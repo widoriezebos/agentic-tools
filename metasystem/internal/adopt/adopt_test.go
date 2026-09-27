@@ -140,7 +140,7 @@ func TestAdoptRefusesAnEngineFromAnotherCommitAfterBuilding(t *testing.T) {
 		t.Fatalf("a stale engine: built=%d %v", built, err)
 	}
 	resolved, _ := filepath.EvalSymlinks(target)
-	want := []string{filepath.Join(source, "bin", "metasystem"), "system", "adopt", resolved, "--runtimes", "none"}
+	want := []string{filepath.Join(source, "bin", "metasystem"), "system", "adopt", resolved, "--repo", source, "--runtimes", "none"}
 	if strings.Join(refusal.Argv, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("the stale-engine refusal names %q, want %q", refusal.Argv, want)
 	}

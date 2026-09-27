@@ -298,7 +298,7 @@ func Adopt(options Options) (Result, error) {
 		return Result{}, refuse(CodeRefused,
 			fmt.Sprintf("this engine was built from %s, not from the template's HEAD %s; adopting with it could tailor the payload by other rules", displayStamp(d.EngineStamp), sha),
 			"the template's engine is now rebuilt; run the adoption with it",
-			append([]string{filepath.Join(source, "bin", "metasystem"), "system", "adopt", target}, adoptFlags(options)...)...)
+			append([]string{filepath.Join(source, "bin", "metasystem"), "system", "adopt", target, "--repo", source}, adoptFlags(options)...)...)
 	}
 
 	stage, err := os.MkdirTemp("", "metasystem-adopt-")

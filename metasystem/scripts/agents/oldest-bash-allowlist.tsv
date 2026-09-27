@@ -1,7 +1,6 @@
 # Existing Bash 3.2 fixture hazards; new findings are refused.
 # Conversion units delete rows as they repair sites.
 # Rows match rule, path, and content hash; the final column is informational.
-bare-test	scripts/adopt-fixtures.sh	e343c729d49178ae29be136dfcc211e922a7a53bf7dd9816c00d97d5f4303cc3	[[ "$fixture_scenario" == "$1" ]]
 bare-test	scripts/agents/actionable-metrics-fixtures.sh	38e4c772fc2ed99e6e5cd90fc07e997311223fd535c966274ec8dbd2c41cb08e	[[ $(grep -Fc -- '--goal "$goal"' "$root/scripts/agents/dispatch.sh") -ge 3 ]]
 bare-test	scripts/agents/channel-fixtures.sh	0dc348d76c277efdb64143b042e5987c0a27be5ed50f70d8c8b0b3be8a15aad6	[[ $("$ms" channel wait --root "$repo" --question "$qid" --timeout 1) == approve ]]
 bare-test	scripts/agents/channel-fixtures.sh	33f1570d591558a355741ca4fe16c3bfef4d6979aca153926a8ba054aa546405	[[ $("$ms" channel wait --root "$repo" --question "$telegram_qid" --timeout 1) == approve ]]
@@ -119,7 +118,6 @@ bare-test	scripts/agents/witness-gate-fixtures.sh	bf6860d838ea928e930de745429887
 bare-test	scripts/agents/witness-gate-fixtures.sh	ca171606b3fdd9b83b78f3fcc8b45d245b89a3079d2aaea6e0e1c99e2e3f805d	[[ "${GOMODCACHE:-}" == "${WITNESS_FIXTURE_EXPECT_GOMODCACHE:-}" ]]
 bare-test	scripts/agents/witness-gate-fixtures.sh	dcb22c6e5f188538709761280db6ae90b7965dc597a3dfe3ca855d51721a0b02	[[ ${2:-} == ./cmd/metasystem ]]
 bare-test	scripts/agents/witness-gate-fixtures.sh	f258b6f3973a301bab9994e58c1ac5f8bda9b4316a8d3e84039d65d2d8b97d02	[[ "$("$source_engine" json get --file "$witness_path" --field controller.startedAtSec)" != "$wrong_start_started" ]]
-empty-array	scripts/adopt-fixture-helpers.sh	017a08e5fcbf3644eff3a30869b1fdd10c4cae18340c7fe0a37b714bddf71539	joined=$(printf '%s\n' "${models[@]}" | LC_ALL=C sort -u | paste -sd, -)
 empty-array	scripts/agents/delegate-caps-fixtures.sh	20d6667c677bfec7eda9de817feb50768df4a63144dbbf7d2e499e3b5f1c7cdb	|| { echo "AUTH-R2-009: executed registry is not exact:" "${passed[@]}" >&2; exit 1; }
 empty-array	scripts/agents/delegate-caps-fixtures.sh	73759035861360e5c34fb36f4a6f22c0b6a76b851d7de209844185b8b2ad126f	registry_is_complete "${passed[@]}" \
 empty-array	scripts/agents/dispatch-fixtures.sh	18fbf1891ed083970425aee571082c1e2810c333e00426afff55b3c2b1ccc327	if argv_contains -C "${codex_args_two[@]}"; then

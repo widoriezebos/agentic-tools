@@ -414,8 +414,8 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 			t.Fatalf("an unselected runtime key survived: %s", line)
 		}
 	}
-	if !strings.Contains(readText(t, filepath.Join(target, ".claude", "settings.json")), "SessionStart") {
-		t.Fatal("the Claude session-start hook is missing")
+	if settings := readText(t, filepath.Join(target, ".claude", "settings.json")); !strings.Contains(settings, "SessionStart") || !regexp.MustCompile(`supervision-hook\.sh.*claude start`).MatchString(settings) {
+		t.Fatal("the Claude session-start supervision hook is missing")
 	}
 	if _, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: target, Runtimes: []string{"claude"}, Check: true}); err != nil {
 		t.Fatalf("the default Claude registration fails the shared setup check: %v", err)
@@ -461,12 +461,25 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 	}
 	sameTree(t, before, treeState(t, target), "a second adoption")
 
-	// Unreplaced placeholders fail the full audit; the structural pass
-	// tolerated them.
+	// Unreplaced placeholders fail the full audit, which the structural
+	// pass tolerated, and the adopted validator refuses them with its cheap
+	// static scan before any engine gate: first in the project rules, then,
+	// with those filled, in the configuration.
 	for _, fill := range []string{"docs/project-rules.md", ""} {
 		audited, err := audit.AuditMetasystem(target, audit.AuditOptions{})
 		if err != nil || len(audited.Violations) == 0 {
 			t.Fatalf("the audit accepted unreplaced placeholders (%q still unfilled): %v", fill, err)
+		}
+		validator := exec.Command("bash", filepath.Join(target, "scripts", "validate-metasystem.sh"))
+		validator.Dir = target
+		validator.Env = ledgerfence.EnvironWithoutGitSteering()
+		started := time.Now()
+		out, err := validator.CombinedOutput()
+		if err == nil || !hasLine(strings.Split(string(out), "\n"), "adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf") {
+			t.Fatalf("the adopted validator did not refuse unreplaced placeholders with its static scan (%v):\n%s", err, out)
+		}
+		if elapsed := time.Since(started); elapsed >= time.Minute {
+			t.Fatalf("the placeholder refusal took %s; the pre-gate scan must fail within seconds", elapsed)
 		}
 		if fill != "" {
 			path := filepath.Join(target, fill)
@@ -501,7 +514,7 @@ func TestAdoptGitIntegrationRuntimeSelections(t *testing.T) {
 		if !hasLine(confLines(t, target), "metasystem.runtimes=devin") || !hasLine(confLines(t, target), "role.default.runtime=devin") {
 			t.Fatal("the devin selection was not recorded as the default")
 		}
-		if !strings.Contains(readText(t, filepath.Join(target, ".devin", "config.json")), "SessionStart") || exists(filepath.Join(target, ".claude")) {
+		if !regexp.MustCompile(`supervision-hook\.sh.*devin start`).MatchString(readText(t, filepath.Join(target, ".devin", "config.json"))) || exists(filepath.Join(target, ".claude")) {
 			t.Fatal("a devin-only target has the wrong hook configuration")
 		}
 		if _, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: target, Runtimes: []string{"devin"}, Check: true}); err != nil {
@@ -522,7 +535,7 @@ func TestAdoptGitIntegrationRuntimeSelections(t *testing.T) {
 		if !hasLine(confLines(t, target), "metasystem.runtimes=codex") || !hasLine(confLines(t, target), "role.default.runtime=codex") {
 			t.Fatal("the codex selection was not recorded as the default")
 		}
-		if !strings.Contains(readText(t, filepath.Join(target, ".codex", "hooks.json")), "SessionStart") {
+		if !regexp.MustCompile(`supervision-hook\.sh.*codex start`).MatchString(readText(t, filepath.Join(target, ".codex", "hooks.json"))) {
 			t.Fatal("the Codex session-start hook is missing")
 		}
 		if _, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: target, Runtimes: []string{"codex"}, Check: true}); err != nil {

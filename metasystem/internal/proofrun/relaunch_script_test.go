@@ -22,7 +22,6 @@ type relaunchScriptSite struct {
 var relaunchScriptSites = []relaunchScriptSite{
 	{name: "go gate", relative: "scripts/agents/go-gate.sh", marker: "METASYSTEM_GO_GATE_RELAUNCHED", diagnostic: "go gate: relaunched child is not an authorized proof worker"},
 	{name: "validator", relative: "scripts/validate-metasystem.sh", marker: "METASYSTEM_VALIDATE_RELAUNCHED", diagnostic: "validate metasystem: relaunched child is not an authorized proof worker"},
-	{name: "adoption fixtures", relative: "scripts/adopt-fixtures.sh", marker: "METASYSTEM_ADOPT_FIXTURES_RELAUNCHED", diagnostic: "adopt fixtures: relaunched child is not an authorized proof worker"},
 }
 
 type relaunchScriptFixture struct {

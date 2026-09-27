@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -11,7 +10,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adopt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
@@ -25,16 +23,15 @@ func adoptIntentCommand() intentCommand {
 		object: "system", action: "adopt", audience: "human", summary: "install MetaSystem into a fresh application repository",
 		usage: []string{"metasystem system adopt TARGET [--runtimes " + adoptable + "|none] [--enable SKILL] [--copy-skills]"},
 		details: []string{
-			"Exports this installation's committed payload into TARGET (created when missing), writes metasystem.conf for the selected runtimes, registers skills and profiles, installs the shipped enforcement, seeds the goal ledger and records the template commit.",
+			"Run it in the template checkout (or name it with --repo). Exports its committed payload into TARGET (created when missing), writes metasystem.conf for the selected runtimes, registers skills and profiles, installs the shipped enforcement, seeds the goal ledger and records the template commit.",
 			"--runtimes defaults to " + runtimes.AdoptionDefault() + "; the adoptable runtimes are " + strings.Join(runtimes.Adoptable(), ", ") + ", and none registers no runtime. --enable moves an optional skill into skills/; --copy-skills copies skill trees instead of linking them.",
 			"Adopting a target that is already this installation at the same commit changes nothing. A target with other instruction assets, an older installation, or differing payload files is refused with the way forward (docs/metasystem-reconciliation.md); nothing is ever overwritten.",
 			"Only file-shaped instruction assets are detectable: check by hand that no agent-directed prose, prompt directories, or agent-encoding hooks or CI exist before calling a repository fresh.",
 		},
 		flags: []intentFlag{
 			{name: "runtimes", value: "LIST", usage: "comma-separated runtimes to register (" + adoptable + "), or none"},
-			{name: "enable", value: "SKILL", repeat: true, usage: "move an optional skill into skills/ (repeatable)"},
+			{name: "enable", value: "SKILL", repeat: true, usage: "move an optional skill into skills/"},
 			{name: "copy-skills", usage: "copy skill trees instead of linking them"},
-			{name: "from", value: "DIR", advanced: true, usage: "the template installation to adopt from (default: the one this engine belongs to)"},
 		},
 		maxArgs:  1,
 		examples: []string{"metasystem system adopt ../my-app", "metasystem system adopt ../my-app --runtimes claude,codex"},
@@ -54,7 +51,7 @@ func runIntentSystemAdopt(inv *intentInvocation) int {
 	source, err := adoptionSource(inv)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: adopt.CodeUsage, Summary: err.Error(),
-			next: []string{"metasystem", "system", "adopt", inv.input.args[0], "--from", "TEMPLATE"}, nextReason: "name the template installation to adopt from"})
+			next: []string{"metasystem", "system", "adopt", inv.input.args[0], "--repo", "TEMPLATE"}, nextReason: "run it in the template checkout, or name the template with --repo"})
 	}
 	runtimeSelection := inv.input.text("runtimes")
 	if inv.input.has("runtimes") && runtimeSelection == "" {
@@ -104,28 +101,21 @@ func runIntentSystemAdopt(inv *intentInvocation) int {
 		next: []string{"metasystem", "settings", "check", "--repo", result.Target}, nextReason: "after filling the facts above"})
 }
 
-// adoptionSource is the template installation: --from, else the installation
-// this engine belongs to.
+// adoptionSource is the template installation: the one containing --repo, or
+// the current directory, as for every public action.
 func adoptionSource(inv *intentInvocation) (string, error) {
-	if inv.input.has("from") {
-		from := inv.input.text("from")
-		if !filepath.IsAbs(from) {
-			from = filepath.Join(inv.cwd, from)
+	path := inv.cwd
+	if inv.input.has("repo") {
+		path = inv.input.text("repo")
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(inv.cwd, path)
 		}
-		return stateroot.RootForCandidate(from)
 	}
-	executable, err := os.Executable()
+	layout, err := inv.owners.resolver.ResolveLayout(path)
 	if err != nil {
-		return "", fmt.Errorf("cannot locate this engine: %v", err)
+		return "", fmt.Errorf("%s is not inside a metasystem template checkout: %v", shellCommand([]string{path}), err)
 	}
-	if resolved, resolveErr := filepath.EvalSymlinks(executable); resolveErr == nil {
-		executable = resolved
-	}
-	root, err := stateroot.RootForCandidate(filepath.Dir(filepath.Dir(executable)))
-	if err != nil {
-		return "", fmt.Errorf("this engine (%s) is not installed at <installation>/bin/metasystem, so it names no template to adopt from", executable)
-	}
-	return root, nil
+	return layout.InstallationRoot, nil
 }
 
 // buildAdoptionEngine runs the bootstrap build in the template: the engine is

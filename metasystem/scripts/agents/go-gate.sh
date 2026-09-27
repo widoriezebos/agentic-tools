@@ -129,7 +129,7 @@ if [[ "$gate_fast" == 1 && ( -n "${METASYSTEM_GATE_WITNESS:-}" || -n "${METASYST
   exit 1
 fi
 
-# A checkout without a Go module has not adopted the Go engine yet (adopt.sh
+# A checkout without a Go module has not adopted the Go engine yet (adoption
 # ships it as a Phase 4 port, records/misc/go-migration.md). It runs pure
 # shell/python, so the Go gate is a no-op there — SKIP, never fail. This is
 # what keeps an adopted target's own suite green before the engine arrives.

@@ -649,7 +649,7 @@ go_engine_gate_section() {
   # nested delivery-contract runs this suite spawns. Dirty roots, seed,
   # force, or any refusal fall back to the plain worktree gate, no
   # witness, exactly as before. The machinery lives in the sourced
-  # helper so standalone direct-validator stages (adopt-fixtures) arm the same
+  # helper so standalone direct-validator stages arm the same
   # witness instead of re-proving identical bytes per nested run. The
   # fallback is FORCED here: canonical validation always runs a real
   # gate when the witness cannot arm, immune to ambient state. The
@@ -1007,7 +1007,6 @@ for link in \
   docs/examples/step-back-ledger.md \
   .gitattributes \
   memory/instruction-ledger.md \
-  scripts/adopt.sh \
   scripts/enforcement/github-actions-metasystem.yml \
   scripts/enforcement/claude-code-hooks.json \
   scripts/enforcement/codex-hooks.json \
@@ -1067,7 +1066,6 @@ for link in \
   scripts/agents/mission-fixtures.sh \
   scripts/agents/delegate-caps-fixtures.sh \
   scripts/agents/adapter-deadline-fixtures.sh \
-  scripts/adopt-fixtures.sh \
   scripts/agents/dispatch-fixtures.sh \
   scripts/agents/hosts/host-common.sh \
   scripts/agents/hosts/claude.sh \
@@ -1150,7 +1148,6 @@ bash -n scripts/agents/checkout-execution-guard-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/agents/adapter-deadline-fixtures.sh
-bash -n scripts/adopt-fixtures.sh
 bash -n scripts/agents/dispatch-fixtures.sh
 bash -n scripts/agents/conformance-fixtures.sh
 bash -n scripts/agents/goal-cli-fixtures.sh

@@ -447,7 +447,7 @@ provisioner_start=$("$ms" proc started-at --pid $$) \
 "$ms" lease require-holder --root "$target" --caller-pid $$ >/dev/null \
   || die 1 "provision refused: the provisioner did not become the target's lease holder"
 
-if ! "$root/bin/metasystem" system adopt "$target" --runtimes "$runtimes" >"$scratch/adopt.log" 2>&1; then
+if ! "$root/bin/metasystem" system adopt "$target" --repo "$root" --runtimes "$runtimes" >"$scratch/adopt.log" 2>&1; then
   cat "$scratch/adopt.log" >&2
   die 1 "provision failed while adopting the metasystem"
 fi

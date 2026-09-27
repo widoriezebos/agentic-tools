@@ -139,7 +139,6 @@ func TestFullScriptWrappersPreserveOwnerStatusAndIgnoreAmbientProgress(t *testin
 	}{
 		{name: "go gate child failure", relative: "scripts/agents/go-gate.sh", status: 23},
 		{name: "validator reusable success", relative: "scripts/validate-metasystem.sh", status: ExitReusableSuccess},
-		{name: "adoption reusable success", relative: "scripts/adopt-fixtures.sh", status: ExitReusableSuccess, fixtureBudget: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()

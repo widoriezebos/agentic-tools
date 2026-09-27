@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // The public adoption action: its help names the adoptable runtimes, and every
@@ -27,26 +28,33 @@ func TestSystemAdoptHelpAndRefusalsBeforeAnyEffect(t *testing.T) {
 		}
 	}
 
+	// The template is found from --repo or the current directory, as for
+	// every public action; the repository top is stubbed.
 	installation := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cwd := t.TempDir()
 	target := filepath.Join(cwd, "app")
+	owners := defaultIntentOwners()
+	owners.resolver = stateroot.NewResolver(func(path string) (string, error) { return path, nil }, os.Executable)
 	for _, test := range []struct {
 		name string
 		args []string
 		want string
 		next string
 	}{
-		{"no target", []string{"--from", installation}, "name the repository to adopt into", "metasystem system adopt TARGET"},
-		{"no template", []string{"app", "--from", filepath.Join(cwd, "missing")}, "not a metasystem installation", "metasystem system adopt app --from TEMPLATE"},
-		{"unknown runtime", []string{"app", "--from", installation, "--runtimes", "codez"}, "unknown or non-adoptable runtime: codez", "metasystem system adopt TARGET --runtimes"},
-		{"empty runtime selection", []string{"app", "--from", installation, "--runtimes="}, "--runtimes cannot be empty", "metasystem system adopt TARGET --runtimes"},
-		{"none mixed", []string{"app", "--from", installation, "--runtimes", "none,claude"}, "cannot be combined", "metasystem system adopt TARGET --runtimes"},
+		{"no target", []string{"--repo", installation}, "name the repository to adopt into", "metasystem system adopt TARGET"},
+		{"not in a template", []string{"app"}, "is not inside a metasystem template checkout", "metasystem system adopt app --repo TEMPLATE"},
+		{"unknown runtime", []string{"app", "--repo", installation, "--runtimes", "codez"}, "unknown or non-adoptable runtime: codez", "metasystem system adopt TARGET --runtimes"},
+		{"empty runtime selection", []string{"app", "--repo", installation, "--runtimes="}, "--runtimes cannot be empty", "metasystem system adopt TARGET --runtimes"},
+		{"none mixed", []string{"app", "--repo", installation, "--runtimes", "none,claude"}, "cannot be combined", "metasystem system adopt TARGET --runtimes"},
 	} {
 		var stdout, stderr bytes.Buffer
-		code := runIntentIn(command, append(test.args, "--json"), &stdout, &stderr, cwd, defaultIntentOwners())
+		code := runIntentIn(command, append(test.args, "--json"), &stdout, &stderr, cwd, owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%s: not one JSON result: %v\n%s%s", test.name, err, stdout.String(), stderr.String())
