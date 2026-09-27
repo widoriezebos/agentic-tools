@@ -2,16 +2,20 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
-	"strconv"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-func TestLeaseHookDelegateCLIExitContract(t *testing.T) {
+// TestHookDelegateOwnerStatusContract proves the runtime hook's custody
+// owner binding keeps the status contract the hook decides on: the exact
+// custody JSON with 0, and 1 for a narrowed record that is absent.
+func TestHookDelegateOwnerStatusContract(t *testing.T) {
 	root := t.TempDir()
 	installation := t.TempDir()
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
@@ -35,19 +39,18 @@ func TestLeaseHookDelegateCLIExitContract(t *testing.T) {
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	output, code := captureStdout(t, func() int {
-		return runLeaseHookDelegate([]string{"--root", root, "--metasystem-root", installation, "--caller-pid", stringInt64(int64(os.Getpid())), "--job", "job-cli"})
-	})
-	if code != 0 || !strings.Contains(output, `"delegate":true`) {
-		t.Fatalf("positive query = exit %d output %q", code, output)
+	owners := hookOwners{diagnostics: io.Discard}
+	output, code := owners.HookDelegate(root, installation, "job-cli", os.Getpid())
+	if code != 0 || !strings.Contains(output, `"delegate":true`) || !strings.HasSuffix(output, "\n") {
+		t.Fatalf("positive query = status %d output %q", code, output)
 	}
-	if _, code := captureStdout(t, func() int {
-		return runLeaseHookDelegate([]string{"--root", root, "--metasystem-root", installation, "--caller-pid", stringInt64(int64(os.Getpid())), "--job", "job-absent"})
-	}); code != 1 {
-		t.Fatalf("missing narrowed record exit = %d, want 1", code)
+	if !regexp.MustCompile(`^\{"delegate":true,"jobId":"job-cli","matchedPid":[1-9][0-9]*,"comparisonMode":"(darwin-microseconds|linux-ticks-boot-id|legacy-seconds)"\}$`).MatchString(strings.TrimSuffix(output, "\n")) {
+		t.Fatalf("positive query is not the exact custody shape the start boundary accepts: %q", output)
 	}
-}
-
-func stringInt64(value int64) string {
-	return strconv.FormatInt(value, 10)
+	if _, code := owners.HookDelegate(root, installation, "job-absent", os.Getpid()); code != 1 {
+		t.Fatalf("missing narrowed record status = %d, want 1", code)
+	}
+	if _, code := owners.HookDelegate(t.TempDir(), installation, "", os.Getpid()); code != 3 {
+		t.Fatalf("query against a registry no job owns = %d, want 3", code)
+	}
 }

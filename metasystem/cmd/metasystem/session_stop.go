@@ -111,21 +111,3 @@ func authorizeSessionStop(stateRoot, by string) (goal.SessionStop, string, int) 
 	}
 	return marker, "", 0
 }
-
-func runSessionEnd(args []string) int {
-	flags := flag.NewFlagSet("session end", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	session := flags.String("session", "", "announced session id")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if flags.NArg() != 0 || strings.TrimSpace(*session) == "" {
-		fmt.Fprintln(os.Stderr, "session end: --session is required and positional arguments are not accepted")
-		return 2
-	}
-	if err := (&goal.Store{Root: *root}).EndSessionStop(*session); err != nil {
-		fmt.Fprintf(os.Stderr, "session end: unused stop authorization could not be retired: %v\n", err)
-		return 1
-	}
-	return 0
-}

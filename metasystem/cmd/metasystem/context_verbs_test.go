@@ -634,7 +634,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 		"metasystem/internal/usage/cursor.go",
 		"metasystem/internal/steward/context.go",
 		"metasystem/scripts/agents/health-fixtures.sh",
-		"metasystem/scripts/agents/supervision-hook-fixtures.sh",
+		"metasystem/internal/hooks/runtime_hook_stop.go",
 	} {
 		standardPlan, err := testpolicy.Select(contract, testpolicy.SelectionRequest{
 			ChangedPaths: []string{changed}, RequestedMode: testpolicy.ModeStandard, Purpose: testpolicy.PurposeDiagnostic,
@@ -694,7 +694,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 	sectionBlock := string(validateSource[start : start+endOffset])
 	fixtureRoot := t.TempDir()
 	logPath := filepath.Join(fixtureRoot, "order.log")
-	for _, name := range []string{"runtime-hook-fixtures.sh", "supervision-hook-fixtures.sh", "health-fixtures.sh", "supervision-fixtures.sh"} {
+	for _, name := range []string{"health-fixtures.sh", "supervision-fixtures.sh"} {
 		path := filepath.Join(fixtureRoot, "scripts", "agents", name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
@@ -720,7 +720,7 @@ run_section() { shift 2; "$@"; }
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantOrder := "runtime-hook-fixtures.sh\nsupervision-hook-fixtures.sh\nsupervision-fixtures.sh\nhealth-fixtures.sh\n"
+	wantOrder := "supervision-fixtures.sh\nhealth-fixtures.sh\n"
 	if string(order) != wantOrder {
 		t.Fatalf("supervision and census fixture order = %q, want %q", order, wantOrder)
 	}

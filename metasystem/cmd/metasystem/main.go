@@ -73,8 +73,6 @@ func families() []family {
 				{"fence", "report whether a guarded act is refused", runBrainFence},
 				{"boot", "compose the declared brain's bounded standing context", runBrainBoot},
 				{"boot-inputs", "read optional brain boot inputs in the bounded child (internal)", runBrainBootInputs},
-				{"start-delivered", "record a read-only brain packet after SessionStart publication (internal)", runBrainStartDelivered},
-				{"digest-advance", "advance the brain's narrator digest cursor after context emission (internal)", runBrainDigestAdvance},
 			},
 		},
 		{
@@ -257,7 +255,6 @@ func families() []family {
 			name:    "adapter",
 			summary: "shared runtime-adapter plumbing: permissions, patches, snapshots",
 			verbs: []verb{
-				{"stop-output", "map one Stop presentation to a runtime envelope", runAdapterStopOutput},
 				{"root-job", "print a job's root ancestor by walking parentJob", runAdapterRootJob},
 				{"effective-init", "materialize the effective permissions from a job record", runAdapterEffectiveInit},
 				{"effective-workspace", "pin the effective writeRoots to the resolved workspace", runAdapterEffectiveWorkspace},
@@ -366,11 +363,8 @@ func families() []family {
 			name:    "report",
 			summary: "turn-end report decisions",
 			verbs: []verb{
-				{"stop-input", "compose one Stop presentation input from captured files", runReportStopInput},
-				{"stop-present", "publish one immutable Stop report and its compact presentation", runReportStopPresent},
 				{"stop-response", "resolve one runtime Stop payload to its immutable report", runReportStopResponse},
 				{"stop-status", "read one exact immutable Stop report", runReportStopStatus},
-				{"stop-block", "print the stop-hook block that refuses to end a turn with idle open work", runReportStopBlock},
 				{"turn-verdict", "the one structured turn-end decision: scan, goal, block-once state", runReportTurnVerdict},
 				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},
 				{"running-work", "print the turn-end active clause: live jobs, missions, gate runs", runReportRunningWork},
@@ -416,7 +410,6 @@ func families() []family {
 				{"adoption-default", "the one default adoption runtime", runRuntimeAdoptionDefault},
 				{"dirs", "a runtime's adopted registration directories", runRuntimeDirs},
 				{"instruction-file", "a runtime's instruction-bearing filename", runRuntimeInstructionFile},
-				{"start-context", "a runtime's session-start context field, byte bound, and lifecycle sources", runRuntimeStartContext},
 				{"acp-expectation", "a runtime's expected ACP transport declaration as JSON", runRuntimeACPExpectation},
 			},
 		},
@@ -465,10 +458,7 @@ func families() []family {
 		{
 			name:    "hooks",
 			summary: "the Stop hook's deadline worker: wait for it, or stop it past its deadline",
-			verbs: []verb{
-				{"stop-deadline-wait", "wait for one Stop worker or its deadline", runHooksStopDeadlineWait},
-				{"stop-deadline-cleanup", "stop one exact worker after its Stop deadline", runHooksStopDeadlineCleanup},
-			},
+			verbs:   []verb{},
 		},
 		{
 			name:    "util",
@@ -595,7 +585,6 @@ func families() []family {
 			verbs: []verb{
 				{"start", "print durable wait recovery commands for this holder session", runSessionStart},
 				{"stop", "human-only: authorize one quiet stop for the current announced main session", runSessionStop},
-				{"end", "retire any unused quiet-stop authorization for one ended session (internal)", runSessionEnd},
 			},
 		},
 		{
@@ -617,12 +606,8 @@ func families() []family {
 				{"arm", "explicit human enrollment and runner start (long form of metasystem system start)", runStewardArm},
 				{"restart", "replace and re-arm the runner (long form of metasystem system start)", runStewardRestart},
 				{"disarm", "end the runner", runStewardDisarm},
-				{"pending", "one line naming undelivered incidents; empty means none", runStewardPending},
 				{"hook-attempt", "record a supervision-hook attempt before turn work (internal)", runStewardHookAttempt},
 				{"hook-complete", "record a supervision-hook completion after payload emission (internal)", runStewardHookComplete},
-				{"hook-expire", "record a supervision-hook deadline expiry (internal)", runStewardHookExpire},
-				{"digest-pending", "print narrator highlights and lowlights since the last check-in (internal)", runStewardDigestPending},
-				{"digest-advance", "advance the narrator digest after payload emission (internal)", runStewardDigestAdvance},
 			},
 		},
 		{
@@ -646,12 +631,8 @@ func families() []family {
 				{"announce", "record this process as a main and claim the checkout lease", runLeaseAnnounce},
 				{"retire", "remove this process's announcement", runLeaseRetire},
 				{"classify", "classify a caller and report holdership as JSON", runLeaseClassify},
-				{"hook-delegate", "verify that a hook caller descends from exact delegate-job custody", runLeaseHookDelegate},
 				{"require-holder", "gate a write on the caller being the authenticated holder", runLeaseRequireHolder},
-				{"renew", "bump the holder's lease revision", runLeaseRenew},
 				{"run-held", "run a command while holding the lease lock (gated on holdership)", runLeaseRunHeld},
-				{"protocol-growth", "report new protocol errors since a main last advanced its cursor", runLeaseProtocolGrowth},
-				{"protocol-advance", "merge a main's protocol-error counts into its cursor", runLeaseProtocolAdvance},
 				{"commit-token", "atomically write the live commit wrapper token", runLeaseCommitToken},
 			},
 		},
@@ -702,7 +683,6 @@ func families() []family {
 				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},
 				{"status", "print the checkout's supervision state as JSON", runSuperviseStatus},
 				{"launch-detached", "start a command in its own session with logged output", runSuperviseLaunchDetached},
-				{"watchdog-report", "report a stale census, untracked processes, and dead components", runSuperviseWatchdogReport},
 				{"watcher-pass", "run one census pass as a standalone writer under the census lock", runSuperviseWatcherPass},
 			},
 		},
@@ -840,6 +820,9 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 	if args[0] == "up" {
 		return runUpWith(args[1:], repositoryTop)
 	}
+	if args[0] == "hook" {
+		return runHookEntry(args[1:])
+	}
 	if args[0] == "stop" {
 		return runProcessStop(args[1:])
 	}
@@ -934,6 +917,7 @@ func writeUsage(w io.Writer, registered []family) {
 	fmt.Fprintln(w, "usage: metasystem internal <family> <verb> [flags]")
 	fmt.Fprintln(w, "       metasystem internal up [--repo <checkout>] [--pid <pid> --start-time <epoch>]")
 	fmt.Fprintln(w, "       metasystem internal up --print-scheduler-entry [--repo <checkout>]")
+	fmt.Fprintln(w, "       metasystem internal hook <runtime> <start|stop|end|receipt|tool>  (run by scripts/agents/supervision-hook.sh)")
 	fmt.Fprintln(w, "       metasystem internal stop [--repo <path>] [--installation <dir>] [--all]")
 	fmt.Fprintln(w, "       metasystem internal status [--repo <path>] [--installation <dir>] [--all]")
 	fmt.Fprintln(w, "       metasystem internal arm [--repo <path>] [--installation <dir>] [--all] [--temporary-human-word <word> --review-by <date>]")

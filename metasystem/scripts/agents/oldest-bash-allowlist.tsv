@@ -110,7 +110,6 @@ bare-test	scripts/agents/supervision-fixtures.sh	e5e1a54d9e06cf8639b17b7c4676089
 bare-test	scripts/agents/supervision-fixtures.sh	e941b91ee51ab99eacaf90a103894977a5921f222eb8f068b6ecf0aaf9311afa	[[ "$observed" =~ ^[0-9]+$ && "$observed" -gt "$first" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	e9eaca1d448f58a21a87c03344f6790060224f926e8030d0a7912c5420448b9a	[[ "$decision_surface_stop_hook_assertions" =~ $decision_pattern_regex ]]
 bare-test	scripts/agents/supervision-fixtures.sh	ef5a98ae989018787859aae126ec6eef3f0e455eb3845d554863888d2298b451	[[ "$(census_field "$1" verdict)" == "$2" ]]
-bare-test	scripts/agents/supervision-hook-fixtures.sh	2c29e93dcb91bf54d1a9c9af81602f9885e4395dc1ec851d8c0ece4c9d721941	[[ $($engine json get --value "$ancestor" --field pid) == $$ \\n&& $($engine json get --value "$ancestor" --field runtime) == "$runtime" ]]
 bare-test	scripts/agents/witness-gate-fixtures.sh	0632409191e1bb1bc88a455fbaa0d6c8e0cb1ff275ea67fe18108595d79c76a1	[[ "$wrong_start_pid" == $$ ]]
 bare-test	scripts/agents/witness-gate-fixtures.sh	296e54f9f5a419aa7198dd34d1c7e6b93e1e172c07be013643af5601acf684d5	[[ -n "${METASYSTEM_GATE_WITNESS_EXPORT:-}" && -d "$METASYSTEM_GATE_WITNESS_EXPORT" ]]
 bare-test	scripts/agents/witness-gate-fixtures.sh	8f1bc80aad6d366cbd527c61583cf8122eb4592e97d0bbd32a4f486f85fb5a92	[[ "${GOFLAGS:-}" == -mod=readonly ]]
@@ -142,8 +141,3 @@ empty-array	scripts/agents/land-fixtures.sh	2888abdbb6415c3f5ff34bb6ebcbea738508
 empty-array	scripts/agents/land-fixtures.sh	9f70565e827d0c012851c57b84718891985a62a35886934531ff30608485f147	git commit "${commit_args[@]}"
 empty-array	scripts/agents/path-class-fixtures.sh	4b40e70698acad0cfb3f09000fcfd5798dc60e4b550c3e5a99d227b3a4775c57	grep -rnE -I "$pattern" -- "${repo_paths[@]}"
 empty-array	scripts/agents/path-class-fixtures.sh	871d0c30123f274a605695b3b4d48af813198de618d315d9aef25ba8c2372437	grep -rnE -I --exclude-dir=reviews --exclude=journey.md "$pattern" -- "${install_paths[@]}"
-empty-array	scripts/agents/runtime-hook-fixtures.sh	25ed61728c8540ded5775b48ebb5f5bf43e99ab01cf33152f7b39921cea972b8	wait_owned concurrent-runtime-children "${pids[@]}"
-empty-array	scripts/agents/supervision-fixtures.sh	265d4bd106334732389239489e7050d2d723999b8be8f5cf8de26b4b8ae1816a	for blocked_kind in "${blocked_kinds[@]}"; do
-empty-array	scripts/agents/supervision-fixtures.sh	9798fb4126670aaf00e2a268d92f4acf0604512175986b1c278a022516692aeb	"${command_words[@]}"
-empty-array	scripts/agents/supervision-fixtures.sh	b614fda102ca39a7780bd5bb15da9ad6d555cac9efc3f4519b2c2572c994dd54	for release_file in "${release_files[@]}"; do
-empty-array	scripts/agents/supervision-fixtures.sh	c3b010dd99f0f4f0176169b1d0051fb2736d3f99caf8595f71d0c7a2286de4dd	for blocked_pid in "${blocked_pids[@]}"; do

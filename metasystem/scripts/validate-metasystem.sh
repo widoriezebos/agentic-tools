@@ -1053,8 +1053,6 @@ for link in \
   scripts/agents/enumerate-suite-fixtures.sh \
   scripts/agents/fingerprint-harness.sh \
   scripts/agents/supervision-hook.sh \
-  scripts/agents/supervision-hook-fixtures.sh \
-  scripts/agents/runtime-hook-fixtures.sh \
   scripts/agents/supervision-fixtures.sh \
   scripts/agents/telemetry-census-fixtures.sh \
   scripts/agents/return-schema-fixtures.sh \
@@ -1107,8 +1105,6 @@ fi
 # No later section consumes that armed state, so an arming failure is recorded
 # as the owning section's red and does not gate an unrelated section.
 supervision_and_census_section() {
-  scripts/agents/runtime-hook-fixtures.sh
-  scripts/agents/supervision-hook-fixtures.sh
   scripts/agents/supervision-fixtures.sh
   scripts/agents/health-fixtures.sh
 }
@@ -1145,8 +1141,6 @@ bash -n scripts/agents/enumerate-suite-fixtures.sh
 bash -n scripts/agents/witness-gate.sh
 bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
-bash -n scripts/agents/supervision-hook-fixtures.sh
-bash -n scripts/agents/runtime-hook-fixtures.sh
 bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/telemetry-census-fixtures.sh
 bash -n scripts/agents/return-schema-fixtures.sh

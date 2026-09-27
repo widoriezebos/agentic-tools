@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 const fixtureCommit = "0123456789abcdef0123456789abcdef01234567"
@@ -106,7 +107,7 @@ func (f *buildFixture) deps() deps {
 			if !filepath.IsAbs(out) {
 				out = filepath.Join(root, out)
 			}
-			return os.WriteFile(out, []byte("engine "+strings.Join(args, " ")), 0o755)
+			return testexec.WriteFile(out, []byte("engine "+strings.Join(args, " ")), 0o755)
 		},
 		fence: func(root string, selfPid int64) []gaterun.Holder {
 			f.fenceHits++
@@ -130,7 +131,7 @@ func (f *buildFixture) installEngine() string {
 	if err := os.MkdirAll(filepath.Dir(engine), 0o755); err != nil {
 		f.t.Fatal(err)
 	}
-	if err := os.WriteFile(engine, []byte("previous engine"), 0o755); err != nil {
+	if err := testexec.WriteFile(engine, []byte("previous engine"), 0o755); err != nil {
 		f.t.Fatal(err)
 	}
 	return engine

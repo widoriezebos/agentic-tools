@@ -38,8 +38,6 @@ func TestRuntimeVerbContract(t *testing.T) {
 		{"dirs unknown", runRuntimeDirs, []string{"ghostrt"}, 1, ""},
 		{"dirs usage", runRuntimeDirs, nil, 2, ""},
 		{"instruction-file", runRuntimeInstructionFile, []string{"claude"}, 0, "CLAUDE.md\n"},
-		{"start-context", runRuntimeStartContext, []string{"claude"}, 0, "field=hookSpecificOutput.additionalContext event=SessionStart bytes=10000 sources=startup,resume,clear,compact\n"},
-		{"start-context absent", runRuntimeStartContext, []string{"codex"}, 1, ""},
 	}
 	for _, row := range rows {
 		t.Run(strings.ReplaceAll(row.name, " ", "-"), func(t *testing.T) {

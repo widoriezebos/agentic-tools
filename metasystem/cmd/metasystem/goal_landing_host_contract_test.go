@@ -136,7 +136,24 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			t.Errorf("legacy host group %s disappeared", old.ID)
 			continue
 		}
-		containsAll(old.ID+" inputs", now.Inputs, old.Inputs)
+		requiredInputs := old.Inputs
+		if old.ID == "hook-start-audit-standard" {
+			// U4 retired the shell hook bed and the sourced degraded-form
+			// renderer; both moved into internal/hooks, which the group names.
+			// Only these exact retired inputs may be replaced, and only by it.
+			retired := map[string]bool{
+				"metasystem/scripts/agents/supervision-hook-fixtures.sh": true,
+				"metasystem/scripts/agents/stop-degraded-forms.sh":       true,
+			}
+			requiredInputs = nil
+			for _, input := range old.Inputs {
+				if !retired[input] {
+					requiredInputs = append(requiredInputs, input)
+				}
+			}
+			requiredInputs = append(requiredInputs, "metasystem/internal/hooks/**")
+		}
+		containsAll(old.ID+" inputs", now.Inputs, requiredInputs)
 		containsAll(old.ID+" packages", now.Packages, old.Packages)
 		containsAll(old.ID+" obligations", now.Obligations, old.Obligations)
 		var oldTests []string
