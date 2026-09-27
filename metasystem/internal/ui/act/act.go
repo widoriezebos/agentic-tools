@@ -705,11 +705,26 @@ func (a Authority) request(id, action string) (goal.VerbRequest, func(), error) 
 		held.publications.Unlock()
 		endHold()
 	}
+	// Both holds are cleared here until the caller has them, because between
+	// taking them and returning them there is no `defer done()` anywhere: the
+	// caller installs its own only once this function has returned. An assembly
+	// reader that UNWINDS rather than answering would otherwise strand the
+	// registration and this clone's one lock until the process restarted, and
+	// every act on that goal and every publication on that clone with them
+	// (Astra E-04). The flag is what transfers ownership: on any error, and on
+	// any panic, this releases; on the one path that hands the release back, it
+	// does not.
+	transferred := false
+	defer func() {
+		if !transferred {
+			release()
+		}
+	}()
 	request, err := a.assemble()
 	if err != nil {
-		release()
 		return goal.VerbRequest{}, nil, err
 	}
+	transferred = true
 	return request, release, nil
 }
 
