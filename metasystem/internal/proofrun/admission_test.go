@@ -77,6 +77,7 @@ func installAdmissionCensus(t *testing.T, census *admissionCensus, cores int) {
 		return hostload.Sample{Available: true, Cores: cores, Load1m: 1, At: now.UTC().Format(time.RFC3339Nano)}
 	}
 	loadSeams.launchers = countProofLaunchers
+	loadSeams.fixtureNamespaceLaunchers = countProofLaunchersOutsideFixtures
 	loadSeams.nested = nestedProofLauncher
 	loadSeams.prober = census
 	loadSeams.pids = census.pids
