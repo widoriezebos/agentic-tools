@@ -455,7 +455,7 @@ func sortedKeys[V any](m map[string]V) []string {
 // package, so such a collision over-counts rather than hides); a launcher
 // whose argv is built in a statement other than the one that names the
 // engine; a function-typed parameter called without the engine among its
-// arguments; engines found through PATH (exec.Command("metasystem", ...));
+// arguments; engines found through PATH (a bare "metasystem" program name);
 // and wrappers whose program is decided at run time from data.
 
 // Directory names the Go and instruction scans skip under the module root.
@@ -1228,14 +1228,14 @@ func TestVerbRatchetEngineSelfSubprocess(t *testing.T) {
 // counts these whether or not they are still routed, so deleting a family
 // never relaxes the ratchet by making its stale instructions invisible.
 var ratchetFrozenFirstWords = []string{
-	// families
-	"ui", "testing", "test", "brain", "stopfence", "proof-run", "proc", "config", "validate",
-	"landing", "job", "adapter", "host", "audit", "behavior-surface", "path", "gate", "report",
-	"receipt", "metrics", "counselor", "schema", "runtime", "acp", "launch", "unit", "janitor",
-	"output", "context", "hooks", "util", "event", "json", "covenant", "project", "channel",
-	"goal", "session", "seat", "steward", "run", "lease", "mission", "evidence", "supervise",
-	// dispatchInternal top-level forms
-	"up", "stop", "status", "arm", "health", "watch", "wait", "delegate",
+	// families, in alphabetical order
+	"acp", "adapter", "audit", "behavior-surface", "brain", "channel", "config", "context",
+	"counselor", "covenant", "event", "evidence", "gate", "goal", "hooks", "host", "janitor",
+	"job", "json", "landing", "launch", "lease", "metrics", "mission", "output", "path", "proc",
+	"project", "proof-run", "receipt", "report", "run", "runtime", "schema", "seat", "session",
+	"steward", "stopfence", "supervise", "test", "testing", "ui", "unit", "util", "validate",
+	// dispatchInternal top-level forms, in alphabetical order
+	"arm", "delegate", "health", "status", "stop", "up", "wait", "watch",
 }
 
 // ratchetAgentInstructionDirs are repository-relative directories of agent
