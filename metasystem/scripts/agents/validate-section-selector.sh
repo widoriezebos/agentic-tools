@@ -18,7 +18,6 @@ suite-host-prerequisites	suite host prerequisites
 metasystem-audit	metasystem audit
 gate-fail-open-tripwire	Go gate fail-open tripwire
 witness-gate-fixtures	witness gate fixtures
-fixture-bed-scenarios-fixtures	fixture bed harness fixtures
 land-fixtures	landing chain fixtures
 static-contract-audits	static contract audits
 supervision-and-census-fixtures	supervision and census fixtures
@@ -79,7 +78,7 @@ selected_sections() {
   while IFS=$'\t' read -r section_id section_name; do
     if [[ "$context" == adopted ]]; then
       case "$section_id" in
-        witness-gate-fixtures | land-fixtures | adoption-fixtures | fixture-bed-scenarios-fixtures)
+        witness-gate-fixtures | land-fixtures | adoption-fixtures)
           continue
           ;;
       esac

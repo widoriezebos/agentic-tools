@@ -1052,7 +1052,6 @@ for link in \
   scripts/agents/authority-regression-fixtures.sh \
   scripts/agents/pre-commit-guard-fixtures.sh \
   scripts/agents/witness-gate-fixtures.sh \
-  scripts/agents/fixture-bed-scenarios-fixtures.sh \
   scripts/agents/land-fixtures.sh \
   scripts/agents/checkout-execution-guard-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
@@ -1129,7 +1128,6 @@ bash -n scripts/agents/acp-fixtures.sh
 bash -n scripts/agents/emit-event.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
 bash -n scripts/agents/witness-gate-fixtures.sh
-bash -n scripts/agents/fixture-bed-scenarios-fixtures.sh
 bash -n scripts/agents/land.sh
 bash -n scripts/agents/land-fixtures.sh
 bash -n scripts/agents/checkout-execution-guard.sh
@@ -2923,10 +2921,6 @@ if (( template_mode )) && section_selected adoption-fixtures; then
 fi
 if (( template_mode )) && section_selected witness-gate-fixtures; then
   run_section witness-gate-fixtures needs-engine bash scripts/agents/witness-gate-fixtures.sh
-fi
-if (( template_mode )) && section_selected fixture-bed-scenarios-fixtures; then
-  run_section fixture-bed-scenarios-fixtures needs-engine \
-    bash scripts/agents/fixture-bed-scenarios-fixtures.sh
 fi
 if (( template_mode )) && section_selected land-fixtures; then
   run_section land-fixtures needs-engine bash scripts/agents/land-fixtures.sh
