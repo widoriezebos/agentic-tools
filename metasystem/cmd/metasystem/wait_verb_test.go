@@ -1178,7 +1178,6 @@ func installPendingWaitHookFixture(t *testing.T, root, binary string) (hook, can
 	}
 	for _, relative := range []string{
 		"scripts/agents/supervision-hook.sh",
-		"scripts/agents/arm-supervision.sh",
 		"scripts/agents/dispatch.sh",
 		"scripts/agents/adapters/fake.sh",
 		"scripts/agents/adapters/runtime-common.sh",

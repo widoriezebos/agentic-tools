@@ -2205,51 +2205,6 @@ func runProofRunCoverageComplete(args []string) int {
 	return 0
 }
 
-func runProofRunCoverageReuse(args []string) int {
-	flags := flag.NewFlagSet("proof-run coverage-reuse", flag.ContinueOnError)
-	executionRoot := pathFlag(flags, "root", "", "source root whose coverage inputs are checked")
-	controlRoot := flags.String("control-root", "", "canonical root retaining proof evidence")
-	baseline := flags.String("baseline", "", "selected coverage ratchet")
-	var packages repeatedFlag
-	flags.Var(&packages, "package", "selected relative package (repeatable)")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *executionRoot == "" || *baseline == "" || len(packages) == 0 {
-		return 2
-	}
-	canonicalExecution, err := canonicalProofRoot(*executionRoot)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run coverage-reuse:", err)
-		return 1
-	}
-	if *controlRoot == "" {
-		for _, candidate := range []string{os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_RUN_ROOT"), os.Getenv("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT")} {
-			if candidate != "" {
-				*controlRoot = candidate
-				break
-			}
-		}
-		if *controlRoot == "" {
-			*controlRoot = canonicalExecution
-		}
-	}
-	canonicalControl, err := canonicalProofRoot(*controlRoot)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run coverage-reuse:", err)
-		return 1
-	}
-	lines, found, err := coverageReuseLines(canonicalControl, canonicalExecution, *baseline, packages, os.Environ())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run coverage-reuse:", err)
-		return 1
-	}
-	if !found {
-		return 3
-	}
-	for _, line := range lines {
-		fmt.Println(line)
-	}
-	return 0
-}
-
 // coverageReuseLines projects matching retained full coverage for packages,
 // one "coverage reuse" line per package.
 func coverageReuseLines(controlRoot, executionRoot, baseline string, packages, environment []string) ([]string, bool, error) {

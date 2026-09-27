@@ -1039,7 +1039,6 @@ for link in \
   scripts/agents/commit.sh \
   scripts/agents/land.sh \
   scripts/agents/second-session.sh \
-  scripts/agents/arm-supervision.sh \
   scripts/agents/fixture-budget.sh \
   scripts/agents/landing-lane-worker.sh \
   scripts/agents/templates/design-common.md \
@@ -1126,7 +1125,6 @@ fi
 # The external-dependency ratchet (os-dependency-reduction) runs in the go
 # gate (audit dependency-ratchet); this section keeps the syntax checks.
 shell_and_dependency_audits_section() {
-bash -n scripts/agents/arm-supervision.sh
 bash -n scripts/agents/fixture-budget.sh
 bash -n scripts/agents/landing-lane-worker.sh
 bash -n scripts/agents/enumerate-suite.sh
@@ -1556,7 +1554,6 @@ runtime_contract_audits_probe_section() {
 fake_probe_root="$tmp/fake-envelope-probe"
 mkdir -p "$fake_probe_root/scripts/agents/adapters"
 cp scripts/agents/adapters/fake.sh "$fake_probe_root/scripts/agents/adapters/"
-cp scripts/agents/fixture-budget.sh "$fake_probe_root/scripts/agents/"
 fake_probe_result="$tmp/fake-envelope-probe-result.json"
 # The bare probe root carries no engine; point the adapter at this checkout's.
 fake_snapshot=$(METASYSTEM_FAKE_ENVELOPE_PROBE_RESULT="$fake_probe_result" \
@@ -1604,12 +1601,12 @@ validation_cleanup() {
   [[ -z "${witness_state:-}" ]] || rm -rf "$witness_state"
   local repo
   for repo in ${armed_supervision_repos[@]+"${armed_supervision_repos[@]}"}; do
-    [[ -x "$repo/scripts/agents/arm-supervision.sh" ]] || continue
+    [[ -x "$repo/bin/metasystem" ]] || continue
     if [[ "$repo" == "${runner_repo:-}" ]] && declare -p runner_process_env >/dev/null 2>&1; then
-      "${runner_process_env[@]}" "$repo/scripts/agents/arm-supervision.sh" \
+      "${runner_process_env[@]}" "$(fixture_arm_path "$repo")" \
         --repo "$repo" --shutdown >/dev/null 2>&1 || true
     else
-      "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown >/dev/null 2>&1 || true
+      fixture_arm "$repo" --repo "$repo" --shutdown >/dev/null 2>&1 || true
     fi
   done
   # Shutdown returns before the owner and its children have fully exited, and

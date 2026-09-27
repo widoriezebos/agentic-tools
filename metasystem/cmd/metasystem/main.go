@@ -99,7 +99,6 @@ func families() []family {
 				{"coverage-begin", "claim the actual full-gate coverage producer slot", runProofRunCoverageBegin},
 				{"coverage-eligible", "decide whether an authenticated worker owns full coverage production", runProofRunCoverageEligible},
 				{"coverage-complete", "commit measured coverage from the authenticated producer", runProofRunCoverageComplete},
-				{"coverage-reuse", "project matching successful full coverage for selected packages", runProofRunCoverageReuse},
 				{"coverage-delta", "check coverage for the packages a landing names or touches against their ratchet floors", runProofRunCoverageDelta},
 				{"go-gate-tests", "run the full gate's bounded native Go selection", runProofRunGoGateTests},
 				{"fixture-selection", "select the owned fixture scenario set (internal)", runProofRunFixtureSelection},

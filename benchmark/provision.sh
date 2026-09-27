@@ -727,16 +727,16 @@ rm -f "$target/artifacts/agents/mains/worktree-lease.json"
 
 provision_started=$("$ms" proc started-at --pid "$$")
 if ! METASYSTEM_AGENT_RUNTIME="$host_runtime" \
-  "$target/scripts/agents/arm-supervision.sh" --repo "$target" \
+  "$target/bin/metasystem" up --metasystem-root "$target" --repo "$target" \
     --session "benchmark-provision-$mission_id-$$" --pid "$$" \
     --start-time "$provision_started" --tag "benchmark/provision.sh" \
     >"$scratch/arm.log" 2>&1; then
   cat "$scratch/arm.log" >&2
-  "$target/scripts/agents/arm-supervision.sh" --repo "$target" --shutdown >/dev/null 2>&1 || true
+  "$target/bin/metasystem" up --metasystem-root "$target" --repo "$target" --shutdown >/dev/null 2>&1 || true
   die 1 "provision failed while arming supervision"
 fi
 if ! grep -q ' ARMED ' "$scratch/arm.log"; then
-  "$target/scripts/agents/arm-supervision.sh" --repo "$target" --shutdown >/dev/null 2>&1 || true
+  "$target/bin/metasystem" up --metasystem-root "$target" --repo "$target" --shutdown >/dev/null 2>&1 || true
   die 1 "provision failed: supervision returned without an ARMED verdict"
 fi
 

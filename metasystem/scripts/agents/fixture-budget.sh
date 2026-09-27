@@ -20,6 +20,75 @@ harness_fixture_without_outer_proof() { "${harness_fixture_proof_scrub[@]}" "$@"
 
 harness_fixture_exec_without_outer_proof() { exec "${harness_fixture_proof_scrub[@]}" "$@"; }
 
+# Supervision arming is the installation engine's `up` entry. fixture_arm
+# INSTALLATION ARGS... runs `up --metasystem-root INSTALLATION ARGS...` with the
+# engine the installation resolves (METASYSTEM_BIN, else its bin/metasystem);
+# `fixture_arm INSTALLATION fingerprint ARGS...` prints the installation's
+# supervision fingerprint instead. When the supervision fixture sets
+# METASYSTEM_SUPERVISION_FIXTURE_AUDIT, every ordinary arming attempt is
+# recorded for its isolation self-check before the engine runs.
+fixture_arm() { # installation, up arguments...
+  local installation=$1 arm_engine
+  shift
+  arm_engine=${METASYSTEM_BIN:-$installation/bin/metasystem}
+  if [[ ${1:-} == fingerprint ]]; then
+    shift
+    "$arm_engine" supervise fingerprint --root "$installation" "$@"
+    return
+  fi
+  [[ -z "${METASYSTEM_SUPERVISION_FIXTURE_AUDIT:-}" ]] || fixture_arm_audit "$@"
+  "$arm_engine" up --metasystem-root "$installation" "$@"
+}
+
+# fixture_arm_audit records one arming attempt: the registry home, the main
+# pid, and whether that pid descends from the scenario bed. Shutdowns are not
+# arming attempts.
+fixture_arm_audit() { # up arguments...
+  local shutdown=0 main_pid= in_bed=- previous= argument ancestor parent depth
+  for argument in "$@"; do
+    [[ "$previous" != --pid ]] || main_pid=$argument
+    [[ "$argument" != --shutdown ]] || shutdown=1
+    previous=$argument
+  done
+  (( ! shutdown )) || return 0
+  if [[ "$main_pid" =~ ^[1-9][0-9]*$ && "${METASYSTEM_SUPERVISION_FIXTURE_BED_PID:-}" =~ ^[1-9][0-9]*$ ]]; then
+    in_bed=0
+    ancestor=$main_pid
+    for ((depth = 0; depth < 128 && ancestor > 1; depth++)); do
+      if [[ "$ancestor" == "$METASYSTEM_SUPERVISION_FIXTURE_BED_PID" ]]; then
+        in_bed=1
+        break
+      fi
+      parent=$(ps -p "$ancestor" -o ppid= 2>/dev/null | tr -d '[:space:]')
+      [[ "$parent" =~ ^[1-9][0-9]*$ && "$parent" != "$ancestor" ]] || break
+      ancestor=$parent
+    done
+  fi
+  printf '%s\t%s\t%s\t%s\n' "${METASYSTEM_SUPERVISION_REGISTRY_HOME:-}" "${main_pid:--}" fixture-arm "$in_bed" \
+    >>"$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"
+}
+
+# fixture_arm_path INSTALLATION prints a cached fixture_arm_command for
+# INSTALLATION under the caller's $tmp.
+fixture_arm_path() { # installation
+  local command
+  command=${tmp:?}/arm-commands/$(printf '%s' "$1" | tr '/' '_')
+  if [[ ! -x "$command" ]]; then
+    mkdir -p "${command%/*}"
+    fixture_arm_command "$1" "$command"
+  fi
+  printf '%s\n' "$command"
+}
+
+# fixture_arm_command INSTALLATION DESTINATION writes an executable that runs
+# fixture_arm for INSTALLATION, for drivers that take a program path.
+fixture_arm_command() { # installation, destination
+  local library
+  library=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/fixture-budget.sh
+  printf '#!/usr/bin/env bash\nsource %q\nfixture_arm %q "$@"\n' "$library" "$1" >"$2"
+  chmod +x "$2"
+}
+
 harness_fixture_go_test() { # module directory, go test arguments...
   local module_dir=$1 workers=${METASYSTEM_TEST_WORKERS:-1}
   shift

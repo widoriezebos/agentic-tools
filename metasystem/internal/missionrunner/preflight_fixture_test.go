@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -191,12 +192,6 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 	}
 	os.WriteFile(filepath.Join(root, "metasystem.conf"),
 		[]byte("metasystem.runtimes=fake\nrole.default.runtime=fake\n"), 0o644)
-	// The stub armer: typed armed outcome for arming, a fixed fingerprint for both seal
-	// and preflight — agreement by construction.
-	testexec.WriteFile(filepath.Join(root, "scripts", "agents", "arm-supervision.sh"), []byte(
-		"#!/usr/bin/env bash\nset -euo pipefail\n"+
-			"if [[ ${1:-} == fingerprint ]]; then printf 'fixture-fingerprint\\n'; exit 0; fi\n"+
-			"printf 'up outcome=armed authority=writer\\n'\n"), 0o755)
 
 	fixtureGit(t, gitInitDir, "init", "-q", "-b", "main")
 	fixtureGit(t, root, "config", "user.name", "fixture")
@@ -268,11 +263,66 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 	return engine
 }
 
+// supervisionForSubprocess prepares a bed whose mission runs in another
+// engine process, where the in-process arming and fingerprint seams cannot
+// reach: the checkout's supervision fingerprint inputs exist (committed
+// placeholders where the bed has none), the armed state carries the live
+// fingerprint, and arming answers through a fixture engine that reports the
+// typed armed outcome and hands every other verb to the bed's engine. It
+// returns that process's environment.
+func supervisionForSubprocess(t *testing.T, engine *Engine) []string {
+	t.Helper()
+	root := engine.Root
+	inputs := map[string]string{"scripts/agents/adapters/fake.sh": "#!/usr/bin/env bash\ncase \"${1:-}\" in signature) echo 'match metasystem-fake-runtime-marker' ;; esac\n"}
+	for _, relative := range census.FingerprintFiles() {
+		inputs[relative] = "#!/usr/bin/env bash\n# fingerprint input placeholder\n"
+	}
+	for relative, content := range inputs {
+		path := filepath.Join(root, filepath.FromSlash(relative))
+		if _, err := os.Lstat(path); err == nil {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := testexec.WriteFile(path, []byte(content), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commitBedBaseline(t, root)
+	fingerprint, err := census.Fingerprint(root, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervision := filepath.Join(root, "artifacts", "agents", "supervision")
+	for _, name := range []string{"state.json", "last-census.json"} {
+		doc := readTestDoc(t, filepath.Join(supervision, name))
+		doc["fingerprint"] = fingerprint
+		if err := atomicWriteJSON(filepath.Join(supervision, name), doc); err != nil {
+			t.Fatal(err)
+		}
+	}
+	armer := filepath.Join(t.TempDir(), "fixture-arming-engine")
+	script := "#!/bin/sh\nif [ \"${1:-}\" = up ]; then printf 'up outcome=armed authority=writer\\n'; exit 0; fi\nexec '" +
+		filepath.Join(root, "bin", "metasystem") + "' \"$@\"\n"
+	if err := testexec.WriteFile(armer, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return append(os.Environ(), "METASYSTEM_BIN="+armer)
+}
+
 // writeFreshSupervision gives each copied bed its own live process facts.
 // A copied checkout may reuse immutable Git objects, but process identity and
 // heartbeat paths belong to the test that owns the copy.
 func writeFreshSupervision(t *testing.T, engine *Engine) {
 	t.Helper()
+	// The stub armer: the typed armed outcome for arming and a fixed
+	// fingerprint for preflight — agreement with the state below by
+	// construction, without launching supervision.
+	engine.ArmSupervision = func([]string) (string, string, int) {
+		return "up outcome=armed authority=writer\n", "", 0
+	}
+	engine.SupervisionFingerprint = func(string) (string, error) { return "fixture-fingerprint", nil }
 	root := engine.Root
 	stableNow := time.Now().UTC().Truncate(time.Second)
 	engine.Now = func() time.Time { return stableNow }
@@ -1335,6 +1385,7 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 	cmd := exec.Command(filepath.Join(engine.Root, "bin", "metasystem"),
 		"mission", "start", "--root", engine.Root, "--mission", engine.Mission, "--foreground")
 	cmd.Dir = engine.Root
+	cmd.Env = supervisionForSubprocess(t, engine)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("the nested start must give birth: %v\n%s", err, out)

@@ -1546,7 +1546,6 @@ func TestSupervisionGoFixtureSuppliesCensusInputsAndRetainsFailures(t *testing.T
 	script := string(data)
 	for _, required := range []string{
 		`cp "$bin" "$fixture_root/bin/metasystem"`,
-		`scripts/agents/arm-supervision.sh`,
 		`scripts/agents/dispatch.sh`,
 		`scripts/agents/adapters/runtime-common.sh`,
 		`scripts/agents/adapters/fake.sh`,

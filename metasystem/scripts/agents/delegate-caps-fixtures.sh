@@ -16,13 +16,13 @@ cleanup() {
   local cleanup_engine
   [[ -z "$rearm_race_pid" ]] || { kill "$rearm_race_pid" 2>/dev/null || true; wait "$rearm_race_pid" 2>/dev/null || true; }
   [[ -z "$identity_updater" ]] || { kill "$identity_updater" 2>/dev/null || true; wait "$identity_updater" 2>/dev/null || true; }
-  if [[ -n "$armed_repo" && -x "$armed_repo/scripts/agents/arm-supervision.sh" ]]; then
+  if [[ -n "$armed_repo" && -x "$armed_repo/bin/metasystem" ]]; then
     cleanup_engine=${enrolled_engine:-$ms}
     # The config-refusal leg broadens the runtime list, where fake process
     # tables are no longer authorized. Cleanup uses the real process table.
     METASYSTEM_CENSUS_PROCESS_FILE= METASYSTEM_FAKE_PROCESS_IDENTITY_FILE= \
       METASYSTEM_BIN="$cleanup_engine" \
-      "$armed_repo/scripts/agents/arm-supervision.sh" --repo "$armed_repo" --shutdown >&2 \
+      fixture_arm "$armed_repo" --repo "$armed_repo" --shutdown >&2 \
       || echo "delegate caps fixture cleanup shutdown failed" >&2
   fi
   # Backstop: kill any process still rooted under this run's unique temp
@@ -189,7 +189,7 @@ register_supervision_identities() {
 "$harness/bin/metasystem" lease announce --root "$harness" \
   --session caps-fixture --pid $$ --start "$process_start" --tag caps-fixture --runtime fake >/dev/null
 
-arm=$harness/scripts/agents/arm-supervision.sh
+arm=$(fixture_arm_path "$harness")
 run_arm() { # description, arm arguments...
   local description=$1 arm_rc
   shift

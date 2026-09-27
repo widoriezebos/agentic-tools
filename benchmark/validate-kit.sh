@@ -124,8 +124,8 @@ kit_cleanup() {
   [[ -z "${gate_run_marker:-}" ]] || rm -f "$gate_run_marker"
   local repo
   for repo in ${armed_supervision_repos[@]+"${armed_supervision_repos[@]}"}; do
-    [[ -x "$repo/scripts/agents/arm-supervision.sh" ]] || continue
-    "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown >/dev/null 2>&1 || true
+    [[ -x "$repo/bin/metasystem" ]] || continue
+    "$repo/bin/metasystem" up --metasystem-root "$repo" --repo "$repo" --shutdown >/dev/null 2>&1 || true
   done
   rm -rf -- "$tmp"
 }

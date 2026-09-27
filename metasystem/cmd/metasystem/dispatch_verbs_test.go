@@ -789,7 +789,6 @@ func runCensusFreshCommandClockBody(t *testing.T) {
 		t.Helper()
 		root := t.TempDir()
 		for _, rel := range []string{
-			"scripts/agents/arm-supervision.sh",
 			"scripts/agents/dispatch.sh",
 			"bin/metasystem",
 			"scripts/agents/adapters/runtime-common.sh",

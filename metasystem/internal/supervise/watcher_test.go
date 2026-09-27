@@ -39,7 +39,6 @@ func stageCheckout(t *testing.T) string {
 		"#!/usr/bin/env bash\ncase \"$1\" in signature) echo 'match metasystem-fake-runtime-marker' ;; esac\n", 0o755)
 	// The remaining fingerprint inputs need only exist and be readable.
 	for _, rel := range []string{
-		"scripts/agents/arm-supervision.sh",
 		"scripts/agents/dispatch.sh",
 		"bin/metasystem",
 		"scripts/agents/adapters/runtime-common.sh",

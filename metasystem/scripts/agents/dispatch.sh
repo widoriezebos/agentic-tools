@@ -116,7 +116,9 @@ reap_verdict_events() { # job, verdict, reason, cas_rc, cas_out
 # How long the reaper waits past a record's handshake budget before calling a
 # unfinished-handshake job process-lost. See the handshake branch in reap_one_locked.
 handshake_backstop_grace_sec=2
-arm_supervision="$root/scripts/agents/arm-supervision.sh"
+# The re-arm remedy named in census refusals: the public form that arms a
+# checkout (the `up` owner).
+arm_supervision="metasystem system start"
 mission_fence() { local fence_verb=$1; shift; "$ms" mission "fence-$fence_verb" "$@"; }
 entry_caller_pid=$$
 current_claim_epoch=
@@ -435,7 +437,7 @@ job_supervisor_matches() { # record
   case "$(tag_state "$pid" "$tag")" in
     live) return 0 ;;
     # Indeterminacy never acts: an uninspectable supervisor is not a dead
-    # one, so the kill-capable callers defer exactly as arm-supervision's
+    # one, so the kill-capable callers defer exactly as `up` arming's
     # identity ladder does (script-orchestration-09).
     unknown) return 0 ;;
   esac

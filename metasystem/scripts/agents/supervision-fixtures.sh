@@ -236,7 +236,7 @@ assert_fixture_supervision_isolation() {
       [[ "$armed_pid" == - || "$armed_in_bed" == 1 ]] \
         || { echo "supervision fixture scenario $fixture_scenario attempted to arm with main pid $armed_pid outside its scenario bed $fixture_bed_pid" >&2; return 1; }
       case "$armed_source" in
-        arm-supervision) ;;
+        fixture-arm) ;;
         metasystem-up) direct_up_seen=1 ;;
         *) echo "supervision fixture scenario $fixture_scenario recorded an unknown arming source: $armed_source" >&2; return 1 ;;
       esac
@@ -570,12 +570,12 @@ cleanup() {
     status=70
   fi
   local harness_path tuple pid start
-  if [[ -n "${operator_harness:-}" && -x "$operator_harness/scripts/agents/arm-supervision.sh" ]]; then
+  if [[ -n "${operator_harness:-}" && -x "$operator_harness/bin/metasystem" ]]; then
     if declare -p operator_env >/dev/null 2>&1; then
-      "${operator_env[@]}" "$operator_harness/scripts/agents/arm-supervision.sh" \
+      "${operator_env[@]}" "$(fixture_arm_path "$operator_harness")" \
         --repo "${operator_scope:-$operator_harness}" --shutdown >/dev/null 2>&1 || true
     else
-      "$operator_harness/scripts/agents/arm-supervision.sh" \
+      fixture_arm "$operator_harness" \
         --repo "$operator_harness" --shutdown >/dev/null 2>&1 || true
     fi
   fi
@@ -583,8 +583,8 @@ cleanup() {
     status=1
   fi
   for harness_path in ${fixture_harness_roots[@]+"${fixture_harness_roots[@]}"}; do
-    if [[ -x "$harness_path/scripts/agents/arm-supervision.sh" ]]; then
-      "$harness_path/scripts/agents/arm-supervision.sh" --repo "$harness_path" --shutdown >/dev/null 2>&1 || true
+    if [[ -x "$harness_path/bin/metasystem" ]]; then
+      fixture_arm "$harness_path" --repo "$harness_path" --shutdown >/dev/null 2>&1 || true
     fi
   done
   for tuple in ${owned_pids[@]+"${owned_pids[@]}"}; do
@@ -1268,7 +1268,7 @@ git -C "$operator_scope" -c user.name=metasystem -c user.email=metasystem.invali
 fixture_harness_roots+=("$operator_harness")
 mkdir -p "$operator_harness/bin"
 cp_engine "$ms" "$operator_harness/bin/metasystem"
-operator_arm=$operator_harness/scripts/agents/arm-supervision.sh
+operator_arm=$(fixture_arm_path "$operator_harness")
 operator_engine=$operator_harness/bin/metasystem
 enroll_fixture_engine "$operator_harness" "$operator_engine"
 
@@ -1457,7 +1457,7 @@ nested_override_engine=$tmp/pair-engine
 (
   cd "$nested_sibling"
   exec bash "$live_arm_driver" "$nested_installation/bin/metasystem" \
-    "$nested_installation/scripts/agents/arm-supervision.sh" "$nested_installation" \
+    "$(fixture_arm_path "$nested_installation")" "$nested_installation" \
     nested-holder nested-holder "$nested_arm_output_file" "$nested_arm_status_file" \
     "$nested_arm_ready" "$nested_arm_release" "$nested_holder_request" \
     "$nested_holder_request_status" "$nested_holder_request_done"
@@ -2102,7 +2102,7 @@ if [[ "$fixture_scenario" == stop-everything ]]; then
   git -C "$repo" -c user.name=metasystem -c user.email=metasystem.invalid \
     commit -qm 'add stop fixture design artifact'
 fi
-arm="$repo/scripts/agents/arm-supervision.sh"
+arm=$(fixture_arm_path "$repo")
 # One writer per checkout. Phases that arm a DIFFERENT main than the phase
 # before them release the checkout first, the way a departing main does.
 # Supervision components never hold the lease, so dropping the lease record
@@ -3238,7 +3238,7 @@ infer_driver_in_bed=0
 if fixture_pid_is_in_bed "$infer_driver"; then
   infer_driver_in_bed=1
 fi
-printf '%s\t%s\t%s\t%s\n' "$fixture_registry_home" "$infer_driver" arm-supervision "$infer_driver_in_bed" \
+printf '%s\t%s\t%s\t%s\n' "$fixture_registry_home" "$infer_driver" fixture-arm "$infer_driver_in_bed" \
   >>"$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"
 touch "$infer_release"
 wait_for_child_exit "S4-8 inferred arming" "$infer_driver"
@@ -3594,26 +3594,26 @@ assert_stale_shape() { # name, window
   grep -Eq 'age=[0-9]+s' "$output" \
     && grep -Fq "window=${window}s" "$output" \
     && grep -Fq 'retry in a moment' "$output" \
-    && grep -Fq "re-arm with $gate_repo_real/scripts/agents/arm-supervision.sh --repo $gate_repo_real if supervision is dead" "$output" \
+    && grep -Fq "re-arm with metasystem system start --repo $gate_repo_real if supervision is dead" "$output" \
     || { echo "stale census refusal did not carry the common diagnostic shape" >&2; cat "$output" >&2; exit 1; }
 }
 dispatch_fails no-census 'census verdict is absent'
 mkdir -p "$gate_repo/artifacts/agents/supervision"
 cp "$state" "$gate_repo/artifacts/agents/supervision/state.json"
 cp "$last" "$gate_repo/artifacts/agents/supervision/last-census.json"
-gate_fingerprint=$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")
+gate_fingerprint=$(fixture_arm "$gate_repo" fingerprint --repo "$gate_repo")
 cp "$gate_repo/artifacts/agents/supervision/state.json" "$tmp/gate-state.json"
 conf_edit "$gate_repo/metasystem.conf" replace-line-first '^watch[.]stale-min=.*$' 'watch.stale-min=21'
-[[ "$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")" != "$gate_fingerprint" ]] \
+[[ "$(fixture_arm "$gate_repo" fingerprint --repo "$gate_repo")" != "$gate_fingerprint" ]] \
   || { echo "S4-3: relevant configuration did not alter the fingerprint" >&2; exit 1; }
 git -C "$gate_repo" show HEAD:metasystem.conf >"$gate_repo/metasystem.conf"
 edit_state_owner "$gate_repo/artifacts/agents/supervision/state.json" \
   --field instanceTag="$(json_field "$gate_repo/artifacts/agents/supervision/state.json" owner.instanceTag)-changed"
-[[ "$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")" == "$gate_fingerprint" ]] \
+[[ "$(fixture_arm "$gate_repo" fingerprint --repo "$gate_repo")" == "$gate_fingerprint" ]] \
   || { echo "S4-3: supervisor instance identity altered the static fingerprint" >&2; exit 1; }
 cp "$tmp/gate-state.json" "$gate_repo/artifacts/agents/supervision/state.json"
 printf '\n# watcher fingerprint fixture\n' >>"$gate_repo/scripts/watch-background-jobs.sh"
-[[ "$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")" != "$gate_fingerprint" ]] \
+[[ "$(fixture_arm "$gate_repo" fingerprint --repo "$gate_repo")" != "$gate_fingerprint" ]] \
   || { echo "S4-3: watcher code did not alter the fingerprint" >&2; exit 1; }
 git -C "$gate_repo" show HEAD:scripts/watch-background-jobs.sh >"$gate_repo/scripts/watch-background-jobs.sh"
 chmod +x "$gate_repo/scripts/watch-background-jobs.sh"
@@ -3631,7 +3631,7 @@ set_gate_census 21 10 "$gate_fingerprint"
 dispatch_fails stale-census 'census verdict is stale'
 assert_stale_shape stale-census 20
 conf_edit "$gate_repo/metasystem.conf" replace-line-first '^watch[.]interval-sec=.*$' 'watch.interval-sec=200'
-capped_fingerprint=$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")
+capped_fingerprint=$(fixture_arm "$gate_repo" fingerprint --repo "$gate_repo")
 set_gate_census 180 200 "$capped_fingerprint"
 dispatch_fails capped-census-window 'census verdict is stale'
 assert_stale_shape capped-census-window 180
@@ -3868,8 +3868,6 @@ foreign=$tmp/foreign-owner
 mkdir -p "$foreign/repo"
 (cd "$foreign/repo" && git init -q -b main .)
 mkdir -p "$foreign/repo/metasystem/scripts/agents" "$foreign/repo/metasystem/artifacts/agents/supervision/lock.d"
-cp "$source_root/scripts/agents/arm-supervision.sh" \
-  "$foreign/repo/metasystem/scripts/agents/"
 # Shutting supervision down is a control-plane write, so the sandbox needs the
 # engine (census identity, lease classification); without it this sandbox
 # refuses for the wrong reason and the foreign-owner rule below is never
@@ -3896,7 +3894,7 @@ printf '{"pid":%s,"pidStartedAt":%s,"instanceTag":"metasystem-supervision-owner-
   "$foreign_sleep_pid" "$foreign_start" \
   >"$foreign/repo/metasystem/artifacts/agents/supervision/lock.d/owner.json"
 set +e
-"$foreign/repo/metasystem/scripts/agents/arm-supervision.sh" --repo "$foreign/repo" --shutdown \
+fixture_arm "$foreign/repo/metasystem" --repo "$foreign/repo" --shutdown \
   >"$tmp/foreign-shutdown.out" 2>&1
 foreign_status=$?
 set -e
@@ -3916,7 +3914,6 @@ if [[ "$fixture_scenario" == stop-hook-monitor ]]; then
 stop_root=$tmp/stop-hook
 mkdir -p "$stop_root/plans" "$stop_root/artifacts/agents/jobs" "$stop_root/artifacts/agents/supervision" "$stop_root/scripts/agents"
 cp "$source_root/scripts/agents/supervision-hook.sh" \
-   "$source_root/scripts/agents/arm-supervision.sh" \
    "$source_root/scripts/agents/pre-commit-guard.sh" "$stop_root/scripts/agents/"
 # The hook (and the announcement step below) derive the caller's
 # main through the runtime-signature ancestor walk, and that walk
