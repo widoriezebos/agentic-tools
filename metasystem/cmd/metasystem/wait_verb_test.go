@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -24,9 +25,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	usagecore "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -1285,6 +1288,9 @@ func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFi
 			}
 		}
 		environment = fixture.Env(append(environment, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=1"))
+		if err := retireUnpublishedPendingWaitOwner(root, environment); err != nil {
+			return err
+		}
 		var failures []error
 		for _, arguments := range [][]string{
 			{"up", "--metasystem-root", root, "--repo", root, "--shutdown"},
@@ -1308,6 +1314,63 @@ func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFi
 		}
 	})
 	return stop
+}
+
+// retireUnpublishedPendingWaitOwner settles the one owner state up --shutdown
+// refuses: a live owner the registry does not yet name ("with no registry
+// checkout"). The fixture's SessionStart arms with a one-second scaled budget,
+// so on a loaded machine the recorded owner can still be unscheduled, before
+// its write-ahead relaunched row, when the stop runs. The owner is frozen
+// first, so the registry read and the decision cannot race its append. If the
+// row exists, the owner resumes and the orderly shutdown stops it. If not, the
+// owner has launched no component (the row precedes every launch), so the
+// fixture ends its own process and awaits that exact exit; the shutdown then
+// takes the recorded dead-owner path. The production refusal is unchanged.
+func retireUnpublishedPendingWaitOwner(root string, environment []string) error {
+	owner, err := supervise.ReadArmingOwner(root)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read the recorded supervision owner before shutdown: %w", err)
+	}
+	registryPath := ""
+	for _, entry := range environment {
+		if value, ok := strings.CutPrefix(entry, "METASYSTEM_SUPERVISION_REGISTRY_HOME="); ok {
+			registryPath = filepath.Join(value, ".metasystem", "armed-checkouts.jsonl")
+		}
+	}
+	if registryPath == "" {
+		if registryPath, err = registry.DefaultPath(); err != nil {
+			return err
+		}
+	}
+	prober := identity.KernelProber{}
+	ref := identity.Ref{Pid: owner.Pid, StartedAtSec: owner.PidStartedAt, StartTicks: owner.PidStartTicks, BootID: owner.BootID}
+	if identity.AliveTaggedRef(prober, ref, owner.InstanceTag) != identity.Alive {
+		return nil
+	}
+	if err := syscall.Kill(int(owner.Pid), syscall.SIGSTOP); err != nil {
+		return nil // already gone: the shutdown's dead-owner path applies
+	}
+	// A stopped process keeps its pid, so this probe decides whether the
+	// frozen process is still the recorded owner.
+	if identity.AliveTaggedRef(prober, ref, owner.InstanceTag) != identity.Alive {
+		_ = syscall.Kill(int(owner.Pid), syscall.SIGCONT)
+		return nil
+	}
+	_, published, readErr := registry.OwnerCheckoutPath(registryPath, owner.InstanceTag)
+	if readErr != nil || published {
+		_ = syscall.Kill(int(owner.Pid), syscall.SIGCONT)
+		return nil
+	}
+	if err := syscall.Kill(int(owner.Pid), syscall.SIGKILL); err != nil {
+		return fmt.Errorf("end the unpublished supervision owner %s (pid %d): %w", owner.InstanceTag, owner.Pid, err)
+	}
+	if err := testutil.AwaitExactExit(prober, ref); err != nil {
+		return fmt.Errorf("unpublished supervision owner %s did not exit: %w", owner.InstanceTag, err)
+	}
+	return nil
 }
 
 // pendingWaitHealthyPreview is the healthy hook preview the installed wait

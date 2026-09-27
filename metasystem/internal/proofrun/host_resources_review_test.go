@@ -381,11 +381,9 @@ func TestHostResourceNestedCustodySubprocess(t *testing.T) {
 		}
 	})
 	for name, data := range map[string]string{
-		"worker.pid": strconv.Itoa(os.Getpid()), "grandchild.pid": strconv.Itoa(grandchild.Process.Pid),
+		"worker.pid": strconv.Itoa(os.Getpid()) + "\n", "grandchild.pid": strconv.Itoa(grandchild.Process.Pid) + "\n",
 	} {
-		if err := os.WriteFile(filepath.Join(directory, name), []byte(data), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		publishCustodyFile(t, filepath.Join(directory, name), data)
 	}
 	for {
 		time.Sleep(time.Second)

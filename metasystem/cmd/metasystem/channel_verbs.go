@@ -452,6 +452,7 @@ func runChannelFakeServe(args []string) int {
 
 func runChannelFakeServeWithDependencies(args []string, deps fixtureLifetimeDependencies, serve func(context.Context, string, chan<- string) error) int {
 	f := flag.NewFlagSet("channel fake-serve", flag.ContinueOnError)
+	f.SetOutput(deps.stderr)
 	dir := f.String("dir", "", "state directory")
 	maxSecondsText := f.String("max-seconds", "0", "terminal lifetime when no owner leash closes")
 	readyFD := f.Int("ready-fd", 0, "inherited descriptor that receives the listening address")
@@ -460,37 +461,37 @@ func runChannelFakeServeWithDependencies(args []string, deps fixtureLifetimeDepe
 	}
 	maxSeconds, err := strconv.ParseInt(*maxSecondsText, 10, 64)
 	if err != nil || maxSeconds < 0 {
-		fmt.Fprintln(os.Stderr, "channel fake serve: --max-seconds must be a non-negative integer of seconds")
+		fmt.Fprintln(deps.stderr, "channel fake serve: --max-seconds must be a non-negative integer of seconds")
 		return 2
 	}
 	signalContext, stopSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignal()
 	ctx, stopLifetime, err := fixtureLifetimeContext(signalContext, maxSeconds, deps)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "channel fake serve:", err)
+		fmt.Fprintln(deps.stderr, "channel fake serve:", err)
 		return 2
 	}
 	defer stopLifetime()
 	if *readyFD == 0 {
 		if err := serve(ctx, *dir, nil); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(deps.stderr, err)
 			return 1
 		}
 		return 0
 	}
 	if *readyFD < 3 {
-		fmt.Fprintln(os.Stderr, "channel fake serve: --ready-fd must name an inherited descriptor")
+		fmt.Fprintln(deps.stderr, "channel fake serve: --ready-fd must name an inherited descriptor")
 		return 2
 	}
 	readyFile := os.NewFile(uintptr(*readyFD), "channel-fake-ready")
 	if readyFile == nil {
-		fmt.Fprintln(os.Stderr, "channel fake serve: readiness descriptor is unavailable")
+		fmt.Fprintln(deps.stderr, "channel fake serve: readiness descriptor is unavailable")
 		return 2
 	}
 	info, statErr := readyFile.Stat()
 	if statErr != nil || info.Mode()&os.ModeNamedPipe == 0 {
 		_ = readyFile.Close()
-		fmt.Fprintln(os.Stderr, "channel fake serve: readiness descriptor must be a pipe")
+		fmt.Fprintln(deps.stderr, "channel fake serve: readiness descriptor must be a pipe")
 		return 2
 	}
 	ready := make(chan string, 1)
@@ -506,19 +507,19 @@ func runChannelFakeServeWithDependencies(args []string, deps fixtureLifetimeDepe
 		if err != nil {
 			stopLifetime()
 			<-served
-			fmt.Fprintln(os.Stderr, "channel fake serve: publish readiness:", err)
+			fmt.Fprintln(deps.stderr, "channel fake serve: publish readiness:", err)
 			return 1
 		}
 	case err = <-served:
 		_ = readyFile.Close()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(deps.stderr, err)
 			return 1
 		}
 		return 0
 	}
 	if err := <-served; err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(deps.stderr, err)
 		return 1
 	}
 	return 0

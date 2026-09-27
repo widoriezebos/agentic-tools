@@ -7,6 +7,7 @@ package main
 // standard error.
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -21,6 +22,17 @@ const designHintLine = "A design for %s is a record: " +
 	"see docs/design/design-obligation-gate.md, A design is a record.\n"
 
 func designHintFor(id string) string { return strings.Replace(designHintLine, "%s", id, 1) }
+
+// designHintStreams are the real owner dependencies writing to this test's own
+// standard output and standard error: the contract is which stream carries
+// what, and a process-wide capture would also collect whatever a parallel test
+// prints while it is open.
+func designHintStreams() (syncRequestDependencies, *bytes.Buffer, *bytes.Buffer) {
+	var stdout, stderr bytes.Buffer
+	dependencies := defaultSyncRequestDependencies()
+	dependencies.stdout, dependencies.stderr = &stdout, &stderr
+	return dependencies, &stdout, &stderr
+}
 
 // designHintConfirmedJSON is the half of the contract the standard output
 // owns: the confirmation stays one JSON object, whatever is said beside it.
@@ -41,17 +53,14 @@ func TestDesignRecordHintFollowsAConfirmedOpen(t *testing.T) {
 	t.Parallel()
 
 	root := syncedClaimedGoalFixture(t)
-	var handled bool
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		var code int
-		code, handled = trySyncMutation("open", []string{
-			"--root", root, "--id", "designed-goal",
-			"--intent", "Unblock the standing goal.", "--next", "Design it.",
-			"--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "fixture risk",
-			"--lineage", "m1", "--blocks", "standing-validation",
-		})
-		return code
-	})
+	dependencies, out, errOut := designHintStreams()
+	code, handled := trySyncMutationWithDependencies("open", []string{
+		"--root", root, "--id", "designed-goal",
+		"--intent", "Unblock the standing goal.", "--next", "Design it.",
+		"--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "fixture risk",
+		"--lineage", "m1", "--blocks", "standing-validation",
+	}, goalCommandNow, dependencies, goalParkBranchCheck)
+	stdout, stderr := out.String(), errOut.String()
 	if !handled || code != 0 {
 		t.Fatalf("goal open handled=%v code=%d stdout=%q stderr=%q", handled, code, stdout, stderr)
 	}
@@ -73,10 +82,10 @@ func TestDesignRecordHintFollowsAConfirmedClaim(t *testing.T) {
 	confirm := func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.PublishResult{Outcome: goal.OutcomeConfirmed, Tip: "fixture-tip"}, nil
 	}
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runSyncOnly("claim", confirm, "id")(
-			[]string{"--root", root, "--id", "standing-validation", "--lineage", "m1"})
-	})
+	dependencies, out, errOut := designHintStreams()
+	code := runSyncOnlyWithDependencies("claim", confirm, nil, dependencies, "id")(
+		[]string{"--root", root, "--id", "standing-validation", "--lineage", "m1"})
+	stdout, stderr := out.String(), errOut.String()
 	if code != 0 {
 		t.Fatalf("the claim wrapper returned %d: stdout %q stderr %q", code, stdout, stderr)
 	}
@@ -87,10 +96,10 @@ func TestDesignRecordHintFollowsAConfirmedClaim(t *testing.T) {
 
 	// The hint belongs to claiming, not to every verb that shares the
 	// wrapper: releasing a goal confirms the same way and says nothing.
-	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-		return runSyncOnly("release", confirm, "id")(
-			[]string{"--root", root, "--id", "standing-validation", "--lineage", "m1"})
-	})
+	dependencies, out, errOut = designHintStreams()
+	code = runSyncOnlyWithDependencies("release", confirm, nil, dependencies, "id")(
+		[]string{"--root", root, "--id", "standing-validation", "--lineage", "m1"})
+	stdout, stderr = out.String(), errOut.String()
 	if code != 0 || stderr != "" {
 		t.Fatalf("release carried the hint: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
@@ -104,19 +113,16 @@ func TestDesignRecordHintIsSilentWhenTheActIsRefused(t *testing.T) {
 	t.Parallel()
 
 	root := syncedClaimedGoalFixture(t)
-	var handled bool
-	code, _, stderr := captureCommandOutput(t, true, true, func() int {
-		var code int
-		code, handled = trySyncMutation("open", []string{
-			"--root", root, "--id", "claimed-on-open",
-			"--intent", "Open and claim in one act.", "--next", "Design it.",
-			"--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "fixture risk",
-			"--lineage", "m1", "--blocks", "standing-validation", "--claim",
-			"--elapsed-limit", "8h", "--attempt-limit", "2", "--reserved-job-minutes-limit", "120",
-			"--active-job-limit", "1", "--review-round-limit", "0",
-		})
-		return code
-	})
+	dependencies, _, errOut := designHintStreams()
+	code, handled := trySyncMutationWithDependencies("open", []string{
+		"--root", root, "--id", "claimed-on-open",
+		"--intent", "Open and claim in one act.", "--next", "Design it.",
+		"--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "fixture risk",
+		"--lineage", "m1", "--blocks", "standing-validation", "--claim",
+		"--elapsed-limit", "8h", "--attempt-limit", "2", "--reserved-job-minutes-limit", "120",
+		"--active-job-limit", "1", "--review-round-limit", "0",
+	}, goalCommandNow, dependencies, goalParkBranchCheck)
+	stderr := errOut.String()
 	if !handled || code == 0 {
 		t.Fatalf("open --claim confirmed: handled=%v code=%d stderr=%q", handled, code, stderr)
 	}
@@ -124,9 +130,10 @@ func TestDesignRecordHintIsSilentWhenTheActIsRefused(t *testing.T) {
 		t.Fatalf("a refused open carried the hint: %q", stderr)
 	}
 
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalClaim([]string{"--root", root, "--id", "standing-validation", "--lineage", "m1"})
-	})
+	dependencies, out, errOut := designHintStreams()
+	code = runSyncOnlyWithDependencies("claim", claimGoalOwner, nil, dependencies, "id")(
+		[]string{"--root", root, "--id", "standing-validation", "--lineage", "m1"})
+	stdout, stderr := out.String(), errOut.String()
 	if code == 0 {
 		t.Fatalf("the claim confirmed; the fixture no longer refuses: stdout %q", stdout)
 	}

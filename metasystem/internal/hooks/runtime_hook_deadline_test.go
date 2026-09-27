@@ -3,7 +3,6 @@ package hooks
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,9 +28,15 @@ type deadlineCase struct {
 	env      map[string]string
 	now      func() time.Time
 	mono     func() time.Duration
-	deadline bool // fire the fixture deadline once the worker entered
-	hang     bool // the worker waits for a release that never comes
-	tempDir  string
+	deadline bool // fire the fixture deadline once the worker entered and the resolver answered
+	// unresolved: the fixture resolver never answers, so the deadline fires
+	// on the worker's entry alone.
+	unresolved bool
+	// resolverAnswered observes the coordinate resolver's answer.
+	resolverAnswered func()
+	after            func(time.Duration) <-chan time.Time
+	hang             bool // the worker waits for a release that never comes
+	tempDir          string
 	// afterWorker observes the launched worker.
 	afterWorker func(Worker)
 }
@@ -47,25 +52,35 @@ func runDeadline(t *testing.T, installation hookInstallation, ops *fakeOps, test
 	}
 	launched := make(chan []string, 1)
 	fixture := make(chan time.Time, 1)
+	resolverAnswered := test.resolverAnswered
+	// The parent adopts the record coordinates only if the resolver has
+	// answered when the deadline fires, and it rightly never waits past a
+	// spent budget; so the fixture deadline waits for the answer, or a
+	// loaded scheduler drops the checkout.
+	answered := make(chan struct{})
+	if test.deadline && !test.unresolved {
+		observe := resolverAnswered
+		resolverAnswered = func() {
+			if observe != nil {
+				observe()
+			}
+			close(answered)
+		}
+	} else {
+		close(answered)
+	}
 	if test.deadline {
-		// The deadline fires once the worker has entered: reading the
-		// entered FIFO blocks until the worker opens it. A worker that never
-		// enters leaves the reader to the cleanup, which opens the write end
-		// without blocking so the reader returns.
+		// The deadline fires once the worker has entered: the entered FIFO
+		// carries its pid. A worker that never enters leaves the reader to
+		// the cleanup, which writes without blocking so the reader returns.
 		entered := makeFIFO(t, "worker.entered")
 		worker["METASYSTEM_HOOK_TEST_WORKER_ENTERED"] = entered
 		go func() {
-			if file, err := os.Open(entered); err == nil {
-				_, _ = io.Copy(io.Discard, file)
-				_ = file.Close()
-			}
+			_ = awaitFIFO(entered)
+			<-answered
 			fixture <- time.Unix(0, 0)
 		}()
-		t.Cleanup(func() {
-			if file, err := os.OpenFile(entered, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
-				_ = file.Close()
-			}
-		})
+		t.Cleanup(func() { unblockFIFO(entered) })
 	}
 	payload := test.payload
 	if payload == "" {
@@ -77,7 +92,8 @@ func runDeadline(t *testing.T, installation hookInstallation, ops *fakeOps, test
 	}
 	call := hookCall{
 		runtime: "claude", event: "stop", payload: payload, env: env, now: test.now, monotonic: test.mono,
-		startWorker: startTestWorker(t, worker, launched), tempDir: test.tempDir,
+		startWorker: startTestWorker(t, worker, launched), tempDir: test.tempDir, after: test.after,
+		resolverAnswered: resolverAnswered,
 	}
 	if test.afterWorker != nil {
 		start := call.startWorker
@@ -131,7 +147,7 @@ func TestDeadlineParentPassesTheSkipQuietly(t *testing.T) {
 	t.Parallel()
 	installation := newHookInstallation(t)
 	release := makeFIFO(t, "release")
-	go releaseFIFO(release)
+	releaseFIFO(t, release)
 	run, _ := runDeadline(t, installation, newFakeOps(t, installation), deadlineCase{worker: map[string]string{
 		"METASYSTEM_HOOK_TEST_WORKER_OUTPUT": internalSkipResult, "METASYSTEM_HOOK_TEST_WORKER_RELEASE": release}})
 	if run.status != 0 || run.stdout != "" {
@@ -330,13 +346,28 @@ func TestDeadlineSetupConsumesTheWorkerWindow(t *testing.T) {
 		}
 		return 0
 	}
-	started := time.Now()
-	run, _ := runDeadline(t, installation, ops, deadlineCase{mono: mono, hang: true, env: map[string]string{stopDeadlineBudgetEnv: "4"}})
+	// The coordinate resolver runs beside the worker. With the window
+	// already spent the deadline is due at once, and the parent adopts the
+	// coordinates only if the resolver has answered by then; the deadline
+	// fires once it has, so a loaded scheduler cannot drop the checkout.
+	resolved := make(chan time.Time)
+	var windows []time.Duration
+	after := func(wait time.Duration) <-chan time.Time {
+		windows = append(windows, wait)
+		if len(windows) == 1 {
+			return resolved
+		}
+		return nil // the worker's cleanup grace; it ends on SIGTERM
+	}
+	run, _ := runDeadline(t, installation, ops, deadlineCase{mono: mono, hang: true, after: after,
+		resolverAnswered: func() { close(resolved) }, env: map[string]string{stopDeadlineBudgetEnv: "4"}})
 	if run.stdout != mustForm(t, "allowed", "deadline-expired")+"\n" {
 		t.Fatalf("setup-consumed window = stdout %q stderr %q", run.stdout, run.stderr)
 	}
-	if elapsed := time.Since(started); elapsed > 20*time.Second {
-		t.Fatalf("a consumed window still waited %s", elapsed)
+	// Setup consumed the whole worker window: the deadline wait asks for
+	// nothing more.
+	if len(windows) == 0 || windows[0] != 0 {
+		t.Fatalf("a consumed window still waited: deadline waits %v", windows)
 	}
 }
 
@@ -384,7 +415,7 @@ func TestDeadlineSlowResolution(t *testing.T) {
 	block := make(chan struct{})
 	defer close(block)
 	never.stateRoot = func(string) (string, int) { <-block; return "", 1 }
-	run, _ = runDeadline(t, unresolved, never, deadlineCase{deadline: true, env: map[string]string{stopDeadlineBudgetEnv: "4"}})
+	run, _ = runDeadline(t, unresolved, never, deadlineCase{deadline: true, unresolved: true, env: map[string]string{stopDeadlineBudgetEnv: "4"}})
 	if run.stdout != mustForm(t, "allowed", "deadline-expired", "record-update-failed", "condition-log-failed", "no-resolved-checkout")+"\n" {
 		t.Fatalf("unresolved deadline = stdout %q", run.stdout)
 	}

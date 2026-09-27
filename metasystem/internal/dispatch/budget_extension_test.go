@@ -223,7 +223,8 @@ func TestGoalRevisionAdmissionNamesStandingExtensionMarker(t *testing.T) {
 	verdict, err := bed.revisionAdmission("bounded", 3, 1, now)
 	lines := FormatGoalRevisionAdmission(verdict)
 	if err != nil || verdict.Extension != nil || len(lines) != 1 ||
-		!strings.Contains(lines[0], "; extended once at 2026-08-28T10:00:00Z; a further raise is a person's set-budget") {
+		!strings.Contains(lines[0], "; extended once at 2026-08-28T10:00:00Z") || !strings.Contains(lines[0], "metasystem goal budget bounded BOX") ||
+		strings.Contains(lines[0], "set-budget") {
 		t.Fatalf("standing marker was not named: verdict=%+v lines=%v err=%v", verdict, lines, err)
 	}
 }

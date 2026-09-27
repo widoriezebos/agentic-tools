@@ -190,7 +190,7 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 		}
 		members := testMembers("foreign-parent")
 		result, err := Split(verbReqFor(b, "01J5X00000000000000000PF10", "mac-b"), "foreign-parent", members, mainRatification("foreign-parent", members), nil)
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "park or steal") {
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "metasystem goal claim foreign-parent --take-over --reason TEXT") {
 			t.Fatalf("foreign claim did not refuse toward the authority transition: %+v %v", result, err)
 		}
 	})

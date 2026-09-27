@@ -14,14 +14,14 @@ The single routing layer. `AGENTS.md` owns always-on behavior; this table owns w
 | Code and design standards | `docs/design/design-principles.md` | Any non-trivial code, design, refactor, or consequential change |
 | Completion check and design proof | `docs/design/design-obligation-gate.md` | Finishing any change; full matrix on its listed triggers |
 | End-to-end verification | `skills/verify/SKILL.md` | A change claims to work and can be run |
-| Waiting without model polling | `metasystem work wait` | Waiting for a job, run, attempt, goal, or path |
+| Waiting without model polling | `metasystem work wait` | Waiting for a job, run, goal, or path |
 | Adversarial design critique | `skills/design-critique/SKILL.md` | A design is ready to attack, or a critique loop needs a stop decision |
 | Two-layer implementation critique | `skills/code-critique/SKILL.md` | Implemented work needs conformance review against its brief and diff, then defect review |
 | Behavior-preserving refactor | `skills/refactor/SKILL.md` | Restructuring or cleanup whose contract is unchanged behavior |
 | Benchmark-driven improvement | `skills/improve/SKILL.md` | Chasing a measured goal against a runnable evaluation |
 | Investigation stop-loss | `skills/take-a-step-back/SKILL.md` | Work is stuck, repetitive, costly, or its premise is uncertain |
-| Working modes in plain English | `docs/working-modes.md` | Learning the system, or unsure of a mode |
-| The Go engine's architecture | `docs/architecture.md` | Locating a decision, or judging where new logic belongs |
+| Working modes in plain English | `docs/working-modes.md` | Learning the system or its modes |
+| The Go engine's architecture | `docs/architecture.md` | Locating a decision or where new logic belongs |
 | Worked examples | `docs/examples/` | A template is unclear |
 | Adoption and the change gate | `docs/project-adaptation.md` | Starting a repository, or judging an instruction change |
 | Metasystem retro | `skills/retro/SKILL.md` | `metasystem receipt status` reports one due, or the human asks |

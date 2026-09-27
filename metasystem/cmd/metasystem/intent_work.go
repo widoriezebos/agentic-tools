@@ -59,6 +59,9 @@ type intentWorkOwners struct {
 	// --exit-code blocks in, with their own pinned exit codes.
 	jobWatch func(args []string) int
 	runWatch func(args []string) int
+	// waitClock replaces the default wait owner's clock (see
+	// runWaitCommandOnClock); nil keeps the kernel clock.
+	waitClock func(*metarun.WaitOptions)
 }
 
 // intentConfPath is the selected installation's configuration file.
@@ -93,8 +96,9 @@ func (inv *intentInvocation) work() intentWorkOwners {
 		}
 	}
 	if owners.wait == nil {
+		clock := owners.waitClock
 		owners.wait = func(args []string, print func(metarun.WaitResult, bool)) int {
-			return runWaitCommand(args, nil, waitCallerPID(), print)
+			return runWaitCommandOnClock(args, nil, waitCallerPID(), print, clock)
 		}
 	}
 	if owners.subprocess == nil {

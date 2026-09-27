@@ -102,12 +102,12 @@ func TestProofLauncherArgv(t *testing.T) {
 	row := func(pid, parent int64, argv string) processRow {
 		return processRow{pid: pid, parent: parent, launcher: isProofLauncherArgv(strings.Fields(argv))}
 	}
-	if got := topLevelLaunchers([]processRow{row(10, 1, "metasystem test run")}, 999); got != 1 {
+	if got := len(topLevelLauncherRows([]processRow{row(10, 1, "metasystem test run")}, 999)); got != 1 {
 		t.Fatalf("a top-level engine test run counted %d launcher(s), want 1", got)
 	}
-	if got := topLevelLaunchers([]processRow{
+	if got := len(topLevelLauncherRows([]processRow{
 		row(10, 1, "metasystem internal proof-run launch"), row(11, 10, "metasystem test run"),
-	}, 999); got != 1 {
+	}, 999)); got != 1 {
 		t.Fatalf("a proof launch with a nested engine test run counted %d launcher(s), want 1", got)
 	}
 }
@@ -116,12 +116,12 @@ func TestCensusCountsRunningBatchProof(t *testing.T) {
 	row := func(pid, parent int64, argv string) processRow {
 		return processRow{pid: pid, parent: parent, launcher: isProofLauncherArgv(strings.Fields(argv))}
 	}
-	if got := topLevelLaunchers([]processRow{row(10, 1, "metasystem internal landing batch owner")}, 999); got != 0 {
+	if got := len(topLevelLauncherRows([]processRow{row(10, 1, "metasystem internal landing batch owner")}, 999)); got != 0 {
 		t.Fatalf("an idle batch owner counted %d launcher(s), want 0", got)
 	}
-	if got := topLevelLaunchers([]processRow{
+	if got := len(topLevelLauncherRows([]processRow{
 		row(10, 1, "metasystem internal landing batch owner"), row(11, 10, "metasystem test run"),
-	}, 999); got != 1 {
+	}, 999)); got != 1 {
 		t.Fatalf("a batch owner with its nested engine run counted %d launcher(s), want 1", got)
 	}
 	previousPids := loadSeams.pids
@@ -176,16 +176,16 @@ func TestTopLevelLaunchersCountBatteriesNotTheirFamilies(t *testing.T) {
 		{pid: 200, parent: 1, launcher: true}, {pid: 205, parent: 200}, {pid: 210, parent: 205, launcher: true},
 		{pid: 300, parent: 1, launcher: true}, {pid: 400, parent: 1},
 	}
-	if got := topLevelLaunchers(rows, 100); got != 2 {
+	if got := len(topLevelLauncherRows(rows, 100)); got != 2 {
 		t.Fatalf("top-level launchers outside self's family = %d, want 2 (200 and 300)", got)
 	}
-	if got := topLevelLaunchers(rows, 300); got != 2 {
+	if got := len(topLevelLauncherRows(rows, 300)); got != 2 {
 		t.Fatalf("seen from the lone launcher = %d, want 2 (the joined battery 90 counts once, and 200)", got)
 	}
-	if got := topLevelLaunchers(rows, 999); got != 3 {
+	if got := len(topLevelLauncherRows(rows, 999)); got != 3 {
 		t.Fatalf("seen from a process outside every family = %d, want 3 (90's battery, 200's, 300)", got)
 	}
-	if got := topLevelLaunchers(nil, 100); got != 0 {
+	if got := len(topLevelLauncherRows(nil, 100)); got != 0 {
 		t.Fatalf("an empty table counted %d", got)
 	}
 }

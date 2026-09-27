@@ -712,7 +712,7 @@ type ownerRefusal struct {
 
 func (d syncRequestDependencies) publish(res goal.PublishResult, err error) int {
 	if d.report == nil {
-		return printSyncResult(res, err)
+		return writeSyncResult(d.outStream(), d.errStream(), res, err)
 	}
 	if err != nil {
 		// A landed act keeps its publication even when later work failed.
@@ -771,7 +771,7 @@ func (d syncRequestDependencies) note(stdout bool, line string) {
 
 func (d syncRequestDependencies) noteWriter() io.Writer {
 	if d.report == nil {
-		return os.Stderr
+		return d.errStream()
 	}
 	return &d.report.written
 }

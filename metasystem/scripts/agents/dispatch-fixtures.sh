@@ -1584,7 +1584,7 @@ grep -Fq -- '- Budget: elapsedLimit=1d attemptLimit=2 reservedJobMinutesLimit=24
     "$budget_dispatch_repo/bin/metasystem" internal delegate --role verifier --brief "$budget_brief" \
       --op structured-budget-refused --goal structured-budget --destructive-reach MECHANICAL
 )
-grep -Fq "extended once at 2000-01-01T00:07:00Z; a further raise is a person's set-budget" \
+grep -Fq "extended once at 2000-01-01T00:07:00Z" \
   "$agent_fixture/structured-budget-refused.out" \
   || { echo "the second exhaustion did not name the standing extension marker" >&2; cat "$agent_fixture/structured-budget-refused.out" >&2; exit 1; }
 [[ ! -e "$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-refused.json" ]] \
@@ -2803,7 +2803,7 @@ if [[ ${1:-} == job && ${2:-} == compose-role-packet ]]; then
 	fi
 	exit "$compose_rc"
 fi
-if [[ ${1:-} == config && ${2:-} == get && -e ${PACKET_CAP_MARKER:?}.composed ]]; then
+if [[ ${1:-} == internal && ${2:-} == config && ${3:-} == get && -e ${PACKET_CAP_MARKER:?}.composed ]]; then
 	previous=
 	for argument in "$@"; do
 		if [[ $previous == --key && $argument == dispatch.max-inline-input-kb ]]; then
@@ -3635,7 +3635,7 @@ run_agent_fixture_captured cap-driver-close flag-runtime "$agent_fixture/cap-dri
 cap_driver_close_rc=$?
 set -e
 [[ "$cap_driver_close_rc" -ne 0 ]] \
-  && grep -Fq 'next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget: the chain's next follow-up or close (work revise, design review, work review --dispositions, work finish) carries the raised limit onto it first' \
+  && grep -Fq 'next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget: the chain'"'"'s next follow-up or close (work revise, design review, work review --dispositions, work finish) carries the raised limit onto it first' \
     "$agent_fixture/cap-driver-close.out" \
   || { echo "the code critique close refusal did not print its human next steps" >&2; cat "$agent_fixture/cap-driver-close.out" >&2; exit 1; }
 echo "cap-driver terminal exhaustion fixture passed"
@@ -3700,7 +3700,7 @@ run_agent_fixture_captured cap-warden-close cap-warden "$agent_fixture/cap-warde
 cap_warden_close_rc=$?
 set -e
 [[ "$cap_warden_close_rc" -ne 0 ]] \
-  && grep -Fq 'next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget: the chain's next follow-up or close (work revise, design review, work review --dispositions, work finish) carries the raised limit onto it first' \
+  && grep -Fq 'next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget: the chain'"'"'s next follow-up or close (work revise, design review, work review --dispositions, work finish) carries the raised limit onto it first' \
     "$agent_fixture/cap-warden-close.out" \
   || { echo "the warden close refusal did not print its human next steps" >&2; cat "$agent_fixture/cap-warden-close.out" >&2; exit 1; }
 echo "cap-warden terminal exhaustion fixture passed"

@@ -535,10 +535,10 @@ if [[ "$fixture_scenario" == mission-stop ]]; then
     set +e
     if [[ "$ignore_term" == 1 ]]; then
       METASYSTEM_AGENT_RUNTIME=fake METASYSTEM_FAKE_HOST_HOLD=1 METASYSTEM_FAKE_HOST_IGNORE_TERM=1 \
-        "$repo/bin/metasystem" mission "$mode" --root "$repo" --mission "$mission" >"$output"
+        "$repo/bin/metasystem" internal mission "$mode" --root "$repo" --mission "$mission" >"$output"
     else
       METASYSTEM_AGENT_RUNTIME=fake METASYSTEM_FAKE_HOST_HOLD=1 \
-        "$repo/bin/metasystem" mission "$mode" --root "$repo" --mission "$mission" >"$output"
+        "$repo/bin/metasystem" internal mission "$mode" --root "$repo" --mission "$mission" >"$output"
     fi
     status=$?
     set -e
