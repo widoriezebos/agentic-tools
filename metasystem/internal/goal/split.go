@@ -230,6 +230,20 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 				if opidLanded(archived, r) {
 					return nil, AlreadyApplied{}
 				}
+				if _, decomposed := rootDecomposed(t.Root, parentID); decomposed {
+					// The same split again is a repeat whose effect already
+					// holds (R-129-ui): the parent is decomposed into exactly
+					// these members. Other members are a different split.
+					requested := make([]string, 0, len(parsed))
+					for _, member := range parsed {
+						requested = append(requested, member.ID)
+					}
+					existing := arcMemberIDs(t, parentID)
+					if strings.Join(sortedUnique(requested), ",") == strings.Join(existing, ",") {
+						return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already split into %s", parentID, strings.Join(existing, ", "))}
+					}
+					return nil, fmt.Errorf("goal %s is already split into %s; a split happens once, so change the members with metasystem goal open, goal group and goal done", parentID, strings.Join(existing, ", "))
+				}
 				return nil, fmt.Errorf("goal %s is in the archive; there is nothing to split", parentID)
 			}
 			parent := t.Live[parentID]
@@ -496,4 +510,23 @@ func raiseSplitOldArcDebt(e Endpoint, tip, parentID, opid string, now time.Time)
 		return fmt.Errorf("raise split's old-arc retro debt: %w", err)
 	}
 	return nil
+}
+
+// arcMemberIDs are the goals, live or archived, whose arc is the given
+// parent, sorted.
+func arcMemberIDs(t *TreeGoals, parentID string) []string {
+	var ids []string
+	for id, file := range t.Live {
+		if file.Arc == parentID && id != parentID {
+			ids = append(ids, id)
+		}
+	}
+	for _, archive := range []map[string]*GoalFile{t.Done, t.Abandoned} {
+		for id, file := range archive {
+			if file.Arc == parentID && id != parentID {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return sortedUnique(ids)
 }
