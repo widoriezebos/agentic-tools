@@ -149,10 +149,18 @@ type Service struct {
 
 	mu            sync.Mutex
 	conversations map[string]*Conversation
-	spokeLast     string
-	current       *turn
-	watchers      map[int]chan Event
-	nextID        int
+	// opening names the keys a caller is loading right now, with the channel it
+	// closes when it is done. It is what makes the FIRST open of one transcript
+	// exclusive: a load repairs the file it reads (R-131-ui), so two loaders
+	// over one transcript archive it twice and the loser rewrites it from the
+	// reading it took before the winner appended anything — losing a message
+	// the human had already been told was accepted (Astra F-02). One opener per
+	// key; every other caller waits for it and takes what it installed.
+	opening   map[string]chan struct{}
+	spokeLast string
+	current   *turn
+	watchers  map[int]chan Event
+	nextID    int
 	// indexedAt is when the live session's map of the project's memory was
 	// read. A fresh session is given the map; every later prompt of that
 	// session is given this moment instead, so the Partner knows how old its
@@ -223,6 +231,7 @@ func NewService(runtime Runtime, host *Host, open func(human string) (*Conversat
 	return &Service{
 		runtime: runtime, host: host, open: open, facts: facts, now: now,
 		conversations: map[string]*Conversation{},
+		opening:       map[string]chan struct{}{},
 		watchers:      map[int]chan Event{},
 	}
 }
@@ -236,26 +245,48 @@ func NewService(runtime Runtime, host *Host, open func(human string) (*Conversat
 // trim's own mutex exists to prevent (g1-s54 F2). Housekeeping reaches a
 // transcript nobody has opened this run by the file's name, so the two ways in
 // have to meet at one object.
+// The first open of one key is also EXCLUSIVE, because a load is no longer a
+// read: an oversized transcript is archived and rewritten by the loader that
+// finds it (R-131-ui). Two loaders over one file archive it twice, and the one
+// that is discarded has already published its own older reading over the file —
+// taking out a message the other opener has since accepted (Astra F-02). So one
+// caller loads and the others wait for it here, and the object that is installed
+// is the one they all take.
 func (s *Service) conversation(human string) (*Conversation, error) {
 	key := fileName(human)
-	s.mu.Lock()
-	held, known := s.conversations[key]
-	s.mu.Unlock()
-	if known {
-		return held, nil
+	for {
+		s.mu.Lock()
+		if held, known := s.conversations[key]; known {
+			s.mu.Unlock()
+			return held, nil
+		}
+		if loading, busy := s.opening[key]; busy {
+			s.mu.Unlock()
+			// The loader has the file. Waiting costs this caller the load it
+			// would have run itself, and the loop then finds what was
+			// installed — or, where that load failed, takes the open on.
+			<-loading
+			continue
+		}
+		mine := make(chan struct{})
+		s.opening[key] = mine
+		s.mu.Unlock()
+
+		opened, err := s.open(human)
+		s.mu.Lock()
+		delete(s.opening, key)
+		if err == nil {
+			s.conversations[key] = opened
+		}
+		s.mu.Unlock()
+		// After the map is written, so a waiter that wakes finds the
+		// conversation rather than going round and loading it again.
+		close(mine)
+		if err != nil {
+			return nil, err
+		}
+		return opened, nil
 	}
-	opened, err := s.open(human)
-	if err != nil {
-		return nil, err
-	}
-	s.mu.Lock()
-	if again, raced := s.conversations[key]; raced {
-		opened = again
-	} else {
-		s.conversations[key] = opened
-	}
-	s.mu.Unlock()
-	return opened, nil
 }
 
 // Adopt gives a human the conversation an unnamed seat was having.
