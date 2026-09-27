@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -149,8 +150,12 @@ func unblockOnDeath(pipes *ACPPipes, serverDone, clientDone <-chan struct{}) {
 	}()
 }
 
-// protocolServerCommand is the launch's server command on the pair.
-func protocolServerCommand(d Deps, pipes *ACPPipes, launch Launch, dir string, env []string, log io.Writer) (*exec.Cmd, error) {
+// protocolServerCommand is the launch's server command on the pair. Its
+// stderr is a file the server inherits directly (nil is /dev/null), never a
+// pipe: exec.Cmd.Wait would otherwise block until every descendant holding
+// fd 2 closed it, and a tool child that outlives the server would strand the
+// turn after delivery.
+func protocolServerCommand(d Deps, pipes *ACPPipes, launch Launch, dir string, env []string, log *os.File) (*exec.Cmd, error) {
 	program, err := d.LookPath(launch.Argv[0])
 	if err != nil {
 		return nil, err
@@ -217,7 +222,7 @@ func (s *Supervision) driveProtocol(t *Turn, ops Operations, launch Launch) (sta
 		s.failPending("prefork_marker", "handshake", "")
 		return 0, 1, false
 	}
-	command, err := protocolServerCommand(s.d, pipes, launch, s.workspace, s.childEnv, s.logWriter())
+	command, err := protocolServerCommand(s.d, pipes, launch, s.workspace, s.childEnv, s.log)
 	if err == nil {
 		server, err = startChild(command)
 		pipes.Started()
@@ -317,7 +322,15 @@ func RunHostProtocol(d Deps, t *Turn, launch Launch) (status int, exit *int) {
 	defer pipes.Remove()
 	var server *exec.Cmd
 	serverDone := make(chan struct{})
-	command, err := protocolServerCommand(d, pipes, launch, t.Workspace, t.Env, t.Log)
+	// The server writes host.log through its own descriptor, as the host
+	// script gave it one.
+	serverLog, err := os.OpenFile(filepath.Join(t.Dir, "host.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		fmt.Fprintln(d.Stderr, err)
+		return 0, code(1)
+	}
+	defer serverLog.Close()
+	command, err := protocolServerCommand(d, pipes, launch, t.Workspace, t.Env, serverLog)
 	if err == nil {
 		err = command.Start()
 		pipes.Started()

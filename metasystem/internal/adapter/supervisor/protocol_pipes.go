@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,7 +83,7 @@ func (p *ACPPipes) Make() error {
 // ignores it), stdout into the server-out fifo, stdin from the server-in
 // fifo, stderr to the given log. The fifo ends are opened here, without
 // blocking, with their keepers; call Started after the command starts.
-func (p *ACPPipes) ServerCommand(program, argv0 string, args []string, dir string, env []string, stderr io.Writer) (*exec.Cmd, error) {
+func (p *ACPPipes) ServerCommand(program, argv0 string, args []string, dir string, env []string, stderr *os.File) (*exec.Cmd, error) {
 	outKeeper, err := os.OpenFile(p.ServerOut, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
@@ -123,7 +122,11 @@ func (p *ACPPipes) ServerCommand(program, argv0 string, args []string, dir strin
 	command.Env = env
 	command.Stdin = serverStdin
 	command.Stdout = serverStdout
-	command.Stderr = stderr
+	if stderr != nil {
+		// Only a real file: a nil *os.File in the interface would be
+		// written to, and a non-file writer would make Wait a pipe drain.
+		command.Stderr = stderr
+	}
 	return command, nil
 }
 

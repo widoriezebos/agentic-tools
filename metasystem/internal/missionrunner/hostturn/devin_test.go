@@ -367,3 +367,36 @@ func readFieldMap(t *testing.T, path string) map[string]any {
 	}
 	return object
 }
+
+// A tool child of the ACP server that outlives the server and holds its
+// stderr must not strand the host turn after delivery: the server writes
+// host.log through its own descriptor, never a pipe exec.Cmd.Wait drains.
+func TestDevinHostACPOrphanHoldingStderrDoesNotStrandTheTurn(t *testing.T) {
+	t.Parallel()
+	f := newHostFixture(t, "dispatch.transport.devin=acp\n")
+	pidFile := filepath.Join(f.stubDir, "orphan.pid")
+	server := strings.Replace(hostACPServer, "exec cat >/dev/null\n",
+		"sleep 30 </dev/null >/dev/null &\necho $! >'"+pidFile+"'\nexit 0\n", 1)
+	f.write(filepath.Join(f.stubDir, "acp-server.sh"), server)
+	t.Cleanup(func() {
+		if data, err := os.ReadFile(pidFile); err == nil {
+			var pid int
+			if _, err := fmt.Sscan(string(data), &pid); err == nil && pid > 0 {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+	})
+	started := time.Now()
+	code, dir := f.turn("t-orphan", "")
+	elapsed := time.Since(started)
+	if code != 0 {
+		log, _ := os.ReadFile(filepath.Join(dir, "host.log"))
+		t.Fatalf("host turn exit %d\nstderr %s\nlog %s", code, f.stderr, log)
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("the host turn waited %s on an orphan holding the server's stderr", elapsed)
+	}
+	if readField(t, filepath.Join(dir, "result.json"), "outcome") != "completed" {
+		t.Fatal("the turn did not complete")
+	}
+}
