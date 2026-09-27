@@ -4,7 +4,7 @@ import { NavLink } from "react-router";
 import type { Need, Where as Reference } from "./api";
 import { askedLine, bandLine, blockedLine, budgetLine, destinationFor, wayThrough } from "./decisions";
 import { confirmLine, goalLine, rowFacts, rowLine, writeLabel, writeStatus } from "./groups";
-import { applyLabel, type ProposalActs } from "./proposals";
+import { pressFor, type ProposalActs } from "./proposals";
 import { ProposalSubstance } from "../partner/Proposal";
 import { ASK_THE_PARTNER, DISMISS, lineState } from "../partner/proposing";
 import { Help } from "../help/Help";
@@ -370,17 +370,24 @@ function ProposalPresses({ need, acts }: { need: Need; acts: Acts }) {
     return null;
   }
   const running = acts.proposals.running;
+  // What this line's own press says, or nothing where it offers none: a line
+  // whose act landed and whose outcome the conversation could not write down is
+  // read and never sent again (Sol S60-C-01). Dismiss stays, because putting a
+  // line away publishes nothing.
+  const press = pressFor(line, running);
   return (
     <>
-      <Button
-        primary
-        disabled={running}
-        onClick={() => {
-          acts.proposals.onApply(need);
-        }}
-      >
-        {applyLabel(line)}
-      </Button>
+      {press !== "" && (
+        <Button
+          primary
+          disabled={running}
+          onClick={() => {
+            acts.proposals.onApply(need);
+          }}
+        >
+          {press}
+        </Button>
+      )}
       <Button
         disabled={running}
         onClick={() => {

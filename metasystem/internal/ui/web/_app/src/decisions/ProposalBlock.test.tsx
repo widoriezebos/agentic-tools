@@ -6,7 +6,14 @@ import { describe, expect, it } from "vitest";
 import type { Need, Proposed } from "./api";
 import { ProposalBlock, ProposalSheet } from "./ProposalBlock";
 import type { Acts } from "./InboxRow";
-import { ANSWERED_ONCE, lineOf, linesOf, NOTHING_SENDABLE, type Applying } from "./proposals";
+import {
+  ANSWERED_ONCE,
+  LANDED_ALREADY,
+  lineOf,
+  linesOf,
+  NOTHING_SENDABLE,
+  type Applying,
+} from "./proposals";
 import type { Backlog, Budget, Row } from "../backlog/api";
 import { NEEDS_ITS_BUDGET } from "../partner/proposing";
 
@@ -319,6 +326,38 @@ describe("what the sheet leaves out", () => {
 
     expect(markup).toContain(ANSWERED_ONCE);
     expect(markup).toContain("ms-decisions-planned--out");
+    expect(markup).toContain("Apply 1 action");
+  });
+
+  it("says a line whose act landed is not sent, rather than calling it a retry", () => {
+    const landed = need(
+      "t7/3",
+      { title: "The channel gateway retries a refused delivery", where: { kind: "goal", id: "g1-s48" } },
+      { index: 3, state: "applying", version: 2 },
+    );
+    const holdingLanded: Applying = {
+      ...holding,
+      linesOf: (many) =>
+        linesOf(many, {
+          "t7#3": { ticked: true, notRun: false, refusedUnsent: "", unrecorded: { state: "applied", words: "" } },
+        }),
+    };
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <ProposalSheet
+            needs={[parking, landed]}
+            backlog={backlog()}
+            holding={holdingLanded}
+            onClose={() => undefined}
+            onApply={() => undefined}
+          />
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(markup).toContain(LANDED_ALREADY);
+    expect(markup).not.toContain(ANSWERED_ONCE);
     expect(markup).toContain("Apply 1 action");
   });
 

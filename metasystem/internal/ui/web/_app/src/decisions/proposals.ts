@@ -12,11 +12,13 @@ import {
   lineState,
   markOf,
   noRun,
+  offersTryAgain,
   releaseRun,
   runProposals,
   takeRun,
   TRY_AGAIN,
   verbWord,
+  waiting,
   type Displayed,
   type Displayeds,
   type Line,
@@ -159,16 +161,36 @@ export function proposalLine(need: Need): string {
 }
 
 /**
- * What the row's own first act says.
+ * What this row's own press says, or "" where the row offers none at all.
  *
- * Try again where the line has already been answered once — refused, unresolved,
- * or left in flight by a page that went away — and Apply where nobody has
- * touched it. It is the card's own pair of words, for the card's own reason: a
- * press on a line that has been answered is a retry, and a human has to be able
- * to read that before they make it.
+ * Apply where nobody has touched the line, and Try again where it has been
+ * answered once — refused, unresolved, or left in flight by a page that went
+ * away — because a press on a line that has been answered is a retry and a human
+ * has to read that before they make it.
+ *
+ * And NOTHING where the runner's own rule says nothing: a line whose act
+ * answered `applied` while the conversation could not write that down is a line
+ * that landed. The record still says `applying`, because the write that would
+ * have said otherwise failed, and a row that offered Try again on it would be
+ * offering to approve the same goal twice (Sol S60-C-01). It is the card's rule,
+ * from the card's own function, rather than a second reading of the states.
  */
-export function applyLabel(line: Line): string {
-  return line.state === "waiting" ? APPLY : TRY_AGAIN;
+export function pressFor(line: Line, running = false): string {
+  if (waiting(line)) {
+    return APPLY;
+  }
+  return offersTryAgain(line, running) ? TRY_AGAIN : "";
+}
+
+/**
+ * The lines one press may actually send.
+ *
+ * It is the same rule where it cannot be skipped: the row offers no button for a
+ * line that landed, and a press that reached the runner another way — the bulk
+ * sheet, Continue, a stale render — sends nothing for it either.
+ */
+export function toSend(lines: readonly Line[]): readonly Line[] {
+  return lines.filter((line) => pressFor(line) !== "");
 }
 
 /* --------------------------------------------------------------- the run -- */
@@ -276,11 +298,19 @@ export type ProposalActs = {
  * without the reading it needs (g1-s60, "Not here, later").
  */
 export function excludedInBulk(line: Line): string {
-  return line.state === "waiting" ? excludedFor(line) : ANSWERED_ONCE;
+  if (waiting(line)) {
+    return excludedFor(line);
+  }
+  // A line whose act landed is not a retry anybody may make: the row offers no
+  // press for it either, and what it needs is reading and not sending.
+  return pressFor(line) === "" ? LANDED_ALREADY : ANSWERED_ONCE;
 }
 
 /** What a line that has already been answered says in the sheet. */
 export const ANSWERED_ONCE = "answered once already: Try again on the row itself";
+
+/** What a line whose act landed says in the sheet: there is nothing to send. */
+export const LANDED_ALREADY = "it applied already; the conversation could not record that, so nothing is sent";
 
 /** What the sheet says where nothing it lists can be sent at all. */
 export const NOTHING_SENDABLE =
@@ -367,13 +397,15 @@ export function useProposals(ask: {
 
   const run = useCallback(
     (lines: readonly Line[]) => {
-      if (lines.length === 0 || !takeRun(guard.current, lines[0].id)) {
+      // Never a line whose act landed, however the press reached here.
+      const sending = toSend(lines);
+      if (sending.length === 0 || !takeRun(guard.current, sending[0].id)) {
         return;
       }
-      setRunning(lines[0].id);
+      setRunning(sending[0].id);
       void (async () => {
         try {
-          await runProposals(lines, portsFor({ reconcile, mark, reread, signIn }));
+          await runProposals(sending, portsFor({ reconcile, mark, reread, signIn }));
         } finally {
           releaseRun(guard.current);
           setRunning("");

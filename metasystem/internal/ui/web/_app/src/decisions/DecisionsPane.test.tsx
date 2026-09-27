@@ -806,6 +806,39 @@ describe("proposed by the Partner", () => {
     expect(inFlight).toContain(WAS_IN_FLIGHT);
   });
 
+  it("offers no press at all on a line whose act landed and could not be recorded", () => {
+    // The record still says `applying`, because the write that would have said
+    // otherwise failed; the ACT happened. A row that offered Try again on it
+    // would be offering to approve the same goal twice (Sol S60-C-01).
+    const landed = proposed(
+      { id: "t7/3" },
+      { index: 3, state: "applying", version: 2 },
+    );
+    const handles: Acts = {
+      ...acts,
+      proposals: {
+        ...acts.proposals,
+        lineOf: (one: Need) =>
+          lineOf(one, {
+            "t7#3": { ticked: true, notRun: false, refusedUnsent: "", unrecorded: { state: "applied", words: "" } },
+          }),
+      },
+    };
+
+    const markup = rendered(
+      page({ needsYou: [landed, ...everyKind] }),
+      { chosen: "proposed", openRow: "t7/3" },
+      handles,
+    );
+
+    expect(markup).toContain("applied; the conversation could not record this");
+    expect(markup).not.toContain(">Try again</button>");
+    expect(markup).not.toContain(">Apply</button>");
+    // Putting it away publishes nothing, so that press stays.
+    expect(markup).toContain(">Dismiss</button>");
+    expect(markup).toContain(">Ask the Partner</button>");
+  });
+
   it("offers signing in instead, where nothing proves a human", () => {
     const markup = rendered(proposing(), { chosen: "proposed", openRow: "t7/0", signedIn: false });
 

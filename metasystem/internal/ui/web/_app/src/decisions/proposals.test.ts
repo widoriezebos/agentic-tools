@@ -2,19 +2,20 @@ import { describe, expect, it } from "vitest";
 
 import type { Need, Proposed } from "./api";
 import {
-  applyLabel,
   dismissLine,
   lineOf,
   linesOf,
   portsFor,
+  pressFor,
   proposalLine,
   rowID,
+  toSend,
   turnOf,
   type Through,
 } from "./proposals";
 import type { Proposal } from "../partner/api";
-import type { Answered, Line, Looked, Mark, Written } from "../partner/proposing";
-import { runProposals, WAS_IN_FLIGHT } from "../partner/proposing";
+import type { Answered, Line, Looked, Mark, Marks, Written } from "../partner/proposing";
+import { lineState, runProposals, WAS_IN_FLIGHT } from "../partner/proposing";
 
 /**
  * A proposal as a row of the inbox, and the run one press makes.
@@ -179,10 +180,45 @@ describe("what a row's line says", () => {
   });
 
   it("says Apply on a waiting line and Try again on one already answered", () => {
-    expect(applyLabel(lineOf(need()) as Line)).toBe("Apply");
-    expect(applyLabel(lineOf(need({}, { state: "refused" })) as Line)).toBe("Try again");
-    expect(applyLabel(lineOf(need({}, { state: "unresolved" })) as Line)).toBe("Try again");
-    expect(applyLabel(lineOf(need({}, { state: "applying" })) as Line)).toBe("Try again");
+    expect(pressFor(lineOf(need()) as Line)).toBe("Apply");
+    expect(pressFor(lineOf(need({}, { state: "refused" })) as Line)).toBe("Try again");
+    expect(pressFor(lineOf(need({}, { state: "unresolved" })) as Line)).toBe("Try again");
+    expect(pressFor(lineOf(need({}, { state: "applying" })) as Line)).toBe("Try again");
+  });
+});
+
+/**
+ * A line whose act landed and whose outcome the conversation could not write
+ * down (Sol S60-C-01).
+ *
+ * The record still says `applying`, because the write that would have said
+ * otherwise failed. The act HAPPENED: an approve applied twice is two approval
+ * records, so the one thing this row must never offer is the press that makes a
+ * second one. It is the card's own rule, taken from the card's own function.
+ */
+describe("a line whose act landed and could not be written down", () => {
+  const landed: Marks = {
+    "t7#2": { ticked: true, notRun: false, refusedUnsent: "", unrecorded: { state: "applied", words: "" } },
+  };
+
+  function line(): Line {
+    return lineOf(need({}, { state: "applying", version: 2 }), landed) as Line;
+  }
+
+  it("offers no press at all, where a refused line offers Try again", () => {
+    expect(pressFor(line())).toBe("");
+    expect(pressFor(lineOf(need({}, { state: "applying", version: 2 })) as Line)).toBe("Try again");
+  });
+
+  it("says what the act answered and that the conversation could not record it", () => {
+    expect(lineState(line())).toBe("applied; the conversation could not record this");
+  });
+
+  it("is not sent by any press that reaches the runner", () => {
+    const waitingLine = lineOf(need({ id: "t7/3" }, { index: 3 })) as Line;
+
+    expect(toSend([line(), waitingLine]).map((one) => one.id)).toEqual([waitingLine.id]);
+    expect(toSend([line()])).toEqual([]);
   });
 });
 
