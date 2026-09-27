@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import type { Proposal, ProposalState } from "./api";
+import type { Proposal, ProposalState, Snapshot } from "./api";
+import { emptyStore, loaded, received, type Store } from "./conversation";
 import { proposedFor, showsAt, waitsOnTheHuman } from "./proposed";
 import { cardsIn, type Card } from "./proposing";
 
@@ -212,3 +213,97 @@ describe("how the press gets there", () => {
 function lineOf(entry: Proposal) {
   return cardsIn([{ turn: "t1", proposals: [entry] }], {}, {}, [])[0].lines[0];
 }
+
+/**
+ * And the chip leaves when the line does, on every page at once.
+ *
+ * This is the whole reason the chip reads the conversation rather than a payload
+ * of its own: the outcome route publishes a `proposal` beat with the entry it
+ * wrote, the store folds it into the message it belongs to, and the rows compose
+ * their cards from those messages. So a line applied from the card in the drawer,
+ * or from a row in the Decisions inbox, or from another tab, takes the chip off
+ * the board without anybody re-reading anything (g1-s61 D1, g1-s60 D5).
+ */
+describe("the chip leaving on a beat that settles the line", () => {
+  const snapshot: Snapshot = {
+    runtime: "claude",
+    model: "claude-opus-5-5",
+    human: "Wido",
+    busy: false,
+    turn: "",
+    partial: "",
+    partialSeq: 0,
+    activity: null,
+    doing: "",
+    looked: null,
+    suggestions: null,
+    deposits: null,
+    proposals: null,
+    sitting: null,
+    index: null,
+    readOnly: "",
+    messages: [
+      {
+        id: "t1-partner",
+        turn: "t1",
+        role: "partner",
+        text: "I have proposed them.",
+        at: "2026-09-26T09:00:00Z",
+        outcome: "complete",
+        proposals: [proposal({ index: 0 }), proposal({ index: 1, goal: "refunds", verb: "approve-goal" })],
+      },
+    ],
+  };
+
+  /** The cards the store composes, which is what the hook reads. */
+  function cards(store: Store): readonly Card[] {
+    return cardsIn(
+      store.messages
+        .filter((message) => (message.proposals ?? []).length > 0)
+        .map((message) => ({ turn: message.turn, proposals: message.proposals ?? [] })),
+      {},
+      {},
+      [],
+    );
+  }
+
+  function moved(store: Store, entry: Proposal): Store {
+    return received(store, {
+      turn: "t1",
+      seq: 0,
+      kind: "proposal",
+      text: "",
+      at: "2026-09-26T10:00:00Z",
+      proposal: entry,
+    });
+  }
+
+  it("goes when the line is applied, and the other goal's chip stays", () => {
+    const store = loaded(emptyStore, snapshot);
+    expect(proposedFor(cards(store), "g1-s44")).toHaveLength(1);
+
+    const after = moved(store, proposal({ index: 0, state: "applied", version: 2 }));
+
+    expect(proposedFor(cards(after), "g1-s44")).toEqual([]);
+    expect(proposedFor(cards(after), "refunds")).toHaveLength(1);
+  });
+
+  it("goes when the line is dismissed", () => {
+    const after = moved(loaded(emptyStore, snapshot), proposal({ index: 0, state: "dismissed", version: 2 }));
+
+    expect(proposedFor(cards(after), "g1-s44")).toEqual([]);
+  });
+
+  /**
+   * And a beat that moves a line to a state that is still a choice leaves the
+   * chip there, saying what happened: a refusal is a no the human answers.
+   */
+  it("stays, in the danger colour's state, on a refusal", () => {
+    const after = moved(
+      loaded(emptyStore, snapshot),
+      proposal({ index: 0, state: "refused", words: "goal g1-s44 is claimed by m2a", version: 2 }),
+    );
+
+    expect(proposedFor(cards(after), "g1-s44").map((line) => line.state)).toEqual(["refused"]);
+  });
+});

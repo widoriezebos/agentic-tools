@@ -79,6 +79,7 @@ import { Tabs, tabShown, type Tab } from "../panes/Tabs";
 import { backlogPath, documentPath, goalPath, projectPath } from "../routes";
 import { CardMenu } from "../backlog/CardMenu";
 import { opensMenu, type At } from "../backlog/menu";
+import { ProposedChip } from "../partner/ProposedChip";
 import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
@@ -823,7 +824,7 @@ function Block({
  * did not reach it. It names what it does, in the view this browser is going
  * to get, and the Backlog does it on arrival.
  */
-function GoalBlock({
+export function GoalBlock({
   briefing,
   ledger,
   onEdited,
@@ -873,6 +874,11 @@ function GoalBlock({
       <div className="ms-briefing-head">
         <h2 className="ms-briefing-title">{goal.title}</h2>
         {goal.state !== "" && <Chip>{goal.state}</Chip>}
+        {/* After the goal's own chip: what the Partner proposed about it and
+            nobody has answered, which opens the conversation at the line
+            (g1-s61 D2). A goal page is where a human comes to read the thing
+            whole, and a proposal waiting on it belongs in that reading. */}
+        <ProposedChip goal={goal.id} />
         <span className="ms-project-count">{goal.count}</span>
         {/* The edit, beside the intent it changes. A goal the ledger will
             not take an edit of says which act would let it, because "no

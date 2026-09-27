@@ -6,6 +6,9 @@ import { describe, expect, it } from "vitest";
 import type { Backlog, Row } from "./api";
 import { noFilters } from "./filters";
 import { Board } from "./Board";
+import type { Proposal } from "../partner/api";
+import { cardsIn } from "../partner/proposing";
+import { PartnerAs } from "../partner/store";
 
 /**
  * What the board is made of, above and below the lanes.
@@ -86,27 +89,49 @@ const backlog: Backlog = {
   closed: [],
 };
 
-function markup(): string {
+function markup(proposals: readonly Proposal[] = []): string {
   return renderToStaticMarkup(
     <MemoryRouter>
       <TooltipPrimitive.Provider>
-        <Board
-          backlog={backlog}
-          view="board"
-          closedShown={false}
-          onToggleClosed={() => undefined}
-          onAct={() => undefined}
-          onMoved={() => undefined}
-          plans={null}
-          filters={noFilters}
-          window={1}
-          onWindow={() => undefined}
-          showing=""
-          onFaded={() => undefined}
-        />
+        <PartnerAs held={{ proposals: cardsIn([{ turn: "t1", proposals }], {}, {}, []) }}>
+          <Board
+            backlog={backlog}
+            view="board"
+            closedShown={false}
+            onToggleClosed={() => undefined}
+            onAct={() => undefined}
+            onMoved={() => undefined}
+            plans={null}
+            filters={noFilters}
+            window={1}
+            onWindow={() => undefined}
+            showing=""
+            onFaded={() => undefined}
+          />
+        </PartnerAs>
       </TooltipPrimitive.Provider>
     </MemoryRouter>,
   );
+}
+
+/** One act the Partner proposed, in the shape the snapshot carries it. */
+function proposal(over: Partial<Proposal> = {}): Proposal {
+  return {
+    index: 0,
+    verb: "park-goal",
+    goal: "ui-1",
+    title: "The board reads.",
+    fields: { because: "superseded by the seat inventory (g1-s42)" },
+    read: null,
+    why: "the inventory covers what this was for",
+    offered: true,
+    reason: "",
+    state: "waiting",
+    words: "",
+    at: "2026-09-26T09:00:00Z",
+    version: 1,
+    ...over,
+  };
 }
 
 describe("the lanes the board renders", () => {
@@ -148,5 +173,44 @@ describe("what no longer stands over the lanes", () => {
     expect(board).not.toContain("ms-board-unproven");
     expect(board).not.toContain("started by an agent process");
     expect(board.indexOf('class="ms-board-frame"')).toBeLessThan(board.indexOf('class="ms-board"'));
+  });
+});
+
+/**
+ * What the Partner proposed about a goal, on that goal's own card.
+ *
+ * The board is where a morning of triage happens, and until this a card said
+ * nothing about a proposal waiting on its goal. The chip is last in the card's
+ * chips — after the facts the ledger holds — and it is the one of them that is a
+ * control: it opens the conversation at the line (g1-s61 D2).
+ */
+describe("the chip on a board card", () => {
+  it("stands last in the card's chips, named for the goal and the count", () => {
+    const board = markup([proposal()]);
+
+    expect(board).toContain('aria-label="Not now proposed on ui-1, 1 action"');
+    expect(board).toContain("Not now proposed");
+    expect(board.indexOf("ms-chip-proposed")).toBeGreaterThan(board.indexOf(">tier 1<"));
+  });
+
+  it("is one chip per card, whatever a card was proposed, and only on that card", () => {
+    const board = markup([proposal(), proposal({ index: 1, verb: "edit-goal" })]);
+
+    expect(board.match(/ms-chip-proposed/g)).toHaveLength(1);
+    expect(board).toContain('aria-label="2 proposed on ui-1, 2 actions"');
+    expect(board).toContain(">2 proposed</button>");
+  });
+
+  it("wears the danger colour where the line was refused", () => {
+    const board = markup([proposal({ state: "refused", words: "goal ui-1 is claimed by m2a" })]);
+
+    expect(board).toContain("ms-chip-proposed--wrong");
+    expect(board).toContain("Not now refused");
+  });
+
+  it("is on no card where nothing was proposed, which is the ordinary board", () => {
+    expect(markup()).not.toContain("ms-chip-proposed");
+    expect(markup([proposal({ goal: "no-such-goal" })])).not.toContain("ms-chip-proposed");
+    expect(markup([proposal({ state: "dismissed" })])).not.toContain("ms-chip-proposed");
   });
 });

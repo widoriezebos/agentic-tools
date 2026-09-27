@@ -1,7 +1,16 @@
+import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
+
+import type { Briefing } from "./pane";
+import { GoalBlock } from "./ProjectPane";
+import type { Proposal } from "../partner/api";
+import { cardsIn } from "../partner/proposing";
+import { PartnerAs } from "../partner/store";
 
 /**
  * Where the goal page puts a save nobody could confirm.
@@ -91,5 +100,88 @@ describe("the Sittings row press", () => {
     expect(sittings.match(/startSitting\(/g)).toHaveLength(1);
     // And the row says which of the two the press will do before it is pressed.
     expect(sittings).toContain("title={opensLine(row, stands)}");
+  });
+});
+
+/**
+ * What the goal page's own header says about the Partner.
+ *
+ * A goal page is where a human comes to read one goal whole, so a proposal
+ * waiting on it belongs in that reading — after the goal's own chip, before the
+ * counts, and pressed it opens the conversation at the line (g1-s61 D2).
+ */
+describe("the chip on a goal's header", () => {
+  const briefing: Briefing = {
+    goal: {
+      id: "g1-s44",
+      title: "The seat census answers which machines are alive",
+      state: "queued",
+      intent: "One read of the census answers which machines are alive.",
+      found: true,
+      count: 3,
+    },
+    books: [],
+    decisions: [],
+    designs: { open: [], runs: [] },
+    questions: [],
+    slices: null,
+    needsYou: { questions: 0, designs: 0 },
+    checkout: { records: 0, homes: 0, goals: 0, problems: 0 },
+    across: { decisions: [], designs: [], questions: [] },
+    scopes: {
+      decisions: { own: 0, underGoals: 0 },
+      designs: { own: 0, underGoals: 0 },
+      questions: { own: 0, underGoals: 0 },
+    },
+  };
+
+  function proposal(over: Partial<Proposal> = {}): Proposal {
+    return {
+      index: 0,
+      verb: "park-goal",
+      goal: "g1-s44",
+      title: "The seat census answers which machines are alive",
+      fields: { because: "superseded by the seat inventory (g1-s42)" },
+      read: null,
+      why: "the inventory covers what these were for",
+      offered: true,
+      reason: "",
+      state: "waiting",
+      words: "",
+      at: "2026-09-26T09:00:00Z",
+      version: 1,
+      ...over,
+    };
+  }
+
+  function header(proposals: readonly Proposal[]): string {
+    return renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <PartnerAs held={{ proposals: cardsIn([{ turn: "t1", proposals }], {}, {}, []) }}>
+            <GoalBlock
+              briefing={briefing}
+              ledger={null}
+              onEdited={() => undefined}
+              onReread={() => undefined}
+            />
+          </PartnerAs>
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("stands in the head, after the goal's own chip", () => {
+    const markup = header([proposal()]);
+
+    expect(markup).toContain('aria-label="Not now proposed on g1-s44, 1 action"');
+    expect(markup.indexOf("ms-chip-proposed")).toBeGreaterThan(markup.indexOf(">queued<"));
+    expect(markup.indexOf("ms-chip-proposed")).toBeLessThan(markup.indexOf("ms-project-count"));
+  });
+
+  it("is absent where nothing about this goal waits", () => {
+    expect(header([])).not.toContain("ms-chip-proposed");
+    expect(header([proposal({ goal: "refunds" })])).not.toContain("ms-chip-proposed");
+    expect(header([proposal({ state: "applied" })])).not.toContain("ms-chip-proposed");
   });
 });

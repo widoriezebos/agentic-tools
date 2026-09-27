@@ -6,6 +6,7 @@ import { askedLine, bandLine, blockedLine, budgetLine, destinationFor, wayThroug
 import { confirmLine, goalLine, rowFacts, rowLine, writeLabel, writeStatus } from "./groups";
 import { pressFor, proposalLine, type ProposalActs } from "./proposals";
 import { ProposalSubstance } from "../partner/Proposal";
+import { ProposedChip } from "../partner/ProposedChip";
 import { ASK_THE_PARTNER, DISMISS, lineState } from "../partner/proposing";
 import { Help } from "../help/Help";
 import { useNotifications } from "../notifications/store";
@@ -104,6 +105,12 @@ export function InboxRow({
             )}
           </span>
         </button>
+        {/* The Partner's own waiting acts on this goal, beside the row's toggle
+            and not inside it: it is a second control, and it does something
+            else — the toggle opens the row and this opens the conversation at
+            the line (g1-s61 D2, D3). It is the queue's rows that carry it,
+            which is the group a human triages a goal in before opening it. */}
+        {need.kind === "approval" && <ProposedChip goal={need.id} />}
       </div>
       {open && <OpenRow need={need} now={now} acts={acts} />}
     </li>
