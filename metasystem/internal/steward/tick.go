@@ -47,7 +47,16 @@ type TickConfig struct {
 	// lifecycle's report. The lifecycle composes above the steward (design
 	// 6.3), so the command layer supplies it; a tick without one reports
 	// every stoppable route FAILED by name.
-	BreachStop        func(goalID string, revision uint64) (string, error)
+	BreachStop func(goalID string, revision uint64) (string, error)
+	// BreachStopReady reports whether this process may act as the stop
+	// custodian yet. The resident runner defers its breach-stop passes until
+	// its standing is its own (a session leader no recognized ancestor
+	// claims), because while the arming process is still its parent the
+	// stop-custodian gate classifies that ancestor and the pass would only
+	// write a FAILED report. A deferred pass scans nothing and reports
+	// nothing; the breach stays for the next tick. nil is always ready (the
+	// external tick verb).
+	BreachStopReady   func() bool
 	narrationLocation *time.Location
 }
 
@@ -102,8 +111,13 @@ type BreachStopReport struct {
 	Detail   string `json:"detail,omitempty"`
 }
 
-func runBreachStopCustodian(repoRoot string, now time.Time, stop func(string, uint64) (string, error)) []BreachStopReport {
-	return runBreachStopCustodianWithScanner(repoRoot, now, dispatch.FindBreachStops, stop)
+// custodialBreachStops is the tick's breach-stop pass: deferred, with no
+// scan and no report, while the configured custodian is not ready.
+func custodialBreachStops(repoRoot string, cfg TickConfig, scanner func(string, time.Time) ([]dispatch.StopRoute, error)) []BreachStopReport {
+	if cfg.BreachStopReady != nil && !cfg.BreachStopReady() {
+		return nil
+	}
+	return runBreachStopCustodianWithScanner(repoRoot, cfg.now(), scanner, cfg.BreachStop)
 }
 
 func runBreachStopCustodianWithScanner(repoRoot string, now time.Time,
@@ -193,7 +207,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// Budget healing runs before health and notification. A successful stop is
 	// machinery history only; a failure remains visible to the ordinary health
 	// breaker, which is the sole escalation owner.
-	goalStops := runBreachStopCustodian(repoRoot, cfg.now(), cfg.BreachStop)
+	goalStops := custodialBreachStops(repoRoot, cfg, dispatch.FindBreachStops)
 	governedRefreshFailures := refreshGovernedObligations(repoRoot, cfg.now())
 	if len(governedRefreshFailures) > 0 {
 		return degradedTick(repoRoot, "governed-obligation observation failed: "+strings.Join(governedRefreshFailures, "; "))

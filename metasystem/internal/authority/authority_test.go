@@ -154,3 +154,15 @@ func TestAnnouncedMainAdmitsGenesisByAdoptionShape(t *testing.T) {
 		t.Fatal("a non-holder main must not genesis a target that is not adoption-shaped")
 	}
 }
+
+// Rule H1 (design 3.6): a human is never denied a verb, so stop-custodian
+// admits HUMAN and the breach stop records the person as its actor. Unit U-H1
+// builds it; until then the STEWARD path is the one pinned (TestAuthorize and
+// the portable lifecycle test's resident runner).
+func TestUH1StopCustodianAdmitsHumanRecordedAsHumanOrdered(t *testing.T) {
+	t.Parallel()
+	t.Skip("U-H1 (rule H1) admits HUMAN at stop-custodian as human-ordered; enable when U-H1 lands")
+	if err := Authorize("stop-custodian", cls("HUMAN", false, ""), ""); err != nil {
+		t.Fatalf("an authenticated human was refused the breach stop: %v", err)
+	}
+}

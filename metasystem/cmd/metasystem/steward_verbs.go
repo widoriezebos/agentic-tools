@@ -608,6 +608,7 @@ func runStewardRun(args []string) int {
 	}
 	tickConfig.ArmedLineage = *lineage
 	tickConfig.BreachStop = delegateBreachStop(*repo)
+	tickConfig.BreachStopReady = stewardRunnerCustodianReady(*repo, productionStewardCustodianFacts())
 	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
 	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {
 		out, err := stewardReviveOwner(*repo)
