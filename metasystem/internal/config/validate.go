@@ -169,7 +169,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	}
 	var unsupported []string
 	for r := range runtimeSet {
-		if !runtimereg.Supported(r) && !externalAdapterInstalled(filepath.Dir(confPath), r) {
+		if !runtimereg.Supported(r) {
 			unsupported = append(unsupported, r)
 		}
 	}
@@ -186,7 +186,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			continue
 		}
 		runtime := match[1]
-		if !runtimereg.Supported(runtime) && !externalAdapterInstalled(filepath.Dir(confPath), runtime) {
+		if !runtimereg.Supported(runtime) {
 			add("%s names unsupported runtime %s", key, pyRepr(runtime))
 		}
 		seen := map[string]bool{}
@@ -871,17 +871,4 @@ func pyRepr(s string) string {
 	}
 	b.WriteByte(quote)
 	return b.String()
-}
-
-// externalAdapterInstalled reports an external agent adapter executable at
-// <installation>/adapters/<name> (design verbs-object-action 3.5): a runtime
-// the metasystem does not ship is a roster member when its adapter is
-// installed. The runtime registry's discovery (internal/runtimes/external)
-// owns the rest of the contract.
-func externalAdapterInstalled(installation, name string) bool {
-	if !regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`).MatchString(name) {
-		return false
-	}
-	info, err := os.Stat(filepath.Join(installation, "adapters", name))
-	return err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0
 }

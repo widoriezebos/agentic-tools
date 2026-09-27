@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 )
 
 // WaitDeliveryRequest is the complete adapter contract for holding one
@@ -38,42 +37,15 @@ func DeliverWait(ctx context.Context, runtime string, request WaitDeliveryReques
 	return DeliverWaitAt(ctx, "", runtime, request)
 }
 
-// DeliverWaitAt is DeliverWait for an installation root, whose external
-// adapters (design 3.5) answer for their runtimes; an overriding executable
-// answers for its built-in unless it delegates (exit 64).
-func DeliverWaitAt(_ context.Context, root, runtime string, request WaitDeliveryRequest) (string, error) {
+// DeliverWaitAt is DeliverWait for an installation root (the root an
+// external adapter's answer will come from, U6c).
+func DeliverWaitAt(_ context.Context, _, runtime string, request WaitDeliveryRequest) (string, error) {
 	if runtime == "" || request.WaitID == "" || request.Nonce == "" || request.Deadline.IsZero() || request.Session == "" {
 		return "", fmt.Errorf("wait delivery requires an adapter, wait identifier, nonce, deadline, and session")
 	}
 	deadline := request.Deadline.UTC().Format(time.RFC3339Nano)
 	if !WaitDeliveryAccepted(request.WaitID, request.Nonce, deadline, request.Session) {
 		return "", ErrWaitDeliveryDeclined
-	}
-	if root != "" {
-		adapter, found, err := external.Lookup(root, runtime)
-		if err != nil {
-			return "", err
-		}
-		if found {
-			response, err := adapter.Call("wait-delivery", map[string]any{
-				"waitId": request.WaitID, "nonce": request.Nonce, "deadline": deadline, "session": request.Session,
-			}, nil)
-			if err == nil {
-				var answer struct {
-					Answer string `json:"answer"`
-				}
-				if err := external.Decode(response, &answer); err != nil {
-					return "", err
-				}
-				if answer.Answer != "blocking" {
-					return "", ErrWaitDeliveryDeclined
-				}
-				return "blocking", nil
-			}
-			if !errors.Is(err, external.ErrDelegated) || !adapter.Overrides {
-				return "", err
-			}
-		}
 	}
 	if declaration, ok := runtimes.Lookup(runtime); !ok || !declaration.HasAdapter {
 		return "", fmt.Errorf("wait delivery adapter %s is unavailable", runtime)

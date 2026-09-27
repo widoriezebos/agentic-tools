@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -42,22 +43,22 @@ const Dir = "adapters"
 // hands one operation back to the built-in it overrides.
 const DelegateExit = 64
 
-// OverrideValue is the only value of adapters.<name>.override that lets an
-// executable replace a built-in.
-const OverrideValue = "external"
+// UseValue is the only value of adapters.<name>.use that lets an executable
+// run: a new runtime, or an override of a built-in of the same name.
+const UseValue = "external"
 
 // Operations are the runtime layer's operations, in contract order.
 var Operations = []string{
-	"probe", "identity", "signature", "config-identity", "local-config-paths",
-	"enforcement-map", "contract", "command", "output-stream", "cancel", "wait-delivery",
+	"describe", "probe", "selftest", "prepare", "observe", "finalize", "repair", "cancel",
 }
 
 // ErrDelegated is the answer of an overriding executable that exits 64: the
 // built-in performs this operation.
 var ErrDelegated = errors.New("the external adapter delegated this operation to the built-in")
 
-// OverrideKey is the configuration key that records a built-in override.
-func OverrideKey(name string) string { return "adapters." + name + ".override" }
+// UseKey is the configuration key that names an external adapter (or an
+// override of a built-in): adapters.<name>.use=external.
+func UseKey(name string) string { return "adapters." + name + ".use" }
 
 var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
@@ -109,16 +110,25 @@ func Discover(root string) ([]Adapter, []Refusal, error) {
 			continue
 		}
 		adapter := Adapter{Name: name, Path: path, conf: conf}
+		// Trust boundary (VOA-28): an external adapter is trusted code a
+		// person installed. It runs only when the configuration names it,
+		// is owned by the installation's user and is not group- or
+		// world-writable; discovery never executes an unnamed or unsafe
+		// file, it reports it.
+		value, _, getErr := config.Get(config.GetParams{
+			Key: UseKey(name), Default: "", DefaultSet: true, ConfPath: conf,
+			LookupEnv: func(string) (string, bool) { return "", false },
+		})
+		if getErr != nil || value != UseValue {
+			refusals = append(refusals, Refusal{Name: name, Path: path, Reason: fmt.Sprintf(
+				"an external adapter runs only when %s=%s is set", UseKey(name), UseValue)})
+			continue
+		}
+		if reason := unsafeFile(info); reason != "" {
+			refusals = append(refusals, Refusal{Name: name, Path: path, Reason: reason})
+			continue
+		}
 		if declaration, builtin := runtimes.Lookup(name); builtin && declaration.HasAdapter {
-			value, _, getErr := config.Get(config.GetParams{
-				Key: OverrideKey(name), Default: "", DefaultSet: true, ConfPath: conf,
-				LookupEnv: func(string) (string, bool) { return "", false },
-			})
-			if getErr != nil || value != OverrideValue {
-				refusals = append(refusals, Refusal{Name: name, Path: path, Reason: fmt.Sprintf(
-					"an executable with a built-in runtime's name replaces it only when %s=%s is set", OverrideKey(name), OverrideValue)})
-				continue
-			}
 			adapter.Overrides = true
 		}
 		adapters = append(adapters, adapter)
@@ -192,32 +202,34 @@ func Decode(response []byte, into any) error {
 	return json.Unmarshal(response, into)
 }
 
-// SignatureResponse is the signature operation's response.
-type SignatureResponse struct {
+// DescribeResponse is the part of the describe operation's response the
+// recognizers read: the classification signatures with their exclusions.
+type DescribeResponse struct {
 	SchemaVersion int      `json:"schemaVersion"`
 	Match         []string `json:"match"`
 	Exclude       []string `json:"exclude"`
 }
 
-// SignatureText asks the adapter for its process signature and renders it
-// in the registry's line form. ErrDelegated passes through for an override.
+// SignatureText asks the adapter to describe itself and renders its process
+// signature in the registry's line form. ErrDelegated passes through for an
+// override that leaves describe to its built-in.
 func (a Adapter) SignatureText() (string, error) {
-	response, err := a.Call("signature", nil, nil)
+	response, err := a.Call("describe", nil, nil)
 	if err != nil {
 		return "", err
 	}
-	var signature SignatureResponse
-	if err := Decode(response, &signature); err != nil {
+	var described DescribeResponse
+	if err := Decode(response, &described); err != nil {
 		return "", err
 	}
-	if len(signature.Match) == 0 {
+	if len(described.Match) == 0 {
 		return "", fmt.Errorf("external adapter %s declares no match pattern", a.Name)
 	}
 	var lines []string
-	for _, pattern := range signature.Match {
+	for _, pattern := range described.Match {
 		lines = append(lines, "match "+pattern)
 	}
-	for _, pattern := range signature.Exclude {
+	for _, pattern := range described.Exclude {
 		lines = append(lines, "exclude "+pattern)
 	}
 	for _, line := range lines {
@@ -226,4 +238,16 @@ func (a Adapter) SignatureText() (string, error) {
 		}
 	}
 	return strings.Join(lines, "\n") + "\n", nil
+}
+
+// unsafeFile names why an adapter file is not trusted: not owned by this
+// user, or writable by its group or by everyone.
+func unsafeFile(info os.FileInfo) string {
+	if info.Mode()&0o022 != 0 {
+		return "the adapter file is group- or world-writable"
+	}
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok && int(stat.Uid) != os.Getuid() {
+		return "the adapter file is not owned by the installation's user"
+	}
+	return ""
 }

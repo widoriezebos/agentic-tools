@@ -32,3 +32,28 @@ func TestInstalledAdapterSignaturesNarrowOnlyInFixtureMode(t *testing.T) {
 		t.Fatalf("unnarrowed universe = %v, %v", names, err)
 	}
 }
+
+// TestInstalledSignaturesIncludeANamedExternalRuntime: the census and lease
+// classification recognize an external runtime's processes through its
+// describe (design 3.5), without a Go change.
+func TestInstalledSignaturesIncludeANamedExternalRuntime(t *testing.T) {
+	root := t.TempDir()
+	adapter := filepath.Join(root, "adapters", "newagent")
+	if err := os.MkdirAll(filepath.Dir(adapter), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\n[ \"$1\" = describe ] || exit 64\nprintf '{\"schemaVersion\":1,\"match\":[\"^([^[:space:]]*/)?newagent([[:space:]]|$)\"]}\\n'\n"
+	if err := os.WriteFile(adapter, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("adapters.newagent.use=external\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sigs, names, _, err := InstalledAdapterSignatures(root)
+	if err != nil || len(names) != 5 {
+		t.Fatalf("names = %v, %v", names, err)
+	}
+	if Runtime("/usr/local/bin/newagent --task x", sigs) != "newagent" {
+		t.Fatal("the external runtime's process was not recognized")
+	}
+}

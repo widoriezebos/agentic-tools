@@ -23,7 +23,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	usagecore "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -80,9 +79,6 @@ var waitCurrentHolder = func(ctx context.Context, root string) (lease.CurrentHol
 // for a caller; tests replace it.
 var waitDeliveryRuntime = func(root, runtimeName string) (string, error) {
 	if declaration, ok := runtimes.Lookup(runtimeName); ok && declaration.HasAdapter {
-		return runtimeName, nil
-	}
-	if _, found, err := external.Lookup(waitInstallation(root), runtimeName); err == nil && found {
 		return runtimeName, nil
 	}
 	return "", fmt.Errorf("wait delivery adapter %s is unavailable", runtimeName)

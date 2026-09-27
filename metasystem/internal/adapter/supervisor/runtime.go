@@ -116,107 +116,24 @@ func (b builtin) WaitDelivery(_ Deps, waitID, nonce, deadline, session string) (
 // ErrNotInstalled is a runtime name neither built in nor discovered.
 var ErrNotInstalled = errors.New("runtime adapter is not installed")
 
-// resolveRuntime is the registry: an external adapter discovered in the
-// installation's adapters directory, an override of a built-in (per
-// operation, the executable first and the built-in on exit 64), or the
-// built-in.
+// resolveRuntime is the registry: the built-in of a name. An external
+// adapter discovered in the installation's adapters directory (design 3.5)
+// is recognized by the census and lease classification already; running it
+// is the external-executable implementation of this interface (U6c), which
+// plugs in here.
 func resolveRuntime(d Deps, name string) (Runtime, error) {
-	b, isBuiltin := registry[name]
-	if d.Root != "" {
-		adapter, found, err := external.Lookup(d.Root, name)
-		if err != nil {
-			return nil, err
-		}
-		if found && adapter.Overrides && isBuiltin {
-			return override{ext: externalRuntime{adapter}, base: builtin{b}}, nil
-		}
-		if found {
-			return externalRuntime{adapter}, nil
-		}
-	}
-	if isBuiltin {
+	if b, isBuiltin := registry[name]; isBuiltin {
 		return builtin{b}, nil
+	}
+	if d.Root != "" {
+		if _, found, err := external.Lookup(d.Root, name); err != nil {
+			return nil, err
+		} else if found {
+			return nil, fmt.Errorf("external runtime %s is discovered but not runnable yet: the external adapter implementation of the runtime operations is unit U6c", name)
+		}
 	}
 	return nil, fmt.Errorf("%w: %s", ErrNotInstalled, name)
 }
-
-// override runs an overriding executable's operation, and the built-in's
-// when the executable delegates it (exit 64).
-type override struct {
-	ext  externalRuntime
-	base builtin
-}
-
-func delegated(err error) bool { return errors.Is(err, external.ErrDelegated) }
-
-func (o override) Name() string { return o.base.Name() }
-func (o override) Signature(d Deps) (string, error) {
-	if text, err := o.ext.Signature(d); !delegated(err) {
-		return text, err
-	}
-	return o.base.Signature(d)
-}
-func (o override) ConfigIdentity(d Deps) (string, error) {
-	if identity, err := o.ext.ConfigIdentity(d); !delegated(err) {
-		return identity, err
-	}
-	return o.base.ConfigIdentity(d)
-}
-func (o override) LocalConfigPaths(d Deps) ([]string, error) {
-	if paths, err := o.ext.LocalConfigPaths(d); !delegated(err) {
-		return paths, err
-	}
-	return o.base.LocalConfigPaths(d)
-}
-func (o override) EnforcementMap(d Deps) (string, bool, error) {
-	if enforcement, ok, err := o.ext.EnforcementMap(d); !delegated(err) {
-		return enforcement, ok, err
-	}
-	return o.base.EnforcementMap(d)
-}
-func (o override) Contract(d Deps) ([]byte, error) {
-	if data, err := o.ext.Contract(d); !delegated(err) {
-		return data, err
-	}
-	return o.base.Contract(d)
-}
-func (o override) Probe(d Deps, args []string) int {
-	if code, err := o.ext.probe(d, args); !delegated(err) {
-		return code
-	}
-	return o.base.Probe(d, args)
-}
-func (o override) OutputStream(d Deps, roundDir string) (string, error) {
-	if declared, err := o.ext.declaresCommand(); err == nil && declared {
-		return o.ext.OutputStream(d, roundDir)
-	}
-	return o.base.OutputStream(d, roundDir)
-}
-func (o override) Supervise(s *Supervision, args []string) int {
-	declared, err := o.ext.declaresCommand()
-	if err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		return 1
-	}
-	if !declared {
-		return o.base.Supervise(s, args)
-	}
-	return superviseExternal(s, args, o.ext, o.base.a.name)
-}
-func (o override) Cancel(d Deps, job string) int {
-	if _, err := o.ext.cancelHook(d, job); !delegated(err) && err != nil {
-		fmt.Fprintln(d.Stderr, err)
-	}
-	return o.base.Cancel(d, job)
-}
-func (o override) WaitDelivery(d Deps, waitID, nonce, deadline, session string) (bool, error) {
-	if accepted, err := o.ext.WaitDelivery(d, waitID, nonce, deadline, session); !delegated(err) {
-		return accepted, err
-	}
-	return o.base.WaitDelivery(d, waitID, nonce, deadline, session)
-}
-func (o override) Selftest(d Deps) int { return o.base.Selftest(d) }
-func (o override) Usage(d Deps)        { o.base.Usage(d) }
 
 // usageLines is the entry's usage for a runtime.
 func usageLines(name, probe string, enforcement bool) []string {
@@ -251,31 +168,13 @@ func writeUsage(w io.Writer, lines []string) {
 	}
 }
 
-// LocalConfigManifest is every installed runtime's declared local
-// configuration for an installation — the built-ins (or their overrides)
-// and the external adapters — sorted, deduplicated.
+// LocalConfigManifest is every built-in runtime's declared local
+// configuration, sorted and deduplicated.
 func LocalConfigManifest(d Deps) ([]string, error) {
-	names := runtimes.WithAdapter()
-	adapters, _, err := external.Discover(d.Root)
-	if err != nil {
-		return nil, err
-	}
-	for _, a := range adapters {
-		if !a.Overrides {
-			names = append(names, a.Name)
-		}
-	}
 	seen := map[string]bool{}
 	var paths []string
-	for _, name := range names {
-		r, err := resolveRuntime(d, name)
-		if err != nil {
-			return nil, err
-		}
-		declared, err := r.LocalConfigPaths(d)
-		if err != nil {
-			return nil, err
-		}
+	for _, name := range runtimes.WithAdapter() {
+		declared, _ := runtimes.LocalConfigPaths(name)
 		for _, path := range declared {
 			if !seen[path] {
 				seen[path] = true
