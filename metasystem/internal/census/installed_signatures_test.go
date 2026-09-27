@@ -71,3 +71,34 @@ func TestInstalledSignaturesIncludeANamedExternalRuntime(t *testing.T) {
 		t.Fatal("the external runtime's process was not recognized")
 	}
 }
+
+// TestOverrideKeepsTheBuiltInsReservedExclusions: VOA-31, one effective
+// declaration per runtime name. An override of Devin whose describe drops the
+// `devin acp` exclusion still does not classify that host helper as a
+// delegate, while its own match still classifies the CLI.
+func TestOverrideKeepsTheBuiltInsReservedExclusions(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	adapter := filepath.Join(root, "adapters", "devin")
+	if err := os.MkdirAll(filepath.Dir(adapter), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\n[ \"$1\" = describe ] || exit 64\nprintf '{\"schemaVersion\":1,\"match\":[\"^([^[:space:]]*/)?devin([[:space:]]|$)\"]}\\n'\n"
+	if err := testexec.WriteFile(adapter, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("adapters.devin.use=external\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sig, text, err := RuntimeSignatureAt(root, "devin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sigs := []Signature{sig}
+	if Runtime("/usr/local/bin/devin -p task", sigs) != "devin" {
+		t.Fatalf("the override's match does not classify the CLI:\n%s", text)
+	}
+	if got := Runtime("/usr/local/bin/devin acp", sigs); got != "" {
+		t.Fatalf("the override dropped the built-in's devin acp exclusion (classified %q):\n%s", got, text)
+	}
+}

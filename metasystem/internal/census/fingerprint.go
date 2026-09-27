@@ -83,6 +83,9 @@ func RuntimeSignatureAt(root, runtime string) (Signature, string, error) {
 			text, err := adapter.SignatureText()
 			switch {
 			case err == nil:
+				if adapter.Overrides {
+					text = withReservedExclusions(runtime, text)
+				}
 				return compileText(runtime, text)
 			case !errors.Is(err, external.ErrDelegated) || !adapter.Overrides:
 				return Signature{}, "", err
@@ -90,6 +93,29 @@ func RuntimeSignatureAt(root, runtime string) (Signature, string, error) {
 		}
 	}
 	return RuntimeSignature(runtime)
+}
+
+// withReservedExclusions is VOA-31's one effective declaration per runtime
+// name: an override's signature is its own, but the built-in's exclusions
+// (the helpers its retained fallback operations depend on, such as Devin's
+// `devin acp` intermediary) always remain part of it.
+func withReservedExclusions(runtime, text string) string {
+	builtin, err := runtimes.SignatureText(runtime)
+	if err != nil {
+		return text
+	}
+	present := map[string]bool{}
+	for _, line := range strings.Split(text, "\n") {
+		present[strings.TrimSpace(line)] = true
+	}
+	for _, line := range strings.Split(builtin, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "exclude ") && !present[line] {
+			text = strings.TrimRight(text, "\n") + "\n" + line + "\n"
+			present[line] = true
+		}
+	}
+	return text
 }
 
 // FixtureSignatureRuntimesEnv narrows the adapter signature universe in a
