@@ -1147,7 +1147,6 @@ bash -n scripts/adopt-fixtures.sh
 bash -n scripts/agents/dispatch-fixtures.sh
 bash -n scripts/agents/conformance-fixtures.sh
 bash -n scripts/agents/goal-cli-fixtures.sh
-bash -n scripts/agents/brain-fixtures.sh
 bash -n scripts/agents/hosts/claude.sh
 bash -n scripts/agents/hosts/codex.sh
 bash -n scripts/agents/hosts/devin.sh
@@ -1168,10 +1167,6 @@ fi
 if section_selected goal-cli-fixtures; then
   delivery_contract_skip goal-cli-fixtures \
     || run_section goal-cli-fixtures needs-engine bash scripts/agents/goal-cli-fixtures.sh
-fi
-if section_selected brain-fixtures; then
-  delivery_contract_skip brain-fixtures \
-    || run_section brain-fixtures needs-engine bash scripts/agents/brain-fixtures.sh
 fi
 if section_selected telemetry-census-fixtures; then
   delivery_contract_skip telemetry-census-fixtures \

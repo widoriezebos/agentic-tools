@@ -44,8 +44,8 @@ if [[ $(METASYSTEM_DELIVERY_CONTRACT=0 bash "$template_root/scripts/agents/valid
   echo "enumeration fixture: an independent template clone did not select 44 sections" >&2
   exit 1
 fi
-METASYSTEM_DELIVERY_CONTRACT=0 bash "$template_root/scripts/agents/validate-section-selector.sh" list | cut -f1 | grep -Fxq brain-fixtures \
-  || { echo "enumeration fixture: an independent template clone omitted brain-fixtures" >&2; exit 1; }
+METASYSTEM_DELIVERY_CONTRACT=0 bash "$template_root/scripts/agents/validate-section-selector.sh" list | cut -f1 | grep -Fxq telemetry-census-fixtures \
+  || { echo "enumeration fixture: an independent template clone omitted telemetry-census-fixtures" >&2; exit 1; }
 
 adopted_repo="$tmp/adopted-repo"
 adopted_root="$adopted_repo/metasystem"
@@ -65,8 +65,8 @@ if [[ $(METASYSTEM_DELIVERY_CONTRACT=0 bash "$adopted_root/scripts/agents/valida
   echo "enumeration fixture: an adopted installation did not select 39 sections" >&2
   exit 1
 fi
-METASYSTEM_DELIVERY_CONTRACT=0 bash "$adopted_root/scripts/agents/validate-section-selector.sh" list | cut -f1 | grep -Fxq brain-fixtures \
-  || { echo "enumeration fixture: an adopted installation omitted brain-fixtures" >&2; exit 1; }
+METASYSTEM_DELIVERY_CONTRACT=0 bash "$adopted_root/scripts/agents/validate-section-selector.sh" list | cut -f1 | grep -Fxq telemetry-census-fixtures \
+  || { echo "enumeration fixture: an adopted installation omitted telemetry-census-fixtures" >&2; exit 1; }
 
 selector="$tmp/selector.sh"
 cat >"$selector" <<'EOF'

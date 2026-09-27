@@ -108,7 +108,7 @@ guard_run_pass() { # output directory, label
   if (( delivery_probe )); then
     guard_step "$dir" test-plan "$ms" test plan --root "$root" --json
     guard_step "$dir" test-run "$ms" internal test run --root "$root" \
-      --purpose diagnostic --groups section/brain-fixtures --result "$dir/test-run-result.json"
+      --purpose diagnostic --groups brain-bed-standard --result "$dir/test-run-result.json"
   fi
 }
 
@@ -161,7 +161,7 @@ guard_plant() { # creates the adversarial tree
   mkdir -p "$poison/node_modules/deeper" "$poison/bin" "$poison/.github/workflows"
 
   # Unformatted on purpose (space indentation), and holding each of the four
-  # expressions brain-fixtures.sh scans cmd/metasystem and internal for.
+  # expressions TestBrainBedActorSeamCoverage scans cmd/metasystem and internal for.
   cat >"$poison/seam.go" <<'POISON_SEAM'
 package poison
 

@@ -2,7 +2,6 @@ scripts/adopt-fixtures.sh	section/adoption-fixtures
 scripts/agents/acp-fixtures.sh	section/acp-fixtures
 scripts/agents/adapter-deadline-fixtures.sh	section/adapter-deadline-fixtures
 scripts/agents/authority-regression-fixtures.sh	section/authority-regression-fixtures
-scripts/agents/brain-fixtures.sh	section/brain-fixtures
 scripts/agents/checkout-execution-guard-fixtures.sh	section/gate-fence-fixtures
 scripts/agents/config-identity-fixtures.sh	section/config-identity-fixtures
 scripts/agents/conformance-fixtures.sh	section/conformance-fixtures

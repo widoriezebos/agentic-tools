@@ -26,7 +26,6 @@ supervisor-fingerprint-heal-harness	supervisor fingerprint heal harness
 shell-and-dependency-audits	shell syntax and dependency audits
 conformance-fixtures	conformance fixtures
 goal-cli-fixtures	goal command fixtures
-brain-fixtures	brain fixtures
 telemetry-census-fixtures	telemetry census fixtures
 return-schema-fixtures	return schema fixtures
 config-identity-fixtures	configuration identity fixtures
