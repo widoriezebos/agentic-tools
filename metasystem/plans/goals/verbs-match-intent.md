@@ -1,6 +1,6 @@
 # verbs-match-intent
 
-- State: queued
+- State: claimed
 - Priority: 3
 - Sequence: 2
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Severity 3: public human and agent commands cross approval, stop, completion, review and landing boundaries; a routing or proof defect can record an unauthorized act or hide committed state. Novelty 2: an intent boundary composes existing owners and adds named retry without replacing governance. Exposure 3: the surface is used by people and agents across installed repositories. Accumulation 2: repeated confusing commands and recovery sequences impose daily costs. Independent design and code critique plus actual isolated authority/lifecycle and workflow proof are required."
@@ -9,8 +9,12 @@
 - Origin: main
 - Next step: Wido 2026-09-26 ~22:30 CEST rejected the aa00d78ed result: 44 public commands sat on top of 465 untouched internal verbs (45 families), ~213 of which exist only because Bash scripts call Go as a standard library. Ruling: object-action grammar (metasystem goal approve G), metasystem status kept as the one top-level exception, no other aliases; delete every internal verb that is not a genuine external process entrypoint; port all orchestration Bash (dispatch, supervision-hook, land, commit, go-gate, validate-metasystem, adapters) and the 33k lines of Bash fixtures to Go so no script calls an internal verb. Hard cutover, callers updated in the same slice; land and push to origin per green reviewed slice; up to 3 Opus builders in parallel worktrees. Process: m1e root authors metasystem/plans/designs/verbs-object-action.md, Codex Astra critiques until no material findings, then build. DONE: every Bash script gone or not calling internal verbs; public verbs object-action only; ratchet on internal-verb count and script lines.
 - OpenedAt: 2026-09-06T12:49:42Z
-- Revision: 44
+- Revision: 46
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-27T05:44:17Z revision=45 opid=9EPWEAYHAAGZNQ5BJJQ89419B1-m1e-c6925449 authority=proven digest=9e07de4e9ed3931ac713a731e098c7c73e25c8b46da716f1563d61f087e5013d episode=45
+- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-09-27T05:54:22Z revision=46 accountingRevision=46 episodeAt=2026-09-27T05:54:22Z episodeRevision=46
+- StopCapability: generation=46 revision=46 machine=m1e claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-09-06T12:49:42Z Y85Z3NWBZQ3WG34G89RP885ANW-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=verbs-match-intent
@@ -57,4 +61,6 @@ History:
 - 2026-09-26T18:40:32Z 6N1EENGWNVFEXEV8VWY9M3MHJA-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-26T19:57:38Z JHRDAC2ZRJNTYMMHSATP1CFME6-m1e-bb5bd0c8 edit actor=m1e+01a0d906-3db6-76d3-b502-20c0f98357e3 targets=verbs-match-intent
 - 2026-09-26T21:14:00Z EJVP3W808A3DQM31KP944FAHK6-m1e-ef5a4f8c edit actor=m1e+m1e+f77e7ebb-e1ab-4137-9935-206f37035290 targets=verbs-match-intent
-Integrity: sha256=ccf81f6da8bbb258a400d7c90d606fb5432db7281b068dd24dddbad6a19ab6f5
+- 2026-09-27T05:44:17Z 9EPWEAYHAAGZNQ5BJJQ89419B1-m1e-c6925449 approve actor=human:Wido targets=verbs-match-intent
+- 2026-09-27T05:54:22Z CSGA6H8SKJNTWS63G16GQ7ZP2R-m1e-f456f182 claim actor=m1e+main-1790454088-93948-21671b targets=verbs-match-intent
+Integrity: sha256=4c0affdb3c6f11ca109eecfc8b3b80acda3f97858753bacf3079657adb0846cf
