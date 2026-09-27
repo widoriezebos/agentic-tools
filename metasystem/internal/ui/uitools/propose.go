@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -583,6 +584,12 @@ func (r Readers) propose(args Args) Result {
 		return refusedCall(action + " changes at least one of " + listed(act.OneOf) +
 			"; a proposal that changes none of them would publish nothing")
 	}
+	// The count is asked last, over a call this server would have prepared: a
+	// call refused for its shape is not a line the answer carries, and counting
+	// one would cost the answer a proposal nobody made.
+	if refusal := r.Proposals.another(); refusal != "" {
+		return refusedCall(refusal)
+	}
 	return Result{Prepared: PreparedProposalLine + "\n" + framed(act, subject, body) + explanation + "\n"}
 }
 
@@ -798,16 +805,91 @@ const MostProposalsPerAnswer = 50
 // bound that moved without its own sentence would tell the Partner to do
 // something other than what the interface will accept.
 //
-// The counting itself is not here. This server is one process for a whole
-// Partner session and the wire carries no signal for where one answer ends, so
-// the count is asked where an answer's own proposals are held — the interface's
-// running turn — and this says what the bound is and how the refusal reads.
+// It is asked in two places, over one number. The count below refuses the
+// fifty-first CALL, so the Partner reads the refusal inside the answer it is
+// composing; admission asks it again over the answer's own lines, because a
+// frame a runtime composed itself never passed through this server.
 func BeyondTheProposalCount(alreadyCarried int) string {
 	if alreadyCarried < MostProposalsPerAnswer {
 		return ""
 	}
 	return "this answer already carries fifty proposals; say how many remain and " +
 		"propose them in your next answer, after the human has applied these"
+}
+
+// ProposalsCut is the one line an answer keeps for the frames it carried past
+// the count: the same sentence, and how many lines it stands for.
+//
+// The overflow is not stored line by line. Every line of an answer is a line the
+// human's transcript carries, and that storage is the whole reason the bound
+// exists, so an answer that ran over keeps ONE account of what was cut rather
+// than one refusal per frame (Astra F-06).
+func ProposalsCut(cut int) string {
+	were := strconv.Itoa(cut) + " more actions were"
+	if cut == 1 {
+		were = "one more action was"
+	}
+	return BeyondTheProposalCount(MostProposalsPerAnswer) +
+		" (" + were + " cut from this answer and not recorded)"
+}
+
+// AnswerFile is the environment variable that names the file the interface's own
+// seat writes the current answer's mark into, and this server reads to tell one
+// answer from the next.
+//
+// It is how the boundary reaches a server that cannot see it. One stdio process
+// serves a whole Partner session, and nothing in the protocol says where one
+// answer ends; the seat starts and ends every answer, so it writes its own mark
+// into one small file and this server counts per mark, starting over when the
+// mark changes. The path travels in the environment because it is settled when
+// this process is launched and never again.
+const AnswerFile = "METASYSTEM_UI_ANSWER"
+
+// ProposalCount is one answer's proposals, counted where the calls arrive.
+//
+// Admission keeps the bound too, and keeps it as the backstop. But a bound only
+// at admission is one the Partner does not learn until its NEXT prompt, after
+// the answer has ended, while every call it makes goes on answering that the
+// action was prepared — so the human collects rejected lines the Partner was
+// never told about, and goes on being handed them (Astra F-06). This is the same
+// number and the same sentence, at the call.
+type ProposalCount struct {
+	answer func() string
+
+	mu      sync.Mutex
+	mark    string
+	counted int
+}
+
+// NewProposalCount counts the proposals of the answer `answer` names.
+func NewProposalCount(answer func() string) *ProposalCount {
+	return &ProposalCount{answer: answer}
+}
+
+// another counts one more prepared proposal, and answers the refusal where the
+// answer being composed has no room for it.
+//
+// A build that was told no file, and a mark that cannot be read, count nothing:
+// the bound at admission still holds, and a server that refused every call
+// because it could not read a file would take the tool away over a file.
+func (c *ProposalCount) another() string {
+	if c == nil || c.answer == nil {
+		return ""
+	}
+	mark := c.answer()
+	if mark == "" {
+		return ""
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if mark != c.mark {
+		c.mark, c.counted = mark, 0
+	}
+	if refusal := BeyondTheProposalCount(c.counted); refusal != "" {
+		return refusal
+	}
+	c.counted++
+	return ""
 }
 
 // boundedFrameField is one framing line's own bound. The ids and the labels are

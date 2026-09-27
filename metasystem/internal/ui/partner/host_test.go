@@ -3,6 +3,8 @@ package partner_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -197,4 +199,57 @@ func runTurn(t *testing.T, host *partner.Host, text string) (partner.Result, str
 		t.Fatalf("the turn must run: %v", err)
 	}
 	return result, answer.String()
+}
+
+// The answer's own mark, written where the tool server was told to look.
+//
+// It is the channel by which the tool server learns a boundary the protocol does
+// not carry: one stdio process serves a whole Partner session, so without a mark
+// per answer the count that bounds an answer's proposals would have nothing to
+// count against (Astra F-06). This host starts and ends every answer, so it
+// writes the mark; the tool counts per mark and starts over when it changes.
+func TestEveryAnswerIsMarkedWhereTheToolServerReadsIt(t *testing.T) {
+	t.Parallel()
+	answers := filepath.Join(t.TempDir(), "answer")
+	runtime := partner.Runtime{Name: "claude",
+		Tools: &partner.ToolServer{Name: "metasystem", Command: "metasystem", Answers: answers}}
+	host := partner.NewHostOn(runtime, t.TempDir(),
+		fakeacp.Open(fakeacp.Script{Chunks: []string{"one"}}))
+	t.Cleanup(host.Close)
+	_, err := host.Ready(context.Background())
+	testutil.Require(t, "ready", err, nil)
+	testutil.Expect(t, "nothing is marked before the first answer", fileThere(answers), false)
+
+	runTurn(t, host, "first")
+	first := markedAnswer(t, answers)
+	testutil.Expect(t, "the first answer is marked", first != "", true)
+
+	runTurn(t, host, "second")
+	testutil.Expect(t, "and the next answer is marked differently",
+		markedAnswer(t, answers) != first, true)
+}
+
+// A host whose runtime names no tool server, and one whose tool server keeps no
+// mark, write nothing: the bound at admission still holds.
+func TestAHostToldNoAnswerFileWritesNoMark(t *testing.T) {
+	t.Parallel()
+	host := hostOn(t, fakeacp.Script{Chunks: []string{"one"}})
+	_, err := host.Ready(context.Background())
+	testutil.Require(t, "ready", err, nil)
+	result, _ := runTurn(t, host, "first")
+	testutil.Expect(t, "the turn completes all the same", result.Outcome, partner.OutcomeComplete)
+}
+
+func markedAnswer(t *testing.T, path string) string {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("the answer's mark must be readable: %v", err)
+	}
+	return strings.TrimSpace(string(body))
+}
+
+func fileThere(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

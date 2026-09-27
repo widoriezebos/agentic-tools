@@ -191,6 +191,12 @@ type Readers struct {
 	// points at, the rulings register, the routes, and the command catalogue
 	// the binary routes with.
 	Kit Kit
+	// Proposals counts the proposals of the answer being composed, so that the
+	// fifty-first is refused at the call and the Partner reads the bound inside
+	// the answer rather than in its next prompt. A nil counter counts nothing,
+	// which is what a build that was told no answer file has; admission keeps
+	// the bound either way.
+	Proposals *ProposalCount
 }
 
 func (r Readers) now() time.Time {

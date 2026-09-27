@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
@@ -56,7 +57,14 @@ func runUITools(args []string) int {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return 1
 	}
-	if err := uitools.Serve(os.Stdin, os.Stdout, toolReaders(roots, *presenceRun)); err != nil {
+	// Which answer the Partner is composing, from the file the interface server
+	// marks each answer in. It is the one thing this process cannot work out for
+	// itself: it serves a whole Partner session and the wire carries no boundary,
+	// so without the mark the proposal count would have nothing to count against
+	// and the fifty-first proposal of an answer would be prepared like any other
+	// (Astra F-06). A seat that named no file leaves the count to admission.
+	answers := os.Getenv(uitools.AnswerFile)
+	if err := uitools.Serve(os.Stdin, os.Stdout, toolReaders(roots, *presenceRun, answers)); err != nil {
 		fmt.Fprintln(os.Stderr, "the interface's tool server stopped reading: "+err.Error())
 		return 1
 	}
@@ -67,7 +75,7 @@ func runUITools(args []string) int {
 // are the interface server's readers, built here again rather than passed
 // across a process boundary: this process is the engine, and the engine reads
 // the ledger and the checkout the same way wherever it runs.
-func toolReaders(roots lifecycle.Roots, presenceRun string) uitools.Readers {
+func toolReaders(roots lifecycle.Roots, presenceRun, answers string) uitools.Readers {
 	now := func() time.Time { return time.Now().UTC() }
 	ledger := snapshot.New(roots.StateRoot, time.Now)
 	journal := steward.NotificationJournalPath(roots.Checkout)
@@ -78,6 +86,21 @@ func toolReaders(roots lifecycle.Roots, presenceRun string) uitools.Readers {
 	return uitools.Readers{
 		Now:     now,
 		Observe: ledger.Observe,
+		// The proposals of the answer being composed, counted so that the
+		// fifty-first is refused at the call and the Partner reads the bound
+		// inside its own answer. The mark is read at every call rather than
+		// once: this process outlives every answer of its session. A file that
+		// cannot be read is no mark, and counts nothing.
+		Proposals: uitools.NewProposalCount(func() string {
+			if answers == "" {
+				return ""
+			}
+			mark, err := os.ReadFile(answers)
+			if err != nil {
+				return ""
+			}
+			return strings.TrimSpace(string(mark))
+		}),
 		// What this interface is made of, and what this kit's own words mean.
 		// Both are composed here, in the engine, from the owners that hold
 		// them: the bundle this executable carries, the configuration this

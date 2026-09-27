@@ -224,3 +224,44 @@ func archiveNotices(messages []Message) int {
 	}
 	return count
 }
+
+// A recovered transcript whose last line has no newline keeps that message
+// (Astra F-07).
+//
+// bufio.Reader.ReadLine hands one line back in pieces and reports EOF on the
+// call AFTER the last piece of a final line with no newline, so readLineWithin
+// threw away what it had accumulated and messagesThatFit never saw the message.
+// A final line exactly the reader's own buffer long is where it shows: the first
+// ReadLine fills the buffer and says a piece follows, and the next one reports
+// the end of the file.
+func TestARecoveredTranscriptKeepsItsUnterminatedFinalLine(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	path := filepath.Join(directory, "Wido.jsonl")
+	body := strings.Join([]string{
+		archiveLine(t, Message{ID: "m1", Turn: "t1", Role: RoleHuman, Text: "the first thing said"}),
+		archiveLine(t, Message{ID: "m2", Turn: "t1", Role: RolePartner, Outcome: OutcomeComplete,
+			Text: strings.Repeat("x", maxLineBytes)}),
+		// Exactly the reader's buffer, which is the boundary ReadLine answers in
+		// two calls, and the last thing the writer had written when it went away:
+		// no newline after it.
+		archiveLineOfExactly(t, Message{ID: "m3", Turn: "t2", Role: RoleHuman}, 64*1024),
+	}, "\n")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("cannot write the fixture's transcript: %v", err)
+	}
+
+	conversation, err := OpenConversation(directory, "Wido")
+
+	testutil.Require(t, "the conversation opens", err, nil)
+	held := conversation.Messages(0)
+	testutil.Require(t, "two messages and the notice", len(held), 3)
+	testutil.Expect(t, "the first is still the first", held[0].ID, "m1")
+	testutil.Expect(t, "and the unterminated final line is kept", held[1].ID, "m3")
+	testutil.Expect(t, "the notice names the one line that did not fit",
+		strings.Contains(held[2].Text, "one message was set aside"), true)
+	rewritten, err := os.ReadFile(path)
+	testutil.Require(t, "the rewritten transcript reads", err, nil)
+	testutil.Expect(t, "and the rewrite keeps it too",
+		strings.Contains(string(rewritten), `"id":"m3"`), true)
+}

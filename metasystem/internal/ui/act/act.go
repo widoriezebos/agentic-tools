@@ -575,9 +575,17 @@ func (a Authority) Unblock(dependent, blocker string) error {
 //     because the pause is the effect and the reason is not (verbs.go);
 //   - unpark: the goal is not parked, which is the state a resume asks for
 //     (verbs.go);
-//   - abandon: the goal is already in the archive (abandon.go).
+//   - abandon: the goal is already abandoned — never merely archived, because a
+//     done goal is archived too — and to the successor this act names
+//     (abandon.go);
+//   - unapprove: the goal is LIVE and already carries no approval, which is the
+//     state a withdrawal asks for; a goal that has left the live tree keeps the
+//     engine's own refusal (approval.go);
+//   - open: the goal the id already names reads exactly what this open states —
+//     the same intent, next step, tier and labels, the same goals it waits for,
+//     and the edge on every goal it names with --blocks (verbs.go).
 //
-// The last three used to be excluded: park and abandon answered
+// Park, unpark and abandon used to be excluded: park and abandon answered
 // LostToCompetitor, naming the operation that got there first, and unpark
 // refused a goal that is not parked in its own words, so all three reached the
 // page as refusals of an act the human had already made. R-129-ui closed that —
@@ -585,9 +593,15 @@ func (a Authority) Unblock(dependent, blocker string) error {
 // each of them NothingToDo under a browser session, which is the one hand that
 // can press one card twice.
 //
-// Withdraw and open are not here, and neither is in the ruling's list: an
-// unapprove of an unapproved goal and an open of an id the ledger carries are
-// both refused by the engine in its own words, and the page shows them.
+// Withdraw and open were excluded for one round longer, on a reading of the
+// ruling's examples as its whole list. They are the two acts whose repeat is
+// decided by a COMPARISON rather than by the target's mere existence, and the
+// engine now makes it: unapprove reads the live goal's own approval, and open
+// reads the record the id already names against what the request states. A
+// request that asks for anything else is a different act and still loses, so
+// nothing here swallows it — this map only turns the engine's no-op into
+// applied, and OutcomeLost and OutcomeRejected still reach the page as
+// refusals.
 var alreadyCarried = map[string]bool{
 	"goal approve":      true,
 	"goal edit":         true,
@@ -597,6 +611,8 @@ var alreadyCarried = map[string]bool{
 	"goal park":         true,
 	"goal unpark":       true,
 	"goal abandon":      true,
+	"goal unapprove":    true,
+	"goal open":         true,
 }
 
 // settle turns one publication into the answer a route gives, and records the
