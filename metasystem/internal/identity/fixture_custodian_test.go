@@ -521,53 +521,6 @@ func TestFixtureBedInterruptUsesCleanupFactsAndReportsFailures(t *testing.T) {
 	if killAt < 0 || waitAt < killAt {
 		t.Fatalf("fixture bed cleanup can block in wait before KILL: kill=%d wait=%d", killAt, waitAt)
 	}
-
-	fixture := readLauncherSource(t, filepath.Join(root, "scripts", "agents", "fixture-bed-scenarios-fixtures.sh"))
-	for _, want := range []string{
-		`local description=$1 pid=$2 ref=$3 cap=${4:-suite-watchdog-reap} current deadline`,
-		`local log=$1 fragment=$2 cap=${3:-suite-watchdog-reap} deadline`,
-		`deadline=$((SECONDS + $(harness_fixture_cap "$cap")))`,
-	} {
-		if !strings.Contains(fixture, want) {
-			t.Fatalf("fixture log wait omits cap selection %q", want)
-		}
-	}
-	start := strings.Index(fixture, `if [[ "$fixture_scenario" == hang-leash ]]`)
-	if start < 0 {
-		t.Fatal("hang-leash scenario start was not found")
-	}
-	end := strings.Index(fixture[start:], `if [[ "$fixture_scenario" == command-substitution-failure ]]`)
-	if end < 0 {
-		t.Fatal("hang-leash scenario end was not found")
-	}
-	hang := fixture[start : start+end]
-	interruptEnd := strings.Index(hang, `leash_child=$tmp/leash-child.sh`)
-	if interruptEnd < 0 {
-		t.Fatal("hang-leash INT leg boundary was not found")
-	}
-	interruptLeg := hang[:interruptEnd]
-	for _, want := range []string{
-		`hang_leash_int_wait_sec=$((10 * (fixture_bed_term_grace_sec + fixture_bed_kill_grace_sec)))`,
-		`wait_fixture_ref_gone "leashed child after owner KILL" "$leash_pid" "$leash_ref" suite-watchdog-wait`,
-		`wait_fixture_log_line "$leash_log" "action=complete" suite-watchdog-wait`,
-		`wait_fixture_log_line "$custodian_log" "action=kill pid=$custodian_child"`,
-		"set -m",
-		"set +m",
-		`kill -INT "$interrupt_owner"`,
-		"hang-leash failure diagnostics elapsed=",
-		"custodian-log ",
-		"pid-states:",
-	} {
-		if !strings.Contains(hang, want) {
-			t.Fatalf("hang-leash scenario omits %q", want)
-		}
-	}
-	if strings.Contains(interruptLeg, "harness_fixture_cap bed-scenario") {
-		t.Fatal("hang-leash INT leg still depends on the scenario cap")
-	}
-	if strings.Contains(hang, "FIXTURE_CHILD_STOP") {
-		t.Fatal("hang-leash disabled-leash child is stopped instead of proving cleanup of a running orphan")
-	}
 }
 
 func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {

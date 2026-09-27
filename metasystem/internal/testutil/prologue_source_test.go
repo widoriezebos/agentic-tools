@@ -29,7 +29,6 @@ func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
 		name string
 		path string
 	}{
-		{name: "hang", path: filepath.Join(root, "scripts", "agents", "fixture-bed-scenarios-fixtures.sh")},
 		{name: "stopped", path: filepath.Join(root, "scripts", "agents", "suite-progress-fixtures.sh")},
 		{name: "detached", path: filepath.Join(root, "scripts", "agents", "suite-progress-fixtures.sh")},
 		{name: "fake host", path: filepath.Join(root, "scripts", "agents", "hosts", "fake.sh")},
@@ -49,8 +48,12 @@ func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
 		})
 	}
 
-	hang := readFixtureSource(t, filepath.Join(root, "scripts", "agents", "fixture-bed-scenarios-fixtures.sh"))
-	if !strings.Contains(hang, "exec 3<\"$METASYSTEM_FIXTURE_LEASH\"\n    read -r _ <&3") {
+	// The hang scenario's bed is the Go-held Bash source the fixture bed
+	// tests run; it re-executes through the Bash form of the prologue.
+	if !strings.Contains(fixtureBedInnerBed, strings.ReplaceAll(ShellPrologue, "exec /bin/sh", "exec /bin/bash")) {
+		t.Fatal("fixture bed inner bed prologue differs from ShellPrologue")
+	}
+	if !strings.Contains(fixtureBedInnerBed, "exec 3<\"$METASYSTEM_FIXTURE_LEASH\"\n    read -r _ <&3") {
 		t.Fatal("hang fixture does not block on its leash")
 	}
 	suite := readFixtureSource(t, filepath.Join(root, "scripts", "agents", "suite-progress-fixtures.sh"))
