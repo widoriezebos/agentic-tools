@@ -151,7 +151,7 @@ func (b *designBed) censusFresh() {
 // allows one claim per machine.
 func (b *designBed) release(id string) {
 	b.t.Helper()
-	if output, code := b.run(b.repo, []string{"METASYSTEM_OWNER_LINEAGE=" + b.lineage}, b.engine, "goal", "release", "--root", b.repo, "--id", id); code != 0 {
+	if output, code := b.run(b.repo, []string{"METASYSTEM_OWNER_LINEAGE=" + b.lineage}, b.engine, "internal", "goal", "release", "--root", b.repo, "--id", id); code != 0 {
 		b.t.Fatalf("goal release %s: %s", id, output)
 	}
 }
@@ -161,19 +161,19 @@ func (b *designBed) release(id string) {
 func (b *designBed) releaseOnFailure(id string) {
 	b.t.Cleanup(func() {
 		if b.t.Failed() {
-			b.run(b.repo, []string{"METASYSTEM_OWNER_LINEAGE=" + b.lineage}, b.engine, "goal", "release", "--root", b.repo, "--id", id)
+			b.run(b.repo, []string{"METASYSTEM_OWNER_LINEAGE=" + b.lineage}, b.engine, "internal", "goal", "release", "--root", b.repo, "--id", id)
 		}
 	})
 }
 
 func (b *designBed) fixtureGoal(id, intent string) {
 	b.t.Helper()
-	if output, code := b.run(b.repo, []string{"METASYSTEM_OWNER_LINEAGE=agent-fixture"}, b.engine, "goal", "open", "--root", b.repo, "--id", id, "--origin", "human", "--by", "Wido",
+	if output, code := b.run(b.repo, []string{"METASYSTEM_OWNER_LINEAGE=agent-fixture"}, b.engine, "internal", "goal", "open", "--root", b.repo, "--id", id, "--origin", "human", "--by", "Wido",
 		"--fixture-human-authority", "--intent", intent, "--next", "Drive it through intent.", "--risk", "severity=3,novelty=1,exposure=1,accumulation=1",
 		"--basis", "The fixture drives a public design route over the real owners."); code != 0 {
 		b.t.Fatalf("goal open: %s", output)
 	}
-	if output, code := b.run(b.repo, nil, b.engine, "goal", "approve", "--root", b.repo, "--id", id, "--by", "Wido", "--lineage", "agent-fixture",
+	if output, code := b.run(b.repo, nil, b.engine, "internal", "goal", "approve", "--root", b.repo, "--id", id, "--by", "Wido", "--lineage", "agent-fixture",
 		"--elapsed-limit", "8h", "--attempt-limit", "10", "--reserved-job-minutes-limit", "1200", "--active-job-limit", "1",
 		"--review-round-limit", "3", "--fixture-human-authority"); code != 0 {
 		b.t.Fatalf("goal approve: %s", output)
@@ -184,7 +184,7 @@ func (b *designBed) fixtureGoal(id, intent string) {
 // tree.
 func (b *designBed) goalRecord(id string) (string, float64) {
 	b.t.Helper()
-	output, code := b.run(b.repo, nil, b.engine, "goal", "show", "--root", b.repo, "--id", id)
+	output, code := b.run(b.repo, nil, b.engine, "internal", "goal", "show", "--root", b.repo, "--id", id)
 	var page struct {
 		Goal struct {
 			State    string
@@ -228,7 +228,7 @@ func (b *designBed) waitStatus(id, status string) {
 	b.t.Helper()
 	// The engine's durable wait owner returns when the job's record is
 	// terminal (or at its bounded deadline); the status is then read.
-	output, _ := b.run(b.repo, nil, b.engine, "work", "wait", "--root", b.repo, "--job", id, "--timeout", "3m")
+	output, _ := b.run(b.repo, nil, b.engine, "internal", "wait", "--root", b.repo, "--job", id, "--timeout", "3m")
 	if b.jobExists(id) && fmt.Sprint(b.job(id)["status"]) == status {
 		return
 	}
@@ -367,7 +367,7 @@ func TestIntentDesignReviewRealOwnerJourney(t *testing.T) {
 	// The goal's revision moves (its holder rewrites the next step); the
 	// replay still rejoins the same child.
 	_, revision := b.goalRecord(goalID)
-	if output, code := b.run(b.repo, []string{"METASYSTEM_OWNER_LINEAGE=" + b.lineage}, b.engine, "goal", "set-next", "--root", b.repo, "--id", goalID,
+	if output, code := b.run(b.repo, []string{"METASYSTEM_OWNER_LINEAGE=" + b.lineage}, b.engine, "internal", "goal", "set-next", "--root", b.repo, "--id", goalID,
 		"--next", "Decide the second examination."); code != 0 {
 		t.Fatalf("goal set-next: %s", output)
 	}
@@ -606,7 +606,7 @@ func (b *designBed) reapDead(job, roundDir string) map[string]any {
 		}
 		// Wait on the job through the engine's durable wait owner before
 		// the next reap attempt.
-		b.run(b.repo, nil, b.engine, "work", "wait", "--root", b.repo, "--job", job, "--timeout", "5s")
+		b.run(b.repo, nil, b.engine, "internal", "wait", "--root", b.repo, "--job", job, "--timeout", "5s")
 	}
 }
 
