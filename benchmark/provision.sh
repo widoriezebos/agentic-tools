@@ -554,7 +554,7 @@ temporary = path.with_name(path.name + ".provision.tmp")
 temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
 os.replace(temporary, path)
 PY
-"$target/scripts/metasystem-config.sh" validate
+"$target/bin/metasystem" config validate --conf "$target/metasystem.conf"
 
 # The adopted target must survive its own landing boundary: the
 # instruments commit below rides the target's commit.sh, whose IL-28

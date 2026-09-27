@@ -1025,7 +1025,6 @@ make_repo() { # destination
   mkdir -p "$repo/scripts"
   cp -R "$source_root/scripts/agents" "$repo/scripts/"
   cp "$source_root/scripts/watch-background-jobs.sh" "$repo/scripts/"
-  cp "$source_root/scripts/metasystem-config.sh" "$repo/scripts/"
   mkdir -p "$repo/skills/design-critique"
   cp "$source_root/skills/design-critique/SKILL.md" "$repo/skills/design-critique/"
   cp "$source_root/metasystem.conf" "$repo/metasystem.conf"
@@ -1344,8 +1343,10 @@ if [[ -z "$operator_runtimes" ]] \
 fi
 if [[ "${METASYSTEM_SUPERVISION_OPERATOR_EMPTY_RUNTIME_FIXTURE_ONLY:-0}" == 1 ]]; then
   [[ -z "$operator_runtimes" ]]
-  [[ "$(env -u METASYSTEM_METASYSTEM_RUNTIMES \
-    "$operator_harness/scripts/metasystem-config.sh" get --key metasystem.runtimes --default '')" == codex ]]
+  operator_configured_runtimes=$(env -u METASYSTEM_METASYSTEM_RUNTIMES "$operator_harness/bin/metasystem" config get \
+    --conf "$operator_harness/metasystem.conf" --key metasystem.runtimes --default '')
+  [[ "$operator_configured_runtimes" == codex ]] \
+    || { echo "operator empty-runtime fixture: the local override did not select codex" >&2; exit 1; }
   grep -Fqx 'metasystem.runtimes=fake' "$operator_harness/metasystem.conf"
   [[ "${operator_env[*]}" == *"METASYSTEM_CENSUS_PROCESS_FILE=$operator_process_fixture"* ]]
   assert_fixture_supervision_isolation
@@ -1419,7 +1420,6 @@ nested_sibling=$nested_scope/development/sub
 mkdir -p "$nested_installation/scripts" "$nested_installation/plans" "$nested_sibling"
 cp -R "$source_root/scripts/agents" "$nested_installation/scripts/"
 cp "$source_root/scripts/watch-background-jobs.sh" "$nested_installation/scripts/"
-cp "$source_root/scripts/metasystem-config.sh" "$nested_installation/scripts/"
 mkdir -p "$nested_scope/development"
 : >"$nested_scope/development/metasystem-design.md"
 cp "$source_root/metasystem.conf" "$nested_installation/metasystem.conf"

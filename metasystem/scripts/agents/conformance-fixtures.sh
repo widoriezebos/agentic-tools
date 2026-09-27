@@ -90,7 +90,6 @@ new_case() { # name
   worktree="$case_root/worktree"
   mkdir -p "$controller/scripts/agents" "$controller/docs" "$controller/memory"
   cp "$source_root/scripts/agents/path-classes.txt" "$controller/scripts/agents/"
-  cp "$source_root/scripts/metasystem-config.sh" "$controller/scripts/"
   # The copied config reader resolves its engine as <controller>/bin/metasystem.
   mkdir -p "$controller/bin"
   cp "$source_root/bin/metasystem" "$controller/bin/metasystem"

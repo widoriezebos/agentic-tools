@@ -235,7 +235,7 @@ case "$command_name" in
     ;;
   selftest)
     (($# == 0)) || { usage; exit 2; }
-    selftest_model=$("$root/scripts/metasystem-config.sh" get \
+    selftest_model=$("$ms" config get --conf "$root/metasystem.conf" \
       --key role.default.model.codex --default '')
     METASYSTEM_ROLE_DESIGN_CRITIC_MODEL_CODEX="$selftest_model" \
       run_full_contract_selftest native

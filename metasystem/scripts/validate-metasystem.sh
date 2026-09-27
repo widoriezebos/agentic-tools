@@ -994,7 +994,7 @@ static_contract_audits_section() {
 # any profile a remaining skill does provide must be registered without drift;
 # project-added skills are not required to invent profiles they never shipped.
 if (( ! template_mode )); then
-  scripts/metasystem-config.sh validate
+  "$root/bin/metasystem" config validate --conf "$root/metasystem.conf"
 fi
 
 for link in \
@@ -1034,7 +1034,6 @@ for link in \
   scripts/agents/permissions/none.json \
   scripts/agents/permissions/workspace.json \
   metasystem.conf \
-  scripts/metasystem-config.sh \
   scripts/agents/dispatch.sh \
   scripts/agents/checkout-execution-guard.sh \
   scripts/agents/commit.sh \
@@ -1232,7 +1231,7 @@ fi
 # itself — the audit's outside-reference fence stands — but a project may
 # DECLARE companion suites in its own configuration, and a declaration is
 # a promise: a declared suite that is missing or red refuses the run.
-extra_suites=$(scripts/metasystem-config.sh get --key validate.extra-suites --default "" 2>/dev/null || true)
+extra_suites=$("$root/bin/metasystem" config get --conf "$root/metasystem.conf" --key validate.extra-suites --default "" 2>/dev/null || true)
 project_extra_suites_section() {
   for extra in $extra_suites; do
     if [[ ! -x "$extra" ]]; then
@@ -1475,7 +1474,7 @@ done
 if (( ! template_mode )); then
   # Through the config engine, honoring the same flag/env/local/conf
   # precedence the suite itself enforces (script-validate-8/D34).
-  configured_runtimes=$(scripts/metasystem-config.sh get --key metasystem.runtimes)
+  configured_runtimes=$("$root/bin/metasystem" config get --conf "$root/metasystem.conf" --key metasystem.runtimes)
   runtime_selected() { [[ ",$configured_runtimes," == *",$1,"* ]]; }
   for skill_dir in skills/*/; do
     [[ -d "$skill_dir" ]] || continue
@@ -2804,7 +2803,7 @@ METASYSTEM_RETRO_MAX_RECEIPTS=2 receipt_at "$knob_fixture/receipt" check --file 
 METASYSTEM_RETRO_MAX_RECEIPTS=0 receipt_at "$knob_fixture/receipt" check --max-receipts 2 --file "$knob_fixture/receipt/receipts.log" >/dev/null \
   || { echo "receipt did not prefer the flag over the environment" >&2; exit 1; }
 
-cp scripts/watch-background-jobs.sh scripts/metasystem-config.sh "$knob_fixture/watch/scripts/"
+cp scripts/watch-background-jobs.sh "$knob_fixture/watch/scripts/"
 cp bin/metasystem "$knob_fixture/watch/bin/metasystem"
 printf 'watch.stale-min=7\nwatch.cap-min=%s\n' "$fixture_watcher_config_cap_min" >"$knob_fixture/watch/metasystem.conf"
 touch "$knob_fixture/watch/state"

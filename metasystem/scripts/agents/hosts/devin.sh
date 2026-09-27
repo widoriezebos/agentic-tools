@@ -25,7 +25,7 @@ host_require_cli devin
 # config must never fail open into the dangerous path.
 host_transport=
 host_transport_value=$(
-  "$root/scripts/metasystem-config.sh" get --key dispatch.transport.devin --default legacy 2>/dev/null
+  "$ms" config get --conf "$root/metasystem.conf" --key dispatch.transport.devin --default legacy 2>/dev/null
 ) || {
   echo "devin host: transport configuration unreadable" >&2
   exit 3

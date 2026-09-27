@@ -125,16 +125,16 @@ done
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 harness_root=$(cd "$script_dir/.." && pwd -P)
 ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
-config=$script_dir/metasystem-config.sh
+config() { "$ms" config "$1" --conf "$harness_root/metasystem.conf" "${@:2}"; }
 stale_args=(get --key watch.stale-min --default 20)
 cap_args=(get --key watch.cap-min --default 180)
 interval_args=(get --key watch.interval-sec --default 60)
 (( stale_min_set )) && stale_args+=(--flag "$stale_min")
 (( cap_min_set )) && cap_args+=(--flag "$cap_min")
 (( interval_set )) && interval_args+=(--flag "$interval")
-stale_min=$("$config" "${stale_args[@]}")
-cap_min=$("$config" "${cap_args[@]}")
-interval=$("$config" "${interval_args[@]}")
+stale_min=$(config "${stale_args[@]}")
+cap_min=$(config "${cap_args[@]}")
+interval=$(config "${interval_args[@]}")
 
 if [[ -n "$expected_cap" && ! "$expected_cap" =~ ^[1-9][0-9]*$ ]]; then
   echo "--expected-cap must be a positive integer" >&2
@@ -199,7 +199,7 @@ trap 'rm -f "$running_file"' EXIT
 
 append_census_log() { # captured scan output
   local captured=$1 log="$supervision_dir/census.log" max_bytes current=0 incoming
-  max_bytes=$("$config" get --key census.log-max-bytes --default 1048576)
+  max_bytes=$(config get --key census.log-max-bytes --default 1048576)
   [[ "$max_bytes" =~ ^[1-9][0-9]*$ ]] || max_bytes=1048576
   [[ -f "$log" ]] && current=$(wc -c <"$log" | tr -d ' ')
   incoming=$(wc -c <"$captured" | tr -d ' ')

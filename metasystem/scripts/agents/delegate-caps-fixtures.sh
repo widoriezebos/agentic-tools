@@ -363,7 +363,7 @@ grep -Fq 'ordinary-blocking-job' "$tmp/ordinary-establish.out" \
 # AUTH-R2-008 attacks the local override layer with the exact noncanonical key.
 conf_edit "$harness/metasystem.conf" replace-line-first '^metasystem[.]runtimes=fake$' 'metasystem.runtimes=fake,devin'
 printf 'cap.min.devin.swe-1.7=250\n' >"$harness/metasystem.conf.local"
-if "$harness/scripts/metasystem-config.sh" validate >"$tmp/noncanonical.out" 2>&1; then
+if "$harness/bin/metasystem" config validate --conf "$harness/metasystem.conf" >"$tmp/noncanonical.out" 2>&1; then
   echo "AUTH-R2-008: noncanonical local cap key was accepted" >&2
   exit 1
 fi

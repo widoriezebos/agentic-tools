@@ -134,7 +134,6 @@ mkdir -p "$host_harness/scripts/agents/hosts" "$host_harness/scripts/agents/sche
   "$host_harness/scripts/agents/permissions" "$host_harness/bin" "$host_harness/turns/t1"
 cp "$source_root/scripts/agents/hosts/host-common.sh" \
   "$source_root/scripts/agents/hosts/devin.sh" "$host_harness/scripts/agents/hosts/"
-cp "$source_root/scripts/metasystem-config.sh" "$host_harness/scripts/"
 cp "$source_root/scripts/agents/schemas/orchestrator.schema.json" "$host_harness/scripts/agents/schemas/"
 cp "$source_root/scripts/agents/permissions/workspace.json" "$host_harness/scripts/agents/permissions/"
 cp "$ms" "$host_harness/bin/metasystem"

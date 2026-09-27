@@ -325,7 +325,6 @@ setup_brain_dispatch_bed() {
   cp "$engine" "$brain_repo/bin/metasystem"
   cp "$root/scripts/agents/dispatch.sh" "$root/scripts/agents/checkout-execution-guard.sh" \
     "$root/scripts/agents/pre-commit-guard.sh" "$brain_repo/scripts/agents/"
-  cp "$root/scripts/metasystem-config.sh" "$brain_repo/scripts/"
   cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$brain_repo/records/misc/"
   printf 'metasystem.runtimes=fake\n' >"$brain_repo/metasystem.conf"
   cat >"$brain_repo/plans/goals.md" <<'LEDGER'
@@ -458,7 +457,6 @@ if [[ "$fixture_scenario" == brain-delegate-refuses || "$fixture_scenario" == br
     mkdir -p "$node_repo/bin" "$node_repo/scripts/agents"
     cp "$engine" "$node_repo/bin/metasystem"
     cp "$root/scripts/agents/dispatch.sh" "$root/scripts/agents/checkout-execution-guard.sh" "$node_repo/scripts/agents/"
-    cp "$root/scripts/metasystem-config.sh" "$node_repo/scripts/"
     node_fence=$("$node_repo/bin/metasystem" brain fence --root "$node_repo" --act dispatch)
     [[ "$("$node_repo/bin/metasystem" json get --value "$node_fence" --field fenced)" == false ]] || { echo "another checkout's declaration fenced the node" >&2; exit 1; }
 
@@ -518,8 +516,7 @@ cp -R scripts/agents "$agent_repo/scripts/"
 # the reviewed design blob at that path too.
 mkdir -p "$agent_repo/metasystem/scripts/agents/roles"
 cp scripts/agents/roles/design-critic.md "$agent_repo/metasystem/scripts/agents/roles/design-critic.md"
-cp scripts/metasystem-config.sh \
-  scripts/watch-background-jobs.sh "$agent_repo/scripts/"
+cp scripts/watch-background-jobs.sh "$agent_repo/scripts/"
 cp docs/project-rules.md docs/orchestration.md "$agent_repo/docs/"
 cp -R skills/code-critique skills/design-critique skills/take-a-step-back skills/verify "$agent_repo/skills/"
 cp metasystem.conf "$agent_repo/"
@@ -550,7 +547,8 @@ cp "$engine" "$agent_repo/bin/metasystem"
 enroll_fixture_repo "$agent_repo"
 agent_dispatch="$agent_repo/scripts/agents/dispatch.sh"
 fake_adapter="$agent_repo/scripts/agents/adapters/fake.sh"
-agent_config="$agent_repo/scripts/metasystem-config.sh"
+# The agent checkout's configuration, through its own engine: get|validate.
+agent_config() { "$agent_repo/bin/metasystem" config "$1" --conf "$agent_repo/metasystem.conf" "${@:2}"; }
 good_agent_conf="$agent_fixture/good-metasystem.conf"
 cp "$agent_repo/metasystem.conf" "$good_agent_conf"
 owner_lock_ack_wrapper=$agent_fixture/owner-lock-ack-engine
@@ -1263,50 +1261,21 @@ grep -Fq "dispatch refused: engine commit $skew_stamp is older than checkout com
 # standalone raw-runtime driver is retired and must not reappear.
 [[ ! -e "$root/scripts/agents/critique-round.sh" ]] \
   || { echo "the retired standalone critique driver is still installed" >&2; exit 1; }
-# Configuration resolution is flag, environment, mode, plain, default.
-config_order="$agent_fixture/config-order"
-mkdir -p "$config_order/scripts" "$config_order/bin"
-cp scripts/metasystem-config.sh "$config_order/scripts/"
-cp "$engine" "$config_order/bin/metasystem"
-cat >"$config_order/metasystem.conf" <<EOF
-role.implementer.runtime=plain
-mode.refactor.role.implementer.runtime=mode
-plain.knob=plain-value
-EOF
-[[ "$("$config_order/scripts/metasystem-config.sh" get --key role.implementer.runtime --mode refactor --flag flag)" == flag ]] \
-  || { echo "metasystem config did not prefer the flag" >&2; exit 1; }
-[[ "$(METASYSTEM_ROLE_IMPLEMENTER_RUNTIME=environment "$config_order/scripts/metasystem-config.sh" get --key role.implementer.runtime --mode refactor)" == environment ]] \
-  || { echo "metasystem config did not prefer the environment" >&2; exit 1; }
-[[ "$(env -u METASYSTEM_ROLE_IMPLEMENTER_RUNTIME "$config_order/scripts/metasystem-config.sh" get --key role.implementer.runtime --mode refactor)" == mode ]] \
-  || { echo "metasystem config did not resolve the mode scope" >&2; exit 1; }
-[[ "$("$config_order/scripts/metasystem-config.sh" get --key plain.knob --mode refactor)" == plain-value ]] \
-  || { echo "metasystem config did not resolve the plain key" >&2; exit 1; }
-[[ "$("$config_order/scripts/metasystem-config.sh" get --key absent.knob --default built-in)" == built-in ]] \
-  || { echo "metasystem config did not resolve the built-in default" >&2; exit 1; }
-# An uncommitted local file carries values that must not ship to adopting
-# projects. It outranks the committed conf and yields to the environment.
-cat >"$config_order/metasystem.conf.local" <<'EOF'
-plain.knob=local-value
-EOF
-[[ "$(env -u METASYSTEM_PLAIN_KNOB "$config_order/scripts/metasystem-config.sh" get --key plain.knob)" == local-value ]] \
-  || { echo "metasystem config did not prefer the local override" >&2; exit 1; }
-[[ "$(METASYSTEM_PLAIN_KNOB=environment "$config_order/scripts/metasystem-config.sh" get --key plain.knob)" == environment ]] \
-  || { echo "local override outranked the environment" >&2; exit 1; }
-[[ "$(env -u METASYSTEM_ROLE_IMPLEMENTER_RUNTIME "$config_order/scripts/metasystem-config.sh" get --key role.implementer.runtime --mode refactor)" == mode ]] \
-  || { echo "local override disturbed a key it does not carry" >&2; exit 1; }
-rm -f "$config_order/metasystem.conf.local"
+# Configuration resolution order (flag, environment, local override, mode,
+# plain, default) is proven by internal/config's TestGetPrecedence and
+# TestGetLocalPrecedence.
 
-"$agent_config" validate
+agent_config validate
 cp "$no_tier_conf" "$agent_repo/metasystem.conf"
-"$agent_config" validate >"$agent_fixture/no-tier-validate.out"
+agent_config validate >"$agent_fixture/no-tier-validate.out"
 [[ $(grep -Fc 'INFO: model tiers are absent; dispatch overrides therefore always escalate' "$agent_fixture/no-tier-validate.out") -eq 1 ]] \
   || { echo "tier-absence validation fixture did not emit its one informational line" >&2; exit 1; }
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]1=.*$' 'model.tier.one=fake:fake-model'
-agent_fails malformed-tier-key 'not a supported model tier key' "$agent_config" validate
+agent_fails malformed-tier-key 'not a supported model tier key' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]1=.*$' 'model.tier.1=fake-model'
-agent_fails malformed-tier-member 'not runtime-qualified' "$agent_config" validate
+agent_fails malformed-tier-member 'not runtime-qualified' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 # An adopted repository may rely on role.default.runtime while the template
 # carries this role-specific key. Replace or append so both shapes gain one
@@ -1316,7 +1285,7 @@ if grep -q '^role[.]design-critic[.]runtime=' "$agent_repo/metasystem.conf"; the
 else
   printf 'role.design-critic.runtime=ghost\n' >>"$agent_repo/metasystem.conf"
 fi
-invalid_role_runtime=$("$agent_config" get --key role.design-critic.runtime) || {
+invalid_role_runtime=$(agent_config get --key role.design-critic.runtime) || {
   echo "invalid-role-runtime precondition failed: could not resolve role.design-critic.runtime after config mutation" >&2
   exit 1
 }
@@ -1324,29 +1293,29 @@ invalid_role_runtime=$("$agent_config" get --key role.design-critic.runtime) || 
   echo "invalid-role-runtime precondition failed: role.design-critic.runtime resolved to '$invalid_role_runtime', expected 'ghost'" >&2
   exit 1
 }
-agent_fails invalid-role-runtime 'outside metasystem.runtimes' "$agent_config" validate
+agent_fails invalid-role-runtime 'outside metasystem.runtimes' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 printf 'mode.refactor.role.implementer.runtime=ghost\n' >>"$agent_repo/metasystem.conf"
-agent_fails invalid-mode-runtime 'outside metasystem.runtimes' "$agent_config" validate
+agent_fails invalid-mode-runtime 'outside metasystem.runtimes' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 printf 'role.default.model.ghost=ghost-model\n' >>"$agent_repo/metasystem.conf"
-agent_fails invalid-model-runtime 'outside metasystem.runtimes' "$agent_config" validate
+agent_fails invalid-model-runtime 'outside metasystem.runtimes' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^metasystem[.]runtimes=.*$' 'metasystem.runtimes=ghost'
-agent_fails unsupported-runtime 'unsupported runtime' "$agent_config" validate
+agent_fails unsupported-runtime 'unsupported runtime' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]1=.*$' 'model.tier.1='
-agent_fails unmapped-model 'appears in 0 model tiers' "$agent_config" validate
+agent_fails unmapped-model 'appears in 0 model tiers' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]2=.*$' 'model.tier.2=fake:fake-model'
-agent_fails duplicate-model-tier 'appears in 2 model tiers' "$agent_config" validate
+agent_fails duplicate-model-tier 'appears in 2 model tiers' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]design-critic[.]model[.]fake=.*$'
 conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]default[.]model[.]fake=.*$'
-agent_fails missing-runtime-model 'has no model.fake value' "$agent_config" validate
+agent_fails missing-runtime-model 'has no model.fake value' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' "evidence.root=$agent_repo/evidence"
-agent_fails inside-evidence-root 'outside the repository' "$agent_config" validate
+agent_fails inside-evidence-root 'outside the repository' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 
 # A direct record write simulates a pre-law survivor. It has a claim but no
@@ -3534,7 +3503,7 @@ local_refusals="$agent_repo/artifacts/agents/refusal-durable-root/reads-refused.
   && grep -Fq 'cannot mirror refusal-durable-root' "$agent_fixture/refusal-durable.out" \
   || { echo "refusal-durable lost the local event or scripted mirror failure" >&2; cat "$agent_fixture/refusal-durable.out" >&2; exit 1; }
 refusal_mirror_result="$agent_fixture/refusal-durable-mirror.json"
-refusal_evidence=$("$agent_config" get --key evidence.root)
+refusal_evidence=$(agent_config get --key evidence.root)
 "$engine" job mirror --repo "$agent_repo" --checkout "$agent_repo" --evidence "$refusal_evidence" \
   --root-job refusal-durable-root --job refusal-durable-root --result "$refusal_mirror_result"
 refusal_mirror_home=$("$engine" json get --file "$refusal_mirror_result" --field path)

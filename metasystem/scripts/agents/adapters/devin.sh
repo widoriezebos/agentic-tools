@@ -237,7 +237,7 @@ runtime_repair_turn() { # prompt file, output file
 # or acp; nonzero is the refusal.
 devin_transport() {
   local value rc=0
-  value=$("$root/scripts/metasystem-config.sh" get --key dispatch.transport.devin --default legacy 2>>"${log:-/dev/null}") || rc=$?
+  value=$("$ms" config get --conf "$root/metasystem.conf" --key dispatch.transport.devin --default legacy 2>>"${log:-/dev/null}") || rc=$?
   if (( rc != 0 )); then
     echo "transport-config-unreadable"
     return 1

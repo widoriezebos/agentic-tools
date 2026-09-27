@@ -65,7 +65,6 @@ if [[ ${BASH_SOURCE[0]} == "$0" && -z "${METASYSTEM_DELEGATE_INTERNAL:-}" ]]; th
       exit 2 ;;
   esac
 fi
-config="$root/scripts/metasystem-config.sh"
 source "$root/scripts/agents/checkout-execution-guard.sh"
 agents="$root/artifacts/agents"
 jobs="$agents/jobs"
@@ -833,7 +832,7 @@ require_slice_admission() { # proposed cap minutes, recorded approval reference,
   esac
 }
 
-config_get() { "$config" get "$@"; }
+config_get() { "$ms" config get --conf "$root/metasystem.conf" "$@"; }
 
 canonical_model() { "$ms" config canonical-model "$1"; }
 

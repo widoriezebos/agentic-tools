@@ -351,7 +351,6 @@ if [[ "$fixture_scenario" != runner-end-state && "$fixture_scenario" != mission-
 # process identities. They stay independent of the process-owning validator
 # fixtures so restricted worktrees can exercise these two terminal outcomes.
 cp -R "$root/scripts/agents/." "$repo/scripts/agents/"
-cp "$root/scripts/metasystem-config.sh" "$repo/scripts/"
 cp "$root/metasystem.conf" "$repo/metasystem.conf"
 conf_edit "$repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' \
   "evidence.root=$fixture_root/runner-evidence"

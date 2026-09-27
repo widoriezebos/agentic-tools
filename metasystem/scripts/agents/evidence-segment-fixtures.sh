@@ -18,7 +18,6 @@ mirror_checkout() { # checkout directory
   # the retired .py helpers live inside that one binary now.
   mkdir -p "$fixture_root/bin"
   cp "$source_root/bin/metasystem" "$fixture_root/bin/metasystem"
-  cp "$source_root/scripts/metasystem-config.sh" "$fixture_root/scripts/metasystem-config.sh"
   printf 'evidence.root=%s\nmetasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' "$evidence" >"$fixture_root/metasystem.conf"
   # The held reap is a control-plane write. Under an agent-run suite
   # the ambient ancestry classifies UNTRUSTED in this sandbox, so
@@ -88,7 +87,6 @@ mkdir -p "$legacy_root/scripts/agents" "$legacy_root/scripts" \
   "$evidence/agents/legacy-chain"
 mkdir -p "$legacy_root/bin"
 cp "$source_root/bin/metasystem" "$legacy_root/bin/metasystem"
-cp "$source_root/scripts/metasystem-config.sh" "$legacy_root/scripts/metasystem-config.sh"
 printf 'evidence.root=%s\nmetasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' "$evidence" >"$legacy_root/metasystem.conf"
 # Same announcement as mirror_checkout: the held GC is a
 # control-plane write and ambient ancestry classifies UNTRUSTED

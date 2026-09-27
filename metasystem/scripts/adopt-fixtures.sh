@@ -705,7 +705,7 @@ if adopt_leg default; then
   fill_harness_conf "$tgt/metasystem.conf" "$tmp/adopt-default-evidence"
 
   mv "$tgt/.claude/skills" "$tgt/.claude/skills.missing"
-  if "$tgt/scripts/metasystem-config.sh" validate >"$tmp/missing-registration.out" 2>&1; then
+  if "$tgt/bin/metasystem" config validate --conf "$tgt/metasystem.conf" >"$tmp/missing-registration.out" 2>&1; then
     echo "adopt: configuration validation missed a selected runtime registration" >&2
     exit 1
   fi
