@@ -259,11 +259,10 @@ result strictly, as `test.go:932` does. No other pair may be both.
 | `up` | cron line (`internal/up/up.go:936`), rearm (`rearm_on_landed.go:410`), seat step | also the `system start` owner; kept as argv for these launchers |
 | `hook RUNTIME EVENT` (new) | the plumbing stub `supervision-hook.sh` (3.3) | runtime hook body, replaces the script |
 | `pre-commit` (new) | the plumbing stub `pre-commit-guard.sh` (3.3) | git hook body |
-| `delegate-supervisor` (new, U6a) | the dispatch driver (U6b) | persistent owner of one delegate launch through completion and result publication, replacing the detached adapter supervisor (`dispatch.sh:1001`, `adapters/claude.sh:165`) (VOA-04) |
+| `delegate-supervisor` (new, U6a) | the dispatch driver (U6b); the mission runner for host turns (`delegate-supervisor RUNTIME start-turn`, `internal/missionrunner/host.go:403`) | persistent owner of one delegate launch through completion and result publication, replacing the detached adapter supervisor (`dispatch.sh:1001`, `adapters/claude.sh:165`) (VOA-04) |
 
 Entries that become function calls, because nothing outside the engine needs a
-process for them: `steward revive`, `util hold` (becomes a test helper binary
-built by the test). Two stay processes (U1b, confirmed by its read):
+process for them: `steward revive`. `util hold` stays an engine verb as the fake runtime's stand-in CLI child (U6a: the fake is compiled into the engine and driven by shell beds, so a test-built helper cannot serve them; its janitor shape is `tagged-hold`). Two stay processes (U1b, confirmed by its read):
 `up --recover-only` from landing (`landing_batch_owner.go:122-137`) is a
 fire-and-forget detached launch whose recovery must not hold the ensure lock or
 the joining seat; `delegate --revive` keeps its own session so dispatch never
@@ -507,6 +506,29 @@ probes (`adapter/probe.go:47`), selftest, dispatch and the mission runner.
 
 The operation schemas are versioned and documented in `docs/agent-adapters.md`.
 
+### 3.6 A human is never denied a verb (rule H1, 2026-09-27)
+
+Wido, 2026-09-27: "if a human wants to use a verb; that should never be denied.
+Ever. Unless it damages the system somehow so then it is more like protecting
+the human against himself and advising the human on how to do it properly (but
+that is like detecting the wrong way, pointing to the right way: not
+blocking)".
+
+**Rule H1.** An authenticated human (the HUMAN classification, with the human
+proof a verb already requires) is authorized for every public action and every
+control-plane mode. A refusal a human can meet is allowed only when the act
+would damage the system; it then states what would go wrong and names the
+command that achieves the person's intent the right way, so no refusal is a
+dead end. Machinery separations (custodial bookkeeping, holder-only writes) are
+not damage: the human's act is admitted and recorded as human-ordered. First
+case: `stop-custodian` (`internal/authority/authority.go:27-32`) admits HUMAN;
+a human-ordered breach stop records the person as its actor.
+
+Unit U-H1: audit every refusal an authenticated human can reach (authority
+modes, owner refusals in internal/goal, landing, dispatch, delegation, steward,
+proofrun, and the command layer), classify each as admit or guide, fix both
+kinds, and add witness R14.
+
 ## 4. Rules and their witnesses
 
 Witness tests land in U0 with today's counts as ceilings and tighten in every
@@ -526,6 +548,7 @@ later unit (a ratchet: numbers, not lists, except where a list is the rule).
 | R10 | Hard cutover per slice. | R1-R9 green at every landing. |
 | R11 | No metasystem scripts outside declared extension points; nothing in `metasystem/` depends on `environment/vms` (3.3). | Static test over `git ls-files` under `metasystem/`: extension-point allowlist by directory, zero other `*.sh`/`*.bash`, zero references to `environment/vms`. |
 | R13 | A new agent needs no Go change, and a built-in can be overridden (3.5). | With an engine built before the helper exists: a uniquely named external runtime passes configuration validation, dispatches, resumes, cancels, serves a mission host turn and runs its selftest with a custom probe; the fake runtime as built-in and as external executable produce identical records; a partial override changes one operation and falls back (64) for the rest; an unnamed executable, an unsafe file and a signature overlapping another runtime's vectors are refused; the janitor kills a correctly tagged orphaned external CLI and leaves wrongly tagged or reused-pid processes alone; an override of Devin's `describe` that falls back for host preparation is refused when it drops the `devin acp` exclusion, and with the exclusion kept a host turn's tool call still classifies through its announced main. |
+| R14 | A human is never dead-ended (3.6). | For each refusal reachable with a HUMAN classification: either it no longer refuses, or its message names a runnable public command; a static test over the refusal register and the authority modes fails on a new human-reachable refusal without a way forward. |
 | R12 | Every public action states an intent (3.4, G7). | Router test pins the revision 7 table; an unknown command's "did you mean" comes from the current table only (C1). |
 
 ## 5. Units
@@ -928,3 +951,8 @@ into 3.5 ("One effective declaration per runtime name") and R13.
 
 VOA-31 confirmation against 36bffdd8f: verified, zero material findings.
 Revision 8 is closed.
+
+U6a read (Fable, 2026-09-27): R5 rose to 124 with genuine process boundaries
+now recorded in 3.2 (host turns via `delegate-supervisor ... start-turn`; the
+fake runtime's `util hold` child); the fake self-test's `internal delegate`
+children are transitional until U6b removes dispatch.sh.
