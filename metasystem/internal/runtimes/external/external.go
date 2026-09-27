@@ -391,6 +391,9 @@ type Entry struct {
 	// exclusions (VOA-31); for every external, the shared exclusions of the
 	// supervision processes.
 	Signature string
+	// DescribeDelegated is an override that left describe to its built-in:
+	// the built-in's whole description (its capabilities included) stands.
+	DescribeDelegated bool
 	// Lookalikes are the reserved vectors no other declaration may match.
 	Lookalikes []string
 	// Refused is an override the registry refused: recognition keeps the
@@ -554,6 +557,16 @@ func Load(root string) (Registry, error) {
 		return Registry{}, err
 	}
 	r.Refusals = append(r.Refusals, refusals...)
+	for i := range refusals {
+		// A named but unsafe override of a built-in: the person asked for
+		// it, so running the runtime is refused (with the fix) instead of
+		// the built-in running silently; recognition keeps the built-in.
+		refusal := refusals[i]
+		if builtin, ok := r.entries[refusal.Name]; ok && Named(root, refusal.Name) {
+			builtin.Refused = &refusal
+			r.entries[refusal.Name] = builtin
+		}
+	}
 	var pending []candidate
 	for i := range adapters {
 		adapter := adapters[i]
@@ -572,7 +585,7 @@ func Load(root string) (Registry, error) {
 			if errors.Is(err, ErrDelegated) {
 				// The override leaves describe, and so its signature, to
 				// the built-in.
-				builtin.Adapter = &adapter
+				builtin.Adapter, builtin.DescribeDelegated = &adapter, true
 				r.entries[adapter.Name] = builtin
 				continue
 			}
@@ -638,9 +651,9 @@ func Load(root string) (Registry, error) {
 	// built-ins are fixed.
 	var others []candidate
 	for _, name := range r.Names() {
-		if entry := r.entries[name]; entry.Refused == nil {
-			others = append(others, candidateOf(entry))
-		}
+		// A refused override still carries its built-in's signature and
+		// reserved vectors, which keep protecting it.
+		others = append(others, candidateOf(r.entries[name]))
 	}
 	others = append(others, pending...)
 	for _, c := range pending {

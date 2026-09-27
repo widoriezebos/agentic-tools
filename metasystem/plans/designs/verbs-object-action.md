@@ -477,7 +477,16 @@ mission runner read it; the executable implementation of the operations is
 contract. A refused override leaves the built-in's declaration to the
 recognizers and refuses running the runtime until fixed; a launch an
 override's own prepare made must be observed and finalized by it (a built-in
-cannot continue a launch it did not prepare).
+cannot continue a launch it did not prepare). The Fable read's F1-F3 and
+F5(ii) are folded: a refused override keeps protecting its built-in in the
+cross-check; an override that leaves describe to its built-in keeps the
+built-in's whole description (repair included); a named but unsafe override
+refuses running the runtime with the fix; the shared self-test runs against
+an external runtime. Later (U6c read), one line each:
+
+- F4: adapter trust checks the file only: not the `adapters/` directory's
+  owner and mode, not a symlink's target (os.Stat follows it), and the check
+  and the exec are separate (a swap between them is not refused).
 **External runtimes** implement it as an executable at
 `<installation>/adapters/<name>` (any language; an extension point under rule
 S1): `<executable> OPERATION`, JSON request on stdin, JSON response on stdout

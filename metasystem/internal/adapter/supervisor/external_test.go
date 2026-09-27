@@ -78,7 +78,7 @@ type externalRequest struct {
 	Job        string `json:"job"`
 	Usage      string `json:"usage"`
 	Turn       struct {
-		Role, Verb, Dir, Record, Prompt, Tag, Round, RootJob, Model, ResumeSession, Requested, Effective string
+		Role, Verb, Dir, Record, Prompt, Tag, Round, RootJob, Model, ResumeSession, Requested, Effective, Workspace string
 	} `json:"turn"`
 	Private struct {
 		Stdout  string `json:"stdout"`
@@ -202,6 +202,14 @@ func externalFixture(mode, operation string, request externalRequest) (string, i
 			return "bad return", 1
 		}
 		value["runtime"] = "newagent"
+		// A fake-style agent does what a self-test brief asks: it reads
+		// permitted.txt and quotes the line in its evidence.
+		if permitted, err := os.ReadFile(filepath.Join(turn.Workspace, "permitted.txt")); err == nil {
+			if brief, _ := os.ReadFile(turn.Prompt); strings.Contains(string(brief), "PERMITTED_READ:") {
+				value["evidence"] = append(value["evidence"].([]any), map[string]any{
+					"command": "read permitted.txt", "observed": strings.TrimSpace(string(permitted)), "level": "ran"})
+			}
+		}
 		data, _ = json.Marshal(value)
 		if err := os.WriteFile(raw, data, 0o644); err != nil {
 			return err.Error(), 1
@@ -382,6 +390,20 @@ func TestUntrustedAdapterRefusedWithTheFix(t *testing.T) {
 		t.Fatalf("the untrusted adapter was executed: %v", logged)
 	}
 
+	// A named but unsafe override of a built-in refuses running it, with
+	// the fix, instead of the built-in running silently (read F3).
+	o := newFakeInstall(t, installOptions{})
+	overridePath, overrideLog := installExternalAdapter(t, o.root, "fake", "fake-finalize", 0o775, true)
+	if code := o.run(); code != 2 {
+		t.Fatalf("unsafe override exit %d, want 2", code)
+	}
+	if got := o.stderr.String(); !strings.Contains(got, "chmod go-w "+overridePath) {
+		t.Fatalf("stderr = %q, want the fix", got)
+	}
+	if logged := operationsLogged(t, overrideLog); len(logged) != 0 || exists(o.roundFile("raw.out")) {
+		t.Fatalf("the refused override ran or the built-in ran silently: %v", logged)
+	}
+
 	g := newFakeInstall(t, installOptions{})
 	_, unnamedLog := installExternalAdapter(t, g.root, "newagent", "newagent", 0o755, false)
 	if code := g.run(g.superviseAs("newagent")...); code != 2 {
@@ -472,6 +494,22 @@ func TestDevinPartialOverrideFallsBackToTheBuiltIn(t *testing.T) {
 	}
 	if counts["describe=64"] != 1 || counts["prepare=64"] != 1 || counts["finalize=64"] != 1 || counts["probe=ok"] != 0 {
 		t.Fatalf("adapter operations = %v", counts)
+	}
+	// Delivery repair stays available: the override left describe to the
+	// built-in, whose capabilities (repair included) stand (read F2).
+	r := newDevinFixture(t, "", "dispatch")
+	r.legacyHappyStubs()
+	os.Remove(filepath.Join(r.stubDir, "stdout"))
+	r.stub("repair-transcript", r.transcript("sess-1"))
+	r.stub("repair-named", r.validReturn)
+	r.stub("repair-named-path", filepath.Join(r.roundDir, "devin-return.repair-1.json"))
+	installExternalAdapter(t, r.root, "devin", "devin-identity", 0o755, true)
+	if code := r.run("dispatch"); code != 0 {
+		t.Fatalf("repair round exit %d\ncalls %v\nstderr %s\nlog %s", code, r.dispatch.verbs(), r.stderr, r.jobLog())
+	}
+	r.expectTerminal("completed", "")
+	if !strings.Contains(r.jobLog(), "delivery repair attempt 1: no return was delivered, asking session sess-1 to write") {
+		t.Fatalf("the overridden Devin lost its delivery repair: %s", r.jobLog())
 	}
 	f.stdout.Reset()
 	if code := Main([]string{"devin", "config-identity", "--root", f.root}, func(string) Deps { return f.deps() }); code != 0 || !strings.Contains(f.stdout.String(), "devin-override-config") {

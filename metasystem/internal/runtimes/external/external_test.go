@@ -136,6 +136,50 @@ func TestRegistryCrossCheck(t *testing.T) {
 	}
 }
 
+// TestRefusedOverrideStillProtectsTheBuiltIn: a refused override of Devin
+// leaves the built-in's signature and reserved vectors in the cross-check,
+// so a second external that claims `devin acp` is still refused (read F1).
+func TestRefusedOverrideStillProtectsTheBuiltIn(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	install(t, root, "devin", describeScript(`{"schemaVersion":1,"name":"devin","match":["^([^[:space:]]*/)?devin([[:space:]]|$)"]}`), 0o755, true)
+	install(t, root, "acpish", describeScript(`{"schemaVersion":1,"name":"acpish","match":["(^|/)(devin acp|acpish)"],"positive":"acpish run","lookalike":"x-helper"}`), 0o755, true)
+	reg, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if devin, _ := reg.Lookup("devin"); devin.Refused == nil {
+		t.Fatalf("the devin override was admitted: %+v", devin)
+	}
+	if _, ok := reg.Lookup("acpish"); ok {
+		t.Fatal("an external claiming devin acp was admitted beside a refused devin override")
+	}
+	if refusal, refused := reg.Refusal("acpish"); !refused || !strings.Contains(refusal.Reason, `claims "devin acp", a process of runtime devin`) {
+		t.Fatalf("acpish refusal = %+v", refusal)
+	}
+}
+
+// TestNamedUnsafeOverrideRefusesTheRuntime: a named override of a built-in
+// whose file is unsafe refuses running that runtime with the fix, instead
+// of the built-in running silently (read F3); an unnamed file does not.
+func TestNamedUnsafeOverrideRefusesTheRuntime(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := install(t, root, "codex", "#!/bin/sh\nexit 64\n", 0o775, true)
+	install(t, root, "claude", "#!/bin/sh\nexit 64\n", 0o775, false)
+	reg, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codex, _ := reg.Lookup("codex")
+	if codex.Refused == nil || !strings.Contains(codex.Refused.Reason, "chmod go-w "+path) || !strings.Contains(codex.Signature, "match ^([^[:space:]]*/)?codex") {
+		t.Fatalf("codex = %+v", codex)
+	}
+	if claude, _ := reg.Lookup("claude"); claude.Refused != nil {
+		t.Fatalf("an unnamed file refused the built-in claude: %+v", claude.Refused)
+	}
+}
+
 // TestOverrideKeepsReservedExclusions is VOA-31: an override of Devin whose
 // describe drops the `devin acp` exclusion is refused (the built-in's
 // declaration stays in force for recognition, and running it names the

@@ -97,6 +97,11 @@ func (x *externalOps) Describe(d Deps) (Description, error) {
 		}
 		base = described
 	}
+	if x.builtin != nil && x.entry.DescribeDelegated {
+		// The override left describe to the built-in: its description,
+		// capabilities (repair included) and all, stands unchanged.
+		return base, nil
+	}
 	e := x.entry.Description
 	out := Description{Name: x.adapter.Name, SchemaVersion: OperationsSchemaVersion, CLI: e.CLI,
 		Capabilities: Capabilities{Resume: e.Capabilities.Resume, FollowUp: e.Capabilities.FollowUp, Repair: e.Capabilities.Repair,
