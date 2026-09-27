@@ -1835,3 +1835,39 @@ func TestIdleNextTaskSkipsAQueueHeadThatWaitsOnAPerson(t *testing.T) {
 		t.Fatalf("the steward continuation and the named next task disagree: %+v", prepared)
 	}
 }
+
+// Witness for declared outside work, shaped like seat m1e's wait
+// e6d85acab0f7df03111ea5abd61bc9ee: a pending `work wait --path FILE --until
+// present` of this seat's session and lineage counts as work in flight while
+// FILE is absent, exactly like a live delegate job, and stops counting once
+// FILE exists. Before the fix every path wait was dropped at row-coordinates
+// (targetZero=true targetRequired=true), so no sanctioned way existed for a
+// seat to declare work the engine cannot see. The idle refusal names this
+// remedy.
+func TestPendingPathWaitCountsAsWorkInFlightUntilItsFileExists(t *testing.T) {
+	t.Parallel()
+	fixture := newPendingWaitVerdictFixture(t, "path", true)
+	fixture.row.OpenWorkSignature = ""
+	fixture.writeRow(t)
+	seedPendingWaitIdleCounter(t, fixture, 2)
+	verdict, session := pendingWaitIdleOutcome(t, fixture)
+	if verdict.ShouldBlock || verdict.IdleRefusal || session.IdleBlocks != 0 {
+		t.Fatalf("a pending path wait did not count as work in flight: verdict=%+v session=%+v", verdict, session)
+	}
+	if !strings.Contains(verdict.Display, "WAITING: registered wait "+fixture.row.WaitID+" covers path "+fixture.row.Selector.Path+" until present") {
+		t.Fatalf("the path wait was not shown: %s", verdict.Display)
+	}
+	if err := os.MkdirAll(filepath.Dir(fixture.row.Selector.Path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture.row.Selector.Path, []byte("done\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	verdict, session = pendingWaitIdleOutcome(t, fixture)
+	if !verdict.ShouldBlock || !verdict.IdleRefusal || session.IdleBlocks != 1 {
+		t.Fatalf("a path wait whose file exists still counted: verdict=%+v session=%+v", verdict, session)
+	}
+	if !strings.Contains(verdict.Display, "metasystem work wait --path FILE --until present --timeout 24h") {
+		t.Fatalf("the idle refusal did not name the outside-work remedy: %s", verdict.Display)
+	}
+}

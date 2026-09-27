@@ -324,6 +324,9 @@ func (waits registeredWaits) lines() []string {
 			continue
 		}
 		target := wait.row.Kind + " " + wait.row.TargetID
+		if wait.row.Kind == "path" {
+			target = "path " + wait.row.Selector.Path + " until " + wait.row.Selector.Until
+		}
 		if wait.landing {
 			target = "landing for goal " + wait.goalID
 		} else if wait.humanAct {
@@ -848,6 +851,10 @@ func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineag
 		delivery, targetRequired = "harness", false
 	} else if row.Kind == "human" {
 		delivery, targetRequired = "human", false
+	} else if row.Kind == "path" {
+		// A path has no incarnation to pin (run.waitSelectorHasIncarnation):
+		// its target is the path itself, named by the selector.
+		targetRequired = false
 	}
 	if row.SchemaVersion != 2 || row.State != "pending" || row.Delivery != delivery || row.Result != nil ||
 		!run.ValidWaitID(row.WaitID) || !run.ValidWaitID(row.Nonce) || row.MainId != mainID ||
@@ -940,6 +947,25 @@ func (s *Store) registeredWaitSource(work ClaimableBudgetedWork, claimed map[str
 		return wait, true
 	case "human":
 		wait.humanAct = true
+		wait.detached = true
+		return wait, true
+	case "path":
+		// The documented way for a seat to register work the engine cannot
+		// see (in-process sub-agents, external jobs): a live, pending
+		// `work wait --path FILE --until present` of this seat's session and
+		// lineage. It counts until its condition holds, checked here as well
+		// as by the waiting process, so a finished condition never keeps the
+		// seat exempt between the waiter's polls.
+		_, statErr := os.Stat(row.Selector.Path)
+		present := statErr == nil
+		if statErr != nil && !os.IsNotExist(statErr) {
+			*reason = waitDrop("source", "kind", row.Kind, "check", "path", "path", row.Selector.Path, "err", statErr)
+			return registeredWait{}, false
+		}
+		if present == (row.Selector.Until == "present") {
+			*reason = waitDrop("source", "kind", row.Kind, "check", "path-condition-met", "path", row.Selector.Path, "until", row.Selector.Until)
+			return registeredWait{}, false
+		}
 		wait.detached = true
 		return wait, true
 	case "job":
@@ -1262,9 +1288,14 @@ func (s *Store) enforceIdleBacklogWithWaits(verdict *Verdict, work *ClaimableBud
 	verdict.BlockSource = &source
 	countText := fmt.Sprintf("refusal %d of 3 in this idle interval (no new claim, job or wait from this seat); at 3 request steward continuation and allow Stop unless another branch blocks", session.IdleBlocks)
 	verdict.Display = strings.TrimSpace(verdict.Display + "\n" + fmt.Sprintf(
-		"IDLE WITH BACKLOG: %d claimable goals await a live claim or job: %s; %s; stop_hook_active=%t; an attended human may run `metasystem session stop --by <name>`",
-		len(work.Claimable), idleBacklogNames(*work), countText, options.StopHookActive))
+		"IDLE WITH BACKLOG: %d claimable goals await a live claim or job: %s; %s; stop_hook_active=%t; an attended human may run `metasystem session stop --by <name>`; %s",
+		len(work.Claimable), idleBacklogNames(*work), countText, options.StopHookActive, idleOutsideWorkRemedy))
 }
+
+// idleOutsideWorkRemedy names the one sanctioned way for a seat to declare
+// work the engine cannot see. Only a pending wait counts: a wait that reached
+// its deadline, or whose file already exists, stops counting.
+const idleOutsideWorkRemedy = "if this seat waits on work the engine cannot see (sub-agents, external jobs), register it with a pending wait run in the background: `metasystem work wait --path FILE --until present --timeout 24h` (the work writes FILE when done); it counts only while it is pending, so a wait that timed out or whose FILE exists no longer counts"
 
 func idleBacklogContinuation(work ClaimableBudgetedWork) (string, bool, string) {
 	if len(work.Claimed) > 0 {
