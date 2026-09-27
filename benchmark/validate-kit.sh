@@ -321,7 +321,7 @@ print(f"benchmark consistency: {count} case version(s), no seams")
 PY
 
 # 3. Provisioning, end to end against a committed snapshot of the working
-# tree (adopt.sh rightly refuses a dirty template, and the gate must test the
+# tree (system adopt rightly refuses a dirty template, and the gate must test the
 # tree as it is now, not as it was last committed).
 srcrepo="$tmp/snapshot"
 mkdir -p "$srcrepo"
@@ -347,7 +347,7 @@ git -C "$srcrepo" add .
 git -C "$srcrepo" -c user.name=kit -c user.email=kit@example.invalid commit -qm snapshot
   # Benchmark provisioning owns the complete bridge from a held-out spec kit
   # to the human seal/sign boundary. Exercise the real BM-1 manifest through a
-  # clean source snapshot because adopt.sh correctly refuses a dirty source.
+  # clean source snapshot because system adopt correctly refuses a dirty source.
   provision_target="$tmp/provision-bm-1"
   provision_contract="$provision_target/plans/mission-taskrun.contract.md"
   provision_output="$tmp/provision-bm-1.out"

@@ -138,7 +138,6 @@ func TestFullScriptWrappersPreserveOwnerStatusAndIgnoreAmbientProgress(t *testin
 		fixtureBudget  bool
 	}{
 		{name: "validator reusable success", relative: "scripts/validate-metasystem.sh", status: ExitReusableSuccess},
-		{name: "adoption reusable success", relative: "scripts/adopt-fixtures.sh", status: ExitReusableSuccess, fixtureBudget: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()

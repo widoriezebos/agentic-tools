@@ -458,7 +458,7 @@ runtimes, not the supported universe.
 | Devin CLI | `scripts/agents/adapters/devin.sh` | `.agents/skills/<name>`, `.devin/skills/<name>`, and `.devin/agents/<name>/AGENT.md` |
 | Fake | `scripts/agents/adapters/fake.sh` | No runtime registration; fixture-only protocol simulator |
 
-Per-runtime profile templates live under `skills/<name>/agents/`, and `scripts/adopt.sh` invokes runtime setup for its selected runtimes. Project-specific delegation facts belong in `docs/project-rules.md`.
+Per-runtime profile templates live under `skills/<name>/agents/`, and `metasystem system adopt` invokes runtime setup for its selected runtimes. Project-specific delegation facts belong in `docs/project-rules.md`.
 
 All rostered delegates remain children of the dispatcher's one shared job
 owner, even when their provider process runs in a linked worktree or a

@@ -649,7 +649,7 @@ go_engine_gate_section() {
   # nested delivery-contract runs this suite spawns. Dirty roots, seed,
   # force, or any refusal fall back to the plain worktree gate, no
   # witness, exactly as before. The machinery lives in the Go gate's
-  # arming controller so standalone direct-validator stages (adopt-fixtures)
+  # arming controller so standalone direct-validator stages
   # arm the same witness instead of re-proving identical bytes per nested
   # run; this shell names itself the controller and adopts the state the
   # controller hands back. The fallback is FORCED here: canonical validation
@@ -1011,7 +1011,6 @@ for link in \
   docs/examples/step-back-ledger.md \
   .gitattributes \
   memory/instruction-ledger.md \
-  scripts/adopt.sh \
   scripts/enforcement/github-actions-metasystem.yml \
   scripts/enforcement/claude-code-hooks.json \
   scripts/enforcement/codex-hooks.json \
@@ -1070,7 +1069,6 @@ for link in \
   scripts/agents/mission-fixtures.sh \
   scripts/agents/delegate-caps-fixtures.sh \
   scripts/agents/adapter-deadline-fixtures.sh \
-  scripts/adopt-fixtures.sh \
   scripts/agents/dispatch-fixtures.sh \
   scripts/agents/hosts/host-common.sh \
   scripts/agents/hosts/claude.sh \
@@ -1151,7 +1149,6 @@ bash -n scripts/agents/checkout-execution-guard-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/agents/adapter-deadline-fixtures.sh
-bash -n scripts/adopt-fixtures.sh
 bash -n scripts/agents/dispatch-fixtures.sh
 bash -n scripts/agents/conformance-fixtures.sh
 bash -n scripts/agents/goal-cli-fixtures.sh
@@ -2954,9 +2951,14 @@ if section_selected workflow-tooling-fixtures; then
   run_section workflow-tooling-fixtures needs-fixture-budget workflow_tooling_fixtures_section
 fi
 
-# adopt.sh self-test: extracted to its own sub-suite (script-validate-4/D35).
+# Adoption: the system adopt owner's Go tests, then the delivery comparison of
+# two adopted installations.
+adoption_fixtures_section() {
+  go test -count=1 -timeout 60m ./internal/adopt/
+  METASYSTEM_ADOPTION_COMPARISON=1 go test -count=1 -timeout 60m -run '^TestAdoptionComparisonSelectedScenarios$' ./cmd/metasystem
+}
 if (( template_mode )) && section_selected adoption-fixtures; then
-  run_section adoption-fixtures needs-engine bash scripts/adopt-fixtures.sh
+  run_section adoption-fixtures needs-engine adoption_fixtures_section
 fi
 if (( template_mode )) && section_selected suite-progress-fixtures; then
   # Watchdog fixtures emit heartbeat evidence while the sequencer records their outcome.

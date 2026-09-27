@@ -75,9 +75,9 @@ installations retain their migration-only coverage delta. The full Go gate
 (`go run ./cmd/devgate gate`) owns the legacy repository-wide coverage ratchet. Wido owns the review,
 after the next declared milestone, of whether that sweep still catches debt
 the landing delta cannot. `validate-metasystem.sh` owns VM delivery and
-guest-runtime invariants; `adopt-fixtures.sh` owns installed-tree and update
-invariants. Wido reviews those distinct owners after the same two-run
-retirement window. The steward puts a due review in its single ceilinged
+guest-runtime invariants; the adoption tests (`internal/adopt` and the
+delivery comparison) own installed-tree and update invariants. Wido reviews
+those distinct owners after the same two-run retirement window. The steward puts a due review in its single ceilinged
 ruling digest; none has a per-row delivery.
 
 ## Review Guide in Reports

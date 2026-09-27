@@ -4,7 +4,7 @@ Replace this file when adopting the metasystem. Keep facts concrete and reposito
 
 ## Project Map
 
-- Adopted from template SHA: `<template sha>`. Filled by `scripts/adopt.sh`; future template migrations diff against it.
+- Adopted from template SHA: `<template sha>`. Filled by `metasystem system adopt`; future template migrations diff against it.
 - Purpose: `<one paragraph>`
 - Production entrypoints: `<paths>`
 - Test roots: `<paths>`

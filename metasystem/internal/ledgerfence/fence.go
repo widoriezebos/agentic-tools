@@ -230,7 +230,7 @@ exit 0
 `
 
 // isOurComposer recognizes the enrollment composer this program (and
-// adopt.sh) writes by its EXACT shape: the shebang, one guard=
+// earlier adopters) writes by its EXACT shape: the shebang, one guard=
 // assignment, and one of the two known bodies byte-for-byte. A
 // foreign or locally extended hook that merely contains similar
 // fragments is a human's file — rewriting it would delete their

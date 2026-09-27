@@ -34,15 +34,14 @@ die() { echo "$2" >&2; exit "$1"; }
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../metasystem" && pwd -P)
 kit=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 # The engine decides identity, leases, and the census. A snapshot carries no
-# built binary (bin/ is ignored), so build one exactly as adoption does.
+# built binary (bin/ is ignored), and adoption runs only with an engine built
+# from the template's own commit, so build it with the bootstrap build, exactly
+# as adoption does.
+command -v go >/dev/null 2>&1 \
+  || { echo "provision refused: go is unavailable, so the metasystem engine cannot be built" >&2; exit 1; }
+go -C "$root" run ./cmd/devgate build >&2 \
+  || { echo "provision refused: could not build the metasystem engine" >&2; exit 1; }
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
-if [[ ! -x "$ms" ]]; then
-  command -v go >/dev/null 2>&1 \
-    || { echo "provision refused: the metasystem engine is not built and go is unavailable" >&2; exit 1; }
-  (cd "$root" && go build -o bin/metasystem ./cmd/metasystem) \
-    || { echo "provision refused: could not build the metasystem engine" >&2; exit 1; }
-  ms="$root/bin/metasystem"
-fi
 spec_arg=
 case_arg=
 config_arg=
@@ -133,7 +132,7 @@ evidence_root=$target.evidence
 
 # Validate every copy source before creating any destination. In particular,
 # the held-out grader boundary is checked by resolved path and through seed
-# symlinks, even though adopt.sh independently excludes the whole benchmark kit.
+# symlinks, even though adoption independently excludes the whole benchmark kit.
 manifest_facts=$(python3 - "$manifest" "$spec" <<'PY'
 import json
 import os
@@ -448,7 +447,7 @@ provisioner_start=$("$ms" proc started-at --pid $$) \
 "$ms" lease require-holder --root "$target" --caller-pid $$ >/dev/null \
   || die 1 "provision refused: the provisioner did not become the target's lease holder"
 
-if ! "$root/scripts/adopt.sh" "$target" --runtimes "$runtimes" >"$scratch/adopt.log" 2>&1; then
+if ! "$root/bin/metasystem" system adopt "$target" --repo "$root" --runtimes "$runtimes" >"$scratch/adopt.log" 2>&1; then
   cat "$scratch/adopt.log" >&2
   die 1 "provision failed while adopting the metasystem"
 fi

@@ -1,7 +1,6 @@
 # Existing Bash 3.2 fixture hazards; new findings are refused.
 # Conversion units delete rows as they repair sites.
 # Rows match rule, path, and content hash; the final column is informational.
-bare-test	scripts/adopt-fixtures.sh	e343c729d49178ae29be136dfcc211e922a7a53bf7dd9816c00d97d5f4303cc3	[[ "$fixture_scenario" == "$1" ]]
 bare-test	scripts/agents/actionable-metrics-fixtures.sh	38e4c772fc2ed99e6e5cd90fc07e997311223fd535c966274ec8dbd2c41cb08e	[[ $(grep -Fc -- '--goal "$goal"' "$root/scripts/agents/dispatch.sh") -ge 3 ]]
 bare-test	scripts/agents/channel-fixtures.sh	0dc348d76c277efdb64143b042e5987c0a27be5ed50f70d8c8b0b3be8a15aad6	[[ $("$ms" channel wait --root "$repo" --question "$qid" --timeout 1) == approve ]]
 bare-test	scripts/agents/channel-fixtures.sh	33f1570d591558a355741ca4fe16c3bfef4d6979aca153926a8ba054aa546405	[[ $("$ms" channel wait --root "$repo" --question "$telegram_qid" --timeout 1) == approve ]]
@@ -109,7 +108,6 @@ bare-test	scripts/agents/supervision-fixtures.sh	e5e1a54d9e06cf8639b17b7c4676089
 bare-test	scripts/agents/supervision-fixtures.sh	e941b91ee51ab99eacaf90a103894977a5921f222eb8f068b6ecf0aaf9311afa	[[ "$observed" =~ ^[0-9]+$ && "$observed" -gt "$first" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	e9eaca1d448f58a21a87c03344f6790060224f926e8030d0a7912c5420448b9a	[[ "$decision_surface_stop_hook_assertions" =~ $decision_pattern_regex ]]
 bare-test	scripts/agents/supervision-fixtures.sh	ef5a98ae989018787859aae126ec6eef3f0e455eb3845d554863888d2298b451	[[ "$(census_field "$1" verdict)" == "$2" ]]
-empty-array	scripts/adopt-fixture-helpers.sh	017a08e5fcbf3644eff3a30869b1fdd10c4cae18340c7fe0a37b714bddf71539	joined=$(printf '%s\n' "${models[@]}" | LC_ALL=C sort -u | paste -sd, -)
 empty-array	scripts/agents/delegate-caps-fixtures.sh	20d6667c677bfec7eda9de817feb50768df4a63144dbbf7d2e499e3b5f1c7cdb	|| { echo "AUTH-R2-009: executed registry is not exact:" "${passed[@]}" >&2; exit 1; }
 empty-array	scripts/agents/delegate-caps-fixtures.sh	73759035861360e5c34fb36f4a6f22c0b6a76b851d7de209844185b8b2ad126f	registry_is_complete "${passed[@]}" \
 empty-array	scripts/agents/dispatch-fixtures.sh	18fbf1891ed083970425aee571082c1e2810c333e00426afff55b3c2b1ccc327	if argv_contains -C "${codex_args_two[@]}"; then

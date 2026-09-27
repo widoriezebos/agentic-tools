@@ -1,4 +1,3 @@
-scripts/adopt-fixtures.sh	section/adoption-fixtures
 scripts/agents/acp-fixtures.sh	section/acp-fixtures
 scripts/agents/adapter-deadline-fixtures.sh	section/adapter-deadline-fixtures
 scripts/agents/authority-regression-fixtures.sh	section/authority-regression-fixtures

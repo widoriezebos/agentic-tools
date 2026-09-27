@@ -505,25 +505,6 @@ func runLandingPark(args []string) int {
 	return 0
 }
 
-func runLandingAdoptionRulings(args []string) int {
-	flags := flag.NewFlagSet("landing adoption-rulings", flag.ContinueOnError)
-	source := flags.String("source", "", "staged template installation")
-	target := flags.String("target", "", "application installation")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *source == "" || *target == "" {
-		return 2
-	}
-	data, err := landing.AdoptionRulings(*source, *target)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if _, err := os.Stdout.Write(data); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
 // runLandingReceiptLine answers whether a prospective landing appends the
 // RECEIPT line for its goal; land.sh runs it on the staged whole-project
 // tree right after staging. Exit 2 is a refusal with the detail in the
