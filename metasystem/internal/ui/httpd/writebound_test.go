@@ -90,3 +90,44 @@ func TestAWriteBodyThatEndsInWhitespaceIsTaken(t *testing.T) {
 	testutil.Expect(t, "status", response.Code, http.StatusOK)
 	testutil.Expect(t, "the writer was reached once", len(rec.records), 1)
 }
+
+// The document decoder had the same hole as the write decoder: json.Decoder.More
+// answered "no sibling" to a stray closing bracket, and the preview or the save
+// went through with junk after its object. It asks for the end of the document
+// now, as decode does (the Go builder's "left" after Astra A-04).
+func TestADocumentBodyWithJSONAfterTheObjectIsRefused(t *testing.T) {
+	t.Parallel()
+	for _, trailing := range []struct {
+		what string
+		body string
+	}{
+		{"a closing bracket nobody opened", `{"source":"# A\n"}]`},
+		{"a closing brace nobody opened", `{"source":"# A\n"}}`},
+		{"a bare word", `{"source":"# A\n"} nonsense`},
+	} {
+		t.Run(trailing.what, func(t *testing.T) {
+			t.Parallel()
+			rec := &recorder{}
+			served := New(rec.writing(), loopback(), testBundle())
+
+			response := post(t, served, "/api/documents/preview", trailing.body, nil)
+
+			testutil.Expect(t, "status", response.Code, http.StatusBadRequest)
+			testutil.Expect(t, "the reader was not reached", len(rec.previews), 0)
+			testutil.Expect(t, "the refusal says what is wrong",
+				refusalBody(t, "the refusal", response).Error,
+				"the request body carries more than one JSON value")
+		})
+	}
+}
+
+func TestADocumentBodyThatEndsInWhitespaceIsTaken(t *testing.T) {
+	t.Parallel()
+	rec := &recorder{}
+	served := New(rec.writing(), loopback(), testBundle())
+
+	response := post(t, served, "/api/documents/preview", `{"source":"# A\n"}`+"\n", nil)
+
+	testutil.Expect(t, "status", response.Code, http.StatusOK)
+	testutil.Expect(t, "the reader was reached once", len(rec.previews), 1)
+}

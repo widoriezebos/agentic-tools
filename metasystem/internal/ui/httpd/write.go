@@ -445,7 +445,8 @@ func decodeDocument(w http.ResponseWriter, r *http.Request, into any) bool {
 		writeRefusal(w, http.StatusBadRequest, "the request body is not the JSON object this route takes: "+err.Error(), nil)
 		return false
 	}
-	if reader.More() {
+	var after json.RawMessage
+	if err := reader.Decode(&after); !errors.Is(err, io.EOF) {
 		writeRefusal(w, http.StatusBadRequest, "the request body carries more than one JSON value", nil)
 		return false
 	}
