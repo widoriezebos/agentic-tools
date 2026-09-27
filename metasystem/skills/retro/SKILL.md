@@ -44,7 +44,7 @@ The expected effect must be testable: "fewer rework receipts on refactor tasks",
 
 ## Step 4: Apply and Close
 
-Present verdicts and proposals as a list the human can accept or veto item by item. Apply the accepted rows, update the ledger, then record the marker: `scripts/receipt.sh retro` with a one-line summary. A retro that forgets its marker breaks the cadence for the next one.
+Present verdicts and proposals as a list the human can accept or veto item by item. Apply the accepted rows, update the ledger, then record the marker: `metasystem receipt retro` with a one-line summary. A retro that forgets its marker breaks the cadence for the next one.
 
 With peer agents active, run retros at a quiet point on the integration branch. Accepted changes land through the normal review flow, agents mid-task finish under the rules they started with, and new rules apply from their next session.
 

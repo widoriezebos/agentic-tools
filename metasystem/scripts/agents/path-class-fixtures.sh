@@ -208,7 +208,6 @@ make_wrapper_fixture() { # fixture name
     "$landing_fixture/memory" "$landing_fixture/plans/goals"
   cp "$root/scripts/agents/commit.sh" "$landing_fixture/scripts/agents/commit.sh"
   cp "$root/scripts/agents/land.sh" "$landing_fixture/scripts/agents/land.sh"
-  cp "$root/scripts/agents/coverage-delta.sh" "$landing_fixture/scripts/agents/coverage-delta.sh"
   cp "$root/scripts/agents/landing-classes.json" "$landing_fixture/scripts/agents/landing-classes.json"
   cp "$root/scripts/agents/path-classes.txt" "$landing_fixture/scripts/agents/path-classes.txt"
   cp "$root/memory/rulings.md" "$landing_fixture/memory/rulings.md"
@@ -228,10 +227,14 @@ case "\$1 \${2:-}" in
   *) exec "$landing_fixture_engine" "\$@" ;;
 esac
 SH
-  cat >"$landing_fixture/scripts/audit-metasystem.sh" <<'SH'
+  # The proof engine is the real one except for the static audit, whose
+  # legs belong to the real suite.
+  cat >"$tmp/$1-proof-engine" <<SH
 #!/usr/bin/env bash
-exit 0
+[[ "\${1:-} \${2:-} \${3:-}" != "internal audit metasystem" ]] || exit 0
+exec "$landing_fixture_engine" "\$@"
 SH
+  chmod +x "$tmp/$1-proof-engine"
   cat >"$landing_fixture/scripts/agents/go-gate.sh" <<SH
 #!/usr/bin/env bash
 set -euo pipefail
@@ -243,9 +246,9 @@ while ((\$#)); do
   esac
 done
 [[ -n "\$proof_out" ]]
-cp "$landing_fixture_engine" "\$proof_out"
+cp "$tmp/$1-proof-engine" "\$proof_out"
 SH
-  chmod +x "$landing_fixture/bin/metasystem" "$landing_fixture/scripts/audit-metasystem.sh" \
+  chmod +x "$landing_fixture/bin/metasystem" \
     "$landing_fixture/scripts/agents/go-gate.sh" "$landing_fixture/scripts/agents/commit.sh" \
     "$landing_fixture/scripts/agents/land.sh"
   printf 'artifacts/\n' >"$landing_fixture/.gitignore"

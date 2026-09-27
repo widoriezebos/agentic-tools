@@ -214,15 +214,17 @@ type Deposit struct {
 // applied.
 //
 // It is not an act and it is not made. The Partner has no session and cannot
-// obtain one; what it can do is say which of this interface's nine acts it would
+// obtain one; what it can do is say which of this interface's ten acts it would
 // make and with which arguments, and the human's press on the card is the act.
 // So the fields here are the route body's own fields, under the body's own
 // names, and the verb is the route id the runner dispatches on.
 type Action struct {
 	// Verb is the route id: open-goal, approve-goal, withdraw-goal,
-	// set-goal-priority, block-goal, unblock-goal, park-goal, unpark-goal or
-	// edit-goal. It is the route and not a word a human reads, so a button
-	// renamed on a page leaves every persisted proposal alone.
+	// set-goal-priority, block-goal, unblock-goal, park-goal, unpark-goal,
+	// edit-goal or abandon-goal. It is the route and not a word a human reads,
+	// so a button renamed on a page leaves every persisted proposal alone — and
+	// it is the route rather than the name the Partner called the act by, so a
+	// public name the tool admits leaves them alone too.
 	Verb string `json:"verb"`
 	// Goal is the goal the act is about, by its ledger id: the goal in the
 	// route's path, and for an open the new goal's own id.

@@ -101,7 +101,6 @@ func TestAuditDependenciesReportsEveryForbiddenCommandAndPythonDebt(t *testing.T
 		"python3 -c pass",
 	}, "\n"))
 	writeDependencyTestFile(t, filepath.Join(root, "scripts", "agents", "safe.sh"), "echo 'node is prose'; printf '%s' node\n")
-	writeDependencyTestFile(t, filepath.Join(root, "scripts", "agents", "dependency-ratchet.sh"), "ruby -v\n")
 	writeDependencyTestFile(t, filepath.Join(root, "scripts", "agents", "channel-fixtures.sh"), "python3 -c pass\n")
 
 	findings, err := AuditDependencies(root)

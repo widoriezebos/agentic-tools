@@ -79,7 +79,7 @@ export function BulkSheet({
     : parkPlan(bulk.goals);
   const sending = sendable(plan);
   const [reason, setReason] = useState("");
-  // This opening of this sheet, minted once. Not now has one field the Partner
+  // This opening of this sheet, minted once. Pause has one field the Partner
   // may write; approving in bulk has none.
   const opening = useOpening();
   // Which field the caret is in, reported by the field's own row.
@@ -137,16 +137,16 @@ export function BulkSheet({
 
   return (
     <Panel
-      eyebrow={approving ? "To Do → Ready for Work" : "To Do → Not now"}
-      title={approving ? `Approve ${goalsWord(sending.length)}` : `Not now for ${goalsWord(sending.length)}`}
-      sheetName={approving ? "Approve selected" : "Not now for selected"}
+      eyebrow={approving ? "To Do → Ready for Work" : "To Do → Paused"}
+      title={approving ? `Approve ${goalsWord(sending.length)}` : `Pause ${goalsWord(sending.length)}`}
+      sheetName={approving ? "Approve selected" : "Pause selected"}
       fields={[
         { name: "Goals", value: sending.map((one) => one.id).join(", ") },
         { name: "Reason", value: because },
       ]}
       opening={opening}
       // Approving in bulk is a confirmation of what the list already shows, and
-      // it has no field at all. Not now asks for one reason, on every goal.
+      // it has no field at all. Pause asks for one reason, on every goal.
       writable={approving ? [] : ["Reason"]}
       set={putWords}
       unproven=""
@@ -159,7 +159,7 @@ export function BulkSheet({
       onClose={onClose}
       act={
         <Button primary disabled={!maySend(run, blocked)} onClick={send}>
-          {approving ? "Approve" : "Not now"}
+          {approving ? "Approve" : "Pause"}
         </Button>
       }
       aside={

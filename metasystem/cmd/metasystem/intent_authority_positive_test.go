@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -114,17 +115,15 @@ func materializeLocalLedger(t *testing.T, root string) {
 }
 
 // TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner:
-// settings coordinator --declare, bare and --withdraw run the real brain
-// owner, freshly built, as its own process. The owner classifies its caller
-// by walking the child's ancestry, and here that caller is a person at a
-// terminal (the existing fixture table, in an exact fake-runtime root), so
-// the owner's own authority admits the act and its real transition is
-// observed: the declaration record and the per-run registry entry, then
-// their withdrawal. Git is the claim because the owner process reads the
-// migrated ledger identity and the claim projection from the Git ledger
-// itself; no per-test fake repository crosses that process boundary.
+// settings coordinator --declare, bare and --withdraw call the real brain
+// owner in this process (design 6.2). The owner classifies the supplied
+// identity, this process, by walking its ancestry, and here that caller is a
+// person at a terminal (the existing fixture table, in an exact fake-runtime
+// root), so the owner's own authority admits the act and its real transition
+// is observed: the declaration record and the per-run registry entry, then
+// their withdrawal. Git is the claim because the owner reads the migrated
+// ledger identity and the claim projection from the Git ledger itself.
 func TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner(t *testing.T) {
-	engine := intentTestEngine(t)
 	root := migratedHumanTerminalRoot(t, "coordinator-machine", os.Getpid(), os.Getppid())
 	registry := t.TempDir()
 	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", registry)
@@ -133,16 +132,20 @@ func TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner(t *
 		t.Fatalf("migrated ledger identity = %q", ledger)
 	}
 
+	// The brain owner runs in this process (design 6.2); every call is
+	// recorded with the identity the edge supplied.
 	var calls [][]string
-	delivery := &intentDeliveryOwners{
-		process: func(process intentProcess) intentProcessResult {
-			calls = append(calls, process.argv)
-			return runIntentOwnerProcess(process)
-		},
-		executable: func() (string, error) { return engine, nil },
+	ownerCalls := defaultIntentOwnerCalls()
+	realBrain := ownerCalls.brain
+	ownerCalls.brain = func(choice string, caller processIdentity, stdout, stderr io.Writer, root, by string) int {
+		if caller.pid != int64(os.Getpid()) {
+			t.Fatalf("brain owner call supplied %+v, want this process", caller)
+		}
+		calls = append(calls, []string{"brain", choice, "--root", root, "--by", by})
+		return realBrain(choice, caller, stdout, stderr, root, by)
 	}
 	owners := defaultIntentOwners()
-	owners.resolver, owners.delivery = stateroot.NewResolver(fakeTop(root), noExecutable), delivery
+	owners.resolver, owners.delivery = stateroot.NewResolver(fakeTop(root), noExecutable), &intentDeliveryOwners{calls: ownerCalls}
 	settings, _ := findIntentCommand("settings coordinator")
 	run := func(args ...string) (int, intentResult) {
 		t.Helper()
@@ -185,7 +188,7 @@ func TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner(t *
 
 	code, result = run("--declare", "--by", "Wido")
 	argv := lastOwner(0)
-	if want := []string{engine, "internal", "brain", "declare", "--root", root, "--by", "Wido"}; !slicesEqual(argv, want) {
+	if want := []string{"brain", "declare", "--root", root, "--by", "Wido"}; !slicesEqual(argv, want) {
 		t.Fatalf("declare owner argv = %v, want %v", argv, want)
 	}
 	expectOutcome(t, "declare", code, result, intentConfirmed)
@@ -215,7 +218,7 @@ func TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner(t *
 
 	code, result = run("--withdraw", "--by", "Wido")
 	argv = lastOwner(2)
-	if want := []string{engine, "internal", "brain", "withdraw", "--root", root, "--by", "Wido"}; !slicesEqual(argv, want) {
+	if want := []string{"brain", "withdraw", "--root", root, "--by", "Wido"}; !slicesEqual(argv, want) {
 		t.Fatalf("withdraw owner argv = %v, want %v", argv, want)
 	}
 	expectOutcome(t, "withdraw", code, result, intentConfirmed)
@@ -245,9 +248,10 @@ func registryFiles(t *testing.T, home string) []string {
 	return files
 }
 
-// runIntentRealOwner runs one public command from root, its owner verbs
-// being the freshly built engine as their own processes; every owner argv
-// is recorded exactly as the adapter composed it.
+// runIntentRealOwner runs one public command from root, its owners being
+// either the in-process owner calls (design 6.2) or the freshly built engine
+// as their own processes; every owner call is recorded as the argv the
+// adapter composed, or its former child carried.
 func runIntentRealOwner(t *testing.T, root string, calls *[][]string, args ...string) (int, intentResult) {
 	t.Helper()
 	engine := intentTestEngine(t)
@@ -259,6 +263,9 @@ func runIntentRealOwner(t *testing.T, root string, calls *[][]string, args ...st
 			return runIntentOwnerProcess(process)
 		},
 		executable: func() (string, error) { return engine, nil },
+		calls: recordingOwnerCalls([]string{engine, "internal"}, func(argv []string) {
+			*calls = append(*calls, append([]string(nil), argv...))
+		}),
 	}
 	command, rest, _ := resolveIntentArgv(args)
 	var stdout, stderr bytes.Buffer

@@ -424,7 +424,7 @@ coverage_arguments=(--staged)
 if [[ -n "$ratchet" ]]; then
   coverage_arguments+=(--ratchet "$ratchet")
 fi
-bash "$root/scripts/agents/coverage-delta.sh" "${coverage_arguments[@]}" || {
+"$ms" internal proof-run coverage-delta --root "$root" "${coverage_arguments[@]}" || {
   echo "agent commit refused: staged Go package coverage check failed" >&2
   exit 1
 }
@@ -573,10 +573,8 @@ rm -f "$hidden_file"
 # without building, and the audit runs on the checkout's own engine.
 if [[ -z "$testing_contract" ]]; then
   audit_engine=$policy_engine
-  env -u METASYSTEM_MAX_ALWAYS_LOADED_WORDS -u METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS \
-    METASYSTEM_BIN="$audit_engine" \
-    "$root/scripts/audit-metasystem.sh" "$root" 1>&2 || {
-    echo "agent commit refused: the static re-proof failed (audit-metasystem.sh)" >&2
+  "$audit_engine" internal audit metasystem --root "$root" 1>&2 || {
+    echo "agent commit refused: the static re-proof failed (internal audit metasystem)" >&2
     exit 1
   }
 fi
@@ -985,8 +983,8 @@ if (( push_after )); then
     # Transport receives origin's ref, never the local branch: the
     # mirror sync cannot carry a commit origin has not accepted, so a
     # pre-review local chain cannot leak through this leg.
-    bash "$root/scripts/agents/sync-transport.sh" "$branch" || {
-      echo "landing push failed at transport with origin already pushed; resolve and rerun scripts/agents/sync-transport.sh" >&2
+    "$ms" internal landing sync-transport --root "$root" "$branch" || {
+      echo "landing push failed at transport with origin already pushed; resolve and rerun metasystem internal landing sync-transport" >&2
       exit 1
     }
   fi

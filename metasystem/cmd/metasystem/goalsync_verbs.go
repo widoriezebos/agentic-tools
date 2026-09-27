@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -134,21 +135,26 @@ func runGoalFetchWithResolver(args []string, resolve func(string) (goal.Endpoint
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *root == "" {
-		fmt.Fprintln(os.Stderr, "goal fetch: --root is required")
+	return goalFetchTo(os.Stdout, os.Stderr, *root, resolve)
+}
+
+// goalFetchTo is the read-side advance on the caller's streams.
+func goalFetchTo(stdout, stderr io.Writer, root string, resolve func(string) (goal.Endpoint, error)) int {
+	if root == "" {
+		fmt.Fprintln(stderr, "goal fetch: --root is required")
 		return 2
 	}
-	endpoint, err := resolve(*root)
+	endpoint, err := resolve(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal fetch: %v\n", err)
+		fmt.Fprintf(stderr, "goal fetch: %v\n", err)
 		return 1
 	}
 	res, err := goal.FetchAdvance(endpoint)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal fetch: %v\n", err)
+		fmt.Fprintf(stderr, "goal fetch: %v\n", err)
 		return 1
 	}
-	fmt.Printf("advanced=%v tip=%s %s\n", res.Advanced, res.Tip, res.Detail)
+	fmt.Fprintf(stdout, "advanced=%v tip=%s %s\n", res.Advanced, res.Tip, res.Detail)
 	return 0
 }
 
@@ -175,25 +181,32 @@ func runGoalRepairWithInputs(args []string, facts goalAuthorityReadFacts, resolv
 		flags.Usage()
 		return 2
 	}
-	if *root == "" {
-		fmt.Fprintln(os.Stderr, "goal repair: --root is required")
+	return goalRepairAcceptRemoteTo(os.Stdout, os.Stderr, *root, *by, facts, resolveEndpoint)
+}
+
+// goalRepairAcceptRemoteTo is the accept-remote repair owner on the caller's
+// streams; facts carry the supplied caller identity the brain's human-word
+// gate classifies.
+func goalRepairAcceptRemoteTo(stdout, stderr io.Writer, root, by string, facts goalAuthorityReadFacts, resolveEndpoint func(string) (goal.Endpoint, error)) int {
+	if root == "" {
+		fmt.Fprintln(stderr, "goal repair: --root is required")
 		return 2
 	}
-	if _, classErr := brainHumanWordClassificationWithFacts("repair", *root, *by, nil, facts); classErr != nil {
-		fmt.Fprintf(os.Stderr, "goal repair: %v\n", classErr)
+	if _, classErr := brainHumanWordClassificationWithFacts("repair", root, by, nil, facts); classErr != nil {
+		fmt.Fprintf(stderr, "goal repair: %v\n", classErr)
 		return 1
 	}
-	endpoint, err := resolveEndpoint(*root)
+	endpoint, err := resolveEndpoint(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal repair: %v\n", err)
+		fmt.Fprintf(stderr, "goal repair: %v\n", err)
 		return 1
 	}
-	res, err := goal.RepairAcceptRemote(endpoint, *by)
+	res, err := goal.RepairAcceptRemote(endpoint, by)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal repair: %v\n", err)
+		fmt.Fprintf(stderr, "goal repair: %v\n", err)
 		return 1
 	}
-	fmt.Printf("advanced=%v tip=%s %s\n", res.Advanced, res.Tip, res.Detail)
+	fmt.Fprintf(stdout, "advanced=%v tip=%s %s\n", res.Advanced, res.Tip, res.Detail)
 	return 0
 }
 

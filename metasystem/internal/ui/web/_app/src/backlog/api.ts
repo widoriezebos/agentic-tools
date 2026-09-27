@@ -45,6 +45,14 @@ const UNBLOCK = "/unblock";
 const PARK = "/park";
 const UNPARK = "/unpark";
 /**
+ * The act no page offers a button for and the Partner's card proposes: the goal
+ * that will never be worked, with the reason and the live goal carrying its work
+ * where a human named one. It is the same request to the same collection as the
+ * rest, with the same id between the prefix and the suffix, so it rides the one
+ * call site this build reaches the network from rather than opening a second one.
+ */
+const ABANDON = "/abandon";
+/**
  * The goal editor's first gate: the three fields of a goal nobody has
  * approved. It is the same request to the same collection as the rest, so it
  * rides the one call site rather than opening a second one.
@@ -383,6 +391,23 @@ export async function parkGoal(id: string, because: string): Promise<Backlog> {
 /** goal unpark, for one goal. The engine decides what it returns to. */
 export async function unparkGoal(id: string): Promise<Backlog> {
   return request(`${GOALS}${encodeURIComponent(id)}${UNPARK}`, {});
+}
+
+/**
+ * goal abandon, for one goal: the reason it will never be worked, and the live
+ * goal carrying its work where somebody named one.
+ *
+ * The reason is never invented here and never defaulted, for the reason a park's
+ * is not: the engine refuses an abandon without one, and a page that supplied a
+ * sentence would be writing a why nobody wrote. The successor travels exactly as
+ * it was proposed, and empty where nobody named one — which is the body saying
+ * there is no successor rather than this page choosing a goal to carry the work.
+ * Every rule about the goal's live dependents is the engine's: with a successor
+ * it repoints them in the same act, and without one it refuses in its own words,
+ * which name what a human does at a terminal. Nothing here decides any of that.
+ */
+export async function abandonGoal(id: string, because: string, successor: string): Promise<Backlog> {
+  return request(`${GOALS}${encodeURIComponent(id)}${ABANDON}`, { because, successor });
 }
 
 /**

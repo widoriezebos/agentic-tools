@@ -176,6 +176,13 @@ func validateCoverageProducerInputs(options CoverageBeginOptions, attempt Attemp
 }
 
 func ReusableCoverage(root, executionRoot, baselinePath string, packages []string) (*CoverageEvidence, bool, error) {
+	return ReusableCoverageInEnvironment(root, executionRoot, baselinePath, packages, os.Environ())
+}
+
+// ReusableCoverageInEnvironment is ReusableCoverage with the toolchain
+// identity judged under an explicit environment, for a caller whose Go
+// settings differ from its own process environment.
+func ReusableCoverageInEnvironment(root, executionRoot, baselinePath string, packages []string, environment []string) (*CoverageEvidence, bool, error) {
 	baseline, err := audit.ReadCoverageBaseline(baselinePath)
 	if err != nil {
 		return nil, false, err
@@ -190,7 +197,7 @@ func ReusableCoverage(root, executionRoot, baselinePath string, packages []strin
 		return left.After(right)
 	})
 	for _, attempt := range attempts {
-		evidence, found, matchErr := reusableCoverageForAttempt(attempt, executionRoot, baselinePath, baseline, packages)
+		evidence, found, matchErr := reusableCoverageForAttempt(attempt, executionRoot, baselinePath, baseline, packages, environment)
 		if matchErr != nil {
 			return nil, false, matchErr
 		}
@@ -212,10 +219,10 @@ func ReusableCoverageForAttempt(root, executionRoot, baselinePath, attemptID str
 	if err != nil {
 		return nil, false, err
 	}
-	return reusableCoverageForAttempt(attempt, executionRoot, baselinePath, baseline, packages)
+	return reusableCoverageForAttempt(attempt, executionRoot, baselinePath, baseline, packages, os.Environ())
 }
 
-func reusableCoverageForAttempt(attempt Attempt, executionRoot, baselinePath string, baseline *audit.CoverageBaseline, packages []string) (*CoverageEvidence, bool, error) {
+func reusableCoverageForAttempt(attempt Attempt, executionRoot, baselinePath string, baseline *audit.CoverageBaseline, packages []string, environment []string) (*CoverageEvidence, bool, error) {
 	if attempt.Terminal == nil || attempt.Terminal.Result != TerminalSuccess || len(CommittedDeliveryReceipt(attempt)) == 0 ||
 		attempt.PendingCoverage == nil || attempt.PendingCoverage.Evidence == nil {
 		return nil, false, nil
@@ -228,7 +235,7 @@ func reusableCoverageForAttempt(attempt Attempt, executionRoot, baselinePath str
 	if err != nil {
 		return nil, false, err
 	}
-	toolchain, err := CompleteToolchainIdentityAtWithEnvironment(executionRoot, os.Environ())
+	toolchain, err := CompleteToolchainIdentityAtWithEnvironment(executionRoot, environment)
 	if err != nil {
 		return nil, false, err
 	}

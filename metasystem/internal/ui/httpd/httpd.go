@@ -124,7 +124,8 @@ type Info struct {
 	// than through the ancestry of the process that started the server. A nil
 	// store is a build that cannot sign anyone in, which the routes say.
 	Sessions *session.Store
-	// The backlog's six acts and the Decisions queue's two, each one the human
+	// The backlog's six acts, the Decisions queue's two and the abandon the
+	// Partner's card asks for, each one the human
 	// working their own backlog
 	// in their own checkout: admitting work, withdrawing that admission,
 	// placing a goal in a priority band, opening a new goal at intake, and
@@ -153,6 +154,12 @@ type Info struct {
 	// that cannot act, which the route says.
 	Park   func(signed *session.Session, id, because string) error
 	Unpark func(signed *session.Session, id string) error
+	// Abandon records that one goal will never be worked, with the reason and
+	// the live goal carrying its work where a human named one. It is admitted
+	// from a browser under R-128-ui; neither --waive nor --also reaches it, so
+	// a goal with live dependents and no successor is refused by the engine.
+	// A nil field is an engine that cannot act, which the route says.
+	Abandon func(signed *session.Session, id, because, successor string) error
 	// Edit rewrites the intent, the next step and the labels of a goal nobody
 	// has approved yet, from the goal's own page or the board's card menu.
 	// Only the fields a human changed are carried, so a terminal edit of an

@@ -125,13 +125,53 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 	containsAll("always canary", current.Always.Canary, previous.Always.Canary)
 	containsAll("always standard", current.Always.Standard, previous.Always.Standard)
 	containsAll("unknown", current.Unknown, previous.Unknown)
-	containsAll("cadence", current.Cadence, previous.Cadence)
 	currentGroups := map[string]testpolicy.Group{}
 	for _, group := range current.Groups {
 		currentGroups[group.ID] = group
 	}
+	// A retired fixture section may leave the contract only when every one of
+	// its scenarios was ported to named Go tests that a replacement group,
+	// itself on the cadence, discovers. Only these exact sections qualify.
+	retiredSections := map[string]struct {
+		replacement string
+		tests       []string
+	}{
+		// second-session.sh moved into internal/seat/launch (verbs-object-action U3).
+		"section/second-session-fixtures": {replacement: "launch-machine-standard", tests: []string{
+			"TestTheManifestIsTheAdaptersDeclaredContract",
+			"TestSecondSessionCreatesAnIsolatedArmedWorktree",
+			"TestSecondSessionMintsANameAndRefusesUnlawfulOnes",
+			"TestSecondSessionStopsWhenArmingFails",
+		}},
+	}
+	requiredCadence := make([]string, 0, len(previous.Cadence))
+	for _, name := range previous.Cadence {
+		if retired, ok := retiredSections[name]; ok {
+			if _, still := currentGroups[name]; !still {
+				name = retired.replacement
+			}
+		}
+		requiredCadence = append(requiredCadence, name)
+	}
+	containsAll("cadence", current.Cadence, requiredCadence)
 	for _, old := range previous.Groups {
 		now, ok := currentGroups[old.ID]
+		if retired, isRetired := retiredSections[old.ID]; !ok && isRetired {
+			replacement, present := currentGroups[retired.replacement]
+			if !present {
+				t.Errorf("retired section %s has no replacement group %s", old.ID, retired.replacement)
+				continue
+			}
+			probe := replacement
+			if probe.Tests, err = json.Marshal(retired.tests); err != nil {
+				t.Fatal(err)
+			}
+			probeContract := testpolicy.Contract{SchemaVersion: current.SchemaVersion, Groups: []testpolicy.Group{probe}}
+			if err := proofrun.CheckNativeDiscovery(t.Context(), projectRoot, installation, probeContract, os.Environ()); err != nil {
+				t.Errorf("retired section %s: replacement %s does not discover its ported tests: %v", old.ID, retired.replacement, err)
+			}
+			continue
+		}
 		if !ok {
 			t.Errorf("legacy host group %s disappeared", old.ID)
 			continue

@@ -612,7 +612,7 @@ func (s *stopRun) decide() {
 	// that is not the one holding it. An unidentified caller is not an
 	// advisor.
 	if s.mainClass == "MAIN" && s.mainHolder != "true" {
-		message := "OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run scripts/agents/second-session.sh."
+		message := "OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run metasystem session isolate."
 		if s.upFailure != "" {
 			message += "\n" + s.upFailure
 		}

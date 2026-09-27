@@ -606,6 +606,23 @@ func runUIServe(args []string) int {
 					advance()
 					return nil
 				},
+				// And the act that says a goal will never be worked,
+				// with the reason and the successor carrying its work.
+				// Admitted from a signed-in browser under R-128-ui; the
+				// dependents rule, the successor rule and the reason
+				// rule are the engine's, and reach the page in its own
+				// words.
+				Abandon: func(signed *session.Session, id, because, successor string) error {
+					hand, err := acting(signed)
+					if err != nil {
+						return err
+					}
+					if err := hand.Abandon(id, because, successor); err != nil {
+						return err
+					}
+					advance()
+					return nil
+				},
 				// The one direct edit the master design admits: the
 				// intent, the next step and the labels of a goal nobody
 				// has approved. The state it must be in is the

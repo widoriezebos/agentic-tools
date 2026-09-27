@@ -276,7 +276,6 @@ func newGitFreePreflightBed(t *testing.T, behavior string) (*Engine, *hostCycleS
 	f := &hostCycleSource{t: t, root: root, contractPath: e.contractPath(), files: map[string][]byte{}}
 	f.files["scripts/gate.sh"] = []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\nmetric=audit=1\\n'\n")
 	f.files["truth/reference.txt"] = []byte("certified truth\n")
-	f.files["scripts/agents/arm-supervision.sh"] = []byte("#!/usr/bin/env bash\nset -euo pipefail\nif [[ ${1:-} == fingerprint ]]; then printf 'fixture-fingerprint\\n'; exit 0; fi\nprintf 'up outcome=armed authority=writer\\n'\n")
 	rules, err := os.ReadFile(filepath.Join("..", "..", "docs", "project-rules.md"))
 	if err != nil {
 		t.Fatal(err)

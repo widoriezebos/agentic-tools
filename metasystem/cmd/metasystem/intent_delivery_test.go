@@ -66,6 +66,10 @@ func newDeliveryBed(t *testing.T) *deliveryBed {
 		now:        func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC) },
 		batchRoot:  func(string, time.Time) (string, bool, error) { return "", false, nil },
 	}
+	// The bed's fakes answer by argv: owner calls reach them as the argv the
+	// former owner children carried.
+	bed.owners.calls = processBackedOwnerCalls(func() (string, error) { return bed.owners.executable() },
+		func(process intentProcess) intentProcessResult { return bed.owners.process(process) })
 	return bed
 }
 

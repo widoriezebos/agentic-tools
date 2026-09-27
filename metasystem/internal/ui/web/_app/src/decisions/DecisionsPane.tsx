@@ -137,7 +137,7 @@ export function DecisionsPane() {
   const [refused, setRefused] = useState<Refused>(nothingRefused);
   // Who is signed in NOW, rather than who was signed in when this payload was
   // composed. A human who opens the page signed out, signs in through the
-  // sheet and presses Not now would otherwise meet a disabled button until
+  // sheet and presses Pause would otherwise meet a disabled button until
   // they thought to press Refresh.
   const { session, askToSignIn } = useSession();
   const signedIn = signedInNow(session);
@@ -283,7 +283,7 @@ export function DecisionsPane() {
       });
   }, []);
 
-  // Return to queue is one goal and one publication, so it needs nothing but
+  // Resume is one goal and one publication, so it needs nothing but
   // the id: it sends unpark and the page reads its payload again, which is
   // what says the goal came back.
   const returnToQueue = useCallback(
@@ -911,7 +911,7 @@ function Mentioned({ mention }: { mention: Mention }) {
 }
 
 /**
- * Not now: the parks this human made, with the whole of what they said.
+ * Paused: the parks this human made, with the whole of what they said.
  *
  * Each row is the Overview's own item row with the reason as its note, and a
  * button that returns the goal to the queue — one goal, one publication, and
@@ -936,7 +936,7 @@ function NotNowList({
   return (
     <>
       <p className="ms-decisions-quiet">
-        Return to queue lifts one pause.
+        Resume lifts one pause.
         <Help id="return-to-queue" />
       </p>
       <ul className="ms-decisions-lines">
@@ -958,7 +958,7 @@ function NotNowList({
                 onReturn(park.id);
               }}
             >
-              Return to queue
+              Resume
             </Button>
           </li>
         ))}
@@ -1021,7 +1021,7 @@ function Approvals({ approved, onAct, now }: { approved: Approved[]; onAct: (req
                 onAct({ move: "withdraw", goal: one.row });
               }}
             >
-              Withdraw approval
+              Unapprove
             </Button>
           )}
         </li>

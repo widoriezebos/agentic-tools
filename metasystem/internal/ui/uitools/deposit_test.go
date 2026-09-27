@@ -130,6 +130,13 @@ func TestADepositOfAKindThisBuildDoesNotRecordIsRefused(t *testing.T) {
 			strings.Contains(result.Text(), DepositSeparator), false)
 		testutil.Expect(t, probe.what+" tells the model it was refused",
 			strings.HasPrefix(result.Text(), "Outcome: this call was refused"), true)
+		if probe.kind == DepositProposal {
+			// And it names the tool that does take one, so a Partner refused
+			// here is not left guessing where an act on a goal is proposed
+			// (g1-s62 D4).
+			testutil.Expect(t, "a proposal is sent to "+OpPropose,
+				strings.Contains(result.Problem, "an act on a goal is proposed with "+OpPropose), true)
+		}
 	}
 }
 

@@ -263,6 +263,18 @@ type testingSelectionRequest struct {
 	// and the verify verb judge the engine as they find it.
 	LandedRearm bool
 	PolicyChild bool
+	// Preparation is this invocation's preparation state, shared by every
+	// preparation the invocation makes; nil gives one preparation its own.
+	Preparation *testingPreparationState
+}
+
+// testingPreparationState is invocation-local execution state (design 6.2,
+// VOA-14): whether this invocation already restarted its preparation once
+// after the landing ref moved. It lives in the request, never in the process
+// environment, so a resident owner's earlier invocation cannot spend a later
+// one's allowance.
+type testingPreparationState struct {
+	restarted bool
 }
 
 func admitTestingRun(request testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
@@ -299,7 +311,8 @@ func (admission testingCommandAdmission) forced(launch proofLaunchAdmission) (pr
 
 func parseTestingSelection(name string, args []string, execution bool) (testingSelectionRequest, bool, int) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
-	request := testingSelectionRequest{}
+	// One command is one invocation: its preparations share one state.
+	request := testingSelectionRequest{Preparation: &testingPreparationState{}}
 	pathFlagVar(flags, &request.Root, "root", "", "MetaSystem installation root")
 	flags.StringVar(&request.GoalID, "goal", "", "accepted goal owning delivery")
 	flags.StringVar(&request.AuthorityGoalID, "authority", "", "claimed goal authorizing the proof reservation")
@@ -475,8 +488,6 @@ func batchRequirementsArgument(groups []string) string {
 	return string(encoded)
 }
 
-const preparationRestartedEnv = "METASYSTEM_PREPARATION_RESTARTED"
-
 type preparationBaseMove struct {
 	ours, engine string
 }
@@ -492,23 +503,23 @@ func prepareTesting(request testingSelectionRequest) (testingPreparation, error)
 }
 
 func prepareTestingWith(request testingSelectionRequest, attempt testingPreparationAttempt) (testingPreparation, error) {
-	restarted := os.Getenv(preparationRestartedEnv) == "1"
+	state := request.Preparation
+	if state == nil {
+		state = &testingPreparationState{}
+	}
 	for {
 		prepared, err := attempt(request)
 		var move *preparationBaseMove
 		if !errors.As(err, &move) {
 			return prepared, err
 		}
-		if restarted {
+		if state.restarted {
 			return testingPreparation{}, engineRefusal("base-moved", []enginecause.Fact{
 				enginecause.Value("ours", move.ours), enginecause.Value("engine", move.engine), enginecause.Value("restarts", "1"),
 			}, "the landing ref moved a second time during one test invocation")
 		}
 		fmt.Fprintf(os.Stderr, "metasystem test run: the landing ref moved under the run (ours=%s engine=%s); restarting preparation once\n", move.ours, move.engine)
-		if err := os.Setenv(preparationRestartedEnv, "1"); err != nil {
-			return testingPreparation{}, fmt.Errorf("record the one policy-base restart: %w", err)
-		}
-		restarted = true
+		state.restarted = true
 	}
 }
 

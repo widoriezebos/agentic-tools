@@ -1791,7 +1791,6 @@ func newResumedHostBed(t *testing.T, anchorReads int) *resolutionFileBed {
 	source := &hostCycleSource{t: t, root: canonicalRoot, contractPath: filepath.Join(canonicalRoot, "plans", "mission-alpha.contract.md"), files: map[string][]byte{}}
 	source.files["scripts/gate.sh"] = []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\nmetric=audit=1\\n'\n")
 	source.files["truth/reference.txt"] = []byte("certified truth\n")
-	source.files["scripts/agents/arm-supervision.sh"] = []byte("#!/usr/bin/env bash\nset -euo pipefail\nif [[ ${1:-} == fingerprint ]]; then printf 'fixture-fingerprint\\n'; exit 0; fi\nprintf 'up outcome=armed authority=writer\\n'\n")
 	rules, err := os.ReadFile(filepath.Join("..", "..", "docs", "project-rules.md"))
 	if err != nil {
 		t.Fatal(err)

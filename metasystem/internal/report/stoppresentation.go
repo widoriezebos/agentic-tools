@@ -217,7 +217,7 @@ func ComposeStopPresentationInput(collection StopPresentationCollection, now tim
 		input.Control = StopControl{Class: "advisor", JudgmentAvailable: false}
 		input.Unavailable = append(input.Unavailable, StopUnavailable{
 			Section: "judgment-facts", Cause: "the read-only advisor path does not run the seat's turn judgment",
-			Remedy: "Use scripts/agents/second-session.sh to write independently", Owner: "seat",
+			Remedy: "Use metasystem session isolate to write independently", Owner: "seat",
 		})
 	} else {
 		verdictBytes, err := os.ReadFile(collection.VerdictFile)

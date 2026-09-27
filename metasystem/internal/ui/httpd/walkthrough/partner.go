@@ -114,6 +114,14 @@ On the table: 1 fact, 1 decision, 1 open question.`
 // there. So one press shows a line landing, a refusal passed, and an unresolved
 // answer with Try again and Ask the Partner beside it.
 //
+// The two abandons are the act no page has a button for, so the card is the only
+// place either of them can be stood in front of. The first is a goal nothing
+// waits for, and it applies; the second names a goal two others wait for with no
+// successor, and the engine refuses it in the sentence that says what a human
+// does about it — which is the one refusal a slice about an irreversible act has
+// to be able to show. They sit before the withdrawal, because the withdrawal
+// stops the run.
+//
 // The fourth is an approve, and it is here for the Decisions inbox (g1-s60): an
 // approve is the one line that carries a budget, so it is what the open row's
 // read on opening and the bulk sheet's one read are stood in front of. Its goal
@@ -130,6 +138,11 @@ const (
 	proposedWithdraw     = unresolvedWithdraw
 	proposedApprove      = "g1-s47"
 	proposedOpen         = "refund-worker"
+	// The goal nothing waits for, which the abandon lands on, and the goal
+	// g1-s23 waits for, which the engine refuses until it is carried, waived or
+	// abandoned at a terminal.
+	proposedAbandon        = "g1-s46"
+	proposedAbandonRefused = "g1-s24"
 )
 
 const (
@@ -138,18 +151,26 @@ const (
 )
 
 // proposed is one canned propose call, in the tool's own fixed form.
-func proposed(when, verb, subject string, lines []string, explanation string) fakeacp.Read {
-	frame := uitools.ProposalHeader + verb + "\n"
-	if verb != uitools.ProposeOpen {
+//
+// The route is what the frame carries and what the message persists; the title
+// is the CALL, so it names the act the way the Partner asked for it, by the
+// goal action's public name (g1-s62 D1).
+func proposed(when, route, subject string, lines []string, explanation string) fakeacp.Read {
+	frame := uitools.ProposalHeader + route + "\n"
+	if route != uitools.ProposeOpen {
 		frame += uitools.ProposalGoal + subject + "\n"
 	}
 	for _, line := range lines {
 		frame += line + "\n"
 	}
+	asked := route
+	if named, there := uitools.ProposedActOf(route); there {
+		asked = named.Action
+	}
 	return fakeacp.Read{
 		When:  when,
 		Name:  "mcp__" + uitools.ServerName + "__" + uitools.OpPropose,
-		Title: "propose(" + verb + " " + subject + ")",
+		Title: "propose(" + asked + " " + subject + ")",
 		Result: uitools.PreparedProposalLine + "\n" + frame +
 			uitools.ProposalSeparator + "\n" + explanation + "\n",
 	}
@@ -215,6 +236,12 @@ var fakeReads = []fakeacp.Read{
 	proposed(pausePhrase, uitools.ProposePark, proposedPauseRefused,
 		[]string{uitools.ProposalBecause + "superseded by the seat inventory (g1-s42)"},
 		"the same inventory covers the phase this one publishes"),
+	proposed(pausePhrase, uitools.ProposeAbandon, proposedAbandon,
+		[]string{uitools.ProposalBecause + "the whole chain is read by the census now"},
+		"nothing waits for this one, so retiring it costs nothing else"),
+	proposed(pausePhrase, uitools.ProposeAbandon, proposedAbandonRefused,
+		[]string{uitools.ProposalBecause + "the format was decided in the inventory"},
+		"this one is the blocker g1-s23 waits for, so it needs a successor or a terminal"),
 	proposed(pausePhrase, uitools.ProposeWithdraw, proposedWithdraw,
 		[]string{uitools.ProposalReason + "the budget assumed a July start"},
 		"this one was approved against a date that has passed"),

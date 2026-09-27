@@ -63,10 +63,10 @@ const ids = (of: Row) => offersFor(of, all).map((offer) => offer.id);
 describe("what a card offers", () => {
   it("names the lane's own verb, the steps its band allows, and the goal", () => {
     expect(labels(middle)).toEqual([
-      "Ask about this", "Edit…", "Approve…", "Move up", "Move down", "Set priority…", "Open goal",
+      "Ask about this", "Edit…", "Approve…", "Move up", "Move down", "Prioritize…", "Open goal",
     ]);
     expect(labels(approved)).toEqual([
-      "Ask about this", "Withdraw approval…", "Move up", "Move down", "Set priority…", "Open goal",
+      "Ask about this", "Unapprove…", "Move up", "Move down", "Prioritize…", "Open goal",
     ]);
   });
 

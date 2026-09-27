@@ -200,20 +200,41 @@ func TestAWriteWithAStaleVersionIsRefusedWithTheEntry(t *testing.T) {
 	testutil.Expect(t, "at the version it really is", standing.Version, 2)
 }
 
-// Two writers racing on one line with the same version: exactly one is admitted.
-func TestTwoWritersRacingOnOneLineAdmitExactlyOne(t *testing.T) {
+// Writers racing on one line with the same version, on every pair the table
+// allows: exactly one is admitted, and the line moves exactly once.
+//
+// The race is what the version exists for, so it is run against the whole table
+// rather than against one pair that stands for it. The pairs are read off the
+// table below instead of being written down here, so a pair added to the table
+// is raced without this test being touched — and if a race could be won twice on
+// some pair the others do not exercise, it is this that would say so.
+func TestWritersRacingOnEveryAllowedPairAdmitExactlyOne(t *testing.T) {
 	t.Parallel()
-	for _, state := range []string{partner.ProposalApplying, partner.ProposalDismissed} {
-		t.Run(state, func(t *testing.T) {
+	pairs := allowedProposalPairs()
+	testutil.Require(t, "the table allows pairs to race", len(pairs) > 0, true)
+	for _, pair := range pairs {
+		t.Run(pair.from+"-to-"+pair.to, func(t *testing.T) {
 			t.Parallel()
 			served, turn := proposing(t)
+			// The line is walked to the state the race starts from, through the
+			// route like any other press, so what the writers contend over is a
+			// line that really arrived there rather than one put there behind the
+			// route's back.
+			version := 1
+			for _, step := range proposalWalk(t, pair.from) {
+				response, held := wrote(t, served, turn, 0, version, step, "")
+				testutil.Require(t, "the walk to "+pair.from+" is admitted at "+step,
+					response.Code, http.StatusOK)
+				version = held.Version
+			}
+
 			var running sync.WaitGroup
 			codes := make([]int, 8)
 			for at := range codes {
 				running.Add(1)
 				go func(at int) {
 					defer running.Done()
-					body := fmt.Sprintf(`{"version":1,"state":%q,"words":""}`, state)
+					body := fmt.Sprintf(`{"version":%d,"state":%q,"words":""}`, version, pair.to)
 					// The recorder is this goroutine's own, so nothing here shares
 					// one: what is compared afterwards is the status each got.
 					codes[at] = post(t, served, proposalPath(turn, 0), body, nil).Code
@@ -231,8 +252,62 @@ func TestTwoWritersRacingOnOneLineAdmitExactlyOne(t *testing.T) {
 			}
 			testutil.Expect(t, "exactly one writer moved the line", admitted, 1)
 			testutil.Expect(t, "and every other lost", conflicted, len(codes)-1)
+
+			// And the record agrees with the count. Statuses alone would not catch
+			// a second write that landed and answered late: one admitted write is
+			// one version, so a line eight versions on is eight writers that all
+			// won while reporting otherwise.
+			after := partnerSnapshot(t, get(t, served, partnerPath, nil))
+			settled := after.Messages[len(after.Messages)-1].Proposals[0]
+			testutil.Expect(t, "the line says "+pair.to, settled.State, pair.to)
+			testutil.Expect(t, "one version past where the race started", settled.Version, version+1)
 		})
 	}
+}
+
+// proposalPair is one move the transition table allows.
+type proposalPair struct{ from, to string }
+
+// allowedProposalPairs is the table read as pairs: every state against every
+// state, kept where the table admits the move.
+//
+// It asks the table rather than listing its eleven answers, because a test that
+// listed them would go on passing while saying nothing about a twelfth. The
+// order is the states' own, which is the order a line passes through them, so a
+// failure names a pair in the terms the table is written in.
+func allowedProposalPairs() []proposalPair {
+	pairs := []proposalPair{}
+	for _, from := range partner.ProposalStates {
+		for _, to := range partner.ProposalStates {
+			if partner.ProposalMayBecome(from, to) {
+				pairs = append(pairs, proposalPair{from: from, to: to})
+			}
+		}
+	}
+	return pairs
+}
+
+// proposalWalk is the shortest lawful walk from waiting to one state: the states
+// to write, in order, to bring a fresh line there.
+//
+// The four states a pair can start from are reached in at most two writes, so
+// the walks are spelled out rather than searched for. A state a new pair started
+// from and this did not know would stop the test rather than be skipped in
+// silence, which is what the failure below is for.
+func proposalWalk(t *testing.T, to string) []string {
+	t.Helper()
+	switch to {
+	case partner.ProposalWaiting:
+		return nil
+	case partner.ProposalApplying:
+		return []string{partner.ProposalApplying}
+	case partner.ProposalRefused:
+		return []string{partner.ProposalApplying, partner.ProposalRefused}
+	case partner.ProposalUnresolved:
+		return []string{partner.ProposalApplying, partner.ProposalUnresolved}
+	}
+	t.Fatalf("no walk from waiting to %s: the table has grown a state a race can start from", to)
+	return nil
 }
 
 // Two tabs pressing Try again on one line the page shows in flight: exactly one

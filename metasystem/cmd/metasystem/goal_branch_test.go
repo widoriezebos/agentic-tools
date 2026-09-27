@@ -28,7 +28,7 @@ func TestGoalBranchReadDelegateUsesBinarySeamAndReturnsWithoutWaiting(t *testing
 		t.Fatal(err)
 	}
 	t.Setenv("ARGS_PATH", argsPath)
-	job, err := readDelegate(binary, dir, filepath.Join(dir, "brief.md"), "goal-a", strings.Repeat("a", 40), "", "")
+	job, err := readDelegate(scriptDelegator(binary), dir, filepath.Join(dir, "brief.md"), "goal-a", strings.Repeat("a", 40), "", "")
 	if err != nil || job != "critic-fake" {
 		t.Fatalf("job=%q err=%v", job, err)
 	}
@@ -68,7 +68,7 @@ func TestGLEGoalBranchReadPassesFrozenBriefAndSolOverrideToDelegate(t *testing.T
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
 		return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit,
 			"--brief", input, "--runtime", "codex", "--model", "gpt-5.6-sol"}, goalBranchReadDependencies{
-			Binary: binary, Gate: func(string) (string, error) { return "green", nil }, Raw: raw,
+			Delegator: scriptDelegator(binary), Gate: func(string) (string, error) { return "green", nil }, Raw: raw,
 		})
 	})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "state=dispatched") {
@@ -196,7 +196,7 @@ func TestGLEGoalBranchReadRetriesStructuredRosterRefusalWithFrozenContext(t *tes
 	t.Setenv("LAUNCH_PATH", launchPath)
 	t.Setenv("ARGV_PATH", argvPath)
 	t.Setenv("BRIEF_COPY", briefCopy)
-	deps := goalBranchReadDependencies{Binary: binary, Gate: func(string) (string, error) { return "green", nil }, Raw: raw}
+	deps := goalBranchReadDependencies{Delegator: scriptDelegator(binary), Gate: func(string) (string, error) { return "green", nil }, Raw: raw}
 	code, _, stderr = captureCommandOutput(t, true, true, func() int {
 		return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit,
 			"--brief", input, "--runtime", "codex", "--model", "gpt-5.6-sol"}, deps)
@@ -237,7 +237,7 @@ func TestGLEGoalBranchReadKeepsUncertainDelegateOutcomePending(t *testing.T) {
 	if err := testexec.WriteFile(binary, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, err := readDelegate(binary, dir, filepath.Join(dir, "brief.md"), "goal-a", strings.Repeat("a", 40), "codex", "gpt-5.6-sol")
+	_, err := readDelegate(scriptDelegator(binary), dir, filepath.Join(dir, "brief.md"), "goal-a", strings.Repeat("a", 40), "codex", "gpt-5.6-sol")
 	var never *branch.ReadNeverLaunchedError
 	var structured *readDelegateOutcomeError
 	if err == nil || errors.As(err, &never) || !errors.As(err, &structured) ||

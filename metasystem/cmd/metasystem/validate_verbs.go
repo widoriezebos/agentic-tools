@@ -4,11 +4,15 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -193,9 +197,9 @@ func runValidateReturnComplete(args []string) int {
 	var violations []string
 	switch {
 	case *job != "" && *role == "" && *file == "":
-		violations = validate.ReturnCompleteJob(*root, *job)
+		violations = returnschema.ReturnCompleteJob(*root, *job)
 	case *job == "" && *role != "" && *file != "":
-		violations = validate.ReturnCompleteRole(*root, *role, *file)
+		violations = returnschema.ReturnCompleteRole(*root, *role, *file)
 	default:
 		fmt.Fprintln(os.Stderr, "validate return-complete: --job, or --role with --file")
 		return 2
@@ -495,19 +499,71 @@ func movedEffectsReport(page []byte, repositoryRoot string) ([]string, int) {
 // new refactor edit batch may start. Exit 0 safe, 1 blocked, 2 usage or
 // environment error — the contract its callers script against.
 func runValidateRefactorBaseline(args []string) int {
-	flags := flag.NewFlagSet("validate refactor-baseline", flag.ContinueOnError)
-	var p validate.RefactorBaselineParams
-	flags.StringVar(&p.Command, "command", "", "record or check")
-	flags.StringVar(&p.File, "file", "plans/refactor-baseline", "baseline file path")
-	flags.StringVar(&p.Gate, "gate", "", "record: the acceptance gate command that passed")
-	flags.IntVar(&p.MaxAgeMinutes, "max-age-minutes", 1440, "check: maximum baseline age")
-	flags.IntVar(&p.MaxCommits, "max-commits", 40, "check: maximum commits since the baseline")
-	if flags.Parse(args) != nil {
+	usage := func() int {
+		fmt.Fprintln(os.Stderr, `usage: metasystem internal validate refactor-baseline record --gate CMD [--file F] [--root INSTALLATION]
+       metasystem internal validate refactor-baseline check [--file F] [--max-age-minutes N] [--max-commits N] [--root INSTALLATION]
+
+record: store the current clean, committed HEAD as the trusted refactor
+baseline after the project's acceptance gate passed. check: allow a new
+refactor edit batch only when the worktree is clean, the baseline is an
+ancestor of HEAD, and the cadence backstop is not exceeded. The cadence
+resolves from flags, then environment, then the installation's
+metasystem.conf, then 1440 minutes and 40 commits.
+Exit codes: 0 safe; 1 blocked; 2 usage or environment error.`)
 		return 2
 	}
-	if p.Command != "record" && p.Command != "check" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate refactor-baseline --command record|check [--file F] [--gate CMD] [--max-age-minutes N] [--max-commits N]")
-		return 2
+	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
+		usage()
+		return 0
+	}
+	if len(args) == 0 || (args[0] != "record" && args[0] != "check") {
+		return usage()
+	}
+	var p validate.RefactorBaselineParams
+	p.Command = args[0]
+	flags := flag.NewFlagSet("validate refactor-baseline", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.StringVar(&p.File, "file", "plans/refactor-baseline", "baseline file path")
+	flags.StringVar(&p.Gate, "gate", "", "record: the acceptance gate command that passed")
+	maxAge := flags.String("max-age-minutes", "", "check: maximum baseline age")
+	maxCommits := flags.String("max-commits", "", "check: maximum commits since the baseline")
+	root := pathFlag(flags, "root", "", "installation whose metasystem.conf supplies the cadence (default: this engine's)")
+	if flags.Parse(args[1:]) != nil || flags.NArg() != 0 {
+		return usage()
+	}
+	set := map[string]bool{}
+	flags.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	installation := *root
+	if installation == "" {
+		if exe, err := os.Executable(); err == nil {
+			installation = filepath.Dir(filepath.Dir(exe))
+		}
+	}
+	confPath := filepath.Join(installation, "metasystem.conf")
+	for _, cadence := range []struct {
+		key, value, fallback string
+		target               *int
+	}{
+		{"refactor.max-age-minutes", *maxAge, "1440", &p.MaxAgeMinutes},
+		{"refactor.max-commits", *maxCommits, "40", &p.MaxCommits},
+	} {
+		flagName := strings.TrimPrefix(cadence.key, "refactor.")
+		value, code, err := config.Get(config.GetParams{
+			Key: cadence.key, Flag: cadence.value, FlagSet: set[flagName],
+			Default: cadence.fallback, DefaultSet: true, ConfPath: confPath,
+		})
+		if err != nil || code != 0 {
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
+			return 2
+		}
+		number, err := strconv.Atoi(value)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid value %q for %s\n", value, cadence.key)
+			return 2
+		}
+		*cadence.target = number
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -516,4 +572,40 @@ func runValidateRefactorBaseline(args []string) int {
 	}
 	p.Cwd = cwd
 	return validate.RefactorBaseline(p, os.Stdout, os.Stderr)
+}
+
+// runValidateSkills validates skills: every skill under the root's skills and
+// optional-skills (validate.SkillInventory), or only the named skill
+// directories: `validate skills [--root R] [DIR ...]`.
+func runValidateSkills(args []string) int {
+	flags := flag.NewFlagSet("validate skills", flag.ContinueOnError)
+	root := pathFlag(flags, "root", ".", "checkout whose skills and optional-skills are validated")
+	if flags.Parse(args) != nil {
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate skills [--root CHECKOUT] [DIR ...]")
+		return 2
+	}
+	if flags.NArg() > 0 {
+		for _, dir := range flags.Args() {
+			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+				fmt.Fprintf(os.Stderr, "skill directory is not a directory: %s\n", dir)
+				return 2
+			}
+			name, err := validate.Skill(dir)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			fmt.Printf("%s is valid\n", name)
+		}
+		return 0
+	}
+	if info, err := os.Stat(*root); err != nil || !info.IsDir() {
+		fmt.Fprintf(os.Stderr, "skill inventory root is not a directory: %s\n", *root)
+		return 2
+	}
+	if err := validate.SkillInventory(*root, os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
 }

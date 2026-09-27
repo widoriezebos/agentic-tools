@@ -53,7 +53,7 @@ func TestAProposalIsARowCarryingTheWholeAction(t *testing.T) {
 	testutil.Expect(t, "the title is the subject as the pages say it",
 		need.Title, "What g1-s44 is for")
 	testutil.Expect(t, "what is asked is the verb's word, the subject and every argument",
-		need.Asked, "Not now · What g1-s44 is for · Because: superseded by the seat inventory (g1-s42)")
+		need.Asked, "Pause · What g1-s44 is for · Because: superseded by the seat inventory (g1-s42)")
 	testutil.Expect(t, "who asks", need.By, "the Partner")
 	testutil.Expect(t, "since when", need.Since, ago(2*time.Hour))
 	testutil.Expect(t, "what silence does", need.Silence, "it stays proposed; nothing is applied")
@@ -72,7 +72,7 @@ func TestAProposalIsARowCarryingTheWholeAction(t *testing.T) {
 	testutil.Expect(t, "the Partner's own words are the explanation",
 		need.Proposal.Explanation, "the inventory covers what these were for")
 	testutil.Expect(t, "the state it stands in", need.Proposal.State, partner.ProposalWaiting)
-	testutil.Expect(t, "and the schema says which shape this is", page.SchemaVersion, 5)
+	testutil.Expect(t, "and the schema says which shape this is", page.SchemaVersion, 6)
 }
 
 // The goal's own row is joined where the ledger carries it, and nothing is
@@ -106,7 +106,7 @@ func TestAProposalJoinsTheGoalsRowWhereTheLedgerHasIt(t *testing.T) {
 	testutil.Expect(t, "the row of a goal nobody has yet is nil", unjoined.Row == nil, true)
 	testutil.Expect(t, "and what is asked still says what would happen",
 		unjoined.Asked,
-		"Open goal · Every refund lands within a day · Intent: Every refund lands within a day. · Severity: 2")
+		"Open · Every refund lands within a day · Intent: Every refund lands within a day. · Severity: 2")
 }
 
 // A line's own state travels, so a refused or unresolved row keeps its words
@@ -154,6 +154,46 @@ func TestAProposalIsNewByWhenItWasProposed(t *testing.T) {
 	testutil.Expect(t, "the one from three days ago is not", fresh["t6/0"], false)
 }
 
+// The row dates the asking and not the last press, and the last press travels
+// beside it.
+//
+// It is the same claim the "new" test makes, from the other end: a line that has
+// been answered once — refused, unresolved, left in flight — has been written
+// since it was proposed, and a row dated by that write would sort to the end of
+// its group and read "today" at exactly the moment it started to carry a
+// recovery (Sol's read of g1-s60, deferred). The group is read oldest asking
+// first, so the row that has waited longest leads whatever has been pressed on
+// it since.
+func TestAProposalsRowIsDatedByWhenItWasProposedAndNotByTheLastWrite(t *testing.T) {
+	t.Parallel()
+	answered := proposedPark("t6", 0, "g1-s44", partner.ProposalRefused, "goal g1-s44 is claimed by m2a", 3)
+	answered.At = ago(3 * 24 * time.Hour)
+	answered.UpdatedAt = ago(time.Minute)
+	untouched := proposedPark("t7", 0, "g1-s44", partner.ProposalWaiting, "", 1)
+
+	page := Compose(proposingInputs(untouched, answered), observed)
+
+	rows := map[string]Need{}
+	order := []string{}
+	for _, need := range page.NeedsYou {
+		if need.Kind == KindProposal {
+			rows[need.ID] = need
+			order = append(order, need.ID)
+		}
+	}
+	testutil.Require(t, "both rows are listed", len(rows), 2)
+	testutil.Expect(t, "the answered row is dated by its asking three days ago",
+		rows["t6/0"].Since, ago(3*24*time.Hour))
+	testutil.Expect(t, "and carries the instant of the write that answered it",
+		rows["t6/0"].Proposal.UpdatedAt, ago(time.Minute))
+	testutil.Expect(t, "a row nothing has written carries no write instant",
+		rows["t7/0"].Proposal.UpdatedAt, "")
+	// A row dated by the write would have gone to the end of the group; dated by
+	// the asking, the three-day-old refusal is still the one that has waited
+	// longest.
+	testutil.Expect(t, "oldest asking first", order, []string{"t6/0", "t7/0"})
+}
+
 // A seat with no Partner has no proposals and no group, and every other kind is
 // composed exactly as it was.
 func TestNoProposalsIsNoRowsAtAll(t *testing.T) {
@@ -178,20 +218,24 @@ func everyProposalMemberIsNil(page Page) bool {
 	return true
 }
 
-// The word on the row is the button word of the page that offers that act, for
-// every one of the nine: the row, the card and the button say one thing.
-func TestTheWordOnAProposalRowIsThePagesOwnButtonWord(t *testing.T) {
+// The word on the row is the act's own public name, for every one of the ten:
+// the row, the card and the page's button say one thing, and it is the word a
+// human types at a terminal (g1-s62 D3). Abandon has no button on any page —
+// the Partner's line is the whole of the ask — so its word is the word the card
+// says.
+func TestTheWordOnAProposalRowIsTheActsOwnPublicName(t *testing.T) {
 	t.Parallel()
 	for verb, word := range map[string]string{
-		"park-goal":         "Not now",
-		"unpark-goal":       "Return to queue",
+		"abandon-goal":      "Abandon",
+		"park-goal":         "Pause",
+		"unpark-goal":       "Resume",
 		"approve-goal":      "Approve",
-		"withdraw-goal":     "Withdraw approval",
-		"set-goal-priority": "Set priority",
-		"open-goal":         "Open goal",
+		"withdraw-goal":     "Unapprove",
+		"set-goal-priority": "Prioritize",
+		"open-goal":         "Open",
 		"edit-goal":         "Edit",
-		"block-goal":        "Waits for",
-		"unblock-goal":      "No longer waits for",
+		"block-goal":        "Block",
+		"unblock-goal":      "Unblock",
 	} {
 		testutil.Expect(t, "the word for "+verb, proposalWord(verb), word)
 	}

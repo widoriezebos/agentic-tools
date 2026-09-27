@@ -32,14 +32,34 @@ done
 
 source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$source_root/bin/metasystem}"
-source "$source_root/scripts/agents/fixture-budget.sh"
 : "${METASYSTEM_FIXTURE_POLL_INTERVAL_MS:=10}"
 : "${METASYSTEM_CENSUS_INTERVAL_MS:=250}"
 : "${METASYSTEM_WATCH_POLL_INTERVAL_MS:=50}"
 : "${METASYSTEM_HEARTBEAT_INTERVAL_MS:=20}"
 : "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:=20}"
-harness_fixture_budget_init "$source_root"
-fixture_ceiling_sec=$(harness_fixture_cap supervision-wait)
+: "${METASYSTEM_DRAIN_REAP_INTERVAL_MS:=$METASYSTEM_HEARTBEAT_INTERVAL_MS}"
+# The fixture cap scale is the suite's (a parent harness exports it) or the
+# calibration floor, 8x. The supervision wait is a hang detector of a 12 s
+# base (METASYSTEM_SUPERVISION_FIXTURE_TIMEOUT_SEC, 12..60) at that scale.
+: "${METASYSTEM_FIXTURE_CAP_SCALE_MILLI:=8000}"
+[[ "$METASYSTEM_FIXTURE_CAP_SCALE_MILLI" =~ ^[1-9][0-9]*$ ]] \
+  || { echo "METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer" >&2; exit 2; }
+: "${METASYSTEM_FIXTURE_CAP_SCALE:=$((METASYSTEM_FIXTURE_CAP_SCALE_MILLI / 1000))}"
+fixture_supervision_wait=${METASYSTEM_SUPERVISION_FIXTURE_TIMEOUT_SEC:-12}
+[[ "$fixture_supervision_wait" =~ ^[1-9][0-9]*$ && "$fixture_supervision_wait" -ge 12 && "$fixture_supervision_wait" -le 60 ]] \
+  || { echo "METASYSTEM_SUPERVISION_FIXTURE_TIMEOUT_SEC must be 12..60" >&2; exit 2; }
+fixture_ceiling_sec=$(( (fixture_supervision_wait * METASYSTEM_FIXTURE_CAP_SCALE_MILLI + 999) / 1000 ))
+METASYSTEM_FIXTURE_POLL_INTERVAL_SEC=$(printf '%d.%03d' "$((METASYSTEM_FIXTURE_POLL_INTERVAL_MS / 1000))" "$((METASYSTEM_FIXTURE_POLL_INTERVAL_MS % 1000))")
+export METASYSTEM_FIXTURE_CAP_SCALE METASYSTEM_FIXTURE_CAP_SCALE_MILLI \
+  METASYSTEM_FIXTURE_POLL_INTERVAL_MS METASYSTEM_FIXTURE_POLL_INTERVAL_SEC \
+  METASYSTEM_CENSUS_INTERVAL_MS METASYSTEM_WATCH_POLL_INTERVAL_MS \
+  METASYSTEM_HEARTBEAT_INTERVAL_MS METASYSTEM_DRAIN_REAP_INTERVAL_MS \
+  METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS
+
+# Arming is the repository engine's `up` entry.
+arm_repo() { # up arguments...
+  "${METASYSTEM_BIN:-$repo/bin/metasystem}" up --metasystem-root "$repo" "$@"
+}
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-fingerprint-harness.XXXXXX")
 tmp=$(cd "$tmp" && pwd -P)
@@ -58,9 +78,8 @@ cleanup() {
       cleanup_rc=1
     }
   fi
-  if [[ -x "$repo/scripts/agents/arm-supervision.sh" ]]; then
-    METASYSTEM_BIN="$cleanup_engine" \
-      "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown >&2 \
+  if [[ -x "$repo/bin/metasystem" ]]; then
+    METASYSTEM_BIN="$cleanup_engine" arm_repo --repo "$repo" --shutdown >&2 \
       || {
         echo "fingerprint harness cleanup shutdown failed" >&2
         cleanup_rc=1
@@ -143,9 +162,6 @@ backdate_census_generation() { # census, generation
 
 mkdir -p "$repo/scripts" "$repo/docs" "$repo/skills/design-critique"
 cp -R "$source_root/scripts/agents" "$repo/scripts/"
-cp "$source_root/scripts/metasystem-config.sh" \
-  "$source_root/scripts/assert-return-complete.sh" \
-  "$source_root/scripts/watch-background-jobs.sh" "$repo/scripts/"
 cp "$source_root/docs/project-rules.md" "$repo/docs/"
 cp "$source_root/skills/design-critique/SKILL.md" "$repo/skills/design-critique/"
 cp "$source_root/metasystem.conf" "$repo/"
@@ -193,7 +209,6 @@ printf '{}\n' >"$identity_fixture"
 export METASYSTEM_CENSUS_PROCESS_FILE=$process_fixture
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_fixture
 
-arm=$repo/scripts/agents/arm-supervision.sh
 state=$repo/artifacts/agents/supervision/state.json
 last=$repo/artifacts/agents/supervision/last-census.json
 brief=$tmp/brief.md
@@ -210,7 +225,7 @@ run_arm() { # description, arm arguments...
   local description=$1 arm_rc
   shift
   set +e
-  METASYSTEM_BIN="$enrolled_engine" "$arm" "$@" >&2
+  METASYSTEM_BIN="$enrolled_engine" arm_repo "$@" >&2
   arm_rc=$?
   set -e
   if (( arm_rc != 0 )); then

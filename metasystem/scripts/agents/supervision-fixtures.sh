@@ -91,6 +91,14 @@ cp_engine() { # source destination
   chmod 0755 "$2"
 }
 
+# The background-job watcher of one installation: its engine's
+# `report watch-jobs`, configured from that installation.
+watch_jobs() { # installation, then the watcher's arguments
+  local installation=$1
+  shift
+  "$installation/bin/metasystem" internal report watch-jobs --root "$installation" "$@"
+}
+
 # Every direct `metasystem up` through this fixture-only auditor is recorded
 # before the checkout-local engine receives it, giving the final isolation
 # check the registry-home and main-identity evidence the compatibility arm
@@ -242,7 +250,7 @@ assert_fixture_supervision_isolation() {
       [[ "$armed_pid" == - || "$armed_in_bed" == 1 ]] \
         || { echo "supervision fixture scenario $fixture_scenario attempted to arm with main pid $armed_pid outside its scenario bed $fixture_bed_pid" >&2; return 1; }
       case "$armed_source" in
-        arm-supervision) ;;
+        fixture-arm) ;;
         metasystem-up) direct_up_seen=1 ;;
         hook-main) ;;
         *) echo "supervision fixture scenario $fixture_scenario recorded an unknown arming source: $armed_source" >&2; return 1 ;;
@@ -570,12 +578,12 @@ cleanup() {
     status=70
   fi
   local harness_path tuple pid start
-  if [[ -n "${operator_harness:-}" && -x "$operator_harness/scripts/agents/arm-supervision.sh" ]]; then
+  if [[ -n "${operator_harness:-}" && -x "$operator_harness/bin/metasystem" ]]; then
     if declare -p operator_env >/dev/null 2>&1; then
-      "${operator_env[@]}" "$operator_harness/scripts/agents/arm-supervision.sh" \
+      "${operator_env[@]}" "$(fixture_arm_path "$operator_harness")" \
         --repo "${operator_scope:-$operator_harness}" --shutdown >/dev/null 2>&1 || true
     else
-      "$operator_harness/scripts/agents/arm-supervision.sh" \
+      fixture_arm "$operator_harness" \
         --repo "$operator_harness" --shutdown >/dev/null 2>&1 || true
     fi
   fi
@@ -583,8 +591,8 @@ cleanup() {
     status=1
   fi
   for harness_path in ${fixture_harness_roots[@]+"${fixture_harness_roots[@]}"}; do
-    if [[ -x "$harness_path/scripts/agents/arm-supervision.sh" ]]; then
-      "$harness_path/scripts/agents/arm-supervision.sh" --repo "$harness_path" --shutdown >/dev/null 2>&1 || true
+    if [[ -x "$harness_path/bin/metasystem" ]]; then
+      fixture_arm "$harness_path" --repo "$harness_path" --shutdown >/dev/null 2>&1 || true
     fi
   done
   for tuple in ${owned_pids[@]+"${owned_pids[@]}"}; do
@@ -1024,8 +1032,6 @@ make_repo() { # destination
   fixture_harness_roots+=("$repo")
   mkdir -p "$repo/scripts"
   cp -R "$source_root/scripts/agents" "$repo/scripts/"
-  cp "$source_root/scripts/watch-background-jobs.sh" "$repo/scripts/"
-  cp "$source_root/scripts/metasystem-config.sh" "$repo/scripts/"
   mkdir -p "$repo/skills/design-critique"
   cp "$source_root/skills/design-critique/SKILL.md" "$repo/skills/design-critique/"
   cp "$source_root/metasystem.conf" "$repo/metasystem.conf"
@@ -1269,7 +1275,7 @@ git -C "$operator_scope" -c user.name=metasystem -c user.email=metasystem.invali
 fixture_harness_roots+=("$operator_harness")
 mkdir -p "$operator_harness/bin"
 cp_engine "$ms" "$operator_harness/bin/metasystem"
-operator_arm=$operator_harness/scripts/agents/arm-supervision.sh
+operator_arm=$(fixture_arm_path "$operator_harness")
 operator_engine=$operator_harness/bin/metasystem
 enroll_fixture_engine "$operator_harness" "$operator_engine"
 
@@ -1344,8 +1350,10 @@ if [[ -z "$operator_runtimes" ]] \
 fi
 if [[ "${METASYSTEM_SUPERVISION_OPERATOR_EMPTY_RUNTIME_FIXTURE_ONLY:-0}" == 1 ]]; then
   [[ -z "$operator_runtimes" ]]
-  [[ "$(env -u METASYSTEM_METASYSTEM_RUNTIMES \
-    "$operator_harness/scripts/metasystem-config.sh" get --key metasystem.runtimes --default '')" == codex ]]
+  operator_configured_runtimes=$(env -u METASYSTEM_METASYSTEM_RUNTIMES "$operator_harness/bin/metasystem" internal config get \
+    --conf "$operator_harness/metasystem.conf" --key metasystem.runtimes --default '')
+  [[ "$operator_configured_runtimes" == codex ]] \
+    || { echo "operator empty-runtime fixture: the local override did not select codex" >&2; exit 1; }
   grep -Fqx 'metasystem.runtimes=fake' "$operator_harness/metasystem.conf"
   [[ "${operator_env[*]}" == *"METASYSTEM_CENSUS_PROCESS_FILE=$operator_process_fixture"* ]]
   assert_fixture_supervision_isolation
@@ -1422,7 +1430,7 @@ if [[ "$fixture_scenario" == stop-everything ]]; then
   git -C "$repo" -c user.name=metasystem -c user.email=metasystem.invalid \
     commit -qm 'add stop fixture design artifact'
 fi
-arm="$repo/scripts/agents/arm-supervision.sh"
+arm=$(fixture_arm_path "$repo")
 # One writer per checkout. Phases that arm a DIFFERENT main than the phase
 # before them release the checkout first, the way a departing main does.
 # Supervision components never hold the lease, so dropping the lease record
@@ -1445,7 +1453,7 @@ become_main() { # repository state root, session, optional engine
     --session "$session" --pid $$ --start "$(process_started_at $$)" \
     --tag "fixture-$session" --runtime fake >/dev/null
 }
-watcher="$repo/scripts/watch-background-jobs.sh"
+watcher_repo=$repo
 census_engine="$repo/bin/metasystem"
 process_fixture=$repo/process-fixture.json
 identity_fixture=$repo/process-identities.json
@@ -2558,7 +2566,7 @@ infer_driver_in_bed=0
 if fixture_pid_is_in_bed "$infer_driver"; then
   infer_driver_in_bed=1
 fi
-printf '%s\t%s\t%s\t%s\n' "$fixture_registry_home" "$infer_driver" arm-supervision "$infer_driver_in_bed" \
+printf '%s\t%s\t%s\t%s\n' "$fixture_registry_home" "$infer_driver" fixture-arm "$infer_driver_in_bed" \
   >>"$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"
 touch "$infer_release"
 wait_for_child_exit "S4-8 inferred arming" "$infer_driver"
@@ -2617,7 +2625,7 @@ for s45_component in watcher reaper landing-owner; do
       || { echo "S4-5: component $s45_component is missing $s45_key" >&2; exit 1; }
   done
 done
-if "$watcher" --dir "$repo/artifacts/agents/jobs" --scope "$repo" \
+if watch_jobs "$watcher_repo" --dir "$repo/artifacts/agents/jobs" --scope "$repo" \
     --state "$tmp/second-writer.state" --interval 1 --once --census \
     --supervision-dir "$repo/artifacts/agents/supervision" \
     --heartbeat "$tmp/second-writer.heartbeat" --instance-tag second-writer \
@@ -2653,7 +2661,7 @@ cat >"$warning_supervision/state.json" <<'JSON'
 JSON
 METASYSTEM_CENSUS_PROCESS_FILE="$warning_process_fixture" \
 METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$warning_identity_fixture" \
-  "$warning_repo/scripts/watch-background-jobs.sh" \
+  watch_jobs "$warning_repo" \
     --dir "$warning_repo/artifacts/agents/jobs" --scope "$warning_repo" \
     --state "$warning_supervision/jobs.state" --interval 1 --once --census \
     --supervision-dir "$warning_supervision" \
@@ -2675,7 +2683,7 @@ grep -Fq '"pidStartedAt"' "$source_root/internal/dispatch/ownership.go" \
 grep -Fq 'pidStartedAt' "$source_root/docs/orchestration.md" \
   || { echo "S4-1/S4-10: host-turn contract does not document pidStartedAt" >&2; exit 1; }
 for owner_asset in \
-  scripts/agents/dispatch.sh scripts/watch-background-jobs.sh \
+  scripts/agents/dispatch.sh \
   scripts/agents/adapters/runtime-common.sh scripts/agents/supervision-hook.sh \
   scripts/enforcement/claude-code-hooks.json scripts/enforcement/codex-hooks.json \
   scripts/enforcement/devin-hooks.json; do
@@ -2718,7 +2726,7 @@ holder_after=$(json_field "$repo/artifacts/agents/mains/worktree-lease.json" hol
   || { echo "advisor up displaced the live checkout holder" >&2; exit 1; }
 grep -Fq 'component=checkout-lease outcome=advisor' <<<"$advisor_output" \
   && grep -Fq 'up outcome=advisor authority=read-only' <<<"$advisor_output" \
-  && grep -Fq 'scripts/agents/second-session.sh' <<<"$advisor_output" \
+  && grep -Fq 'metasystem session isolate' <<<"$advisor_output" \
   || { echo "second-session up did not return the typed advisor outcome" >&2; echo "$advisor_output" >&2; exit 1; }
 touch "$advisor_release"
 wait_for_child_exit "advisor descendant release" "$advisor_pid"
@@ -2914,29 +2922,24 @@ assert_stale_shape() { # name, window
   grep -Eq 'age=[0-9]+s' "$output" \
     && grep -Fq "window=${window}s" "$output" \
     && grep -Fq 'retry in a moment' "$output" \
-    && grep -Fq "re-arm with $gate_repo_real/scripts/agents/arm-supervision.sh --repo $gate_repo_real if supervision is dead" "$output" \
+    && grep -Fq "re-arm with metasystem system start --repo $gate_repo_real if supervision is dead" "$output" \
     || { echo "stale census refusal did not carry the common diagnostic shape" >&2; cat "$output" >&2; exit 1; }
 }
 dispatch_fails no-census 'census verdict is absent'
 mkdir -p "$gate_repo/artifacts/agents/supervision"
 cp "$state" "$gate_repo/artifacts/agents/supervision/state.json"
 cp "$last" "$gate_repo/artifacts/agents/supervision/last-census.json"
-gate_fingerprint=$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")
+gate_fingerprint=$(fixture_arm "$gate_repo" fingerprint --repo "$gate_repo")
 cp "$gate_repo/artifacts/agents/supervision/state.json" "$tmp/gate-state.json"
 conf_edit "$gate_repo/metasystem.conf" replace-line-first '^watch[.]stale-min=.*$' 'watch.stale-min=21'
-[[ "$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")" != "$gate_fingerprint" ]] \
+[[ "$(fixture_arm "$gate_repo" fingerprint --repo "$gate_repo")" != "$gate_fingerprint" ]] \
   || { echo "S4-3: relevant configuration did not alter the fingerprint" >&2; exit 1; }
 git -C "$gate_repo" show HEAD:metasystem.conf >"$gate_repo/metasystem.conf"
 edit_state_owner "$gate_repo/artifacts/agents/supervision/state.json" \
   --field instanceTag="$(json_field "$gate_repo/artifacts/agents/supervision/state.json" owner.instanceTag)-changed"
-[[ "$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")" == "$gate_fingerprint" ]] \
+[[ "$(fixture_arm "$gate_repo" fingerprint --repo "$gate_repo")" == "$gate_fingerprint" ]] \
   || { echo "S4-3: supervisor instance identity altered the static fingerprint" >&2; exit 1; }
 cp "$tmp/gate-state.json" "$gate_repo/artifacts/agents/supervision/state.json"
-printf '\n# watcher fingerprint fixture\n' >>"$gate_repo/scripts/watch-background-jobs.sh"
-[[ "$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")" != "$gate_fingerprint" ]] \
-  || { echo "S4-3: watcher code did not alter the fingerprint" >&2; exit 1; }
-git -C "$gate_repo" show HEAD:scripts/watch-background-jobs.sh >"$gate_repo/scripts/watch-background-jobs.sh"
-chmod +x "$gate_repo/scripts/watch-background-jobs.sh"
 
 # Freshness is one capped window. Inside proceeds; the exact boundary and one
 # second past refuse with age, window, and both remedies. A configured interval
@@ -2951,7 +2954,7 @@ set_gate_census 21 10 "$gate_fingerprint"
 dispatch_fails stale-census 'census verdict is stale'
 assert_stale_shape stale-census 20
 conf_edit "$gate_repo/metasystem.conf" replace-line-first '^watch[.]interval-sec=.*$' 'watch.interval-sec=200'
-capped_fingerprint=$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")
+capped_fingerprint=$(fixture_arm "$gate_repo" fingerprint --repo "$gate_repo")
 set_gate_census 180 200 "$capped_fingerprint"
 dispatch_fails capped-census-window 'census verdict is stale'
 assert_stale_shape capped-census-window 180
@@ -3084,8 +3087,8 @@ fi
 
 if [[ "$fixture_scenario" == rotation-log ]]; then
 # The armed engine watcher publishes verdicts, not a census.log; the
-# transcript log and its byte-capped rotation belong to the shell job
-# watcher's --census mode, so rotation is proven there, in its own sandbox
+# transcript log and its byte-capped rotation belong to the job watcher's
+# --census mode (report watch-jobs), so rotation is proven there, in its own sandbox
 # (the armed repository's census-writer lock is held by the live watcher).
 rotation_repo=$tmp/rotation-repo
 make_repo "$rotation_repo"
@@ -3102,7 +3105,7 @@ until [[ -f "$rotation_supervision/census.log.1" ]]; do
     || { echo "census log rotation never happened after $rotation_passes passes" >&2; exit 1; }
   METASYSTEM_CENSUS_PROCESS_FILE="$rotation_repo/processes.json" \
   METASYSTEM_CENSUS_INTERVAL_MS=1 \
-    "$rotation_repo/scripts/watch-background-jobs.sh" \
+    watch_jobs "$rotation_repo" \
       --dir "$rotation_repo/artifacts/agents/jobs" --scope "$rotation_repo" \
       --state "$rotation_supervision/jobs.state" --interval 1 --once --census \
       --supervision-dir "$rotation_supervision" \
@@ -3131,9 +3134,6 @@ foreign=$tmp/foreign-owner
 mkdir -p "$foreign/repo"
 (cd "$foreign/repo" && git init -q -b main .)
 mkdir -p "$foreign/repo/metasystem/scripts/agents" "$foreign/repo/metasystem/artifacts/agents/supervision/lock.d"
-cp "$source_root/scripts/agents/arm-supervision.sh" \
-  "$source_root/scripts/agents/preflight-commands.sh" \
-  "$foreign/repo/metasystem/scripts/agents/"
 # Shutting supervision down is a control-plane write, so the sandbox needs the
 # engine (census identity, lease classification); without it this sandbox
 # refuses for the wrong reason and the foreign-owner rule below is never
@@ -3160,7 +3160,7 @@ printf '{"pid":%s,"pidStartedAt":%s,"instanceTag":"metasystem-supervision-owner-
   "$foreign_sleep_pid" "$foreign_start" \
   >"$foreign/repo/metasystem/artifacts/agents/supervision/lock.d/owner.json"
 set +e
-"$foreign/repo/metasystem/scripts/agents/arm-supervision.sh" --repo "$foreign/repo" --shutdown \
+fixture_arm "$foreign/repo/metasystem" --repo "$foreign/repo" --shutdown \
   >"$tmp/foreign-shutdown.out" 2>&1
 foreign_status=$?
 set -e
@@ -3180,7 +3180,6 @@ if [[ "$fixture_scenario" == stop-hook-monitor ]]; then
 stop_root=$tmp/stop-hook
 mkdir -p "$stop_root/plans" "$stop_root/artifacts/agents/jobs" "$stop_root/artifacts/agents/supervision" "$stop_root/scripts/agents"
 cp "$source_root/scripts/agents/supervision-hook.sh" \
-   "$source_root/scripts/agents/arm-supervision.sh" \
    "$source_root/scripts/agents/pre-commit-guard.sh" "$stop_root/scripts/agents/"
 # The hook (and the announcement step below) derive the caller's
 # main through the runtime-signature ancestor walk, and that walk

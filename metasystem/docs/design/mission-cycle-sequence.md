@@ -298,8 +298,8 @@ exact order (`ValidateReturn`, adjudicate.go:68-119):
 2. `outcome == "completed"` (78-80);
 3. `rawPath` and `returnPath` resolve inside the turn directory, symlinks
    resolved (81-87, 123-157);
-4. `scripts/assert-return-complete.sh --role orchestrator` passes on the
-   return file (89, turnio.go:16-26);
+4. the shipped return checker (`returnschema.ReturnCompleteRole`, role
+   orchestrator) passes on the return file (89, turnio.go:16-26);
 5. the return's `turnId`, `missionId`, `cycle` equal the turn record
    (96-107);
 6. `identity.runtime` and `identity.model` equal the turn record (108-114);

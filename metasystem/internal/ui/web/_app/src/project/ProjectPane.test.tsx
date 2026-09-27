@@ -174,7 +174,7 @@ describe("the chip on a goal's header", () => {
   it("stands in the head, after the goal's own chip", () => {
     const markup = header([proposal()]);
 
-    expect(markup).toContain('aria-label="Not now proposed on g1-s44, 1 action"');
+    expect(markup).toContain('aria-label="Pause proposed on g1-s44, 1 action"');
     expect(markup.indexOf("ms-chip-proposed")).toBeGreaterThan(markup.indexOf(">queued<"));
     expect(markup.indexOf("ms-chip-proposed")).toBeLessThan(markup.indexOf("ms-project-count"));
   });

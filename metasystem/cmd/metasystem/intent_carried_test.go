@@ -52,7 +52,7 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 	// land.sh publishes to origin, so the ledger is synced there too, as
 	// land-fixtures.sh configures its carried beds.
 	goalSyncMutationGit(t, f.mainRoot, "config", "goal.sync-remote", "origin")
-	// sync-transport.sh mirrors origin's main to the checkout's transport.
+	// landing sync-transport mirrors origin's main to the checkout's transport.
 	b.transport = filepath.Join(t.TempDir(), "transport.git")
 	goalSyncMutationGit(t, filepath.Dir(b.transport), "init", "-q", "--bare", b.transport)
 	goalSyncMutationGit(t, f.mainRoot, "remote", "add", "transport", b.transport)
@@ -68,6 +68,7 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 	b.owners = defaultIntentOwners()
 	delivery := defaultIntentDeliveryOwners()
 	delivery.executable = func() (string, error) { return b.engine, nil }
+	delivery.calls = recordingOwnerCalls([]string{b.engine, "internal"}, func(argv []string) { b.calls = append(b.calls, argv) })
 	delivery.process = func(process intentProcess) intentProcessResult {
 		b.calls = append(b.calls, append([]string(nil), process.argv...))
 		if len(process.argv) > 3 && process.argv[2] == "goal" && process.argv[3] == "carry" && !b.unproven {
@@ -322,7 +323,7 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 	goalSyncMutationGit(t, f.mainRoot, "pull", "-q", "--ff-only", f.upstream, "main")
 	goalSyncMutationGit(t, f.mainRoot, "update-ref", goal.LocalLedgerBranch, accepted)
 	goalSyncMutationGit(t, f.mainRoot, "update-ref", goal.AcceptedRef, accepted)
-	for _, name := range []string{"land.sh", "commit.sh", "pre-commit-guard.sh", "coverage-delta.sh", "sync-transport.sh", "path-classes.txt", "landing-classes.json"} {
+	for _, name := range []string{"land.sh", "commit.sh", "pre-commit-guard.sh", "path-classes.txt", "landing-classes.json"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", name))
 		if err != nil {
 			t.Fatal(err)
@@ -342,7 +343,7 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 	// carried stubs, and its proof engine is the bed's built engine, as
 	// land-fixtures.sh's go-build.sh copies it: this bed proves the carried
 	// transport, not the suites.
-	for _, battery := range []string{"agents/dispatch-fixtures.sh", "agents/goal-cli-fixtures.sh", "audit-metasystem.sh"} {
+	for _, battery := range []string{"agents/dispatch-fixtures.sh", "agents/goal-cli-fixtures.sh"} {
 		writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", filepath.FromSlash(battery)), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
 	}
 	gate := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == --fast && \"${2:-}\" == --proof-out && -n \"${3:-}\" ]]\ncp %q \"$3\"\n", engine)
