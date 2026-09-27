@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -456,6 +457,24 @@ func (s *Supervision) writePatch(output, failure, phase, usageFile string) {
 	}
 }
 
+// addPatchField sets one top-level field of a JSON patch file.
+func addPatchField(path, key string, value any) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var patch map[string]any
+	if err := json.Unmarshal(data, &patch); err != nil {
+		return fmt.Errorf("patch %s: %w", path, err)
+	}
+	patch[key] = value
+	encoded, err := json.Marshal(patch)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(encoded, '\n'), 0o644)
+}
+
 // failPending lands a pending round failed; a lost compare (3) is not an
 // error: the record already moved on.
 func (s *Supervision) failPending(failure, phase, usageFile string) bool {
@@ -563,11 +582,18 @@ func (s *Supervision) enforceExpiredDeadline(kind string, cli *child) error {
 		s.logf("%s %s-deadline sweep left the kill domain unproven; record stays nonterminal\n", s.d.nowISO(), kind)
 		return nil
 	}
+	provenAt := s.d.nowISO()
 	if kind == "handshake" {
 		s.failPending("handshake_timeout", "handshake", "")
 	} else {
-		// The reaper's and waiter's spelling: one record reads one way.
-		s.finishRunning("timeout", "budget-cap", "supervision", "")
+		// The reaper's and waiter's spelling, with the reaper's death
+		// proof: one record reads one way whoever lands the cap first.
+		patch := filepath.Join(s.roundDir, "terminal-patch.json")
+		s.writePatch(patch, "budget-cap", "supervision", "")
+		if err := addPatchField(patch, "groupDeathProvenAt", provenAt); err != nil {
+			fmt.Fprintln(s.d.Stderr, err)
+		}
+		s.recordCAS("running", "timeout", patch)
 	}
 	s.logf("%s %s deadline enforced by the custodian (D32)\n", s.d.nowISO(), kind)
 	return exit{0}

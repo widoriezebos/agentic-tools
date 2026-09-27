@@ -225,6 +225,9 @@ func TestExpiredCapKillsChildAndLandsTimeoutOnce(t *testing.T) {
 	if !strings.Contains(string(patch), `"budget-cap"`) || !strings.Contains(string(patch), `"supervision"`) {
 		t.Fatalf("terminal patch is not the reaper's budget-cap/supervision spelling: %s", patch)
 	}
+	if !strings.Contains(string(patch), `"groupDeathProvenAt"`) {
+		t.Fatalf("the custodian's cap patch carries no death proof: %s", patch)
+	}
 	if !strings.Contains(f.logText(t), "cap deadline enforced by the custodian") {
 		t.Fatalf("enforcement did not say itself in the job log: %s", f.logText(t))
 	}
