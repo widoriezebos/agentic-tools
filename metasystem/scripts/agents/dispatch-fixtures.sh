@@ -259,28 +259,28 @@ cleanup() {
   local status=$1 repo cleanup_failed=0
   trap - EXIT
   for repo in ${armed_supervision_repos[@]+"${armed_supervision_repos[@]}"}; do
-    [[ -x "$repo/scripts/agents/arm-supervision.sh" ]] || continue
+    [[ -x "$repo/bin/metasystem" ]] || continue
     if [[ "$repo" == "${runner_repo:-}" ]] && declare -p runner_process_env >/dev/null 2>&1; then
       run_fixture_arm "cleanup shutdown for $repo" - \
-        "${runner_process_env[@]}" "$repo/scripts/agents/arm-supervision.sh" \
+        "${runner_process_env[@]}" "$(fixture_arm_path "$repo")" \
           --repo "$repo" --shutdown \
         || { echo "dispatch fixture cleanup shutdown failed: $repo" >&2; cleanup_failed=1; }
     elif [[ "$repo" == "${steward_repo:-}" && -n "${steward_enrolled_engine:-}" ]]; then
       run_fixture_arm "cleanup shutdown for $repo" - \
         env METASYSTEM_BIN="$steward_enrolled_engine" \
-          "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown \
+          "$(fixture_arm_path "$repo")" --repo "$repo" --shutdown \
         || { echo "dispatch fixture cleanup shutdown failed: $repo" >&2; cleanup_failed=1; }
     else
       run_fixture_arm "cleanup shutdown for $repo" - \
-        "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown \
+        "$(fixture_arm_path "$repo")" --repo "$repo" --shutdown \
         || { echo "dispatch fixture cleanup shutdown failed: $repo" >&2; cleanup_failed=1; }
     fi
   done
   # Kill any job child still rooted under this run's temp dir before the
   # dir is preserved or removed. The process-loss/timed/cancelled/
   # mission-lease fixtures spawn `util hold` children the reaper is meant
-  # to reap; when an assertion fails BEFORE that reap, arm-supervision
-  # --shutdown stops the reaper but leaves those children orphaned, and
+  # to reap; when an assertion fails BEFORE that reap, the `up --shutdown`
+  # arming stops the reaper but leaves those children orphaned, and
   # the failure branch below PRESERVES the temp dir instead of deleting
   # it, so the child would otherwise run forever. Each such leak adds
   # process pressure that slows the next run's reaper past its assertion
@@ -324,7 +324,6 @@ setup_brain_dispatch_bed() {
   cp "$engine" "$brain_repo/bin/metasystem"
   cp "$root/scripts/agents/dispatch.sh" "$root/scripts/agents/checkout-execution-guard.sh" \
     "$root/scripts/agents/pre-commit-guard.sh" "$brain_repo/scripts/agents/"
-  cp "$root/scripts/metasystem-config.sh" "$brain_repo/scripts/"
   cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$brain_repo/records/misc/"
   printf 'metasystem.runtimes=fake\n' >"$brain_repo/metasystem.conf"
   cat >"$brain_repo/plans/goals.md" <<'LEDGER'
@@ -441,7 +440,7 @@ if [[ "$fixture_scenario" == brain-delegate-refuses || "$fixture_scenario" == br
 			out=$(assert_brain_dispatch_refusal env -u METASYSTEM_DELEGATE_INTERNAL "$brain_repo/scripts/agents/dispatch.sh" "${form_args[@]}")
 			[[ "$out" == *"until a human repairs it"* ]] || { echo "corrupt dispatcher refusal omitted the remedy" >&2; exit 1; }
 			out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_INTERNAL=1 "$brain_repo/scripts/agents/dispatch.sh" "${form_args[@]}")
-			[[ "$out" == *"until a human repairs it"* ]] || { echo "corrupt internal dispatcher refusal omitted the remedy" >&2; exit 1; }
+			[[ "$out" == *"until a human repairs it"* ]] || { echo "corrupt dispatcher refusal omitted the remedy" >&2; exit 1; }
 		done
   elif [[ "$fixture_scenario" == brain-breach-stop-exempt ]]; then
     set +e
@@ -457,7 +456,6 @@ if [[ "$fixture_scenario" == brain-delegate-refuses || "$fixture_scenario" == br
     mkdir -p "$node_repo/bin" "$node_repo/scripts/agents"
     cp "$engine" "$node_repo/bin/metasystem"
     cp "$root/scripts/agents/dispatch.sh" "$root/scripts/agents/checkout-execution-guard.sh" "$node_repo/scripts/agents/"
-    cp "$root/scripts/metasystem-config.sh" "$node_repo/scripts/"
     node_fence=$("$node_repo/bin/metasystem" brain fence --root "$node_repo" --act dispatch)
     [[ "$("$node_repo/bin/metasystem" json get --value "$node_fence" --field fenced)" == false ]] || { echo "another checkout's declaration fenced the node" >&2; exit 1; }
 
@@ -482,7 +480,7 @@ if [[ "$fixture_scenario" == brain-delegate-refuses || "$fixture_scenario" == br
 		track_armed_supervision "$node_repo"
 		node_start=$("$engine" proc started-at --pid "$$")
 		run_fixture_arm "brain absent-node arm" "$tmp/node-arm.out" \
-			env METASYSTEM_AGENT_RUNTIME=fake "$node_repo/scripts/agents/arm-supervision.sh" \
+			env METASYSTEM_AGENT_RUNTIME=fake "$(fixture_arm_path "$node_repo")" \
 				--repo "$node_repo" --session brain-absent-node --pid "$$" \
 				--start-time "$node_start" --tag brain-absent-node-fixture
 		cat >"$tmp/node-brief.md" <<'NODE_BRIEF'
@@ -517,8 +515,6 @@ cp -R scripts/agents "$agent_repo/scripts/"
 # the reviewed design blob at that path too.
 mkdir -p "$agent_repo/metasystem/scripts/agents/roles"
 cp scripts/agents/roles/design-critic.md "$agent_repo/metasystem/scripts/agents/roles/design-critic.md"
-cp scripts/metasystem-config.sh scripts/assert-return-complete.sh \
-  scripts/watch-background-jobs.sh "$agent_repo/scripts/"
 cp docs/project-rules.md docs/orchestration.md "$agent_repo/docs/"
 cp -R skills/code-critique skills/design-critique skills/take-a-step-back skills/verify "$agent_repo/skills/"
 cp metasystem.conf "$agent_repo/"
@@ -549,7 +545,8 @@ cp "$engine" "$agent_repo/bin/metasystem"
 enroll_fixture_repo "$agent_repo"
 agent_dispatch="$agent_repo/scripts/agents/dispatch.sh"
 fake_adapter=("$agent_repo/bin/metasystem" delegate-supervisor fake)
-agent_config="$agent_repo/scripts/metasystem-config.sh"
+# The agent checkout's configuration, through its own engine: get|validate.
+agent_config() { "$agent_repo/bin/metasystem" internal config "$1" --conf "$agent_repo/metasystem.conf" "${@:2}"; }
 good_agent_conf="$agent_fixture/good-metasystem.conf"
 cp "$agent_repo/metasystem.conf" "$good_agent_conf"
 owner_lock_ack_wrapper=$agent_fixture/owner-lock-ack-engine
@@ -1262,50 +1259,21 @@ grep -Fq "dispatch refused: engine commit $skew_stamp is older than checkout com
 # standalone raw-runtime driver is retired and must not reappear.
 [[ ! -e "$root/scripts/agents/critique-round.sh" ]] \
   || { echo "the retired standalone critique driver is still installed" >&2; exit 1; }
-# Configuration resolution is flag, environment, mode, plain, default.
-config_order="$agent_fixture/config-order"
-mkdir -p "$config_order/scripts" "$config_order/bin"
-cp scripts/metasystem-config.sh "$config_order/scripts/"
-cp "$engine" "$config_order/bin/metasystem"
-cat >"$config_order/metasystem.conf" <<EOF
-role.implementer.runtime=plain
-mode.refactor.role.implementer.runtime=mode
-plain.knob=plain-value
-EOF
-[[ "$("$config_order/scripts/metasystem-config.sh" get --key role.implementer.runtime --mode refactor --flag flag)" == flag ]] \
-  || { echo "metasystem config did not prefer the flag" >&2; exit 1; }
-[[ "$(METASYSTEM_ROLE_IMPLEMENTER_RUNTIME=environment "$config_order/scripts/metasystem-config.sh" get --key role.implementer.runtime --mode refactor)" == environment ]] \
-  || { echo "metasystem config did not prefer the environment" >&2; exit 1; }
-[[ "$(env -u METASYSTEM_ROLE_IMPLEMENTER_RUNTIME "$config_order/scripts/metasystem-config.sh" get --key role.implementer.runtime --mode refactor)" == mode ]] \
-  || { echo "metasystem config did not resolve the mode scope" >&2; exit 1; }
-[[ "$("$config_order/scripts/metasystem-config.sh" get --key plain.knob --mode refactor)" == plain-value ]] \
-  || { echo "metasystem config did not resolve the plain key" >&2; exit 1; }
-[[ "$("$config_order/scripts/metasystem-config.sh" get --key absent.knob --default built-in)" == built-in ]] \
-  || { echo "metasystem config did not resolve the built-in default" >&2; exit 1; }
-# An uncommitted local file carries values that must not ship to adopting
-# projects. It outranks the committed conf and yields to the environment.
-cat >"$config_order/metasystem.conf.local" <<'EOF'
-plain.knob=local-value
-EOF
-[[ "$(env -u METASYSTEM_PLAIN_KNOB "$config_order/scripts/metasystem-config.sh" get --key plain.knob)" == local-value ]] \
-  || { echo "metasystem config did not prefer the local override" >&2; exit 1; }
-[[ "$(METASYSTEM_PLAIN_KNOB=environment "$config_order/scripts/metasystem-config.sh" get --key plain.knob)" == environment ]] \
-  || { echo "local override outranked the environment" >&2; exit 1; }
-[[ "$(env -u METASYSTEM_ROLE_IMPLEMENTER_RUNTIME "$config_order/scripts/metasystem-config.sh" get --key role.implementer.runtime --mode refactor)" == mode ]] \
-  || { echo "local override disturbed a key it does not carry" >&2; exit 1; }
-rm -f "$config_order/metasystem.conf.local"
+# Configuration resolution order (flag, environment, local override, mode,
+# plain, default) is proven by internal/config's TestGetPrecedence and
+# TestGetLocalPrecedence.
 
-"$agent_config" validate
+agent_config validate
 cp "$no_tier_conf" "$agent_repo/metasystem.conf"
-"$agent_config" validate >"$agent_fixture/no-tier-validate.out"
+agent_config validate >"$agent_fixture/no-tier-validate.out"
 [[ $(grep -Fc 'INFO: model tiers are absent; dispatch overrides therefore always escalate' "$agent_fixture/no-tier-validate.out") -eq 1 ]] \
   || { echo "tier-absence validation fixture did not emit its one informational line" >&2; exit 1; }
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]1=.*$' 'model.tier.one=fake:fake-model'
-agent_fails malformed-tier-key 'not a supported model tier key' "$agent_config" validate
+agent_fails malformed-tier-key 'not a supported model tier key' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]1=.*$' 'model.tier.1=fake-model'
-agent_fails malformed-tier-member 'not runtime-qualified' "$agent_config" validate
+agent_fails malformed-tier-member 'not runtime-qualified' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 # An adopted repository may rely on role.default.runtime while the template
 # carries this role-specific key. Replace or append so both shapes gain one
@@ -1315,7 +1283,7 @@ if grep -q '^role[.]design-critic[.]runtime=' "$agent_repo/metasystem.conf"; the
 else
   printf 'role.design-critic.runtime=ghost\n' >>"$agent_repo/metasystem.conf"
 fi
-invalid_role_runtime=$("$agent_config" get --key role.design-critic.runtime) || {
+invalid_role_runtime=$(agent_config get --key role.design-critic.runtime) || {
   echo "invalid-role-runtime precondition failed: could not resolve role.design-critic.runtime after config mutation" >&2
   exit 1
 }
@@ -1323,29 +1291,29 @@ invalid_role_runtime=$("$agent_config" get --key role.design-critic.runtime) || 
   echo "invalid-role-runtime precondition failed: role.design-critic.runtime resolved to '$invalid_role_runtime', expected 'ghost'" >&2
   exit 1
 }
-agent_fails invalid-role-runtime 'outside metasystem.runtimes' "$agent_config" validate
+agent_fails invalid-role-runtime 'outside metasystem.runtimes' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 printf 'mode.refactor.role.implementer.runtime=ghost\n' >>"$agent_repo/metasystem.conf"
-agent_fails invalid-mode-runtime 'outside metasystem.runtimes' "$agent_config" validate
+agent_fails invalid-mode-runtime 'outside metasystem.runtimes' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 printf 'role.default.model.ghost=ghost-model\n' >>"$agent_repo/metasystem.conf"
-agent_fails invalid-model-runtime 'outside metasystem.runtimes' "$agent_config" validate
+agent_fails invalid-model-runtime 'outside metasystem.runtimes' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^metasystem[.]runtimes=.*$' 'metasystem.runtimes=ghost'
-agent_fails unsupported-runtime 'unsupported runtime' "$agent_config" validate
+agent_fails unsupported-runtime 'unsupported runtime' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]1=.*$' 'model.tier.1='
-agent_fails unmapped-model 'appears in 0 model tiers' "$agent_config" validate
+agent_fails unmapped-model 'appears in 0 model tiers' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]2=.*$' 'model.tier.2=fake:fake-model'
-agent_fails duplicate-model-tier 'appears in 2 model tiers' "$agent_config" validate
+agent_fails duplicate-model-tier 'appears in 2 model tiers' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]design-critic[.]model[.]fake=.*$'
 conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]default[.]model[.]fake=.*$'
-agent_fails missing-runtime-model 'has no model.fake value' "$agent_config" validate
+agent_fails missing-runtime-model 'has no model.fake value' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' "evidence.root=$agent_repo/evidence"
-agent_fails inside-evidence-root 'outside the repository' "$agent_config" validate
+agent_fails inside-evidence-root 'outside the repository' agent_config validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 
 # A direct record write simulates a pre-law survivor. It has a claim but no
@@ -1500,7 +1468,7 @@ git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard refs/
 track_armed_supervision "$budget_dispatch_repo"
 budget_main_start=$("$budget_dispatch_repo/bin/metasystem" proc started-at --pid "$$")
 run_fixture_arm "structured-budget initial arm" "$agent_fixture/budget-arming.out" \
-  env METASYSTEM_AGENT_RUNTIME=fake "$budget_dispatch_repo/scripts/agents/arm-supervision.sh" \
+  env METASYSTEM_AGENT_RUNTIME=fake "$(fixture_arm_path "$budget_dispatch_repo")" \
     --repo "$budget_dispatch_repo" --session budget-validator --pid "$$" \
     --start-time "$budget_main_start" --tag metasystem-main-fake-budget-validator
 METASYSTEM_OWNER_LINEAGE=budget-fixture \
@@ -1668,7 +1636,7 @@ agent_supervision_repo=$agent_repo
 track_armed_supervision "$agent_repo"
 agent_main_start=$("$agent_repo/bin/metasystem" proc started-at --pid "$$")
 run_fixture_arm "dispatcher initial arm" "$agent_fixture/arming.out" \
-  env METASYSTEM_AGENT_RUNTIME=fake "$agent_repo/scripts/agents/arm-supervision.sh" \
+  env METASYSTEM_AGENT_RUNTIME=fake "$(fixture_arm_path "$agent_repo")" \
     --repo "$agent_repo" --session validator --pid "$$" \
     --start-time "$agent_main_start" --tag metasystem-main-fake-validator
 
@@ -2834,7 +2802,7 @@ if [[ ${1:-} == job && ${2:-} == compose-role-packet ]]; then
 	fi
 	exit "$compose_rc"
 fi
-if [[ ${1:-} == config && ${2:-} == get && -e ${PACKET_CAP_MARKER:?}.composed ]]; then
+if [[ ${1:-} == internal && ${2:-} == config && ${3:-} == get && -e ${PACKET_CAP_MARKER:?}.composed ]]; then
 	previous=
 	for argument in "$@"; do
 		if [[ $previous == --key && $argument == dispatch.max-inline-input-kb ]]; then
@@ -3529,7 +3497,7 @@ local_refusals="$agent_repo/artifacts/agents/refusal-durable-root/reads-refused.
   && grep -Fq 'cannot mirror refusal-durable-root' "$agent_fixture/refusal-durable.out" \
   || { echo "refusal-durable lost the local event or scripted mirror failure" >&2; cat "$agent_fixture/refusal-durable.out" >&2; exit 1; }
 refusal_mirror_result="$agent_fixture/refusal-durable-mirror.json"
-refusal_evidence=$("$agent_config" get --key evidence.root)
+refusal_evidence=$(agent_config get --key evidence.root)
 "$engine" job mirror --repo "$agent_repo" --checkout "$agent_repo" --evidence "$refusal_evidence" \
   --root-job refusal-durable-root --job refusal-durable-root --result "$refusal_mirror_result"
 refusal_mirror_home=$("$engine" json get --file "$refusal_mirror_result" --field path)
@@ -3662,7 +3630,7 @@ run_agent_fixture_captured cap-driver-close flag-runtime "$agent_fixture/cap-dri
 cap_driver_close_rc=$?
 set -e
 [[ "$cap_driver_close_rc" -ne 0 ]] \
-  && grep -Fq 'next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and run job critique-budget-rebind' \
+  && grep -Fq "next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget: the chain's next follow-up or close (work revise, design review, work review --dispositions, work finish) carries the raised limit onto it first" \
     "$agent_fixture/cap-driver-close.out" \
   || { echo "the code critique close refusal did not print its human next steps" >&2; cat "$agent_fixture/cap-driver-close.out" >&2; exit 1; }
 echo "cap-driver terminal exhaustion fixture passed"
@@ -3727,7 +3695,7 @@ run_agent_fixture_captured cap-warden-close cap-warden "$agent_fixture/cap-warde
 cap_warden_close_rc=$?
 set -e
 [[ "$cap_warden_close_rc" -ne 0 ]] \
-  && grep -Fq 'next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and run job critique-budget-rebind' \
+  && grep -Fq "next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget: the chain's next follow-up or close (work revise, design review, work review --dispositions, work finish) carries the raised limit onto it first" \
     "$agent_fixture/cap-warden-close.out" \
   || { echo "the warden close refusal did not print its human next steps" >&2; cat "$agent_fixture/cap-warden-close.out" >&2; exit 1; }
 echo "cap-warden terminal exhaustion fixture passed"
@@ -4508,7 +4476,7 @@ grep -Fq '$(touch should-not-exist)' "$agent_repo/artifacts/agents/malicious-arg
 # changing the roster. The runtime-override roles return to their shipped
 # main assignment; fake remains the only registered fixture adapter.
 run_fixture_arm "dispatcher shutdown before no-tier re-arm" - \
-  "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown
+  "$(fixture_arm_path "$agent_repo")" --repo "$agent_repo" --shutdown
 cp "$no_tier_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" awk '
   /^role[.](code-critic|investigator)[.]runtime=fake$/ {
@@ -4529,7 +4497,7 @@ cat >>"$agent_repo/metasystem.conf" <<'EOF'
 role.investigator.model.fake=fake-implied-model
 EOF
 run_fixture_arm "dispatcher no-tier re-arm" "$agent_fixture/no-tier-arming.out" \
-  env METASYSTEM_AGENT_RUNTIME=fake "$agent_repo/scripts/agents/arm-supervision.sh" \
+  env METASYSTEM_AGENT_RUNTIME=fake "$(fixture_arm_path "$agent_repo")" \
     --repo "$agent_repo" --session validator-no-tiers --pid "$$" \
     --start-time "$agent_main_start" --tag metasystem-main-fake-validator
 
@@ -4849,7 +4817,7 @@ rm -f "$agent_repo/artifacts/agents/jobs/malformed-status.json"
 
 fi
 run_fixture_arm "dispatcher final shutdown" - \
-  "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown \
+  "$(fixture_arm_path "$agent_repo")" --repo "$agent_repo" --shutdown \
   || { echo "dispatcher fixture shutdown failed" >&2; exit 1; }
 agent_supervision_repo=
 fi
@@ -4941,21 +4909,22 @@ agent_supervision_repo=$runner_repo
 track_armed_supervision "$runner_repo"
 run_fixture_arm "mission runner baseline arm" "$agent_fixture/runner-baseline-arming.out" \
   "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
-    "$runner_repo/scripts/agents/arm-supervision.sh" \
+    "$(fixture_arm_path "$runner_repo")" \
     --repo "$runner_repo" --session runner-validator --pid "$$" \
     --start-time "$runner_main_start" --tag metasystem-main-fake-runner-validator \
   || { echo "mission runner fixture could not establish its baseline census" >&2; exit 1; }
-mv "$runner_repo/scripts/agents/arm-supervision.sh" \
-  "$runner_repo/scripts/agents/arm-supervision-real.sh"
-cat >"$runner_repo/scripts/agents/arm-supervision.sh" <<'ARM'
-#!/usr/bin/env bash
-set -euo pipefail
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-fixture_root=$(git -C "$script_dir" rev-parse --show-toplevel)
+# The runner arms through its checkout engine's `up` entry. The fixture
+# engine below stands in for that engine during runner missions: arming runs
+# the enrolled engine's `up`, then stages the fixture process identities and
+# waits for the post-arm census; every other verb is the enrolled engine.
+runner_arm_wrapper=$agent_fixture/runner-arm-wrapper
+{
+  printf '#!/usr/bin/env bash\nset -euo pipefail\nfixture_root=%q\nreal_engine=%q\n' "$runner_repo" "$enrolled_engine"
+  cat <<'ARM'
+[[ ${1:-} == up ]] || exec "$real_engine" "$@"
 wait_for_post_arm_census=1
-[[ ${1:-} == fingerprint ]] && wait_for_post_arm_census=0
 for argument in "$@"; do [[ "$argument" == --shutdown ]] && wait_for_post_arm_census=0; done
-if "$script_dir/arm-supervision-real.sh" "$@"; then
+if "$real_engine" "$@"; then
   arm_status=0
 else
   arm_status=$?
@@ -4966,12 +4935,12 @@ echo "mission runner fixture real arm result (exit status $arm_status)" >&2
 if [[ -n "${METASYSTEM_MISSION_PROCESS_IDENTITY_FILE:-}" \
 && -f "$fixture_root/artifacts/agents/supervision/state.json" ]]; then
 state_file="$fixture_root/artifacts/agents/supervision/state.json"
-watcher_pid=$("$fixture_root/bin/metasystem" json get --file "$state_file" --field components.watcher.pid)
-watcher_started=$("$fixture_root/bin/metasystem" json get --file "$state_file" --field components.watcher.pidStartedAt)
-watcher_tag=$("$fixture_root/bin/metasystem" json get --file "$state_file" --field components.watcher.instanceTag)
-reaper_pid=$("$fixture_root/bin/metasystem" json get --file "$state_file" --field components.reaper.pid)
-reaper_started=$("$fixture_root/bin/metasystem" json get --file "$state_file" --field components.reaper.pidStartedAt)
-reaper_tag=$("$fixture_root/bin/metasystem" json get --file "$state_file" --field components.reaper.instanceTag)
+watcher_pid=$("$real_engine" json get --file "$state_file" --field components.watcher.pid)
+watcher_started=$("$real_engine" json get --file "$state_file" --field components.watcher.pidStartedAt)
+watcher_tag=$("$real_engine" json get --file "$state_file" --field components.watcher.instanceTag)
+reaper_pid=$("$real_engine" json get --file "$state_file" --field components.reaper.pid)
+reaper_started=$("$real_engine" json get --file "$state_file" --field components.reaper.pidStartedAt)
+reaper_tag=$("$real_engine" json get --file "$state_file" --field components.reaper.instanceTag)
 identity_staged=$(mktemp "$(dirname "$METASYSTEM_MISSION_PROCESS_IDENTITY_FILE")/.identities.XXXXXX")
 printf '{"%s":{"pidStartedAt":%s,"command":"fixture %s"},"%s":{"pidStartedAt":%s,"command":"fixture %s"}}\n' \
   "$watcher_pid" "$watcher_started" "$watcher_tag" \
@@ -4980,18 +4949,20 @@ mv "$identity_staged" "$METASYSTEM_MISSION_PROCESS_IDENTITY_FILE"
 fi
 census_verdict="$fixture_root/artifacts/agents/supervision/last-census.json"
 census_state="$fixture_root/artifacts/agents/supervision/state.json"
-post_arm_generation=$("$fixture_root/bin/metasystem" json get --file "$census_verdict" --field generation)
-post_arm_scan=$("$fixture_root/bin/metasystem" json get --file "$census_verdict" --field scanSeq)
-"$fixture_root/bin/metasystem" job census-wait \
+post_arm_generation=$("$real_engine" json get --file "$census_verdict" --field generation)
+post_arm_scan=$("$real_engine" json get --file "$census_verdict" --field scanSeq)
+"$real_engine" job census-wait \
   --verdict "$census_verdict" --state "$census_state" \
   --root "$fixture_root" --repo "$fixture_root" \
   --post-generation "$post_arm_generation" --post-scan "$post_arm_scan" \
   --poll-ms 50
 ARM
-chmod +x "$runner_repo/scripts/agents/arm-supervision.sh"
+} >"$runner_arm_wrapper"
+chmod +x "$runner_arm_wrapper"
+runner_mission_env+=("METASYSTEM_BIN=$runner_arm_wrapper")
 run_fixture_arm "mission runner initial arm" "$agent_fixture/runner-arming.out" \
-  "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
-    "$runner_repo/scripts/agents/arm-supervision.sh" \
+  "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake METASYSTEM_BIN="$runner_arm_wrapper" \
+    "$(fixture_arm_path "$runner_repo")" \
     --repo "$runner_repo" --session runner-validator --pid "$$" \
     --start-time "$runner_main_start" --tag metasystem-main-fake-runner-validator \
   || { echo "mission runner fixture could not arm real-source supervision" >&2; exit 1; }
@@ -5642,7 +5613,7 @@ run_runner_expect runner-unverified-answer 0 "${runner_mission_env[@]}" \
 wait_runner_status runner-unverified 0
 
 run_fixture_arm "mission runner shutdown before resume" - \
-  "${runner_process_env[@]}" "$runner_repo/scripts/agents/arm-supervision.sh" \
+  "${runner_process_env[@]}" "$(fixture_arm_path "$runner_repo")" \
     --repo "$runner_repo" --shutdown
 agent_supervision_repo=
 [[ ! -e "$runner_repo/artifacts/agents/missions/runner-unverified/lease.d" ]] \
@@ -5662,7 +5633,7 @@ grep -Fq $'\tfailed\tstart-unverified' "$resumed_prompt" \
   || { echo "resumed turn omitted the failed prior turn from reconciliation" >&2; exit 1; }
 
 run_fixture_arm "mission runner final shutdown" - \
-  "${runner_process_env[@]}" "$runner_repo/scripts/agents/arm-supervision.sh" \
+  "${runner_process_env[@]}" "$(fixture_arm_path "$runner_repo")" \
     --repo "$runner_repo" --shutdown
 agent_supervision_repo=
 fi
@@ -5678,7 +5649,7 @@ agent_supervision_repo=$agent_selftest_repo
 track_armed_supervision "$agent_selftest_repo"
 agent_selftest_main_start=$("$agent_selftest_repo/bin/metasystem" proc started-at --pid "$$")
 run_fixture_arm "adapter selftest initial arm" "$agent_fixture/selftest-arming.out" \
-  env METASYSTEM_AGENT_RUNTIME=fake "$agent_selftest_repo/scripts/agents/arm-supervision.sh" \
+  env METASYSTEM_AGENT_RUNTIME=fake "$(fixture_arm_path "$agent_selftest_repo")" \
     --repo "$agent_selftest_repo" --session selftest-validator --pid "$$" \
     --start-time "$agent_selftest_main_start" --tag metasystem-main-fake-selftest-validator \
   || { echo "adapter selftest fixture could not arm supervision" >&2; exit 1; }
@@ -5697,7 +5668,7 @@ selftest_proven=$("$engine" json get --file "$selftest_newest" --field provenBeh
   || { echo "network stayed constructed-only in the selftest record" >&2; exit 1; }
 
 run_fixture_arm "adapter selftest final shutdown" - \
-  "$agent_selftest_repo/scripts/agents/arm-supervision.sh" --repo "$agent_selftest_repo" --shutdown
+  "$(fixture_arm_path "$agent_selftest_repo")" --repo "$agent_selftest_repo" --shutdown
 agent_supervision_repo=
 unset METASYSTEM_CENSUS_PROCESS_FILE METASYSTEM_FAKE_PROCESS_IDENTITY_FILE \
   METASYSTEM_MISSION_PROCESS_IDENTITY_FILE
@@ -5755,7 +5726,7 @@ STEWARD_ARM_DRIVER
 chmod +x "$steward_arm_driver"
 run_fixture_arm "steward end-to-end initial arm" - \
   "$steward_arm_driver" "$steward_enrolled_engine" \
-    "$steward_repo/scripts/agents/arm-supervision.sh" "$steward_repo" \
+    "$(fixture_arm_path "$steward_repo")" "$steward_repo" \
   || { echo "steward end-to-end: supervision arming failed" >&2; exit 1; }
 # The dispatch pipeline requires a fresh capability snapshot for the
 # runtime it launches; probe the fake adapter like every dispatching

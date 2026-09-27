@@ -19,6 +19,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
+// VerdictWriter is the writer identity every census verdict (last-census.json)
+// carries and every reader requires. It names the shell watcher that first
+// wrote the schema-2 verdict; the Go census kept the wire value so verdicts
+// already on disk and readers of either generation agree. It is data, not a
+// process: no process runs under this name any more.
+const VerdictWriter = "watch-background-jobs.sh"
+
 // run census: the per-interval scan the watcher runs. It classifies every
 // in-scope agent-shaped process as ANNOUNCED (a registered main), CUSTODY
 // (owned by a live job), or UNTRACKED (nobody can account for it — surfaced,
@@ -283,7 +290,7 @@ func assembleVerdict(label, fingerprint string, interval int, generation *int64,
 	}
 	completed := now.UTC()
 	return Verdict{
-		SchemaVersion: 2, Writer: "watch-background-jobs.sh", Verdict: label,
+		SchemaVersion: 2, Writer: VerdictWriter, Verdict: label,
 		CompletedAt:      completed.Format("2006-01-02T15:04:05Z"),
 		CompletedAtEpoch: completed.Unix(),
 		DurationMs:       0,

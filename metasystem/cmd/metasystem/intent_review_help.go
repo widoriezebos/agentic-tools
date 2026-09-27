@@ -12,6 +12,8 @@ const (
 	reviewRunUsage     = "metasystem work review run:RUN [--model MODEL]"
 	reviewChangesUsage = "metasystem work review --changes --brief FILE [--goal G] [--retry N]"
 	reviewDiffUsage    = "metasystem work review --patch PATCH --brief FILE [--goal G] [--retry N]"
+	reviewCheckUsage   = "metasystem work review j2:J --check-only --stage review|recertify|merge | [j2:ROOT] --check-only --findings RETURN --dispositions FILE"
+	reviewDesignCheck  = "metasystem design review FILE --check-only"
 )
 
 func reviewHelpForms() []intentHelpForm {
@@ -109,6 +111,18 @@ func reviewHelpForms() []intentHelpForm {
 			flags:      []string{"finding", "test", "review", "implementation-chain", "artifact", "result", "critic", "by"},
 			example:    []string{"metasystem", "work", "review", "G", "--finding", "F", "--test", "TestBehavior", "--json"},
 		},
+		{
+			name: "check", purpose: "check a job's review boundary or a round's decisions without asking a critic",
+			usage: []string{reviewCheckUsage},
+			inputs: []string{"j2:J with --stage review, recertify or merge checks that implementer job's review boundary.",
+				"--findings RETURN with --dispositions FILE checks that every finding of a critic round is decided; j2:ROOT checks against that chain's register."},
+			effects:     "Runs the check and prints its own lines; exit 0 passes, 1 fails, 2 is a usage mistake. The review stage writes the job's review artifacts; nothing is reviewed, closed or landed.",
+			authority:   "No critic is asked and no finding is decided; the check only reports.",
+			repetition:  "Repeat after correcting what it names.",
+			flags:       []string{"check-only", "stage", "test-command", "recertification", "findings", "dispositions"},
+			optionNotes: map[string]intentHelpOptionNote{"dispositions": {description: "the dispositions table the round's findings are checked against"}},
+			example:     []string{"metasystem", "work", "review", "j2:J", "--check-only", "--stage", "review"},
+		},
 	}
 }
 
@@ -125,6 +139,16 @@ func designReviewHelpForms() []intentHelpForm {
 			flags:       []string{"goal", "dispositions", "after", "retry", "tool-calls"},
 			optionNotes: map[string]intentHelpOptionNote{"dispositions": {description: "the author's decisions on the examined design"}, "after": {description: "the examination number the decisions answer"}},
 			example:     []string{"metasystem", "design", "review", "plans/designs/example.md", "--goal", "G", "--json"},
+		},
+		{
+			name: "check", purpose: "check a design page's moved-effect inventory against the code, without a critic",
+			usage:      []string{reviewDesignCheck},
+			inputs:     []string{"FILE is the design page; its Moved effects table names the code each moved effect reaches."},
+			effects:    "Checks each row's owners and code paths and prints one line per row and problem. Nothing is examined by a critic and nothing is written.",
+			authority:  "None needed; it only reads.",
+			repetition: "Repeat after correcting the inventory.",
+			flags:      []string{"check-only"},
+			example:    []string{"metasystem", "design", "review", "plans/designs/example.md", "--check-only"},
 		},
 	}
 }

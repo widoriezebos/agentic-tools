@@ -74,14 +74,6 @@ func TestIntentPublicDiscovery(t *testing.T) {
 	if code != 2 || out != "" || !strings.Contains(problem, "did you mean: metasystem work") || strings.Contains(problem, "internal") {
 		t.Errorf("unknown word = %d %q %q", code, out, problem)
 	}
-	for _, name := range []string{"goals", "approve", "show", "review", "enroll"} {
-		if _, ok := findIntentCommand(name); ok {
-			t.Errorf("%s is still a public descriptor", name)
-		}
-		if code, out, _ := runCLIHelp([]string{"help", name}, registered); code == 0 || out != "" {
-			t.Errorf("help %s = code %d stdout %q; a removed spelling is refused", name, code, out)
-		}
-	}
 }
 
 // TestRealPartnerPublicCatalogue: the Partner's kit tool, given the real

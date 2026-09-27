@@ -430,7 +430,7 @@ func syntheticFingerprintRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	for _, relative := range []string{
-		"scripts/agents/arm-supervision.sh", "scripts/agents/dispatch.sh", "bin/metasystem", "scripts/watch-background-jobs.sh",
+		"scripts/agents/dispatch.sh", "bin/metasystem",
 	} {
 		path := filepath.Join(root, relative)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -504,11 +504,11 @@ func TestAdvisorRenderingNamesHolderAndWorktree(t *testing.T) {
 	result := Result{
 		Components: []ComponentOutcome{{Component: "checkout-lease", Outcome: "advisor", Detail: "holder=session-a"}},
 		Outcome:    "advisor", Authority: "read-only", Holder: "session-a (main-1)",
-		Worktree: "scripts/agents/second-session.sh",
+		Worktree: "metasystem session isolate",
 	}
 	lines := result.Lines()
 	if result.ExitCode() != 0 || len(lines) != 2 ||
-		lines[1] != `up outcome=advisor authority=read-only holder="session-a (main-1)" worktree="scripts/agents/second-session.sh"` {
+		lines[1] != `up outcome=advisor authority=read-only holder="session-a (main-1)" worktree="metasystem session isolate"` {
 		t.Fatalf("wrong advisor outcome: %#v", lines)
 	}
 }

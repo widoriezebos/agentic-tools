@@ -13,6 +13,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
@@ -281,13 +282,13 @@ func TestConformanceTopLevelBoundarySurvivesReturnValidation(t *testing.T) {
 	// The mismatch is the fresh round's first review, so no persisted review
 	// can replace the boundary refusal with an immutability refusal.
 	writeReturn()
-	if violations := ReturnCompleteJob(f.controller, "impl"); len(violations) != 0 {
+	if violations := returnschema.ReturnCompleteJob(f.controller, "impl"); len(violations) != 0 {
 		t.Fatalf("an empty boundary must remain valid: %v", violations)
 	}
 	expectConformance(t, f, "review", 1, "changed paths fall outside the cumulative implementation boundary")
 
 	writeReturn("source.txt")
-	if violations := ReturnCompleteJob(f.controller, "impl"); len(violations) != 0 {
+	if violations := returnschema.ReturnCompleteJob(f.controller, "impl"); len(violations) != 0 {
 		t.Fatalf("the top-level project declaration must remain valid: %v", violations)
 	}
 	data, err := os.ReadFile(filepath.Join(f.controller, "artifacts", "agents", "impl", "rounds", "1", "return.json"))

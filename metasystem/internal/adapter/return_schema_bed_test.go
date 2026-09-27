@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
 
 // The adapter legs of scripts/agents/return-schema-fixtures.sh, ported with
@@ -84,7 +84,7 @@ func TestReturnSchemaBedNormalizeAdoptsObservedIdentity(t *testing.T) {
 	if want := map[string]any{"sessionId": "claimed-session", "model": "claimed-model"}; !reflect.DeepEqual(normalized["claimed"], want) {
 		t.Fatalf("normalized return did not preserve both claims: %v", normalized["claimed"])
 	}
-	if violations := validate.ReturnCompleteRole(root, "implementer", output); len(violations) != 0 {
+	if violations := returnschema.ReturnCompleteRole(root, "implementer", output); len(violations) != 0 {
 		t.Fatalf("normalized return failed the implementer schema: %v", violations)
 	}
 
@@ -101,7 +101,7 @@ func TestReturnSchemaBedNormalizeAdoptsObservedIdentity(t *testing.T) {
 	if want := map[string]any{"sessionId": nil, "model": "claimed-model"}; !reflect.DeepEqual(readReturnObject(t, output)["claimed"], want) {
 		t.Fatalf("a claim on one member did not keep both claimed keys: %v", readReturnObject(t, output)["claimed"])
 	}
-	if violations := validate.ReturnCompleteRole(root, "implementer", output); len(violations) != 0 {
+	if violations := returnschema.ReturnCompleteRole(root, "implementer", output); len(violations) != 0 {
 		t.Fatalf("one-claim return failed the implementer schema: %v", violations)
 	}
 }
@@ -123,7 +123,7 @@ func TestReturnSchemaBedFakeCriticSpeaksVersionThree(t *testing.T) {
 	if err := WriteFakeReturn(record, prompt, output); err != nil {
 		t.Fatal(err)
 	}
-	if violations := validate.ReturnCompleteRole(root, "code-critic", output); len(violations) != 0 {
+	if violations := returnschema.ReturnCompleteRole(root, "code-critic", output); len(violations) != 0 {
 		t.Fatalf("fake critic return failed the code-critic schema: %v", violations)
 	}
 	object := readReturnObject(t, output)

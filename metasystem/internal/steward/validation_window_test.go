@@ -135,6 +135,15 @@ func writeValidationAttempt(t *testing.T, root, runID, omitted string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A private admission namespace: the default is the host's durable one,
+	// which concurrent processes on this machine hold. A separate fake-runtime
+	// root authorizes it without changing the steward fixture's own root.
+	authority := t.TempDir()
+	if err := os.WriteFile(filepath.Join(authority, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", authority)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(t.TempDir(), "host-admission"))
 	owner := &proofrun.ReservationOwner{ControlRoot: root, RunID: runID, RunGeneration: 1,
 		LaunchNonce: strings.Repeat("a", 32), GoalRevision: 2, ObligationRevision: 3, AttemptOrdinal: 3,
 		Deadline: now.Add(10 * time.Minute).Format(time.RFC3339Nano)}

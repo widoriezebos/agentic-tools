@@ -859,14 +859,10 @@ func TestFakeProbe(t *testing.T) {
 		want  float64
 		fails string
 	}{
-		{name: "scale 3", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE": "3"}, want: 6},
-		{name: "scale 1.25", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE": "1.25"}, want: 3},
-		{name: "milli wins", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE_MILLI": "1500", "METASYSTEM_FIXTURE_CAP_SCALE": "9"}, want: 3},
-		{name: "capped at 60", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE": "48"}, want: 60},
-		{name: "scale above 48", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE": "48.5"}, fails: "must be a decimal from 1 through 48"},
-		{name: "scale below 1", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE": "0.9995"}, fails: "must be a decimal from 1 through 48"},
-		{name: "scale not decimal", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE": "2x"}, fails: "must be a decimal from 1 through 48"},
-		{name: "milli invalid", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE_MILLI": "0"}, fails: "fixture cap scale is not initialized"},
+		{name: "calibration floor", env: map[string]string{}, want: 16},
+		{name: "milli 1500", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE_MILLI": "1500"}, want: 3},
+		{name: "milli 3000", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE_MILLI": "3000"}, want: 6},
+		{name: "milli invalid", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE_MILLI": "0"}, fails: "METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer"},
 		{name: "scripted failure", env: map[string]string{"METASYSTEM_FAKE_PROBE_FAIL": "1"}, fails: "scripted probe failure"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

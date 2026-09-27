@@ -14,7 +14,7 @@ Replace this file when adopting the metasystem. Keep facts concrete and reposito
 
 ## Commands
 
-- Testing contract: `testing.json`, selected through `testing.contract=testing.json` in `metasystem.conf`. `bin/metasystem test list --root .` describes it, `test check` validates it without compiling, `test plan --goal <goal> --mode auto` resolves the actual risk-selected groups, `test run` executes the selected stages, and `test verify` consumes sufficient retained evidence without rerunning it. `metasystem internal testing merge --base <file> --ours <file> --theirs <file> --out <file>` merges concurrent contract edits by surface, group, and list identity; `testing merge-driver` prints the Git driver setup and accepts Git's `%O %A %B` order; `testing add-tests --file <file> --group <id> --tests <name,...>` verifies and adds named Go tests.
+- Testing contract: `testing.json`, selected through `testing.contract=testing.json` in `metasystem.conf`. `bin/metasystem test list --root .` describes it, `settings check` validates it with the settings without compiling, `test plan --goal <goal> --mode auto` resolves the actual risk-selected groups, `test run` executes the selected stages, and `test status --tree <tree>` reads sufficient retained evidence without rerunning it. `metasystem internal testing merge --base <file> --ours <file> --theirs <file> --out <file>` merges concurrent contract edits by surface, group, and list identity; `testing merge-driver` prints the Git driver setup and accepts Git's `%O %A %B` order; `testing add-tests --file <file> --group <id> --tests <name,...>` verifies and adds named Go tests.
 
   Application-language-neutral schema 2 fields and a command/JUnit example are in [the testing contract guide](testing-contract.md).
 
@@ -25,7 +25,7 @@ Batch composition and landing, goal branch commit and land preparation (includin
 - Build/package: `<command>`
 - Format/lint/typecheck: `<command>`
 - Local run: `<command>`
-- Refactor acceptance gate: `<command>`. The full behavior-preservation proof (full suite, benchmark, or golden run) that accepts a refactor candidate. State its cadence backstop if it differs from the defaults owned by `scripts/refactor-baseline.sh`.
+- Refactor acceptance gate: `<command>`. The full behavior-preservation proof (full suite, benchmark, or golden run) that accepts a refactor candidate. State its cadence backstop if it differs from the defaults owned by `metasystem internal validate refactor-baseline`.
 - Improvement evaluation: `<command>`. The on-demand evaluation for improvement goals. State the evaluation type (deterministic, stochastic, hidden-information, or dynamic; see the improve skill), the primary metric and its direction (max or min), guard metrics with floors, the noise floor (minimum meaningful delta), any cheaper canary or subset variant, and the holdout or case-rotation policy.
 - Frontier preservation policy: `<policy>`. How a new best-known state is preserved: tag pattern, push target, and who may move it.
 
@@ -46,7 +46,7 @@ List only rules that cannot be inferred from code or tooling and apply broadly i
 
 - A commit is gated on the verification run that produced its verdict, in one shell chain whose failure stops the push. Never read a verdict from a log tail or a previous shell.
 - The candidate index and every delivery-relevant working-tree input must describe the same workspace bytes (the whole project minus the goal ledger paths that goal verbs rewrite: `plans/goals`, `plans/goals.md`, `plans/goals-accepted.json`, `records/goals`, `records/counselor`, `memory/receipts.log`, `records/narrator-digest.log`) before selected testing evidence can authorize delivery; the exact tree the proof ran on is still recorded; a tip move that leaves every selected test group's execution identity unchanged never voids that proof, however many records it touched; a moved declared input is proved again, never treated as permission to publish partial coverage.
-- A receipt is appended in the same commit as the work it describes; bookkeeping-only commits hide the ratio of records to evidence. Landing enforces it (`metasystem work land`, through its owner `land.sh`): a landing that changes code (any path that is neither a record nor a ledger) is refused unless its staged `memory/receipts.log` appends a RECEIPT line for the landing's goal, and the refusal names the one `scripts/receipt.sh add` command that writes the line; records-only, receipt-only and exact-revert landings are exempt, as is a checkout whose HEAD keeps no tracked `memory/receipts.log` (the rule binds from the ledger's first commit on), and a landing that removes the ledger is refused.
+- A receipt is appended in the same commit as the work it describes; bookkeeping-only commits hide the ratio of records to evidence. Landing enforces it (`metasystem work land`, through its owner `land.sh`): a landing that changes code (any path that is neither a record nor a ledger) is refused unless its staged `memory/receipts.log` appends a RECEIPT line for the landing's goal, and the refusal names the one `metasystem receipt add` command that writes the line; records-only, receipt-only and exact-revert landings are exempt, as is a checkout whose HEAD keeps no tracked `memory/receipts.log` (the rule binds from the ledger's first commit on), and a landing that removes the ledger is refused.
 - When the same repository is developed by expensive models and measured or exercised by cheap ones, pin both rosters explicitly and name which activity each configuration serves; a cost rule applied to the wrong roster cancels healthy work.
 - Only the goal's current claim holder writes `goal/<goal-id>` on the configured remote, every rewrite uses an explicit force-with-lease, and every branch commit has one parent and exactly one kind trailer: `Goal-Unit` carries only product changes, `Goal-Plan` carries only design and decision records, and `Goal-Read` carries one validated attestation plus an optional prose read record named by its sha256, while goal-store paths, append-only registers, and malformed paths under `records/reads/` belong to none of those classes.
 - A read of a branch unit runs through `metasystem work review G` for work built with `build`, or `metasystem work review --commit SHA --goal G` for an existing commit, both owned by `goal branch read`; a reader record serves only the hand lane, and the batch lane refuses it.
@@ -132,8 +132,8 @@ on it.
   packages) on arm64/amd64 with a standard /proc mount.
 - **The command inventory is a contract**: production scripts exec git
   (git), ps and pgrep (procps), awk (mawk/gawk), sed, grep, tar, find
-  (findutils), and the coreutils set; `scripts/agents/preflight-commands.sh`
-  checks the inventory and names each missing command with its
+  (findutils), and the coreutils set; the engine's command preflight
+  (`metasystem internal audit production-commands`) checks the inventory and names each missing command with its
   Debian-family package — adoption runs it before any target mutation and
   supervision arming runs it at entry. perl and python3 are suite-host
   concerns only (fixture drivers), never production dependencies; hashing

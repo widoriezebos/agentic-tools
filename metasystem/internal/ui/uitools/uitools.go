@@ -232,7 +232,7 @@ func (r Readers) Answer(operation string, args Args) Result {
 		return deposit(args.Text("kind"), args.Text("text"),
 			args.Text("anchor"), args.Text("reason"), args.Text("consequence"), args.Text("clause"))
 	case OpPropose:
-		return propose(args)
+		return r.propose(args)
 	default:
 		return Result{Problem: "this server answers " + strings.Join(Operations, ", ") + ", not " + operation}
 	}

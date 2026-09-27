@@ -588,7 +588,7 @@ func (inv *intentInvocation) selectRoot() *intentResult {
 	if !converted(inv.stateRoot) {
 		return &intentResult{Outcome: intentRefused, code: 1,
 			Summary:  fmt.Sprintf("the installation at %s has no synced goal ledger", shellCommand([]string{inv.stateRoot})),
-			Decision: "a person upgrades the legacy goals file to the synced ledger first: metasystem goal repair --upgrade --by NAME (it shows the digest to review)"}
+			Decision: "a person upgrades the legacy goals file to the synced ledger first: metasystem goal sync --upgrade --by NAME (it shows the digest to review)"}
 	}
 	return nil
 }
@@ -913,36 +913,33 @@ type intentGroup struct {
 var intentGroups = []intentGroup{
 	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
 	{"deliver", "Deliver", []string{"work", "test", "question", "incident"}},
-	{"run", "Run", []string{"status", "session", "mission", "system", "machine", "ui", "settings", "terminal"}},
-	{"practice", "Practice", []string{"receipt", "experiment", "critique", "covenant"}},
+	{"run", "Run", []string{"status", "session", "mission", "system", "machine", "ui", "settings"}},
+	{"practice", "Practice", []string{"receipt", "experiment"}},
 }
 
 // intentObjectSummaries say in one line what each object is.
 var intentObjectSummaries = map[string]string{
 	"goal":       "the backlog: open, approve, budget, claim and conclude goals",
-	"design":     "a goal's design: write, find, review and read designs",
+	"design":     "a goal's design: write, review, list and read designs",
 	"decision":   "the project's recorded decisions",
 	"grant":      "powers of attorney a seat acts under",
-	"work":       "a goal's work: brief, build, review, revise, land, wait and stop",
+	"work":       "a goal's work: brief, build, review, revise, land, finish, wait and stop",
 	"test":       "risk-selected tests and their proof",
 	"question":   "questions for a person, and their answers",
 	"incident":   "failures on main that someone must own",
 	"status":     "the overview of this checkout, or one goal's work",
-	"session":    "this agent session: start, stop, stop report and context handoff",
+	"session":    "this agent session: start, stop, whether it may stop, and its handoff",
 	"mission":    "autonomous missions",
-	"system":     "MetaSystem for this checkout: start, stop, restart, status, check, repair",
+	"system":     "MetaSystem for this checkout: start, stop, restart, status, check, enroll",
 	"machine":    "the fleet's machines",
 	"ui":         "the browser interface",
 	"settings":   "MetaSystem settings and coordination",
-	"terminal":   "enroll a terminal for a person's decisions",
 	"receipt":    "task receipts and the retro cadence",
 	"experiment": "measured-improvement experiments and their stop-loss",
-	"critique":   "critique registers and their review budget",
-	"covenant":   "the app's covenant",
 }
 
 // intentAdministrationObjects configure or repair MetaSystem itself.
-var intentAdministrationObjects = []string{"system", "machine", "ui", "settings", "terminal"}
+var intentAdministrationObjects = []string{"system", "machine", "ui", "settings"}
 
 func intentObjectGroup(object string) string {
 	for _, group := range intentGroups {
@@ -1164,50 +1161,72 @@ func (command intentCommand) helpFlags() []intentFlag {
 	return command.allFlags()
 }
 
-// suggestIntent names the public spellings nearest a mistyped first word: an
-// object a small typo away, else the actions of that exact name, else the
-// nearest object.
-func suggestIntent(word string) []string {
-	best, closest := "", 3
-	for _, object := range append(intentObjects(), "status") {
-		if distance := editDistance(object, word); distance < closest {
-			best, closest = object, distance
-		}
-	}
-	if best != "" {
-		return []string{"metasystem " + best}
-	}
+// Rule C1 of the design: "did you mean" names the current command that was
+// probably meant, computed only from the current table; no removed spelling
+// is remembered anywhere.
+
+// suggestIntent names the current commands a first word that is not an
+// object probably meant. A word that is a current action of one or more
+// objects suggests OBJECT ACTION with the caller's remaining words, one per
+// object; otherwise the nearest current object by spelling takes the word's
+// place, else the nearest current actions by spelling.
+func suggestIntent(word string, rest []string) []string {
 	var actions []string
 	for _, command := range publicIntentCommands() {
-		if command.action == word {
-			actions = append(actions, "metasystem "+command.name)
+		if command.action != "" && command.action == word {
+			actions = append(actions, suggestedCommand(command.words(), rest))
 		}
 	}
 	if len(actions) > 0 {
 		return actions
 	}
-	for _, command := range publicIntentCommands() {
-		if command.action != "" && editDistance(command.action, word) <= 2 {
-			actions = append(actions, "metasystem "+command.name)
+	var near []string
+	closest := 3
+	for _, object := range append(intentObjects(), "status") {
+		distance := editDistance(object, word)
+		switch {
+		case distance < closest:
+			closest, near = distance, []string{suggestedCommand([]string{object}, rest)}
+		case distance == closest:
+			near = append(near, suggestedCommand([]string{object}, rest))
 		}
 	}
-	if len(actions) > 4 {
-		actions = actions[:4]
+	if len(near) > 0 {
+		return near
 	}
-	return actions
+	closest = 3
+	for _, command := range publicIntentCommands() {
+		if command.action == "" {
+			continue
+		}
+		distance := editDistance(command.action, word)
+		switch {
+		case distance < closest:
+			closest, near = distance, []string{suggestedCommand(command.words(), rest)}
+		case distance == closest:
+			near = append(near, suggestedCommand(command.words(), rest))
+		}
+	}
+	if len(near) > 4 {
+		near = near[:4]
+	}
+	return near
 }
 
-// suggestIntentAction names the actions of object nearest a mistyped action.
-func suggestIntentAction(object, word string) []string {
+// suggestIntentAction names the current commands an unknown action of object
+// probably meant: the object's nearest actions by spelling, else the other
+// objects that have that exact action, each with the caller's remaining
+// words.
+func suggestIntentAction(object, word string, rest []string) []string {
 	var near []string
 	closest := 3
 	for _, command := range objectActions(object) {
 		distance := editDistance(command.action, word)
 		switch {
 		case distance < closest:
-			closest, near = distance, []string{"metasystem " + command.name}
+			closest, near = distance, []string{suggestedCommand(command.words(), rest)}
 		case distance == closest:
-			near = append(near, "metasystem "+command.name)
+			near = append(near, suggestedCommand(command.words(), rest))
 		}
 	}
 	if len(near) > 0 {
@@ -1215,8 +1234,13 @@ func suggestIntentAction(object, word string) []string {
 	}
 	for _, command := range publicIntentCommands() {
 		if command.action == word {
-			near = append(near, "metasystem "+command.name)
+			near = append(near, suggestedCommand(command.words(), rest))
 		}
 	}
 	return near
+}
+
+// suggestedCommand is one suggestion as the caller would type it.
+func suggestedCommand(words, rest []string) string {
+	return strings.TrimSpace("metasystem " + strings.Join(words, " ") + " " + shellCommand(rest))
 }

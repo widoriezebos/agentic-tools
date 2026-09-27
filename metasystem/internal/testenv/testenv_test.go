@@ -241,13 +241,7 @@ func TestRemoveDeadRegistryHomesKeepsLiveAndUnrelatedDirectories(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = live.cleanupReporting(io.Discard) })
-	dead, err := createRegistryHomeUnder(os.MkdirTemp, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := dead.lock.Close(); err != nil {
-		t.Fatal(err)
-	}
+	dead := deadRegistryHomeUnder(t, root)
 	unrelated := filepath.Join(root, "unrelated-old-directory")
 	if err := os.Mkdir(unrelated, 0o700); err != nil {
 		t.Fatal(err)

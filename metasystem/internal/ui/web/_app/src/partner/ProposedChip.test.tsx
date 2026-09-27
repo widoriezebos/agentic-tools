@@ -48,7 +48,7 @@ function rendered(found: readonly Proposed[]): string {
 
 describe("what the chip says", () => {
   it("is the act's own button word for one line", () => {
-    expect(chipWords(lines({ verb: "park-goal" }))).toEqual({ words: "Not now proposed", danger: false });
+    expect(chipWords(lines({ verb: "park-goal" }))).toEqual({ words: "Pause proposed", danger: false });
     expect(chipWords(lines({ verb: "edit-goal" }))).toEqual({ words: "Edit proposed", danger: false });
     expect(chipWords(lines({ verb: "approve-goal" }))).toEqual({ words: "Approve proposed", danger: false });
   });
@@ -66,12 +66,12 @@ describe("what the chip says", () => {
    * the same reason. So the chip says what was proposed.
    */
   it("reads a line left in flight as proposed", () => {
-    expect(chipWords(lines({ state: "applying" }))).toEqual({ words: "Not now proposed", danger: false });
+    expect(chipWords(lines({ state: "applying" }))).toEqual({ words: "Pause proposed", danger: false });
   });
 
   it("names a refusal in the danger colour", () => {
     expect(chipWords(lines({ verb: "park-goal", state: "refused", words: "g1-s44 is claimed by m2a" }))).toEqual({
-      words: "Not now refused",
+      words: "Pause refused",
       danger: true,
     });
   });
@@ -101,7 +101,7 @@ describe("what the chip says", () => {
   });
 
   it("names the goal and the count in the accessible name", () => {
-    expect(chipName("g1-s44", lines({ verb: "park-goal" }))).toBe("Not now proposed on g1-s44, 1 action");
+    expect(chipName("g1-s44", lines({ verb: "park-goal" }))).toBe("Pause proposed on g1-s44, 1 action");
     expect(chipName("g1-s44", lines({}, {}))).toBe("2 proposed on g1-s44, 2 actions");
     expect(chipName("g1-s44", [])).toBe("");
   });
@@ -114,15 +114,15 @@ describe("what the chip puts on the row", () => {
     expect(markup).toContain("<button");
     expect(markup).toContain('type="button"');
     expect(markup).toContain('class="ms-chip ms-chip-proposed"');
-    expect(markup).toContain('aria-label="Not now proposed on g1-s44, 1 action"');
-    expect(markup).toContain("Not now proposed");
+    expect(markup).toContain('aria-label="Pause proposed on g1-s44, 1 action"');
+    expect(markup).toContain("Pause proposed");
   });
 
   it("wears the danger class on a refused line", () => {
     const markup = rendered(lines({ state: "refused", words: "g1-s44 is claimed by m2a" }));
 
     expect(markup).toContain("ms-chip-proposed--wrong");
-    expect(markup).toContain("Not now refused");
+    expect(markup).toContain("Pause refused");
   });
 
   it("is absent where the hook answers none", () => {

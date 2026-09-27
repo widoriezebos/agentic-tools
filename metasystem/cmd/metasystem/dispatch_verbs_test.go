@@ -788,10 +788,8 @@ func runCensusFreshCommandClockBody(t *testing.T) {
 		t.Helper()
 		root := t.TempDir()
 		for _, rel := range []string{
-			"scripts/agents/arm-supervision.sh",
 			"scripts/agents/dispatch.sh",
 			"bin/metasystem",
-			"scripts/watch-background-jobs.sh",
 		} {
 			path := filepath.Join(root, rel)
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

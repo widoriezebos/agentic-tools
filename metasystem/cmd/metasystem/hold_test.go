@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"os/signal"
@@ -35,6 +36,9 @@ func fixtureLifetimeTestDependencies(environment map[string]string, after func(t
 	return fixtureLifetimeDependencies{
 		getenv: func(name string) string { return environment[name] },
 		prober: identity.KernelProber{}, after: after, openLeash: open, ready: func() {},
+		// Never the process-global os.Stderr: a parallel test may have it
+		// redirected into its own capture pipe at this moment.
+		stderr: io.Discard,
 	}
 }
 
@@ -50,8 +54,13 @@ func TestRunUtilHoldRequiresLeashOrExpiry(t *testing.T) {
 		t.Fatal("unbounded hold tried to open a leash")
 		return nil, nil
 	})
+	var stderr bytes.Buffer
+	deps.stderr = &stderr
 	if code := runUtilHoldWithDependencies([]string{"--tag", "unbounded"}, deps); code != 2 {
 		t.Fatalf("an unbounded hold must be refused, got %d", code)
+	}
+	if got, want := stderr.String(), "util hold: an exact fixture leash or --max-seconds is required\n"; got != want {
+		t.Fatalf("unbounded hold refusal = %q, want %q", got, want)
 	}
 }
 
@@ -112,8 +121,13 @@ func TestRunUtilHoldRefusesMismatchedExactOwner(t *testing.T) {
 	deps.prober = fixtureLifetimeProber(func(int64) (identity.Exact, identity.Liveness, error) {
 		return identity.Exact{}, identity.Dead, nil
 	})
+	var stderr bytes.Buffer
+	deps.stderr = &stderr
 	if code := runUtilHoldWithDependencies([]string{"--tag", "mismatch"}, deps); code != 2 {
 		t.Fatalf("mismatched owner hold exit = %d, want 2", code)
+	}
+	if got, want := stderr.String(), "util hold: fixture lifetime owner does not match the live exact process\n"; got != want {
+		t.Fatalf("mismatched owner refusal = %q, want %q", got, want)
 	}
 }
 

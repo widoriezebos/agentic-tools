@@ -14,7 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
 
 // The delivery collector: one owner
@@ -236,7 +236,7 @@ func (p CollectParams) acceptCandidate(verdict *CollectVerdict, channel string, 
 	}
 	// The full JOB flow, not schema-only: a schema-valid return for the
 	// wrong job must be rejected here, at selection.
-	if problems := validate.ReturnCompleteJobFile(p.Root, p.Job, normalized); len(problems) > 0 {
+	if problems := returnschema.ReturnCompleteJobFile(p.Root, p.Job, normalized); len(problems) > 0 {
 		verdict.Rejected = append(verdict.Rejected, channel+": "+strings.Join(problems, "; "))
 		return false
 	}

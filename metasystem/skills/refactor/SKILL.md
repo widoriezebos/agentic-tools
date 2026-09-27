@@ -10,8 +10,8 @@ In refactor work the outcome is structural and the proof is that behavior did no
 ## Contract and Trusted Baseline
 
 - Name the acceptance gate before editing. The project's full proof that behavior is preserved (full suite, benchmark, golden run) is declared in `docs/project-rules.md`. Focused tests validate steps; only the gate accepts a candidate.
-- The trusted baseline is the last commit that passed that gate. Record it with `scripts/refactor-baseline.sh record --gate "the gate command that passed"`, and commit the baseline file with the next checkpoint. Everything after the baseline is untrusted until the exact candidate HEAD passes the same gate.
-- Before every new edit batch, run `scripts/refactor-baseline.sh check`. If it blocks (dirty worktree, diverged history, or the cadence backstop; defaults are owned by the script and tuned per project in `docs/project-rules.md`), stop editing. Gate the current candidate or return to the baseline. Do not argue with the check.
+- The trusted baseline is the last commit that passed that gate. Record it with `metasystem internal validate refactor-baseline record --gate "the gate command that passed"`, and commit the baseline file with the next checkpoint. Everything after the baseline is untrusted until the exact candidate HEAD passes the same gate.
+- Before every new edit batch, run `metasystem internal validate refactor-baseline check`. If it blocks (dirty worktree, diverged history, or the cadence backstop; defaults are owned by the verb and tuned per project in `docs/project-rules.md`), stop editing. Gate the current candidate or return to the baseline. Do not argue with the check.
 
 ## Tests Before Restructuring
 

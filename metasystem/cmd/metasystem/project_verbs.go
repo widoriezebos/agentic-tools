@@ -114,7 +114,7 @@ func projectDesignOf(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if flags.NArg() != 0 || *goal == "" {
-		fmt.Fprintln(stderr, "usage: metasystem design find --goal ID [--root DIR] [--json]")
+		fmt.Fprintln(stderr, "usage: metasystem internal project design-of --goal ID [--root DIR] [--json]")
 		return 2
 	}
 	read, code := projectRead(*root, stderr)
@@ -122,7 +122,7 @@ func projectDesignOf(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 	if !read.HasGoal(*goal) {
-		fmt.Fprintf(stderr, "metasystem design find: the goal %s is not in the ledger\n", *goal)
+		fmt.Fprintf(stderr, "project design-of: the goal %s is not in the ledger\n", *goal)
 		return 2
 	}
 	found := read.List(project.KindDesign, project.ListOptions{Goal: *goal})

@@ -29,9 +29,10 @@ import (
 
 const proposedAt = "2026-09-26T12:00:00Z"
 
-// proposingLedger is the tip these tests admit against: three live goals, one
-// of them approved with a budget and a tier, so an approve's own reading has
-// something to carry.
+// proposingLedger is the tip these tests admit against: four live goals, one of
+// them approved with a budget and a tier, so an approve's own reading has
+// something to carry, and one of them waiting for another, so an abandon's
+// reading has a live dependent to list.
 func proposingLedger() snapshot.Observation {
 	at, _ := time.Parse(time.RFC3339, proposedAt)
 	tree := &goal.TreeGoals{
@@ -56,6 +57,14 @@ func proposingLedger() snapshot.Observation {
 		Id: "bank-sandbox", State: goal.StateQueued, Origin: "human",
 		Intent: "The bank sandbox answers late.", NextStep: "Read it.",
 		OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
+	}
+	// One goal waits for another, which is what an abandon's own reading is
+	// about: what becomes of the goals that wait for the one being retired.
+	tree.Live["census-format"] = &goal.GoalFile{
+		Id: "census-format", State: goal.StateQueued, Origin: "human",
+		Intent: "The census format is settled.", NextStep: "Write it down.",
+		OpenedAt: "2026-08-23T00:00:00Z", Revision: 1,
+		Blocked: []string{"fleet-presence"},
 	}
 	horizon := goal.NewApprovalHorizon(tree, at)
 	return snapshot.Observation{
@@ -164,7 +173,8 @@ func TestAnActionOnAGoalAtTheTipIsOffered(t *testing.T) {
 	testutil.Expect(t, "and its version", kept[0].Version, 1)
 }
 
-// An approve and an edit carry the goal as it was read; the other seven do not.
+// An approve, an edit and an abandon carry the goal as it was read; the other
+// seven do not.
 func TestAnApproveAndAnEditCarryTheGoalAsItWasRead(t *testing.T) {
 	t.Parallel()
 	service := serviceProposing(t,
@@ -252,6 +262,59 @@ func TestAnActionTheTipCannotCarryIsRecordedWithItsReason(t *testing.T) {
 	// index of every action the answer carried.
 	testutil.Expect(t, "the fourth keeps its index", kept[3].Index, 3)
 	testutil.Expect(t, "and is offered", kept[3].Offered, true)
+}
+
+// openingLines is one open's framing: the seven fields its route body cannot do
+// without, its own id, and whatever edges the case is about.
+func openingLines(id string, edges ...string) []string {
+	return append([]string{
+		uitools.ProposalIntent + "Every refund of " + id + " lands within a day.",
+		uitools.ProposalNextStep + "Read the retry loop.",
+		uitools.ProposalID + id,
+		uitools.ProposalSeverity + "2", uitools.ProposalNovelty + "1",
+		uitools.ProposalExposure + "2", uitools.ProposalAccumulation + "1",
+		uitools.ProposalBasis + "payments, one team",
+	}, edges...)
+}
+
+// An open's own two lists are checked exactly as a blocker is.
+//
+// They were not, and a blocker was: an open naming a goal nobody has in Blocked
+// by or Blocks was offered whole, and the edge the human pressed for was refused
+// by the act afterwards, which is the refusal this whole design moves to before
+// the card exists (Sol's read of g1-s58, deferred). Each id has to be at the
+// accepted tip or be the id of an open admitted earlier in the same answer — the
+// same two ways the subject of every other act is there.
+func TestAnOpensBlockedByAndBlocksAreCheckedAsABlockerIs(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeOpen, "refund-worker", openingLines("refund-worker"), "create it"),
+		proposed(uitools.ProposeOpen, "refund-audit", openingLines("refund-audit",
+			uitools.ProposalBlockedBy+"refund-worker, bank-sandbox",
+			uitools.ProposalBlocks+"refunds"), "create it, between the two"),
+		proposed(uitools.ProposeOpen, "refund-ledger", openingLines("refund-ledger",
+			uitools.ProposalBlockedBy+"nobody"), "create it"),
+		proposed(uitools.ProposeOpen, "refund-report", openingLines("refund-report",
+			uitools.ProposalBlocks+"bank-sandbox, ghost"), "create it"),
+	)
+	_, kept := askProposing(t, service, "open these four")
+	testutil.Require(t, "all four are recorded", len(kept), 4)
+
+	testutil.Expect(t, "the plain open is offered", kept[0].Offered, true)
+
+	// One list naming a goal at the tip and a goal this very answer opened, the
+	// other naming a goal at the tip: every end is there, so the card stands.
+	testutil.Expect(t, "an open whose edges are all there is offered", kept[1].Offered, true)
+	testutil.Expect(t, "with nothing to explain", kept[1].Reason, "")
+
+	testutil.Expect(t, "an open waiting for a goal nobody has is not offered", kept[2].Offered, false)
+	testutil.Expect(t, "naming the end that is missing", kept[2].Reason,
+		"the accepted tip carries no goal nobody")
+
+	// And the second name of a list is read as well as the first, which is the
+	// whole point of reading a list rather than a field.
+	testutil.Expect(t, "an open blocking a goal nobody has is not offered", kept[3].Offered, false)
+	testutil.Expect(t, "naming that end", kept[3].Reason, "the accepted tip carries no goal ghost")
 }
 
 // Admission checks existence and nothing else: whether the act is allowed in the
@@ -367,7 +430,12 @@ func TestTheSkillTellsThePartnerToPropose(t *testing.T) {
 	t.Parallel()
 	skill := partner.Skill()
 	for _, said := range []string{
-		"Call `propose` once per action with the act, the goal, its fields and why",
+		"Call `propose` once per action, beside the answer you give in words",
+		// The grammar it speaks: the public action and its own flags, with the
+		// command's own help as the place to read them (g1-s62 D4).
+		"the goal action's public name, the goal, the action's own flags as " +
+			"`metasystem goal ACTION --help` shows them",
+		"the interface has ten of those actions today and the tool names them",
 		"Words alone propose nothing.",
 		"do not do it and do not say it is done",
 		"the card under your answer is the only place one is applied",
@@ -375,4 +443,154 @@ func TestTheSkillTellsThePartnerToPropose(t *testing.T) {
 	} {
 		testutil.Expect(t, "the skill says "+said, strings.Contains(skill, said), true)
 	}
+}
+
+// An abandon carries the goal as it was read, and with it the live goals that
+// wait for it — which is the whole of what its line tells the human before they
+// press (Astra S64-01, S64-02).
+func TestAnAbandonCarriesTheGoalAndItsLiveDependentsAsRead(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeAbandon, "fleet-presence", []string{
+			uitools.ProposalBecause + "superseded by the seat inventory (g1-s42)",
+			uitools.ProposalSuccessor + "refunds",
+		}, "the inventory answers what this one was for"),
+	)
+	_, kept := askProposing(t, service, "this one will never be worked; retire it")
+
+	testutil.Require(t, "one action", len(kept), 1)
+	testutil.Expect(t, "the route it dispatches to", kept[0].Verb, uitools.ProposeAbandon)
+	testutil.Expect(t, "the reason under the body's own name",
+		kept[0].Fields[uitools.FieldBecause], "superseded by the seat inventory (g1-s42)")
+	testutil.Expect(t, "the successor under its own",
+		kept[0].Fields[uitools.FieldSuccessor], "refunds")
+	read := kept[0].Read
+	testutil.Require(t, "it carries the reading", read != nil, true)
+	testutil.Expect(t, "the intent as read", read.Intent,
+		"Fleet presence is read from the census, not polled. It has been for a week.")
+	testutil.Expect(t, "the next step as read", read.NextStep, "Read the census.")
+	testutil.Expect(t, "the tier as read", read.Tier, 2)
+	testutil.Expect(t, "the labels as read", read.Labels, []string{"fleet", "browser-interface"})
+	testutil.Expect(t, "and the live goals that wait for it", read.Dependents, []string{"census-format"})
+}
+
+// A goal nothing waits for carries no dependents at all, which is absent rather
+// than empty: a reader never has to tell one from the other.
+func TestAnAbandonOfAGoalNothingWaitsForCarriesNoDependents(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeAbandon, "bank-sandbox",
+			[]string{uitools.ProposalBecause + "the sandbox is gone"}, "nothing waits for it"),
+	)
+	_, kept := askProposing(t, service, "this one will never be worked; retire it")
+
+	testutil.Require(t, "one action", len(kept), 1)
+	read := kept[0].Read
+	testutil.Require(t, "it carries the reading", read != nil, true)
+	testutil.Expect(t, "with no dependents", len(read.Dependents), 0)
+	testutil.Expect(t, "and no successor was named",
+		kept[0].Fields[uitools.FieldSuccessor], "")
+}
+
+// An edit's labels are the whole list its route takes, composed here from the
+// delta the Partner proposed and the labels this admission read.
+//
+// It is here and nowhere else, and that is the point. The tool server has no
+// ledger reading: `--label` adds and `--unlabel` removes, and what they add to
+// and remove from is the goal as the tip holds it. So the delta travels under the
+// public flags' own spellings and the command's own owner composes it here —
+// `goal.ApplyLabelDelta`, the same function `metasystem goal edit --label` uses,
+// so an edit proposed in the browser and an edit typed at a terminal compose one
+// list.
+func TestAnEditsLabelsAreComposedFromTheLabelsRead(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeEdit, "fleet-presence", []string{
+			uitools.ProposalLabel + "payments",
+			uitools.ProposalUnlabel + "fleet",
+		}, "one moves"),
+		// Every label removed IS how they are cleared: the composed list is
+		// empty, which the route takes as an empty list rather than as silence.
+		proposed(uitools.ProposeEdit, "refunds", []string{
+			uitools.ProposalIntent + "Refunds land within a day, always.",
+		}, "tighter"),
+	)
+	_, kept := askProposing(t, service, "move that label and tidy the other intent")
+	testutil.Require(t, "two actions", len(kept), 2)
+
+	testutil.Expect(t, "the delta is composed onto the labels read",
+		kept[0].Fields[uitools.FieldLabels], "browser-interface, payments")
+	_, adding := kept[0].Fields[uitools.FieldLabel]
+	_, removing := kept[0].Fields[uitools.FieldUnlabel]
+	testutil.Expect(t, "and the delta itself does not travel on", adding || removing, false)
+	// The whole list is what the route takes, so the reading the card shows is
+	// still the labels as they stood.
+	testutil.Require(t, "the edit carries the reading", kept[0].Read != nil, true)
+	testutil.Expect(t, "with the labels as read", kept[0].Read.Labels,
+		[]string{"fleet", "browser-interface"})
+
+	// An edit that says nothing about labels leaves them alone: no field at all.
+	_, touched := kept[1].Fields[uitools.FieldLabels]
+	testutil.Expect(t, "an edit that says nothing about labels carries none", touched, false)
+}
+
+// Clearing a goal's labels is naming every one of them to remove: the composed
+// list is empty, and an empty list is what the route takes as "none".
+func TestAnEditThatRemovesEveryLabelClearsThem(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeEdit, "fleet-presence", []string{
+			uitools.ProposalUnlabel + "fleet, browser-interface",
+		}, "the labels moved to the arc"),
+	)
+	_, kept := askProposing(t, service, "clear its labels")
+	testutil.Require(t, "one action", len(kept), 1)
+	testutil.Expect(t, "it is offered", kept[0].Offered, true)
+	said, given := kept[0].Fields[uitools.FieldLabels]
+	testutil.Expect(t, "the whole list is there", given, true)
+	testutil.Expect(t, "and says nothing, which is how they are cleared", said, "")
+}
+
+// A label named in both lists is refused in the composing owner's own words,
+// recorded on the card rather than dropped.
+func TestALabelInBothListsIsRefusedInTheOwnersWords(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeEdit, "fleet-presence", []string{
+			uitools.ProposalLabel + "fleet",
+			uitools.ProposalUnlabel + "fleet",
+		}, "both at once"),
+	)
+	_, kept := askProposing(t, service, "add and remove that label")
+	testutil.Require(t, "one action", len(kept), 1)
+	testutil.Expect(t, "it is not offered", kept[0].Offered, false)
+	testutil.Expect(t, "and the owner's own words say why", kept[0].Reason,
+		`label "fleet" cannot be both --label and --unlabel in one edit`)
+}
+
+// An edit of a goal an earlier open of the same answer named composes against
+// that open's own labels: there is nothing at the tip to read them from.
+func TestAnEditOfAGoalOpenedInTheSameAnswerComposesOnItsLabels(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeOpen, "refund-worker", []string{
+			uitools.ProposalIntent + "Every refund lands within a day.",
+			uitools.ProposalNextStep + "Read the retry loop.",
+			uitools.ProposalID + "refund-worker",
+			uitools.ProposalSeverity + "2", uitools.ProposalNovelty + "1",
+			uitools.ProposalExposure + "2", uitools.ProposalAccumulation + "1",
+			uitools.ProposalBasis + "payments, one team",
+			uitools.ProposalLabels + "payments, robustness",
+		}, "as discussed"),
+		proposed(uitools.ProposeEdit, "refund-worker", []string{
+			uitools.ProposalLabel + "queue",
+			uitools.ProposalUnlabel + "robustness",
+		}, "one more label, one fewer"),
+	)
+	_, kept := askProposing(t, service, "Create it, then fix its labels")
+	testutil.Require(t, "two actions", len(kept), 2)
+	testutil.Expect(t, "the open is offered", kept[0].Offered, true)
+	testutil.Expect(t, "the edit is offered too", kept[1].Offered, true)
+	testutil.Expect(t, "and composes on the labels the open carried",
+		kept[1].Fields[uitools.FieldLabels], "payments, queue")
 }

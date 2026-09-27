@@ -14,7 +14,7 @@
 # cohesive low-risk cluster closes with the full suite at its boundary;
 # high-blast-radius changes are never batched into an ambiguous failure
 # and gate immediately; the trusted baseline and its cadence backstop are
-# scripts/refactor-baseline.sh. The canary is the per-checkpoint screen
+# metasystem internal validate refactor-baseline. The canary is the per-checkpoint screen
 # that makes cluster-boundary acceptance safe.
 #
 # Usage: scripts/canary.sh <change-class> [more classes...]

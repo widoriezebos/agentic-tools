@@ -279,7 +279,7 @@ func LaunchSuite(options LaunchOptions) int {
 				return 1
 			}
 		}
-		custody, err = startResourceCustody(options, launcherExact.Ref(), donePath, custodyFiles, spools)
+		custody, err = startResourceCustody(options, launcherExact.Ref(), donePath, custodyFiles, spools, nil)
 		if err != nil {
 			if resourceFiles {
 				_ = MarkHostResourcesClean(options.HostResourceFiles)
@@ -321,7 +321,7 @@ func LaunchSuite(options LaunchOptions) int {
 		for _, file := range suite.ExtraFiles[len(suite.ExtraFiles)-2:] {
 			_ = file.Close()
 		}
-		if err := barrier.await(); err != nil {
+		if err := barrier.await(nil); err != nil {
 			_ = suite.Process.Kill()
 			_ = suite.Wait()
 			_ = custody.finish()

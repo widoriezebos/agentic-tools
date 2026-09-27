@@ -18,7 +18,6 @@ mirror_checkout() { # checkout directory
   # the retired .py helpers live inside that one binary now.
   mkdir -p "$fixture_root/bin"
   cp "$source_root/bin/metasystem" "$fixture_root/bin/metasystem"
-  cp "$source_root/scripts/metasystem-config.sh" "$fixture_root/scripts/metasystem-config.sh"
   printf 'evidence.root=%s\nmetasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' "$evidence" >"$fixture_root/metasystem.conf"
   # The held reap is a control-plane write. Under an agent-run suite
   # the ambient ancestry classifies UNTRUSTED in this sandbox, so
@@ -86,10 +85,8 @@ legacy_root="$tmp/legacy-checkout/metasystem"
 mkdir -p "$legacy_root/scripts/agents" "$legacy_root/scripts" \
   "$legacy_root/artifacts/agents/jobs" "$legacy_root/artifacts/agents/legacy-chain" \
   "$evidence/agents/legacy-chain"
-cp "$source_root/scripts/agents/evidence-gc.sh" "$legacy_root/scripts/agents/evidence-gc.sh"
 mkdir -p "$legacy_root/bin"
 cp "$source_root/bin/metasystem" "$legacy_root/bin/metasystem"
-cp "$source_root/scripts/metasystem-config.sh" "$legacy_root/scripts/metasystem-config.sh"
 printf 'evidence.root=%s\nmetasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' "$evidence" >"$legacy_root/metasystem.conf"
 # Same announcement as mirror_checkout: the held GC is a
 # control-plane write and ambient ancestry classifies UNTRUSTED
@@ -116,7 +113,7 @@ legacy_staged=$(mktemp "$(dirname "$legacy_manifest")/.manifest.XXXXXX")
 printf '{"rootJob":"legacy-chain","files":{"brief.md":{"sha256":"%s","bytes":%s}},"updatedAt":"%s"}\n' \
   "$legacy_digest" "$legacy_bytes" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$legacy_staged"
 mv "$legacy_staged" "$legacy_manifest"
-"$legacy_root/scripts/agents/evidence-gc.sh" __lease-held human >"$tmp/legacy-gc.out"
+"$legacy_root/bin/metasystem" internal evidence gc --root "$legacy_root" >"$tmp/legacy-gc.out"
 grep -Fq 'collected legacy-chain' "$tmp/legacy-gc.out"
 [[ ! -e "$legacy_root/artifacts/agents/legacy-chain" ]] || {
   echo "evidence segment fixture: legacy manifest payload was not collected" >&2

@@ -275,7 +275,7 @@ func TestCritiqueClosePrintsEveryBlockingFinding(t *testing.T) {
 				t.Fatalf("%s did not print %q: %v", name, want, err)
 			}
 		}
-		wantNext := "next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and run job critique-budget-rebind"
+		wantNext := "next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget: the chain's next follow-up or close (work revise, design review, work review --dispositions, work finish) carries the raised limit onto it first"
 		if !strings.HasSuffix(err.Error(), wantNext) {
 			t.Fatalf("%s next step = %v", name, err)
 		}
@@ -294,7 +294,7 @@ func TestMalformedRoundAccountingNamesBudgetRebindNextStep(t *testing.T) {
 		findingRegisterRoundField: 1, reviewRoundLimitField: 3, criticRoundsConsumedField: "malformed",
 	})
 	_, err := CritiqueRegisterClose(repo, "critic")
-	want := "next: job critique-budget-rebind --root-job critic"
+	want := "next: continue or close chain critic (work revise, design review, work review --dispositions, work finish), which rebinds its round accounting first"
 	if err == nil || !strings.HasSuffix(err.Error(), want) {
 		t.Fatalf("malformed accounting refusal = %v, want suffix %q", err, want)
 	}

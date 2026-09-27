@@ -152,7 +152,10 @@ func reapFixtureProcessGroups(t fixtureProcessGroupTB, groups []FixtureProcessGr
 				leaderless[i] = true
 				continue
 			}
-			if err := ops.signal(group.signalTarget, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+			// Darwin refuses a group signal with EPERM when every member is a
+			// zombie: a leader that exited under load but that its parent has
+			// not reaped yet. The exit wait below still proves the group gone.
+			if err := ops.signal(group.signalTarget, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) && !errors.Is(err, syscall.EPERM) {
 				t.Errorf("kill fixture process group: pid=%d verb=%q: %v", group.pid, group.verb, err)
 			}
 		}

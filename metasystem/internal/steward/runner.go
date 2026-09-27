@@ -879,19 +879,27 @@ func launchRunner(repoRoot string, binary *EnrolledBinary, lineage string) (Runn
 	// The runner is detached on purpose: it must outlive this launch.
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
-	deadline := runnerNow().Add(runnerConfirmationWait)
-	for runnerNow().Before(deadline) {
-		if rec, alive := liveRunner(repoRoot); alive {
+	return awaitRunnerConfirmation(repoRoot, func() (RunnerRecord, bool) { return liveRunner(repoRoot) }, waited, runnerSleep)
+}
+
+// awaitRunnerConfirmation ends a launch on one of the two facts that decide
+// it: the runner published its live record, or it exited. Elapsed time
+// decides nothing. A fresh runner's start (exec of a newly pinned engine,
+// its identity and enrollment reads) has no bound under host load, and a
+// wall-clock limit here reported a failed arm while the detached runner went
+// on to publish its record and guard the repository.
+func awaitRunnerConfirmation(repoRoot string, confirmed func() (RunnerRecord, bool), exited <-chan error, sleep func(time.Duration)) (RunnerRecord, error) {
+	for {
+		if rec, alive := confirmed(); alive {
 			return rec, nil
 		}
 		select {
-		case <-waited:
+		case <-exited:
 			return RunnerRecord{}, fmt.Errorf("the runner died before guarding the repository; see %s", runnerLogPath(repoRoot))
 		default:
 		}
-		runnerSleep(50 * time.Millisecond)
+		sleep(50 * time.Millisecond)
 	}
-	return RunnerRecord{}, fmt.Errorf("the runner did not confirm within ten seconds; see %s", runnerLogPath(repoRoot))
 }
 
 // runnerLaunchArguments is the arming caller's handoff: the runner learns

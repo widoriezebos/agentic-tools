@@ -94,7 +94,7 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
 				return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit,
 					"--brief", brief, "--selected-installation", selected}, goalBranchReadDependencies{
-					Binary: filepath.Join(worktree, "bin", "metasystem"), Gate: func(string) (string, error) { return "green", nil },
+					Gate: func(string) (string, error) { return "green", nil },
 				})
 			})
 			t.Logf("branch read: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -303,10 +303,12 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 	// the steward runner they start, and the runner's record lives in this
 	// worktree, so the runner is disarmed here, after the rings can no longer
 	// revive it and before the temp directory takes the record away.
-	arm := filepath.Join(worktree, "scripts", "agents", "arm-supervision.sh")
+	// Arming and shutdown run the installed engine's `up` entry for the
+	// worktree.
+	arm := []string{"up", "--metasystem-root", worktree}
 	armEnv := append(os.Environ(), "METASYSTEM_BIN="+installed, "METASYSTEM_AGENT_RUNTIME=claude")
 	t.Cleanup(func() {
-		shutdown := exec.Command(arm, "--repo", worktree, "--shutdown")
+		shutdown := exec.Command(installed, append(arm, "--repo", worktree, "--shutdown")...)
 		shutdown.Env = armEnv
 		if output, err := shutdown.CombinedOutput(); err != nil {
 			t.Errorf("supervision shutdown: %v: %s", err, output)
@@ -354,8 +356,8 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 	if err != nil {
 		t.Fatalf("started-at: %v", err)
 	}
-	armCommand := exec.Command(arm, "--repo", worktree, "--session", "real-delegate", "--pid", strconv.Itoa(os.Getpid()),
-		"--start-time", strings.TrimSpace(string(started)), "--tag", "real-delegate-fixture")
+	armCommand := exec.Command(installed, append(arm, "--repo", worktree, "--session", "real-delegate", "--pid", strconv.Itoa(os.Getpid()),
+		"--start-time", strings.TrimSpace(string(started)), "--tag", "real-delegate-fixture")...)
 	armCommand.Env = armEnv
 	if output, err := armCommand.CombinedOutput(); err != nil {
 		t.Fatalf("arm supervision: %v: %s", err, output)

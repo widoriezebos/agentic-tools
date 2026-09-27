@@ -262,9 +262,13 @@ result strictly, as `test.go:932` does. No other pair may be both.
 | `delegate-supervisor` (new, U6a) | the dispatch driver (U6b) | persistent owner of one delegate launch through completion and result publication, replacing the detached adapter supervisor (`dispatch.sh:1001`, `adapters/claude.sh:165`) (VOA-04) |
 
 Entries that become function calls, because nothing outside the engine needs a
-process for them: `steward revive`, `delegate --revive`, `up --recover-only`
-called from landing (`landing_batch_owner.go:137`), `util hold` (becomes a test
-helper binary built by the test). `proc setsid` goes when `launch/process.go`
+process for them: `steward revive`, `util hold` (becomes a test helper binary
+built by the test). Two stay processes (U1b, confirmed by its read):
+`up --recover-only` from landing (`landing_batch_owner.go:122-137`) is a
+fire-and-forget detached launch whose recovery must not hold the ensure lock or
+the joining seat; `delegate --revive` keeps its own session so dispatch never
+inherits an operator's controlling terminal (`lease/classify.go:463` would read
+HUMAN). `proc setsid` goes when `launch/process.go`
 sets `Setsid` directly and its argv recognizers (6.6) move with it. The list may
 shrink during the build; adding an entry needs a revision of this page.
 
@@ -386,6 +390,34 @@ After U1d the objects are goal, design, decision, grant, work, test, question,
 incident, session, mission, system, machine, ui, settings, receipt, experiment,
 and the top-level `status`. `help agent` and skills name only these.
 
+U1d build notes (the forms as built, recorded here per section 3.1's refinement
+rule): `goal sync` keeps the two administrative modes the old `goal repair`
+held, `--accept-remote-history --by NAME` and `--upgrade ...`, beside the four
+above; `--publish` requires at least one `--goal`, and the owner's refusal code
+is `RECONCILE_OUTSIDE_SCOPE`. `work finish` accepts `j2:` only and keeps the
+close owner's `--evidence R` (the `REDUNDANT_READ` remedy) and `--dispositions
+FILE`. `work wait --exit-code` takes `j2:J` (or a bare job id), and a tracked
+run (the `internal run` store, not a unit run) as `--run ID`; `--list` takes
+`--session S`. `work review --check-only` takes `j2:J --stage
+review|recertify|merge [--test-command C] [--recertification R]`, or
+`[j2:ROOT] --findings RETURN --dispositions FILE`. `session status` keeps
+`--id ID` required (no newest-report lookup exists to default it).
+`receipt add --corrects EPOCH:SHA1` names the corrected line by the epoch and
+SHA-1 the receipt owner already keys it by. `test status` takes `--tree T` for
+retained proof and `--result FILE --expensive-ms N` for a recorded result's
+cost (the old `test report`). Every follow-up and every close
+of a chain first rebinds the round budget of each open critic root it
+continues (`CritiqueChainBudgetRebind`: the root itself when it is a critic's,
+else every code-critic or warden root reviewing the implementation chain, the
+selection `CritiqueExhaustionAdvance` inspects); a root whose goal is no longer
+claimed keeps its stored limit, and any other rebind failure refuses the
+follow-up or close. Register close already ran inside the close owner. `settings check` validates the
+testing contract and its declared tools in process; it does not run native
+discovery, which waits for the host's heavy proof lease (a test run resolves
+native tests when it runs). `system check` reports the
+covenant's shape when a `covenant.json` exists at the installation or
+repository root.
+
 **Rule C1 (clean code, Wido 2026-09-27: "There's nothing in the wild out
 there. There's only us. So we can have clean code.").** There are no external
 installations, so the build carries no compatibility code for old spellings: no
@@ -399,6 +431,81 @@ remaining arguments (`approve x` → `goal approve x`; several objects list
 each); otherwise the nearest current object or action by spelling. U1d deletes
 U1a's removed-spelling table and its tests and adds tests for these two
 suggestion rules.
+
+### 3.5 Agent adapters: built-ins in Go, an external contract for new agents (revision 8)
+
+Wido, 2026-09-27: moving the adapters to Go is fine, "but we do not want to lose
+extensibility": supporting an agent the metasystem does not ship must stay
+possible without changing Go, and "if people want to change the behavior of the
+built-in adapter somehow, that is possible". Today both work by adding or
+editing `scripts/agents/adapters/<name>.sh` and `hosts/<name>.sh`.
+
+**One runtime interface, two implementations.** Every runtime, built-in or
+external, implements the same Go interface; the shared layer (Go, identical for
+every runtime: custody, deadlines and kill domains, record CAS and patches,
+handshake bookkeeping, return normalization and turn adjudication, permission
+comparison and refusal, the janitor's kill decision) only calls it. The
+operations (VOA-25, VOA-26, VOA-27, VOA-30):
+
+| Operation | Input | Output |
+|---|---|---|
+| `describe` | none | runtime name, schema version, capabilities (resume, follow-up, repair, wait delivery, usage), classification signatures with their exclusions, the claim-bound invocation shape (where a claim tag sits in argv, accepted prefix and basename variants), config paths |
+| `probe` | none | installed, version, and the runtime's own permission-denial check |
+| `selftest` | the shared selftest parameters | the runtime-specific evidence the shared selftest judges |
+| `prepare` | turn context: role (`delegate` or mission `host`), job or mission and turn, resume identity, requested permissions, workspace, prior usage | argv, environment, stdin, settings files and callback channels to write, artifact paths to observe, and the **effective permission envelope** the settings and command produce |
+| `observe` | the CLI's stdout stream and the declared channels and artifact paths | events: session and turn handshake, effective model, delivery, protocol violation |
+| `finalize` | CLI exit status, artifacts, prior usage | result candidate, usage (including repair spend), observed session identity |
+| `repair` | only when `describe` declares it: the violation and the same session | a repaired result, through the same custody |
+| `cancel` | the owned process group | runtime-specific cancellation beyond the shared group kill, if any |
+
+The shared layer compares the effective envelope with the request and refuses
+a wider grant before starting the CLI; mapping a request to settings is the
+runtime's (the "working directory is the write boundary" rewrite of
+`internal/adapter/permissions.go:20` becomes the built-ins' choice). The
+mission runner uses the same interface with role `host` (today
+`missionrunner/host.go:337` and `hosts/*.sh`), so a new runtime can serve both
+delegate jobs and mission host turns.
+
+**Built-ins** (claude, codex, devin, fake) implement it in Go (U6a).
+**External runtimes** implement it as an executable at
+`<installation>/adapters/<name>` (any language; an extension point under rule
+S1): `<executable> OPERATION`, JSON request on stdin, JSON response on stdout
+(`observe` writes one JSON event per line), exit 0 on success (U6c).
+
+**Trust boundary (VOA-28).** An external adapter is trusted code, installed by
+a person: it runs only when the installation's configuration names it
+(`adapters.<name>.use=external`), the file is owned by the installation's user
+and not group- or world-writable, and discovery never executes an unnamed or
+unsafe file (it reports it). **Overriding a built-in** is the same setting on a
+built-in's name; an override may implement only some operations and exit with
+the reserved code 64 to fall back to the built-in for the rest. `settings show`
+and `system check` report every external adapter and override. The registry
+refuses a declaration whose classification signatures match another runtime's
+declared positive vectors or its reserved exclusions (each `describe` carries
+positive and lookalike vectors; the registry cross-checks all of them), so one
+runtime cannot claim another's processes (for example Devin's `devin acp`
+intermediary).
+
+**One effective declaration per runtime name (VOA-31).** An override of a
+built-in yields a single declaration under that name: its signatures are the
+override's, but the built-in's reserved exclusions and lookalike vectors (the
+helpers its retained fallback operations depend on, such as `devin acp` at
+`internal/runtimes/runtimes.go:206`) are always part of it. The registry refuses
+an override whose signature matches any of the built-in's reserved lookalike
+vectors, while matches of that runtime's own positive vectors are not
+conflicts.
+
+**Recognizers.** Census and lease classification take signatures from the
+registry. The janitor keeps its kill proof in Go (kernel identity plus
+claim-consistent argv, `janitor/killproof.go:19,206`) and takes each runtime's
+claim-bound invocation shape declaratively from `describe`; a runtime's
+assertion that a process is its own never authorizes a signal (VOA-29).
+
+**Every consumer uses the registry (VOA-30):** configuration validation
+(`config/validate.go:170`), `internal/runtimes` resolution (`runtimes.go:298`),
+probes (`adapter/probe.go:47`), selftest, dispatch and the mission runner.
+
+The operation schemas are versioned and documented in `docs/agent-adapters.md`.
 
 ## 4. Rules and their witnesses
 
@@ -418,7 +525,8 @@ later unit (a ratchet: numbers, not lists, except where a list is the rule).
 | R9 | Orchestration sits above owners (6.3). | `go list -deps` test: no package under `internal/` that is an owner imports an orchestration package. |
 | R10 | Hard cutover per slice. | R1-R9 green at every landing. |
 | R11 | No metasystem scripts outside declared extension points; nothing in `metasystem/` depends on `environment/vms` (3.3). | Static test over `git ls-files` under `metasystem/`: extension-point allowlist by directory, zero other `*.sh`/`*.bash`, zero references to `environment/vms`. |
-| R12 | Every public action states an intent (3.4, G7). | Router test pins the revision 7 table; removed U1a spellings refuse with their successor. |
+| R13 | A new agent needs no Go change, and a built-in can be overridden (3.5). | With an engine built before the helper exists: a uniquely named external runtime passes configuration validation, dispatches, resumes, cancels, serves a mission host turn and runs its selftest with a custom probe; the fake runtime as built-in and as external executable produce identical records; a partial override changes one operation and falls back (64) for the rest; an unnamed executable, an unsafe file and a signature overlapping another runtime's vectors are refused; the janitor kills a correctly tagged orphaned external CLI and leaves wrongly tagged or reused-pid processes alone; an override of Devin's `describe` that falls back for host preparation is refused when it drops the `devin acp` exclusion, and with the exclusion kept a host turn's tool call still classifies through its announced main. |
+| R12 | Every public action states an intent (3.4, G7). | Router test pins the revision 7 table; an unknown command's "did you mean" comes from the current table only (C1). |
 
 ## 5. Units
 
@@ -493,6 +601,7 @@ reconciliation owner's scoped publication (3.4, VOA-21).
   the Go path, switches the guard stub to `internal pre-commit`, and deletes the
   scripts. `landing/batch/transport.go:301` and `intent_exception.go:227` call Go.
   Fixtures port.
+- U6c External runtimes (revision 8). The external-executable implementation of the runtime interface, the registry and its trust rules, every consumer on the registry, `docs/agent-adapters.md`, R13. After U6a.
 - U6a Runtimes. `adapters/runtime-common.sh`, the four adapters,
   `host-common.sh` and the four hosts into Go; the `delegate-supervisor` entry;
   adapter signature discovery from a Go runtime registry instead of enumerating
@@ -799,3 +908,23 @@ findings, all accepted.
 Revision 7 confirmation, Codex `gpt-6-astra`, against 464fd20d0: seven of seven folds
 verified; C1 and the section 7 withdrawal checked; zero material findings. The
 loop for revision 7 is closed.
+
+Revision 8 read, Codex `gpt-6-astra`, against 26708ddce: six material findings,
+all accepted and folded into 3.5, R13 and unit U6c.
+
+| Finding | Disposition | Where folded |
+|---|---|---|
+| VOA-25 mission host turns | accepted | 3.5 role `host`; mission runner on the interface |
+| VOA-26 permission mapping is runtime-specific | accepted | 3.5 effective envelope from `prepare`; shared comparison |
+| VOA-27 preparation, observation, finalization, repair | accepted | 3.5 operation table |
+| VOA-28 trust and signature interference | accepted | 3.5 trust boundary; registry cross-check |
+| VOA-29 janitor claim shapes | accepted | 3.5 recognizers |
+| VOA-30 end-to-end with an unknown runtime | accepted | 3.5 consumers; R13 |
+
+Revision 8 confirmation, Codex `gpt-6-astra`, against 233caaa2b: six of six
+folds verified; one new material finding, VOA-31 (an override could drop the
+built-in's reserved exclusions its fallback depends on), accepted and folded
+into 3.5 ("One effective declaration per runtime name") and R13.
+
+VOA-31 confirmation against 36bffdd8f: verified, zero material findings.
+Revision 8 is closed.

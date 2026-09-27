@@ -156,6 +156,10 @@ func TestIntentWaitRealOwner(t *testing.T) {
 	announceProofFixtureHolder(t, bed.root())
 	owners := bed.workOwners()
 	owners.work.wait = nil
+	// The wait's deadlines run on this test's clock, not the machine's: the
+	// fake adapter is a real subprocess, and under load its start alone can
+	// outlast a one-second wall-clock delivery budget.
+	owners.work.waitClock = newVirtualWaitClock(time.Now()).apply
 	var lastErr string
 	run := func(args ...string) (int, intentResult) {
 		var stdout, stderr bytes.Buffer

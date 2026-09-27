@@ -150,6 +150,9 @@ type contractDoc struct {
 	sealed   map[string]string
 	approval []string
 	source   *Source
+	// fingerprint computes the live supervision fingerprint preflight
+	// compares with the armed set; nil is census.Fingerprint.
+	fingerprint func(projectRoot string) (string, error)
 }
 
 // Source supplies raw repository facts and checkout effects for one contract invocation.
@@ -277,18 +280,35 @@ func PreflightWithSource(path, verifiedBytesOutput string, source *Source) (stri
 	if err := checkSource(source); err != nil {
 		return "", "", err
 	}
-	return contractPreflightWithSource(path, verifiedBytesOutput, source.Repository, source)
+	return contractPreflightWithSource(path, verifiedBytesOutput, source.Repository, source, nil)
 }
 
 func contractPreflightWithRepository(path, verifiedBytesOutput string, repository func(string) (string, error)) (missionID, rawSHA string, err error) {
-	return contractPreflightWithSource(path, verifiedBytesOutput, repository, nil)
+	return contractPreflightWithSource(path, verifiedBytesOutput, repository, nil, nil)
 }
 
-func contractPreflightWithSource(path, verifiedBytesOutput string, repository func(string) (string, error), source *Source) (missionID, rawSHA string, err error) {
+// PreflightWithFingerprint is Preflight with the live supervision
+// fingerprint supplied by the caller (nil computes census.Fingerprint), for
+// a caller that owns how its checkout's supervision code is identified.
+func PreflightWithFingerprint(path, verifiedBytesOutput string, fingerprint func(projectRoot string) (string, error)) (string, string, error) {
+	return contractPreflightWithSource(path, verifiedBytesOutput, contractRepositoryFor, nil, fingerprint)
+}
+
+// PreflightWithSourceAndFingerprint is PreflightWithSource with the live
+// supervision fingerprint supplied by the caller.
+func PreflightWithSourceAndFingerprint(path, verifiedBytesOutput string, source *Source, fingerprint func(projectRoot string) (string, error)) (string, string, error) {
+	if err := checkSource(source); err != nil {
+		return "", "", err
+	}
+	return contractPreflightWithSource(path, verifiedBytesOutput, source.Repository, source, fingerprint)
+}
+
+func contractPreflightWithSource(path, verifiedBytesOutput string, repository func(string) (string, error), source *Source, fingerprint func(string) (string, error)) (missionID, rawSHA string, err error) {
 	doc, repo, projectRoot, err := contractLoadWithSource(path, repository, source)
 	if err != nil {
 		return "", "", err
 	}
+	doc.fingerprint = fingerprint
 	if err := doc.preflight(repo, projectRoot); err != nil {
 		return "", "", err
 	}
@@ -1282,7 +1302,7 @@ func (d *contractDoc) preflight(repo, projectRoot string) error {
 	if _, _, err := d.runGate(repo, projectRoot, preflightSHA, preflightGateRef); err != nil {
 		return err
 	}
-	if err := contractVerifySupervision(projectRoot); err != nil {
+	if err := contractVerifySupervision(projectRoot, d.fingerprint); err != nil {
 		return err
 	}
 	return d.verifyLease(projectRoot)
@@ -1442,7 +1462,7 @@ func contractMissionID(path string) (string, error) {
 // a valid interval, a live and correctly-tagged watcher and reaper with recent
 // heartbeats, a recent successful census, and a fingerprint that still matches
 // the live supervision code.
-func contractVerifySupervision(projectRoot string) error {
+func contractVerifySupervision(projectRoot string, fingerprintOf func(string) (string, error)) error {
 	dir := filepath.Join(projectRoot, "artifacts", "agents", "supervision")
 	state, err := contractReadJSON(filepath.Join(dir, "state.json"))
 	if err != nil {
@@ -1495,8 +1515,11 @@ func contractVerifySupervision(projectRoot string) error {
 		return stateErr("preflight refused: census is absent, failed, or stale")
 	}
 	stateFingerprint, _ := state["fingerprint"].(string)
-	fingerprint, code := contractRunFingerprint(projectRoot)
-	if code != 0 || strings.TrimSpace(fingerprint) != stateFingerprint {
+	if fingerprintOf == nil {
+		fingerprintOf = contractRunFingerprint
+	}
+	fingerprint, err := fingerprintOf(projectRoot)
+	if err != nil || strings.TrimSpace(fingerprint) != stateFingerprint {
 		return stateErr("preflight refused: supervisor fingerprint does not match live code")
 	}
 	if censusFingerprint, _ := lastCensus["fingerprint"].(string); censusFingerprint != stateFingerprint {
@@ -1570,26 +1593,10 @@ func contractFixtureIdentityMatches(projectRoot string, pid, started int64, tag 
 	return *entry.PidStartedAt == started && strings.Contains(*entry.Command, tag)
 }
 
-// contractRunFingerprint asks the live supervision code to print the checkout's
-// fingerprint, returning its output and exit code.
-func contractRunFingerprint(projectRoot string) (string, int) {
-	script := filepath.Join(projectRoot, "scripts", "agents", "arm-supervision.sh")
-	command := exec.Command(script, "fingerprint", "--repo", projectRoot)
-	// The fingerprint script runs raw `git -C`; the scrubbed environment
-	// keeps an inherited GIT_DIR (or its steering siblings) from
-	// redirecting repository resolution and falsely refusing admission.
-	command.Env = gittree.ScrubbedEnviron()
-	var out strings.Builder
-	command.Stdout = &out
-	// A fingerprint script that hangs must not hang the preflight.
-	limit := boundedexec.Timeout(filepath.Join(projectRoot, "metasystem.conf"), boundedexec.Local)
-	if err := boundedexec.Run(command, limit, "supervision fingerprint"); err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
-			return out.String(), exit.ExitCode()
-		}
-		return out.String(), 1
-	}
-	return out.String(), 0
+// contractRunFingerprint computes the checkout's live supervision
+// fingerprint: census.Fingerprint, the owner `up` arms with.
+func contractRunFingerprint(projectRoot string) (string, error) {
+	return census.Fingerprint(projectRoot, projectRoot)
 }
 
 // --- path and repository resolution ---

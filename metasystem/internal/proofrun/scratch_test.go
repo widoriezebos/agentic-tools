@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // scratchProbe reports every pid Dead unless named; a named Alive pid reads
@@ -83,18 +84,32 @@ func writeScratchRecord(t *testing.T, control string, record ScratchRecord) {
 	}
 }
 
+// Writer-lock note: a fork by any parallel test in this binary copies every
+// open descriptor, CLOEXEC included, into a child that keeps it until it
+// execs; the copy shares the open file description, so a launcher's writer
+// flock outlives its Close and a later proof that the writer is gone reads a
+// live writer. The product closes rather than unlocks that description on
+// purpose (Cleanup). A test that holds a writer description and then proves
+// the lock free therefore keeps that whole window inside testexec.Locked,
+// which excludes forks (and must not itself fork or take ForkLock again).
+// The three tests that start their own writer children inside that window
+// cannot exclude forks and are serial instead.
+
 // crashedScratch is a run whose launcher died: its descriptor is gone (the
 // kernel closed it) and its recorded launcher reads Dead.
 func crashedScratch(t *testing.T, control string, probe scratchProbe, edit func(*ScratchRecord)) ScratchRecord {
 	t.Helper()
-	run, err := CreateScratchRun(control)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(run.Dir("groups"), "bytes"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_ = run.writer.Close()
+	var run *ScratchRun
+	lockedScratch(t, func() {
+		var err error
+		if run, err = CreateScratchRun(control); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(run.Dir("groups"), "bytes"), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_ = run.writer.Close()
+	})
 	record := readScratchRecord(t, control, run.ID())
 	_, record.Launcher = probe.ref(t, 900001)
 	if edit != nil {
@@ -102,6 +117,14 @@ func crashedScratch(t *testing.T, control string, probe scratchProbe, edit func(
 	}
 	writeScratchRecord(t, control, record)
 	return record
+}
+
+// lockedScratch runs body with forks excluded (see the writer-lock note).
+func lockedScratch(t *testing.T, body func()) {
+	t.Helper()
+	if err := testexec.Locked(func() error { body(); return nil }); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func scratchOutcome(outcomes []ReconcileOutcome, run string) ReconcileOutcome {
@@ -116,21 +139,24 @@ func scratchOutcome(outcomes []ReconcileOutcome, run string) ReconcileOutcome {
 func TestScratchNormalCleanupRemovesRootAndRecord(t *testing.T) {
 	t.Parallel()
 	control := t.TempDir()
-	run, err := CreateScratchRun(control)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range append([]string{".writer-lock", ".metasystem-scratch", "go.mod"}, ScratchSubdirectories...) {
-		if _, err := os.Lstat(filepath.Join(run.Root(), name)); err != nil {
-			t.Fatalf("%s: %v", name, err)
+	var run *ScratchRun
+	lockedScratch(t, func() {
+		var err error
+		if run, err = CreateScratchRun(control); err != nil {
+			t.Fatal(err)
 		}
-	}
-	if err := os.WriteFile(filepath.Join(run.Dir("gocache"), "entry"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := run.Cleanup(nil); err != nil {
-		t.Fatal(err)
-	}
+		for _, name := range append([]string{".writer-lock", ".metasystem-scratch", "go.mod"}, ScratchSubdirectories...) {
+			if _, err := os.Lstat(filepath.Join(run.Root(), name)); err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(run.Dir("gocache"), "entry"), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := run.Cleanup(nil); err != nil {
+			t.Fatal(err)
+		}
+	})
 	if _, err := os.Lstat(run.Root()); !os.IsNotExist(err) {
 		t.Fatalf("root survived: %v", err)
 	}
@@ -205,7 +231,7 @@ func TestScratchRecoveryWaitsForTheRecordedCustodian(t *testing.T) {
 // cleanup reports cleanup.incomplete with the record retained, recovery
 // reports writer-lock-held, and only the child's exit permits removal.
 func TestScratchInheritedWriterLockOutlivesTheLaunchersCopy(t *testing.T) {
-	t.Parallel()
+	// Not parallel: it starts its own writer child while the writer is open (writer-lock note).
 	control := t.TempDir()
 	run, err := CreateScratchRun(control)
 	if err != nil {
@@ -365,7 +391,7 @@ func TestScratchRecoveryKeepsRootWhileAWorktreeIsUnresolved(t *testing.T) {
 // copy; it is recorded before the workload runs, and only its exit lets the
 // launcher's cleanup take the lock.
 func TestScratchCustodianHoldsTheWriterAfterTheWorkloadClosesIt(t *testing.T) {
-	t.Parallel()
+	// Not parallel: it starts its own writer child while the writer is open (writer-lock note).
 	engine := buildResourceCustodyEngine(t)
 	control := t.TempDir()
 	run, err := CreateScratchRun(control)
@@ -453,6 +479,12 @@ func scratchGitStub(t *testing.T) gittree.Workspace {
 func dupCloseOnExec(file *os.File) (int, error) {
 	syscall.ForkLock.RLock()
 	defer syscall.ForkLock.RUnlock()
+	return dupCloseOnExecForksExcluded(file)
+}
+
+// dupCloseOnExecForksExcluded is dupCloseOnExec for a caller already inside
+// testexec.Locked: taking ForkLock again there can deadlock behind a waiting fork.
+func dupCloseOnExecForksExcluded(file *os.File) (int, error) {
 	fd, err := syscall.Dup(int(file.Fd()))
 	if err == nil {
 		syscall.CloseOnExec(fd)
@@ -462,9 +494,10 @@ func dupCloseOnExec(file *os.File) (int, error) {
 
 // borrowScratch reopens run as its worker would, through a duplicate of the
 // launcher's description (what ExtraFiles hands a child).
+// It runs inside testexec.Locked (its only caller's window).
 func borrowScratch(t *testing.T, control string, run *ScratchRun, attempt string) *ScratchRun {
 	t.Helper()
-	fd, err := dupCloseOnExec(run.Writer())
+	fd, err := dupCloseOnExecForksExcluded(run.Writer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,64 +515,66 @@ func borrowScratch(t *testing.T, control string, run *ScratchRun, attempt string
 func TestScratchRecordMutationsSerializeAcrossHandlesAndCleanupReloads(t *testing.T) {
 	t.Parallel()
 	control := t.TempDir()
-	run, err := CreateScratchRun(control)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := run.RecordAttempt("proof-attempt-a"); err != nil {
-		t.Fatal(err)
-	}
-	worker := borrowScratch(t, control, run, "proof-attempt-a")
-	probe := newScratchProbe(t)
-	const each = 20
-	start := make(chan struct{})
-	errs := make(chan error, 2*each)
-	for index, handle := range []*ScratchRun{run, worker} {
-		go func(handle *ScratchRun, base int64) {
-			<-start
-			for step := int64(0); step < each; step++ {
-				ref, _ := probe.ref(t, base+step)
-				errs <- handle.RecordCustodian(ref, base+step)
-			}
-		}(handle, int64(910000+index*1000))
-	}
-	close(start)
-	for range 2 * each {
-		if err := <-errs; err != nil {
+	lockedScratch(t, func() {
+		run, err := CreateScratchRun(control)
+		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	if record := readScratchRecord(t, control, run.ID()); len(record.Custodians) != 2*each || record.Attempt != "proof-attempt-a" {
-		t.Fatalf("durable record lost a mutation: %d custodians, attempt %q", len(record.Custodians), record.Attempt)
-	}
-	plan, err := worker.PlanWorktree(scratchGitStub(t), "groups")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(plan.Parent, run.Dir("groups")+string(os.PathSeparator)) {
-		t.Fatalf("worker worktree %s is outside the run root", plan.Parent)
-	}
-	if stale, _ := filepath.Glob(filepath.Join(ScratchStore(control), "*.tmp-*")); len(stale) != 0 {
-		t.Fatalf("temporary record files left: %v", stale)
-	}
-	var removed []string
-	if err := run.Cleanup(nil); err == nil || !strings.Contains(err.Error(), "writer-lock-held") {
-		t.Fatalf("cleanup while the worker holds its inherited writer = %v", err)
-	}
-	_ = worker.writer.Close() // the worker exits
-	err = run.Cleanup(func(tuple gittree.WorktreeTuple, _ gittree.Workspace) (string, error) {
-		removed = append(removed, tuple.Top)
-		return gittree.WorktreeRemoved, os.RemoveAll(tuple.Parent)
+		if err := run.RecordAttempt("proof-attempt-a"); err != nil {
+			t.Fatal(err)
+		}
+		worker := borrowScratch(t, control, run, "proof-attempt-a")
+		probe := newScratchProbe(t)
+		const each = 20
+		start := make(chan struct{})
+		errs := make(chan error, 2*each)
+		for index, handle := range []*ScratchRun{run, worker} {
+			go func(handle *ScratchRun, base int64) {
+				<-start
+				for step := int64(0); step < each; step++ {
+					ref, _ := probe.ref(t, base+step)
+					errs <- handle.RecordCustodian(ref, base+step)
+				}
+			}(handle, int64(910000+index*1000))
+		}
+		close(start)
+		for range 2 * each {
+			if err := <-errs; err != nil {
+				t.Fatal(err)
+			}
+		}
+		if record := readScratchRecord(t, control, run.ID()); len(record.Custodians) != 2*each || record.Attempt != "proof-attempt-a" {
+			t.Fatalf("durable record lost a mutation: %d custodians, attempt %q", len(record.Custodians), record.Attempt)
+		}
+		plan, err := worker.PlanWorktree(scratchGitStub(t), "groups")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(plan.Parent, run.Dir("groups")+string(os.PathSeparator)) {
+			t.Fatalf("worker worktree %s is outside the run root", plan.Parent)
+		}
+		if stale, _ := filepath.Glob(filepath.Join(ScratchStore(control), "*.tmp-*")); len(stale) != 0 {
+			t.Fatalf("temporary record files left: %v", stale)
+		}
+		var removed []string
+		if err := run.Cleanup(nil); err == nil || !strings.Contains(err.Error(), "writer-lock-held") {
+			t.Fatalf("cleanup while the worker holds its inherited writer = %v", err)
+		}
+		_ = worker.writer.Close() // the worker exits
+		err = run.Cleanup(func(tuple gittree.WorktreeTuple, _ gittree.Workspace) (string, error) {
+			removed = append(removed, tuple.Top)
+			return gittree.WorktreeRemoved, os.RemoveAll(tuple.Parent)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(removed) != 1 || removed[0] != plan.Top {
+			t.Fatalf("cleanup removed %v, want the worker's %s", removed, plan.Top)
+		}
+		if entries, _ := os.ReadDir(ScratchStore(control)); len(entries) != 0 {
+			t.Fatalf("store not empty: %v", entries)
+		}
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(removed) != 1 || removed[0] != plan.Top {
-		t.Fatalf("cleanup removed %v, want the worker's %s", removed, plan.Top)
-	}
-	if entries, _ := os.ReadDir(ScratchStore(control)); len(entries) != 0 {
-		t.Fatalf("store not empty: %v", entries)
-	}
 }
 
 // The worker accepts only the launcher's own inherited description of this
@@ -616,7 +651,7 @@ const scratchWorkerChildEnv = "GO_WANT_SCRATCH_WORKER_CHILD"
 // it from its packet locator, and appends to the durable record while the
 // launcher appends too; the launcher's cleanup sees the worker's tuple.
 func TestScratchWorkerProcessAppendsThroughTheInheritedWriter(t *testing.T) {
-	t.Parallel()
+	// Not parallel: it starts its own writer child while the writer is open (writer-lock note).
 	if spec := os.Getenv(scratchWorkerChildEnv); spec != "" {
 		scratchWorkerChild(t, spec)
 		return
@@ -794,13 +829,15 @@ func TestScratchStoreMustResolveInsideTheControlRoot(t *testing.T) {
 	if err := os.Symlink(real, alias); err != nil {
 		t.Fatal(err)
 	}
-	run, err := CreateScratchRun(alias)
-	if err != nil {
-		t.Fatalf("control-root alias refused: %v", err)
-	}
-	if err := run.Cleanup(nil); err != nil {
-		t.Fatal(err)
-	}
+	lockedScratch(t, func() {
+		run, err := CreateScratchRun(alias)
+		if err != nil {
+			t.Fatalf("control-root alias refused: %v", err)
+		}
+		if err := run.Cleanup(nil); err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 // C4: a failed sidecar deletion keeps the record discoverable, and the next

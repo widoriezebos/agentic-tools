@@ -30,19 +30,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-func TestBatchGoalHandoverChild(t *testing.T) {
-	raw := os.Getenv("GO_WANT_BATCH_GOAL_HANDOVER_CHILD")
-	if raw == "" {
-		return
-	}
-	var args []string
-	if err := json.Unmarshal([]byte(raw), &args); err != nil {
-		fmt.Println(err)
-		os.Exit(25)
-	}
-	os.Exit(runGoalHandoverMutation(args))
-}
-
 func TestBatchJoinSpawnsOneOwner(t *testing.T) {
 	original := batchOwnerEnsure
 	t.Cleanup(func() { batchOwnerEnsure = original })
@@ -691,7 +678,7 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	if !firstScanner.Scan() || firstScanner.Text() != "READY" {
 		t.Fatalf("first batch owner did not acquire the lease: %q (%v)", firstScanner.Text(), firstScanner.Err())
 	}
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", landingOwnerLineage)
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "") // the owner call names its lineage; nothing inherits it
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T08:07:00Z")
 	store := batch.NewStore(root, nil)
 	claim := batch.Claim{Machine: "landing", Lineage: landingOwnerLineage, Epoch: 1, Revision: 3, AccountingRevision: 2}
@@ -701,25 +688,15 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	var calls [][]string
-	run := func(gotRoot string, args ...string) error {
-		if gotRoot != root {
-			t.Fatalf("rebind root=%q, want %q", gotRoot, root)
+	var calls []goalHandoverRequest
+	run := func(request goalHandoverRequest) error {
+		if request.Root != root {
+			t.Fatalf("rebind root=%q, want %q", request.Root, root)
 		}
-		calls = append(calls, append([]string(nil), args...))
-		if len(args) < 2 || args[0] != "goal" || args[1] != "handover" {
-			return fmt.Errorf("unexpected rebind command %v", args)
-		}
-		childArgs, err := json.Marshal(args[2:])
-		if err != nil {
-			return err
-		}
-		command := exec.Command(os.Args[0], "-test.run=^TestBatchGoalHandoverChild$")
-		command.Env = append(os.Environ(), "GO_WANT_BATCH_GOAL_HANDOVER_CHILD="+string(childArgs))
-		if output, err := command.CombinedOutput(); err != nil {
-			return fmt.Errorf("real goal handover: %w: %s", err, output)
-		}
-		return nil
+		calls = append(calls, request)
+		// The real handover owner runs in this process, the lease holder,
+		// exactly as its former child classified this process as its parent.
+		return goalHandoverOwner(landingOwnerInvocation(), request)
 	}
 	acceptedTree := func() string {
 		return strings.TrimSpace(goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef+"^{tree}"))
@@ -752,10 +729,8 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("rebind calls=%v", calls)
 	}
-	joined := strings.Join(calls[0], " ")
-	if !strings.Contains(joined, "--id standing-validation") || strings.Contains(joined, "goal-b") ||
-		!strings.Contains(joined, "--target-claim-epoch 2") || !strings.Contains(joined, "--target-lineage "+landingOwnerLineage) {
-		t.Fatalf("rebind calls=%v", calls)
+	if calls[0].GoalID != "standing-validation" || calls[0].TargetEpoch != 2 || calls[0].TargetLineage != landingOwnerLineage {
+		t.Fatalf("rebind calls=%+v", calls)
 	}
 	ledger, err := batch.ReadReturnLedgerGoal(root, acceptedTree(), "standing-validation")
 	if err != nil || ledger.ClaimEpoch != 2 {
@@ -898,16 +873,19 @@ func TestBatchProductionReturnAndForwardHandoverArguments(t *testing.T) {
 	if err := os.WriteFile(fixturePath, append(fixtureBytes, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	original, originalRead := batchChildRunner, batchReturnLedgerGoal
-	t.Cleanup(func() { batchChildRunner, batchReturnLedgerGoal = original, originalRead })
+	originalRead := batchReturnLedgerGoal
+	t.Cleanup(func() { batchReturnLedgerGoal = originalRead })
 	batchReturnLedgerGoal = func(string, string, string) (batch.ReturnLedgerGoal, error) {
 		return batch.ReturnLedgerGoal{Claimed: true, Batch: batchID}, nil
 	}
 	var calls [][]string
-	batchChildRunner = func(gotRoot, lineage string, args ...string) error {
-		calls = append(calls, append([]string{gotRoot, lineage}, args...))
+	stubBatchOwnerCalls(t, func(invocation ownerInvocation, args ...string) error {
+		if invocation.lineage != landingOwnerLineage || invocation.caller.pid != int64(os.Getpid()) {
+			t.Fatalf("landing owner call context=%+v, want the owner itself under its lineage", invocation)
+		}
+		calls = append(calls, append([]string(nil), args...))
 		return nil
-	}
+	})
 	seams := productionReturnSeams(root, func() string { return "tree" })
 	if err := seams.HandBack("goal-a", claim, 8); err != nil {
 		t.Fatal(err)

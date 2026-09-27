@@ -37,10 +37,8 @@ func stageCheckout(t *testing.T) string {
 	write("metasystem.conf", "metasystem.runtimes=fake\n", 0o644)
 	// The remaining fingerprint inputs need only exist and be readable.
 	for _, rel := range []string{
-		"scripts/agents/arm-supervision.sh",
 		"scripts/agents/dispatch.sh",
 		"bin/metasystem",
-		"scripts/watch-background-jobs.sh",
 	} {
 		write(rel, "# fingerprint input placeholder\n", 0o644)
 	}

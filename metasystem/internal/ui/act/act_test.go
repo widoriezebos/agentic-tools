@@ -409,9 +409,11 @@ func provenFor(t *testing.T, bed *ledgerBed) Authority {
 // endpoint and machine name, and a goal branch's safety — are handed to the
 // authority as its own, so the whole publication path runs with Git absent,
 // which is what this repository's rules ask of a behaviour test.
+// The field is the interface rather than the fixture's own type because a test
+// that needs one call of the ledger to fail swaps in a wrapper of its own.
 type ledgerBed struct {
 	root       string
-	repository *testgoal.Repository
+	repository goal.Repository
 }
 
 // The bed's own seed commit: forty characters, because a commit id is what the

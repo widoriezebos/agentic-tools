@@ -162,6 +162,14 @@ func runWaitWithPoll(args []string, poll func(context.Context) error) int {
 }
 
 func runWaitCommand(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool)) int {
+	return runWaitCommandOnClock(args, poll, callerPID, printResult, nil)
+}
+
+// runWaitCommandOnClock is runWaitCommand with the wait's clock replaced when
+// clock is not nil. The replacement sets Now, BootClock, Sleep and
+// WithTimeout together, so every deadline the wait derives is measured and
+// enforced on that one clock; production passes nil and keeps the kernel's.
+func runWaitCommandOnClock(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool), clock func(*metarun.WaitOptions)) int {
 	flags := flag.NewFlagSet("wait", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	job := flags.String("job", "", "delegate job identifier")
@@ -273,6 +281,9 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 		fmt.Fprintln(os.Stderr, err)
 		return metarun.ExitWaiterIO
 	}
+	if clock != nil {
+		clock(&options)
+	}
 	registerFresh := false
 	if *resume != "" && view.ClaimEpoch != nil {
 		lineage, succeeded, successionErr := report.SucceededWaitOwner(stateRoot, view.MainId, *view.ClaimEpoch, resumeRow.MainId)
@@ -299,16 +310,26 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 		if scanBudget > 10*time.Second {
 			scanBudget = 10 * time.Second
 		}
-		scanCtx, cancel := context.WithTimeout(ctx, scanBudget)
+		// The scan is bounded on the wait's own clock, like every deadline
+		// the wait derives; production leaves both at their defaults.
+		withTimeout, now := options.WithTimeout, options.Now
+		if withTimeout == nil {
+			withTimeout = context.WithTimeout
+		}
+		if now == nil {
+			now = time.Now
+		}
+		scanCtx, cancel := withTimeout(ctx, scanBudget)
 		openWorkSignature, scanErr := options.OpenWorkSignature(scanCtx)
 		cancel()
 		if scanErr != nil {
+			returnedAt := now().UTC().Format(time.RFC3339Nano)
 			if ctx.Err() != nil {
-				result = metarun.WaitResult{SchemaVersion: 2, ExitCode: metarun.ExitInterrupted, Reason: "wait command was interrupted", SourceOutcome: "interrupted", ReturnedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+				result = metarun.WaitResult{SchemaVersion: 2, ExitCode: metarun.ExitInterrupted, Reason: "wait command was interrupted", SourceOutcome: "interrupted", ReturnedAt: returnedAt}
 			} else if *timeout <= 10*time.Second && errors.Is(scanErr, context.DeadlineExceeded) {
-				result = metarun.WaitResult{SchemaVersion: 2, ExitCode: metarun.ExitWaitDeadline, Reason: "this wait reached its deadline during the open-work scan", SourceOutcome: "wait-deadline", ReturnedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+				result = metarun.WaitResult{SchemaVersion: 2, ExitCode: metarun.ExitWaitDeadline, Reason: "this wait reached its deadline during the open-work scan", SourceOutcome: "wait-deadline", ReturnedAt: returnedAt}
 			} else {
-				result = metarun.WaitResult{SchemaVersion: 2, ExitCode: metarun.ExitWaiterIO, Reason: "the open-work signature could not be read: " + scanErr.Error(), SourceOutcome: "storage-failure", ReturnedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+				result = metarun.WaitResult{SchemaVersion: 2, ExitCode: metarun.ExitWaiterIO, Reason: "the open-work signature could not be read: " + scanErr.Error(), SourceOutcome: "storage-failure", ReturnedAt: returnedAt}
 			}
 		} else {
 			result = store.Wait(ctx, metarun.WaitRequest{Selector: selector, Owner: owner, RuntimeSession: runtimeSession, Timeout: *timeout, OpenWorkSignature: openWorkSignature}, options)

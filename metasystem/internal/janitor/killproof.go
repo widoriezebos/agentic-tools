@@ -43,7 +43,6 @@ type Shape struct {
 // definition, the same one their launcher builds its argv from.
 func DefaultShapes() []Shape {
 	shapes := []Shape{
-		{Name: "shell-watcher", Includes: []string{"watch-background-jobs.sh"}, TagFlag: "--instance-tag"},
 		{Name: "shell-reaper", Includes: []string{"dispatch.sh", "reap"}, TagFlag: "--instance-tag"},
 		{Name: "go-owner", Includes: []string{"metasystem", "supervise"}, TagFlag: "--tag"},
 	}

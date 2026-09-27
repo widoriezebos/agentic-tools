@@ -9,6 +9,7 @@ import {
   askLine,
   barLine,
   cardsIn,
+  dependentsWords,
   dispatchOf,
   dismissable,
   dismissableIn,
@@ -21,7 +22,9 @@ import {
   guardFor,
   lineID,
   lineState,
+  liveDependentsIn,
   NEEDS_ITS_BUDGET,
+  needsTheCompare,
   busyAnswering,
   coverChanged,
   newestWaitingCard,
@@ -125,6 +128,25 @@ function row(over: Partial<Row> = {}): Row {
   };
 }
 
+/** The goal as the Partner read it, which every guarded line carries. */
+const READ = {
+  intent: "Fleet presence is read from the census, not polled.",
+  nextStep: "Read the census.",
+};
+
+/**
+ * One abandon line: the reason, the successor carrying the work, and the two live
+ * goals the Partner read as waiting for this one.
+ */
+function abandonOf(over: Partial<Proposal> = {}): Proposal {
+  return proposal({
+    verb: "abandon-goal",
+    fields: { because: "the seat inventory carries this now", successor: "g1-s70" },
+    read: { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"], dependents: ["g1-s44", "g1-s45"] },
+    ...over,
+  });
+}
+
 /** One card over the proposals given, with the marks and tuples given. */
 function card(
   proposals: readonly Proposal[],
@@ -143,20 +165,22 @@ function lineOf(one: Card, index = 0): Line {
 
 describe("the word on the line", () => {
   /**
-   * It is the word the button on the page that offers the act uses, so a human
-   * who has pressed Not now on the Decisions page reads Not now here. It is never
-   * the route id: that is what the message persists and the runner dispatches on.
+   * It is the goal action's public name under the goal object, the word the
+   * button on the page that offers the act uses, so a human who has pressed
+   * Pause on the Decisions page reads Pause here. It is never the route id: that
+   * is what the message persists and the runner dispatches on.
    */
   it("is the page's own button word for every act", () => {
-    expect(verbWord("park-goal")).toBe("Not now");
-    expect(verbWord("unpark-goal")).toBe("Return to queue");
-    expect(verbWord("withdraw-goal")).toBe("Withdraw approval");
+    expect(verbWord("park-goal")).toBe("Pause");
+    expect(verbWord("unpark-goal")).toBe("Resume");
+    expect(verbWord("withdraw-goal")).toBe("Unapprove");
     expect(verbWord("approve-goal")).toBe("Approve");
-    expect(verbWord("set-goal-priority")).toBe("Set priority");
-    expect(verbWord("open-goal")).toBe("Open goal");
+    expect(verbWord("set-goal-priority")).toBe("Prioritize");
+    expect(verbWord("open-goal")).toBe("Open");
     expect(verbWord("edit-goal")).toBe("Edit");
-    expect(verbWord("block-goal")).toBe("Waits for");
-    expect(verbWord("unblock-goal")).toBe("No longer waits for");
+    expect(verbWord("block-goal")).toBe("Block");
+    expect(verbWord("unblock-goal")).toBe("Unblock");
+    expect(verbWord("abandon-goal")).toBe("Abandon");
   });
 });
 
@@ -242,6 +266,104 @@ describe("what a line says it will carry", () => {
     expect(sendable(one)).toEqual([]);
     expect(ticked(one)).toBe(0);
   });
+
+  /**
+   * An abandon shows the goal's intent WHOLE, then the reason, the successor
+   * where one was named, and what becomes of the goals that wait for the goal.
+   *
+   * The intent is first and it is the whole of it, because the heading above the
+   * arguments shows the TITLE — the intent cut at its first sentence — and this
+   * press ends the goal for good. The multi-sentence intent below is the case
+   * that tells the two apart: the title stops at the comma-free first sentence,
+   * and the second sentence exists nowhere on the card but here (g1-s64 D4, Sol
+   * S64-C-01). What becomes of the dependents is the engine's rule and not the
+   * page's, so the human reads it before the press rather than learning it from
+   * a refusal (g1-s64 D2).
+   */
+  it("shows an abandon's intent whole, its reason, its successor and what waits for the goal", () => {
+    const whole = "Fleet presence is read from the census, not polled. It has been for a week.";
+    const line = lineOf(
+      card([
+        abandonOf({
+          read: { intent: whole, nextStep: READ.nextStep, tier: 2, labels: ["fleet"], dependents: ["g1-s44", "g1-s45"] },
+        }),
+      ]),
+    );
+
+    expect(argumentsOf(line)).toEqual([
+      { label: "Intent", value: whole },
+      { label: "Reason", value: "the seat inventory carries this now" },
+      { label: "Successor", value: "g1-s70" },
+      { label: "Holds up", value: "2 goals wait for it: g1-s44, g1-s45 — they will wait for g1-s70 instead" },
+    ]);
+    // And the heading the card shows beside the word is only the first sentence,
+    // which is the whole reason the argument above has to carry the rest.
+    expect(line.title).toBe("Fleet presence is read from the census");
+  });
+
+  /** A goal nothing waits for says nothing about dependents, and names no line. */
+  it("says nothing of dependents on an abandon that has none", () => {
+    const alone = abandonOf({
+      fields: { because: "the seat inventory carries this now", successor: "" },
+      read: { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] },
+    });
+    expect(argumentsOf(lineOf(card([alone])))).toEqual([
+      { label: "Intent", value: READ.intent },
+      { label: "Reason", value: "the seat inventory carries this now" },
+    ]);
+  });
+
+  /**
+   * A line the service admitted without a reading says nothing about an intent,
+   * rather than throwing.
+   *
+   * Admission carries the reading on every abandon it offers, so this is not a
+   * card a human meets; it is the shape the function must survive, because a
+   * renderer that threw on one line would take the whole card with it.
+   */
+  it("says nothing of an intent on an abandon admitted without a reading", () => {
+    expect(argumentsOf(lineOf(card([abandonOf({ read: null })])))).toEqual([
+      { label: "Reason", value: "the seat inventory carries this now" },
+      { label: "Successor", value: "g1-s70" },
+    ]);
+  });
+
+  /**
+   * The sentence itself: the verb agrees with the count, the ids are named, and
+   * the half after the dash is what the engine will do — repoint the dependents at
+   * the successor, or refuse until each is waived or abandoned at a terminal,
+   * neither of which a browser can do (Astra S64-02).
+   */
+  it("says how many goals wait for the goal and what becomes of them", () => {
+    const said = (dependents: string[] | undefined, successor: string) =>
+      dependentsWords(
+        lineOf(
+          card([
+            abandonOf({
+              fields: { because: "the seat inventory carries this now", successor },
+              read: { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"], dependents },
+            }),
+          ]),
+        ),
+      );
+
+    expect(said(["g1-s44", "g1-s45"], "g1-s70")).toBe(
+      "2 goals wait for it: g1-s44, g1-s45 — they will wait for g1-s70 instead",
+    );
+    expect(said(["g1-s44", "g1-s45"], "")).toBe(
+      "2 goals wait for it: g1-s44, g1-s45 — " +
+        "the engine will refuse until they are waived or abandoned at a terminal",
+    );
+    expect(said(["g1-s44"], "g1-s70")).toBe("1 goal waits for it: g1-s44 — they will wait for g1-s70 instead");
+    expect(said(["g1-s44"], "")).toBe(
+      "1 goal waits for it: g1-s44 — the engine will refuse until they are waived or abandoned at a terminal",
+    );
+    // A read that carries no dependents, and one that carries an empty list, both
+    // say nothing: a line reading "0 goals wait for it" is an argument about an
+    // absence.
+    expect(said(undefined, "g1-s70")).toBe("");
+    expect(said([], "g1-s70")).toBe("");
+  });
 });
 
 describe("what one press sends", () => {
@@ -278,6 +400,20 @@ describe("what one press sends", () => {
       .toEqual({ act: "priority", id: "fleet-presence", priority: 2, sequence: null });
     expect(dispatchOf(lineOf(card([proposal({ verb: "unblock-goal", fields: { blocker: "x" } })]))))
       .toEqual({ act: "unblock", dependent: "fleet-presence", blocker: "x" });
+    expect(dispatchOf(lineOf(card([abandonOf()])))).toEqual({
+      act: "abandon", id: "fleet-presence",
+      because: "the seat inventory carries this now", successor: "g1-s70",
+    });
+    // The successor travels empty where nobody named one, which is the body
+    // saying there is none rather than this page choosing a goal.
+    expect(
+      dispatchOf(
+        lineOf(card([abandonOf({ fields: { because: "the seat inventory carries this now" } })])),
+      ),
+    ).toEqual({
+      act: "abandon", id: "fleet-presence",
+      because: "the seat inventory carries this now", successor: "",
+    });
   });
 
   /**
@@ -454,6 +590,82 @@ describe("what is approved is what was read", () => {
   });
 });
 
+describe("what an abandon compares", () => {
+  /** The goal's own row, and the two live goals whose blockers name it. */
+  const tip = (dependents: readonly string[] = ["g1-s44", "g1-s45"]) => [
+    row(),
+    ...dependents.map((id) => row({ ref: { kind: "goal", id, revision: 2 }, blockedBy: ["fleet-presence"] })),
+  ];
+
+  /**
+   * An abandon is a guarded line, and it is guarded for a reason an approve is
+   * not: no press undoes it. `goal reopen` is a terminal act, so a card written
+   * before somebody else moved the goal must not record that it will never be
+   * worked (g1-s64 D4, Astra S64-01).
+   */
+  it("needs the compare, as an approve and an edit do", () => {
+    expect(needsTheCompare("abandon-goal")).toBe(true);
+    expect(needsTheCompare("approve-goal")).toBe(true);
+    expect(needsTheCompare("edit-goal")).toBe(true);
+    expect(needsTheCompare("park-goal")).toBe(false);
+    expect(needsTheCompare("unpark-goal")).toBe(false);
+  });
+
+  it("sends a line whose goal and dependents have not moved", () => {
+    expect(guardFor(lineOf(card([abandonOf()])), tip(), {}, "current", "")).toBe("");
+    // The order the rows arrive in is not the order of the read: both are id
+    // order by the time they are compared.
+    expect(guardFor(lineOf(card([abandonOf()])), tip().reverse(), {}, "current", "")).toBe("");
+  });
+
+  it("refuses a line whose goal has moved, unsent", () => {
+    const one = card([abandonOf()]);
+    for (const moved of [
+      row({ intent: "Something else entirely." }),
+      row({ nextStep: "Read something else." }),
+      row({ tier: 3 }),
+      row({ labels: ["fleet", "browser-interface"] }),
+    ]) {
+      expect(guardFor(lineOf(one), [moved, ...tip().slice(1)], {}, "current", "")).toBe(GOAL_CHANGED);
+    }
+  });
+
+  /**
+   * The dependents are compared too, in both directions. A goal that has grown a
+   * dependent since the card was written is an abandon the engine would repoint or
+   * refuse, and a goal that has lost one is an act the human read as something
+   * else — so neither is sent on a card that says otherwise.
+   */
+  it("refuses a line whose live dependents are no longer the ones it named", () => {
+    const one = card([abandonOf()]);
+    expect(guardFor(lineOf(one), tip(["g1-s44", "g1-s45", "g1-s46"]), {}, "current", "")).toBe(GOAL_CHANGED);
+    expect(guardFor(lineOf(one), tip(["g1-s44"]), {}, "current", "")).toBe(GOAL_CHANGED);
+    expect(guardFor(lineOf(one), tip(["g1-s44", "g1-s46"]), {}, "current", "")).toBe(GOAL_CHANGED);
+    // And a read that named none against a tip that now has one.
+    const none = card([
+      abandonOf({ read: { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] } }),
+    ]);
+    expect(guardFor(lineOf(none), tip(["g1-s44"]), {}, "current", "")).toBe(GOAL_CHANGED);
+    expect(guardFor(lineOf(none), [row()], {}, "current", "")).toBe("");
+  });
+
+  /**
+   * The other direction of the blocked relation, computed from the whole reading:
+   * only the LIVE rows, because a goal already done or abandoned waits for
+   * nothing, and counting one would refuse an abandon the engine would admit.
+   */
+  it("counts the live dependents and no others, in id order", () => {
+    const rows = [
+      ...tip(["g1-s45", "g1-s44"]),
+      row({ ref: { kind: "goal", id: "g1-s12", revision: 4 }, where: "closed", blockedBy: ["fleet-presence"] }),
+      row({ ref: { kind: "goal", id: "g1-s13", revision: 4 }, blockedBy: ["something-else"] }),
+    ];
+    expect(liveDependentsIn(rows, "fleet-presence")).toEqual(["g1-s44", "g1-s45"]);
+    expect(liveDependentsIn(rows, "nothing-waits-for-this")).toEqual([]);
+    expect(guardFor(lineOf(card([abandonOf()])), rows, {}, "current", "")).toBe("");
+  });
+});
+
 describe("what a line says about where it stands", () => {
   it("says each state in the words a human reads", () => {
     expect(lineState(lineOf(card([proposal({ state: "applying" })])), true)).toBe("applying…");
@@ -525,7 +737,7 @@ describe("what a line says about where it stands", () => {
   it("puts the line's own words in the composer for Ask the Partner", () => {
     const line = lineOf(card([proposal({ state: "refused", words: "goal is claimed by m1e" })]));
     expect(askLine(line)).toBe(
-      "About your proposed Not now on fleet-presence — refused: goal is claimed by m1e. What else could be done?",
+      "About your proposed Pause on fleet-presence — refused: goal is claimed by m1e. What else could be done?",
     );
   });
 });

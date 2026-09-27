@@ -115,13 +115,21 @@ GATE
 chmod +x "$repo/scripts/gate.sh"
 printf 'certified truth\n' >"$repo/truth/reference.txt"
 cp "$root/docs/project-rules.md" "$repo/docs/project-rules.md"
-cat >"$repo/scripts/agents/arm-supervision.sh" <<'ARM'
-#!/usr/bin/env bash
-set -euo pipefail
-[[ ${1:-} == fingerprint && ${2:-} == --repo && $# -eq 3 ]] || exit 2
-printf 'fixture-fingerprint\n'
-ARM
-chmod +x "$repo/scripts/agents/arm-supervision.sh"
+# Preflight compares the armed fingerprint with the checkout's live one
+# (`supervise fingerprint`). Its inputs are committed with the instruments,
+# as placeholders where the fixture needs no real script.
+supervision_fingerprint() { # print the repo's supervision fingerprint, creating absent inputs
+  local output input
+  until output=$("$root/bin/metasystem" internal supervise fingerprint --root "$repo" --repo "$repo" 2>&1); do
+    input=${output#*fingerprint input is unavailable: }
+    input=${input%%: *}
+    [[ "$input" != "$output" && -n "$input" ]] || { printf '%s\n' "$output" >&2; return 1; }
+    mkdir -p "$repo/$(dirname "$input")"
+    printf '# fingerprint input placeholder\n' >"$repo/$input"
+  done
+  printf '%s\n' "$output"
+}
+supervision_fingerprint >/dev/null
 # The fixture mirrors the deployment's projection boundary (HIW-O3): the
 # wall's shippable snapshot must exclude runtime state exactly as the real
 # repository's .gitignore does.
@@ -178,11 +186,12 @@ fabricate_supervisor_facts() {
     "$watcher_pid" "$watcher_start" "$supervision_now" >"$watcher_hb"
   printf '{"function":"reaper","pid":%s,"pidStartedAt":%s,"observedAtEpoch":%s}\n' \
     "$reaper_pid" "$reaper_start" "$supervision_now" >"$reaper_hb"
-  printf '{"intervalSec":60,"fingerprint":"fixture-fingerprint","components":{"watcher":{"pid":%s,"pidStartedAt":%s,"instanceTag":"mission-watcher-tag","heartbeat":"%s"},"reaper":{"pid":%s,"pidStartedAt":%s,"instanceTag":"mission-reaper-tag","heartbeat":"%s"}}}\n' \
-    "$watcher_pid" "$watcher_start" "$watcher_hb" \
+  supervision_fingerprint_value=$(supervision_fingerprint)
+  printf '{"intervalSec":60,"fingerprint":"%s","components":{"watcher":{"pid":%s,"pidStartedAt":%s,"instanceTag":"mission-watcher-tag","heartbeat":"%s"},"reaper":{"pid":%s,"pidStartedAt":%s,"instanceTag":"mission-reaper-tag","heartbeat":"%s"}}}\n' \
+    "$supervision_fingerprint_value" "$watcher_pid" "$watcher_start" "$watcher_hb" \
     "$reaper_pid" "$reaper_start" "$reaper_hb" >"$supervision/state.json"
-  printf '{"verdict":"SUCCESS","completedAtEpoch":%s,"fingerprint":"fixture-fingerprint"}\n' \
-    "$supervision_now" >"$supervision/last-census.json"
+  printf '{"verdict":"SUCCESS","completedAtEpoch":%s,"fingerprint":"%s"}\n' \
+    "$supervision_now" "$supervision_fingerprint_value" >"$supervision/last-census.json"
 }
 
 
@@ -351,24 +360,28 @@ if [[ "$fixture_scenario" != runner-end-state && "$fixture_scenario" != mission-
 # process identities. They stay independent of the process-owning validator
 # fixtures so restricted worktrees can exercise these two terminal outcomes.
 cp -R "$root/scripts/agents/." "$repo/scripts/agents/"
-cp "$root/scripts/metasystem-config.sh" \
-  "$root/scripts/assert-return-complete.sh" "$repo/scripts/"
 cp "$root/metasystem.conf" "$repo/metasystem.conf"
 conf_edit "$repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' \
   "evidence.root=$fixture_root/runner-evidence"
 conf_edit "$repo/metasystem.conf" replace-line-first '^metasystem[.]runtimes=.*$' \
   'metasystem.runtimes=fake'
 printf 'role.default.model.fake=fake-model\n' >>"$repo/metasystem.conf"
-cat >"$repo/scripts/agents/arm-supervision.sh" <<'ARM'
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ ${1:-} == fingerprint && ${2:-} == --repo && $# -eq 3 ]]; then
-  printf 'fixture-fingerprint\n'
-else
+# The runner arms through its checkout engine's `up` entry. This fixture
+# engine answers arming with the typed armed outcome (the supervisor facts
+# are fabricated) and hands every other verb to the real engine.
+mission_arm_wrapper=$fixture_root/mission-arm-wrapper
+{
+  printf '#!/usr/bin/env bash\nreal_engine=%q\n' "$repo/bin/metasystem"
+  cat <<'ARM'
+if [[ ${1:-} == up ]]; then
   printf 'up outcome=armed authority=writer\n'
+  exit 0
 fi
+exec "$real_engine" "$@"
 ARM
-chmod +x "$repo/scripts/agents/arm-supervision.sh"
+} >"$mission_arm_wrapper"
+chmod +x "$mission_arm_wrapper"
+export METASYSTEM_BIN=$mission_arm_wrapper
 # candidate-bad is the contract scenario's leftover; under scenario
 # isolation this child may never have created it.
 git -C "$repo" rm -q --ignore-unmatch candidate-bad

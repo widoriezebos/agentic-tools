@@ -173,19 +173,35 @@ func runTestCheck(args []string) int {
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test check --root INSTALLATION [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem settings check [--repo INSTALLATION]")
 		return 2
 	}
-	installation, contract, path, err := loadPhysicalTestingContract(*root)
+	path, groups, err := testingContractReady(*root, true)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test check:", err)
+		fmt.Fprintln(os.Stderr, "testing contract:", err)
 		return 1
+	}
+	if *jsonOutput {
+		printJSON(map[string]any{"schemaVersion": 1, "status": "ready", "contract": path, "groupCount": groups})
+	} else {
+		fmt.Printf("TEST-CONTRACT READY groups=%d contract=%s\n", groups, path)
+	}
+	return 0
+}
+
+// testingContractReady validates the committed testing contract and its
+// declared tools without running a test; with discovery it also resolves
+// every group's native tests under the host's heavy resource lease.
+func testingContractReady(root string, discovery bool) (string, int, error) {
+	installation, contract, path, err := loadPhysicalTestingContract(root)
+	if err != nil {
+		return "", 0, err
 	}
 	projectRoot, err := (gittree.Workspace{Dir: installation}).TopLevel()
 	if err == nil {
 		err = checkTestingTools(projectRoot, contract)
 	}
-	if err == nil {
+	if err == nil && discovery {
 		ctx := context.Background()
 		lease, leaseErr := proofrun.AcquireHostResources(ctx, installation,
 			filepath.Join(installation, "metasystem.conf"), "heavy", nil)
@@ -198,15 +214,9 @@ func runTestCheck(args []string) int {
 		}
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test check:", err)
-		return 1
+		return "", 0, err
 	}
-	if *jsonOutput {
-		printJSON(map[string]any{"schemaVersion": 1, "status": "ready", "contract": path, "groupCount": len(contract.Groups)})
-	} else {
-		fmt.Printf("TEST-CONTRACT READY groups=%d contract=%s\n", len(contract.Groups), path)
-	}
-	return 0
+	return path, len(contract.Groups), nil
 }
 
 func runTestPlan(args []string) int {
@@ -253,6 +263,18 @@ type testingSelectionRequest struct {
 	// and the verify verb judge the engine as they find it.
 	LandedRearm bool
 	PolicyChild bool
+	// Preparation is this invocation's preparation state, shared by every
+	// preparation the invocation makes; nil gives one preparation its own.
+	Preparation *testingPreparationState
+}
+
+// testingPreparationState is invocation-local execution state (design 6.2,
+// VOA-14): whether this invocation already restarted its preparation once
+// after the landing ref moved. It lives in the request, never in the process
+// environment, so a resident owner's earlier invocation cannot spend a later
+// one's allowance.
+type testingPreparationState struct {
+	restarted bool
 }
 
 func admitTestingRun(request testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
@@ -289,7 +311,8 @@ func (admission testingCommandAdmission) forced(launch proofLaunchAdmission) (pr
 
 func parseTestingSelection(name string, args []string, execution bool) (testingSelectionRequest, bool, int) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
-	request := testingSelectionRequest{}
+	// One command is one invocation: its preparations share one state.
+	request := testingSelectionRequest{Preparation: &testingPreparationState{}}
 	pathFlagVar(flags, &request.Root, "root", "", "MetaSystem installation root")
 	flags.StringVar(&request.GoalID, "goal", "", "accepted goal owning delivery")
 	flags.StringVar(&request.AuthorityGoalID, "authority", "", "claimed goal authorizing the proof reservation")
@@ -465,8 +488,6 @@ func batchRequirementsArgument(groups []string) string {
 	return string(encoded)
 }
 
-const preparationRestartedEnv = "METASYSTEM_PREPARATION_RESTARTED"
-
 type preparationBaseMove struct {
 	ours, engine string
 }
@@ -482,23 +503,23 @@ func prepareTesting(request testingSelectionRequest) (testingPreparation, error)
 }
 
 func prepareTestingWith(request testingSelectionRequest, attempt testingPreparationAttempt) (testingPreparation, error) {
-	restarted := os.Getenv(preparationRestartedEnv) == "1"
+	state := request.Preparation
+	if state == nil {
+		state = &testingPreparationState{}
+	}
 	for {
 		prepared, err := attempt(request)
 		var move *preparationBaseMove
 		if !errors.As(err, &move) {
 			return prepared, err
 		}
-		if restarted {
+		if state.restarted {
 			return testingPreparation{}, engineRefusal("base-moved", []enginecause.Fact{
 				enginecause.Value("ours", move.ours), enginecause.Value("engine", move.engine), enginecause.Value("restarts", "1"),
 			}, "the landing ref moved a second time during one test invocation")
 		}
 		fmt.Fprintf(os.Stderr, "metasystem test run: the landing ref moved under the run (ours=%s engine=%s); restarting preparation once\n", move.ours, move.engine)
-		if err := os.Setenv(preparationRestartedEnv, "1"); err != nil {
-			return testingPreparation{}, fmt.Errorf("record the one policy-base restart: %w", err)
-		}
-		restarted = true
+		state.restarted = true
 	}
 }
 
@@ -2410,13 +2431,13 @@ func runTestVerify(args []string) int {
 		return status
 	}
 	if request.Tree == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test verify --root INSTALLATION [--goal ID] --tree TREE [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem test status --tree TREE [--goal ID] [--root INSTALLATION] [--json]")
 		return 2
 	}
 	result, err := verifyRetainedTesting(request)
 	if err != nil {
 		printMovedProofInputsWithoutCandidateEngine(request)
-		fmt.Fprintln(os.Stderr, "metasystem test verify:", err)
+		fmt.Fprintln(os.Stderr, "metasystem test status:", err)
 		return 1
 	}
 	if jsonOutput {

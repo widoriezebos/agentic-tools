@@ -41,6 +41,12 @@ import (
 
 // SchemaVersion is the shape of the decisions resource a reader parses.
 //
+// Six, since a proposal row carries the instant of the last write to its entry
+// beside the instant it was proposed. The row's Since is the asking, which is
+// what its age and its "new" have always been about; the write's own instant is
+// the other fact, on the proposal member. It is an addition, and it is a version
+// all the same.
+//
 // Five, since the actions the Project Partner proposed wait here: one more kind
 // of row, carrying the action it would make on the kind's own member and null
 // on every other kind. It is an addition — an older reader skips a kind it has
@@ -59,7 +65,7 @@ import (
 // need — a ruling review the register row's own words, a draft and a landed
 // design the record's path, and a landed design the goals it named with where
 // each stands.
-const SchemaVersion = 5
+const SchemaVersion = 6
 
 // The kinds of thing that wait on a human. Each one is a row of the design's
 // own table, and each one carries its own silence line.
@@ -86,14 +92,14 @@ const (
 const (
 	ActApprove  = "approve"
 	ActWithdraw = "withdraw"
-	// ActPark is "Not now": a pause with the reason the human types.
+	// ActPark is "Pause": a pause with the reason the human types.
 	ActPark = "park"
 	// ActUnpark returns a paused goal to the queue.
 	ActUnpark = "unpark"
 	// ActApply is the press that applies one action the Partner proposed. The
 	// act it makes is the verb's own, through the route that verb names, under
 	// the human's own sign-in; this page names the press and not the act,
-	// because one row can carry any of the nine.
+	// because one row can carry any of the ten.
 	ActApply = "apply"
 )
 
@@ -275,8 +281,13 @@ type Proposed struct {
 	State       string `json:"state"`
 	// Words are what the last state change said: the engine's own sentence on a
 	// refusal, what was said on an unresolved answer, "" on a plain one.
-	Words   string `json:"words"`
-	Version int    `json:"version"`
+	Words string `json:"words"`
+	// UpdatedAt is when the entry was last written, and "" on one nothing has
+	// written since it was admitted. The row's own Since is when the action was
+	// PROPOSED, which is what the group's ages and its "n new" are about; this is
+	// the other fact, for a surface that wants to say when the last press was.
+	UpdatedAt string `json:"updatedAt,omitempty"`
+	Version   int    `json:"version"`
 }
 
 // GoalState is one goal a record names and where the ledger says it stands.
@@ -618,7 +629,8 @@ func proposals(in Inputs) []Need {
 			Proposal: &Proposed{
 				Turn: held.Turn, Index: held.Index, Verb: held.Verb,
 				Fields: fieldsOf(held), Read: held.Read, Explanation: held.Why,
-				State: held.State, Words: held.Words, Version: held.Version,
+				State: held.State, Words: held.Words, UpdatedAt: held.UpdatedAt,
+				Version: held.Version,
 			},
 		}
 		// The goal's own row, where the ledger carries it. An `open` proposes a
@@ -658,10 +670,10 @@ func proposalTitle(held partner.Unsettled) string {
 // proposalAsked is the line whole: the verb's own word, the subject, and every
 // argument the act would carry, in the labels the frame writes them under.
 //
-// The word is the one on the button of the page that offers that act, from the
-// catalogue's own table (uitools.ProposedActs), so the row, the card and the
-// button say one thing and a rename touches one place. The arguments are walked
-// in the frame's own order for the same reason.
+// The word is the act's own public name, from the catalogue's own table
+// (uitools.ProposedActs), so the row, the card and the page's button say one
+// thing and a rename touches one place. The arguments are walked in the frame's
+// own order for the same reason.
 func proposalAsked(held partner.Unsettled) string {
 	said := []string{proposalWord(held.Verb), proposalTitle(held)}
 	for _, line := range uitools.ProposalFrame {
@@ -672,12 +684,12 @@ func proposalAsked(held partner.Unsettled) string {
 	return strings.Join(said, " · ")
 }
 
-// proposalWord is the button word for one act, or the route id where this build
+// proposalWord is the one word for one act, or the route id where this build
 // has no word for it — which is a catalogue and an act table that disagree, and
 // is said rather than hidden.
 func proposalWord(verb string) string {
 	if named, there := uitools.ProposedActOf(verb); there {
-		return named.Button
+		return named.Word
 	}
 	return verb
 }
@@ -946,7 +958,7 @@ func questions(register []project.Question) []Need {
 //
 // The prefix is what tells a seat's pause from a person's. A park a person
 // made is a decision they already took, with their reason on it, so it is in
-// Not now rather than here; a seat's park stays, because a human has not seen
+// Paused rather than here; a seat's park stays, because a human has not seen
 // it. The row carries the act that returns it either way.
 //
 // Silence: goal.Store.Unpark is the only verb that lifts a park with no

@@ -20,15 +20,8 @@ scripts/agents/path-class-fixtures.sh	section/static-reproof-fixtures
 scripts/agents/pre-commit-guard-fixtures.sh	section/pre-commit-guard-fixtures
 scripts/agents/record-protocol-fixtures.sh	section/record-protocol-fixtures
 scripts/agents/return-schema-fixtures.sh	section/return-schema-fixtures
-scripts/agents/second-session-fixtures.sh	section/second-session-fixtures
 scripts/agents/static-reproof-fixtures.sh	section/static-reproof-fixtures
 scripts/agents/suite-progress-fixtures.sh	section/suite-progress-fixtures
 scripts/agents/supervision-fixtures.sh	section/supervision-and-census-fixtures
 scripts/agents/supervision-go-fixtures.sh	section/supervision-go-fixtures
 scripts/agents/witness-gate-fixtures.sh	section/witness-gate-fixtures
-scripts/assert-return-complete.sh	section/agent-protocol-fixtures
-scripts/metasystem-config.sh	section/workflow-tooling-fixtures
-scripts/receipt.sh	section/workflow-tooling-fixtures
-scripts/refactor-baseline.sh	section/workflow-tooling-fixtures
-scripts/watch-background-jobs.sh	section/watch-background-jobs-fixtures
-scripts/watch-background-jobs.sh	section/workflow-tooling-fixtures

@@ -788,8 +788,10 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 		return Attempt{}, LaunchResult{SchemaVersion: 1, Disposition: DispositionAdmissionRefused,
 			ExitStatus: ExitAdmissionRefused, Reason: "host proof admission is busy"}, nil
 	}
-	defer hostGuard.Close()
-	start := sampleLoad(request.ControlRoot, id, request.Launcher.Pid, now, request.loadOptions...)
+	// Released explicitly, not only closed: see releaseHostProbe.
+	defer releaseHostProbe(hostGuard)
+	start := sampleLoad(request.ControlRoot, id, request.Launcher.Pid, now,
+		append(append([]loadSampleOption(nil), request.loadOptions...), withAdmissionDirectory(directory))...)
 	admission, err := ResolveAdmissionCap(request.ConfPath, start.Cores)
 	if err != nil {
 		return Attempt{}, LaunchResult{}, err

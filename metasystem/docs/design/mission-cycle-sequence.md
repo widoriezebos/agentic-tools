@@ -298,8 +298,8 @@ exact order (`ValidateReturn`, adjudicate.go:68-119):
 2. `outcome == "completed"` (78-80);
 3. `rawPath` and `returnPath` resolve inside the turn directory, symlinks
    resolved (81-87, 123-157);
-4. `scripts/assert-return-complete.sh --role orchestrator` passes on the
-   return file (89, turnio.go:16-26);
+4. the shipped return checker (`returnschema.ReturnCompleteRole`, role
+   orchestrator) passes on the return file (89, turnio.go:16-26);
 5. the return's `turnId`, `missionId`, `cycle` equal the turn record
    (96-107);
 6. `identity.runtime` and `identity.model` equal the turn record (108-114);
@@ -503,7 +503,7 @@ this mission+turn stamp.
 
 **What the runner cannot know today**: whether a critique round *closed*.
 Closure — every material finding dispositioned
-(`metasystem work check` joining a round return's findings
+(`metasystem work review --check-only` joining a round return's findings
 against a Markdown dispositions table) — is a skill-level check over
 artifacts the runner never reads (round `return.json` files and dispositions
 documents in `plans/`). No job-record field records closure; the runner sees

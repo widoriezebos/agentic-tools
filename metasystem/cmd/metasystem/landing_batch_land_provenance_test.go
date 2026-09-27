@@ -71,7 +71,6 @@ func newBatchProvenanceBed(t *testing.T, verdict string, branchMember bool) batc
 	sourceTree := batchProvenanceGit(t, "-C", root, "rev-parse", "HEAD^{tree}")
 	batchProvenanceGit(t, "-C", root, "switch", "-q", "main")
 
-	batchProvenanceWrite(t, filepath.Join(root, "scripts", "receipt.sh"), "#!/usr/bin/env bash\nexit 0\n", 0o755)
 	wrapper := `#!/usr/bin/env bash
 set -euo pipefail
 chain=
@@ -159,13 +158,12 @@ func landBatchProvenanceBed(t *testing.T, bed batchProvenanceBed) error {
 }
 
 func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
-	original := batchChildRunner
 	originalNext := batchRecoveryGoalNext
 	originalRearm := batchRecoveryRearm
 	t.Cleanup(func() {
-		batchChildRunner, batchRecoveryGoalNext, batchRecoveryRearm = original, originalNext, originalRearm
+		batchRecoveryGoalNext, batchRecoveryRearm = originalNext, originalRearm
 	})
-	batchChildRunner = func(string, string, ...string) error { return nil }
+	stubBatchOwnerCalls(t, func(ownerInvocation, ...string) error { return nil })
 	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
 	batchRecoveryRearm = func(string, string) error { return nil }
 
@@ -242,13 +240,12 @@ func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
 }
 
 func TestBatchChainCommitKeepsWouldRefuseVerdictBehavior(t *testing.T) {
-	original := batchChildRunner
 	originalNext := batchRecoveryGoalNext
 	originalRearm := batchRecoveryRearm
 	t.Cleanup(func() {
-		batchChildRunner, batchRecoveryGoalNext, batchRecoveryRearm = original, originalNext, originalRearm
+		batchRecoveryGoalNext, batchRecoveryRearm = originalNext, originalRearm
 	})
-	batchChildRunner = func(string, string, ...string) error { return nil }
+	stubBatchOwnerCalls(t, func(ownerInvocation, ...string) error { return nil })
 	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
 	batchRecoveryRearm = func(string, string) error { return nil }
 	bed := newBatchProvenanceBed(t, "would-refuse code=chain-not-implementation", false)
@@ -532,13 +529,12 @@ func TestBatchRecoveryRequiresExactChainField(t *testing.T) {
 }
 
 func TestBatchMixedBranchAndChainMembersLandInBothOrders(t *testing.T) {
-	original := batchChildRunner
 	originalNext := batchRecoveryGoalNext
 	originalRearm := batchRecoveryRearm
 	t.Cleanup(func() {
-		batchChildRunner, batchRecoveryGoalNext, batchRecoveryRearm = original, originalNext, originalRearm
+		batchRecoveryGoalNext, batchRecoveryRearm = originalNext, originalRearm
 	})
-	batchChildRunner = func(string, string, ...string) error { return nil }
+	stubBatchOwnerCalls(t, func(ownerInvocation, ...string) error { return nil })
 	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
 	batchRecoveryRearm = func(string, string) error { return nil }
 	for _, branchFirst := range []bool{true, false} {
@@ -775,25 +771,25 @@ func TestBatchRecoveryLostFinalizeReplyDoesNotRepeatGoalEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	original := batchChildRunner
 	originalRearm := batchRecoveryRearm
-	t.Cleanup(func() { batchChildRunner, batchRecoveryRearm = original, originalRearm })
+	t.Cleanup(func() { batchRecoveryRearm = originalRearm })
 	batchRecoveryRearm = func(string, string) error { return nil }
 	edits := 0
-	batchChildRunner = func(_ string, _ string, args ...string) error {
+	realEdit := batchOwnerCalls.editNext
+	stubBatchOwnerCalls(t, func(invocation ownerInvocation, args ...string) error {
 		if len(args) < 3 || args[0] != "internal" || args[1] != "goal" || args[2] != "edit" {
 			return nil
 		}
 		edits++
-		code, _, stderr := captureCommandOutput(t, true, true, func() int { return runGoalEdit(args[3:]) })
-		if code != 0 {
-			return errors.New(stderr)
+		// The real owner runs in this process under the owner's context.
+		if err := realEdit(invocation, args[4], args[6], args[8]); err != nil {
+			return err
 		}
 		if edits == 1 {
 			return errors.New("finalize reply lost after goal edit")
 		}
 		return nil
-	}
+	})
 	if err := recoverBatchLanding(root, store, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err == nil {
 		t.Fatal("lost finalization reply unexpectedly completed recovery")
 	}
@@ -874,10 +870,9 @@ func TestBatchLastBranchLandingSweepsGoalBranch(t *testing.T) {
 			if err := store.Create(record); err != nil {
 				t.Fatal(err)
 			}
-			original := batchChildRunner
 			originalSweep := batchGoalBranchSweep
-			t.Cleanup(func() { batchChildRunner, batchGoalBranchSweep = original, originalSweep })
-			batchChildRunner = func(string, string, ...string) error { return nil }
+			t.Cleanup(func() { batchGoalBranchSweep = originalSweep })
+			stubBatchOwnerCalls(t, func(ownerInvocation, ...string) error { return nil })
 			sweeps := 0
 			if test.failOnce {
 				batchGoalBranchSweep = func(request goalbranch.SweepRequest) (goalbranch.SweepResult, error) {

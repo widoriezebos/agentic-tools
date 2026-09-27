@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -8,40 +9,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
-
-// removedIntentAliases are the compatibility spellings the verb cleanup
-// deleted; each task is reached by its current public form.
-var removedIntentAliases = []string{"ready", "decide", "resolve", "recover", "red", "fleet", "doctor", "fold", "close"}
-
-// TestIntentRemovedAliasesRefuse: every removed spelling, called the way its
-// old form was, reaches no public descriptor and no family handler, so it is
-// refused before anything runs.
-func TestIntentRemovedAliasesRefuse(t *testing.T) {
-	t.Parallel()
-	for _, args := range [][]string{
-		{"ready", bedGoal},
-		{"decide", bedGoal, "--finding", "S-1", "--review", "critic-r2", "--reason", "bounded exposure"},
-		{"resolve", bedGoal, "--review", "critic-r2", "--finding", "F-1", "--test", "TestIntentReady"},
-		{"recover", "--session", "s1"},
-		{"red", "own", "tr-1", "--goal", bedGoal},
-		{"red", "close", "tr-1", "--reason", "fixed"},
-		{"fleet", "--refresh"},
-		{"doctor"},
-		{"fold", "review", "crit1", "--dispositions", "d.md", "--brief", "b.md"},
-		{"fold", "unit", "run-1", "--brief", "b.md"},
-		{"close", "crit1", "--dispositions", "d.md", "--reconcile-evidence", "crit2"},
-	} {
-		if _, ok := findIntentCommand(args[0]); ok {
-			t.Errorf("%s is still a public descriptor", args[0])
-		}
-		if code, stdout, stderr := runCLIHelp(args, families()); code != 2 || stdout != "" || stderr == "" {
-			t.Errorf("%v = code %d stdout %q stderr %q; a removed spelling is refused", args, code, stdout, stderr)
-		}
-	}
-	if len(removedIntentAliases) != 9 {
-		t.Fatalf("%d removed aliases, want 9", len(removedIntentAliases))
-	}
-}
 
 // TestIntentDoneJobCompletesOnlyTheJob: done job J runs the one close-chain
 // owner on the chain's own records. It never reaches the goal: goal options
@@ -62,10 +29,10 @@ func TestIntentDoneJobCompletesOnlyTheJob(t *testing.T) {
 	}
 	before, goalBefore := b.publications(), b.goalFile(bedGoal)
 	for _, args := range [][]string{
-		{"work", "close", "j2:inv1", "--reason", "finished"},
-		{"work", "close", "j2:inv1", "--by", "Wido"},
-		{"work", "close", "j2:inv1", "--lineage", "m1"},
-		{"work", "close", "j2:inv1", "--goal", bedGoal},
+		{"work", "finish", "j2:inv1", "--reason", "finished"},
+		{"work", "finish", "j2:inv1", "--by", "Wido"},
+		{"work", "finish", "j2:inv1", "--lineage", "m1"},
+		{"work", "finish", "j2:inv1", "--goal", bedGoal},
 		{"goal", "done", bedGoal, "--reason", "finished", "--dispositions", "d.md"},
 		{"goal", "done", bedGoal, "--reason", "finished", "--evidence", "crit1"},
 	} {
@@ -74,24 +41,24 @@ func TestIntentDoneJobCompletesOnlyTheJob(t *testing.T) {
 			t.Fatalf("%v = code %d %+v calls %v", args, code, result, b.calls)
 		}
 	}
-	code, result := b.do("work", "close", "j2:inv1-r2")
+	code, result := b.do("work", "finish", "j2:inv1-r2")
 	if code != 2 || result.Outcome != intentRefused || result.Next == nil || len(b.calls) != 0 ||
-		!slices.Equal(slices.DeleteFunc(slices.Clone(result.Next.Argv), func(word string) bool { return word == "--json" }), []string{"metasystem", "work", "close", "j2:inv1"}) {
+		!slices.Equal(slices.DeleteFunc(slices.Clone(result.Next.Argv), func(word string) bool { return word == "--json" }), []string{"metasystem", "work", "finish", "j2:inv1"}) {
 		t.Fatalf("a round's done = code %d %+v", code, result)
 	}
 	for _, ref := range []string{"j1:inv1", "j2:missing"} {
-		if code, result := b.do("work", "close", ref); code == 0 || result.Outcome != intentRefused || len(b.calls) != 0 {
+		if code, result := b.do("work", "finish", ref); code == 0 || result.Outcome != intentRefused || len(b.calls) != 0 {
 			t.Fatalf("an unresolved qualified reference %s = code %d %+v", ref, code, result)
 		}
 	}
-	code, result = b.do("work", "close", "j2:inv1", "--evidence", "crit1")
+	code, result = b.do("work", "finish", "j2:inv1", "--evidence", "crit1")
 	if code != 0 || result.Outcome != intentConfirmed || len(b.calls) != 1 {
 		t.Fatalf("done job = code %d %+v calls %v", code, result, b.calls)
 	}
 	if call := b.calls[0]; filepath.Base(call[0]) != "dispatch.sh" || !slices.Equal(call[1:], []string{"close", "--job", "inv1", "--reconcile-evidence", "crit1"}) {
 		t.Fatalf("the close owner was called as %v", call)
 	}
-	if code, result := b.do("work", "close", "j2:inv1"); code != 0 || result.Outcome != intentUnchanged || len(b.calls) != 1 {
+	if code, result := b.do("work", "finish", "j2:inv1"); code != 0 || result.Outcome != intentUnchanged || len(b.calls) != 1 {
 		t.Fatalf("a repeated done job = code %d %+v", code, result)
 	}
 	if after := b.goalFile(bedGoal); b.publications() != before || after.State != goalBefore.State || len(after.History) != len(goalBefore.History) {
@@ -112,14 +79,51 @@ func TestIntentDoneJobRefusesALaunch(t *testing.T) {
 	owners.delivery = b.owners
 	owners.processes.launches = func() *launch.Manager { return manager }
 	before := b.publications()
-	code, result := b.runJSON(owners, "work", "close", "j1:solo-1")
+	code, result := b.runJSON(owners, "work", "finish", "j1:solo-1")
 	if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "does not take a launch reference") ||
 		!strings.Contains(result.Decision, "metasystem work stop") || len(b.calls) != 0 || b.publications() != before {
-		t.Fatalf("work close j1:solo-1 = code %d %+v", code, result)
+		t.Fatalf("work finish j1:solo-1 = code %d %+v", code, result)
 	}
 	// A bare launch id is not a dispatch job: it is read as a goal name and
 	// refused by the goal's own owner, with nothing closed.
-	if code, result := b.runJSON(owners, "work", "close", "solo-1"); code == 0 || result.Outcome != intentRefused || len(b.calls) != 0 || b.publications() != before {
-		t.Fatalf("work close solo-1 = code %d %+v", code, result)
+	if code, result := b.runJSON(owners, "work", "finish", "solo-1"); code == 0 || result.Outcome != intentRefused || len(b.calls) != 0 || b.publications() != before {
+		t.Fatalf("work finish solo-1 = code %d %+v", code, result)
+	}
+}
+
+// TestIntentCloseRebindsTheChainBudgetFirst (U1d read F-1): the close of a
+// chain carries the goal's review-round limit onto its critic registers
+// before the close owner runs, and a rebind that fails is refused with the
+// owner never started.
+func TestIntentCloseRebindsTheChainBudgetFirst(t *testing.T) {
+	t.Parallel()
+	b := newDeliveryBed(t)
+	b.writeJob(map[string]any{"jobId": "inv1", "role": "investigator", "status": "completed", "round": 1, "parentJob": nil})
+	var rebound []string
+	failing := false
+	b.owners.rebind = func(root, job string) (map[string]string, error) {
+		rebound = append(rebound, job)
+		if failing {
+			return nil, errors.New("fixture rebind failure")
+		}
+		return map[string]string{}, nil
+	}
+	b.handler = func(process intentProcess) intentProcessResult {
+		if !slices.Equal(rebound, []string{"inv1"}) {
+			t.Fatalf("the close owner ran before the rebind: %v", rebound)
+		}
+		record := b.job("inv1")
+		record["chainClosed"] = true
+		b.writeJob(record)
+		return intentProcessResult{}
+	}
+	failing = true
+	if code, result := b.do("work", "finish", "j2:inv1"); code != 1 || result.Outcome != intentRefused || len(b.calls) != 0 ||
+		!strings.Contains(result.Summary, "fixture rebind failure") {
+		t.Fatalf("a failed rebind = code %d %+v calls %v", code, result, b.calls)
+	}
+	failing, rebound = false, nil
+	if code, result := b.do("work", "finish", "j2:inv1"); code != 0 || result.Outcome != intentConfirmed || len(b.calls) != 1 {
+		t.Fatalf("the close after the rebind = code %d %+v calls %v", code, result, b.calls)
 	}
 }

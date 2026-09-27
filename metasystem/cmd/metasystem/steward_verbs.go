@@ -372,8 +372,7 @@ func runStewardTick(args []string) int {
 		}
 	}
 	if resume {
-		cmd := exec.Command(os.Args[0], "steward", "revive", "--repo", *repo)
-		if out, err := cmd.CombinedOutput(); err != nil {
+		if out, err := stewardReviveOwner(*repo); err != nil {
 			fmt.Fprintf(os.Stderr, "steward tick: revive: %v (%s)\n", err, strings.TrimSpace(string(out)))
 			// Durable, not just printed: a failed revival must reach
 			// the operator even when nobody reads this output.
@@ -491,64 +490,83 @@ func runStewardRevive(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward revive: --repo is required")
 		return 2
 	}
+	return stewardRevive(*repo, os.Stdout, os.Stderr)
+}
+
+// stewardReviveOwner is one revival called in the caller's process (the
+// steward runner or tick), with its output returned as the former child's
+// combined output was.
+func stewardReviveOwner(repo string) (string, error) {
+	var output strings.Builder
+	if status := stewardRevive(cleanOwnerRoot(repo), &output, &output); status != 0 {
+		return output.String(), fmt.Errorf("steward revive exited %d", status)
+	}
+	return output.String(), nil
+}
+
+// stewardRevive is the revival owner on the caller's streams. The revival's
+// dispatch stays its own process in its own session (delegate --revive), so
+// the delegate chain classifies STEWARD from the steward process that calls
+// this, as it did from the revive child.
+func stewardRevive(repo string, stdout, stderr io.Writer) int {
 
 	// Resume an already-minted intent before minting another: the
 	// one-active-continuation guard would otherwise refuse forever.
-	live, err := steward.LiveIntents(*repo)
+	live, err := steward.LiveIntents(repo)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+		fmt.Fprintf(stderr, "steward revive: %v\n", err)
 		return 1
 	}
 	var nonce string
 	if len(live) > 0 {
 		nonce = live[0].Nonce
 	} else {
-		work, reason, err := steward.LegacyOpenWork(*repo)
+		work, reason, err := steward.LegacyOpenWork(repo)
 		if err != nil || work != steward.WorkOwned {
-			fmt.Fprintf(os.Stderr, "steward revive: no owned open work (%s)\n", reason)
+			fmt.Fprintf(stderr, "steward revive: no owned open work (%s)\n", reason)
 			return 1
 		}
 		goalName := strings.TrimPrefix(reason, "current goal: ")
 		roster, err := dispatchpkg.ResolveRoster(dispatchpkg.RosterParams{
-			ConfPath: filepath.Join(*repo, "metasystem.conf"),
+			ConfPath: filepath.Join(repo, "metasystem.conf"),
 			Role:     "steward-continuation", Mode: "build",
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "steward revive: roster: %v\n", err)
+			fmt.Fprintf(stderr, "steward revive: roster: %v\n", err)
 			return 1
 		}
 		raw := make([]byte, 8)
 		if _, err := rand.Read(raw); err != nil {
-			fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+			fmt.Fprintf(stderr, "steward revive: %v\n", err)
 			return 1
 		}
 		nonce = hex.EncodeToString(raw)
-		it, err := steward.StageIntent(*repo, nonce, goalName, "steward-"+nonce,
+		it, err := steward.StageIntent(repo, nonce, goalName, "steward-"+nonce,
 			roster.Runtime, roster.Model, "worker provably dead with open work")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+			fmt.Fprintf(stderr, "steward revive: %v\n", err)
 			return 1
 		}
 		receiptRoot, rootErr := stateroot.StateRoot(stateroot.Receipts)
 		if rootErr != nil {
-			fmt.Fprintf(os.Stderr, "steward revive: %v\n", rootErr)
+			fmt.Fprintf(stderr, "steward revive: %v\n", rootErr)
 			return 1
 		}
-		if err := steward.PrepareIntent(*repo, filepath.Join(receiptRoot, "receipts.log"), it); err != nil {
-			fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+		if err := steward.PrepareIntent(repo, filepath.Join(receiptRoot, "receipts.log"), it); err != nil {
+			fmt.Fprintf(stderr, "steward revive: %v\n", err)
 			return 1
 		}
 	}
 
-	outcome, err := steward.CompleteRevival(*repo, steward.TickConfig{}, stewardCensusFor(*repo), nonce,
+	outcome, err := steward.CompleteRevival(repo, steward.TickConfig{}, stewardCensusFor(repo), nonce,
 		func(it steward.Intent) error {
 			binary, binaryErr := os.Executable()
 			if binaryErr != nil {
 				return binaryErr
 			}
 			cmd := exec.Command(binary, "internal", "delegate", "--revive", it.Nonce)
-			cmd.Dir = *repo
-			cmd.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+*repo)
+			cmd.Dir = repo
+			cmd.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+repo)
 			// Its own session, no controlling terminal: the chain
 			// classifies STEWARD identically whether the tick came
 			// from the runner, a cron, or an operator's shell.
@@ -560,7 +578,7 @@ func runStewardRevive(args []string) int {
 			return nil
 		})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+		fmt.Fprintf(stderr, "steward revive: %v\n", err)
 		return 1
 	}
 	// A concurrent runner may consume, launch, and stamp this exact intent
@@ -568,12 +586,12 @@ func runStewardRevive(args []string) int {
 	// handoff as the successful launch it was; an unstamped consumption still
 	// remains an unknown outcome and is not promoted.
 	if !outcome.Launched && strings.Contains(outcome.Reason, "intent is not live") {
-		if consumed, consumedErr := steward.ConsumedIntent(*repo, nonce); consumedErr == nil && consumed.LaunchStamped {
+		if consumed, consumedErr := steward.ConsumedIntent(repo, nonce); consumedErr == nil && consumed.LaunchStamped {
 			outcome.Launched = true
 			outcome.Reason = "intent was launched by a concurrent reviver"
 		}
 	}
-	fmt.Printf("launched=%v reason=%s\n", outcome.Launched, outcome.Reason)
+	fmt.Fprintf(stdout, "launched=%v reason=%s\n", outcome.Launched, outcome.Reason)
 	if !outcome.Launched {
 		if outcome.Escalate {
 			return 3
@@ -613,8 +631,7 @@ func runStewardRun(args []string) int {
 	tickConfig.ArmedLineage = *lineage
 	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
 	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {
-		cmd := exec.Command(os.Args[0], "steward", "revive", "--repo", *repo)
-		out, err := cmd.CombinedOutput()
+		out, err := stewardReviveOwner(*repo)
 		if err != nil {
 			return fmt.Errorf("%v (%s)", err, strings.TrimSpace(string(out)))
 		}

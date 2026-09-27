@@ -104,7 +104,7 @@ func TestIntentReferenceGoalNameFirst(t *testing.T) {
 	b := newReferenceBed(t)
 	b.launchRecord(bedGoal, launch.Running)
 	b.dispatchJob(bedGoal, "running")
-	for _, name := range []string{"work status", "work wait", "work land", "work review", "work revise", "work close", "work build"} {
+	for _, name := range []string{"work status", "work wait", "work land", "work review", "work revise", "work build"} {
 		inv := b.invocation(name)
 		ref, problem := inv.resolveWorkRef(bedGoal, inv.command.accepts)
 		if problem != nil || ref.kind != refGoal || ref.id != bedGoal {
@@ -167,7 +167,7 @@ func TestIntentReferenceKindsPerAction(t *testing.T) {
 		t.Fatal("a refused reference reached the cancel owner")
 		return nil, 0, nil
 	}
-	for _, args := range [][]string{{"work", "land", "run:rec-1"}, {"work", "stop", "run:rec-1"}, {"test", "wait", "j2:rec-1"}, {"work", "close", "read:read-000000000000000000000000"}} {
+	for _, args := range [][]string{{"work", "land", "run:rec-1"}, {"work", "stop", "run:rec-1"}, {"test", "wait", "j2:rec-1"}, {"work", "finish", "read:read-000000000000000000000000"}} {
 		if code, result := b.runJSON(owners, args...); code != 2 || result.Outcome != intentRefused || result.Decision == "" {
 			t.Errorf("%v = %d %+v", args, code, result)
 		}

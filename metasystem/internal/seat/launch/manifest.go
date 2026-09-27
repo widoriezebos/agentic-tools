@@ -1,11 +1,12 @@
 package launch
 
-// The runtime-declared local configuration a new machine gets.
+// The runtime-declared local configuration a new machine or a second session
+// gets.
 //
 // `validate session-isolation` takes the paths in a file. The paths are each
 // runtime's declared local configuration in the runtime registry
-// (internal/runtimes, LocalConfigPaths), the one definition second-session.sh
-// and the goal worktree isolation read too.
+// (internal/runtimes, LocalConfigPaths), the one definition the seat launch,
+// the second session (session isolate) and the goal worktree isolation read.
 
 import (
 	"sort"

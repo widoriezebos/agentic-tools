@@ -218,60 +218,21 @@ func probeFakeEnvelopeMechanism(d Deps) error {
 	return nil
 }
 
-var fixtureScaleRE = regexp.MustCompile(`^([0-9]+)(?:\.([0-9]+))?$`)
-
-// fakeHandshakeSeconds is the simulator's session-established window: the
-// adapter-handshake fixture cap (base 2 seconds) scaled by the fixture cap
-// scale like every other fixture ceiling, and capped at 60. The scale is
-// METASYSTEM_FIXTURE_CAP_SCALE_MILLI, else METASYSTEM_FIXTURE_CAP_SCALE (a
-// decimal 1..48, times 1000 rounded up), else 1000: the census calibration
-// probe fixture-budget.sh ran when neither was set is retired.
+// fakeHandshakeSeconds is the simulator's session-established window: two
+// seconds scaled by the fixture cap scale like every other fixture ceiling
+// (a fixed two-second default is a red gate on a busy machine): the suite's
+// exported METASYSTEM_FIXTURE_CAP_SCALE_MILLI, else the calibration floor
+// 8000 (main's fake.sh after U3 cut it loose from fixture-budget.sh).
 func fakeHandshakeSeconds(d Deps) (int, error) {
-	milli := int64(1000)
+	milli := int64(8000)
 	if raw := d.Getenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI"); raw != "" {
 		value, err := strconv.ParseInt(raw, 10, 64)
 		if !positiveIntegerRE.MatchString(raw) || err != nil {
-			return 0, errors.New("fixture cap scale is not initialized")
+			return 0, errors.New("METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer")
 		}
 		milli = value
-	} else if raw := d.Getenv("METASYSTEM_FIXTURE_CAP_SCALE"); raw != "" {
-		invalid := errors.New("METASYSTEM_FIXTURE_CAP_SCALE must be a decimal from 1 through 48")
-		match := fixtureScaleRE.FindStringSubmatch(raw)
-		if match == nil || len(match[1]) > 6 {
-			return 0, invalid
-		}
-		whole, _ := strconv.ParseInt(match[1], 10, 64)
-		fraction := match[2]
-		thousandths := int64(0)
-		roundUp, fractional := false, false
-		for index, digit := range fraction {
-			value := int64(digit - '0')
-			if value != 0 {
-				fractional = true
-			}
-			if index < 3 {
-				thousandths = thousandths*10 + value
-			} else if value != 0 {
-				roundUp = true
-			}
-		}
-		for index := len(fraction); index < 3; index++ {
-			thousandths *= 10
-		}
-		// 1 <= scale <= 48 on the exact decimal value.
-		if whole < 1 || whole > 48 || (whole == 48 && fractional) {
-			return 0, invalid
-		}
-		milli = whole*1000 + thousandths
-		if roundUp {
-			milli++
-		}
 	}
-	handshake := (2*milli + 999) / 1000
-	if handshake > 60 {
-		handshake = 60
-	}
-	return int(handshake), nil
+	return int((2*milli + 999) / 1000), nil
 }
 
 var digitsRE = regexp.MustCompile(`^[0-9]+$`)

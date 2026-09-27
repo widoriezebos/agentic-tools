@@ -29,7 +29,7 @@ export type Where = { kind: string; id: string };
  * What a row asks this human to do, where this interface has the act.
  *
  * Two are the board's. The other two are this page's own, admitted from a
- * signed-in browser under R-125-m1u: park is "Not now", and unpark returns a
+ * signed-in browser under R-125-m1u: park is "Pause", and unpark returns a
  * paused goal to the queue.
  */
 export type Act = "approve" | "withdraw" | "park" | "unpark" | "apply" | "";
@@ -56,6 +56,15 @@ export type Proposed = {
   state: ProposalState;
   /** What the last state change said: the engine's own sentence on a refusal. */
   words: string;
+  /**
+   * When the entry was last written, and absent on one nothing has written since
+   * it was admitted.
+   *
+   * The row's own `since` is when the action was PROPOSED, which is what its age
+   * and its dot are about; this is the other fact, for a surface that wants to
+   * say when the last press on it was.
+   */
+  updatedAt?: string;
   version: number;
 };
 

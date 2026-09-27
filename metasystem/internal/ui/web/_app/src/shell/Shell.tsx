@@ -146,7 +146,7 @@ function Frame() {
   // Ask on a card, and Cmd/Ctrl+J, ask for the composer by counting. The
   // drawer opens for them, because a composer nobody can see is a composer
   // that must never be given the caret.
-  const { wanted, revealed } = usePartner();
+  const { wanted, revealed, clearShowing } = usePartner();
 
   // The stored height is read once, as the layout this group opens with; from
   // there the group owns the arithmetic and a drag is what changes it.
@@ -235,10 +235,21 @@ function Frame() {
 
   // Open or closed is remembered the way the dock's was, under the key the
   // dock used: it is the same preference about the same collaborator.
+  //
+  // And a close spends the card the drawer was opened at. The conversation's
+  // column is mounted only while the drawer is open and decides where it opens
+  // from that target, so a target nobody cleared would take every later opening
+  // back to the answer some chip pressed once, however long ago (g1-s61, as
+  // built). This is the one place that closes the drawer — the header's toggle,
+  // the panel's and Escape all come through here — which is why the clear is
+  // here and not in three handlers.
   const setDrawer = (next: boolean, goes: Caret) => {
     setDrawerOpen(next);
     setCaret(goes);
     writeDockOpen(next);
+    if (!next) {
+      clearShowing();
+    }
   };
 
   // From the header, whose button is not replaced and keeps the caret itself.

@@ -36,6 +36,15 @@ var textSurfaceExceptions = []struct{ file, text, reason string }{
 	{"metasystem/cmd/metasystem/intent_worktree.go", "metasystem goal worktree", "Git's worktree lock reason, not a command"},
 }
 
+// textProseAfterObject are words prose puts after "metasystem OBJECT" that
+// are not an action: "the metasystem system is ...". Any other word there
+// must be a current action of that object.
+var textProseAfterObject = map[string]bool{
+	"is": true, "are": true, "was": true, "and": true, "or": true, "of": true, "to": true, "in": true, "on": true,
+	"for": true, "the": true, "that": true, "it": true, "has": true, "can": true, "will": true, "with": true, "as": true,
+	"object": true, "objects": true, "action": true, "actions": true,
+}
+
 var textCommandPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.\-/])((?:bin/)?metasystem) ([a-z][a-z0-9-]*)(?: ([a-z][a-z0-9-]*|--[a-z][a-z-]*))?`)
 
 // TestIntentTextNamesOnlyPublicForms is the witness that text shown to
@@ -65,6 +74,8 @@ func TestIntentTextNamesOnlyPublicForms(t *testing.T) {
 					bad = "a process entry"
 				} else if !ok && familyHasVerb(registered, first, second) {
 					bad = "a family verb without internal"
+				} else if !ok && second != "" && !strings.HasPrefix(second, "--") && !textProseAfterObject[second] {
+					bad = "an action the " + first + " object does not have"
 				}
 			case slices.Contains(removedFirstWords, first):
 				bad = "a removed public spelling"

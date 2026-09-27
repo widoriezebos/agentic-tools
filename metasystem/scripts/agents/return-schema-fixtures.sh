@@ -127,21 +127,23 @@ cp "$fixture/candidate.json" "$fixture/extra.json"
 # (TestMaterializedSchemasObeyStructuredOutputRules, internal/returnschema,
 # under the go gate — script-fixtures-002/D37): generator invariants of
 # Go-owned code belong where they survive fixture retirement. This file
-# keeps its thin assert-return-complete legs.
+# keeps its thin return-complete legs.
+
+return_complete() { "$ms" internal validate return-complete --root "$root" "$@"; }
 
 if [[ "$fixture_scenario" == implementer-v1-v2 ]]; then
 
-"$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/v1.json"
+return_complete --role implementer --file "$fixture/v1.json"
 
 # The normalize_return legs (the observed-identity adoption and the
 # one-claim shape) moved to the go gate with the adapters' port:
 # internal/adapter's TestReturnSchemaBedNormalizeAdoptsObservedIdentity.
 
-if "$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/missing-version.json" >/dev/null 2>&1; then
+if return_complete --role implementer --file "$fixture/missing-version.json" >/dev/null 2>&1; then
   echo "version-2-shaped return without schemaVersion passed the frozen v1 schema" >&2
   exit 1
 fi
-if "$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/extra.json" >/dev/null 2>&1; then
+if return_complete --role implementer --file "$fixture/extra.json" >/dev/null 2>&1; then
   echo "version-2 return with an undeclared property passed" >&2
   exit 1
 fi

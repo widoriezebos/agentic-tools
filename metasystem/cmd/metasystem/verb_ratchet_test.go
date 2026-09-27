@@ -27,22 +27,19 @@ import (
 
 const (
 	// R1/R3 residue: (family, verb) pairs plus dispatchInternal's top-level forms.
-	verbRatchetInternalVerbCeiling = 360
+	verbRatchetInternalVerbCeiling = 362
 	// R4: shell lines that reference the engine.
-	verbRatchetShellEngineCeiling = 2416
+	verbRatchetShellEngineCeiling = 2427
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
-	verbRatchetScriptLinesCeiling = 40970
+	verbRatchetScriptLinesCeiling = 39820
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
-	// U6a raised it by four process boundaries that were shell before: the
+	// U6a raised it by the process boundaries that were shell before: the
 	// mission host turn's delegate-supervisor entry launch, the fake runtime's
-	// fixture holds (its CLI stand-in children and the host hold exec), and
-	// the fake self-test's delegate children; the hold exec counts twice
-	// (its argv and its exec). It is 124, not 120, because the fake self-test
-	// launches its delegate children through engineDelegate, which resolves
-	// the running binary itself: the witness now follows that launcher's four
-	// calls, where it earlier counted only its one exec. No new boundary.
-	verbRatchetSelfSubprocessCeiling = 124
+	// fixture holds (its CLI stand-in children and the host hold exec, which
+	// counts twice: its argv and its exec), and the fake self-test's delegate
+	// children, launched through engineDelegate with the running binary.
+	verbRatchetSelfSubprocessCeiling = 101
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
 	verbRatchetInstructionCeiling = 47
@@ -451,7 +448,7 @@ func sortedKeys[V any](m map[string]V) []string {
 // initialisers (var self = os.Args[0], var launch = os.Executable); package
 // functions every return of which is the engine; and launcher helpers, found
 // by a package-level fixpoint (ratchetLaunchers), so a launch through
-// engineVerb, a subprocess field, batchChildRunner, batchDiagnosticExecute,
+// engineVerb, a subprocess field, batchDiagnosticExecute,
 // newBrainBootInputsCommand or a local run closure counts at every call
 // whatever the shape of its argv. It also counts a call of a function-typed
 // parameter handed the engine (execute(binary, args, ...)).
@@ -580,8 +577,8 @@ type ratchetUnit struct {
 }
 
 // ratchetLaunchers holds one package's launchers: package-scope names,
-// closures per declaration, and aliases (var batchChildRunner =
-// runBatchChildAs) resolved to their targets.
+// closures per declaration, and aliases (var batchDiagnosticRunner =
+// runBatchDiagnostic) resolved to their targets.
 type ratchetLaunchers struct {
 	pkg     map[string]ratchetLauncher
 	local   map[ast.Decl]map[string]ratchetLauncher

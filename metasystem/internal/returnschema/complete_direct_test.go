@@ -1,4 +1,4 @@
-package validate
+package returnschema
 
 import (
 	"fmt"
@@ -42,6 +42,7 @@ func implementerReturn(boundary string) string {
 }
 
 func TestReturnCompleteNormalizesResolvableDiffBoundaryPaths(t *testing.T) {
+	t.Parallel()
 	root := returnRoot(t)
 
 	t.Run("metasystem-relative entries are normalized and correct entries stay unchanged", func(t *testing.T) {
@@ -136,6 +137,7 @@ func v3CriticReturn(findings, rigor string, count int) string {
 }
 
 func TestReturnCompleteRoleUnknownRole(t *testing.T) {
+	t.Parallel()
 	violations := ReturnCompleteRole(t.TempDir(), "no-such-role", "")
 	if len(violations) == 0 || !strings.Contains(violations[0], "unknown role") {
 		t.Fatalf("unknown role not refused: %v", violations)
@@ -143,6 +145,7 @@ func TestReturnCompleteRoleUnknownRole(t *testing.T) {
 }
 
 func TestReturnCompleteRoleMissingAndMalformedFiles(t *testing.T) {
+	t.Parallel()
 	root := returnRoot(t)
 	violations := ReturnCompleteRole(root, "design-critic", filepath.Join(root, "absent.json"))
 	joined := strings.Join(violations, "\n")
@@ -158,6 +161,7 @@ func TestReturnCompleteRoleMissingAndMalformedFiles(t *testing.T) {
 }
 
 func TestReturnCompleteJobChainWalk(t *testing.T) {
+	t.Parallel()
 	root := returnRoot(t)
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	os.MkdirAll(jobs, 0o755)
@@ -194,6 +198,7 @@ func TestReturnCompleteJobChainWalk(t *testing.T) {
 // walk, value walk, type matching, enums, and the material-count cross
 // check — the paths the refusal cases above never reach.
 func TestReturnCompleteRoleLawfulReturn(t *testing.T) {
+	t.Parallel()
 	root := returnRoot(t)
 	lawful := `{
   "jobId": "rc-happy",
@@ -234,6 +239,7 @@ func TestReturnCompleteRoleLawfulReturn(t *testing.T) {
 }
 
 func TestReturnCompleteRoleVersionThreeRigorJoin(t *testing.T) {
+	t.Parallel()
 	root := returnRoot(t)
 	path := filepath.Join(root, "return.json")
 	findings := `[
@@ -258,6 +264,7 @@ func TestReturnCompleteRoleVersionThreeRigorJoin(t *testing.T) {
 }
 
 func TestReturnCompleteRoleVersionFourRequiresCanonicalArtifact(t *testing.T) {
+	t.Parallel()
 	root := returnRoot(t)
 	path := filepath.Join(root, "return.json")
 	finding := `[{"id":"F1","severity":"high","material":true,"claim":"claim","evidence":"read"}]`
@@ -275,6 +282,7 @@ func TestReturnCompleteRoleVersionFourRequiresCanonicalArtifact(t *testing.T) {
 }
 
 func TestReturnCompleteRoleVersionThreeRefusesUnjoinableRigor(t *testing.T) {
+	t.Parallel()
 	root := returnRoot(t)
 	path := filepath.Join(root, "return.json")
 	finding := `[{"id":"F1","severity":"high","material":true,"claim":"claim","evidence":"read"}]`
@@ -307,6 +315,7 @@ func TestReturnCompleteRoleVersionThreeRefusesUnjoinableRigor(t *testing.T) {
 }
 
 func TestReturnCompleteRoleVersionThreeRefusesMalformedFacts(t *testing.T) {
+	t.Parallel()
 	root := returnRoot(t)
 	path := filepath.Join(root, "return.json")
 	finding := `[{"id":"F1","severity":"high","material":true,"claim":"claim","evidence":"read"}]`
@@ -320,6 +329,7 @@ func TestReturnCompleteRoleVersionThreeRefusesMalformedFacts(t *testing.T) {
 }
 
 func TestFindingIDRefusesInteriorControlCharacters(t *testing.T) {
+	t.Parallel()
 	root := returnRoot(t)
 	path := filepath.Join(root, "return.json")
 	findings := `[{"id":"F-1\nF-2","severity":"high","material":true,"claim":"x","evidence":"read"}]`

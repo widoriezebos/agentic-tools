@@ -24,7 +24,7 @@ The single routing layer. `AGENTS.md` owns always-on behavior; this table owns w
 | The Go engine's architecture | `docs/architecture.md` | Locating a decision, or judging where new logic belongs |
 | Worked examples | `docs/examples/` | A template is unclear |
 | Adoption and the change gate | `docs/project-adaptation.md` | Starting a repository, or judging an instruction change |
-| Metasystem retro | `skills/retro/SKILL.md` | `scripts/receipt.sh check` reports one due, or the human asks |
+| Metasystem retro | `skills/retro/SKILL.md` | `metasystem receipt status` reports one due, or the human asks |
 | Reconciling an existing repository | `docs/metasystem-reconciliation.md` | Installing or upgrading where instructions or skills already exist |
 | App inception | `skills/inception/SKILL.md` | Birthing an app: covenant, doctrine, thread |
 | Answering in the browser | `skills/project-partner/SKILL.md` | Where a fact lives and what the Project Partner may claim about it |

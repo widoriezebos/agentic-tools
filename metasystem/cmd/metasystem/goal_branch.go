@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,11 +63,13 @@ func runGoalBranch(args []string) int {
 }
 
 type goalBranchReadDependencies struct {
-	Binary   string
-	Gate     func(string) (string, error)
-	Delegate func(string, string, string, string, string) (string, error)
-	Commit   func(branch.CommitReadRequest) (string, branch.Attestation, error)
-	Raw      *goalBranchRawDependencies
+	// Delegator is the delegate boundary the read calls in its own process
+	// (design 6.2); nil is the production boundary.
+	Delegator delegateCaller
+	Gate      func(string) (string, error)
+	Delegate  func(string, string, string, string, string) (string, error)
+	Commit    func(branch.CommitReadRequest) (string, branch.Attestation, error)
+	Raw       *goalBranchRawDependencies
 }
 
 type goalBranchRawDependencies struct {
@@ -120,8 +123,7 @@ func (option *goalBranchReadOption) Set(value string) error {
 }
 
 func runGoalBranchRead(args []string) int {
-	binary, _ := os.Executable()
-	return runGoalBranchReadWith(args, goalBranchReadDependencies{Binary: binary, Commit: branch.CommitRead})
+	return runGoalBranchReadWith(args, goalBranchReadDependencies{Commit: branch.CommitRead})
 }
 
 func lastOutputLine(output []byte) string {
@@ -173,11 +175,29 @@ func readDelegateNeverLaunched(outcome delegateOutcome) bool {
 	}
 }
 
-func readDelegate(binary, root, brief, goalID, commit, runtime, model string, environment ...string) (string, error) {
-	if binary == "" {
-		return "", fmt.Errorf("delegate binary is unavailable")
+// delegateCaller is one call of the delegate boundary on the caller's
+// streams, returning its status.
+type delegateCaller func(request delegateRequest, stdout, stderr io.Writer) int
+
+// callDelegate runs one delegate request in this process as the former
+// `internal delegate` child ran: the installation is root, the script gets
+// no input, and the extra environment reaches the script. It returns the
+// child's stdout and stderr and, for a nonzero status, the error its exit
+// was.
+func callDelegate(delegate delegateCaller, root string, args []string, environment []string) ([]byte, []byte, error) {
+	if delegate == nil {
+		delegate = runDelegateWith
 	}
-	args := []string{"internal", "delegate", "--role", "code-critic", "--reviews", "commit:" + commit,
+	var stdout, stderr bytes.Buffer
+	status := delegate(delegateRequest{rootOverride: root, args: args, environment: environment}, &stdout, &stderr)
+	if status != 0 {
+		return stdout.Bytes(), stderr.Bytes(), fmt.Errorf("delegate exited with status %d", status)
+	}
+	return stdout.Bytes(), stderr.Bytes(), nil
+}
+
+func readDelegate(delegate delegateCaller, root, brief, goalID, commit, runtime, model string, environment ...string) (string, error) {
+	args := []string{"--role", "code-critic", "--reviews", "commit:" + commit,
 		"--goal", goalID, "--brief", brief, "--destructive-reach", "DESIGN-BEARING"}
 	if runtime != "" {
 		args = append(args, "--runtime", runtime)
@@ -185,11 +205,7 @@ func readDelegate(binary, root, brief, goalID, commit, runtime, model string, en
 	if model != "" {
 		args = append(args, "--model", model)
 	}
-	command := exec.Command(binary, args...)
-	command.Env = append(append(os.Environ(), environment...), "METASYSTEM_DELEGATE_ROOT="+root)
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	output, err := command.Output()
+	output, stderr, err := callDelegate(delegate, root, args, environment)
 	var outcome delegateOutcome
 	if jsonErr := json.Unmarshal(bytes.TrimSpace(output), &outcome); jsonErr == nil && outcome.Outcome != "" {
 		if err == nil && outcome.Outcome == "WON" && outcome.JobID != "" {
@@ -202,28 +218,21 @@ func readDelegate(binary, root, brief, goalID, commit, runtime, model string, en
 		return "", failure
 	}
 	if err != nil {
-		return "", fmt.Errorf("delegate: %s: %w", lastOutputLine(stderr.Bytes()), err)
+		return "", fmt.Errorf("delegate: %s: %w", lastOutputLine(stderr), err)
 	}
 	return "", fmt.Errorf("delegate returned no started job: %s", lastOutputLine(output))
 }
 
 // readFollowUp starts one more round of a critic chain through the delegate
 // follow-up and returns the round's job id.
-func readFollowUp(binary, root, rootJob, brief string, environment ...string) (string, error) {
-	if binary == "" {
-		return "", fmt.Errorf("delegate binary is unavailable")
-	}
-	command := exec.Command(binary, "internal", "delegate", "--follow-up", rootJob, "--brief", brief)
-	command.Env = append(append(os.Environ(), environment...), "METASYSTEM_DELEGATE_ROOT="+root)
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	output, err := command.Output()
+func readFollowUp(delegate delegateCaller, root, rootJob, brief string, environment ...string) (string, error) {
+	output, stderr, err := callDelegate(delegate, root, []string{"--follow-up", rootJob, "--brief", brief}, environment)
 	var outcome delegateOutcome
 	if jsonErr := json.Unmarshal(bytes.TrimSpace(output), &outcome); jsonErr == nil && outcome.Outcome == "WON" && outcome.JobID != "" && err == nil {
 		return outcome.JobID, nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("delegate follow-up: %s: %w", lastOutputLine(stderr.Bytes()), err)
+		return "", fmt.Errorf("delegate follow-up: %s: %w", lastOutputLine(stderr), err)
 	}
 	return "", fmt.Errorf("delegate follow-up returned no started round: %s", lastOutputLine(output))
 }
@@ -300,7 +309,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 			if err != nil {
 				return "", &branch.ReadNeverLaunchedError{Err: err}
 			}
-			return readDelegate(dependencies.Binary, *root, brief, goalID, commit, runtime, model, environment...)
+			return readDelegate(dependencies.Delegator, *root, brief, goalID, commit, runtime, model, environment...)
 		}
 	}
 	var readRepository branch.BranchReadRepository
@@ -321,7 +330,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 			if err != nil {
 				return "", err
 			}
-			return readFollowUp(dependencies.Binary, *root, rootJob, brief, environment...)
+			return readFollowUp(dependencies.Delegator, *root, rootJob, brief, environment...)
 		}})
 	if err != nil {
 		return branch.BranchReadResult{}, 1, err
