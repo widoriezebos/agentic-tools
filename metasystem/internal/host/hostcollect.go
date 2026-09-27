@@ -12,7 +12,7 @@ import (
 	"strconv"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
 
 // The host-turn delivery walk. Turn-shaped, not
@@ -171,7 +171,7 @@ func hostCandidateCheck(root, turnDir, channel string, raw []byte, turnRecord ma
 	if err := os.WriteFile(candidate, raw, 0o644); err != nil {
 		return "snapshot write failed: " + err.Error()
 	}
-	if problems := validate.ReturnCompleteRole(root, "orchestrator", candidate); len(problems) > 0 {
+	if problems := returnschema.ReturnCompleteRole(root, "orchestrator", candidate); len(problems) > 0 {
 		return fmt.Sprintf("schema: %v", problems)
 	}
 	for _, field := range []string{"turnId", "missionId"} {

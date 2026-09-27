@@ -225,6 +225,7 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 	reads := repository.reads()
 	dependencies := syncRequestDependencies{
 		authorityFacts: goalAuthorityReadFacts{
+			caller:        entryCallerIdentity(),
 			repositoryTop: repository.receiptTop,
 			ledgerIdentity: func(root string) string {
 				if root != repository.root {

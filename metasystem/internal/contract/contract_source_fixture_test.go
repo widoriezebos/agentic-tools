@@ -77,7 +77,7 @@ func (f *contractFixtureSource) expect(args []string, out string) {
 
 func (f *contractFixtureSource) tree() {
 	f.expect([]string{"ls-tree", "-r", "--name-only", "-z", fixtureGateSHA},
-		"docs/project-rules.md\x00scripts/agents/arm-supervision.sh\x00scripts/gate.sh\x00truth/reference.txt\x00")
+		"docs/project-rules.md\x00scripts/agents/fixture-helper.sh\x00scripts/gate.sh\x00truth/reference.txt\x00")
 }
 
 func (f *contractFixtureSource) ref() {
@@ -120,7 +120,7 @@ func (f *contractFixtureSource) preflight(fetchFailure bool) (string, string, er
 	if fetchFailure {
 		f.calls = append(f.calls, sourceCall{kind: "fetch"})
 	}
-	return contractPreflightWithSource(f.path, "", f.repository, f.source())
+	return contractPreflightWithSource(f.path, "", f.repository, f.source(), nil)
 }
 
 func (f *contractFixtureSource) measure(previous map[string]string) (*MeasureResult, error) {

@@ -1,12 +1,13 @@
 // Package act is the interface server's human hand on the ledger.
 //
-// Nine verbs reach it, and every one of them is a verb a human performs on
+// Ten verbs reach it, and every one of them is a verb a human performs on
 // their own backlog: goal approve and goal unapprove admit and withdraw work,
 // goal park and goal unpark pause it and let it go again, goal set-priority
 // places a goal in a band and orders it there, goal open is
 // the intake act that creates one, goal block and goal unblock write and
-// remove the edges that say which goal waits for which, and goal edit
-// rewrites the three fields of a goal nobody has approved yet. Nothing here
+// remove the edges that say which goal waits for which, goal edit
+// rewrites the three fields of a goal nobody has approved yet, and goal
+// abandon records that a goal will never be worked and why. Nothing here
 // shells out. A
 // child of this server has no terminal in its ancestry and would be refused
 // by the very check that makes these acts a human's, so the engine is called
@@ -328,6 +329,41 @@ func (a Authority) Unpark(id string) error {
 	}
 	result, publishErr := goal.Unpark(request, id)
 	return a.settle(request, result, publishErr, "goal unpark")
+}
+
+// Abandon publishes goal abandon for one goal: the reason it will never be
+// worked, and the live goal carrying its work where there is one.
+//
+// It is admitted from a browser under R-128-ui, which extends R-125-m1u by
+// this one verb: the engine takes this hand's session proof at abandon's own
+// human row, and records the session on the History line it appends.
+//
+// The reason is required, exactly as the engine requires it: a goal that will
+// never be worked owes the reader why, and a sentence invented here would be a
+// why nobody wrote. The successor is optional and travels as the spec's
+// Carried, which is what the engine calls it; where the goal has live
+// dependents and no successor is named, the engine refuses in its own words,
+// which name the terminal forms, and the card shows them. Neither --waive nor
+// --also travels from here at all: releasing or abandoning somebody else's
+// dependent is a separate judgement, made at a terminal, and an empty Waive
+// and Also is how this hand says it is not making it.
+func (a Authority) Abandon(id, because, successor string) error {
+	if strings.TrimSpace(id) == "" {
+		return refuse(KindRequest, "no-goal", "an abandon names one live goal")
+	}
+	if strings.TrimSpace(because) == "" {
+		return refuse(KindRequest, "no-reason",
+			"abandon needs its reason — a goal that will never be worked owes the reader why")
+	}
+	request, err := a.request()
+	if err != nil {
+		return err
+	}
+	result, publishErr := goal.Abandon(request, id, goal.AbandonSpec{
+		Because: strings.TrimSpace(because),
+		Carried: strings.TrimSpace(successor),
+	}, &a.proof)
+	return a.settle(request, result, publishErr, "goal abandon")
 }
 
 // SetPriority publishes goal set-priority for one goal: the band it is to be

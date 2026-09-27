@@ -56,6 +56,15 @@ export type Proposed = {
   state: ProposalState;
   /** What the last state change said: the engine's own sentence on a refusal. */
   words: string;
+  /**
+   * When the entry was last written, and absent on one nothing has written since
+   * it was admitted.
+   *
+   * The row's own `since` is when the action was PROPOSED, which is what its age
+   * and its dot are about; this is the other fact, for a surface that wants to
+   * say when the last press on it was.
+   */
+  updatedAt?: string;
   version: number;
 };
 

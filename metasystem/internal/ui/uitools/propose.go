@@ -25,14 +25,23 @@ import (
 // allowed" will guess again, and a Partner told "park-goal takes because" will
 // not.
 //
-// The vocabulary is the INTERFACE'S OWN and nothing else's. A verb here is one
-// of the nine route ids the act table publishes, and a field is one of that
-// route's own body fields under the body's own spelling. Nothing here reads a
-// command catalogue: what the browser can do is what the browser's routes can
-// do, and a proposal the routes cannot carry is a proposal that would be
-// refused after the human pressed rather than before the card existed.
+// The vocabulary is the INTERFACE'S OWN and nothing else's. Every verb here is
+// an act the act table publishes, and every field is one that act's route body
+// carries. Nothing here reads a command catalogue: what the browser can do is
+// what the browser's routes can do, and a proposal the routes cannot carry is a
+// proposal that would be refused after the human pressed rather than before the
+// card existed.
+//
+// What a row is CALLED and what it dispatches to are two facts, and abandon is
+// the first row where they differ: the Partner calls it by the action's public
+// name, `abandon`, and its fields by the public flags of `metasystem goal
+// abandon`, `reason` and `successor`, while the message persists the route id
+// `abandon-goal` and the frame writes the route body's own spellings. The row
+// carries both, so the name the model is told and the body the route decodes
+// cannot drift apart. The other nine are named by their route ids until the
+// public grammar lands for all of them.
 
-// The nine acts one proposal can be: the interface's own route ids, exactly as
+// The ten acts one proposal can be: the interface's own route ids, exactly as
 // the act table names them and the runner dispatches on them.
 //
 // They are route ids rather than words a human reads, because the route id is
@@ -48,7 +57,12 @@ const (
 	ProposePark     = "park-goal"
 	ProposeUnpark   = "unpark-goal"
 	ProposeEdit     = "edit-goal"
+	ProposeAbandon  = "abandon-goal"
 )
+
+// The public action names a row may be called by, where that is not its route
+// id. Abandon is the first, under R-128-ui.
+const VerbAbandon = "abandon"
 
 // The fields, under the route bodies' own spellings.
 const (
@@ -68,6 +82,10 @@ const (
 	FieldPriority     = "priority"
 	FieldSequence     = "sequence"
 	FieldBlocker      = "blocker"
+	// FieldSuccessor is the live goal carrying an abandoned goal's work. It is
+	// the public flag's own name; the route body spells it the same way, and
+	// the engine calls it Carried.
+	FieldSuccessor = "successor"
 )
 
 // ProposedAct is one row of the catalogue: the route a proposal dispatches to,
@@ -78,7 +96,12 @@ const (
 // what the button on the page says, so a human who has pressed Not now on the
 // Decisions page reads Not now on the card rather than a synonym for it.
 type ProposedAct struct {
-	Route  string
+	Route string
+	// Verb is the name the Partner calls this act by, where that is not the
+	// route id: the action's public name under the goal object, as
+	// `metasystem goal ACTION --help` shows it. Empty means the route id is
+	// also the name.
+	Verb   string
 	Button string
 	// Needs are the fields the route body cannot do without.
 	Needs []string
@@ -88,6 +111,33 @@ type ProposedAct struct {
 	// the edit route's own rule: a body with all three absent changes nothing
 	// and the route refuses it rather than publishing a no-op.
 	OneOf []string
+	// Body maps a field's public name to the route body's own spelling, for the
+	// fields where the two differ. A field absent from it is spelled the same
+	// on both sides.
+	//
+	// It exists because abandon's public flag is `--reason` while its route
+	// body carries `because`, which is the park's word for the same thing.
+	// Without the map the Partner would have to know the body's spelling to
+	// name a public flag, and the frame the runner reads would carry a field
+	// its own decoder does not have.
+	Body map[string]string
+}
+
+// Name is what the Partner calls this act: its public action name where it has
+// one, and its route id otherwise.
+func (a ProposedAct) Name() string {
+	if a.Verb != "" {
+		return a.Verb
+	}
+	return a.Route
+}
+
+// BodyField is one of this act's fields under the route body's own spelling.
+func (a ProposedAct) BodyField(field string) string {
+	if spelled, differs := a.Body[field]; differs {
+		return spelled
+	}
+	return field
 }
 
 // Fields is every field this act admits, needed and taken together.
@@ -119,6 +169,18 @@ var ProposedActs = []ProposedAct{
 	{Route: ProposePark, Button: "Not now", Needs: []string{FieldBecause}},
 	{Route: ProposeUnpark, Button: "Return to queue"},
 	{Route: ProposeEdit, Button: "Edit", OneOf: []string{FieldIntent, FieldNextStep, FieldLabels}},
+	// Abandon, under R-128-ui: the act that says a goal will never be worked.
+	// It is named and flagged as the public form is — `metasystem goal abandon
+	// G --reason TEXT [--successor G2]` — and its reason reaches the route body
+	// as `because`, which is the word that body already has for a reason.
+	// Neither --waive nor --also is here: they are refused by name below, with
+	// the terminal form, because releasing or abandoning somebody else's
+	// dependent is a judgement made at a terminal.
+	{
+		Route: ProposeAbandon, Verb: VerbAbandon, Button: "Abandon",
+		Needs: []string{FieldReason}, Takes: []string{FieldSuccessor},
+		Body: map[string]string{FieldReason: FieldBecause},
+	},
 }
 
 // ProposedActOf is one row of the catalogue by its route id.
@@ -131,11 +193,32 @@ func ProposedActOf(route string) (ProposedAct, bool) {
 	return ProposedAct{}, false
 }
 
-// ProposeRoutes is the nine route ids, in the catalogue's order.
+// ProposedActNamed is one row by the name the Partner calls it: its public
+// action name where it has one, its route id otherwise.
+func ProposedActNamed(name string) (ProposedAct, bool) {
+	for _, act := range ProposedActs {
+		if act.Name() == name {
+			return act, true
+		}
+	}
+	return ProposedAct{}, false
+}
+
+// ProposeRoutes is the ten route ids, in the catalogue's order.
 func ProposeRoutes() []string {
 	named := make([]string, 0, len(ProposedActs))
 	for _, act := range ProposedActs {
 		named = append(named, act.Route)
+	}
+	return named
+}
+
+// ProposeVerbs is what the Partner is told and what it may send: each row by
+// the name it is called, in the catalogue's order.
+func ProposeVerbs() []string {
+	named := make([]string, 0, len(ProposedActs))
+	for _, act := range ProposedActs {
+		named = append(named, act.Name())
 	}
 	return named
 }
@@ -174,6 +257,7 @@ const (
 	ProposalPriority     = "Priority: "
 	ProposalSequence     = "Sequence: "
 	ProposalBlocker      = "Blocker: "
+	ProposalSuccessor    = "Successor: "
 	ProposalIntent       = "Intent: "
 	ProposalNextStep     = "Next step: "
 	ProposalLabels       = "Labels: "
@@ -200,6 +284,7 @@ var ProposalFrame = []struct {
 	{ProposalPriority, FieldPriority},
 	{ProposalSequence, FieldSequence},
 	{ProposalBlocker, FieldBlocker},
+	{ProposalSuccessor, FieldSuccessor},
 	{ProposalIntent, FieldIntent},
 	{ProposalNextStep, FieldNextStep},
 	{ProposalLabels, FieldLabels},
@@ -257,6 +342,11 @@ var refusedProposalFields = []struct {
 	{"risk", "the four risk answers travel as severity, novelty, exposure and accumulation, each a number from 1 to 3"},
 	{"evidence", "evidence is recorded where the work landed, not on an edit a human presses"},
 	{"nextAppend", "this interface's edit replaces the next step; send the whole nextStep"},
+	{"waive", "a live dependent is released at a terminal: metasystem goal abandon G --reason TEXT " +
+		"--waive DEPENDENT=REASON; from here, name the successor that carries the work, or say in words " +
+		"that the dependents are waived at a terminal"},
+	{"also", "a dependent is abandoned in the same act at a terminal: metasystem goal abandon G " +
+		"--reason TEXT --also DEPENDENT; from here, propose one abandon per goal"},
 }
 
 // The goal acts this interface has no route for, refused by name.
@@ -267,7 +357,7 @@ var refusedProposalFields = []struct {
 // interface could never have. Named, it says the act exists and that this
 // interface is not where it is made, so the Partner can say where.
 var actsNotInTheInterface = []string{
-	"abandon", "done", "reopen", "budget", "claim", "release",
+	"done", "reopen", "budget", "claim", "release",
 	"accept-risk", "pin", "grant", "revoke", "split", "group", "ungroup", "notes",
 }
 
@@ -279,7 +369,7 @@ var actsNotInTheInterface = []string{
 // value within the bounds the sheets hold.
 func propose(args Args) Result {
 	verb := strings.ToLower(oneLine(args.Text("verb")))
-	act, known := ProposedActOf(verb)
+	act, known := ProposedActNamed(verb)
 	if !known {
 		return refusedCall(unknownVerb(verb))
 	}
@@ -292,13 +382,13 @@ func propose(args Args) Result {
 	// The subject. Every act names one goal: the eight that take it in the
 	// route's path, and the open whose route body carries it as `id`.
 	subject := oneLine(args.Text("goal"))
-	if subject == "" && verb == ProposeOpen {
+	if subject == "" && act.Route == ProposeOpen {
 		subject = oneLine(args.Text(FieldID))
 	}
 	if subject == "" {
 		return refusedCall("this tool needs the goal the action is about, by its ledger id")
 	}
-	if verb == ProposeOpen {
+	if act.Route == ProposeOpen {
 		if given := oneLine(args.Text(FieldID)); given != "" && given != subject {
 			return refusedCall("an open names one new goal: goal is " + subject + " and id is " + given)
 		}
@@ -314,10 +404,10 @@ func propose(args Args) Result {
 	}
 
 	fields := map[string]string{}
-	if verb == ProposeOpen {
+	if act.Route == ProposeOpen {
 		fields[FieldID] = subject
 	}
-	admitted := map[string]bool{FieldID: verb == ProposeOpen}
+	admitted := map[string]bool{FieldID: act.Route == ProposeOpen}
 	for _, field := range act.Fields() {
 		admitted[field] = true
 	}
@@ -388,6 +478,14 @@ func propose(args Args) Result {
 func framed(act ProposedAct, subject string, fields map[string]string) string {
 	var built strings.Builder
 	built.WriteString(ProposalHeader + act.Route + "\n")
+	// The frame is the ROUTE's, so a field whose public flag is spelled one way
+	// and whose body spells it another is written under the body's spelling: the
+	// host reads this frame into the action the runner dispatches, and a label
+	// the route's decoder has no field for would be a field silently dropped.
+	written := make(map[string]string, len(fields))
+	for field, said := range fields {
+		written[act.BodyField(field)] = said
+	}
 	// The open's subject is its route body's own `id`, and the other eight
 	// carry the goal in the route's path. Each act's frame is exactly its
 	// body's fields, so neither says one fact twice.
@@ -395,7 +493,7 @@ func framed(act ProposedAct, subject string, fields map[string]string) string {
 		built.WriteString(ProposalGoal + subject + "\n")
 	}
 	for _, line := range ProposalFrame {
-		if said, given := fields[line.Field]; given {
+		if said, given := written[line.Field]; given {
 			built.WriteString(line.Label + said + "\n")
 		}
 	}
@@ -450,7 +548,7 @@ func valueOf(args Args, field string) (string, string) {
 			return "", "a sequence is a one-based position within the priority band"
 		}
 		return strconv.Itoa(at), ""
-	case FieldBlocker:
+	case FieldBlocker, FieldSuccessor:
 		return oneLine(args.Text(field)), ""
 	case FieldLabels, FieldBlockedBy, FieldBlocks:
 		named := args.List(field)
@@ -474,6 +572,9 @@ func needs(verb, field string) string {
 	case FieldBasis:
 		return "the risk answers carry the basis they were judged on"
 	case FieldReason:
+		if verb == VerbAbandon {
+			return "a goal that will never be worked owes the reader why"
+		}
 		return "taking an approval back is recorded with the reason the human gave"
 	case FieldBecause:
 		return "a pause without a why is a stall in disguise"
@@ -491,16 +592,16 @@ func needs(verb, field string) string {
 // that it exists somewhere else.
 func unknownVerb(verb string) string {
 	if verb == "" {
-		return "this tool needs the act to propose, one of " + listed(ProposeRoutes())
+		return "this tool needs the act to propose, one of " + listed(ProposeVerbs())
 	}
 	bare := strings.TrimSuffix(strings.TrimSuffix(verb, "-goal"), "goal-")
 	for _, elsewhere := range actsNotInTheInterface {
 		if bare == elsewhere {
 			return elsewhere + " is not an act this interface has, so there is nothing here to propose; " +
-				"say in words that it is done at a terminal. This interface's acts are " + listed(ProposeRoutes())
+				"say in words that it is done at a terminal. This interface's acts are " + listed(ProposeVerbs())
 		}
 	}
-	return `"` + verb + `" is not an act this interface has; it has ` + listed(ProposeRoutes())
+	return `"` + verb + `" is not an act this interface has; it has ` + listed(ProposeVerbs())
 }
 
 // takenBy names the acts one field belongs to, so a misplaced field teaches
@@ -510,7 +611,7 @@ func takenBy(field string) string {
 	for _, act := range ProposedActs {
 		for _, taken := range act.Fields() {
 			if taken == field {
-				owners = append(owners, act.Route)
+				owners = append(owners, act.Name())
 				break
 			}
 		}
@@ -581,7 +682,7 @@ func listed(names []string) string {
 	}
 }
 
-// proposeDescription is the tool's own description: the nine acts with the
+// proposeDescription is the tool's own description: the ten acts with the
 // word each page's button uses, and the rule that words alone propose nothing.
 //
 // It is composed from the catalogue rather than written beside it, so a verb
@@ -594,9 +695,9 @@ func proposeDescription() string {
 		"answer, ticks the ones they want and presses Apply, and their press is the act. " +
 		WordsAloneProposeNothing +
 		" Any combination of acts may be proposed together, and a goal you propose to open may be named by a " +
-		"later action of the same answer. The nine acts, by the word the interface's own button uses:")
+		"later action of the same answer. The ten acts, by the word the interface's own button uses:")
 	for _, act := range ProposedActs {
-		built.WriteString("\n- " + act.Route + " (" + act.Button + ")")
+		built.WriteString("\n- " + act.Name() + " (" + act.Button + ")")
 		if fields := act.Fields(); len(fields) > 0 {
 			built.WriteString(": " + listed(fields))
 			if len(act.OneOf) > 0 {
@@ -614,8 +715,8 @@ func proposeDescription() string {
 func proposeSchema() map[string]any {
 	properties := map[string]any{
 		"verb": map[string]any{
-			"type": "string", "enum": ProposeRoutes(),
-			"description": "Which of the nine acts this is, by its route id.",
+			"type": "string", "enum": ProposeVerbs(),
+			"description": "Which of the ten acts this is, by the name this tool lists it under.",
 		},
 		"goal": map[string]any{
 			"type":        "string",
@@ -642,7 +743,12 @@ func proposeSchema() map[string]any {
 		FieldBlockedBy: namesProperty("On " + ProposeOpen + ": the goals this one waits for."),
 		FieldBlocks:    namesProperty("On " + ProposeOpen + ": the goals that will wait for this one."),
 		FieldReason: map[string]any{"type": "string",
-			"description": "On " + ProposeWithdraw + ": the reason the approval is taken back."},
+			"description": "On " + ProposeWithdraw + ": the reason the approval is taken back. On " +
+				VerbAbandon + ": why the goal will never be worked."},
+		FieldSuccessor: map[string]any{"type": "string",
+			"description": "On " + VerbAbandon + ": the live goal carrying this one's work. " +
+				"Omit it where nothing carries it; a goal other goals wait for is then refused by the engine " +
+				"until they are waived or abandoned at a terminal."},
 		FieldBecause: map[string]any{"type": "string",
 			"description": "On " + ProposePark + ": the reason the goal is paused."},
 		FieldPriority: map[string]any{"type": "integer", "enum": []int{1, 2, 3},

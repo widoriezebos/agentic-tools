@@ -82,7 +82,7 @@ func executeBatchDiagnosisWithConfig(root, id, actor string, at time.Time, looku
 		Ledger:     ledgerOwner,
 		BaseCommit: baseCommit,
 		UpdateNext: func(goalID, status string) error {
-			return batchChildRunner(controlRoot, landingOwnerLineage, "internal", "goal", "edit", "--root", controlRoot, "--id", goalID, "--next", status, "--lineage", landingOwnerLineage)
+			return batchEditNext(controlRoot, goalID, status)
 		},
 	})
 }

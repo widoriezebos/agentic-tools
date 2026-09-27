@@ -244,6 +244,8 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.unblockGoal(w, r, route.id)
 	case routePark:
 		h.parkGoal(w, r, route.id)
+	case routeAbandon:
+		h.abandonGoal(w, r, route.id)
 	case routeUnpark:
 		h.unparkGoal(w, r, route.id)
 	case routeEditGoal:

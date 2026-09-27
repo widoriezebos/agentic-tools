@@ -36,7 +36,7 @@ func TestReceiptLineRefusesCodeWithoutItsLineAndNamesTheCommand(t *testing.T) {
 	for _, want := range []string{
 		"the landing changes code (cmd/fixture.go)",
 		"appends no RECEIPT line for goal " + receiptLineFixtureGoal,
-		`scripts/receipt.sh add --type implement --outcome shipped --goal ` + receiptLineFixtureGoal + ` --built-by coordinator --note "<what landed and how it was verified>"`,
+		`metasystem receipt add --type implement --outcome shipped --goal ` + receiptLineFixtureGoal + ` --built-by coordinator --note "<what landed and how it was verified>"`,
 		"include memory/receipts.log in the landing",
 	} {
 		if !strings.Contains(decision.Detail, want) {

@@ -26,6 +26,7 @@ func TestGoalRepairReachesAcceptRemoteAndRequiresBy(t *testing.T) {
 	repository.canonical = canonical
 	repository.mu.Unlock()
 	facts := goalAuthorityReadFacts{
+		caller:        entryCallerIdentity(),
 		repositoryTop: repository.receiptTop,
 		ledgerIdentity: func(got string) string {
 			if got != root {

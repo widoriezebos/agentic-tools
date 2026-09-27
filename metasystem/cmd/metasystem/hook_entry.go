@@ -545,16 +545,7 @@ func (o hookOwners) ChannelStatusPost(root string, stdout, stderr io.Writer) int
 }
 
 func (o hookOwners) EvidenceGC(installation string, output io.Writer) int {
-	command := exec.Command(filepath.Join(installation, "scripts", "agents", "evidence-gc.sh"))
-	command.Stdout, command.Stderr = output, output
-	if err := command.Run(); err != nil {
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) && exitError.ExitCode() > 0 {
-			return exitError.ExitCode()
-		}
-		return 126
-	}
-	return 0
+	return evidenceGC(installation, "", evidenceGCDefaultGrace(), output, output)
 }
 
 func (o hookOwners) Slug(value string) string { return lease.Slug(value) }

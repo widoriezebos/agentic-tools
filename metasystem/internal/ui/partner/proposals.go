@@ -2,6 +2,7 @@ package partner
 
 import (
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -98,16 +99,28 @@ func ProposalMayBecome(from, to string) bool {
 // ProposalRead is the goal as the Partner read it, kept with an action whose
 // act binds what it finds at the tip.
 //
-// It is on an approve and an edit and on nothing else, because those are the two
-// acts whose meaning depends on what the goal says: an approval authorises the
-// goal as it stands when the transaction runs, and an edit replaces fields of
-// it. The runner compares this against the canonical branch before it sends, so
-// a card read yesterday cannot authorise work nobody read.
+// It is on an approve, an edit and an abandon, and on nothing else, because
+// those are the three acts whose meaning depends on what the goal says: an
+// approval authorises the goal as it stands when the transaction runs, an edit
+// replaces fields of it, and an abandon ends it for good — `goal reopen` is a
+// terminal act, so no press undoes one (Astra S64-01). The runner compares this
+// against the canonical branch before it sends, so a card read yesterday cannot
+// authorise work nobody read.
 type ProposalRead struct {
 	Intent   string   `json:"intent"`
 	NextStep string   `json:"nextStep"`
 	Tier     int      `json:"tier"`
 	Labels   []string `json:"labels"`
+	// Dependents are the goal's live dependents as this reading found them: the
+	// live goals whose own blockers name it, in id order.
+	//
+	// They are on an abandon and on nothing else, because an abandon is the one
+	// act whose consequence for OTHER goals the human has to be told before
+	// they press: with a successor the engine repoints every one of them in the
+	// same act, and without one it refuses until they are waived or abandoned
+	// at a terminal (Astra S64-02). A goal that nothing waits for carries none,
+	// which is why the field is absent rather than empty.
+	Dependents []string `json:"dependents,omitempty"`
 }
 
 // Proposal is one admitted or refused action, as the message persists it, the
@@ -140,7 +153,21 @@ type Proposal struct {
 	// Words are what the last state change said: the engine's own sentence on a
 	// refusal, what was said on an unresolved answer, "" on a plain one.
 	Words string `json:"words,omitempty"`
-	At    string `json:"at"`
+	// At is when this action was PROPOSED: the instant the service admitted it,
+	// stamped once and never again.
+	//
+	// It used to be the instant of the last write, and that was the wrong fact
+	// for the one place it is read. An answered row sorted to the end of its
+	// group and read "today", so the inbox's ages were the ages of the human's
+	// own presses rather than of the asking, and "n new" counted a proposal from
+	// last week as new because somebody had just refused it (Sol's read of
+	// g1-s60, deferred). Every list that dates a proposal dates the asking.
+	At string `json:"at"`
+	// UpdatedAt is when this entry was last written, and "" on one nothing has
+	// written since it was admitted. It is what At used to carry, kept beside it
+	// rather than in place of it, because both facts are true of a line that was
+	// proposed on Monday and refused on Friday.
+	UpdatedAt string `json:"updatedAt,omitempty"`
 	// Version is how many times this entry has been written, counting the
 	// service's own admission as the first. Every press sends the version of
 	// the entry it last rendered, and the writer admits the write only against
@@ -218,19 +245,56 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 				Intent: subject.Intent, NextStep: subject.NextStep,
 				Tier: int(subject.Tier), Labels: append([]string{}, subject.Labels...),
 			}
+			// What waits for the goal is read HERE, from the rows this turn was
+			// composed against, for the reason everything else about admission
+			// is: the card is written against one reading of the ledger, and a
+			// list taken from a later one would tell the human about goals the
+			// Partner was never told about. It is on an abandon alone, because
+			// it is the abandon whose line says what becomes of them.
+			if prepared.Verb == uitools.ProposeAbandon {
+				admitted.Read.Dependents = liveDependentsOf(rows, prepared.Goal)
+			}
 		}
 	}
-	// A blocker is a goal too, and an edge naming one nobody has is an edge the
-	// act would refuse. It is checked after the subject so the refusal names
-	// whichever end is missing.
-	if blocker := strings.TrimSpace(prepared.Fields[uitools.FieldBlocker]); blocker != "" {
-		if _, there := rows[blocker]; !there && !opened[blocker] {
-			s.refuseProposal(running, admitted, "the accepted tip carries no goal "+blocker)
+	// The goal at the other end of an edge is a goal too, and an edge naming one
+	// nobody has is an edge the act would refuse. It is checked after the subject
+	// so the refusal names whichever end is missing.
+	for _, named := range edgesNamedBy(prepared.Fields) {
+		if _, there := rows[named]; !there && !opened[named] {
+			s.refuseProposal(running, admitted, "the accepted tip carries no goal "+named)
 			return
 		}
 	}
 	admitted.Offered = true
 	s.record(running, Event{Kind: EventProposal, Proposal: &admitted})
+}
+
+// edgesNamedBy is every OTHER goal one prepared action's fields name.
+//
+// Three fields carry one: the blocker a block or an unblock waits on, and the two
+// lists an open takes — the goals it will wait for, and the goals that will wait
+// for it. All three are the same claim, that a goal at the other end of an edge
+// exists, and all three were not checked: the blocker was, and an open's lists
+// went through unread, so a card could offer to open a goal waiting for a goal
+// nobody has and the refusal arrived after the human pressed (Sol's read of
+// g1-s58, deferred).
+//
+// The lists arrive as the tool joined them, comma-separated, because that is how
+// the frame carries a list of names and how the route body reads one. An empty
+// name is not a name: a trailing comma says nothing about a goal.
+//
+// In the frame's own order, so a refusal names the first missing end a reader of
+// the card would look for rather than whichever the map happened to yield.
+func edgesNamedBy(fields map[string]string) []string {
+	named := []string{}
+	for _, field := range []string{uitools.FieldBlocker, uitools.FieldBlockedBy, uitools.FieldBlocks} {
+		for _, id := range strings.Split(fields[field], ",") {
+			if trimmed := strings.TrimSpace(id); trimmed != "" {
+				named = append(named, trimmed)
+			}
+		}
+	}
+	return named
 }
 
 // refuseProposal records one action the human is not offered, with its reason.
@@ -245,13 +309,46 @@ func (s *Service) refuseProposal(running *turn, refused Proposal, reason string)
 
 // needsTheReading says which acts carry the goal as it was read.
 //
-// Two do. An approval binds the goal as it stands when the transaction runs, so
-// the card shows the intent and the next step it was proposed against and the
+// Three do. An approval binds the goal as it stands when the transaction runs,
+// so the card shows the intent and the next step it was proposed against and the
 // runner refuses a line whose goal has moved; an edit replaces fields of the
-// goal, so the same comparison keeps it from overwriting somebody else's change.
-// The other seven say what they do without depending on what the goal says.
+// goal, so the same comparison keeps it from overwriting somebody else's change;
+// and an abandon ends the goal for good, which no press undoes, so a card that
+// proposed abandoning one thing must not abandon another (Astra S64-01). The
+// other seven say what they do without depending on what the goal says.
 func needsTheReading(verb string) bool {
-	return verb == uitools.ProposeApprove || verb == uitools.ProposeEdit
+	return verb == uitools.ProposeApprove || verb == uitools.ProposeEdit ||
+		verb == uitools.ProposeAbandon
+}
+
+// liveDependentsOf is every live goal that waits for one goal, by id.
+//
+// It is the engine's own rule read from the projection rather than from the
+// tree: the verb refuses, or repoints, the LIVE goals whose own blockers name
+// the abandoned one (internal/goal/abandon.go directLiveDependents), and a row
+// of the projection says both — where it stands, and what it waits for. A
+// concluded goal that once waited is not one of them, which is why the row's
+// own `where` decides rather than the inverted relation the projection also
+// carries.
+//
+// It is the page's compare and not the owner's, and it says so: the engine's
+// dependents rule inside the transaction is what actually holds the act, and
+// this is what lets the card say, before the press, what that rule will do.
+func liveDependentsOf(rows map[string]backlog.Row, id string) []string {
+	waiting := []string{}
+	for _, row := range rows {
+		if row.Where != backlog.WhereLive || row.ID == id {
+			continue
+		}
+		for _, blocker := range row.BlockedBy {
+			if blocker == id {
+				waiting = append(waiting, row.ID)
+				break
+			}
+		}
+	}
+	sort.Strings(waiting)
+	return waiting
 }
 
 // rowsAt is the goals the accepted tip carries, by id, from the reading the
@@ -418,7 +515,10 @@ func (c *Conversation) RecordProposal(turn string, index, version int, state, wo
 	rewritten := append([]Proposal{}, proposals...)
 	held.State = state
 	held.Words = words
-	held.At = now.UTC().Format(time.RFC3339)
+	// The write's own instant, beside the asking's rather than over it: the
+	// entry's At is when the action was proposed, which is what every list that
+	// dates a proposal reads.
+	held.UpdatedAt = now.UTC().Format(time.RFC3339)
 	held.Version = version + 1
 	rewritten[index] = held
 	messages := append([]Message{}, c.messages...)

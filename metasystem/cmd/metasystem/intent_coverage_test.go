@@ -27,7 +27,7 @@ var publicPairs = []string{
 	"question ask", "question retry", "question withdraw", "question answer", "question show", "question list", "question wait",
 	"incident list", "incident claim", "incident close",
 	"status",
-	"session start", "session stop", "session report", "session handoff", "session context", "session verify",
+	"session start", "session stop", "session report", "session handoff", "session context", "session verify", "session isolate",
 	"mission start", "mission status", "mission resume", "mission repair",
 	"system start", "system stop", "system restart", "system status", "system check", "system repair",
 	"machine list", "machine start",

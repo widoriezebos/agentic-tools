@@ -74,6 +74,14 @@ type Engine struct {
 	// AnchorEffect replaces the anchor commit for this engine only; nil
 	// anchors through mission.AnchorNamed. Fixtures without Git set it.
 	AnchorEffect func(statePath, ledgerPath, identityName string) error
+	// ArmSupervision replaces arming this engine's checkout (the engine's
+	// `up` entry) for this engine only; nil execs the checkout's engine.
+	// Fixtures without live supervision set it.
+	ArmSupervision func(args []string) (stdout, stderr string, code int)
+	// SupervisionFingerprint replaces computing the checkout's live
+	// supervision fingerprint at contract preflight for this engine only;
+	// nil computes census.Fingerprint.
+	SupervisionFingerprint func(projectRoot string) (string, error)
 	// LastAnswer is what the most recent Answer on this engine committed.
 	LastAnswer AnswerEffects
 	emitter    events.Emitter

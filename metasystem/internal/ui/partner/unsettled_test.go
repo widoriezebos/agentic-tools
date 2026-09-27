@@ -119,6 +119,59 @@ func TestUnsettledLeavesOutAnActionNobodyWasOffered(t *testing.T) {
 	testutil.Expect(t, "and it is the one that was offered", held[0].Goal, "g1-s44")
 }
 
+// A proposal keeps the time it was PROPOSED, however often it is written.
+//
+// Every admitted write used to restamp the entry's At, so an answered row sorted
+// to the end of its group and read "today": the inbox's ages were the ages of the
+// human's own presses rather than of the asking, and a proposal from last week
+// counted as new because somebody had just refused it (Sol's read of g1-s60,
+// deferred). The instant of the write is not lost — it is stamped beside the
+// asking's, because both facts are true of a line proposed on Monday and refused
+// on Friday.
+func TestAWriteStampsUpdatedAtAndLeavesTheProposalsOwnInstantAlone(t *testing.T) {
+	t.Parallel()
+	proposed := unsettledLine(0, "park-goal", "g1-s44", partner.ProposalWaiting, "", 1)
+	service := transcriptOf(t, answered("t1", proposed))
+
+	inFlight, err := service.Proposed("wido", "t1", 0, 1, partner.ProposalApplying, "")
+
+	testutil.Require(t, "the write is admitted", err, nil)
+	testutil.Expect(t, "the asking's own instant is untouched", inFlight.At, proposed.At)
+	testutil.Expect(t, "and the write's instant stands beside it",
+		inFlight.UpdatedAt, "2026-09-26T12:00:00Z")
+
+	// And again on the second write, which is the one that used to make a
+	// week-old refusal read as today's asking.
+	refused, err := service.Proposed("wido", "t1", 0, inFlight.Version, partner.ProposalRefused,
+		"goal g1-s44 is claimed by m2a")
+	testutil.Require(t, "the outcome is admitted", err, nil)
+	testutil.Expect(t, "the asking is still the asking", refused.At, proposed.At)
+	testutil.Expect(t, "the last write is the last write", refused.UpdatedAt, "2026-09-26T12:00:00Z")
+
+	// The reader the inbox composes from carries both, so the row dates the
+	// asking and can still say when the last press was.
+	held, err := service.Unsettled("wido")
+	testutil.Require(t, "reading the transcript", err, nil)
+	testutil.Require(t, "the refused line is still waiting on the human", len(held), 1)
+	testutil.Expect(t, "dated by when it was proposed", held[0].At, proposed.At)
+	testutil.Expect(t, "with the write's own instant beside it",
+		held[0].UpdatedAt, "2026-09-26T12:00:00Z")
+}
+
+// A line nothing has written since it was admitted says so by carrying no write
+// at all, rather than by repeating the asking's instant twice.
+func TestAProposalNobodyHasWrittenCarriesNoUpdateInstant(t *testing.T) {
+	t.Parallel()
+	service := transcriptOf(t, answered("t1",
+		unsettledLine(0, "park-goal", "g1-s44", partner.ProposalWaiting, "", 1)))
+
+	held, err := service.Unsettled("wido")
+
+	testutil.Require(t, "reading the transcript", err, nil)
+	testutil.Require(t, "the waiting line is there", len(held), 1)
+	testutil.Expect(t, "and nothing has written it", held[0].UpdatedAt, "")
+}
+
 // A human who has never talked to the Partner has an empty reading and not a
 // failure: a transcript nobody has written is an ordinary state of a seat.
 func TestUnsettledIsEmptyWhereNothingWasProposed(t *testing.T) {

@@ -73,6 +73,11 @@ func TestEveryLedgerActOnAGoalCanBeProposed(t *testing.T) {
 // their JSON tags: a route that renamed a field would fail here rather than
 // leave the Partner proposing a field the decoder refuses. Each row below is
 // the body the route decodes, which is the one place the spelling lives.
+//
+// A row whose public flag is spelled differently from its body field says so
+// itself, through the catalogue's own map: abandon's `reason` is the body's
+// `because`, and it is the map that is joined here rather than the public name,
+// because the map is what the frame writes with.
 func TestEveryCatalogueFieldIsItsRoutesOwnBodyField(t *testing.T) {
 	t.Parallel()
 	// The bodies, by the route that decodes them. An act with no fields has no
@@ -88,13 +93,15 @@ func TestEveryCatalogueFieldIsItsRoutesOwnBodyField(t *testing.T) {
 		routePark:     fieldsOf(parkBody{}),
 		routeUnpark:   {},
 		routeEditGoal: fieldsOf(editGoalBody{}),
+		routeAbandon:  fieldsOf(abandonBody{}),
 	}
 	for _, act := range uitools.ProposedActs {
 		carried, known := bodies[act.Route]
 		testutil.Require(t, act.Route+" has a body in this test", known, true)
 		for _, field := range act.Fields() {
-			testutil.Expect(t, act.Route+" carries "+field+" in its route body",
-				contains(carried, field), true)
+			spelled := act.BodyField(field)
+			testutil.Expect(t, act.Route+" carries "+spelled+" in its route body",
+				contains(carried, spelled), true)
 		}
 	}
 	// The open's own subject is its body's `id`, which is why the catalogue

@@ -32,7 +32,14 @@ func upMetasystemRoot(explicit string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if binary, err = filepath.EvalSymlinks(binary); err != nil {
+	return upMetasystemRootOf(binary)
+}
+
+// upMetasystemRootOf is the installation an engine executable belongs to:
+// the directory above its bin directory, which carries metasystem.conf.
+func upMetasystemRootOf(binary string) (string, error) {
+	binary, err := filepath.EvalSymlinks(binary)
+	if err != nil {
 		return "", err
 	}
 	root := filepath.Dir(filepath.Dir(binary))

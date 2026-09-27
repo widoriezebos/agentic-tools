@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
 
 // The full-contract adapter self-test: one Go
@@ -41,6 +43,7 @@ type SelftestParams struct {
 	DenialEndsTurn bool // the runtime ends a turn on a denied tool
 	statusProbe    func(string) string
 	reapProbe      func(string)
+	returnCheck    func(root, job string) []string
 }
 
 func (p SelftestParams) agentsDir() string { return filepath.Join(p.Root, "artifacts", "agents") }
@@ -49,6 +52,18 @@ func (p SelftestParams) dispatch() string {
 	return filepath.Join(p.Root, "scripts", "agents", "dispatch.sh")
 }
 func (p SelftestParams) delegate() string { return filepath.Join(p.Root, "bin", "metasystem") }
+
+// checkReturn runs the shipped job-mode return checker on a self-test job.
+func (p SelftestParams) checkReturn(job string) error {
+	check := returnschema.ReturnCompleteJob
+	if p.returnCheck != nil {
+		check = p.returnCheck
+	}
+	if violations := check(p.Root, job); len(violations) > 0 {
+		return fmt.Errorf("%s selftest return for %s is incomplete: violation: %s", p.Runtime, job, strings.Join(violations, "; violation: "))
+	}
+	return nil
+}
 
 // ValidateSelftestModel refuses an absent or still-templated model value: a
 // placeholder like <model> dispatches nothing and the self-test must say so
@@ -216,7 +231,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if !p.waitForJob(mainJob) {
 		return fmt.Errorf("%s selftest dispatch failed", p.Runtime)
 	}
-	if err := runQuiet(filepath.Join(p.Root, "scripts", "assert-return-complete.sh"), "--job", mainJob); err != nil {
+	if err := p.checkReturn(mainJob); err != nil {
 		return err
 	}
 	session := p.jobField(mainJob, "sessionId")
@@ -236,7 +251,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if !p.waitForJob(followJob) {
 		return fmt.Errorf("%s selftest follow-up failed", p.Runtime)
 	}
-	if err := runQuiet(filepath.Join(p.Root, "scripts", "assert-return-complete.sh"), "--job", followJob); err != nil {
+	if err := p.checkReturn(followJob); err != nil {
 		return err
 	}
 	if p.jobField(followJob, "sessionId") != session {
