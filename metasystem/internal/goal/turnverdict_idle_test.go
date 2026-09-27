@@ -504,7 +504,7 @@ func TestIdleBacklogBlocksTwiceThenDefersClaimAndPreparesStewardContinuation(t *
 		verdict, err := store.TurnVerdict(ScanResult{}, "same-session", "", "main-1", options)
 		if err != nil || !verdict.ShouldBlock || !verdict.IdleRefusal || verdict.BlockSource == nil || *verdict.BlockSource != "idle-backlog" ||
 			!strings.Contains(verdict.Display, "waiting") ||
-			!strings.Contains(verdict.Display, fmt.Sprintf("refusal %d of 3 for this unchanged backlog", stop)) ||
+			!strings.Contains(verdict.Display, fmt.Sprintf("refusal %d of 3 in this idle interval", stop)) ||
 			!strings.Contains(verdict.Display, "at 3 request steward continuation and allow Stop unless another branch blocks") {
 			t.Fatalf("unchanged stop %d must block on claimable backlog: %+v %v", stop, verdict, err)
 		}
@@ -1746,5 +1746,50 @@ func TestClaudeTurnExitRequiresDelegateWorkNotMerelyALiveSeat(t *testing.T) {
 	liveClaim, _ := claimStore.TurnVerdict(ScanResult{}, "live-claim", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if !liveClaim.ShouldBlock || liveClaim.BlockSource == nil || *liveClaim.BlockSource != "idle-backlog" {
 		t.Fatalf("the Claude turn exit treated its still-live seat as active work on the claim: %+v", liveClaim)
+	}
+}
+
+// servingFixtureAdvance publishes a new accepted ledger commit holding files,
+// as another seat or a person changing the shared backlog would.
+func servingFixtureAdvance(t *testing.T, client *fakeGoalRepository, machine string, files map[string]*GoalFile) {
+	t.Helper()
+	client.store.mu.Lock()
+	defer client.store.mu.Unlock()
+	client.store.serial++
+	id := fmt.Sprintf("%040x", client.store.serial)
+	client.store.commits[id] = fakeGoalCommit{files: servingFixtureFiles(machine, files), at: time.Date(2026, 8, 20, 21, 0, 0, 0, time.UTC)}
+	client.store.canonical = id
+	client.accepted = id
+}
+
+// Witness for the idle-interval count: a goal opened or approved by someone
+// else between two stops is not activity of this seat and must not restart
+// the three-refusal bound. Before the fix the digest carried the claimable
+// set, so every such change reset the count to 1 and a seat on a busy ledger
+// never reached the escape.
+func TestIdleBacklogCountSurvivesAnotherSeatsBacklogChange(t *testing.T) {
+	t.Parallel()
+	store, client, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
+		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+	})
+	store.PrepareIdleContinuation = func(IdleEscalationEvent) (string, error) { return "intent-interval", nil }
+	store.RecordIdleIncident = func(IdleEscalationEvent) (string, error) { return "alert-interval", nil }
+	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
+	first, err := store.TurnVerdict(ScanResult{}, "interval", "", "main-1", options)
+	if err != nil || !first.ShouldBlock || !strings.Contains(first.Display, "refusal 1 of 3") {
+		t.Fatalf("first refusal: %+v %v", first, err)
+	}
+	servingFixtureAdvance(t, client, "bed-m1", map[string]*GoalFile{
+		"waiting":     budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+		"other-seats": budgetedQueuedGoal("other-seats", "2026-08-23T00:00:02Z"),
+	})
+	second, err := store.TurnVerdict(ScanResult{}, "interval", "", "main-1", options)
+	if err != nil || !second.ShouldBlock || !strings.Contains(second.Display, "refusal 2 of 3") || !strings.Contains(second.Display, "other-seats") {
+		t.Fatalf("another seat's new goal restarted this seat's idle count: %+v %v", second, err)
+	}
+	options.StopHookActive = true
+	third, err := store.TurnVerdict(ScanResult{}, "interval", "", "main-1", options)
+	if err != nil || third.ShouldBlock || !strings.Contains(third.Display, "reached the bound of 3") {
+		t.Fatalf("the third idle refusal of the interval did not end the turn: %+v %v", third, err)
 	}
 }

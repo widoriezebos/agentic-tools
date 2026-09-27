@@ -1260,7 +1260,7 @@ func (s *Store) enforceIdleBacklogWithWaits(verdict *Verdict, work *ClaimableBud
 	verdict.ShouldBlock = true
 	source := "idle-backlog"
 	verdict.BlockSource = &source
-	countText := fmt.Sprintf("refusal %d of 3 for this unchanged backlog; at 3 request steward continuation and allow Stop unless another branch blocks", session.IdleBlocks)
+	countText := fmt.Sprintf("refusal %d of 3 in this idle interval (no new claim, job or wait from this seat); at 3 request steward continuation and allow Stop unless another branch blocks", session.IdleBlocks)
 	verdict.Display = strings.TrimSpace(verdict.Display + "\n" + fmt.Sprintf(
 		"IDLE WITH BACKLOG: %d claimable goals await a live claim or job: %s; %s; stop_hook_active=%t; an attended human may run `metasystem session stop --by <name>`",
 		len(work.Claimable), idleBacklogNames(*work), countText, options.StopHookActive))
@@ -1292,16 +1292,30 @@ func idleBacklogNames(work ClaimableBudgetedWork) string {
 	return display
 }
 
+// idleBacklogDigest names this seat's own activity state: its claims (held,
+// landing and breach-stopped) and the checkout's non-terminal job records.
+// The claimable set is deliberately absent. Other seats and people open,
+// approve and claim goals all day on a busy ledger; when that reset the count,
+// the three-refusal bound was almost never reached and an idle-looking seat
+// fought its Stop hook for hours. The count now spans one idle interval of
+// this seat and resets only when the seat itself shows activity: a claim
+// change, a job, or a registered wait (the last two end the refusal outright).
 func idleBacklogDigest(work ClaimableBudgetedWork) string {
-	claimable := append([]string(nil), work.Claimable...)
 	claimed := append([]string(nil), work.Claimed...)
+	landing := append([]string(nil), work.Landing...)
+	fenced := make([]string, 0, len(work.fencedClaims))
+	for _, file := range work.fencedClaims {
+		fenced = append(fenced, file.Id)
+	}
 	jobs := append([]string(nil), work.NonTerminalJobs...)
-	sort.Strings(claimable)
 	sort.Strings(claimed)
+	sort.Strings(landing)
+	sort.Strings(fenced)
 	sort.Strings(jobs)
 	parts := []string{
-		"claimable\n" + strings.Join(claimable, "\n"),
 		"claimed\n" + strings.Join(claimed, "\n"),
+		"landing\n" + strings.Join(landing, "\n"),
+		"fenced\n" + strings.Join(fenced, "\n"),
 		"non-terminal-jobs\n" + strings.Join(jobs, "\n"),
 	}
 	return sha256Hex([]byte(strings.Join(parts, "\n--\n")))
@@ -1386,7 +1400,7 @@ func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, ses
 	} else {
 		verdict.IdleRefusal = false
 	}
-	detail := fmt.Sprintf("IDLE WITH BACKLOG: refusal %d reached the bound of 3 for this unchanged backlog; ", session.IdleBlocks)
+	detail := fmt.Sprintf("IDLE WITH BACKLOG: refusal %d reached the bound of 3 in this idle interval; ", session.IdleBlocks)
 	if event.IntentPrepared && claimNeeded {
 		detail += fmt.Sprintf("selected goal %s and deferred its claim as %s to the steward tick; ", goalID, options.SeatActor.historyActor())
 	} else if event.IntentPrepared {
