@@ -67,6 +67,11 @@ func Acts() []manifest.Act {
 		// proposal catalogue joined to this table could not name it at all.
 		{ID: routeEditGoal, Title: "Edit a goal", Requires: ledgerHand,
 			Does: "Rewrites the intent, the next step and the labels of a goal nobody has approved yet."},
+		// The act the Partner's card is the ask for: no page offers a button
+		// for it, and it is described because a human asking what they can do
+		// to a goal is answered from this table.
+		{ID: routeAbandon, Title: "Abandon a goal", Requires: ledgerHand,
+			Does: "Records that a goal will never be worked, with the reason, and the live goal carrying its work where there is one."},
 		{ID: routeCreateRecord, Title: "Write a record", Requires: checkoutHand,
 			Does: "Creates one decision, design, doctrine or intent record in the home its kind names."},
 		{ID: routeRecordStatus, Title: "Set a record's status", Requires: checkoutHand,
