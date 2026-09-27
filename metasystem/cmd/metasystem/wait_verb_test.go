@@ -24,9 +24,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	usagecore "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -1290,6 +1292,9 @@ func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFi
 			}
 		}
 		environment = fixture.Env(append(environment, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=1"))
+		if err := awaitPendingWaitOwnerPublished(t, root, environment); err != nil {
+			return err
+		}
 		var failures []error
 		for _, arguments := range [][]string{
 			{"up", "--metasystem-root", root, "--repo", root, "--shutdown"},
@@ -1313,6 +1318,49 @@ func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFi
 		}
 	})
 	return stop
+}
+
+// awaitPendingWaitOwnerPublished holds a shutdown until the checkout's
+// recorded supervision owner has appended its write-ahead registry row, or is
+// no longer the live recorded process. up --shutdown refuses a live owner the
+// registry does not yet name ("with no registry checkout"), and the fixture's
+// SessionStart arms with a one-second scaled budget that may end before a
+// starved owner is scheduled; the stop therefore waits for that event, not
+// for a length of time. The bound is the test's own deadline.
+func awaitPendingWaitOwnerPublished(t *testing.T, root string, environment []string) error {
+	t.Helper()
+	owner, err := supervise.ReadArmingOwner(root)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read the recorded supervision owner before shutdown: %w", err)
+	}
+	registryPath := ""
+	for _, entry := range environment {
+		if value, ok := strings.CutPrefix(entry, "METASYSTEM_SUPERVISION_REGISTRY_HOME="); ok {
+			registryPath = filepath.Join(value, ".metasystem", "armed-checkouts.jsonl")
+		}
+	}
+	if registryPath == "" {
+		if registryPath, err = registry.DefaultPath(); err != nil {
+			return err
+		}
+	}
+	ref := identity.Ref{Pid: owner.Pid, StartedAtSec: owner.PidStartedAt, StartTicks: owner.PidStartTicks, BootID: owner.BootID}
+	deadline, bounded := t.Deadline()
+	for {
+		if _, found, readErr := registry.OwnerCheckoutPath(registryPath, owner.InstanceTag); readErr == nil && found {
+			return nil
+		}
+		if identity.AliveTaggedRef(identity.KernelProber{}, ref, owner.InstanceTag) != identity.Alive {
+			return nil
+		}
+		if bounded && time.Now().After(deadline.Add(-30*time.Second)) {
+			return fmt.Errorf("supervision owner %s (pid %d) stayed alive without a registry row until the test deadline", owner.InstanceTag, owner.Pid)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // pendingWaitHealthyPreview is the healthy hook preview the installed wait
