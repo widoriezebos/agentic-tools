@@ -150,8 +150,7 @@ export function linesOf(
  * that has already been answered once is a different choice from one nobody has
  * touched (g1-s60 D3).
  */
-export function proposalLine(need: Need): string {
-  const line = lineOf(need);
+export function proposalLine(need: Need, line: Line | null = lineOf(need)): string {
   if (line === null) {
     return need.title;
   }
@@ -191,6 +190,19 @@ export function pressFor(line: Line, running = false): string {
  */
 export function toSend(lines: readonly Line[]): readonly Line[] {
   return lines.filter((line) => pressFor(line) !== "");
+}
+
+/**
+ * The lines a stopped run never reached, in the order they stand.
+ *
+ * A run stops at an answer that does not say what happened, because the act may
+ * have landed and the next line may depend on it; the lines after it were never
+ * sent, and they are the ones Continue with the rest runs. They are read from
+ * what the page holds, so each one carries the entry as the route last returned
+ * it rather than the version the first press rendered (Sol S60-C-02).
+ */
+export function notRunIn(lines: readonly Line[]): readonly Line[] {
+  return lines.filter((line) => line.mark.notRun);
 }
 
 /* --------------------------------------------------------------- the run -- */
@@ -284,6 +296,11 @@ export type ProposalActs = {
   onBulkApply: (needs: readonly Need[]) => void;
   /** The bar's Dismiss, which needs no sheet: it publishes nothing. */
   onBulkDismiss: (needs: readonly Need[]) => void;
+  /**
+   * Continue with the rest: the lines a stopped run never reached, as the route
+   * last returned them, through the same runner.
+   */
+  onContinue: (lines: readonly Line[]) => void;
   running: boolean;
 };
 
@@ -323,8 +340,15 @@ export type Applying = {
   lineOf: (need: Need) => Line | null;
   /** Every proposal row's line, in the order the rows stand. */
   linesOf: (needs: readonly Need[]) => Line[];
-  /** Apply these lines, in this order, one act each, never retried. */
-  run: (lines: readonly Line[]) => void;
+  /**
+   * Apply these lines, in this order, one act each, never retried.
+   *
+   * `done` is what the press wants said when the run has ENDED rather than when
+   * it was started: a selection cleared at the press would take the rows a
+   * stopped run never reached out of the bar that is about to offer Continue
+   * (Sol S60-C-02).
+   */
+  run: (lines: readonly Line[], done?: () => void) => void;
   /** The line a run is in flight for, or "" where none is. */
   running: boolean;
   /**
@@ -396,7 +420,7 @@ export function useProposals(ask: {
   );
 
   const run = useCallback(
-    (lines: readonly Line[]) => {
+    (lines: readonly Line[], done?: () => void) => {
       // Never a line whose act landed, however the press reached here.
       const sending = toSend(lines);
       if (sending.length === 0 || !takeRun(guard.current, sending[0].id)) {
@@ -409,6 +433,7 @@ export function useProposals(ask: {
         } finally {
           releaseRun(guard.current);
           setRunning("");
+          done?.();
         }
       })();
     },

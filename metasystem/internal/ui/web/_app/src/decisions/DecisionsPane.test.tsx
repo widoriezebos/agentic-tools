@@ -245,6 +245,7 @@ const acts: Acts = {
     onAsk: () => undefined,
     onBulkApply: () => undefined,
     onBulkDismiss: () => undefined,
+    onContinue: () => undefined,
     running: false,
   },
 };

@@ -177,6 +177,7 @@ const acts: Acts = {
     onAsk: () => undefined,
     onBulkApply: () => undefined,
     onBulkDismiss: () => undefined,
+    onContinue: () => undefined,
     running: false,
   },
 };
@@ -253,6 +254,52 @@ describe("the group's rows and its bar", () => {
     const markup = block([parking], ["t7/0", "g1-s40", "g1-s41"]);
 
     expect(markup).toContain('<span class="ms-decisions-bar-count">1 selected</span>');
+  });
+});
+
+describe("what a stopped run leaves in the group", () => {
+  const stopped = need(
+    "t7/4",
+    { title: "The fleet page reads a seat's whole chain", where: { kind: "goal", id: "g1-s46" } },
+    { index: 4 },
+  );
+
+  /** The handles of a page whose last run stopped before this row. */
+  function afterAStop(): Acts {
+    const marks = {
+      "t7#4": { ticked: true, notRun: true, refusedUnsent: "", unrecorded: null },
+    };
+    return { ...acts, proposals: { ...acts.proposals, lineOf: (one: Need) => lineOf(one, marks) } };
+  }
+
+  function stoppedBlock(): string {
+    return renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <ProposalBlock
+            needs={[parking, stopped]}
+            selected={["t7/0", "t7/4"]}
+            onSelect={() => undefined}
+            opened=""
+            onOpen={() => undefined}
+            acts={afterAStop()}
+            now={now}
+          />
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("says not run on the row the run never reached", () => {
+    expect(stoppedBlock()).toContain("The fleet page reads a seat&#x27;s whole chain · not run");
+  });
+
+  it("offers Continue with the rest from the group's head", () => {
+    expect(stoppedBlock()).toContain(">Continue with the rest</button>");
+  });
+
+  it("offers it nowhere when no run stopped", () => {
+    expect(block([parking, stopped], [])).not.toContain("Continue with the rest");
   });
 });
 

@@ -4,7 +4,7 @@ import { NavLink } from "react-router";
 import type { Need, Where as Reference } from "./api";
 import { askedLine, bandLine, blockedLine, budgetLine, destinationFor, wayThrough } from "./decisions";
 import { confirmLine, goalLine, rowFacts, rowLine, writeLabel, writeStatus } from "./groups";
-import { pressFor, type ProposalActs } from "./proposals";
+import { pressFor, proposalLine, type ProposalActs } from "./proposals";
 import { ProposalSubstance } from "../partner/Proposal";
 import { ASK_THE_PARTNER, DISMISS, lineState } from "../partner/proposing";
 import { Help } from "../help/Help";
@@ -88,7 +88,7 @@ export function InboxRow({
           </label>
         )}
         <button type="button" className="ms-decisions-row-open" aria-expanded={open} onClick={onOpen}>
-          <span className="ms-decisions-row-said">{rowLine(need)}</span>
+          <span className="ms-decisions-row-said">{saidOn(need, acts)}</span>
           <span className="ms-decisions-row-facts">
             {facts.yours && <Chip>yours</Chip>}
             {facts.tier > 0 && <Chip>tier {facts.tier}</Chip>}
@@ -108,6 +108,19 @@ export function InboxRow({
       {open && <OpenRow need={need} now={now} acts={acts} />}
     </li>
   );
+}
+
+/**
+ * The one line of substance a row is.
+ *
+ * For a proposal it is composed over everything the page holds about the line
+ * and not over the payload alone, because some of what a human has to read
+ * there is the page's own: a line a stopped run never reached says "not run"
+ * on its line, which is how the row a Continue would send is told from one
+ * nobody has touched (Sol S60-C-02).
+ */
+function saidOn(need: Need, acts: Acts): string {
+  return need.kind === "proposal" ? proposalLine(need, acts.proposals.lineOf(need)) : rowLine(need);
 }
 
 /**

@@ -376,6 +376,11 @@ export function DecisionsPane() {
         onBulkDismiss: (needs: readonly Need[]) => {
           proposals.dismiss(proposals.linesOf(needs));
         },
+        // The lines a stopped run never reached, through the same runner, as the
+        // route last returned them.
+        onContinue: (lines: readonly ProposalLine[]) => {
+          proposals.run(lines);
+        },
         running: proposals.running,
       },
     }),
@@ -485,11 +490,15 @@ export function DecisionsPane() {
           }}
           onApply={(lines) => {
             // The sheet closes on the press and the rows report the run: the
-            // lines are the page's own, and the page is what the run moves.
+            // lines are the page's own, and the page is what the run moves. The
+            // selection is cleared when the run ENDS, so a run that stopped
+            // leaves its remainder ticked beside the Continue that sends it
+            // (Sol S60-C-02).
             setProposing(null);
-            setSelected([]);
             proposals.noteBudgets(budgetsOf(lines));
-            proposals.run(lines);
+            proposals.run(lines, () => {
+              setSelected([]);
+            });
           }}
         />
       )}

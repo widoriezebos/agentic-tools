@@ -5,6 +5,7 @@ import {
   dismissLine,
   lineOf,
   linesOf,
+  notRunIn,
   portsFor,
   pressFor,
   proposalLine,
@@ -371,6 +372,69 @@ describe("the run the inbox makes", () => {
     // asked for it rather than writing a version the server has moved past.
     expect(driven.signedInFrom()[0].version).toBe(3);
     expect(driven.signedInFrom()[0].state).toBe("refused");
+  });
+});
+
+/**
+ * A run that stopped, and the press that finishes it (Sol S60-C-02).
+ *
+ * The run stops at an answer that does not say what happened, because the act
+ * may have landed and the next line may depend on it. The lines after it were
+ * never sent — they are marked "not run" and nothing about them has moved — and
+ * Continue with the rest is what sends them, through the same runner, as the
+ * route last returned them.
+ */
+describe("what a stopped run leaves, and Continue with the rest", () => {
+  /** Three lines of one press, the way a bulk sheet hands them over. */
+  function three(): Line[] {
+    return [
+      lineOf(need()) as Line,
+      lineOf(need({ id: "t7/3" }, { index: 3, version: 2 })) as Line,
+      lineOf(need({ id: "t7/4" }, { index: 4, version: 1 })) as Line,
+    ];
+  }
+
+  it("leaves the third not run where the second answers unresolved", async () => {
+    const lines = three();
+    const driven = driving(lines, {
+      sent: { [lines[1].id]: { kind: "unresolved", words: "the answer was lost" } },
+    });
+    await driven.ran;
+
+    expect(driven.sent).toEqual(["t7#2", "t7#3"]);
+    expect(driven.marks.filter((one) => one.change.notRun === true).map((one) => one.id)).toEqual(["t7#4"]);
+    // And the unresolved line keeps its own state: it is not "not run".
+    expect(driven.wrote).toContain("t7:3:3:unresolved:the answer was lost");
+  });
+
+  it("offers Continue over exactly the lines nobody sent", () => {
+    const marks: Marks = {
+      "t7#4": { ticked: true, notRun: true, refusedUnsent: "", unrecorded: null },
+    };
+    const lines = [
+      lineOf(need(), marks) as Line,
+      lineOf(need({ id: "t7/4" }, { index: 4 }), marks) as Line,
+    ];
+
+    expect(notRunIn(lines).map((one) => one.id)).toEqual(["t7#4"]);
+    // And the row says so, in the card's own words.
+    expect(proposalLine(need({ id: "t7/4" }, { index: 4 }), lines[1])).toBe(
+      "Not now · The seat census answers which machines are alive · not run",
+    );
+  });
+
+  it("sends the remainder when Continue is pressed", async () => {
+    const marks: Marks = {
+      "t7#4": { ticked: true, notRun: true, refusedUnsent: "", unrecorded: null },
+    };
+    const rest = notRunIn([lineOf(need({ id: "t7/4" }, { index: 4, version: 3 }), marks) as Line]);
+
+    const driven = driving(rest);
+    await driven.ran;
+
+    expect(driven.sent).toEqual(["t7#4"]);
+    // At the version the route last returned, which is what the row holds.
+    expect(driven.wrote).toEqual(["t7:4:3:applying:", "t7:4:4:applied:"]);
   });
 });
 

@@ -2,11 +2,11 @@ import { useMemo, useState } from "react";
 
 import type { Need } from "./api";
 import { InboxRow, type Acts } from "./InboxRow";
-import { budgetsFrom, excludedInBulk, NOTHING_SENDABLE, type Applying } from "./proposals";
+import { budgetsFrom, excludedInBulk, notRunIn, NOTHING_SENDABLE, type Applying } from "./proposals";
 import type { Backlog } from "../backlog/api";
 import { Panel } from "../backlog/Panel";
 import { ProposalSubstance } from "../partner/Proposal";
-import { APPLY, DISMISS, type Line } from "../partner/proposing";
+import { APPLY, CONTINUE, DISMISS, type Line } from "../partner/proposing";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
 
@@ -45,19 +45,39 @@ export function ProposalBlock({
 }) {
   const ticked = useMemo(() => needs.filter((need) => selected.includes(need.id)), [needs, selected]);
   const all = needs.length > 0 && ticked.length === needs.length;
+  // What a stopped run never reached. The run stops at an answer that does not
+  // say what happened, because the act may have landed and the next line may
+  // depend on it; the lines after it were never sent, and this is the one press
+  // that sends them (Sol S60-C-02).
+  const stopped = useMemo(
+    () => notRunIn(lineFor(needs, acts)),
+    [needs, acts],
+  );
   return (
     // The group block's own column layout, which the queue's block also takes.
     <div className="ms-decisions-queue">
-      <label className="ms-decisions-check ms-decisions-all">
-        <input
-          type="checkbox"
-          checked={all}
-          onChange={() => {
-            onSelect(all ? [] : needs.map((need) => need.id));
-          }}
-        />
-        Select all shown
-      </label>
+      <div className="ms-decisions-head">
+        <label className="ms-decisions-check ms-decisions-all">
+          <input
+            type="checkbox"
+            checked={all}
+            onChange={() => {
+              onSelect(all ? [] : needs.map((need) => need.id));
+            }}
+          />
+          Select all shown
+        </label>
+        {stopped.length > 0 && (
+          <Button
+            disabled={acts.proposals.running}
+            onClick={() => {
+              acts.proposals.onContinue(stopped);
+            }}
+          >
+            {CONTINUE}
+          </Button>
+        )}
+      </div>
       <ul className="ms-decisions-rows">
         {needs.map((need) => (
           <InboxRow
@@ -94,6 +114,18 @@ export function ProposalBlock({
       )}
     </div>
   );
+}
+
+/** Every row's line as the page holds it, which is what carries the marks. */
+function lineFor(needs: readonly Need[], acts: Acts): Line[] {
+  const lines: Line[] = [];
+  for (const need of needs) {
+    const line = acts.proposals.lineOf(need);
+    if (line !== null) {
+      lines.push(line);
+    }
+  }
+  return lines;
 }
 
 /**

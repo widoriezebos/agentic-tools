@@ -444,6 +444,19 @@
 }
 
 /*
+ * The group's head: what to select, and the one control a stopped run leaves
+ * behind it. Continue with the rest belongs here rather than in the selection
+ * bar, because the bar is what is ticked NOW and the remainder is what a press
+ * that has already ended never reached.
+ */
+.ms-decisions-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/*
  * The selection bar at the group's foot. It is not there at all until
  * something is ticked: a control that spends its life disabled teaches a
  * human to stop reading that part of the screen.
