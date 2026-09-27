@@ -200,3 +200,94 @@ Reviewed clean HEAD `7e0a486d12a422eae394191242e7265353af1f9b`. No files changed
 
 VERDICT: 5 material findings: C-01, C-02, C-03, C-04, C-05; 2 non-material: C-06, C-07
 
+
+---
+
+# The confirmation read of the first fix round
+
+Produced 2026-09-28 by Codex on `gpt-6-astra`, read-only, against ui-development at `9d5c8bc47` (the two fix branches merged, plus the document decoder). Verbatim.
+
+| Finding | Confirmation | Holding test and evidence |
+|---|---|---|
+| A-01 | **Not closed** | `TestIdenticalSignedInSessionApprovalIsANoOp` and `TestASecondIdenticalApproveFromASessionAnswersApplied` cover duplicate approvals. Concurrent edits still dispatch twice: the production-runner probe observed `applying@2`, `applying@3`, then two sends of the same edit. [runProposals](metasystem/internal/ui/web/_app/src/partner/proposing.ts:1181) permits this when neither initial read carries the effect; the [Go edit](metasystem/internal/goal/verbs.go:3521) records both operations without an identical-fields no-op. **SAFE fails.** |
+| A-02 | **Closed** | `TestTheNextActClassifiesAPushNobodyCouldConfirm`, `TestAPushedEntryARecoveryMayNotTouchLeavesTheActUnresolved`, and `TestTheRefreshAdvanceClassifiesTheJournalFirst` hold the reported stranded-push recovery. The new concurrency regression is D-01 below. |
+| A-03 | **Not closed** | `TestTheFirstSignInKeepsTheSeatsConversation` and `TestTheSeatsMessagesMoveToTheHumanAndLeaveTheSeatEmpty` hold completed-turn transfer. [Adopt](metasystem/internal/ui/partner/service.go:268) transfers only saved messages. Signing in during an answer leaves `running.human` and the running turn’s conversation unchanged; its [answer is appended to the emptied seat](metasystem/internal/ui/partner/service.go:1046). The named conversation loses that answer and its proposals. Sitting state also remains behind. **WORK fails.** |
+| A-04 | **Closed** | `TestAWriteBodyOneBytePastTheBoundIsRefusedForItsSize`, `TestAWriteBodyWithJSONAfterTheObjectIsRefused`, and the at-bound/whitespace controls hold the correction. The corresponding document-decoder tests cover the extra commit. |
+| A-05 | **Closed** | `TestTheFixtureAbandonRefusesAReasonThatIsNotOnOneLine` and `TestTheFixtureAbandonRefusesASuccessorThatWaitsForTheAbandonedGoal` hold both reported examples. Transitive cycles remain a residual below. |
+| B-01 | **Closed** | `TestTheIdsAndLabelsAFrameCarriesAreTheLedgersOwn`, `TestAFramePastTheLedgersBoundsIsRefusedWithoutKeepingIt`, and `TestAMessageAtTheBoundReadsBackWhateverJSONSpendsOnIt` hold the oversized-field failure and worst-case text escaping. Aggregate proposal size remains a residual. |
+| B-02 | **Closed** | `TestAListThisToolCannotReadWholeIsRefusedByItsName` checks malformed members, unsupported values, and preservation of comma-string shorthand. |
+| B-03 | **Closed** | `TestWhatHappenedToAProposalOutlastsTenExchangesWithoutOne` checks the next prompt after the outcome leaves the ordinary history window. Selection now uses the retained transcript. |
+| B-04 | **Closed** | `TestTheSkillTellsThePartnerToPropose` names both surfaces; `TestTheEmbeddedSkillIsTheKitsOwnFile` holds copy equality. |
+| C-01 | **Closed** | `reads again after an applied conflict and refuses the next line against the fresh reading` holds the reported edit-then-approve sequence. Both existing conflict sites invalidate the read. |
+| C-02 | **Closed** | `what the drawer already knows about a line` exercises the real hook through server rendering and checks the displayed outcome, absent retry, and zero sendable lines. Its interaction with C-04 remains defective below. |
+| C-03 | **Closed** | `unfolds an older card the human expanded, and folds it again when it is dismissed` holds the folding rule. The store’s expansion wiring was read. |
+| C-04 | **Not closed** | The two new runner tests hold local clearing. Across surfaces, [knownWith](metasystem/internal/ui/web/_app/src/decisions/proposals.ts:145) imports the drawer’s old `unrecorded` whenever the inbox’s own mark is null—including after successful clearing. The probe produced persisted `applied@4` with “refused: claimed; the conversation could not record this” and `Try again: true`. Clearing must reach the shared mark, or its version must prevent an older mark overriding a settled entry. **WORK fails.** |
+| C-05 | **Closed** | `keeps what it already read when the read fails, in every pane that offers one` guards all six failure paths. Source inspection confirms the successful payload and mounted child branch remain. This is source evidence, not a mounted-form test. |
+| C-06 | **Closed** | The conflict and failed-dismissal guards in `store.test.ts` cover the changed callbacks structurally. Reading confirms conflict entries are folded in and failed writes expose their words and undo dismissal. |
+| C-07 | **Closed** | `asks for the offered re-read once, after the writes have answered` guards the callback. Reading confirms `Promise.all` finishes before the single deferred reread request. |
+
+Reviewed clean HEAD `9d5c8bc472bbcb141d3015e1450d51f9dba4d622` and the complete specified diff, excluding the generated bundle. No files were edited. All named tests were **read**: Go could not create its temporary build directory, and Vitest was absent. The TypeScript probes **ran in memory against production functions**, with substituted I/O; they did not exercise the HTTP server or React lifecycle.
+
+1. **D-01 — High — Recovery can terminalize a browser act that is still executing.**
+
+   **File:** [act/recover.go:40](metasystem/internal/ui/act/recover.go:40).
+
+   **Evidence, read:** Refresh and another act now invoke whole-journal recovery concurrently with publication. After an act’s push lands but before its confirming fetch finishes, recovery finds its operation in canonical history and [marks it terminal](metasystem/internal/goal/recover.go:87). The original request subsequently calls [MarkTerminal](metasystem/internal/goal/txn.go:833), which rejects an already-terminal entry. [settle/unsettled](metasystem/internal/ui/act/act.go:553) then report an engine refusal and skip the separate authority-proof write.
+
+   **Concrete failure:** Press Refresh in another tab while an approval is confirming. The approval lands, but its originating request can answer “refused” and omit its authority-proof record. The live-owner test covers another process, not another request owned by this server process.
+
+   **Smallest fix:** Coordinate recovery with active browser publications and settlement through one shared owner, so recovery cannot take an entry away from an executing request. Add a controlled concurrent Refresh/publication test.
+
+   **Material: yes — WORK and SAFE fail.**
+
+2. **D-02 — High — Retry records success from a backlog whose canonical fetch failed.**
+
+   **File:** [proposing.ts:1186](metasystem/internal/ui/web/_app/src/partner/proposing.ts:1186).
+
+   **Evidence, ran:** With an `applying` park, `look.outcome: "failed"`, and a cached parked row, HEAD wrote only `applied` and sent nothing. The base runner attempted the act. `guardFor` checks fetch success only for approve, edit, and abandon; the new reconciliation branch uses rows for the other verbs without checking it.
+
+   **Concrete failure:** The accepted cache says parked, but the canonical goal has since resumed. A failed fetch followed by Try again permanently settles the park proposal as applied while leaving the goal running.
+
+   **Smallest fix:** Require a successful canonical read before inferring an effect and recording `ALREADY_CARRIED`; otherwise preserve an unresolved outcome.
+
+   **Material: yes — WORK and SAFE fail.**
+
+3. **D-03 — Medium — An expired approval suppresses the fresh approval needed to replace it.**
+
+   **File:** [proposing.ts:842](metasystem/internal/ui/web/_app/src/partner/proposing.ts:842).
+
+   **Evidence, ran:** An `applying` approval with unchanged displayed fields and budget, but a **relayed, expired** approval on the row, passes the guard. HEAD writes `applied` with zero sends; the base sends the approval. `carriesAlready` checks existence and tuple equality but ignores `approved.expired`. The Go no-op explicitly [requires an unexpired approval](metasystem/internal/goal/approval.go:629).
+
+   **Concrete failure:** An interrupted attempt to replace an expired approval is retried. The proposal becomes applied while the goal retains the expired approval and remains inadmissible for work.
+
+   **Smallest fix:** Exclude expired approvals from the shortcut and test retry against an expired relayed approval.
+
+   **Material: yes — WORK fails.**
+
+The departures are adjudicated as follows:
+
+- **Go departure 1:** The session-specific no-op wording and omission of a second proof are appropriate for a genuine duplicate approval; they do not close A-01’s concurrent-edit case.
+- **Go departure 2:** The pushed-entry gate and extracted `uiAdvance` are appropriate; invoking recovery without coordinating active publications is not, per D-01. Refusing unsupported breach-stop replay preserves the authority boundary.
+- **Go departure 3:** The shared seat constant, transfer semantics, fixture extraction, and existing-human test are appropriate. Moving messages alone is insufficient, and silently discarding adoption failure leaves A-03 unresolved; preserve sign-in while making transfer failure recoverable and visible.
+- **Go departure 4:** Shared bounds, ledger label validation, bounded refusal IDs, and increased decoding capacity are appropriate. Eight times the text bound is not a guaranteed bound on a complete encoded message.
+- **Go departure 5:** Combining B-01 and B-02 is justified by their shared argument-decoding changes.
+- **Go departure 6:** Adding the required test main and correcting exemption prose is appropriate; the exemption itself was not widened.
+- **Frontend C-05:** Applying the same preservation rule across six panes is justified; the backlog prop and source-helper extraction fit that correction.
+- **Frontend C-02:** Reading the existing Partner store through the hook is appropriate, but shared outcome ownership must include clearing, as C-04 demonstrates.
+- **Frontend A-01:** Omitting open and withdraw from effect inference avoids inventing success; their repeat refusals are acceptable. Effect inspection alone does not provide exclusive ownership of an in-flight act.
+
+The left items are adjudicated individually:
+
+- **Document decoder:** Already fixed at HEAD; the new trailing-JSON and whitespace tests cover it.
+- **Unbounded proposal count:** **Record residual**; aggregate overflow remains possible, but no ordinary first-use-sized answer was shown to reach it. Do not describe the reader ceiling as the writer’s guaranteed bound.
+- **Previously oversized transcripts:** **Record residual**; old files beyond the new ceiling still need recovery, but no affected user transcript was established here.
+- **Unnamed-seat sitting:** **Fix now under A-03**; the sitting can be opened before sign-in, and moving its messages without its state breaks continued sitting work.
+- **Turn in flight during sign-in:** **Fix now under A-03**; the header permits this ordinary sequence, and the answer is subsequently saved to the wrong conversation.
+- **Walkthrough transitive cycle:** **Record residual**; production validation remains intact, and this extends fixture fidelity beyond the demonstrated canned-path defect.
+- **Tool prose about the card under the answer:** **Record residual/no change needed**; the sentence is descriptive, not exclusive.
+- **Frontend halves delegated elsewhere:** Assessed in the table; A-01 and C-04 remain open.
+- **C-06/C-07 source-reading guards:** **Record residual**; they are weaker than driven provider tests, but the inspected callbacks implement the requested behavior.
+- **C-03 store wiring without a behavioral test:** **Record residual**; the folding behavior is tested and the small wiring is directly inspectable.
+
+VERDICT: 3 not closed: A-01, A-03, C-04; 3 new material: D-01, D-02, D-03; 0 new non-material: none
+
