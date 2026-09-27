@@ -434,7 +434,7 @@ export function useProposals(ask: {
   // What the Partner's own store holds about these very lines. The drawer and the
   // inbox are two readings of one record, and an act whose answer could not be
   // written down is known in the store alone (Astra C-02).
-  const { proposalMarks } = usePartner();
+  const { proposalMarks, clearProposalMark } = usePartner();
   const [standing, setStanding] = useState<Standing>({});
   const [budgets, setBudgets] = useState<Displayeds>({});
   const [running, setRunning] = useState("");
@@ -450,7 +450,14 @@ export function useProposals(ask: {
 
   const mark = useCallback((id: string, change: Partial<Mark>) => {
     setMarks((held) => ({ ...held, [id]: { ...markOf(held, id), ...change } }));
-  }, []);
+    // And the answer the run has just recorded or reconciled a newer one for is
+    // dropped from the SHARED mark, not only from this page's own: it is the
+    // drawer's mark the inbox reads, and a copy cleared here left the drawer's
+    // standing to be imported again (Astra C-04).
+    if (change.unrecorded === null) {
+      clearProposalMark(id);
+    }
+  }, [clearProposalMark]);
 
   const reconcile = useCallback((id: string, proposal: Proposal) => {
     setStanding((held) => ({ ...held, [id]: proposal }));

@@ -90,3 +90,25 @@ describe("what the drawer's dismissal does with what its writes answer", () => {
     expect(times(body, "askTheReread")).toBe(1);
   });
 });
+
+/**
+ * The answer a page holds for want of a record is held in the STORE, and the
+ * store is what clears it (Astra C-04).
+ *
+ * The drawer and the inbox read one mark, because they are two readings of one
+ * record. A surface that has just recorded or reconciled a newer outcome must
+ * therefore be able to drop the old answer where both of them read it; the inbox
+ * cleared only its own copy, and went on importing the drawer's obsolete refusal
+ * over an entry the record had applied. This is read out of the source for the
+ * reason the guards above are: a press is the only thing that reaches the
+ * callback.
+ */
+describe("the answer the store holds for want of a record", () => {
+  it("can be cleared by the surface that recorded a newer outcome", () => {
+    const body = bodyOf("clearProposalMark");
+    expect(body).not.toBe("");
+    // The shared mark, through the same writer every other mark goes through.
+    expect(body).toContain("mark(id,");
+    expect(body).toContain("unrecorded: null");
+  });
+});
