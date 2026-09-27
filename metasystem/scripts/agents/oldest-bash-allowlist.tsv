@@ -99,7 +99,6 @@ bare-test	scripts/agents/path-class-fixtures.sh	1b6b2f987a066511d10c3709de688ec3
 bare-test	scripts/agents/path-class-fixtures.sh	beca019e194f4e1f137464a52dfcccd6afb548d7013c386c403f3deb727fcec1	[[ -n "\$proof_out" ]]
 bare-test	scripts/agents/static-reproof-fixtures.sh	beca019e194f4e1f137464a52dfcccd6afb548d7013c386c403f3deb727fcec1	[[ -n "\$proof_out" ]]
 bare-test	scripts/agents/static-reproof-fixtures.sh	f3cb0757061d0e10bc4bc91ba1b7033f755f0605da664dca4e6beb2c126d6d4b	[[ -n "$proof_out" ]]
-bare-test	scripts/agents/suite-progress-fixtures.sh	9cfaaa6c7fca0d93c1061d2789c70cb26334b1b0db736f202659f59541c4c58c	[[ -n "$evidence_dir" && -f "$evidence_dir/copy-note.txt" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	158b0a6c52bc9da0ea5cccb61a98c5be36d9f5d96c3ed6ccfded66f1815364f5	[[ "${operator_env[*]}" == *"METASYSTEM_CENSUS_PROCESS_FILE=$operator_process_fixture"* ]]
 bare-test	scripts/agents/supervision-fixtures.sh	57473eecd6bc76eb86dd2a8119c94832dea0b4a18546b20d92a6f753cdad1217	[[ -f "$file" ]] && [[ "$("$engine" json get --file "$file" --field "$field" 2>/dev/null)" == "$expected" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	5f0f5a4614271736bdd51b853da109f4f03f040002a4dcb92e2b902854d72233	[[ "$(json_field "$state" "components.$1.pid")" != "$2" ]]
