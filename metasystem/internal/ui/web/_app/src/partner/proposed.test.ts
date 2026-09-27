@@ -176,6 +176,7 @@ describe("how the press gets there", () => {
   const SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..");
   const STORE = readFileSync(path.join(SRC, "partner", "store.tsx"), "utf8");
   const CARD = readFileSync(path.join(SRC, "partner", "Proposal.tsx"), "utf8");
+  const TRANSCRIPT = readFileSync(path.join(SRC, "partner", "Transcript.tsx"), "utf8");
 
   /**
    * The bar's own two writes and no third mechanism: the card the conversation is
@@ -206,6 +207,25 @@ describe("how the press gets there", () => {
     // one line while it has something waiting, and that line is what a press
     // opening at that answer is brought up to.
     expect(CARD.match(/box\.current = element;/g)).toHaveLength(2);
+  });
+
+  /**
+   * And where the press had to OPEN the drawer, the column that is mounted by it
+   * opens at that card rather than running to the end. The column's opening is
+   * decided at its first render, out of the store's target and the cards it is
+   * carrying, and it is read before anything scrolls anywhere (Sol S61-C-01).
+   */
+  it("opens the column at the card instead of the end, when the press mounted it", () => {
+    expect(TRANSCRIPT).toContain("openAt.current = opensAt(showing, cardsCarried(store));");
+
+    const consults = TRANSCRIPT.indexOf("const opening = openAt.current;");
+    const toTheEnd = TRANSCRIPT.indexOf("scroller.scrollTop = scroller.scrollHeight;");
+    expect(consults).toBeGreaterThan(-1);
+    expect(consults).toBeLessThan(toTheEnd);
+    // Spent as it is read, so that everything after the opening is the
+    // follow-down's business again.
+    expect(TRANSCRIPT).toContain('openAt.current = "";');
+    expect(TRANSCRIPT).toContain('if (opening !== null && opening !== "") {');
   });
 });
 

@@ -4,7 +4,7 @@ import { NavLink, useNavigate } from "react-router";
 
 import type { Message, Page } from "./api";
 import { chipOf, sheetNote, whenOf } from "./capture";
-import { nameOf } from "./conversation";
+import { nameOf, type Store } from "./conversation";
 import { DepositCard } from "./Deposit";
 import { useTypefaceOn } from "./FontControl";
 import { Looked } from "./Looked";
@@ -12,7 +12,7 @@ import { ProposalCard } from "./Proposal";
 import { cardID } from "./proposing";
 import { namesIn, runsIn, type Names } from "./references";
 import { ring } from "./ringing";
-import { atEnd, scrollerOf } from "./scrolling";
+import { atEnd, opensAt, scrollerOf } from "./scrolling";
 import { usePartner } from "./store";
 import { SuggestionCard } from "./Suggestion";
 import { depositID, THE_INTERFACES } from "./sitting";
@@ -70,7 +70,7 @@ const PARTNER = "Project Partner";
 const MARK = 16;
 
 export function Transcript() {
-  const { store } = usePartner();
+  const { store, showing } = usePartner();
   const messages = store.messages;
   const firstRendered = Math.max(0, messages.length - RENDERED);
   const column = useRef<HTMLDivElement | null>(null);
@@ -89,6 +89,22 @@ export function Transcript() {
   // The face and the size a human chose for this conversation, on the column
   // they chose it for and on nothing above it.
   useTypefaceOn(column);
+
+  // Where this column opens, decided at its first render and spent at its
+  // first scroll.
+  //
+  // A drawer that opens because a chip on a goal's row was pressed, or because
+  // the closed bar's count was, opens AT a card: the press writes the target and
+  // then this column is mounted. The card's own effect has already brought the
+  // column to it by the time the opening scroll below runs — a child's effect
+  // runs before its parent's — so what the opening has to do is leave it there
+  // instead of running to the end, which in a long conversation is not where the
+  // human asked to be (Sol S61-C-01). Nobody having asked for a card, the end is
+  // where a conversation opens.
+  const openAt = useRef<string | null>(null);
+  if (openAt.current === null) {
+    openAt.current = opensAt(showing, cardsCarried(store));
+  }
 
   // Where the human is in the conversation, from the scroller itself. It is
   // the only thing that clears the pill: no timer takes it away.
@@ -118,6 +134,13 @@ export function Transcript() {
   useEffect(() => {
     const scroller = scrollerOf(column.current);
     if (scroller === null) {
+      return;
+    }
+    // The opening, spent once and whatever it was, so that everything after it
+    // is the follow-down's business again.
+    const opening = openAt.current;
+    openAt.current = "";
+    if (opening !== null && opening !== "") {
       return;
     }
     if (following.current) {
@@ -165,6 +188,21 @@ export function Transcript() {
       )}
     </div>
   );
+}
+
+/**
+ * The proposal cards this column is carrying, which is what an opening target
+ * has to be one of: every answered turn that proposed something, and the answer
+ * arriving now where it has.
+ */
+function cardsCarried(store: Store): string[] {
+  const carried = store.messages
+    .filter((message) => (message.proposals ?? []).length > 0)
+    .map((message) => cardID(message.turn));
+  if (store.live.turn !== "" && store.live.proposals.length > 0) {
+    carried.push(cardID(store.live.turn));
+  }
+  return carried;
 }
 
 function Said({
