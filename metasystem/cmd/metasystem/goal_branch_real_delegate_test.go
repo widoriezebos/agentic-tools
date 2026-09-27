@@ -86,7 +86,7 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
 				return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit,
 					"--brief", brief, "--selected-installation", selected}, goalBranchReadDependencies{
-					Binary: filepath.Join(worktree, "bin", "metasystem"), Gate: func(string) (string, error) { return "green", nil },
+					Gate: func(string) (string, error) { return "green", nil },
 				})
 			})
 			t.Logf("branch read: code=%d stdout=%q stderr=%q", code, stdout, stderr)

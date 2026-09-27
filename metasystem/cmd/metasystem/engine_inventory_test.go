@@ -65,6 +65,7 @@ var engineBindingStandardTests = []string{
 	"TestRefusalQuotesPathFacts",
 	"TestRunOwnerSurvivesTestingWorkerFilters",
 	"TestSecondBaseMoveRefusesBaseMoved",
+	"TestPreparationRestartAllowanceIsInvocationLocal",
 	"TestTestListCheckPlanAndVerifyWithoutLaunching",
 	"TestTestPlanReArmsOnALandedEngine",
 	"TestTestRunRearmsOnALandedEngine",

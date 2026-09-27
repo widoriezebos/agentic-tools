@@ -82,11 +82,11 @@ func TestGLEBatchMovedRetryRejectsRevisedMemberBeforePublication(t *testing.T) {
 	if err := authorizeBatchMember(root, record, record.Units[0]); err != nil {
 		t.Fatalf("initial live claim was not authorized: %v", err)
 	}
-	originalChild, originalVerify, originalPush := batchChildRunner, batchVerifyRebasedSeries, batchMovedEndpointPush
+	originalVerify, originalPush := batchVerifyRebasedSeries, batchMovedEndpointPush
 	t.Cleanup(func() {
-		batchChildRunner, batchVerifyRebasedSeries, batchMovedEndpointPush = originalChild, originalVerify, originalPush
+		batchVerifyRebasedSeries, batchMovedEndpointPush = originalVerify, originalPush
 	})
-	batchChildRunner = func(string, string, ...string) error { return nil }
+	stubBatchOwnerCalls(t, func(ownerInvocation, ...string) error { return nil })
 	verified, pushed, firstAttempt := 0, 0, 0
 	revisedCommit := ""
 	batchVerifyRebasedSeries = func(_ string, _ batch.Record, trees []string) error {

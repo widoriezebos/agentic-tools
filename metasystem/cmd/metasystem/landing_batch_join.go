@@ -434,9 +434,11 @@ func productionForwardHandover(request batchJoinRequest, batchID string, source 
 	if err != nil {
 		return err
 	}
-	return batchChildRunner(request.SeatRoot, source.Lineage, "goal", "handover", "--root", request.SeatRoot,
-		"--id", request.GoalID, "--lineage", source.Lineage, "--target-machine", machine,
-		"--target-lineage", landingOwnerLineage, "--target-claim-epoch", fmt.Sprint(holder.ClaimEpoch), "--batch", batchID)
+	// The joining seat's own process is the supplied identity, as the
+	// handover child's parent was, and the request carries the seat's lineage.
+	return batchOwnerCalls.handover(ownerCallFromThisProcess(source.Lineage), goalHandoverRequest{Root: request.SeatRoot,
+		GoalID: request.GoalID, TargetMachine: machine, TargetLineage: landingOwnerLineage,
+		TargetEpoch: holder.ClaimEpoch, Batch: batchID})
 }
 
 func runBatchJoin(args []string) int {

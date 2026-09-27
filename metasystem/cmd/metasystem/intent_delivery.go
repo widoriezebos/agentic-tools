@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -222,6 +223,9 @@ type intentDeliveryOwners struct {
 	batchJoin    func(batchJoinRequest) (batch.Record, error)
 	now          func() time.Time
 	foldUnitHook func(inv *intentInvocation, run string) int
+	// calls are the owner functions public commands call in this process
+	// (intent_owner_calls.go); nil selects the production owners.
+	calls *intentOwnerCalls
 }
 
 // intentBranchState is the goal branch as the landing owners read it.
@@ -238,11 +242,7 @@ func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 		process:      runIntentOwnerProcess,
 		executable:   os.Executable,
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
-			binary, err := os.Executable()
-			if err != nil {
-				return branch.BranchReadResult{}, 1, err
-			}
-			return goalBranchReadRun(args, goalBranchReadDependencies{Binary: binary})
+			return goalBranchReadRun(args, goalBranchReadDependencies{})
 		},
 		branchState: productionIntentBranchState,
 		landPrep: func(args []string) (goalBranchLandPrepOutcome, int, error) {
@@ -934,14 +934,18 @@ func (inv *intentInvocation) dispatchReview(targets []intentTarget, args []strin
 	return inv.collectReview(targets, outcome)
 }
 
-// delegate runs `metasystem internal delegate` and reads its typed outcome.
+// delegate calls the delegate boundary in this process and reads its typed
+// outcome. The installation is the selected engine's, as the former
+// `internal delegate` child derived it from its own executable; the
+// dispatch script starts in the installation with no input.
 func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (delegateOutcome, *intentResult) {
 	owners := inv.delivery()
 	binary, err := owners.executable()
 	if err != nil {
 		return delegateOutcome{}, &intentResult{Targets: targets, Outcome: intentFailed, Summary: err.Error()}
 	}
-	ran := owners.process(intentProcess{argv: append([]string{binary, "internal", "delegate"}, args...), dir: inv.layout.InstallationRoot})
+	request := delegateRequest{rootOverride: os.Getenv("METASYSTEM_DELEGATE_ROOT"), engine: binary, args: args, dir: inv.layout.InstallationRoot}
+	ran := ownerCall(func(stdout, stderr io.Writer) int { return inv.ownerCalls().delegate(request, stdout, stderr) })
 	var outcome delegateOutcome
 	if ran.err != nil || json.Unmarshal(bytes.TrimSpace(ran.stdout), &outcome) != nil || outcome.Outcome == "" {
 		detail := "the delegate boundary returned no typed outcome"

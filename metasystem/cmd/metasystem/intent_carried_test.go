@@ -68,6 +68,7 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 	b.owners = defaultIntentOwners()
 	delivery := defaultIntentDeliveryOwners()
 	delivery.executable = func() (string, error) { return b.engine, nil }
+	delivery.calls = recordingOwnerCalls([]string{b.engine, "internal"}, func(argv []string) { b.calls = append(b.calls, argv) })
 	delivery.process = func(process intentProcess) intentProcessResult {
 		b.calls = append(b.calls, append([]string(nil), process.argv...))
 		if len(process.argv) > 3 && process.argv[2] == "goal" && process.argv[3] == "carry" && !b.unproven {

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -294,10 +295,7 @@ func (inv *intentInvocation) carriedRefresh(primary string, targets []intentTarg
 	if _, err := inv.work().git(primary, "fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main"); err != nil {
 		return "", &intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: "the code origin cannot be fetched: " + err.Error() + "; nothing more was done"}
 	}
-	ran, problem := inv.engineVerb("goal", "fetch", "--root", primary)
-	if problem != nil {
-		return "", problem
-	}
+	ran := ownerCall(func(stdout, stderr io.Writer) int { return inv.ownerCalls().goalFetch(stdout, stderr, primary) })
 	output := string(ran.stdout)
 	_, tip, _ := strings.Cut(output, "tip=")
 	tip, _, _ = strings.Cut(tip, " ")
