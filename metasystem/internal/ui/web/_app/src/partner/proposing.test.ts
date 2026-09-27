@@ -1762,6 +1762,98 @@ describe("the run, in order", () => {
   });
 
   /**
+   * And the settle of a carried line is an outcome write of this run's own, so a
+   * refusal of it stops the run too (Wido's ruling, the fourth pass).
+   *
+   * The line is one another press began and whose act the reading already shows
+   * landed: this press takes it over and settles it, with no act of its own. Where
+   * that takeover is refused — another press took the line first, and left it
+   * however it left it — nothing of this run is out for the line, so there is
+   * nothing to hold; but the press that has the line may be applying an act a line
+   * behind this one is about, exactly as at an `in-flight` answer. So the view is
+   * reconciled to the entry that came back, the rest say "not run", and Continue —
+   * a fresh press with its own attempt and its own read — compares them afresh.
+   */
+  it("stops where the takeover of a carried line was refused, and leaves the rest for Continue", async () => {
+    const read = { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] };
+    const one = card(
+      [
+        proposal({ index: 0, state: "applying" }),
+        proposal({ index: 1, verb: "approve-goal", fields: {}, read }),
+      ],
+      {},
+      { [lineID("t1", 1)]: { budget: BOX, source: "goal" } },
+    );
+    // The goal is parked, so the park another press began is carried by the
+    // reading and this press settles it rather than sending anything.
+    const before: Looked = {
+      rows: [row({ state: "parked", budget: BOX })], defaults: {}, outcome: "current", message: "",
+    };
+    // And the goal as another press's edit leaves it, for the read Continue takes.
+    const after: Looked = {
+      rows: [row({ state: "parked", intent: "Something else entirely.", budget: BOX })],
+      defaults: {}, outcome: "current", message: "",
+    };
+    // The entry as the press that took the line first left it.
+    const taken: Proposal = { ...one.lines[0], state: "refused", words: "goal is claimed", version: 5 };
+    const driven = driving(one.lines, {
+      looks: [before, after],
+      writes: { [`${one.lines[0].id}:applying`]: { kind: "conflict", proposal: taken } },
+    });
+
+    await runProposals(one.lines, driven.ports);
+
+    // No act at all, and the settle was never written: the line is not this
+    // press's to settle.
+    expect(driven.sent).toEqual([]);
+    expect(driven.written).toEqual([
+      { line: one.lines[0].id, state: "applying", words: "", version: 1 },
+    ]);
+    expect(driven.reconciled).toEqual([taken]);
+    expect(driven.looks.length).toBe(1);
+    // Nothing is held for it: this run published nothing on that line.
+    expect(markAfter(
+      { ticked: true, notRun: false, refusedUnsent: "", unrecorded: null },
+      driven.marked, one.lines[0].id,
+    ).unrecorded).toBeNull();
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { notRun: true } });
+
+    // Continue: the line the stopped run never reached, compared against a read
+    // of its own.
+    await runProposals([one.lines[1]], driven.ports);
+
+    expect(driven.looks.length).toBe(2);
+    expect(driven.sent).toEqual([]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { refusedUnsent: GOAL_CHANGED } });
+  });
+
+  /** And the same where the takeover landed and the settle itself was refused. */
+  it("stops where the settle of a carried line was refused, and holds nothing for it", async () => {
+    const lines = card([proposal({ index: 0, state: "applying" }), proposal({ index: 1, goal: "refunds" })]).lines;
+    // The entry as a press that took the line over after this one's takeover
+    // left it.
+    const taken: Proposal = { ...lines[0], state: "applying", words: "", version: 7 };
+    const driven = driving(lines, {
+      look: { rows: [row({ state: "parked" })], defaults: {}, outcome: "current", message: "" },
+      writes: { [`${lines[0].id}:applied`]: { kind: "conflict", proposal: taken } },
+    });
+
+    await runProposals(lines, driven.ports);
+
+    expect(driven.sent).toEqual([]);
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 2 },
+    ]);
+    expect(driven.reconciled).toEqual([taken]);
+    expect(markAfter(
+      { ticked: true, notRun: false, refusedUnsent: "", unrecorded: null },
+      driven.marked, lines[0].id,
+    ).unrecorded).toBeNull();
+    expect(driven.marked).toContainEqual({ line: lines[1].id, change: { notRun: true } });
+  });
+
+  /**
    * Astra's F-01 sequence, whole: the page never rebases, and it never goes on.
    *
    * This tab's edit of G is refused, and its outcome write is delayed. Another

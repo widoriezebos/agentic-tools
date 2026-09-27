@@ -1310,10 +1310,13 @@ export function newAttempt(): string {
  *     run goes past it only where what they left is settled;
  *   - the act is sent once, and its answer is written onto the line — two writes
  *     per line and no more, so a reload during a run finds the line in flight;
- *   - an outcome write the server refuses is never written again at the version it
- *     comes back with: the answer is held on the line, the entry is shown, and the
- *     run stops there, because the press that owns the line now may be applying an
- *     act a line behind this one is about;
+ *   - an outcome write of this run's own that the server refuses is never written
+ *     again at the version it comes back with: the entry is shown, the answer is
+ *     held on the line where there is one, and the run stops there, because the
+ *     press that owns the line now may be applying an act a line behind this one is
+ *     about. The settle of a carried line is such a write, at both of its halves —
+ *     the takeover and the `applied` — and holds nothing, because this run
+ *     published nothing on that line;
  *   - a refusal is passed; anything that does not say what happened stops the run
  *     and the lines after it say "not run";
  *   - a refusal a sign-in would remedy ends the run at that line and NEVER waits:
@@ -1348,8 +1351,13 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
    * One line the reading shows the goal already carries: recorded applied, with
    * no act of this run's own, and what the record answered kept as every other
    * outcome write's is.
+   *
+   * It answers what its write did, because a refusal of it stops the run: this is
+   * an outcome write of this run's own, and the press that has the line may be
+   * applying an act a line behind this one is about (Wido's ruling, fourth pass).
+   * Nothing is held for a refused one — this run published nothing on that line.
    */
-  const settleCarried = async (one: Line): Promise<void> => {
+  const settleCarried = async (one: Line): Promise<Written["kind"]> => {
     const settled = await ports.record(one, "applied", ALREADY_CARRIED, attempt);
     if (settled.kind === "conflict") {
       ports.reconcile(settled.proposal, one);
@@ -1358,6 +1366,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     } else {
       ports.mark(one, { unrecorded: null });
     }
+    return settled.kind;
   };
   for (const [at, line] of lines.entries()) {
     if (stale && needsTheCompare(line.verb)) {
@@ -1418,6 +1427,14 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
         // answer this page was holding for want of a record is history now
         // (Astra C-04).
         ports.mark(line, { unrecorded: null });
+      }
+      // On a CARRIED line this write is the takeover that settles it, which makes
+      // it an outcome write of this run's own: a refusal of it stops the run,
+      // whatever the entry says, because the press that took the line first may be
+      // applying an act a line behind this one is about (Wido's ruling, fourth
+      // pass). A line about to be SENT whose entry somebody has settled is
+      // accounted for by that entry, and the run goes on to the next line.
+      if (!carried && settledState(started.proposal.state)) {
         continue;
       }
       stoppedAt = at;
@@ -1440,7 +1457,10 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     // in flight for good. It is also what the transition table wants: `applied`
     // comes only from `applying` (internal/ui/partner/proposals.go).
     if (carried) {
-      await settleCarried(sending);
+      if ((await settleCarried(sending)) === "conflict") {
+        stoppedAt = at;
+        break;
+      }
       continue;
     }
     const answered = await ports.send(sending);
