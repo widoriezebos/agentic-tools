@@ -22,7 +22,7 @@ func TestAuthorize(t *testing.T) {
 		{"holder writes", "holder-only", cls("MAIN", true, ""), "", true},
 		{"holder runs stop custodian", "stop-custodian", cls("MAIN", true, ""), "", true},
 		{"steward runs stop custodian", "stop-custodian", cls("STEWARD", false, ""), "", true},
-		{"human string cannot run stop custodian", "stop-custodian", cls("HUMAN", false, ""), "", false},
+		{"human runs stop custodian (rule H1)", "stop-custodian", cls("HUMAN", false, ""), "", true},
 		{"delegate cannot run stop custodian", "stop-custodian", cls("DELEGATE", false, ""), "", false},
 		{"holder cannot standing-reap", "supervision-only", cls("MAIN", true, ""), "", false},
 		{"non-holder main refused holder-only", "holder-only", cls("MAIN", false, ""), "", false},
@@ -38,6 +38,36 @@ func TestAuthorize(t *testing.T) {
 		err := Authorize(c.mode, c.class, c.job)
 		if (err == nil) != c.allowed {
 			t.Errorf("%s: Authorize(%s) allowed=%v, err=%v", c.name, c.mode, err == nil, err)
+		}
+	}
+}
+
+// Rule H1 (verbs-object-action 3.6): the authenticated human is authorized
+// for every control-plane mode, holder or not, with or without a job.
+func TestAuthorizeAdmitsTheHumanInEveryMode(t *testing.T) {
+	if len(Modes()) == 0 {
+		t.Fatal("the mode set is empty")
+	}
+	for _, mode := range Modes() {
+		for _, holder := range []bool{false, true} {
+			for _, job := range []string{"", "job-7"} {
+				if err := Authorize(mode, cls("HUMAN", holder, ""), job); err != nil {
+					t.Errorf("Authorize(%s, HUMAN holder=%v job=%q) refused the human: %v", mode, holder, job, err)
+				}
+			}
+		}
+	}
+}
+
+func TestModesIsTheValidModeSet(t *testing.T) {
+	modes := Modes()
+	modes[0] = "tampered"
+	if !ValidMode("holder-only") || ValidMode("tampered") {
+		t.Fatal("Modes must return a copy the caller cannot use to change the mode set")
+	}
+	for _, mode := range Modes() {
+		if !ValidMode(mode) {
+			t.Errorf("mode %s from Modes is not valid", mode)
 		}
 	}
 }

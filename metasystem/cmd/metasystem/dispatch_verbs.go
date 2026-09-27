@@ -17,8 +17,10 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"golang.org/x/sys/unix"
 )
@@ -1228,6 +1230,7 @@ func runDispatchBreachStop(args []string) int {
 	root := pathFlag(flags, "root", "", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	revision := flags.Uint64("revision", 0, "exact accepted goal revision")
+	by := flags.String("by", "", "the ordering person's name (a person's stop; default: the enrolled terminal's name)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -1248,12 +1251,47 @@ func runDispatchBreachStop(args []string) int {
 	if err != nil {
 		return recordExit(err)
 	}
-	batch, err := dispatchcore.EnsureBreachStop(*root, *goalID, *revision, now)
+	human, err := breachStopOrderingHuman(*root, caller, strings.TrimSpace(*by), now, humanauthority.Prove)
+	if err != nil {
+		return recordExit(err)
+	}
+	var batch goal.StopBatch
+	if human != "" {
+		batch, err = dispatchcore.EnsureBreachStopOrderedBy(*root, *goalID, *revision, now, human)
+	} else {
+		batch, err = dispatchcore.EnsureBreachStop(*root, *goalID, *revision, now)
+	}
 	if err != nil {
 		return recordExit(err)
 	}
 	printJSON(batch)
 	return 0
+}
+
+// breachStopOrderingHuman names the person a human-ordered breach stop
+// records as its actor (rule H1): --by, else the enrolled terminal's
+// recorded name. It returns "" for the machinery custodians, which record
+// the custodian lineage as before, and refuses a --by from any caller that
+// is not a person, since the name would then be forged attribution.
+func breachStopOrderingHuman(root string, caller lease.ClassifyResult, by string, now time.Time,
+	prove func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)) (string, error) {
+	if caller.Class != lease.ClassHuman {
+		if by != "" {
+			return "", fmt.Errorf("job breach-stop: --by names the person ordering the stop; a %s caller records the custodian and takes no --by", caller.Class)
+		}
+		return "", nil
+	}
+	if by != "" {
+		return by, nil
+	}
+	proof, err := prove(root, int64(os.Getppid()), nil, now)
+	if err == nil {
+		flags := &syncFlags{root: root}
+		if err = resolveGoalHuman(flags, proof); err == nil {
+			return flags.by, nil
+		}
+	}
+	return "", fmt.Errorf("job breach-stop: the stop is admitted for a person but records who ordered it, and this terminal has no enrolled name (%v); rerun with --by NAME, or enroll this terminal with metasystem system enroll --name NAME", err)
 }
 
 func runDispatchBreachStopRoutes(args []string) int {

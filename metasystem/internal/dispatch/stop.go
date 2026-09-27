@@ -132,10 +132,20 @@ func stopIdentity(id string, revision, epoch uint64) (string, string) {
 // EnsureBreachStop closes or rediscovers the exact fence and creates its
 // resumable batch. The caller must cancel only after this function returns.
 func EnsureBreachStop(root, id string, revision uint64, now time.Time) (goal.StopBatch, error) {
-	return ensureBreachStopWithReads(root, id, revision, now, concreteGoalAdmissionReads())
+	return ensureBreachStopWithReads(root, id, revision, now, concreteGoalAdmissionReads(), "")
 }
 
-func ensureBreachStopWithReads(root, id string, revision uint64, now time.Time, reads goalAdmissionReads) (goal.StopBatch, error) {
+// EnsureBreachStopOrderedBy is EnsureBreachStop ordered by a person (rule
+// H1): the fence closure it publishes names human as its actor, in the
+// ledger history and the transaction's intent, instead of the custodian.
+func EnsureBreachStopOrderedBy(root, id string, revision uint64, now time.Time, human string) (goal.StopBatch, error) {
+	if human == "" {
+		return goal.StopBatch{}, fmt.Errorf("a human-ordered breach stop needs the person's name")
+	}
+	return ensureBreachStopWithReads(root, id, revision, now, concreteGoalAdmissionReads(), human)
+}
+
+func ensureBreachStopWithReads(root, id string, revision uint64, now time.Time, reads goalAdmissionReads, human string) (goal.StopBatch, error) {
 	binding, err := resolveGoalBindingWithReads(root, id, now, reads)
 	if err != nil {
 		return goal.StopBatch{}, err
@@ -165,7 +175,7 @@ func ensureBreachStopWithReads(root, id string, revision uint64, now time.Time, 
 		}
 		reason := stopReasonFor(binding.File, budget)
 		if reason == "" {
-			return goal.StopBatch{}, fmt.Errorf("goal %s revision %d has no live-stop breach", id, binding.Revision)
+			return goal.StopBatch{}, fmt.Errorf("goal %s revision %d has no live-stop breach: a breach stop fences only a revision over its budget, and fencing one inside it would contradict the budget record; to stop its work, run metasystem work stop REF for the job, or metasystem goal pause %s --reason TEXT to park the goal", id, binding.Revision, id)
 		}
 		if reason == goal.StopReasonElapsedLimit {
 			firingEvidence = &goal.StopFiringEvidence{
@@ -181,7 +191,7 @@ func ensureBreachStopWithReads(root, id string, revision uint64, now time.Time, 
 		request := goal.CloseStopRequest{
 			VerbRequest: goal.VerbRequest{
 				Endpoint: endpoint,
-				Actor:    goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage},
+				Actor:    goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage, Human: human},
 				Ulid:     ulid, Now: now, ClaimEpoch: binding.Capability.ClaimEpoch,
 			},
 			GoalID: id, StopID: stopID, Reason: reason, Capability: binding.Capability,
