@@ -71,6 +71,18 @@ export function waitsOnTheHuman(line: Line): boolean {
   return line.offered && line.state !== "applied" && line.state !== "dismissed";
 }
 
+/**
+ * The card a press on this goal's chip opens the conversation at, or "".
+ *
+ * The newest such line's own answer, because that is the line the chip's words
+ * are about: a human proposed two things about one goal wants the one that was
+ * said last, and the older one is on the card above it.
+ */
+export function showsAt(cards: readonly Card[], goal: string): string {
+  const found = proposedFor(cards, goal);
+  return found.length === 0 ? "" : found[0].card;
+}
+
 /* --------------------------------------------------------------- the words -- */
 
 /** What the chip says, and whether it says it in the danger colour. */

@@ -1,4 +1,5 @@
 import { chipName, chipWords, type Proposed } from "./proposed";
+import { usePartner, useProposedFor } from "./store";
 import "./proposal.css";
 
 /**
@@ -65,5 +66,28 @@ export function ProposedChipView({
     >
       {said.words}
     </button>
+  );
+}
+
+/**
+ * The chip on one goal's row, reading the conversation the shell already holds.
+ *
+ * This is what the three rows render. It asks the store for that goal's waiting
+ * lines and hands the press back to the store: nothing is fetched, and a row
+ * rendered outside the conversation's provider reads an empty conversation and
+ * shows nothing.
+ */
+export function ProposedChip({ goal, onMouseDown }: { goal: string; onMouseDown?: () => void }) {
+  const lines = useProposedFor(goal);
+  const { showProposedFor } = usePartner();
+  return (
+    <ProposedChipView
+      goal={goal}
+      lines={lines}
+      onMouseDown={onMouseDown}
+      onPress={() => {
+        showProposedFor(goal);
+      }}
+    />
   );
 }

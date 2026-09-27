@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import type { Proposal, ProposalState } from "./api";
-import { proposedFor, waitsOnTheHuman } from "./proposed";
+import { proposedFor, showsAt, waitsOnTheHuman } from "./proposed";
 import { cardsIn, type Card } from "./proposing";
 
 /**
@@ -124,6 +127,84 @@ describe("which of a goal's proposed acts still wait on the human", () => {
 
     expect(cards[0].folded).toBe(true);
     expect(proposedFor(cards, "g1-s44").map((line) => line.state)).toEqual(["waiting"]);
+  });
+});
+
+/**
+ * Where the press goes, and how it gets there.
+ *
+ * The chip does one thing: it opens the conversation at the card where the line
+ * it named is decided. Which card that is, is a function and is tested as one.
+ * That the press takes the bar's own path to it, and that the transcript comes to
+ * the card when it does, are two lines in two files that no static render can
+ * exercise — an effect does not run in one, and there is no column here to
+ * scroll — so they are read where they are written, as the hand-over's own guard
+ * reads the store (g1-s52).
+ */
+describe("the card a chip's press opens at", () => {
+  it("is the newest answer carrying a line that still waits on that goal", () => {
+    expect(showsAt(conversation(), "g1-s44")).toBe("t2");
+  });
+
+  /**
+   * The newest ANSWER with such a line, not the newest answer: a goal proposed
+   * something in the older answer and settled in the newer one opens at the older
+   * one, because that is where the line the chip counted is.
+   */
+  it("is an older answer where the newer one has nothing waiting about it", () => {
+    const cards = cardsIn(
+      [
+        { turn: "t1", proposals: [proposal({ index: 0, state: "refused", words: "claimed by m2a" })] },
+        { turn: "t2", proposals: [proposal({ index: 0, goal: "refunds" })] },
+      ],
+      {},
+      {},
+      [],
+    );
+
+    expect(showsAt(cards, "g1-s44")).toBe("t1");
+  });
+
+  it("is nothing where nothing waits, so the press cannot open an empty card", () => {
+    expect(showsAt(conversation(), "fleet-presence")).toBe("");
+    expect(showsAt([], "g1-s44")).toBe("");
+  });
+});
+
+describe("how the press gets there", () => {
+  const SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..");
+  const STORE = readFileSync(path.join(SRC, "partner", "store.tsx"), "utf8");
+  const CARD = readFileSync(path.join(SRC, "partner", "Proposal.tsx"), "utf8");
+
+  /**
+   * The bar's own two writes and no third mechanism: the card the conversation is
+   * showing, and the count of askings the shell opens the drawer on. A second way
+   * to open at a card would be a second answer to which card is in view.
+   */
+  it("is the store's open-at-card path, the one the bar's count uses", () => {
+    const press = STORE.slice(STORE.indexOf("const showProposedFor = useCallback"));
+    const body = press.slice(0, press.indexOf("}, ["));
+    expect(body).toContain("showsAt(proposals, goal)");
+    expect(body).toContain("setShowing(card)");
+    expect(body).toContain("setRevealed((at) => at + 1)");
+    const bar = STORE.slice(STORE.indexOf("const showProposals = useCallback"));
+    const barBody = bar.slice(0, bar.indexOf("}, ["));
+    expect(barBody).toContain("setShowing(newest)");
+    expect(barBody).toContain("setRevealed((at) => at + 1)");
+  });
+
+  /**
+   * And on the focused page, which has no drawer for the count to open, the same
+   * two writes bring the card up in the transcript. The count is among the
+   * dependencies so that pressing the same chip twice moves the column twice.
+   */
+  it("brings the card up in the transcript, folded or not", () => {
+    expect(CARD).toContain("bringUp(box.current);");
+    expect(CARD).toContain("}, [showing, id, revealed]);");
+    // Both shapes of the card take the ref: an older answer's card is folded to
+    // one line while it has something waiting, and that line is what a press
+    // opening at that answer is brought up to.
+    expect(CARD.match(/box\.current = element;/g)).toHaveLength(2);
   });
 });
 

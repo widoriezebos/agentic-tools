@@ -63,15 +63,18 @@ import { useSession } from "../shell/identity";
  * the first thing in view and a conversation does not bury a decision (D8).
  */
 export function ProposalCard({ id }: { id: string }) {
-  const { proposals, reopenProposals, showing } = usePartner();
+  const { proposals, reopenProposals, showing, revealed } = usePartner();
   const card = cardIn(proposals, id);
-  const box = useRef<HTMLDivElement | null>(null);
-  // The bar's count opened the drawer at this card, so the column comes to it.
+  const box = useRef<HTMLElement | null>(null);
+  // Something asked for this card, so the column comes to it: the bar's count, or
+  // a chip on the goal's own row (g1-s61 D3). The count of askings is among the
+  // dependencies as well as the card, because a second press on the same chip is
+  // a human asking again and has to move the column again.
   useEffect(() => {
     if (showing === id) {
       bringUp(box.current);
     }
-  }, [showing, id]);
+  }, [showing, id, revealed]);
   if (card === undefined) {
     return null;
   }
@@ -80,6 +83,12 @@ export function ProposalCard({ id }: { id: string }) {
     return (
       <button
         type="button"
+        // Folded, this line is the card, so it is what a press is brought up to:
+        // an older answer's card folds while it has a waiting line, and a chip
+        // opening at that answer would otherwise move nothing.
+        ref={(element) => {
+          box.current = element;
+        }}
         className="ms-proposal-folded"
         title="Show what the Partner proposed"
         onClick={() => {
@@ -92,7 +101,13 @@ export function ProposalCard({ id }: { id: string }) {
   }
 
   return (
-    <div ref={box} className="ms-proposal" data-proposal={id}>
+    <div
+      ref={(element) => {
+        box.current = element;
+      }}
+      className="ms-proposal"
+      data-proposal={id}
+    >
       <p className="ms-proposal-head">
         <span>{cardHead(card)}</span>
         <Help id="proposed-action" />

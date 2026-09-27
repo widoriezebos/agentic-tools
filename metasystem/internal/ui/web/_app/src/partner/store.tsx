@@ -88,7 +88,7 @@ import {
   unavailable,
   type Store,
 } from "./conversation";
-import { proposedFor, type Proposed } from "./proposed";
+import { proposedFor, showsAt, type Proposed } from "./proposed";
 import {
   askLine as askAboutLine,
   askReread,
@@ -424,6 +424,12 @@ type Partner = {
   /** Open the drawer at the newest card with a waiting line, which the bar does. */
   showProposals: () => void;
   /**
+   * Open the drawer at the newest card carrying a line that still waits on this
+   * human about one goal, which is what a chip on that goal's row does. On the
+   * focused page, which has no drawer, the transcript comes to that card.
+   */
+  showProposedFor: (goal: string) => void;
+  /**
    * The section's own offered re-read, and whether a sheet covers the work area,
    * told to the store from inside the shell.
    *
@@ -524,6 +530,7 @@ const nothing: Partner = {
   proposalsWaiting: 0,
   proposalsLine: "",
   showProposals: () => {},
+  showProposedFor: () => {},
   offerReread: () => {},
   noteCovered: () => {},
   table: {
@@ -1715,6 +1722,25 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     }
   }, [proposals]);
 
+  /**
+   * A chip on a goal's own row, pressed: the conversation opens at the newest
+   * card carrying a line that still waits about that goal.
+   *
+   * It is the bar's own path and not a second one — the card the drawer opens at,
+   * and the count the shell watches — because there is one answer to "which card
+   * is in view" and two mechanisms for it would be two answers. On the focused
+   * page there is no drawer for the count to open; what the same two writes do
+   * there is bring that card up in the transcript, which is the whole of what the
+   * press is for (g1-s61 D3).
+   */
+  const showProposedFor = useCallback((goal: string) => {
+    const card = showsAt(proposals, goal);
+    if (card !== "") {
+      setShowing(card);
+      setRevealed((at) => at + 1);
+    }
+  }, [proposals]);
+
   const value = useMemo(
     () => ({
       store, busy: running, draft, setDraft, send, stop, sending,
@@ -1730,7 +1756,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       proposals, tickProposal, selectProposals, applyProposals, continueProposals, tryProposal,
       dismissProposals, reopenProposals, askAboutProposal, runningProposals,
       proposalsWaiting: waitingAcross(proposals), proposalsLine: barLine(proposals),
-      showProposals, offerReread, noteCovered,
+      showProposals, showProposedFor, offerReread, noteCovered,
     }),
     [store, running, draft, send, stop, sending, attachments, detach, chosen, ask,
       clearChosen, passage, askPassage, sheetDraft, askAbout, handOver, noteDraft,
@@ -1742,7 +1768,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
       proposals, tickProposal, selectProposals, applyProposals, continueProposals, tryProposal,
       dismissProposals, reopenProposals, askAboutProposal, runningProposals,
-      showProposals, offerReread, noteCovered],
+      showProposals, showProposedFor, offerReread, noteCovered],
   );
 
   return <PartnerContext.Provider value={value}>{children}</PartnerContext.Provider>;
