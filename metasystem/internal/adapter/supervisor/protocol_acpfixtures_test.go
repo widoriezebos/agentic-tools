@@ -50,7 +50,7 @@ func newACPFixture(t *testing.T, serverScript string) *acpFixture {
 		t.Fatal(err)
 	}
 	f.pipes = pipes
-	command, err := pipes.ServerCommand(server, "devin-delegate-acp", f.dir, []string{"PATH=/usr/bin:/bin"}, os.Stderr)
+	command, err := pipes.ServerCommand(server, "devin-delegate-acp", []string{"acp"}, f.dir, []string{"PATH=/usr/bin:/bin"}, os.Stderr)
 	if err != nil {
 		t.Fatal(err)
 	}

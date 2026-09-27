@@ -312,8 +312,7 @@ case "$cancel_line" in *session/cancel*) echo seen > %q ;; esac
 exec cat >/dev/null
 `, observed))
 	channels := make(chan chan<- os.Signal, 1)
-	signalHooks.Store(f.root, func(c chan<- os.Signal) { channels <- c })
-	t.Cleanup(func() { signalHooks.Delete(f.root) })
+	t.Cleanup(supervisor.HookTermination(f.root, func(c chan<- os.Signal) { channels <- c }))
 	dir := filepath.Join(f.root, "turns", "t1")
 	go func() {
 		c := <-channels
