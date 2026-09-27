@@ -210,6 +210,14 @@ func waitCustodyRecordWatchdog(t *testing.T, root, suite string) identity.Ref {
 
 func waitCustodyFile(t *testing.T, path string, bound time.Duration) {
 	t.Helper()
+	waitCustodyFileWhile(t, path, bound, nil, nil)
+}
+
+// waitCustodyFileWhile also fails as soon as ended closes while the barrier
+// is still missing: the command that would create it is gone, so waiting on
+// hangs the test instead of reporting endedErr.
+func waitCustodyFileWhile(t testing.TB, path string, bound time.Duration, ended <-chan struct{}, endedErr func() error) {
+	t.Helper()
 	poll := time.NewTicker(20 * time.Millisecond)
 	defer poll.Stop()
 	var deadline <-chan time.Time
@@ -239,6 +247,11 @@ func waitCustodyFile(t *testing.T, path string, bound time.Duration) {
 				return
 			}
 			t.Fatalf("custody barrier %s did not appear", filepath.Base(path))
+		case <-ended:
+			if exists() {
+				return
+			}
+			t.Fatalf("command ended before custody barrier %s appeared: %v", filepath.Base(path), endedErr())
 		}
 	}
 }

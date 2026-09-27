@@ -82,10 +82,17 @@ exit 0`
 						}
 					},
 				}
-				go func() { done <- runResourceCommand(runCtx, command, lease, events) }()
+				runEnded := make(chan struct{})
+				var runErr error
+				go func() {
+					err := runResourceCommand(runCtx, command, lease, events)
+					runErr = err
+					close(runEnded)
+					done <- err
+				}()
 
 				prober := identity.KernelProber{}
-				waitCustodyFile(t, readyPath, 0)
+				waitCustodyFileWhile(t, readyPath, 0, runEnded, func() error { return runErr })
 				root := waitCustodyRef(t, prober, rootPIDPath, 0)
 				child := waitCustodyRef(t, prober, childPIDPath, 0)
 				group, err := syscall.Getpgid(int(root.Pid))
@@ -337,7 +344,7 @@ func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *
 	})
 
 	prober := identity.KernelProber{}
-	waitCustodyFile(t, readyPath, 0)
+	waitCustodyFileWhile(t, readyPath, 0, runDone, func() error { return runErr })
 	child := waitCustodyRef(t, prober, pidPath, 0)
 	childGroup, err := syscall.Getpgid(int(child.Pid))
 	if err != nil || childGroup == int(child.Pid) {
@@ -350,7 +357,7 @@ func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *
 	if err := identity.SignalExact(prober, child, syscall.SIGTERM); err != nil {
 		t.Fatalf("send TERM to exact descendant: %v", err)
 	}
-	waitCustodyFile(t, termAckPath, 0)
+	waitCustodyFileWhile(t, termAckPath, 0, runDone, func() error { return runErr })
 	termAck, err := os.ReadFile(termAckPath)
 	if err != nil || string(termAck) != "TERM\n" {
 		t.Fatalf("exact descendant did not acknowledge TERM: ack=%q err=%v", termAck, err)
