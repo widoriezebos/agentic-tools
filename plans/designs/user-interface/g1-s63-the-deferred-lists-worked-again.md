@@ -52,3 +52,44 @@ it; the guards stay green; screenshots only where a page changed (the
 inbox row's age after a refusal). Budgets as always. Box: one build lane
 (Claude on Opus), one code read (Codex on Sol) with one fix round under
 R-124; one attempt, 120 to 180 job-minutes; lands before g1-s62.
+
+## Built (2026-09-27)
+
+Landed on ui-development and main: seven commits on `ui/g1-s63`, one
+per item and the bundle last, built by Claude on Opus with two
+sub-agents on items 4 and 5, read by Codex on Sol under R-124
+([g1-s63-sol-read.md](g1-s63-sol-read.md)): zero material findings,
+"land as built", all five of the builder's departures accepted; no fix
+round was needed. Go, vet and the interface packages green, the fast
+gate and the parallel ratchet passed; 91 test files, 1,398 frontend
+tests; the bundle rebuilt twice to one digest. One screenshot at 1280
+light: the refused row standing second in its group where the asking
+put it, "asked by the Partner, today", against g1-s60's own evidence
+where the same row had dropped to the foot after the refusal restamped
+it.
+
+The items as built: (1) the store's `clearShowing`, called by the
+shell's one drawer-closing path; (2) `edgesNamedBy` reads `blocker`,
+`blockedBy` and `blocks` and admission checks each id at the tip or
+opened earlier in the answer; (3) `at` stamped once at admission,
+`updatedAt` stamped by every admitted write, carried through the
+Partner's entry, the decisions member (schema 6, an addition) and the
+TypeScript types, the inbox's age and order reading `at`; (4) one test
+derives the eleven allowed pairs from the states and the transition
+table and races eight writers on each; (5) a test-local scripted
+repository over the act bed's ledger drives a real `Approve` to each
+of settle's three answers, with the ledger asserted; (6) the inbox's
+`record` port folds a written answer into its held entries as the
+card's does.
+
+Departures the read accepted: the card shows no second timestamp (the
+design's "may"); the schema bump; the `refused` proof closes the
+journal entry through a failed rebuild capture rather than a lease
+that no test can wait out; the two-pair race test replaced by the
+all-pairs one; the bed's repository field widened to the interface.
+
+Later, when it hurts: a proposal persisted before this slice may carry
+a restamped `at` and no `updatedAt`, and its admission instant is not
+recoverable from that field (the readers tolerate its absence); the
+screenshot's "today" cannot tell admission from write, the dated tests
+can.
