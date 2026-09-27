@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:9936bf5b582df6205551f2a9cea0c7465ed27ba4854a4ffd6347a6268bc917e7",
+  "sourceDigest": "sha256:f260a238db296a797ce83c2bb0ced8382911fe9fd53bc4bb965b262ebe83c147",
   "source": [
     {
       "path": ".npmrc",
@@ -935,8 +935,12 @@
       "sha256": "b0d561838d3d43f8c5995a21e72262b04ec3b7f7fd5b02aa2bd229d6c9bf18d2"
     },
     {
+      "path": "src/shell/SignInControl.test.tsx",
+      "sha256": "9a2da066cc4710711ff826b0e4d249ceb95a0f61d824e0d114a39ee40ceb199a"
+    },
+    {
       "path": "src/shell/SignInControl.tsx",
-      "sha256": "296ca374c5be75a8d6b7bb71391dc92808647e7c9f0fae97e54d4055af9af75e"
+      "sha256": "2806df7cfa8b758ad4031e6199098f8760c5d42162978864b07b333f4f2eb8a7"
     },
     {
       "path": "src/shell/SignInSheet.tsx",
@@ -972,7 +976,7 @@
     },
     {
       "path": "src/shell/identity.tsx",
-      "sha256": "bc35db85840ec1c0ba3c1e226bc6448878f29c8508416f7b2c7e12389a93a1e3"
+      "sha256": "d78526f1f755e5be51e6fc79da1bcecf964218c00deec26e94336245f3f5cca6"
     },
     {
       "path": "src/shell/media.ts",
@@ -992,7 +996,7 @@
     },
     {
       "path": "src/shell/session.ts",
-      "sha256": "c50df192417181f89da1a666203cc217b6963dcafce1426a804af85904513bc0"
+      "sha256": "89a86f1454ff9b15e8ab7ca9813e2c0fde97e44efa7699f37680bb2ddadbb978"
     },
     {
       "path": "src/shell/shell.css",
@@ -1098,7 +1102,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "61254fd43aa92aa26734b5ed51ccee7405bd97ed2125277df17a1d2d26334bd3"
+      "sha256": "2b30b4e28990197a009a8ffff21ea7ea728747535ccb4663bb514f083e59c214"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
