@@ -1,7 +1,15 @@
 # Agent adapters: adding an agent, overriding a built-in
 
-MetaSystem ships four runtimes in Go: `claude`, `codex`, `devin`, and the
-fixture-only `fake`. Two things need no Go change:
+MetaSystem ships four runtimes in Go. Each is a built-in you can override:
+
+| Runtime | Built-in operations | Reserved lookalike (no other declaration may claim it) |
+|---|---|---|
+| `claude` | `internal/adapter/supervisor/claude.go` | `metasystem-claude-lookalike` |
+| `codex` | `internal/adapter/supervisor/codex.go` | `metasystem-codex-lookalike` |
+| `devin` | `internal/adapter/supervisor/devin.go` (legacy and ACP transports) | `devin acp`, the host CLI's own helper |
+| `fake` | `internal/adapter/supervisor/fake.go` (fixtures only) | `metasystem-fake-lookalike` |
+
+Two things need no Go change:
 
 - **A new agent.** Install an executable at `<installation>/adapters/<name>`
   and name it in the configuration. The executable can be written in any
@@ -71,6 +79,22 @@ exclusions. The registry refuses an override whose own signature claims one of
 the built-in's reserved lookalike vectors. For example, a Devin override must
 keep excluding `devin acp`. Matching the built-in's own positive vector is not
 a conflict.
+
+For Devin this matters in practice. The Devin host CLI starts a raw
+`devin acp` helper between the announced main session and every tool shell,
+and the built-in excludes it, so a host's tool calls classify as the main
+session and not as a delegate. A Devin override that answers `describe` must
+therefore keep an exclusion for `devin acp`, for example:
+
+```json
+{"schemaVersion": 1, "name": "devin",
+ "match": ["^([^[:space:]]*/)?devin([[:space:]]|$)", "^([^[:space:]]*/)?devin-delegate-acp([[:space:]]|$)"],
+ "exclude": ["^([^[:space:]]*/)?devin[[:space:]]+acp([[:space:]]|$)"]}
+```
+
+The same holds for `claude` and `codex` with their reserved lookalikes. An
+override that exits 64 on `describe` keeps the built-in's declaration
+unchanged.
 
 After a refused override, recognition keeps the built-in's declaration.
 Running that runtime is refused, with the reason, until the file is fixed.
@@ -341,6 +365,27 @@ A turn's operations must agree about who prepared the launch.
   continue a launch it did not prepare. Exit 64 there fails the turn.
 
 `probe`, `describe`, `selftest` and `cancel` fall back independently.
+
+## Example: a partial override of Devin
+
+To pin extra configuration into Devin's configuration identity and keep
+everything else built in, answer only `probe` and exit 64 for every other
+operation:
+
+```sh
+#!/bin/sh
+case "$1" in
+  probe) exec /usr/local/lib/devin-identity-wrapper ;;  # prints the probe answer
+  *) exit 64 ;;
+esac
+```
+
+Install it as `<installation>/adapters/devin` (mode 0755, owned by you) and set
+`adapters.devin.use=external`. Devin's describe, prepare, observe, finalize,
+repair (delivery repair), self-test and both transports, legacy and ACP, stay
+the built-in's. The engine's test `TestDevinPartialOverrideFallsBackToTheBuiltIn`
+runs a whole Devin round this way. Overrides of `claude` and `codex` work the
+same way.
 
 ## A minimal new agent
 

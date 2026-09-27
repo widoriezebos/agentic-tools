@@ -135,6 +135,14 @@ func externalFixture(mode, operation string, request externalRequest) (string, i
 			return err.Error(), 1
 		}
 		return jsonText(map[string]any{"schemaVersion": 1, "candidate": filepath.Join(request.Turn.Dir, "return.json")}), 0
+	case "devin-identity":
+		// An override of the built-in Devin that changes only its
+		// configuration identity (say, a wrapper that pins extra config).
+		if operation != "probe" {
+			return "", 64
+		}
+		return jsonText(map[string]any{"schemaVersion": 1, "installed": true, "version": "3000.4.25",
+			"configIdentity": map[string]any{"cliVersion": "3000.4.25", "configHash": "devin-override-config", "configKeyHashes": map[string]any{}, "runtime": "devin"}}), 0
 	case "newagent":
 	default:
 		return "unknown mode", 1
@@ -438,5 +446,40 @@ func TestExternalSelftestProbeStages(t *testing.T) {
 	}
 	if err := probe.VerifyEvidence(evidence, "nonce-2"); err == nil {
 		t.Fatal("verify-evidence accepted evidence without the nonce")
+	}
+}
+
+// TestDevinPartialOverrideFallsBackToTheBuiltIn: Devin stays a first-class
+// built-in under an override. An override that answers only probe changes
+// the configuration identity; describe, prepare, observe and finalize exit
+// 64, so a whole legacy-transport round runs through the built-in Devin,
+// and the signature keeps its reserved `devin acp` exclusion.
+func TestDevinPartialOverrideFallsBackToTheBuiltIn(t *testing.T) {
+	t.Parallel()
+	f := newDevinFixture(t, "", "dispatch")
+	f.legacyHappyStubs()
+	_, log := installExternalAdapter(t, f.root, "devin", "devin-identity", 0o755, true)
+	if code := f.run("dispatch"); code != 0 {
+		t.Fatalf("exit %d\ncalls %v\nstderr %s\nlog %s", code, f.dispatch.verbs(), f.stderr, f.jobLog())
+	}
+	f.expectTerminal("completed", "")
+	if !strings.Contains(f.jobLog(), "devin cli exit status=0") {
+		t.Fatalf("the built-in Devin did not run the turn: %s", f.jobLog())
+	}
+	counts := map[string]int{}
+	for _, entry := range operationsLogged(t, log) {
+		counts[entry]++
+	}
+	if counts["describe=64"] != 1 || counts["prepare=64"] != 1 || counts["finalize=64"] != 1 || counts["probe=ok"] != 0 {
+		t.Fatalf("adapter operations = %v", counts)
+	}
+	f.stdout.Reset()
+	if code := Main([]string{"devin", "config-identity", "--root", f.root}, func(string) Deps { return f.deps() }); code != 0 || !strings.Contains(f.stdout.String(), "devin-override-config") {
+		t.Fatalf("config-identity exit %d: %q %s", code, f.stdout.String(), f.stderr)
+	}
+	f.stdout.Reset()
+	if code := Main([]string{"devin", "signature", "--root", f.root}, func(string) Deps { return f.deps() }); code != 0 ||
+		!strings.Contains(f.stdout.String(), "exclude ^([^[:space:]]*/)?devin[[:space:]]+acp([[:space:]]|$)") {
+		t.Fatalf("the override's signature lost the reserved devin acp exclusion: %q", f.stdout.String())
 	}
 }
