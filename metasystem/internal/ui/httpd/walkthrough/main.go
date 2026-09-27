@@ -998,6 +998,11 @@ var walkthroughTitles = map[string]string{
 	"g1-s24": "The census format",
 	"g1-s25": "The seat roster",
 	"g1-s26": "The fleet page's census",
+	// Two of the goals the canned proposals name, so that the goal page's own
+	// header can be stood in front of with a proposal waiting on it and with one
+	// the engine refused (g1-s61).
+	"g1-s44": "The seat census",
+	"g1-s45": "The phase tick",
 }
 
 // paneGoals are the goals the Project pane carries, in the order the ledger
@@ -1005,7 +1010,7 @@ var walkthroughTitles = map[string]string{
 // ones are here because a design's work is read out of them — a payload that
 // carried only live goals would show a shipped design as a design naming a
 // goal nobody has heard of.
-var paneGoals = []string{"g1-s15", "g1-s12", "g1-s13", "g1-s9", "g1-s10", "g1-s23", "g1-s24", "g1-s25", "g1-s26"}
+var paneGoals = []string{"g1-s15", "g1-s12", "g1-s13", "g1-s9", "g1-s10", "g1-s23", "g1-s24", "g1-s25", "g1-s26", "g1-s44", "g1-s45"}
 
 // goalFile is one goal of the fixture tree, live or concluded.
 func (l *ledger) goalFile(id string) *goal.GoalFile {
