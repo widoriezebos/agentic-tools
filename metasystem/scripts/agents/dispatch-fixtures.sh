@@ -1187,13 +1187,13 @@ seat_records_before=$(fixture_record_snapshot "$agent_repo")
 set +e
 METASYSTEM_BIN="$agent_repo/bin/metasystem" \
   "$seat_delegate" "$seat_identity_fixture" "$agent_repo/bin/metasystem" "$seat_tool_shell" \
-    stop --repo "$agent_repo" >"$agent_fixture/seat-stop.out" 2>&1
+    internal stop --repo "$agent_repo" >"$agent_fixture/seat-stop.out" 2>&1
 seat_stop_rc=$?
 set -e
 [[ $seat_stop_rc -eq 1 ]] \
   || { echo "a fake delegate's stop returned $seat_stop_rc instead of refusing" >&2; cat "$agent_fixture/seat-stop.out" >&2; exit 1; }
 seat_stop_expected=$(printf '%s\n%s' \
-  'metasystem system stop: stop is a human act at a terminal; this caller is DELEGATE.' \
+  'metasystem system stop: system stop is a human act at a terminal; this caller is DELEGATE.' \
   "at an agent-free terminal, run: metasystem system stop --repo $agent_repo")
 seat_stop_actual=$(cat "$agent_fixture/seat-stop.out")
 [[ "$seat_stop_actual" == "$seat_stop_expected" ]] \
@@ -1201,7 +1201,7 @@ seat_stop_actual=$(cat "$agent_fixture/seat-stop.out")
 
 METASYSTEM_BIN="$agent_repo/bin/metasystem" \
   "$seat_delegate" "$seat_identity_fixture" "$agent_repo/bin/metasystem" "$seat_tool_shell" \
-    status --repo "$agent_repo" >"$agent_fixture/seat-status.out" 2>&1
+    internal status --repo "$agent_repo" >"$agent_fixture/seat-status.out" 2>&1
 seat_status_expected=$(printf 'checkout %s\nnothing is running' "$agent_repo")
 seat_status_actual=$(cat "$agent_fixture/seat-status.out")
 [[ "$seat_status_actual" == "$seat_status_expected" ]] \

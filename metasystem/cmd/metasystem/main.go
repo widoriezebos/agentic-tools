@@ -964,12 +964,3 @@ func writeUsage(w io.Writer, registered []family) {
 		}
 	}
 }
-
-func isFamilyName(registered []family, name string) bool {
-	for _, fam := range registered {
-		if fam.name == name {
-			return true
-		}
-	}
-	return false
-}

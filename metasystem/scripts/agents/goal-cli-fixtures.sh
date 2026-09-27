@@ -276,13 +276,13 @@ FIXTURE_TOOL_SHELL
   chmod +x "$fake_agent" "$tool_shell"
   set +e
   "$fake_agent" "$identity_file" "$clone/bin/metasystem" "$tool_shell" "$$" \
-    stop --repo "$clone" >"$tmp/wrong-terminal.refusal" 2>&1
+    internal stop --repo "$clone" >"$tmp/wrong-terminal.refusal" 2>&1
   refusal_rc=$?
   set -e
   (( refusal_rc == 1 )) \
     || { echo "a non-terminal caller was allowed to stop the metasystem" >&2; cat "$tmp/wrong-terminal.refusal" >&2; exit 1; }
   printf '%s\n' \
-    "metasystem system stop: stop is a human act at a terminal; this caller is DELEGATE." \
+    "metasystem system stop: system stop is a human act at a terminal; this caller is DELEGATE." \
     "at an agent-free terminal, run: metasystem system stop --repo $expected_checkout" \
     >"$tmp/wrong-terminal.expected"
   cmp -s "$tmp/wrong-terminal.expected" "$tmp/wrong-terminal.refusal" \
@@ -1805,14 +1805,14 @@ for alias_goal in alias-approve-box direct-approve-box alias-approve-long direct
 done
 "$ms" internal goal approve --root "$clone" --id alias-approve-box --budget box --by Wido --fixture-human-authority \
   >"$tmp/alias-approve-box.out" 2>"$tmp/alias-approve-box.err"
-grep -q '^hint: metasystem goal budget .*--id alias-approve-box .*norm$' "$tmp/alias-approve-box.err" \
+grep -q '^hint: metasystem goal budget alias-approve-box .*norm$' "$tmp/alias-approve-box.err" \
   || { echo "approve --budget box did not print its goal budget norm hint" >&2; cat "$tmp/alias-approve-box.err" >&2; exit 1; }
 "$ms" internal goal budget --root "$clone" --id direct-approve-box norm --by Wido --fixture-human-authority >/dev/null
 
 "$ms" internal goal approve --root "$clone" --id alias-approve-long --by Wido --fixture-human-authority \
   --elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2 \
   >"$tmp/alias-approve-long.out" 2>"$tmp/alias-approve-long.err"
-grep -q '^hint: metasystem goal budget .*--id alias-approve-long .*3h/5/300m/1/2$' "$tmp/alias-approve-long.err" \
+grep -q '^hint: metasystem goal budget alias-approve-long .*3h/5/300m/1/2$' "$tmp/alias-approve-long.err" \
   || { echo "approve long form did not print its compact goal budget hint" >&2; cat "$tmp/alias-approve-long.err" >&2; exit 1; }
 "$ms" internal goal budget --root "$clone" --id direct-approve-long 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
 
@@ -1821,7 +1821,7 @@ grep -q '^hint: metasystem goal budget .*--id alias-approve-long .*3h/5/300m/1/2
 "$ms" goal set-budget --root "$clone" --id alias-set-budget --by Wido --fixture-human-authority \
   --elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2 \
   >"$tmp/alias-set-budget.out" 2>"$tmp/alias-set-budget.err"
-grep -q '^hint: metasystem goal budget .*--id alias-set-budget .*3h/5/300m/1/2$' "$tmp/alias-set-budget.err" \
+grep -q '^hint: metasystem goal budget alias-set-budget .*3h/5/300m/1/2$' "$tmp/alias-set-budget.err" \
   || { echo "set-budget did not print its compact goal budget hint" >&2; cat "$tmp/alias-set-budget.err" >&2; exit 1; }
 "$ms" internal goal release --root "$clone" --id alias-set-budget >/dev/null
 "$ms" internal goal budget --root "$clone" --id direct-set-budget norm --by Wido --fixture-human-authority >/dev/null
@@ -1897,7 +1897,7 @@ set +e
 resume_without_fence_rc=$?
 set -e
 [[ $resume_without_fence_rc -ne 0 && $(wc -l <"$tmp/resume-without-fence.err" | tr -d ' ') -eq 2 ]] \
-	&& grep -q '^run: metasystem goal budget .*--id ship-widget .*norm$' "$tmp/resume-without-fence.err" \
+	&& grep -q '^run: metasystem goal budget ship-widget .*norm$' "$tmp/resume-without-fence.err" \
 	|| { echo "resume without a fence did not print the norm budget command" >&2; cat "$tmp/resume-without-fence.err" >&2; exit 1; }
 resume_without_fence_remedy=$(sed -n 's/^run: //p' "$tmp/resume-without-fence.err")
 eval "$resume_without_fence_remedy" >/dev/null

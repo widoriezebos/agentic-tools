@@ -1440,7 +1440,7 @@ fi
 if [[ ${1:-} == up ]]; then
   exit 0
 fi
-if [[ $step == health-failure && ${1:-} == health ]]; then
+if [[ $step == health-failure && ${1:-} == internal && ${2:-} == health ]]; then
   exit 45
 fi
 if [[ $step == hook-attempt && ${1:-} == steward && ${2:-} == hook-attempt ]]; then

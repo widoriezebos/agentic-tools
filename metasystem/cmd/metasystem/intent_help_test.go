@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -73,9 +72,6 @@ func TestIntentAgentHelpCatalogue(t *testing.T) {
 		}
 	}
 }
-
-// helpUsagePattern is a public form as help prints it.
-var helpUsagePattern = regexp.MustCompile(`^metasystem ([a-z-]+)(?: ([a-z-]+))?`)
 
 // TestIntentHelpSurfacesArePublicForms is the witness that every help
 // surface, the JSON help and the Partner catalogue are written from the one

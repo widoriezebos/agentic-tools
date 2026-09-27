@@ -84,7 +84,7 @@ elapsed, active-job or review-round limits, and those limits themselves are
 unchanged. After one extension, a later exhaustion refuses with the marker and
 waits for a person's set-budget.
 
-For a proof run (`metasystem test`), `--goal X` names the candidate goal whose risk,
+For a proof run (`metasystem test run`), `--goal X` names the candidate goal whose risk,
 proof plan, candidate tree, budget episode, retries, and reuse the run advances;
 it does not automatically name the claim that authorizes the seat. `--authority
 C` may name that claim explicitly, or admission resolves the machine's one live,
