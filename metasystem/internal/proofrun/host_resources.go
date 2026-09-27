@@ -645,7 +645,7 @@ func resourceLegacyLauncherCount(controlRoot string) (int, bool, error) {
 			}
 		}
 	}
-	count, known := loadSeams.launchers(int64(os.Getpid()))
+	count, known := hostLauncherCensus(controlRoot, int64(os.Getpid()))
 	return count, known, nil
 }
 
