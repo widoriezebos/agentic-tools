@@ -81,6 +81,24 @@ var retiredWithDeletedVerb = map[string]string{
 	"launch-standard/TestUnitFamilyIsRegistered":     "unit run",
 }
 
+// providerTransitions names legacy groups whose command moved to a new
+// provider under the two-step transition (plans/designs/verbs-object-action.md
+// 6.4): the group keeps its id so a candidate's proof runs the base's command,
+// and holds exactly the new provider's definition. Nothing else may leave the
+// legacy definition this way.
+var providerTransitions = map[string]func(testpolicy.Group) bool{
+	// go-gate.sh --fast became the Go bootstrap's static leaf.
+	"fast-static-build": func(group testpolicy.Group) bool {
+		return group.Adapter == "command" && slices.Equal(group.Argv, []string{"go", "run", "./cmd/devgate", "static"}) &&
+			slices.Contains(group.Obligations, "gate-integrity")
+	},
+	// witness-gate-fixtures.sh became the devgate witness and arming tests.
+	"section/witness-gate-fixtures": func(group testpolicy.Group) bool {
+		return group.Adapter == "go" && slices.Equal(group.Packages, []string{"cmd/devgate"}) && len(group.Tests) > 2 &&
+			slices.Contains(group.Obligations, "test-execution-integrity")
+	},
+}
+
 func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract) {
 	t.Helper()
 	installation, err := filepath.Abs(filepath.Join("..", ".."))
@@ -174,6 +192,12 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		}
 		if !ok {
 			t.Errorf("legacy host group %s disappeared", old.ID)
+			continue
+		}
+		if transitioned, moved := providerTransitions[old.ID]; moved {
+			if !transitioned(now) {
+				t.Errorf("legacy group %s left its definition without holding its new provider's", old.ID)
+			}
 			continue
 		}
 		requiredInputs := old.Inputs

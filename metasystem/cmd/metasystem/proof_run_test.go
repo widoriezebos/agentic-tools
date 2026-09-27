@@ -764,6 +764,26 @@ func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 		{"ls-files", "--others", "--exclude-standard", "--full-name", "-z"},
 		{"ls-files", "--others", "-i", "--exclude-standard", "--full-name", "-z"},
 	}
+	// The probe is the root's own Go gate asked about an ENGINE witness; the
+	// state classification only consumes its verdict.
+	usable := func(gotRoot string) bool {
+		if gotRoot != root {
+			t.Fatalf("probe root = %q, want %q", gotRoot, root)
+		}
+		return os.Getenv("METASYSTEM_GATE_WITNESS") == "usable"
+	}
+	probe := proofRunWitnessProbe(root)
+	if !slices.Equal(probe.Args, []string{"go", "run", "./cmd/devgate", "gate", "--witness-check-only"}) || probe.Dir != root ||
+		!slices.Contains(probe.Env, "METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=ENGINE") {
+		t.Fatalf("witness probe = %q in %q", probe.Args, probe.Dir)
+	}
+	// A tree that still carries the shell gate is probed through it.
+	shellRoot := t.TempDir()
+	shellGate := filepath.Join(shellRoot, "scripts", "agents", "go-gate.sh")
+	writeTestingFixtureFile(t, shellGate, []byte("#!/usr/bin/env bash\n"), 0o755)
+	if shell := proofRunWitnessProbe(shellRoot); !slices.Equal(shell.Args, []string{"bash", shellGate, "--witness-check-only"}) || shell.Dir != shellRoot {
+		t.Fatalf("shell-gate probe = %q in %q", shell.Args, shell.Dir)
+	}
 	assertState := func(want string, reads [][]string) {
 		t.Helper()
 		called := 0
@@ -797,7 +817,7 @@ func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 			}
 			return nil, nil
 		}
-		if state := proofRunWitnessStateWithRead(root, read); state != want {
+		if state := proofRunWitnessStateWith(root, read, usable); state != want {
 			t.Fatalf("witness state = %q, want %q", state, want)
 		}
 		if called != len(reads) {
@@ -822,13 +842,6 @@ func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 	t.Setenv("METASYSTEM_GATE_WITNESS", "unusable")
 	assertState("unarmed", nil)
 
-	script := filepath.Join(root, "scripts", "agents", "go-gate.sh")
-	if err := os.MkdirAll(filepath.Dir(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(script, []byte("#!/usr/bin/env bash\n[[ \"$1\" == --witness-check-only && \"$METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE\" == ENGINE && \"$METASYSTEM_GATE_WITNESS\" == usable ]]\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("METASYSTEM_GATE_WITNESS", "usable")
 	assertState("armed", nil)
 	export := filepath.Join(root, "export")

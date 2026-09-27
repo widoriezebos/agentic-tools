@@ -8,6 +8,7 @@
   "internal/ui/partner/fakeacp": "test-support scripted ACP server stand-in with no test files of its own: imported only by _test.go files of internal/ui/partner and internal/ui/httpd and by the exempt manual walkthrough harness internal/ui/httpd/walkthrough, and no shipped package imports it or depends on it on darwin or linux; the ACP host it drives is measured and floored in internal/ui/partner"
  },
  "floors": {
+  "cmd/devgate": 75.4,
   "internal/acp": 88.7,
   "internal/adapter": 85.5,
   "internal/atif": 75.0,

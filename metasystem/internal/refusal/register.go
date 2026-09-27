@@ -283,7 +283,7 @@ var Rows = []Row{
 
 	{Code: "malformed-candidate-tree", Owner: "internal/landing", Site: "observe.go:163", Shape: Question, H1: StandingInput},
 	{Code: "candidate-tree-unreadable", Owner: "internal/landing", Site: "observe.go:167", Shape: Question, H1: StandingInput},
-	{Code: "evaluator-unavailable", Owner: "scripts/agents", Site: "commit.sh:627", Shape: Agent, Override: "land.sh --carried", Commands: 1},
+	{Code: "evaluator-unavailable", Owner: "scripts/agents", Site: "commit.sh:642", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "missing-declaration", Owner: "internal/landing", Site: "observe.go:179", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "conflicting-declarations", Owner: "internal/landing", Site: "observe.go:170", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "path-unclassified", Owner: "internal/landing", Site: "observe.go:1144", Shape: Agent, Override: "land.sh --carried", Commands: 1},
@@ -460,7 +460,7 @@ var ShellRows = []Shell{
 	{Script: "land.sh", Line: "107", Prose: "land refused: --staged-only cannot be combined with pathspecs", Override: "the usage line"},
 	{Script: "land.sh", Line: "111", Prose: "land refused: name pathspecs or choose --staged-only", Override: "the usage line"},
 	{Script: "commit.sh", Line: "234", Prose: "agent commit refused: staged Go package coverage check failed (legacy branch, contract off)", Override: "land.sh --carried"},
-	{Script: "commit.sh", Line: "271", Prose: "agent commit refused: the static re-proof failed (go-gate.sh --fast; legacy branch, contract off)", Override: "land.sh --carried"},
+	{Script: "commit.sh", Line: "271", Prose: "agent commit refused: the static re-proof failed (devgate static; legacy branch, contract off)", Override: "land.sh --carried"},
 	{Script: "commit.sh", Line: "386", Prose: "agent commit refused: the static re-proof failed (internal audit metasystem; legacy branch, contract off)", Override: "land.sh --carried"},
 	{Script: "commit.sh", Line: "450", Prose: "agent commit refused: the landing evaluator failed or returned an incomplete decision ($landing_verdict)", Override: "land.sh --carried"},
 	{Script: "commit.sh", Line: "542", Prose: "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back", Record: true},

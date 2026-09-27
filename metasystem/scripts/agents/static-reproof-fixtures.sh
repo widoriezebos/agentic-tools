@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # IL-28 fixtures: the landing boundary re-proves the static checks via
-# go-gate.sh --fast before any commit concludes. Leg 1 proves the SHAPE
+# `go run ./cmd/devgate static` before any commit concludes. Leg 1 proves the SHAPE
 # (the re-proof sits in commit.sh between the wrapper token and the
 # commit, with no environment escape). Legs 2 and 3 prove the BEHAVIOR
 # on a stubbed boundary: a red fast gate refuses the commit and names
@@ -45,7 +45,8 @@ SH
 exec "$real_engine" "\$@"
 SH
   chmod +x "$tmp/real-observer-proof-engine"
-  cat >"$fixture/scripts/agents/go-gate.sh" <<SH
+  harness_fixture_plant_devgate "$fixture"
+  cat >"$fixture/scripts/agents/devgate-static.sh" <<SH
 #!/usr/bin/env bash
 set -euo pipefail
 proof_out=
@@ -58,7 +59,7 @@ done
 [[ -n "\$proof_out" ]]
 cp "$tmp/real-observer-proof-engine" "\$proof_out"
 SH
-  chmod +x "$fixture/scripts/agents/go-gate.sh" "$fixture/bin/metasystem"
+  chmod +x "$fixture/scripts/agents/devgate-static.sh" "$fixture/bin/metasystem"
 
   fixture_git() {
     harness_fixture_without_outer_proof env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" git -C "$fixture" "$@"
@@ -129,7 +130,8 @@ SH
   cp "$root/memory/rulings.md" "$vendored_install/memory/rulings.md"
   cp "$fixture/plans/goals/fx.md" "$vendored_install/plans/goals/fx.md"
   cp "$fixture/bin/metasystem" "$vendored_install/bin/metasystem"
-  cp "$fixture/scripts/agents/go-gate.sh" "$vendored_install/scripts/agents/go-gate.sh"
+  cp "$fixture/scripts/agents/devgate-static.sh" "$vendored_install/scripts/agents/devgate-static.sh"
+  harness_fixture_plant_devgate "$vendored_install"
   vendored_git() {
     harness_fixture_without_outer_proof env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" git -C "$vendored_fixture" "$@"
   }
@@ -252,11 +254,11 @@ wrapper="$root/scripts/agents/commit.sh"
 tail_body=$(awk '/IL-28 static re-proof/{flag=1} flag' "$wrapper")
 [[ -n "$tail_body" ]] \
   || { echo "static re-proof fixture: commit.sh lost its IL-28 stanza" >&2; exit 1; }
-grep -Fq 'go-gate.sh" --fast' <<<"$tail_body" \
-  || { echo "static re-proof fixture: the boundary does not invoke go-gate.sh --fast" >&2; exit 1; }
-grep -Fq -- '--fast --proof-out' "$wrapper" \
+grep -Fq 'run ./cmd/devgate static' <<<"$tail_body" \
+  || { echo "static re-proof fixture: the boundary does not invoke devgate static" >&2; exit 1; }
+grep -Fq -- 'devgate static --proof-out' "$wrapper" \
   || { echo "static re-proof fixture: the boundary's gate call lost its side-effect-free --proof-out" >&2; exit 1; }
-gate_line=$(grep -n 'go-gate.sh" --fast' "$wrapper" | head -1 | cut -d: -f1)
+gate_line=$(grep -n 'run ./cmd/devgate static' "$wrapper" | head -1 | cut -d: -f1)
 commit_line=$(grep -n 'git -C "$root" commit "${commit_trailers\[@\]}"' "$wrapper" | head -1 | cut -d: -f1)
 [[ -n "$gate_line" && -n "$commit_line" && "$gate_line" -lt "$commit_line" ]] \
   || { echo "static re-proof fixture: the re-proof does not precede the commit" >&2; exit 1; }
@@ -306,6 +308,7 @@ esac
 exit 0
 SH
 chmod +x "$fixture_root/bin/metasystem"
+harness_fixture_plant_devgate "$fixture_root"
 cat >"$fixture_root/scripts/agents/proof-engine.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -354,12 +357,12 @@ git -C "$fixture_root" add README
 # Leg 2: a red fast gate refuses the commit and names the re-proof. The
 # stub is STAGED each time it changes: the boundary's own input closure
 # (untracked and diverged gate inputs refuse) would otherwise fire first.
-cat >"$fixture_root/scripts/agents/go-gate.sh" <<'SH'
+cat >"$fixture_root/scripts/agents/devgate-static.sh" <<'SH'
 #!/usr/bin/env bash
 exit 1
 SH
-chmod +x "$fixture_root/scripts/agents/go-gate.sh"
-git -C "$fixture_root" add scripts/agents/go-gate.sh
+chmod +x "$fixture_root/scripts/agents/devgate-static.sh"
+git -C "$fixture_root" add scripts/agents/devgate-static.sh
 set +e
 refusal=$(harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse" 2>&1)
 status=$?
@@ -372,7 +375,7 @@ git -C "$fixture_root" diff --cached --quiet && {
   echo "static re-proof fixture: the refused commit concluded anyway" >&2; exit 1; }
 
 # Leg 3: a green fast gate lets the commit conclude.
-cat >"$fixture_root/scripts/agents/go-gate.sh" <<'SH'
+cat >"$fixture_root/scripts/agents/devgate-static.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 proof_out=
@@ -386,8 +389,8 @@ done
 cp "$(cd "$(dirname "$0")" && pwd -P)/proof-engine.sh" "$proof_out"
 chmod +x "$proof_out"
 SH
-chmod +x "$fixture_root/scripts/agents/go-gate.sh"
-git -C "$fixture_root" add scripts/agents/go-gate.sh
+chmod +x "$fixture_root/scripts/agents/devgate-static.sh"
+git -C "$fixture_root" add scripts/agents/devgate-static.sh
 harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "concludes green" \
   || { echo "static re-proof fixture: a green fast gate blocked the commit" >&2; exit 1; }
 [[ "$(git -C "$fixture_root" log --format=%s -1)" == "concludes green" ]] \

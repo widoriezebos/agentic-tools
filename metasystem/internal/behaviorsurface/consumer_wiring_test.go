@@ -2,6 +2,7 @@ package behaviorsurface
 
 import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,7 +49,10 @@ func TestLandingConsumerUsesProspectivePolicyForStaleBinaryAndRename(t *testing.
 		t.Fatal(err)
 	}
 	writeConsumerFixture(t, filepath.Join(root, "scripts", "agents", "commit.sh"), string(commitBody), true)
-	writeConsumerFixture(t, filepath.Join(root, "scripts", "agents", "go-gate.sh"), `#!/usr/bin/env bash
+	if err := testutil.WriteFixtureDevgate(root); err != nil {
+		t.Fatal(err)
+	}
+	writeConsumerFixture(t, filepath.Join(root, "scripts", "agents", "devgate-static.sh"), `#!/usr/bin/env bash
 set -euo pipefail
 proof=
 while (($#)); do

@@ -2334,12 +2334,12 @@ func proofRunDisplayPath(root, path string) string {
 }
 
 func proofRunWitnessState(root string) string {
-	return proofRunWitnessStateWithRead(root, proofRunRawGit)
+	return proofRunWitnessStateWith(root, proofRunRawGit, proofRunWitnessUsable)
 }
 
-func proofRunWitnessStateWithRead(root string, read func(string, ...string) ([]byte, error)) string {
+func proofRunWitnessStateWith(root string, read func(string, ...string) ([]byte, error), usable func(string) bool) string {
 	if os.Getenv("METASYSTEM_GATE_WITNESS") != "" {
-		if proofRunWitnessUsable(root) {
+		if usable(root) {
 			if export := os.Getenv("METASYSTEM_GATE_WITNESS_EXPORT"); export != "" {
 				if info, err := os.Stat(export); err == nil && info.IsDir() {
 					return "frozen"
@@ -2356,14 +2356,24 @@ func proofRunWitnessStateWithRead(root string, read func(string, ...string) ([]b
 	return "unarmed"
 }
 
+// proofRunWitnessUsable asks the root's own Go gate whether the inherited
+// witness may stand in for its ENGINE proof.
 func proofRunWitnessUsable(root string) bool {
-	script := filepath.Join(root, "scripts", "agents", "go-gate.sh")
-	command := exec.Command("bash", script, "--witness-check-only")
+	return proofRunWitnessProbe(root).Run() == nil
+}
+
+// proofRunWitnessProbe asks the root's gate: the shell gate while the root
+// still carries it (a tree the base's fixture legs build), else the Go gate.
+func proofRunWitnessProbe(root string) *exec.Cmd {
+	command := exec.Command("go", "run", "./cmd/devgate", "gate", "--witness-check-only")
+	if script := filepath.Join(root, "scripts", "agents", "go-gate.sh"); proofRunRegularFile(script) {
+		command = exec.Command("bash", script, "--witness-check-only")
+	}
 	command.Dir = root
 	command.Env = proofRunEnvironment("METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE", "ENGINE")
 	command.Stdout = io.Discard
 	command.Stderr = io.Discard
-	return command.Run() == nil
+	return command
 }
 
 func proofRunEnvironment(name, value string) []string {
@@ -2441,4 +2451,9 @@ func proofRunEngineDirtyWithRead(root string, read func(string, ...string) ([]by
 		}
 	}
 	return false, true
+}
+
+func proofRunRegularFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
