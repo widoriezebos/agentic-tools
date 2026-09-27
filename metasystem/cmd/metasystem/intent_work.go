@@ -294,8 +294,9 @@ func intentWorkCommands() []intentCommand {
 		},
 		{
 			object: "settings", action: "check", audience: "both", summary: "validate every setting and the testing contract, changing nothing",
-			usage:    []string{"metasystem settings check"},
-			details:  []string{"Validates metasystem.conf, then the testing contract it names and the contract's declared tools; no test runs."},
+			usage: []string{"metasystem settings check"},
+			details: []string{"Validates metasystem.conf, then the testing contract it names and the contract's declared tools; no test runs.",
+				"A test run resolves each group's native tests when it runs; this check does not take the host's proof lease."},
 			maxArgs:  0,
 			examples: []string{"metasystem settings check"},
 			run:      runIntentSettingsCheck,
@@ -1453,16 +1454,15 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 		return inv.render(settings)
 	}
 	// The testing contract the settings name is validated with its declared
-	// tools; no test runs.
-	ran, problem = inv.engineVerb("test", "check", "--root", root)
-	if problem != nil {
-		return inv.render(*problem)
+	// tools; no test runs and no native discovery takes the host's lease.
+	path, groups, err := testingContractReady(root, false)
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root},
+			Summary: "the settings of " + root + " are valid, but the testing contract is not: " + err.Error()})
 	}
-	contract := ownerVerbResult(ran, nil, "the settings of "+root+" and their testing contract are valid", map[string]any{"installation": root})
-	if contract.Outcome == intentConfirmed {
-		contract.text = append(settings.text, contract.text...)
-	}
-	return inv.render(contract)
+	settings.Summary = "the settings of " + root + " and their testing contract are valid"
+	settings.text = append(settings.text, fmt.Sprintf("testing contract %s: %d group(s)", path, groups))
+	return inv.render(settings)
 }
 
 func runIntentSettings(inv *intentInvocation) int {

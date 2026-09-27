@@ -3,9 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // The rows of the object-action table that are not goal, work or process
@@ -299,6 +302,15 @@ func receiptAddWords(args []string) ([]string, string) {
 // numbers; its exit code is the due check's (1 when a retro is due).
 func runReceiptStatus(args []string) int {
 	all, _, checkArgs := takeIntentFlag(args, "all", false)
+	if _, named, _ := takeIntentFlag(checkArgs, "file", true); !named {
+		// Both reads use the one ledger, resolved once.
+		root, err := stateroot.StateRoot(stateroot.Receipts)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "receipt:", err)
+			return 1
+		}
+		checkArgs = append(slices.Clone(checkArgs), "--file", filepath.Join(root, "receipts.log"))
+	}
 	due := runReceipt(append([]string{"check"}, checkArgs...))
 	if due > 1 {
 		return due

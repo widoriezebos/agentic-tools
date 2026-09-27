@@ -435,15 +435,6 @@ func TestIntentSettingsKeysAndCheck(t *testing.T) {
 	if output, err := exec.Command("git", "-C", bed.root(), "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, output)
 	}
-	// Native discovery reads the section catalog the installation's selector
-	// prints; this one knows the contract's one section.
-	selector := filepath.Join(bed.root(), "scripts", "agents", "validate-section-selector.sh")
-	if err := os.MkdirAll(filepath.Dir(selector), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(selector, []byte("#!/bin/sh\n[ \"$1\" = catalog ] && printf 'smoke\\tfixture\\n'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	if code, accepted := run("settings", "check"); code != 0 || accepted.Outcome != intentConfirmed {
 		t.Fatalf("check settings on a valid configuration: code=%d %+v", code, accepted)
 	}
