@@ -780,6 +780,36 @@ func BeyondTheProposalBounds(subject, explanation string, fields map[string]stri
 	return ""
 }
 
+// MostProposalsPerAnswer is how many actions one answer of the Partner's
+// carries.
+//
+// There is a bound at all because an answer is written whole into the human's
+// own transcript, and that transcript is read back whole on the next open: an
+// answer of any length is a conversation that can no longer be reloaded, which
+// is the one failure that takes every page reading it down with it. So a long
+// list is worked in batches, and the batch is fifty (R-130-ui).
+const MostProposalsPerAnswer = 50
+
+// BeyondTheProposalCount is what one action past the batch is refused with, or
+// "" where the answer has room for it.
+//
+// The number and the word for it are kept in one place, here beside the bounds:
+// the sentence spells fifty out, because that is what the Partner reads, and a
+// bound that moved without its own sentence would tell the Partner to do
+// something other than what the interface will accept.
+//
+// The counting itself is not here. This server is one process for a whole
+// Partner session and the wire carries no signal for where one answer ends, so
+// the count is asked where an answer's own proposals are held — the interface's
+// running turn — and this says what the bound is and how the refusal reads.
+func BeyondTheProposalCount(alreadyCarried int) string {
+	if alreadyCarried < MostProposalsPerAnswer {
+		return ""
+	}
+	return "this answer already carries fifty proposals; say how many remain and " +
+		"propose them in your next answer, after the human has applied these"
+}
+
 // boundedFrameField is one framing line's own bound. The ids and the labels are
 // the ledger's tokens; an intent and a next step are the sheets' one-line
 // fields; and everything else a frame carries — a reason, a basis, the four risk

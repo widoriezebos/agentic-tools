@@ -237,6 +237,33 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 	}
 	s.mu.Unlock()
 
+	// How many proposals this answer has room for, asked before the frame is
+	// read at all.
+	//
+	// The bound exists so that a conversation can always be reloaded: the answer
+	// is written whole into the human's transcript and read back whole on the
+	// next open, so a Partner that proposed a hundred and forty actions in one
+	// answer would leave a message nothing can open again (R-130-ui). It is
+	// counted HERE and not in the tool because the tool server is one stdio
+	// process for a whole Partner session and the wire carries no signal for
+	// where one answer ends; this is the one place that holds an answer's own
+	// proposals. The number and the words are the tool's, beside every other
+	// bound a proposal is held to, so that one number is never two.
+	//
+	// Every line of the answer is counted, the refused ones with the offered: a
+	// refusal is still a line the message carries, and it is the message's own
+	// size the bound protects. Which is also why the refusal past the count
+	// travels to the card rather than being dropped — the human asked for these
+	// actions and has to be told what became of each of them.
+	if refusal := uitools.BeyondTheProposalCount(index); refusal != "" {
+		s.refuseProposal(running, Proposal{
+			Index: index, Verb: prepared.Verb, Goal: boundedGoal(prepared.Goal),
+			State: ProposalWaiting, Version: 1,
+			At: s.now().UTC().Format(time.RFC3339),
+		}, refusal)
+		return
+	}
+
 	// The frame's own bounds, asked before anything of the frame is kept.
 	//
 	// The tool refuses a CALL past them and this refuses a FRAME past them,
@@ -538,14 +565,23 @@ func proposalsBlock(messages []Message) string {
 // proposalsLine is one answer's proposals, counted by state, with the refused
 // ones named: a count alone would tell the Partner that something was refused
 // and not what to do about it.
+//
+// The answer the human has finished with says so too, because a list longer than
+// one answer is proposed in batches (R-130-ui) and a Partner that had to be asked
+// twice for the next one would be spending the human's turn on bookkeeping.
 func proposalsLine(proposals []Proposal) string {
 	counted := map[string]int{}
 	named := []string{}
+	offered, unsettled := 0, 0
 	for _, proposal := range proposals {
 		if !proposal.Offered {
 			counted["not offered"]++
 			named = append(named, proposal.Verb+" "+proposal.Goal+": "+proposal.Reason)
 			continue
+		}
+		offered++
+		if !proposal.Settled() {
+			unsettled++
 		}
 		counted[proposal.State]++
 		if proposal.State == ProposalRefused || proposal.State == ProposalUnresolved {
@@ -562,7 +598,14 @@ func proposalsLine(proposals []Proposal) string {
 	if len(named) > 0 {
 		line += " (" + strings.Join(named, "; ") + ")"
 	}
-	return line + "."
+	line += "."
+	// A line that was never offered waits for nobody, so it cannot hold this
+	// back; a line the human has not pressed yet can.
+	if offered > 0 && unsettled == 0 {
+		line += " Every line of that answer is settled: if a longer list remains, " +
+			"the human may ask for the next batch."
+	}
+	return line
 }
 
 /* --------------------------------------------- where an outcome is written -- */
