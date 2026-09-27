@@ -11,11 +11,20 @@ import { controlFor, signOut } from "./session";
  * that will expire is one a human should be able to see expiring. A server
  * the terminal proved says so and offers no sign-out: there is nothing to
  * sign out of, and the way to end it is to stop the server.
+ *
+ * And it carries the one thing a sign-in can answer besides who is acting: what
+ * went wrong alongside it. The first sign-in on a seat that had named nobody
+ * moves that seat's conversation to the human, and a move that failed leaves the
+ * session standing and the transcript behind. The sheet cannot say so — it
+ * closes the moment the sign-in lands — so the words stand here, beside the
+ * handle they are about, for as long as the session that answered them
+ * (Astra A-03).
  */
 export function SignInControl() {
   const { session, askToSignIn, settled } = useSession();
   const [leaving, setLeaving] = useState(false);
   const control = controlFor(session);
+  const trouble = session.state === "known" ? (session.session.trouble ?? "") : "";
 
   if (control.kind === "loading") {
     return (
@@ -41,6 +50,11 @@ export function SignInControl() {
 
   return (
     <span className="ms-signin">
+      {trouble !== "" && (
+        <span className="ms-signin-refusal" role="alert">
+          {trouble}
+        </span>
+      )}
       <span className="ms-signin-who">{control.who}</span>
       <span className="ms-signin-until">· {control.qualifier}</span>
       {control.canSignOut && (
