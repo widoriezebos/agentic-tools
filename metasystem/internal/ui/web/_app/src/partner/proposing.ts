@@ -873,11 +873,19 @@ export function carriesAlready(line: Line, rows: readonly Row[]): boolean {
   }
   const fields = line.fields ?? {};
   switch (line.verb) {
-    // Approved, and with the tuple this line displayed: an approval carrying
-    // another budget is not this act's effect, and the guard above refuses such a
-    // line on its own because a fresh prefill now answers differently.
+    // Approved, unexpired, and with the tuple this line displayed. An approval
+    // carrying another budget is not this act's effect, and the guard above
+    // refuses such a line on its own because a fresh prefill now answers
+    // differently. An EXPIRED approval is not this act's effect either: the
+    // engine's own no-op requires an unexpired one (internal/goal/approval.go),
+    // so the approve writes a fresh approval, and a goal left carrying the
+    // expired one is inadmissible for work (Astra D-03).
     case "approve-goal":
-      return row.approved !== undefined && sameTuple(line.displayed?.budget ?? null, row.budget ?? null);
+      return (
+        row.approved !== undefined &&
+        !row.approved.expired &&
+        sameTuple(line.displayed?.budget ?? null, row.budget ?? null)
+      );
     // Every field the edit names, as the goal now reads. A field the action does
     // not carry is one it says nothing about, so it is not compared.
     case "edit-goal":

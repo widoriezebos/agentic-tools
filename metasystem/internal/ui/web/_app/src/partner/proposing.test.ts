@@ -150,6 +150,12 @@ const APPROVAL = {
   expiredWhy: "",
 };
 
+/**
+ * The same approval, relayed and expired: an approval the goal carries and
+ * cannot be worked under. Replacing it is what the approve on the card is for.
+ */
+const EXPIRED = { ...APPROVAL, authority: "attorney", expired: true, expiredWhy: "the review date passed" };
+
 /** The goal as the Partner read it, which every guarded line carries. */
 const READ = {
   intent: "Fleet presence is read from the census, not polled.",
@@ -897,6 +903,10 @@ describe("what the goal already carries", () => {
     // Another tuple is another act, which the freshness guard refuses on its own.
     expect(carriesAlready(line, [row({ approved: APPROVAL, budget: { ...BOX, attemptLimit: 9 } })])).toBe(false);
     expect(carriesAlready(line, [row({ budget: BOX })])).toBe(false);
+    // And an approval that has EXPIRED carries no approve at all: the engine's
+    // own no-op requires an unexpired one (internal/goal/approval.go), so the
+    // act writes a fresh approval and the goal is waiting for it (Astra D-03).
+    expect(carriesAlready(line, [row({ approved: EXPIRED, budget: BOX })])).toBe(false);
   });
 
   it("reads an edit as carried where every field it names is what the goal says", () => {
@@ -1395,6 +1405,39 @@ describe("the run, in order", () => {
     expect(driven.written).toEqual([
       { line: one.lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 1 },
     ]);
+  });
+
+  /**
+   * And an expired approval carries no approve (Astra D-03).
+   *
+   * The tuple and the fields are the ones the card displayed, so the freshness
+   * guard passes, and the approval on the goal has expired: the engine writes a
+   * fresh approval for it — its no-op requires an unexpired one — and the goal
+   * is inadmissible for work until it does. A press that recorded `applied`
+   * over it would leave the goal approved by nothing.
+   */
+  it("sends the approval where the one the goal carries has expired", async () => {
+    const one = card(
+      [
+        proposal({
+          verb: "approve-goal", fields: {}, state: "applying",
+          read: { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] },
+        }),
+      ],
+      {},
+      { [lineID("t1", 0)]: { budget: BOX, source: "goal" } },
+    );
+    const driven = driving(one.lines, {
+      look: {
+        rows: [row({ state: "approved", budget: BOX, approved: EXPIRED })],
+        defaults: {}, outcome: "current", message: "",
+      },
+    });
+    await runProposals(one.lines, driven.ports);
+
+    expect(driven.marked.some((change) => change.change.refusedUnsent === GOAL_CHANGED)).toBe(false);
+    expect(driven.sent).toEqual([one.lines[0].id]);
+    expect(driven.written.map((each) => each.state)).toEqual(["applying", "applied"]);
   });
 
   /**
