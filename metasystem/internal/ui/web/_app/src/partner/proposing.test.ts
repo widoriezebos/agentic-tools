@@ -1546,9 +1546,12 @@ describe("the run, in order", () => {
     });
     await runProposals(lines, driven.ports);
     expect(driven.sent).toEqual([]);
-    // One write and no act: the outcome, at the version the press read.
+    // Two writes and no act: the line is taken over at the version the press read,
+    // because the settle must carry the attempt the entry holds, and settled under
+    // it.
     expect(driven.written).toEqual([
-      { line: lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 1 },
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 2 },
     ]);
     expect(driven.marked).toContainEqual({ line: lines[0].id, change: { unrecorded: null } });
   });
@@ -1587,7 +1590,8 @@ describe("the run, in order", () => {
     expect(driven.marked.some((one) => one.change.refusedUnsent === GOAL_CHANGED)).toBe(false);
     expect(driven.sent).toEqual([]);
     expect(driven.written).toEqual([
-      { line: one.lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 1 },
+      { line: one.lines[0].id, state: "applying", words: "", version: 1 },
+      { line: one.lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 2 },
     ]);
   });
 
@@ -2159,6 +2163,60 @@ describe("tabs pressing one line", () => {
     // And the entry B left offers the press that reconciles by read, which finds
     // the approval on the goal and settles the line with no second act.
     expect(offersTryAgain(lineOf(card([entry], {}, displayed)))).toBe(true);
+  });
+
+  /**
+   * And a press that finds a line another press left `applying` TAKES IT OVER
+   * before it settles it.
+   *
+   * The act that press may have landed is read off the goal rather than sent again
+   * (Astra A-01) — but the entry belongs to the press that wrote `applying`, and a
+   * settle write carrying another attempt is refused with it. So the line is moved
+   * to `applying` under THIS press's attempt, which is the takeover the route
+   * admits of a line whose press died, and settled under it. A settle written
+   * straight onto the entry was refused, and the line stayed in flight for good.
+   */
+  it("takes over a line another press left applying before it settles it", async () => {
+    // The entry as the press that went away left it: in flight, under its own
+    // attempt, at the version this page rendered.
+    let entry: Proposal = proposal({ state: "applying", version: 3, attempt: "1f2e3d4c5b6a7988" });
+    const wrote: string[] = [];
+    const sent: string[] = [];
+    const ports: RunPorts = {
+      look: () => Promise.resolve({
+        rows: [row({ state: "parked" })], defaults: {}, outcome: "current", message: "",
+      }),
+      record: (line, state, words, attempt) => {
+        wrote.push(`${state}@${String(line.version)}`);
+        if (line.version !== entry.version || !(MAY[state] ?? []).includes(entry.state)) {
+          return Promise.resolve({ kind: "conflict", proposal: entry });
+        }
+        if (state === "applying") {
+          entry = { ...entry, state, words, version: entry.version + 1, attempt };
+          return Promise.resolve({ kind: "written", proposal: entry });
+        }
+        if (attempt !== entry.attempt) {
+          return Promise.resolve({ kind: "conflict", proposal: entry });
+        }
+        entry = { ...entry, state, words, version: entry.version + 1 };
+        return Promise.resolve({ kind: "written", proposal: entry });
+      },
+      send: (line) => {
+        sent.push(line.id);
+        return Promise.resolve({ kind: "applied", words: "" });
+      },
+      mark: () => undefined,
+      reconcile: () => undefined,
+      reread: () => undefined,
+      signIn: () => undefined,
+    };
+
+    await runProposals(card([entry]).lines, ports);
+
+    // No act of this press's own, and the line is settled.
+    expect(sent).toEqual([]);
+    expect(wrote).toEqual(["applying@3", "applied@4"]);
+    expect({ state: entry.state, words: entry.words }).toEqual({ state: "applied", words: ALREADY_CARRIED });
   });
 
   /**

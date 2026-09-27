@@ -1302,9 +1302,9 @@ export function newAttempt(): string {
  *     a goal says, because one of these acts can be what changed it;
  *   - a line the compare refuses is refused UNSENT and the run goes on, because
  *     nothing was published, which is exactly what a refusal means;
- *   - a line found at `applying` is reconciled before anything is sent: somebody
- *     began it, and a goal that already carries the act is recorded applied with
- *     no act of this run's own;
+ *   - a line found at `applying` or `unresolved` is reconciled before anything is
+ *     sent: somebody began it, and a goal that already carries the act is taken
+ *     over and recorded applied with no act of this run's own;
  *   - `applying` is written BEFORE the act. A write that failed sends nothing and
  *     stops the run; a write somebody else won means the line is theirs, and the
  *     run goes past it only where what they left is settled;
@@ -1403,10 +1403,6 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       }
       carried = carriesAlready(line, looked.rows);
     }
-    if (carried && line.state === "applying") {
-      await settleCarried(line);
-      continue;
-    }
     const started = await ports.record(line, "applying", "", attempt);
     if (started.kind !== "failed") {
       standing.set(line.id, started.proposal);
@@ -1435,9 +1431,14 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     // The line as the server now has it: the outcome's own write is against the
     // version this one left, so nobody else can slip between them.
     const sending = { ...line, version: started.proposal.version };
-    // A line another press owns, whose act the reading already shows landed: the
-    // entry is taken above rather than below because the record admits `applied`
-    // only from `applying`, and it is settled here with no act of this run's own.
+    // A line another press began, whose act the reading already shows landed: it
+    // is settled here with no act of this run's own, and under the `applying`
+    // write above rather than straight onto the entry the other press left. That
+    // write is the TAKEOVER of a line whose press died — the only thing that moves
+    // ownership — and a settle written straight onto that press's entry carries an
+    // attempt the entry does not hold, so the route refuses it and the line stays
+    // in flight for good. It is also what the transition table wants: `applied`
+    // comes only from `applying` (internal/ui/partner/proposals.go).
     if (carried) {
       await settleCarried(sending);
       continue;
