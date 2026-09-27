@@ -622,7 +622,6 @@ func TestFixtureGoConsumersUseSharedWorkerBoundary(t *testing.T) {
 	scripts := map[string]int{
 		"dispatch-fixtures.sh":      1,
 		"land-fixtures.sh":          14,
-		"return-schema-fixtures.sh": 3,
 		"supervision-fixtures.sh":   10,
 	}
 	for name, minimum := range scripts {

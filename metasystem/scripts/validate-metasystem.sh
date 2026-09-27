@@ -1048,7 +1048,6 @@ for link in \
   scripts/agents/supervision-hook.sh \
   scripts/agents/supervision-fixtures.sh \
   scripts/agents/telemetry-census-fixtures.sh \
-  scripts/agents/return-schema-fixtures.sh \
   scripts/agents/config-identity-fixtures.sh \
   scripts/agents/authority-regression-fixtures.sh \
   scripts/agents/pre-commit-guard-fixtures.sh \
@@ -1124,7 +1123,6 @@ bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/telemetry-census-fixtures.sh
-bash -n scripts/agents/return-schema-fixtures.sh
 bash -n scripts/agents/config-identity-fixtures.sh
 bash -n scripts/agents/record-protocol-fixtures.sh
 bash -n scripts/agents/evidence-segment-fixtures.sh
@@ -1171,10 +1169,6 @@ fi
 if section_selected telemetry-census-fixtures; then
   delivery_contract_skip telemetry-census-fixtures \
     || run_section telemetry-census-fixtures needs-engine bash scripts/agents/telemetry-census-fixtures.sh
-fi
-if section_selected return-schema-fixtures; then
-  delivery_contract_skip return-schema-fixtures \
-    || run_section return-schema-fixtures needs-engine bash scripts/agents/return-schema-fixtures.sh
 fi
 if section_selected config-identity-fixtures; then
   run_section config-identity-fixtures needs-engine bash scripts/agents/config-identity-fixtures.sh

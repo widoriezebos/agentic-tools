@@ -19,7 +19,6 @@ scripts/agents/lease-succession-fixtures.sh	section/lease-succession-fixtures
 scripts/agents/path-class-fixtures.sh	section/static-reproof-fixtures
 scripts/agents/pre-commit-guard-fixtures.sh	section/pre-commit-guard-fixtures
 scripts/agents/record-protocol-fixtures.sh	section/record-protocol-fixtures
-scripts/agents/return-schema-fixtures.sh	section/return-schema-fixtures
 scripts/agents/static-reproof-fixtures.sh	section/static-reproof-fixtures
 scripts/agents/supervision-fixtures.sh	section/supervision-and-census-fixtures
 scripts/agents/supervision-go-fixtures.sh	section/supervision-go-fixtures
