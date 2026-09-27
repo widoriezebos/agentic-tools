@@ -20,7 +20,7 @@
 # Usage: scripts/canary.sh <change-class> [more classes...]
 # Classes:
 #   go            the Go gate alone (unit+race tests, ratchet, cross-builds)
-#   supervision   gate + supervision fixtures
+#   supervision   gate + the supervision and health bed tests
 #   dispatch      gate + conformance tests and delegate-caps fixtures
 #   mission       gate + the mission bed tests
 #   lease         gate + lease-succession fixtures
@@ -52,7 +52,7 @@ for class in "$@"; do
     go) gate ;;
     supervision)
       gate
-      run supervision bash scripts/agents/supervision-fixtures.sh
+      run supervision go test -count=1 -run '^(TestSup[ABC]|TestSupervisionBedA|TestHealthBed)' ./cmd/metasystem/ ./internal/census/ ./internal/dispatch/ ./internal/goal/ ./internal/hooks/ ./internal/lease/ ./internal/missionrunner/ ./internal/report/ ./internal/run/ ./internal/steward/ ./internal/stoptransition/ ./internal/supervise/ ./internal/up/
       run adapter-deadline bash scripts/agents/adapter-deadline-fixtures.sh ;;
     dispatch)
       gate

@@ -96,7 +96,6 @@ section_selected() { # stable section identifier
 }
 
 delegate_owed_sections=(
-  "supervision and census fixtures"
   "supervisor fingerprint heal harness"
   "dispatcher, adapter selftest, and mission-runner process fixtures"
 )
@@ -1046,7 +1045,6 @@ for link in \
   scripts/agents/enumerate-suite-fixtures.sh \
   scripts/agents/fingerprint-harness.sh \
   scripts/agents/supervision-hook.sh \
-  scripts/agents/supervision-fixtures.sh \
   scripts/agents/telemetry-census-fixtures.sh \
   scripts/agents/config-identity-fixtures.sh \
   scripts/agents/authority-regression-fixtures.sh \
@@ -1080,23 +1078,6 @@ if section_selected static-contract-audits; then
   run_section static-contract-audits needs-engine static_contract_audits_section
 fi
 
-# Section 3.11 and retained watch-list round S4 have one bounded fixture suite.
-# Process-owning groups run serially and use separate temporary repositories,
-# so their supervisors and dispatch jobs cannot share lifecycle state. They
-# name S4-1 through S4-10 at their owning checks and contain no uncapped
-# process wait (IL-1).
-# Each process fixture section owns the supervision it arms and shuts down.
-# No later section consumes that armed state, so an arming failure is recorded
-# as the owning section's red and does not gate an unrelated section.
-supervision_and_census_section() {
-  scripts/agents/supervision-fixtures.sh
-  scripts/agents/health-fixtures.sh
-}
-if section_selected supervision-and-census-fixtures \
-  && delegate_process_section "supervision and census fixtures" \
-  && ! delivery_contract_skip supervision-and-census-fixtures "supervision and census fixtures"; then
-  run_section supervision-and-census-fixtures needs-engine supervision_and_census_section
-fi
 if section_selected supervisor-fingerprint-heal-harness \
   && delegate_process_section "supervisor fingerprint heal harness" \
   && ! delivery_contract_skip supervisor-fingerprint-heal-harness "supervisor fingerprint heal harness"; then
@@ -1117,7 +1098,6 @@ bash -n scripts/agents/enumerate-suite-fixtures.sh
 bash -n scripts/agents/witness-gate.sh
 bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
-bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/telemetry-census-fixtures.sh
 bash -n scripts/agents/config-identity-fixtures.sh
 bash -n scripts/agents/record-protocol-fixtures.sh
