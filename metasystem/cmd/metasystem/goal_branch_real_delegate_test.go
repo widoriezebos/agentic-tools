@@ -68,7 +68,7 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
-			probe := exec.Command(filepath.Join(worktree, "scripts", "agents", "adapters", "claude.sh"), "probe")
+			probe := exec.Command(filepath.Join(worktree, "bin", "metasystem"), "delegate-supervisor", "claude", "probe", "--root", worktree)
 			probe.Dir, probe.Env = worktree, append(os.Environ(), "METASYSTEM_BIN="+filepath.Join(worktree, "bin", "metasystem"))
 			if output, err := probe.CombinedOutput(); err != nil {
 				t.Fatalf("claude adapter probe: %v: %s", err, output)

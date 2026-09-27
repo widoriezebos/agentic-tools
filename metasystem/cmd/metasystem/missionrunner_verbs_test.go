@@ -191,14 +191,17 @@ func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(
 	if err := testexec.WriteFile(filepath.Join(installation, "bin", "metasystem"), []byte("fixture"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+	// An external adapter overriding the fake runtime's describe (design
+	// 3.5) whose signature matches every process: the nested installation's
+	// classifier, not the checkout's, must see it.
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\nadapters.fake.use=external\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	adapter := filepath.Join(installation, "scripts", "agents", "adapters", "fake.sh")
+	adapter := filepath.Join(installation, "adapters", "fake")
 	if err := os.MkdirAll(filepath.Dir(adapter), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := testexec.WriteFile(adapter, []byte("#!/bin/sh\n[ \"$1\" = signature ] && printf 'match .*\\n'\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(adapter, []byte("#!/bin/sh\n[ \"$1\" = describe ] || exit 64\nprintf '%s\\n' '{\"schemaVersion\":1,\"match\":[\".*\"]}'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	table := filepath.Join(t.TempDir(), "identities.json")

@@ -96,7 +96,7 @@ func delegateRoot(t *testing.T) string {
 	}
 	pattern, _ := json.Marshal(regexp.QuoteMeta(command))
 	describe := `{"schemaVersion":1,"match":[` + string(pattern) + `]}`
-	script := "#!/bin/sh\n[ \"$1\" = describe ] || exit 64\ncat <<'JSON'\n" + describe + "\nJSON\n"
+	script := "#!/bin/sh\n[ \"$1\" = describe ] || exit 64\nprintf '%s\\n' '" + strings.ReplaceAll(describe, "'", `'\''`) + "'\n"
 	if err := testexec.WriteFile(filepath.Join(adapterDir, "testagent"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
