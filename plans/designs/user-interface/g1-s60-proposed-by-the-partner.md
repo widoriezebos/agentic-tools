@@ -210,6 +210,50 @@ Weakest: the id `<turn>/<index>` is a conversation coordinate in an
 inbox of records; it is stable for the proposal's life and is shown
 small, as every id is.
 
+## Built (2026-09-27)
+
+Landed on ui-development and main: fourteen commits on `ui/g1-s60`,
+built by Claude on Opus from revision 5 on top of g1-s58 step 1, read
+by Codex on Sol under R-124 ([g1-s60-sol-read.md](g1-s60-sol-read.md)):
+three material findings, every one reproduced and fixed in the one fix
+round with a test that failed against the old code; all six of the
+builder's departures accepted. Go, the fast gate and the parallel
+ratchet green; 88 test files, 1,353 frontend tests; the bundle rebuilt
+twice to one digest. Twenty-five screenshots at 1280 and 400, light and
+dark: the group first with "n new", a row open with its four acts, a
+refused row still listed, the bulk sheet with an approve's budget, the
+page after a run, the card in the drawer showing the same record, and a
+stopped run's "not run" row with Continue in the group's head. The
+walkthrough's network log shows the route contract line by line: each
+act's `applying` write at the entry's version, the act, the outcome
+write at the next version, the approve sending the tuple the sheet
+displayed.
+
+The fix round: the store keeps the higher version when an older beat or
+an earlier snapshot arrives late; the inbox withholds a retry the card
+withholds, so a line whose act landed and whose outcome write failed
+offers no press but Dismiss; a stopped bulk run keeps its "not run"
+remainder on the rows and offers Continue with the rest from the
+group's head, the selection cleared only when the run ends.
+
+Departures the read accepted: the handler resolves the human as the
+Partner's routes do, so the unnamed seat reads its own transcript; a
+never-offered action stays on the card with its reason and is not an
+inbox row; `reconcile` takes the line beside the entry; the open row's
+budget read runs once per opening; bulk Try again is refused in the
+sheet by name.
+
+Later, when it hurts: every admitted write restamps `at`, so an
+answered row sorts to the end of its group and reads "today"; transcript
+trimming can remove an old unanswered proposal's turn; the "one read on
+open" lifecycle is held by source and walkthrough, not a mounted test;
+and, found while taking the last screenshot, the inbox folds only
+conflicts into its held entries, so between a run's own outcome write
+and the page's re-read that follows it a line this page just left
+unresolved reads as in flight for about ten milliseconds and corrects
+itself on that read; the card has no such window because the store
+folds every write it makes.
+
 ## Dispositions (Astra round 1, 2026-09-26, under R-124)
 
 Three material findings, all accepted; every code claim checked.
