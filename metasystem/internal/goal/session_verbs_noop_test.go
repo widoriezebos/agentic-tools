@@ -103,7 +103,8 @@ func TestAParkOfAParkedGoalFromASessionIsANoOp(t *testing.T) {
 	}
 }
 
-func TestAParkOfAParkedGoalFromATerminalIsUnchanged(t *testing.T) {
+// U-idem: the same repeat from a terminal or seat is success with no record.
+func TestAParkOfAParkedGoalFromATerminalIsANoOp(t *testing.T) {
 	t.Parallel()
 	endpoint := sessionNoOpGoal(t, 2, "seat-park-twice")
 
@@ -114,8 +115,9 @@ func TestAParkOfAParkedGoalFromATerminalIsUnchanged(t *testing.T) {
 
 	second, err := Park(verbReqFor(endpoint, sessionNoOpUlid(2, 3), "mac-ui"), "seat-park-twice",
 		"the seat pauses it")
-	if err != nil || second.Outcome != OutcomeLost || !strings.Contains(second.Detail, "winner: ") {
-		t.Fatalf("a seat's repeated park was not the competitor refusal: %+v %v", second, err)
+	if err != nil || second.Outcome != OutcomeAbandoned || !second.Unchanged ||
+		!strings.Contains(second.Detail, "is already paused (since ") || !strings.Contains(second.Detail, "reason the seat pauses it") {
+		t.Fatalf("a seat's repeated park was not a no-op naming the standing pause: %+v %v", second, err)
 	}
 }
 
@@ -163,13 +165,13 @@ func TestAnUnparkOfARunningGoalFromASessionIsANoOp(t *testing.T) {
 	}
 }
 
-func TestAnUnparkOfARunningGoalFromATerminalIsUnchanged(t *testing.T) {
+func TestAnUnparkOfARunningGoalFromATerminalIsANoOp(t *testing.T) {
 	t.Parallel()
 	endpoint := sessionNoOpGoal(t, 4, "seat-unpark-twice")
 
 	result, err := Unpark(verbReqFor(endpoint, sessionNoOpUlid(4, 2), "mac-ui"), "seat-unpark-twice")
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not parked") {
-		t.Fatalf("a seat's unpark of a running goal was not the engine's own refusal: %+v %v", result, err)
+	if err != nil || result.Outcome != OutcomeAbandoned || !result.Unchanged || !strings.Contains(result.Detail, "is not paused (it is queued)") {
+		t.Fatalf("a seat's unpark of a running goal was not a no-op: %+v %v", result, err)
 	}
 }
 
@@ -223,7 +225,7 @@ func TestAnAbandonOfAnAbandonedGoalFromASessionIsANoOp(t *testing.T) {
 	}
 }
 
-func TestAnAbandonOfAnAbandonedGoalFromATerminalIsUnchanged(t *testing.T) {
+func TestAnAbandonOfAnAbandonedGoalFromATerminalIsANoOp(t *testing.T) {
 	t.Parallel()
 	endpoint := sessionNoOpGoal(t, 6, "seat-abandon-twice")
 
@@ -245,7 +247,7 @@ func TestAnAbandonOfAnAbandonedGoalFromATerminalIsUnchanged(t *testing.T) {
 	second.Authority = secondProof
 	result, err := Abandon(second, "seat-abandon-twice",
 		AbandonSpec{Because: "abandoned at the terminal"}, secondProof)
-	if err != nil || result.Outcome != OutcomeLost || !strings.Contains(result.Detail, "winner: ") {
-		t.Fatalf("a terminal's repeated abandon was not the competitor refusal: %+v %v", result, err)
+	if err != nil || result.Outcome != OutcomeAbandoned || !result.Unchanged || !strings.Contains(result.Detail, "is already abandoned (since ") {
+		t.Fatalf("a terminal's repeated abandon was not a no-op: %+v %v", result, err)
 	}
 }

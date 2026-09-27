@@ -1327,6 +1327,11 @@ func runIntentReopen(inv *intentInvocation) int {
 	switch {
 	case file == nil:
 		return unknownGoal(inv, id)
+	case where == "live" && file.NextStep == next:
+		// Open with this next step is what a reopen asks for: a repeat,
+		// success with no record (R-129-ui, U-idem).
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: inv.targets(id),
+			Summary: fmt.Sprintf("%s is already open (it is %s) with that next step", id, file.State)})
 	case where == "live":
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
 			Summary: fmt.Sprintf("%s is %s, not done or abandoned; nothing was done", id, file.State),
