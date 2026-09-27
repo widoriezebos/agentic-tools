@@ -137,6 +137,47 @@ func TestAnOversizeAnswerIsBoundedAndSaysSo(t *testing.T) {
 	testutil.Expect(t, "and is bounded", len(kept) < maxMessageBytes+200, true)
 }
 
+// A message written at the bound the writer holds one to reads back, whatever
+// JSON spends on spelling it and whatever bounded proposals it carries.
+//
+// The reader took a line of the message bound plus a kilobyte, which is less than
+// the text bound alone can cost: JSON spends six bytes on one `<`, so an answer of
+// them — or a plain answer carrying one proposal — wrote a line the reader then
+// refused. And it refused THE WHOLE FILE for it, which is the opposite of this
+// store's own rule that a bad line costs one message: the transcript failed to
+// open on every restart, and the Decisions page, which reads the same transcript,
+// failed with it (Astra B-01). What the writer can write, the reader reads.
+func TestAMessageAtTheBoundReadsBackWhateverJSONSpendsOnIt(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	conversation, err := OpenConversation(root, "Wido")
+	testutil.Require(t, "opened", err, nil)
+	testutil.Require(t, "appended", conversation.Append(Message{
+		ID: "m1", Turn: "t1", Role: RolePartner, Outcome: OutcomeComplete,
+		// Every one of these costs six bytes in JSON, which is the most one byte
+		// of an answer can cost.
+		Text: strings.Repeat("<", maxMessageBytes),
+		Proposals: []Proposal{{
+			Index: 0, Verb: "edit-goal", Goal: strings.Repeat("g", 64),
+			Title: strings.Repeat("t", 160), State: ProposalWaiting, Version: 1,
+			Fields: map[string]string{
+				"intent":   strings.Repeat("i", 2000),
+				"nextStep": strings.Repeat("n", 2000),
+				"labels":   strings.Repeat("l", 25*32),
+			},
+			Why: strings.Repeat("w", 2000),
+		}},
+	}), nil)
+
+	reopened, err := OpenConversation(root, "Wido")
+	testutil.Require(t, "reopened", err, nil)
+	messages := reopened.Messages(0)
+	testutil.Require(t, "the line reads back", len(messages), 1)
+	testutil.Expect(t, "with its whole text", len(messages[0].Text), maxMessageBytes)
+	testutil.Require(t, "and its proposal", len(messages[0].Proposals), 1)
+	testutil.Expect(t, "whole", len(messages[0].Proposals[0].Why), 2000)
+}
+
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil

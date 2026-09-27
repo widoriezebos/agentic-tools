@@ -627,7 +627,7 @@ func (c *Conversation) load() error {
 	}
 	defer file.Close()
 	reader := bufio.NewScanner(file)
-	reader.Buffer(make([]byte, 0, 64*1024), maxMessageBytes+1024)
+	reader.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
 	for reader.Scan() {
 		line := strings.TrimSpace(reader.Text())
 		if line == "" {
@@ -665,6 +665,23 @@ func (c *Conversation) readState() error {
 // maxMessageBytes bounds one stored message. A model that answers with a
 // megabyte is a model whose answer is kept to the bound and said to be.
 const maxMessageBytes = 256 << 10
+
+// maxLineBytes is the longest line this store reads back, and it is the writer's
+// own bound rather than a guess.
+//
+// It was maxMessageBytes plus a kilobyte, which is less than the text bound alone
+// can cost: JSON spends six bytes on one `<` and on one control character, so an
+// answer of those — or a plain answer carrying one proposal — wrote a line the
+// reader then refused. And bufio refuses THE WHOLE FILE for one long line, which
+// is the opposite of this file's own rule that a line it cannot read costs one
+// message: the transcript failed to open on every restart afterwards, and the
+// Decisions page, which reads the same transcript, failed with it (Astra B-01).
+//
+// So the bound is the text bound as JSON can spell it, six times over, and the
+// rest is for what a message carries beside its text — its stamps, its activity,
+// and its proposals, suggestions and deposits, every field of which is bounded
+// where it is admitted.
+const maxLineBytes = 8 * maxMessageBytes
 
 // Append writes one message and keeps it.
 func (c *Conversation) Append(message Message) error {

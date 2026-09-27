@@ -264,6 +264,44 @@ func TestAnActionTheTipCannotCarryIsRecordedWithItsReason(t *testing.T) {
 	testutil.Expect(t, "and is offered", kept[3].Offered, true)
 }
 
+// A frame whose fields are past the ledger's own bounds is refused here, and the
+// refusal keeps none of the oversized value.
+//
+// The tool bounds every field it frames, and this bounds the FRAME, which is not
+// the same check: a frame arrives as text a runtime reported, so a runtime that
+// composed one itself could write a field of any length into the human's own
+// transcript. It could, and the cost was the conversation: a propose naming a
+// goal of three hundred thousand characters was refused for a goal nothing
+// carries, the refusal persisted the whole id, and the next open of that
+// transcript failed on the line — taking the Decisions page, which reads the same
+// transcript, down with it (Astra B-01). So this is the one refusal that does not
+// carry what it refused.
+func TestAFramePastTheLedgersBoundsIsRefusedWithoutKeepingIt(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeUnpark, strings.Repeat("a", 300000), nil, "resume it"),
+		proposed(uitools.ProposeEdit, "refunds",
+			[]string{uitools.ProposalIntent + strings.Repeat("i", 300000)}, "reword it"),
+		proposed(uitools.ProposeUnpark, "refunds", nil, "back to the queue"),
+	)
+	_, kept := askProposing(t, service, "do these three")
+	testutil.Require(t, "all three are recorded", len(kept), 3)
+
+	testutil.Expect(t, "an oversized goal is not offered", kept[0].Offered, false)
+	testutil.Expect(t, "with the ledger's own bound as the reason",
+		strings.Contains(kept[0].Reason, "a goal id is at most 64 bytes in the ledger"), true)
+	testutil.Expect(t, "and the transcript keeps none of it", len(kept[0].Goal) < 100, true)
+
+	testutil.Expect(t, "an oversized intent is not offered either", kept[1].Offered, false)
+	testutil.Expect(t, "bounded by the sheets' own line",
+		strings.Contains(kept[1].Reason, "carries at most 2000 characters"), true)
+	testutil.Expect(t, "and none of it is kept", len(kept[1].Fields), 0)
+
+	// A refusal holds its place, exactly as every other refusal does.
+	testutil.Expect(t, "the third keeps its index", kept[2].Index, 2)
+	testutil.Expect(t, "and is offered", kept[2].Offered, true)
+}
+
 // openingLines is one open's framing: the seven fields its route body cannot do
 // without, its own id, and whatever edges the case is about.
 func openingLines(id string, edges ...string) []string {
