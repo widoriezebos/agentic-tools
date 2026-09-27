@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -55,35 +58,44 @@ func TestTestingEnvironmentCarriesGoConfigIntoScratchPreparation(t *testing.T) {
 			t.Fatal("filter passed an unrelated host variable")
 		}
 		request := testingRunRequest(prepared, "attempt", t.TempDir(), "", "", "")
-		run, err := proofrun.CreateScratchRun(t.TempDir())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := proofrun.PrepareScratchEnvironment(&request, run); err != nil {
-			t.Fatalf("%s: %v", test.name, err)
-		}
-		location := filepath.Join(run.Dir("goenv"), "env")
-		if test.name == "default" {
-			// An unset GOENV is resolved per group: the caller's default file
-			// is snapshotted at the group's managed default config location.
-			home := filepath.Join(run.Dir("groups"), group.ID, ".environment", "home")
-			location = filepath.Join(home, ".config", "go", "env")
-			if runtime.GOOS == "darwin" {
-				location = filepath.Join(home, "Library", "Application Support", "go", "env")
+		control := t.TempDir()
+		// Cleanup proves the scratch writers gone by taking the writer lock
+		// through a fresh description. A parallel test's fork/exec copies the
+		// launcher's writer descriptor into its child until that child execs,
+		// which keeps the lock held and retains the run as writer-lock-held.
+		// Excluding forks while the descriptor is open keeps it this run's own.
+		checkScratchLifetime := func() error {
+			run, err := proofrun.CreateScratchRun(control)
+			if err != nil {
+				return err
 			}
-		}
-		snapshot, err := os.ReadFile(location)
-		if test.off {
-			if request.ScratchEnvironment.GoEnv != "off" || !os.IsNotExist(err) {
-				t.Errorf("off: mode %q, snapshot err %v", request.ScratchEnvironment.GoEnv, err)
+			if err := proofrun.PrepareScratchEnvironment(&request, run); err != nil {
+				return errors.Join(fmt.Errorf("%s: %w", test.name, err), run.Cleanup(nil))
 			}
-		} else if err != nil || string(snapshot) != test.want {
-			t.Errorf("%s snapshot = %q %v, want %q", test.name, snapshot, err, test.want)
+			location := filepath.Join(run.Dir("goenv"), "env")
+			if test.name == "default" {
+				// An unset GOENV is resolved per group: the caller's default file
+				// is snapshotted at the group's managed default config location.
+				home := filepath.Join(run.Dir("groups"), group.ID, ".environment", "home")
+				location = filepath.Join(home, ".config", "go", "env")
+				if runtime.GOOS == "darwin" {
+					location = filepath.Join(home, "Library", "Application Support", "go", "env")
+				}
+			}
+			snapshot, err := os.ReadFile(location)
+			if test.off {
+				if request.ScratchEnvironment.GoEnv != "off" || !os.IsNotExist(err) {
+					t.Errorf("off: mode %q, snapshot err %v", request.ScratchEnvironment.GoEnv, err)
+				}
+			} else if err != nil || string(snapshot) != test.want {
+				t.Errorf("%s snapshot = %q %v, want %q", test.name, snapshot, err, test.want)
+			}
+			if err := proofrun.ValidateScratchEnvironment(request, run); err != nil {
+				t.Errorf("%s: %v", test.name, err)
+			}
+			return run.Cleanup(nil)
 		}
-		if err := proofrun.ValidateScratchEnvironment(request, run); err != nil {
-			t.Errorf("%s: %v", test.name, err)
-		}
-		if err := run.Cleanup(nil); err != nil {
+		if err := testexec.Locked(checkScratchLifetime); err != nil {
 			t.Fatal(err)
 		}
 	}
