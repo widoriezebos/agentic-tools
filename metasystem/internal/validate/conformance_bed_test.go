@@ -62,7 +62,7 @@ func TestConformanceBedInstructionsHandOffOverTheBound(t *testing.T) {
 // checks above; the context-budget surface must select it and a change to
 // docs/orchestration.md must admit it. The group switch that retires
 // conformance-fixtures.sh renames it to the group that runs TestConformanceBed*.
-const conformanceBedGroup = "section/conformance-fixtures"
+const conformanceBedGroup = "conformance-bed-standard"
 
 func TestConformanceBedContextTestingContract(t *testing.T) {
 	t.Parallel()
