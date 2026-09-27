@@ -30,7 +30,8 @@ import { derivedTier, type Answer, type NewGoal, type Risk } from "../backlog/op
  * somebody else began — left at `applying`, or left `unresolved` by a press the
  * act layer refused because another one owns that act — is reconciled before it
  * is sent: a goal that already carries the act is recorded applied with nothing
- * sent for it.
+ * sent for it. And a press the act layer refused stops the run where it stands,
+ * because the act it could not make may be landing behind it.
  *
  * **The result wins.** The tab that received an act's answer is the only thing
  * that knows what the ledger did. An outcome write refused because another tab
@@ -698,7 +699,9 @@ export const NOT_APPLIED_SIGN_IN = "not applied: sign in to apply";
  * any publish, and the act that IS executing may land — so the tab that meets it
  * holds no result about that line at all. It writes `unresolved` in the
  * refusal's own sentence, never `refused`, which would say the act did not
- * happen; and it never sends again on its own (Astra A-01).
+ * happen; it stops the run there, because the act it could not make may be
+ * changing the goal a line behind it is about (Astra E-01); and it never sends
+ * again on its own (Astra A-01).
  */
 export const IN_FLIGHT = "in-flight";
 
@@ -711,11 +714,16 @@ export const IN_FLIGHT = "in-flight";
  * run never waits on a sheet, so the line says what it needs and the rest say
  * "not run" until the human signs in or presses Continue (g1-s58 D7).
  *
- * And an act another press owns is passed, for the refusal's own reason: this
- * press published nothing, so the next line does not depend on anything it did.
+ * And an act another press owns stops it, for the reason the unresolved answer
+ * does. Nothing of THIS press was published, but the act that press owns may be
+ * landing as the answer is read, and a line behind it can be about the very goal
+ * it changes: going on would compare that line against the reading taken before
+ * the act and send it against a goal nobody read (Astra E-01). The lines behind
+ * it say "not run", and Continue is a fresh press, which reads fetch-first before
+ * it compares anything.
  */
 export function goesOn(answered: Answered): boolean {
-  return answered.kind === "applied" || answered.kind === "refused" || answered.kind === "in-flight";
+  return answered.kind === "applied" || answered.kind === "refused";
 }
 
 /**

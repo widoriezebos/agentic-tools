@@ -546,14 +546,18 @@ describe("what the run does with each answer", () => {
    * publish (Astra A-01). The tab that meets it holds NO result: the act is
    * somebody else's and may yet land, so the line is written `unresolved` in the
    * refusal's own sentence and never `refused` — a refusal would say nothing
-   * landed, which this tab cannot know — and the run goes on, because nothing of
-   * this press's was published.
+   * landed, which this tab cannot know.
+   *
+   * And it STOPS the run, for the reason every unresolved answer does: the act
+   * may be landing as this is read, and a line behind it may be about the very
+   * goal it changes. The rest say "not run", and Continue reads again before it
+   * compares them (Astra E-01).
    */
-  it("holds no result for an act another press is applying", () => {
+  it("holds no result for an act another press is applying, and stops there", () => {
     const answered = answeredOf(new BacklogError("/act", 409, IN_FLIGHT_SAID, IN_FLIGHT));
     expect(answered).toEqual({ kind: "in-flight", words: IN_FLIGHT_SAID });
     expect(recorded(answered)).toEqual({ state: "unresolved", words: IN_FLIGHT_SAID });
-    expect(goesOn(answered)).toBe(true);
+    expect(goesOn(answered)).toBe(false);
   });
 
   it("writes each answer's own state onto the line", () => {
@@ -1534,15 +1538,17 @@ describe("the run, in order", () => {
 
   /**
    * An act another press owns is written `unresolved`, in the refusal's own
-   * sentence, and the run goes on (Astra A-01).
+   * sentence, and the run STOPS there (Astra A-01, corrected by E-01).
    *
    * The act layer refuses the second request for one goal and one act at once,
-   * before any read or publish, so nothing of this press's was published: the
-   * next line does not depend on it, and the line itself holds no result — the
-   * other press's act may yet land, which is what `unresolved` says and what
-   * `refused` would deny.
+   * before any read or publish, so this tab holds no result: the other press's
+   * act may yet land, which is what `unresolved` says and what `refused` would
+   * deny. And because it may be landing, the run stops exactly as it does at any
+   * other unresolved answer — a line behind it can be about that goal, and the
+   * reading every compare rests on was taken before the act. The rest say "not
+   * run", and Continue reads again.
    */
-  it("writes an act another press owns as unresolved, and sends it no second time", async () => {
+  it("writes an act another press owns as unresolved, and stops the run there", async () => {
     const lines = three();
     const driven = driving(lines, {
       answers: { [lines[0].id]: answeredOf(new BacklogError("/act", 409, IN_FLIGHT_SAID, IN_FLIGHT)) },
@@ -1555,11 +1561,62 @@ describe("the run, in order", () => {
     ]);
     // Never `refused`: this tab holds no result at all for that act.
     expect(driven.written.some((one) => one.line === lines[0].id && one.state === "refused")).toBe(false);
-    // Once, and the run goes on to the lines behind it.
-    expect(driven.sent).toEqual([lines[0].id, lines[1].id, lines[2].id]);
+    // Once, and nothing behind it.
+    expect(driven.sent).toEqual([lines[0].id]);
+    expect(driven.marked.filter((one) => one.change.notRun === true).map((one) => one.line))
+      .toEqual([lines[1].id, lines[2].id]);
     // And the line offers Try again, as an unresolved line does.
     const after = card([proposal({ state: "unresolved", words: IN_FLIGHT_SAID })]);
     expect(offersTryAgain(lineOf(after))).toBe(true);
+  });
+
+  /**
+   * Astra's own sequence, whole (E-01).
+   *
+   * An `applying` edit of G, retried, and behind it a waiting approve of G that
+   * the card shows against the intent the Partner read. The edit is answered
+   * `in-flight`: the other press has it, and it is that press's edit that changes
+   * the very intent the approve is about. A run that went on would compare the
+   * approve against the reading taken before it and approve work nobody read.
+   *
+   * So the run stops, the approve says "not run", and Continue — a fresh press
+   * through the same runner — reads again fetch-first and refuses it unsent
+   * against the goal as it now is.
+   */
+  it("leaves a later line about that goal for Continue, which compares it afresh", async () => {
+    const read = { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] };
+    const one = card(
+      [
+        proposal({ index: 0, verb: "edit-goal", fields: { intent: "Something else entirely." }, read, state: "applying" }),
+        proposal({ index: 1, verb: "approve-goal", fields: {}, read }),
+      ],
+      {},
+      { [lineID("t1", 1)]: { budget: BOX, source: "goal" } },
+    );
+    const before: Looked = { rows: [row({ budget: BOX })], defaults: {}, outcome: "current", message: "" };
+    // The goal as the other press's edit leaves it.
+    const after: Looked = {
+      rows: [row({ intent: "Something else entirely.", budget: BOX })],
+      defaults: {}, outcome: "current", message: "",
+    };
+    const driven = driving(one.lines, {
+      looks: [before, after],
+      answers: { [one.lines[0].id]: answeredOf(new BacklogError("/act", 409, IN_FLIGHT_SAID, IN_FLIGHT)) },
+    });
+
+    await runProposals(one.lines, driven.ports);
+
+    // One read, one act attempted, and no approval sent on it.
+    expect(driven.looks.length).toBe(1);
+    expect(driven.sent).toEqual([one.lines[0].id]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { notRun: true } });
+
+    // Continue: the lines the stopped run never reached, through the same runner.
+    await runProposals([one.lines[1]], driven.ports);
+
+    expect(driven.looks.length).toBe(2);
+    expect(driven.sent).toEqual([one.lines[0].id]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { refusedUnsent: GOAL_CHANGED } });
   });
 
   /**
