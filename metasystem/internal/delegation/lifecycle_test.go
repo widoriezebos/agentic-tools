@@ -76,6 +76,26 @@ func TestNewResolvesTheRepositoryScopeThroughGit(t *testing.T) {
 	}
 }
 
+// Outside the delegate boundary the authority-bearing grammar is refused
+// exactly as the retired script refused a direct invocation.
+func TestLegacyGrammarIsRefusedOutsideTheBoundary(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	for _, argv := range [][]string{{"dispatch", "--role", "implementer"}, {"follow-up", "--job", "j"}, {"cancel", "--job", "j"}, {"--role", "implementer"}, {}} {
+		result := b.runEnv(delegation.Env{}, argv...)
+		requireExit(t, result, 2, b.stderr.String())
+		if !strings.Contains(string(result.Stdout), `"outcome":"REFUSED-REQUEST"`) || !strings.Contains(string(result.Stdout), "use metasystem internal delegate") {
+			t.Fatalf("%v: refusal %q", argv, result.Stdout)
+		}
+	}
+	// Reads stay reachable: status answers for an unknown job.
+	result := b.runEnv(delegation.Env{}, "status", "--job", "never-was")
+	requireExit(t, result, 6, b.stderr.String())
+	if !strings.Contains(b.stderr.String(), "status: no job record for never-was") {
+		t.Fatalf("stderr %q", b.stderr.String())
+	}
+}
+
 func TestUnknownCommandsAndMalformedCallbacksAreUsage(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)

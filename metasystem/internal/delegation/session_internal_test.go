@@ -74,6 +74,24 @@ func internalSession(t *testing.T, ports Ports) (*session, *bytes.Buffer) {
 	}), &stderr
 }
 
+// authority-regression WC-3: the wait re-enters reaping only through the
+// lease-held entry, once, for every terminal verdict, and maps the waiter's
+// verdict to the dispatcher's exit codes.
+func TestWaitReapsOnlyThroughTheLeaseHeldEntry(t *testing.T) {
+	t.Parallel()
+	for waiter, want := range map[int]int{0: 0, 1: 3, 2: 4, 3: 8, 4: 5, 9: 9} {
+		held := &stubLease{}
+		s, _ := internalSession(t, Ports{Lease: held, Host: stubHost{wait: WaitOutcome{Code: waiter}}, Clock: &stubClock{now: time.Unix(1790000000, 0)}})
+		if got := s.waitForJob("job-a"); got != want {
+			t.Fatalf("waiter %d mapped to %d, want %d", waiter, got, want)
+		}
+		reaped := waiter <= 3
+		if reaped != (strings.Join(held.calls, ";") == "held;authorize holder-only ") {
+			t.Fatalf("waiter %d: lease calls %v", waiter, held.calls)
+		}
+	}
+}
+
 // delegate-caps AUTH-R2-005: a cap at or above the live watcher's attested
 // ceiling refuses by name, whatever the configuration raised.
 func TestJobCapMustStayBelowTheAttestedWatcherCeiling(t *testing.T) {
