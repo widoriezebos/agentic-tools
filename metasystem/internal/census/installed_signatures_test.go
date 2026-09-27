@@ -6,9 +6,10 @@ import (
 	"testing"
 )
 
-// TestInstalledAdapterSignaturesNarrowOnlyInFixtureMode: the fixture
-// narrowing that replaced deleting adapter scripts from a scratch
-// installation applies in a fixture-mode root and nowhere else.
+// TestInstalledAdapterSignaturesNarrowOnlyInFixtureMode: a fixture-mode
+// root classifies against its configured runtimes (what fixture beds got by
+// deleting unrelated adapter scripts from a scratch installation), the
+// environment narrows it further, and neither applies to a production root.
 func TestInstalledAdapterSignaturesNarrowOnlyInFixtureMode(t *testing.T) {
 	t.Parallel()
 	fixture, production := t.TempDir(), t.TempDir()
@@ -32,9 +33,15 @@ func TestInstalledAdapterSignaturesNarrowOnlyInFixtureMode(t *testing.T) {
 	if err != nil || len(names) != 4 {
 		t.Fatalf("a production root honored the fixture narrowing: %v, %v", names, err)
 	}
-	_, names, texts, err := installedAdapterSignatures(fixture, func(string) string { return "" })
+	// Unnarrowed, a fixture-mode root classifies against its configured
+	// runtimes only; a production root against every declared runtime.
+	_, names, _, err = installedAdapterSignatures(fixture, func(string) string { return "" })
+	if err != nil || len(names) != 1 || names[0] != "fake" {
+		t.Fatalf("fixture-mode universe = %v, %v", names, err)
+	}
+	_, names, texts, err := installedAdapterSignatures(production, func(string) string { return "" })
 	if err != nil || len(names) != 4 || len(texts) != 4 || names[0] != "claude" || names[3] != "fake" {
-		t.Fatalf("unnarrowed universe = %v, %v", names, err)
+		t.Fatalf("production universe = %v, %v", names, err)
 	}
 }
 

@@ -130,8 +130,16 @@ func installedAdapterSignatures(root string, getenv func(string) string) ([]Sign
 			names = append(names, adapter.Name)
 		}
 	}
-	if narrowed := getenv(FixtureSignatureRuntimesEnv); narrowed != "" && fixtureauth.FixtureModeRoot(root) {
-		names = strings.Fields(strings.ReplaceAll(narrowed, ",", " "))
+	if fixtureauth.FixtureModeRoot(root) {
+		// A fixture-mode root (metasystem.runtimes=fake) classifies against
+		// its configured runtimes only: a test or bed runs under whatever
+		// agent CLI its person uses, and that ambient runtime must not turn
+		// a staged human ancestry into a delegate one. The environment can
+		// narrow further.
+		names = splitRuntimes(config.ConfValue(filepath.Join(root, "metasystem.conf"), "metasystem.runtimes", ""))
+		if narrowed := getenv(FixtureSignatureRuntimesEnv); narrowed != "" {
+			names = strings.Fields(strings.ReplaceAll(narrowed, ",", " "))
+		}
 	}
 	sort.Strings(names)
 	var sigs []Signature
