@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"golang.org/x/sys/unix"
 )
 
@@ -342,7 +343,7 @@ func newFixtureBedHarness(t *testing.T) *fixtureBedHarness {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(harness.inner, []byte(fixtureBedInnerBed), 0o755); err != nil {
+	if err := testexec.WriteFile(harness.inner, []byte(fixtureBedInnerBed), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return harness
@@ -635,6 +636,11 @@ func TestFixtureBedLeashReleasesChildOnOwnerDeath(t *testing.T) {
 	if _, err := io.Copy(io.Discard, ready); err != nil {
 		t.Fatal(err)
 	}
+	// End of file says every holder closed descriptor 5; a child closes its
+	// descriptors on the way out before the kernel marks it exited, so the
+	// probe waits for the child's own exit event first. A child that closed
+	// the leash and kept running would never deliver it.
+	waitFixtureBedOwnerExit(child)
 	exact, state, err := identity.KernelProber{}.Probe(int64(child))
 	if err == nil && state == identity.Alive && !exact.Zombie {
 		t.Fatalf("leashed child %d is still running after its owner died", child)
