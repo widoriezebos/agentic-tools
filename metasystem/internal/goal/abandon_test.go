@@ -222,7 +222,7 @@ func TestAbandonRefusalsStartWithAuthorityReasonAndArgumentGrammar(t *testing.T)
 		t.Fatalf("authority name must refuse first: %v", err)
 	}
 	req.Actor.Human = "Wido"
-	if _, err := Abandon(req, "goal-a", AbandonSpec{Because: "reason"}, nil); err == nil || err.Error() != "abandon requires freshly observed enrolled-terminal human authority" {
+	if _, err := Abandon(req, "goal-a", AbandonSpec{Because: "reason"}, nil); err == nil || err.Error() != "abandon requires freshly observed enrolled-terminal human authority or a signed-in browser session" {
 		t.Fatalf("fresh proof must refuse second: %v", err)
 	}
 	proof := goalHumanProof(t, root, req.Now)
@@ -418,7 +418,7 @@ func TestAbandonRefusalsAreOrderedInputFirst(t *testing.T) {
 		t.Fatalf("refusal 1 must win: %v", err)
 	}
 	req.Actor.Human = "Wido"
-	if _, err := Abandon(req, "primary", defect, nil); err == nil || err.Error() != "abandon requires freshly observed enrolled-terminal human authority" {
+	if _, err := Abandon(req, "primary", defect, nil); err == nil || err.Error() != "abandon requires freshly observed enrolled-terminal human authority or a signed-in browser session" {
 		t.Fatalf("proof half of refusal 1 must win: %v", err)
 	}
 	proof := goalHumanProof(t, root, req.Now)
@@ -527,7 +527,7 @@ func TestAbandonAlsoCascadesToNamedDependentsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	primaryRevision := projectedTree.Live["primary"].Revision
-	_, err = abandonRequest(req, "primary", AbandonSpec{Because: "obsolete", Also: []string{"outsider"}}, arguments, map[string]uint64{"primary": primaryRevision}).Mutate(tip)
+	_, err = abandonRequest(req, "primary", AbandonSpec{Because: "obsolete", Also: []string{"outsider"}}, arguments, map[string]uint64{"primary": primaryRevision}, nil).Mutate(tip)
 	if err == nil || err.Error() != "abandon takes one goal; --also names only its live dependents" || strings.Contains(err.Error(), "revision 0") {
 		t.Fatalf("an --also goal absent from the projection did not reach refusal 8: %v", err)
 	}
@@ -535,11 +535,11 @@ func TestAbandonAlsoCascadesToNamedDependentsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = abandonRequest(req, "primary", AbandonSpec{Because: "obsolete", Also: []string{"child"}}, dependentArguments, map[string]uint64{"primary": primaryRevision}).Mutate(tip)
+	_, err = abandonRequest(req, "primary", AbandonSpec{Because: "obsolete", Also: []string{"child"}}, dependentArguments, map[string]uint64{"primary": primaryRevision}, nil).Mutate(tip)
 	if err == nil || !strings.Contains(err.Error(), "goal child changed under abandon's lock") || strings.Contains(err.Error(), "revision 0") {
 		t.Fatalf("a live dependent absent from the projection did not reach the record-moved refusal without revision zero: %v", err)
 	}
-	_, err = abandonRequest(req, "primary", AbandonSpec{Because: "obsolete"}, abandonArguments{waive: map[string]string{}, set: map[string]bool{"primary": true}}, map[string]uint64{}).Mutate(tip)
+	_, err = abandonRequest(req, "primary", AbandonSpec{Because: "obsolete"}, abandonArguments{waive: map[string]string{}, set: map[string]bool{"primary": true}}, map[string]uint64{}, nil).Mutate(tip)
 	if err == nil || err.Error() != "goal primary is not live; nothing to abandon" || strings.Contains(err.Error(), "revision 0") {
 		t.Fatalf("a primary absent from the projection did not reach the not-live refusal before compare: %v", err)
 	}
@@ -645,7 +645,7 @@ func TestAbandonNeedsNoEngineHistoryInAnUnrelatedProject(t *testing.T) {
 			req.Actor.Human = "Wido"
 			other, _ := fakeGoalEndpoint(t)
 			for label, proof := range map[string]*humanauthority.Proof{"no proof": nil, "another project's proof": goalHumanProof(t, other.Root, req.Now)} {
-				if _, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof); err == nil || err.Error() != "abandon requires freshly observed enrolled-terminal human authority" {
+				if _, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof); err == nil || err.Error() != "abandon requires freshly observed enrolled-terminal human authority or a signed-in browser session" {
 					t.Fatalf("abandon with %s: %v", label, err)
 				}
 			}
