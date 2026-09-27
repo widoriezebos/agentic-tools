@@ -5,7 +5,6 @@ scripts/agents/checkout-execution-guard-fixtures.sh	section/gate-fence-fixtures
 scripts/agents/config-identity-fixtures.sh	section/config-identity-fixtures
 scripts/agents/delegate-caps-fixtures.sh	section/delegate-caps-fixtures
 scripts/agents/dispatch-fixtures.sh	section/dispatcher-adapter-and-mission-runner-fixtures
-scripts/agents/enumerate-suite-fixtures.sh	section/enumeration-mode-fixtures
 scripts/agents/evidence-segment-fixtures.sh	section/evidence-segment-fixtures
 scripts/agents/flight-recorder-fixtures.sh	section/flight-recorder-fixtures
 scripts/agents/goal-cli-fixtures.sh	section/goal-cli-fixtures

@@ -15,11 +15,10 @@ var forbiddenInterpreters = map[string]bool{
 	"deno": true, "node": true, "perl": true, "php": true, "ruby": true,
 }
 
-// These three published fixture owners are the complete legacy Python debt.
+// These two published fixture owners are the complete legacy Python debt.
 // The inventory is basename-exact so no new source path inherits it.
 var declaredPythonFiles = map[string]bool{
 	"channel-fixtures.sh": true, "dispatch-fixtures.sh": true,
-	"validate-metasystem.sh": true,
 }
 
 // DependencyFinding names one executable interpreter command that violates

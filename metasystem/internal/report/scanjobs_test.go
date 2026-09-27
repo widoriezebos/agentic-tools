@@ -239,3 +239,23 @@ func TestScanJobsScopeSidecarsChildrenAndQuietSidecars(t *testing.T) {
 		}
 	}
 }
+
+// A quiet non-JSON record past the start-verify window but inside the stale
+// window reports nothing: its empty status never earns NEVER-STARTED, and
+// its id is not marked seen before it can age into STALE.
+func TestScanJobsQuietNonJSONRecordInsideStaleWindowReportsNothing(t *testing.T) {
+	t.Parallel()
+	f := newScanFixture(t)
+	f.write("notes.json", "plain text progress notes\n", 6)
+	var out strings.Builder
+	if err := ScanJobs(ScanJobsParams{Dirs: []string{f.dir}, StateFile: f.state, RunningFile: f.run,
+		ScopeField: "workspaceRoot", StaleMin: 20, CapMin: 180, StartVerifyMin: 5, Now: f.now}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "" {
+		t.Fatalf("a quiet non-JSON record inside its stale window reported: %q", out.String())
+	}
+	if state, _ := os.ReadFile(f.state); strings.Contains(string(state), "notes") {
+		t.Fatalf("a quiet non-JSON record was marked seen prematurely: %q", state)
+	}
+}

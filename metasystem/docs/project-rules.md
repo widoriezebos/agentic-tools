@@ -117,7 +117,7 @@ Document who owns deployments, proxies, credentials, production data, migrations
 
 Promoted from plans/go-production-grade.md at its Phase 7 close-out
 (2026-08-12); this table is the living record — a platform moves to the
-verified tier only when a full `scripts/validate-metasystem.sh` run passes
+verified tier only when a full `metasystem test run --mode deep` passes
 on it.
 
 - **Verified**: macOS on arm64 (the development host), and **Debian 12

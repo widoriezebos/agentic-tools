@@ -462,24 +462,17 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 	sameTree(t, before, treeState(t, target), "a second adoption")
 
 	// Unreplaced placeholders fail the full audit, which the structural
-	// pass tolerated, and the adopted validator refuses them with its cheap
-	// static scan before any engine gate: first in the project rules, then,
-	// with those filled, in the configuration.
+	// pass tolerated, and the audit names them as the adopted placeholder
+	// refusal (the retired validator's static scan carried this message;
+	// the audit owns it): first in the project rules, then, with those
+	// filled, in the configuration.
 	for _, fill := range []string{"docs/project-rules.md", ""} {
 		audited, err := audit.AuditMetasystem(target, audit.AuditOptions{})
 		if err != nil || len(audited.Violations) == 0 {
 			t.Fatalf("the audit accepted unreplaced placeholders (%q still unfilled): %v", fill, err)
 		}
-		validator := exec.Command("bash", filepath.Join(target, "scripts", "validate-metasystem.sh"))
-		validator.Dir = target
-		validator.Env = ledgerfence.EnvironWithoutGitSteering()
-		started := time.Now()
-		out, err := validator.CombinedOutput()
-		if err == nil || !hasLine(strings.Split(string(out), "\n"), "adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf") {
-			t.Fatalf("the adopted validator did not refuse unreplaced placeholders with its static scan (%v):\n%s", err, out)
-		}
-		if elapsed := time.Since(started); elapsed >= time.Minute {
-			t.Fatalf("the placeholder refusal took %s; the pre-gate scan must fail within seconds", elapsed)
+		if !hasLine(audited.Violations, "adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf") {
+			t.Fatalf("the audit did not name the adopted placeholder refusal (%q still unfilled): %q", fill, audited.Violations)
 		}
 		if fill != "" {
 			path := filepath.Join(target, fill)

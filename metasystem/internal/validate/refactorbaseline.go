@@ -29,17 +29,22 @@ type RefactorBaselineParams struct {
 	Gate          string // record: the acceptance gate command that passed
 	MaxAgeMinutes int
 	MaxCommits    int
+	// Git runs one git command in dir and returns its raw stdout; nil runs
+	// the git executable. Now is the gate's clock; nil is time.Now. Both are
+	// per-call seams for behaviour tests.
+	Git func(dir string, args ...string) (string, error)
+	Now func() time.Time
 }
 
 // RefactorBaseline runs the gate and returns its exit code: 0 safe, 1
 // blocked, 2 usage or environment error. Messages go to out (verdicts) and
 // errOut (refusals), matching the script's stdout/stderr split.
 func RefactorBaseline(p RefactorBaselineParams, out, errOut io.Writer) int {
-	if gitIn(p.Cwd, "rev-parse", "--is-inside-work-tree") != nil {
+	if p.gitIn(p.Cwd, "rev-parse", "--is-inside-work-tree") != nil {
 		fmt.Fprintln(errOut, "not inside a git repository")
 		return 2
 	}
-	toplevel, err := gitOutputIn(p.Cwd, "rev-parse", "--show-toplevel")
+	toplevel, err := p.gitOutputIn(p.Cwd, "rev-parse", "--show-toplevel")
 	if err != nil {
 		fmt.Fprintln(errOut, "not inside a git repository")
 		return 2
@@ -79,7 +84,7 @@ func refactorBaselineRecord(p RefactorBaselineParams, absFile string, out, errOu
 		fmt.Fprintln(errOut, "record requires --gate with the acceptance gate command that passed")
 		return 2
 	}
-	dirt, err := gitOutputIn(p.Cwd, "status", "--porcelain")
+	dirt, err := p.gitOutputIn(p.Cwd, "status", "--porcelain")
 	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 2
@@ -88,12 +93,12 @@ func refactorBaselineRecord(p RefactorBaselineParams, absFile string, out, errOu
 		fmt.Fprintln(errOut, "worktree is dirty; a baseline must be an exact committed state")
 		return 1
 	}
-	sha, err := gitOutputIn(p.Cwd, "rev-parse", "HEAD")
+	sha, err := p.gitOutputIn(p.Cwd, "rev-parse", "HEAD")
 	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 2
 	}
-	record := fmt.Sprintf("sha=%s\nrecorded_epoch=%d\ngate=%s\n", sha, time.Now().UTC().Unix(), p.Gate)
+	record := fmt.Sprintf("sha=%s\nrecorded_epoch=%d\ngate=%s\n", sha, p.now().UTC().Unix(), p.Gate)
 	if err := os.WriteFile(absFile, []byte(record), 0o644); err != nil {
 		fmt.Fprintln(errOut, err)
 		return 2
@@ -116,11 +121,11 @@ func refactorBaselineCheck(p RefactorBaselineParams, toplevel, absFile, relFile 
 		return 2
 	}
 	epoch, _ := strconv.ParseInt(epochText, 10, 64)
-	if gitIn(p.Cwd, "rev-parse", "--verify", "--quiet", sha+"^{commit}") != nil {
+	if p.gitIn(p.Cwd, "rev-parse", "--verify", "--quiet", sha+"^{commit}") != nil {
 		fmt.Fprintf(errOut, "baseline commit %s is unknown to this repository\n", sha)
 		return 1
 	}
-	foreign, err := dirtBeyondBaseline(toplevel, relFile)
+	foreign, err := p.dirtBeyondBaseline(toplevel, relFile)
 	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 2
@@ -129,11 +134,11 @@ func refactorBaselineCheck(p RefactorBaselineParams, toplevel, absFile, relFile 
 		fmt.Fprintln(errOut, "worktree is dirty beyond the baseline file; commit, stash, or revert before a new refactor batch")
 		return 1
 	}
-	if gitIn(p.Cwd, "merge-base", "--is-ancestor", sha, "HEAD") != nil {
+	if p.gitIn(p.Cwd, "merge-base", "--is-ancestor", sha, "HEAD") != nil {
 		fmt.Fprintf(errOut, "baseline %s is not an ancestor of HEAD; history diverged from the trusted baseline\n", sha)
 		return 1
 	}
-	countText, err := gitOutputIn(p.Cwd, "rev-list", "--count", sha+"..HEAD")
+	countText, err := p.gitOutputIn(p.Cwd, "rev-list", "--count", sha+"..HEAD")
 	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 2
@@ -143,7 +148,7 @@ func refactorBaselineCheck(p RefactorBaselineParams, toplevel, absFile, relFile 
 		fmt.Fprintln(errOut, err)
 		return 2
 	}
-	ageMinutes := (time.Now().UTC().Unix() - epoch) / 60
+	ageMinutes := (p.now().UTC().Unix() - epoch) / 60
 	if commitsSince > p.MaxCommits {
 		fmt.Fprintf(errOut, "cadence backstop due: %d commits since the trusted baseline (max %d); run the acceptance gate\n", commitsSince, p.MaxCommits)
 		return 1
@@ -172,8 +177,8 @@ func baselineField(text, key string) string {
 // C-quoted, so paths with spaces or non-ASCII bytes compare literally; a
 // rename's second record carries no status prefix and therefore reads as
 // foreign dirt, which is the safe direction: it blocks.
-func dirtBeyondBaseline(toplevel, relFile string) (bool, error) {
-	output, err := gitOutputRawIn(toplevel, "status", "--porcelain", "--untracked-files=all", "-z")
+func (p RefactorBaselineParams) dirtBeyondBaseline(toplevel, relFile string) (bool, error) {
+	output, err := p.gitOutputRawIn(toplevel, "status", "--porcelain", "--untracked-files=all", "-z")
 	if err != nil {
 		return false, err
 	}
@@ -189,19 +194,27 @@ func dirtBeyondBaseline(toplevel, relFile string) (bool, error) {
 	return false, nil
 }
 
-func gitIn(dir string, args ...string) error {
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	return cmd.Run()
+func (p RefactorBaselineParams) now() time.Time {
+	if p.Now != nil {
+		return p.Now()
+	}
+	return time.Now()
 }
 
-func gitOutputIn(dir string, args ...string) (string, error) {
-	output, err := gitOutputRawIn(dir, args...)
+func (p RefactorBaselineParams) gitIn(dir string, args ...string) error {
+	_, err := p.gitOutputRawIn(dir, args...)
+	return err
+}
+
+func (p RefactorBaselineParams) gitOutputIn(dir string, args ...string) (string, error) {
+	output, err := p.gitOutputRawIn(dir, args...)
 	return strings.TrimSpace(output), err
 }
 
-func gitOutputRawIn(dir string, args ...string) (string, error) {
+func (p RefactorBaselineParams) gitOutputRawIn(dir string, args ...string) (string, error) {
+	if p.Git != nil {
+		return p.Git(dir, args...)
+	}
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	cmd.Stderr = io.Discard
 	output, err := cmd.Output()

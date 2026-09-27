@@ -1,7 +1,6 @@
 # Shipped enforcement: copy to .github/workflows/metasystem.yml during adaptation.
 # Runs the metasystem hard checks on every push and pull request so they do not
-# depend on anyone remembering to run them. Installs ripgrep, which the audit
-# hard-requires.
+# depend on anyone remembering to run them.
 name: metasystem
 on: [push, pull_request]
 jobs:
@@ -9,12 +8,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The payload ships the engine source (D17); the suite's go gate
-      # rebuilds it, so CI needs the toolchain the go.mod pins.
+      # The payload ships the engine source (D17); CI builds it with the
+      # toolchain the go.mod pins.
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
-      - name: Metasystem validation
-        run: bash scripts/validate-metasystem.sh
+      - name: Build the engine
+        run: go build -o bin/metasystem ./cmd/metasystem
+      - name: Metasystem checks
+        run: bin/metasystem system check && bin/metasystem test run

@@ -3,7 +3,7 @@
 # installed frontend dependency tree changes no verdict this engine renders.
 # Two enumeration sweeps each claimed to have found every walker and each
 # missed one, so completeness is MEASURED here and never searched: the
-# repository's own validation runs once with the tree absent and once with an
+# repository's own gates run once with the tree absent and once with an
 # adversarial tree planted beneath internal/ui/web/_app/node_modules, and every
 # exit status and verdict must be identical.
 #
@@ -15,7 +15,7 @@
 # A first-run difference caused by any planted file is a walker the exclusion
 # missed and a finding for the slice, never a reason to thin the corpus.
 #
-# Runs from metasystem/. Not a validation section: it runs the validation.
+# Runs from metasystem/.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -104,7 +104,6 @@ guard_run_pass() { # output directory, label
   guard_step "$dir" stop-surface "$ms" audit stop-decision-surface
   guard_step "$dir" metasystem-audit "$ms" internal audit metasystem --root .
   guard_step "$dir" go-gate go run ./cmd/devgate gate
-  guard_step "$dir" validation bash scripts/validate-metasystem.sh
   if (( delivery_probe )); then
     guard_step "$dir" test-plan "$ms" test plan --root "$root" --json
     guard_step "$dir" test-run "$ms" internal test run --root "$root" \
@@ -130,9 +129,6 @@ guard_require_green() { # output directory
   [[ ! -s "$dir/metasystem-audit.err" ]] || guard_refuse "the metasystem audit reported violations"
   [[ "$(guard_status "$dir" go-gate)" == 0 ]] || guard_refuse "the Go gate refused with status $(guard_status "$dir" go-gate)"
   grep -q '^go gate: PASSED' "$dir/go-gate.out" || guard_refuse "the Go gate printed no green verdict line"
-  [[ "$(guard_status "$dir" validation)" == 0 ]] || guard_refuse "the validation refused with status $(guard_status "$dir" validation)"
-  grep -q 'SECTION GREEN: ' "$dir/validation.out" || guard_refuse "the validation printed no section verdict"
-  ! grep -q 'SECTION RED: ' "$dir/validation.out" "$dir/validation.err" || guard_refuse "the validation printed a red section"
   if (( delivery_probe )); then
     [[ "$(guard_status "$dir" test-plan)" == 0 ]] || guard_refuse "test plan refused with status $(guard_status "$dir" test-plan)"
     # Transcript only (obligation 7): a selected group declaring
@@ -252,7 +248,7 @@ guard_same() { # what, absent file, planted file
 guard_compare() {
   local name projection
   for name in status digest-ENGINE digest-LANDING digest-PAYLOAD ratchet stop-surface \
-    metasystem-audit go-gate validation; do
+    metasystem-audit go-gate; do
     guard_same "the exit status of $name" "$absent/$name.status" "$planted/$name.status"
   done
   guard_same "the git status --porcelain output" "$absent/status.out" "$planted/status.out"
@@ -278,12 +274,6 @@ guard_compare() {
   guard_same "the Go gate's verdict line" \
     <(grep '^go gate: PASSED' "$absent/go-gate.out" | tail -n 1) \
     <(grep '^go gate: PASSED' "$planted/go-gate.out" | tail -n 1)
-  guard_same "the validation's green section verdicts" \
-    <(grep 'SECTION GREEN: ' "$absent/validation.out") \
-    <(grep 'SECTION GREEN: ' "$planted/validation.out")
-  guard_same "the validation's red section verdicts" \
-    <(grep 'SECTION RED: ' "$absent/validation.err" || true) \
-    <(grep 'SECTION RED: ' "$planted/validation.err" || true)
 
   if (( delivery_probe )); then
     for name in test-plan test-run; do

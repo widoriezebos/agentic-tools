@@ -82,9 +82,9 @@ Each failure class has a named answer, and where the rule is binary, a script th
 | False completion | The verify skill (drive the change end to end and report the observed output) and the five-question completion check, with the obligation matrix for risky changes | `metasystem internal validate design-obligations` refuses completion while critical obligations lack proof. A report that says "should work" is treated as a defect |
 | Forgotten lessons | Correction capture (a correction updates the instructions in their one owning document) and handoff notes that carry unfinished work across sessions | Receipts record every correction, the retro reviews the pattern, and the instruction ledger holds every rule change with a testable expected effect |
 | Unreviewable output | The collaboration rules: one intent per commit, mechanical churn separated from behavior change, and reports that start with the riskiest part | The human sends unreviewable diffs back; splitting them is the agent's job, and repeated offenses become retro findings |
-| Unsupervised runs | The supervision rules in `docs/orchestration.md`: detached launches, a verified liveness signal, one watcher armed per session over every job the session can create, budgets that wind down instead of interrupting | The job watcher (`metasystem internal report watch-jobs`) reports terminal, stale, capped and vanished jobs from a runner's job directory; `scripts/validate-metasystem.sh` exercises all four; remaining incidents land in receipts and `memory/known-issues.md` |
+| Unsupervised runs | The supervision rules in `docs/orchestration.md`: detached launches, a verified liveness signal, one watcher armed per session over every job the session can create, budgets that wind down instead of interrupting | The job watcher (`metasystem internal report watch-jobs`) reports terminal, stale, capped and vanished jobs from a runner's job directory; the `watch-jobs-standard` testing group exercises all four; remaining incidents land in receipts and `memory/known-issues.md` |
 | Runaway spend | Budgets as project facts, spend measured from the provider's own records, and overage or a costlier resource tier as human-reserved decisions | No script can read an external invoice: the fence lives in `docs/project-rules.md`, overage requires an explicit ask, and the retro compares spend against receipts |
-| Prose mistaken for enforcement | Binary rules become scripts, and the enforcement ships ready to wire in: a CI workflow and Claude Code hooks under `scripts/enforcement/` | `scripts/validate-metasystem.sh` runs positive and negative fixtures for the gate scripts, in the template and in adopted repositories |
+| Prose mistaken for enforcement | Binary rules become scripts, and the enforcement ships ready to wire in: a CI workflow and Claude Code hooks under `scripts/enforcement/` | The testing contract (`testing.json`, run by `metasystem test run`) runs positive and negative fixtures for the gates |
 
 ## What it does
 
@@ -203,7 +203,7 @@ to adopting projects.
 
 | Script | Job |
 | --- | --- |
-| `scripts/validate-metasystem.sh` | Full self-check: audit, skill validation, routed assets, positive and negative fixture tests for the gate scripts. Works in both the template and adopted repositories |
+| `testing.json` (run by `metasystem test run`) | The testing contract: audit, skill validation, routed assets, positive and negative fixture tests for the gates, selected by what changed |
 | `metasystem internal audit metasystem` | Required files, no outside references in metasystem files, placeholder leakage, always-loaded word cap |
 | `metasystem internal validate skills` | Skill frontmatter and naming rules |
 | `metasystem internal validate design-obligations` | Structure and declared state of an obligation matrix |
@@ -220,7 +220,7 @@ The canonical steps live in [`docs/project-adaptation.md`](docs/project-adaptati
 
 1. From the template checkout, run `bin/metasystem system adopt <target> [--runtimes <names>] [--enable debug-java]` (`metasystem system adopt --help` lists the adoptable runtimes). It exports the payload from the template's tracked HEAD, registers skills and subagent profiles for the selected runtimes, installs the shipped CI workflow and Claude Code hook, creates the gitignored `artifacts/` directory, and records the template SHA for future migrations. It refuses targets that already carry instruction assets; those follow the reconciliation manual below.
 2. Fill `docs/project-rules.md` with verified facts: commands, invariants, reserved decisions, budgets, the refactor acceptance gate, delegation facts.
-3. Run `scripts/validate-metasystem.sh` in the target; it must pass with zero placeholders. Then work normally: each repo-changing task ends with the completion check, verification when runnable, and a receipt. Run the first retro after a handful of tasks instead of waiting for the cadence. Early routing errors are the cheapest to fix.
+3. Run `metasystem system check` and `metasystem test run` in the target; both must pass. Then work normally: each repo-changing task ends with the completion check, verification when runnable, and a receipt. Run the first retro after a handful of tasks instead of waiting for the cadence. Early routing errors are the cheapest to fix.
 
 For the engineers on the team, [`docs/working-with-agents.md`](docs/working-with-agents.md) is the manual: how to hand over work, what comes back to you, how to review, how to make corrections stick, and how to run several agents without collisions.
 
@@ -230,9 +230,9 @@ Adopting in an **existing** repository, one that already has agent instructions,
 
 **Tuning an adopted metasystem (the normal path).** Instruction changes come from the receipts-and-retro loop: patterns in receipts, proposals through the change gate, human veto, recorded retro. Corrections captured mid-task go straight to their owning document. Resist editing the contract from a single anecdote. That is the failure mode this metasystem exists to prevent.
 
-**Pulling template updates into a project.** Diff against the recorded adoption SHA and apply the three-bucket rule: project-owned files are never overwritten, template-owned files are taken from upstream, and shared files are merged deliberately with local changes re-applied on top. The procedure is owned by [`docs/metasystem-reconciliation.md`](docs/metasystem-reconciliation.md). Finish with `scripts/validate-metasystem.sh` and a retro entry recording the new template SHA.
+**Pulling template updates into a project.** Diff against the recorded adoption SHA and apply the three-bucket rule: project-owned files are never overwritten, template-owned files are taken from upstream, and shared files are merged deliberately with local changes re-applied on top. The procedure is owned by [`docs/metasystem-reconciliation.md`](docs/metasystem-reconciliation.md). Finish with `metasystem test run` and a retro entry recording the new template SHA.
 
-**Changing the template itself.** Applies to this repository only: every addition answers the change gate (owned by [`docs/project-adaptation.md`](docs/project-adaptation.md), shipped with every project), keep-or-remove decisions are recorded in `development/source-analysis.md`, structural claims must pass `scripts/validate-metasystem.sh`, and external critiques get a written disposition: implemented, deferred with a named revisit trigger, or rejected with a reason.
+**Changing the template itself.** Applies to this repository only: every addition answers the change gate (owned by [`docs/project-adaptation.md`](docs/project-adaptation.md), shipped with every project), keep-or-remove decisions are recorded in `development/source-analysis.md`, structural claims must pass `metasystem test run`, and external critiques get a written disposition: implemented, deferred with a named revisit trigger, or rejected with a reason.
 
 ## This template repository itself
 

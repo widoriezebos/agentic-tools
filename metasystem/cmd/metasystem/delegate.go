@@ -449,6 +449,11 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 	if reviewsSeen && role != "code-critic" && role != "warden" && role != "verifier" {
 		return nil, "", fmt.Errorf("--reviews is only valid for the code-critic, warden, and verifier roles")
 	}
+	// The review relation is the critic's subject; refuse its absence at the
+	// front door, before any checkout guard or dispatch record exists.
+	if !reviewsSeen && (role == "code-critic" || role == "warden") {
+		return nil, "", fmt.Errorf("%s dispatch requires --reviews <implementer-job-id>", role)
+	}
 	if (runtimeSeen || modelSeen) && (role != "code-critic" || !strings.HasPrefix(reviews, "commit:")) {
 		return nil, "", fmt.Errorf("delegate --runtime and --model require a code-critic commit review")
 	}
