@@ -61,10 +61,7 @@ func LoadEnvelopeFile(path string) (Envelope, error) {
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return Envelope{}, fmt.Errorf("envelope %s: %w", path, err)
 	}
-	return Envelope{
-		ReadRoots: parsed.ReadRoots, WriteRoots: parsed.WriteRoots,
-		Network: parsed.Network, Approvals: parsed.Approvals, Tools: parsed.Tools,
-	}, nil
+	return Envelope(parsed), nil
 }
 
 // RunFileTurn drives one prompt attempt and returns its typed outcome. An

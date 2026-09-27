@@ -93,16 +93,6 @@ func (c *child) terminate() {
 // pollTick is the handshake loop's cadence while the CLI starts.
 const pollTick = 20 * time.Millisecond
 
-// launch starts the runtime CLI in the round's workspace: stdin from the
-// prompt (when named), stdout truncated into the stream file, stderr
-// appended to the job log. The child stays in this supervisor's process
-// group. setupErr is a failure the shell adapters met inside the launch
-// subshell (a scratch directory that could not be made); it fails the launch
-// the same way.
-func (s *Supervision) launch(argv, env []string, stdinPath, stdoutPath string, setupErr error) (*child, error) {
-	return s.launchWith(argv, "", env, stdinPath, stdoutPath, setupErr)
-}
-
 // launchAs is launch with argv[0] renamed (a census-distinct process name).
 func (s *Supervision) launchAs(argv []string, argv0 string, env []string, stdinPath, stdoutPath string) (*child, error) {
 	return s.launchWith(argv, argv0, env, stdinPath, stdoutPath, nil)

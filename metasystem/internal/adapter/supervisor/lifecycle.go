@@ -334,10 +334,6 @@ func (s *Supervision) registerCustody(c *child) error {
 	return errors.New("child exited before custody")
 }
 
-func (s *Supervision) recordWorkspaceWriteScope() error {
-	return adapter.RewriteWriteScope(s.effective, s.workspace)
-}
-
 // failIfEffectiveWider refuses a launch whose effective grant is wider than
 // the request. An unreadable comparison passes, as the shell adapter's
 // captured-output check did (recorded as a finding for its own goal).

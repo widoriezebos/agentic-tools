@@ -22,8 +22,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/host"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
@@ -38,25 +36,16 @@ type Turn struct {
 	TurnDir string
 }
 
-type hostRuntime struct {
-	// cli is the runtime binary that must be installed ("" for fake).
-	cli string
-	// run executes the turn after the arguments parsed and returns the exit
-	// status.
-	run func(t *Turn) int
-	// usageExtra is the runtime's additional usage line.
-	usageExtra string
-}
-
-var hosts = map[string]hostRuntime{}
-
-func register(name string, h hostRuntime) { hosts[name] = h }
-
-// Runtimes lists the host runtimes served.
+// Runtimes lists the runtimes that serve host turns: every built-in whose
+// operations declare the host role.
 func Runtimes() []string {
 	var names []string
-	for name := range hosts {
-		names = append(names, name)
+	for _, name := range runtimes.WithHost() {
+		if ops, ok := supervisor.OperationsFor(supervisor.Deps{}, name); ok {
+			if description, err := ops.Describe(supervisor.Deps{}); err == nil && description.Capabilities.Host {
+				names = append(names, name)
+			}
+		}
 	}
 	return names
 }
@@ -64,9 +53,6 @@ func Runtimes() []string {
 func usage(d supervisor.Deps, runtime string) {
 	fmt.Fprintf(d.Stderr, "Usage:\n  metasystem %s %s %s --root ROOT --mission <id> --turn-id <id>\n      --prompt <file> --result <file> [--resume-session <sid>] --instance-tag <tag>\n",
 		runtimes.SupervisorEntry, runtime, runtimes.SupervisorHostTurn)
-	if extra := hosts[runtime].usageExtra; extra != "" {
-		fmt.Fprintln(d.Stderr, extra)
-	}
 }
 
 var idRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -83,11 +69,7 @@ func Main(args []string, newDeps func(root string) supervisor.Deps) int {
 		root, rest = rest[1], rest[2:]
 	}
 	d := newDeps(root)
-	h, ok := hosts[name]
-	ops, hasOps := supervisor.OperationsFor(d, name)
-	if !ok && hasOps {
-		h, ok = hostRuntime{run: func(t *Turn) int { return runHostOps(t, ops) }}, true
-	}
+	ops, ok := supervisor.OperationsFor(d, name)
 	if !ok {
 		fmt.Fprintf(d.Stderr, "host adapter is not installed: %s\n", name)
 		return 2
@@ -147,7 +129,7 @@ func Main(args []string, newDeps func(root string) supervisor.Deps) int {
 		fmt.Fprintln(d.Stderr, err)
 		return 1
 	}
-	return h.run(t)
+	return runHostOps(t, ops)
 }
 
 // requireCLI refuses a turn whose runtime CLI is absent, then waits for the
@@ -206,39 +188,4 @@ func (t *Turn) schema() string {
 
 func (t *Turn) permissions() string {
 	return filepath.Join(t.d.Root, "scripts", "agents", "permissions", "workspace.json")
-}
-
-// turnModel reads the turn record's model.
-func (t *Turn) turnModel() (string, bool) {
-	data, err := os.ReadFile(t.Path("turn.json"))
-	if err != nil {
-		return "", false
-	}
-	return jsonedit.Get(data, "model", nil)
-}
-
-// finish is the engine's one turn-outcome adjudication (host.FinishTurn);
-// its exit code is the host taxonomy.
-func (t *Turn) finish(session, usagePath, rawPath, returnPath, accepted string, cliStatus int, requireReply bool, transport string) int {
-	code, err := host.FinishTurnTransport(t.Result, session, usagePath, rawPath, returnPath, accepted, int64(cliStatus), requireReply, transport)
-	if err != nil {
-		fmt.Fprintln(t.d.Stderr, err)
-	}
-	return code
-}
-
-// copyFile copies src over dst, leaving dst empty when src is unreadable.
-func copyOrEmpty(src, dst string) {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		data = nil
-	}
-	_ = os.WriteFile(dst, data, 0o644)
-}
-
-// ensureFile creates an empty file when path is absent.
-func ensureFile(path string) {
-	if _, err := os.Stat(path); err != nil {
-		_ = os.WriteFile(path, nil, 0o644)
-	}
 }
