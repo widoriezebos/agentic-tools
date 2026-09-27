@@ -37,7 +37,7 @@ const (
 	verbRatchetSelfSubprocessCeiling = 93
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
-	verbRatchetInstructionCeiling = 47
+	verbRatchetInstructionCeiling = 46
 )
 
 type ratchetSite struct {
