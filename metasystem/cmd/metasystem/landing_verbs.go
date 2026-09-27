@@ -565,22 +565,29 @@ func runLandingReceiptLineWithRawSource(args []string, raw func(gittree.RawReque
 // remote (landing.SyncTransport): `landing sync-transport [--root R] [BRANCH]`.
 // BRANCH defaults to main when absent; an explicitly empty BRANCH refuses.
 func runLandingSyncTransport(args []string) int {
+	return runLandingSyncTransportWith(args, os.Stdout, os.Stderr, nil)
+}
+
+// runLandingSyncTransportWith is the verb with its output streams and Git
+// runner supplied; a nil git runs the real Git.
+func runLandingSyncTransportWith(args []string, stdout, stderr io.Writer, git landing.TransportGit) int {
 	flags := flag.NewFlagSet("landing sync-transport", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", ".", "checkout whose origin and transport remotes are synchronized")
 	if flags.Parse(args) != nil || flags.NArg() > 1 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing sync-transport [--root CHECKOUT] [BRANCH]")
+		fmt.Fprintln(stderr, "usage: metasystem internal landing sync-transport [--root CHECKOUT] [BRANCH]")
 		return 2
 	}
 	branch := "main"
 	if flags.NArg() == 1 {
 		branch = flags.Arg(0)
 	}
-	last, err := landing.SyncTransport(*root, branch, nil)
+	last, err := landing.SyncTransport(*root, branch, git)
 	if last != "" {
-		fmt.Println(last)
+		fmt.Fprintln(stdout, last)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		var refusal *landing.TransportError
 		if errors.As(err, &refusal) {
 			return refusal.Code
