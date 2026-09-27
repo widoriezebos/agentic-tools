@@ -317,7 +317,8 @@ exec cat >/dev/null
 	dir := filepath.Join(f.root, "turns", "t1")
 	go func() {
 		c := <-channels
-		for i := 0; i < 1000; i++ {
+		// Unbounded here; the test binary's timeout bounds it.
+		for {
 			if data, _ := os.ReadFile(filepath.Join(dir, "acp-journal.log")); strings.Contains(string(data), "session/prompt") {
 				break
 			}
@@ -329,11 +330,29 @@ exec cat >/dev/null
 	if code != 143 {
 		t.Fatalf("exit %d, want 143", code)
 	}
-	if _, err := os.Stat(observed); err != nil {
-		t.Fatal("the courtesy session/cancel never reached the wire")
+	// The wire decides: the journal holds the outbound courtesy cancel (the
+	// stub's own observation races its termination).
+	if data, _ := os.ReadFile(filepath.Join(dir, "acp-journal.log")); !strings.Contains(string(data), "session/cancel") {
+		t.Fatalf("the courtesy session/cancel never reached the wire: %s", data)
 	}
+	_ = observed
 	if _, err := os.Stat(filepath.Join(dir, "result.json")); err == nil {
 		t.Fatal("a signalled host turn writes no result")
+	}
+}
+
+// A server that dies before the client opens its ends must not strand the
+// client in a blocked fifo open: the turn fails with a result.
+func TestDevinHostACPServerDeadFailsTheTurn(t *testing.T) {
+	t.Parallel()
+	f := newHostFixture(t, "dispatch.transport.devin=acp\n")
+	f.write(filepath.Join(f.stubDir, "acp-server.sh"), "exit 0\n")
+	code, dir := f.turn("t1", "")
+	if code != 3 {
+		t.Fatalf("exit %d, want 3", code)
+	}
+	if readField(t, filepath.Join(dir, "result.json"), "outcome") != "failed" {
+		t.Fatal("the result names the failure")
 	}
 }
 

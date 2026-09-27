@@ -863,9 +863,18 @@ func superviseDevinACP(s *Supervision, args []string) int {
 		fmt.Fprintln(s.d.Stderr, err)
 		return 1
 	}
-	client = startInProcessChild(s.d.Pid, func(ctx context.Context) int {
+	client = startInProcessChild(s.d.Pid, pipes, func(ctx context.Context) int {
 		return runACPClient(ctx, turn, outcomeFile, s.logWriter())
 	})
+	// A server that dies before the client opened its ends would leave the
+	// client blocked in the open forever; its death unblocks them.
+	go func(server, client *child) {
+		select {
+		case <-server.done:
+			pipes.Unblock(client.done)
+		case <-client.done:
+		}
+	}(server, client)
 	s.appendEvent(fmt.Sprintf(`{"type":"acp-launched","server_pid":%d,"client_pid":%d,"client":"in-process","mode":"%s"}`,
 		server.pid, client.pid, mode))
 

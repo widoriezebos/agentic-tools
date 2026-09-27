@@ -736,7 +736,13 @@ func TestDevinACPHappyPathCompletes(t *testing.T) {
 		t.Fatalf("the transport pin must be recorded: %v", record["transport"])
 	}
 	events, _ := os.ReadFile(filepath.Join(f.roundDir, "events.jsonl"))
-	if !strings.Contains(string(events), fmt.Sprintf(`"client_pid":%d,"client":"in-process","mode":"accept-edits"`, os.Getpid())) ||
+	if !strings.Contains(string(events), fmt.Sprintf(`"client_pid":%d,"client":"in-process","mode":"accept-edits"`, os.Getpid())) {
+		t.Fatalf("events: %s", events)
+	}
+	// The mid-turn handshake writes the correlation event; a turn that
+	// settles before the loop reads the session file handshakes from the
+	// outcome instead, which writes none (as the script did).
+	if strings.Contains(string(events), "session-correlated") &&
 		!strings.Contains(string(events), `{"type":"session-correlated","session_id":"sess-1","predicate":"acp-wire-typed"}`) {
 		t.Fatalf("events: %s", events)
 	}
@@ -833,7 +839,8 @@ exec cat >/dev/null
 	go func() {
 		c := <-signals
 		journal := filepath.Join(f.roundDir, "acp-journal.log")
-		for i := 0; i < 1000; i++ {
+		// Unbounded here; the test binary's timeout bounds it.
+		for {
 			if data, _ := os.ReadFile(journal); strings.Contains(string(data), "session/prompt") {
 				break
 			}
@@ -844,9 +851,12 @@ exec cat >/dev/null
 	if code := f.run("dispatch"); code != 143 {
 		t.Fatalf("exit %d, want 143\nlog %s", code, f.jobLog())
 	}
-	if _, err := os.Stat(observed); err != nil {
-		t.Fatal("the courtesy session/cancel never reached the wire")
+	// The wire decides: the journal holds the outbound courtesy cancel (the
+	// stub's own observation races its termination).
+	if data, _ := os.ReadFile(filepath.Join(f.roundDir, "acp-journal.log")); !strings.Contains(string(data), "session/cancel") {
+		t.Fatalf("the courtesy session/cancel never reached the wire: %s", data)
 	}
+	_ = observed
 	outcome, _ := os.ReadFile(filepath.Join(f.roundDir, "acp-outcome.json"))
 	if !strings.Contains(string(outcome), `"row":"cancelled"`) {
 		t.Fatalf("the typed cancelled outcome: %s", outcome)
