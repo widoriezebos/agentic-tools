@@ -131,8 +131,8 @@
   },
   {
     "id": "not-now",
-    "term": "Not now",
-    "text": "A goal you paused, with the reason you gave and the date you gave it. It is a decision rather than something waiting on you, so it is here and not in the inbox. Return to queue lifts the pause; a pause that names a blocker lifts by itself when that blocker is done."
+    "term": "Paused",
+    "text": "A goal you paused, with the reason you gave and the date you gave it, called Not now until the verbs landed. It is a decision rather than something waiting on you, so it is here and not in the inbox. Resume lifts the pause; a pause that names a blocker lifts by itself when that blocker is done."
   },
   {
     "id": "act-selected",
@@ -141,8 +141,8 @@
   },
   {
     "id": "return-to-queue",
-    "term": "Return to queue",
-    "text": "Lifts one pause. The goal goes back to approved where its approval still stands, and to the queue otherwise. A pause a seat made can be lifted here too; one that waits for a blocker returns by itself when every blocker is done."
+    "term": "Resume",
+    "text": "Lifts one pause, called Return to queue until the verbs landed. The goal goes back to approved where its approval still stands, and to the queue otherwise. A pause a seat made can be lifted here too; one that waits for a blocker returns by itself when every blocker is done."
   },
   {
     "id": "silence",

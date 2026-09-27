@@ -105,7 +105,7 @@ function need(id: string, over: Partial<Need> = {}, action: Partial<Proposed> = 
     kind: "proposal",
     id,
     title: "The seat census answers which machines are alive",
-    asked: "Not now · The seat census answers which machines are alive",
+    asked: "Pause · The seat census answers which machines are alive",
     by: "the Partner",
     since: "2026-09-25T09:00:00Z",
     deadline: "",
@@ -307,7 +307,7 @@ describe("the sheet the bar's Apply opens", () => {
   it("lists every ticked line whole, in the card's own words", () => {
     const markup = sheet([parking, alsoParking]);
 
-    expect(markup).toContain('<span class="ms-proposal-word">Not now</span>');
+    expect(markup).toContain('<span class="ms-proposal-word">Pause</span>');
     expect(markup).toContain("The seat census answers which machines are alive");
     expect(markup).toContain("A machine publishes its phase with every tick");
     // Every argument the act will carry, and the Partner's own words with it.

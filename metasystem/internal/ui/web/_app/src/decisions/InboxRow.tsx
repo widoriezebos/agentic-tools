@@ -45,7 +45,7 @@ export type Acts = {
   onSignIn: () => void;
   /** The board's own approve sheet, over the row this need carries. */
   onApprove: (need: Need) => void;
-  /** "Not now": the not-now sheet with this one goal in it. */
+  /** "Pause": the pause sheet with this one goal in it. */
   onPark: (need: Need) => void;
   /** g1-s47's edit sheet, over the same row. */
   onEdit: (need: Need) => void;
@@ -321,7 +321,7 @@ function Offered({ need, acts }: { need: Need; acts: Acts }): ReactNode {
               acts.onPark(need);
             }}
           >
-            Not now
+            Pause
           </Button>
           <Button
             onClick={() => {
@@ -355,7 +355,7 @@ function Offered({ need, acts }: { need: Need; acts: Acts }): ReactNode {
               acts.onReturn(need.id);
             }}
           >
-            Return to queue
+            Resume
           </Button>
           <Help id="return-to-queue" />
         </>

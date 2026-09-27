@@ -213,16 +213,16 @@ export const HELP: Record<HelpId, Term> = {
     text: "The goals nobody has authorized, which is a queue rather than a list: many, mostly weeks old, fine to wait. Approving one admits it so a seat may claim it, and the approval carries the budget shown beside it — the tuple the goal already has, or the project's law for its tier.",
   },
   "not-now": {
-    term: "Not now",
-    text: "A goal you paused, with the reason you gave and the date you gave it. It is a decision rather than something waiting on you, so it is here and not in the inbox. Return to queue lifts the pause; a pause that names a blocker lifts by itself when that blocker is done.",
+    term: "Paused",
+    text: "A goal you paused, with the reason you gave and the date you gave it, called Not now until the verbs landed. It is a decision rather than something waiting on you, so it is here and not in the inbox. Resume lifts the pause; a pause that names a blocker lifts by itself when that blocker is done.",
   },
   "act-selected": {
     term: "Acting on what you selected",
     text: "One publication per goal, sent in the order shown, because this engine has no act over many goals. The first refusal stops the run and says which goal it stopped at in the engine's own words; the goals after it were never sent, and the page reads the ledger again to say what landed.",
   },
   "return-to-queue": {
-    term: "Return to queue",
-    text: "Lifts one pause. The goal goes back to approved where its approval still stands, and to the queue otherwise. A pause a seat made can be lifted here too; one that waits for a blocker returns by itself when every blocker is done.",
+    term: "Resume",
+    text: "Lifts one pause, called Return to queue until the verbs landed. The goal goes back to approved where its approval still stands, and to the queue otherwise. A pause a seat made can be lifted here too; one that waits for a blocker returns by itself when every blocker is done.",
   },
   silence: {
     term: "If you do nothing",

@@ -165,20 +165,21 @@ function lineOf(one: Card, index = 0): Line {
 
 describe("the word on the line", () => {
   /**
-   * It is the word the button on the page that offers the act uses, so a human
-   * who has pressed Not now on the Decisions page reads Not now here. It is never
-   * the route id: that is what the message persists and the runner dispatches on.
+   * It is the goal action's public name under the goal object, the word the
+   * button on the page that offers the act uses, so a human who has pressed
+   * Pause on the Decisions page reads Pause here. It is never the route id: that
+   * is what the message persists and the runner dispatches on.
    */
   it("is the page's own button word for every act", () => {
-    expect(verbWord("park-goal")).toBe("Not now");
-    expect(verbWord("unpark-goal")).toBe("Return to queue");
-    expect(verbWord("withdraw-goal")).toBe("Withdraw approval");
+    expect(verbWord("park-goal")).toBe("Pause");
+    expect(verbWord("unpark-goal")).toBe("Resume");
+    expect(verbWord("withdraw-goal")).toBe("Unapprove");
     expect(verbWord("approve-goal")).toBe("Approve");
-    expect(verbWord("set-goal-priority")).toBe("Set priority");
-    expect(verbWord("open-goal")).toBe("Open goal");
+    expect(verbWord("set-goal-priority")).toBe("Prioritize");
+    expect(verbWord("open-goal")).toBe("Open");
     expect(verbWord("edit-goal")).toBe("Edit");
-    expect(verbWord("block-goal")).toBe("Waits for");
-    expect(verbWord("unblock-goal")).toBe("No longer waits for");
+    expect(verbWord("block-goal")).toBe("Block");
+    expect(verbWord("unblock-goal")).toBe("Unblock");
     expect(verbWord("abandon-goal")).toBe("Abandon");
   });
 });
@@ -736,7 +737,7 @@ describe("what a line says about where it stands", () => {
   it("puts the line's own words in the composer for Ask the Partner", () => {
     const line = lineOf(card([proposal({ state: "refused", words: "goal is claimed by m1e" })]));
     expect(askLine(line)).toBe(
-      "About your proposed Not now on fleet-presence — refused: goal is claimed by m1e. What else could be done?",
+      "About your proposed Pause on fleet-presence — refused: goal is claimed by m1e. What else could be done?",
     );
   });
 });

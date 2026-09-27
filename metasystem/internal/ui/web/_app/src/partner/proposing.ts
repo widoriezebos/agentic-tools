@@ -220,32 +220,32 @@ export const NEEDS_ITS_BUDGET = "needs its budget first: approve it alone";
 /* ------------------------------------------------------------- the words -- */
 
 /**
- * The word on the line: the word the button on the page that offers this act
- * uses, so the card and the page say one thing.
+ * The word on the line: the goal action's public name under the `goal` object.
  *
- * It is the page's word and not the route's id, because the human reads it. The
- * route id is what the message persists and the runner dispatches on, which is
- * why a word changed here touches no persisted proposal.
+ * It is the word `metasystem goal ACTION` uses and the word the pages' buttons
+ * now use, so the card, the rows, the chip, the buttons and the terminal say one
+ * thing for one act. The route id is what the message persists and the runner
+ * dispatches on, which is why a word changed here touches no persisted proposal.
  */
-const BUTTON: Readonly<Record<string, string>> = {
-  "open-goal": "Open goal",
+const WORD: Readonly<Record<string, string>> = {
+  "open-goal": "Open",
   "approve-goal": "Approve",
-  "withdraw-goal": "Withdraw approval",
-  "set-goal-priority": "Set priority",
-  "block-goal": "Waits for",
-  "unblock-goal": "No longer waits for",
-  "park-goal": "Not now",
-  "unpark-goal": "Return to queue",
+  "withdraw-goal": "Unapprove",
+  "set-goal-priority": "Prioritize",
+  "block-goal": "Block",
+  "unblock-goal": "Unblock",
+  "park-goal": "Pause",
+  "unpark-goal": "Resume",
   "edit-goal": "Edit",
   "abandon-goal": "Abandon",
 };
 
 export function verbWord(verb: string): string {
-  return BUTTON[verb] ?? verb;
+  return WORD[verb] ?? verb;
 }
 
 /** Every act a card can carry, for a reader that needs the whole list. */
-export const VERB_WORDS = BUTTON;
+export const VERB_WORDS = WORD;
 
 /** One labelled argument of a line, as the card shows it. */
 export type Argument = { label: string; value: string };

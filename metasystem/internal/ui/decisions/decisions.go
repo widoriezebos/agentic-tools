@@ -92,7 +92,7 @@ const (
 const (
 	ActApprove  = "approve"
 	ActWithdraw = "withdraw"
-	// ActPark is "Not now": a pause with the reason the human types.
+	// ActPark is "Pause": a pause with the reason the human types.
 	ActPark = "park"
 	// ActUnpark returns a paused goal to the queue.
 	ActUnpark = "unpark"
@@ -670,10 +670,10 @@ func proposalTitle(held partner.Unsettled) string {
 // proposalAsked is the line whole: the verb's own word, the subject, and every
 // argument the act would carry, in the labels the frame writes them under.
 //
-// The word is the one on the button of the page that offers that act, from the
-// catalogue's own table (uitools.ProposedActs), so the row, the card and the
-// button say one thing and a rename touches one place. The arguments are walked
-// in the frame's own order for the same reason.
+// The word is the act's own public name, from the catalogue's own table
+// (uitools.ProposedActs), so the row, the card and the page's button say one
+// thing and a rename touches one place. The arguments are walked in the frame's
+// own order for the same reason.
 func proposalAsked(held partner.Unsettled) string {
 	said := []string{proposalWord(held.Verb), proposalTitle(held)}
 	for _, line := range uitools.ProposalFrame {
@@ -684,12 +684,12 @@ func proposalAsked(held partner.Unsettled) string {
 	return strings.Join(said, " · ")
 }
 
-// proposalWord is the button word for one act, or the route id where this build
+// proposalWord is the one word for one act, or the route id where this build
 // has no word for it — which is a catalogue and an act table that disagree, and
 // is said rather than hidden.
 func proposalWord(verb string) string {
 	if named, there := uitools.ProposedActOf(verb); there {
-		return named.Button
+		return named.Word
 	}
 	return verb
 }
@@ -958,7 +958,7 @@ func questions(register []project.Question) []Need {
 //
 // The prefix is what tells a seat's pause from a person's. A park a person
 // made is a decision they already took, with their reason on it, so it is in
-// Not now rather than here; a seat's park stays, because a human has not seen
+// Paused rather than here; a seat's park stays, because a human has not seen
 // it. The row carries the act that returns it either way.
 //
 // Silence: goal.Store.Unpark is the only verb that lifts a park with no

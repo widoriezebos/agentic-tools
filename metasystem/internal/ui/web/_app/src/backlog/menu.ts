@@ -37,10 +37,10 @@ const LABELS: Record<OfferId, string> = {
   ask: "Ask about this",
   edit: "Edit…",
   approve: "Approve…",
-  withdraw: "Withdraw approval…",
+  withdraw: "Unapprove…",
   up: "Move up",
   down: "Move down",
-  rank: "Set priority…",
+  rank: "Prioritize…",
   open: "Open goal",
 };
 

@@ -74,10 +74,11 @@ func (a Args) Cursor() string { return a.Text("cursor") }
 // Given reports whether the caller sent this argument at all.
 //
 // An argument that was not sent and one sent empty are two different
-// statements, and one operation depends on the difference: an edit whose label
-// list arrives empty clears the labels, while an edit that says nothing about
-// them leaves them alone. A JSON null is nothing sent — a client filling every
-// property of a schema with null is saying nothing about any of them.
+// statements, and one operation depends on the difference: an edit that names
+// labels to remove has said something about them, while an edit that says
+// nothing about them leaves them alone. A JSON null is nothing sent — a client
+// filling every property of a schema with null is saying nothing about any of
+// them.
 func (a Args) Given(name string) bool {
 	value, present := a[name]
 	return present && value != nil

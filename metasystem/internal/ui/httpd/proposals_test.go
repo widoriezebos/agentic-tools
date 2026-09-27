@@ -66,18 +66,22 @@ func TestEveryLedgerActOnAGoalCanBeProposed(t *testing.T) {
 		len(uitools.ProposedActs), len(goalActs()))
 }
 
-// A catalogue field is a field of that route's own body, under the body's own
-// spelling.
+// Every field a catalogue row's arguments become is a field of that route's own
+// body, under the body's own spelling.
+//
+// The catalogue's own fields are the PUBLIC flags now (g1-s62 D1), which the
+// cmd/metasystem join holds against the descriptor table; what this side holds
+// is what the tool maps them to. Body() is that mapping's answer: the route
+// body's fields, with an edit's label delta collapsed into the whole list
+// admission composes from it. Where the two spellings differ — an abandon's
+// public `--reason` is the abandon body's own `because` — it is the mapping
+// that is joined here and not the public name, because the mapping is what the
+// frame writes with.
 //
 // The bodies are this package's own structs, so the field names are read from
 // their JSON tags: a route that renamed a field would fail here rather than
 // leave the Partner proposing a field the decoder refuses. Each row below is
 // the body the route decodes, which is the one place the spelling lives.
-//
-// A row whose public flag is spelled differently from its body field says so
-// itself, through the catalogue's own map: abandon's `reason` is the body's
-// `because`, and it is the map that is joined here rather than the public name,
-// because the map is what the frame writes with.
 func TestEveryCatalogueFieldIsItsRoutesOwnBodyField(t *testing.T) {
 	t.Parallel()
 	// The bodies, by the route that decodes them. An act with no fields has no
@@ -98,10 +102,9 @@ func TestEveryCatalogueFieldIsItsRoutesOwnBodyField(t *testing.T) {
 	for _, act := range uitools.ProposedActs {
 		carried, known := bodies[act.Route]
 		testutil.Require(t, act.Route+" has a body in this test", known, true)
-		for _, field := range act.Fields() {
-			spelled := act.BodyField(field)
-			testutil.Expect(t, act.Route+" carries "+spelled+" in its route body",
-				contains(carried, spelled), true)
+		for _, field := range act.Body() {
+			testutil.Expect(t, act.Route+" carries "+field+" in its route body",
+				contains(carried, field), true)
 		}
 	}
 	// The open's own subject is its body's `id`, which is why the catalogue
@@ -110,6 +113,13 @@ func TestEveryCatalogueFieldIsItsRoutesOwnBodyField(t *testing.T) {
 		contains(bodies[routeOpen], "id"), true)
 	testutil.Expect(t, "and the catalogue does not ask for it twice",
 		contains(mustAct(t, routeOpen).Fields(), "id"), false)
+	// An edit's label delta is the one pair that travels unresolved, and the
+	// whole list is what the route decodes.
+	editing := mustAct(t, routeEditGoal)
+	testutil.Expect(t, "an edit's delta travels under the public flags",
+		contains(editing.Travels(), "label") && contains(editing.Travels(), "unlabel"), true)
+	testutil.Expect(t, "and the route is given the whole list",
+		contains(editing.Body(), "labels"), true)
 }
 
 // None of the fields a proposal carries is an authority a body could smuggle.
@@ -117,6 +127,11 @@ func TestEveryCatalogueFieldIsItsRoutesOwnBodyField(t *testing.T) {
 // The act bodies cannot carry one — the hand is mayAct's and a name in a body
 // authorizes nothing — and this says so from the catalogue's side as well, so a
 // field added to a body and to the catalogue together would still fail here.
+// No field a proposal sends a route is an authority or a piece of plumbing.
+//
+// It is the body side of the same rule the cmd/metasystem join holds on the
+// public side: what reaches a route is the act's own arguments and never the
+// hand that acts, the tier it is recorded under or the box it is approved with.
 func TestNoCatalogueFieldIsAnAuthority(t *testing.T) {
 	t.Parallel()
 	forbidden := []string{
@@ -124,7 +139,7 @@ func TestNoCatalogueFieldIsAnAuthority(t *testing.T) {
 		"fixtureHumanAuthority", "under", "verified", "tier", "why", "budget", "risk", "evidence",
 	}
 	for _, act := range uitools.ProposedActs {
-		for _, field := range act.Fields() {
+		for _, field := range act.Body() {
 			testutil.Expect(t, act.Route+"'s "+field+" is not an authority",
 				contains(forbidden, field), false)
 		}
