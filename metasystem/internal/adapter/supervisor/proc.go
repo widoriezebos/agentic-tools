@@ -97,12 +97,18 @@ func (s *Supervision) launch(argv, env []string, stdinPath, stdoutPath string, s
 		fmt.Fprintf(s.d.Stderr, "%s child exited before custody identity was recorded\n", s.runtime)
 		return nil, setupErr
 	}
-	command := exec.Command(argv[0], argv[1:]...)
-	if len(argv) > 0 && !strings.Contains(argv[0], "/") {
-		if path, err := s.d.LookPath(argv[0]); err == nil {
-			command.Path = path
+	program := argv[0]
+	if !strings.Contains(program, "/") {
+		resolved, err := s.d.LookPath(program)
+		if err != nil {
+			s.logf("%v\n", err)
+			fmt.Fprintf(s.d.Stderr, "%s child exited before custody identity was recorded\n", s.runtime)
+			return nil, err
 		}
+		program = resolved
 	}
+	command := exec.Command(program, argv[1:]...)
+	command.Args[0] = argv[0]
 	command.Dir = s.workspace
 	command.Env = env
 	if stdinPath != "" {

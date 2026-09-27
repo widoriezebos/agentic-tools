@@ -376,28 +376,31 @@ func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 	l.hostGate = filepath.Join(l.turnDir, "host.start")
 	l.tag = "metasystem-host-" + l.turnID
 	l.fakeRuntime = l.runtime == "fake"
-	args := hostFixtureCarriers()
-	args = append(args, l.runtime, runtimes.SupervisorHostTurn,
+	flags := []string{
 		"--root", e.Root,
 		"--mission", e.Mission,
 		"--turn-id", l.turnID,
 		"--prompt", prompt,
 		"--result", l.resultPath,
 		"--instance-tag", l.tag,
-	)
+	}
 	// The raw assertion, not the lens: the lens reads an empty-string
 	// session as absent, but the original contract passes --resume-session
 	// verbatim whenever the field is a string AT ALL — and a conversion
 	// commit may not narrow that, even where narrowing looks saner
 	// (typed-documents rule: the projection is a lens, never a filter).
 	if session, ok := l.turn["hostSession"].(string); ok {
-		args = append(args, "--resume-session", session)
+		flags = append(flags, "--resume-session", session)
 	}
 	gateTimeout, err := ScaledWaitAtLeast(10, 3*time.Second)
 	if err != nil {
 		return err
 	}
-	command := exec.Command(engine, append([]string{runtimes.SupervisorEntry}, args...)...)
+	// Fixture carriers lead the entry's arguments (after its word), so a
+	// survivor scan finds a fixture-owned host by its argv.
+	args := runtimes.SupervisorArgs(l.runtime, runtimes.SupervisorHostTurn, flags...)
+	args = append(append([]string{args[0]}, hostFixtureCarriers()...), args[1:]...)
+	command := exec.Command(engine, args...)
 	command.Dir = e.Root
 	command.Env = append(gitAuthorEnvironment(l.turnID),
 		"METASYSTEM_MISSION_ID="+e.Mission,

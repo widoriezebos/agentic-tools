@@ -15,7 +15,7 @@ import (
 // running or enumerating scripts.
 
 // SupervisorEntry is the argv word of the delegate-supervisor process
-// entrypoint: `ENGINE delegate-supervisor RUNTIME VERB [flags]`.
+// entrypoint: `ENGINE delegate-supervisor RUNTIME VERB --root ROOT [flags]`.
 const SupervisorEntry = "delegate-supervisor"
 
 // Supervisor verbs that own a long-lived process: a delegate round
@@ -28,11 +28,12 @@ const (
 	SupervisorTagFlag  = "--instance-tag"
 )
 
-// SupervisorArgv is the argument vector of one supervisor process. The
-// launcher and the recognizers both build from it, so the argv a launch
-// produces is the argv a recognizer expects.
-func SupervisorArgv(engine, runtime, verb string, flags ...string) []string {
-	return append([]string{engine, SupervisorEntry, runtime, verb}, flags...)
+// SupervisorArgs are the engine arguments of one supervisor process (the
+// argv after the engine's own path). The launchers build from it and the
+// recognizers' shapes (SupervisorShapes) name the same words, so the argv a
+// launch produces is the argv a recognizer expects.
+func SupervisorArgs(runtime, verb string, flags ...string) []string {
+	return append([]string{SupervisorEntry, runtime, verb}, flags...)
 }
 
 // SupervisorShape is one long-lived supervisor argv shape: argv must carry

@@ -15,10 +15,13 @@ import (
 // prompt, stdout into stdoutPath, stderr into the turn's host log (appended,
 // or truncated first when truncateLog). It returns the shell status.
 func (t *Turn) runCLI(argv []string, stdoutPath string, truncateLog bool) int {
-	command := exec.Command(argv[0], argv[1:]...)
-	if path, err := t.d.LookPath(argv[0]); err == nil {
-		command.Path = path
+	program, err := t.d.LookPath(argv[0])
+	if err != nil {
+		fmt.Fprintln(t.d.Stderr, err)
+		return 127
 	}
+	command := exec.Command(program, argv[1:]...)
+	command.Args[0] = argv[0]
 	command.Dir = t.d.Root
 	command.Env = t.d.Environ
 	stdin, err := os.Open(t.Prompt)

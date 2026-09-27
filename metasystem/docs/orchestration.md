@@ -451,12 +451,17 @@ convenience view of `bin/metasystem internal runtime registration <name>` — th
 verb is authoritative; this table describes the currently shipped
 runtimes, not the supported universe.
 
-| Runtime | Rostered adapter | Skill and profile registration |
+| Runtime | Rostered adapter (delegate supervisor) | Skill and profile registration |
 | --- | --- | --- |
-| Claude Code | `scripts/agents/adapters/claude.sh` | `.claude/skills/<name>` and `.claude/agents/<name>.md` |
-| OpenAI Codex | `scripts/agents/adapters/codex.sh` | `.agents/skills/<name>`; reads the skill's `agents/openai.yaml` |
-| Devin CLI | `scripts/agents/adapters/devin.sh` | `.agents/skills/<name>`, `.devin/skills/<name>`, and `.devin/agents/<name>/AGENT.md` |
-| Fake | `scripts/agents/adapters/fake.sh` | No runtime registration; fixture-only protocol simulator |
+| Claude Code | `internal/adapter/supervisor/claude.go` | `.claude/skills/<name>` and `.claude/agents/<name>.md` |
+| OpenAI Codex | `internal/adapter/supervisor/codex.go` | `.agents/skills/<name>`; reads the skill's `agents/openai.yaml` |
+| Devin CLI | `internal/adapter/supervisor/devin.go` | `.agents/skills/<name>`, `.devin/skills/<name>`, and `.devin/agents/<name>/AGENT.md` |
+| Fake | `internal/adapter/supervisor/fake.go` | No runtime registration; fixture-only protocol simulator |
+
+Each adapter runs as the engine's `delegate-supervisor` process entry, the
+persistent owner of one delegate round from its launch through the terminal
+record; a mission host turn runs as the same entry
+(`internal/missionrunner/hostturn`).
 
 Per-runtime profile templates live under `skills/<name>/agents/`, and `scripts/adopt.sh` invokes runtime setup for its selected runtimes. Project-specific delegation facts belong in `docs/project-rules.md`.
 
