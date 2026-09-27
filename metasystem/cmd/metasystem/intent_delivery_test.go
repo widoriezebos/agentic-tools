@@ -605,7 +605,7 @@ func TestIntentLandRouteEvidence(t *testing.T) {
 	}
 	owners.member.State = batch.UnitLanded
 	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "batch landed", code, result, intentConfirmed)
+	expectOutcome(t, "batch landed", code, result, intentUnchanged)
 	if !strings.Contains(result.Summary, "stays open") {
 		t.Fatalf("landing never concludes the goal: %+v", result)
 	}
@@ -726,7 +726,7 @@ func TestIntentLandBatchMemberSelection(t *testing.T) {
 	}
 
 	code, result := b.do("work", "land", "standing-validation", "--through", first)
-	expectOutcome(t, "landed prefix after branch deletion", code, result, intentConfirmed)
+	expectOutcome(t, "landed prefix after branch deletion", code, result, intentUnchanged)
 	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "full request after a landed prefix", code, result, intentRefused)
 	if !strings.Contains(result.Summary, "origin has no goal/standing-validation") || joins != 0 {
@@ -743,7 +743,7 @@ func TestIntentLandBatchMemberSelection(t *testing.T) {
 	}
 	markBatchLanded(t, landingRoot, full.BatchID)
 	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "whole goal landed, branch deleted", code, result, intentConfirmed)
+	expectOutcome(t, "whole goal landed, branch deleted", code, result, intentUnchanged)
 }
 
 func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
@@ -888,7 +888,7 @@ func TestIntentLandOldWholeLandingDoesNotAnswerFreshBranch(t *testing.T) {
 		return intentBranchState{EndpointTip: strings.Repeat("e", 40)}, nil
 	}
 	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "retained landing once the branch is gone", code, result, intentConfirmed)
+	expectOutcome(t, "retained landing once the branch is gone", code, result, intentUnchanged)
 	if len(joins) != 1 {
 		t.Fatal("a retained landed member is not joined again")
 	}

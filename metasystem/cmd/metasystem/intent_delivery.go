@@ -1528,8 +1528,14 @@ func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchJoin
 	}
 	switch unit.State {
 	case batch.UnitLanded:
-		return intentResult{Targets: targets, Outcome: intentConfirmed, Data: data,
-			Summary: fmt.Sprintf("goal %s landed through batch %s; the goal stays open until done", request.GoalID, record.BatchID)}
+		// The batch owner recorded the landing; this call only reads it, so
+		// the repeat is success that changes nothing (R-129-ui).
+		landed := ""
+		if unit.LandedCommit != "" {
+			landed = " as " + shortCommit(unit.LandedCommit)
+		}
+		return intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
+			Summary: fmt.Sprintf("goal %s already landed%s through batch %s; the goal stays open until done", request.GoalID, landed, record.BatchID)}
 	case batch.UnitEjected, batch.UnitWithdrawn, batch.UnitWithdrawnBudget:
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
 			Summary: fmt.Sprintf("goal %s left batch %s as %s", request.GoalID, record.BatchID, unit.State)}
