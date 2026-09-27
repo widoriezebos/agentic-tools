@@ -240,3 +240,47 @@ func witnessSplitAtOwner(t *testing.T) {
 		t.Fatal("the repeated split recorded something")
 	}
 }
+
+// goal budget --id G BOX names the goal by --id and the box by the one word
+// left, as the help's "--id is an alternative to naming it first" says.
+func TestIntentBudgetTakesTheGoalByID(t *testing.T) {
+	t.Parallel()
+	bed := newIntentBed(t, false, nil)
+	before := bed.publications()
+	code, result := bed.runJSON(bed.terminalOwners(), "goal", "budget", "--id", bedGoal, "4h/4/240m/2/3", "--fixture-human-authority", "--lineage", "m1")
+	if code != 0 || result.Outcome != intentUnchanged || !strings.Contains(result.Summary, "already has exactly this budget") || bed.publications() != before {
+		t.Fatalf("goal budget --id G BOX = %d %+v", code, result)
+	}
+}
+
+// A budget request that completes to the box the goal already carries is a
+// repeat whose effect holds: success with nothing recorded, not a refusal
+// with no way forward.
+func TestIntentBudgetCompletingToTheCarriedBoxIsUnchanged(t *testing.T) {
+	t.Parallel()
+	bed := newIntentBed(t, false, nil)
+	before := bed.publications()
+	code, result := bed.runJSON(bed.terminalOwners(), "goal", "budget", bedGoal, "4h/4/240m/2/3/9", "--fixture-human-authority", "--lineage", "m1")
+	if code != 0 || result.Outcome != intentUnchanged || !strings.Contains(result.Summary, "already carries the box 4h/4/240m/2/3") || bed.publications() != before {
+		t.Fatalf("a box completing to the carried box = %d %+v", code, result)
+	}
+}
+
+// Rule H1: a person at a terminal that is not enrolled releases a claim by
+// naming themself; the stopping act's own terminal-grade proof attributes it.
+func TestIntentReleaseAtAnUnenrolledTerminal(t *testing.T) {
+	t.Parallel()
+	bed := newIntentBed(t, false, nil)
+	reader := goalSyncTerminalReader(t, bed.root(), "ttys:fixture_release")
+	bed.facts.reader = &reader
+	owners := bed.owners()
+	owners.prove = unprovable
+	code, result := bed.runJSON(owners, "goal", "release", bedGoal, "--reason", "the seat is gone")
+	if code == 0 || !strings.Contains(result.Decision, "--by NAME") {
+		t.Fatalf("an unnamed release at an unenrolled terminal must guide to --by: %d %+v", code, result)
+	}
+	code, result = bed.runJSON(owners, "goal", "release", bedGoal, "--reason", "the seat is gone", "--by", "Wido")
+	if code != 0 || result.Outcome != intentConfirmed || bed.goalFile(bedGoal).State == goal.StateClaimed {
+		t.Fatalf("a named release at an unenrolled terminal = %d %+v", code, result)
+	}
+}

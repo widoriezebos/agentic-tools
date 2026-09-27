@@ -1529,13 +1529,13 @@ func completedBudgetRemedy(values *humanVerbValues, file *goal.GoalFile, complet
 			return humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")}
 		}
 		if values.approvedRef == "" {
-			return humanVerbRemedy{words: "the goal already carries that box, so there is no new act to record"}
+			return humanVerbRemedy{words: alreadyCarriesBox}
 		}
 	case goal.StateApproved, goal.StateParked:
 		expired, _ := file.ApprovalExpired(horizon)
 		if file.Approved != nil && file.Approved.Authority == goal.ApprovalAuthorityProven &&
 			values.temporaryWord == "" && values.reviewBy == "" && !expired {
-			return humanVerbRemedy{words: "the goal already carries that box, so there is no new act to record"}
+			return humanVerbRemedy{words: alreadyCarriesBox}
 		}
 	}
 	return humanVerbRemedy{command: values.budgetCommand(box)}

@@ -408,7 +408,16 @@ func runIntentShow(inv *intentInvocation) int {
 	return inv.render(result)
 }
 
+// budgetTargetFirst reads goal budget --id G BOX as goal budget G BOX: with
+// the goal named by --id, the one word left is the box.
+func (inv *intentInvocation) budgetTargetFirst() {
+	if flagged := inv.input.text("id"); flagged != "" && len(inv.input.args) == 1 && inv.input.args[0] != flagged {
+		inv.input.args = []string{flagged, inv.input.args[0]}
+	}
+}
+
 func runIntentBudget(inv *intentInvocation) int {
+	inv.budgetTargetFirst()
 	id, problem := inv.singleTarget()
 	if problem != nil {
 		return inv.render(*problem)

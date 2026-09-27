@@ -1570,7 +1570,14 @@ func extendBudgetRequest(r VerbRequest, id string, offer BudgetExtensionOffer) P
 			if !ownPair(f.Claimed, r.Actor) {
 				return nil, fmt.Errorf("goal %s is claimed by %s+%s; only that pair may extend its budget", id, f.Claimed.Machine, f.Claimed.Lineage)
 			}
-			if f.BudgetExtension != nil {
+			if extension := f.BudgetExtension; extension != nil {
+				// The same offer again is a repeat of the extension that
+				// stands: success with no record (R-129-ui, U-idem). Another
+				// offer asks for a second raise, which is a person's act.
+				if extension.EvidenceKind == offer.EvidenceKind && extension.EvidenceID == offer.EvidenceID &&
+					extension.AttemptLimitFrom == offer.AttemptLimitFrom && extension.ReservedJobMinutesFrom == offer.ReservedJobMinutesFrom {
+					return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already extended on %s:%s (at %s)", id, extension.EvidenceKind, extension.EvidenceID, extension.At)}
+				}
 				return nil, fmt.Errorf("goal %s extended once at %s; a further raise is a person's set-budget", id, f.BudgetExtension.At)
 			}
 			if offer.EvidenceKind != "review" && offer.EvidenceKind != "landing" && offer.EvidenceKind != "receipt" ||

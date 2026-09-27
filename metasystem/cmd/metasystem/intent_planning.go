@@ -426,6 +426,11 @@ const (
 	actorHuman
 	// actorAgent is only ever the holding session's own act.
 	actorAgent
+	// actorEitherStopping is actorEither for a stopping act (release): a
+	// person at a terminal that is not enrolled names themself with --by and
+	// acts under the terminal-grade proof the owner accepts for stopping
+	// acts (rule H1: a human is never denied a verb).
+	actorEitherStopping
 )
 
 // actingAs is the owner's actor flags, and the observed proof when a person
@@ -442,6 +447,10 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 			Summary:  fmt.Sprintf("%s is the claim holder's own act and takes no --by; nothing was done", verb),
 			Decision: "the session holding the goal runs it, acting in its own name"}
 	}
+	stopping := actor == actorEitherStopping
+	if stopping {
+		actor = actorEither
+	}
 	if typed == "" && (actor == actorAgent || actor == actorEither && agent) {
 		if !agent {
 			return nil, nil, &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(target),
@@ -453,6 +462,7 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 	flags := &syncFlags{root: inv.stateRoot, fixtureHumanAuthority: inv.input.switched("fixture-human-authority"),
 		temporaryWord: inv.input.text("temporary-human-word"), reviewBy: inv.input.text("review-by")}
 	proof, err := proveGoalHumanAuthorityAt(verb, flags, inv.owners.prove, inv.owners.commandNow)
+	mismatch := false
 	switch {
 	case err != nil:
 	case flags.temporaryWord != "":
@@ -463,16 +473,23 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 		flags.by = typed
 	default:
 		if err = resolveGoalHuman(flags, proof); err == nil && typed != "" && typed != flags.by {
-			err = fmt.Errorf("--by %s is not the person enrolled at this terminal", typed)
+			err, mismatch = fmt.Errorf("--by %s is not the person enrolled at this terminal", typed), true
 		}
+	}
+	if err != nil && stopping && typed != "" && !mismatch && flags.temporaryWord == "" {
+		// The owner proves the terminal itself when the request is built.
+		return append(args, "--by", typed), nil, nil
 	}
 	if err != nil {
 		summary := fmt.Sprintf("%s is a person's act and no enrolled person was proven here (%v); nothing was done", verb, err)
 		if actor == actorEither && typed == "" {
 			summary = fmt.Sprintf("cannot tell who acts: no agent lineage, and no enrolled person was proven here (%v); nothing was done", err)
 		}
-		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target), Summary: summary,
-			Decision: "a person runs it at the enrolled terminal; an agent session passes --lineage LINEAGE"}
+		decision := "a person runs it at the enrolled terminal; an agent session passes --lineage LINEAGE"
+		if stopping && typed == "" {
+			decision = "a person names themself with --by NAME (a terminal that is not enrolled is proven by its own ancestry) or runs it at the enrolled terminal; an agent session passes --lineage LINEAGE"
+		}
+		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target), Summary: summary, Decision: decision}
 	}
 	return append(args, "--by", flags.by), &proof, nil
 }
@@ -664,6 +681,7 @@ func runIntentApproveWithLimits(inv *intentInvocation) int {
 }
 
 func runIntentBudgetWithLimits(inv *intentInvocation) int {
+	inv.budgetTargetFirst()
 	compact := inv.input.text("budget")
 	if len(inv.input.args) > 1 {
 		compact = inv.input.args[1]
@@ -1099,7 +1117,7 @@ func runIntentRelease(inv *intentInvocation) int {
 	if reason == "" {
 		return inv.refuse(id, "a release is recorded with its reason; nothing was done", "say why with --reason TEXT")
 	}
-	actor, proof, problem := inv.actingAs("release", id, actorEither)
+	actor, proof, problem := inv.actingAs("release", id, actorEitherStopping)
 	if problem != nil {
 		return inv.render(*problem)
 	}

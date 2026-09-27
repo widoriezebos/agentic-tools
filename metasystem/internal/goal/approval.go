@@ -890,7 +890,7 @@ func RecordFleetEnrollment(r VerbRequest, generation uint64) (PublishResult, err
 				return nil, err
 			}
 			if t.Root.FleetEnrollment != nil {
-				return nil, NothingToDo{Reason: "the fleet's first terminal enrollment is already recorded"}
+				return nil, AlreadyHolds{Reason: "the fleet's first terminal enrollment is already recorded"}
 			}
 			t.Root.FleetEnrollment = &FleetEnrollmentRecord{At: r.stamp(), Machine: r.Actor.Machine, Generation: generation, Opid: r.opid()}
 			t.Root.Revision++
