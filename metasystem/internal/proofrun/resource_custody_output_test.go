@@ -61,17 +61,11 @@ printf '{"suite":"chatty","section":"over-cap","event":"end","at":"%s","depth":0
 	}()
 	t.Cleanup(func() {
 		_ = os.WriteFile(release, nil, 0o600)
-		select {
-		case <-ended:
-		case <-time.After(5 * time.Second):
-			t.Error("custody fixture launcher did not drain during cleanup")
-		}
+		<-ended
 	})
 	note := "section over-cap passed its 300ms cap"
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
-	deadline := time.NewTimer(12 * time.Second)
-	defer deadline.Stop()
 	for {
 		data, _ := os.ReadFile(publicPath)
 		if bytes.Contains(data, []byte(note)) {
@@ -81,7 +75,7 @@ printf '{"suite":"chatty","section":"over-cap","event":"end","at":"%s","depth":0
 		case result := <-finished:
 			t.Fatalf("suite ended before its live cap note: status=%d output=%s", result, data)
 		case <-ticker.C:
-		case <-deadline.C:
+		case <-t.Context().Done():
 			t.Fatalf("live cap note missing from public output: %s", data)
 		}
 	}
@@ -130,9 +124,16 @@ type failAfterBannerWriter struct {
 	writes int
 }
 
+// extendingSpoolWriter appends to the spool it is fed from, so a follower
+// that reads past the final prefix is fed forever. It stops appending once it
+// has been handed more than limit bytes, which a correct follower never hands
+// it; the follower then ends and the test sees the overrun, with no clock.
 type extendingSpoolWriter struct {
 	file          *os.File
 	keepAppending atomic.Bool
+	limit         int64
+	received      atomic.Int64
+	overran       atomic.Bool
 }
 
 type gatedSuiteOutput struct {
@@ -176,18 +177,19 @@ func TestManagedSuiteOutputRetainsTailAfterChildWait(t *testing.T) {
 			HostResourceFiles:  lease.Files(), Output: output, ErrorOutput: io.Discard})
 		close(ended)
 	}()
+	// Every wait below ends on an event: the barrier, the launcher returning,
+	// or the test's own context. None is a wall-clock bound, which a loaded
+	// host exceeds with nothing wrong.
 	t.Cleanup(func() {
 		releaseOnce.Do(func() { close(output.release) })
 		_ = os.WriteFile(continuePath, nil, 0o600)
-		select {
-		case <-ended:
-		case <-time.After(5 * time.Second):
-			t.Error("gated suite launcher did not settle")
-		}
+		<-ended
 	})
 	select {
 	case <-output.first:
-	case <-time.After(5 * time.Second):
+	case <-ended:
+		t.Fatal("gated suite launcher returned before its first output was observed")
+	case <-t.Context().Done():
 		t.Fatal("suite first output was not observed")
 	}
 	if err := os.WriteFile(continuePath, nil, 0o600); err != nil {
@@ -195,7 +197,7 @@ func TestManagedSuiteOutputRetainsTailAfterChildWait(t *testing.T) {
 	}
 	// The launcher writes .done only after the direct child has exited and
 	// exec.Cmd.Wait has completed. Keep the first public write gated until then.
-	waitCustodyFile(t, logPath+".done", 5*time.Second)
+	waitCustodyFileWhile(t, logPath+".done", 0, ended, func() error { return errors.New("the gated suite launcher returned") })
 	releaseOnce.Do(func() { close(output.release) })
 	if status := <-finished; status != 0 {
 		t.Fatalf("gated suite status=%d", status)
@@ -236,13 +238,9 @@ func TestCustodiedSuiteWithoutResourceFilesDrainsGrandchildWithoutSlot(t *testin
 		if grandchild.Pid > 0 {
 			_ = identity.SignalExact(identity.KernelProber{}, grandchild, syscall.SIGKILL)
 		}
-		select {
-		case <-ended:
-		case <-time.After(5 * time.Second):
-			t.Error("borrowed custody launcher did not settle")
-		}
+		<-ended
 	})
-	waitCustodyFile(t, pidPath, 5*time.Second)
+	waitCustodyFileWhile(t, pidPath, 0, ended, func() error { return errors.New("the borrowed custody launcher returned") })
 	pidText, err := os.ReadFile(pidPath)
 	if err != nil {
 		t.Fatal(err)
@@ -322,6 +320,10 @@ func TestCustodiedSuiteWithoutResourceFilesDrainsGrandchildWithoutSlot(t *testin
 }
 
 func (writer *extendingSpoolWriter) Write(data []byte) (int, error) {
+	if writer.limit > 0 && writer.received.Add(int64(len(data))) > writer.limit {
+		writer.overran.Store(true)
+		writer.keepAppending.Store(false)
+	}
 	if writer.keepAppending.Load() {
 		if _, err := writer.file.Write(bytes.Repeat([]byte("x"), 2*len(data))); err != nil {
 			return 0, err
@@ -348,22 +350,14 @@ func TestSuiteSpoolFinalPrefixStopsSelfExtendingWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer log.Close()
-	feedback := &extendingSpoolWriter{file: appendFile}
+	feedback := &extendingSpoolWriter{file: appendFile, limit: int64(len(initial))}
 	feedback.keepAppending.Store(true)
 	done := make(chan struct{})
 	close(done)
-	finished := make(chan error, 1)
-	go func() {
-		finished <- followCustodySpool(path, &lockedWriter{writers: []io.Writer{feedback, log}}, log, done)
-	}()
-	select {
-	case err := <-finished:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(time.Second):
-		feedback.keepAppending.Store(false)
-		<-finished
+	if err := followCustodySpool(path, &lockedWriter{writers: []io.Writer{feedback, log}}, log, done); err != nil {
+		t.Fatal(err)
+	}
+	if feedback.overran.Load() {
 		t.Fatal("completed suite output followed an unbounded descendant append")
 	}
 	content, err := os.ReadFile(log.Name())
@@ -436,11 +430,7 @@ func TestResourceCustodyFailedPublicSuiteOutputStillDrainsLargeChild(t *testing.
 	}
 	t.Cleanup(func() {
 		stopSuite()
-		select {
-		case <-ended:
-		case <-time.After(5 * time.Second):
-			t.Error("large-output launcher did not settle after exact child stop")
-		}
+		<-ended
 	})
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
