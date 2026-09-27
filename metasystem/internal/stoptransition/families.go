@@ -113,9 +113,18 @@ func (f *missionFamily) Stop(item Item) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
-	complete := outcome.Result != "not-stopped"
 	if current.Kind == missionrunner.ItemRunner {
 		f.runnerConcluded[current.MissionID] = outcome.Signal == missionrunner.TerminationTerm && outcome.Reason == "runner-concluded"
+	}
+	line, complete := missionOutcomeLine(current, outcome)
+	return Outcome{Line: line, Complete: complete, Survivor: item.Survivor}, nil
+}
+
+// missionOutcomeLine words one mission item's stop outcome and reports
+// whether the item is stopped.
+func missionOutcomeLine(current missionrunner.Item, outcome missionrunner.StopOutcome) (string, bool) {
+	complete := outcome.Result != "not-stopped"
+	if current.Kind == missionrunner.ItemRunner {
 		line := fmt.Sprintf("mission %s runner pid %d pgid %d tag %s: ", current.MissionID, current.Pid, current.Pgid, current.Tag)
 		switch {
 		case !complete:
@@ -127,7 +136,7 @@ func (f *missionFamily) Stop(item Item) (Outcome, error) {
 		default:
 			line += "stopped (TERM, runner concluded)"
 		}
-		return Outcome{Line: line, Complete: complete, Survivor: item.Survivor}, nil
+		return line, complete
 	}
 	line := fmt.Sprintf("mission %s turn %s host pid %d pgid %d: ", current.MissionID, current.TurnID, current.Pid, current.Pgid)
 	if !complete {
@@ -143,7 +152,7 @@ func (f *missionFamily) Stop(item Item) (Outcome, error) {
 	} else {
 		line += "stopped (TERM)"
 	}
-	return Outcome{Line: line, Complete: complete, Survivor: item.Survivor}, nil
+	return line, complete
 }
 
 type jobFamily struct {
