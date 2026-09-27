@@ -206,6 +206,7 @@ func requireEndedTurn(t *testing.T, err error) {
 // ADPT-DL-001: an expired cap kills the child and lands running->timeout
 // exactly once, and the supervisor's turn ends there.
 func TestExpiredCapKillsChildAndLandsTimeoutOnce(t *testing.T) {
+	t.Parallel()
 	domain := newKillDomain(t)
 	f := newDeadlineFixture(t, `{"jobId":"f4fix","status":"running","capDeadline":"2020-01-01T00:00:00Z"}`, true, domain, nil)
 	cli := domain.startCLI(t)
@@ -235,6 +236,7 @@ func TestExpiredCapKillsChildAndLandsTimeoutOnce(t *testing.T) {
 // ADPT-DL-002: an expired handshake deadline (no session ever recorded)
 // lands pending->failed through the handshake_timeout path.
 func TestExpiredHandshakeLandsPendingFailed(t *testing.T) {
+	t.Parallel()
 	domain := newKillDomain(t)
 	f := newDeadlineFixture(t, `{"jobId":"f4fix","status":"pending","handshakeDeadline":5}`, false, domain, nil)
 	cli := domain.startCLI(t)
@@ -259,6 +261,7 @@ func TestExpiredHandshakeLandsPendingFailed(t *testing.T) {
 // signals, the wait continues undisturbed and returns normally once the child
 // ends.
 func TestWonHandshakeStandsDownBeforeAnySignal(t *testing.T) {
+	t.Parallel()
 	domain := newKillDomain(t)
 	f := newDeadlineFixture(t, `{"jobId":"f4fix","status":"running","handshakeDeadline":5}`, true, domain, nil)
 	cli := domain.startCLI(t)
@@ -298,6 +301,7 @@ func TestWonHandshakeStandsDownBeforeAnySignal(t *testing.T) {
 // ADPT-DL-004: when the waiter's verdict already landed, the supervisor's CAS
 // loses (status 3) and the turn still settles with exactly one attempt.
 func TestLostCASSettlesWithOneAttempt(t *testing.T) {
+	t.Parallel()
 	domain := newKillDomain(t)
 	f := newDeadlineFixture(t, `{"jobId":"f4fix","status":"running","capDeadline":"2020-01-01T00:00:00Z"}`, true, domain, nil)
 	f.dispatch.status = 3
@@ -318,6 +322,7 @@ func TestLostCASSettlesWithOneAttempt(t *testing.T) {
 // survives every sweep) leaves the record NONTERMINAL: no CAS, the decline
 // said in the log, the supervisor not ended.
 func TestUnprovenKillDomainLeavesRecordNonterminal(t *testing.T) {
+	t.Parallel()
 	domain := newKillDomain(t)
 	phantom := func(int, ...int) ([]int, error) { return []int{phantomPid}, nil }
 	f := newDeadlineFixture(t, `{"jobId":"f4fix","status":"running","capDeadline":"2020-01-01T00:00:00Z"}`, true, domain, phantom)

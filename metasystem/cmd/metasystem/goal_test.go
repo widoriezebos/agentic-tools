@@ -87,13 +87,20 @@ func delegateRoot(t *testing.T) string {
 	if !ok {
 		t.Skip("cannot read our own command to build a matching signature")
 	}
-	adapterDir := filepath.Join(root, "scripts/agents/adapters")
+	// An external adapter named in the configuration (design 3.5) whose
+	// describe matches our own command: the registry the lease reads
+	// includes it.
+	adapterDir := filepath.Join(root, "adapters")
 	if err := os.MkdirAll(adapterDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	line := "match " + regexp.QuoteMeta(command)
-	script := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' '" + line + "'\n"
-	if err := testexec.WriteFile(filepath.Join(adapterDir, "fake.sh"), []byte(script), 0o755); err != nil {
+	pattern, _ := json.Marshal(regexp.QuoteMeta(command))
+	describe := `{"schemaVersion":1,"match":[` + string(pattern) + `]}`
+	script := "#!/bin/sh\n[ \"$1\" = describe ] || exit 64\ncat <<'JSON'\n" + describe + "\nJSON\n"
+	if err := testexec.WriteFile(filepath.Join(adapterDir, "testagent"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("adapters.testagent.use=external\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return root

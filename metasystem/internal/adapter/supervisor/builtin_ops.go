@@ -19,13 +19,16 @@ type builtinOps struct {
 	probe          func(Deps, []string) int
 	contract       func(Deps) ([]byte, error)
 	selftest       func(Deps) int
-	invocations    []InvocationShape
 }
 
 func (b builtinOps) Describe(Deps) (Description, error) {
 	d := Description{Name: b.name, CLI: b.cli, SchemaVersion: OperationsSchemaVersion,
 		Capabilities: Capabilities{Resume: true, FollowUp: true, Repair: b.repair, WaitDelivery: true, Host: b.host, Usage: b.usage},
-		Invocations:  b.invocations}
+	}
+	for _, shape := range runtimes.CLIInvocations(b.name) {
+		d.Invocations = append(d.Invocations, InvocationShape{Includes: shape.Includes, TagFlag: shape.TagFlag,
+			TagPrefix: shape.TagPrefix, TagPathBase: shape.TagPathBase})
+	}
 	text, err := runtimes.SignatureText(b.name)
 	if err != nil {
 		return Description{}, err

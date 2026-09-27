@@ -53,6 +53,11 @@ func runHostOps(t *Turn, ops supervisor.Operations) int {
 	if launch.Simulated != nil {
 		// An in-process CLI stand-in (the fake host) runs to its exit.
 		status = launch.Simulated(make(chan struct{}))
+	} else if launch.Protocol != nil {
+		var exit *int
+		if status, exit = supervisor.RunHostProtocol(d, turn, launch); exit != nil {
+			return *exit
+		}
 	} else {
 		status = supervisor.RunHostCLI(d, turn, launch, t.Path("host.log"))
 	}

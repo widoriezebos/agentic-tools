@@ -116,6 +116,10 @@ func AllAdapterSignatures() ([]Signature, error) {
 // FixtureSignatureRuntimesEnv in a fixture-mode root. It also returns the
 // runtime names and each signature text in the same order.
 func InstalledAdapterSignatures(root string) ([]Signature, []string, []string, error) {
+	return installedAdapterSignatures(root, os.Getenv)
+}
+
+func installedAdapterSignatures(root string, getenv func(string) string) ([]Signature, []string, []string, error) {
 	names := runtimes.WithAdapter()
 	adapters, _, err := external.Discover(root)
 	if err != nil {
@@ -126,7 +130,7 @@ func InstalledAdapterSignatures(root string) ([]Signature, []string, []string, e
 			names = append(names, adapter.Name)
 		}
 	}
-	if narrowed := os.Getenv(FixtureSignatureRuntimesEnv); narrowed != "" && fixtureauth.FixtureModeRoot(root) {
+	if narrowed := getenv(FixtureSignatureRuntimesEnv); narrowed != "" && fixtureauth.FixtureModeRoot(root) {
 		names = strings.Fields(strings.ReplaceAll(narrowed, ",", " "))
 	}
 	sort.Strings(names)

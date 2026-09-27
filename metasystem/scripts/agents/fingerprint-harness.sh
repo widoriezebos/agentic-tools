@@ -177,7 +177,6 @@ fixture_install=$tmp/fixture-install
 mkdir -p "$fixture_install/bin" "$fixture_install/scripts/agents"
 printf 'metasystem.runtimes=fake\n' >"$fixture_install/metasystem.conf"
 cp "$ms" "$fixture_install/bin/metasystem"
-cp -R "$source_root/scripts/agents/adapters" "$fixture_install/scripts/agents/"
 enrolled_engine=$fixture_install/bin/metasystem
 enrollment_digest=$("$enrolled_engine" util sha256 --file "$enrolled_engine")
 mkdir -p "$repo/artifacts/agents/steward"

@@ -55,7 +55,6 @@ setup_ledger() {
   git -C "$bed_clone" commit -q --allow-empty -m seed
   mkdir -p "$bed_clone/plans" "$bed_clone/scripts/agents" "$bed_clone/records/misc"
   cp "$root/scripts/agents/pre-commit-guard.sh" "$bed_clone/scripts/agents/"
-  cp -R "$root/scripts/agents/adapters" "$bed_clone/scripts/agents/"
   cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$bed_clone/records/misc/"
   cat >"$bed_clone/plans/goals.md" <<'LEDGER'
 # Goals

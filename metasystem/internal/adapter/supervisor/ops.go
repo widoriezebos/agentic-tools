@@ -157,20 +157,34 @@ type Launch struct {
 	// Private is the runtime's own per-turn state, handed back to observe,
 	// finalize and repair.
 	Private any
+	// BeforeLaunch, when set, runs after the envelope comparison and the
+	// refusal, before reference verification: a pre-launch step whose
+	// refusal lands pending (Devin's session baseline, which must never run
+	// for a turn the comparison refuses). An error ends the round (1).
+	BeforeLaunch func() (*Refusal, error)
 }
 
 // ProtocolLaunch asks the shared layer to drive a protocol client against
 // the launched server over the named pipes.
+//
+// The shared layer makes the per-attempt fifo pair (it fills in ServerOut
+// and ServerIn), launches the server from Argv/Argv0/Env with its stdout and
+// stdin on the pair, drives the in-process client over Envelope, and owns
+// the server's custody, the client's cancellation on TERM/INT, and the
+// pair's removal. Its own failure codes are named by Kind: KIND_fifo_setup
+// (setup) and KIND_server_died (handshake).
 type ProtocolLaunch struct {
 	Kind                string // "acp"
 	ServerOut, ServerIn string
-	Journal, Outcome    string
-	SessionFile         string
-	PromptFile          string
-	Mode                string
-	ExpectedProtocol    int64
-	LoadSession         string
-	Cleanup             func()
+	// Envelope is the permission envelope file the client enforces.
+	Envelope         string
+	Journal, Outcome string
+	SessionFile      string
+	PromptFile       string
+	Mode             string
+	ExpectedProtocol int64
+	LoadSession      string
+	Cleanup          func()
 }
 
 // Observation is what observe reads while the CLI runs.
@@ -186,6 +200,10 @@ type Events struct {
 	// Lines are events-stream lines the runtime records (session
 	// correlation evidence).
 	Lines []string
+	// RecordPatch, when set, is a record patch the shared layer applies
+	// running→running right after the handshake it reports, best-effort,
+	// its output to the job log (a transport pin).
+	RecordPatch string
 }
 
 // FinalInput is what finalize reads after the CLI exits.
@@ -197,6 +215,11 @@ type FinalInput struct {
 
 // Final is finalize's answer.
 type Final struct {
+	// Handshake, when it names a session and the turn has none yet, is
+	// recorded before anything else of this answer (a session only the
+	// settled outcome names); its Lines and RecordPatch follow a successful
+	// handshake.
+	Handshake *Events
 	// Refusal ends the turn with a named failure instead of adjudication.
 	Refusal *Refusal
 	// Candidate and Transcript are what adjudication validates; Usage is
@@ -247,6 +270,14 @@ type RepairResult struct {
 	// Settled reports the repaired session and model re-certified.
 	Settled bool
 	Model   string
+}
+
+// Admitter is an optional operation: a refusal before the round is even
+// prepared — nothing spent, no record written — whose message goes to
+// stderr, ending the round with 1 (a runtime configuration that cannot be
+// read, or names no known transport).
+type Admitter interface {
+	Admit(d Deps, verb string) error
 }
 
 // Operations is the operation interface of one runtime.

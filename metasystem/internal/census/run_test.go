@@ -183,6 +183,7 @@ func TestReadSupervisionSnapshotAcceptsTheLandingOwner(t *testing.T) {
 // The checkout carries no adapter script: the fake signature is the
 // registry's.
 func TestUnavailableSupervisionPublishesPresentNullFailure(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"),
 		[]byte("metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n"), 0o644); err != nil {

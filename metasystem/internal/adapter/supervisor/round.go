@@ -1,14 +1,12 @@
 package supervisor
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/acp"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 )
 
@@ -88,32 +86,14 @@ func simulatedChild(run func(stop <-chan struct{}) int) *child {
 	return c
 }
 
-// protocolClient drives the shared protocol client of a protocol launch as
-// an in-process child: cancelling it is its termination.
-func protocolClient(p *ProtocolLaunch, workspace, envelope string, log interface{ Write([]byte) (int, error) }) *child {
-	ctx, cancel := context.WithCancel(context.Background())
-	c := &child{done: make(chan struct{}), pid: os.Getpid(), stop: cancel}
-	go func() {
-		defer cancel()
-		outcome, err := acp.RunFileTurn(ctx, acp.FileTurnConfig{
-			ServerOut: p.ServerOut, ServerIn: p.ServerIn, JournalPath: p.Journal, Workspace: workspace,
-			EnvelopePath: envelope, PromptFile: p.PromptFile, LoadSession: p.LoadSession, Mode: p.Mode,
-			ExpectedProtocol: p.ExpectedProtocol, SessionFile: p.SessionFile,
-		})
-		if err != nil {
-			fmt.Fprintln(log, err)
-			c.status = 1
-		} else if err := acp.WriteFileTurnOutcome(p.Outcome, outcome); err != nil {
-			fmt.Fprintln(log, err)
-			c.status = 1
-		}
-		close(c.done)
-	}()
-	return c
-}
-
 // superviseRound is one delegate round of a runtime.
 func superviseRound(s *Supervision, args []string, ops Operations) int {
+	if admitter, ok := ops.(Admitter); ok {
+		if err := admitter.Admit(s.d, s.verb); err != nil {
+			fmt.Fprintln(s.d.Stderr, err)
+			return 1
+		}
+	}
 	if !s.prepareOrUsage(args) {
 		return 2
 	}
@@ -135,66 +115,33 @@ func superviseRound(s *Supervision, args []string, ops Operations) int {
 		s.failPending(launch.Refusal.Error, launch.Refusal.Phase, "")
 		return 1
 	}
-	if !s.verifyReferences() {
-		return 1
-	}
-	// A simulated CLI forks nothing and never enters custody, so it leaves
-	// no pre-fork marker behind.
-	if launch.Simulated == nil {
-		if err := s.markPrefork(); err != nil {
-			fmt.Fprintln(s.d.Stderr, err)
-			s.failPending("prefork_marker", "handshake", "")
-			return 1
-		}
-	}
-	cli, _, err := s.start(launch)
-	if err != nil {
-		s.failPending("custody_registration", "handshake", "")
-		return 1
-	}
-	if launch.Simulated == nil {
-		if err := s.registerCustody(cli); err != nil {
-			cli.terminate()
-			s.failPending("custody_registration", "handshake", "")
-			return 1
-		}
-	}
-	for cli.alive() {
-		t.HandshakeDone, t.SessionID = s.handshakeDone, s.sessionID
-		events, err := ops.Observe(t, Observation{Launch: launch, Running: true})
+	if launch.BeforeLaunch != nil {
+		refusal, err := launch.BeforeLaunch()
 		if err != nil {
-			s.logf("%v\n", err)
-		}
-		if events.Refusal != nil {
-			s.failPending(events.Refusal.Error, events.Refusal.Phase, "")
-			cli.terminate()
+			fmt.Fprintln(s.d.Stderr, err)
 			return 1
 		}
-		if events.Session != "" {
-			if !s.recordHandshake(events.Session, events.Turn, events.Model) {
-				cli.terminate()
-				return 1
-			}
-			for _, line := range events.Lines {
-				s.appendEventLine(line)
-			}
-			if launch.OnHandshake != nil {
-				launch.OnHandshake()
-			}
-			break
+		if refusal != nil {
+			s.failPending(refusal.Error, refusal.Phase, "")
+			return 1
 		}
-		touch(s.heartbeat)
-		s.d.Clock.Sleep(pollTick)
 	}
-	status, err := s.waitForCLI(cli)
-	if err != nil {
-		return exitCodeOf(err, 1)
+	drive := s.driveCLI
+	if launch.Protocol != nil {
+		drive = s.driveProtocol
+	}
+	status, code, cont := drive(t, ops, launch)
+	if !cont {
+		return code
 	}
 	t.HandshakeDone, t.SessionID = s.handshakeDone, s.sessionID
 	final, err := ops.Finalize(t, FinalInput{Launch: launch, Status: status, Usage: usageFile})
 	if err != nil {
 		fmt.Fprintln(s.d.Stderr, err)
 		return 1
+	}
+	if final.Handshake != nil && final.Handshake.Session != "" && !s.handshakeDone {
+		s.handshakeFrom(*final.Handshake)
 	}
 	if final.RecordModel != "" {
 		s.recordResultEffectiveModel(final.RecordModel)
@@ -218,6 +165,65 @@ func superviseRound(s *Supervision, args []string, ops Operations) int {
 		return s.deliveryRepair(t, ops, launch, usageFile, hooks)
 	}
 	return terminal(s.completeFromCLI(status, usageFile, final.Candidate, final.Transcript, hooks))
+}
+
+// driveCLI launches the CLI (or its in-process stand-in) and supervises it
+// to its exit: custody, the handshake from observe, deadlines. cont is
+// false when the round already ended, with code its status.
+func (s *Supervision) driveCLI(t *Turn, ops Operations, launch Launch) (status, code int, cont bool) {
+	if !s.verifyReferences() {
+		return 0, 1, false
+	}
+	// A simulated CLI forks nothing and never enters custody, so it leaves
+	// no pre-fork marker behind.
+	if launch.Simulated == nil {
+		if err := s.markPrefork(); err != nil {
+			fmt.Fprintln(s.d.Stderr, err)
+			s.failPending("prefork_marker", "handshake", "")
+			return 0, 1, false
+		}
+	}
+	cli, _, err := s.start(launch)
+	if err != nil {
+		s.failPending("custody_registration", "handshake", "")
+		return 0, 1, false
+	}
+	if launch.Simulated == nil {
+		if err := s.registerCustody(cli); err != nil {
+			cli.terminate()
+			s.failPending("custody_registration", "handshake", "")
+			return 0, 1, false
+		}
+	}
+	for cli.alive() {
+		t.HandshakeDone, t.SessionID = s.handshakeDone, s.sessionID
+		events, err := ops.Observe(t, Observation{Launch: launch, Running: true})
+		if err != nil {
+			s.logf("%v\n", err)
+		}
+		if events.Refusal != nil {
+			s.failPending(events.Refusal.Error, events.Refusal.Phase, "")
+			cli.terminate()
+			return 0, 1, false
+		}
+		if events.Session != "" {
+			if !s.handshakeFrom(events) {
+				cli.terminate()
+				return 0, 1, false
+			}
+			if launch.OnHandshake != nil {
+				launch.OnHandshake()
+			}
+			break
+		}
+		touch(s.heartbeat)
+		s.d.Clock.Sleep(pollTick)
+	}
+	status, err = s.waitForCLI(cli)
+	if err != nil {
+		return 0, exitCodeOf(err, 1), false
+	}
+	return status, 0, true
 }
 
 func (s *Supervision) appendEventLine(line string) {

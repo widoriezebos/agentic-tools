@@ -34,6 +34,7 @@ func TestSignatureText(t *testing.T) {
 // S4-7 (supervision-fixtures.sh): every declared adapter runtime serves a
 // non-empty, strictly line-oriented declaration that compiles.
 func TestEveryRegistrySignatureIsWellFormed(t *testing.T) {
+	t.Parallel()
 	names := runtimes.WithAdapter()
 	if len(names) < 4 {
 		t.Fatalf("only %d adapter runtimes declared — the population went missing: %v", len(names), names)
@@ -125,6 +126,7 @@ func TestFingerprintDeterministicAndSensitive(t *testing.T) {
 // signature set; an adapter script, if one is left in a checkout, is no
 // longer an input.
 func TestFingerprintMovesWithEngineAndSignatureSetNotAdapterScripts(t *testing.T) {
+	t.Parallel()
 	root := writeFingerprintRoot(t)
 	before := mustFingerprint(t, root)
 

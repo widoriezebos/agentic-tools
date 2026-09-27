@@ -19,8 +19,7 @@ import (
 func init() {
 	ops := claudeOps{builtinOps{name: "claude", cli: "claude", usage: "native", host: true,
 		configIdentity: claudeConfigIdentity, probe: claudeProbe, contract: commonContract("claude"),
-		selftest:    commonSelftest("claude", "native", "", nil),
-		invocations: []InvocationShape{{Includes: []string{"claude", "-p"}, TagFlag: "--name"}}}}
+		selftest: commonSelftest("claude", "native", "", nil)}}
 	register(runtimeAdapter{
 		name:           "claude",
 		configIdentity: claudeConfigIdentity,
