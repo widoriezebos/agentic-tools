@@ -36,7 +36,7 @@ func TestRuntimeAdapterContracts(t *testing.T) {
 		if a.contract == nil {
 			continue
 		}
-		data, err := a.contract(Deps{})
+		data, err := a.contract(Deps{Getenv: func(string) string { return "" }})
 		if err != nil {
 			t.Fatalf("%s contract: %v", name, err)
 		}
@@ -83,7 +83,7 @@ func TestSupervisorSignatureAndLocalConfigVerbs(t *testing.T) {
 	t.Parallel()
 	for _, name := range Runtimes() {
 		var stdout, stderr strings.Builder
-		d := Deps{Root: "/installation", Stdout: &stdout, Stderr: &stderr}
+		d := Deps{Root: "/installation", Stdout: &stdout, Stderr: &stderr, Getenv: func(string) string { return "" }}
 		newDeps := func(string) Deps { return d }
 		if code := Main([]string{name, "signature", "--root", "/installation"}, newDeps); code != 0 {
 			t.Fatalf("%s signature = %d: %s", name, code, stderr.String())

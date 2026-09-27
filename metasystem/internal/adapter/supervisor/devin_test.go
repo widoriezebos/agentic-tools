@@ -165,12 +165,12 @@ func (f *fakeDispatch) terminal() (string, string, string) {
 	return status, failure, phase
 }
 
-// stepClock is wall time whose waits are shortened: the supervision loops
+// devinStepClock is wall time whose waits are shortened: the supervision loops
 // poll at their cadence without the test paying it.
-type stepClock struct{}
+type devinStepClock struct{}
 
-func (stepClock) Now() time.Time        { return time.Now() }
-func (stepClock) Sleep(d time.Duration) { time.Sleep(min(d, 5*time.Millisecond)) }
+func (devinStepClock) Now() time.Time        { return time.Now() }
+func (devinStepClock) Sleep(d time.Duration) { time.Sleep(min(d, 5*time.Millisecond)) }
 
 type devinFixture struct {
 	t                                *testing.T
@@ -284,7 +284,7 @@ func (f *devinFixture) deps() Deps {
 		Root: f.root, Engine: "/nonexistent/metasystem", Environ: environ,
 		Getenv: func(name string) string { return f.env[name] },
 		Pid:    os.Getpid(), Stdout: f.stdout, Stderr: f.stderr,
-		Clock:    stepClock{},
+		Clock:    devinStepClock{},
 		Dispatch: f.dispatch,
 		GroupMembers: func(int, ...int) ([]int, error) {
 			return nil, nil

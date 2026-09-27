@@ -11,8 +11,20 @@ import (
 // stdout; ok is false when git refuses.
 type GitQuery func(dir string, args ...string) (string, bool)
 
-// gitOutput is the production GitQuery.
-func gitOutput(dir string, args ...string) (string, bool) {
+// gitOutput is the GitQuery a Deps without its own Git uses; a package
+// TestMain may fix it once for the whole package.
+var gitOutput GitQuery = runGit
+
+// git is the dependency's GitQuery.
+func (d Deps) git() GitQuery {
+	if d.Git != nil {
+		return d.Git
+	}
+	return gitOutput
+}
+
+// runGit is the production GitQuery.
+func runGit(dir string, args ...string) (string, bool) {
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	output, err := command.Output()
 	if err != nil {

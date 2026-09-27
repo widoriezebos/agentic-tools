@@ -79,11 +79,11 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// recordingDispatcher appends each callback's argv, one JSON array per
+// fakeRecordingDispatcher appends each callback's argv, one JSON array per
 // line, to a file, and answers with a configured status. A successful
 // __handshake records the session in the job record, as dispatch.sh's
 // handshake does.
-type recordingDispatcher struct {
+type fakeRecordingDispatcher struct {
 	Root     string         `json:"root"`
 	Log      string         `json:"log"`
 	Statuses map[string]int `json:"statuses"`
@@ -91,7 +91,7 @@ type recordingDispatcher struct {
 	KeepSession bool `json:"keepSession"`
 }
 
-func (r recordingDispatcher) Run(_, _ io.Writer, args ...string) int {
+func (r fakeRecordingDispatcher) Run(_, _ io.Writer, args ...string) int {
 	line, _ := json.Marshal(args)
 	file, err := os.OpenFile(r.Log, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err == nil {
@@ -105,15 +105,6 @@ func (r recordingDispatcher) Run(_, _ io.Writer, args ...string) int {
 		editRecord(path, func(record map[string]any) { record["sessionId"] = session })
 	}
 	return status
-}
-
-func flagValue(args []string, name string) string {
-	for index := 0; index+1 < len(args); index++ {
-		if args[index] == name {
-			return args[index+1]
-		}
-	}
-	return ""
 }
 
 func editRecord(path string, edit func(map[string]any)) {
@@ -131,7 +122,7 @@ func editRecord(path string, edit func(map[string]any)) {
 }
 
 // calls reads the recorded callback argvs.
-func (r recordingDispatcher) calls(t *testing.T) [][]string {
+func (r fakeRecordingDispatcher) calls(t *testing.T) [][]string {
 	t.Helper()
 	data, err := os.ReadFile(r.Log)
 	if os.IsNotExist(err) {
@@ -186,7 +177,7 @@ type fakeInstall struct {
 	job, rootJob, tag, verb    string
 	capability, gate, round    string
 	engine, holdDir, delegates string
-	dispatcher                 recordingDispatcher
+	dispatcher                 fakeRecordingDispatcher
 	env                        map[string]string
 	clock                      Clock
 	stdout, stderr             *syncBuffer
@@ -285,7 +276,7 @@ func newFakeInstall(t *testing.T, opts installOptions) *fakeInstall {
 		f.rootJob = opts.parent
 		f.job = "fake-job-2"
 	}
-	f.dispatcher = recordingDispatcher{Root: root, Log: filepath.Join(root, "dispatch.log"), Statuses: map[string]int{}}
+	f.dispatcher = fakeRecordingDispatcher{Root: root, Log: filepath.Join(root, "dispatch.log"), Statuses: map[string]int{}}
 	for _, dir := range []string{f.workspace, f.holdDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -438,10 +429,10 @@ func processAlive(pid int) bool {
 
 // helperConfig is the subprocess supervisor's configuration.
 type helperConfig struct {
-	Args       []string            `json:"args"`
-	Root       string              `json:"root"`
-	Engine     string              `json:"engine"`
-	Dispatcher recordingDispatcher `json:"dispatcher"`
+	Args       []string                `json:"args"`
+	Root       string                  `json:"root"`
+	Engine     string                  `json:"engine"`
+	Dispatcher fakeRecordingDispatcher `json:"dispatcher"`
 }
 
 // TestFakeSupervisorHelperProcess is the subprocess body for the behaviors

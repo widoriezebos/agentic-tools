@@ -256,7 +256,7 @@ func (r *devinRound) repairInvoke(promptFile, outputFile string) int {
 		"--export", filepath.Join(s.roundDir, "transcript.repair-1.atif.json"))
 	command.Args[0] = "devin"
 	command.Dir = s.workspace
-	command.Env = withEnv(s.childEnv, jobGitQuarantineEnv(s.workspace)...)
+	command.Env = withEnv(s.childEnv, jobGitQuarantineEnv(s.d.git(), s.workspace)...)
 	command.Stdout = output
 	command.Stderr = s.logWriter()
 	return exitStatus(command.Run())
@@ -484,7 +484,7 @@ func superviseDevinLegacy(s *Supervision, args []string) int {
 	// Existing Devin hooks can backfill the signal file from their stable
 	// session_id payload; the baseline remains `devin list`.
 	env := withEnv(s.childEnv, "METASYSTEM_DEVIN_SESSION_SIGNAL="+signalFile)
-	env = withEnv(env, jobGitQuarantineEnv(s.workspace)...)
+	env = withEnv(env, jobGitQuarantineEnv(s.d.git(), s.workspace)...)
 	cli, err := s.launch(command, env, "", s.raw, nil)
 	if err != nil {
 		s.failPending("custody_registration", "handshake", "")
@@ -1042,7 +1042,7 @@ func (s *Supervision) startACPServer(pipes *ACPPipes) (*child, error) {
 	if err != nil {
 		return fail(err)
 	}
-	env := withEnv(s.childEnv, jobGitQuarantineEnv(s.workspace)...)
+	env := withEnv(s.childEnv, jobGitQuarantineEnv(s.d.git(), s.workspace)...)
 	command, err := pipes.ServerCommand(path, "devin-delegate-acp", s.workspace, env, s.logWriter())
 	if err != nil {
 		return fail(err)

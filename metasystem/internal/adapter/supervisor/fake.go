@@ -180,12 +180,12 @@ func (r *fakeRound) failed(err error) int {
 // linked worktree's, with the go-cache and go-tmp directories made. It
 // differs from recordBuildCachePath in exactly the script's ways: no
 // staticcheck directory, and a failed mkdir records an empty path.
-func fakeRecordBuildCachePath(agents, workspace, roundDir string) {
+func fakeRecordBuildCachePath(git GitQuery, agents, workspace, roundDir string) {
 	cache := ""
 	if jobsRoot, ok := realDir(filepath.Join(agents, "worktrees")); ok {
 		ws, _ := realDir(workspace)
 		if strings.HasPrefix(ws+"/", jobsRoot+"/") {
-			if gitdir, ok := gitOutput(workspace, "rev-parse", "--absolute-git-dir"); ok && strings.Contains(gitdir, "/.git/worktrees/") {
+			if gitdir, ok := git(workspace, "rev-parse", "--absolute-git-dir"); ok && strings.Contains(gitdir, "/.git/worktrees/") {
 				cache = filepath.Join(gitdir, "metasystem-build-cache", "go-cache")
 				if os.MkdirAll(cache, 0o755) != nil || os.MkdirAll(filepath.Join(gitdir, "metasystem-build-cache", "go-tmp"), 0o755) != nil {
 					cache = ""
@@ -454,7 +454,7 @@ func superviseFake(s *Supervision, args []string) int {
 		}
 	}
 	workspace, _ := field(s.record, "workspaceRoot")
-	fakeRecordBuildCachePath(s.d.agents(), workspace, s.roundDir)
+	fakeRecordBuildCachePath(s.d.git(), s.d.agents(), workspace, s.roundDir)
 	if err := os.WriteFile(s.logPath, []byte(fmt.Sprintf("fake supervisor started value=%s\n", s.tag)), 0o644); err != nil {
 		return r.failed(err)
 	}

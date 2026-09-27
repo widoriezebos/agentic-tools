@@ -293,7 +293,7 @@ func TestHostStartVerified(t *testing.T) {
 	if hostStartVerified(42, 41, command, tag, false) {
 		t.Fatal("a host that does not lead its group must not verify")
 	}
-	if hostStartVerified(42, 42, "/repo/bin/metasystem " + strings.Join(runtimes.SupervisorArgs("fake", runtimes.SupervisorHostTurn, "--root", "/repo"), " "), tag, false) {
+	if hostStartVerified(42, 42, "/repo/bin/metasystem "+strings.Join(runtimes.SupervisorArgs("fake", runtimes.SupervisorHostTurn, "--root", "/repo"), " "), tag, false) {
 		t.Fatal("a command without the minted tag must not verify")
 	}
 	if hostStartVerified(42, 42, command, tag, true) {

@@ -744,7 +744,7 @@ func TestFakeRecordBuildCachePath(t *testing.T) {
 		}
 	}
 	roundDir := t.TempDir()
-	fakeRecordBuildCachePath(agents, worktree, roundDir)
+	fakeRecordBuildCachePath(runGit, agents, worktree, roundDir)
 	cache := filepath.Join(repo, ".git", "worktrees", "job-1", "metasystem-build-cache")
 	if got := readText(t, filepath.Join(roundDir, "build-cache.txt")); got != filepath.Join(cache, "go-cache")+"\n" {
 		t.Fatalf("build cache = %q", got)
@@ -752,7 +752,7 @@ func TestFakeRecordBuildCachePath(t *testing.T) {
 	if !exists(filepath.Join(cache, "go-tmp")) || exists(filepath.Join(cache, "staticcheck")) {
 		t.Fatal("the fake makes go-cache and go-tmp only")
 	}
-	fakeRecordBuildCachePath(agents, repo, roundDir)
+	fakeRecordBuildCachePath(runGit, agents, repo, roundDir)
 	if got := readText(t, filepath.Join(roundDir, "build-cache.txt")); got != "\n" {
 		t.Fatalf("a checkout outside the job worktrees recorded %q", got)
 	}

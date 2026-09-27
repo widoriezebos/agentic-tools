@@ -35,8 +35,8 @@ func (d *patchingDispatcher) Run(_, _ io.Writer, args ...string) int {
 		flags[args[i]] = args[i+1]
 	}
 	var record, patch map[string]any
-	readJSON(d.t, d.record, &record)
-	readJSON(d.t, flags["--patch"], &patch)
+	readJSONInto(d.t, d.record, &record)
+	readJSONInto(d.t, flags["--patch"], &patch)
 	if record["status"] != flags["--expect"] {
 		return 3
 	}
@@ -54,7 +54,7 @@ func (d *patchingDispatcher) Run(_, _ io.Writer, args ...string) int {
 	return 0
 }
 
-func readJSON(t *testing.T, path string, into any) {
+func readJSONInto(t *testing.T, path string, into any) {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -96,7 +96,7 @@ func TestObservedResultModelIsRecordedAndNormalized(t *testing.T) {
 		t.Fatalf("expected one running->running model CAS: %q", dispatch.calls)
 	}
 	var updated map[string]any
-	readJSON(t, record, &updated)
+	readJSONInto(t, record, &updated)
 	if updated["effectiveModel"] != "actual-model" || s.effectiveModel != "actual-model" {
 		t.Fatalf("record did not adopt the observed effective model: %v", updated)
 	}
@@ -106,7 +106,7 @@ func TestObservedResultModelIsRecordedAndNormalized(t *testing.T) {
 		t.Fatal(err)
 	}
 	var normalized map[string]any
-	readJSON(t, returnPath, &normalized)
+	readJSONInto(t, returnPath, &normalized)
 	model, _ := normalized["model"].(map[string]any)
 	if model["requested"] != "requested-model" || model["effective"] != "actual-model" {
 		t.Fatalf("normalized return did not carry the observed model: %v", normalized["model"])

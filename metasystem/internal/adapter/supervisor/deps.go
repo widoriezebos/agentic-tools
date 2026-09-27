@@ -104,7 +104,7 @@ func ProcessDeps(root string) Deps {
 		Dispatch:     ScriptDispatcher{Root: root, Environ: environ},
 		GroupMembers: groupMembers,
 		LookPath:     exec.LookPath,
-		Git:          gitOutput,
+		Git:          runGit,
 	}
 }
 
