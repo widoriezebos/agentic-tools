@@ -69,3 +69,27 @@ func TestCheckProofAttemptsNamesADeadLauncher(t *testing.T) {
 		t.Fatalf("missing launcher evidence = %+v", role)
 	}
 }
+
+// Witness for the Stop hook's health cost: a terminal attempt is decided at
+// its "terminal" key and the payload after it is never parsed. Seat m1e held
+// 518 MB of such payload (delivery receipts and test results) that the role
+// fully decoded on every Stop. The fixture's payload after "terminal" is cut
+// off mid-value, which only a reader that stops at the key can accept; the
+// full parse judged the whole role unknown.
+func TestCheckProofAttemptsNeverParsesATerminalAttemptsPayload(t *testing.T) {
+	repoRoot := t.TempDir()
+	attempts := filepath.Join(repoRoot, "metasystem", "artifacts", "agents", "proof-runs", "attempts")
+	if err := os.MkdirAll(attempts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeAttemptRecord(t, attempts, "proof-heavy-1", `{"attemptId":"proof-heavy-1","launcher":{"pid":601,"pidStartedAt":100},"terminal":{"result":"success"},"deliveryReceiptBytes":"`+strings.Repeat("x", 1<<16))
+	writeAttemptRecord(t, attempts, "proof-live-2", `{"attemptId":"proof-live-2","launcher":{"pid":602,"pidStartedAt":100},"terminal":null}`)
+	probe := attemptProbe{601: identity.Dead, 602: identity.Alive}
+	if role := checkProofAttempts(repoRoot, probe); role.Status != HealthAlive || strings.Contains(role.Reason, "proof-heavy-1") {
+		t.Fatalf("a terminal attempt's payload was parsed or judged: %+v", role)
+	}
+	writeAttemptRecord(t, attempts, "proof-live-2", `{"attemptId":"proof-live-2","launcher":{"pid":602,"pidStartedAt":100}} {}`)
+	if role := checkProofAttempts(repoRoot, probe); role.Status != HealthUnknown || !strings.Contains(role.Reason, "proof-live-2") {
+		t.Fatalf("a live attempt that is not exactly one JSON object was accepted: %+v", role)
+	}
+}

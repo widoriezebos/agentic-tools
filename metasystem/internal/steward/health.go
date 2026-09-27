@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -1625,12 +1626,12 @@ func checkProofAttempts(repoRoot string, prober identity.Prober) RoleVerdict {
 	sort.Strings(paths)
 	var dead, unknown []string
 	for _, path := range paths {
-		value, err := readHealthObject(path)
+		value, terminal, err := readProofAttemptHead(path)
 		if err != nil {
 			unknown = append(unknown, strings.TrimSuffix(filepath.Base(path), ".json"))
 			continue
 		}
-		if value["terminal"] != nil {
+		if terminal {
 			continue
 		}
 		attemptID, _ := value["attemptId"].(string)
@@ -1718,6 +1719,55 @@ func boundedConfig(repoRoot, key string, fallback, minimum int) (int, error) {
 
 func supervisionRemedy(repoRoot string) string {
 	return fmt.Sprintf("metasystem session start --repo %q", repoRoot)
+}
+
+// readProofAttemptHead reads a proof attempt record only as far as the
+// proof-attempts role needs. A terminal attempt is decided at its "terminal"
+// key: the payload after it (the delivery receipt and test results, up to
+// 25 MB a record, 518 MB across seat m1e's 268 records on 2026-09-27) is
+// never parsed, because a finished attempt has no launcher to judge. That
+// full parse cost the Stop hook about three seconds of CPU per turn. A live
+// attempt is read whole and must be exactly one JSON object, as before.
+func readProofAttemptHead(path string) (map[string]any, bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(bufio.NewReader(file))
+	decoder.UseNumber()
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		if err == nil {
+			err = fmt.Errorf("not a JSON object")
+		}
+		return nil, false, err
+	}
+	value := map[string]any{}
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, false, err
+		}
+		key, _ := token.(string)
+		var field any
+		if err := decoder.Decode(&field); err != nil {
+			return nil, false, err
+		}
+		if key == "terminal" && field != nil {
+			return nil, true, nil
+		}
+		value[key] = field
+	}
+	if _, err := decoder.Token(); err != nil {
+		return nil, false, err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("multiple JSON values")
+		}
+		return nil, false, err
+	}
+	return value, false, nil
 }
 
 func readHealthObject(path string) (map[string]any, error) {
