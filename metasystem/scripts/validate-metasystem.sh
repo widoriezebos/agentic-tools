@@ -1063,7 +1063,6 @@ for link in \
   scripts/agents/lease-succession-fixtures.sh \
   scripts/agents/flight-recorder-fixtures.sh \
   scripts/agents/acp-fixtures.sh \
-  scripts/agents/mission-fixtures.sh \
   scripts/agents/delegate-caps-fixtures.sh \
   scripts/agents/adapter-deadline-fixtures.sh \
   scripts/adopt-fixtures.sh \
@@ -1109,9 +1108,6 @@ if section_selected supervisor-fingerprint-heal-harness \
   run_section supervisor-fingerprint-heal-harness needs-engine \
     scripts/agents/fingerprint-harness.sh --iterations 2
 fi
-if section_selected mission-fixtures && ! delivery_contract_skip mission-fixtures; then
-  run_section mission-fixtures needs-engine scripts/agents/mission-fixtures.sh
-fi
 
 # Real runtime selftests spend model calls and remain manual acceptance steps.
 # Validation covers only their static adapter contract.
@@ -1145,7 +1141,6 @@ bash -n scripts/agents/land.sh
 bash -n scripts/agents/land-fixtures.sh
 bash -n scripts/agents/checkout-execution-guard.sh
 bash -n scripts/agents/checkout-execution-guard-fixtures.sh
-bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/agents/adapter-deadline-fixtures.sh
 bash -n scripts/adopt-fixtures.sh

@@ -22,7 +22,7 @@
 #   go            the Go gate alone (unit+race tests, ratchet, cross-builds)
 #   supervision   gate + supervision fixtures
 #   dispatch      gate + conformance and delegate-caps fixtures
-#   mission       gate + mission fixtures
+#   mission       gate + the mission bed tests
 #   lease         gate + lease-succession fixtures
 #   records       gate + record-protocol and flight-recorder fixtures
 #   shell         syntax sweep of every tracked script + repository audit
@@ -58,7 +58,7 @@ for class in "$@"; do
       gate
       run conformance bash scripts/agents/conformance-fixtures.sh
       run delegate-caps bash scripts/agents/delegate-caps-fixtures.sh ;;
-    mission) gate; run mission bash scripts/agents/mission-fixtures.sh ;;
+    mission) gate; run mission go test -count=1 -run '^TestMissionBed' ./cmd/metasystem/ ./internal/contract/ ./internal/mission/ ./internal/missionrunner/ ./internal/stoptransition/ ;;
     lease) gate; run lease bash scripts/agents/lease-succession-fixtures.sh ;;
     records)
       gate

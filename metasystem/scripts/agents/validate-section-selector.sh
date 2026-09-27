@@ -23,7 +23,6 @@ land-fixtures	landing chain fixtures
 static-contract-audits	static contract audits
 supervision-and-census-fixtures	supervision and census fixtures
 supervisor-fingerprint-heal-harness	supervisor fingerprint heal harness
-mission-fixtures	mission fixtures
 shell-and-dependency-audits	shell syntax and dependency audits
 conformance-fixtures	conformance fixtures
 goal-cli-fixtures	goal command fixtures
