@@ -759,7 +759,7 @@ func Open(r VerbRequest, id, intent, origin, nextStep string, labels ...string) 
 // OpenTiered adds a queued goal at the caller-selected tier. Goal-free clears
 // in the same commit when it was declared.
 func OpenTiered(r VerbRequest, id, intent, origin, nextStep string, tier uint8, supplied *Budget, labels ...string) (PublishResult, error) {
-	req, err := openRequest(r, id, intent, origin, nextStep, nil, nil, tier, supplied, nil, "", false, labels)
+	req, err := openRequest(r, id, intent, origin, nextStep, nil, nil, tier, supplied, nil, "", false, false, labels)
 	if err != nil {
 		return PublishResult{}, err
 	}
@@ -819,7 +819,7 @@ func OpenRisked(r VerbRequest, id, intent, origin, nextStep string, blocks, bloc
 	if hand == nil {
 		origin = OriginMain
 	}
-	req, err := openRequest(r, id, intent, origin, nextStep, blocks, blockedBy, tier, supplied, &risk, why, hand != nil, labels)
+	req, err := openRequest(r, id, intent, origin, nextStep, blocks, blockedBy, tier, supplied, &risk, why, hand != nil, fromSignedInSession(proof), labels)
 	if err != nil {
 		return PublishResult{}, err
 	}
@@ -833,7 +833,11 @@ const SeatOpenNeedsBlocker = "a seat opens only the defect that blocks its claim
 // openRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
-func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blockedBy []string, tier uint8, supplied *Budget, risk *RiskRecord, why string, human bool, labels []string) (PublishRequest, error) {
+//
+// session says a signed-in browser is the hand behind this open, which is the
+// one hand whose repeat of it is read as the open HAVING its effect rather than
+// as a competitor losing to it (R-129-ui). A replay carries none.
+func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blockedBy []string, tier uint8, supplied *Budget, risk *RiskRecord, why string, human, session bool, labels []string) (PublishRequest, error) {
 	if tier < 1 || tier > 3 {
 		return PublishRequest{}, fmt.Errorf("goal open requires --tier 1, 2, or 3")
 	}
@@ -896,6 +900,16 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blo
 				if opidLanded(f, r) {
 					return nil, AlreadyApplied{}
 				}
+				// The goal this id names already reads exactly what this open
+				// asks to write. From a browser session that is the act HAVING
+				// its effect (R-129-ui): the first press landed and its answer
+				// was lost, or a second tab held the same intake sheet. The
+				// comparison is of the record and never of the id alone — an
+				// open of one id stating anything else is a SECOND act on that
+				// id and still loses to the first.
+				if session && openAlreadyReads(t, f, intent, nextStep, tier, canonical, blocks, blockedBy) {
+					return nil, NothingToDo{Reason: "goal " + id + " already reads exactly this way: the same open from this signed-in session"}
+				}
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
 			if _, archived := t.Archived(id); archived {
@@ -950,6 +964,45 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blo
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}, nil
+}
+
+// openAlreadyReads says the live goal this id names already reads what the open
+// asks to write: the same intent, the same next step, the same tier, the same
+// labels, the same goals it waits for, and — on every goal the open names with
+// --blocks — the edge that says that goal waits for this one.
+//
+// It is the comparison behind open's no-op (R-129-ui), and it compares the
+// record rather than the id: an open of an existing id that states anything
+// else is a second act on one id, not the same act twice, and it keeps the
+// competitor refusal.
+func openAlreadyReads(t *TreeGoals, f *GoalFile, intent, nextStep string, tier uint8, canonical, blocks, blockedBy []string) bool {
+	if f.Intent != intent || f.NextStep != nextStep || f.Tier != tier {
+		return false
+	}
+	if len(f.Labels) != len(canonical) {
+		return false
+	}
+	for at, label := range canonical {
+		if f.Labels[at] != label {
+			return false
+		}
+	}
+	waits := sortedUnique(append([]string(nil), blockedBy...))
+	if len(f.Blocked) != len(waits) {
+		return false
+	}
+	for at, blocker := range waits {
+		if f.Blocked[at] != blocker {
+			return false
+		}
+	}
+	for _, blocked := range blocks {
+		held := t.Live[blocked]
+		if held == nil || !contains(held.Blocked, f.Id) {
+			return false
+		}
+	}
+	return true
 }
 
 // parkBehindBlocker records that the goal being opened (blocker) blocks

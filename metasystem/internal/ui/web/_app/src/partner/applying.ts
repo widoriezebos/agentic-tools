@@ -118,15 +118,20 @@ async function actOf(line: Line): Promise<Backlog | null> {
  * which the caller must SHOW rather than answer with an act of its own: the
  * writer that won may have sent the act already. Anything else that went wrong
  * is a failure with its words, and a failure before the act stops the run.
+ *
+ * The attempt is the run's own token, carried on every write that run makes, and
+ * "" on the one write no press owns: a dismissal, which publishes nothing and is
+ * compared on the version alone.
  */
 export async function writeOutcome(
   turn: string,
   line: Line,
   state: ProposalState,
   words: string,
+  attempt = "",
 ): Promise<Written> {
   try {
-    const answered = await recordProposal(turn, line.index, line.version, state, words);
+    const answered = await recordProposal(turn, line.index, line.version, state, words, attempt);
     return { kind: "written", proposal: answered.proposal };
   } catch (error: unknown) {
     return error instanceof ProposalConflict

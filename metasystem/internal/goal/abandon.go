@@ -204,10 +204,19 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 				if opidLanded(archived, r) {
 					return nil, AlreadyApplied{}
 				}
-				// The goal is already abandoned, which is the effect this act
-				// asks for. From a browser session that is the act having its
-				// effect (R-129-ui), whatever reason the repeat carries.
-				if fromSignedInSession(proof) {
+				// The goal is already abandoned to the successor this act
+				// names, which is the effect it asks for. From a browser
+				// session that is the act having its effect (R-129-ui),
+				// whatever reason the repeat carries.
+				//
+				// The comparison is the record's, not the archive's: Archived
+				// answers for a DONE goal too, and an abandon of one asks for a
+				// state the ledger is not in; an abandon carrying another
+				// successor asks for a re-pointing the record does not hold.
+				// Either answered applied would tell the human the ledger says
+				// something it does not, so both keep the refusal.
+				if fromSignedInSession(proof) && archived.State == StateAbandoned &&
+					archived.Abandoned != nil && archived.Abandoned.Carried == spec.Carried {
 					return nil, NothingToDo{Reason: "goal " + id + " is already abandoned: the same abandon from this signed-in session"}
 				}
 				return nil, LostToCompetitor{Winner: lastOpid(archived)}

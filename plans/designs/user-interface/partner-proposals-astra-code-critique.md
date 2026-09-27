@@ -529,3 +529,56 @@ The builders’ departures and left items are adjudicated individually:
 
 VERDICT: 4 not closed: R-129-ui, R-130-ui, R-131-ui, E-02; 6 new material: F-01, F-02, F-03, F-04, F-05, F-06; 1 new non-material: F-07
 
+
+---
+
+# The fourth and last confirmation read (the fourth pass: the attempt owns the line), under the stop rule
+
+Produced 2026-09-28 by Codex on `gpt-6-astra`, read-only, against ui-development at `63c8f469f`. Verbatim.
+
+| Item | Confirmation under Wido’s stop rule | Holding test and evidence |
+|---|---|---|
+| F-01 — conflict permits obsolete approval | **Closed** | **Ran in memory:** `stops where its outcome write met another press, and leaves the rest for Continue`; both carried-line conflict tests also pass. The run stops, and Continue compares afresh. |
+| F-02 — concurrent recovery loses messages | **Closed** | **Read:** `TestConcurrentFirstOpensOfOneTranscriptRecoverItOnce`. The service installs one opener per transcript key; waiting callers receive its cached conversation. |
+| F-03 — older refusal overwrites newer work | **Closed** | **Ran in memory:** `never rebases an older answer onto a line another press took over`. Older answers remain local; subsequent reconciliation reaches applied without another act. **Read:** server ownership checks reject displaced attempts. |
+| F-04 — abandon accepts a different disposition | **Closed** | **Read:** `TestARepeatedAbandonCarryingTheSameSuccessorFromASessionIsANoOp`, `TestAnAbandonAskingAnotherSuccessorFromASessionIsRefused`, and `TestAnAbandonOfADoneGoalFromASessionIsRefused`. The engine compares abandoned state and recorded successor. |
+| F-05 — Open and Withdraw refuse repeats | **Closed** | **Read:** `TestARepeatedOpenOfTheSameGoalFromASessionIsANoOp`, `TestAWithdrawOfAnUnapprovedGoalFromASessionIsANoOp`, differing-request tests, and terminal controls. **Ran in memory:** both frontend effect comparisons. |
+| F-06 — proposal limit missing at tool | **Closed; bounded departure recorded below** | **Read:** `TestTheFiftyFirstProposalOfOneAnswerIsRefusedAtTheCall` covers immediate refusal and reset; `TestEveryAnswerIsMarkedWhereTheToolServerReadsIt` covers the answer boundary. Admission retains fifty proposals plus one overflow account. |
+| F-07 — unterminated final line disappears | **Closed** | **Read:** `TestARecoveredTranscriptKeepsItsUnterminatedFinalLine`. Accumulated fitting bytes are returned before EOF. |
+| R-129-ui — all ten acts are idempotent | **Closed** | **Read:** `TestEveryActOfTheRulingAnswersItsRepeatApplied`, plus the separate Open and Abandon repeat tests, cover all ten acts and unchanged revision/history. |
+| R-130-ui — batches of fifty | **Closed; bounded departure recorded below** | **Read:** tool refusal/reset, bounded admission, and `TestAnAnswerWhoseLinesAreSettledIsToldToOfferTheNextBatch`; the Partner’s instructions specify batching. |
+| R-131-ui — archive and recover oversized transcripts | **Closed** | **Read:** byte-for-byte archive, retained-message, second-open, untouched-readable-transcript, concurrent-open, and final-line tests. |
+| E-02 — delayed refusal defeats successful attempt | **Closed** | **Ran:** independent two-tab production-runner probe using Go’s transition pairs and modeled version/owner checks: `A:applying@1 → B:applying@2 → A:refused@2(conflict) → B:applied@3`. The goal is parked, the entry applied, and A retains its refusal locally. |
+
+**G findings: none.**
+
+**Residuals, recorded**
+
+- Admission stores a fifty-first, non-actionable overflow account rather than attaching it to line fifty; storage is bounded, and this departure does not justify another correction round.
+- Fifty proposals still do not guarantee that the aggregate encoded message fits the reader’s byte ceiling; the previously recorded aggregate-size residual remains.
+- Missing or unreadable answer marks bypass tool counting; admission remains bounded, but immediate model feedback is then lost.
+- Frontend abandon reconciliation cannot compare the recorded successor: a no-successor retry can misclassify a differing prior abandon; successor-bearing retries reach the engine. No additional ledger mutation was demonstrated.
+- Open’s engine comparison permits additional goals blocked by the existing goal; frontend comparison is stricter, including label order. No duplicate publication was established.
+- Held-result display quirks, empty legacy attempts, unbounded attempt text within the request limit, stale comments, and the duplicated TypeScript transition table remain non-blocking.
+- An oversized unterminated final line can escape the recovery notice’s count; its original bytes remain archived.
+- The concurrent-open test does not deterministically gate the second caller inside the lookup; the inspected ownership mechanism nevertheless prevents the competing loader.
+- Verification: clean HEAD `63c8f469fb37c9595999266f71496f57cc270e02`; no files edited or protected configuration read. Go and Vitest were sandbox-blocked before execution. Sixteen frontend test bodies passed through an in-memory assertion adapter, plus the independent two-tab probe; no HTTP or mounted-browser execution.
+
+VERDICT: 0 not closed: none; 0 plausible and costly: none; stop: yes
+
+
+---
+
+# Dispositions, and what the round landed (Fable, 2026-09-28)
+
+The loop ran four fix passes under Wido's "fix any issues", each by two builders (Claude on Opus, Go and frontend) from a failing test first, each merged and checked (Go build, vet, the interface, engine and refusal packages, the fast gate, the ratchet, typecheck, the frontend suite, the bundle digest), each followed by one Astra confirmation read. Wido's stop rule of 2026-09-28 closed it: "stop when the defects are without impact, or are likely never to occur (or there are no defects)". The last read found all of F-01 to F-07, R-129-ui, R-130-ui, R-131-ui and E-02 closed, no plausible-and-costly defect, and said stop.
+
+What the round changed, in one paragraph each:
+
+- **Two presses cannot apply one proposal twice.** The act layer owns every act it executes (an in-flight registry per goal and act; a second identical press is refused at once with `in-flight`); recovery and publication share one lock; every press is an attempt whose id the server stores on the entry, and only that attempt may write the line's result (409 `attempt` otherwise); the page never rebases a late answer and stops its run wherever a write of its own is refused, leaving the rest for Continue's fresh read; a line another press left in flight is taken over under a new attempt before it is settled. Under a signed-in session, every one of the ten browser acts answers a repeat whose effect already holds as applied, with no second record (R-129-ui).
+- **An irreversible press is informed.** The freshness guard covers abandon; an applied conflict makes the reading stale; the Abandon line shows the intent whole and the live dependents; a stale held answer never overrides a settled entry across the drawer and the inbox.
+- **The page recovers.** A push whose confirmation failed is classified by the next human press, not left to block every later act; an offered re-read that fails keeps the page and its forms mounted; a dismissal that fails says so; the inbox re-reads after a drawer dismissal; the Fleet draft survives.
+- **The first sign-in keeps the conversation.** The unnamed seat's transcript, its sitting and a turn in flight move to the human at the first sign-in; a transfer that fails is shown in the header.
+- **The Partner's input is bounded and batched.** Every proposal field is bounded before it is framed; a list argument that cannot be read whole is refused by name; at most fifty proposals per answer, refused at the tool call with the batching sentence and bounded again at admission; the skill says how to batch (R-130-ui). A transcript too large to read is archived beside the store, rewritten to what fits, and the human is told once (R-131-ui). The write decoders count their bytes and require the end of the document.
+
+Residuals recorded, not built (each judged improbable or without cost under the stop rule): the aggregate encoded size of fifty bounded proposals is not a byte guarantee; a missing answer mark loses the tool's immediate count (admission still bounds); the page's abandon reconcile cannot see the recorded successor; open's engine comparison is one-directional on blocks; held-result display quirks while another press applies; empty legacy attempts from a page of the previous bundle; the attempt text unbounded within the request bound; the duplicated TypeScript transition table in one test; an oversized unterminated final line escapes the recovery notice's count; the concurrent-open test gates by inspection; `owners` never pruned; the whole `cmd/metasystem` package does not finish as one `go test` on this machine; the walkthrough's transitive cycle; transcripts written past the old ceiling by the old build; summarizing what a recovery cut (the ruling's own "later").

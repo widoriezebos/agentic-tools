@@ -33,13 +33,14 @@ import { derivedTier, type Answer, type NewGoal, type Risk } from "../backlog/op
  * sent for it. And a press the act layer refused stops the run where it stands,
  * because the act it could not make may be landing behind it.
  *
- * **The result wins.** The tab that received an act's answer is the only thing
- * that knows what the ledger did. An outcome write refused because another tab
- * moved the entry while the act was out is written once more at their version
- * where they left it `unresolved`, which is an entry nobody is executing; where
- * they left it `applying` that attempt owns the line and will settle it, so this
- * tab holds its own answer on the line instead; and where it is settled, they
- * established what happened and this tab shows that.
+ * **The page never rebases.** The tab that received an act's answer is the only
+ * thing that knows what the ledger did, and it keeps that answer rather than
+ * writing it somewhere it no longer belongs. An outcome write refused because
+ * another press moved the entry while the act was out — on the version, or on the
+ * attempt, which is that press owning the line now — is never written again at the
+ * version that came back. This tab holds its own answer on the line as an
+ * unrecorded mark, shows the entry the refusal carried, and stops the run there,
+ * leaving the lines behind it for Continue.
  *
  * **What was read is what is approved.** An approve and an edit carry the goal as
  * the Partner read it. Before the first line the page reads the canonical branch
@@ -906,11 +907,17 @@ function sameTuple(one: Budget | null, other: Budget | null): boolean {
  * act's own effect settles the line without a send.
  *
  * Every effect below is the one that act's route writes, so a goal that shows it
- * is a goal the act reached. Two acts are absent and fall through to the send: an
- * open, whose effect is a goal that exists, and an unapprove, whose effect is an
- * approval that is gone. Both are refused by the engine the second time — the
- * goal already exists, the goal is not approved — so a second press answers with
- * a refusal rather than with a second act, which is the harm this is about.
+ * is a goal the act reached. All ten are here, because the engine answers the
+ * repeat of all ten applied under a browser session, and a page that read one of
+ * them as a fresh act would be offering a press the engine would refuse.
+ *
+ * What a line is NOT carried by is an effect this reading cannot establish. An
+ * open is carried by the goal it asked for whole — a goal of that id that differs
+ * is not this act's effect — and an abandon that asked for a successor is carried
+ * by nothing at all, because the row's abandoned clause says who, when and why and
+ * never which goal carried the work (Astra F-04). Such a line is sent, and the
+ * engine answers it: applied where the effect it asked for holds, and refused in
+ * its own words where another one does.
  */
 export function carriesAlready(line: Line, rows: readonly Row[]): boolean {
   const row = rows.find((one) => one.ref.id === line.goal);
@@ -953,8 +960,35 @@ export function carriesAlready(line: Line, rows: readonly Row[]): boolean {
       return row.blockedBy.includes(fields.blocker ?? "");
     case "unblock-goal":
       return !row.blockedBy.includes(fields.blocker ?? "");
+    // No approval on the goal: what the unapprove takes off is not there. An
+    // EXPIRED approval is not nothing — it is an approval this act would take off
+    // — so a goal carrying one is not carried (Astra F-05).
+    case "withdraw-goal":
+      return row.approved === undefined;
+    // The goal this open asked for, as the goal that exists: its intent, its next
+    // step, the tier the line DERIVED and sends, its labels, and both directions
+    // of the blocked relation — `holds` is the other direction of `blocks`, which
+    // no record stores and the reading computes. A goal of that id that differs is
+    // somebody else's, or an earlier one, and this act never reached it: the line
+    // is sent and the engine refuses it as it does today (Astra F-05). The edges
+    // are compared as relations rather than in the order either side lists them.
+    case "open-goal": {
+      const asked = openOf(line.goal, fields);
+      return (
+        asked.intent === row.intent &&
+        asked.nextStep === row.nextStep &&
+        asked.tier === row.tier &&
+        named(asked.labels) === named(row.labels) &&
+        named([...asked.blockedBy].sort()) === named([...row.blockedBy].sort()) &&
+        named([...asked.blocks].sort()) === named([...row.holds].sort())
+      );
+    }
+    // Abandoned, and only where this line asked for no successor. The reading does
+    // not say WHICH successor an abandon recorded, so an abandon that asks for one
+    // is carried by nothing here and is sent to the engine, which compares the
+    // successor it recorded with the one asked for (Astra F-04).
     case "abandon-goal":
-      return row.state === "abandoned";
+      return row.state === "abandoned" && (fields.successor ?? "") === "";
     default:
       return false;
   }
@@ -1164,7 +1198,13 @@ export type Written =
  */
 export type RunPorts = {
   look: () => Promise<Looked>;
-  record: (line: Line, state: ProposalState, words: string) => Promise<Written>;
+  /**
+   * Write one state onto one line, under this run's own attempt.
+   *
+   * The attempt is the same on every write of one run, and the server is what
+   * compares it: this side carries it and holds what comes back.
+   */
+  record: (line: Line, state: ProposalState, words: string, attempt: string) => Promise<Written>;
   send: (line: Line) => Promise<Answered>;
   mark: (line: Line, change: Partial<Mark>) => void;
   /**
@@ -1224,6 +1264,34 @@ function begun(line: Line): boolean {
 }
 
 /**
+ * One attempt: the token the press that makes this run owns its lines by.
+ *
+ * A press is an attempt, and the attempt owns the line. Every run of the runner —
+ * a press on the card, an inbox press, a bulk press, Continue, Try again — makes
+ * one of these for its lifetime and carries it on every write it makes. The server
+ * stores it on the entry when the line moves to `applying`, and refuses a settle
+ * write carrying any other, because the press that owns the line is the only one
+ * that may say what became of it. The page never compares it: that compare is the
+ * server's, and this side's whole part is one token per press.
+ *
+ * Sixteen hex characters from the browser's own generator. A clone without one
+ * falls back to the weaker source rather than sending nothing, because an empty
+ * attempt is the write of a press that claims no ownership at all.
+ */
+export function newAttempt(): string {
+  const bytes = new Uint8Array(8);
+  const random = globalThis.crypto as { getRandomValues?: (into: Uint8Array) => void } | undefined;
+  if (random?.getRandomValues === undefined) {
+    for (let at = 0; at < bytes.length; at += 1) {
+      bytes[at] = Math.floor(Math.random() * 256);
+    }
+  } else {
+    random.getRandomValues(bytes);
+  }
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
  * The run: these lines, in this order, one act each, never retried.
  *
  * Read down it, the rules are:
@@ -1234,14 +1302,21 @@ function begun(line: Line): boolean {
  *     a goal says, because one of these acts can be what changed it;
  *   - a line the compare refuses is refused UNSENT and the run goes on, because
  *     nothing was published, which is exactly what a refusal means;
- *   - a line found at `applying` is reconciled before anything is sent: somebody
- *     began it, and a goal that already carries the act is recorded applied with
- *     no act of this run's own;
+ *   - a line found at `applying` or `unresolved` is reconciled before anything is
+ *     sent: somebody began it, and a goal that already carries the act is taken
+ *     over and recorded applied with no act of this run's own;
  *   - `applying` is written BEFORE the act. A write that failed sends nothing and
  *     stops the run; a write somebody else won means the line is theirs, and the
  *     run goes past it only where what they left is settled;
  *   - the act is sent once, and its answer is written onto the line — two writes
  *     per line and no more, so a reload during a run finds the line in flight;
+ *   - an outcome write of this run's own that the server refuses is never written
+ *     again at the version it comes back with: the entry is shown, the answer is
+ *     held on the line where there is one, and the run stops there, because the
+ *     press that owns the line now may be applying an act a line behind this one is
+ *     about. The settle of a carried line is such a write, at both of its halves —
+ *     the takeover and the `applied` — and holds nothing, because this run
+ *     published nothing on that line;
  *   - a refusal is passed; anything that does not say what happened stops the run
  *     and the lines after it say "not run";
  *   - a refusal a sign-in would remedy ends the run at that line and NEVER waits:
@@ -1251,6 +1326,9 @@ function begun(line: Line): boolean {
  *   - the page in view reads again after each confirmed act and when the run ends.
  */
 export async function runProposals(lines: readonly Line[], ports: RunPorts): Promise<void> {
+  // This press's own attempt, carried on every write below. Continue and Try
+  // again come back through here, so each of them owns the lines it moves.
+  const attempt = newAttempt();
   for (const line of lines) {
     ports.mark(line, { notRun: false, refusedUnsent: "" });
   }
@@ -1273,9 +1351,14 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
    * One line the reading shows the goal already carries: recorded applied, with
    * no act of this run's own, and what the record answered kept as every other
    * outcome write's is.
+   *
+   * It answers what its write did, because a refusal of it stops the run: this is
+   * an outcome write of this run's own, and the press that has the line may be
+   * applying an act a line behind this one is about (Wido's ruling, fourth pass).
+   * Nothing is held for a refused one — this run published nothing on that line.
    */
-  const settleCarried = async (one: Line): Promise<void> => {
-    const settled = await ports.record(one, "applied", ALREADY_CARRIED);
+  const settleCarried = async (one: Line): Promise<Written["kind"]> => {
+    const settled = await ports.record(one, "applied", ALREADY_CARRIED, attempt);
     if (settled.kind === "conflict") {
       ports.reconcile(settled.proposal, one);
     } else if (settled.kind === "failed") {
@@ -1283,6 +1366,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     } else {
       ports.mark(one, { unrecorded: null });
     }
+    return settled.kind;
   };
   for (const [at, line] of lines.entries()) {
     if (stale && needsTheCompare(line.verb)) {
@@ -1318,7 +1402,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       if (!canCompare(looked.outcome)) {
         const unread = fetchFailedLine(looked.message);
         if (line.state === "applying") {
-          const said = await ports.record(line, "unresolved", unread);
+          const said = await ports.record(line, "unresolved", unread, attempt);
           if (said.kind === "conflict") {
             ports.reconcile(said.proposal, line);
           }
@@ -1328,11 +1412,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       }
       carried = carriesAlready(line, looked.rows);
     }
-    if (carried && line.state === "applying") {
-      await settleCarried(line);
-      continue;
-    }
-    const started = await ports.record(line, "applying", "");
+    const started = await ports.record(line, "applying", "", attempt);
     if (started.kind !== "failed") {
       standing.set(line.id, started.proposal);
     }
@@ -1347,6 +1427,14 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
         // answer this page was holding for want of a record is history now
         // (Astra C-04).
         ports.mark(line, { unrecorded: null });
+      }
+      // On a CARRIED line this write is the takeover that settles it, which makes
+      // it an outcome write of this run's own: a refusal of it stops the run,
+      // whatever the entry says, because the press that took the line first may be
+      // applying an act a line behind this one is about (Wido's ruling, fourth
+      // pass). A line about to be SENT whose entry somebody has settled is
+      // accounted for by that entry, and the run goes on to the next line.
+      if (!carried && settledState(started.proposal.state)) {
         continue;
       }
       stoppedAt = at;
@@ -1360,48 +1448,49 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     // The line as the server now has it: the outcome's own write is against the
     // version this one left, so nobody else can slip between them.
     const sending = { ...line, version: started.proposal.version };
-    // A line another press owns, whose act the reading already shows landed: the
-    // entry is taken above rather than below because the record admits `applied`
-    // only from `applying`, and it is settled here with no act of this run's own.
+    // A line another press began, whose act the reading already shows landed: it
+    // is settled here with no act of this run's own, and under the `applying`
+    // write above rather than straight onto the entry the other press left. That
+    // write is the TAKEOVER of a line whose press died — the only thing that moves
+    // ownership — and a settle written straight onto that press's entry carries an
+    // attempt the entry does not hold, so the route refuses it and the line stays
+    // in flight for good. It is also what the transition table wants: `applied`
+    // comes only from `applying` (internal/ui/partner/proposals.go).
     if (carried) {
-      await settleCarried(sending);
+      if ((await settleCarried(sending)) === "conflict") {
+        stoppedAt = at;
+        break;
+      }
       continue;
     }
     const answered = await ports.send(sending);
     const written = recorded(answered);
-    // The version the outcome was last written AT, which is the version the
-    // entry still stands at where that write failed.
-    let wroteAt = sending.version;
-    let finished = await ports.record(sending, written.state, written.words);
-    // The result WINS, over an entry NOBODY is executing. A conflict here means
-    // another tab moved the entry while this act was out. Where they left it
-    // `unresolved` no act of theirs is running and they hold no result for the
-    // line, so this tab's answer — the only one there is — is written once more
-    // at their version. Where they left it `applying`, another attempt OWNS the
-    // line and will settle it with its own answer: writing this older one over
-    // it settled the line refused while that attempt's act applied, and that tab
-    // then reconciled to the refusal and threw its own answer away (Astra E-02).
-    // And where it is settled they established what happened, and the run shows
-    // that instead.
-    if (finished.kind === "conflict" && finished.proposal.state === "unresolved") {
-      wroteAt = finished.proposal.version;
-      finished = await ports.record({ ...sending, version: wroteAt }, written.state, written.words);
-    }
+    // The version the outcome was written AT, which is the version the entry
+    // still stands at where that write did not land.
+    const wroteAt = sending.version;
+    const finished = await ports.record(sending, written.state, written.words, attempt);
     if (finished.kind !== "failed") {
       standing.set(line.id, finished.proposal);
     }
+    // The page NEVER REBASES. A conflict here is the line not being this press's
+    // to settle any more: another press moved the entry while this act was out —
+    // refused on the version, or on the attempt where the entry belongs to that
+    // press now. Writing the answer again at the version that came back is what
+    // this page used to do over an entry left `unresolved`, on the reading that
+    // nobody was executing; but `unresolved` says nothing of the kind. A third
+    // press wrote it while the second press's act was landing, and the rebased
+    // refusal settled the line refused over a park that had applied, taking that
+    // press's own answer with it (Astra F-03).
+    //
+    // So the answer is held here, where every answer the record does not carry is
+    // held, the view is reconciled to the entry the refusal came with, and the run
+    // STOPS below — exactly as it does at an `in-flight` answer, and for the same
+    // reason: the act that press owns may be changing the very goal a line behind
+    // this one is about (Astra F-01). Continue is a fresh press, with its own
+    // attempt and its own read.
     if (finished.kind === "conflict") {
       ports.reconcile(finished.proposal, sending);
-      stale = stale || appliedEntry(finished.proposal);
-      if (settledState(finished.proposal.state)) {
-        ports.mark(line, { unrecorded: null });
-      } else {
-        // Another attempt owns the line and this tab still knows what its own
-        // act answered, so that answer is held here — where every answer the
-        // record does not carry is held — until the record says what happened
-        // (Astra E-02).
-        ports.mark(line, { unrecorded: { ...written, version: wroteAt } });
-      }
+      ports.mark(line, { unrecorded: { ...written, version: wroteAt } });
     } else if (finished.kind === "failed") {
       // The act happened and the conversation could not say so. What the act
       // answered is kept on the line, because that is the only thing here that
@@ -1421,7 +1510,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       stale = true;
       ports.reread();
     }
-    if (!goesOn(answered)) {
+    if (finished.kind === "conflict" || !goesOn(answered)) {
       stoppedAt = at;
       if (answered.kind === "sign-in") {
         // The lines from here, as the route now holds them, so signing in

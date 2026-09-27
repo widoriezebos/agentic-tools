@@ -1690,8 +1690,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
           // because the inbox applies the same lines through the same runner
           // (g1-s60 D4).
           look: lookOnce,
-          record: async (line, state, words) => {
-            const answered = await writeOutcome(card, line, state, words);
+          record: async (line, state, words, attempt) => {
+            const answered = await writeOutcome(card, line, state, words, attempt);
             if (answered.kind === "written") {
               setStore((held) => proposalMoved(held, card, answered.proposal));
             }

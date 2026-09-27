@@ -408,7 +408,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		// journal recorded — and a journaled name is refused above, so the
 		// opens that reach here are the seat's own and are judged as such.
 		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"],
-			commaValues(in.Args["blocks"]), commaValues(in.Args["blockedBy"]), uint8(tier), budget, risk, in.Args["why"], false, commaValues(in.Args["labels"]))
+			commaValues(in.Args["blocks"]), commaValues(in.Args["blockedBy"]), uint8(tier), budget, risk, in.Args["why"], false, false, commaValues(in.Args["labels"]))
 	case "block":
 		return blockRequest(r, target, in.Args["blocker"], false), nil
 	case "unblock":
