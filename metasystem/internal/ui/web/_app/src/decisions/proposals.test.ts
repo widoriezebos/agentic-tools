@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { Need, Proposed } from "./api";
@@ -12,11 +14,13 @@ import {
   rowID,
   toSend,
   turnOf,
+  useProposals,
   type Through,
 } from "./proposals";
 import type { Proposal } from "../partner/api";
+import { PartnerAs } from "../partner/store";
 import type { Answered, Line, Looked, Mark, Marks, Written } from "../partner/proposing";
-import { lineState, runProposals, WAS_IN_FLIGHT } from "../partner/proposing";
+import { lineState, runProposals, TRY_AGAIN, WAS_IN_FLIGHT } from "../partner/proposing";
 
 /**
  * A proposal as a row of the inbox, and the run one press makes.
@@ -551,5 +555,63 @@ describe("putting a line away", () => {
     expect(wrote).toEqual(["t7:2:3:dismissed:"]);
     expect(answered.kind).toBe("written");
     expect(answered.kind === "written" ? answered.proposal.state : "").toBe("dismissed");
+  });
+});
+
+/**
+ * What the drawer already knows about a line, read from the inbox (Astra C-02).
+ *
+ * The row and the card are two readings of ONE record, and there is one thing the
+ * drawer knows that the record does not: an act whose answer the conversation
+ * could not write down. The entry still says `applying`, because the write that
+ * would have said otherwise failed, and a row that offered Try again on it would
+ * be offering to approve the same goal twice. The Partner's store stands above the
+ * pages, so the inbox reads that mark there rather than keeping a second copy of
+ * it.
+ *
+ * It is driven through the hook itself, under the store's own provider, because
+ * the wiring is the finding: the rules are proposing.ts's and are proved there.
+ */
+describe("what the drawer already knows about a line", () => {
+  const landed: Marks = {
+    "t7#2": { ticked: true, notRun: false, refusedUnsent: "", unrecorded: { state: "applied", words: "" } },
+  };
+
+  /** One row of the inbox, as everything the page holds about it composes it. */
+  function Probe({ shown }: { shown: Need }) {
+    const applying = useProposals({ reread: () => undefined, signIn: () => undefined });
+    const line = applying.lineOf(shown);
+    return createElement(
+      "p",
+      null,
+      line === null
+        ? "no line"
+        : `${lineState(line)} · press: ${pressFor(line) === "" ? "none" : pressFor(line)} · sends: ${String(toSend([line]).length)}`,
+    );
+  }
+
+  function shownWith(held: Marks): string {
+    return renderToStaticMarkup(
+      createElement(PartnerAs, {
+        held: { proposalMarks: held },
+        children: createElement(Probe, { shown: need({}, { state: "applying", version: 2 }) }),
+      }),
+    );
+  }
+
+  it("is what the inbox says and what it admits a retry on", () => {
+    const markup = shownWith(landed);
+
+    expect(markup).toContain("applied; the conversation could not record this");
+    expect(markup).toContain("press: none");
+    expect(markup).toContain("sends: 0");
+  });
+
+  it("leaves a line the drawer knows nothing about offering Try again", () => {
+    const markup = shownWith({});
+
+    expect(markup).toContain(WAS_IN_FLIGHT);
+    expect(markup).toContain(`press: ${TRY_AGAIN}`);
+    expect(markup).toContain("sends: 1");
   });
 });

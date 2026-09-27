@@ -430,6 +430,17 @@ type Partner = {
   reopenProposals: (card: string) => void;
   /** Ask the Partner: the line's words go in the composer, and nothing is sent. */
   askAboutProposal: (id: string) => void;
+  /**
+   * What this page holds about each proposed line beyond what the server
+   * persists, by the line's own id.
+   *
+   * It is read outside the drawer for one reason: an act whose answer the
+   * conversation could not write down is known HERE and nowhere in the record.
+   * The entry still says `applying`, so a surface reading the record alone would
+   * offer to send it again — and the inbox is such a surface (Astra C-02). The
+   * store stands above the pages, so there is one answer for one line.
+   */
+  proposalMarks: ProposalMarks;
   /** The card whose run is in flight, or "". A second Apply is refused while it is. */
   runningProposals: string;
   /** How many actions are waiting for the human, across every answer. */
@@ -542,6 +553,7 @@ const nothing: Partner = {
   dismissProposals: () => {},
   reopenProposals: () => {},
   askAboutProposal: () => {},
+  proposalMarks: {},
   runningProposals: "",
   proposalsWaiting: 0,
   proposalsLine: "",
@@ -1777,7 +1789,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       endWithoutRecording: endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
       proposals, tickProposal, selectProposals, applyProposals, continueProposals, tryProposal,
-      dismissProposals, reopenProposals, askAboutProposal, runningProposals,
+      dismissProposals, reopenProposals, askAboutProposal, runningProposals, proposalMarks,
       proposalsWaiting: waitingAcross(proposals), proposalsLine: barLine(proposals),
       showProposals, showProposedFor, offerReread, noteCovered,
     }),
@@ -1790,7 +1802,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       sitting, begin, close, end, endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
       proposals, tickProposal, selectProposals, applyProposals, continueProposals, tryProposal,
-      dismissProposals, reopenProposals, askAboutProposal, runningProposals,
+      dismissProposals, reopenProposals, askAboutProposal, runningProposals, proposalMarks,
       showProposals, showProposedFor, offerReread, noteCovered],
   );
 
