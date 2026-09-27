@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // Lifecycle tests for every runtime and event outside SessionStart's
@@ -344,7 +346,7 @@ func TestStopFromALinkedWorktreeCompletesInThePrimary(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(primary.root, "metasystem", "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(primary.root, "metasystem", "bin", "metasystem"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(primary.root, "metasystem", "bin", "metasystem"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	worktree := hookInstallation{root: harness, script: filepath.Join(harness, "scripts", "agents", "supervision-hook.sh")}

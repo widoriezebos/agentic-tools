@@ -405,7 +405,7 @@ func TestHookStartFailureBranchFixtures(t *testing.T) {
 			}
 			call := hookCall{runtime: runtime, event: "start", payload: payload, env: test.env}
 			if test.key == "brain-timeout" {
-				call.after = func(time.Duration) <-chan time.Time { return time.After(20 * time.Millisecond) }
+				call.after = firedTimer
 			}
 			run := runHook(t, installation, ops, call)
 			want, wantStatus := test.stdout, StartOutcomeNotices[test.key].status
@@ -451,7 +451,19 @@ func TestHookStartBrainFailureKeepsWaitLine(t *testing.T) {
 			}
 			call := hookCall{runtime: "claude", event: "start", payload: `{"session_id":"brain-wait","source":"startup"}` + "\n"}
 			if mode == "brain-timeout" {
-				call.after = func(time.Duration) <-chan time.Time { return time.After(20 * time.Millisecond) }
+				// The timer fires once the brain preparation has begun, so the
+				// trace orders it before arming without any elapsed time.
+				entered := make(chan struct{})
+				boot := ops.brainBoot
+				ops.brainBoot = func(ctx context.Context) (string, string, int) {
+					close(entered)
+					return boot(ctx)
+				}
+				call.after = func(time.Duration) <-chan time.Time {
+					fired := make(chan time.Time, 1)
+					go func() { <-entered; fired <- time.Unix(0, 0) }()
+					return fired
+				}
 			}
 			run := runHook(t, installation, ops, call)
 			want := appendSystemMessage(appendSystemMessage(noticeOf(mode), "WAIT RECOVERY fixture row"), "Supervision may have been partly initialized.")
@@ -638,4 +650,12 @@ func TestHookStartPublishesThroughOpenStdoutWithUnwritableModeBits(t *testing.T)
 			}
 		})
 	}
+}
+
+// firedTimer is a brain-preparation timer that has already fired: the fake
+// brain never answers, so the timeout wins without any elapsed time.
+func firedTimer(time.Duration) <-chan time.Time {
+	fired := make(chan time.Time, 1)
+	fired <- time.Unix(0, 0)
+	return fired
 }

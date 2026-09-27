@@ -7,6 +7,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // Start legs of the brain-lifecycle bed: the tool engine cache, the nested
@@ -34,7 +36,7 @@ func TestHookStartToolEngineCache(t *testing.T) {
 	ops := newFakeOps(t, installation)
 	ops.runtimeNames = func() (string, int) { return "fake\n", 0 }
 	override := filepath.Join(t.TempDir(), "override-engine")
-	if err := os.WriteFile(override, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(override, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	call := hookCall{runtime: "claude", event: "start", payload: `{"session_id":"tool-engine-cache","source":"startup"}`, env: map[string]string{"METASYSTEM_BIN": override}}

@@ -3,6 +3,7 @@ package hooks
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -31,14 +32,15 @@ type deadlineCase struct {
 	deadline bool // fire the fixture deadline once the worker entered
 	hang     bool // the worker waits for a release that never comes
 	tempDir  string
+	// afterWorker observes the launched worker.
+	afterWorker func(Worker)
 }
 
 func runDeadline(t *testing.T, installation hookInstallation, ops *fakeOps, test deadlineCase) (hookRun, []string) {
 	t.Helper()
-	entered := filepath.Join(t.TempDir(), "worker.entered")
-	worker := map[string]string{"METASYSTEM_HOOK_TEST_WORKER_ENTERED": entered}
+	worker := map[string]string{}
 	if test.deadline || test.hang {
-		worker["METASYSTEM_HOOK_TEST_WORKER_RELEASE"] = filepath.Join(t.TempDir(), "never-released")
+		worker["METASYSTEM_HOOK_TEST_WORKER_RELEASE"] = makeFIFO(t, "never-released")
 	}
 	for key, value := range test.worker {
 		worker[key] = value
@@ -46,15 +48,24 @@ func runDeadline(t *testing.T, installation hookInstallation, ops *fakeOps, test
 	launched := make(chan []string, 1)
 	fixture := make(chan time.Time, 1)
 	if test.deadline {
+		// The deadline fires once the worker has entered: reading the
+		// entered FIFO blocks until the worker opens it. A worker that never
+		// enters leaves the reader to the cleanup, which opens the write end
+		// without blocking so the reader returns.
+		entered := makeFIFO(t, "worker.entered")
+		worker["METASYSTEM_HOOK_TEST_WORKER_ENTERED"] = entered
 		go func() {
-			for i := 0; i < 6000; i++ {
-				if _, err := os.Stat(entered); err == nil {
-					fixture <- time.Now()
-					return
-				}
-				time.Sleep(10 * time.Millisecond)
+			if file, err := os.Open(entered); err == nil {
+				_, _ = io.Copy(io.Discard, file)
+				_ = file.Close()
 			}
+			fixture <- time.Unix(0, 0)
 		}()
+		t.Cleanup(func() {
+			if file, err := os.OpenFile(entered, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+				_ = file.Close()
+			}
+		})
 	}
 	payload := test.payload
 	if payload == "" {
@@ -67,6 +78,16 @@ func runDeadline(t *testing.T, installation hookInstallation, ops *fakeOps, test
 	call := hookCall{
 		runtime: "claude", event: "stop", payload: payload, env: env, now: test.now, monotonic: test.mono,
 		startWorker: startTestWorker(t, worker, launched), tempDir: test.tempDir,
+	}
+	if test.afterWorker != nil {
+		start := call.startWorker
+		call.startWorker = func(script, runtime string, env []string, stdin, stdout, stderr *os.File) (Worker, error) {
+			worker, err := start(script, runtime, env, stdin, stdout, stderr)
+			if err == nil {
+				test.afterWorker(worker)
+			}
+			return worker, err
+		}
 	}
 	if test.deadline {
 		call.fixtureDeadline = fixture
@@ -107,8 +128,8 @@ func TestDeadlineParentPublishesAValidWorkerResponse(t *testing.T) {
 // silent Stop, even after a delay.
 func TestDeadlineParentPassesTheSkipQuietly(t *testing.T) {
 	installation := newHookInstallation(t)
-	release := filepath.Join(t.TempDir(), "release")
-	go func() { time.Sleep(100 * time.Millisecond); _ = os.WriteFile(release, nil, 0o600) }()
+	release := makeFIFO(t, "release")
+	go releaseFIFO(release)
 	run, _ := runDeadline(t, installation, newFakeOps(t, installation), deadlineCase{worker: map[string]string{
 		"METASYSTEM_HOOK_TEST_WORKER_OUTPUT": internalSkipResult, "METASYSTEM_HOOK_TEST_WORKER_RELEASE": release}})
 	if run.status != 0 || run.stdout != "" {
@@ -337,8 +358,10 @@ func TestDeadlineSlowResolution(t *testing.T) {
 		<-release
 		return root + "\n", 0
 	}
-	go func() { time.Sleep(300 * time.Millisecond); close(release) }()
-	run, _ := runDeadline(t, installation, ops, deadlineCase{worker: map[string]string{"METASYSTEM_HOOK_TEST_WORKER_STATUS": "1"}})
+	// The resolver answers only after the worker has failed and exited, so
+	// the parent must wait for it rather than treat it as no checkout.
+	run, _ := runDeadline(t, installation, ops, deadlineCase{worker: map[string]string{"METASYSTEM_HOOK_TEST_WORKER_STATUS": "1"},
+		afterWorker: func(worker Worker) { go func() { <-worker.Done(); close(release) }() }})
 	if run.stdout != mustForm(t, "allowed", "unreadable-output")+"\n" ||
 		!strings.Contains(readHookLog(t, installation), "stop response outcome=invalid-worker-output-allow") {
 		t.Fatalf("slow resolution = stdout %q log %q", run.stdout, readHookLog(t, installation))

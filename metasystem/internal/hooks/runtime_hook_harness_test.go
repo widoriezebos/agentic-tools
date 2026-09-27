@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // The runtime hook's tests run the entry in process against a fake of its
@@ -30,7 +32,7 @@ import (
 const hookWorkerModeEnv = "METASYSTEM_HOOK_TEST_WORKER"
 
 // runHookTestWorker is the Stop worker a deadline test launches: it prints
-// the configured output, optionally after a release file appears, and exits
+// the configured output, optionally after its release FIFO closes, and exits
 // with the configured status.
 func runHookTestWorker() int {
 	if os.Getenv("METASYSTEM_HOOK_TEST_WORKER_IGNORE_TERM") == "1" {
@@ -44,16 +46,20 @@ func runHookTestWorker() int {
 		fmt.Println(output)
 		output = ""
 	}
+	// Both handshakes are FIFOs, so neither side polls a clock: opening the
+	// entered FIFO blocks until the test reads it, and reading the release
+	// FIFO blocks until the test opens and closes it (or the worker is
+	// signalled, which is what a never-released worker waits for).
 	if entered != "" {
-		_ = os.WriteFile(entered, []byte(fmt.Sprint(os.Getpid())), 0o600)
+		if file, err := os.OpenFile(entered, os.O_WRONLY, 0); err == nil {
+			_, _ = fmt.Fprint(file, os.Getpid())
+			_ = file.Close()
+		}
 	}
 	if release != "" {
-		deadline := time.Now().Add(60 * time.Second)
-		for time.Now().Before(deadline) {
-			if _, err := os.Stat(release); err == nil {
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
+		if file, err := os.Open(release); err == nil {
+			_, _ = io.Copy(io.Discard, file)
+			_ = file.Close()
 		}
 	}
 	if output != "" {
@@ -84,10 +90,10 @@ func newHookInstallation(t *testing.T) hookInstallation {
 		}
 	}
 	script := filepath.Join(root, "scripts", "agents", "supervision-hook.sh")
-	if err := os.WriteFile(script, []byte("#!/usr/bin/env bash\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(script, []byte("#!/usr/bin/env bash\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("#!/bin/sh\nexit 97\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("#!/bin/sh\nexit 97\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return hookInstallation{root: root, script: script}
@@ -609,7 +615,7 @@ func runHook(t *testing.T, installation hookInstallation, ops Ops, call hookCall
 		Stdout: out, Stderr: &stderr,
 		Lookup: func(name string) (string, bool) { value, ok := env[name]; return value, ok },
 		Pid:    os.Getpid(), Ppid: call.ppid, Script: installation.script,
-		Now: now, Monotonic: call.monotonic, After: call.after, Sleep: func(time.Duration) { time.Sleep(5 * time.Millisecond) },
+		Now: now, Monotonic: call.monotonic, After: call.after, Sleep: func(time.Duration) { runtime.Gosched() },
 		Signals: call.signals, Exec: call.exec,
 		Environ:     func() []string { return os.Environ() },
 		StartWorker: call.startWorker, TempDir: call.tempDir,
@@ -689,4 +695,23 @@ func readHookLog(t *testing.T, installation hookInstallation) string {
 	t.Helper()
 	data, _ := os.ReadFile(filepath.Join(installation.root, "artifacts", "agents", "supervision", "hooks.log"))
 	return string(data)
+}
+
+// makeFIFO creates a named pipe for a worker handshake.
+func makeFIFO(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// releaseFIFO lets a worker blocked on the release FIFO continue: opening
+// the write end waits for the worker's read end, and closing it ends the
+// worker's read.
+func releaseFIFO(path string) {
+	if file, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+		_ = file.Close()
+	}
 }
