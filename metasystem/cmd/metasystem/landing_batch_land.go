@@ -156,7 +156,7 @@ func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, ac
 			return commit, nil
 		},
 		Held: func(_, tip string) error {
-			return batchChildRunner(controlRoot, landingOwnerLineage, "landing", "held", "--root", controlRoot, "--base", baseCommit, "--commit", tip, "--remote", "origin", "--ref", "refs/heads/main")
+			return batchOwnerCalls.held(controlRoot, baseCommit, tip, "origin", "refs/heads/main")
 		},
 		VerifySeries: func(units []batch.Unit, commits map[string]string) error {
 			if err := authorizeBatchSeries(root, batch.NewStore(root, nil), record, actor, time.Now().UTC()); err != nil {
@@ -274,7 +274,7 @@ func recoverMovedBatchPushWithInputs(root, id string, record batch.Record, actor
 	if err != nil {
 		return recovery, err
 	}
-	if err := batchChildRunner(controlRoot, landingOwnerLineage, "landing", "held", "--root", controlRoot, "--base", originCommit, "--commit", rebasedTip, "--remote", "origin", "--ref", "refs/heads/main"); err != nil {
+	if err := batchOwnerCalls.held(controlRoot, originCommit, rebasedTip, "origin", "refs/heads/main"); err != nil {
 		return reopenMovedBatchAfterRecoveryFailure(root, id, tip, originCommit, recovery, fmt.Errorf("rebased landing held: %w", err))
 	}
 	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
@@ -616,7 +616,7 @@ func batchRecoverySeamsWithGit(root string, store batch.Store, id string, at tim
 			if current == next {
 				return nil
 			}
-			return batchChildRunner(controlRoot, landingOwnerLineage, "internal", "goal", "edit", "--root", controlRoot, "--id", unit.GoalID, "--next", next, "--lineage", landingOwnerLineage)
+			return batchEditNext(controlRoot, unit.GoalID, next)
 		},
 		Rearm: func(tip string) error {
 			return batchRecoveryRearm(root, tip)

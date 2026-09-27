@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -141,29 +142,44 @@ func runLandingHeld(args []string) int {
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *base == "" || *commit == "" || *remote == "" || *ref == "" {
 		return 2
 	}
-	verdict, err := landing.Held(*root, *base, *commit, *remote, *ref)
+	return landingHeldTo(os.Stdout, os.Stderr, *root, *base, *commit, *remote, *ref)
+}
+
+// landingHeld re-checks the goal binding of every commit a push introduces,
+// in the caller's process; a refusal or an unreadable verdict is the error,
+// carrying the lines the verb prints.
+func landingHeld(root, base, commit, remote, ref string) error {
+	var output strings.Builder
+	if status := landingHeldTo(&output, &output, cleanOwnerRoot(root), base, commit, remote, ref); status != 0 {
+		return fmt.Errorf("%s: landing held exited %d", strings.TrimSpace(output.String()), status)
+	}
+	return nil
+}
+
+func landingHeldTo(stdout, stderr io.Writer, root, base, commit, remote, ref string) int {
+	verdict, err := landing.Held(root, base, commit, remote, ref)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "held: unreadable:", err)
+		fmt.Fprintln(stderr, "held: unreadable:", err)
 		return 2
 	}
 	for _, warning := range verdict.Warnings {
-		fmt.Fprintln(os.Stderr, warning)
+		fmt.Fprintln(stderr, warning)
 	}
 	switch verdict.Outcome {
 	case "nothing-to-push":
-		fmt.Println("held: nothing to push")
+		fmt.Fprintln(stdout, "held: nothing to push")
 	case "goal-free":
-		fmt.Println("held: goal-free ledger")
+		fmt.Fprintln(stdout, "held: goal-free ledger")
 	case "ok":
-		fmt.Printf("held: ok %d commit(s) above %s\n", verdict.Commits, shortLandingID(verdict.Base))
+		fmt.Fprintf(stdout, "held: ok %d commit(s) above %s\n", verdict.Commits, shortLandingID(verdict.Base))
 	case "refused":
 		if verdict.Refusal != nil {
-			fmt.Fprintf(os.Stderr, "held refused: %s: %s: %s\n", verdict.Refusal.Code, verdict.Refusal.Commit, verdict.Refusal.Detail)
+			fmt.Fprintf(stderr, "held refused: %s: %s: %s\n", verdict.Refusal.Code, verdict.Refusal.Commit, verdict.Refusal.Detail)
 		}
 	case "unreadable":
 		// Held has already supplied the precise unreadable line in Warnings.
 	default:
-		fmt.Fprintln(os.Stderr, "held: unreadable: unknown verdict")
+		fmt.Fprintln(stderr, "held: unreadable: unknown verdict")
 		return 2
 	}
 	return verdict.ExitCode

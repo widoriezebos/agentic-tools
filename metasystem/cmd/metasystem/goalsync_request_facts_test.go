@@ -58,6 +58,7 @@ func (f *syncRequestFacts) checkRoot(root string) {
 func (f *syncRequestFacts) dependencies() syncRequestDependencies {
 	return syncRequestDependencies{
 		authorityFacts: goalAuthorityReadFacts{
+			caller: entryCallerIdentity(),
 			repositoryTop: func(root string) (string, error) {
 				f.checkRoot(root)
 				f.topCalls++
