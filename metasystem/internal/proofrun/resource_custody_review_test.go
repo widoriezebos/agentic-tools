@@ -364,3 +364,34 @@ func main(){
 	}
 	defer next.Close()
 }
+
+// A fixture drain is bounded by complete censuses, never by wall time. On a
+// crowded host one census walk took longer than the old two-second bound, so
+// a drain with nothing left to stop reported "declared fixture custody did
+// not drain within 2s" (three land beds side by side, 2026-09-27). The drain
+// now reads no clock: it ends on two empty censuses however long each takes,
+// its only waits are the injected pause, and an unreadable census still
+// fails closed at once.
+func TestResourceCustodyFixtureDrainCountsCensusesNotTime(t *testing.T) {
+	t.Parallel()
+	owner := identity.Exact{Pid: int64(os.Getpid()), StartedAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)}
+	passes, pauses := 0, 0
+	observed, err := drainCustodyFixtureScansWith(ResourceCustodyOptions{Launcher: owner.Ref()}, identity.KernelProber{},
+		func() ([]identity.FixtureSurvivor, error) {
+			passes++
+			return nil, nil
+		}, func() { pauses++ })
+	if err != nil || observed || passes != 2 || pauses != 1 {
+		t.Fatalf("empty census drain observed=%t passes=%d pauses=%d err=%v", observed, passes, pauses, err)
+	}
+
+	passes, pauses = 0, 0
+	_, err = drainCustodyFixtureScansWith(ResourceCustodyOptions{Launcher: owner.Ref()}, identity.KernelProber{},
+		func() ([]identity.FixtureSurvivor, error) {
+			passes++
+			return nil, errors.New("census unreadable")
+		}, func() { pauses++ })
+	if err == nil || passes != 1 || pauses != 0 {
+		t.Fatalf("unreadable census passes=%d pauses=%d err=%v", passes, pauses, err)
+	}
+}
