@@ -4,10 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -145,9 +147,12 @@ func runConfigGet(args []string) int {
 func runConfigValidate(args []string) int {
 	flags := flag.NewFlagSet("config validate", flag.ContinueOnError)
 	conf := flags.String("conf", "metasystem.conf", "path to metasystem.conf")
-	repo := pathFlag(flags, "repo", ".", "repository root the configuration is validated against")
+	repo := pathFlag(flags, "repo", "", "repository root the configuration is validated against (default: the Git toplevel holding --conf, else its directory)")
 	if flags.Parse(args) != nil {
 		return 2
+	}
+	if *repo == "" {
+		*repo = configRepositoryScope(*conf)
 	}
 	tiersAbsent, problems, err := config.Validate(*conf, *repo)
 	if err != nil {
@@ -212,4 +217,21 @@ func runConfigConfValue(args []string) int {
 	}
 	fmt.Println(value)
 	return 0
+}
+
+// configRepositoryScope is the repository a configuration file is validated
+// against when none is named: the Git toplevel holding it, resolved, or the
+// file's own directory outside Git.
+func configRepositoryScope(conf string) string {
+	directory := filepath.Dir(conf)
+	if absolute, err := filepath.Abs(directory); err == nil {
+		directory = absolute
+	}
+	if top, err := stateroot.RepositoryTop(directory); err == nil && top != "" {
+		directory = top
+	}
+	if resolved, err := filepath.EvalSymlinks(directory); err == nil {
+		return resolved
+	}
+	return directory
 }

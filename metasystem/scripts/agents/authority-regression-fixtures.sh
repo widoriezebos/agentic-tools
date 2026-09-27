@@ -33,7 +33,7 @@ grep -Fq DELEGATE <<<"$wc1_err" \
   || { echo "authority regression: refusal did not name the caller class" >&2; exit 1; }
 
 # The retired marker must not reappear in the shell control-plane sources.
-for source in scripts/agents/dispatch.sh scripts/agents/commit.sh scripts/agents/evidence-gc.sh; do
+for source in scripts/agents/dispatch.sh scripts/agents/commit.sh; do
   if grep -Fq "$retired_marker" "$root/$source"; then
     echo "authority regression: retired marker resurfaced in $source" >&2
     exit 1

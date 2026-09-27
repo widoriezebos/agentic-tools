@@ -81,12 +81,18 @@ fi
 
 # Flight-recorder witness: the driver exports the cohort id as the execution
 # id (it IS the cohort id -- nothing is minted; plans/flight-recorder.md
-# D-1a) and emits a driver-phase event on every transition.
-if [[ -f "$top/metasystem/scripts/agents/emit-event.sh" ]]; then
-  source "$top/metasystem/scripts/agents/emit-event.sh"
-else
-  emit_event() { :; }
-fi
+# D-1a) and emits a driver-phase event on every transition. The driver is the
+# writer (D-1c): the engine's event verb records this process and its start
+# time, and the driver owns the per-process sequence. An emission never fails
+# the driver, whatever is broken.
+cohort_event_seq=0
+emit_event() { # component, event, key=value...
+  local event_engine=${METASYSTEM_BIN:-$top/metasystem/bin/metasystem}
+  cohort_event_seq=$((cohort_event_seq + 1))
+  "$event_engine" internal event emit "root=${METASYSTEM_HARNESS_ROOT:-$top/metasystem}" \
+    "component=${1:-unknown}" "event=${2:-unknown}" "pid=$$" "seq=$cohort_event_seq" "${@:3}" \
+    >/dev/null 2>&1 || true
+}
 
 atomic_state() { # state path, phase, repetition index
   python3 - "$1" "$2" "$3" <<'PY'

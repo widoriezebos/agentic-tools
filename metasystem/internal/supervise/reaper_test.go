@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
 
 // A fake custody table: a pid is alive only when listed with a matching start
@@ -250,7 +250,7 @@ func TestReaperRecollectsDeliveredReturn(t *testing.T) {
 				Survivors: func(string, int64, int64) (bool, bool) { return false, true },
 				Apply:     casApplier(t, jobs),
 				ReturnComplete: func(role, file string) bool {
-					return len(validate.ReturnCompleteRole(root, role, file)) == 0
+					return len(returnschema.ReturnCompleteRole(root, role, file)) == 0
 				},
 			}
 			if tc.name == "no-validator" {

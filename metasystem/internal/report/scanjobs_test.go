@@ -198,3 +198,44 @@ func TestScanJobsRefusesEmptyThresholds(t *testing.T) {
 		t.Fatalf("an unset stale-min silently disabled STALE in the shell; the engine must refuse: %v", err)
 	}
 }
+
+// Ported from the watch-background-jobs section: scope admits the
+// repository and its worktrees but not a peer or a path-prefix collision; a
+// job with a sidecar reports exactly once; a follow-up child reports under its
+// own id; and a record whose sidecar is quiet too is genuinely stale.
+func TestScanJobsScopeSidecarsChildrenAndQuietSidecars(t *testing.T) {
+	t.Parallel()
+	f := newScanFixture(t)
+	f.write("sc-mine.json", `{"status":"completed","workspaceRoot":"/r/mine"}`, 1)
+	f.write("sc-wt.json", `{"status":"completed","workspaceRoot":"/r/mine/.worktrees/w"}`, 1)
+	f.write("sc-peer.json", `{"status":"completed","workspaceRoot":"/r/other"}`, 1)
+	f.write("sc-prefix.json", `{"status":"completed","workspaceRoot":"/r/mine-other"}`, 1)
+	f.write("dual.json", `{"status":"completed","workspaceRoot":"/r/mine"}`, 1)
+	f.write("dual.log", "log text, not json\n", 1)
+	f.write("side.json", `{"status":"completed","workspaceRoot":"/r/other"}`, 1)
+	f.write("side.log", "log text, not json\n", 1)
+	f.write("chain-r2.json", `{"jobId":"chain-r2","parentJob":"chain","round":2,"status":"completed","workspaceRoot":"/r/mine"}`, 1)
+	f.write("busy.json", `{"status":"running","workspaceRoot":"/r/mine"}`, 60)
+	f.write("busy.log", "building\n", 60)
+	var out strings.Builder
+	if err := ScanJobs(ScanJobsParams{
+		Dirs: []string{f.dir}, StateFile: f.state, RunningFile: f.run,
+		Scope: "/r/mine", ScopeField: "workspaceRoot", StaleMin: 5, CapMin: 180, StartVerifyMin: 5, Now: f.now,
+	}, &out); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, want := range []string{"DONE sc-mine ", "DONE sc-wt ", "DONE chain-r2 status=completed", "STALE busy "} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("report lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Count(got, "DONE dual ") != 1 {
+		t.Fatalf("a job with a sidecar did not report exactly once:\n%s", got)
+	}
+	for _, absent := range []string{"sc-peer", "sc-prefix", "side"} {
+		if strings.Contains(got, absent) {
+			t.Fatalf("out-of-scope %s reported:\n%s", absent, got)
+		}
+	}
+}

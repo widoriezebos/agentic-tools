@@ -38,7 +38,6 @@ static-reproof-fixtures	static reproof fixtures
 project-extra-suites	project-declared extra suites
 record-protocol-fixtures	record protocol fixtures
 evidence-segment-fixtures	evidence segment fixtures
-second-session-fixtures	second-session fixtures
 lease-succession-fixtures	lease succession fixtures
 flight-recorder-fixtures	flight recorder fixtures
 acp-fixtures	Agent Client Protocol fixtures

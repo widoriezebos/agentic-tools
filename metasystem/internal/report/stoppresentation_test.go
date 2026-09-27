@@ -1032,7 +1032,7 @@ func TestComposeStopPresentationInputPublishesAdvisorReportWithoutJudgment(t *te
 		ReceiptFile: write("receipt.txt", "current\n"), ReceiptStderrFile: write("receipt.err", ""),
 		ArmingFile:       write("arming.txt", "component=checkout-lease outcome=advisor\nup outcome=advisor authority=read-only\n"),
 		ArmingStderrFile: write("arming.err", ""),
-		NoticeFile:       write("notice.txt", "OWNED-ELSEWHERE: use scripts/agents/second-session.sh"),
+		NoticeFile:       write("notice.txt", "OWNED-ELSEWHERE: use metasystem session isolate"),
 		FailureFile:      write("failure.txt", ""), OutputFile: inputPath,
 	}, time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)

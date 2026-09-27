@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-// The watcher's job-file classification engine (relocated from
-// watch-background-jobs.sh; it belongs to the REPORT
-// family). Every report line and the seen-state file format
-// are wire: humans and fixtures grep them. The census half of the watcher
-// already runs through `supervise watcher-pass`; this is the other half.
+// The watcher's job-file classification engine (relocated from the retired
+// shell job watcher; it belongs to the REPORT family and runs under
+// WatchJobs). Every report line and the seen-state file format are wire:
+// humans and fixtures grep them. The census half of the watcher runs through
+// the supervise watcher pass; this is the other half.
 
 // terminalScanStatuses is the watcher's terminal vocabulary — wider than
 // dispatch's, deliberately: it classifies FOREIGN runners' records too.
@@ -107,12 +107,12 @@ func ScanJobs(p ScanJobsParams, out io.Writer) error {
 		// The shell's concatenated digit check let an EMPTY --stale-min
 		// through, after which `[ age -ge "" ]` failed and STALE silently
 		// never fired (the review's verified defect). The engine refuses.
-		return fmt.Errorf("scan-jobs thresholds must be positive integers (stale-min, cap-min) and start-verify-min non-negative")
+		return fmt.Errorf("job scan thresholds must be positive integers (stale-min, cap-min) and start-verify-min non-negative")
 	}
 	seen := readLineSet(p.StateFile)
 	stateHandle, err := os.OpenFile(p.StateFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		return fmt.Errorf("scan-jobs cannot append to the state file: %v", err)
+		return fmt.Errorf("job scan cannot append to the state file: %v", err)
 	}
 	defer stateHandle.Close()
 	mark := func(id string) {
@@ -278,7 +278,7 @@ func ScanJobs(p ScanJobsParams, out io.Writer) error {
 		fmt.Fprintf(&buffer, "%s\t%s\n", id, runningPaths[id])
 	}
 	if err := os.WriteFile(p.RunningFile, []byte(buffer.String()), 0o644); err != nil {
-		return fmt.Errorf("scan-jobs cannot persist the running set: %v", err)
+		return fmt.Errorf("job scan cannot persist the running set: %v", err)
 	}
 	return nil
 }
