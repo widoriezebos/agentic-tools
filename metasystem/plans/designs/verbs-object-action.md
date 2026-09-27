@@ -436,10 +436,20 @@ Go. **External runtimes** implement the same operations as an executable at
 under rule S1): invoked as `<executable> OPERATION`, request as JSON on stdin,
 response as JSON on stdout, exit 0 on success; `output-stream` reads the CLI's
 output on stdin and writes one JSON event per line. The runtime registry is the
-built-ins plus the executables found in that directory (a built-in name cannot
-be shadowed); census, lease classification and janitor recognizers take
-signatures from the registry, so an external runtime's processes are
-recognized like a built-in's. `delegate-supervisor` runs built-in and external
+built-ins plus the executables found in that directory. **A built-in can be
+overridden** (Wido, 2026-09-27: "if people want to change the behavior of the
+built-in adapter somehow, that is possible"): an executable of a built-in's
+name replaces it only when the setting `adapters.<name>.override=external` is
+present in the installation's configuration, so the override is a recorded
+decision rather than a file that happens to exist; `settings show` and
+`system check` report every active override. Without the setting, an
+executable with a built-in's name is refused at discovery with a message that
+names the setting. An override may also implement only some operations and
+delegate the rest to the built-in (`<executable> OPERATION` exits with the
+reserved code 64 to mean "use the built-in for this operation"). Census, lease
+classification and janitor recognizers take signatures from the registry, so
+an external or overriding runtime's processes are recognized like a
+built-in's. `delegate-supervisor` runs built-in and external
 runtimes through one Go interface, so supervision, deadlines, custody and
 records are the same for both.
 
@@ -447,7 +457,11 @@ The operation schemas are versioned (`schemaVersion`), documented in
 `docs/agent-adapters.md`, and pinned by a conformance test that drives the
 fake runtime twice, once as a built-in and once as an external executable
 (a Go test helper that speaks the contract), and requires identical records and
-outcomes. U6a builds the contract; a real third-party runtime is not in scope.
+outcomes. A second conformance case overrides the fake built-in with
+an executable that changes one operation and delegates the rest (exit 64), and
+requires the override's effect on that operation and built-in behavior on the
+others; a third places an unconfigured executable with a built-in's name and
+requires the refusal. U6a builds the contract; a real third-party runtime is not in scope.
 
 ## 4. Rules and their witnesses
 
