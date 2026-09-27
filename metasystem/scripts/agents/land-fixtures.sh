@@ -3361,9 +3361,8 @@ fi
 # same tree, which the enrolled older reader must reject after it is copied.
 if [[ "$fixture_scenario" == receipt-cutover ]]; then
 echo "land receipt-cutover fixture: one candidate engine build and one pinned old-engine build"
-# The pre-cutover source is archived once; a provisionally stamped build of it
-# claims the seed goal inside make_leg, and the seed-stamped build below is the
-# engine the cutover leg enrolls.
+# The pre-cutover source is archived once; a provisionally stamped build of it claims the seed goal
+# inside make_leg, and the seed-stamped build below is the engine the cutover leg enrolls.
 cutover_old_source=$tmp/receipt-cutover-old-src
 cutover_seed_goal_engine=$tmp/receipt-cutover-seed-goal-engine
 cutover_source_top=$(git -C "$root" rev-parse --show-toplevel)
@@ -3453,15 +3452,15 @@ if git -C "$leg_local" ls-files --error-unmatch bin/metasystem >/dev/null 2>&1 |
   echo "land receipt-cutover fixture: an installed cutover engine is tracked" >&2
   exit 1
 fi
+# The pinned engine refuses a child after its reservation deadline by the real clock, so each of its receipts reads a fresh goal clock.
+fixture_receipt_now=$(date -u +%Y-%m-%dT%H:%M:%SZ); export METASYSTEM_GOAL_NOW=$fixture_receipt_now
 arm_receipt_runner "$leg_local" "$leg_local/bin/metasystem"
 cutover_message=$leg_root/message.txt
 cutover_output=$leg_root/land.out
 cutover_chain_log=$leg_root/chain.log
 printf 'fixture lands an exact old-engine receipt\n' >"$cutover_message"
-printf 'cutover exact landing\n' >"$leg_local/payload.txt"
-printf 'cutover exact landing\n' >"$leg_peer/payload.txt"
-git -C "$leg_local" add -- payload.txt
-git -C "$leg_peer" add -- payload.txt
+printf 'cutover exact landing\n' | tee "$leg_local/payload.txt" >"$leg_peer/payload.txt"
+git -C "$leg_local" add -- payload.txt; git -C "$leg_peer" add -- payload.txt
 cutover_candidate=$(git -C "$leg_local" write-tree)
 cutover_peer_candidate=$(git -C "$leg_peer" write-tree)
 [[ "$cutover_peer_candidate" == "$cutover_candidate" ]]
@@ -3533,6 +3532,7 @@ git -C "$cutover_moved_peer" update-ref refs/metasystem/goals/accepted origin/ma
 install_cutover_engine "$leg_local" "$cutover_old_engine"
 install_cutover_engine "$cutover_moved_peer" "$leg_root/engine"
 [[ $(git -C "$leg_local" rev-parse HEAD) == "$receipt_seed_build_stamp" ]]
+fixture_receipt_now=$(date -u +%Y-%m-%dT%H:%M:%SZ); export METASYSTEM_GOAL_NOW=$fixture_receipt_now
 arm_receipt_runner "$leg_local" "$leg_local/bin/metasystem"
 cutover_moved_message=$leg_root/moved-message.txt
 cutover_moved_output=$leg_root/moved-land.out
