@@ -502,28 +502,6 @@ func runDispatchClaimOccupancyPrepare(args []string) int {
 	return recordExit(dispatchcore.WriteClaimOccupancyPreparation(*root, *session, *output))
 }
 
-func runDispatchLaunchCapabilityConsume(args []string) int {
-	flags := flag.NewFlagSet("job launch-capability-consume", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "Git checkout root")
-	job := flags.String("job", "", "admitted job id")
-	capability := flags.String("capability", "", "opaque one-shot launch capability")
-	adapterVerb := flags.String("adapter-verb", "", "dispatch or follow-up")
-	instanceTag := flags.String("instance-tag", "", "admitted instance tag")
-	supervisorPID := flags.Int64("supervisor-pid", 0, "adapter supervisor pid")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if flags.NArg() != 0 || *root == "" || *job == "" || *capability == "" || *adapterVerb == "" || *instanceTag == "" || *supervisorPID < 1 {
-		fmt.Fprintln(os.Stderr, "job launch-capability-consume requires --root, --job, --capability, --adapter-verb, --instance-tag, and positive --supervisor-pid")
-		return 2
-	}
-	reader, err := dispatchStartReader(*root)
-	if err != nil {
-		return recordExit(err)
-	}
-	return recordExit(dispatchcore.ConsumeLaunchCapability(*root, *job, *capability, *adapterVerb, *instanceTag, *supervisorPID, reader))
-}
-
 type commandClaimProcessVerifier struct{}
 
 func (commandClaimProcessVerifier) Verify(pid int64, instanceTag string) identity.Verification {
@@ -604,30 +582,6 @@ func (r commandConfiguredProcessReader) ReadArgv(pid int64) ([]string, bool) {
 func positionedJobTag(argv []string, tag string) bool {
 	_, matches := janitor.MatchShape(janitor.DefaultShapes(), argv, tag)
 	return matches
-}
-
-func runDispatchPreforkMark(args []string) int {
-	if refuseRepeatedFlags("job prefork-mark", args) {
-		return 2
-	}
-	flags := flag.NewFlagSet("job prefork-mark", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	job := flags.String("job", "", "job id")
-	tag := flags.String("tag", "", "reservation instance tag")
-	supervisor := flags.Int64("supervisor-pid", 0, "supervisor process id")
-	pgid := flags.Int64("intended-pgid", 0, "process group the child will join")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" || *job == "" || *tag == "" || *supervisor < 1 || *pgid < 2 {
-		fmt.Fprintln(os.Stderr, "job prefork-mark: --root, --job, --tag, --supervisor-pid, and --intended-pgid are required")
-		return 2
-	}
-	reader, err := dispatchStartReader(*root)
-	if err != nil {
-		return recordExit(err)
-	}
-	return recordExit(dispatchcore.WritePreforkMarker(*root, *job, *tag, *supervisor, *pgid, reader))
 }
 
 func runDispatchCustodyGroups(args []string) int {

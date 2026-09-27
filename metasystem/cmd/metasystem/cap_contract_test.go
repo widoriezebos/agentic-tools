@@ -5,9 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 )
 
-// TestCapContractPublicAdapterAndRetiredVerb is the public edge of the
+// TestCapContractPublicAdapterAndRetiredVerb is the adapter edge of the
 // Go-owned cap-contract group. Its bounded, protocol, and severe matrices are
 // selected beside it from the existing dispatch owners in testing.json.
 func TestCapContractPublicAdapterAndRetiredVerb(t *testing.T) {
@@ -16,17 +18,17 @@ func TestCapContractPublicAdapterAndRetiredVerb(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct {
-		name string
-		args []string
-		want string
+		name   string
+		params adapter.AdjudicateParams
+		want   string
 	}{
-		{"runtime", []string{"--stage", "initial", "--record", record, "--cli-status", "7", "--handshake-done"}, "finish failed protocol_error runtime"},
-		{"delivery", []string{"--stage", "empty-reply", "--record", record, "--handshake-done"}, "finish failed protocol_error delivery"},
+		{"runtime", adapter.AdjudicateParams{Stage: "initial", RecordPath: record, CLIStatus: 7, HandshakeDone: true}, "finish failed protocol_error runtime"},
+		{"delivery", adapter.AdjudicateParams{Stage: "empty-reply", RecordPath: record, HandshakeDone: true}, "finish failed protocol_error delivery"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			output, code := captureStdout(t, func() int { return runAdapterAdjudicateTurn(test.args) })
-			if code != 0 || strings.TrimSpace(output) != test.want {
-				t.Fatalf("adapter cap outcome: code=%d output=%q want=%q", code, output, test.want)
+			output, err := adapter.AdjudicateTurn(test.params)
+			if err != nil || output != test.want {
+				t.Fatalf("adapter cap outcome: err=%v output=%q want=%q", err, output, test.want)
 			}
 		})
 	}

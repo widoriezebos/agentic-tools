@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 const (
@@ -616,24 +617,12 @@ func sameArguments(first, second []string) bool {
 }
 
 func signatureSet(root string) ([]census.Signature, string, error) {
-	paths, err := filepath.Glob(filepath.Join(root, "scripts", "agents", "adapters", "*.sh"))
-	if err != nil {
-		return nil, "", err
-	}
-	sort.Strings(paths)
 	hash := sha256.New()
 	var signatures []census.Signature
-	for _, path := range paths {
-		runtime := strings.TrimSuffix(filepath.Base(path), ".sh")
-		if runtime == "runtime-common" {
-			continue
-		}
-		text, err := census.SignatureText(path)
-		if err != nil {
-			return nil, "", err
-		}
-		matches, excludes := census.ParseSignatureText(text)
-		signature, err := census.CompileSignature(runtime, matches, excludes)
+	names := runtimes.WithAdapter()
+	sort.Strings(names)
+	for _, runtime := range names {
+		signature, text, err := census.RuntimeSignature(runtime)
 		if err != nil {
 			return nil, "", err
 		}
@@ -643,7 +632,7 @@ func signatureSet(root string) ([]census.Signature, string, error) {
 		hash.Write([]byte(text))
 	}
 	if len(signatures) == 0 {
-		return nil, "", fmt.Errorf("no adapter signatures are installed under %s", root)
+		return nil, "", fmt.Errorf("no adapter signatures are declared for %s", root)
 	}
 	return signatures, hex.EncodeToString(hash.Sum(nil)), nil
 }

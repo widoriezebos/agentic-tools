@@ -8,8 +8,8 @@ import (
 )
 
 // The remaining small census verbs: alive (liveness), authentication-identity
-// (start time + command from one source), and signature-check (adapter
-// positive/lookalike contract).
+// (start time + command from one source), and the signature contract (a
+// runtime's positive/lookalike vectors).
 
 // Alive is the `alive` verb: true iff the pid is live at expectedStart.
 // The probe is the fixture authority — nil refuses fixture identity and
@@ -64,33 +64,25 @@ func kernelIdentity(pid int64) (ProcIdentity, error) {
 		PidStartTicks: exact.StartTicks, BootID: exact.BootID}, nil
 }
 
-// SignatureCheck is the `signature-check` verb: the positive argv must
-// classify as the adapter's runtime and the lookalike must NOT — the
-// adapters' self-test that their signatures are neither too loose nor too
-// tight. Returns an error when the contract fails.
-func SignatureCheck(adapterPath, positive, lookalike string) error {
-	text, err := SignatureText(adapterPath)
+// SignatureCheck is the positive/lookalike contract of one runtime's
+// registry signature: the positive argv must classify as the runtime and
+// the lookalike must NOT — the proof that a signature is neither too loose
+// nor too tight. Returns an error when the contract fails.
+func SignatureCheck(runtime, positive, lookalike string) error {
+	sig, _, err := RuntimeSignature(runtime)
 	if err != nil {
 		return err
 	}
-	matches, excludes := ParseSignatureText(text)
-	sig, err := CompileSignature("check", matches, excludes)
-	if err != nil {
-		return err
-	}
+	return signatureContract(runtime, sig, positive, lookalike)
+}
+
+func signatureContract(runtime string, sig Signature, positive, lookalike string) error {
 	positiveOK := sig.matches(positive)
 	lookalikeOK := sig.matches(lookalike)
 	if !positiveOK || lookalikeOK {
-		return fmt.Errorf("signature positive/lookalike contract failed for %s", adapterBase(adapterPath))
+		return fmt.Errorf("signature positive/lookalike contract failed for %s", runtime)
 	}
 	return nil
-}
-
-func adapterBase(path string) string {
-	if i := strings.LastIndexByte(path, '/'); i >= 0 {
-		return path[i+1:]
-	}
-	return path
 }
 
 // probeFixture is the nil-safe fixture read (a nil probe refuses).

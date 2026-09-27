@@ -250,33 +250,14 @@ func authenticatedAnnouncement(pid int64, records []announcementFile, probe iden
 	return nil
 }
 
-// allAdapterSignatures compiles the delegate signatures from every runtime
-// adapter (all of them, not only the configured runtimes: a delegate of any
-// installed runtime must be recognised as a delegate). runtime-common.sh is
-// shared code, not an adapter.
+// allAdapterSignatures compiles the delegate signatures of every runtime
+// that declares an adapter (all of them, not only the configured runtimes: a
+// delegate of any installed runtime must be recognised as a delegate), from
+// the runtime registry's one process definition.
 func allAdapterSignatures(root string) ([]census.Signature, error) {
-	dir := filepath.Join(root, "scripts/agents/adapters")
-	entries, err := filepath.Glob(filepath.Join(dir, "*.sh"))
+	sigs, err := census.AllAdapterSignatures()
 	if err != nil {
-		return nil, classificationDataFailure("adapter signature directory", dir, err)
-	}
-	sort.Strings(entries)
-	var sigs []census.Signature
-	for _, path := range entries {
-		name := filepath.Base(path)
-		if name == "runtime-common.sh" {
-			continue
-		}
-		text, err := census.SignatureText(path)
-		if err != nil {
-			return nil, classificationDataFailure("adapter signature", path, err)
-		}
-		matches, excludes := census.ParseSignatureText(text)
-		sig, err := census.CompileSignature(strings.TrimSuffix(name, ".sh"), matches, excludes)
-		if err != nil {
-			return nil, classificationDataFailure("adapter signature", path, err)
-		}
-		sigs = append(sigs, sig)
+		return nil, classificationDataFailure("adapter signature", root, err)
 	}
 	return sigs, nil
 }

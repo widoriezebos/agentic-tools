@@ -7,14 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 // The fingerprint is the supervision code staleness detector. It hashes the
@@ -28,7 +27,6 @@ var fingerprintFiles = []string{
 	"scripts/agents/arm-supervision.sh",
 	"scripts/agents/dispatch.sh",
 	"bin/metasystem",
-	"scripts/agents/adapters/runtime-common.sh",
 	"scripts/watch-background-jobs.sh",
 }
 
@@ -42,38 +40,45 @@ var fingerprintConfig = map[string]string{
 	"census.max-interval-share-percent": "50",
 }
 
-// SignatureText returns an adapter's normalized signature declaration — the
-// `match`/`exclude` lines joined by newlines with a trailing newline. This is
-// the value hashed per runtime.
-func SignatureText(adapterPath string) (string, error) {
-	cmd := exec.Command(adapterPath, "signature")
-	var out strings.Builder
-	cmd.Stdout = &out
-	// Bounded: a hung adapter would otherwise hang watcher passes and
-	// lease classification. Adapters live at
-	// <root>/scripts/agents/adapters/<runtime>.sh, so the checkout's conf is
-	// four steps up; anywhere else the stated default applies — a missing
-	// conf must not disable bounding.
-	conf := filepath.Join(adapterPath, "..", "..", "..", "..", "metasystem.conf")
-	limit := boundedexec.Timeout(conf, boundedexec.Local)
-	if err := boundedexec.Run(cmd, limit, "signature adapter "+filepath.Base(adapterPath)); err != nil {
-		return "", fmt.Errorf("signature adapter failed: %s: %w", filepath.Base(adapterPath), err)
+// SignatureText returns a runtime's normalized signature declaration — the
+// `match`/`exclude` lines joined by newlines with a trailing newline, from
+// the runtime registry's one process definition. This is the value hashed
+// per runtime.
+func SignatureText(runtime string) (string, error) {
+	return runtimes.SignatureText(runtime)
+}
+
+// RuntimeSignature compiles one runtime's registry signature.
+func RuntimeSignature(runtime string) (Signature, string, error) {
+	text, err := SignatureText(runtime)
+	if err != nil {
+		return Signature{}, "", err
 	}
-	var normalized []string
-	for _, raw := range strings.Split(strings.TrimRight(out.String(), "\n"), "\n") {
-		if raw == "" || raw != strings.TrimSpace(raw) {
-			return "", fmt.Errorf("malformed signature declaration from %s", filepath.Base(adapterPath))
+	matches, excludes := ParseSignatureText(text)
+	sig, err := CompileSignature(runtime, matches, excludes)
+	if err != nil {
+		return Signature{}, "", err
+	}
+	return sig, text, nil
+}
+
+// AllAdapterSignatures compiles the delegate signature of every runtime
+// that declares an adapter, (all of them, not
+// only the configured runtimes: a delegate of any installed runtime must be
+// recognised as a delegate). The order is the runtime names' sort order,
+// the order the adapter scripts' directory listing used to give.
+func AllAdapterSignatures() ([]Signature, error) {
+	names := runtimes.WithAdapter()
+	sort.Strings(names)
+	var sigs []Signature
+	for _, runtime := range names {
+		sig, _, err := RuntimeSignature(runtime)
+		if err != nil {
+			return nil, err
 		}
-		verb, pattern, found := strings.Cut(raw, " ")
-		if (verb != "match" && verb != "exclude") || !found || pattern == "" {
-			return "", fmt.Errorf("malformed signature declaration from %s: %s", filepath.Base(adapterPath), raw)
-		}
-		normalized = append(normalized, raw)
+		sigs = append(sigs, sig)
 	}
-	if len(normalized) == 0 {
-		return "", fmt.Errorf("signature adapter returned nothing: %s", filepath.Base(adapterPath))
-	}
-	return strings.Join(normalized, "\n") + "\n", nil
+	return sigs, nil
 }
 
 // Fingerprint computes the supervision fingerprint for a repo, hashing files
@@ -87,9 +92,6 @@ func Fingerprint(metasystemRoot, repo string) (string, error) {
 
 	selected := splitRuntimes(config.ConfValue(confPath, "metasystem.runtimes", ""))
 	files := append([]string(nil), fingerprintFiles...)
-	for _, runtime := range selected {
-		files = append(files, filepath.Join("scripts", "agents", "adapters", runtime+".sh"))
-	}
 
 	fileHashes := map[string]string{}
 	for _, rel := range files {
@@ -103,7 +105,7 @@ func Fingerprint(metasystemRoot, repo string) (string, error) {
 
 	signatures := map[string]string{}
 	for _, runtime := range selected {
-		text, err := SignatureText(filepath.Join(metasystemRoot, "scripts", "agents", "adapters", runtime+".sh"))
+		text, err := SignatureText(runtime)
 		if err != nil {
 			return "", err
 		}

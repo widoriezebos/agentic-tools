@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"golang.org/x/sys/unix"
 )
 
@@ -37,30 +38,25 @@ type Shape struct {
 	TagPathBase bool
 }
 
-// DefaultShapes covers the committed supervision processes.
+// DefaultShapes covers the committed supervision processes. The delegate
+// and host supervisors' shapes come from the runtime registry's one process
+// definition, the same one their launcher builds its argv from.
 func DefaultShapes() []Shape {
-	return []Shape{
+	shapes := []Shape{
 		{Name: "shell-watcher", Includes: []string{"watch-background-jobs.sh"}, TagFlag: "--instance-tag"},
 		{Name: "shell-reaper", Includes: []string{"dispatch.sh", "reap"}, TagFlag: "--instance-tag"},
 		{Name: "go-owner", Includes: []string{"metasystem", "supervise"}, TagFlag: "--tag"},
-		{Name: "adapter-supervisor-codex-dispatch", Includes: []string{"codex.sh", "dispatch"}, TagFlag: "--instance-tag"},
-		{Name: "adapter-supervisor-codex-follow-up", Includes: []string{"codex.sh", "follow-up"}, TagFlag: "--instance-tag"},
-		{Name: "adapter-supervisor-claude-dispatch", Includes: []string{"claude.sh", "dispatch"}, TagFlag: "--instance-tag"},
-		{Name: "adapter-supervisor-claude-follow-up", Includes: []string{"claude.sh", "follow-up"}, TagFlag: "--instance-tag"},
-		{Name: "adapter-supervisor-devin-dispatch", Includes: []string{"devin.sh", "dispatch"}, TagFlag: "--instance-tag"},
-		{Name: "adapter-supervisor-devin-follow-up", Includes: []string{"devin.sh", "follow-up"}, TagFlag: "--instance-tag"},
-		{Name: "adapter-supervisor-fake-dispatch", Includes: []string{"fake.sh", "dispatch"}, TagFlag: "--instance-tag"},
-		{Name: "adapter-supervisor-fake-follow-up", Includes: []string{"fake.sh", "follow-up"}, TagFlag: "--instance-tag"},
-		{Name: "adapter-cli-codex", Includes: []string{"codex", "exec"}, TagFlag: "-c", TagPrefix: "metasystem_instance_tag="},
-		{Name: "adapter-cli-claude", Includes: []string{"claude", "-p"}, TagFlag: "--name"},
-		{Name: "adapter-cli-devin", Includes: []string{"devin", "-p"}, TagFlag: "--config", TagPathBase: true},
-		{Name: "tagged-hold", Includes: []string{"metasystem", "util", "hold"}, TagFlag: "--tag"},
-		{Name: "mission-run-loop", Includes: []string{"metasystem", "mission", "run-loop"}, TagFlag: "--instance-tag"},
-		{Name: "host-codex-start-turn", Includes: []string{"codex.sh", "start-turn"}, TagFlag: "--instance-tag"},
-		{Name: "host-claude-start-turn", Includes: []string{"claude.sh", "start-turn"}, TagFlag: "--instance-tag"},
-		{Name: "host-devin-start-turn", Includes: []string{"devin.sh", "start-turn"}, TagFlag: "--instance-tag"},
-		{Name: "host-fake-start-turn", Includes: []string{"fake.sh", "start-turn"}, TagFlag: "--instance-tag"},
 	}
+	for _, supervisor := range runtimes.SupervisorShapes() {
+		shapes = append(shapes, Shape{Name: supervisor.Name, Includes: supervisor.Includes, TagFlag: supervisor.TagFlag})
+	}
+	return append(shapes,
+		Shape{Name: "adapter-cli-codex", Includes: []string{"codex", "exec"}, TagFlag: "-c", TagPrefix: "metasystem_instance_tag="},
+		Shape{Name: "adapter-cli-claude", Includes: []string{"claude", "-p"}, TagFlag: "--name"},
+		Shape{Name: "adapter-cli-devin", Includes: []string{"devin", "-p"}, TagFlag: "--config", TagPathBase: true},
+		Shape{Name: "tagged-hold", Includes: []string{"metasystem", "util", "hold"}, TagFlag: "--tag"},
+		Shape{Name: "mission-run-loop", Includes: []string{"metasystem", "mission", "run-loop"}, TagFlag: "--instance-tag"},
+	)
 }
 
 // MatchShape reports whether argv matches a known invocation shape

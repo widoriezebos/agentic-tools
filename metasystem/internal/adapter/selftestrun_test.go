@@ -7,6 +7,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -242,7 +243,7 @@ func TestSelftestRunMergedLegs(t *testing.T) {
 	root := stageSelftestFixture(t, "mapped", "mapped")
 	var out strings.Builder
 	p := SelftestParams{
-		Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"),
+		Root: root, Runtime: "stub", RunIdentity: stubAdapterStep(root), RunProbe: stubAdapterStep(root),
 		Usage: "native", TurnCeilingSec: 10,
 	}
 	if err := SelftestRun(p, "stub-model", &out); err != nil {
@@ -271,7 +272,7 @@ func TestSelftestRunSplitLegsWithDevinChecks(t *testing.T) {
 	root := stageSelftestFixture(t, "mapped", "notEnforced")
 	var out strings.Builder
 	p := SelftestParams{
-		Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"),
+		Root: root, Runtime: "stub", RunIdentity: stubAdapterStep(root), RunProbe: stubAdapterStep(root),
 		Usage: "native", TurnCeilingSec: 10, DenialEndsTurn: true,
 	}
 	devinProbe, err := SelftestProbeFor("devin", "symlinked-skill-discovery")
@@ -324,7 +325,7 @@ func TestSelftestRunRefusesSessionDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := SelftestParams{
-		Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"),
+		Root: root, Runtime: "stub", RunIdentity: stubAdapterStep(root), RunProbe: stubAdapterStep(root),
 		Usage: "native", TurnCeilingSec: 10,
 	}
 	err = SelftestRun(p, "stub-model", &strings.Builder{})
@@ -395,7 +396,7 @@ func TestSelftestRunRefusals(t *testing.T) {
 	}
 	params := func(root string) SelftestParams {
 		return SelftestParams{
-			Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"),
+			Root: root, Runtime: "stub", RunIdentity: stubAdapterStep(root), RunProbe: stubAdapterStep(root),
 			Usage: "native", TurnCeilingSec: 10,
 		}
 	}
@@ -478,7 +479,7 @@ func TestSelftestRunEvidenceRefusals(t *testing.T) {
 	}
 	params := func(root string) SelftestParams {
 		return SelftestParams{
-			Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"),
+			Root: root, Runtime: "stub", RunIdentity: stubAdapterStep(root), RunProbe: stubAdapterStep(root),
 			Usage: "native", TurnCeilingSec: 10,
 		}
 	}
@@ -604,5 +605,13 @@ func TestSelftestWaitForJobCeiling(t *testing.T) {
 	}
 	if statusCalls != 6 || reapCalls != 6 {
 		t.Fatalf("poll probes = status:%d reap:%d, want 6 each", statusCalls, reapCalls)
+	}
+}
+
+// stubAdapterStep runs the fixture's stand-in for the runtime's identity or
+// probe step; a nonzero exit is the step's refusal.
+func stubAdapterStep(root string) func() error {
+	return func() error {
+		return exec.Command(filepath.Join(root, "adapter.sh")).Run()
 	}
 }
