@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // startSidecarCustodian stands in for a fixture custodian the way
@@ -40,6 +41,24 @@ func startSidecarCustodian(t *testing.T, logPath string) func() {
 	}
 	t.Cleanup(stop)
 	return stop
+}
+
+// deadRegistryHomeUnder creates a registry home whose owner has already gone:
+// its owner lock is free before the call returns. The owner descriptor exists
+// only while forks are excluded (testexec.Locked), so no fork/exec by a
+// parallel test can copy it: a copy inherited by a child that has not yet
+// exec'd shares the open file description and so keeps its flock, and the
+// home would look live to the sweep under test until that child execs.
+func deadRegistryHomeUnder(t *testing.T, root string) *registryHomeLease {
+	t.Helper()
+	var dead *registryHomeLease
+	checkTestenv(t, testexec.Locked(func() (err error) {
+		if dead, err = createRegistryHomeUnder(os.MkdirTemp, root); err != nil {
+			return err
+		}
+		return dead.lock.Close()
+	}))
+	return dead
 }
 
 func requireSidecars(t *testing.T, present bool, paths ...string) {
@@ -163,9 +182,7 @@ func TestRegistrySidecarCleanupReportsBoundedTailAndKeepsSentinels(t *testing.T)
 func TestRegistrySidecarCleanupReportsRemovalErrors(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	dead, err := createRegistryHomeUnder(os.MkdirTemp, root)
-	checkTestenv(t, err)
-	checkTestenv(t, dead.lock.Close())
+	dead := deadRegistryHomeUnder(t, root)
 	stem := dead.path
 	checkTestenv(t, os.WriteFile(stem+".custodian-1.log", []byte("diagnostic\n"), 0o600))
 	checkTestenv(t, os.Chmod(root, 0o500))
@@ -237,9 +254,7 @@ func TestRegistrySidecarCleanupRetainsFailedSettlement(t *testing.T) {
 func TestRegistrySidecarCleanupReportsDiagnosticsAppendedBeforeLockRelease(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	dead, err := createRegistryHomeUnder(os.MkdirTemp, root)
-	checkTestenv(t, err)
-	checkTestenv(t, dead.lock.Close())
+	dead := deadRegistryHomeUnder(t, root)
 	logPath := dead.path + ".custodian-1.log"
 	checkTestenv(t, os.WriteFile(logPath, nil, 0o600))
 

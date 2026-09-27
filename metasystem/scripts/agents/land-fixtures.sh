@@ -747,27 +747,27 @@ BACKLOG
     git -C "$leg_seed" update-ref refs/heads/metasystem/goals HEAD
     git -C "$leg_seed" update-ref refs/metasystem/goals/accepted HEAD
     seed_goal_engine=$source_engine
+    seed_goal_family=(internal goal)
     if [[ "$fixture_scenario" == receipt-cutover ]]; then
-      # A receipt cutover's deciding engine authors every goal record it
-      # validates. Goal-record keys are closed and have their own fleet-floor
-      # rollout; this scenario exercises the receipt cutover, not that rollout.
+      # The pinned pre-cutover engine authors the goal records it validates, in its own goal family.
       seed_goal_engine=$cutover_seed_goal_engine
+      seed_goal_family=(goal)
     fi
     receipt_fixture_start=$("$seed_goal_engine" proc started-at --pid "$$")
     "$seed_goal_engine" lease announce --root "$leg_seed" --session "land-$fixture_scenario-seed" \
       --pid "$$" --start "$receipt_fixture_start" --tag "land-$fixture_scenario-seed" \
       --runtime fake --owner-lineage land-receipt-fixture >/dev/null
-    METASYSTEM_OWNER_LINEAGE=land-receipt-fixture "$seed_goal_engine" internal goal open --root "$leg_seed" \
+    METASYSTEM_OWNER_LINEAGE=land-receipt-fixture "$seed_goal_engine" "${seed_goal_family[@]}" open --root "$leg_seed" \
       --id fx --origin human --by Wido --intent "Create an exact fixture-local landing receipt." \
       --next "Run the bounded fixture receipt." \
       --risk severity=1,novelty=1,exposure=1,accumulation=1 \
       --basis "This disposable fixture executes only its bounded local landing receipt." \
       --fixture-human-authority >/dev/null
-    "$seed_goal_engine" internal goal approve --root "$leg_seed" --id fx --by Wido \
+    "$seed_goal_engine" "${seed_goal_family[@]}" approve --root "$leg_seed" --id fx --by Wido \
       --lineage land-receipt-fixture --elapsed-limit 4h --attempt-limit 4 \
       --reserved-job-minutes-limit 12 --active-job-limit 1 --review-round-limit 0 \
       --fixture-human-authority
-    "$seed_goal_engine" internal goal claim --root "$leg_seed" --id fx --lineage land-receipt-fixture >/dev/null
+    "$seed_goal_engine" "${seed_goal_family[@]}" claim --root "$leg_seed" --id fx --lineage land-receipt-fixture >/dev/null
     git -C "$leg_seed" reset -q --hard refs/metasystem/goals/accepted
     if [[ "$fixture_scenario" == receipt-cutover ]]; then
       # In the cutover leg H0 is the one complete seed tip, including the fx

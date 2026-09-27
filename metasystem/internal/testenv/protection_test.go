@@ -140,6 +140,35 @@ func child() {
 			t.Fatalf("survivor failure = %q", got)
 		}
 
+		// Darwin answers a group SIGKILL with EPERM while the only member is
+		// an unreaped zombie leader; the exit wait decides, in both outcomes.
+		for _, reaped := range []bool{true, false} {
+			zombie := &fixtureProcessGroupRecorder{}
+			reapFixtureProcessGroups(zombie, []FixtureProcessGroup{{
+				Verb: "steward run", Resolve: func() (int, bool, error) { return 44, true, nil },
+			}}, nil, fixtureProcessGroupOps{
+				groupID: func(pid int) (int, error) { return pid, nil },
+				signal:  func(int, syscall.Signal) error { return syscall.EPERM },
+				wait: func(context.Context, int) error {
+					if reaped {
+						return nil
+					}
+					return context.DeadlineExceeded
+				},
+				cleanupContext: testFixtureContext,
+				birth:          func(int) (time.Time, bool) { return time.Unix(1, 0), true },
+				exitContext:    testFixtureContext,
+			})
+			zombie.runCleanups()
+			got := strings.Join(zombie.errors, "\n")
+			if reaped && got != "" {
+				t.Fatalf("zombie-only group reaped after EPERM reported %q", got)
+			}
+			if !reaped && !strings.Contains(got, "fixture child outlived test") {
+				t.Fatalf("group that stayed after EPERM = %q", got)
+			}
+		}
+
 		wrongGroup := &fixtureProcessGroupRecorder{}
 		reapFixtureProcessGroups(wrongGroup, []FixtureProcessGroup{{
 			Verb: "supervise owner", Resolve: func() (int, bool, error) { return 42, true, nil },

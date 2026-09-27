@@ -83,6 +83,17 @@ func writeScratchRecord(t *testing.T, control string, record ScratchRecord) {
 	}
 }
 
+// Writer-lock note: a test that holds a launcher's writer
+// description and then proves the writer lock free (Cleanup, or recovery
+// that must remove the root) does not call t.Parallel. A fork by any parallel
+// test in this binary copies every open descriptor, CLOEXEC included, into a
+// child that keeps it until it execs; the copy shares the open file
+// description, so the writer flock outlives the launcher's Close and the
+// proof reads a live writer. The product closes rather than unlocks that
+// description on purpose (Cleanup), and several of these tests start their
+// own writer children while it is open, so excluding forks around it is not
+// possible. Sequential tests never overlap a parallel test.
+
 // crashedScratch is a run whose launcher died: its descriptor is gone (the
 // kernel closed it) and its recorded launcher reads Dead.
 func crashedScratch(t *testing.T, control string, probe scratchProbe, edit func(*ScratchRecord)) ScratchRecord {
@@ -114,7 +125,7 @@ func scratchOutcome(outcomes []ReconcileOutcome, run string) ReconcileOutcome {
 }
 
 func TestScratchNormalCleanupRemovesRootAndRecord(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	control := t.TempDir()
 	run, err := CreateScratchRun(control)
 	if err != nil {
@@ -143,7 +154,7 @@ func TestScratchNormalCleanupRemovesRootAndRecord(t *testing.T) {
 // a missing process record set as pending; all Dead with the lock free
 // removes.
 func TestScratchRecoveryPredicateKeepsEveryUnprovenWriterPending(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
 	control, attempt, record := reconcileFixture(t, now)
 	record.Status = StatusDone
@@ -181,7 +192,7 @@ func TestScratchRecoveryPredicateKeepsEveryUnprovenWriterPending(t *testing.T) {
 // A3 custodian cases: launcher Dead but custodian alive stays; custodian
 // Dead with an empty group removes.
 func TestScratchRecoveryWaitsForTheRecordedCustodian(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	control := t.TempDir()
 	probe := newScratchProbe(t)
 	probe.states[900002] = identity.Alive
@@ -205,7 +216,7 @@ func TestScratchRecoveryWaitsForTheRecordedCustodian(t *testing.T) {
 // cleanup reports cleanup.incomplete with the record retained, recovery
 // reports writer-lock-held, and only the child's exit permits removal.
 func TestScratchInheritedWriterLockOutlivesTheLaunchersCopy(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	control := t.TempDir()
 	run, err := CreateScratchRun(control)
 	if err != nil {
@@ -255,7 +266,7 @@ func TestScratchInheritedWriterLockOutlivesTheLaunchersCopy(t *testing.T) {
 // peer stays, a symlink or foreign marker refuses, and an unrecorded
 // same-prefix directory is never touched.
 func TestScratchRecoveryRootShapes(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	control := t.TempDir()
 	probe := newScratchProbe(t)
 	empty := func(int64) ([]int64, error) { return nil, nil }
@@ -333,7 +344,7 @@ func TestScratchRecoveryRootShapes(t *testing.T) {
 // Recovery removes recorded worktrees before the root and keeps root and
 // record when a registration stays unresolved.
 func TestScratchRecoveryKeepsRootWhileAWorktreeIsUnresolved(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	control := t.TempDir()
 	probe := newScratchProbe(t)
 	tuple := ScratchWorktree{Group: "g", Parent: "/p", Top: "/p/worktree-x", Control: "/c", Common: "/c/.git", State: ScratchWorktreeReserved}
@@ -365,7 +376,7 @@ func TestScratchRecoveryKeepsRootWhileAWorktreeIsUnresolved(t *testing.T) {
 // copy; it is recorded before the workload runs, and only its exit lets the
 // launcher's cleanup take the lock.
 func TestScratchCustodianHoldsTheWriterAfterTheWorkloadClosesIt(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	engine := buildResourceCustodyEngine(t)
 	control := t.TempDir()
 	run, err := CreateScratchRun(control)
@@ -480,7 +491,7 @@ func borrowScratch(t *testing.T, control string, run *ScratchRun, attempt string
 // append is lost, and the launcher's cleanup reloads the record after the
 // writers drained and removes the worktree only the worker recorded.
 func TestScratchRecordMutationsSerializeAcrossHandlesAndCleanupReloads(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	control := t.TempDir()
 	run, err := CreateScratchRun(control)
 	if err != nil {
@@ -545,7 +556,7 @@ func TestScratchRecordMutationsSerializeAcrossHandlesAndCleanupReloads(t *testin
 // The worker accepts only the launcher's own inherited description of this
 // run's writer lock, for the authenticated attempt, in this store.
 func TestOpenScratchRunAuthenticatesTheInheritedWriter(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	control := t.TempDir()
 	run, err := CreateScratchRun(control)
 	if err != nil {
@@ -616,7 +627,7 @@ const scratchWorkerChildEnv = "GO_WANT_SCRATCH_WORKER_CHILD"
 // it from its packet locator, and appends to the durable record while the
 // launcher appends too; the launcher's cleanup sees the worker's tuple.
 func TestScratchWorkerProcessAppendsThroughTheInheritedWriter(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	if spec := os.Getenv(scratchWorkerChildEnv); spec != "" {
 		scratchWorkerChild(t, spec)
 		return
@@ -705,7 +716,7 @@ func scratchWorkerChild(t *testing.T, spec string) {
 // same handle; under -race this proves the names are read without a race
 // and never change.
 func TestScratchRunGettersRaceWithMutations(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	control := t.TempDir()
 	run, err := CreateScratchRun(control)
 	if err != nil {
@@ -752,7 +763,7 @@ func TestScratchRunGettersRaceWithMutations(t *testing.T) {
 // C2: a store symlinked outside the control root is refused before any byte
 // is written or removed there; a control-root alias still works.
 func TestScratchStoreMustResolveInsideTheControlRoot(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	control := t.TempDir()
 	external := t.TempDir()
 	sentinel := filepath.Join(external, "sentinel")
@@ -807,7 +818,7 @@ func TestScratchStoreMustResolveInsideTheControlRoot(t *testing.T) {
 // reconcile pass retries; a record lock left after its record went is
 // recovered by its exact run name. Nothing is lost or swept by prefix.
 func TestScratchRecordDeletionFailuresAreRetried(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	control := t.TempDir()
 	probe := newScratchProbe(t)
 	record := crashedScratch(t, control, probe, nil)

@@ -156,6 +156,14 @@ func runWaitWithPoll(args []string, poll func(context.Context) error) int {
 }
 
 func runWaitCommand(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool)) int {
+	return runWaitCommandOnClock(args, poll, callerPID, printResult, nil)
+}
+
+// runWaitCommandOnClock is runWaitCommand with the wait's clock replaced when
+// clock is not nil. The replacement sets Now, BootClock, Sleep and
+// WithTimeout together, so every deadline the wait derives is measured and
+// enforced on that one clock; production passes nil and keeps the kernel's.
+func runWaitCommandOnClock(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool), clock func(*metarun.WaitOptions)) int {
 	flags := flag.NewFlagSet("wait", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	job := flags.String("job", "", "delegate job identifier")
@@ -266,6 +274,9 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return metarun.ExitWaiterIO
+	}
+	if clock != nil {
+		clock(&options)
 	}
 	registerFresh := false
 	if *resume != "" && view.ClaimEpoch != nil {

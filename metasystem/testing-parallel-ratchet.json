@@ -103,6 +103,81 @@
   },
   "exempt": [
     {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestReserveCensusReadsOnlyItsOwnAdmissionNamespace",
+      "reason": "changes the process-wide host admission directory seam"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchEnvironmentIdentity",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchNormalCleanupRemovesRootAndRecord",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchRecoveryPredicateKeepsEveryUnprovenWriterPending",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchRecoveryWaitsForTheRecordedCustodian",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchInheritedWriterLockOutlivesTheLaunchersCopy",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchRecoveryRootShapes",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchRecoveryKeepsRootWhileAWorktreeIsUnresolved",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchCustodianHoldsTheWriterAfterTheWorkloadClosesIt",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchRecordMutationsSerializeAcrossHandlesAndCleanupReloads",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestOpenScratchRunAuthenticatesTheInheritedWriter",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchWorkerProcessAppendsThroughTheInheritedWriter",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchRunGettersRaceWithMutations",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchStoreMustResolveInsideTheControlRoot",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchRecordDeletionFailuresAreRetried",
+      "reason": "proves the scratch writer lock free while starting its own writer children; a parallel test's fork holds a copy of the open writer description until it execs"
+    },
+    {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestBatchLandingRehearsalOnRealOrigin",
       "reason": "drives the production batch command through its process environment clock and helper controls and owns SIGUSR1 handling"

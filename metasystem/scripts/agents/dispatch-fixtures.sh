@@ -2803,7 +2803,7 @@ if [[ ${1:-} == job && ${2:-} == compose-role-packet ]]; then
 	fi
 	exit "$compose_rc"
 fi
-if [[ ${1:-} == config && ${2:-} == get && -e ${PACKET_CAP_MARKER:?}.composed ]]; then
+if [[ ${1:-} == internal && ${2:-} == config && ${3:-} == get && -e ${PACKET_CAP_MARKER:?}.composed ]]; then
 	previous=
 	for argument in "$@"; do
 		if [[ $previous == --key && $argument == dispatch.max-inline-input-kb ]]; then
