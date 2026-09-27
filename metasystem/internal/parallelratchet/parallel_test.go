@@ -150,21 +150,6 @@ func TestParallelRatchetRoundTripsCanonicalListObjects(t *testing.T) {
 	}
 }
 
-func TestGoGateFastModeRunsParallelRatchetBesideDependencyRatchet(t *testing.T) {
-	t.Parallel()
-	data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "go-gate.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(data)
-	dependency := strings.Index(source, "audit dependency-ratchet --root")
-	parallel := strings.Index(source, "audit parallel-ratchet --root")
-	registration := strings.Index(source, "# A STANDALONE go-gate run registers itself")
-	if dependency < 0 || parallel < dependency || registration < parallel {
-		t.Fatalf("fast gate does not run the parallel ratchet beside the dependency ratchet")
-	}
-}
-
 func parallelFixtureModule(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()

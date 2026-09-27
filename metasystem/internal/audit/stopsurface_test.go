@@ -936,33 +936,6 @@ func TestStopSurfaceDeclareWritesAnAcceptedDeclaration(t *testing.T) {
 	})
 }
 
-func TestGoGateRunsTheStopDecisionSurfaceCheck(t *testing.T) {
-	content, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "go-gate.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(content)
-	hook := strings.Index(script, `audit hook-start-exits --root "$root"`)
-	stop := strings.Index(script, `audit stop-decision-surface --root "$root"`)
-	if hook < 0 || stop <= hook {
-		t.Fatalf("Stop surface audit is not after the hook-start audit: hook=%d stop=%d", hook, stop)
-	}
-	for _, required := range []string{
-		`gate_static_reds+=("Stop decision surface audit failed:`,
-		`"$gate_hook_start_scope" == installation`,
-		`git -C "$root" rev-parse --is-inside-work-tree`,
-		`Stop decision surface audit not applicable`,
-		`printf '%s\n' "$gate_stop_surface_out"`,
-	} {
-		if !strings.Contains(script[hook:], required) {
-			t.Errorf("go gate lacks %q", required)
-		}
-	}
-	if strings.Contains(script[hook:], "stop-decision-surface.txt") {
-		t.Error("go gate still makes the audit depend on the removed include list")
-	}
-}
-
 // TestStopSurfaceListOfThisRepositoryIsSound checks source-tree coverage of the
 // required production assertions and fixture beds in this repository.
 func TestStopSurfaceListOfThisRepositoryIsSound(t *testing.T) {

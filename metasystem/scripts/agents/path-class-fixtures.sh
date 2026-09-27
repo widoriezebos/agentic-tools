@@ -235,7 +235,8 @@ SH
 exec "$landing_fixture_engine" "\$@"
 SH
   chmod +x "$tmp/$1-proof-engine"
-  cat >"$landing_fixture/scripts/agents/go-gate.sh" <<SH
+  harness_fixture_plant_devgate "$landing_fixture"
+  cat >"$landing_fixture/scripts/agents/devgate-static.sh" <<SH
 #!/usr/bin/env bash
 set -euo pipefail
 proof_out=
@@ -249,7 +250,7 @@ done
 cp "$tmp/$1-proof-engine" "\$proof_out"
 SH
   chmod +x "$landing_fixture/bin/metasystem" \
-    "$landing_fixture/scripts/agents/go-gate.sh" "$landing_fixture/scripts/agents/commit.sh" \
+    "$landing_fixture/scripts/agents/devgate-static.sh" "$landing_fixture/scripts/agents/commit.sh" \
     "$landing_fixture/scripts/agents/land.sh"
   printf 'artifacts/\n' >"$landing_fixture/.gitignore"
   write_fixture_goal "$landing_fixture/plans/goals/fx.md" fx L
