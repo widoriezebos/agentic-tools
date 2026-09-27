@@ -26,7 +26,10 @@ package act
 // they are about: one server, one clone. A second server on the same clone is
 // excluded by the checkout lock long before anything here.
 
-import "sync"
+import (
+	"strings"
+	"sync"
+)
 
 // InFlight is what a second press on an act already running is told. It is not
 // a refusal of the act — the first press is applying it — which is why it says
@@ -73,8 +76,14 @@ func ownerOf(root string) *owner {
 // begin registers one act as this process's own and answers the refusal a
 // second press meets while the first runs. The release it returns clears the
 // registration, whatever the act answered.
+//
+// The id is trimmed here, in this one place, because the goal a registration is
+// about is the goal the LEDGER means: the engine trims an id before it publishes
+// (internal/goal/verbs.go Block and Unblock), so " g " and "g" are one goal
+// there and were two registrations here — and the second press this registry
+// exists to refuse went through on a spelling (Astra E-05).
 func (o *owner) begin(id, action string) (func(), error) {
-	key := flight{goal: id, act: action}
+	key := flight{goal: strings.TrimSpace(id), act: action}
 	o.running.Lock()
 	defer o.running.Unlock()
 	if o.acts[key] {

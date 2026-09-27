@@ -204,6 +204,12 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 				if opidLanded(archived, r) {
 					return nil, AlreadyApplied{}
 				}
+				// The goal is already abandoned, which is the effect this act
+				// asks for. From a browser session that is the act having its
+				// effect (R-129-ui), whatever reason the repeat carries.
+				if fromSignedInSession(proof) {
+					return nil, NothingToDo{Reason: "goal " + id + " is already abandoned: the same abandon from this signed-in session"}
+				}
 				return nil, LostToCompetitor{Winner: lastOpid(archived)}
 			}
 			if tree.Live[id] == nil {

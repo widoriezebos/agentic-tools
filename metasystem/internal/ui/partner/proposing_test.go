@@ -541,6 +541,11 @@ func TestTheSkillTellsThePartnerToPropose(t *testing.T) {
 		// and the inbox that lists every action still waiting (Astra B-04).
 		"on the card under your answer, or in the Decisions inbox",
 		"a goal you propose to open may be named by a later action of the same answer",
+		// How a list longer than one answer is worked: the batch, the count of
+		// what is left, and the offer of the next one (R-130-ui).
+		"At most fifty proposals in one answer: for a longer list, propose the " +
+			"first fifty, say how many remain, and offer the next batch when the " +
+			"human has applied these.",
 	} {
 		testutil.Expect(t, "the skill says "+said, strings.Contains(skill, said), true)
 	}
