@@ -88,6 +88,7 @@ import {
   unavailable,
   type Store,
 } from "./conversation";
+import { proposedFor, type Proposed } from "./proposed";
 import {
   askLine as askAboutLine,
   askReread,
@@ -551,6 +552,21 @@ export function usePartner(): Partner {
  */
 export function PartnerAs({ held, children }: { held: Partial<Partner>; children: ReactNode }) {
   return <PartnerContext.Provider value={{ ...nothing, ...held }}>{children}</PartnerContext.Provider>;
+}
+
+/**
+ * Every act the Partner proposed on one goal that still waits on this human,
+ * newest answer first — for a row that is not in the conversation at all.
+ *
+ * It is a hook rather than a field of the context because it is asked per goal,
+ * and a board of forty cards asks it forty times: each one reads the cards the
+ * store already composed and picks its own lines out of them. Nothing is
+ * fetched, and a page outside the provider reads an empty conversation and shows
+ * nothing (g1-s61 D1).
+ */
+export function useProposedFor(goal: string): readonly Proposed[] {
+  const { proposals } = usePartner();
+  return useMemo(() => proposedFor(proposals, goal), [proposals, goal]);
 }
 
 /**
