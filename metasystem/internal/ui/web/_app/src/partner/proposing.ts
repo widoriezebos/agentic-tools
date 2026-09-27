@@ -1102,6 +1102,11 @@ export function settledState(state: ProposalState): boolean {
   return state === "applied" || state === "refused" || state === "dismissed";
 }
 
+/** True for an entry somebody left applied: the ledger moved behind this run. */
+function appliedEntry(proposal: Proposal): boolean {
+  return proposal.state === "applied";
+}
+
 /**
  * The run: these lines, in this order, one act each, never retried.
  *
@@ -1186,6 +1191,10 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     }
     if (started.kind === "conflict") {
       ports.reconcile(started.proposal, line);
+      // Somebody else's applied entry means the LEDGER moved, exactly as this
+      // run's own applied answer does, so the reading every later compare rests
+      // on is stale and the next guarded line takes a fresh one (Astra C-01).
+      stale = stale || appliedEntry(started.proposal);
       if (settledState(started.proposal.state)) {
         continue;
       }
@@ -1208,6 +1217,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     }
     if (finished.kind === "conflict") {
       ports.reconcile(finished.proposal, sending);
+      stale = stale || appliedEntry(finished.proposal);
     } else if (finished.kind === "failed") {
       // The act happened and the conversation could not say so. What the act
       // answered is kept on the line for the page's life, because that is the

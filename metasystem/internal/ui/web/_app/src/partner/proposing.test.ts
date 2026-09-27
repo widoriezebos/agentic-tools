@@ -1217,6 +1217,47 @@ describe("the run, in order", () => {
     expect(driven.looks.length).toBe(2);
   });
 
+  /**
+   * And an act somebody ELSE applied invalidates the reading just as one of this
+   * run's own does (Astra C-01).
+   *
+   * `[edit G, approve G]` again, and this time the edit comes back as a conflict
+   * carrying an applied entry: another tab made that very edit. The ledger has
+   * moved, so the approval behind it must not compare against the reading taken
+   * before the run — that reading is the intent the card displayed, and passing on
+   * it would approve work the human never read.
+   */
+  it("reads again after an applied conflict and refuses the next line against the fresh reading", async () => {
+    const read = { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] };
+    const one = card(
+      [
+        proposal({ index: 0, verb: "edit-goal", fields: { intent: "Something else entirely." }, read }),
+        proposal({ index: 1, verb: "approve-goal", fields: {}, read }),
+      ],
+      {},
+      { [lineID("t1", 1)]: { budget: BOX, source: "goal" } },
+    );
+    const before: Looked = { rows: [row({ budget: BOX })], defaults: {}, outcome: "current", message: "" };
+    const after: Looked = {
+      rows: [row({ intent: "Something else entirely.", budget: BOX })],
+      defaults: {}, outcome: "current", message: "",
+    };
+    const applied: Proposal = { ...one.lines[0], state: "applied", words: "", version: 4 };
+    const driven = driving(one.lines, {
+      looks: [before, after],
+      writes: { [`${one.lines[0].id}:applying`]: { kind: "conflict", proposal: applied } },
+    });
+    await runProposals(one.lines, driven.ports);
+
+    // The entry they left is shown, nothing is sent for it, and the approval is
+    // refused against the reading taken after it rather than passed on the stale
+    // one.
+    expect(driven.reconciled).toEqual([applied]);
+    expect(driven.looks.length).toBe(2);
+    expect(driven.sent).toEqual([]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { refusedUnsent: GOAL_CHANGED } });
+  });
+
   /** And it reads again only where a later line actually depends on a goal. */
   it("reads again once per confirmed act, and not at all where no later line is guarded", async () => {
     const lines = three();
