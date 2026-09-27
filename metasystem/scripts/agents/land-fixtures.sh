@@ -753,12 +753,8 @@ BACKLOG
     seed_goal_engine=$source_engine
     seed_goal_family=(internal goal)
     if [[ "$fixture_scenario" == receipt-cutover ]]; then
-      # A receipt cutover's deciding engine authors every goal record it
-      # validates. Goal-record keys are closed and have their own fleet-floor
-      # rollout; this scenario exercises the receipt cutover, not that rollout.
+      # The pinned pre-cutover engine authors the goal records it validates, in its own goal family.
       seed_goal_engine=$cutover_seed_goal_engine
-      # The pinned pre-cutover engine predates the internal family and
-      # spells these verbs as its top-level goal family.
       seed_goal_family=(goal)
     fi
     receipt_fixture_start=$("$seed_goal_engine" proc started-at --pid "$$")
