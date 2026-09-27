@@ -2,6 +2,7 @@ package partner
 
 import (
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -98,16 +99,28 @@ func ProposalMayBecome(from, to string) bool {
 // ProposalRead is the goal as the Partner read it, kept with an action whose
 // act binds what it finds at the tip.
 //
-// It is on an approve and an edit and on nothing else, because those are the two
-// acts whose meaning depends on what the goal says: an approval authorises the
-// goal as it stands when the transaction runs, and an edit replaces fields of
-// it. The runner compares this against the canonical branch before it sends, so
-// a card read yesterday cannot authorise work nobody read.
+// It is on an approve, an edit and an abandon, and on nothing else, because
+// those are the three acts whose meaning depends on what the goal says: an
+// approval authorises the goal as it stands when the transaction runs, an edit
+// replaces fields of it, and an abandon ends it for good — `goal reopen` is a
+// terminal act, so no press undoes one (Astra S64-01). The runner compares this
+// against the canonical branch before it sends, so a card read yesterday cannot
+// authorise work nobody read.
 type ProposalRead struct {
 	Intent   string   `json:"intent"`
 	NextStep string   `json:"nextStep"`
 	Tier     int      `json:"tier"`
 	Labels   []string `json:"labels"`
+	// Dependents are the goal's live dependents as this reading found them: the
+	// live goals whose own blockers name it, in id order.
+	//
+	// They are on an abandon and on nothing else, because an abandon is the one
+	// act whose consequence for OTHER goals the human has to be told before
+	// they press: with a successor the engine repoints every one of them in the
+	// same act, and without one it refuses until they are waived or abandoned
+	// at a terminal (Astra S64-02). A goal that nothing waits for carries none,
+	// which is why the field is absent rather than empty.
+	Dependents []string `json:"dependents,omitempty"`
 }
 
 // Proposal is one admitted or refused action, as the message persists it, the
@@ -232,6 +245,15 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 				Intent: subject.Intent, NextStep: subject.NextStep,
 				Tier: int(subject.Tier), Labels: append([]string{}, subject.Labels...),
 			}
+			// What waits for the goal is read HERE, from the rows this turn was
+			// composed against, for the reason everything else about admission
+			// is: the card is written against one reading of the ledger, and a
+			// list taken from a later one would tell the human about goals the
+			// Partner was never told about. It is on an abandon alone, because
+			// it is the abandon whose line says what becomes of them.
+			if prepared.Verb == uitools.ProposeAbandon {
+				admitted.Read.Dependents = liveDependentsOf(rows, prepared.Goal)
+			}
 		}
 	}
 	// The goal at the other end of an edge is a goal too, and an edge naming one
@@ -287,13 +309,46 @@ func (s *Service) refuseProposal(running *turn, refused Proposal, reason string)
 
 // needsTheReading says which acts carry the goal as it was read.
 //
-// Two do. An approval binds the goal as it stands when the transaction runs, so
-// the card shows the intent and the next step it was proposed against and the
+// Three do. An approval binds the goal as it stands when the transaction runs,
+// so the card shows the intent and the next step it was proposed against and the
 // runner refuses a line whose goal has moved; an edit replaces fields of the
-// goal, so the same comparison keeps it from overwriting somebody else's change.
-// The other seven say what they do without depending on what the goal says.
+// goal, so the same comparison keeps it from overwriting somebody else's change;
+// and an abandon ends the goal for good, which no press undoes, so a card that
+// proposed abandoning one thing must not abandon another (Astra S64-01). The
+// other seven say what they do without depending on what the goal says.
 func needsTheReading(verb string) bool {
-	return verb == uitools.ProposeApprove || verb == uitools.ProposeEdit
+	return verb == uitools.ProposeApprove || verb == uitools.ProposeEdit ||
+		verb == uitools.ProposeAbandon
+}
+
+// liveDependentsOf is every live goal that waits for one goal, by id.
+//
+// It is the engine's own rule read from the projection rather than from the
+// tree: the verb refuses, or repoints, the LIVE goals whose own blockers name
+// the abandoned one (internal/goal/abandon.go directLiveDependents), and a row
+// of the projection says both — where it stands, and what it waits for. A
+// concluded goal that once waited is not one of them, which is why the row's
+// own `where` decides rather than the inverted relation the projection also
+// carries.
+//
+// It is the page's compare and not the owner's, and it says so: the engine's
+// dependents rule inside the transaction is what actually holds the act, and
+// this is what lets the card say, before the press, what that rule will do.
+func liveDependentsOf(rows map[string]backlog.Row, id string) []string {
+	waiting := []string{}
+	for _, row := range rows {
+		if row.Where != backlog.WhereLive || row.ID == id {
+			continue
+		}
+		for _, blocker := range row.BlockedBy {
+			if blocker == id {
+				waiting = append(waiting, row.ID)
+				break
+			}
+		}
+	}
+	sort.Strings(waiting)
+	return waiting
 }
 
 // rowsAt is the goals the accepted tip carries, by id, from the reading the

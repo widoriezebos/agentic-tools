@@ -9,7 +9,7 @@ import { derivedTier, type Answer, type NewGoal, type Risk } from "../backlog/op
  *
  * The Partner cannot act. It has no session, no cookie and no way to obtain one,
  * and the act routes refuse a cookie-less request while a Partner is configured.
- * What it can do is name one of this interface's nine acts with its arguments;
+ * What it can do is name one of this interface's ten acts with its arguments;
  * the card renders it, the human ticks what they want, and their press is the
  * act. This file is the whole of the rules around that press — what a line says,
  * which lines may be sent, what the run does with each answer, and what the card
@@ -237,6 +237,7 @@ const BUTTON: Readonly<Record<string, string>> = {
   "park-goal": "Not now",
   "unpark-goal": "Return to queue",
   "edit-goal": "Edit",
+  "abandon-goal": "Abandon",
 };
 
 export function verbWord(verb: string): string {
@@ -256,7 +257,9 @@ export type Argument = { label: string; value: string };
  * Partner's prose: the Partner's own words are its "why", shown separately as
  * its words. An approve shows the intent and the next step whole from what was
  * read, as the Decisions open row does before its Approve, and the budget it
- * would carry with where that budget came from.
+ * would carry with where that budget came from. An abandon shows the reason, the
+ * successor where one was named, and what becomes of the goals that wait for the
+ * one being abandoned, which is the sentence below.
  */
 export function argumentsOf(line: Line): readonly Argument[] {
   const said: Argument[] = [];
@@ -292,6 +295,11 @@ export function argumentsOf(line: Line): readonly Argument[] {
     case "park-goal":
       add("Reason", fields.because);
       break;
+    case "abandon-goal":
+      add("Reason", fields.because);
+      add("Successor", fields.successor);
+      add("Holds up", dependentsWords(line));
+      break;
     case "set-goal-priority":
       add("Priority", fields.priority);
       add("Position", fields.sequence);
@@ -304,6 +312,41 @@ export function argumentsOf(line: Line): readonly Argument[] {
       break;
   }
   return said;
+}
+
+/**
+ * What an abandon line says about the goals that wait for the goal, or "" where
+ * the read carries none.
+ *
+ * Both halves of the sentence are the ENGINE's, not this page's. With a successor
+ * the engine does not refuse a goal with live dependents: it repoints every one
+ * of them at the successor inside the same act, so the line says where they will
+ * wait instead. Without one it refuses the abandon until each dependent has been
+ * waived or abandoned, neither of which a browser can do, so the line says so
+ * before the press rather than letting the human learn it from a refusal
+ * (g1-s64 D2, Astra S64-02).
+ *
+ * The dependents are the ones the Partner read, carried on the line — which is
+ * the only reason the sentence can be said at all, since no record stores the
+ * other direction of the relation. A goal nothing waits for carries no list, and
+ * says nothing: a line reading "0 goals wait for it" would be an argument about
+ * an absence.
+ */
+export function dependentsWords(line: Line): string {
+  const dependents = line.read?.dependents ?? [];
+  if (dependents.length === 0) {
+    return "";
+  }
+  const successor = (line.fields?.successor ?? "").trim();
+  // "1 goal waits for it" and "2 goals wait for it": the verb agrees with the
+  // count, because the line is read as a sentence and not as a label.
+  const wait =
+    dependents.length === 1 ? "1 goal waits for it" : `${String(dependents.length)} goals wait for it`;
+  const becomes =
+    successor === ""
+      ? "the engine will refuse until they are waived or abandoned at a terminal"
+      : `they will wait for ${successor} instead`;
+  return `${wait}: ${dependents.join(", ")} — ${becomes}`;
 }
 
 /**
@@ -624,9 +667,18 @@ export function canCompare(outcome: string): boolean {
   return outcome === "advanced" || outcome === "current";
 }
 
-/** Which acts depend on what the goal says, and so need the compare. */
+/**
+ * Which acts depend on what the goal says, and so need the compare.
+ *
+ * An abandon is the third, and it is here because it is the one act on this list
+ * a press cannot undo: `goal reopen` is a terminal act, so a stale card must not
+ * record that a goal will never be worked when its intent, next step, tier,
+ * labels or live dependents have moved in another tab since the Partner read it
+ * (g1-s64 D4, Astra S64-01). An approve and an edit are refused for the same
+ * reason and were the only two before it.
+ */
 export function needsTheCompare(verb: string): boolean {
-  return verb === "approve-goal" || verb === "edit-goal";
+  return verb === "approve-goal" || verb === "edit-goal" || verb === "abandon-goal";
 }
 
 export function fetchFailedLine(message: string): string {
@@ -638,11 +690,15 @@ export const GOAL_CHANGED = "the goal changed since this was proposed; open it a
 /**
  * Why this line will not be sent, in words, or "" where it will be.
  *
- * Three refusals, all of them unsent. The fetch that could not read the canonical
+ * Four refusals, all of them unsent. The fetch that could not read the canonical
  * branch, for a line that depends on what the goal says. The goal whose intent,
- * next step, tier or labels differ from what the Partner read. And the budget
- * that a fresh prefill now answers differently from the one the card displayed —
- * which is the press confirming one tuple and the run sending another.
+ * next step, tier or labels differ from what the Partner read. The budget that a
+ * fresh prefill now answers differently from the one the card displayed — which
+ * is the press confirming one tuple and the run sending another. And, on an
+ * abandon, the live dependents that are no longer the ones the card named: a goal
+ * that has grown a dependent since is an abandon the engine would refuse or
+ * repoint, and a goal that has lost one is an act the human read as something
+ * else (g1-s64 D4).
  */
 export function guardFor(
   line: Line,
@@ -668,10 +724,40 @@ export function guardFor(
   if (line.verb === "approve-goal" && !sameBudget(line.displayed, prefillFor(row, defaults, rows))) {
     return GOAL_CHANGED;
   }
+  // The dependents are not a field of the row: they are the other direction of
+  // the blocked relation, computed from the whole reading, which is why they are
+  // compared here beside the budget rather than inside the field-by-field move
+  // below — and why an approve and an edit still compare exactly what they
+  // compared before.
+  if (line.verb === "abandon-goal" && named(read.dependents) !== named(liveDependentsIn(rows, line.goal))) {
+    return GOAL_CHANGED;
+  }
   return "";
 }
 
-/** Whether the goal has changed in any way the approval or the edit is about. */
+/**
+ * The goals that wait for this one at the tip: the live rows whose own blockers
+ * name it, in id order.
+ *
+ * The reading a run takes carries the closed rows beside the live ones, so the
+ * live ones are picked out here by their own `where`: a goal already done or
+ * abandoned waits for nothing, and counting it would refuse an abandon the engine
+ * would have admitted. It is the same selection the engine makes inside the
+ * transaction, which is the whole reason a compare against it means anything.
+ */
+export function liveDependentsIn(rows: readonly Row[], goal: string): string[] {
+  return rows
+    .filter((one) => one.where === "live" && one.blockedBy.includes(goal))
+    .map((one) => one.ref.id)
+    .sort();
+}
+
+/** One list of names as one string, for a compare that is about the whole list. */
+function named(names: readonly string[] | undefined): string {
+  return (names ?? []).join(" ");
+}
+
+/** Whether the goal has changed in any way the approve, the edit or the abandon is about. */
 function moved(read: ProposalRead, row: Row): boolean {
   return (
     read.intent !== row.intent ||
@@ -725,7 +811,8 @@ export type Dispatch =
   | { act: "park"; id: string; because: string }
   | { act: "unpark"; id: string }
   | { act: "edit"; id: string; edit: GoalEdit }
-  | { act: "open"; goal: NewGoal };
+  | { act: "open"; goal: NewGoal }
+  | { act: "abandon"; id: string; because: string; successor: string };
 
 /**
  * What this line sends, composed from the route body's own fields — or null
@@ -762,6 +849,14 @@ export function dispatchOf(line: Line): Dispatch | null {
       return { act: "edit", id: line.goal, edit: editOf(fields) };
     case "open-goal":
       return { act: "open", goal: openOf(line.goal, fields) };
+    // The successor is sent as it was proposed and empty where nobody named one,
+    // which is the body saying there is none; what an empty one means to a goal
+    // with live dependents is the engine's own rule.
+    case "abandon-goal":
+      return {
+        act: "abandon", id: line.goal,
+        because: fields.because ?? "", successor: fields.successor ?? "",
+      };
     default:
       return null;
   }

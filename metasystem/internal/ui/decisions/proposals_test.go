@@ -219,10 +219,13 @@ func everyProposalMemberIsNil(page Page) bool {
 }
 
 // The word on the row is the button word of the page that offers that act, for
-// every one of the nine: the row, the card and the button say one thing.
+// every one of the ten: the row, the card and the button say one thing. Abandon
+// has no button on any page — the Partner's line is the whole of the ask — so
+// its word is the word the card says.
 func TestTheWordOnAProposalRowIsThePagesOwnButtonWord(t *testing.T) {
 	t.Parallel()
 	for verb, word := range map[string]string{
+		"abandon-goal":      "Abandon",
 		"park-goal":         "Not now",
 		"unpark-goal":       "Return to queue",
 		"approve-goal":      "Approve",

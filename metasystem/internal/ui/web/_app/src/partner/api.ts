@@ -262,8 +262,26 @@ export type Deposit = {
  */
 export type ProposalState = "waiting" | "applying" | "applied" | "refused" | "unresolved" | "dismissed";
 
-/** The goal as the Partner read it, on the two acts whose meaning depends on it. */
-export type ProposalRead = { intent: string; nextStep: string; tier: number; labels: string[] };
+/** The goal as the Partner read it, on the three acts whose meaning depends on it. */
+export type ProposalRead = {
+  intent: string;
+  nextStep: string;
+  tier: number;
+  labels: string[];
+  /**
+   * The goal's live dependents as the Partner read them: the goals whose own
+   * blockers name it, in id order, from the observation the answer was composed
+   * against. It is carried on an abandon and absent everywhere else, which is
+   * why it is optional rather than an empty list — a goal nothing waits for
+   * sends no list at all.
+   *
+   * The line says how many goals wait for the goal and what becomes of them, so
+   * the press is an informed one; and the runner refuses a line whose dependents
+   * have changed since, because a goal that has grown or lost a dependent is a
+   * different abandon from the one the human read (g1-s64 D2, D4).
+   */
+  dependents?: string[];
+};
 
 /**
  * One act the Partner proposed on one goal, before the human has applied it.
