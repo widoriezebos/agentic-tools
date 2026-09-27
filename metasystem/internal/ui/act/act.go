@@ -266,10 +266,11 @@ func (a Authority) Approve(id string, budget goalbudget.Budget) error {
 	if err := budget.Validate(); err != nil {
 		return refuse(KindRequest, "budget", "the budget is not complete: "+err.Error())
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal approve")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Approve(request, []string{id}, &budget, &a.proof)
 	return a.settle(request, result, publishErr, "goal approve")
 }
@@ -284,10 +285,11 @@ func (a Authority) Withdraw(id, because string) error {
 	if strings.TrimSpace(because) == "" {
 		because = "withdrawn from the board"
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal unapprove")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Unapprove(request, id, because, &a.proof)
 	return a.settle(request, result, publishErr, "goal unapprove")
 }
@@ -308,10 +310,11 @@ func (a Authority) Park(id, because string) error {
 	if strings.TrimSpace(because) == "" {
 		return refuse(KindRequest, "no-reason", "park needs its reason — a pause without a why is a stall in disguise")
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal park")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Park(request, id, because)
 	return a.settle(request, result, publishErr, "goal park")
 }
@@ -323,10 +326,11 @@ func (a Authority) Unpark(id string) error {
 	if strings.TrimSpace(id) == "" {
 		return refuse(KindRequest, "no-goal", "an unpark names one live goal")
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal unpark")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Unpark(request, id)
 	return a.settle(request, result, publishErr, "goal unpark")
 }
@@ -355,10 +359,11 @@ func (a Authority) Abandon(id, because, successor string) error {
 		return refuse(KindRequest, "no-reason",
 			"abandon needs its reason — a goal that will never be worked owes the reader why")
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal abandon")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Abandon(request, id, goal.AbandonSpec{
 		Because: strings.TrimSpace(because),
 		Carried: strings.TrimSpace(successor),
@@ -390,10 +395,11 @@ func (a Authority) SetPriority(id string, priority uint8, sequence *uint64) erro
 	if sequence != nil && *sequence < 1 {
 		return refuse(KindRequest, "sequence", "a sequence is a one-based position within the priority")
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal set-priority")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.SetPriority(request, id, priority, sequence, &a.proof)
 	return a.settle(request, result, publishErr, "goal set-priority")
 }
@@ -448,10 +454,11 @@ func (a Authority) Open(opened Opened) error {
 	if opened.Tier > 3 {
 		return refuse(KindRequest, "tier", "a rigor tier is 1, 2, or 3")
 	}
-	request, err := a.request()
+	request, done, err := a.request(opened.ID, "goal open")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.OpenRisked(request, opened.ID, opened.Intent, goal.OriginHuman,
 		opened.NextStep, opened.Blocks, opened.BlockedBy, opened.Risk, opened.Tier, opened.Why, nil, &a.proof, opened.Labels...)
 	return a.settle(request, result, publishErr, "goal open")
@@ -496,10 +503,11 @@ func (a Authority) Edit(id string, edited Edited) error {
 		return refuse(KindRequest, "no-next-step",
 			"a goal's next step states intent, constraints and freedoms, never a script of the how")
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal edit")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Edit(request, id, goal.EditFields{
 		QueuedOnly: true,
 		Intent:     edited.Intent,
@@ -522,10 +530,11 @@ func (a Authority) Block(dependent, blocker string) error {
 	if strings.TrimSpace(dependent) == strings.TrimSpace(blocker) {
 		return refuse(KindRequest, "self-edge", "a goal cannot wait for itself")
 	}
-	request, err := a.request()
+	request, done, err := a.request(dependent, "goal block")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Block(request, dependent, blocker, &a.proof)
 	return a.settle(request, result, publishErr, "goal block")
 }
@@ -538,10 +547,11 @@ func (a Authority) Unblock(dependent, blocker string) error {
 	if strings.TrimSpace(dependent) == "" || strings.TrimSpace(blocker) == "" {
 		return refuse(KindRequest, "no-goal", "an edge names the goal that waits and the goal it waits for")
 	}
-	request, err := a.request()
+	request, done, err := a.request(dependent, "goal unblock")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Unblock(request, dependent, blocker, &a.proof)
 	return a.settle(request, result, publishErr, "goal unblock")
 }
@@ -630,14 +640,43 @@ func (a Authority) unsettled(operation string, publishErr error) error {
 	}
 }
 
-// request assembles the same goal.VerbRequest the command edge assembles for
+// request takes this act for this process and assembles the engine request it
+// will publish.
+//
+// Taking it is the first thing that happens, before any read: while an act on
+// one goal is executing here, a second request for that same goal and that
+// same act is refused at once (owner.begin). The one lock over this clone's
+// ledger is taken with it and held until the act answers, so the publication,
+// its settlement, and the journal recovery this request runs before it
+// publishes are one critical section that a concurrent recovery cannot enter.
+// The returned release clears both, whatever the act answered.
+func (a Authority) request(id, action string) (goal.VerbRequest, func(), error) {
+	if !a.proven {
+		return goal.VerbRequest{}, nil, refuse(KindUnproven, "unproven", a.reason)
+	}
+	held := ownerOf(a.root)
+	clear, err := held.begin(id, action)
+	if err != nil {
+		return goal.VerbRequest{}, nil, err
+	}
+	held.publications.Lock()
+	release := func() {
+		held.publications.Unlock()
+		clear()
+	}
+	request, err := a.assemble()
+	if err != nil {
+		release()
+		return goal.VerbRequest{}, nil, err
+	}
+	return request, release, nil
+}
+
+// assemble builds the same goal.VerbRequest the command edge assembles for
 // a human verb: this checkout's endpoint and machine, the enrolled terminal's
 // lineage and name, the boot-time caller classification, a fresh operation
 // identifier and the checkout's clock.
-func (a Authority) request() (goal.VerbRequest, error) {
-	if !a.proven {
-		return goal.VerbRequest{}, refuse(KindUnproven, "unproven", a.reason)
-	}
+func (a Authority) assemble() (goal.VerbRequest, error) {
 	if err := a.reads.ensureFence(a.root); err != nil {
 		return goal.VerbRequest{}, refuse(KindFailed, "no-fence", err.Error())
 	}
