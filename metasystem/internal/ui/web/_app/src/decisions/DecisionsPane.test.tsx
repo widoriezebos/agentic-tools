@@ -823,7 +823,10 @@ describe("proposed by the Partner", () => {
         ...acts.proposals,
         lineOf: (one: Need) =>
           lineOf(one, {
-            "t7#3": { ticked: true, notRun: false, refusedUnsent: "", unrecorded: { state: "applied", words: "" } },
+            "t7#3": {
+              ticked: true, notRun: false, refusedUnsent: "",
+              unrecorded: { state: "applied", words: "", version: 2 },
+            },
           }),
       },
     };

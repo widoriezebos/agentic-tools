@@ -571,6 +571,11 @@ func (h *Host) Prompt(ctx context.Context, text string, sink func(Update)) (Resu
 	h.stopIdleLocked()
 	h.mu.Unlock()
 
+	// The answer's own mark, before the first tool call of it can arrive: the
+	// tool server counts proposals per mark, so it can refuse the fifty-first
+	// proposal of THIS answer at the call (Astra F-06).
+	h.markAnswer()
+
 	session.listen(sink)
 	defer func() {
 		session.listen(nil)
@@ -624,6 +629,29 @@ func (h *Host) Prompt(ctx context.Context, text string, sink func(Update)) (Resu
 	default:
 		return Result{Outcome: OutcomeFailed, Detail: "the Partner's runtime ended the turn with an unknown reason: " + answered.StopReason}, nil
 	}
+}
+
+// markAnswer writes the mark that says one answer is being composed.
+//
+// It is how the boundary of an answer reaches the tool server, which cannot see
+// it: that server is one stdio process for a whole Partner session, and nothing
+// in the protocol says where one answer ends. This host starts and ends every
+// answer, so it writes a fresh mark where the tool server was told to look, and
+// the tool counts per mark and starts over when it changes.
+//
+// The mark is this host's own token rather than the conversation owner's turn
+// id: Prompt is not given the turn, and the tool compares the mark for change
+// and reads nothing else into it.
+//
+// A mark that cannot be written is not a turn's failure, exactly as a wire
+// journal that cannot be opened is not: the count at admission still holds the
+// bound, and a human's question does not fail because a small file could not be
+// written.
+func (h *Host) markAnswer() {
+	if h.runtime.Tools == nil || h.runtime.Tools.Answers == "" {
+		return
+	}
+	_ = os.WriteFile(h.runtime.Tools.Answers, []byte(mintTurn()+"\n"), 0o600)
 }
 
 // Stop cancels the running turn through the protocol and lets Prompt settle

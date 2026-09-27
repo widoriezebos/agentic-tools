@@ -616,7 +616,15 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 						return nil, normErr
 					}
 				}
-				if f.Approved != nil && f.Approved.Authority == ApprovalAuthorityProven && authority == ApprovalAuthorityProven &&
+				// An identical approval under the same human authority is an
+				// explicit no-op: the goal already carries this exact budget,
+				// unexpired, so a second word writes nothing. A signed-in browser
+				// session is included because it is the one hand that can press
+				// Apply twice on one proposal — two tabs read one card — and a
+				// second session approval used to write a second approval record
+				// with a second History line.
+				if f.Approved != nil && authority == f.Approved.Authority &&
+					(authority == ApprovalAuthorityProven || authority == ApprovalAuthoritySession) &&
 					f.Budget != nil && *f.Budget == *nextBudget {
 					if expired, _ := f.ApprovalExpired(approvalHorizon(t, r.Now)); !expired {
 						continue
@@ -649,8 +657,11 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 				changed = true
 			}
 			if !changed {
-				if authority == ApprovalAuthorityAttorney {
+				switch authority {
+				case ApprovalAuthorityAttorney:
 					return nil, NothingToDo{Reason: "every target already has the same approval under power of attorney"}
+				case ApprovalAuthoritySession:
+					return nil, NothingToDo{Reason: "every target already has the same approval from this signed-in session"}
 				}
 				return nil, NothingToDo{Reason: "every target already has the same proven approval"}
 			}
@@ -684,7 +695,20 @@ func Unapprove(r VerbRequest, id, because string, proof *humanauthority.Proof) (
 				return nil, err
 			}
 			f := t.Live[id]
-			if f == nil || f.Approved == nil {
+			if f == nil {
+				return nil, approvalRequired(f, "unapprove")
+			}
+			if f.Approved == nil {
+				// The goal carries no approval, which is the state this act
+				// asks for. From a browser session that is the act HAVING its
+				// effect (R-129-ui) rather than a refusal of an act the human
+				// already made: the first withdrawal landed and its answer was
+				// lost, or a second tab held the same card. A goal that is not
+				// live is refused above — this rule reads a live goal's own
+				// approval and says nothing about one that has left the tree.
+				if fromSignedInSession(proof) {
+					return nil, NothingToDo{Reason: "goal " + id + " carries no approval: the same withdrawal from this signed-in session"}
+				}
 				return nil, approvalRequired(f, "unapprove")
 			}
 			if opidLanded(f, r) {

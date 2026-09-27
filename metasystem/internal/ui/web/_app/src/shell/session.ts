@@ -31,6 +31,18 @@ export type SessionState = {
   /** When this session stops acting, or "" for one that does not expire. */
   until: string;
   source: Source;
+  /**
+   * What went wrong ALONGSIDE a sign-in that succeeded, in the server's own
+   * words, and absent where nothing did.
+   *
+   * There is one today: the first sign-in on a seat that had named nobody moves
+   * the unnamed seat's conversation to the human, and that move can fail. The
+   * sign-in still stands — the session is real and the acts are this human's —
+   * but the transcript did not come with it, and a page that said nothing would
+   * leave a human wondering where their conversation went. So the words travel
+   * with the answer and the header shows them (Astra A-03).
+   */
+  trouble?: string;
 };
 
 /** What the page holds while it reads, and after it has. */

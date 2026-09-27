@@ -277,11 +277,12 @@ func installDeterministicTestLoadReaders() {
 		host: func(now time.Time) hostload.Sample {
 			return hostload.Sample{At: now.UTC().Format(time.RFC3339Nano), Available: true, Cores: 18}
 		},
-		launchers: func(int64) (int, bool) { return 0, true },
-		nested:    func(int64) (bool, bool) { return false, true },
-		prober:    deadTestProber{},
-		pids:      func() ([]int64, error) { return nil, nil },
-		parent:    func(int64) (int64, bool) { return 0, false },
+		launchers:                 func(int64) (int, bool) { return 0, true },
+		fixtureNamespaceLaunchers: func(int64) (int, bool) { return 0, true },
+		nested:                    func(int64) (bool, bool) { return false, true },
+		prober:                    deadTestProber{},
+		pids:                      func() ([]int64, error) { return nil, nil },
+		parent:                    func(int64) (int64, bool) { return 0, false },
 	}
 }
 

@@ -96,6 +96,47 @@ Evidence: `~/LocalStorage/agentic-tools-evidence/g1-s6N-20260927/`
 (screenshots, the builders' reports, Sol's reads); Sol's reads also
 beside each design as `<slice>-sol-read.md`.
 
+## The critique round (2026-09-28)
+
+You asked for Astra to critique the code and for any issues to be fixed.
+Astra read the whole body of work in three parts and found sixteen
+things, ten of them serious. Four fix rounds followed, each one built
+from a failing test, each checked and read again by Astra. You then set
+the stop rule: stop when what is left has no real impact or will
+practically never happen. Astra's last read found everything closed and
+nothing left that you would plausibly hit and pay for, and said stop.
+
+What changed for you, in plain terms:
+
+- **A proposal can no longer be applied twice**, not from two tabs, not
+  from the drawer and the inbox together, not by a slow answer arriving
+  late. Each press now owns the line it is applying; the server refuses
+  any other press until it is done, and a press that lost its line keeps
+  its own answer for you to see rather than overwriting what a later
+  press did.
+- **Repeating an action is fine.** Your ruling: pausing a paused goal,
+  approving an approved goal, and so on for all ten actions, reads as
+  done, with nothing written twice.
+- **The page recovers by itself** from a push whose confirmation was
+  lost, from a failed refresh, from a failed dismissal, and it keeps
+  a form you were typing in.
+- **Signing in for the first time keeps the conversation**, including a
+  turn that was still being answered.
+- **The Partner's lists are bounded and batched.** At most fifty
+  proposals per answer, refused at the moment it tries a fifty-first,
+  and its instructions say to offer the next batch; every field it
+  sends has a size limit, so a huge proposal can no longer break the
+  conversation file.
+- **A conversation file that is too large to open is repaired**: the
+  original is kept beside it as an archive, the rest is trimmed to what
+  fits, and you are told once. Summarizing what was cut is for later,
+  as you said.
+
+The record, with Astra's reads verbatim and what was left as a residual,
+is `partner-proposals-astra-code-critique.md` beside this page. The
+residuals are all of the "three tabs racing in one second" or "a file
+another program wrote" kind.
+
 ## What waits now
 
 Of the first round's seven waiting items, five are done (items 2, 3, 4

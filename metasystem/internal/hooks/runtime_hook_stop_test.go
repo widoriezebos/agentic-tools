@@ -178,6 +178,45 @@ func TestStopPreVerdictFailuresAllow(t *testing.T) {
 			t.Fatalf("retained block = stdout %q completion %+v", run.stdout, ops.completions)
 		}
 	})
+	// Every presentation owner that fails leaves the retained allowance in
+	// its bare degraded form, and an owner's diagnostics reach the hook log.
+	for _, owner := range []struct {
+		name      string
+		configure func(*fakeOps)
+		logged    string
+	}{
+		{"attempt token unavailable", func(ops *fakeOps) {
+			ops.tokenHex = func() (string, error) { return "", fmt.Errorf("fixture entropy failure") }
+		}, ""},
+		{"attempt token malformed", func(ops *fakeOps) {
+			ops.tokenHex = func() (string, error) { return "not-hex", nil }
+		}, ""},
+		{"presentation input refused", func(ops *fakeOps) {
+			ops.stopInput = func(_ StopInputRequest, stderr io.Writer) int {
+				_, _ = io.WriteString(stderr, "fixture stop-input diagnostic\n")
+				return 1
+			}
+		}, "fixture stop-input diagnostic\n"},
+		{"runtime mapper refused", func(ops *fakeOps) {
+			ops.stopOutput = func(_, _, _ string, stderr io.Writer) int {
+				_, _ = io.WriteString(stderr, "fixture stop-output diagnostic\n")
+				return 1
+			}
+		}, "fixture stop-output diagnostic\n"},
+	} {
+		t.Run(owner.name, func(t *testing.T) {
+			installation, ops, run := stopOnce(t, owner.configure, "")
+			if run.status != 0 || run.stdout != bare {
+				t.Fatalf("%s = status %d stdout %q", owner.name, run.status, run.stdout)
+			}
+			if completion := ops.completion(t); completion.Result != "ERROR" || completion.Outcome != "PRESENTATION_UNAVAILABLE" {
+				t.Fatalf("completion = %+v", completion)
+			}
+			if !strings.Contains(readHookLog(t, installation), owner.logged) {
+				t.Fatalf("the owner's diagnostic did not reach the hook log: %q", readHookLog(t, installation))
+			}
+		})
+	}
 }
 
 // A re-arm notice is keyed from up's aggregate line; a later failure cannot
@@ -512,5 +551,63 @@ func TestStopHolderWithoutOptionalProjection(t *testing.T) {
 	}
 	if input := ops.stopInputs[0]; input.ClaimEpoch != "0" || input.Lineage != "main-fixture" || input.Machine != "" {
 		t.Fatalf("presentation coordinates = %+v", input)
+	}
+}
+
+// An identity the stop cannot read is a recorded failure, never a guess; an
+// announced main recorded by the classifier stands in for a missing ancestor.
+func TestStopIdentityEvidenceIsReadOrRecorded(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name      string
+		configure func(*fakeOps)
+		failure   string
+		pid       string
+	}{
+		{"ancestor without runtime", func(ops *fakeOps) {
+			ops.findAncestor = func(string, int, string, bool) (string, int) { return `{"pid":4321,"pidStartedAt":1700000000}`, 0 }
+		}, "the runtime identity was unreadable", ""},
+		{"ancestor without a process start", func(ops *fakeOps) {
+			ops.findAncestor = func(string, int, string, bool) (string, int) { return `{"runtime":"claude","pid":4321}`, 0 }
+		}, "the runtime identity was unreadable", ""},
+		{"announced main without runtime", func(ops *fakeOps) {
+			ops.findAncestor = func(string, int, string, bool) (string, int) { return "", 1 }
+			ops.classify = func(string, string, int) (string, int) { return `{"class":"MAIN","announcement":{"pid":4321}}`, 0 }
+		}, "the fallback runtime identity was unreadable", ""},
+		{"announced main stands in", func(ops *fakeOps) {
+			ops.findAncestor = func(string, int, string, bool) (string, int) { return "", 1 }
+		}, "", "4321"},
+		{"holder unclassified", func(ops *fakeOps) {
+			ops.classify = func(string, string, int) (string, int) { return "", 1 }
+		}, "the checkout holder could not be classified", "4321"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, ops, run := stopOnce(t, test.configure, "")
+			if run.status != 0 {
+				t.Fatalf("stop = status %d stderr %q", run.status, run.stderr)
+			}
+			failures := presentedFailures(t, ops)
+			if (test.failure == "" && failures != "") || !strings.HasPrefix(failures, test.failure) {
+				t.Fatalf("failures = %q, want %q", failures, test.failure)
+			}
+			if up := ops.upRequests[0]; up.Pid != test.pid {
+				t.Fatalf("up identity = %q, want %q (%+v)", up.Pid, test.pid, up)
+			}
+		})
+	}
+}
+
+// A Stop that cannot stage its presentation allows in the staging form.
+func TestStopStagingFailureAllows(t *testing.T) {
+	t.Parallel()
+	installation := newHookInstallation(t)
+	ops := newFakeOps(t, installation)
+	run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "stop", payload: `{"session_id":"line-fixture"}`,
+		tempDir: filepath.Join(t.TempDir(), "absent")})
+	if run.status != 0 || run.stdout != mustForm(t, "allowed", "staging-failed")+"\n" {
+		t.Fatalf("staging failure = status %d stdout %q", run.status, run.stdout)
+	}
+	if ops.called("lease classify") {
+		t.Fatalf("an unstaged stop went on to classify: %s", ops.trace())
 	}
 }

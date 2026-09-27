@@ -266,10 +266,11 @@ func (a Authority) Approve(id string, budget goalbudget.Budget) error {
 	if err := budget.Validate(); err != nil {
 		return refuse(KindRequest, "budget", "the budget is not complete: "+err.Error())
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal approve")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Approve(request, []string{id}, &budget, &a.proof)
 	return a.settle(request, result, publishErr, "goal approve")
 }
@@ -284,10 +285,11 @@ func (a Authority) Withdraw(id, because string) error {
 	if strings.TrimSpace(because) == "" {
 		because = "withdrawn from the board"
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal unapprove")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Unapprove(request, id, because, &a.proof)
 	return a.settle(request, result, publishErr, "goal unapprove")
 }
@@ -308,10 +310,11 @@ func (a Authority) Park(id, because string) error {
 	if strings.TrimSpace(because) == "" {
 		return refuse(KindRequest, "no-reason", "park needs its reason — a pause without a why is a stall in disguise")
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal park")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Park(request, id, because)
 	return a.settle(request, result, publishErr, "goal park")
 }
@@ -323,10 +326,11 @@ func (a Authority) Unpark(id string) error {
 	if strings.TrimSpace(id) == "" {
 		return refuse(KindRequest, "no-goal", "an unpark names one live goal")
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal unpark")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Unpark(request, id)
 	return a.settle(request, result, publishErr, "goal unpark")
 }
@@ -355,10 +359,11 @@ func (a Authority) Abandon(id, because, successor string) error {
 		return refuse(KindRequest, "no-reason",
 			"abandon needs its reason — a goal that will never be worked owes the reader why")
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal abandon")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Abandon(request, id, goal.AbandonSpec{
 		Because: strings.TrimSpace(because),
 		Carried: strings.TrimSpace(successor),
@@ -390,10 +395,11 @@ func (a Authority) SetPriority(id string, priority uint8, sequence *uint64) erro
 	if sequence != nil && *sequence < 1 {
 		return refuse(KindRequest, "sequence", "a sequence is a one-based position within the priority")
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal set-priority")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.SetPriority(request, id, priority, sequence, &a.proof)
 	return a.settle(request, result, publishErr, "goal set-priority")
 }
@@ -448,10 +454,11 @@ func (a Authority) Open(opened Opened) error {
 	if opened.Tier > 3 {
 		return refuse(KindRequest, "tier", "a rigor tier is 1, 2, or 3")
 	}
-	request, err := a.request()
+	request, done, err := a.request(opened.ID, "goal open")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.OpenRisked(request, opened.ID, opened.Intent, goal.OriginHuman,
 		opened.NextStep, opened.Blocks, opened.BlockedBy, opened.Risk, opened.Tier, opened.Why, nil, &a.proof, opened.Labels...)
 	return a.settle(request, result, publishErr, "goal open")
@@ -496,10 +503,11 @@ func (a Authority) Edit(id string, edited Edited) error {
 		return refuse(KindRequest, "no-next-step",
 			"a goal's next step states intent, constraints and freedoms, never a script of the how")
 	}
-	request, err := a.request()
+	request, done, err := a.request(id, "goal edit")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Edit(request, id, goal.EditFields{
 		QueuedOnly: true,
 		Intent:     edited.Intent,
@@ -522,10 +530,11 @@ func (a Authority) Block(dependent, blocker string) error {
 	if strings.TrimSpace(dependent) == strings.TrimSpace(blocker) {
 		return refuse(KindRequest, "self-edge", "a goal cannot wait for itself")
 	}
-	request, err := a.request()
+	request, done, err := a.request(dependent, "goal block")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Block(request, dependent, blocker, &a.proof)
 	return a.settle(request, result, publishErr, "goal block")
 }
@@ -538,12 +547,72 @@ func (a Authority) Unblock(dependent, blocker string) error {
 	if strings.TrimSpace(dependent) == "" || strings.TrimSpace(blocker) == "" {
 		return refuse(KindRequest, "no-goal", "an edge names the goal that waits and the goal it waits for")
 	}
-	request, err := a.request()
+	request, done, err := a.request(dependent, "goal unblock")
 	if err != nil {
 		return err
 	}
+	defer done()
 	result, publishErr := goal.Unblock(request, dependent, blocker, &a.proof)
 	return a.settle(request, result, publishErr, "goal unblock")
+}
+
+// alreadyCarried names the acts whose repeat the engine answers with an
+// explicit no-op — the one outcome that is abandoned with no error, which is
+// NothingToDo (internal/goal/txn.go terminalFromMutate).
+//
+// It is R-129-ui's list, and every one of them was read in the engine before it
+// was named here:
+//
+//   - approve: the goal already carries this exact budget under this exact
+//     authority, unexpired (approval.go);
+//   - edit: the intent, the next step and the labels already read exactly this
+//     way, under this signed-in session (verbs.go);
+//   - set-priority: the requested priority and sequence already hold
+//     (order.go);
+//   - block and unblock: the edge is already there, or already gone
+//     (verbs.go);
+//   - park: the goal is already parked, whatever reason the repeat carries,
+//     because the pause is the effect and the reason is not (verbs.go);
+//   - unpark: the goal is not parked, which is the state a resume asks for
+//     (verbs.go);
+//   - abandon: the goal is already abandoned — never merely archived, because a
+//     done goal is archived too — and to the successor this act names
+//     (abandon.go);
+//   - unapprove: the goal is LIVE and already carries no approval, which is the
+//     state a withdrawal asks for; a goal that has left the live tree keeps the
+//     engine's own refusal (approval.go);
+//   - open: the goal the id already names reads exactly what this open states —
+//     the same intent, next step, tier and labels, the same goals it waits for,
+//     and the edge on every goal it names with --blocks (verbs.go).
+//
+// Park, unpark and abandon used to be excluded: park and abandon answered
+// LostToCompetitor, naming the operation that got there first, and unpark
+// refused a goal that is not parked in its own words, so all three reached the
+// page as refusals of an act the human had already made. R-129-ui closed that —
+// an act whose effect already holds is success — and the engine now answers
+// each of them NothingToDo under a browser session, which is the one hand that
+// can press one card twice.
+//
+// Withdraw and open were excluded for one round longer, on a reading of the
+// ruling's examples as its whole list. They are the two acts whose repeat is
+// decided by a COMPARISON rather than by the target's mere existence, and the
+// engine now makes it: unapprove reads the live goal's own approval, and open
+// reads the record the id already names against what the request states. A
+// request that asks for anything else is a different act and still loses, so
+// nothing here swallows it — this map only turns the engine's no-op into
+// applied, and OutcomeLost and OutcomeRejected still reach the page as
+// refusals.
+var alreadyCarried = map[string]bool{
+	"goal approve":      true,
+	"goal edit":         true,
+	"goal set-priority": true,
+	"goal block":        true,
+	"goal unblock":      true,
+	"goal park":         true,
+	"goal unpark":       true,
+	"goal abandon":      true,
+	"goal unapprove":    true,
+	"goal open":         true,
 }
 
 // settle turns one publication into the answer a route gives, and records the
@@ -556,6 +625,14 @@ func (a Authority) settle(request goal.VerbRequest, result goal.PublishResult, p
 		return a.unsettled(operation, publishErr)
 	}
 	if result.Outcome != goal.OutcomeConfirmed {
+		// An act the engine found nothing to do for is an act whose effect
+		// already stands, and that is the act HAVING its effect: the second
+		// press of one proposal's Apply asked for a state the ledger is
+		// already in, so the page is told applied rather than refused.
+		// Nothing new landed, so no second proof is recorded beside it.
+		if alreadyCarried[action] && result.Outcome == goal.OutcomeAbandoned {
+			return nil
+		}
 		detail := result.Detail
 		if detail == "" {
 			detail = "the ledger did not confirm " + action
@@ -620,14 +697,58 @@ func (a Authority) unsettled(operation string, publishErr error) error {
 	}
 }
 
-// request assembles the same goal.VerbRequest the command edge assembles for
+// request takes this act for this process and assembles the engine request it
+// will publish.
+//
+// Taking it is the first thing that happens, before any read: while an act on
+// one goal is executing here, a second request for that same goal and that
+// same act is refused at once (owner.begin). The one lock over this clone's
+// ledger is taken with it and held until the act answers, so the publication,
+// its settlement, and the journal recovery this request runs before it
+// publishes are one critical section that a concurrent recovery cannot enter.
+// The returned release clears both, whatever the act answered.
+func (a Authority) request(id, action string) (goal.VerbRequest, func(), error) {
+	if !a.proven {
+		return goal.VerbRequest{}, nil, refuse(KindUnproven, "unproven", a.reason)
+	}
+	held := ownerOf(a.root)
+	endHold, err := held.begin(id, action)
+	if err != nil {
+		return goal.VerbRequest{}, nil, err
+	}
+	held.publications.Lock()
+	release := func() {
+		held.publications.Unlock()
+		endHold()
+	}
+	// Both holds are cleared here until the caller has them, because between
+	// taking them and returning them there is no `defer done()` anywhere: the
+	// caller installs its own only once this function has returned. An assembly
+	// reader that UNWINDS rather than answering would otherwise strand the
+	// registration and this clone's one lock until the process restarted, and
+	// every act on that goal and every publication on that clone with them
+	// (Astra E-04). The flag is what transfers ownership: on any error, and on
+	// any panic, this releases; on the one path that hands the release back, it
+	// does not.
+	transferred := false
+	defer func() {
+		if !transferred {
+			release()
+		}
+	}()
+	request, err := a.assemble()
+	if err != nil {
+		return goal.VerbRequest{}, nil, err
+	}
+	transferred = true
+	return request, release, nil
+}
+
+// assemble builds the same goal.VerbRequest the command edge assembles for
 // a human verb: this checkout's endpoint and machine, the enrolled terminal's
 // lineage and name, the boot-time caller classification, a fresh operation
 // identifier and the checkout's clock.
-func (a Authority) request() (goal.VerbRequest, error) {
-	if !a.proven {
-		return goal.VerbRequest{}, refuse(KindUnproven, "unproven", a.reason)
-	}
+func (a Authority) assemble() (goal.VerbRequest, error) {
 	if err := a.reads.ensureFence(a.root); err != nil {
 		return goal.VerbRequest{}, refuse(KindFailed, "no-fence", err.Error())
 	}
@@ -642,6 +763,15 @@ func (a Authority) request() (goal.VerbRequest, error) {
 		}
 		return counselor.AppendCarriedLanding(root, line)
 	})
+	// An unclassified push wedges this clone: the engine refuses every
+	// mutation while one stands, and nothing in the browser could reach the
+	// classification. So this press makes it, through the engine's own
+	// recovery rule, before it publishes. It is the rule Reconcile runs, run
+	// here inside the lock this request already holds rather than through
+	// Reconcile, which takes that same lock for a Refresh.
+	if err := a.reads.reconcile(a.root, endpoint); err != nil {
+		return goal.VerbRequest{}, err
+	}
 	machine, err := a.reads.resolveMachine(a.root)
 	if err != nil {
 		return goal.VerbRequest{}, refuse(KindFailed, "no-machine", err.Error())

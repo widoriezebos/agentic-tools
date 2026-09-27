@@ -759,7 +759,7 @@ func Open(r VerbRequest, id, intent, origin, nextStep string, labels ...string) 
 // OpenTiered adds a queued goal at the caller-selected tier. Goal-free clears
 // in the same commit when it was declared.
 func OpenTiered(r VerbRequest, id, intent, origin, nextStep string, tier uint8, supplied *Budget, labels ...string) (PublishResult, error) {
-	req, err := openRequest(r, id, intent, origin, nextStep, nil, nil, tier, supplied, nil, "", false, labels)
+	req, err := openRequest(r, id, intent, origin, nextStep, nil, nil, tier, supplied, nil, "", false, false, labels)
 	if err != nil {
 		return PublishResult{}, err
 	}
@@ -819,7 +819,7 @@ func OpenRisked(r VerbRequest, id, intent, origin, nextStep string, blocks, bloc
 	if hand == nil {
 		origin = OriginMain
 	}
-	req, err := openRequest(r, id, intent, origin, nextStep, blocks, blockedBy, tier, supplied, &risk, why, hand != nil, labels)
+	req, err := openRequest(r, id, intent, origin, nextStep, blocks, blockedBy, tier, supplied, &risk, why, hand != nil, fromSignedInSession(proof), labels)
 	if err != nil {
 		return PublishResult{}, err
 	}
@@ -833,7 +833,11 @@ const SeatOpenNeedsBlocker = "a seat opens only the defect that blocks its claim
 // openRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
-func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blockedBy []string, tier uint8, supplied *Budget, risk *RiskRecord, why string, human bool, labels []string) (PublishRequest, error) {
+//
+// session says a signed-in browser is the hand behind this open, which is the
+// one hand whose repeat of it is read as the open HAVING its effect rather than
+// as a competitor losing to it (R-129-ui). A replay carries none.
+func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blockedBy []string, tier uint8, supplied *Budget, risk *RiskRecord, why string, human, session bool, labels []string) (PublishRequest, error) {
 	if tier < 1 || tier > 3 {
 		return PublishRequest{}, fmt.Errorf("goal open requires --tier 1, 2, or 3")
 	}
@@ -896,6 +900,16 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blo
 				if opidLanded(f, r) {
 					return nil, AlreadyApplied{}
 				}
+				// The goal this id names already reads exactly what this open
+				// asks to write. From a browser session that is the act HAVING
+				// its effect (R-129-ui): the first press landed and its answer
+				// was lost, or a second tab held the same intake sheet. The
+				// comparison is of the record and never of the id alone — an
+				// open of one id stating anything else is a SECOND act on that
+				// id and still loses to the first.
+				if session && openAlreadyReads(t, f, intent, nextStep, tier, canonical, blocks, blockedBy) {
+					return nil, NothingToDo{Reason: "goal " + id + " already reads exactly this way: the same open from this signed-in session"}
+				}
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
 			if _, archived := t.Archived(id); archived {
@@ -950,6 +964,45 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blo
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}, nil
+}
+
+// openAlreadyReads says the live goal this id names already reads what the open
+// asks to write: the same intent, the same next step, the same tier, the same
+// labels, the same goals it waits for, and — on every goal the open names with
+// --blocks — the edge that says that goal waits for this one.
+//
+// It is the comparison behind open's no-op (R-129-ui), and it compares the
+// record rather than the id: an open of an existing id that states anything
+// else is a second act on one id, not the same act twice, and it keeps the
+// competitor refusal.
+func openAlreadyReads(t *TreeGoals, f *GoalFile, intent, nextStep string, tier uint8, canonical, blocks, blockedBy []string) bool {
+	if f.Intent != intent || f.NextStep != nextStep || f.Tier != tier {
+		return false
+	}
+	if len(f.Labels) != len(canonical) {
+		return false
+	}
+	for at, label := range canonical {
+		if f.Labels[at] != label {
+			return false
+		}
+	}
+	waits := sortedUnique(append([]string(nil), blockedBy...))
+	if len(f.Blocked) != len(waits) {
+		return false
+	}
+	for at, blocker := range waits {
+		if f.Blocked[at] != blocker {
+			return false
+		}
+	}
+	for _, blocked := range blocks {
+		held := t.Live[blocked]
+		if held == nil || !contains(held.Blocked, f.Id) {
+			return false
+		}
+	}
+	return true
 }
 
 // parkBehindBlocker records that the goal being opened (blocker) blocks
@@ -1261,7 +1314,7 @@ func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 		return PublishResult{}, fmt.Errorf("%s", detail)
 	}
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
+		return PublishResult{}, fmt.Errorf("claim is an agent session's act: a claim binds the session that works the goal, and a person's claim would hold goal %s with no session to work it; steer which machine takes it with metasystem goal pin %s MACHINE or metasystem goal prioritize %s 1, or move a standing claim with metasystem goal claim %s --take-over --reason TEXT", id, id, id, id)
 	}
 	if len(budgets) != 0 || r.ApprovedRef != "" {
 		return PublishResult{}, fmt.Errorf("the budget and any norm approval were bound by the human's approval; goal claim carries no tuple or --approved-ref")
@@ -1292,7 +1345,7 @@ func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id string) string {
 // live target without starting a new claim or budget episode.
 func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClaimEpoch int64, batch string, targetLiveness func() (identity.Liveness, error)) (PublishResult, error) {
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("handover is agent-only; moving another holder's claim remains a human steal")
+		return PublishResult{}, fmt.Errorf("handover moves a claim between agent sessions, and a person's handover would leave goal %s with no session bound to its hand-back; a person moves another holder's claim with metasystem goal claim %s --take-over --reason TEXT", id, id)
 	}
 	if err := ValidateMachineNickname(targetMachine); err != nil || strings.TrimSpace(targetLineage) == "" || targetClaimEpoch < 1 || strings.TrimSpace(batch) == "" || targetLiveness == nil {
 		return PublishResult{}, fmt.Errorf("handover requires a target machine, lineage, positive claim epoch, batch, and liveness verifier")
@@ -1641,7 +1694,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			resumedStopID := ""
 			if f.StopFence != nil {
 				if f.Budget != nil && *f.Budget == budget {
-					return nil, fmt.Errorf("SET_BUDGET_FENCED_SAME_TUPLE: goal %s is breach-stopped by %s and the supplied budget is unchanged; only goal resume may reopen admission", id, f.StopFence.StopID)
+					return nil, fmt.Errorf("SET_BUDGET_FENCED_SAME_TUPLE: goal %s is breach-stopped by %s and the supplied budget is unchanged; resume it under its standing box with metasystem goal resume %s", id, f.StopFence.StopID, id)
 				}
 				if _, approvalErr := requireApprovedForClaim(r.Endpoint.Root, t, f, r.Now, "set-budget resume"); approvalErr != nil {
 					return nil, approvalErr
@@ -2626,6 +2679,17 @@ func lastOpid(f *GoalFile) string {
 	return f.History[len(f.History)-1].Opid
 }
 
+// fromSignedInSession says whether an act's authority is a browser session's.
+//
+// It is the one hand that can press one card twice — two tabs read one goal,
+// and the second press arrives while the first act is in flight or after its
+// outcome write failed — so it is the one hand whose repeat of an act is read
+// as the act HAVING its effect rather than as a competitor losing to it
+// (R-129-ui). A terminal's second word is still its own word.
+func fromSignedInSession(proof *humanauthority.Proof) bool {
+	return proof != nil && proof.Outcome == humanauthority.OutcomeSession
+}
+
 // Park pauses a goal with its reason. Parking another machine's
 // claim is a human act, and the displaced claimant is recorded —
 // displacement is a stop signal the serving machine hears (the
@@ -2677,6 +2741,14 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 				return nil, AlreadyApplied{}
 			}
 			if f.State == StateParked {
+				// The pause this act asks for already stands. From a browser
+				// session that is the act having its effect (R-129-ui), and the
+				// reason it carries does not change that: the reason is why the
+				// pause was made, and the pause is the effect, so a second press
+				// with other words is still a repeat and writes nothing.
+				if fromSignedInSession(r.Authority) {
+					return nil, NothingToDo{Reason: "goal " + id + " is already parked: the same pause from this signed-in session"}
+				}
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
 			if f.State != StateQueued && f.State != StateApproved && f.State != StateClaimed {
@@ -2786,6 +2858,13 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 				return nil, AlreadyApplied{}
 			}
 			if f.State != StateParked {
+				// An unpark's effect is that the goal is not parked, and it is
+				// not: from a browser session, resuming a running goal is the
+				// act having its effect (R-129-ui) rather than a refusal the
+				// human has to read as one.
+				if fromSignedInSession(r.Authority) {
+					return nil, NothingToDo{Reason: "goal " + id + " is not parked: the same resume from this signed-in session"}
+				}
 				return nil, fmt.Errorf("goal %s is %s, not parked", id, f.State)
 			}
 			var entry PowerOfAttorneyEntry
@@ -3492,6 +3571,16 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 					}
 				}
 			}
+			// An identical edit under this hand's own signed-in session is an
+			// explicit no-op, as an identical approval above it is: every
+			// field the request carries already reads exactly this way, so a
+			// second press of one proposal's Apply writes nothing. The
+			// browser is the one hand with two tabs on one card, and its
+			// second press used to land a second edit with a second History
+			// line.
+			if editChangesNothing(f, fields, r.Authority) {
+				return nil, NothingToDo{Reason: "goal " + id + " already reads exactly this way: the same edit from this signed-in session"}
+			}
 			displaced := ""
 			if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
 				displaced = pairMarker(f.Claimed)
@@ -3551,6 +3640,42 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}, nil
+}
+
+// editChangesNothing says whether every field this edit carries already holds.
+//
+// It answers for a signed-in browser session and for nobody else: that is the
+// one hand that can press Apply twice on one proposal, and a terminal's second
+// word is still its own word. It answers for the three fields that hand sends
+// — the intent, the next step and the labels — and an edit carrying anything
+// else is not the repeat this rule is about, so it lands as it always did.
+func editChangesNothing(f *GoalFile, fields EditFields, proof *humanauthority.Proof) bool {
+	if proof == nil || proof.Outcome != humanauthority.OutcomeSession {
+		return false
+	}
+	if fields.Tier != nil || fields.Risk != nil || fields.Blocked != nil || fields.NextStepAppend != nil {
+		return false
+	}
+	if fields.Intent == nil && fields.NextStep == nil && fields.Labels == nil {
+		return false
+	}
+	if fields.Intent != nil && *fields.Intent != f.Intent {
+		return false
+	}
+	if fields.NextStep != nil && *fields.NextStep != f.NextStep {
+		return false
+	}
+	if fields.Labels != nil {
+		if len(*fields.Labels) != len(f.Labels) {
+			return false
+		}
+		for at, label := range *fields.Labels {
+			if label != f.Labels[at] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // claimedPair names the pair holding a claim, for a refusal that tells a
@@ -3702,7 +3827,7 @@ func stealRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 					return nil, fmt.Errorf("goal %s is breach-stopped by %s; only goal resume may replace its claim authority", member.Id, member.StopFence.StopID)
 				}
 				if member.Pinned != "" && member.Pinned != r.Actor.Machine {
-					return nil, fmt.Errorf("goal %s is pinned to machine %s and this machine is %s; even a steal honors the pin — clear the pin, steal, then re-pin", member.Id, member.Pinned, r.Actor.Machine)
+					return nil, fmt.Errorf("goal %s is pinned to machine %s and this machine is %s; a take-over here would contradict the pin — clear it with metasystem goal pin %s --clear, take over with metasystem goal claim %s --take-over --reason TEXT, then re-pin with metasystem goal pin %s MACHINE", member.Id, member.Pinned, r.Actor.Machine, member.Id, member.Id, member.Id)
 				}
 				if r.ApprovedRef != "" {
 					return nil, fmt.Errorf("steal uses the standing approval and does not take --approved-ref")
@@ -3948,7 +4073,7 @@ func ClaimArc(r VerbRequest, id string, budgets ...Budget) (PublishResult, error
 		return PublishResult{}, fmt.Errorf("%s", detail)
 	}
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
+		return PublishResult{}, fmt.Errorf("claim is an agent session's act: a claim binds the session that works the goal, and a person's claim would hold goal %s with no session to work it; steer which machine takes it with metasystem goal pin %s MACHINE or metasystem goal prioritize %s 1, or move a standing claim with metasystem goal claim %s --take-over --reason TEXT", id, id, id, id)
 	}
 	if len(budgets) != 0 || r.ApprovedRef != "" {
 		return PublishResult{}, fmt.Errorf("the budget and any norm approval were bound by the human's approval; goal claim carries no tuple or --approved-ref")
@@ -4402,7 +4527,7 @@ func setPinRequest(r VerbRequest, id, pin string) PublishRequest {
 			// only by explicit direction: refuse so the human decides
 			// between waiting, releasing, and stealing.
 			if next != "" && f.State == StateClaimed && f.Claimed != nil && f.Claimed.Machine != next {
-				return nil, fmt.Errorf("goal %s is claimed by machine %s; release it first (or clear the pin, steal, and re-pin) before pinning it to %s", id, f.Claimed.Machine, next)
+				return nil, fmt.Errorf("goal %s is claimed by machine %s, and pinning it to %s would strand that claim; release it first (metasystem goal release %s --reason TEXT from the holding session), or take it over with metasystem goal claim %s --take-over --reason TEXT, then pin it with metasystem goal pin %s %s", id, f.Claimed.Machine, next, id, id, id, next)
 			}
 			f.Pinned = next
 			touch(f, r, "set-pin", []string{id})
@@ -5345,7 +5470,7 @@ func validateCarryReservation(r VerbRequest, tree *TreeGoals, tip string, args C
 		return CarryWord{}, carryAsk("carry-goal-not-live", fmt.Sprintf("goal %s is not live", args.Goal))
 	}
 	if file.State != StateClaimed || !ownPair(file.Claimed, r.Actor) {
-		return CarryWord{}, carryAsk("goal-item-not-held", fmt.Sprintf("goal %s is not held by %s+%s; use goal steal", args.Goal, r.Actor.Machine, r.Actor.Lineage))
+		return CarryWord{}, carryAsk("goal-item-not-held", fmt.Sprintf("goal %s is not held by %s+%s; take it over with metasystem goal claim %s --take-over --reason TEXT", args.Goal, r.Actor.Machine, r.Actor.Lineage, args.Goal))
 	}
 	word, err := CarryWordAt(tree, args.Goal, args.ApprovedRef)
 	if err != nil {
@@ -5356,16 +5481,16 @@ func validateCarryReservation(r VerbRequest, tree *TreeGoals, tip string, args C
 	}
 	seat, _ := OpidMachine(word.History.Opid)
 	if seat != r.Actor.Machine {
-		return CarryWord{}, carryAsk("carry-seat-mismatch", fmt.Sprintf("word %s belongs to seat %s; run goal carry --supersede %s --transfer on %s", word.History.Opid, seat, word.History.Opid, r.Actor.Machine))
+		return CarryWord{}, carryAsk("carry-seat-mismatch", fmt.Sprintf("word %s belongs to seat %s; move it on %s with metasystem work land G --exception CODE --reason TEXT --by NAME --replace-exception %s --transfer", word.History.Opid, seat, r.Actor.Machine, word.History.Opid))
 	}
 	if word.Workspace != args.Workspace {
-		return CarryWord{}, carryAsk("carry-tree-mismatch", fmt.Sprintf("word workspace=%s candidate workspace=%s; issue goal carry --supersede %s", word.Workspace, args.Workspace, word.History.Opid))
+		return CarryWord{}, carryAsk("carry-tree-mismatch", fmt.Sprintf("word workspace=%s candidate workspace=%s; record it for this candidate with metasystem work land G --exception CODE --reason TEXT --by NAME --replace-exception %s", word.Workspace, args.Workspace, word.History.Opid))
 	}
 	if !CarryableName(r.Endpoint.Root, word.Past) {
 		return CarryWord{}, carryAsk("carry-not-carryable", fmt.Sprintf("%s is not carryable", word.Past))
 	}
 	if !r.Now.Before(word.Expires) {
-		return CarryWord{}, carryAsk("carry-word-expired", fmt.Sprintf("word %s expired at %s; issue a fresh goal carry", word.History.Opid, word.Expires.UTC().Format(time.RFC3339)))
+		return CarryWord{}, carryAsk("carry-word-expired", fmt.Sprintf("word %s expired at %s; record a fresh one with metasystem work land G --exception CODE --reason TEXT --by NAME", word.History.Opid, word.Expires.UTC().Format(time.RFC3339)))
 	}
 	consumption, err := carryConsumptionAtFor(r.Endpoint, tree, carryCodeTip(r.Endpoint, tip), word)
 	if err != nil {

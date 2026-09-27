@@ -245,7 +245,7 @@ func runUIServe(args []string) int {
 	// look through here too, bounded by the same budget.
 	advance := func() {
 		ledger.Advance(func(endpoint goal.Endpoint) (goal.AdvanceResult, error) {
-			return goal.FetchAdvanceBounded(endpoint, snapshot.FetchBudget)
+			return uiAdvance(roots.StateRoot, endpoint)
 		})
 	}
 
@@ -306,7 +306,12 @@ func runUIServe(args []string) int {
 			// session/new. A seat that cannot name its own executable gets
 			// a Partner that reads the page and nothing beyond it, which is
 			// the previous slice's Partner rather than no Partner at all.
-			if tools, toolsErr := partner.ToolsFor(roots.Checkout, roots.Installation, presenceRun); toolsErr != nil {
+			// And the file this seat marks each answer in, beside the
+			// conversation: it is what lets the tool server tell one answer
+			// from the next, so the fifty-first proposal of an answer is
+			// refused at the call (R-130-ui, Astra F-06).
+			if tools, toolsErr := partner.ToolsFor(roots.Checkout, roots.Installation, presenceRun,
+				filepath.Join(conversations, "answer")); toolsErr != nil {
 				fmt.Fprintln(os.Stderr, "interface Partner: "+toolsErr.Error())
 			} else {
 				admitted.Tools = tools
@@ -784,6 +789,23 @@ func runUIServe(args []string) int {
 // adds to the store in a day is small against them (g1-s54 D1, D4).
 const storeSweep = 24 * time.Hour
 
+// uiAdvance is the one look at the canonical branch both human presses take:
+// the act routes' own, after a publication, and the board's Refresh.
+//
+// It classifies this clone's transaction journal first. A push that landed and
+// failed its confirmation leaves an entry at pushed, and the engine mutates
+// nothing in this clone until somebody classifies it; a Refresh that only
+// advanced the accepted ref showed a current board while every act stayed
+// refused. The classification is the engine's own recovery rule, under the
+// policy this interface can carry (act.Reconcile), and it is what the terminal's
+// `goal recover` runs. A journal nothing is pushed in costs one directory read.
+func uiAdvance(root string, endpoint goal.Endpoint) (goal.AdvanceResult, error) {
+	if err := act.Reconcile(root, endpoint); err != nil {
+		return goal.AdvanceResult{}, err
+	}
+	return goal.FetchAdvanceBounded(endpoint, snapshot.FetchBudget)
+}
+
 // startStoreHousekeeping starts one server's housekeeping and answers the stop
 // the caller owes it: cancel its context and join its goroutine.
 //
@@ -801,6 +823,7 @@ const storeSweep = 24 * time.Hour
 //
 // Calling the stop twice cancels a cancelled context and reads a closed
 // channel, which is why both callers may call it.
+
 func startStoreHousekeeping(ctx context.Context, owned *snapshot.Gate, keeper *storeKeeper, tick <-chan time.Time) func() {
 	housekeeping, stop := context.WithCancel(ctx)
 	stopped := make(chan struct{})

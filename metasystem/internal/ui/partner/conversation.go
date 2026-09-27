@@ -627,7 +627,7 @@ func (c *Conversation) load() error {
 	}
 	defer file.Close()
 	reader := bufio.NewScanner(file)
-	reader.Buffer(make([]byte, 0, 64*1024), maxMessageBytes+1024)
+	reader.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
 	for reader.Scan() {
 		line := strings.TrimSpace(reader.Text())
 		if line == "" {
@@ -643,9 +643,182 @@ func (c *Conversation) load() error {
 		c.messages = append(c.messages, message)
 	}
 	if err := reader.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			// A line past the reader's bound used to fail the whole load, which
+			// took the conversation page and the Decisions page down on every
+			// restart (Astra B-01's residual). R-131-ui: the original is kept
+			// whole, the transcript is rewritten to what fits, and the human is
+			// told once.
+			return c.archiveAndFit()
+		}
 		return fmt.Errorf("the Partner's transcript could not be read: %w", err)
 	}
 	return c.readState()
+}
+
+// archivedExtension is what an archived transcript is named with. It is neither
+// .json nor .jsonl on purpose: conversationFile and Humans recognise a
+// conversation by its extension, and an archive is a copy and not one.
+const archivedExtension = ".archived"
+
+// archiveAndFit is Wido's R-131-ui, and it runs only where the scan failed for
+// a line past the reader's bound: "If the partner file is too large, we should
+// archive the original and then just truncate so that it fits."
+//
+// A conversation the reader cannot load because of its size is not an error a
+// human meets. So the original is kept whole beside it, the transcript is
+// rewritten to the messages that fit, and the last message says that this
+// happened. Summarizing what was cut is later.
+//
+// The archive is written BEFORE anything is rewritten, and its failure is
+// returned: a truncation over an archive that was not written is the one way
+// this loses a conversation instead of saving one.
+//
+// load has no clock — OpenConversation takes none — so the archive's stamp and
+// the notice's are time.Now().UTC().
+func (c *Conversation) archiveAndFit() error {
+	now := time.Now().UTC()
+	archive, err := archiveTranscript(c.transcript, now)
+	if err != nil {
+		return err
+	}
+	kept, setAside, err := messagesThatFit(c.transcript)
+	if err != nil {
+		return err
+	}
+	kept = append(kept, unreadableNotice(filepath.Base(archive), setAside, now))
+	if err := writeTranscript(c.transcript, kept); err != nil {
+		return err
+	}
+	// The cached messages are the rewritten file's, not the prefix the scanner
+	// read before it stopped.
+	c.messages = kept
+	return c.readState()
+}
+
+// archiveTranscript keeps the original whole beside itself, under its own name
+// with the moment it was archived: Wido.jsonl.20260928T143052Z.archived.
+//
+// It streams rather than reads the file into memory, because the file being too
+// large to read is the whole reason it is here. And it never writes over
+// anything: the name is opened O_EXCL, and a name something already holds takes
+// the next distinct one, so a second archive in the same second is a second file
+// rather than the first one lost.
+func archiveTranscript(path string, now time.Time) (string, error) {
+	source, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("the Partner's transcript could not be read: %w", err)
+	}
+	defer func() { _ = source.Close() }()
+	stamp := now.UTC().Format("20060102T150405Z")
+	for attempt := 0; attempt < 100; attempt++ {
+		name := fmt.Sprintf("%s.%s%s", path, stamp, archivedExtension)
+		if attempt > 0 {
+			name = fmt.Sprintf("%s.%s-%d%s", path, stamp, attempt, archivedExtension)
+		}
+		target, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("the Partner's transcript could not be archived at %s: %w", name, err)
+		}
+		if _, err := io.Copy(target, source); err != nil {
+			_ = target.Close()
+			return "", fmt.Errorf("the Partner's transcript could not be archived at %s: %w", name, err)
+		}
+		if err := target.Close(); err != nil {
+			return "", fmt.Errorf("the Partner's transcript could not be archived at %s: %w", name, err)
+		}
+		return name, nil
+	}
+	return "", fmt.Errorf("the Partner's transcript could not be archived beside %s: every name of this moment is taken", path)
+}
+
+// messagesThatFit reads the whole file again, keeping every message the reader's
+// own bound admits and counting each line that passes it, in the file's order.
+//
+// A bufio.Scanner cannot do this: it stops at the FIRST line over its bound, so
+// every message after the one oversized line would be lost — and those messages
+// are exactly what this is for. So a bufio.Reader and ReadLine, which hands one
+// line back in pieces: a line under the bound is accumulated, and a line that
+// passes it is DRAINED rather than accumulated, so an enormous line costs this
+// bounded memory and nothing more.
+//
+// The bound is the scanner's own, exactly. A Scanner can return a
+// newline-terminated token of at most maxLineBytes - 1 bytes, because the
+// delimiter has to fit in the same buffer; so a line of maxLineBytes or more is
+// one the next load could not read, and keeping it would archive the file again
+// on every open.
+func messagesThatFit(path string) ([]Message, int, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, 0, fmt.Errorf("the Partner's transcript could not be read: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	reader := bufio.NewReaderSize(file, 64*1024)
+	kept := []Message{}
+	setAside := 0
+	for {
+		line, over, err := readLineWithin(reader)
+		if errors.Is(err, io.EOF) {
+			return kept, setAside, nil
+		}
+		if err != nil {
+			return nil, 0, fmt.Errorf("the Partner's transcript could not be read: %w", err)
+		}
+		if over {
+			setAside++
+			continue
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var message Message
+		if err := json.Unmarshal([]byte(line), &message); err != nil {
+			// Dropped exactly as load drops one, and for load's own reason: a
+			// line this build cannot read costs one message, not the file.
+			continue
+		}
+		kept = append(kept, message)
+	}
+}
+
+// readLineWithin reads one line and says whether it passed the bound. A line
+// under it comes back whole; one that passes it is read to its end a piece at a
+// time and thrown away, so its size is never this process's.
+func readLineWithin(reader *bufio.Reader) (string, bool, error) {
+	var built strings.Builder
+	over := false
+	for {
+		// ReadLine answers a line or an error and never both, so a piece here is
+		// a piece of the line this call is reading.
+		piece, more, err := reader.ReadLine()
+		if err != nil {
+			// A final line with no newline after it — the last thing a writer
+			// that went away had written. ReadLine hands its pieces back and
+			// reports the end of the file on the NEXT call, so what has been
+			// accumulated is a whole line and is returned once before the EOF is
+			// passed on; the call after this one reports it (Astra F-07). A line
+			// past the bound accumulates nothing, so this is the fitting line
+			// alone.
+			if errors.Is(err, io.EOF) && built.Len() > 0 {
+				return built.String(), false, nil
+			}
+			return "", false, err
+		}
+		if !over && built.Len()+len(piece) >= maxLineBytes {
+			over = true
+			built.Reset()
+		}
+		if !over {
+			built.Write(piece)
+		}
+		if !more {
+			return built.String(), over, nil
+		}
+	}
 }
 
 func (c *Conversation) readState() error {
@@ -666,8 +839,36 @@ func (c *Conversation) readState() error {
 // megabyte is a model whose answer is kept to the bound and said to be.
 const maxMessageBytes = 256 << 10
 
+// maxLineBytes is the longest line this store reads back, and it is the writer's
+// own bound rather than a guess.
+//
+// It was maxMessageBytes plus a kilobyte, which is less than the text bound alone
+// can cost: JSON spends six bytes on one `<` and on one control character, so an
+// answer of those — or a plain answer carrying one proposal — wrote a line the
+// reader then refused. And bufio refuses THE WHOLE FILE for one long line, which
+// is the opposite of this file's own rule that a line it cannot read costs one
+// message: the transcript failed to open on every restart afterwards, and the
+// Decisions page, which reads the same transcript, failed with it (Astra B-01).
+//
+// So the bound is the text bound as JSON can spell it, six times over, and the
+// rest is for what a message carries beside its text — its stamps, its activity,
+// and its proposals, suggestions and deposits, every field of which is bounded
+// where it is admitted.
+const maxLineBytes = 8 * maxMessageBytes
+
 // Append writes one message and keeps it.
 func (c *Conversation) Append(message Message) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.appendHeld(message)
+}
+
+// appendHeld is Append with this conversation's own lock already held.
+//
+// It is apart for the one caller that has to decide WHICH conversation it is
+// writing into while holding that lock: a turn's answer, whose conversation a
+// first sign-in can move out from under it (Service.appendAnswer).
+func (c *Conversation) appendHeld(message Message) error {
 	if len(message.Text) > maxMessageBytes {
 		message.Text = message.Text[:maxMessageBytes] + "\n\n[the rest of this answer was longer than the transcript keeps]"
 	}
@@ -675,8 +876,6 @@ func (c *Conversation) Append(message Message) error {
 	if err != nil {
 		return err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	file, err := os.OpenFile(c.transcript, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("the Partner's transcript could not be written: %w", err)
@@ -881,6 +1080,32 @@ func trimNotice(now time.Time) Message {
 	}
 }
 
+// unreadableNotice is the line a rewritten transcript keeps, and it is at the
+// END of the file rather than at the head: the drawer shows the newest message
+// first and Messages(limit) answers the LAST n, so a notice at the head is one
+// the human would not be shown at all (R-131-ui).
+//
+// It is shaped like trimNotice and marked as a trim's own for trimNotice's
+// reason: what it says is that messages are gone, which is the first thing a
+// later sweep should cut.
+func unreadableNotice(archive string, setAside int, now time.Time) Message {
+	stamp := now.UTC()
+	gone := fmt.Sprintf("%d messages were set aside", setAside)
+	if setAside == 1 {
+		gone = "one message was set aside"
+	}
+	return Message{
+		ID:      mintTurn(),
+		Turn:    mintTurn(),
+		Role:    RolePartner,
+		Outcome: OutcomeComplete,
+		Text: "This conversation was too large to open, so it was rewritten to what fits. " +
+			"The original is kept whole beside it as " + archive + ", and " + gone + ".",
+		At:      stamp.Format(time.RFC3339),
+		Trimmed: true,
+	}
+}
+
 // writeTranscript replaces the whole file, in one publication: a reader halfway
 // through the old file reads the old file whole rather than a torn mixture, and
 // the append that takes the lock next opens the file this left.
@@ -1025,11 +1250,24 @@ func (c *Conversation) writeState(now time.Time) error {
 	c.mu.Lock()
 	held := stateFile{Session: c.session, Sitting: c.sitting, UpdatedAt: now.UTC().Format(time.RFC3339)}
 	c.mu.Unlock()
+	return publishState(c.state, held)
+}
+
+// writeStateHeld is writeState with this conversation's own lock already held,
+// for the sitting's move to a name at the first sign-in (Service.Adopt), which
+// holds both conversations while it moves them.
+func (c *Conversation) writeStateHeld(now time.Time) error {
+	return publishState(c.state, stateFile{
+		Session: c.session, Sitting: c.sitting, UpdatedAt: now.UTC().Format(time.RFC3339)})
+}
+
+// publishState writes one state file, whole.
+func publishState(path string, held stateFile) error {
 	body, err := json.Marshal(held)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(c.state, append(body, '\n'), 0o600); err != nil {
+	if err := os.WriteFile(path, append(body, '\n'), 0o600); err != nil {
 		return fmt.Errorf("the Partner's conversation state could not be written: %w", err)
 	}
 	return nil

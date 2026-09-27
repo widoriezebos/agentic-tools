@@ -214,3 +214,29 @@ func TestCodexHostCompletesWithItsThread(t *testing.T) {
 		t.Fatalf("codex host wrote no usage: %v", err)
 	}
 }
+
+// TestCodexHostRunsInTheCheckout: the Codex host CLI runs in the
+// installation's checkout (hosts/codex.sh's `cd "$root"`), for a fresh turn
+// and for a resumed thread, whose `codex exec resume` takes no -C.
+func TestCodexHostRunsInTheCheckout(t *testing.T) {
+	t.Parallel()
+	for _, resume := range []string{"", "codex-thread"} {
+		b := newHostBed(t, "codex", "pwd -P >\"$HOST_CWD_FILE\"\n"+codexStub)
+		cwdFile := filepath.Join(b.root, "host-cwd")
+		b.env["HOST_CWD_FILE"] = cwdFile
+		var extra []string
+		if resume != "" {
+			extra = []string{"--resume-session", resume}
+		}
+		if code := b.run("codex", extra...); code != 0 {
+			t.Fatalf("codex host (resume %q) = %d: %s", resume, code, b.stderr.String())
+		}
+		want, err := filepath.EvalSymlinks(b.root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := os.ReadFile(cwdFile); strings.TrimSpace(string(got)) != want {
+			t.Fatalf("codex host (resume %q) ran in %q, want the checkout %q", resume, got, want)
+		}
+	}
+}

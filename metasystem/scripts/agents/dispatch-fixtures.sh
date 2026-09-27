@@ -758,6 +758,8 @@ wait_for_agent_child_stopped() { # stopped-file path, failure message
   done
 }
 
+assert_agent_round_child_dead() { # round dir, message: the owner's death proof, not the child's TERM acknowledgement
+  local child; child=$(tr -d '[:space:]' <"$1/child.pid") && [[ "$child" =~ ^[1-9][0-9]*$ ]] && ! kill -0 "$child" 2>/dev/null || { echo "$2: recorded child ${child:-?} is alive or unrecorded" >&2; exit 1; }; }
 cap_lock_fixture_acquire() { # fixture name
   local name=$1 directory="$agent_repo/artifacts/agents/supervision/cap-authority.lock.d"
   cap_lock_fixture_tag="metasystem-cap-lock-$name-$$-$RANDOM"
@@ -1583,7 +1585,7 @@ grep -Fq -- '- Budget: elapsedLimit=1d attemptLimit=2 reservedJobMinutesLimit=24
     "$budget_dispatch_repo/bin/metasystem" internal delegate --role verifier --brief "$budget_brief" \
       --op structured-budget-refused --goal structured-budget --destructive-reach MECHANICAL
 )
-grep -Fq "extended once at 2000-01-01T00:07:00Z; a further raise is a person's set-budget" \
+grep -Fq "extended once at 2000-01-01T00:07:00Z" \
   "$agent_fixture/structured-budget-refused.out" \
   || { echo "the second exhaustion did not name the standing extension marker" >&2; cat "$agent_fixture/structured-budget-refused.out" >&2; exit 1; }
 [[ ! -e "$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-refused.json" ]] \
@@ -2912,8 +2914,7 @@ process_loss_status=0; wait_for_agent_fixture_process process-loss-driver proces
 [[ $process_loss_status -eq 3 ]] || { echo "process loss mapped to $process_loss_status instead of 3" >&2; exit 1; }
 grep -Fq 'process-lost' "$agent_repo/artifacts/agents/jobs/process-loss.json" \
   || { echo "reap did not name process-lost" >&2; exit 1; }
-wait_for_agent_child_stopped "$agent_repo/artifacts/agents/process-loss/rounds/1/child.stopped" \
-  "reap did not TERM the orphaned process-loss child"
+assert_agent_round_child_dead "$agent_repo/artifacts/agents/process-loss/rounds/1" "reap did not stop the orphaned process-loss child"
 grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/process-loss.json" \
   || { echo "process-loss terminal record lacks group-death proof" >&2; exit 1; }
 
@@ -2942,8 +2943,7 @@ wait_for_agent_fixture_process timed-driver timed "$timeout_driver"
   exit 1; }
 grep -Fq 'budget-cap' "$agent_repo/artifacts/agents/jobs/timed.json" \
   || { echo "absolute cap did not record budget-cap" >&2; exit 1; }
-wait_for_agent_child_stopped "$agent_repo/artifacts/agents/timed/rounds/1/child.stopped" \
-  "timeout did not TERM the whole owned group"
+assert_agent_round_child_dead "$agent_repo/artifacts/agents/timed/rounds/1" "timeout did not stop the whole owned group"
 grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/timed.json" \
   || { echo "timeout terminal record lacks group-death proof" >&2; exit 1; }
 # A capped critic round is not continued; the examination retry below
@@ -2983,8 +2983,8 @@ wait_for_agent_fixture_process capped-wt-driver capped-wt "$capped_driver"
 [[ "$(cat "$capped_result")" == 4 ]] || { echo "the capped implementer round did not map to wait exit 4 (got $(cat "$capped_result"))" >&2; exit 1; }
 grep -Fq 'budget-cap' "$agent_repo/artifacts/agents/jobs/capped-wt.json" \
   || { echo "the capped implementer round did not record budget-cap" >&2; exit 1; }
-wait_for_agent_child_stopped "$agent_repo/artifacts/agents/capped-wt/rounds/1/child.stopped" \
-  "the capped implementer round's group was not stopped"
+assert_agent_round_child_dead "$agent_repo/artifacts/agents/capped-wt/rounds/1" "the capped implementer round's group was not stopped"
+grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/capped-wt.json" || { echo "capped-wt terminal record lacks group-death proof" >&2; exit 1; }
 [[ -f "$capped_workspace/metasystem/capped-marker.txt" ]] \
   || { echo "the reap removed the capped round's worktree file" >&2; exit 1; }
 run_agent_fixture capped-wt-follow-up capped-wt-r2 "$agent_dispatch" follow-up --job capped-wt --message "$follow_message" --wait
@@ -3084,8 +3084,7 @@ wait_for_agent_status cancelled running
 run_agent_fixture cancelled-cancel cancelled "$agent_dispatch" cancel --job cancelled
 wait_for_agent_fixture_process cancelled-driver cancelled "$cancel_driver"
 [[ "$(cat "$cancel_result")" == 8 ]] || { echo "cancelled did not map to wait exit 8" >&2; exit 1; }
-wait_for_agent_child_stopped "$agent_repo/artifacts/agents/cancelled/rounds/1/child.stopped" \
-  "cancel did not TERM the whole owned group"
+assert_agent_round_child_dead "$agent_repo/artifacts/agents/cancelled/rounds/1" "cancel did not stop the whole owned group"
 grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/cancelled.json" \
   || { echo "cancelled terminal record lacks group-death proof" >&2; exit 1; }
 

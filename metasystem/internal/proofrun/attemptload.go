@@ -338,14 +338,10 @@ func nestedProofLauncher(self int64) (bool, bool) {
 	return false, true
 }
 
-// topLevelLaunchers counts the launchers that have no launcher above them
-// and are neither self, nor an ancestor of self, nor a descendant of self.
-// A battery's nested bed launchers, and the joined launches inside another
-// seat's battery, are one launcher each way: the battery's.
-func topLevelLaunchers(rows []processRow, self int64) int {
-	return len(topLevelLauncherRows(rows, self))
-}
-
+// topLevelLauncherRows returns the launchers that have no launcher above
+// them and are neither self, nor an ancestor of self, nor a descendant of
+// self. A battery's nested bed launchers, and the joined launches inside
+// another seat's battery, are one launcher each way: the battery's.
 func topLevelLauncherRows(rows []processRow, self int64) []processRow {
 	parent := map[int64]int64{}
 	launcher := map[int64]bool{}

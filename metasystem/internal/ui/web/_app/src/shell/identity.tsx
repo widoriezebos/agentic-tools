@@ -25,7 +25,7 @@ export type WorkspaceState =
   | { state: "failed"; message: string }
   | { state: "known"; workspace: Workspace };
 
-type Identity = {
+export type Identity = {
   workspace: WorkspaceState;
   retry: () => void;
   session: SessionStatus;
@@ -39,13 +39,25 @@ type Identity = {
   settled: (state: SessionState) => void;
 };
 
-const IdentityContext = createContext<Identity>({
+/** What a page reads where nothing above it has provided an identity. */
+const nothing: Identity = {
   workspace: { state: "loading" },
   retry: () => {},
   session: { state: "loading" },
   askToSignIn: () => {},
   settled: () => {},
-});
+};
+
+const IdentityContext = createContext<Identity>(nothing);
+
+/**
+ * The identity one subtree reads: what the caller names, and nothing for the
+ * rest. It is how the header's own controls are rendered without a server, as
+ * `PartnerAs` renders the drawer's.
+ */
+export function IdentityAs({ held, children }: { held: Partial<Identity>; children: ReactNode }) {
+  return <IdentityContext.Provider value={{ ...nothing, ...held }}>{children}</IdentityContext.Provider>;
+}
 
 export function useWorkspaceState(): Identity {
   return useContext(IdentityContext);

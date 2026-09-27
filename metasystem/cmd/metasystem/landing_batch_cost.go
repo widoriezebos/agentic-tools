@@ -273,5 +273,5 @@ func forecastCostRefusal(forecast batch.CostForecast) error {
 	if len(reasons) == 0 {
 		return nil
 	}
-	return fmt.Errorf("BATCH_COST_HEADROOM_REFUSED: %s", strings.Join(reasons, "; "))
+	return fmt.Errorf("BATCH_COST_HEADROOM_REFUSED: %s; the proof would spend past an approved box, so a person raises it with metasystem goal budget G BOX", strings.Join(reasons, "; "))
 }

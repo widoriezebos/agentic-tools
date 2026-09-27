@@ -207,7 +207,7 @@ func TestDoneRefusesOpenReadItemIDsAndPassesWhenClosed(t *testing.T) {
 	var openErr *DoneReadItemsOpenError
 	_, tip := acceptedTreeForEndpoint(t, endpoint)
 	_, typedErr := doneRequest(readItemRequest(endpoint, 73), "source", "Built.").Mutate(tip)
-	if doneErr != nil || result.Outcome != OutcomeRejected || !errors.As(typedErr, &openErr) || !strings.Contains(result.Detail, "read-z-1, read-z-2") || !strings.Contains(result.Detail, "--id source --item read-z-1 --fixed") || !strings.Contains(result.Detail, "--id source --item read-z-2 --moved") || !strings.Contains(result.Detail, "--id source --item read-z-2 --accepted") {
+	if doneErr != nil || result.Outcome != OutcomeRejected || !errors.As(typedErr, &openErr) || !strings.Contains(result.Detail, "read-z-1, read-z-2") || !strings.Contains(result.Detail, "metasystem goal notes source --close read-z-1 --fixed") || !strings.Contains(result.Detail, "metasystem goal notes source --close read-z-2 --moved") || !strings.Contains(result.Detail, "metasystem goal notes source --close read-z-2 --accepted") {
 		t.Fatalf("open-item done refusal: result=%+v error=%v typed=%T %v", result, doneErr, typedErr, typedErr)
 	}
 	reason := "the behavior is intentional"

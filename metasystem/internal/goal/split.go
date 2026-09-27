@@ -240,7 +240,7 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 				return nil, err
 			}
 			if parent.Sliced != nil {
-				return nil, fmt.Errorf("GOAL_SPLIT_REFUSED: goal %s recorded its first slice (machine %s, revision %d, %s); split is a before-slicing act and slicing has begun — conclude the goal and open successor goals instead", parentID, parent.Sliced.Machine, parent.Sliced.Revision, parent.Sliced.At)
+				return nil, fmt.Errorf("GOAL_SPLIT_REFUSED: goal %s recorded its first slice (machine %s, revision %d, %s); split is a before-slicing act and slicing has begun, so a split now would orphan the recorded slices — conclude it with metasystem goal done %s --reason TEXT and declare each successor with metasystem goal open G2", parentID, parent.Sliced.Machine, parent.Sliced.Revision, parent.Sliced.At, parentID)
 			}
 			if _, retired := rootDecomposed(t.Root, parentID); retired {
 				return nil, fmt.Errorf("goal %s is registered as decomposed and cannot split again", parentID)
@@ -373,7 +373,7 @@ func validateSplitParent(parent *GoalFile, r VerbRequest) error {
 		if ownPair(parent.Claimed, r.Actor) {
 			return nil
 		}
-		return fmt.Errorf("goal %s is claimed by %s+%s; whether its slicing has started is that machine's job-record truth — park or steal it first, then split", parent.Id, parent.Claimed.Machine, parent.Claimed.Lineage)
+		return fmt.Errorf("goal %s is claimed by %s+%s; whether its slicing has started is that machine's job-record truth, and splitting under it could discard started work — park it with metasystem goal pause %s --reason TEXT or take it over with metasystem goal claim %s --take-over --reason TEXT, then split", parent.Id, parent.Claimed.Machine, parent.Claimed.Lineage, parent.Id, parent.Id)
 	case StateParked:
 		if r.Actor.Human == "" {
 			return fmt.Errorf("goal %s is parked; splitting it is a human act", parent.Id)

@@ -1,14 +1,20 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import type { Proposal } from "./api";
+import type { Proposal, ProposalState } from "./api";
 import {
+  ALREADY_CARRIED,
   answeredOf,
+  APPLIED,
   applyLabel,
   askReread,
   argumentsOf,
   askLine,
   barLine,
   cardsIn,
+  carriesAlready,
   dependentsWords,
   dispatchOf,
   dismissable,
@@ -20,6 +26,7 @@ import {
   GOAL_CHANGED,
   goesOn,
   guardFor,
+  IN_FLIGHT,
   lineID,
   lineState,
   liveDependentsIn,
@@ -128,6 +135,30 @@ function row(over: Partial<Row> = {}): Row {
   };
 }
 
+/**
+ * The sentence the act layer answers a second press with, while this process is
+ * executing the same act on the same goal (internal/ui/act). The page never
+ * composes it: it echoes the one the refusal carried, which is what these tests
+ * hand it. The code beside it is the page's own constant.
+ */
+const IN_FLIGHT_SAID = "this act on this goal is being applied by another press; the next read says what happened";
+
+/** One approval as the ledger records one, for a goal read as already approved. */
+const APPROVAL = {
+  by: "wido",
+  at: "2026-09-27T09:00:00Z",
+  authority: "session",
+  reviewBy: "",
+  expired: false,
+  expiredWhy: "",
+};
+
+/**
+ * The same approval, relayed and expired: an approval the goal carries and
+ * cannot be worked under. Replacing it is what the approve on the card is for.
+ */
+const EXPIRED = { ...APPROVAL, authority: "attorney", expired: true, expiredWhy: "the review date passed" };
+
 /** The goal as the Partner read it, which every guarded line carries. */
 const READ = {
   intent: "Fleet presence is read from the census, not polled.",
@@ -146,6 +177,13 @@ function abandonOf(over: Partial<Proposal> = {}): Proposal {
     ...over,
   });
 }
+
+/**
+ * One held answer, at the entry version the page was holding it at: what the
+ * act answered where the conversation could not write it down.
+ */
+const heldAt = (state: ProposalState, words: string, version: number): Mark["unrecorded"] =>
+  ({ state, words, version }) as Mark["unrecorded"];
 
 /** One card over the proposals given, with the marks and tuples given. */
 function card(
@@ -506,6 +544,25 @@ describe("what the run does with each answer", () => {
     expect(recorded(answered)).toEqual({ state: "refused", words: NOT_APPLIED_SIGN_IN });
   });
 
+  /**
+   * An act another press owns is answered 409 `in-flight`, before any read or
+   * publish (Astra A-01). The tab that meets it holds NO result: the act is
+   * somebody else's and may yet land, so the line is written `unresolved` in the
+   * refusal's own sentence and never `refused` — a refusal would say nothing
+   * landed, which this tab cannot know.
+   *
+   * And it STOPS the run, for the reason every unresolved answer does: the act
+   * may be landing as this is read, and a line behind it may be about the very
+   * goal it changes. The rest say "not run", and Continue reads again before it
+   * compares them (Astra E-01).
+   */
+  it("holds no result for an act another press is applying, and stops there", () => {
+    const answered = answeredOf(new BacklogError("/act", 409, IN_FLIGHT_SAID, IN_FLIGHT));
+    expect(answered).toEqual({ kind: "in-flight", words: IN_FLIGHT_SAID });
+    expect(recorded(answered)).toEqual({ state: "unresolved", words: IN_FLIGHT_SAID });
+    expect(goesOn(answered)).toBe(false);
+  });
+
   it("writes each answer's own state onto the line", () => {
     expect(recorded({ kind: "applied", words: "" })).toEqual({ state: "applied", words: "" });
     expect(recorded({ kind: "refused", words: "no" })).toEqual({ state: "refused", words: "no" });
@@ -715,6 +772,71 @@ describe("what a line says about where it stands", () => {
     }
   });
 
+  /**
+   * And it says nothing of an answer a SETTLED entry has accounted for
+   * (Astra C-04, narrowed by E-03).
+   *
+   * The answer is held because the record could not be written, so it is the only
+   * account of the act there is — until the record carries one. What carries one
+   * is a settled entry: `applied`, `refused` or `dismissed`. A version increment
+   * is not one. Another tab's bookkeeping moves the version without saying what
+   * happened, and retiring the held answer on it hid the only explanation there
+   * was and offered a retry over an act that had landed (Astra E-03). The mark is
+   * the store's, so a drawer that recovered used to hand the inbox its obsolete
+   * answer.
+   */
+  it("says nothing of a held answer once a settled entry accounts for it", () => {
+    const held = (version: number): Marks => ({
+      [lineID("t1", 0)]: {
+        ticked: true, notRun: false, refusedUnsent: "",
+        unrecorded: heldAt("refused", "goal is claimed", version),
+      },
+    });
+    const settled = card([proposal({ state: "applied", version: 4 })], held(2));
+    expect(lineState(lineOf(settled))).toBe(APPLIED);
+    expect(offersTryAgain(lineOf(settled))).toBe(false);
+
+    // Moved but unsettled: somebody has written the line since and said nothing
+    // about what became of the act, so what this page holds is still the only
+    // account of it.
+    const moved = card([proposal({ state: "applying", version: 3 })], held(2));
+    expect(lineState(lineOf(moved))).toBe(`refused: goal is claimed; ${COULD_NOT_RECORD}`);
+    expect(offersTryAgain(lineOf(moved))).toBe(true);
+
+    // And at its own version, as before.
+    const standing = card([proposal({ state: "applying", version: 2 })], held(2));
+    expect(lineState(lineOf(standing))).toBe(`refused: goal is claimed; ${COULD_NOT_RECORD}`);
+    expect(offersTryAgain(lineOf(standing))).toBe(true);
+  });
+
+  /**
+   * The end state of the two tabs below, read on the tab that holds the result
+   * (Astra E-03).
+   *
+   * This tab's approve applied, its outcome write met the other tab's attempt, and
+   * that tab then wrote `unresolved` at version 4 in the refusal's own sentence —
+   * bookkeeping about a request that published nothing. The act LANDED, and this
+   * held answer is the only thing anywhere that knows it: a line that read the
+   * unresolved entry instead would say the opposite and offer the press that
+   * approves the goal twice.
+   */
+  it("keeps a held result over another tab's unresolved bookkeeping", () => {
+    const landed = (version: number): Marks => ({
+      [lineID("t1", 0)]: {
+        ticked: true, notRun: false, refusedUnsent: "",
+        unrecorded: heldAt("applied", "", version),
+      },
+    });
+    const bookkept = card([proposal({ state: "unresolved", words: IN_FLIGHT_SAID, version: 4 })], landed(2));
+    expect(lineState(lineOf(bookkept))).toBe(`applied; ${COULD_NOT_RECORD}`);
+    expect(offersTryAgain(lineOf(bookkept))).toBe(false);
+
+    // And the settled entry retires it: the record carries the account now.
+    const recorded = card([proposal({ state: "applied", version: 4 })], landed(2));
+    expect(lineState(lineOf(recorded))).toBe(APPLIED);
+    expect(offersTryAgain(lineOf(recorded))).toBe(false);
+  });
+
   it("offers Try again on a refused or unresolved line and on nothing else", () => {
     expect(offersTryAgain(lineOf(card([proposal({ state: "refused", words: "no" })])))).toBe(true);
     expect(offersTryAgain(lineOf(card([proposal({ state: "unresolved", words: "?" })])))).toBe(true);
@@ -786,6 +908,28 @@ describe("where a card that waits stands", () => {
     expect(cards[0].folded).toBe(true);
   });
 
+  /**
+   * And the folded line's own press opens it (Astra C-03).
+   *
+   * The automatic fold is a presentation rule about what is in view, not a fact
+   * about the card, so the human's press outranks it: a card nobody dismissed used
+   * to have its id removed from a list it was never in, and the condition folded it
+   * straight back — leaving its arguments and its controls unreachable. A press
+   * records the expansion, and a dismissal folds it again, because putting the card
+   * away is a later act of the human's own.
+   */
+  it("unfolds an older card the human expanded, and folds it again when it is dismissed", () => {
+    const two = [
+      { turn: "t1", proposals: [proposal({ index: 0 })] },
+      { turn: "t2", proposals: [proposal({ index: 0, goal: "refunds" })] },
+    ];
+    expect(cardsIn(two, {}, {}, []).map((one) => one.folded)).toEqual([true, false]);
+    expect(cardsIn(two, {}, {}, [], ["t1"]).map((one) => one.folded)).toEqual([false, false]);
+    expect(cardsIn(two, {}, {}, ["t1"], ["t1"]).map((one) => one.folded)).toEqual([true, false]);
+    // An expansion names one card and says nothing about any other.
+    expect(cardsIn(two, {}, {}, [], ["t9"]).map((one) => one.folded)).toEqual([true, false]);
+  });
+
   /** The bar counts across answers, and its press opens the newest with one. */
   it("counts every waiting action across answers", () => {
     const cards = cardsIn(
@@ -816,6 +960,134 @@ describe("where a card that waits stands", () => {
   });
 });
 
+/**
+ * What the goal already carries: each act's own effect, read off the reading a
+ * run takes.
+ *
+ * It is asked of a line found at `applying` and of nothing else, and what it
+ * decides is whether that line is settled without a send (Astra A-01). Every
+ * effect below is the one the act's own route writes, so a goal that shows it is
+ * a goal the act reached.
+ */
+describe("what the goal already carries", () => {
+  const applying = (over: Partial<Proposal>, displayed: Displayeds = {}) =>
+    lineOf(card([proposal({ state: "applying", ...over })], {}, displayed));
+
+  it("reads an approval as carried only with the tuple the card displayed", () => {
+    const line = applying(
+      { verb: "approve-goal", fields: {} },
+      { [lineID("t1", 0)]: { budget: BOX, source: "goal" } },
+    );
+    expect(carriesAlready(line, [row({ approved: APPROVAL, budget: BOX })])).toBe(true);
+    // Another tuple is another act, which the freshness guard refuses on its own.
+    expect(carriesAlready(line, [row({ approved: APPROVAL, budget: { ...BOX, attemptLimit: 9 } })])).toBe(false);
+    expect(carriesAlready(line, [row({ budget: BOX })])).toBe(false);
+    // And an approval that has EXPIRED carries no approve at all: the engine's
+    // own no-op requires an unexpired one (internal/goal/approval.go), so the
+    // act writes a fresh approval and the goal is waiting for it (Astra D-03).
+    expect(carriesAlready(line, [row({ approved: EXPIRED, budget: BOX })])).toBe(false);
+  });
+
+  it("reads an edit as carried where every field it names is what the goal says", () => {
+    const line = applying({ verb: "edit-goal", fields: { intent: "A new intent.", labels: "fleet, presence" } });
+    expect(carriesAlready(line, [row({ intent: "A new intent.", labels: ["fleet", "presence"] })])).toBe(true);
+    expect(carriesAlready(line, [row({ intent: "A new intent.", labels: ["fleet"] })])).toBe(false);
+    expect(carriesAlready(line, [row()])).toBe(false);
+  });
+
+  it("reads a pause, a resume, a priority, a block, an unblock and an abandon", () => {
+    expect(carriesAlready(applying({}), [row({ state: "parked" })])).toBe(true);
+    expect(carriesAlready(applying({}), [row()])).toBe(false);
+    expect(carriesAlready(applying({ verb: "unpark-goal", fields: {} }), [row()])).toBe(true);
+    expect(carriesAlready(applying({ verb: "unpark-goal", fields: {} }), [row({ state: "parked" })])).toBe(false);
+    const priority = applying({ verb: "set-goal-priority", fields: { priority: "1", sequence: "3" } });
+    expect(carriesAlready(priority, [row({ priority: 1, sequence: 3 })])).toBe(true);
+    expect(carriesAlready(priority, [row({ priority: 1, sequence: 4 })])).toBe(false);
+    const block = applying({ verb: "block-goal", fields: { blocker: "refunds" } });
+    expect(carriesAlready(block, [row({ blockedBy: ["refunds"] })])).toBe(true);
+    expect(carriesAlready(block, [row()])).toBe(false);
+    const unblock = applying({ verb: "unblock-goal", fields: { blocker: "refunds" } });
+    expect(carriesAlready(unblock, [row()])).toBe(true);
+    expect(carriesAlready(unblock, [row({ blockedBy: ["refunds"] })])).toBe(false);
+    expect(carriesAlready(applying({ verb: "abandon-goal", fields: {} }), [row({ state: "abandoned" })])).toBe(true);
+    expect(carriesAlready(applying({ verb: "abandon-goal", fields: {} }), [row()])).toBe(false);
+  });
+
+  /**
+   * An unapprove's effect is an approval that is GONE (Astra F-05).
+   *
+   * The engine answers the repeat of it applied under a browser session, so the
+   * page reads the same effect the same way: a goal carrying no approval carries
+   * this act. An EXPIRED approval is not nothing — it is an approval this act
+   * would take off — so a goal carrying one is not carried and the line is sent.
+   */
+  it("reads an unapprove as carried where the goal carries no approval", () => {
+    const line = applying({ verb: "withdraw-goal", fields: { reason: "the budget was wrong" } });
+    expect(carriesAlready(line, [row()])).toBe(true);
+    expect(carriesAlready(line, [row({ approved: APPROVAL })])).toBe(false);
+    expect(carriesAlready(line, [row({ approved: EXPIRED })])).toBe(false);
+  });
+
+  /**
+   * And an open's effect is the goal it asked for, whole (Astra F-05).
+   *
+   * Not an id that is taken: the whole requested effect — the intent, the next
+   * step, the derived tier, the labels and both directions of the blocked
+   * relation. A goal of that id that differs is somebody else's goal, or an
+   * earlier one, and this act never reached it: the line is sent, and the engine
+   * refuses it in its own words as it does today.
+   */
+  it("reads an open as carried where the goal that exists is the goal it asked for", () => {
+    const fields = {
+      intent: "Fleet presence is read from the census, not polled.",
+      nextStep: "Read the census.",
+      basis: "the census is the source", severity: "2", novelty: "3", exposure: "1", accumulation: "1",
+      labels: "fleet", blockedBy: "refunds", blocks: "bank-sandbox",
+    };
+    const line = applying({ verb: "open-goal", fields });
+    // The tier the line would SEND, derived from the answers it carries.
+    const asked = dispatchOf(line);
+    expect(asked?.act === "open" ? asked.goal.tier : 0).toBe(3);
+    const opened = row({ tier: 3, blockedBy: ["refunds"], holds: ["bank-sandbox"] });
+    expect(carriesAlready(line, [opened])).toBe(true);
+    // The other direction of the relation is read as a relation, not as an order.
+    expect(carriesAlready(line, [row({ tier: 3, blockedBy: ["refunds"], holds: ["bank-sandbox", "refunds"] })]))
+      .toBe(false);
+    // And every field of the effect is compared.
+    expect(carriesAlready(line, [{ ...opened, intent: "Something else entirely." }])).toBe(false);
+    expect(carriesAlready(line, [{ ...opened, nextStep: "Ask the fleet." }])).toBe(false);
+    expect(carriesAlready(line, [{ ...opened, tier: 2 }])).toBe(false);
+    expect(carriesAlready(line, [{ ...opened, labels: ["fleet", "presence"] }])).toBe(false);
+    expect(carriesAlready(line, [{ ...opened, blockedBy: [] }])).toBe(false);
+    expect(carriesAlready(line, [{ ...opened, holds: [] }])).toBe(false);
+  });
+
+  /**
+   * An abandon is carried only where the successor is the one it asked for
+   * (Astra F-04).
+   *
+   * The reading does not say which successor an abandon recorded — the row's
+   * abandoned clause is who, when and why — so an abandon that asks for one is
+   * never read off a row at all: it is sent, and the engine compares the successor
+   * it recorded with the one asked for, answering applied where they are the same
+   * and refusing in words where they are not.
+   */
+  it("reads an abandon as carried only where it asked for no successor", () => {
+    const plain = applying({ verb: "abandon-goal", fields: { because: "overtaken" } });
+    expect(carriesAlready(plain, [row({ state: "abandoned" })])).toBe(true);
+    expect(carriesAlready(plain, [row()])).toBe(false);
+    const carrying = applying({ verb: "abandon-goal", fields: { because: "overtaken", successor: "g1-s70" } });
+    expect(carriesAlready(carrying, [row({ state: "abandoned" })])).toBe(false);
+  });
+
+  it("says nothing of a goal the reading has not got", () => {
+    expect(carriesAlready(applying({}), [])).toBe(false);
+    // An open of an id nothing carries is the act that MAKES the goal, so there
+    // is nothing to read it off: the line is sent.
+    expect(carriesAlready(applying({ verb: "open-goal", fields: {} }), [])).toBe(false);
+  });
+});
+
 describe("the run, in order", () => {
   /** A run over these lines, with every impure step recorded rather than made. */
   function driving(
@@ -829,7 +1101,12 @@ describe("the run, in order", () => {
        * than once — the human signing in after a refusal that asked them to.
        */
       answers: Record<string, Answered | readonly Answered[]>;
-      writes: Record<string, Written>;
+      /**
+       * What each write answers, by `line:state`. A list answers a write made
+       * more than once at that state — the same line written by a second press,
+       * after a run that stopped on the first one's refusal.
+       */
+      writes: Record<string, Written | readonly Written[]>;
     }> = {},
   ) {
     const sent: string[] = [];
@@ -837,6 +1114,8 @@ describe("the run, in order", () => {
     // The entry each line stands at, as the route would hold it.
     const entries = new Map<string, Proposal>();
     const written: { line: string; state: string; words: string; version: number }[] = [];
+    // The attempt each write carried, in the order the writes were made.
+    const attempts: string[] = [];
     const marked: { line: string; change: Partial<Mark> }[] = [];
     const reconciled: Proposal[] = [];
     const rereads: number[] = [];
@@ -849,11 +1128,16 @@ describe("the run, in order", () => {
         looks.push(read);
         return Promise.resolve(read);
       },
-      record: (line, state, words) => {
+      record: (line, state, words, attempt) => {
+        attempts.push(attempt);
+        const key = `${line.id}:${state}`;
+        const before = written.filter((one) => `${one.line}:${one.state}` === key).length;
         written.push({ line: line.id, state, words, version: line.version });
-        const forced = over.writes?.[`${line.id}:${state}`];
+        const forced = over.writes?.[key];
         if (forced !== undefined) {
-          return Promise.resolve(forced);
+          return Promise.resolve(
+            Array.isArray(forced) ? forced[Math.min(before, forced.length - 1)] : (forced as Written),
+          );
         }
         // The server's own compare-and-set, here: a write against a version the
         // entry has moved past is refused with the entry as it stands. Without
@@ -892,11 +1176,22 @@ describe("the run, in order", () => {
         signIns.push(rest);
       },
     };
-    return { ports, sent, written, marked, reconciled, rereads, signIns, looks };
+    return { ports, sent, written, attempts, marked, reconciled, rereads, signIns, looks };
   }
 
   const three = () => card([proposal({ index: 0 }), proposal({ index: 1, goal: "refunds" }),
     proposal({ index: 2, goal: "bank-sandbox" })]).lines;
+
+  /** The mark a page would hold after a run: every change it made, folded in. */
+  function markAfter(
+    from: Mark,
+    changes: readonly { line: string; change: Partial<Mark> }[],
+    id: string,
+  ): Mark {
+    return changes
+      .filter((one) => one.line === id)
+      .reduce((held, one) => ({ ...held, ...one.change }), from);
+  }
 
   /** Two writes per line and no more: applying before the act, the outcome after. */
   it("writes applying before the act and the outcome after, for every line", async () => {
@@ -914,6 +1209,40 @@ describe("the run, in order", () => {
     ]);
     // The page in view reads again after each confirmed act and when the run ends.
     expect(driven.rereads.length).toBe(4);
+  });
+
+  /**
+   * A press is an attempt, and the attempt owns the line.
+   *
+   * Every run of this runner makes ONE attempt id and carries it on every write
+   * it makes. It is what lets the server tell the press that owns a line from a
+   * press that has lost it: the attempt is stored on the entry when the line
+   * moves to `applying`, and a settle write carrying another one is refused with
+   * the entry as it stands. The page never compares it — that compare is the
+   * server's — and its whole part is one token per run.
+   *
+   * Continue and Try again are fresh presses, each with its own read, so each
+   * mints its own: a continuation writing under the attempt of the run before it
+   * would be claiming a line it never took.
+   */
+  it("carries one attempt on every write of a run, and a fresh one on the next press", async () => {
+    const lines = three();
+    const driven = driving(lines);
+    await runProposals(lines, driven.ports);
+
+    // Six writes — applying and the outcome, for each of three lines — under one
+    // attempt.
+    expect(driven.attempts.length).toBe(6);
+    expect([...new Set(driven.attempts)]).toEqual([driven.attempts[0]]);
+    // A random token of sixteen hex characters, as the entry carries it.
+    expect(driven.attempts[0]).toMatch(/^[0-9a-f]{16}$/);
+
+    // Try again on the last line, or Continue from it: another press, another
+    // attempt.
+    const again = driving(lines);
+    await runProposals([lines[2]], again.ports);
+    expect(again.attempts[0]).toMatch(/^[0-9a-f]{16}$/);
+    expect(again.attempts[0]).not.toBe(driven.attempts[0]);
   });
 
   it("passes a refusal and sends the next line", async () => {
@@ -1029,7 +1358,9 @@ describe("the run, in order", () => {
     });
     await runProposals(lines, driven.ports);
     expect(driven.marked).toContainEqual({
-      line: lines[0].id, change: { unrecorded: { state: "applied", words: "" } },
+      // At the version the entry stands at: the write that would have moved it
+      // is the one that failed.
+      line: lines[0].id, change: { unrecorded: { state: "applied", words: "", version: 2 } },
     });
     // Never the other mark: an unsent refusal is a different thing and would
     // take precedence over what the ledger did.
@@ -1046,7 +1377,7 @@ describe("the run, in order", () => {
     const applied = card([proposal({ state: "applying" })], {
       [lineID("t1", 0)]: {
         ticked: true, notRun: false, refusedUnsent: "",
-        unrecorded: { state: "applied", words: "" },
+        unrecorded: { state: "applied", words: "", version: 1 },
       },
     });
     expect(lineState(lineOf(applied))).toBe(`applied; ${COULD_NOT_RECORD}`);
@@ -1056,7 +1387,7 @@ describe("the run, in order", () => {
     const refusedLine = card([proposal({ state: "applying" })], {
       [lineID("t1", 0)]: {
         ticked: true, notRun: false, refusedUnsent: "",
-        unrecorded: { state: "refused", words: "goal is claimed" },
+        unrecorded: { state: "refused", words: "goal is claimed", version: 1 },
       },
     });
     expect(lineState(lineOf(refusedLine))).toBe(`refused: goal is claimed; ${COULD_NOT_RECORD}`);
@@ -1066,7 +1397,7 @@ describe("the run, in order", () => {
     const unresolved = card([proposal({ state: "applying" })], {
       [lineID("t1", 0)]: {
         ticked: true, notRun: false, refusedUnsent: "",
-        unrecorded: { state: "unresolved", words: "nobody knows" },
+        unrecorded: { state: "unresolved", words: "nobody knows", version: 1 },
       },
     });
     expect(lineState(lineOf(unresolved)))
@@ -1147,6 +1478,47 @@ describe("the run, in order", () => {
     expect(driven.looks.length).toBe(2);
   });
 
+  /**
+   * And an act somebody ELSE applied invalidates the reading just as one of this
+   * run's own does (Astra C-01).
+   *
+   * `[edit G, approve G]` again, and this time the edit comes back as a conflict
+   * carrying an applied entry: another tab made that very edit. The ledger has
+   * moved, so the approval behind it must not compare against the reading taken
+   * before the run — that reading is the intent the card displayed, and passing on
+   * it would approve work the human never read.
+   */
+  it("reads again after an applied conflict and refuses the next line against the fresh reading", async () => {
+    const read = { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] };
+    const one = card(
+      [
+        proposal({ index: 0, verb: "edit-goal", fields: { intent: "Something else entirely." }, read }),
+        proposal({ index: 1, verb: "approve-goal", fields: {}, read }),
+      ],
+      {},
+      { [lineID("t1", 1)]: { budget: BOX, source: "goal" } },
+    );
+    const before: Looked = { rows: [row({ budget: BOX })], defaults: {}, outcome: "current", message: "" };
+    const after: Looked = {
+      rows: [row({ intent: "Something else entirely.", budget: BOX })],
+      defaults: {}, outcome: "current", message: "",
+    };
+    const applied: Proposal = { ...one.lines[0], state: "applied", words: "", version: 4 };
+    const driven = driving(one.lines, {
+      looks: [before, after],
+      writes: { [`${one.lines[0].id}:applying`]: { kind: "conflict", proposal: applied } },
+    });
+    await runProposals(one.lines, driven.ports);
+
+    // The entry they left is shown, nothing is sent for it, and the approval is
+    // refused against the reading taken after it rather than passed on the stale
+    // one.
+    expect(driven.reconciled).toEqual([applied]);
+    expect(driven.looks.length).toBe(2);
+    expect(driven.sent).toEqual([]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { refusedUnsent: GOAL_CHANGED } });
+  });
+
   /** And it reads again only where a later line actually depends on a goal. */
   it("reads again once per confirmed act, and not at all where no later line is guarded", async () => {
     const lines = three();
@@ -1154,6 +1526,587 @@ describe("the run, in order", () => {
     await runProposals(lines, driven.ports);
     // Three parks land and none of the lines after them compares anything.
     expect(driven.looks.length).toBe(1);
+  });
+
+  /**
+   * A line found at `applying` was begun by somebody, and learning that must not
+   * authorise a second act (Astra A-01).
+   *
+   * Tab A records `applying` and sends; tab B receives that version and offers
+   * Try again, whose press used to write `applying` again and send a second act.
+   * An approve applied twice is two approval records — the engine suppresses a
+   * duplicate proven approval and not a session one — so the press reconciles
+   * first: the fetch-first reading this run already took is looked at, and a goal
+   * that already carries the act settles the line without a send.
+   */
+  it("records an applying line whose goal already carries the act, and sends nothing", async () => {
+    const lines = card([proposal({ state: "applying" })]).lines;
+    const driven = driving(lines, {
+      look: { rows: [row({ state: "parked" })], defaults: {}, outcome: "current", message: "" },
+    });
+    await runProposals(lines, driven.ports);
+    expect(driven.sent).toEqual([]);
+    // Two writes and no act: the line is taken over at the version the press read,
+    // because the settle must carry the attempt the entry holds, and settled under
+    // it.
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 2 },
+    ]);
+    expect(driven.marked).toContainEqual({ line: lines[0].id, change: { unrecorded: null } });
+  });
+
+  it("sends an applying line once where the goal does not carry the act", async () => {
+    const lines = card([proposal({ state: "applying" })]).lines;
+    const driven = driving(lines, {
+      look: { rows: [row()], defaults: {}, outcome: "current", message: "" },
+    });
+    await runProposals(lines, driven.ports);
+    expect(driven.sent).toEqual([lines[0].id]);
+    expect(driven.written.map((one) => one.state)).toEqual(["applying", "applied"]);
+  });
+
+  /** Astra's own sequence: the approve of a goal another tab has just approved. */
+  it("sends no second approval for a goal already approved with the tuple on the card", async () => {
+    const one = card(
+      [
+        proposal({
+          verb: "approve-goal", fields: {}, state: "applying",
+          read: { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] },
+        }),
+      ],
+      {},
+      { [lineID("t1", 0)]: { budget: BOX, source: "goal" } },
+    );
+    const driven = driving(one.lines, {
+      look: {
+        rows: [row({ state: "approved", budget: BOX, approved: APPROVAL })],
+        defaults: {}, outcome: "current", message: "",
+      },
+    });
+    await runProposals(one.lines, driven.ports);
+    // The freshness guard passes — the goal has not moved and its tuple is the
+    // one the card displayed — and the act is still not sent.
+    expect(driven.marked.some((one) => one.change.refusedUnsent === GOAL_CHANGED)).toBe(false);
+    expect(driven.sent).toEqual([]);
+    expect(driven.written).toEqual([
+      { line: one.lines[0].id, state: "applying", words: "", version: 1 },
+      { line: one.lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 2 },
+    ]);
+  });
+
+  /**
+   * And an expired approval carries no approve (Astra D-03).
+   *
+   * The tuple and the fields are the ones the card displayed, so the freshness
+   * guard passes, and the approval on the goal has expired: the engine writes a
+   * fresh approval for it — its no-op requires an unexpired one — and the goal
+   * is inadmissible for work until it does. A press that recorded `applied`
+   * over it would leave the goal approved by nothing.
+   */
+  it("sends the approval where the one the goal carries has expired", async () => {
+    const one = card(
+      [
+        proposal({
+          verb: "approve-goal", fields: {}, state: "applying",
+          read: { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] },
+        }),
+      ],
+      {},
+      { [lineID("t1", 0)]: { budget: BOX, source: "goal" } },
+    );
+    const driven = driving(one.lines, {
+      look: {
+        rows: [row({ state: "approved", budget: BOX, approved: EXPIRED })],
+        defaults: {}, outcome: "current", message: "",
+      },
+    });
+    await runProposals(one.lines, driven.ports);
+
+    expect(driven.marked.some((change) => change.change.refusedUnsent === GOAL_CHANGED)).toBe(false);
+    expect(driven.sent).toEqual([one.lines[0].id]);
+    expect(driven.written.map((each) => each.state)).toEqual(["applying", "applied"]);
+  });
+
+  /**
+   * And the effect is inferred only from a canonical read that SUCCEEDED
+   * (Astra D-02).
+   *
+   * The read answers 200 from the accepted ledger whether or not its own fetch
+   * of the canonical branch landed, so a failed one can hand the run rows older
+   * than the act: the cache says parked, the goal has resumed since, and the
+   * park proposal would be settled `applied` for good over a goal that is
+   * running. The three verbs that compare are already refused unsent by the same
+   * rule; these are the other seven.
+   */
+  it("settles nothing from a read that failed, and sends nothing", async () => {
+    const lines = card([proposal({ state: "applying" })]).lines;
+    const driven = driving(lines, {
+      look: {
+        rows: [row({ state: "parked" })], defaults: {},
+        outcome: "failed", message: "the remote refused the fetch",
+      },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(driven.sent).toEqual([]);
+    // The record is moved off `applying`, because nothing else will settle it,
+    // and it is moved to unresolved in the read's own words — never applied.
+    expect(driven.written).toEqual([
+      {
+        line: lines[0].id, state: "unresolved",
+        words: fetchFailedLine("the remote refused the fetch"), version: 1,
+      },
+    ]);
+    expect(driven.marked).toContainEqual({
+      line: lines[0].id, change: { refusedUnsent: fetchFailedLine("the remote refused the fetch") },
+    });
+  });
+
+  /** A line that already says unresolved is left saying it, with the read's words. */
+  it("writes nothing for a line another press owns where the read failed", async () => {
+    const lines = card([proposal({ state: "unresolved", words: IN_FLIGHT_SAID, version: 3 })]).lines;
+    const driven = driving(lines, {
+      look: { rows: [row({ state: "parked" })], defaults: {}, outcome: "failed", message: "no route to host" },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(driven.sent).toEqual([]);
+    expect(driven.written).toEqual([]);
+    expect(driven.marked).toContainEqual({
+      line: lines[0].id, change: { refusedUnsent: fetchFailedLine("no route to host") },
+    });
+  });
+
+  /**
+   * An act another press owns is written `unresolved`, in the refusal's own
+   * sentence, and the run STOPS there (Astra A-01, corrected by E-01).
+   *
+   * The act layer refuses the second request for one goal and one act at once,
+   * before any read or publish, so this tab holds no result: the other press's
+   * act may yet land, which is what `unresolved` says and what `refused` would
+   * deny. And because it may be landing, the run stops exactly as it does at any
+   * other unresolved answer — a line behind it can be about that goal, and the
+   * reading every compare rests on was taken before the act. The rest say "not
+   * run", and Continue reads again.
+   */
+  it("writes an act another press owns as unresolved, and stops the run there", async () => {
+    const lines = three();
+    const driven = driving(lines, {
+      answers: { [lines[0].id]: answeredOf(new BacklogError("/act", 409, IN_FLIGHT_SAID, IN_FLIGHT)) },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(driven.written.filter((one) => one.line === lines[0].id)).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "unresolved", words: IN_FLIGHT_SAID, version: 2 },
+    ]);
+    // Never `refused`: this tab holds no result at all for that act.
+    expect(driven.written.some((one) => one.line === lines[0].id && one.state === "refused")).toBe(false);
+    // Once, and nothing behind it.
+    expect(driven.sent).toEqual([lines[0].id]);
+    expect(driven.marked.filter((one) => one.change.notRun === true).map((one) => one.line))
+      .toEqual([lines[1].id, lines[2].id]);
+    // And the line offers Try again, as an unresolved line does.
+    const after = card([proposal({ state: "unresolved", words: IN_FLIGHT_SAID })]);
+    expect(offersTryAgain(lineOf(after))).toBe(true);
+  });
+
+  /**
+   * Astra's own sequence, whole (E-01).
+   *
+   * An `applying` edit of G, retried, and behind it a waiting approve of G that
+   * the card shows against the intent the Partner read. The edit is answered
+   * `in-flight`: the other press has it, and it is that press's edit that changes
+   * the very intent the approve is about. A run that went on would compare the
+   * approve against the reading taken before it and approve work nobody read.
+   *
+   * So the run stops, the approve says "not run", and Continue — a fresh press
+   * through the same runner — reads again fetch-first and refuses it unsent
+   * against the goal as it now is.
+   */
+  it("leaves a later line about that goal for Continue, which compares it afresh", async () => {
+    const read = { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] };
+    const one = card(
+      [
+        proposal({ index: 0, verb: "edit-goal", fields: { intent: "Something else entirely." }, read, state: "applying" }),
+        proposal({ index: 1, verb: "approve-goal", fields: {}, read }),
+      ],
+      {},
+      { [lineID("t1", 1)]: { budget: BOX, source: "goal" } },
+    );
+    const before: Looked = { rows: [row({ budget: BOX })], defaults: {}, outcome: "current", message: "" };
+    // The goal as the other press's edit leaves it.
+    const after: Looked = {
+      rows: [row({ intent: "Something else entirely.", budget: BOX })],
+      defaults: {}, outcome: "current", message: "",
+    };
+    const driven = driving(one.lines, {
+      looks: [before, after],
+      answers: { [one.lines[0].id]: answeredOf(new BacklogError("/act", 409, IN_FLIGHT_SAID, IN_FLIGHT)) },
+    });
+
+    await runProposals(one.lines, driven.ports);
+
+    // One read, one act attempted, and no approval sent on it.
+    expect(driven.looks.length).toBe(1);
+    expect(driven.sent).toEqual([one.lines[0].id]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { notRun: true } });
+
+    // Continue: the lines the stopped run never reached, through the same runner.
+    await runProposals([one.lines[1]], driven.ports);
+
+    expect(driven.looks.length).toBe(2);
+    expect(driven.sent).toEqual([one.lines[0].id]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { refusedUnsent: GOAL_CHANGED } });
+  });
+
+  /**
+   * And the settle of a carried line is an outcome write of this run's own, so a
+   * refusal of it stops the run too (Wido's ruling, the fourth pass).
+   *
+   * The line is one another press began and whose act the reading already shows
+   * landed: this press takes it over and settles it, with no act of its own. Where
+   * that takeover is refused — another press took the line first, and left it
+   * however it left it — nothing of this run is out for the line, so there is
+   * nothing to hold; but the press that has the line may be applying an act a line
+   * behind this one is about, exactly as at an `in-flight` answer. So the view is
+   * reconciled to the entry that came back, the rest say "not run", and Continue —
+   * a fresh press with its own attempt and its own read — compares them afresh.
+   */
+  it("stops where the takeover of a carried line was refused, and leaves the rest for Continue", async () => {
+    const read = { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] };
+    const one = card(
+      [
+        proposal({ index: 0, state: "applying" }),
+        proposal({ index: 1, verb: "approve-goal", fields: {}, read }),
+      ],
+      {},
+      { [lineID("t1", 1)]: { budget: BOX, source: "goal" } },
+    );
+    // The goal is parked, so the park another press began is carried by the
+    // reading and this press settles it rather than sending anything.
+    const before: Looked = {
+      rows: [row({ state: "parked", budget: BOX })], defaults: {}, outcome: "current", message: "",
+    };
+    // And the goal as another press's edit leaves it, for the read Continue takes.
+    const after: Looked = {
+      rows: [row({ state: "parked", intent: "Something else entirely.", budget: BOX })],
+      defaults: {}, outcome: "current", message: "",
+    };
+    // The entry as the press that took the line first left it.
+    const taken: Proposal = { ...one.lines[0], state: "refused", words: "goal is claimed", version: 5 };
+    const driven = driving(one.lines, {
+      looks: [before, after],
+      writes: { [`${one.lines[0].id}:applying`]: { kind: "conflict", proposal: taken } },
+    });
+
+    await runProposals(one.lines, driven.ports);
+
+    // No act at all, and the settle was never written: the line is not this
+    // press's to settle.
+    expect(driven.sent).toEqual([]);
+    expect(driven.written).toEqual([
+      { line: one.lines[0].id, state: "applying", words: "", version: 1 },
+    ]);
+    expect(driven.reconciled).toEqual([taken]);
+    expect(driven.looks.length).toBe(1);
+    // Nothing is held for it: this run published nothing on that line.
+    expect(markAfter(
+      { ticked: true, notRun: false, refusedUnsent: "", unrecorded: null },
+      driven.marked, one.lines[0].id,
+    ).unrecorded).toBeNull();
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { notRun: true } });
+
+    // Continue: the line the stopped run never reached, compared against a read
+    // of its own.
+    await runProposals([one.lines[1]], driven.ports);
+
+    expect(driven.looks.length).toBe(2);
+    expect(driven.sent).toEqual([]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { refusedUnsent: GOAL_CHANGED } });
+  });
+
+  /** And the same where the takeover landed and the settle itself was refused. */
+  it("stops where the settle of a carried line was refused, and holds nothing for it", async () => {
+    const lines = card([proposal({ index: 0, state: "applying" }), proposal({ index: 1, goal: "refunds" })]).lines;
+    // The entry as a press that took the line over after this one's takeover
+    // left it.
+    const taken: Proposal = { ...lines[0], state: "applying", words: "", version: 7 };
+    const driven = driving(lines, {
+      look: { rows: [row({ state: "parked" })], defaults: {}, outcome: "current", message: "" },
+      writes: { [`${lines[0].id}:applied`]: { kind: "conflict", proposal: taken } },
+    });
+
+    await runProposals(lines, driven.ports);
+
+    expect(driven.sent).toEqual([]);
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 2 },
+    ]);
+    expect(driven.reconciled).toEqual([taken]);
+    expect(markAfter(
+      { ticked: true, notRun: false, refusedUnsent: "", unrecorded: null },
+      driven.marked, lines[0].id,
+    ).unrecorded).toBeNull();
+    expect(driven.marked).toContainEqual({ line: lines[1].id, change: { notRun: true } });
+  });
+
+  /**
+   * Astra's F-01 sequence, whole: the page never rebases, and it never goes on.
+   *
+   * This tab's edit of G is refused, and its outcome write is delayed. Another
+   * press takes the line over meanwhile and edits G itself, so this tab's write
+   * meets that press's `applying` entry — refused on the version, or on the
+   * attempt where the entry it holds belongs to that press. Nothing of THIS press
+   * was published, but the edit that press owns may be landing as the refusal is
+   * read, and the line behind this one is an approve of the very goal it changes.
+   *
+   * So the run stops there. The refusal is held on the line, because nothing
+   * wrote it down; the approve says "not run"; and Continue — a fresh press, with
+   * its own attempt and its own read — refuses it unsent against the goal as it
+   * now is. The run that went on approved work nobody had read.
+   */
+  it("stops where its outcome write met another press, and leaves the rest for Continue", async () => {
+    const read = { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] };
+    const one = card(
+      [
+        proposal({ index: 0, verb: "edit-goal", fields: { intent: "Something else entirely." }, read }),
+        proposal({ index: 1, verb: "approve-goal", fields: {}, read }),
+      ],
+      {},
+      { [lineID("t1", 1)]: { budget: BOX, source: "goal" } },
+    );
+    const before: Looked = { rows: [row({ budget: BOX })], defaults: {}, outcome: "current", message: "" };
+    // The goal as the other press's edit leaves it.
+    const after: Looked = {
+      rows: [row({ intent: "Something else entirely.", budget: BOX })],
+      defaults: {}, outcome: "current", message: "",
+    };
+    // The entry as that press left it: its own attempt, applying, at a version
+    // this tab's write cannot be against.
+    const owned: Proposal = { ...one.lines[0], state: "applying", words: "", version: 4 };
+    const driven = driving(one.lines, {
+      looks: [before, after],
+      answers: { [one.lines[0].id]: { kind: "refused", words: "goal is claimed" } },
+      writes: { [`${one.lines[0].id}:refused`]: { kind: "conflict", proposal: owned } },
+    });
+
+    await runProposals(one.lines, driven.ports);
+
+    // One read, one act attempted, and no approval sent behind it.
+    expect(driven.looks.length).toBe(1);
+    expect(driven.sent).toEqual([one.lines[0].id]);
+    expect(driven.reconciled).toEqual([owned]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { notRun: true } });
+    // And the refusal is this tab's own, held on the line at the version it was
+    // sent under: nothing wrote it down.
+    const held = markAfter(
+      { ticked: true, notRun: false, refusedUnsent: "", unrecorded: null },
+      driven.marked, one.lines[0].id,
+    );
+    expect(held.unrecorded).toEqual({ state: "refused", words: "goal is claimed", version: 2 });
+
+    // Continue: the line the stopped run never reached, through the same runner.
+    await runProposals([one.lines[1]], driven.ports);
+
+    expect(driven.looks.length).toBe(2);
+    expect(driven.sent).toEqual([one.lines[0].id]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { refusedUnsent: GOAL_CHANGED } });
+  });
+
+  /**
+   * And that press reconciles by read first, as a press on a line found at
+   * `applying` does: the act it was told another press owns may have landed
+   * since, and sending a second one is the harm A-01 is about.
+   *
+   * The entry is taken before it is settled because the record admits `applied`
+   * only from `applying` (internal/ui/partner/proposals.go) — two writes, and no
+   * act.
+   */
+  it("reconciles a line another press owns before a retry sends anything", async () => {
+    const lines = card([proposal({ state: "unresolved", words: IN_FLIGHT_SAID, version: 3 })]).lines;
+    const driven = driving(lines, {
+      look: { rows: [row({ state: "parked" })], defaults: {}, outcome: "current", message: "" },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(driven.sent).toEqual([]);
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 3 },
+      { line: lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 4 },
+    ]);
+  });
+
+  /**
+   * The page never rebases (Astra F-03).
+   *
+   * The tab that received an act's answer is the only thing that knows what the
+   * ledger did, and it KEEPS that answer rather than writing it at a version it
+   * was never sent under. An entry another press left `unresolved` is not an entry
+   * nobody is executing: a third press writes exactly that while the press before
+   * it is applying, and the older answer rebased onto it settled the line over an
+   * act that had landed.
+   *
+   * So the answer is held on the line, the view is reconciled to the entry the
+   * refusal carried, and the run stops there — the lines behind it say "not run"
+   * and Continue is a fresh press with its own attempt and its own read.
+   */
+  it("never writes the act's answer again at the version another tab left", async () => {
+    const lines = card([proposal({ index: 0 }), proposal({ index: 1, goal: "refunds" })]).lines;
+    const held: Proposal = { ...lines[0], state: "unresolved", words: IN_FLIGHT_SAID, version: 4 };
+    const driven = driving(lines, {
+      writes: { [`${lines[0].id}:applied`]: { kind: "conflict", proposal: held } },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(driven.sent).toEqual([lines[0].id]);
+    // Two writes and no third: `applying` before the act, the outcome after it.
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "applied", words: "", version: 2 },
+    ]);
+    expect(driven.reconciled).toEqual([held]);
+    // The answer is this tab's own until the record carries an account of it.
+    expect(driven.marked).toContainEqual({
+      line: lines[0].id, change: { unrecorded: { state: "applied", words: "", version: 2 } },
+    });
+    // And the run stopped there.
+    expect(driven.marked).toContainEqual({ line: lines[1].id, change: { notRun: true } });
+  });
+
+  /**
+   * And it is written again only over an entry NOBODY is executing (Astra E-02).
+   *
+   * Astra's sequence: this tab's act is refused, its outcome write is delayed,
+   * and another tab retries the line meanwhile — leaving the entry `applying`
+   * under an act of its own that will succeed. An `applying` entry is not an
+   * entry whose writer holds no result: that attempt owns the line and will
+   * settle it. Rebasing this older refusal onto it settled the line `refused`
+   * while the other attempt's act applied, and that tab then reconciled to the
+   * refusal and threw its own answer away.
+   *
+   * So this tab reconciles to the attempt and keeps its own answer where it keeps
+   * every answer the record does not carry: on the line, until the record says
+   * what happened.
+   */
+  it("holds its own answer rather than writing it over another attempt", async () => {
+    const lines = card([proposal()]).lines;
+    const attempt: Proposal = { ...lines[0], state: "applying", words: "", version: 3 };
+    const driven = driving(lines, {
+      answers: { [lines[0].id]: { kind: "refused", words: "goal is claimed" } },
+      writes: { [`${lines[0].id}:refused`]: { kind: "conflict", proposal: attempt } },
+    });
+    await runProposals(lines, driven.ports);
+
+    // Two writes and no third: the older refusal is never written over the
+    // attempt that owns the line.
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "refused", words: "goal is claimed", version: 2 },
+    ]);
+    expect(driven.reconciled).toEqual([attempt]);
+    // And this tab still holds what its own act answered, at the version it was
+    // sent under, exactly as it does where the write could not be made at all.
+    const after = markAfter(
+      { ticked: true, notRun: false, refusedUnsent: "", unrecorded: null },
+      driven.marked, lines[0].id,
+    );
+    expect(after.unrecorded).toEqual({ state: "refused", words: "goal is claimed", version: 2 });
+    // And once that attempt has settled the line, the held refusal is shown
+    // nowhere: the record carries the account now.
+    const settled = card([proposal({ state: "applied", version: 4 })], { [lineID("t1", 0)]: after });
+    expect(lineState(lineOf(settled))).toBe(APPLIED);
+    expect(offersTryAgain(lineOf(settled))).toBe(false);
+  });
+
+  /** And a conflict with a SETTLED entry is reconciled to, never written over. */
+  it("reconciles to a settled entry rather than writing its answer again", async () => {
+    const lines = card([proposal()]).lines;
+    const held: Proposal = { ...lines[0], state: "refused", words: "another tab refused it", version: 4 };
+    const driven = driving(lines, {
+      writes: { [`${lines[0].id}:applied`]: { kind: "conflict", proposal: held } },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(driven.reconciled).toEqual([held]);
+    expect(driven.written.filter((one) => one.state === "applied").length).toBe(1);
+  });
+
+  /**
+   * A line that has recovered stops saying what went wrong before it (Astra C-04).
+   *
+   * An answer the conversation could not write down is held on the line for the
+   * page's life, because it is the only thing that knows what the ledger did. Once
+   * something NEWER establishes what happened — this run's own outcome written
+   * down, or a settled entry somebody else left — that answer is history: the line
+   * used to go on reading "refused: claimed; the conversation could not record
+   * this" and offering Try again over a record that said applied.
+   */
+  it("clears an obsolete unrecorded answer when a later outcome is written, and ends applied", async () => {
+    const stale: Mark = {
+      ticked: true, notRun: false, refusedUnsent: "",
+      unrecorded: { state: "refused", words: "goal is claimed", version: 1 },
+    };
+    const lines = card([proposal()], { [lineID("t1", 0)]: stale }).lines;
+    const driven = driving(lines);
+    await runProposals(lines, driven.ports);
+
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "applied", words: "", version: 2 },
+    ]);
+    // And the line a page holding those marks would show: the record's own
+    // answer, with no recovery offered over it.
+    const after = markAfter(stale, driven.marked, lines[0].id);
+    expect(after.unrecorded).toBeNull();
+    const settled = card([proposal({ state: "applied" })], { [lineID("t1", 0)]: after });
+    expect(lineState(lineOf(settled))).toBe(APPLIED);
+    expect(offersTryAgain(lineOf(settled))).toBe(false);
+  });
+
+  it("clears it where a conflict shows somebody else settled the line", async () => {
+    const stale: Mark = {
+      ticked: true, notRun: false, refusedUnsent: "",
+      unrecorded: { state: "refused", words: "goal is claimed", version: 1 },
+    };
+    const lines = card([proposal()], { [lineID("t1", 0)]: stale }).lines;
+    const held: Proposal = { ...lines[0], state: "applied", words: "", version: 4 };
+    const driven = driving(lines, {
+      writes: { [`${lines[0].id}:applying`]: { kind: "conflict", proposal: held } },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(markAfter(stale, driven.marked, lines[0].id).unrecorded).toBeNull();
+  });
+
+  /**
+   * And it is KEPT where nothing newer establishes what happened. A line the
+   * freshness guard refuses is not sent at all, so what the page knows about the
+   * act that did go out is still the only account of it there is.
+   */
+  it("keeps an unrecorded answer where nothing newer establishes what happened", async () => {
+    const stale: Mark = {
+      ticked: true, notRun: false, refusedUnsent: "",
+      unrecorded: { state: "refused", words: "goal is claimed", version: 1 },
+    };
+    const approve = proposal({
+      verb: "approve-goal", fields: {},
+      read: { intent: "not what the ledger says", nextStep: "n", tier: 2, labels: [] },
+    });
+    const one = card(
+      [approve],
+      { [lineID("t1", 0)]: stale },
+      { [lineID("t1", 0)]: { budget: BOX, source: "goal" } },
+    );
+    const driven = driving(one.lines, {
+      look: { rows: [row({ budget: BOX })], defaults: {}, outcome: "current", message: "" },
+    });
+    await runProposals(one.lines, driven.ports);
+
+    expect(driven.sent).toEqual([]);
+    expect(markAfter(stale, driven.marked, one.lines[0].id).unrecorded).toEqual(stale.unrecorded);
   });
 
   /** And the run asks for the page's re-read once when it ends, however it ended. */
@@ -1164,6 +2117,332 @@ describe("the run, in order", () => {
     });
     await runProposals([lines[0]], driven.ports);
     expect(driven.rereads.length).toBe(1);
+  });
+});
+
+/**
+ * Astra's two tabs on one line, whole (A-01).
+ *
+ * Tab A presses Apply on an approve; tab B learns the `applying` entry that
+ * press wrote and presses the Try again it is offered while A's act is still
+ * executing. Both runs are the production runner, over one entry and one goal,
+ * with the outcome route's own compare-and-set and its own transition table —
+ * so a write this test admits is a write the server admits.
+ *
+ * Three rules of the contract meet here. The act layer owns the act, so B's
+ * request is refused at once with `in-flight`; B holds no result and writes
+ * `unresolved`, never `refused`; and A's own answer, refused because B had moved
+ * the entry to its OWN attempt while the act was out, is not written over that
+ * attempt — B owns the line and settles it with its own answer, and A holds what
+ * its act answered on its own line (Astra E-02). One approval is published, and
+ * the account of it is not lost.
+ */
+describe("tabs pressing one line", () => {
+  /** A promise this test opens by hand, so the two runs interleave with no timer. */
+  function gate() {
+    let open: () => void = () => undefined;
+    const waited = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    return { waited, open: () => { open(); } };
+  }
+
+  /**
+   * What a line may become, from what it is: the outcome route's own table
+   * (internal/ui/partner/proposals.go). `applied`, `refused` and `unresolved`
+   * come only from `applying`, and a write of any other pair is refused with the
+   * entry exactly as a stale version is.
+   */
+  const MAY: Readonly<Record<string, readonly string[]>> = {
+    applying: ["waiting", "refused", "unresolved", "applying"],
+    applied: ["applying"],
+    refused: ["applying"],
+    unresolved: ["applying"],
+    dismissed: ["waiting", "refused", "unresolved", "applying"],
+  };
+
+  it("publishes the act once, and both tabs end on the applied entry", async () => {
+    const read = { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] };
+    const displayed: Displayeds = { [lineID("t1", 0)]: { budget: BOX, source: "goal" } };
+    // The one entry, as the outcome route holds it, and the one goal.
+    let entry: Proposal = proposal({ verb: "approve-goal", fields: {}, read });
+    let approved = false;
+    // What the act layer executed, and what it refused because this process was
+    // already executing the same act on the same goal.
+    const executed: string[] = [];
+    const refused: string[] = [];
+    const inFlight = new Set<string>();
+    const asked: string[] = [];
+    const wrote: string[] = [];
+    const reconciled: Record<string, Proposal> = {};
+    const marked: Record<string, Partial<Mark>[]> = { A: [], B: [] };
+    const executing = gate();
+    const answered = gate();
+    const ended = gate();
+
+    const portsOf = (tab: string): RunPorts => ({
+      look: () => Promise.resolve({
+        rows: [approved ? row({ budget: BOX, state: "approved", approved: APPROVAL }) : row({ budget: BOX })],
+        defaults: {}, outcome: "current", message: "",
+      }),
+      record: async (line, state, words) => {
+        // B's outcome write is made after A's run has ended, which is the
+        // ordering the rule is about: A's result meets an entry B moved while
+        // the act was out.
+        if (tab === "B" && state !== "applying") {
+          await ended.waited;
+        }
+        wrote.push(`${tab}:${state}@${String(line.version)}`);
+        if (line.version !== entry.version || !(MAY[state] ?? []).includes(entry.state)) {
+          return { kind: "conflict", proposal: entry };
+        }
+        entry = { ...entry, state, words, version: entry.version + 1 };
+        return { kind: "written", proposal: entry };
+      },
+      send: async (line) => {
+        asked.push(tab);
+        const key = `${line.goal}:${line.verb}`;
+        // The act layer, keyed by the goal and the act: a second request while
+        // one is executing in this process is refused before any read or publish.
+        if (inFlight.has(key)) {
+          refused.push(tab);
+          answered.open();
+          return answeredOf(new BacklogError("/act", 409, IN_FLIGHT_SAID, IN_FLIGHT));
+        }
+        inFlight.add(key);
+        executed.push(tab);
+        executing.open();
+        await answered.waited;
+        approved = true;
+        inFlight.delete(key);
+        return { kind: "applied", words: "" };
+      },
+      mark: (line, change) => {
+        marked[tab].push(change);
+      },
+      reconcile: (proposal) => {
+        reconciled[tab] = proposal;
+      },
+      reread: () => undefined,
+      signIn: () => undefined,
+    });
+
+    const first = runProposals(card([entry], {}, displayed).lines, portsOf("A"));
+    await executing.waited;
+    // The other tab renders the `applying` entry that press wrote, and presses
+    // the Try again it is offered.
+    const second = runProposals(card([entry], {}, displayed).lines, portsOf("B"));
+    await first;
+    ended.open();
+    await second;
+
+    // One act published, and the second request refused before it read anything.
+    expect(asked).toEqual(["A", "B"]);
+    expect(executed).toEqual(["A"]);
+    expect(refused).toEqual(["B"]);
+    // A's answer is never written over B's attempt, and B — which holds no
+    // result — never writes `refused`. B's own answer settles nothing either: it
+    // says the line is unresolved, which is the truth about it.
+    expect(wrote).toEqual([
+      "A:applying@1", "B:applying@2", "A:applied@2", "B:unresolved@3",
+    ]);
+    expect(wrote.some((one) => one.startsWith("B:refused"))).toBe(false);
+    expect({ state: entry.state, version: entry.version }).toEqual({ state: "unresolved", version: 4 });
+    // A reconciled to the attempt that owned the line, and kept the account of
+    // the act that DID land: it is the only thing anywhere that has it.
+    expect(reconciled.A?.state).toBe("applying");
+    expect(marked.A).toContainEqual({ unrecorded: { state: "applied", words: "", version: 2 } });
+    // And the entry B left offers the press that reconciles by read, which finds
+    // the approval on the goal and settles the line with no second act.
+    expect(offersTryAgain(lineOf(card([entry], {}, displayed)))).toBe(true);
+  });
+
+  /**
+   * And a press that finds a line another press left `applying` TAKES IT OVER
+   * before it settles it.
+   *
+   * The act that press may have landed is read off the goal rather than sent again
+   * (Astra A-01) — but the entry belongs to the press that wrote `applying`, and a
+   * settle write carrying another attempt is refused with it. So the line is moved
+   * to `applying` under THIS press's attempt, which is the takeover the route
+   * admits of a line whose press died, and settled under it. A settle written
+   * straight onto the entry was refused, and the line stayed in flight for good.
+   */
+  it("takes over a line another press left applying before it settles it", async () => {
+    // The entry as the press that went away left it: in flight, under its own
+    // attempt, at the version this page rendered.
+    let entry: Proposal = proposal({ state: "applying", version: 3, attempt: "1f2e3d4c5b6a7988" });
+    const wrote: string[] = [];
+    const sent: string[] = [];
+    const ports: RunPorts = {
+      look: () => Promise.resolve({
+        rows: [row({ state: "parked" })], defaults: {}, outcome: "current", message: "",
+      }),
+      record: (line, state, words, attempt) => {
+        wrote.push(`${state}@${String(line.version)}`);
+        if (line.version !== entry.version || !(MAY[state] ?? []).includes(entry.state)) {
+          return Promise.resolve({ kind: "conflict", proposal: entry });
+        }
+        if (state === "applying") {
+          entry = { ...entry, state, words, version: entry.version + 1, attempt };
+          return Promise.resolve({ kind: "written", proposal: entry });
+        }
+        if (attempt !== entry.attempt) {
+          return Promise.resolve({ kind: "conflict", proposal: entry });
+        }
+        entry = { ...entry, state, words, version: entry.version + 1 };
+        return Promise.resolve({ kind: "written", proposal: entry });
+      },
+      send: (line) => {
+        sent.push(line.id);
+        return Promise.resolve({ kind: "applied", words: "" });
+      },
+      mark: () => undefined,
+      reconcile: () => undefined,
+      reread: () => undefined,
+      signIn: () => undefined,
+    };
+
+    await runProposals(card([entry]).lines, ports);
+
+    // No act of this press's own, and the line is settled.
+    expect(sent).toEqual([]);
+    expect(wrote).toEqual(["applying@3", "applied@4"]);
+    expect({ state: entry.state, words: entry.words }).toEqual({ state: "applied", words: ALREADY_CARRIED });
+  });
+
+  /**
+   * Astra's F-03 sequence, whole: three legitimate presses on one line.
+   *
+   * A's park is refused and its outcome write is delayed. B, rendering the entry
+   * A left, presses the Try again it is offered, and B's act SUCCEEDS: the goal is
+   * parked. C, rendering the entry B left, presses Try again while B's act is
+   * still out, is refused `in-flight`, and writes the `unresolved` that is the
+   * truth about its own press. Two older writes then arrive at an entry neither of
+   * them owns.
+   *
+   * Neither is rebased onto it. `unresolved` does not say that nobody is
+   * executing — C wrote it while B's act was landing — so A's refusal stays A's
+   * own, on A's line, and B's applied answer stays B's own, on B's. The entry is
+   * what C left, and the press it offers reconciles by READ: it finds the goal
+   * parked and settles the line applied with no second act.
+   *
+   * The run that rebased A's refusal onto C's version settled the line `refused`
+   * over a park that had landed, and B's own answer was thrown away with it.
+   *
+   * The route is modelled with its attempt as well as its version: a write that
+   * moves the line to `applying` takes ownership, and a settle write carrying any
+   * other attempt is refused with the entry.
+   */
+  it("never rebases an older answer onto a line another press took over", async () => {
+    let entry: Proposal = proposal();
+    let parked = false;
+    const executed: string[] = [];
+    const refusedInFlight: string[] = [];
+    const inFlight = new Set<string>();
+    const wrote: string[] = [];
+    const reconciled: Record<string, Proposal> = {};
+    const marked: Record<string, Partial<Mark>[]> = { A: [], B: [], C: [], D: [] };
+    const aSent = gate();
+    const aWrites = gate();
+    const bExecuting = gate();
+    const bActEnds = gate();
+
+    const portsOf = (tab: string): RunPorts => ({
+      look: () => Promise.resolve({
+        rows: [parked ? row({ state: "parked" }) : row()],
+        defaults: {}, outcome: "current", message: "",
+      }),
+      record: async (line, state, words, attempt) => {
+        // A's outcome write is delayed: it arrives after two other presses have
+        // moved the line, which is the whole of what the rule is about.
+        if (tab === "A" && state !== "applying") {
+          await aWrites.waited;
+        }
+        wrote.push(`${tab}:${state}@${String(line.version)}`);
+        if (line.version !== entry.version || !(MAY[state] ?? []).includes(entry.state)) {
+          return { kind: "conflict", proposal: entry };
+        }
+        // A write that moves the line to `applying` takes ownership of it; a
+        // settle write must carry the attempt the entry holds.
+        if (state === "applying") {
+          entry = { ...entry, state, words, version: entry.version + 1, attempt };
+          return { kind: "written", proposal: entry };
+        }
+        if (attempt !== entry.attempt) {
+          return { kind: "conflict", proposal: entry };
+        }
+        entry = { ...entry, state, words, version: entry.version + 1 };
+        return { kind: "written", proposal: entry };
+      },
+      send: async (line) => {
+        const key = `${line.goal}:${line.verb}`;
+        if (inFlight.has(key)) {
+          refusedInFlight.push(tab);
+          return answeredOf(new BacklogError("/act", 409, IN_FLIGHT_SAID, IN_FLIGHT));
+        }
+        // A's own act: the engine refused it, and that refusal is A's to record.
+        if (tab === "A") {
+          aSent.open();
+          return { kind: "refused", words: "goal is claimed" };
+        }
+        inFlight.add(key);
+        executed.push(tab);
+        bExecuting.open();
+        await bActEnds.waited;
+        parked = true;
+        inFlight.delete(key);
+        return { kind: "applied", words: "" };
+      },
+      mark: (line, change) => {
+        marked[tab].push(change);
+      },
+      reconcile: (proposal) => {
+        reconciled[tab] = proposal;
+      },
+      reread: () => undefined,
+      signIn: () => undefined,
+    });
+
+    const first = runProposals(card([entry]).lines, portsOf("A"));
+    await aSent.waited;
+    // The entry A left, pressed again by a tab that renders it.
+    const second = runProposals(card([entry]).lines, portsOf("B"));
+    await bExecuting.waited;
+    // And once more, by a third, while B's act is out: this press is refused at
+    // once and writes the unresolved that says so.
+    await runProposals(card([entry]).lines, portsOf("C"));
+    bActEnds.open();
+    await second;
+    aWrites.open();
+    await first;
+
+    // One act published, and the goal is parked by it.
+    expect(executed).toEqual(["B"]);
+    expect(refusedInFlight).toEqual(["C"]);
+    expect(parked).toBe(true);
+    // Six writes attempted; the last two are refused, and neither is written
+    // again at the version that came back.
+    expect(wrote).toEqual([
+      "A:applying@1", "B:applying@2", "C:applying@3", "C:unresolved@4", "B:applied@3", "A:refused@2",
+    ]);
+    // The entry is what C left, and A never settled it refused.
+    expect({ state: entry.state, version: entry.version }).toEqual({ state: "unresolved", version: 5 });
+    // Each press holds its own answer, where every answer the record does not
+    // carry is held.
+    expect(marked.A).toContainEqual({ unrecorded: { state: "refused", words: "goal is claimed", version: 2 } });
+    expect(marked.B).toContainEqual({ unrecorded: { state: "applied", words: "", version: 3 } });
+    expect(reconciled.A?.state).toBe("unresolved");
+    expect(reconciled.B?.state).toBe("unresolved");
+
+    // And the press the entry C left offers converges it: a fresh attempt, a
+    // fresh read, the park found on the goal, and no second act.
+    expect(offersTryAgain(lineOf(card([entry])))).toBe(true);
+    await runProposals(card([entry]).lines, portsOf("D"));
+
+    expect(executed).toEqual(["B"]);
+    expect(wrote.slice(6)).toEqual(["D:applying@5", "D:applied@6"]);
+    expect({ state: entry.state, words: entry.words }).toEqual({ state: "applied", words: ALREADY_CARRIED });
   });
 });
 
@@ -1249,5 +2528,51 @@ describe("a re-read asked while a sheet covers the work area", () => {
       reads += 1;
     });
     expect(reads).toBe(0);
+  });
+});
+
+/**
+ * What the write that records an outcome carries, and what it reads back from a
+ * refusal — out of the source.
+ *
+ * The body and the refusal are the one edge this suite cannot drive: nothing here
+ * reaches the network, and a test that stubbed `fetch` would name it in a file the
+ * cut guard scans. So the two halves of the attempt's protocol are read where they
+ * are written, as the inbox's own shared-mark clearing is read (Astra C-04): the
+ * attempt travels in the write's own body, and the refusal that says another press
+ * owns the line carries the entry exactly as a stale version does.
+ */
+describe("the attempt on the outcome write", () => {
+  const source = (file: string) =>
+    readFileSync(path.resolve(fileURLToPath(import.meta.url), "..", file), "utf8");
+  const API = source("api.ts");
+  const IMPURE = source("applying.ts");
+
+  it("carries the run's attempt in the write's own body", () => {
+    const at = API.indexOf("export async function recordProposal(");
+    expect(at).toBeGreaterThan(0);
+    const body = API.slice(at, API.indexOf("function conflictOf", at));
+    expect(body).toContain("attempt: string");
+    expect(body).toContain("body.attempt = attempt");
+  });
+
+  it("holds the attempt the entry carries, as a field and nothing more", () => {
+    expect(API).toContain("attempt?: string");
+  });
+
+  it("reads the entry out of the refusal that says another press owns the line", () => {
+    const at = API.indexOf("function heldIn(");
+    expect(at).toBeGreaterThan(0);
+    const body = API.slice(at, API.indexOf("\n}", at));
+    expect(body).toContain('"state"');
+    expect(body).toContain('"attempt"');
+  });
+
+  it("passes it through the one write of the impure half", () => {
+    const at = IMPURE.indexOf("export async function writeOutcome(");
+    expect(at).toBeGreaterThan(0);
+    const body = IMPURE.slice(at, IMPURE.indexOf("function reasonOf", at));
+    expect(body).toContain("attempt");
+    expect(body).toContain("state, words, attempt)");
   });
 });

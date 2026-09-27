@@ -175,8 +175,13 @@ func (h *handler) partnerHuman(r *http.Request) string {
 	if named := strings.TrimSpace(h.knownHuman()); named != "" {
 		return named
 	}
-	return "seat"
+	return partnerSeat
 }
+
+// partnerSeat is the human a seat that knows nobody is: the transcript what is
+// said before anybody signs in goes into. The sign-in hands it to the name it
+// binds, so the conversation is not left behind by being named.
+const partnerSeat = "seat"
 
 // partner answers what the Partner is and what it has said.
 //
@@ -492,6 +497,15 @@ type proposalBody struct {
 	Version int    `json:"version"`
 	State   string `json:"state"`
 	Words   string `json:"words"`
+	// Attempt is the run of the runner this press belongs to: one id for the
+	// lifetime of a run, sent with every write that run makes.
+	//
+	// It is what the version cannot say. A line goes back to `applying` on every
+	// Try again and on every takeover, so the version a page reads there does
+	// not tell it whose act the line is waiting for; the attempt does. The write
+	// that moves a line to `applying` claims it, and the settle that follows must
+	// carry the attempt the entry holds. A dismissal carries none.
+	Attempt string `json:"attempt"`
 }
 
 // partnerProposal records what the human's press did to one proposed action.
@@ -521,12 +535,24 @@ func (h *handler) partnerProposal(w http.ResponseWriter, r *http.Request, turn, 
 	if !decode(w, r, &body) {
 		return
 	}
-	held, err := h.info.Partner.Proposed(h.partnerHuman(r), turn, index, body.Version, body.State, body.Words)
+	held, err := h.info.Partner.Proposed(h.partnerHuman(r), turn, index,
+		body.Version, body.State, body.Words, body.Attempt)
 	if err != nil {
 		var conflict *partner.ProposalConflict
 		if errors.As(err, &conflict) {
 			w.WriteHeader(http.StatusConflict)
-			writeProposalRefusal(w, conflict.Error(), conflict.Held)
+			writeProposalRefusal(w, "state", conflict.Error(), conflict.Held)
+			return
+		}
+		// The line has another owner: the act this write answers for is not the
+		// act the line is waiting for. It is the version's own refusal in
+		// everything but the code — the entry travels, and the page holds its
+		// result on the line and stops its run — and it is a code of its own
+		// because the two are different facts about one write.
+		var owner *partner.ProposalOwner
+		if errors.As(err, &owner) {
+			w.WriteHeader(http.StatusConflict)
+			writeProposalRefusal(w, "attempt", owner.Error(), owner.Held)
 			return
 		}
 		w.WriteHeader(http.StatusBadRequest)
@@ -548,12 +574,17 @@ func (h *handler) partnerProposal(w http.ResponseWriter, r *http.Request, turn, 
 
 // writeProposalRefusal is the one refusal that carries a record rather than only
 // a sentence: the entry the caller must show instead of what it had.
-func writeProposalRefusal(w http.ResponseWriter, reason string, held partner.Proposal) {
+//
+// Two codes reach it. `state` is the version's own compare-and-set, or a pair
+// the line may not pass through; `attempt` is a line another press owns. The
+// page treats them the same way — it reconciles to the entry, holds its own
+// result unrecorded and stops the run — and the code says which fact refused it.
+func writeProposalRefusal(w http.ResponseWriter, code, reason string, held partner.Proposal) {
 	_ = json.NewEncoder(w).Encode(struct {
 		Error    string           `json:"error"`
 		Code     string           `json:"code"`
 		Proposal partner.Proposal `json:"proposal"`
-	}{Error: reason, Code: "state", Proposal: held})
+	}{Error: reason, Code: code, Proposal: held})
 }
 
 // partnerStop stops the running turn. It answers the snapshot, so the page

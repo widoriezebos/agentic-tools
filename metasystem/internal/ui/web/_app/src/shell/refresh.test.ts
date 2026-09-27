@@ -53,6 +53,15 @@ const OFFERED: readonly (readonly [string, string, string])[] = [
 /** What a body that unmounts its page says. */
 const BLANKS = 'state: "loading"';
 
+/** What a failure that asks whether there is a reading to keep says. */
+const CONSULTS = /\.state === "(read|known)"/;
+
+/** And what keeping that reading, with the refusal's words beside it, says. */
+const KEEPS = /\{ \.\.\.\w+, problem: /;
+
+/** And what the same failure says for a first read, which has nothing to keep. */
+const FAILS = 'state: "failed"';
+
 function sourceFiles(relative = ""): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(relative === "" ? SRC : path.join(SRC, relative), { withFileTypes: true })) {
@@ -91,9 +100,11 @@ function bodyOf(source: string, name: string): string {
     return "";
   }
   const opens = source.indexOf("{", at);
-  if (opens < 0) {
-    return "";
-  }
+  return opens < 0 ? "" : bracedAt(source, opens);
+}
+
+/** The block that opens at `opens`, up to the brace that closes it. */
+function bracedAt(source: string, opens: number): string {
   let depth = 0;
   for (let index = opens; index < source.length; index += 1) {
     if (source[index] === "{") {
@@ -106,6 +117,31 @@ function bodyOf(source: string, name: string): string {
     }
   }
   return source.slice(opens);
+}
+
+/**
+ * The setter of the pane's own state: the one declared holding the loading
+ * state a page starts in.
+ *
+ * Naming it is what tells the read's own failure path from the others. A page
+ * full of acts has a `.catch` for each of them — a sheet that could not be
+ * opened, a status that was refused — and every one of them sets some state to
+ * failed; only one of them sets the state of the page.
+ */
+function paneSetter(source: string): string {
+  const declared = /const \[\w+, (set\w+)\] = useState<\w+>\(\{ state: "loading" \}\)/.exec(source);
+  return declared === null ? "" : declared[1];
+}
+
+/** The body of the `.catch` that sets that state: the read's failure path. */
+function failurePath(source: string, setter: string): string {
+  for (const match of source.matchAll(/\.catch\(\s*\([^)]*\)\s*=>\s*\{/g)) {
+    const body = bracedAt(source, match.index + match[0].length - 1);
+    if (body.includes(`${setter}(`)) {
+      return body;
+    }
+  }
+  return "";
 }
 
 describe("what a pane offers as its re-read", () => {
@@ -147,6 +183,38 @@ describe("what a pane offers as its re-read", () => {
     ]) {
       const source = readFileSync(path.join(SRC, file), "utf8");
       expect({ file, blanks: bodyOf(source, blanking).includes(BLANKS) }).toEqual({ file, blanks: true });
+    }
+  });
+
+  /**
+   * And a re-read that FAILS keeps the page too.
+   *
+   * Keeping the page mounted while the read is in flight was only half of the
+   * promise. The other half was missing: a refusal set the whole pane to failed,
+   * the error view replaced the page, and everything inside it went with it —
+   * Fleet's failed-launch Retry form, and the authorization word and the review
+   * date a human had typed into it. Apply an unrelated proposal in the Partner's
+   * drawer, let the Fleet re-read it asks for fail, and the draft was gone; a
+   * read that then worked drew a new, empty form (Astra C-05). The payload was
+   * good the whole time. Only the request for a newer one was not.
+   *
+   * So the failure path consults what the pane already holds, keeps that reading
+   * and records the refusal's words beside it; and only a first read's failure —
+   * where there is nothing on screen to keep — reaches the failed state. All
+   * three are asserted: consulting the state alone would be satisfied by a body
+   * that looks and blanks the page anyway, and keeping the reading alone would be
+   * satisfied by a pane that stopped failing at all.
+   */
+  it("keeps what it already read when the read fails, in every pane that offers one", () => {
+    for (const [file, , declared] of OFFERED) {
+      const source = readFileSync(path.join(SRC, declared), "utf8");
+      const setter = paneSetter(source);
+      expect({ file, declaresItsPaneState: setter !== "" }).toEqual({ file, declaresItsPaneState: true });
+      const failure = failurePath(source, setter);
+      expect({ file, hasAFailurePath: failure !== "" }).toEqual({ file, hasAFailurePath: true });
+      expect({ file, consultsWhatItHolds: CONSULTS.test(failure) }).toEqual({ file, consultsWhatItHolds: true });
+      expect({ file, keepsThatReading: KEEPS.test(failure) }).toEqual({ file, keepsThatReading: true });
+      expect({ file, stillFailsAFirstRead: failure.includes(FAILS) }).toEqual({ file, stillFailsAFirstRead: true });
     }
   });
 
