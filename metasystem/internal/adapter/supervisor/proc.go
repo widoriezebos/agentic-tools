@@ -26,6 +26,9 @@ type child struct {
 	pid     int
 	done    chan struct{}
 	status  int
+	// stop, when set, ends an in-process child (the Devin ACP client,
+	// which runs as a goroutine of this supervisor) in place of signals.
+	stop func()
 }
 
 // startChild starts command and its reaper.
@@ -73,6 +76,11 @@ func (c *child) exitedWithin(d time.Duration) bool {
 // then KILL, and the reap, so its group membership ends with it.
 func (c *child) terminate() {
 	if c == nil {
+		return
+	}
+	if c.stop != nil {
+		c.stop()
+		<-c.done
 		return
 	}
 	_ = c.command.Process.Signal(syscall.SIGTERM)
