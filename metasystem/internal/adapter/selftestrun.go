@@ -32,15 +32,15 @@ import (
 // Devin turn routinely runs for minutes, and a runtime that ends the turn on
 // a denied tool must run the permission legs as separate turns.
 type SelftestParams struct {
-	Root           string // checkout root
-	Runtime        string
+	Root    string // checkout root
+	Runtime string
 	// RunIdentity and RunProbe are the runtime adapter's identity read and
 	// capability probe, run in process by the delegate supervisor.
 	RunIdentity func() error
 	RunProbe    func() error
 	// ExtraEnv are assignments every delegate child of the self-test
 	// inherits (a runtime's model override for the critic role).
-	ExtraEnv []string
+	ExtraEnv       []string
 	Usage          string // native, unavailable, or metered
 	Probe          *SelftestProbe
 	TurnCeilingSec int  // how long one self-test turn may take

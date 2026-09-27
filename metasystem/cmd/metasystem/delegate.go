@@ -14,6 +14,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 const delegateClaimCapabilityEnv = "METASYSTEM_DELEGATE_CLAIM_CAPABILITY"
@@ -147,9 +148,9 @@ func delegateInternalRefusalDetail(stderr string, runErr error, exitCode int) st
 }
 
 // delegateSelftestInternalAuthorized keeps the fixed self-test grammar behind
-// its two actual orchestrators. The environment marker is necessary but not
-// sufficient: the live parent must also be the same binary's self-test verb or
-// the repository's fixed fake-adapter self-test script.
+// its actual orchestrator. The environment marker is necessary but not
+// sufficient: the live parent must also be the same binary's
+// delegate-supervisor self-test for this installation.
 func delegateSelftestInternalAuthorized(root string) bool {
 	if os.Getenv("METASYSTEM_DELEGATE_SELFTEST_INTERNAL") != "1" {
 		return false
@@ -169,16 +170,17 @@ func delegateSelftestInternalAuthorized(root string) bool {
 		return false
 	}
 	executable = resolvedDelegatePath(executable)
-	if executable == self && len(exact.Argv) >= 3 && exact.Argv[1] == "adapter" && exact.Argv[2] == "selftest-run" {
-		return true
+	if executable != self {
+		return false
 	}
-	fakeAdapter := resolvedDelegatePath(filepath.Join(root, "scripts", "agents", "adapters", "fake.sh"))
-	for index := 0; index+1 < len(exact.Argv) && index < 2; index++ {
-		if resolvedDelegatePath(exact.Argv[index]) == fakeAdapter && exact.Argv[index+1] == "selftest" {
-			return filepath.Base(executable) == "bash"
-		}
+	// The self-test orchestrator is the same binary's delegate-supervisor
+	// entry running RUNTIME selftest for this installation root.
+	args := exact.Argv[1:]
+	if len(args) > 0 && args[0] == "internal" {
+		args = args[1:]
 	}
-	return false
+	return len(args) >= 5 && args[0] == runtimes.SupervisorEntry && args[2] == "selftest" &&
+		args[3] == "--root" && resolvedDelegatePath(args[4]) == resolvedDelegatePath(root)
 }
 
 func resolvedDelegatePath(path string) string {

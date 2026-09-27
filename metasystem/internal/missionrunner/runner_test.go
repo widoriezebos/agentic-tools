@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 func TestPriorContext(t *testing.T) {
@@ -284,14 +286,14 @@ func TestTurnCapFromDoc(t *testing.T) {
 
 func TestHostStartVerified(t *testing.T) {
 	tag := "metasystem-host-m1-t1-abcd"
-	command := "hosts/fake.sh start-turn --instance-tag " + tag
+	command := strings.Join(runtimes.SupervisorArgv("/repo/bin/metasystem", "fake", runtimes.SupervisorHostTurn, "--root", "/repo", "--instance-tag", tag), " ")
 	if !hostStartVerified(42, 42, command, tag, false) {
 		t.Fatal("own group with tag must verify")
 	}
 	if hostStartVerified(42, 41, command, tag, false) {
 		t.Fatal("a host that does not lead its group must not verify")
 	}
-	if hostStartVerified(42, 42, "hosts/fake.sh start-turn", tag, false) {
+	if hostStartVerified(42, 42, strings.Join(runtimes.SupervisorArgv("/repo/bin/metasystem", "fake", runtimes.SupervisorHostTurn, "--root", "/repo"), " "), tag, false) {
 		t.Fatal("a command without the minted tag must not verify")
 	}
 	if hostStartVerified(42, 42, command, tag, true) {

@@ -4,9 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,15 +14,13 @@ import (
 )
 
 // The placement convention, mechanically checked: in the seam
-// packages and the runtime-named shell files, a file owned by one
+// packages and the runtime supervisors and host turns, a file owned by one
 // runtime must not reference another runtime in code — including a
 // runtime name buried inside an identifier. Go files are
 // parsed — identifiers are split into camelCase/snake_case tokens and
 // compared, comments are exempt by construction, and a string literal
 // counts only when it IS a bare runtime name (a selector like
-// RegisterRecoverer("claude", ...)), never fixture data. Shell files
-// use word matching on non-comment lines, which shell's delimiting
-// makes sound.
+// RegisterRecoverer("claude", ...)), never fixture data.
 func TestRuntimeFilePlacement(t *testing.T) {
 	names := runtimes.Names()
 	var violations []string
@@ -33,6 +29,8 @@ func TestRuntimeFilePlacement(t *testing.T) {
 		"../../internal/adapter/*.go",
 		"../../internal/host/*.go",
 		"../../internal/usage/*.go",
+		"../../internal/adapter/supervisor/*.go",
+		"../../internal/missionrunner/hostturn/*.go",
 		"*_verbs.go",
 	}
 	for _, glob := range goGlobs {
@@ -46,39 +44,6 @@ func TestRuntimeFilePlacement(t *testing.T) {
 				continue
 			}
 			violations = append(violations, goPlacementViolations(t, path, owner, names)...)
-		}
-	}
-
-	shellGlobs := []string{
-		"../../scripts/agents/adapters/*.sh",
-		"../../scripts/agents/hosts/*.sh",
-	}
-	for _, glob := range shellGlobs {
-		paths, err := filepath.Glob(glob)
-		if err != nil || len(paths) == 0 {
-			t.Fatalf("shell glob %s matched nothing", glob)
-		}
-		for _, path := range paths {
-			owner := fileOwner(path, names)
-			if owner == "" {
-				continue
-			}
-			body, readErr := os.ReadFile(path)
-			if readErr != nil {
-				t.Fatal(readErr)
-			}
-			for lineNumber, line := range strings.Split(string(body), "\n") {
-				code := strings.SplitN(line, "#", 2)[0]
-				for _, other := range names {
-					if other == owner {
-						continue
-					}
-					if regexp.MustCompile(`(?i)\b` + other + `\b`).MatchString(code) {
-						violations = append(violations,
-							filepath.Base(path)+":"+strconv.Itoa(lineNumber+1)+": ["+owner+" file] "+strings.TrimSpace(line))
-					}
-				}
-			}
 		}
 	}
 

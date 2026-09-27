@@ -10,10 +10,10 @@ import (
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
-// The adapter family is the shared lifecycle plumbing (internal/adapter) every
-// runtime adapter calls from runtime-common.sh: the job root-ancestor walk, the
-// effective-permissions materialize/bound/compare handshake, the compare-and-
-// swap patch writers, and the capability-snapshot writer.
+// The adapter family's remaining verbs: the job root-ancestor walk and the
+// terminal patch writer that scripts/agents/dispatch.sh calls until its port,
+// and the Claude runtime hooks (claude-session-signal, claude-tool-gate) that
+// are process entrypoints.
 
 // runAdapterRootJob prints the root of a job's parentJob chain.
 func runAdapterRootJob(args []string) int {
