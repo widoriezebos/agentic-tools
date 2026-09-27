@@ -24,7 +24,6 @@ static-contract-audits	static contract audits
 supervision-and-census-fixtures	supervision and census fixtures
 supervisor-fingerprint-heal-harness	supervisor fingerprint heal harness
 shell-and-dependency-audits	shell syntax and dependency audits
-conformance-fixtures	conformance fixtures
 goal-cli-fixtures	goal command fixtures
 telemetry-census-fixtures	telemetry census fixtures
 config-identity-fixtures	configuration identity fixtures

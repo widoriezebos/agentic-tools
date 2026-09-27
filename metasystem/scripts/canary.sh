@@ -21,7 +21,7 @@
 # Classes:
 #   go            the Go gate alone (unit+race tests, ratchet, cross-builds)
 #   supervision   gate + supervision fixtures
-#   dispatch      gate + conformance and delegate-caps fixtures
+#   dispatch      gate + conformance tests and delegate-caps fixtures
 #   mission       gate + the mission bed tests
 #   lease         gate + lease-succession fixtures
 #   records       gate + record-protocol and flight-recorder fixtures
@@ -56,7 +56,7 @@ for class in "$@"; do
       run adapter-deadline bash scripts/agents/adapter-deadline-fixtures.sh ;;
     dispatch)
       gate
-      run conformance bash scripts/agents/conformance-fixtures.sh
+      run conformance go test -count=1 -run '^TestConformance' ./internal/validate/ ./cmd/metasystem/
       run delegate-caps bash scripts/agents/delegate-caps-fixtures.sh ;;
     mission) gate; run mission go test -count=1 -run '^TestMissionBed' ./cmd/metasystem/ ./internal/contract/ ./internal/mission/ ./internal/missionrunner/ ./internal/stoptransition/ ;;
     lease) gate; run lease bash scripts/agents/lease-succession-fixtures.sh ;;

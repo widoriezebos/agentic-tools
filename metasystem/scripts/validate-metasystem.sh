@@ -1073,7 +1073,6 @@ for link in \
   scripts/agents/schemas/wall-evidence.schema.json \
   scripts/agents/adapters/fake.sh \
   scripts/agents/adapters/runtime-common.sh \
-  scripts/agents/conformance-fixtures.sh \
   scripts/agents/path-classes.txt; do
   [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
 done
@@ -1139,7 +1138,6 @@ bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/agents/adapter-deadline-fixtures.sh
 bash -n scripts/adopt-fixtures.sh
 bash -n scripts/agents/dispatch-fixtures.sh
-bash -n scripts/agents/conformance-fixtures.sh
 bash -n scripts/agents/goal-cli-fixtures.sh
 bash -n scripts/agents/hosts/claude.sh
 bash -n scripts/agents/hosts/codex.sh
@@ -1153,10 +1151,6 @@ bash scripts/agents/oldest-bash-gate.sh >/dev/null
 }
 if section_selected shell-and-dependency-audits; then
   run_section shell-and-dependency-audits needs-nothing shell_and_dependency_audits_section
-fi
-if section_selected conformance-fixtures; then
-  delivery_contract_skip conformance-fixtures \
-    || run_section conformance-fixtures needs-engine bash scripts/agents/conformance-fixtures.sh
 fi
 if section_selected goal-cli-fixtures; then
   delivery_contract_skip goal-cli-fixtures \
