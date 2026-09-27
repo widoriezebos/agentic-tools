@@ -131,12 +131,20 @@ export type Carried = { turn: string; proposals: readonly Proposal[] };
  * thing in view and a conversation must not bury a decision. A card the human
  * dismissed folds too, and a card with nothing waiting is read as it stands —
  * folding a finished card would be hiding the record of what was done.
+ *
+ * `expandedCards` is the human's own press on the folded line, and it outranks
+ * that automatic fold for the card it names: the fold is a rule about what is in
+ * view and not a fact about the card, so a card nobody dismissed was folded
+ * straight back by it and its arguments and controls could not be reached at all
+ * (Astra C-03). A dismissal folds it again, because putting the card away is a
+ * later act of the same human's.
  */
 export function cardsIn(
   carried: readonly Carried[],
   marks: Marks,
   displayed: Displayeds,
   dismissedCards: readonly string[],
+  expandedCards: readonly string[] = [],
 ): readonly Card[] {
   const held = carried.filter((one) => one.turn !== "" && one.proposals.length > 0);
   const newest = newestWaiting(held, marks);
@@ -155,7 +163,9 @@ export function cardsIn(
       id: cardID(one.turn),
       turn: one.turn,
       lines,
-      folded: dismissedCards.includes(one.turn) || (!isNewest && waitingIn(lines) > 0),
+      folded:
+        dismissedCards.includes(one.turn) ||
+        (!isNewest && waitingIn(lines) > 0 && !expandedCards.includes(one.turn)),
       newest: isNewest,
     };
   });

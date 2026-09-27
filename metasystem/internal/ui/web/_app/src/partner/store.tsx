@@ -678,6 +678,11 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // state: what the record says is that every waiting line was dismissed, and
   // whether the card is folded or open again is how they are reading it.
   const [dismissedCards, setDismissedCards] = useState<readonly string[]>([]);
+  // And the cards they opened again by pressing the folded line. It is the same
+  // kind of state for the same reason, and it outranks the automatic fold for the
+  // card it names: without it a card nobody dismissed was folded straight back by
+  // that rule and could not be read at all (Astra C-03).
+  const [expandedCards, setExpandedCards] = useState<readonly string[]>([]);
   // The card whose run is in flight, for the buttons. The guard that actually
   // refuses a second Apply is the ref below, taken synchronously.
   const [runningProposals, setRunningProposals] = useState("");
@@ -1484,8 +1489,10 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         proposalMarks,
         displayed,
         dismissedCards,
+        expandedCards,
       ),
-    [store.messages, store.live.turn, store.live.proposals, proposalMarks, displayed, dismissedCards],
+    [store.messages, store.live.turn, store.live.proposals, proposalMarks, displayed,
+      dismissedCards, expandedCards],
   );
 
   /**
@@ -1554,8 +1561,18 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     });
   }, [proposals]);
 
+  /**
+   * The folded line, pressed: the card is open again, and stays open.
+   *
+   * Both writes, because a card folds for two different reasons. A dismissal is
+   * taken back by dropping it from the dismissed list; the automatic fold of an
+   * older answer that still has a waiting line is not a list to be dropped from
+   * at all, so the expansion is recorded and the fold gives way to it. Pressing
+   * the line of a card nobody had dismissed used to change nothing (Astra C-03).
+   */
   const reopenProposals = useCallback((card: string) => {
     setDismissedCards((held) => held.filter((one) => one !== card));
+    setExpandedCards((held) => (held.includes(card) ? held : [...held, card]));
   }, []);
 
   /**

@@ -798,6 +798,28 @@ describe("where a card that waits stands", () => {
     expect(cards[0].folded).toBe(true);
   });
 
+  /**
+   * And the folded line's own press opens it (Astra C-03).
+   *
+   * The automatic fold is a presentation rule about what is in view, not a fact
+   * about the card, so the human's press outranks it: a card nobody dismissed used
+   * to have its id removed from a list it was never in, and the condition folded it
+   * straight back — leaving its arguments and its controls unreachable. A press
+   * records the expansion, and a dismissal folds it again, because putting the card
+   * away is a later act of the human's own.
+   */
+  it("unfolds an older card the human expanded, and folds it again when it is dismissed", () => {
+    const two = [
+      { turn: "t1", proposals: [proposal({ index: 0 })] },
+      { turn: "t2", proposals: [proposal({ index: 0, goal: "refunds" })] },
+    ];
+    expect(cardsIn(two, {}, {}, []).map((one) => one.folded)).toEqual([true, false]);
+    expect(cardsIn(two, {}, {}, [], ["t1"]).map((one) => one.folded)).toEqual([false, false]);
+    expect(cardsIn(two, {}, {}, ["t1"], ["t1"]).map((one) => one.folded)).toEqual([true, false]);
+    // An expansion names one card and says nothing about any other.
+    expect(cardsIn(two, {}, {}, [], ["t9"]).map((one) => one.folded)).toEqual([true, false]);
+  });
+
   /** The bar counts across answers, and its press opens the newest with one. */
   it("counts every waiting action across answers", () => {
     const cards = cardsIn(
