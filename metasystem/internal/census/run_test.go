@@ -1,8 +1,8 @@
 package census
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,12 +14,9 @@ import (
 func writeBundle(t *testing.T) (root, procFile string) {
 	t.Helper()
 	root = t.TempDir()
-	os.MkdirAll(filepath.Join(root, "scripts", "agents", "adapters"), 0o755)
 	os.MkdirAll(filepath.Join(root, "artifacts", "agents", "mains"), 0o755)
 	os.MkdirAll(filepath.Join(root, "artifacts", "agents", "jobs"), 0o755)
 	os.MkdirAll(filepath.Join(root, "artifacts", "agents", "supervision"), 0o755)
-	testexec.WriteFile(filepath.Join(root, "scripts", "agents", "adapters", "fake.sh"),
-		[]byte("#!/bin/sh\nprintf 'match (^|[[:space:]/-])metasystem-fake-agent([[:space:]]|$)\\n'\n"), 0o755)
 	os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644)
 	procFile = filepath.Join(t.TempDir(), "procs.json")
 	os.WriteFile(procFile, []byte(`[
@@ -177,5 +174,46 @@ func TestReadSupervisionSnapshotAcceptsTheLandingOwner(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Ported from telemetry-census-fixtures.sh: a checkout whose supervision
+// state is unavailable still publishes a well-formed schema-2 CENSUS-FAILED
+// verdict whose generation and stateDigest are PRESENT and null on the wire.
+// The checkout carries no adapter script: the fake signature is the
+// registry's.
+func TestUnavailableSupervisionPublishesPresentNullFailure(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"),
+		[]byte("metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	procFile := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(procFile, []byte("[]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v, err := RunFixtureCensus(root, root, procFile, "fixture-fingerprint", 10, time.Unix(1786000000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if string(wire["schemaVersion"]) != "2" {
+		t.Fatalf("failure census is not schema 2: %s", data)
+	}
+	if string(wire["verdict"]) != `"CENSUS-FAILED"` {
+		t.Fatalf("unavailable supervision did not produce CENSUS-FAILED: %s", data)
+	}
+	for _, key := range []string{"generation", "stateDigest"} {
+		value, present := wire[key]
+		if !present || string(value) != "null" {
+			t.Fatalf("failure census %s is not a present null: %s", key, data)
+		}
 	}
 }

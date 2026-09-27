@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
@@ -114,6 +115,12 @@ func TestMatchShapeRequiresAllIncludes(t *testing.T) {
 	}
 }
 
+// supervisorArgv is the delegate-supervisor argv the launcher builds, under
+// the engine /repo/bin/metasystem.
+func supervisorArgv(runtime, verb string, flags ...string) []string {
+	return append([]string{"/repo/bin/metasystem"}, runtimes.SupervisorArgs(runtime, verb, flags...)...)
+}
+
 func TestGroupOwnershipShapesRequireTheTagPosition(t *testing.T) {
 	shapes := DefaultShapes()
 	real := []struct {
@@ -121,24 +128,29 @@ func TestGroupOwnershipShapesRequireTheTagPosition(t *testing.T) {
 		argv []string
 	}{
 		{
-			name: "adapter supervisor dispatch",
-			argv: []string{"bash", "/repo/scripts/agents/adapters/codex.sh", "dispatch", "--job", "job-a", "--start-gate", "/tmp/gate", "--instance-tag", tag},
+			name: "delegate supervisor dispatch",
+			argv: supervisorArgv("codex", runtimes.SupervisorDispatch, "--root", "/repo", "--job", "job-a", "--start-gate", "/tmp/gate", "--instance-tag", tag),
 		},
 		{
-			name: "adapter supervisor follow-up behind the execution guard",
-			argv: []string{"bash", "/repo/scripts/agents/checkout-execution-guard.sh", "run-member", "--", "/repo/scripts/agents/adapters/codex.sh", "follow-up", "--job", "job-b", "--instance-tag=" + tag},
+			name: "delegate supervisor follow-up behind the execution guard",
+			argv: append([]string{"bash", "/repo/scripts/agents/checkout-execution-guard.sh", "run-member", "--root", "/repo", "--engine", "/repo/bin/metasystem", "--"},
+				supervisorArgv("codex", runtimes.SupervisorFollowUp, "--root", "/repo", "--job", "job-b", "--instance-tag", tag)...),
 		},
 		{
-			name: "claude adapter supervisor",
-			argv: []string{"bash", "/repo/scripts/agents/adapters/claude.sh", "dispatch", "--job", "job-c", "--instance-tag", tag},
+			name: "claude delegate supervisor",
+			argv: supervisorArgv("claude", runtimes.SupervisorDispatch, "--root", "/repo", "--job", "job-c", "--instance-tag", tag),
 		},
 		{
-			name: "devin adapter supervisor",
-			argv: []string{"bash", "/repo/scripts/agents/adapters/devin.sh", "follow-up", "--job", "job-d", "--instance-tag", tag},
+			name: "devin delegate supervisor",
+			argv: supervisorArgv("devin", runtimes.SupervisorFollowUp, "--root", "/repo", "--job", "job-d", "--instance-tag", tag),
 		},
 		{
-			name: "fake adapter supervisor dispatch",
-			argv: []string{"bash", "/repo/scripts/agents/adapters/fake.sh", "dispatch", "--job", "job-e", "--start-gate", "/tmp/gate", "--instance-tag", tag},
+			name: "fake delegate supervisor dispatch",
+			argv: supervisorArgv("fake", runtimes.SupervisorDispatch, "--root", "/repo", "--job", "job-e", "--start-gate", "/tmp/gate", "--instance-tag", tag),
+		},
+		{
+			name: "codex host start-turn",
+			argv: supervisorArgv("codex", runtimes.SupervisorHostTurn, "--root", "/repo", "--instance-tag", tag),
 		},
 		{
 			name: "codex cli launch",
@@ -165,6 +177,17 @@ func TestGroupOwnershipShapesRequireTheTagPosition(t *testing.T) {
 				t.Fatal("a matching adapter shape must carry a report label")
 			}
 		})
+	}
+
+	// The retired shell adapter argv is no longer a supervisor shape.
+	retired := []string{"bash", "/repo/scripts/agents/adapters/codex.sh", "dispatch", "--job", "job-a", "--instance-tag", tag}
+	if shape, ok := MatchShape(shapes, retired, tag); ok {
+		t.Fatalf("a retired adapter-script argv still proves ownership through %s", shape.Name)
+	}
+	// A supervisor argv carrying another round's tag proves nothing.
+	foreign := supervisorArgv("codex", runtimes.SupervisorDispatch, "--job", "job-a", "--instance-tag", "some-other-tag")
+	if _, ok := MatchShape(shapes, foreign, tag); ok {
+		t.Fatal("a supervisor argv with a foreign tag matched")
 	}
 
 	rgLeader := []string{"rg", tag, "/repo"}

@@ -1,14 +1,23 @@
 package census
 
-import "testing"
+import (
+	"testing"
 
-// The real adapter patterns (verified against the shipped adapters), so the
-// tests exercise the exact ERE shapes production uses.
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+)
+
+// supervisorExcl keeps the delegate-supervisor process out of every
+// runtime's signature (it launches the CLI; it is not the CLI).
+const supervisorExcl = `(^|[[:space:]/])metasystem[[:space:]]+(internal[[:space:]]+)?delegate-supervisor([[:space:]]|$)`
+
+// The real registry patterns (verified against the runtime registry by the
+// shipped-signature tests below), so the tests exercise the exact ERE shapes
+// production uses.
 var (
 	claudeMatch = []string{`^([^[:space:]]*/)?claude([[:space:]]|$)`}
-	claudeExcl  = []string{`claude-session-signal\.py`, `supervision-hook\.sh`, `scripts/agents/adapters/claude\.sh`}
+	claudeExcl  = []string{`claude-session-signal\.py`, `supervision-hook\.sh`, supervisorExcl}
 	fakeMatch   = []string{`(^|[[:space:]/-])metasystem-fake-agent([[:space:]]|$)`}
-	fakeExcl    = []string{`supervision-hook\.sh`, `scripts/agents/adapters/fake\.sh`}
+	fakeExcl    = []string{`supervision-hook\.sh`, supervisorExcl}
 )
 
 func testSignatures(t *testing.T) []Signature {
@@ -41,13 +50,14 @@ func TestRuntimeClassification(t *testing.T) {
 		// runtime only as an argument and is never the runtime itself.
 		{"engine hook entry", "/repo/metasystem/bin/metasystem internal hook claude stop", ""},
 		{"engine hook entry for fake", "/repo/metasystem/bin/metasystem internal hook fake stop", ""},
-		{"excluded adapter", "bash scripts/agents/adapters/claude.sh probe", ""},
+		{"excluded supervisor", "/repo/bin/metasystem delegate-supervisor claude dispatch --job j", ""},
+		{"excluded supervisor naming claude first", "claude /repo/bin/metasystem delegate-supervisor claude dispatch", ""},
 		// A shell whose argv merely CONTAINS 'claude' mid-word is not
 		// matched (the word-boundary anchor).
 		{"claude substring not a word", "echo declaudetest", ""},
 		{"fake agent", "metasystem-fake-agent first", "fake"},
 		{"fake agent with leading path", "/tool/metasystem-fake-agent second", "fake"},
-		{"fake excluded adapter", "bash scripts/agents/adapters/fake.sh signature", ""},
+		{"fake excluded supervisor", "metasystem-fake-agent /repo/bin/metasystem delegate-supervisor fake dispatch", ""},
 		{"unrelated process", "vim notes.md", ""},
 	}
 	for _, row := range cases {
@@ -109,7 +119,7 @@ var (
 	devinExcl = []string{
 		`^([^[:space:]]*/)?devin[[:space:]]+acp([[:space:]]|$)`,
 		`supervision-hook\.sh`,
-		`scripts/agents/adapters/devin\.sh`,
+		supervisorExcl,
 	}
 )
 
@@ -136,7 +146,7 @@ func TestDevinSignatureIssue12Shapes(t *testing.T) {
 		{"delegate acp server", "devin-delegate-acp acp", "devin"},
 		{"delegate acp server by path", "/Users/w/.local/bin/devin-delegate-acp acp", "devin"},
 		{"declared lookalike", "metasystem-devin-lookalike", ""},
-		{"adapter itself", "bash scripts/agents/adapters/devin.sh probe", ""},
+		{"supervisor itself", "devin /repo/bin/metasystem internal delegate-supervisor devin follow-up", ""},
 	}
 	for _, row := range cases {
 		t.Run(row.name, func(t *testing.T) {
@@ -147,25 +157,35 @@ func TestDevinSignatureIssue12Shapes(t *testing.T) {
 	}
 }
 
-// The shipped adapter emits exactly the patterns the test above compiled —
-// drift between the fixture and the adapter fails here, not in the field.
-func TestDevinShippedSignatureMatchesFixture(t *testing.T) {
-	text, err := SignatureText("../../scripts/agents/adapters/devin.sh")
-	if err != nil {
-		t.Skipf("shipped adapter unavailable: %v", err)
-	}
-	matches, excludes := ParseSignatureText(text)
-	if len(matches) != len(devinMatch) || len(excludes) != len(devinExcl) {
-		t.Fatalf("shipped devin signature drifted: %v / %v", matches, excludes)
-	}
-	for i, m := range devinMatch {
-		if matches[i] != m {
-			t.Fatalf("match %d drifted: %q vs %q", i, matches[i], m)
+// The runtime registry declares exactly the patterns the tests above
+// compiled — drift between the fixtures and the registry fails here, not in
+// the field.
+func TestShippedSignaturesMatchFixtures(t *testing.T) {
+	for _, row := range []struct {
+		runtime           string
+		matches, excludes []string
+	}{
+		{"devin", devinMatch, devinExcl},
+		{"claude", claudeMatch, claudeExcl},
+		{"fake", fakeMatch, fakeExcl},
+	} {
+		text, err := runtimes.SignatureText(row.runtime)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	for i, x := range devinExcl {
-		if excludes[i] != x {
-			t.Fatalf("exclude %d drifted: %q vs %q", i, excludes[i], x)
+		matches, excludes := ParseSignatureText(text)
+		if len(matches) != len(row.matches) || len(excludes) != len(row.excludes) {
+			t.Fatalf("shipped %s signature drifted: %v / %v", row.runtime, matches, excludes)
+		}
+		for i, m := range row.matches {
+			if matches[i] != m {
+				t.Fatalf("%s match %d drifted: %q vs %q", row.runtime, i, matches[i], m)
+			}
+		}
+		for i, x := range row.excludes {
+			if excludes[i] != x {
+				t.Fatalf("%s exclude %d drifted: %q vs %q", row.runtime, i, excludes[i], x)
+			}
 		}
 	}
 }

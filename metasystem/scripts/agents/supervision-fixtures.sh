@@ -2480,51 +2480,6 @@ export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$identity_fixture"
 export METASYSTEM_WATCH_INTERVAL_SEC=1
 export METASYSTEM_CENSUS_LOG_MAX_BYTES=350
 
-# S4-7: all four adapters own a strict, line-oriented POSIX-ERE signature
-# grammar. Exclude wins ties, malformed declarations fail the whole census,
-# and lookalikes from each runtime stay out.
-# The vectors are PROVIDER-OWNED declarations (agnosticism B1, ric
-# critique r3-5): the registry serves them and this loop iterates the
-# declared adapter population with no shared runtime branch — a future
-# runtime joins by declaration, not by editing this fixture.
-s47_population=$("$census_engine" runtime list --with-adapter) \
-  || { echo "S4-7: the adapter population query refused" >&2; exit 1; }
-s47_count=0
-while IFS= read -r runtime; do
-  adapter="$source_root/scripts/agents/adapters/$runtime.sh"
-  signature=$($adapter signature)
-  [[ -n "$signature" ]] || { echo "S4-7: $runtime returned no signatures" >&2; exit 1; }
-  while IFS= read -r line; do
-    [[ "$line" == match\ * || "$line" == exclude\ * ]] \
-      || { echo "S4-7: malformed $runtime signature line: $line" >&2; exit 1; }
-  done <<<"$signature"
-  vectors=$("$census_engine" runtime signature-vectors "$runtime")
-  positive=$("$census_engine" json get --value "$vectors" --field positive)
-  lookalike=$("$census_engine" json get --value "$vectors" --field lookalike)
-  [[ -n "$positive" && -n "$lookalike" ]] \
-    || { echo "S4-7: $runtime declared no signature vectors" >&2; exit 1; }
-  "$census_engine" proc signature-check --adapter "$adapter" --positive "$positive" \
-    --lookalike "$lookalike" >/dev/null
-  s47_count=$((s47_count + 1))
-done <<<"$s47_population"
-(( s47_count >= 4 )) \
-  || { echo "S4-7: only $s47_count adapter runtimes exercised — the declared population went missing" >&2; exit 1; }
-for failure in malformed invalid-ere adapter-failed exclude-tie; do
-  bad_adapter="$tmp/signature-$failure.sh"
-  case "$failure" in
-    malformed) printf '#!/usr/bin/env bash\nprintf "bogus .*\\n"\n' >"$bad_adapter" ;;
-    invalid-ere) printf '#!/usr/bin/env bash\nprintf "match [\\n"\n' >"$bad_adapter" ;;
-    adapter-failed) printf '#!/usr/bin/env bash\nexit 9\n' >"$bad_adapter" ;;
-    exclude-tie) printf '#!/usr/bin/env bash\nprintf "match ^tie$\\nexclude ^tie$\\n"\n' >"$bad_adapter" ;;
-  esac
-  chmod +x "$bad_adapter"
-  if "$census_engine" proc signature-check --adapter "$bad_adapter" --positive tie \
-      --lookalike lookalike >/dev/null 2>&1; then
-    echo "S4-7: $failure signature adapter did not fail closed" >&2
-    exit 1
-  fi
-done
-
 # S4-8: omitted identity arguments have an executable rule. Run arming below a
 # fake agent-signature ancestor and require inferred session/process identity.
 cat >"$repo/metasystem-fake-agent" <<'SH'
@@ -2829,13 +2784,12 @@ wait_for_census "S4-6 unreadable start time" pred_verdict_and_error_prefix CENSU
 printf '[]\n' >"$process_fixture"
 wait_for_census "S4-6 partial-failure recovery" pred_verdict_is SUCCESS
 
-# Fingerprint includes scripts, signatures, and relevant config. Mutating a
-# static identity owner invalidates the old verdict (S4-3).
-fingerprint_before=$(json_field "$last" fingerprint)
-printf '\n# signature fingerprint fixture\n' >>"$repo/scripts/agents/adapters/fake.sh"
-fingerprint_after=$($arm fingerprint --repo "$repo")
-[[ "$fingerprint_before" != "$fingerprint_after" ]] \
-  || { echo "S4-3: adapter change did not alter expected fingerprint" >&2; exit 1; }
+# A generation change for the replacement leg below. (S4-3, that the
+# fingerprint moves with the engine that carries the signature registry, is
+# TestFingerprintMovesWithEngineAndSignatureSetNotAdapterScripts in
+# internal/census.) The adapter scripts are no longer fingerprint inputs, so
+# the change lands on a static input that still is.
+printf '\n# generation change fixture\n' >>"$repo/scripts/watch-background-jobs.sh"
 old_generation_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pid)
 replacement_output=$("$arm" --repo "$repo" --session generation-replacement --pid "$$" \
   --start-time "$(process_started_at "$$")" --tag fixture-main)
@@ -2843,9 +2797,9 @@ new_generation_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/own
 [[ "$new_generation_owner" != "$old_generation_owner" ]] \
   && grep -Fq 'component=supervision-owner outcome=replaced' <<<"$replacement_output" \
   || { echo "ordinary up did not replace the live older engine generation" >&2; echo "$replacement_output" >&2; exit 1; }
-git -C "$repo" show HEAD:scripts/agents/adapters/fake.sh >"$repo/scripts/agents/adapters/fake.sh.restored"
-mv "$repo/scripts/agents/adapters/fake.sh.restored" "$repo/scripts/agents/adapters/fake.sh"
-chmod +x "$repo/scripts/agents/adapters/fake.sh"
+git -C "$repo" show HEAD:scripts/watch-background-jobs.sh >"$repo/scripts/watch-background-jobs.sh.restored"
+chmod +x "$repo/scripts/watch-background-jobs.sh.restored"
+mv "$repo/scripts/watch-background-jobs.sh.restored" "$repo/scripts/watch-background-jobs.sh"
 # Restoring the accepted bytes is another generation change; ordinary up
 # absorbs that replacement too, leaving later fixture legs on current code.
 "$arm" --repo "$repo" --session generation-restored --pid "$$" \

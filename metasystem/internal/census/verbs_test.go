@@ -3,7 +3,7 @@ package census
 import (
 	"encoding/json"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -55,20 +55,80 @@ func TestAuthIdentityFixtureFile(t *testing.T) {
 }
 
 func TestSignatureCheckContract(t *testing.T) {
-	dir := t.TempDir()
-	adapter := filepath.Join(dir, "fake.sh")
-	testexec.WriteFile(adapter, []byte("#!/bin/sh\nprintf 'match (^|[[:space:]/-])metasystem-fake-agent([[:space:]]|$)\\nexclude fake\\.sh\\n'\n"), 0o755)
 	// positive classifies, lookalike does not: contract holds.
-	if err := SignatureCheck(adapter, "metasystem-fake-agent job", "unrelated proc"); err != nil {
+	if err := SignatureCheck("fake", "metasystem-fake-agent job", "unrelated proc"); err != nil {
 		t.Fatalf("valid contract rejected: %v", err)
 	}
 	// A lookalike that DOES classify breaks the contract.
-	if err := SignatureCheck(adapter, "metasystem-fake-agent job", "another metasystem-fake-agent"); err == nil {
+	if err := SignatureCheck("fake", "metasystem-fake-agent job", "another metasystem-fake-agent"); err == nil {
 		t.Fatal("a matching lookalike must fail the contract")
 	}
 	// A positive that does NOT classify breaks the contract.
-	if err := SignatureCheck(adapter, "not an agent", "unrelated"); err == nil {
+	if err := SignatureCheck("fake", "not an agent", "unrelated"); err == nil {
 		t.Fatal("a non-matching positive must fail the contract")
+	}
+	// The supervisor process launches the CLI; it is never the CLI.
+	if err := SignatureCheck("fake", "metasystem-fake-agent job",
+		"/repo/bin/metasystem delegate-supervisor fake dispatch --job j metasystem-fake-agent"); err != nil {
+		t.Fatalf("the supervisor argv must stay out of the fake signature: %v", err)
+	}
+}
+
+// S4-7 (supervision-fixtures.sh): every declared adapter runtime's registry
+// signature holds its PROVIDER-OWNED positive/lookalike vectors. The loop
+// iterates the declared population with no runtime branch: a future runtime
+// joins by declaration.
+func TestSignatureCheckEveryDeclaredRuntime(t *testing.T) {
+	names := runtimes.WithAdapter()
+	if len(names) < 4 {
+		t.Fatalf("only %d adapter runtimes exercised — the declared population went missing", len(names))
+	}
+	for _, runtime := range names {
+		declaration, ok := runtimes.Lookup(runtime)
+		if !ok {
+			t.Fatalf("%s is listed but not declared", runtime)
+		}
+		vectors := declaration.SignatureVectors
+		if vectors.Positive == "" || vectors.Lookalike == "" {
+			t.Fatalf("%s declared no signature vectors", runtime)
+		}
+		if err := SignatureCheck(runtime, vectors.Positive, vectors.Lookalike); err != nil {
+			t.Fatalf("%s: %v", runtime, err)
+		}
+	}
+}
+
+// S4-7's bad-adapter refusals, on the declaration side that replaced the
+// adapter scripts: every bad declaration fails closed.
+func TestBadSignatureDeclarationsFailClosed(t *testing.T) {
+	// invalid-ere: a declaration that does not compile.
+	if _, err := CompileSignature("bad", []string{"["}, nil); err == nil {
+		t.Fatal("invalid-ere signature did not fail closed")
+	}
+	if _, err := CompileSignature("bad", []string{"^ok$"}, []string{"["}); err == nil {
+		t.Fatal("invalid-ere exclude did not fail closed")
+	}
+	// exclude-tie: exclude wins ties, so the positive cannot classify.
+	tie, err := CompileSignature("tie", []string{"^tie$"}, []string{"^tie$"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := signatureContract("tie", tie, "tie", "lookalike"); err == nil {
+		t.Fatal("exclude-tie signature did not fail closed")
+	}
+	// malformed: a line that is neither match nor exclude declares nothing,
+	// so the contract's positive cannot classify.
+	matches, excludes := ParseSignatureText("bogus .*\n")
+	malformed, err := CompileSignature("malformed", matches, excludes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := signatureContract("malformed", malformed, "tie", "lookalike"); err == nil {
+		t.Fatal("malformed signature did not fail closed")
+	}
+	// adapter-failed: a runtime with no declaration is refused.
+	if err := SignatureCheck("no-such-runtime", "tie", "lookalike"); err == nil {
+		t.Fatal("an undeclared runtime's signature check did not fail closed")
 	}
 }
 
