@@ -300,7 +300,7 @@ func TestSetBudgetFencedSameTupleRefusesWithoutMutation(t *testing.T) {
 	beforeTip := acceptedTipForEndpoint(t, endpoint)
 	result, err := setBudgetApprovedForTest(t, set, stopped.Id, budget)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "SET_BUDGET_FENCED_SAME_TUPLE") ||
-		!strings.Contains(result.Detail, "only goal resume") {
+		!strings.Contains(result.Detail, "metasystem goal resume fenced-rebudget") {
 		t.Fatalf("same-tuple fenced set-budget refusal: %+v %v", result, err)
 	}
 	if acceptedTipForEndpoint(t, endpoint) != beforeTip {
@@ -417,7 +417,7 @@ func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDep
 	}
 	for _, operation := range wedge {
 		result, operationErr := operation.run()
-		if operationErr != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "breach-stopped") || !strings.Contains(result.Detail, "only goal resume") {
+		if operationErr != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "breach-stopped") || !(strings.Contains(result.Detail, "only goal resume") || strings.Contains(result.Detail, "metasystem goal resume stop-me")) {
 			t.Fatalf("%s crossed the breach-stop wedge: %+v %v", operation.name, result, operationErr)
 		}
 	}

@@ -558,7 +558,9 @@ func (h *handler) refuseAct(w http.ResponseWriter, refusal *act.Refusal) {
 
 // actStatus maps a refusal to the status that says what a human can do about
 // it: 403 for a server that is not the human's, 400 for a request that was
-// wrong, 409 for a ledger that refuses the act in the state it is in, and 500
+// wrong, 409 for a ledger that refuses the act in the state it is in — and
+// for the act this server is already applying, which is the same "not in this
+// state, not now" and reaches the page under the code `in-flight` — and 500
 // for an engine that could not answer.
 func actStatus(kind string) int {
 	switch kind {

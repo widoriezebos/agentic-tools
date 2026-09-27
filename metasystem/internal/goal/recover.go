@@ -174,7 +174,7 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		return "escalation required: " + detail, nil
 	}
 	if taken.Intent.Verb == "steal" {
-		detail := "human authority cannot be recovered from journal text; rerun goal steal from the enrolled terminal and pass its --approved-ref again when the goal is over norm"
+		detail := "human authority cannot be recovered from journal text; rerun the take-over from the enrolled terminal: metasystem goal claim G --take-over --reason TEXT"
 		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
 			return "", err
 		}

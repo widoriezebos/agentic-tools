@@ -867,16 +867,16 @@ func protectCoverageRatchets(workspace gittree.Workspace, baseTree, candidateTre
 		}
 		candidateBytes, candidatePresent, err := workspace.FileAt(candidateTree, path)
 		if err != nil || !candidatePresent {
-			return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: protected coverage baseline %s is absent", path)
+			return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: protected coverage baseline %s is absent; a proof without it would certify unprotected coverage, so restore %s and rerun metasystem test run", path, path)
 		}
 		var base, candidate protectedCoverageBaseline
 		if json.Unmarshal(baseBytes, &base) != nil || json.Unmarshal(candidateBytes, &candidate) != nil || len(base.Floors) == 0 || len(candidate.Floors) == 0 {
-			return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: protected coverage baseline %s is malformed", path)
+			return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: protected coverage baseline %s is malformed; a proof against it would certify unprotected coverage, so restore %s and rerun metasystem test run", path, path)
 		}
 		for packageName, floor := range base.Floors {
 			candidateFloor, present := candidate.Floors[packageName]
 			if !present || candidateFloor < floor {
-				return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: %s floor %s changed from %.1f to %.1f", path, packageName, floor, candidateFloor)
+				return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: %s floor %s changed from %.1f to %.1f; a proof against a lowered floor would certify lost coverage, so restore the floor in %s (floors only rise) and rerun metasystem test run", path, packageName, floor, candidateFloor, path)
 			}
 		}
 	}

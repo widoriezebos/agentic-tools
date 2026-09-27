@@ -440,7 +440,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 			t.Fatalf("abandon with open word: %+v %v", result, err)
 		}
 		want := "goal g has open carry word " + ref
-		if !strings.Contains(result.Detail, want) || !strings.Contains(result.Detail, "goal carry --supersede "+ref) || !strings.Contains(result.Detail, word.Expires.Format(time.RFC3339)) {
+		if !strings.Contains(result.Detail, want) || !strings.Contains(result.Detail, "--replace-exception "+ref) || !strings.Contains(result.Detail, word.Expires.Format(time.RFC3339)) {
 			t.Fatalf("open-word refusal = %q", result.Detail)
 		}
 		after, afterTip := acceptedTreeForEndpoint(t, endpoint)

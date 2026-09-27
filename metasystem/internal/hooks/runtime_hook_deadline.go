@@ -139,7 +139,15 @@ func runStopDeadlineParent(inv Invocation, ops Ops, harnessRoot string) int {
 	// it: the session and the engine-owned state root.
 	if p.engine != "" {
 		p.resolverDone = make(chan struct{})
+		answered := inv.Deadline.ResolverAnswered
 		go func() {
+			// Deferred in reverse: the answer is adoptable before anyone
+			// is told it exists.
+			defer func() {
+				if answered != nil {
+					answered()
+				}
+			}()
 			defer close(p.resolverDone)
 			payload, _ := os.ReadFile(p.payloadPath)
 			p.resolvedSession = jsonValue(string(payload), "session_id")

@@ -568,6 +568,81 @@ func TestTheBoundsAreTheSheetsOwn(t *testing.T) {
 		strings.Contains(said, "the explanation on one action carries at most 2000 characters"), true)
 }
 
+// The ids and the labels a frame carries are the ledger's own tokens, and they
+// are bounded here beside the free text.
+//
+// They were not bounded at all, and the goal id is the one that cost. A propose
+// naming a goal of three hundred thousand characters prepared a card; admission
+// refused the goal nothing carries and kept the refusal whole; and the next open
+// of that transcript failed on the line, taking the Decisions page with it
+// (Astra B-01). The numbers are the engine's own: a goal id is at most 64 bytes
+// in the ledger, and a label is the ledger's own token.
+func TestTheIdsAndLabelsAFrameCarriesAreTheLedgersOwn(t *testing.T) {
+	t.Parallel()
+	const bound = "a goal id is at most 64 bytes in the ledger"
+	tooLong := strings.Repeat("a", 65)
+
+	subject := refusedPropose(t, "an oversized goal", uitools.Args{
+		"verb": "resume", "goal": tooLong, "explanation": "x"})
+	testutil.Expect(t, "the goal is bounded where it is read",
+		strings.Contains(subject, "goal: "+bound), true)
+
+	edge := refusedPropose(t, "an oversized blocker", uitools.Args{
+		"verb": "block", "goal": "g", "on": tooLong, "explanation": "x"})
+	testutil.Expect(t, "so is the goal at the other end of an edge",
+		strings.Contains(edge, "on: "+bound), true)
+
+	successor := refusedPropose(t, "an oversized successor", uitools.Args{
+		"verb": "abandon", "goal": "g", "reason": "r", "successor": tooLong, "explanation": "x"})
+	testutil.Expect(t, "and the goal that carries an abandoned goal's work",
+		strings.Contains(successor, "successor: "+bound), true)
+
+	listed := refusedPropose(t, "an oversized name in a list", uitools.Args{
+		"verb": "open", "goal": "g", "intent": "i", "next": "n", "basis": "b",
+		"risk":       "severity=1,novelty=1,exposure=1,accumulation=1",
+		"blocked-by": []any{"bank-sandbox", tooLong}, "explanation": "x"})
+	testutil.Expect(t, "and every name of a list, not just the first",
+		strings.Contains(listed, "blocked-by: "+bound), true)
+
+	label := refusedPropose(t, "an oversized label", uitools.Args{
+		"verb": "edit", "goal": "g", "label": []any{strings.Repeat("e", 33)}, "explanation": "x"})
+	testutil.Expect(t, "and a label is the ledger's own token, refused in its own words",
+		strings.Contains(label, "label: label ") && strings.Contains(label, "must match"), true)
+}
+
+// A list argument this tool cannot read whole is refused by the field's own
+// name, rather than emptied.
+//
+// It was emptied. The browser sends an open's dependencies as the list the tool
+// prepared, so a member that is not a name was dropped in silence: `blocked-by`
+// arriving as [{"id": "bank-sandbox"}] prepared an Open with NO dependency, said
+// it had prepared it, and the human's press queued a goal without the blocker
+// they had asked for (Astra B-02). The one string a client sends instead of an
+// array is still a list of names.
+func TestAListThisToolCannotReadWholeIsRefusedByItsName(t *testing.T) {
+	t.Parallel()
+	shaped := refusedPropose(t, "a list of objects", uitools.Args{
+		"verb": "open", "goal": "refund-audit", "intent": "i", "next": "n", "basis": "b",
+		"risk":       "severity=1,novelty=1,exposure=1,accumulation=1",
+		"blocked-by": []any{map[string]any{"id": "bank-sandbox"}}, "explanation": "x"})
+	testutil.Expect(t, "the entry that is not a name is named",
+		strings.Contains(shaped, "blocked-by is a list of names, and its entry 1 is not one"), true)
+
+	kind := refusedPropose(t, "a list that is a number", uitools.Args{
+		"verb": "edit", "goal": "g1-s18", "label": float64(7), "explanation": "x"})
+	testutil.Expect(t, "and a value that is neither a name nor a list of them",
+		strings.Contains(kind, "label is a name, or a list of names; this call sent neither"), true)
+
+	// The shorthand stays: a client that sends the names in one string is sending
+	// a list, and the frame carries them.
+	text := prepared(t, uitools.Args{
+		"verb": "open", "goal": "refund-audit", "intent": "i", "next": "n", "basis": "b",
+		"risk":       "severity=1,novelty=1,exposure=1,accumulation=1",
+		"blocked-by": "bank-sandbox, refunds", "explanation": "x"})
+	testutil.Expect(t, "the string shorthand is still a list of names",
+		strings.Contains(text, uitools.ProposalBlockedBy+"bank-sandbox, refunds\n"), true)
+}
+
 // A proposal always names the goal it is about, under the one name every public
 // form names it by.
 func TestAProposalNamesItsGoal(t *testing.T) {

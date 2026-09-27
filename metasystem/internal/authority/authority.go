@@ -6,13 +6,20 @@ package authority
 
 import "fmt"
 
+// Modes returns the closed set of control-plane write modes the matrix
+// understands, as a fresh slice: importers must not be able to mutate the
+// set. The R14 witness walks it to prove every mode admits the human.
+func Modes() []string {
+	return []string{"holder-only", "record-writer", "adapter-writer", "supervision-only", "stop-custodian", "genesis"}
+}
+
 // ValidMode reports whether name is a control-plane write mode the
-// matrix understands. A function, not an exported map: the mode set is
-// closed and importers must not be able to mutate it.
+// matrix understands.
 func ValidMode(name string) bool {
-	switch name {
-	case "holder-only", "record-writer", "adapter-writer", "supervision-only", "stop-custodian", "genesis":
-		return true
+	for _, mode := range Modes() {
+		if mode == name {
+			return true
+		}
 	}
 	return false
 }
@@ -21,19 +28,25 @@ func ValidMode(name string) bool {
 // a control-plane write in the given mode. job is the job a record-mutating
 // call names, matched against an adapter supervisor's custody. A nil return
 // means permitted; a non-nil error is the refusal.
+//
+// Rule H1 (verbs-object-action 3.6): the authenticated human is authorized
+// for every mode. The matrix's separations are machinery bookkeeping, not
+// damage, so a human's act is admitted here and the verb records it as
+// human-ordered.
 func Authorize(mode string, classification map[string]any, job string) error {
 	class, _ := classification["class"].(string)
 	holder, _ := classification["holder"].(bool)
+	if class == "HUMAN" {
+		return nil
+	}
 	if mode == "stop-custodian" {
 		if class == "STEWARD" || (class == "MAIN" && holder) {
 			return nil
 		}
-		return fmt.Errorf("breach-stop requires the authenticated lease holder or enrolled steward custodian")
+		return fmt.Errorf("breach-stop requires the authenticated lease holder, the enrolled steward custodian, or a person at an agent-free terminal")
 	}
 
 	switch {
-	case class == "HUMAN":
-		return nil
 	case class == "MAIN" && holder:
 		if mode == "supervision-only" {
 			return fmt.Errorf("standing reap requires authenticated supervision custody")

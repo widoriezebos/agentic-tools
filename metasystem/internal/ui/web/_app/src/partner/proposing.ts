@@ -26,7 +26,20 @@ import { derivedTier, type Answer, type NewGoal, type Risk } from "../backlog/op
  * **Nothing is sent twice.** A line is sent at most once per press. A line whose
  * answer said the act landed but its proof was not recorded is recorded as
  * applied and offers no Try again at all: sending it again would make a second
- * approval record rather than repair the first one's missing proof.
+ * approval record rather than repair the first one's missing proof. And a line
+ * somebody else began — left at `applying`, or left `unresolved` by a press the
+ * act layer refused because another one owns that act — is reconciled before it
+ * is sent: a goal that already carries the act is recorded applied with nothing
+ * sent for it. And a press the act layer refused stops the run where it stands,
+ * because the act it could not make may be landing behind it.
+ *
+ * **The result wins.** The tab that received an act's answer is the only thing
+ * that knows what the ledger did. An outcome write refused because another tab
+ * moved the entry while the act was out is written once more at their version
+ * where they left it `unresolved`, which is an entry nobody is executing; where
+ * they left it `applying` that attempt owns the line and will settle it, so this
+ * tab holds its own answer on the line instead; and where it is settled, they
+ * established what happened and this tab shows that.
  *
  * **What was read is what is approved.** An approve and an edit carry the goal as
  * the Partner read it. Before the first line the page reads the canonical branch
@@ -86,8 +99,15 @@ export type Mark = {
    * not record this" and offered Try again invited a second one (Sol S58-C-02).
    * So the answer is held here, the line reads as that answer, and what the line
    * offers is decided by it.
+   *
+   * `version` is the entry it was held at. What retires the answer is the
+   * record carrying an account of its own — an entry somebody has SETTLED — and
+   * not that number: a surface reading the mark raw showed a refusal over a goal
+   * that was applied and offered a second act (Astra C-04), while one that
+   * expired it on any newer version hid an approval that had landed behind
+   * another tab's bookkeeping (Astra E-03).
    */
-  unrecorded: { state: ProposalState; words: string } | null;
+  unrecorded: { state: ProposalState; words: string; version: number } | null;
 };
 
 export type Marks = Readonly<Record<string, Mark>>;
@@ -129,12 +149,20 @@ export type Carried = { turn: string; proposals: readonly Proposal[] };
  * thing in view and a conversation must not bury a decision. A card the human
  * dismissed folds too, and a card with nothing waiting is read as it stands —
  * folding a finished card would be hiding the record of what was done.
+ *
+ * `expandedCards` is the human's own press on the folded line, and it outranks
+ * that automatic fold for the card it names: the fold is a rule about what is in
+ * view and not a fact about the card, so a card nobody dismissed was folded
+ * straight back by it and its arguments and controls could not be reached at all
+ * (Astra C-03). A dismissal folds it again, because putting the card away is a
+ * later act of the same human's.
  */
 export function cardsIn(
   carried: readonly Carried[],
   marks: Marks,
   displayed: Displayeds,
   dismissedCards: readonly string[],
+  expandedCards: readonly string[] = [],
 ): readonly Card[] {
   const held = carried.filter((one) => one.turn !== "" && one.proposals.length > 0);
   const newest = newestWaiting(held, marks);
@@ -153,7 +181,9 @@ export function cardsIn(
       id: cardID(one.turn),
       turn: one.turn,
       lines,
-      folded: dismissedCards.includes(one.turn) || (!isNewest && waitingIn(lines) > 0),
+      folded:
+        dismissedCards.includes(one.turn) ||
+        (!isNewest && waitingIn(lines) > 0 && !expandedCards.includes(one.turn)),
       newest: isNewest,
     };
   });
@@ -467,8 +497,9 @@ export function lineState(line: Line, inFlight = false): string {
   // read before everything else because it is the only thing here that knows
   // what the LEDGER did; the persisted line is still at `applying`, and saying
   // so would hide the act that landed.
-  if (line.mark.unrecorded !== null) {
-    return `${said(line.mark.unrecorded.state, line.mark.unrecorded.words)}; ${COULD_NOT_RECORD}`;
+  const held = unrecordedOn(line);
+  if (held !== null) {
+    return `${said(held.state, held.words)}; ${COULD_NOT_RECORD}`;
   }
   if (line.mark.refusedUnsent !== "") {
     return line.mark.refusedUnsent;
@@ -480,6 +511,33 @@ export function lineState(line: Line, inFlight = false): string {
     return inFlight ? APPLYING : WAS_IN_FLIGHT;
   }
   return said(line.state, line.words ?? "");
+}
+
+/**
+ * What this page holds about this line's own act that the record does not, or
+ * null where the record has moved past it.
+ *
+ * The held answer stands above the record because it is the only thing that
+ * knows what the ledger did — and it stands until the RECORD carries an account
+ * of its own, which is an entry somebody has settled: `applied`, `refused` or
+ * `dismissed`. A newer version is not such an account. Another tab's bookkeeping
+ * about a request that published nothing moves the version and says nothing about
+ * what became of this act, and retiring the answer on it hid the only
+ * explanation there was — an approval that landed and could not be written down —
+ * and offered the press that approves the goal twice (Astra E-03).
+ *
+ * The version the answer was held at is kept beside it as the account of where it
+ * was held; what retires the answer is the settlement and not the number. Every
+ * surface asks this rather than the mark, because the mark is ONE mark shared by
+ * the drawer and the inbox, and a surface reading it raw showed the drawer's
+ * obsolete refusal over an entry the record had applied (Astra C-04).
+ */
+export function unrecordedOn(line: Line): Mark["unrecorded"] {
+  const held = line.mark.unrecorded;
+  if (held === null || settledState(line.state)) {
+    return null;
+  }
+  return held;
 }
 
 /** One settled state in the words a human reads, with what it carried. */
@@ -556,8 +614,9 @@ export function offersTryAgain(line: Line, inFlight = false): boolean {
   // An act whose answer could not be written down offers what that answer
   // offers. An applied one offers nothing: the act landed, and a second press
   // would make a second act rather than repair the record (Sol S58-C-02).
-  if (line.mark.unrecorded !== null) {
-    return line.mark.unrecorded.state !== "applied";
+  const held = unrecordedOn(line);
+  if (held !== null) {
+    return held.state !== "applied";
   }
   if (line.mark.refusedUnsent !== "") {
     return true;
@@ -609,6 +668,7 @@ export type Answered =
   | { kind: "applied"; words: string }
   | { kind: "refused"; words: string }
   | { kind: "unresolved"; words: string }
+  | { kind: "in-flight"; words: string }
   | { kind: "sign-in"; words: string };
 
 /**
@@ -616,13 +676,17 @@ export type Answered =
  *
  * It is the page's one mapping, `outcomeOf`, with two things the runner needs
  * that a save did not: a refusal a sign-in would remedy is its own answer,
- * because it ends the run at that line and opens the sheet; and the answer that
+ * because it ends the run at that line and opens the sheet; the answer that
  * says the act landed and its proof did not is recorded as APPLIED with its own
- * words, because that is what it says.
+ * words, because that is what it says; and the refusal that says another press
+ * owns this act is its own answer too, because it is not a no.
  */
 export function answeredOf(error: unknown): Answered {
   if (error instanceof BacklogError && error.signIn) {
     return { kind: "sign-in", words: NOT_APPLIED_SIGN_IN };
+  }
+  if (error instanceof BacklogError && error.code === IN_FLIGHT) {
+    return { kind: "in-flight", words: error.message };
   }
   if (error instanceof BacklogError && error.code === LANDED_NOT_RECORDED) {
     return { kind: "applied", words: error.message };
@@ -636,6 +700,20 @@ export function answeredOf(error: unknown): Answered {
 export const NOT_APPLIED_SIGN_IN = "not applied: sign in to apply";
 
 /**
+ * The refusal code the act layer answers a second press with, while this
+ * process is already executing the same act on the same goal (internal/ui/act).
+ *
+ * It is not a no. The request was refused at once, before any read and before
+ * any publish, and the act that IS executing may land — so the tab that meets it
+ * holds no result about that line at all. It writes `unresolved` in the
+ * refusal's own sentence, never `refused`, which would say the act did not
+ * happen; it stops the run there, because the act it could not make may be
+ * changing the goal a line behind it is about (Astra E-01); and it never sends
+ * again on its own (Astra A-01).
+ */
+export const IN_FLIGHT = "in-flight";
+
+/**
  * Whether the run goes on to the next ticked line after this answer.
  *
  * A refusal is passed, because nothing landed behind it and the next line does
@@ -643,6 +721,14 @@ export const NOT_APPLIED_SIGN_IN = "not applied: sign in to apply";
  * landed and the next line may depend on it. A sign-in refusal stops it too: the
  * run never waits on a sheet, so the line says what it needs and the rest say
  * "not run" until the human signs in or presses Continue (g1-s58 D7).
+ *
+ * And an act another press owns stops it, for the reason the unresolved answer
+ * does. Nothing of THIS press was published, but the act that press owns may be
+ * landing as the answer is read, and a line behind it can be about the very goal
+ * it changes: going on would compare that line against the reading taken before
+ * the act and send it against a goal nobody read (Astra E-01). The lines behind
+ * it say "not run", and Continue is a fresh press, which reads fetch-first before
+ * it compares anything.
  */
 export function goesOn(answered: Answered): boolean {
   return answered.kind === "applied" || answered.kind === "refused";
@@ -651,14 +737,24 @@ export function goesOn(answered: Answered): boolean {
 /**
  * The state one answer writes onto its line, and the words with it.
  *
- * A sign-in refusal is written as `refused`: nothing was published, which is
- * what refused means, and the words say what the human does about it.
+ * Two of the five are written as another state. A sign-in refusal is written as
+ * `refused`: nothing was published, which is what refused means, and the words
+ * say what the human does about it. An act another press owns is written
+ * `unresolved`: this tab holds no result for it, and the act may yet land.
  */
 export function recorded(answered: Answered): { state: ProposalState; words: string } {
-  return {
-    state: answered.kind === "sign-in" ? "refused" : answered.kind,
-    words: answered.words,
-  };
+  return { state: writtenAs(answered.kind), words: answered.words };
+}
+
+function writtenAs(kind: Answered["kind"]): ProposalState {
+  switch (kind) {
+    case "sign-in":
+      return "refused";
+    case "in-flight":
+      return "unresolved";
+    default:
+      return kind;
+  }
 }
 
 /**
@@ -777,18 +873,95 @@ function moved(read: ProposalRead, row: Row): boolean {
 
 /** Whether the tuple the card displayed is the tuple a fresh prefill answers. */
 function sameBudget(displayed: Displayed | null, fresh: Displayed): boolean {
-  if (displayed === null || displayed.budget === null || fresh.budget === null) {
+  if (displayed === null) {
+    return false;
+  }
+  return displayed.source === fresh.source && sameTuple(displayed.budget, fresh.budget);
+}
+
+/** Whether two budgets are the same five limits. Nothing is never a match. */
+function sameTuple(one: Budget | null, other: Budget | null): boolean {
+  if (one === null || other === null) {
     return false;
   }
   return (
-    displayed.source === fresh.source &&
-    displayed.budget.elapsedLimit === fresh.budget.elapsedLimit &&
-    displayed.budget.attemptLimit === fresh.budget.attemptLimit &&
-    displayed.budget.reservedJobMinutesLimit === fresh.budget.reservedJobMinutesLimit &&
-    displayed.budget.activeJobLimit === fresh.budget.activeJobLimit &&
-    displayed.budget.reviewRoundLimit === fresh.budget.reviewRoundLimit
+    one.elapsedLimit === other.elapsedLimit &&
+    one.attemptLimit === other.attemptLimit &&
+    one.reservedJobMinutesLimit === other.reservedJobMinutesLimit &&
+    one.activeJobLimit === other.activeJobLimit &&
+    one.reviewRoundLimit === other.reviewRoundLimit
   );
 }
+
+/**
+ * Whether the goal already carries what this line would do.
+ *
+ * It is asked of a line found at `applying` and of no other. Such a line was
+ * begun by somebody — this page before it went away, or another tab whose write
+ * this page learned — and the act may well have landed already. Learning that
+ * must not itself authorise a fresh one: an approve applied twice is two approval
+ * records, and the engine suppresses a duplicate proven approval but not a
+ * session one, so nothing behind the browser would catch it (Astra A-01). The
+ * press therefore looks in the reading the run took, and a goal that shows the
+ * act's own effect settles the line without a send.
+ *
+ * Every effect below is the one that act's route writes, so a goal that shows it
+ * is a goal the act reached. Two acts are absent and fall through to the send: an
+ * open, whose effect is a goal that exists, and an unapprove, whose effect is an
+ * approval that is gone. Both are refused by the engine the second time — the
+ * goal already exists, the goal is not approved — so a second press answers with
+ * a refusal rather than with a second act, which is the harm this is about.
+ */
+export function carriesAlready(line: Line, rows: readonly Row[]): boolean {
+  const row = rows.find((one) => one.ref.id === line.goal);
+  if (row === undefined) {
+    return false;
+  }
+  const fields = line.fields ?? {};
+  switch (line.verb) {
+    // Approved, unexpired, and with the tuple this line displayed. An approval
+    // carrying another budget is not this act's effect, and the guard above
+    // refuses such a line on its own because a fresh prefill now answers
+    // differently. An EXPIRED approval is not this act's effect either: the
+    // engine's own no-op requires an unexpired one (internal/goal/approval.go),
+    // so the approve writes a fresh approval, and a goal left carrying the
+    // expired one is inadmissible for work (Astra D-03).
+    case "approve-goal":
+      return (
+        row.approved !== undefined &&
+        !row.approved.expired &&
+        sameTuple(line.displayed?.budget ?? null, row.budget ?? null)
+      );
+    // Every field the edit names, as the goal now reads. A field the action does
+    // not carry is one it says nothing about, so it is not compared.
+    case "edit-goal":
+      return (
+        (fields.intent === undefined || fields.intent === row.intent) &&
+        (fields.nextStep === undefined || fields.nextStep === row.nextStep) &&
+        (fields.labels === undefined || namesIn(fields.labels).join(" ") === row.labels.join(" "))
+      );
+    case "park-goal":
+      return row.state === "parked";
+    case "unpark-goal":
+      return row.state !== "parked";
+    case "set-goal-priority":
+      return (
+        row.priority === Number(fields.priority ?? "0") &&
+        (fields.sequence === undefined || fields.sequence === "" || row.sequence === Number(fields.sequence))
+      );
+    case "block-goal":
+      return row.blockedBy.includes(fields.blocker ?? "");
+    case "unblock-goal":
+      return !row.blockedBy.includes(fields.blocker ?? "");
+    case "abandon-goal":
+      return row.state === "abandoned";
+    default:
+      return false;
+  }
+}
+
+/** What a line settled without a send says: the act was there to be found. */
+export const ALREADY_CARRIED = "the goal already carries this, so nothing was sent";
 
 /** The tuple each approve line would display, read once at the terminal beat. */
 export function displayedFor(
@@ -1031,6 +1204,25 @@ export function settledState(state: ProposalState): boolean {
   return state === "applied" || state === "refused" || state === "dismissed";
 }
 
+/** True for an entry somebody left applied: the ledger moved behind this run. */
+function appliedEntry(proposal: Proposal): boolean {
+  return proposal.state === "applied";
+}
+
+/**
+ * True for a line somebody BEGAN: an act may have landed behind it.
+ *
+ * Two states say so. `applying` is a line this page went away in the middle of,
+ * or one another tab is applying now. `unresolved` is a line whose act answered
+ * something that does not say what happened — including the refusal that says
+ * another press owns it, which is exactly an act that may be landing as this is
+ * read. A press on either reconciles against the reading before it sends, so
+ * that learning of an act is never what authorises a second one (Astra A-01).
+ */
+function begun(line: Line): boolean {
+  return line.state === "applying" || line.state === "unresolved";
+}
+
 /**
  * The run: these lines, in this order, one act each, never retried.
  *
@@ -1042,6 +1234,9 @@ export function settledState(state: ProposalState): boolean {
  *     a goal says, because one of these acts can be what changed it;
  *   - a line the compare refuses is refused UNSENT and the run goes on, because
  *     nothing was published, which is exactly what a refusal means;
+ *   - a line found at `applying` is reconciled before anything is sent: somebody
+ *     began it, and a goal that already carries the act is recorded applied with
+ *     no act of this run's own;
  *   - `applying` is written BEFORE the act. A write that failed sends nothing and
  *     stops the run; a write somebody else won means the line is theirs, and the
  *     run goes past it only where what they left is settled;
@@ -1074,6 +1269,21 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
   // sign-in sheet made the resumed run write a stale version, meet a settled
   // conflict, and skip the very act the human signed in for (Sol S58-C-03).
   const standing = new Map<string, Proposal>();
+  /**
+   * One line the reading shows the goal already carries: recorded applied, with
+   * no act of this run's own, and what the record answered kept as every other
+   * outcome write's is.
+   */
+  const settleCarried = async (one: Line): Promise<void> => {
+    const settled = await ports.record(one, "applied", ALREADY_CARRIED);
+    if (settled.kind === "conflict") {
+      ports.reconcile(settled.proposal, one);
+    } else if (settled.kind === "failed") {
+      ports.mark(one, { unrecorded: { state: "applied", words: ALREADY_CARRIED, version: one.version } });
+    } else {
+      ports.mark(one, { unrecorded: null });
+    }
+  };
   for (const [at, line] of lines.entries()) {
     if (stale && needsTheCompare(line.verb)) {
       looked = await ports.look();
@@ -1084,13 +1294,59 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       ports.mark(line, { refusedUnsent: refusal });
       continue;
     }
+    // A line somebody BEGAN is one an act may have landed behind, and learning
+    // of it must not authorise a second one. So it is reconciled against the
+    // reading this run took — fetch-first, and taken again where an act of this
+    // run has moved the ledger since — and a goal that already carries the act
+    // settles the line without being sent (Astra A-01).
+    let carried = false;
+    if (begun(line)) {
+      if (stale) {
+        looked = await ports.look();
+        stale = false;
+      }
+      // Only a read that SUCCEEDED can say what the act did. The read answers
+      // 200 from the accepted ledger whether or not its own fetch of the
+      // canonical branch landed, so a failed one can hand this run rows older
+      // than the act: the cache says parked, the goal has resumed since, and the
+      // line would be settled applied for good over a goal that is running
+      // (Astra D-02). So a failed read settles nothing and sends nothing. The
+      // record is moved off `applying`, because nothing else will settle it, and
+      // moved to `unresolved` in the read's own words; a line that already says
+      // unresolved is left saying it. The three verbs that compare are refused
+      // unsent above by this same rule.
+      if (!canCompare(looked.outcome)) {
+        const unread = fetchFailedLine(looked.message);
+        if (line.state === "applying") {
+          const said = await ports.record(line, "unresolved", unread);
+          if (said.kind === "conflict") {
+            ports.reconcile(said.proposal, line);
+          }
+        }
+        ports.mark(line, { refusedUnsent: unread });
+        continue;
+      }
+      carried = carriesAlready(line, looked.rows);
+    }
+    if (carried && line.state === "applying") {
+      await settleCarried(line);
+      continue;
+    }
     const started = await ports.record(line, "applying", "");
     if (started.kind !== "failed") {
       standing.set(line.id, started.proposal);
     }
     if (started.kind === "conflict") {
       ports.reconcile(started.proposal, line);
+      // Somebody else's applied entry means the LEDGER moved, exactly as this
+      // run's own applied answer does, so the reading every later compare rests
+      // on is stale and the next guarded line takes a fresh one (Astra C-01).
+      stale = stale || appliedEntry(started.proposal);
       if (settledState(started.proposal.state)) {
+        // Their settled entry establishes what happened to this line, so an
+        // answer this page was holding for want of a record is history now
+        // (Astra C-04).
+        ports.mark(line, { unrecorded: null });
         continue;
       }
       stoppedAt = at;
@@ -1104,19 +1360,61 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     // The line as the server now has it: the outcome's own write is against the
     // version this one left, so nobody else can slip between them.
     const sending = { ...line, version: started.proposal.version };
+    // A line another press owns, whose act the reading already shows landed: the
+    // entry is taken above rather than below because the record admits `applied`
+    // only from `applying`, and it is settled here with no act of this run's own.
+    if (carried) {
+      await settleCarried(sending);
+      continue;
+    }
     const answered = await ports.send(sending);
     const written = recorded(answered);
-    const finished = await ports.record(sending, written.state, written.words);
+    // The version the outcome was last written AT, which is the version the
+    // entry still stands at where that write failed.
+    let wroteAt = sending.version;
+    let finished = await ports.record(sending, written.state, written.words);
+    // The result WINS, over an entry NOBODY is executing. A conflict here means
+    // another tab moved the entry while this act was out. Where they left it
+    // `unresolved` no act of theirs is running and they hold no result for the
+    // line, so this tab's answer — the only one there is — is written once more
+    // at their version. Where they left it `applying`, another attempt OWNS the
+    // line and will settle it with its own answer: writing this older one over
+    // it settled the line refused while that attempt's act applied, and that tab
+    // then reconciled to the refusal and threw its own answer away (Astra E-02).
+    // And where it is settled they established what happened, and the run shows
+    // that instead.
+    if (finished.kind === "conflict" && finished.proposal.state === "unresolved") {
+      wroteAt = finished.proposal.version;
+      finished = await ports.record({ ...sending, version: wroteAt }, written.state, written.words);
+    }
     if (finished.kind !== "failed") {
       standing.set(line.id, finished.proposal);
     }
     if (finished.kind === "conflict") {
       ports.reconcile(finished.proposal, sending);
+      stale = stale || appliedEntry(finished.proposal);
+      if (settledState(finished.proposal.state)) {
+        ports.mark(line, { unrecorded: null });
+      } else {
+        // Another attempt owns the line and this tab still knows what its own
+        // act answered, so that answer is held here — where every answer the
+        // record does not carry is held — until the record says what happened
+        // (Astra E-02).
+        ports.mark(line, { unrecorded: { ...written, version: wroteAt } });
+      }
     } else if (finished.kind === "failed") {
       // The act happened and the conversation could not say so. What the act
-      // answered is kept on the line for the page's life, because that is the
-      // only thing here that knows what the ledger did, and the line says both.
-      ports.mark(line, { unrecorded: written });
+      // answered is kept on the line, because that is the only thing here that
+      // knows what the ledger did, and the line says both — until the record
+      // carries an account of its own, which is what the version says
+      // (Astra C-04).
+      ports.mark(line, { unrecorded: { ...written, version: wroteAt } });
+    } else {
+      // The outcome IS written down now, so an answer the page was holding
+      // because an earlier one could not be written is obsolete: the record says
+      // what happened, and a line still reading "the conversation could not
+      // record this" over it would offer a recovery nobody needs (Astra C-04).
+      ports.mark(line, { unrecorded: null });
     }
     if (answered.kind === "applied") {
       // The ledger moved, so the reading every later compare rests on has.

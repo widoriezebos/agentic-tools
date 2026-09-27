@@ -169,10 +169,10 @@ func observeCarried(params ObserveParams) Observation {
 	workspace := gittree.Workspace{Dir: params.RepoRoot}
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
-		return carriedRefusal("goal-item-not-held", fmt.Sprintf("goal %s cannot be proven held; use goal steal after repairing the base tree", params.Goal), provenance)
+		return carriedRefusal("goal-item-not-held", fmt.Sprintf("goal %s cannot be proven held; repair the base tree, then take it over with metasystem goal claim %s --take-over --reason TEXT", params.Goal, params.Goal), provenance)
 	}
 	if err := heldGoalError(workspace, baseTree, params.Goal, params.Actor, 0); err != nil {
-		return carriedRefusal("goal-item-not-held", fmt.Sprintf("%s; use goal steal", err), provenance)
+		return carriedRefusal("goal-item-not-held", fmt.Sprintf("%s; take it over with metasystem goal claim %s --take-over --reason TEXT", err, params.Goal), provenance)
 	}
 	word, err := goal.CarryWordAt(projection.Tree, params.Goal, params.Carried)
 	if err != nil || word.History.Verb == "carry" && word.History.AuthorityOutcome != goal.AuthorityOutcomeHumanAuthorityProven || word.History.Verb == "answer" && word.History.AuthorityOutcome != goal.AuthorityOutcomeAuthenticatedChannelWord {
@@ -187,17 +187,17 @@ func observeCarried(params ObserveParams) Observation {
 	actorMachine, _, _ := strings.Cut(params.Actor, "+")
 	wordMachine, _ := goal.OpidMachine(word.History.Opid)
 	if wordMachine != actorMachine {
-		return carriedRefusal("carry-seat-mismatch", fmt.Sprintf("word %s belongs to seat %s; run goal carry --supersede %s --transfer on %s", params.Carried, wordMachine, params.Carried, actorMachine), provenance)
+		return carriedRefusal("carry-seat-mismatch", fmt.Sprintf("word %s belongs to seat %s; move it on %s with metasystem work land G --exception CODE --reason TEXT --by NAME --replace-exception %s --transfer", params.Carried, wordMachine, actorMachine, params.Carried), provenance)
 	}
 	projectWorkspace, err := ProjectWorkspaceTree(params.RepoRoot, params.ProjectTree)
 	if err != nil || word.Workspace != projectWorkspace {
-		return carriedRefusal("carry-tree-mismatch", fmt.Sprintf("word workspace=%s candidate workspace=%s; issue goal carry --supersede %s", word.Workspace, projectWorkspace, params.Carried), provenance)
+		return carriedRefusal("carry-tree-mismatch", fmt.Sprintf("word workspace=%s candidate workspace=%s; record it for this candidate with metasystem work land G --exception CODE --reason TEXT --by NAME --replace-exception %s", word.Workspace, projectWorkspace, params.Carried), provenance)
 	}
 	if !goal.CarryableName(params.RepoRoot, word.Past) {
 		return carriedRefusal("carry-not-carryable", fmt.Sprintf("%s is not a refusal or testing group that can be carried", word.Past), provenance)
 	}
 	if !now.Before(word.Expires) {
-		return carriedRefusal("carry-word-expired", fmt.Sprintf("word %s expired at %s; issue a fresh goal carry", params.Carried, word.Expires.UTC().Format(time.RFC3339)), provenance)
+		return carriedRefusal("carry-word-expired", fmt.Sprintf("word %s expired at %s; record a fresh one with metasystem work land G --exception CODE --reason TEXT --by NAME", params.Carried, word.Expires.UTC().Format(time.RFC3339)), provenance)
 	}
 	codeTip := "refs/remotes/origin/main"
 	if endpoint.LocalMode() {

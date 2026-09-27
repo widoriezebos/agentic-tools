@@ -56,7 +56,10 @@ import { useOffersRefresh } from "../shell/refresh";
 type PaneState =
   | { state: "loading" }
   | { state: "failed"; message: string }
-  | { state: "read"; page: ApplicationPayload };
+  // `problem` is what a later read of this page was refused with, standing
+  // beside the reading it could not replace. A read that answers replaces this
+  // state whole, so it cannot outlive the reading it was recorded against.
+  | { state: "read"; page: ApplicationPayload; problem?: string };
 
 export function ApplicationPane() {
   const [read, setRead] = useState<PaneState>({ state: "loading" });
@@ -78,7 +81,18 @@ export function ApplicationPane() {
       })
       .catch((error: unknown) => {
         if (!aborter.signal.aborted) {
-          setRead({ state: "failed", message: failureMessage(error) });
+          // A refused read keeps whatever this page already read, and says so
+          // beside it. Failing the whole pane instead would draw the error view
+          // over a page that is still good and unmount everything inline in it,
+          // with whatever a human had typed there — and the read may have been
+          // asked for on somebody else's behalf, after a confirmed act made
+          // somewhere else (Astra C-05). Only a first read's failure has nothing
+          // on screen to keep.
+          setRead((held) =>
+            held.state === "read"
+              ? { ...held, problem: failureMessage(error) }
+              : { state: "failed", message: failureMessage(error) },
+          );
         }
       });
     return () => {
@@ -125,6 +139,11 @@ export function ApplicationPane() {
     <Pane title="Application">
       {read.state === "loading" && <Loading />}
       {read.state === "failed" && <Failure message={read.message} onRetry={reload} />}
+      {read.state === "read" && read.problem !== undefined && (
+        <p className="ms-application-reason" role="status">
+          Application could not be read again, so what is on screen is the last reading: {read.problem}
+        </p>
+      )}
       {read.state === "read" && (
         <Blocks
           page={read.page}

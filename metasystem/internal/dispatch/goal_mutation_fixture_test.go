@@ -79,7 +79,11 @@ func (bed *goalMutationBed) stops(now time.Time) ([]StopRoute, error) {
 }
 
 func (bed *goalMutationBed) stop(id string, revision uint64, now time.Time) (goal.StopBatch, error) {
-	return ensureBreachStopWithReads(bed.root, id, revision, now, bed.reads)
+	return ensureBreachStopWithReads(bed.root, id, revision, now, bed.reads, "")
+}
+
+func (bed *goalMutationBed) stopOrderedBy(id string, revision uint64, now time.Time, human string) (goal.StopBatch, error) {
+	return ensureBreachStopWithReads(bed.root, id, revision, now, bed.reads, human)
 }
 
 func (bed *goalMutationBed) close(job string) (string, error) {

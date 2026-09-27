@@ -137,16 +137,20 @@ func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 
-	// Claim under a human name refuses up front.
+	// Claim under a human name refuses up front, and guides (rule H1): a
+	// person's claim would bind no session to work the goal, so the
+	// refusal names the public commands that steer or move the claim.
 	humanClaim := verbReqFor(a, "01J5X00000000000000000AK10", "mac-a")
 	humanClaim.Actor.Human = "wido"
-	if _, err := Claim(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "agent-only") {
-		t.Fatalf("humans cannot claim: %v", err)
+	if _, err := Claim(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "agent session's act") ||
+		!strings.Contains(err.Error(), "metasystem goal pin pair-keyed MACHINE") ||
+		!strings.Contains(err.Error(), "metasystem goal claim pair-keyed --take-over --reason TEXT") {
+		t.Fatalf("humans cannot claim, and are guided: %v", err)
 	}
 	if _, err := OpenClaim(humanClaim, "other", "X.", "main", "Go.", testBudget()); err == nil || !strings.Contains(err.Error(), "retired") {
 		t.Fatalf("humans cannot open --claim: %v", err)
 	}
-	if _, err := ClaimArc(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "agent-only") {
+	if _, err := ClaimArc(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "metasystem goal claim pair-keyed --take-over") {
 		t.Fatalf("humans cannot claim arcs: %v", err)
 	}
 

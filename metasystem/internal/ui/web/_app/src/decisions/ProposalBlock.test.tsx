@@ -386,7 +386,10 @@ describe("what the sheet leaves out", () => {
       ...holding,
       linesOf: (many) =>
         linesOf(many, {
-          "t7#3": { ticked: true, notRun: false, refusedUnsent: "", unrecorded: { state: "applied", words: "" } },
+          "t7#3": {
+            ticked: true, notRun: false, refusedUnsent: "",
+            unrecorded: { state: "applied", words: "", version: 2 },
+          },
         }),
     };
     const markup = renderToStaticMarkup(
