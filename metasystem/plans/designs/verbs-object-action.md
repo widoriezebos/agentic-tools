@@ -365,9 +365,15 @@ and the top-level `status`. `help agent` and skills name only these.
 there. There's only us. So we can have clean code.").** There are no external
 installations, so the build carries no compatibility code for old spellings: no
 table from removed spellings to successors, no old-spelling refusal messages,
-no tests pinning old spellings. An unknown word refuses like any unknown word,
-with the nearest current action as the only hint. U1d deletes U1a's
-removed-spelling table and its tests.
+no tests pinning old spellings. An unknown command refuses before any effect and says
+"did you mean" with the current command that was probably meant, computed only
+from the current table (Wido: "it should not point to legacy code. It should
+point to the [command] that was probably meant"): a first word that is a current
+action of one or more objects suggests `OBJECT ACTION` with the caller's
+remaining arguments (`approve x` → `goal approve x`; several objects list
+each); otherwise the nearest current object or action by spelling. U1d deletes
+U1a's removed-spelling table and its tests and adds tests for these two
+suggestion rules.
 
 ## 4. Rules and their witnesses
 
