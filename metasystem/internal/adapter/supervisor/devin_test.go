@@ -165,13 +165,6 @@ func (f *callbackRecorder) terminal() (string, string, string) {
 	return status, failure, phase
 }
 
-// devinStepClock is wall time whose waits are shortened: the supervision loops
-// poll at their cadence without the test paying it.
-type devinStepClock struct{}
-
-func (devinStepClock) Now() time.Time        { return time.Now() }
-func (devinStepClock) Sleep(d time.Duration) { time.Sleep(min(d, 5*time.Millisecond)) }
-
 type devinFixture struct {
 	t                                *testing.T
 	root, workspace, stubDir, record string
@@ -284,7 +277,7 @@ func (f *devinFixture) deps() Deps {
 		Root: f.root, Engine: "/nonexistent/metasystem", Environ: environ,
 		Getenv: func(name string) string { return f.env[name] },
 		Pid:    os.Getpid(), Stdout: f.stdout, Stderr: f.stderr,
-		Clock:    devinStepClock{},
+		Clock:    SystemClock(),
 		Dispatch: f.dispatch,
 		GroupMembers: func(int, ...int) ([]int, error) {
 			return nil, nil

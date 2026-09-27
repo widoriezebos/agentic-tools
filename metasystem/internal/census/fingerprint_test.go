@@ -1,6 +1,7 @@
 package census
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,7 +135,7 @@ func TestFingerprintMovesWithEngineAndSignatureSetNotAdapterScripts(t *testing.T
 	if err := os.MkdirAll(adapters, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(adapters, "fake.sh"), []byte("#!/bin/sh\n# signature fingerprint fixture\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(adapters, "fake.sh"), []byte("#!/bin/sh\n# signature fingerprint fixture\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if got := mustFingerprint(t, root); got != before {

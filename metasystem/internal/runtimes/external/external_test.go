@@ -2,6 +2,7 @@ package external
 
 import (
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ func install(t *testing.T, root, name, body string, mode os.FileMode, use bool) 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+	if err := testexec.WriteFile(path, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(path, mode); err != nil {

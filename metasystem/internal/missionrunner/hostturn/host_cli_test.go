@@ -3,6 +3,7 @@ package hostturn
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,7 +48,7 @@ func newHostBed(t *testing.T, cli, script string) *hostBed {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(b.bin, cli), []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(b.bin, cli), []byte("#!/bin/sh\n"+script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(b.turn, "turn.json"), []byte(`{"missionId":"m1","turnId":"t1","cycle":1,"model":"fixture-model"}`+"\n"), 0o644); err != nil {

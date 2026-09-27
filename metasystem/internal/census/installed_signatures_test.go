@@ -1,6 +1,7 @@
 package census
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"testing"
@@ -56,7 +57,7 @@ func TestInstalledSignaturesIncludeANamedExternalRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := "#!/bin/sh\n[ \"$1\" = describe ] || exit 64\nprintf '{\"schemaVersion\":1,\"match\":[\"^([^[:space:]]*/)?newagent([[:space:]]|$)\"]}\\n'\n"
-	if err := os.WriteFile(adapter, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(adapter, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("adapters.newagent.use=external\n"), 0o644); err != nil {
