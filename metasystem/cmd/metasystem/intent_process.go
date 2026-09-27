@@ -1034,6 +1034,17 @@ func runIntentAsk(inv *intentInvocation) int {
 	lines := append(warnings, "delivery: "+delivery)
 	wait := inv.publicArgv("question", "wait", "channel:"+q.ID)
 	poll := inv.publicArgv("question", "retry", q.ID)
+	if errors.Is(err, errQuestionAlreadyOpen) {
+		// The same question already stands open (R-129-ui): success, and
+		// nothing was written, posted or published again.
+		repeat := intentResult{Outcome: intentUnchanged, Targets: targets, text: lines, Data: data,
+			Summary: "question " + q.ID + " is already open for goal " + id + " with this text and these options (" + delivery + "); nothing was asked again",
+			next:    wait, nextReason: "wait for the authenticated answer"}
+		if pending && q.Undelivered > 0 {
+			repeat.next, repeat.nextReason = poll, "delivers exactly this stored question once more"
+		}
+		return inv.render(repeat)
+	}
 	if err != nil {
 		return inv.render(inv.askAfterFailure(q, err, code, targets, warnings))
 	}
@@ -1491,8 +1502,10 @@ func runIntentAnswerQuestion(inv *intentInvocation) int {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "question", ID: q.publicName()}},
 				Summary: fmt.Sprintf("mission %s's question %s is already answered with a different answer; nothing was changed", q.mission, q.id)})
 		}
-		// The same answer again completes what an interrupted call left.
-		return inv.render(inv.resumeMission(q.mission, intentResult{Outcome: intentConfirmed, Summary: "the answer to " + q.id + " was already recorded"}))
+		// The same answer again completes what an interrupted call left;
+		// when the mission already runs, nothing is left and the repeat is
+		// unchanged (R-129-ui).
+		return inv.render(inv.resumeMission(q.mission, intentResult{Outcome: intentUnchanged, Summary: "the answer to " + q.id + " was already recorded"}))
 	}
 	answered := inv.answerMission(q.mission, q.id, text)
 	if answered.Outcome != intentConfirmed && answered.Outcome != intentPartial {
@@ -1519,7 +1532,13 @@ func (inv *intentInvocation) resumeMission(mission string, answered intentResult
 	}
 	resumed := ownerVerbResult(ran, append(answered.Targets, intentTarget{Kind: "mission", ID: mission}), answered.Summary+"; mission "+mission+" resumed", nil)
 	resumed.Data = mergeData(map[string]any{"answer": answered.Data}, resumed.Data)
-	if resumed.Outcome != intentConfirmed {
+	if already, running := missionAlreadyRunning(ran); running {
+		resumed.Summary = answered.Summary + "; " + already
+		if answered.Outcome == intentUnchanged {
+			resumed.Outcome = intentUnchanged
+		}
+	}
+	if resumed.Outcome != intentConfirmed && resumed.Outcome != intentUnchanged {
 		resumed.Outcome = intentPartial
 		resumed.Summary = answered.Summary + ", but the mission did not resume: " + resumed.Summary
 		resumed.next, resumed.nextReason = inv.sameCommand(), "the same answer completes the resume once the named cause is resolved; it is never recorded twice"
@@ -1542,6 +1561,9 @@ func runIntentMission(inv *intentInvocation, verb, mission string) int {
 	}
 	done := map[string]string{"start": "mission " + mission + " started", "resume": "mission " + mission + " resumed", "status": "mission " + mission + " status"}[verb]
 	result := ownerVerbResult(ran, []intentTarget{{Kind: "mission", ID: mission}}, done, nil)
+	if already, running := missionAlreadyRunning(ran); running && verb != "status" {
+		result.Outcome, result.Summary = intentUnchanged, already
+	}
 	if verb == "status" && ran.err == nil {
 		result.Outcome, result.code = intentConfirmed, 0
 		result.Summary = strings.TrimSpace(string(ran.stdout))
@@ -1550,6 +1572,20 @@ func runIntentMission(inv *intentInvocation, verb, mission string) int {
 		}
 	}
 	return inv.render(result)
+}
+
+// missionAlreadyRunning reads a start or resume that found the mission's
+// runner already live: the runner printed one line saying so and exited 0.
+func missionAlreadyRunning(ran intentProcessResult) (string, bool) {
+	if ran.err != nil || ran.code != 0 {
+		return "", false
+	}
+	for _, line := range nonEmptyLines(string(ran.stdout)) {
+		if strings.HasPrefix(line, missionrunner.AlreadyRunningPrefix) {
+			return line, true
+		}
+	}
+	return "", false
 }
 
 // runIntentMissionNamed starts, resumes or reads the one named mission.
