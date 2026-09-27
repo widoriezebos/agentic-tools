@@ -278,7 +278,7 @@ func (s *session) finalizeAndLaunch(job, chain, recordJSON, runtime, adapterVerb
 	}
 	s.println(job)
 	// The exact waiter command: the agent never invents a polling loop.
-	s.eprintf("watch it with: metasystem work watch --job %s\n", job)
+	s.eprintf("wait for it with: metasystem work wait j2:%s\n", job)
 	return nil
 }
 

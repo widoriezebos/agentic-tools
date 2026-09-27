@@ -109,7 +109,7 @@ func TestDispatchIntegrationLaunchesAnImplementerRound(t *testing.T) {
 	brief := b.brief("brief.md", "implement", "Do the thing.")
 	result := b.runEnv(b.dispatchEnv("fresh"), "dispatch", "--role", "implementer", "--brief", brief, "--job-id", "happy")
 	requireExit(t, result, 0, b.stderr.String())
-	if string(result.Stdout) != "happy\n" || !strings.Contains(b.stderr.String(), "watch it with: metasystem work watch --job happy") {
+	if string(result.Stdout) != "happy\n" || !strings.Contains(b.stderr.String(), "wait for it with: metasystem work wait j2:happy") {
 		t.Fatalf("stdout %q stderr %q", result.Stdout, b.stderr.String())
 	}
 	record := b.record("happy")
