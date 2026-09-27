@@ -113,6 +113,7 @@ import {
   type Displayeds,
   type Line as ProposalLine,
   type Marks as ProposalMarks,
+  type Written,
 } from "./proposing";
 import { loadBacklog } from "../backlog/api";
 import type { Chosen } from "./subject";
@@ -1604,27 +1605,34 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     setCovered(now);
   }, []);
 
+  const mark = useCallback((id: string, change: (held: ProposalMarks[string]) => ProposalMarks[string]) => {
+    setProposalMarks((held) => ({ ...held, [id]: change(proposalMarkOf(held, id)) }));
+  }, []);
+
   /**
    * One state written onto one line, through the one route that writes them.
    *
    * It answers the entry as the server now holds it, so the next press sends the
    * version this one left. A write the server refused with the entry is handed
    * back as a conflict, and the caller must show that entry rather than send an
-   * act of its own.
+   * act of its own — which is why both are folded into the conversation here: an
+   * entry somebody else left is the line as the route now holds it, exactly as the
+   * inbox shows it, and a card that ignored it would put the line back where it
+   * was (Astra C-06).
+   *
+   * The answer goes back to the caller, because only the press knows what a
+   * failure means to it. A dismissal that could not be written did not happen.
    */
   const writeState = useCallback(
-    async (line: ProposalLine, turn: string, state: ProposalState, words: string): Promise<void> => {
+    async (line: ProposalLine, turn: string, state: ProposalState, words: string): Promise<Written> => {
       const answered = await writeOutcome(turn, line, state, words);
-      if (answered.kind === "written") {
+      if (answered.kind !== "failed") {
         setStore((held) => proposalMoved(held, turn, answered.proposal));
       }
+      return answered;
     },
     [],
   );
-
-  const mark = useCallback((id: string, change: (held: ProposalMarks[string]) => ProposalMarks[string]) => {
-    setProposalMarks((held) => ({ ...held, [id]: change(proposalMarkOf(held, id)) }));
-  }, []);
 
   /**
    * The run: the lines given, in order, one act each, never retried.
@@ -1741,20 +1749,30 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     if (found === undefined) {
       return;
     }
-    for (const line of found.lines) {
-      // Every line that can still be moved out of where it is, which includes a
-      // line a page went away in the middle of: nothing else will settle that
-      // one, and the route admits `applying` to `dismissed` for exactly this
-      // (Sol S58-C-06). The version is the entry's own, so a line somebody else
-      // moved first answers with a conflict and stays as they left it.
-      if (!dismissableLine(line)) {
-        continue;
+    // Every line that can still be moved out of where it is, which includes a
+    // line a page went away in the middle of: nothing else will settle that one,
+    // and the route admits `applying` to `dismissed` for exactly this
+    // (Sol S58-C-06). The version is the entry's own, so a line somebody else
+    // moved first answers with a conflict and stays as they left it.
+    const lines = found.lines.filter((line) => dismissableLine(line));
+    void (async () => {
+      const answers = await Promise.all(lines.map((line) => writeState(line, card, "dismissed", "")));
+      for (const [at, answered] of answers.entries()) {
+        if (answered.kind === "failed") {
+          // The conversation could not write it down, so what the human pressed
+          // did not happen: the line says so, and the card is open again over a
+          // proposal that is still waiting (Astra C-06).
+          mark(lines[at].id, (held) => ({ ...held, refusedUnsent: answered.words }));
+          setDismissedCards((held) => held.filter((one) => one !== card));
+        }
       }
-      // A line somebody else moved first stays as they left it; the card is
-      // folded either way, because folding it was this human's own act.
-      void writeState(line, card, "dismissed", "");
-    }
-  }, [proposals, writeState]);
+      // And the page behind the drawer reads again, once however many lines were
+      // written, so a mounted Decisions drops the row this press put away
+      // (Astra C-07). It is the store's own deferred read, which waits for a
+      // sheet over the work area to close.
+      askTheReread();
+    })();
+  }, [proposals, writeState, mark, askTheReread]);
 
   const askAboutProposal = useCallback((id: string) => {
     for (const card of proposals) {
