@@ -181,3 +181,60 @@ whose bundle it would otherwise conflict with.
 High: two designs the critic has read, joined as their later lists
 said, on a table the verbs seat calls stable. Weakest: "Paused" as a
 tab name beside nouns, which g1-s59's read accepted.
+
+## Built (2026-09-27)
+
+Landed on ui-development and main: six commits on `ui/g1-s62`, one
+per decision, one for the tool's description and the bundle last,
+built by Claude on Opus, rebased twice (onto the g1-s63 landing, one
+conflict in admission resolved keeping both sides; onto the g1-s64
+landing, the tenth catalogue row folded into this design's public-name
+shape and g1-s64's transitional fields retired), read by Codex on Sol
+under R-124 ([g1-s62-sol-read.md](g1-s62-sol-read.md)): zero material
+findings, "land as built", every departure and both rebases accepted;
+no fix round. Go, vet, the interface packages and the named
+`cmd/metasystem` selection green (the selection takes fifteen minutes
+under this machine's load); the fast gate and the parallel ratchet
+passed; 91 test files, 1,407 frontend tests; the bundle rebuilt twice
+to one digest; the live tool's enum reads the ten public names.
+Twenty-eight screenshots at 1280 and 400, light and dark: the card with
+Pause, Abandon and Unapprove, the queue with Pause and the selection
+bar, the bulk sheet, the Paused tab, the board's card menu, the act
+sheet. The grep over `src/` finds the four old words only in the help
+terms' "called … until the verbs landed" clauses; the question sheet's
+`Withdraw` stands.
+
+As built: the tool's `verb` is the public action and its fields the
+public flags (`risk` through `ParseRiskRecord`; `label` and `unlabel`
+composed by `ApplyLabelDelta` at admission, a label in both refused in
+the owner's words); refusals by name; an action with no act refused
+with its usage line read from the command catalogue at run time; the
+message still persists the route id, so stored proposals are
+unchanged. The join in `cmd/metasystem` holds ten actions and every
+field against the descriptors from both sides. The words: Open,
+Approve, Unapprove, Prioritize, Block, Unblock, Pause, Resume, Edit,
+Abandon, on the card, the inbox rows, the chip and the pages' buttons;
+the Decided tab says Paused; the help terms name the old word once;
+the vocabulary regenerated.
+
+Sol's two deferred notes: the skill's sentence said "nine of those
+actions today" where the tool names ten; folded at the landing as one
+word in the canonical skill, its embedded copy, the three mirrors and
+the sentence's test (the design's D4 sentence predates abandon; g1-s64
+D4 said the list becomes ten). The bulk sheet's title reads "Pause n
+goals" where D3 wrote "Pause n selected"; left as built, the count and
+the act being plain, for Wido to rule on if the word matters.
+
+Departures the read accepted: `Button` renamed `Word`; `Action` beside
+`Route` with `Travels()` and `Body()`; the label delta travelling
+unresolved to admission; `propose` a `Readers` method; the refusal
+lists exported for the join; `successor` no longer refused, it is
+abandon's flag; clearing labels by naming each under `unlabel`;
+comments updated; the fixture's tool-call title in the public grammar;
+the description's "at least one of them"; "Open goal" kept on the
+new-goal button and the card menu's open-the-goal row.
+
+Later, when it hurts: the checkout's other objects' writes as verbs
+(`question ask`, `question withdraw`, `design …`); U1d's renames among
+the refused goal actions follow the catalogue by themselves; the verbs
+seat runs the join test before pushing U1d.
