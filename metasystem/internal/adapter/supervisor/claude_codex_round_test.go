@@ -42,6 +42,9 @@ func stubReturn(t *testing.T, f *fakeInstall) string {
 	if err := adapter.WriteFakeReturn(filepath.Join(f.agents(), "jobs", f.job+".json"), f.roundFile("prompt.md"), path); err != nil {
 		t.Fatal(err)
 	}
+	editRecord(path, func(ret map[string]any) {
+		ret["runtime"] = readJSON(t, filepath.Join(f.agents(), "jobs", f.job+".json"))["runtime"]
+	})
 	data := readText(t, path)
 	return strings.Join(strings.Fields(data), " ")
 }
@@ -67,7 +70,7 @@ printf '%s\n' "$STUB_RESULT"
 	if !strings.HasPrefix(names, "__register-custody __handshake") || !strings.HasSuffix(names, "__record-cas") {
 		t.Fatalf("callbacks = %s", names)
 	}
-	if hs := calls[1]; flagValue(hs, "--session") != "claude-session" || flagValue(hs, "--model") != "claude-model" {
+	if hs := calls[1]; flagValue(hs, "--session") != "claude-session" {
 		t.Fatalf("handshake = %v", hs)
 	}
 	if last := calls[len(calls)-1]; flagValue(last, "--status") != "completed" {

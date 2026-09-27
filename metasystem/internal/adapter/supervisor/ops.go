@@ -54,15 +54,17 @@ type InvocationShape struct {
 
 // Description is describe's answer.
 type Description struct {
-	Name          string            `json:"name"`
-	SchemaVersion int               `json:"schemaVersion"`
-	Capabilities  Capabilities      `json:"capabilities"`
-	Match         []string          `json:"match"`
-	Exclude       []string          `json:"exclude"`
-	Positive      string            `json:"positive"`
-	Lookalike     string            `json:"lookalike"`
-	Invocations   []InvocationShape `json:"invocations"`
-	ConfigPaths   []string          `json:"configPaths"`
+	Name          string `json:"name"`
+	SchemaVersion int    `json:"schemaVersion"`
+	// CLI is the executable a turn needs installed ("" for none).
+	CLI          string            `json:"cli,omitempty"`
+	Capabilities Capabilities      `json:"capabilities"`
+	Match        []string          `json:"match"`
+	Exclude      []string          `json:"exclude"`
+	Positive     string            `json:"positive"`
+	Lookalike    string            `json:"lookalike"`
+	Invocations  []InvocationShape `json:"invocations"`
+	ConfigPaths  []string          `json:"configPaths"`
 	// Enforcement is the static envelope-enforcement map, empty when the
 	// runtime declares none.
 	Enforcement string `json:"enforcement,omitempty"`

@@ -17,7 +17,7 @@ import (
 )
 
 func init() {
-	ops := claudeOps{builtinOps{name: "claude", usage: "native", host: true,
+	ops := claudeOps{builtinOps{name: "claude", cli: "claude", usage: "native", host: true,
 		configIdentity: claudeConfigIdentity, probe: claudeProbe, contract: commonContract("claude"),
 		selftest:    commonSelftest("claude", "native", "", nil),
 		invocations: []InvocationShape{{Includes: []string{"claude", "-p"}, TagFlag: "--name"}}}}
@@ -267,10 +267,13 @@ func (claudeOps) Observe(t *Turn, o Observation) (Events, error) {
 func (claudeOps) Finalize(t *Turn, in FinalInput) (Final, error) {
 	private := in.Launch.Private.(claudeLaunch)
 	ports, err := delegate.PortsFor("claude")
-	if err != nil || ports.Usage == nil || ports.ResultField == nil || ports.HostResult == nil {
+	if err != nil || ports.Usage == nil || ports.ResultField == nil {
 		return Final{}, fmt.Errorf("claude ports are not registered")
 	}
 	if t.Role == RoleHost {
+		if ports.HostResult == nil {
+			return Final{}, fmt.Errorf("claude host ports are not registered")
+		}
 		raw, returnPath, usagePath := filepath.Join(t.Dir, "raw.out"), filepath.Join(t.Dir, "return.json"), filepath.Join(t.Dir, "usage.json")
 		copyOrEmptyFile(private.resultFile, raw)
 		if err := ports.HostResult(private.resultFile, returnPath, usagePath); err != nil {

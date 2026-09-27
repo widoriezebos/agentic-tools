@@ -362,3 +362,38 @@ func runHostCLI(d Deps, t *Turn, launch Launch, hostLog string) int {
 	command.Stderr = log
 	return exitStatus(command.Run())
 }
+
+// HostTurnFacts are what the mission host turn knows before its runtime
+// prepares.
+type HostTurnFacts struct {
+	Runtime, TurnDir, Mission, TurnID string
+	Prompt, Schema, ResumeSession     string
+	Tag, Requested                    string
+}
+
+// NewHostTurn is a runtime's view of one mission host turn (role host): the
+// CLI runs in the installation's checkout.
+func NewHostTurn(d Deps, f HostTurnFacts) *Turn {
+	return &Turn{d: d, Role: RoleHost, Verb: "start-turn", Runtime: f.Runtime, Root: d.Root,
+		Workspace: d.Root, Dir: f.TurnDir, Record: filepath.Join(f.TurnDir, "turn.json"),
+		Mission: f.Mission, TurnID: f.TurnID, Tag: f.Tag, Prompt: f.Prompt, Schema: f.Schema,
+		ResumeSession: f.ResumeSession, Requested: f.Requested, Env: d.Environ,
+		Log: appendLog(filepath.Join(f.TurnDir, "host.log"))}
+}
+
+// RunHostCLI runs a host turn's CLI to its exit and returns its status.
+func RunHostCLI(d Deps, t *Turn, launch Launch, hostLog string) int {
+	return runHostCLI(d, t, launch, hostLog)
+}
+
+// appendLog is a writer appending to a file per write.
+type appendLog string
+
+func (a appendLog) Write(p []byte) (int, error) {
+	file, err := os.OpenFile(string(a), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+	return file.Write(p)
+}

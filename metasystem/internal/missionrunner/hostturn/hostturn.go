@@ -84,6 +84,10 @@ func Main(args []string, newDeps func(root string) supervisor.Deps) int {
 	}
 	d := newDeps(root)
 	h, ok := hosts[name]
+	ops, hasOps := supervisor.OperationsFor(d, name)
+	if !ok && hasOps {
+		h, ok = hostRuntime{run: func(t *Turn) int { return runHostOps(t, ops) }}, true
+	}
 	if !ok {
 		fmt.Fprintf(d.Stderr, "host adapter is not installed: %s\n", name)
 		return 2

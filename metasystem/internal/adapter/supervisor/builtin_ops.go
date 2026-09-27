@@ -12,6 +12,7 @@ import (
 // and adds prepare, observe, finalize (and repair when it declares one).
 type builtinOps struct {
 	name           string
+	cli            string
 	usage          string // native, unavailable, or metered
 	host, repair   bool
 	configIdentity func(Deps) (string, error)
@@ -22,7 +23,7 @@ type builtinOps struct {
 }
 
 func (b builtinOps) Describe(Deps) (Description, error) {
-	d := Description{Name: b.name, SchemaVersion: OperationsSchemaVersion,
+	d := Description{Name: b.name, CLI: b.cli, SchemaVersion: OperationsSchemaVersion,
 		Capabilities: Capabilities{Resume: true, FollowUp: true, Repair: b.repair, WaitDelivery: true, Host: b.host, Usage: b.usage},
 		Invocations:  b.invocations}
 	text, err := runtimes.SignatureText(b.name)
@@ -56,4 +57,15 @@ func (b builtinOps) Repair(*Turn, RepairInput) RepairResult { return RepairResul
 // Cancel has no runtime-specific step: the shared cancellation.
 func (b builtinOps) Cancel(d Deps, job string) int {
 	return d.Dispatch.Run(d.Stdout, d.Stderr, "__cancel-owned", "--job", job)
+}
+
+// OperationsFor is the operation interface of a runtime for an installation
+// (the built-ins that run on the shared rounds). ok is false for a runtime
+// that does not.
+func OperationsFor(d Deps, name string) (Operations, bool) {
+	a, found := registry[name]
+	if !found || a.ops == nil {
+		return nil, false
+	}
+	return a.ops, true
 }
