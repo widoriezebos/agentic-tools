@@ -19,10 +19,6 @@ const RuntimeHookScript = "scripts/agents/supervision-hook.sh"
 // RuntimeHookScriptEnv carries the stub's own path, as invoked, to the entry.
 const RuntimeHookScriptEnv = "METASYSTEM_HOOK_SCRIPT"
 
-// runtimeHookBootstrappedEnv marks the restart of SessionStart on an engine
-// the hook just rebuilt; a restarted start never rebuilds again.
-const runtimeHookBootstrappedEnv = "METASYSTEM_HOOK_BOOTSTRAPPED"
-
 // stopDeadlineParentEnv names the deadline parent to its Stop worker, and
 // stopDeadlineStartedEnv carries the parent's start (epoch seconds).
 const (

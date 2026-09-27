@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -178,73 +177,39 @@ func TestHookStartMissingEngine(t *testing.T) {
 }
 
 // The hook side of a generation cutover: an engine behind the checkout's
-// landed sources is rebuilt and the start restarts on it through the stub,
-// once; a retained plan holds the rearm; a failed rebuild is a notice.
+// landed sources gets a detached rebuild and the start ends with its notice,
+// never waiting on the build and never arming the engine behind; a retained
+// plan holds the rebuild; a rebuild that cannot start is a notice and the
+// start continues on the enrolled engine.
 func TestHookStartBootstrapsAnEngineBehindTheLandedSources(t *testing.T) {
-	type exec struct {
-		path string
-		argv []string
-		env  []string
-	}
-	t.Run("rebuild and restart", func(t *testing.T) {
+	t.Run("detached rebuild ends the start", func(t *testing.T) {
 		installation := newHookInstallation(t)
 		ops := newFakeOps(t, installation)
 		ops.engineBehind = func() (bool, error) { return true, nil }
-		var execs []exec
-		run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "start", payload: `{"session_id":"cutover"}`,
-			exec: func(path string, argv, env []string) error {
-				execs = append(execs, exec{path, argv, env})
-				return syscall.ENOEXEC
-			}})
-		if len(execs) != 1 || len(execs[0].argv) != 6 || execs[0].argv[3] != installation.script || execs[0].argv[4] != "claude" ||
-			!strings.HasPrefix(filepath.Base(execs[0].argv[5]), bootstrapPayloadPrefix) ||
-			!containsEnv(execs[0].env, runtimeHookBootstrappedEnv+"="+execs[0].argv[5]) {
-			t.Fatalf("restart = %+v", execs)
-		}
-		if !ops.called("rebuild engine") || !strings.Contains(run.stdout, "could not restart SessionStart on it") {
-			t.Fatalf("failed restart was not reported: stdout %q trace %s", run.stdout, ops.trace())
+		run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "start", payload: `{"session_id":"cutover"}`})
+		if run.status != 0 || run.stdout != noticeOf("engine-rebuilding") || !ops.called("start engine rebuild") ||
+			ops.called("up ") || ops.called("brain boot") {
+			t.Fatalf("rebuild = status %d stdout %q trace %s", run.status, run.stdout, ops.trace())
 		}
 	})
-	t.Run("restarted start never rebuilds", func(t *testing.T) {
-		installation := newHookInstallation(t)
-		ops := newFakeOps(t, installation)
-		ops.engineBehind = func() (bool, error) { return true, nil }
-		run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "start", payload: `{}`,
-			env:  map[string]string{runtimeHookBootstrappedEnv: "1"},
-			exec: func(string, []string, []string) error { t.Fatal("a restarted start restarted again"); return nil }})
-		if ops.called("engine behind") || run.status != 0 {
-			t.Fatalf("restarted start judged the engine again: %s", ops.trace())
-		}
-	})
-	t.Run("retained plan holds the rearm", func(t *testing.T) {
+	t.Run("retained plan holds the rebuild", func(t *testing.T) {
 		installation := newHookInstallation(t)
 		ops := newFakeOps(t, installation)
 		ops.engineBehind = func() (bool, error) { return true, nil }
 		ops.unmigratable = func() ([]string, error) { return []string{"run:held"}, nil }
-		run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "start", payload: `{}`,
-			exec: func(string, []string, []string) error { t.Fatal("a held rearm restarted"); return nil }})
-		if ops.called("rebuild engine") || !strings.Contains(run.stdout, "retained plans run:held need it") {
-			t.Fatalf("held rearm = stdout %q trace %s", run.stdout, ops.trace())
+		run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "start", payload: `{}`})
+		if ops.called("start engine rebuild") || !strings.Contains(run.stdout, "retained plans run:held need it") || !ops.called("up ") {
+			t.Fatalf("held rebuild = stdout %q trace %s", run.stdout, ops.trace())
 		}
 	})
-	t.Run("failed rebuild continues on the enrolled engine", func(t *testing.T) {
+	t.Run("a rebuild that cannot start continues on the enrolled engine", func(t *testing.T) {
 		installation := newHookInstallation(t)
 		ops := newFakeOps(t, installation)
 		ops.engineBehind = func() (bool, error) { return true, nil }
-		ops.rebuild = func() error { return errors.New("no go toolchain") }
-		run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "start", payload: `{}`,
-			exec: func(string, []string, []string) error { t.Fatal("a failed rebuild restarted"); return nil }})
-		if !strings.Contains(run.stdout, "could not rebuild the engine behind this checkout's sources: no go toolchain") || !ops.called("up ") {
-			t.Fatalf("failed rebuild = stdout %q trace %s", run.stdout, ops.trace())
-		}
-	})
-	t.Run("current engine is left alone", func(t *testing.T) {
-		installation := newHookInstallation(t)
-		ops := newFakeOps(t, installation)
-		run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "start", payload: `{}`,
-			exec: func(string, []string, []string) error { t.Fatal("a current engine restarted"); return nil }})
-		if run.stdout != "{}\n" || ops.called("rebuild engine") {
-			t.Fatalf("current engine = stdout %q trace %s", run.stdout, ops.trace())
+		ops.rebuild = func() error { return errors.New("the proof mutation lock is held") }
+		run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "start", payload: `{}`})
+		if !strings.Contains(run.stdout, "could not start a rebuild of the engine behind this checkout's sources: the proof mutation lock is held") || !ops.called("up ") {
+			t.Fatalf("refused rebuild = stdout %q trace %s", run.stdout, ops.trace())
 		}
 	})
 }

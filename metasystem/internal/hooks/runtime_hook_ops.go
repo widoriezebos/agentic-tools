@@ -92,8 +92,10 @@ type Ops interface {
 	// UnmigratableRetainedPlans names retained executable plans whose stored
 	// argv a rebuilt engine could not run. The rearm is held while any exist.
 	UnmigratableRetainedPlans(repo string) ([]string, error)
-	// RebuildEngine rebuilds the installation's engine in place.
-	RebuildEngine(installation string) error
+	// StartEngineRebuild starts a rebuild of the installation's engine
+	// detached from the hook, under the bootstrap fence, and returns at once.
+	// A rebuild already running is success.
+	StartEngineRebuild(installation string) error
 }
 
 // UpRequest is one `up` invocation of the hook.

@@ -3,18 +3,21 @@ package hooks
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // The plumbing stub scripts/agents/supervision-hook.sh: it locates the
-// engine, execs `internal hook`, rebuilds once when no engine serves the
-// entry, and otherwise prints the fixed degraded response. Git and the
+// engine, execs `internal hook`, starts one detached rebuild when no engine
+// serves the entry, and answers with the fixed degraded response. Git and the
 // engine are fixture programs on the stub's PATH and path.
 
 const stubFakeEngine = `#!/usr/bin/env bash
@@ -192,17 +195,20 @@ func TestStubDegradedRefusesInvalidInvocations(t *testing.T) {
 	}
 }
 
-// An engine older than the entry is rebuilt once under the fence and the
-// invocation retried on the rebuilt engine; a failed rebuild, or a fence
-// another hook holds, answers with the bootstrap allowance. Claude's tool
-// gate never builds.
-func TestStubRebuildsOnceForAnEngineOlderThanTheEntry(t *testing.T) {
+// An engine older than the entry gets one detached rebuild under the fence
+// while the event answers at once with its degraded response; the event
+// after the build uses the rebuilt engine. Builds hand off through FIFOs, so
+// nothing here waits on elapsed time.
+func TestStubRebuildsDetachedForAnEngineOlderThanTheEntry(t *testing.T) {
 	old := strings.Replace(stubFakeEngine, `exit "${STUB_ACCEPTS_STATUS:-0}"`, `echo 'metasystem: unknown command "hook"' >&2; exit 2`, 1)
 	build := `#!/usr/bin/env bash
-printf 'build %s\n' "$PWD" >>"${STUB_BUILD_RECORD:?}"
-[[ -d artifacts/agents/hook-bootstrap.fence ]] || { echo "built outside the fence" >&2; exit 9; }
-[[ ${STUB_BUILD_FAILS:-0} == 0 ]] || { echo "go-build: no go toolchain" >&2; exit 1; }
-cp "${STUB_NEW_ENGINE:?}" bin/metasystem
+printf 'build %s pid=%s\n' "$PWD" "$$" >>"${STUB_BUILD_RECORD:?}"
+[[ -z "${STUB_BUILD_RELEASE:-}" ]] || { read -r _ <"$STUB_BUILD_RELEASE" || true; }
+status=0
+[[ ${STUB_BUILD_FAILS:-0} == 0 ]] || { echo "go-build: no go toolchain" >&2; status=1; }
+[[ $status != 0 ]] || cp "${STUB_NEW_ENGINE:?}" bin/metasystem
+[[ -z "${STUB_BUILD_DONE:-}" ]] || printf 'done\n' >"$STUB_BUILD_DONE"
+exit "$status"
 `
 	newEngine := filepath.Join(t.TempDir(), "new-engine")
 	if err := testexec.WriteFile(newEngine, []byte(stubFakeEngine), 0o755); err != nil {
@@ -215,44 +221,135 @@ cp "${STUB_NEW_ENGINE:?}" bin/metasystem
 		}
 		return bed, filepath.Join(t.TempDir(), "builds")
 	}
-	t.Run("rebuilt and retried", func(t *testing.T) {
-		bed, builds := setup(t)
-		status, stdout, _ := bed.run(t, bed.script, "claude", "stop", "{}", "STUB_BUILD_RECORD="+builds, "STUB_NEW_ENGINE="+newEngine)
-		record, _ := os.ReadFile(builds)
-		if status != 0 || stdout != "engine stdout\n" || string(record) != "build "+bed.root+"\n" ||
-			!strings.Contains(bed.recorded(t), "argv=internal hook claude stop\n") {
-			t.Fatalf("rebuild = status %d stdout %q builds %q record %q", status, stdout, record, bed.recorded(t))
+	awaitBuild := func(done string) {
+		if file, err := os.Open(done); err == nil {
+			_, _ = io.Copy(io.Discard, file)
+			_ = file.Close()
 		}
-		if _, err := os.Stat(filepath.Join(bed.root, "artifacts", "agents", "hook-bootstrap.fence")); !os.IsNotExist(err) {
-			t.Fatalf("the fence outlived its build: %v", err)
-		}
-	})
-	t.Run("failed rebuild", func(t *testing.T) {
-		bed, builds := setup(t)
-		status, stdout, _ := bed.run(t, bed.script, "claude", "stop", "{}", "STUB_BUILD_RECORD="+builds, "STUB_NEW_ENGINE="+newEngine, "STUB_BUILD_FAILS=1")
-		if status != 0 || stdout != mustForm(t, "allowed", "bootstrap-failed")+"\n" || bed.recorded(t) != "" {
-			t.Fatalf("failed rebuild = status %d stdout %q record %q", status, stdout, bed.recorded(t))
-		}
-		log, _ := os.ReadFile(filepath.Join(bed.root, "artifacts", "agents", "hook-bootstrap.log"))
-		if !strings.Contains(string(log), "go-build: no go toolchain") {
-			t.Fatalf("bootstrap log = %q", log)
-		}
-	})
-	t.Run("fence held", func(t *testing.T) {
-		bed, builds := setup(t)
-		if err := os.MkdirAll(filepath.Join(bed.root, "artifacts", "agents", "hook-bootstrap.fence"), 0o755); err != nil {
+	}
+	fenceHolder := func(t *testing.T, bed stubBed) int {
+		t.Helper()
+		target, err := os.Readlink(filepath.Join(bed.root, filepath.FromSlash(BootstrapFencePath)))
+		if err != nil {
 			t.Fatal(err)
 		}
-		status, stdout, _ := bed.run(t, bed.script, "claude", "start", "{}", "STUB_BUILD_RECORD="+builds, "STUB_NEW_ENGINE="+newEngine)
-		if _, err := os.Stat(builds); status != 0 || stdout != StartEngineMissingNotice()+"\n" || !os.IsNotExist(err) {
-			t.Fatalf("held fence = status %d stdout %q build %v", status, stdout, err)
+		pid, err := strconv.Atoi(target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pid
+	}
+	bootstrapForm := mustForm(t, "allowed", "bootstrap-failed") + "\n"
+
+	t.Run("start and end answer while the build runs, the next event uses the rebuilt engine", func(t *testing.T) {
+		bed, builds := setup(t)
+		release, done := makeFIFO(t, "release"), makeFIFO(t, "done")
+		t.Cleanup(func() { unblockFIFO(release) })
+		env := []string{"STUB_BUILD_RECORD=" + builds, "STUB_NEW_ENGINE=" + newEngine, "STUB_BUILD_RELEASE=" + release, "STUB_BUILD_DONE=" + done}
+		status, stdout, _ := bed.run(t, bed.script, "claude", "start", "{}", env...)
+		if status != 0 || stdout != StartEngineMissingNotice()+"\n" {
+			t.Fatalf("start during the build = status %d stdout %q", status, stdout)
+		}
+		builder := fenceHolder(t, bed)
+		if group, err := syscall.Getpgid(builder); err != nil || group != builder {
+			t.Fatalf("the builder %d does not lead its own process group: %d %v", builder, group, err)
+		}
+		// A second event while the build runs neither builds nor waits;
+		// SessionEnd never starts a build.
+		if status, stdout, _ := bed.run(t, bed.script, "claude", "stop", "{}", env...); status != 0 || stdout != bootstrapForm {
+			t.Fatalf("stop during the build = status %d stdout %q", status, stdout)
+		}
+		if status, stdout, _ := bed.run(t, bed.script, "claude", "end", "{}", env...); status != 0 || stdout != "" {
+			t.Fatalf("end during the build = status %d stdout %q", status, stdout)
+		}
+		releaseFIFO(release)
+		awaitBuild(done)
+		record, _ := os.ReadFile(builds)
+		if string(record) != "build "+bed.root+" pid="+strconv.Itoa(builder)+"\n" {
+			t.Fatalf("builds = %q, want one by the fence holder %d", record, builder)
+		}
+		if bed.recorded(t) != "" {
+			t.Fatalf("an event ran an engine that refuses the entry: %q", bed.recorded(t))
+		}
+		status, stdout, _ = bed.run(t, bed.script, "claude", "stop", "{}", env...)
+		if status != 0 || stdout != "engine stdout\n" || !strings.Contains(bed.recorded(t), "argv=internal hook claude stop\n") {
+			t.Fatalf("after the build = status %d stdout %q record %q", status, stdout, bed.recorded(t))
 		}
 	})
-	t.Run("tool gate never builds", func(t *testing.T) {
+	t.Run("a stub killed mid-bootstrap leaves no blocking fence", func(t *testing.T) {
 		bed, builds := setup(t)
-		status, stdout, _ := bed.run(t, bed.script, "claude", "tool", "{}", "STUB_BUILD_RECORD="+builds, "STUB_NEW_ENGINE="+newEngine)
-		if _, err := os.Stat(builds); status != 0 || stdout != "" || !os.IsNotExist(err) {
-			t.Fatalf("tool = status %d stdout %q build %v", status, stdout, err)
+		entered, hold := makeFIFO(t, "ln-entered"), makeFIFO(t, "ln-hold")
+		t.Cleanup(func() { unblockFIFO(hold) })
+		// The fixture ln stops the stub right after it claimed the fence,
+		// before any builder exists; unset, it is the real ln.
+		if err := testexec.WriteFile(filepath.Join(bed.toolDir, "ln"), []byte(`#!/usr/bin/env bash
+/bin/ln "$@" || exit
+[[ -n "${STUB_LN_ENTERED:-}" ]] || exit 0
+printf 'claimed\n' >"$STUB_LN_ENTERED"
+read -r _ <"$STUB_LN_HOLD" || true
+`), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		command := exec.Command("bash", bed.script, "claude", "stop")
+		command.Env = []string{"PATH=" + bed.toolDir + ":/usr/bin:/bin", "STUB_ENGINE_RECORD=" + bed.record,
+			"STUB_LN_ENTERED=" + entered, "STUB_LN_HOLD=" + hold}
+		command.Stdin = strings.NewReader("{}")
+		if err := command.Start(); err != nil {
+			t.Fatal(err)
+		}
+		file, err := os.Open(entered)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, file)
+		_ = file.Close()
+		if holder := fenceHolder(t, bed); holder != command.Process.Pid {
+			t.Fatalf("the fence names %d, not the stub %d", holder, command.Process.Pid)
+		}
+		if err := command.Process.Kill(); err != nil {
+			t.Fatal(err)
+		}
+		_ = command.Wait()
+		releaseFIFO(hold)
+		done := makeFIFO(t, "done")
+		status, stdout, _ := bed.run(t, bed.script, "claude", "start", "{}", "STUB_BUILD_RECORD="+builds, "STUB_NEW_ENGINE="+newEngine, "STUB_BUILD_DONE="+done)
+		if status != 0 || stdout != StartEngineMissingNotice()+"\n" {
+			t.Fatalf("start after the killed stub = status %d stdout %q", status, stdout)
+		}
+		awaitBuild(done)
+		if record, _ := os.ReadFile(builds); !strings.HasPrefix(string(record), "build "+bed.root+" pid=") {
+			t.Fatalf("the dead stub's fence blocked the rebuild: builds %q", record)
+		}
+	})
+	t.Run("a failed build is logged and the next event retries", func(t *testing.T) {
+		bed, builds := setup(t)
+		for attempt := 1; attempt <= 2; attempt++ {
+			done := makeFIFO(t, "done")
+			status, stdout, _ := bed.run(t, bed.script, "claude", "stop", "{}", "STUB_BUILD_RECORD="+builds, "STUB_NEW_ENGINE="+newEngine,
+				"STUB_BUILD_FAILS=1", "STUB_BUILD_DONE="+done)
+			if status != 0 || stdout != bootstrapForm || bed.recorded(t) != "" {
+				t.Fatalf("failed rebuild %d = status %d stdout %q record %q", attempt, status, stdout, bed.recorded(t))
+			}
+			awaitBuild(done)
+		}
+		record, _ := os.ReadFile(builds)
+		log, _ := os.ReadFile(filepath.Join(bed.root, filepath.FromSlash(BootstrapLogPath)))
+		if strings.Count(string(record), "build ") != 2 || strings.Count(string(log), "go-build: no go toolchain") != 2 {
+			t.Fatalf("builds %q log %q", record, log)
+		}
+	})
+	t.Run("the tool gate stays on the enrolled engine and never builds", func(t *testing.T) {
+		bed, builds := setup(t)
+		status, stdout, _ := bed.run(t, bed.script, "claude", "tool", "payload\n", "STUB_BUILD_RECORD="+builds, "STUB_NEW_ENGINE="+newEngine)
+		if _, err := os.Stat(builds); status != 0 || stdout != "engine stdout\n" || !os.IsNotExist(err) ||
+			!strings.Contains(bed.recorded(t), "argv=adapter claude-tool-gate --root "+bed.root+"\n") ||
+			!strings.Contains(bed.recorded(t), "stdin=payload\n") {
+			t.Fatalf("tool = status %d stdout %q build %v record %q", status, stdout, err, bed.recorded(t))
+		}
+		delegate, _ := setup(t)
+		status, stdout, _ = delegate.run(t, delegate.script, "claude", "tool", "{}", "METASYSTEM_HOOK_DELEGATE_JOB=job-1")
+		if status != 0 || stdout != "" || delegate.recorded(t) != "" {
+			t.Fatalf("delegate tool = status %d stdout %q record %q", status, stdout, delegate.recorded(t))
 		}
 	})
 }

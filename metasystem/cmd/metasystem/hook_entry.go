@@ -645,15 +645,31 @@ func (o hookOwners) EngineBehind(installation, repo string) (bool, error) {
 // no retained plan holds the rearm.
 func (o hookOwners) UnmigratableRetainedPlans(string) ([]string, error) { return nil, nil }
 
-// RebuildEngine rebuilds the installation's engine under the proof mutation
-// lock, so no attempt is admitted while the engine changes: through the Go
-// bootstrap when the tree carries it, else the fenced build script.
-func (o hookOwners) RebuildEngine(installation string) error {
-	lock, err := proofrun.AcquireMutation(installation)
+// StartEngineRebuild starts the installation's engine build detached from
+// the hook: in its own session, logging to the bootstrap log, holding the
+// proof mutation lock (handed to the build as an inherited descriptor, so no
+// attempt is admitted while the engine changes) and named by the bootstrap
+// fence. It returns once the build has started: through the Go bootstrap
+// when the tree carries it, else the fenced build script. A live fence means
+// a rebuild already runs; a held proof lock refuses without waiting.
+func (o hookOwners) StartEngineRebuild(installation string) error {
+	if hooks.BootstrapFenceHeld(installation, hookProcessAlive) {
+		return nil
+	}
+	lock, err := proofrun.TryAcquireMutation(installation)
 	if err != nil {
 		return fmt.Errorf("take the proof mutation lock: %w", err)
 	}
 	defer func() { _ = lock.Release() }()
+	claimed, err := hooks.ClaimBootstrapFence(installation, os.Getpid(), hookProcessAlive)
+	if err != nil || !claimed {
+		return err
+	}
+	logFile, err := os.OpenFile(filepath.Join(installation, filepath.FromSlash(hooks.BootstrapLogPath)), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
 	var command *exec.Cmd
 	if info, err := os.Stat(filepath.Join(installation, "cmd", "devgate")); err == nil && info.IsDir() {
 		command = exec.Command("go", "run", "./cmd/devgate", "build")
@@ -661,11 +677,23 @@ func (o hookOwners) RebuildEngine(installation string) error {
 		command = exec.Command("bash", "scripts/agents/go-build.sh")
 	}
 	command.Dir = installation
-	var output bytes.Buffer
-	command.Stdout, command.Stderr = &output, &output
-	if err := command.Run(); err != nil {
-		lines := strings.Split(strings.TrimSpace(output.String()), "\n")
-		return fmt.Errorf("%v: %s", err, lines[len(lines)-1])
+	command.Stdout, command.Stderr = logFile, logFile
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	locked := lock.Handoff()
+	defer locked.Close()
+	command.ExtraFiles = []*os.File{locked}
+	fmt.Fprintf(logFile, "hook bootstrap: SessionStart starts the engine build (%s)\n", strings.Join(command.Args, " "))
+	if err := command.Start(); err != nil {
+		return err
 	}
-	return nil
+	pointErr := hooks.PointBootstrapFence(installation, command.Process.Pid)
+	_ = command.Process.Release()
+	return pointErr
+}
+
+// hookProcessAlive reports whether pid names a process: one this user
+// cannot signal still exists.
+func hookProcessAlive(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }

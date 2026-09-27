@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -41,6 +40,7 @@ type startNotice struct {
 // status. The hook-start audit joins this catalog to its executed cases.
 var StartOutcomeNotices = map[string]startNotice{
 	"engine-missing":          {`{"systemMessage":"Metasystem engine missing: this session received no role context; if this checkout is a declared brain it is uninstructed until the engine is rebuilt: run scripts/agents/go-build.sh, then start a new session"}`, 0},
+	"engine-rebuilding":       {`{"systemMessage":"Metasystem engine is behind this checkout's landed sources: a rebuild runs in the background (log: artifacts/agents/hook-bootstrap.log), so this session received no role context and supervision was not armed; if this checkout is a declared brain it is uninstructed. Start a new session once the rebuild finishes."}`, 0},
 	"engine-skew":             {`{"systemMessage":"Metasystem engine does not answer path state-root: this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild bin/metasystem with scripts/agents/go-build.sh, then start a new session."}`, 0},
 	"installation-directory":  {startNoticeTemplate("locate its installation directory", "Restore access to the installed hook and its parent directories."), 0},
 	"checkout-identification": {startNoticeTemplate("identify the checkout and its primary installation", "Restore Git and access to the checkout and its primary metasystem installation."), 0},
@@ -77,9 +77,6 @@ var StartIntentionalOutcomes = []string{
 // StartEngineMissingNotice is the SessionStart notice the plumbing stub
 // prints when no engine can run the hook.
 func StartEngineMissingNotice() string { return StartOutcomeNotices["engine-missing"].text }
-
-// bootstrapPayloadPrefix names the payload a bootstrap restart stages.
-const bootstrapPayloadPrefix = "metasystem-hook-bootstrap."
 
 const screenOnlyNotice = "this runtime has no session-context channel; the packet reached the screen only"
 
@@ -420,10 +417,6 @@ func (s *startRun) finishPrepared() {
 
 func (s *startRun) main() {
 	inv, ops := s.inv, s.ops
-	if staged := inv.env(runtimeHookBootstrappedEnv); strings.HasPrefix(filepath.Base(staged), bootstrapPayloadPrefix) &&
-		filepath.Dir(staged) == filepath.Clean(inv.TempDir) {
-		defer os.Remove(staged)
-	}
 	if !runtimeNamePattern.MatchString(inv.Runtime) {
 		s.finish("notice", "invocation-invalid")
 	}
@@ -761,13 +754,13 @@ func (s *startRun) writeEngineCache() {
 
 // bootstrapEngine is the hook side of a generation cutover: when the
 // installation's enrolled engine was built from sources the checkout's
-// landed tree has moved past, it rebuilds the engine and restarts this start
-// on the rebuilt engine, whose arming re-enrolls it. A retained plan the
-// rebuilt engine could not run holds the rearm until that plan finishes.
+// landed tree has moved past, it starts a rebuild detached from this hook
+// and ends the start with a notice. SessionStart never waits on a build; the
+// next start finds the rebuilt engine current and arms, re-enrolling it. A
+// retained plan the rebuilt engine could not run holds the rebuild until
+// that plan finishes, and a rebuild that cannot start leaves this start on
+// the enrolled engine.
 func (s *startRun) bootstrapEngine() {
-	if s.inv.env(runtimeHookBootstrappedEnv) != "" || s.inv.Exec == nil {
-		return
-	}
 	behind, err := s.ops.EngineBehind(s.world, s.repo)
 	s.checkpoint()
 	if err != nil || !behind {
@@ -783,31 +776,12 @@ func (s *startRun) bootstrapEngine() {
 		s.collectNotice("Metasystem kept the enrolled engine: retained plans " + strings.Join(held, ", ") + " need it; the engine is rebuilt once they finish.")
 		return
 	}
-	if err := s.ops.RebuildEngine(s.world); err != nil {
+	if err := s.ops.StartEngineRebuild(s.world); err != nil {
 		s.checkpoint()
-		s.collectNotice("Metasystem could not rebuild the engine behind this checkout's sources: " + err.Error())
+		s.collectNotice("Metasystem could not start a rebuild of the engine behind this checkout's sources: " + err.Error())
 		return
 	}
-	s.checkpoint()
-	// The restarted start reads this start's payload, staged for the shell
-	// that execs the stub; the restarted hook removes the staged file.
-	staged, err := os.CreateTemp(s.inv.TempDir, bootstrapPayloadPrefix)
-	if err == nil {
-		_, err = staged.Write(s.payload)
-		if closeErr := staged.Close(); err == nil {
-			err = closeErr
-		}
-	}
-	var shell string
-	if err == nil {
-		shell, err = exec.LookPath("bash")
-	}
-	if err == nil {
-		env := append(s.inv.Environ(), runtimeHookBootstrappedEnv+"="+staged.Name())
-		err = s.inv.Exec(shell, []string{"bash", "-c", `exec bash "$0" "$1" start <"$2"`, s.inv.Script, s.inv.Runtime, staged.Name()}, env)
-		_ = os.Remove(staged.Name())
-	}
-	s.collectNotice("Metasystem rebuilt the engine but could not restart SessionStart on it: " + fmt.Sprint(err))
+	s.finish("notice", "engine-rebuilding")
 }
 
 // parseStartContext splits `field=F event=E bytes=B sources=S` the way the

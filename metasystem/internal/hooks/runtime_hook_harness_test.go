@@ -554,8 +554,8 @@ func (f *fakeOps) UnmigratableRetainedPlans(repo string) ([]string, error) {
 	return nil, nil
 }
 
-func (f *fakeOps) RebuildEngine(installation string) error {
-	f.record("rebuild engine")
+func (f *fakeOps) StartEngineRebuild(installation string) error {
+	f.record("start engine rebuild")
 	if f.rebuild != nil {
 		return f.rebuild()
 	}
@@ -712,6 +712,14 @@ func makeFIFO(t *testing.T, name string) string {
 // worker's read.
 func releaseFIFO(path string) {
 	if file, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+		_ = file.Close()
+	}
+}
+
+// unblockFIFO releases a reader still blocked on a FIFO at cleanup without
+// blocking when no reader is left.
+func unblockFIFO(path string) {
+	if file, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
 		_ = file.Close()
 	}
 }
