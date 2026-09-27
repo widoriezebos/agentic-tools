@@ -37,8 +37,15 @@ func Abandon(r VerbRequest, id string, spec AbandonSpec, proof *humanauthority.P
 	if r.Actor.Human == "" {
 		return PublishResult{}, fmt.Errorf("abandon is a human act and names its human (--by)")
 	}
-	if proof == nil || !proof.ValidFor(r.Endpoint.Root) {
-		return PublishResult{}, fmt.Errorf("abandon requires freshly observed enrolled-terminal human authority")
+	// R-128-ui admits the browser here, as R-125-m1u admits it at park and
+	// unpark: the proof the seat's one-time code mints for a signed-in session
+	// is this checkout's, and it carries the same grade at this row as an
+	// enrolled terminal's. Nothing else about the verb moves — the reason rule,
+	// the dependents rule and the successor rule are the same rules for either
+	// hand, and a session cannot waive or also-abandon from the browser because
+	// the act layer sends neither.
+	if proof == nil || !(proof.ValidFor(r.Endpoint.Root) || proof.SessionValidFor(r.Endpoint.Root)) {
+		return PublishResult{}, fmt.Errorf("abandon requires freshly observed enrolled-terminal human authority or a signed-in browser session")
 	}
 	if strings.TrimSpace(spec.Because) == "" || strings.ContainsAny(spec.Because, "\r\n") {
 		return PublishResult{}, fmt.Errorf("abandon needs its reason on one line; a goal that will never be worked owes the reader why")
@@ -98,7 +105,7 @@ func Abandon(r VerbRequest, id string, spec AbandonSpec, proof *humanauthority.P
 		return PublishResult{}, fmt.Errorf("goal abandon refuses while non-terminal jobs name the abandoned set: %s; stop each dispatch job (%s), then repeat the abandon", strings.Join(jobs, ", "), strings.Join(stops, "; "))
 	}
 	debtDetail := abandonedReviewDebtDetail(projection.Tree, arguments.set)
-	result, err := Publish(r.Endpoint, abandonRequest(r, id, spec, arguments, revisions))
+	result, err := Publish(r.Endpoint, abandonRequest(r, id, spec, arguments, revisions, proof))
 	if err == nil && result.Outcome == OutcomeConfirmed && debtDetail != "" {
 		if result.Detail != "" {
 			result.Detail += "\n"
@@ -178,7 +185,10 @@ func validateAbandonArguments(id string, spec AbandonSpec) (abandonArguments, er
 	return args, nil
 }
 
-func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abandonArguments, projectedRevisions map[string]uint64) PublishRequest {
+// abandonRequest carries the proof into the mutation because the act's own
+// History line names the hand that made it: a signed-in browser session says so
+// on its own line, as a park and an approval do (R-128-ui).
+func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abandonArguments, projectedRevisions map[string]uint64, proof *humanauthority.Proof) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "abandon", Targets: []string{id}, Args: intentArgs(r, map[string]string{
@@ -237,7 +247,7 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 					continue
 				}
 				for _, blocker := range dependents[dependent] {
-					uncovered = append(uncovered, fmt.Sprintf("goal %s is blocked by %s; re-point it with --carried, waive it with --waive %s=<reason>, or abandon it with --also %s", dependent, blocker, dependent, dependent))
+					uncovered = append(uncovered, fmt.Sprintf("goal %s is blocked by %s; re-point it with --successor, waive it with --waive %s=<reason>, or abandon it with --also %s", dependent, blocker, dependent, dependent))
 				}
 			}
 			if len(uncovered) != 0 {
@@ -299,6 +309,9 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 				event.StopID = stopID
 				event.Carried = spec.Carried
 				event.Reason = spec.Because
+				// An abandon a signed-in browser made says so on its own line,
+				// as a park does: the ledger names the hand that acted.
+				recordSessionAuthority(event, proof)
 				tree.Abandoned[file.Id] = file
 				changes[livePath(file.Id)] = Change{Path: livePath(file.Id), Delete: true}
 				changes[donePath(file.Id)] = Change{Path: donePath(file.Id), Content: RenderFile(file)}

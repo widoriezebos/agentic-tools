@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:be71f6ca1b33947552953007d66974ef66f7555c18cd021bc8bac5a526921f84",
+  "sourceDigest": "sha256:08ea9ae5cd382ae134a8f38c0ee622a43e14560d9262820e8c3ec97bd5c746e2",
   "source": [
     {
       "path": ".npmrc",
@@ -172,7 +172,7 @@
     },
     {
       "path": "src/backlog/api.ts",
-      "sha256": "41efff6a51bf06e4070b46beff8b186fd519da7b5e1662cb541174455dc715c8"
+      "sha256": "7fbaec10e762c0cf83fc96d054082710acad7e9f96abe4a9a06f2f344b3e73ed"
     },
     {
       "path": "src/backlog/backlog.css",
@@ -292,7 +292,7 @@
     },
     {
       "path": "src/cuts.test.ts",
-      "sha256": "39258d79a2a2a1a4b767038319eee93f955af14a24b6e0d783b601ab8588a1a8"
+      "sha256": "aafb40fa52ea7644ad73b1c623e4f948b9cfcc5026a8701f8c28f905d7cba078"
     },
     {
       "path": "src/decisions/BulkSheet.tsx",
@@ -628,11 +628,11 @@
     },
     {
       "path": "src/partner/api.ts",
-      "sha256": "03ea37aae9d63d6ee120857644cca243b92422a9e35890334fd8316398698b6c"
+      "sha256": "9c4db237bd61ab84dec042688cd97250aa43960dae1d49794018a9e74aeb56ba"
     },
     {
       "path": "src/partner/applying.ts",
-      "sha256": "1c6ffbc610752a4206e5c2a346cf699650b4a80e48ae4c1c3413b9108e80e5f5"
+      "sha256": "a67e5e39a597c3c70c38a83f37672e4c3769052fa4d5fc5a2c5f8ccf1d665375"
     },
     {
       "path": "src/partner/asking.test.ts",
@@ -712,11 +712,11 @@
     },
     {
       "path": "src/partner/proposing.test.ts",
-      "sha256": "ca7ca861162d673e234dfd7e603dfe1778781a3575c62b6b7b7c702e39f27192"
+      "sha256": "cc5cd1c5c499c985c2bd5863d8c0537f145660781a4bb212e3f2a627d35e63a8"
     },
     {
       "path": "src/partner/proposing.ts",
-      "sha256": "2590d9f0534f52f1c8c31d71f69bf360856be1b26fe9dd7aa423969dff06b070"
+      "sha256": "d84635bbc45530f4dd3b4a7793149103412a469eb193e13d57588b70e5636530"
     },
     {
       "path": "src/partner/recording.test.ts",
@@ -1094,7 +1094,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "c7070c6e88ee3b427a1c7992c19d95f69259c38e8fcb3efa517c47f29d16d392"
+      "sha256": "7ad687466c4b4ebf2b52bab6b9ef3bc16965324f7f18847b86c8972dadaa3e8f"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

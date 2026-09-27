@@ -99,7 +99,7 @@ const (
 	// ActApply is the press that applies one action the Partner proposed. The
 	// act it makes is the verb's own, through the route that verb names, under
 	// the human's own sign-in; this page names the press and not the act,
-	// because one row can carry any of the nine.
+	// because one row can carry any of the ten.
 	ActApply = "apply"
 )
 

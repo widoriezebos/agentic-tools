@@ -29,9 +29,10 @@ import (
 
 const proposedAt = "2026-09-26T12:00:00Z"
 
-// proposingLedger is the tip these tests admit against: three live goals, one
-// of them approved with a budget and a tier, so an approve's own reading has
-// something to carry.
+// proposingLedger is the tip these tests admit against: four live goals, one of
+// them approved with a budget and a tier, so an approve's own reading has
+// something to carry, and one of them waiting for another, so an abandon's
+// reading has a live dependent to list.
 func proposingLedger() snapshot.Observation {
 	at, _ := time.Parse(time.RFC3339, proposedAt)
 	tree := &goal.TreeGoals{
@@ -56,6 +57,14 @@ func proposingLedger() snapshot.Observation {
 		Id: "bank-sandbox", State: goal.StateQueued, Origin: "human",
 		Intent: "The bank sandbox answers late.", NextStep: "Read it.",
 		OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
+	}
+	// One goal waits for another, which is what an abandon's own reading is
+	// about: what becomes of the goals that wait for the one being retired.
+	tree.Live["census-format"] = &goal.GoalFile{
+		Id: "census-format", State: goal.StateQueued, Origin: "human",
+		Intent: "The census format is settled.", NextStep: "Write it down.",
+		OpenedAt: "2026-08-23T00:00:00Z", Revision: 1,
+		Blocked: []string{"fleet-presence"},
 	}
 	horizon := goal.NewApprovalHorizon(tree, at)
 	return snapshot.Observation{
@@ -164,7 +173,8 @@ func TestAnActionOnAGoalAtTheTipIsOffered(t *testing.T) {
 	testutil.Expect(t, "and its version", kept[0].Version, 1)
 }
 
-// An approve and an edit carry the goal as it was read; the other seven do not.
+// An approve, an edit and an abandon carry the goal as it was read; the other
+// seven do not.
 func TestAnApproveAndAnEditCarryTheGoalAsItWasRead(t *testing.T) {
 	t.Parallel()
 	service := serviceProposing(t,
@@ -428,4 +438,51 @@ func TestTheSkillTellsThePartnerToPropose(t *testing.T) {
 	} {
 		testutil.Expect(t, "the skill says "+said, strings.Contains(skill, said), true)
 	}
+}
+
+// An abandon carries the goal as it was read, and with it the live goals that
+// wait for it — which is the whole of what its line tells the human before they
+// press (Astra S64-01, S64-02).
+func TestAnAbandonCarriesTheGoalAndItsLiveDependentsAsRead(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeAbandon, "fleet-presence", []string{
+			uitools.ProposalBecause + "superseded by the seat inventory (g1-s42)",
+			uitools.ProposalSuccessor + "refunds",
+		}, "the inventory answers what this one was for"),
+	)
+	_, kept := askProposing(t, service, "this one will never be worked; retire it")
+
+	testutil.Require(t, "one action", len(kept), 1)
+	testutil.Expect(t, "the route it dispatches to", kept[0].Verb, uitools.ProposeAbandon)
+	testutil.Expect(t, "the reason under the body's own name",
+		kept[0].Fields[uitools.FieldBecause], "superseded by the seat inventory (g1-s42)")
+	testutil.Expect(t, "the successor under its own",
+		kept[0].Fields[uitools.FieldSuccessor], "refunds")
+	read := kept[0].Read
+	testutil.Require(t, "it carries the reading", read != nil, true)
+	testutil.Expect(t, "the intent as read", read.Intent,
+		"Fleet presence is read from the census, not polled. It has been for a week.")
+	testutil.Expect(t, "the next step as read", read.NextStep, "Read the census.")
+	testutil.Expect(t, "the tier as read", read.Tier, 2)
+	testutil.Expect(t, "the labels as read", read.Labels, []string{"fleet", "browser-interface"})
+	testutil.Expect(t, "and the live goals that wait for it", read.Dependents, []string{"census-format"})
+}
+
+// A goal nothing waits for carries no dependents at all, which is absent rather
+// than empty: a reader never has to tell one from the other.
+func TestAnAbandonOfAGoalNothingWaitsForCarriesNoDependents(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeAbandon, "bank-sandbox",
+			[]string{uitools.ProposalBecause + "the sandbox is gone"}, "nothing waits for it"),
+	)
+	_, kept := askProposing(t, service, "this one will never be worked; retire it")
+
+	testutil.Require(t, "one action", len(kept), 1)
+	read := kept[0].Read
+	testutil.Require(t, "it carries the reading", read != nil, true)
+	testutil.Expect(t, "with no dependents", len(read.Dependents), 0)
+	testutil.Expect(t, "and no successor was named",
+		kept[0].Fields[uitools.FieldSuccessor], "")
 }
