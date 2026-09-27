@@ -122,6 +122,7 @@ func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {
 	t.Run("caller_fence_closes_while_queued", func(t *testing.T) {
 		checkHostCapacityWaitObservesCallerFence(t, ctx)
 	})
+	t.Run("fixture_namespace_census_skips_other_fixture_launchers", checkFixtureNamespaceCensusSkipsOtherFixtureLaunchers)
 	t.Run("fixture_census_authority", func(t *testing.T) {
 		previousDirectory, previousReaders, previousOptions := hostAdmissionDirectoryForTest, loadSeams, commandLoadOptions
 		hostAdmissionDirectoryForTest = ""
@@ -706,6 +707,116 @@ func TestHostResourceSubprocess(t *testing.T) {
 				os.Exit(0)
 			}
 			time.Sleep(20 * time.Millisecond)
+		}
+	}
+}
+
+// Two fixture admission namespaces on one host each mark their own waiting
+// launchers managed, in a directory the other cannot see. The land bed runs
+// its carried scenarios that way, one namespace each: when five or more
+// reached the heavy phase together, every one counted the others' waiting
+// test runs as unmanaged launchers against its cap of four, and all of them
+// waited to their ceiling. Inside a selected namespace the census therefore
+// skips launchers of other fake-runtime fixture roots and still counts every
+// launcher it cannot place as a fixture.
+func checkFixtureNamespaceCensusSkipsOtherFixtureLaunchers(t *testing.T) {
+	previousDirectory, previousReaders, previousOptions := hostAdmissionDirectoryForTest, loadSeams, commandLoadOptions
+	hostAdmissionDirectoryForTest = ""
+	commandLoadOptions = nil
+	t.Cleanup(func() {
+		hostAdmissionDirectoryForTest, loadSeams, commandLoadOptions = previousDirectory, previousReaders, previousOptions
+	})
+	ownRoot, otherFixtureRoot, realRoot := t.TempDir(), t.TempDir(), t.TempDir()
+	for _, fixture := range []struct{ root, mode string }{{ownRoot, "fake"}, {otherFixtureRoot, "fake"}, {realRoot, "real"}} {
+		if err := os.WriteFile(filepath.Join(fixture.root, "metasystem.conf"), []byte("metasystem.runtimes="+fixture.mode+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	started := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	launcher := func(pid int64, argv ...string) identity.Exact {
+		return identity.Exact{Pid: pid, StartedAt: started, Argv: append([]string{"/fixture/bin/metasystem"}, argv...), ArgvKnown: true}
+	}
+	census := &censusProber{processes: map[int64]identity.Exact{
+		10: launcher(10, "internal", "test", "run", "--root", otherFixtureRoot, "--goal", "fx"),
+		11: launcher(11, "internal", "test", "run", "--root="+otherFixtureRoot),
+		12: launcher(12, "internal", "proof-run", "launch", "--suite", "validate-metasystem", "--root", realRoot),
+		13: launcher(13, "test", "run", "--root", "relative/fixture"),
+		14: launcher(14, "internal", "test", "run"),
+	}, calls: map[int64]int{}}
+	loadSeams.prober = census
+	loadSeams.pids = func() ([]int64, error) { return []int64{10, 11, 12, 13, 14}, nil }
+	loadSeams.parent = func(int64) (int64, bool) { return 1, true }
+	loadSeams.launchers = countProofLaunchers
+	loadSeams.fixtureNamespaceLaunchers = countProofLaunchersOutsideFixtures
+
+	directory := filepath.Join(t.TempDir(), "host-admission")
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", directory)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", ownRoot)
+	if count, known, err := resourceLegacyLauncherCount(ownRoot); err != nil || !known || count != 3 {
+		t.Fatalf("selected fixture namespace census = %d known=%t err=%v, want 3 (the real launcher and the two it cannot place)", count, known, err)
+	}
+	if count, known, err := resourceLegacyLauncherCount(realRoot); err != nil || !known || count != 5 {
+		t.Fatalf("a real root in a fixture environment counted %d known=%t err=%v, want all 5", count, known, err)
+	}
+	if sample := sampleLoad(ownRoot, "proof-none", 0, started); !sample.OverlapKnown || sample.OverlappingHost != 3 {
+		t.Fatalf("attempt admission inside the namespace saw %+v, want 3 host launchers", sample)
+	}
+
+	// Cap four admits the heavy phase beside three countable launchers; the
+	// whole-host census (five) would have waited. The wait check ends a
+	// regression at the first failed scan instead of on a clock.
+	conf := filepath.Join(ownRoot, "admission.conf")
+	if err := os.WriteFile(conf, []byte(AdmissionCapKey+"=4\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waited := false
+	ctx := WithHostResourceWaitObserver(t.Context(), func() { waited = true })
+	lease, err := AcquireHostResourcesWithWaitCheck(ctx, ownRoot, conf, "heavy", nil, func() error {
+		if waited {
+			return errors.New("the fixture namespace waited on another namespace's launchers")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MarkHostResourcesClean(lease.Files()); err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", "")
+	hostAdmissionDirectoryForTest = t.TempDir()
+	if count, known, err := resourceLegacyLauncherCount(ownRoot); err != nil || !known || count != 5 {
+		t.Fatalf("a fixture root outside a selected namespace counted %d known=%t err=%v, want all 5", count, known, err)
+	}
+}
+
+func TestFixtureLauncherArgvNeedsAnAbsoluteFakeRoot(t *testing.T) {
+	t.Parallel()
+	fakeRoot, realRoot := t.TempDir(), t.TempDir()
+	for _, fixture := range []struct{ root, mode string }{{fakeRoot, "fake"}, {realRoot, "real"}} {
+		if err := os.WriteFile(filepath.Join(fixture.root, "metasystem.conf"), []byte("metasystem.runtimes="+fixture.mode+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		argv []string
+		want bool
+	}{
+		{[]string{"metasystem", "internal", "test", "run", "--root", fakeRoot}, true},
+		{[]string{"metasystem", "internal", "test", "run", "--root=" + fakeRoot}, true},
+		{[]string{"metasystem", "test", "run", "-root", fakeRoot}, true},
+		{[]string{"metasystem", "internal", "test", "run", "--root", realRoot}, false},
+		{[]string{"metasystem", "internal", "test", "run", "--root", "."}, false},
+		{[]string{"metasystem", "internal", "test", "run", "--root"}, false},
+		{[]string{"metasystem", "internal", "test", "run"}, false},
+		{[]string{"metasystem", "internal", "test", "run", "--root", filepath.Join(fakeRoot, "absent")}, false},
+	} {
+		if got := fixtureLauncherArgv(tc.argv); got != tc.want {
+			t.Fatalf("fixtureLauncherArgv(%q) = %t, want %t", tc.argv, got, tc.want)
 		}
 	}
 }

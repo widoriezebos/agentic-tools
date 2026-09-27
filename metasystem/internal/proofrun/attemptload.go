@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -47,6 +48,11 @@ type loadReaders struct {
 	prober    identity.Prober
 	pids      func() ([]int64, error)
 	parent    func(pid int64) (int64, bool)
+
+	// fixtureNamespaceLaunchers is the census an engine inside a selected
+	// fixture admission namespace reads: every launcher launchers counts
+	// except those running against a fake-runtime fixture root.
+	fixtureNamespaceLaunchers func(self int64) (int, bool)
 }
 
 var loadSeams loadReaders
@@ -95,7 +101,8 @@ func TestHostLoadCommandName(raw string) string {
 func realLoadReaders() loadReaders {
 	return loadReaders{
 		host: hostload.Read, launchers: countProofLaunchers,
-		nested: nestedProofLauncher, prober: identity.KernelProber{},
+		fixtureNamespaceLaunchers: countProofLaunchersOutsideFixtures,
+		nested:                    nestedProofLauncher, prober: identity.KernelProber{},
 		pids: identity.AllPids, parent: identity.ParentPid,
 	}
 }
@@ -143,7 +150,7 @@ func sampleLoad(root, selfAttempt string, launcher int64, now time.Time, options
 		sample.Sample, sample.OverlappingHost, sample.OverlapKnown = testHostLoad(settings.fixtureRaw, now)
 	} else {
 		sample.Sample = loadSeams.host(now)
-		if count, known := loadSeams.launchers(launcher); known {
+		if count, known := hostLauncherCensus(root, launcher); known {
 			sample.OverlappingHost, sample.OverlapKnown = count, true
 		}
 		if sample.OverlapKnown {
@@ -202,6 +209,26 @@ func (s LoadSample) Describe() string {
 type processRow struct {
 	pid, parent int64
 	launcher    bool
+	argv        []string
+}
+
+// hostLauncherCensus counts the host's other top-level proof launchers for
+// an engine working on root. Production roots, and fixture roots outside a
+// selected admission namespace, read the whole host.
+//
+// An engine inside a selected fixture admission namespace does not count the
+// launchers of other fake-runtime fixture roots. Each such launcher belongs
+// to its own namespace, whose slots and managed-process markers this
+// namespace cannot see: while it waits for capacity it is a managed process
+// there and an unmanaged launcher here. Counting it made concurrent fixture
+// namespaces (the scenarios of one bed, or beds on two seats) wait on each
+// other's waiting launchers forever. Real launchers still count, so a
+// fixture never masks production load.
+func hostLauncherCensus(root string, self int64) (int, bool) {
+	if _, selected, err := FixtureHostAdmissionDirectory(root); err == nil && selected {
+		return loadSeams.fixtureNamespaceLaunchers(self)
+	}
+	return loadSeams.launchers(self)
 }
 
 // countProofLaunchers counts the top-level proof launchers alive on the
@@ -212,7 +239,46 @@ func countProofLaunchers(self int64) (int, bool) {
 	if !known {
 		return 0, false
 	}
-	return topLevelLaunchers(rows, self), true
+	return len(topLevelLauncherRows(rows, self)), true
+}
+
+// countProofLaunchersOutsideFixtures is countProofLaunchers without the
+// top-level launchers whose root is a fake-runtime fixture checkout.
+func countProofLaunchersOutsideFixtures(self int64) (int, bool) {
+	rows, known := readProcessRows()
+	if !known {
+		return 0, false
+	}
+	count := 0
+	for _, row := range topLevelLauncherRows(rows, self) {
+		if !fixtureLauncherArgv(row.argv) {
+			count++
+		}
+	}
+	return count, true
+}
+
+// fixtureLauncherArgv reports whether a launcher names an absolute --root
+// that is a fake-runtime fixture checkout. A launcher without a readable
+// absolute root is counted: the census never discounts what it cannot place.
+func fixtureLauncherArgv(argv []string) bool {
+	for index := 1; index < len(argv); index++ {
+		argument, root := argv[index], ""
+		switch {
+		case argument == "--root" || argument == "-root":
+			if index+1 < len(argv) {
+				root = argv[index+1]
+			}
+		case strings.HasPrefix(argument, "--root="):
+			root = strings.TrimPrefix(argument, "--root=")
+		case strings.HasPrefix(argument, "-root="):
+			root = strings.TrimPrefix(argument, "-root=")
+		default:
+			continue
+		}
+		return filepath.IsAbs(root) && fixtureauth.FixtureModeRoot(root)
+	}
+	return false
 }
 
 func readProcessRows() ([]processRow, bool) {
@@ -230,6 +296,7 @@ func readProcessRows() ([]processRow, bool) {
 		if err == nil && state == identity.Alive && exact.ArgvKnown && isProofLauncherArgv(exact.Argv) &&
 			!managedProofProcess(exact) {
 			row.launcher = true
+			row.argv = exact.Argv
 		}
 		rows = append(rows, row)
 	}
@@ -260,6 +327,10 @@ func nestedProofLauncher(self int64) (bool, bool) {
 // A battery's nested bed launchers, and the joined launches inside another
 // seat's battery, are one launcher each way: the battery's.
 func topLevelLaunchers(rows []processRow, self int64) int {
+	return len(topLevelLauncherRows(rows, self))
+}
+
+func topLevelLauncherRows(rows []processRow, self int64) []processRow {
 	parent := map[int64]int64{}
 	launcher := map[int64]bool{}
 	for _, row := range rows {
@@ -288,14 +359,15 @@ func topLevelLaunchers(rows []processRow, self int64) int {
 		}
 		return false
 	}
-	count := 0
-	for pid := range launcher {
-		if pid == self || descendsFrom(pid, self) || descendsFrom(self, pid) || ancestorLauncher(pid) {
+	var top []processRow
+	for _, row := range rows {
+		pid := row.pid
+		if !launcher[pid] || pid == self || descendsFrom(pid, self) || descendsFrom(self, pid) || ancestorLauncher(pid) {
 			continue
 		}
-		count++
+		top = append(top, row)
 	}
-	return count
+	return top
 }
 
 // isProofLauncherArgv recognises a metasystem engine, whatever its path,
