@@ -1,10 +1,11 @@
 package census
 
 import (
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // SignatureText normalizes and validates adapter output.
@@ -81,7 +82,7 @@ func TestFingerprintDeterministicAndSensitive(t *testing.T) {
 		t.Fatalf("fingerprint not a stable 64-hex digest: %q %q", one, two)
 	}
 	// A change to a hashed file moves the fingerprint.
-	os.WriteFile(filepath.Join(root, "scripts", "agents", "dispatch.sh"), []byte("changed\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("changed\n"), 0o644)
 	changed, err := Fingerprint(root, root)
 	if err != nil {
 		t.Fatal(err)

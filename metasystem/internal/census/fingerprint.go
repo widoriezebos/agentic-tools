@@ -12,9 +12,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
 // The fingerprint is the supervision code staleness detector. It hashes the
@@ -26,7 +25,6 @@ import (
 // it documents the contract).
 var fingerprintFiles = []string{
 	"scripts/agents/arm-supervision.sh",
-	"scripts/agents/dispatch.sh",
 	"bin/metasystem",
 	"scripts/agents/adapters/runtime-common.sh",
 	"scripts/watch-background-jobs.sh",
