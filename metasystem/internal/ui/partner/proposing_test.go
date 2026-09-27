@@ -537,7 +537,9 @@ func TestTheSkillTellsThePartnerToPropose(t *testing.T) {
 		"the interface has ten of those actions today and the tool names them",
 		"Words alone propose nothing.",
 		"do not do it and do not say it is done",
-		"the card under your answer is the only place one is applied",
+		// Where an action is applied, both of them: the card under the answer,
+		// and the inbox that lists every action still waiting (Astra B-04).
+		"on the card under your answer, or in the Decisions inbox",
 		"a goal you propose to open may be named by a later action of the same answer",
 	} {
 		testutil.Expect(t, "the skill says "+said, strings.Contains(skill, said), true)
