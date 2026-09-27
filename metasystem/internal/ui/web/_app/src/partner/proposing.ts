@@ -36,8 +36,10 @@ import { derivedTier, type Answer, type NewGoal, type Risk } from "../backlog/op
  * **The result wins.** The tab that received an act's answer is the only thing
  * that knows what the ledger did. An outcome write refused because another tab
  * moved the entry while the act was out is written once more at their version
- * where what they left is unsettled; where it is settled, they established what
- * happened and this tab shows that.
+ * where they left it `unresolved`, which is an entry nobody is executing; where
+ * they left it `applying` that attempt owns the line and will settle it, so this
+ * tab holds its own answer on the line instead; and where it is settled, they
+ * established what happened and this tab shows that.
  *
  * **What was read is what is approved.** An approve and an edit carry the goal as
  * the Partner read it. Before the first line the page reads the canonical branch
@@ -1365,13 +1367,17 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     // entry still stands at where that write failed.
     let wroteAt = sending.version;
     let finished = await ports.record(sending, written.state, written.words);
-    // The result WINS. A conflict here means another tab moved the entry while
-    // this act was out; where what they left is unsettled — `applying`, or
-    // `unresolved` from a press the act layer refused — they hold no result for
-    // this line and this tab does, so the answer is written once more at their
-    // version. Where it is settled they established what happened, and the run
-    // shows that instead.
-    if (finished.kind === "conflict" && !settledState(finished.proposal.state)) {
+    // The result WINS, over an entry NOBODY is executing. A conflict here means
+    // another tab moved the entry while this act was out. Where they left it
+    // `unresolved` no act of theirs is running and they hold no result for the
+    // line, so this tab's answer — the only one there is — is written once more
+    // at their version. Where they left it `applying`, another attempt OWNS the
+    // line and will settle it with its own answer: writing this older one over
+    // it settled the line refused while that attempt's act applied, and that tab
+    // then reconciled to the refusal and threw its own answer away (Astra E-02).
+    // And where it is settled they established what happened, and the run shows
+    // that instead.
+    if (finished.kind === "conflict" && finished.proposal.state === "unresolved") {
       wroteAt = finished.proposal.version;
       finished = await ports.record({ ...sending, version: wroteAt }, written.state, written.words);
     }
@@ -1383,6 +1389,12 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       stale = stale || appliedEntry(finished.proposal);
       if (settledState(finished.proposal.state)) {
         ports.mark(line, { unrecorded: null });
+      } else {
+        // Another attempt owns the line and this tab still knows what its own
+        // act answered, so that answer is held here — where every answer the
+        // record does not carry is held — until the record says what happened
+        // (Astra E-02).
+        ports.mark(line, { unrecorded: { ...written, version: wroteAt } });
       }
     } else if (finished.kind === "failed") {
       // The act happened and the conversation could not say so. What the act

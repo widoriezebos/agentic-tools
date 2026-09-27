@@ -1672,6 +1672,51 @@ describe("the run, in order", () => {
     expect(driven.marked).toContainEqual({ line: lines[0].id, change: { unrecorded: null } });
   });
 
+  /**
+   * And it is written again only over an entry NOBODY is executing (Astra E-02).
+   *
+   * Astra's sequence: this tab's act is refused, its outcome write is delayed,
+   * and another tab retries the line meanwhile — leaving the entry `applying`
+   * under an act of its own that will succeed. An `applying` entry is not an
+   * entry whose writer holds no result: that attempt owns the line and will
+   * settle it. Rebasing this older refusal onto it settled the line `refused`
+   * while the other attempt's act applied, and that tab then reconciled to the
+   * refusal and threw its own answer away.
+   *
+   * So this tab reconciles to the attempt and keeps its own answer where it keeps
+   * every answer the record does not carry: on the line, until the record says
+   * what happened.
+   */
+  it("holds its own answer rather than writing it over another attempt", async () => {
+    const lines = card([proposal()]).lines;
+    const attempt: Proposal = { ...lines[0], state: "applying", words: "", version: 3 };
+    const driven = driving(lines, {
+      answers: { [lines[0].id]: { kind: "refused", words: "goal is claimed" } },
+      writes: { [`${lines[0].id}:refused`]: { kind: "conflict", proposal: attempt } },
+    });
+    await runProposals(lines, driven.ports);
+
+    // Two writes and no third: the older refusal is never written over the
+    // attempt that owns the line.
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "refused", words: "goal is claimed", version: 2 },
+    ]);
+    expect(driven.reconciled).toEqual([attempt]);
+    // And this tab still holds what its own act answered, at the version it was
+    // sent under, exactly as it does where the write could not be made at all.
+    const after = markAfter(
+      { ticked: true, notRun: false, refusedUnsent: "", unrecorded: null },
+      driven.marked, lines[0].id,
+    );
+    expect(after.unrecorded).toEqual({ state: "refused", words: "goal is claimed", version: 2 });
+    // And once that attempt has settled the line, the held refusal is shown
+    // nowhere: the record carries the account now.
+    const settled = card([proposal({ state: "applied", version: 4 })], { [lineID("t1", 0)]: after });
+    expect(lineState(lineOf(settled))).toBe(APPLIED);
+    expect(offersTryAgain(lineOf(settled))).toBe(false);
+  });
+
   /** And a conflict with a SETTLED entry is reconciled to, never written over. */
   it("reconciles to a settled entry rather than writing its answer again", async () => {
     const lines = card([proposal()]).lines;
@@ -1782,9 +1827,11 @@ describe("the run, in order", () => {
  *
  * Three rules of the contract meet here. The act layer owns the act, so B's
  * request is refused at once with `in-flight`; B holds no result and writes
- * `unresolved`, never `refused`; and A's own answer, refused because B moved the
- * entry while the act was out, is written once more at B's version — the result
- * wins. One approval is published, and both tabs end on it.
+ * `unresolved`, never `refused`; and A's own answer, refused because B had moved
+ * the entry to its OWN attempt while the act was out, is not written over that
+ * attempt — B owns the line and settles it with its own answer, and A holds what
+ * its act answered on its own line (Astra E-02). One approval is published, and
+ * the account of it is not lost.
  */
 describe("two tabs pressing one line", () => {
   /** A promise this test opens by hand, so the two runs interleave with no timer. */
@@ -1824,6 +1871,7 @@ describe("two tabs pressing one line", () => {
     const asked: string[] = [];
     const wrote: string[] = [];
     const reconciled: Record<string, Proposal> = {};
+    const marked: Record<string, Partial<Mark>[]> = { A: [], B: [] };
     const executing = gate();
     const answered = gate();
     const ended = gate();
@@ -1865,7 +1913,9 @@ describe("two tabs pressing one line", () => {
         inFlight.delete(key);
         return { kind: "applied", words: "" };
       },
-      mark: () => undefined,
+      mark: (line, change) => {
+        marked[tab].push(change);
+      },
       reconcile: (proposal) => {
         reconciled[tab] = proposal;
       },
@@ -1886,16 +1936,21 @@ describe("two tabs pressing one line", () => {
     expect(asked).toEqual(["A", "B"]);
     expect(executed).toEqual(["A"]);
     expect(refused).toEqual(["B"]);
-    // A's own answer, written again at the version B left: the result wins.
+    // A's answer is never written over B's attempt, and B — which holds no
+    // result — never writes `refused`. B's own answer settles nothing either: it
+    // says the line is unresolved, which is the truth about it.
     expect(wrote).toEqual([
-      "A:applying@1", "B:applying@2", "A:applied@2", "A:applied@3", "B:unresolved@3",
+      "A:applying@1", "B:applying@2", "A:applied@2", "B:unresolved@3",
     ]);
-    // Never `refused` from the tab that holds no result.
     expect(wrote.some((one) => one.startsWith("B:refused"))).toBe(false);
-    expect({ state: entry.state, version: entry.version }).toEqual({ state: "applied", version: 4 });
-    // And the tab that was refused ends on the entry the result left.
-    expect(reconciled.B?.state).toBe("applied");
-    expect(lineState(lineOf(card([reconciled.B], {}, displayed)))).toBe(APPLIED);
+    expect({ state: entry.state, version: entry.version }).toEqual({ state: "unresolved", version: 4 });
+    // A reconciled to the attempt that owned the line, and kept the account of
+    // the act that DID land: it is the only thing anywhere that has it.
+    expect(reconciled.A?.state).toBe("applying");
+    expect(marked.A).toContainEqual({ unrecorded: { state: "applied", words: "", version: 2 } });
+    // And the entry B left offers the press that reconciles by read, which finds
+    // the approval on the goal and settles the line with no second act.
+    expect(offersTryAgain(lineOf(card([entry], {}, displayed)))).toBe(true);
   });
 });
 
