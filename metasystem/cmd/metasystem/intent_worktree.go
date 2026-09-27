@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 

@@ -51,8 +51,8 @@ esac
 exit 9
 `
 
-// fakeDispatch stands in for dispatch.sh's lease-held internal callbacks.
-type fakeDispatch struct {
+// callbackRecorder stands in for dispatch.sh's lease-held internal callbacks.
+type callbackRecorder struct {
 	t        *testing.T
 	record   string
 	stubDir  string
@@ -63,7 +63,7 @@ type fakeDispatch struct {
 	casCodes []int
 }
 
-func (f *fakeDispatch) readRecord() map[string]any {
+func (f *callbackRecorder) readRecord() map[string]any {
 	data, err := os.ReadFile(f.record)
 	if err != nil {
 		f.t.Errorf("fake dispatch: %v", err)
@@ -76,7 +76,7 @@ func (f *fakeDispatch) readRecord() map[string]any {
 	return record
 }
 
-func (f *fakeDispatch) writeRecord(record map[string]any) {
+func (f *callbackRecorder) writeRecord(record map[string]any) {
 	data, _ := json.MarshalIndent(record, "", "  ")
 	if err := os.WriteFile(f.record, data, 0o644); err != nil {
 		f.t.Errorf("fake dispatch: %v", err)
@@ -92,7 +92,7 @@ func flagValue(args []string, name string) string {
 	return ""
 }
 
-func (f *fakeDispatch) Run(stdout, stderr io.Writer, args ...string) int {
+func (f *callbackRecorder) Run(stdout, stderr io.Writer, args ...string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, append([]string(nil), args...))
@@ -142,7 +142,7 @@ func (f *fakeDispatch) Run(stdout, stderr io.Writer, args ...string) int {
 	return 2
 }
 
-func (f *fakeDispatch) verbs() []string {
+func (f *callbackRecorder) verbs() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []string
@@ -157,7 +157,7 @@ func (f *fakeDispatch) verbs() []string {
 }
 
 // terminal is the last record status and error the fake holds.
-func (f *fakeDispatch) terminal() (string, string, string) {
+func (f *callbackRecorder) terminal() (string, string, string) {
 	record := f.readRecord()
 	status, _ := record["status"].(string)
 	failure, _ := record["error"].(string)
@@ -176,7 +176,7 @@ type devinFixture struct {
 	t                                *testing.T
 	root, workspace, stubDir, record string
 	roundDir, job, tag, gate, capRaw string
-	dispatch                         *fakeDispatch
+	dispatch                         *callbackRecorder
 	stdout, stderr                   *bytes.Buffer
 	env                              map[string]string
 	validReturn                      string
@@ -252,7 +252,7 @@ func newDevinFixture(t *testing.T, transport, verb string) *devinFixture {
 	if err := os.Chmod(stub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	f.dispatch = &fakeDispatch{t: t, record: f.record, stubDir: f.stubDir}
+	f.dispatch = &callbackRecorder{t: t, record: f.record, stubDir: f.stubDir}
 	f.stdout, f.stderr = &bytes.Buffer{}, &bytes.Buffer{}
 	f.env = map[string]string{
 		"PATH":                                  "/usr/bin:/bin",
