@@ -19,8 +19,6 @@ var (
 	hyphenCode      = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*-(?:refused|unreadable|malformed|unavailable)$`)
 )
 
-const refusalSiteWindowRadius = 2
-
 func TestHCL03EveryCodeRowed(t *testing.T) {
 	collected := collectRefusalTokens(t, moduleRoot(t))
 	rowed := make(map[string]struct{}, len(Rows))
@@ -56,26 +54,31 @@ func TestHCL03EveryRowedSiteNamesAnEmission(t *testing.T) {
 	root := moduleRoot(t)
 	identifiers := refusalCodeIdentifiers(t, root)
 	for _, row := range Rows {
-		file, line, ok := strings.Cut(row.Site, ":")
-		lineNumber, err := strconv.Atoi(line)
-		if !ok || err != nil || lineNumber < 1 {
-			t.Errorf("row %s site %q does not name a positive line", row.Code, row.Site)
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(row.Owner), filepath.FromSlash(file)))
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(row.Owner), filepath.FromSlash(SiteFile(row.Site))))
 		if err != nil {
 			t.Errorf("row %s site %q cannot be read from owner %q: %v", row.Code, row.Site, row.Owner, err)
 			continue
 		}
-		lines := strings.Split(string(data), "\n")
-		first := max(1, lineNumber-refusalSiteWindowRadius)
-		last := min(len(lines), lineNumber+refusalSiteWindowRadius)
-		emissionLines := refusalEmissionLines(t, file, data, row.Code, identifiers[row.Code])
-		if lineNumber > len(lines) || !windowContainsEmission(emissionLines, first, last) {
-			t.Errorf("row %s site %q does not name an emitted string or identifier within the %d-line emission window",
-				row.Code, row.Site, refusalSiteWindowRadius)
+		if problem := rowSiteProblem(t, row, data, identifiers[row.Code]); problem != "" {
+			t.Errorf("row %s site %q %s", row.Code, row.Site, problem)
 		}
 	}
+}
+
+// rowSiteProblem judges one row's site against its file's source: empty when
+// the site resolves and an emission of the row's code (its string or a
+// constant naming it) lies inside it.
+func rowSiteProblem(t *testing.T, row Row, source []byte, identifiers []string) string {
+	t.Helper()
+	first, last, err := siteSpan(row.Site, source)
+	if err != nil {
+		return err.Error()
+	}
+	emissionLines := refusalEmissionLines(t, SiteFile(row.Site), source, row.Code, identifiers)
+	if !windowContainsEmission(emissionLines, first, last) {
+		return "does not name an emitted string or identifier inside its anchor"
+	}
+	return ""
 }
 
 func refusalCodeIdentifiers(t *testing.T, root string) map[string][]string {
@@ -290,14 +293,14 @@ func TestHCL03GoalDoneReadItemsOpenRow(t *testing.T) {
 
 func TestHCL03ProofAdmissionRowsNameEmissions(t *testing.T) {
 	wants := map[string]Row{
-		"CANDIDATE_GOAL_REFUSED":           {Owner: "cmd/metasystem", Site: "proof_run.go:748", Shape: Question},
-		"CANDIDATE_GOAL_MOVED":             {Owner: "cmd/metasystem", Site: "proof_run.go:705", Shape: Question},
-		"PROOF_AUTHORITY_REQUIRED":         {Owner: "cmd/metasystem", Site: "proof_run.go:790", Shape: Question},
-		"PROOF_AUTHORITY_ARC_MATE_REFUSED": {Owner: "cmd/metasystem", Site: "proof_run.go:873", Shape: Question},
-		"CANDIDATE_EXTENSION_REFUSED":      {Owner: "internal/dispatch", Site: "admission.go:428", Shape: Question},
-		"RETRY_PRIOR_OUTSIDE_TREE":         {Owner: "internal/proofrun", Site: "attempt.go:1236", Shape: Question},
-		"SET_BUDGET_FENCED_SAME_TUPLE":     {Owner: "internal/goal", Site: "verbs.go:1709", Shape: Question},
-		"REBIND_EPOCH_UNAUTHENTICATED":     {Owner: "internal/goal", Site: "verbs.go:261", Shape: Identity},
+		"CANDIDATE_GOAL_REFUSED":           {Owner: "cmd/metasystem", Site: "proof_run.go#candidateGoalRefusal", Shape: Question},
+		"CANDIDATE_GOAL_MOVED":             {Owner: "cmd/metasystem", Site: "proof_run.go#proofAdmissionMoved", Shape: Question},
+		"PROOF_AUTHORITY_REQUIRED":         {Owner: "cmd/metasystem", Site: "proof_run.go#proofAuthorityRefusal", Shape: Question},
+		"PROOF_AUTHORITY_ARC_MATE_REFUSED": {Owner: "cmd/metasystem", Site: "proof_run.go#resolveProofGoalRolesWithReads", Shape: Question},
+		"CANDIDATE_EXTENSION_REFUSED":      {Owner: "internal/dispatch", Site: "admission.go#evaluateCandidateConsumptionAdmissionWithReads", Shape: Question},
+		"RETRY_PRIOR_OUTSIDE_TREE":         {Owner: "internal/proofrun", Site: "attempt.go#readRetryDecision", Shape: Question},
+		"SET_BUDGET_FENCED_SAME_TUPLE":     {Owner: "internal/goal", Site: "verbs.go#setBudgetRequest", Shape: Question},
+		"REBIND_EPOCH_UNAUTHENTICATED":     {Owner: "internal/goal", Site: "verbs.go#ClaimEpochForRebind", Shape: Identity},
 	}
 	root := moduleRoot(t)
 	for code, want := range wants {
@@ -312,25 +315,23 @@ func TestHCL03ProofAdmissionRowsNameEmissions(t *testing.T) {
 			t.Errorf("row %s = %+v, want %+v", code, got, want)
 			continue
 		}
-		parts := strings.Split(want.Site, ":")
-		line, parseErr := strconv.Atoi(parts[len(parts)-1])
-		if parseErr != nil {
-			t.Errorf("row %s has invalid site %q", code, want.Site)
-			continue
-		}
-		file := filepath.Join(root, want.Owner, strings.Join(parts[:len(parts)-1], ":"))
-		data, err := os.ReadFile(file)
+		data, err := os.ReadFile(filepath.Join(root, want.Owner, SiteFile(want.Site)))
 		if err != nil {
 			t.Errorf("read row %s site: %v", code, err)
 			continue
 		}
+		first, last, err := siteSpan(want.Site, data)
+		if err != nil {
+			t.Errorf("row %s site %s %v", code, want.Site, err)
+			continue
+		}
 		lines := strings.Split(string(data), "\n")
 		found := false
-		for index := max(0, line-3); index < min(len(lines), line+2); index++ {
+		for index := first - 1; index < min(len(lines), last); index++ {
 			found = found || strings.Contains(lines[index], code)
 		}
 		if !found {
-			t.Errorf("row %s site %s has no emission within two lines", code, want.Site)
+			t.Errorf("row %s site %s has no emission inside its anchor", code, want.Site)
 		}
 	}
 }
@@ -359,15 +360,14 @@ func TestHCL03HandoffCaptureSitesAreEmissionLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lines := strings.Split(string(data), "\n")
-	const prefix = "handoff_capture.go:"
+	const file = "handoff_capture.go"
 	for _, row := range Rows {
-		if row.Owner != "internal/steward" || !strings.HasPrefix(row.Site, prefix) {
+		if row.Owner != "internal/steward" || SiteFile(row.Site) != file {
 			continue
 		}
-		line, err := strconv.Atoi(strings.TrimPrefix(row.Site, prefix))
-		if err != nil || line < 1 || line > len(lines) || !strings.Contains(lines[line-1], `"`+row.Code+`"`) {
-			t.Errorf("row %s site %q is not an emission line", row.Code, row.Site)
+		first, last, err := siteSpan(row.Site, data)
+		if err != nil || !strings.Contains(strings.Join(strings.Split(string(data), "\n")[first-1:last], "\n"), `"`+row.Code+`"`) {
+			t.Errorf("row %s site %q does not anchor an emission: %v", row.Code, row.Site, err)
 		}
 	}
 }
@@ -708,17 +708,15 @@ func TestHCL03NoPendingAfterSlice2(t *testing.T) {
 	}
 }
 
-// proseRowSiteEmits reports whether the row's site line, within the site
-// window, carries the prose's fixed opening (the text before its first
-// placeholder).
+// proseRowSiteEmits reports whether the declaration the row's site anchors
+// carries the prose's fixed opening (the text before its first placeholder).
 func proseRowSiteEmits(t *testing.T, root string, row Prose) bool {
 	t.Helper()
-	file, line, ok := strings.Cut(row.Site, ":")
-	number, err := strconv.Atoi(line)
-	if !ok || err != nil || number < 1 {
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(row.Owner), filepath.FromSlash(SiteFile(row.Site))))
+	if err != nil {
 		return false
 	}
-	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(row.Owner), filepath.FromSlash(file)))
+	first, last, err := siteSpan(row.Site, data)
 	if err != nil {
 		return false
 	}
@@ -727,7 +725,7 @@ func proseRowSiteEmits(t *testing.T, root string, row Prose) bool {
 		opening = opening[:cut]
 	}
 	lines := strings.Split(string(data), "\n")
-	for index := max(1, number-refusalSiteWindowRadius); index <= min(len(lines), number+refusalSiteWindowRadius); index++ {
+	for index := first; index <= min(len(lines), last); index++ {
 		if strings.Contains(lines[index-1], opening) {
 			return true
 		}

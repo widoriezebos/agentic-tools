@@ -263,7 +263,7 @@ func TestPackRefusalCodesAreRegistered(t *testing.T) {
 		"LAUNCH_BRIEF_PACK_DRIFTED":  false,
 	}
 	for _, row := range refusal.Rows {
-		file, _, _ := strings.Cut(row.Site, ":")
+		file := refusal.SiteFile(row.Site)
 		if _, ok := want[row.Code]; ok && row.Owner == "internal/launch" && file == "pack.go" && row.Shape == refusal.Question {
 			want[row.Code] = true
 		}
