@@ -2214,10 +2214,11 @@ func TestLandingReceiptLineRefusesCodeWithoutItsLineAndPassesWithIt(t *testing.T
 // environment holds exactly one GOFLAGS, the value cmd/devgate's frozen-tree
 // check accepts (ownedGoFlags), beside the frozen-toolchain marker.
 func TestCanonicalValidatorEnvironmentOwnsTheGateGoFlags(t *testing.T) {
-	t.Setenv("GOFLAGS", "-mod=mod -tags=ambient")
-	t.Setenv("METASYSTEM_GATE_FROZEN_TOOLCHAIN", "0")
+	t.Parallel()
+	inherited := []string{"PATH=/usr/bin:/bin", "GOCACHE=/fixture/cache/go-build", "STATICCHECK_CACHE=/fixture/cache/staticcheck",
+		"GOFLAGS=-mod=mod -tags=ambient", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=0"}
 	var owned []string
-	for _, entry := range canonicalValidatorEnvironment() {
+	for _, entry := range canonicalValidatorEnvironmentFrom(inherited) {
 		if strings.HasPrefix(entry, "GOFLAGS=") || strings.HasPrefix(entry, "METASYSTEM_GATE_FROZEN_TOOLCHAIN=") {
 			owned = append(owned, entry)
 		}

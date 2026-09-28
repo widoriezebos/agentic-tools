@@ -3134,6 +3134,7 @@ func TestScratchEnvironmentV1WireAndReaderSupport(t *testing.T) {
 // set METASYSTEM_A5_WORKER_ENGINE to an engine built at another commit and
 // METASYSTEM_A5_WORKER_POLICY to the policy this frontend must write for it.
 func TestScratchEnvironmentPolicyAgainstABuiltWorker(t *testing.T) {
+	t.Parallel()
 	engine, want := os.Getenv("METASYSTEM_A5_WORKER_ENGINE"), os.Getenv("METASYSTEM_A5_WORKER_POLICY")
 	if engine == "" || want == "" {
 		t.Skip("set METASYSTEM_A5_WORKER_ENGINE and METASYSTEM_A5_WORKER_POLICY to a built worker and its expected policy")

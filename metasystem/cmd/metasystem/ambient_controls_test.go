@@ -235,6 +235,7 @@ func TestInheritedEngineAndInstallationSelectorsAreAbsent(t *testing.T) {
 // The wait candidate TestMain builds is trimmed like every engine build; the
 // wait tests that exec it prove it still answers.
 func TestWaitCandidateIsBuiltTrimmed(t *testing.T) {
+	t.Parallel()
 	binary := os.Getenv("METASYSTEM_WAIT_BINARY")
 	if binary == "" {
 		t.Fatal("TestMain published no wait candidate")

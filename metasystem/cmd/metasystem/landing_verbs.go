@@ -361,10 +361,17 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 }
 
 func canonicalValidatorEnvironment() []string {
+	return canonicalValidatorEnvironmentFrom(os.Environ())
+}
+
+// canonicalValidatorEnvironmentFrom derives the validator's environment from
+// an inherited one, so its owned values are provable without mutating the
+// test process's environment.
+func canonicalValidatorEnvironmentFrom(inherited []string) []string {
 	owned := map[string]bool{"GOFLAGS": true, "METASYSTEM_GATE_FROZEN_TOOLCHAIN": true, "GOCACHE": true, "STATICCHECK_CACHE": true}
-	caches, _ := gocache.Resolve(os.Environ())
-	environment := make([]string, 0, len(os.Environ())+2)
-	for _, entry := range os.Environ() {
+	caches, _ := gocache.Resolve(inherited)
+	environment := make([]string, 0, len(inherited)+2)
+	for _, entry := range inherited {
 		name, _, _ := strings.Cut(entry, "=")
 		if !owned[name] {
 			environment = append(environment, entry)
