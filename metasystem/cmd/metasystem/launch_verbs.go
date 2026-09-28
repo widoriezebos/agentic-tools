@@ -1,16 +1,13 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
@@ -45,75 +42,6 @@ func newLaunchManager() *launch.Manager {
 
 var launchManager = newLaunchManager
 
-func runLaunchStart(args []string) int {
-	flags := flag.NewFlagSet("launch start", flag.ContinueOnError)
-	kind := flags.String("kind", "", "launch kind")
-	brief := flags.String("brief", "", "brief file")
-	directory := flags.String("dir", ".", "working directory")
-	goal := flags.String("goal", "", "goal id")
-	tag := flags.String("tag", "", "launch tag")
-	model := flags.String("model", "", "model")
-	effort := flags.String("effort", "", "reasoning effort")
-	resume := flags.String("resume-session", "", "Claude session id")
-	page := flags.String("page", "", "page file")
-	unitsPage := flags.String("units-page", "", "page containing the units table")
-	diffFile := flags.String("diff-file", "", "diff file for a read")
-	readPackage := flags.String("package", "", "directory selected from a split diff")
-	wide := flags.Bool("wide", false, "use the wide read window")
-	var inputs, outputs, units multiFlag
-	flags.Var(&inputs, "input", "additional input file (repeatable)")
-	flags.Var(&outputs, "output", "output file to copy into launch state (repeatable)")
-	flags.Var(&units, "unit", "unit name from the selected units table (repeatable)")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *kind == "" || *brief == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal launch start --kind <build|design|read|critique> --brief <file> [--dir <directory>] [--goal <id>] [--tag <tag>] [--model <model>] [--effort <effort>] [--resume-session <id>] [--page <file>] [--input <file>]... [--output <file>]... [--units-page <file>] [--unit <name>]... [--diff-file <file> [--package <directory>|--wide]]")
-		return 2
-	}
-	data := map[string]json.RawMessage{}
-	if *resume != "" {
-		data["resumeSession"], _ = json.Marshal(*resume)
-	}
-	record, err := launchManager().Start(launch.StartSpec{Kind: *kind, Brief: *brief, WorkingDirectory: *directory,
-		Goal: *goal, Tag: *tag, Page: *page, Model: *model, Effort: *effort, Inputs: inputs, Outputs: outputs,
-		UnitsPage: *unitsPage, Units: units, DiffFile: *diffFile, Package: *readPackage, Wide: *wide, AdapterData: data})
-	if record.ID != "" {
-		fmt.Println(launchReport(record))
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "launch start:", err)
-		return 1
-	}
-	return 0
-}
-func runLaunchRoundTask(args []string) int {
-	flags := flag.NewFlagSet("launch round-task", flag.ContinueOnError)
-	tag := flags.String("tag", "", "launch tag")
-	round := flags.Int("round", 0, "task number")
-	previous := flags.String("previous", "", "previous task file")
-	out := flags.String("out", "", "output file")
-	constraints := flags.String("constraints", "0", "constraint count")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *tag == "" || (*round != 2 && *round != 3) || *previous == "" || *out == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal launch round-task --tag <tag> --round <2|3> --previous <file> --out <file> [--constraints <n>]")
-		return 2
-	}
-	data, err := os.ReadFile(*previous)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "launch round-task:", err)
-		return 1
-	}
-	result, err := launch.RoundTask(*tag, *round, data, *constraints)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "launch round-task:", err)
-		return 1
-	}
-	if err := os.WriteFile(*out, result, 0o600); err != nil {
-		fmt.Fprintln(os.Stderr, "launch round-task:", err)
-		return 1
-	}
-	return 0
-}
 func runLaunchSupervise(args []string) int {
 	id, ok := launchID(args, "supervise")
 	if !ok {
@@ -147,61 +75,6 @@ func writeLaunchRecordUsage(w io.Writer, verb string) {
 	fmt.Fprintf(w, "usage: metasystem launch %s --id <id>\n", verb)
 	fmt.Fprintln(w, "Launch records belong to the current user under ~/.metasystem/launch; they are not selected by repository.")
 	fmt.Fprintln(w, "--root is not a launch flag. Use --id to select a launch record.")
-}
-func runLaunchSettings(args []string) int {
-	flags := flag.NewFlagSet("launch settings", flag.ContinueOnError)
-	asJSON := flags.Bool("json", false, "print structured settings")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal launch settings [--json]")
-		return 2
-	}
-	executable, err := launchExecutable()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "launch settings:", err)
-		return 1
-	}
-	confPath := filepath.Join(filepath.Dir(executable), "..", "metasystem.conf")
-	settings, err := launch.ResolveSettings(confPath, launchLookupEnv)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "launch settings:", err)
-		return 1
-	}
-	values := append([]launch.Setting{}, settings.Values...)
-	shipped, err := launch.LoadShippedSeatWindow(filepath.Dir(confPath), settings.SeatWindow)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "launch settings:", err)
-		return 1
-	}
-	values = append(values, launch.Setting{Key: launch.ShippedSeatWindowKey, Value: strconv.FormatInt(shipped.Tokens, 10), Source: shipped.Source, ShippedDiffersFromConf: &shipped.DiffersFromConf})
-	for _, definition := range []struct {
-		key      string
-		fallback int64
-	}{{config.ContextCeilingTokensKey, config.DefaultContextCeilingTokens}, {config.ContextHandoffMarginTokensKey, config.DefaultContextHandoffMarginTokens}} {
-		params := config.GetParams{Key: definition.key, ConfPath: confPath, Default: strconv.FormatInt(definition.fallback, 10), DefaultSet: true, LookupEnv: launchLookupEnv}
-		value, _, getErr := config.Get(params)
-		if getErr != nil {
-			fmt.Fprintln(os.Stderr, "launch settings:", getErr)
-			return 1
-		}
-		source, originErr := config.KeyOrigin(params)
-		if originErr != nil {
-			fmt.Fprintln(os.Stderr, "launch settings:", originErr)
-			return 1
-		}
-		values = append(values, launch.Setting{Key: definition.key, Value: value, Source: source})
-	}
-	if *asJSON {
-		printJSON(values)
-		return 0
-	}
-	for _, value := range values {
-		suffix := ""
-		if value.ShippedDiffersFromConf != nil && *value.ShippedDiffersFromConf {
-			suffix = " shipped-differs-from-conf"
-		}
-		fmt.Printf("%s=%s source=%s%s\n", value.Key, value.Value, value.Source, suffix)
-	}
-	return 0
 }
 func runLaunchReport(args []string) int {
 	flags := flag.NewFlagSet("launch report", flag.ContinueOnError)

@@ -64,26 +64,6 @@ func runLeaseRetire(args []string) int {
 	return 0
 }
 
-func runLeaseClassify(args []string) int {
-	flags := flag.NewFlagSet("lease classify", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	metasystemRoot := flags.String("metasystem-root", "", "installed metasystem root (defaults to checkout root)")
-	caller := flags.Int64("caller-pid", 0, "caller pid")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *metasystemRoot == "" {
-		*metasystemRoot = *root
-	}
-	out, err := lease.ClassifyVerbAt(*root, *metasystemRoot, *caller)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	printJSON(out)
-	return 0
-}
-
 func runLeaseRequireHolder(args []string) int {
 	flags := flag.NewFlagSet("lease require-holder", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "checkout root")
@@ -99,24 +79,4 @@ func runLeaseRequireHolder(args []string) int {
 	}
 	printJSON(out)
 	return 0
-}
-
-func runLeaseRunHeld(args []string) int {
-	flags := flag.NewFlagSet("lease run-held", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	caller := flags.Int64("caller-pid", 0, "caller pid")
-	epoch := flags.Int64("expected-epoch", 0, "expected claim epoch (optional)")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	argv := flags.Args()
-	if len(argv) == 0 {
-		fmt.Fprintln(os.Stderr, "run-held requires a command")
-		return 2
-	}
-	code, err := lease.RunHeld(*root, *caller, optionalEpoch(flags, epoch), argv)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-	}
-	return code
 }

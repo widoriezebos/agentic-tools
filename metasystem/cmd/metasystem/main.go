@@ -95,7 +95,6 @@ func families() []family {
 				{"fixture-survivors", "name or reap fixture children that outlived their owner", runFixtureSurvivors},
 				{"started-at", "print a pid's start time in epoch seconds", runIdentityStartedAt},
 				{"census", "compute a fixture-driven census verdict", runCensusRun},
-				{"classify", "print live, stale, dead, or unknown for a recorded pid and tag", runProcClassify},
 				{"setsid", "run a command as the leader of a new session and exit with its status (proc setsid -- cmd args...)", runProcSetsid},
 			},
 		},
@@ -113,7 +112,6 @@ func families() []family {
 			summary: "whole-artifact validators the assert scripts exec into",
 			verbs: []verb{
 				{"turn-prompt", "validate an assembled host-turn prompt against its turn record and the shipped preamble", runValidateTurnPrompt},
-				{"critique-closed", "join a critic return's findings against the dispositions table", runValidateCritiqueClosed},
 				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
 				{"refactor-baseline", "record or check the trusted refactor baseline", runValidateRefactorBaseline},
 				{"skills", "validate every present skill's SKILL.md frontmatter, or the named skill directories", runValidateSkills},
@@ -135,13 +133,7 @@ func families() []family {
 			summary: "the delegate-job domain: records, chains, locks, caps, snapshots, authority",
 			verbs: []verb{
 				{"goal-revision-admission", "judge one exact revision and proposed cap under its lock", runDispatchGoalRevisionAdmission},
-				{"resolve-roster", "resolve a role's roster pair and classify escalation", runDispatchResolveRoster},
-				{"goal-admission", "judge the structured goal budget before reservation", runDispatchGoalAdmission},
-				{"cap-continuation", "write the prior-worktree paragraph a continuation round is told after its predecessor was cut off at its cap", runDispatchCapContinuation},
-				{"prove-round", "prove a chain round's committed worktree tree on this installation's engine and record the attempt in the round directory", runDispatchProveRound},
-				{"owner-lock", "claim or release the dispatch owner lock (0 done, 3 busy, 4 not-owner)", runDispatchOwnerLock},
 				{"snapshot-select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},
-				{"authority-check", "check a control-plane write against the authority matrix", runAuthorityCheck},
 			},
 		},
 		{
@@ -156,10 +148,8 @@ func families() []family {
 			name:    "audit",
 			summary: "mechanical fences the gate bootstrap consults between steps",
 			verbs: []verb{
-				{"hook-start-exits", "refuse SessionStart paths around the outcome owner", runAuditHookStartExits},
 				{"metasystem", "instruction-asset audit: required files, outside references, placeholders, word budgets", runAuditMetasystem},
 				{"stop-decision-surface", "report additions and refuse undeclared moves of Stop assertions", runAuditStopDecisionSurface},
-				{"production-commands", "name each production command this host lacks, with its package", runAuditProductionCommands},
 			},
 		},
 		{
@@ -203,17 +193,13 @@ func families() []family {
 			summary: "the declared agent-runtime registry (list, lookups)",
 			verbs: []verb{
 				{"setup", "install or check host runtime entry points without selecting an active runtime", runRuntimeSetup},
-				{"list", "runtime names in priority order (--adoptable/--with-* filter)", runRuntimeList},
-				{"collision-roots", "the deduplicated full population of adoption collision roots", runRuntimeCollisionRoots},
-				{"registration", "a runtime's declared registration rows (registration/v1 wire)", runRuntimeRegistration},
-				{"dirs", "a runtime's adopted registration directories", runRuntimeDirs},
 			},
 		},
 		{
 			name:    "launch",
 			summary: "owned external agent processes with durable state and exact cancellation",
 			verbs: []verb{
-				{"start", "start an agent process and return after its child is recorded", runLaunchStart}, {"supervise", "own one launch child through its terminal state (internal)", runLaunchSupervise}, {"round-task", "derive a critique task from its predecessor", runLaunchRoundTask}, {"settings", "show launch and context settings with their sources", runLaunchSettings}, {"report", "summarize launch outcomes and refusals", runLaunchReport},
+				{"supervise", "own one launch child through its terminal state (internal)", runLaunchSupervise},
 			},
 		},
 		{
@@ -247,15 +233,6 @@ func families() []family {
 			summary: "the app's covenant: the versioned declaration binding intent to proofs",
 			verbs: []verb{
 				{"evidence", "the traceability gate: every requirement backed by the evidence table, declared deps present (statuses stay claims)", runCovenantEvidence},
-			},
-		},
-		{
-			name:    "project",
-			summary: "the project's memory: intent, doctrine, decisions, designs and open questions, declared in their records",
-			verbs: []verb{
-				{"id", "print a fresh ULID for a new record", runProjectID},
-				{"check", "refuse every fault in the homes, anchored at its file and line", runProjectCheck},
-				{"design-of", "the design records that name one ledger goal, or the refusal that there are none", runProjectDesignOf},
 			},
 		},
 		{
@@ -309,7 +286,6 @@ func families() []family {
 			verbs: []verb{
 				{"launch", "reserve, spawn the wrapped command detached, print the watch line", runRunLaunch},
 				{"wrap", "the setsid leader: bind, run the workload, write the exit sidecar (internal)", runRunWrap},
-				{"watch", "block until the run is terminal; exit with its pinned code", runRunWatch},
 			},
 		},
 		{
@@ -318,9 +294,7 @@ func families() []family {
 			verbs: []verb{
 				{"announce", "record this process as a main and claim the checkout lease", runLeaseAnnounce},
 				{"retire", "remove this process's announcement", runLeaseRetire},
-				{"classify", "classify a caller and report holdership as JSON", runLeaseClassify},
 				{"require-holder", "gate a write on the caller being the authenticated holder", runLeaseRequireHolder},
-				{"run-held", "run a command while holding the lease lock (gated on holdership)", runLeaseRunHeld},
 			},
 		},
 		{
@@ -329,12 +303,9 @@ func families() []family {
 			verbs: []verb{
 				{"state-init", "create a mission's initial state from its sealed contract", runMissionStateInit},
 				{"state-verify", "validate the state's shape, aggregation, hash chain, and anchor", runMissionStateVerify},
-				{"fence-authorize-cap", "authorize a per-job cap for a runtime/model pair", runMissionFenceAuthorizeCap},
 				{"contract-validate", "validate a mission contract's authored block", runMissionContractValidate},
 				{"contract-seal", "seal a validated contract and print its digest", runMissionContractSeal},
 				{"contract-preflight", "preflight a sealed, signed contract and emit its verified bytes", runMissionContractPreflight},
-				{"contract-envelope-allows", "exit 0 when the signed contract's dispatch-allow carries a pair", runMissionContractEnvelopeAllows},
-				{"prompt-assemble", "assemble the byte-stable host-turn prompt", runMissionPromptAssemble},
 				{"start", "start a mission's detached run loop", runMissionRunnerStart},
 				{"resume", "resume a parked or interrupted mission", runMissionRunnerResume},
 				{"status", "print the mission's runner status line", runMissionRunnerStatus},

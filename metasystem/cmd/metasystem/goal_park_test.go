@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -65,24 +63,5 @@ func TestUnderBelongsToTheAttorneyVerbs(t *testing.T) {
 	g, ok := parseSyncFlags("grant", []string{"--root", root, "--by", "Wido", "--tiers", "1", "--verbs", "approve", "--expires", "2026-09-19"})
 	if !ok || g.tiers != "1" || g.verbs != "approve" || g.expires != "2026-09-19" {
 		t.Fatalf("goal grant carries its flags: ok=%v %+v", ok, g)
-	}
-}
-
-// job cap-continuation refuses without its flags, refuses positional
-// arguments, and refuses a parent that is not a capped implementer round.
-func TestJobCapContinuationFlagsAndRefusals(t *testing.T) {
-	dir := t.TempDir()
-	if code := runDispatchCapContinuation([]string{"--root", dir}); code != 2 {
-		t.Fatalf("missing flags exit = %d, want 2", code)
-	}
-	if code := runDispatchCapContinuation([]string{"--root", dir, "--parent", "p.json", "--worktree", dir, "--output", "o.md", "stray"}); code != 2 {
-		t.Fatalf("a positional argument was accepted: exit %d", code)
-	}
-	parent := filepath.Join(dir, "parent.json")
-	if err := os.WriteFile(parent, []byte(`{"jobId":"chain","role":"implementer","round":1,"status":"completed","error":null,"capMin":120}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if code := runDispatchCapContinuation([]string{"--root", dir, "--parent", "parent.json", "--worktree", dir, "--output", "out.md"}); code != 1 {
-		t.Fatalf("a completed parent was accepted: exit %d", code)
 	}
 }

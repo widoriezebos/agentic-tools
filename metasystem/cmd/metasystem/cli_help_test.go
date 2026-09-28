@@ -104,7 +104,6 @@ func TestLaunchFamilyHelpShowsRecordCommands(t *testing.T) {
 		t.Fatalf("launch help = code %d, stderr %q", code, problem)
 	}
 	for _, want := range []string{
-		"metasystem internal launch start --help",
 		"current user", "~/.metasystem/launch", "--root is not a launch flag",
 	} {
 		if !strings.Contains(output, want) {

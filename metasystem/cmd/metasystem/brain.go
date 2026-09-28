@@ -172,7 +172,7 @@ func brainDeclarationObstacles(root, machine string, deps brainActDependencies) 
 		case "job":
 			obstacles = append(obstacles, fmt.Sprintf("job %s is in flight; stop it first: metasystem work stop j2:%s", item.Id, item.Id))
 		case "run":
-			obstacles = append(obstacles, fmt.Sprintf("run %s is live; wait for it or conclude it: metasystem internal run watch --root %s --id %s", item.Id, root, item.Id))
+			obstacles = append(obstacles, fmt.Sprintf("run %s is live; wait for it: metasystem work wait --run %s --exit-code --repo %s", item.Id, item.Id, root))
 		case "mission":
 			obstacles = append(obstacles, fmt.Sprintf("mission %s is active; wait for mission %s to finish or park; metasystem mission status --root %s --mission %s", item.Id, item.Id, root, item.Id))
 		}

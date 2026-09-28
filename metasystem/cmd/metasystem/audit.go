@@ -4,13 +4,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	goalpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
 func runAuditMetasystem(args []string) int {
@@ -40,28 +37,6 @@ func runAuditMetasystem(args []string) int {
 		return 1
 	}
 	fmt.Println("metasystem audit passed")
-	return 0
-}
-
-func runAuditHookStartExits(args []string) int {
-	flags := flag.NewFlagSet("audit hook-start-exits", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "metasystem installation to audit")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal audit hook-start-exits [--root INSTALLATION]")
-		return 2
-	}
-	findings, err := audit.AuditHookStartExits(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	for _, finding := range findings {
-		fmt.Fprintln(os.Stderr, "hook start exit audit: "+finding.String())
-	}
-	if len(findings) != 0 {
-		return 1
-	}
-	fmt.Println("hook start exit audit passed")
 	return 0
 }
 
@@ -136,27 +111,4 @@ func runAuditStopDecisionSurfaceWith(args []string, dependencies stopDecisionSur
 		return 1
 	}
 	return 0
-}
-
-// runAuditProductionCommands checks this host for the production command
-// inventory (up.ProductionCommands) and names each missing command with its
-// Debian-family package: `audit production-commands`.
-func runAuditProductionCommands(args []string) int {
-	return auditProductionCommands(args, exec.LookPath, os.Stderr)
-}
-
-func auditProductionCommands(args []string, lookPath func(string) (string, error), errOut io.Writer) int {
-	if len(args) != 0 {
-		fmt.Fprintln(errOut, "usage: metasystem internal audit production-commands")
-		return 2
-	}
-	missing := up.MissingProductionCommands(lookPath)
-	if len(missing) == 0 {
-		return 0
-	}
-	fmt.Fprintln(errOut, "command preflight: this host is missing production commands:")
-	for _, command := range missing {
-		fmt.Fprintf(errOut, "  %s (package: %s)\n", command.Name, command.Package)
-	}
-	return 1
 }

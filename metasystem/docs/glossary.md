@@ -231,7 +231,7 @@ not paths.
   one runtime session: the runtime's operations
   (`internal/adapter/supervisor/<runtime>.go`) run by the engine's
   `delegate-supervisor` process — one per registered runtime
-  (`bin/metasystem internal runtime list`; today claude, codex, devin, and
+  (the runtime registry in `internal/runtimes`; today claude, codex, devin, and
   the fixture-only `fake`). The same operations with role host serve a
   mission's host turns (`internal/missionrunner/hostturn`). An external
   adapter (`<installation>/adapters/<name>`, `docs/agent-adapters.md`)

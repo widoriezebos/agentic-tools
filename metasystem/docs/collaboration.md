@@ -133,4 +133,4 @@ coordinator sessions with the limit raised:
 
 Put it in the shell profile of any machine that runs a coordinator.
 The variable is read at session start; a capped session cannot raise
-it from inside — there, start Codex work through its intent (`metasystem work build` or `metasystem work review`), or `metasystem internal launch start` for a launch with no public intent.
+it from inside — there, start Codex work through its intent (`metasystem work build` or `metasystem work review`), or `metasystem design write` and `metasystem design review` for design runs and critiques.
