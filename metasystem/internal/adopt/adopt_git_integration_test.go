@@ -525,10 +525,15 @@ func TestAdoptGitIntegrationRuntimeSelections(t *testing.T) {
 				t.Fatalf("devin registration lacks %s", path)
 			}
 		}
-		for _, link := range []string{".agents/skills/verify", ".devin/skills/verify", ".devin/skills/code-critique"} {
+		for _, link := range []string{".agents/skills/verify", ".agents/skills/code-critique"} {
 			if info, err := os.Lstat(filepath.Join(target, link)); err != nil || info.Mode()&fs.ModeSymlink == 0 {
 				t.Fatalf("devin skill registration %s is missing", link)
 			}
+		}
+		// Devin discovers project skills through .agents/skills; a second
+		// tree under .devin/skills would list every skill twice.
+		if exists(filepath.Join(target, ".devin", "skills")) {
+			t.Fatal("devin skills were registered twice, under .devin/skills too")
 		}
 		if !hasLine(confLines(t, target), "metasystem.runtimes=devin") || !hasLine(confLines(t, target), "role.default.runtime=devin") {
 			t.Fatal("the devin selection was not recorded as the default")

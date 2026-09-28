@@ -201,7 +201,10 @@ func TestSetupNestedDefaultsAllPreservesUnrelatedStateModesAndIsIdempotent(t *te
 	if strings.Join(result.Runtimes, ",") != "codex,devin,claude" {
 		t.Fatalf("default runtimes = %v", result.Runtimes)
 	}
-	for _, path := range []string{".agents/skills/demo", ".devin/skills/demo", ".claude/skills/demo"} {
+	if _, err := os.Lstat(filepath.Join(repo, ".devin", "skills")); !os.IsNotExist(err) {
+		t.Errorf("devin skills registered twice, under .devin/skills too: %v", err)
+	}
+	for _, path := range []string{".agents/skills/demo", ".claude/skills/demo"} {
 		info, err := os.Lstat(filepath.Join(repo, path))
 		if err != nil || info.Mode()&os.ModeSymlink == 0 {
 			t.Errorf("%s is not a link: %v", path, err)
@@ -242,10 +245,10 @@ func TestSetupNestedDefaultsAllPreservesUnrelatedStateModesAndIsIdempotent(t *te
 	if err != nil || len(again.Changed) != 0 {
 		t.Fatalf("repeat changed %v: %v", again.Changed, err)
 	}
-	if err := os.Remove(filepath.Join(repo, ".devin", "skills", "demo")); err != nil {
+	if err := os.Remove(filepath.Join(repo, ".agents", "skills", "demo")); err != nil {
 		t.Fatal(err)
 	}
-	staleStage := filepath.Join(repo, ".devin", "skills", ".demo.metasystem-link")
+	staleStage := filepath.Join(repo, ".agents", "skills", ".demo.metasystem-link")
 	if err := os.Symlink("interrupted-stage", staleStage); err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +419,7 @@ func TestSetupCopyModeInAdoptedRootPreservesCanonicalInstructionsAndGitSteering(
 	if err != nil || len(retry.Changed) != 1 {
 		t.Fatalf("copy-mode partial retry = %v, %v", retry.Changed, err)
 	}
-	writeHostFile(t, filepath.Join(repo, ".devin", "skills", "demo", "SKILL.md"), "locally changed copy\n", 0o640)
+	writeHostFile(t, filepath.Join(repo, ".agents", "skills", "demo", "SKILL.md"), "locally changed copy\n", 0o640)
 	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"devin"}, CopySkills: true}); err == nil || !strings.Contains(err.Error(), "differs from its source") {
 		t.Fatalf("changed copied skill did not conflict: %v", err)
 	}
@@ -795,7 +798,10 @@ func TestSetupSupportsNestedAdoptedInstallationWithoutOwningParent(t *testing.T)
 	if strings.Join(result.Runtimes, ",") != "codex,devin,claude" {
 		t.Fatalf("nested adopted default runtimes = %v", result.Runtimes)
 	}
-	for _, path := range []string{".agents/skills/demo", ".devin/skills/demo", ".claude/skills/demo", ".claude/agents/demo.md", ".devin/agents/demo/AGENT.md", ".codex/hooks.json", ".devin/config.json", ".claude/settings.json"} {
+	if _, err := os.Lstat(filepath.Join(installation, ".devin", "skills")); !os.IsNotExist(err) {
+		t.Errorf("nested adopted devin skills registered twice, under .devin/skills too: %v", err)
+	}
+	for _, path := range []string{".agents/skills/demo", ".claude/skills/demo", ".claude/agents/demo.md", ".devin/agents/demo/AGENT.md", ".codex/hooks.json", ".devin/config.json", ".claude/settings.json"} {
 		if _, err := os.Lstat(filepath.Join(installation, path)); err != nil {
 			t.Errorf("nested adopted registration missing %s: %v", path, err)
 		}

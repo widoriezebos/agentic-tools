@@ -34,7 +34,7 @@ func TestRuntimeVerbContract(t *testing.T) {
 		{"list usage", runRuntimeList, []string{"--bogus"}, 2, ""},
 		{"adoption-default", runRuntimeAdoptionDefault, nil, 0, "claude\n"},
 		{"adoption-default usage", runRuntimeAdoptionDefault, []string{"x"}, 2, ""},
-		{"dirs", runRuntimeDirs, []string{"devin"}, 0, ".agents/skills\n.devin/skills\n.devin/agents\n"},
+		{"dirs", runRuntimeDirs, []string{"devin"}, 0, ".agents/skills\n.devin/agents\n"},
 		{"dirs unknown", runRuntimeDirs, []string{"ghostrt"}, 1, ""},
 		{"dirs usage", runRuntimeDirs, nil, 2, ""},
 		{"instruction-file", runRuntimeInstructionFile, []string{"claude"}, 0, "CLAUDE.md\n"},

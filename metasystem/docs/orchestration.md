@@ -457,7 +457,7 @@ runtimes, not the supported universe.
 | --- | --- | --- |
 | Claude Code | `internal/adapter/supervisor/claude.go` | `.claude/skills/<name>` and `.claude/agents/<name>.md` |
 | OpenAI Codex | `internal/adapter/supervisor/codex.go` | `.agents/skills/<name>`; reads the skill's `agents/openai.yaml` |
-| Devin CLI | `internal/adapter/supervisor/devin.go` | `.agents/skills/<name>`, `.devin/skills/<name>`, and `.devin/agents/<name>/AGENT.md` |
+| Devin CLI | `internal/adapter/supervisor/devin.go` | `.agents/skills/<name>` and `.devin/agents/<name>/AGENT.md` |
 | Fake | `internal/adapter/supervisor/fake.go` | No runtime registration; fixture-only protocol simulator |
 
 Each adapter runs as the engine's `delegate-supervisor` process entry, the
