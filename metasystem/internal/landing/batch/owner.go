@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,7 +31,19 @@ type ownerSeams struct {
 	after               func(time.Duration) <-chan time.Time
 	report              func(string, error)
 	glob                func(string) ([]string, error)
+	helmActive          func(string) bool
 	locks               map[string]*proofLock
+	held                map[string]HeldBatch
+	standing            bool
+}
+
+// HeldBatch is one batch the owner held on its last pass because a unit's
+// seat is at the helm: the seat, the queue registration withdrawn for it
+// (base name, empty when there was none), and whether the hold began on that
+// pass, so the caller prints once per hold.
+type HeldBatch struct {
+	ID, Seat, Entry string
+	New             bool
 }
 
 // OwnerOptions names every authority and side effect used by the durable
@@ -60,6 +73,8 @@ type OwnerOptions struct {
 	After               func(time.Duration) <-chan time.Time
 	Report              func(string, error)
 	Glob                func(string) ([]string, error)
+	// HelmActive reports whether a unit's seat is at the helm; nil holds nothing.
+	HelmActive func(root string) bool
 }
 
 type Owner struct {
@@ -88,10 +103,10 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 		returns: options.Returns, rebind: options.Rebind, mint: options.Mint, logRed: options.LogRed,
 		baseCommit: options.BaseCommit, runDiagnostic: options.RunDiagnostic, descendsFrom: options.DescendsFrom, sample: options.Sample,
 		admission: options.Admission, launch: options.Launch, after: options.After,
-		report: options.Report, glob: options.Glob, locks: map[string]*proofLock{},
+		report: options.Report, glob: options.Glob, helmActive: options.HelmActive, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
 	}
 	owner.lock = func(id string) *proofLock {
-		return newProofLock(options.Store, options.LockDir, options.QueueDir, "batch:"+id, options.PID, options.Now)
+		return newProofLock(options.Store, options.LockDir, options.QueueDir, id, options.PID, options.Now)
 	}
 	return owner, nil
 }
@@ -354,7 +369,63 @@ func (owner *Owner) start(record *Record, sample proofrun.LoadSample, at time.Ti
 	return start, window, nil
 }
 
+// helmSeat names the first unit's seat that is at the helm. A unit without a
+// SeatRoot (joined before the owner learned to hold) is never held.
+func (owner *Owner) helmSeat(record Record) (string, bool) {
+	for _, unit := range record.Units {
+		if owner.helmActive != nil && unit.SeatRoot != "" && owner.helmActive(unit.SeatRoot) {
+			return unit.SeatRoot, true
+		}
+	}
+	return "", false
+}
+
+// hold stands a batch down whole: its Tick is not called, so its record is
+// untouched, and its dormant queue registration is withdrawn so no other batch
+// waits behind it. release removes only this batch's entry; the lock
+// directory only when its owner file names this pid, which outside a launch it
+// never does.
+func (owner *Owner) hold(id, seat string, previous map[string]HeldBatch) {
+	entry := ""
+	if lock := owner.locks[id]; lock != nil && lock.entry != "" {
+		entry = filepath.Base(lock.entry)
+	}
+	if err := owner.release(id); err != nil {
+		owner.report(id, fmt.Errorf("withdraw held batch queue registration: %w", err))
+	}
+	_, before := previous[id]
+	owner.held[id] = HeldBatch{ID: id, Seat: seat, Entry: entry, New: !before}
+}
+
+// Held names the batches held on the last pass.
+func (owner *Owner) Held() []HeldBatch {
+	held := make([]HeldBatch, 0, len(owner.held))
+	for _, batch := range owner.held {
+		held = append(held, batch)
+	}
+	slices.SortFunc(held, func(a, b HeldBatch) int { return strings.Compare(a.ID, b.ID) })
+	return held
+}
+
+// Withdraw stands the whole owner down (the landing seat's own helm): it
+// releases every queue registration the owner holds. first is true on the
+// transition; the next Resume ends the stand-down and registers again.
+func (owner *Owner) Withdraw() (first bool, withdrawn []string, err error) {
+	first, owner.standing = !owner.standing, true
+	for id, lock := range owner.locks {
+		if lock.entry != "" {
+			withdrawn = append(withdrawn, filepath.Base(lock.entry))
+		}
+		err = errors.Join(err, owner.release(id))
+	}
+	slices.Sort(withdrawn)
+	return first, withdrawn, err
+}
+
 func (owner *Owner) Resume() {
+	owner.standing = false
+	previous := owner.held
+	owner.held = map[string]HeldBatch{}
 	paths, err := owner.glob(filepath.Join(owner.store.root, "artifacts", "agents", "landing-batches", "*.json"))
 	if err != nil {
 		owner.report("", fmt.Errorf("enumerate landing batches: %w", err))
@@ -369,6 +440,10 @@ func (owner *Owner) Resume() {
 		}
 		_, clearComplete := greenTipClearStatus(record)
 		if record.State == StateDissolved || record.State == StateLanded && clearComplete {
+			continue
+		}
+		if seat, held := owner.helmSeat(record); held {
+			owner.hold(id, seat, previous)
 			continue
 		}
 		if tickErr := owner.Tick(id); tickErr != nil {

@@ -816,13 +816,13 @@ func (inv *intentInvocation) stopJob(ref string) int {
 func runIntentCheckoutStatus(inv *intentInvocation) int {
 	scope, scale, problem := inv.selectProcessScope()
 	if problem != nil {
-		return inv.render(*problem)
+		return inv.render(inv.withHelm(*problem, inv.helmPath()))
 	}
 	report, err := inv.owners.processes.process.status(scope, scale)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: inv.checkoutTarget(scope), Summary: "status is unknown: " + err.Error()})
+		return inv.render(inv.withHelm(intentResult{Outcome: intentFailed, code: 1, Targets: inv.checkoutTarget(scope), Summary: "status is unknown: " + err.Error()}, scope.Checkout))
 	}
-	return inv.render(processReportResult(inv.checkoutTarget(scope), "status of "+scope.Checkout, report))
+	return inv.render(inv.withHelm(processReportResult(inv.checkoutTarget(scope), "status of "+scope.Checkout, report), scope.Checkout))
 }
 
 // runIntentSystemStatus is the checkout's machinery status, or with
@@ -1227,7 +1227,7 @@ func runIntentDoctor(inv *intentInvocation) int {
 	if first != nil {
 		result.next, result.nextReason = first, "the first public remedy check found"
 	}
-	return inv.render(result)
+	return inv.render(inv.withHelm(result, scope.Checkout))
 }
 
 // runIntentWorkHistory reports how launches ended and why any was refused:

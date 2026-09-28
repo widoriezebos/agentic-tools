@@ -95,8 +95,26 @@ func RunWatchdog(options WatchdogOptions) error {
 		if intent := recordedCancellation(options); intent != "" {
 			return stopStalledSuite(options, section, "cancellation intent recorded: "+intent, run)
 		}
+		// The watchdog exists for one suite. When that suite is gone (its
+		// pid is empty or now holds another process), no verdict can act on
+		// it any more, and a watchdog whose launcher died before publishing
+		// done would otherwise poll forever as an orphan, holding whatever it
+		// inherited (2026-09-28: 55 minutes at a 5 ms poll, holding the VM
+		// suite runner's lock). A zombie is not gone: its launcher is alive
+		// and about to reap it and publish done. Unknown keeps polling.
+		if watchedSuiteGone(options) {
+			return nil
+		}
 		<-ticks
 	}
+}
+
+func watchedSuiteGone(options WatchdogOptions) bool {
+	prober := options.Prober
+	if prober == nil {
+		prober = identity.KernelProber{}
+	}
+	return identity.AliveRef(prober, options.SuiteIdentity) == identity.Dead
 }
 
 // sectionVerdict reads the supervisor's judgement of a section from the

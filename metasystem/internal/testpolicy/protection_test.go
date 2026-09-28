@@ -26,12 +26,12 @@ func TestBasePolicyAndBlackBoxGuardsSurviveCandidateRemovalAndInternalAPIChange(
 	// The landing path that enforces the policy is protected wherever the
 	// installation sits; the retired landing scripts are not.
 	for path, want := range map[string]bool{
-		"internal/landing/landpath/commit.go":                    true,
-		"metasystem/internal/landing/landpath/precommit.go":      true,
-		"./internal/landing/landpath/land.go":                    true,
-		"metasystem/internal/landing/carried.go":                 false,
-		"metasystem/scripts/agents/land.sh":                      false,
-		"metasystem/scripts/agents/commit.sh":                    false,
+		"internal/landing/landpath/commit.go":               true,
+		"metasystem/internal/landing/landpath/precommit.go": true,
+		"./internal/landing/landpath/land.go":               true,
+		"metasystem/internal/landing/carried.go":            false,
+		"metasystem/scripts/agents/land.sh":                 false,
+		"metasystem/scripts/agents/commit.sh":               false,
 	} {
 		if got := ProtectedPolicyChange([]string{path}); got != want {
 			t.Errorf("ProtectedPolicyChange(%s) = %t, want %t", path, got, want)
