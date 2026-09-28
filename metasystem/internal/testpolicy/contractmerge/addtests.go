@@ -149,3 +149,83 @@ func exactPackagePath(pkg string) (string, error) {
 	}
 	return clean, nil
 }
+
+// RemoveTests takes named Go tests out of a group's named test list: the
+// follow-up of deleting a test. A name the group no longer lists is already
+// removed; the names need not exist in the group's packages.
+func RemoveTests(contract testpolicy.Contract, groupID string, removals []string) (testpolicy.Contract, error) {
+	groupIndex := -1
+	for i := range contract.Groups {
+		if contract.Groups[i].ID == groupID {
+			groupIndex = i
+			break
+		}
+	}
+	if groupIndex < 0 {
+		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "id", "unknown group")
+	}
+	group := contract.Groups[groupIndex]
+	all, _, err := testpolicy.GoTests(group)
+	var names []string
+	if err != nil || group.Adapter != "go" || all || json.Unmarshal(group.Tests, &names) != nil {
+		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "group must use a named Go test list")
+	}
+	drop := map[string]bool{}
+	for _, name := range removals {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "test names must be nonempty comma-separated identifiers")
+		}
+		drop[name] = true
+	}
+	if len(drop) == 0 {
+		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "at least one test name is required")
+	}
+	kept := make([]string, 0, len(names))
+	for _, name := range names {
+		if !drop[name] {
+			kept = append(kept, name)
+		}
+	}
+	encoded, _ := json.Marshal(kept)
+	contract.Groups[groupIndex].Tests = encoded
+	if err := contract.Validate(); err != nil {
+		return testpolicy.Contract{}, invalid(err.Error())
+	}
+	return contract, nil
+}
+
+// RemoveGroup takes a whole group out of the contract, with every surface,
+// always, unknown and cadence reference to it. A group the contract no
+// longer has is already removed.
+func RemoveGroup(contract testpolicy.Contract, groupID string) (testpolicy.Contract, error) {
+	without := func(ids []string) []string {
+		kept := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if id != groupID {
+				kept = append(kept, id)
+			}
+		}
+		return kept
+	}
+	groups := make([]testpolicy.Group, 0, len(contract.Groups))
+	for _, group := range contract.Groups {
+		if group.ID != groupID {
+			groups = append(groups, group)
+		}
+	}
+	contract.Groups = groups
+	for i := range contract.Surfaces {
+		surface := &contract.Surfaces[i]
+		surface.Standard, surface.Deep, surface.Critical = without(surface.Standard), without(surface.Deep), without(surface.Critical)
+		if surface.CrossCutting != nil {
+			surface.CrossCutting = without(surface.CrossCutting)
+		}
+	}
+	contract.Always.Canary, contract.Always.Standard = without(contract.Always.Canary), without(contract.Always.Standard)
+	contract.Unknown, contract.Cadence = without(contract.Unknown), without(contract.Cadence)
+	if err := contract.Validate(); err != nil {
+		return testpolicy.Contract{}, invalid(err.Error())
+	}
+	return contract, nil
+}

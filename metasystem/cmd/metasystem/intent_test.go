@@ -744,9 +744,17 @@ func TestIntentLandedActsReportPartialFollowUp(t *testing.T) {
 		code, result := bed.runJSON(owners, "goal", "done", bedGoal, "--reason", "shipped", "--lineage", "m1")
 		data, _ := result.Data.(map[string]any)
 		if code != 1 || result.Outcome != intentPartial || !strings.Contains(fmt.Sprint(data["incomplete"]), "disk full") ||
-			result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "internal", "metrics", "report", "--goal", bedGoal}) ||
+			result.Next == nil || !slices.Equal(result.Next.Argv[:4], []string{"metasystem", "goal", "done", bedGoal}) ||
 			bed.goalFile(bedGoal).State != goal.StateDone {
 			t.Fatalf("done with a failed metrics report = %d %+v", code, result)
+		}
+		// The named repair is the same act again: the goal is already
+		// done, and its repeat writes the metrics report.
+		wrote := 0
+		owners.completion.reporter = func(metrics.Options) (metrics.Result, error) { wrote++; return metrics.Result{}, nil }
+		code, result = bed.runJSON(owners, append(result.Next.Argv[1:], "--lineage", "m1")...)
+		if code != 0 || wrote != 1 || bed.goalFile(bedGoal).State != goal.StateDone {
+			t.Fatalf("repeated done after a failed metrics report = %d %+v (reports written %d)", code, result, wrote)
 		}
 	})
 	t.Run("approval proof record", func(t *testing.T) {

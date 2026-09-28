@@ -24,7 +24,7 @@ var (
 
 // laneAuditFiles lists the lane's sources relative to the module root: the
 // batch package and its subpackages except goadapter, the command's
-// landing_batch_*.go and gate_unit.go files, and internal/quality once it exists.
+// landing_batch_*.go files, and internal/quality once it exists.
 func laneAuditFiles(module string) ([]string, error) {
 	var files []string
 	walk := func(dir string, skip string) error {
@@ -59,7 +59,7 @@ func laneAuditFiles(module string) ([]string, error) {
 	}
 	for _, entry := range command {
 		name := entry.Name()
-		if strings.HasSuffix(name, ".go") && (strings.HasPrefix(name, "landing_batch_") || strings.HasPrefix(name, "gate_unit")) {
+		if strings.HasSuffix(name, ".go") && strings.HasPrefix(name, "landing_batch_") {
 			files = append(files, "cmd/metasystem/"+name)
 		}
 	}
@@ -142,7 +142,7 @@ func TestLaneImportsNoGoToolchainPackages(t *testing.T) {
 		}
 	}
 	for _, required := range []string{"internal/landing/batch/gate.go", "internal/landing/batch/red.go",
-		"internal/landing/batch/leak_audit_test.go", "cmd/metasystem/gate_unit.go", "cmd/metasystem/landing_batch_red.go"} {
+		"internal/landing/batch/leak_audit_test.go", "cmd/metasystem/landing_batch_red.go"} {
 		if !seen[required] {
 			t.Errorf("the audit scope misses %s", required)
 		}

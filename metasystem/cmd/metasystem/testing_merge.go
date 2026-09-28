@@ -66,22 +66,45 @@ func mergeTestingFiles(basePath, oursPath, theirsPath, outPath string) error {
 }
 
 func runTestingAddTests(args []string) int {
-	flags := flag.NewFlagSet("test add", flag.ContinueOnError)
+	return editTestingContract("add", args, func(contract testpolicy.Contract, path, group string, tests []string) (testpolicy.Contract, error) {
+		return contractmerge.AddTests(contract, path, group, tests)
+	})
+}
+
+// runTestingRemoveTests takes named tests out of a group, the follow-up of
+// deleting them.
+func runTestingRemoveTests(args []string) int {
+	return editTestingContract("remove", args, func(contract testpolicy.Contract, _ string, group string, tests []string) (testpolicy.Contract, error) {
+		if len(tests) == 0 {
+			return contractmerge.RemoveGroup(contract, group)
+		}
+		return contractmerge.RemoveTests(contract, group, tests)
+	})
+}
+
+// editTestingContract is test add and test remove: decode the contract, apply
+// one group edit, render and write it back.
+func editTestingContract(action string, args []string, edit func(testpolicy.Contract, string, string, []string) (testpolicy.Contract, error)) int {
+	flags := flag.NewFlagSet("test "+action, flag.ContinueOnError)
 	path := flags.String("file", "", "testing contract to edit")
 	group := flags.String("group", "", "group id")
 	tests := flags.String("tests", "", "comma-separated Go test names")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *path == "" || *group == "" || *tests == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test add --file FILE --group ID --tests NAME,NAME")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *path == "" || *group == "" || *tests == "" && action != "remove" {
+		fmt.Fprintf(os.Stderr, "usage: metasystem test %s --file FILE --group ID --tests NAME,NAME\n", action)
 		return 2
+	}
+	names := []string{}
+	if *tests != "" {
+		names = strings.Split(*tests, ",")
 	}
 	data, err := os.ReadFile(*path)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test add:", err)
+		fmt.Fprintf(os.Stderr, "metasystem test %s: %v\n", action, err)
 		return 1
 	}
 	contract, err := testpolicy.Decode(data)
 	if err == nil {
-		contract, err = contractmerge.AddTests(contract, *path, *group, strings.Split(*tests, ","))
+		contract, err = edit(contract, *path, *group, names)
 	}
 	if err == nil {
 		data, err = contractmerge.Render(contract)
@@ -93,7 +116,7 @@ func runTestingAddTests(args []string) int {
 		err = writeTestingContract(*path, data)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test add:", err)
+		fmt.Fprintf(os.Stderr, "metasystem test %s: %v\n", action, err)
 		return 1
 	}
 	return 0

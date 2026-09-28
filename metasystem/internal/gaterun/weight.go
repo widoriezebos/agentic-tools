@@ -333,12 +333,6 @@ func WeightCheckAt(root string, threshold int64, now time.Time) (WeightState, bo
 	return state, err == nil && threshold > 0 && state.Accumulated >= threshold, err
 }
 
-// WeightDischarge is the reset action boundary. DRAFT and OBSERVE record an
-// inert would-refuse; only exact current human authority can reset weight.
-func WeightDischarge(root, goalID string, obligationRevision uint64, runID string) (WeightDischargeResult, error) {
-	return WeightDischargeAt(root, goalID, obligationRevision, runID, weightNow())
-}
-
 // WeightDischargeAt applies the existing governed discharge path using its
 // caller's clock so cadence orchestration never reads wall time implicitly.
 func WeightDischargeAt(root, goalID string, obligationRevision uint64, runID string, now time.Time) (WeightDischargeResult, error) {

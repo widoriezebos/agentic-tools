@@ -41,10 +41,9 @@ func TestSuiteProgressBedBoundedPreserveNamesTheTruncatedSource(t *testing.T) {
 	}
 }
 
-// deepest-heartbeat and background watcher: the public heartbeat verb and
-// the background job watcher read the same journal view and both relay the
-// deepest open section; the watcher prefixes its one reportable job note.
-func TestSuiteProgressBedHeartbeatAndWatcherRelayTheDeepestSection(t *testing.T) {
+// deepest-heartbeat: the suite heartbeat reads the journal view and relays
+// the deepest open section.
+func TestSuiteProgressBedHeartbeatRelaysTheDeepestSection(t *testing.T) {
 	t.Parallel()
 	workspace := t.TempDir()
 	journal := filepath.Join(workspace, "artifacts", "agents", "supervision", "suite-progress.jsonl")
@@ -66,29 +65,5 @@ func TestSuiteProgressBedHeartbeatAndWatcherRelayTheDeepestSection(t *testing.T)
 	heartbeat, found := deepestSuiteHeartbeat(workspace, time.Now())
 	if !found || !regexp.MustCompile(`^inner:child since [0-9]+min$`).MatchString(heartbeat) {
 		t.Fatalf("deepest live heartbeat was not selected: found=%v heartbeat=%q", found, heartbeat)
-	}
-
-	installation := t.TempDir()
-	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	jobs := filepath.Join(t.TempDir(), "jobs")
-	if err := os.MkdirAll(jobs, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	record := filepath.Join(jobs, "prefix-job.json")
-	if err := os.WriteFile(record, []byte(`{"status":"completed","workspaceRoot":"`+workspace+`"}`+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	state := filepath.Join(t.TempDir(), "watch.state")
-	if err := os.WriteFile(state, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	code, watched, _ := captureCommandOutput(t, true, false, func() int {
-		return runReportWatchJobs([]string{"--root", installation, "--dir", jobs, "--scope", workspace, "--state", state, "--once"})
-	})
-	note := regexp.MustCompile(`(?m)^inner:child since [0-9]+min DONE prefix-job status=completed age=[0-9]+m record=` + regexp.QuoteMeta(record) + `$`)
-	if code != 0 || len(note.FindAllString(watched, -1)) != 1 || strings.Count(watched, "DONE prefix-job") != 1 {
-		t.Fatalf("background watcher did not emit exactly one complete deepest-heartbeat job note: code=%d\n%s", code, watched)
 	}
 }

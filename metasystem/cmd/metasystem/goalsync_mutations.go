@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1985,12 +1986,16 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		}
 		res, err := goal.Done(req, f.id, f.conclude)
 		code := dependencies.publish(res, err)
+		// A repeat on a done goal whose metrics report was never written
+		// writes it: the report is the conclusion's follow-up, and the same
+		// act again is its repair.
+		repeatWithoutReport := code != 0 && goalDoneWithoutMetrics(req, f.root, f.id)
 		if dependencies.report != nil {
-			if code == 0 {
+			if code == 0 || repeatWithoutReport {
 				if metricsErr := concludedGoalMetrics(f.root, f.id, completion.reporter); metricsErr != nil {
 					dependencies.report.secondary = append(dependencies.report.secondary, metricsErr)
-					dependencies.report.repair = []string{"metasystem", "internal", "metrics", "report", "--goal", f.id}
-					dependencies.report.repairReason = "write the goal's metrics report; run it from " + f.root
+					dependencies.report.repair = []string{"metasystem", "goal", "done", f.id, "--reason", f.conclude, "--repo", f.root}
+					dependencies.report.repairReason = "the goal is done; the same act again writes its metrics report"
 				}
 			}
 			return code, true
@@ -3576,3 +3581,14 @@ func claimGoalOwner(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, err
 var (
 	runGoalClaim = runSyncOnly("claim", claimGoalOwner, "id")
 )
+
+// goalDoneWithoutMetrics says the goal is done in the accepted ledger and its
+// metrics report is absent.
+func goalDoneWithoutMetrics(req goal.VerbRequest, root, id string) bool {
+	projection, err := goal.Project(req.Endpoint, false, req.Now)
+	if err != nil || projection.Tree.Done[id] == nil {
+		return false
+	}
+	_, statErr := os.Stat(metrics.GoalReportTarget(root, id))
+	return errors.Is(statErr, fs.ErrNotExist)
+}

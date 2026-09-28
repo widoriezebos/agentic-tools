@@ -49,7 +49,9 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 	if configured, _, configErr := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(repoRoot, "metasystem.conf"), Default: "", DefaultSet: true}); configErr == nil && strings.TrimSpace(configured) != "" {
 		cadenceRoot = configured
 	}
-	remedy := fmt.Sprintf("metasystem internal gate cadence-tick --root %q", cadenceRoot)
+	// The landing owner runs the deep validation cadence in its own loop, so
+	// a missing, overdue or red cadence is repaired by that owner running.
+	remedy := fmt.Sprintf("the landing owner runs the deep validation cadence; keep it running with metasystem system start --repo %q", cadenceRoot)
 	if projection.Tree.Cadence == nil {
 		return roleDead(RoleTrunkRed, "no deep validation cadence status is recorded", remedy)
 	}

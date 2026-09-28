@@ -22,6 +22,7 @@ import (
 
 func init() {
 	registerIdempotency("test add", idemStateful, "tests already in the group: success, the contract's bytes unchanged", witnessTestAddRepeat)
+	registerIdempotency("test remove", idemStateful, "tests already absent from the group: success, the contract's bytes unchanged", witnessTestRemoveRepeat)
 	registerIdempotency("test merge", idemStateful, "the same three contracts merge to the same bytes; a repeat rewrites them unchanged", witnessTestMergeRepeat)
 	registerIdempotency("test baseline", idemCreation, "--gate records that the gate passed at this moment, so the baseline's age restarts from each call; --check only reads", nil)
 	registerIdempotency("settings set", idemStateful, "a key already holding the value: success, the local configuration unchanged", witnessSettingsSetRepeat)
@@ -265,5 +266,85 @@ func witnessSystemRegisterRepeat(t *testing.T) {
 	}
 	if after := snapshotTree(t, repo); !reflect.DeepEqual(before, after) {
 		t.Fatalf("a repeated setup rewrote the installation:\nbefore %v\nafter  %v", before, after)
+	}
+}
+
+// TestTestRemoveTakesTestsOutOfAGroup: deleting a test leaves its name in the
+// contract until test remove takes it out; the name need not exist in the
+// packages any more, and a name the group does not list is refused.
+func TestTestRemoveTakesTestsOutOfAGroup(t *testing.T) {
+	path := newHomesAddTestsFixture(t)
+	if code := dispatch([]string{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestAdded"}); code != 0 {
+		t.Fatalf("test add exit = %d", code)
+	}
+	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "app-group", "--tests", "TestAdded"}); code != 0 {
+		t.Fatalf("test remove exit = %d", code)
+	}
+	loaded, err := testpolicy.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, names, _ := testpolicy.GoTests(loaded.Groups[0]); !reflect.DeepEqual(names, []string{"TestBase"}) {
+		t.Fatalf("test remove left tests %v", names)
+	}
+	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "no-such-group", "--tests", "TestBase"}); code == 0 {
+		t.Fatal("test remove of an unknown group succeeded")
+	}
+}
+
+func witnessTestRemoveRepeat(t *testing.T) {
+	path := newHomesAddTestsFixture(t)
+	if code := dispatch([]string{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestAdded"}); code != 0 {
+		t.Fatalf("test add exit = %d", code)
+	}
+	args := []string{"test", "remove", "--file", path, "--group", "app-group", "--tests", "TestAdded"}
+	if code := dispatch(args); code != 0 {
+		t.Fatalf("first test remove exit = %d", code)
+	}
+	first, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := dispatch(args); code != 0 {
+		t.Fatalf("repeated test remove exit = %d", code)
+	}
+	if second, err := os.ReadFile(path); err != nil || !bytes.Equal(first, second) {
+		t.Fatalf("a repeated test remove changed the contract: err=%v", err)
+	}
+}
+
+// TestTestRemoveWithoutTestsTakesAWholeGroupOut: a group whose tests are all
+// gone leaves the contract, and every surface, the always lists, the unknown
+// list and the cadence stop naming it.
+func TestTestRemoveWithoutTestsTakesAWholeGroupOut(t *testing.T) {
+	contract := testingMergeFixture()
+	spare := contract.Groups[0]
+	spare.ID = "spare-group"
+	contract.Groups = append(contract.Groups, spare)
+	contract.Surfaces[0].Standard = append(contract.Surfaces[0].Standard, "spare-group")
+	contract.Always.Standard = []string{"spare-group"}
+	contract.Unknown = append(contract.Unknown, "spare-group")
+	contract.Cadence = []string{"spare-group"}
+	path := filepath.Join(t.TempDir(), "testing.json")
+	data, err := contractmerge.Render(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "spare-group"}); code != 0 {
+		t.Fatalf("test remove of a group exit = %d", code)
+	}
+	loaded, err := testpolicy.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(loaded)
+	if len(loaded.Groups) != 1 || strings.Contains(string(encoded), "spare-group") {
+		t.Fatalf("the removed group is still named: %s", encoded)
+	}
+	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "spare-group"}); code != 0 {
+		t.Fatalf("a repeated group removal exit = %d", code)
 	}
 }

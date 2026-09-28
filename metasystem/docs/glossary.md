@@ -84,7 +84,7 @@ not paths.
   a second session is armed as a read-only `advisor` without displacing the
   lease holder.
 - **Census** — the periodic scan (the engine's census, run by
-  the supervision watcher and `metasystem internal report watch-jobs --census`; `internal/census`) that classifies every process
+  the supervision watcher; `internal/census`) that classifies every process
   touching the checkout: **ANNOUNCED** (a registered main), **CUSTODY**
   (owned by a tracked job), or **UNTRACKED** (nobody can account for it —
   surfaced, never killed). Each scan ends in a **verdict**: SUCCESS or
@@ -132,8 +132,7 @@ not paths.
 - **Event registry** — `scripts/agents/event-registry.json`, the closed
   catalogue of event names, allowed emitters, required ids, and typed
   payloads. An event not in the registry is a bug, not a feature.
-- **Emitter** — the never-fail append helper (`internal/events`; scripts
-  reach it through `metasystem internal event emit`). An emit may silently lose its own
+- **Emitter** — the never-fail append helper (`internal/events`). An emit may silently lose its own
   event; it may never fail its caller.
 - **executionId** — the cohort id, exported by the benchmark driver to
   everything it spawns so one run's events can be joined across the

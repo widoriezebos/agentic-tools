@@ -135,37 +135,6 @@ func families() []family {
 			verbs:   []verb{},
 		},
 		{
-			name:    "gate",
-			summary: "unit validation and gate-run state",
-			verbs: []verb{
-				{"unit", "gate changed Go packages and every transitive reverse dependent", runGateUnit},
-				{"register", "record that this process is a running gate", runGateRegister},
-				{"weight-discharge", "reset validation weight at the exact authorized green-run boundary", runGateWeightDischarge},
-				{"cadence-tick", "run one landing-owner deep validation cadence decision", runGateCadenceTick},
-			},
-		},
-		{
-			name:    "report",
-			summary: "turn-end report decisions",
-			verbs: []verb{
-				{"watch-jobs", "watch background job records and report every reportable job", runReportWatchJobs},
-			},
-		},
-		{
-			name:    "metrics",
-			summary: "actionable process, proof, lifecycle, delegation, collision, and cost measures",
-			verbs: []verb{
-				{"report", "compute and atomically publish a period or per-goal report", runMetricsReport},
-			},
-		},
-		{
-			name:    "schema",
-			summary: "role-return schema materialization",
-			verbs: []verb{
-				{"materialize", "write a role's return schema at a version", runSchemaMaterialize},
-			},
-		},
-		{
 			name:    "launch",
 			summary: "owned external agent processes with durable state and exact cancellation",
 			verbs: []verb{
@@ -185,23 +154,9 @@ func families() []family {
 			},
 		},
 		{
-			name:    "event",
-			summary: "append a flight-recorder event",
-			verbs: []verb{
-				{"emit", "append one event (key=value args); best-effort, never fails", runEventEmit},
-			},
-		},
-		{
 			name:    "json",
 			summary: "JSON field access for shell callers",
 			verbs:   []verb{},
-		},
-		{
-			name:    "covenant",
-			summary: "the app's covenant: the versioned declaration binding intent to proofs",
-			verbs: []verb{
-				{"evidence", "the traceability gate: every requirement backed by the evidence table, declared deps present (statuses stay claims)", runCovenantEvidence},
-			},
 		},
 		{
 			name:    "channel",
