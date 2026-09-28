@@ -101,12 +101,28 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   `metasystem.conf` and validated by `settings check`. Schema 1 holds
   one application: its name; a `start` command (argv and cwd); an
   optional `stop` command; a `ready` probe; the `address` the app
-  listens on for the standing run and a port range for candidates; an
+  listens on for the standing run and a port range for other runs; an
   optional `log` path; `readyMs` and `stopMs`; an optional `build`
-  command a candidate runs first; and `tools`, declared as the testing
+  command a run at another commit runs first; an optional `prepare`
+  command that gives a run its own data (a database, a queue, a
+  directory), given the run's state root, address and log in its
+  environment, run before a run's first start and on reset; an
+  optional `check`, the id of a group in the testing contract to run
+  against a run's address; and `tools`, declared as the testing
   contract declares them (executable and version arguments), so
   `settings check` names a missing JDK, cargo or Go before a build
-  fails. The contract is language-neutral by construction: the engine
+  fails. **Everything but `start` is optional, and leaving a thing out
+  leaves a working contract** (Wido, 2026-09-28: "the smallest thing
+  that works" applies here too, "if it is decided we don't need certain
+  aspects for the app we are building then we can just leave them out
+  and all still works"): no `stop` means TERM then KILL; no `ready`
+  means alive is ready; no `log` means the engine's capture; no `build`
+  means the tree is run as it is; no `prepare` means a run at another
+  commit shares the standing run's data, and the record, the status and
+  the room say so in those words; no `check` means `app check` answers
+  that none is declared; no `tools` means no preflight. The one
+  refusal in the contract is a contradiction: `data: own` declared with
+  no `prepare` to make it. The contract is language-neutral by construction: the engine
   interprets no language, it starts a process, probes, tracks a tree,
   signals and copies a log, so `mvn spring-boot:run`, `cargo run`, `go
   run`, `npm start` and `docker compose up` are all one thing to it.
@@ -147,9 +163,18 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   plain file in step 1 (Astra ALC-05). Declared tools are an
   availability check, the executable found and its version line
   printed into the record; a version constraint is later (ALC-06).
-- D2. **Four verbs, one object, and a supervisor that owns the run.**
-  `metasystem app start|stop|restart|status`, audience both, forms
-  mirroring `ui`. The owner is an internal `app serve`, the shape of
+- D2. **Seven verbs, one object, and a supervisor that owns the run.**
+  `metasystem app start|stop|restart|status|log|reset|check`, audience
+  both, forms mirroring `ui`; every one takes `--at REF` to name a run
+  at a commit (D3) and means the standing run without it. `log` prints
+  the run's log tail and follows it with `--follow`, from the file the
+  engine captured or the file the contract named. `reset` is stop, then
+  `prepare` where the contract has one, then start, and says "no
+  prepare declared: reset is a restart" where it has none. `check` runs
+  the contract's named testing group with the run's address in its
+  environment through the testing contract's own runner, records the
+  group's verdict and time on the run record, and answers that no check
+  is declared where none is. The owner is an internal `app serve`, the shape of
   `ui serve`: `app start` launches it detached the way `ui start`
   launches the interface (its own session, the log, a readiness pipe),
   and returns when the pipe reports ready or failed, or at `readyMs`.
@@ -188,18 +213,25 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   when every recorded ref is dead and the group is gone, and, for the
   http and tcp forms, the probe is dark. Restart is stop then start
   with what is on disk.
-- D3. **`--goal G` runs the candidate.** The engine takes a worktree of
-  `goal/<id>` at its tip under `artifacts/`, runs the contract's build
-  command there if it has one, allocates an address from the candidate
-  range and a state root of its own, and starts the app from that tree.
-  The record names the goal and the tip; status names both; a moved tip
-  makes the next start replace the run. One candidate per goal at a
-  time. The standing app's record and address are never touched by a
-  candidate's start or stop.
+- D3. **`--at REF` runs the application at any commit; `--goal G` is
+  sugar for the goal branch's tip.** The engine takes a worktree at the
+  commit REF names under `artifacts/`, runs the contract's build
+  command there if it has one, allocates an address from the range and
+  a state root of its own, runs `prepare` there before the first start
+  where the contract has one, and starts the app from that tree. So
+  main and a candidate run side by side, `app start --at main` and `app
+  start --goal G`, and a review compares the same press on two ports.
+  The record names the ref and the commit; status names both and, where
+  no `prepare` exists, says "data: shared with the standing run"; a
+  moved ref makes the next start replace the run. One run per ref at a
+  time. The standing app's record, address and data are never touched
+  by another run's start, stop or reset. `app reset --at REF` re-runs
+  `prepare`, which is what a learning sitting needs to repeat an
+  experiment from a known state (docs/paper/14-how-engineers-learn.md).
 - D4. **Who may press it.** A person at the enrolled terminal; a
-  signed-in browser session through the act layer, as the eleventh
-  browser act, with the four verbs joining the Partner's proposal
-  grammar and the verb-table test; a delegate under launch permissions
+  signed-in browser session through the act layer, as the next browser
+  acts, with the verbs joining the Partner's proposal grammar and the
+  verb-table test; a delegate under launch permissions
   may `app start --goal G` for the goal it holds, in its own worktree.
   The browser act and the grammar are the interface's slice, designed
   and built after this one lands.
@@ -210,9 +242,10 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   status` stay what they are, the seat's own window; `app --goal G`
   is how a candidate interface runs beside it.
 - D6. **What the record is for.** The run record is per seat and never
-  committed. When a run named a goal, stop copies the log tail to the
-  evidence root under the goal, so a review's "how it behaved" survives
-  the process. Nothing else is retained.
+  committed; it carries the last `check`'s verdict and time and the
+  data word. When a run named a goal, stop copies the log tail and the
+  last check to the evidence root under the goal, so a review's "how it
+  behaved" survives the process. Nothing else is retained.
 - D7. **Not here.** Traffic splitting and the releaser's bounds;
   production observation; remote hosts; more than one application per
   contract; Windows; the browser act and the Partner grammar (D4's
@@ -222,9 +255,14 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
 ## 4. Step 1, the smallest thing that works
 
 D1, D2, D3, D5 and D6, as one engine slice: the contract and its check,
-the four verbs on the standing app, the candidate run, and this
-repository's own contract proving it on itself. D4's terminal path comes
-free with the verbs; its browser half waits for the interface's slice.
+the seven verbs on the standing app, the run at any commit with its
+own data where `prepare` is declared, and this repository's own
+contract proving it on itself. D4's terminal path comes free with the
+verbs; its browser half waits for the interface's slice. The four
+capabilities Wido added on 2026-09-28 (own data and reset, any commit,
+the log, the check) are in step 1 because each is one field or one verb
+over the same owner, and because the first adopted application with a
+database would trip over the data one on its first review.
 
 ## 5. Verification and box
 
@@ -246,9 +284,18 @@ between the launch and the record leaves no run and the next status
 says stopped; stop proves death for a child that ignores TERM; a log
 readiness form stops on death alone; restart replaces the process and
 the record.
-Candidate: `--goal G` builds in a worktree at the tip, runs on an
-address from the range with its own state root, leaves the standing
-record untouched, and a moved tip replaces the run. Self-hosting: this
+Runs at a commit: `--at main` and `--goal G` build in two worktrees,
+run on two addresses from the range with their own state roots, leave
+the standing record untouched, and a moved tip replaces the goal's run;
+`prepare` runs once before the first start and again on `reset`, with
+the run's state root and address in its environment; without
+`prepare` the record and status carry "data: shared with the standing
+run"; `data: own` without `prepare` is refused by validation. `log`
+prints the captured tail and follows it; `check` runs the named group
+with the address in its environment and records the verdict, and
+answers "no check declared" where the contract names none. Every
+optional field left out leaves a contract that validates and verbs
+that work, proven with a contract of `start` alone. Self-hosting: this
 repository's contract starts a second interface on another port, its
 health answers, and `ui status` still names the standing one. The
 verify skill drives it once for real. Box: one build lane (Claude on
@@ -303,3 +350,19 @@ application is dead or discoverable and stoppable by identity through
 the recorded group, never signalled by number. Two wording residues
 fixed (an unconditional "probe going dark", a "wrong version" in
 validation). The loop is closed at round 2 on one fixture obligation.
+
+**Fold after the close, on Wido's word (2026-09-28):** asked whether the
+verb misses "a powerful capability along the lines of this intent", the
+intent being to control the runtime state of the application under
+construction, four things were named and Wido said "Yes, indeed. Add
+all to the design": a run's own data (`prepare`, `data`, `reset`), a
+run at any commit (`--at REF`, with `--goal G` as sugar), the log verb,
+and the check against a testing group. Folded into D1, D2, D3, D6, §4
+and §5. Wido added two rules for this fold: every aspect an application
+does not need can be left out and all still works (D1's optional
+fields), and this design is reviewed by Astra "until you both agree
+that nothing material that would change the implementation remains",
+which for this design overrides the two-round cap: rounds continue on
+one chain while a material finding stands, each under R-124, and the
+loop closes at the first round the critic and the author both read as
+holding nothing that would change what step 1 builds.
