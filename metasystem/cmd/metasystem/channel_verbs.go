@@ -278,29 +278,6 @@ func askChannelQuestionVia(root string, in channelAskInput, surface channelAskSu
 // (R-129-ui): the question is returned with it, and nothing was asked again.
 var errQuestionAlreadyOpen = errors.New("this exact question is already open; nothing was asked again")
 
-func runChannelShow(args []string) int {
-	root, id, ok := channelQuestionFlags("show", args)
-	if !ok {
-		return 2
-	}
-	q, err := channel.ReadQuestion(root, id)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	printJSON(q)
-	return 0
-}
-func channelQuestionFlags(name string, args []string) (string, string, bool) {
-	f := flag.NewFlagSet("channel "+name, flag.ContinueOnError)
-	root := pathFlag(f, "root", ".", "repository root")
-	id := f.String("question", "", "question id")
-	if f.Parse(args) != nil || *id == "" {
-		return "", "", false
-	}
-	return *root, *id, true
-}
-
 var channelWaitCommand = runWaitWithPoll
 
 func runChannelWait(args []string) int {

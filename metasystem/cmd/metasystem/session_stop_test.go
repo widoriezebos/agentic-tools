@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -588,4 +591,42 @@ func TestReportTurnVerdictCompletionCapturePreservesVerdict(t *testing.T) {
 	if atWriter == nil || !reflect.DeepEqual(atWriter, after) {
 		t.Fatalf("completion sidecar failure changed state after the completed judgment: at-writer=%v after=%v", atWriter, after)
 	}
+}
+
+// The argument adapter of the retired internal report turn-verdict, kept for
+// these tests over the owner the Stop hook calls in process
+// (reportTurnVerdict).
+
+func runReportTurnVerdictTo(args []string, stdout, stderr io.Writer, resolve func(string) (goal.Endpoint, error), resolveMachine func(string) (string, error)) int {
+	flags := flag.NewFlagSet("report turn-verdict", flag.ContinueOnError)
+	root := pathFlag(flags, "root", ".", "checkout root")
+	session := flags.String("session", "", "normalized session id")
+	watchdog := flags.String("watchdog-surfaced", "", "sha256 of this turn's watchdog report (empty clears)")
+	mainId := flags.String("main-id", "", "the caller main identity for the unwatched-work rule")
+	stopHookActive := flags.Bool("stop-hook-active", false, "the runtime is repeating a Stop hook that previously blocked")
+	sessionAbsent := flags.Bool("session-absent", false, "the Stop payload supplied no runtime session")
+	transcript := flags.String("transcript", "", "runtime transcript for the last main-thread call")
+	runtimeName := flags.String("runtime", "", "runtime that produced the transcript")
+	factsFile := flags.String("facts-file", "", "fresh absolute path for the frozen judgment facts")
+	completionFile := flags.String("completion-file", "", "fresh absolute path for the presentation-only completion observation")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	return reportTurnVerdict(hooks.TurnVerdictRequest{
+		Root: *root, Session: *session, Watchdog: *watchdog, MainID: *mainId, StopHookActive: *stopHookActive,
+		SessionAbsent: *sessionAbsent, Transcript: *transcript, Runtime: *runtimeName,
+		FactsFile: *factsFile, CompletionFile: *completionFile,
+	}, stdout, stderr, resolve, resolveMachine)
+}
+
+func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.Endpoint, error), resolveMachine func(string) (string, error)) int {
+	return runReportTurnVerdictTo(args, os.Stdout, os.Stderr, resolve, resolveMachine)
+}
+
+// runReportTurnVerdict is the Stop hook's one verb: the scanner fills the
+// verdict's input contract and the decision returns as JSON on stdout.
+// Every representable state is exit 0; nonzero means I/O failure and the
+// hook's own fixed degraded message takes over.
+func runReportTurnVerdict(args []string) int {
+	return runReportTurnVerdictWithInputs(args, nil, nil)
 }

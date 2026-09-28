@@ -268,7 +268,7 @@ func Declare(options DeclareOptions) (Record, error) {
 	}
 	current := Read(checkout, options.LedgerIdentity)
 	if current.State == Declared {
-		return Record{}, fmt.Errorf("this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem internal brain withdraw --root %s --by <name>", current.Record.Ledger, current.Record.DeclaredBy, current.Record.DeclaredAt, checkout)
+		return Record{}, fmt.Errorf("this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem settings coordinator --withdraw --by <name> --repo %s", current.Record.Ledger, current.Record.DeclaredBy, current.Record.DeclaredAt, checkout)
 	}
 	if current.State == Corrupt {
 		return Record{}, errors.New(RemedialRefusal(current.Reason, checkout))

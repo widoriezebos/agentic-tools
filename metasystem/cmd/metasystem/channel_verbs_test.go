@@ -63,8 +63,9 @@ func TestConfigurationIndependentChannelVerbs(t *testing.T) {
 	if err := channel.Close(root, q.ID, "test", nil, channel.DestinationConfig{}); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, problem := captureChannelOutput(t, func() int { return runChannelShow([]string{"--root", root, "--question", q.ID}) }); code != 0 {
-		t.Fatal(problem)
+	// The owner question show reads through.
+	if _, err := channel.ReadQuestion(root, q.ID); err != nil {
+		t.Fatal(err)
 	}
 	if code, _, problem := captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", root, "--question", q.ID}) }); code != 67 || !strings.Contains(problem, "no ledgerCursor") {
 		t.Fatalf("legacy cursor-less question was not refused: code=%d stderr=%q", code, problem)

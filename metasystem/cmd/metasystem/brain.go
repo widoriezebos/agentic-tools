@@ -1,10 +1,8 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -118,7 +116,7 @@ func brainDeclareWith(caller processIdentity, stdout, stderr io.Writer, root, by
 	}
 	state := brain.Read(root, ledgerIdentity)
 	if state.State == brain.Declared {
-		fmt.Fprintf(stderr, "this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem internal brain withdraw --root %s --by <name>\n", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, root)
+		fmt.Fprintf(stderr, "this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem settings coordinator --withdraw --by <name> --repo %s\n", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, root)
 		return 2
 	}
 	if state.State == brain.Corrupt {
@@ -189,17 +187,6 @@ func sortedGoalIDs(items map[string]*goal.GoalFile) []string {
 	}
 	sort.Strings(ids)
 	return ids
-}
-
-func runBrainWithdraw(args []string) int {
-	flags := flag.NewFlagSet("brain withdraw", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout state root")
-	by := flags.String("by", "", "human withdrawing the declaration")
-	fixture := flags.Bool("fixture-human-authority", false, "fixture-only authority under an exact fake-runtime root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	return brainWithdraw(entryCallerIdentity(), os.Stdout, os.Stderr, *root, *by, *fixture)
 }
 
 // brainWithdraw is the withdrawal owner under a supplied caller identity.

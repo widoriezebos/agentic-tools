@@ -219,7 +219,7 @@ func TestSupBStewardCreationVerbsRefuseTheClosedFenceWithTheStartRemedy(t *testi
 	}
 	want := "the metasystem is stopped for " + repo + " since 2026-09-27T12:30:00Z, by stop pid 72\n" +
 		"run: metasystem system start --repo " + repo + "\n"
-	for name, verb := range map[string]func([]string) int{"arm": runStewardArm, "restart": runStewardRestart} {
+	for name, verb := range map[string]func([]string) int{"arm": runStewardArm} {
 		stdout, stderr, code := captureRelay(t, func() int { return verb([]string{"--repo", repo}) })
 		if code != 1 || stdout != "" || stderr != want {
 			t.Fatalf("steward %s under the closed fence = code %d stdout %q stderr %q, want %q", name, code, stdout, stderr, want)

@@ -321,7 +321,7 @@ func fitBrainSection(name string, section brainBootSection, existing string, sha
 				if len(section.Lines) > len(lines) && section.Lines[len(lines)].ID != "" {
 					id = section.Lines[len(lines)].ID
 				}
-				texts = append(texts, fmt.Sprintf("%d more; run metasystem internal channel show --root <checkout> --id %s", removed, id))
+				texts = append(texts, fmt.Sprintf("%d more; run metasystem question show %s", removed, id))
 			case "digest":
 				texts = append([]string{header, fmt.Sprintf("%d older lines cut; read records/narrator-digest.log", removed)}, texts[1:]...)
 			default:
@@ -430,7 +430,7 @@ func readBrainAsks(root string) brainBootSection {
 	}
 	if len(unreadable) > 0 {
 		section.Status = "error"
-		section.Lines = append(section.Lines, brainBootLine{Text: fmt.Sprintf("%d unreadable question files; run metasystem internal channel show --root %s", len(unreadable), root)})
+		section.Lines = append(section.Lines, brainBootLine{Text: fmt.Sprintf("%d unreadable question files; run metasystem question list", len(unreadable))})
 	}
 	return section
 }
@@ -527,7 +527,7 @@ func readBrainFleetWith(root string, readers brainBootInputReaders) (brainBootSe
 			censusErr = fmt.Errorf("malformed census verdict")
 		}
 		fleet.Status = "error"
-		fleet.Lines = append(fleet.Lines, brainBootLine{Text: fmt.Sprintf("CENSUS absent or unreadable (%v); run metasystem internal supervise status --repo %s", censusErr, root)})
+		fleet.Lines = append(fleet.Lines, brainBootLine{Text: fmt.Sprintf("CENSUS absent or unreadable (%v); run metasystem system status", censusErr)})
 	} else {
 		age := "age unknown"
 		if census.CompletedAtEpoch > 0 {

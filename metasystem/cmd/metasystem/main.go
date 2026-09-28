@@ -72,7 +72,6 @@ func families() []family {
 			name:    "brain",
 			summary: "the fleet brain seat: designation, boot context, and checkout-local fences",
 			verbs: []verb{
-				{"withdraw", "human-only: remove this checkout's brain declaration", runBrainWithdraw},
 				{"boot", "compose the declared brain's bounded standing context", runBrainBoot},
 				{"boot-inputs", "read optional brain boot inputs in the bounded child (internal)", runBrainBootInputs},
 			},
@@ -143,7 +142,6 @@ func families() []family {
 				{"owner-lock", "claim or release the dispatch owner lock (0 done, 3 busy, 4 not-owner)", runDispatchOwnerLock},
 				{"snapshot-select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},
 				{"authority-check", "check a control-plane write against the authority matrix", runAuthorityCheck},
-				{"watch", "block until a delegate job is terminal; exit with its pinned code", runJobWatchVerb},
 			},
 		},
 		{
@@ -183,8 +181,6 @@ func families() []family {
 			name:    "report",
 			summary: "turn-end report decisions",
 			verbs: []verb{
-				{"stop-status", "read one exact immutable Stop report", runReportStopStatus},
-				{"turn-verdict", "the one structured turn-end decision: scan, goal, block-once state", runReportTurnVerdict},
 				{"watch-jobs", "watch background job records and report every reportable job", runReportWatchJobs},
 			},
 		},
@@ -218,15 +214,6 @@ func families() []family {
 			summary: "owned external agent processes with durable state and exact cancellation",
 			verbs: []verb{
 				{"start", "start an agent process and return after its child is recorded", runLaunchStart}, {"supervise", "own one launch child through its terminal state (internal)", runLaunchSupervise}, {"round-task", "derive a critique task from its predecessor", runLaunchRoundTask}, {"settings", "show launch and context settings with their sources", runLaunchSettings}, {"report", "summarize launch outcomes and refusals", runLaunchReport},
-			},
-		},
-		{
-			name:    "context",
-			summary: "the coordinator's recorded provider-call context budget",
-			verbs: []verb{
-				{"status", "show the holder's current context-budget evidence", runContextStatus},
-				{"handoff", "record a noted task-aware handoff, or cancel one", runContextHandoff},
-				{"verify", "verify an immutable coordinator handoff", runContextVerify},
 			},
 		},
 		{
@@ -277,7 +264,6 @@ func families() []family {
 			verbs: []verb{
 				{"status", "compose or post this machine's durable status", runChannelStatus},
 				{"ask", "open one durable question thread", runChannelAsk},
-				{"show", "show one question record", runChannelShow},
 				{"wait", "wait for one recorded answer", runChannelWait},
 				{"poll", "receive and durably disposition replies", runChannelPoll},
 				{"fake", "fixture-only fake serve and code verbs", runChannelFake},
@@ -313,11 +299,8 @@ func families() []family {
 			summary: "the idle watchdog: open delegated work is never silently idle (D121)",
 			verbs: []verb{
 				{"tick", "one scheduled observation: decide, age the evidence, report the action", runStewardTick},
-				{"status", "the operator's view: evidence age, live intents, pending notifications", runStewardStatus},
-				{"revive", "one revival end to end: stage, mint, arbitrate, dispatch once", runStewardRevive},
 				{"run", "the runner's body: tick until disarmed (spawned by arm; callable by any external ticker)", runStewardRun},
 				{"arm", "explicit human enrollment and runner start (long form of metasystem system start)", runStewardArm},
-				{"restart", "replace and re-arm the runner (long form of metasystem system start)", runStewardRestart},
 			},
 		},
 		{
@@ -366,7 +349,6 @@ func families() []family {
 			verbs: []verb{
 				{"owner", "run the owner loop for a checkout (internal; launched by up)", runSuperviseOwnerLoop},
 				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},
-				{"status", "print the checkout's supervision state as JSON", runSuperviseStatus},
 				{"launch-detached", "start a command in its own session with logged output", runSuperviseLaunchDetached},
 			},
 		},

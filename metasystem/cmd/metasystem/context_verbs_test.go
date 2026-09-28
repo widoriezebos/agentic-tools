@@ -155,7 +155,7 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 	writeContextCommandHolder(t, root, "claude", "inferred")
 
 	code, text, problem := captureChannelOutput(t, func() int {
-		return dispatch([]string{"context", "status", "--root", root})
+		return dispatch([]string{"session", "handoff", "--status", "--root", root})
 	})
 	if code != 0 || problem != "" || !strings.HasPrefix(text, "context-budget=alive (150 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger:") {
 		t.Fatalf("inferred text status = code %d stdout %q stderr %q", code, text, problem)
@@ -306,7 +306,7 @@ func TestContextStatusPrintsTheBudgetLine(t *testing.T) {
 	writeDerivedContextCommandTranscript(t, root, "configured", 120000, 1, true)
 	writeContextCommandHolder(t, root, "claude", "configured")
 	code, output, problem := captureChannelOutput(t, func() int {
-		return dispatch([]string{"context", "status", "--root", root})
+		return dispatch([]string{"session", "handoff", "--status", "--root", root})
 	})
 	if code != 0 || problem != "" || !strings.Contains(output, "trigger 80, proof line 150, proof maximum 200, ceiling 200") {
 		t.Fatalf("configured status = code %d stdout %q stderr %q", code, output, problem)
@@ -670,7 +670,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 
 func TestContextHandoffVerb(t *testing.T) {
 	container, root := contextHandoffCommandRoot(t)
-	code, _, problem := captureContextVerb(t, dispatch, "context", "handoff", "--root", root, "--no-delegates")
+	code, _, problem := captureContextVerb(t, dispatch, "session", "handoff", "--root", root, "--no-delegates")
 	if code != 9 || problem != "HANDOFF_NOTE_MISSING\n" {
 		t.Fatalf("production handoff route = code %d stderr %q", code, problem)
 	}
@@ -679,7 +679,7 @@ func TestContextHandoffVerb(t *testing.T) {
 	container = link
 	useContextHandoffIdentity(t, filepath.Join(link, "metasystem"))
 	contextMust(t, os.WriteFile(filepath.Join(root, "proof.txt"), []byte("bounded proof\n"), 0o644))
-	code, output, problem := captureContextVerb(t, contextHandoffTestDispatch(t, root), "context", "handoff", "--root", container,
+	code, output, problem := captureContextVerb(t, contextHandoffTestRun(t, root), "--root", container,
 		"--note", contextHandoffNotePath(container), "--no-delegates",
 		"--scratch", "purpose=proof,path=proof.txt,required=true", "--scratch", "purpose=second,path=proof.txt,required=false")
 	if code != 0 || problem != "" || !strings.HasPrefix(output, "handoff recorded: ") || !strings.Contains(output, " state=") || !strings.Contains(output, " sha256=") {
@@ -973,7 +973,7 @@ func TestContextVerifyAndCancel(t *testing.T) {
 	container, root := contextHandoffCommandRoot(t)
 	useContextHandoffIdentity(t, root)
 	first := recordContextHandoff(t, container)
-	code, output, problem := captureContextVerb(t, dispatch, "context", "verify", "--root", container, "--nonce", first.nonce)
+	code, output, problem := captureContextVerb(t, dispatch, "session", "handoff", "--verify", first.nonce, "--root", container)
 	if code != 0 || output != "ok sha256="+first.digest+"\n" || problem != "" {
 		t.Fatalf("verify = code %d stdout %q stderr %q", code, output, problem)
 	}
@@ -1202,23 +1202,6 @@ func contextHandoffTestRun(t *testing.T, path string) func([]string) int {
 			},
 		})
 	}
-}
-
-func contextHandoffTestDispatch(t *testing.T, root string) func([]string) int {
-	t.Helper()
-	registered := families()
-	for i := range registered {
-		if registered[i].name != "context" {
-			continue
-		}
-		registered[i].verbs = append([]verb(nil), registered[i].verbs...)
-		for j := range registered[i].verbs {
-			if registered[i].verbs[j].name == "handoff" {
-				registered[i].verbs[j].run = contextHandoffTestRun(t, root)
-			}
-		}
-	}
-	return func(args []string) int { return dispatchWithFamilies(args, os.Stdout, os.Stderr, registered) }
 }
 
 func captureContextVerb(t *testing.T, run func([]string) int, args ...string) (int, string, string) {

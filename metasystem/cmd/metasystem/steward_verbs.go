@@ -255,23 +255,6 @@ func runStewardTick(args []string) int {
 	return 0
 }
 
-// runStewardRevive drives one revival end to end: stage the exact
-// launch bytes, mint the intent under the lock, then complete through the
-// critical section with the real dispatcher as the launch. Recovery heals
-// before alerting; a consumed intent refuses on replay.
-func runStewardRevive(args []string) int {
-	flags := flag.NewFlagSet("steward revive", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "steward revive: --repo is required")
-		return 2
-	}
-	return stewardRevive(*repo, os.Stdout, os.Stderr)
-}
-
 // stewardReviveOwner is one revival called in the caller's process (the
 // steward runner or tick), with its output returned as the former child's
 // combined output was.
@@ -496,58 +479,6 @@ func runStewardArm(args []string) int {
 			return 1
 		}
 		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
-		return 1
-	}
-	fmt.Println(msg)
-	return 0
-}
-
-func runStewardRestart(args []string) int {
-	flags := flag.NewFlagSet("steward restart", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "steward restart: --repo is required")
-		return 2
-	}
-	if refused, err := refuseStewardIfStopped(*repo); err != nil {
-		fmt.Fprintln(os.Stderr, "steward restart:", err)
-		return 1
-	} else if refused {
-		return 1
-	}
-	fixtureEnrollment, authorized := requireHumanTerminal(*repo, "steward restart")
-	if !authorized {
-		return 1
-	}
-	if seed, err := seedStewardLandingRef(*repo); err != nil {
-		fmt.Fprintf(os.Stderr, "steward restart: %v\n", err)
-		return 1
-	} else if seed.Ref != "" {
-		fmt.Fprintf(os.Stderr, "steward restart: seeded metasystem.steward.landing-ref=%s from the checked-out branch's upstream\n", seed.Ref)
-	} else if seed.NotSeeded != "" {
-		fmt.Fprintf(os.Stderr, "steward restart: landing ref was not seeded: %s\n", seed.NotSeeded)
-	}
-	bin, err := os.Executable()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward restart: %v\n", err)
-		return 1
-	}
-	var msg string
-	if fixtureEnrollment {
-		msg, err = steward.RestartFixture(*repo, bin)
-	} else {
-		msg, err = steward.Restart(*repo, bin)
-	}
-	if err != nil {
-		var stopped *steward.StoppedError
-		if errors.As(err, &stopped) {
-			printStewardStopped(stopped.Checkout, stopped.Record)
-			return 1
-		}
-		fmt.Fprintf(os.Stderr, "steward restart: %v\n", err)
 		return 1
 	}
 	fmt.Println(msg)
