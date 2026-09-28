@@ -272,3 +272,25 @@ func TestResolvePathThroughALinkedParent(t *testing.T) {
 		t.Fatalf("got %s", got)
 	}
 }
+
+// A conf file that is not there names no root: it is unspecified, as an
+// absent key is, so an unset root never refuses (decision 5); a conf that is
+// there but unreadable is still an error.
+func TestResolveEvidenceRootTreatsAMissingConfAsUnspecified(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "bare-seat")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ResolveEvidenceRoot(EvidenceRootParams{ConfPath: filepath.Join(dir, "metasystem.conf"), LookupEnv: envMap(map[string]string{"HOME": home})})
+	if err != nil || got.Path != filepath.Join(home, "metasystem-evidence", "bare-seat") || !got.Default() {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "metasystem.conf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveEvidenceRoot(EvidenceRootParams{ConfPath: filepath.Join(dir, "metasystem.conf"), LookupEnv: envMap(map[string]string{"HOME": home})}); err == nil {
+		t.Fatal("an unreadable conf was accepted")
+	}
+}

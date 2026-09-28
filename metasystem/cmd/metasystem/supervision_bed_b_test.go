@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -198,6 +199,12 @@ func TestSupBArmRefusesSurvivorsAndRemoteEvidenceUntilTerminal(t *testing.T) {
 		opened.Generation != stopped.Generation+1 || opened.By.Verb != "arm" {
 		t.Fatalf("arm after the obligation cleared = %#v refusal=%+v fence=%#v err=%v", armed, refusal, opened, err)
 	}
+	// A start says the evidence root first; this bed configures none, so it
+	// is the default under the test process's HOME, named, never made.
+	if len(armed.Lines) == 0 || !strings.HasPrefix(armed.Lines[0], "evidence root: ") || !strings.HasSuffix(armed.Lines[0], " (default; set "+config.EvidenceRootKey+" in metasystem.conf.local to change)") {
+		t.Fatalf("arm page = %#v, want the evidence root line first", armed)
+	}
+	armed.Lines = armed.Lines[1:]
 	wantArm := []string{"checkout " + repo, "component=steward-runner outcome=started", "armed " + repo + " generation " + strconv.FormatInt(opened.Generation, 10)}
 	if armed.ExitCode != 0 || strings.Join(armed.Lines, "\n") != strings.Join(wantArm, "\n") {
 		t.Fatalf("arm page = %#v, want %q", armed, wantArm)

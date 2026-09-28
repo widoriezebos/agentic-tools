@@ -82,9 +82,14 @@ func ResolveEvidenceRoot(p EvidenceRootParams) (EvidenceRoot, error) {
 			return judgeEvidenceRoot(value, filepath.Base(localPath), "conf-local", checkout)
 		}
 	}
-	value, found, err := ConfLookup(p.ConfPath, EvidenceRootKey)
-	if err != nil {
-		return EvidenceRoot{}, err
+	// A conf that is not there names no root, as an absent key does; one
+	// that is there but cannot be read is an error.
+	value, found := "", false
+	if _, statErr := os.Stat(p.ConfPath); statErr == nil || !os.IsNotExist(statErr) {
+		value, found, err = ConfLookup(p.ConfPath, EvidenceRootKey)
+		if err != nil {
+			return EvidenceRoot{}, err
+		}
 	}
 	if found && specified(value) {
 		return judgeEvidenceRoot(value, filepath.Base(p.ConfPath), "conf", checkout)
