@@ -506,17 +506,43 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 		return append(args, "--by", typed), nil, nil
 	}
 	if err != nil {
-		summary := fmt.Sprintf("%s is a person's act and no enrolled person was proven here (%v); nothing was done", verb, err)
+		name, reason := inv.command.name, actorProofReason(err)
+		summary := fmt.Sprintf("%s is a person's act at the enrolled terminal, and no enrolled person was proven here (%s); nothing was done", name, reason)
+		decision := "run it at the enrolled terminal; a person enrolls a terminal with metasystem system enroll --name NAME"
 		if actor == actorEither && typed == "" {
-			summary = fmt.Sprintf("cannot tell who acts: no agent lineage, and no enrolled person was proven here (%v); nothing was done", err)
+			summary = eitherActorSummary(name, reason)
+			decision = eitherActorDecision
 		}
-		decision := "a person runs it at the enrolled terminal; an agent session passes --lineage LINEAGE"
 		if stopping && typed == "" {
-			decision = "a person names themself with --by NAME (a terminal that is not enrolled is proven by its own ancestry) or runs it at the enrolled terminal; an agent session passes --lineage LINEAGE"
+			decision = "a person at a terminal no agent started names themself with --by NAME, or runs it at the enrolled terminal; an agent session names itself with --lineage LINEAGE or METASYSTEM_OWNER_LINEAGE"
 		}
 		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target), Summary: summary, Decision: decision}
 	}
 	return append(args, "--by", flags.by), &proof, nil
+}
+
+// eitherActorDecision is who may run an act an agent session or a person
+// performs, for a shell that is neither.
+const eitherActorDecision = "a person runs it at the enrolled terminal (metasystem system enroll --name NAME enrolls one); an agent session names itself with --lineage LINEAGE or METASYSTEM_OWNER_LINEAGE"
+
+func eitherActorSummary(name, reason string) string {
+	return fmt.Sprintf("cannot tell who runs %s: no agent session is named and no enrolled person was proven here (%s); nothing was done", name, reason)
+}
+
+// actorProofReason is why this shell was not proven to be a person at a
+// terminal, in the reader's terms rather than the proof's outcome code; an
+// error the proof does not classify is kept as it is.
+func actorProofReason(err error) string {
+	text := err.Error()
+	switch {
+	case strings.Contains(text, humanauthority.OutcomeAgent):
+		return "an agent started this shell"
+	case strings.Contains(text, humanauthority.OutcomeTerminalMissing):
+		return "no terminal was found above this shell"
+	case strings.Contains(text, humanauthority.OutcomeNotEnrolled):
+		return "this terminal is not the enrolled one"
+	}
+	return text
 }
 
 // textValue is a TEXT option given inline or read from its --NAME-file,
@@ -826,17 +852,21 @@ func (inv *intentInvocation) openGoal(id, intent, next string) int {
 		return inv.render(*problem)
 	}
 	var missing []string
-	for name, value := range map[string]string{"G": id, "--intent": intent, "--next": next, "--risk": inv.input.text("risk"), "--basis": inv.input.text("basis")} {
+	for name, value := range map[string]string{"--intent": intent, "--next": next, "--risk": inv.input.text("risk"), "--basis": inv.input.text("basis")} {
 		if strings.TrimSpace(value) == "" {
 			missing = append(missing, name)
 		}
 	}
+	slices.Sort(missing)
+	if strings.TrimSpace(id) == "" {
+		missing = append([]string{"G"}, missing...)
+	}
 	if len(missing) > 0 {
-		slices.Sort(missing)
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-			Summary:  fmt.Sprintf("a new goal needs %s; nothing was done", strings.Join(missing, ", ")),
-			Decision: "the four risk answers (severity, novelty, exposure, accumulation) and their basis are a judgement about this goal, not a default",
-			Data:     map[string]any{"missing": missing}})
+			Summary: fmt.Sprintf("a new goal needs %s; nothing was done", strings.Join(missing, ", ")),
+			Decision: "metasystem goal open G --intent TEXT --next TEXT --risk severity=N,novelty=N,exposure=N,accumulation=N --basis TEXT; " +
+				"the four risk answers and their basis are a judgement about this goal, not a default",
+			Data: map[string]any{"missing": missing}})
 	}
 	actor, _, problem := inv.actingAs("open", id, actorEither)
 	if problem != nil {
@@ -1580,7 +1610,8 @@ func runIntentRevoke(inv *intentInvocation) int {
 		entry = inv.input.args[0]
 	}
 	if entry == "" {
-		return inv.refuse("", "needs the grant to close: metasystem grant revoke GRANT; nothing was done", "the grant's id was printed when it was recorded")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "needs the grant to close: metasystem grant revoke GRANT; nothing was done",
+			next: inv.publicArgv("grant", "list"), nextReason: "lists the grants with their ids"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)

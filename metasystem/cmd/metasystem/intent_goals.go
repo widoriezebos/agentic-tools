@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,6 +33,11 @@ func (inv *intentInvocation) projection() (goal.Projection, time.Time, *intentRe
 	}
 	// --fetch is the goal owner's explicit fetch and validation.
 	projection, err := goal.Project(endpoint, inv.input.switched("fetch"), now)
+	if errors.Is(err, goal.ErrLedgerNotFetched) {
+		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, code: 1,
+			Summary: "this checkout has not fetched the goal ledger yet; nothing was read",
+			next:    inv.publicArgv("goal", "list", "--fetch"), nextReason: "fetches the goal ledger and lists its goals"}
+	}
 	if err != nil {
 		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, Summary: "cannot project the accepted goal ledger: " + err.Error(), code: 1}
 	}
@@ -77,11 +83,10 @@ func (inv *intentInvocation) publicArgv(words ...string) []string {
 	return argv
 }
 
-// missingTarget names the command's grammar and the goals it could take.
+// missingTarget names the command's grammar and the goals it can take.
 func (inv *intentInvocation) missingTarget(fits func(*goal.GoalFile) bool) int {
 	result := intentResult{Outcome: intentRefused, code: 2,
-		Summary:  fmt.Sprintf("needs a goal: %s; nothing was done", inv.command.usage[0]),
-		Decision: "name the goal"}
+		Summary: fmt.Sprintf("needs a goal: %s; nothing was done", inv.command.usage[0])}
 	if projection, _, problem := inv.projection(); problem == nil {
 		var candidates []string
 		for _, id := range goal.OrderedOpenGoalIDs(projection.Tree.Live) {
@@ -93,7 +98,7 @@ func (inv *intentInvocation) missingTarget(fits func(*goal.GoalFile) bool) int {
 			candidates = append(candidates[:8], "...")
 		}
 		if len(candidates) > 0 {
-			result.text = []string{"goals it could take: " + strings.Join(candidates, " ")}
+			result.text = []string{"goals you can name: " + strings.Join(candidates, " ")}
 			result.Data = map[string]any{"candidates": candidates}
 		}
 	}
@@ -156,8 +161,7 @@ func (inv *intentInvocation) actorArgs(id string, names ...string) ([]string, *i
 	}
 	refused := func(err error) *intentResult {
 		return &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
-			Summary:  "cannot tell who acts: no --by, --lineage or METASYSTEM_OWNER_LINEAGE, and the enrolled-terminal proof failed: " + err.Error() + "; nothing was done",
-			Decision: "a person runs this at the enrolled terminal; an agent session passes its own lineage with --lineage LINEAGE (a session is started with metasystem session start)"}
+			Summary: eitherActorSummary(inv.command.name, actorProofReason(err)), Decision: eitherActorDecision}
 	}
 	if dependencies.proveHuman == nil {
 		return nil, refused(fmt.Errorf("no human proof reader is available"))
@@ -168,7 +172,7 @@ func (inv *intentInvocation) actorArgs(id string, names ...string) ([]string, *i
 	}
 	proof, err := dependencies.proveHuman(inv.stateRoot, int64(os.Getppid()), nil, now)
 	if err == nil && !proof.EnrolledTerminalFor(inv.stateRoot) {
-		err = fmt.Errorf("this shell does not descend from the enrolled terminal (%s)", proof.Outcome)
+		err = fmt.Errorf("this terminal is not the enrolled one")
 	}
 	if err != nil {
 		return nil, refused(err)

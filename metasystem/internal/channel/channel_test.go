@@ -202,7 +202,7 @@ func TestAskDedupsOpenQuestion(t *testing.T) {
 }
 func TestReportOmitsEmptyParts(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
-	unavailable := "Backlog order: unavailable — no accepted tree; the first fetch or the migration bootstraps it"
+	unavailable := "Backlog order: unavailable — this checkout has not fetched the goal ledger yet; metasystem goal list --fetch fetches it"
 	tests := []struct {
 		name string
 		text string
@@ -240,7 +240,7 @@ func TestReportHeadlineUsesConfiguredLocalTimeAndOffset(t *testing.T) {
 	location := time.FixedZone("machine-local", 5*60*60+30*60)
 	fixture := newAbsentReportFixture(t)
 	text := fixture.mustCompose(ReportConfig{RepoRoot: fixture.root, Machine: "m", Now: now, Location: location}, now.Add(-4*time.Hour), nil)
-	if text != "m status 2026-09-04 17:30 +0530\nBacklog order: unavailable — no accepted tree; the first fetch or the migration bootstraps it" {
+	if text != "m status 2026-09-04 17:30 +0530\nBacklog order: unavailable — this checkout has not fetched the goal ledger yet; metasystem goal list --fetch fetches it" {
 		t.Fatalf("got %q, want configured wall-clock time and offset", text)
 	}
 	if strings.Contains(text, "12:00") {
@@ -401,7 +401,7 @@ func TestReportPriority(t *testing.T) {
 		now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
 		fixture := newAbsentReportFixture(t)
 		text := fixture.mustCompose(ReportConfig{RepoRoot: fixture.root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
-		if !strings.Contains(text, "Backlog order: unavailable — no accepted tree") || strings.Contains(text, "Next for m1:") {
+		if !strings.Contains(text, "Backlog order: unavailable — this checkout has not fetched the goal ledger yet") || strings.Contains(text, "Next for m1:") {
 			t.Fatalf("an unreadable projection implied an empty or selectable backlog:\n%s", text)
 		}
 		for _, line := range strings.Split(text, "\n") {

@@ -44,7 +44,7 @@ func adoptIntentCommand() intentCommand {
 func runIntentSystemAdopt(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 || strings.TrimSpace(inv.input.args[0]) == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: adopt.CodeUsage,
-			Summary: "name the repository to adopt into", next: []string{"metasystem", "system", "adopt", "TARGET"}, nextReason: "TARGET is the application's directory"})
+			Summary: "name the repository to adopt into; nothing was done", next: []string{"metasystem", "system", "adopt", "TARGET"}, nextReason: "TARGET is the application's directory"})
 	}
 	target := inv.input.args[0]
 	if !filepath.IsAbs(target) {

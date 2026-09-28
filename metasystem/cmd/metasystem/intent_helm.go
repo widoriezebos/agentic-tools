@@ -119,7 +119,8 @@ func runIntentHelmTake(inv *intentInvocation) int {
 		err = fmt.Errorf("terminal human authority was not proven")
 	}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 3, Summary: "helm take refused: only a person at a terminal takes the helm: " + err.Error(),
+		return inv.render(intentResult{Outcome: intentRefused, code: 3,
+			Summary:  "only a person at a terminal no agent started can take the helm, and this shell is not one (" + actorProofReason(err) + "); nothing was done",
 			Decision: "run metasystem helm take yourself, at a terminal no agent started"})
 	}
 	record := helm.Record{By: strings.TrimSpace(inv.input.text("by")), At: now.Format(time.RFC3339), Reason: reason, Checkout: seat.Checkout, Enrollment: "unreadable"}

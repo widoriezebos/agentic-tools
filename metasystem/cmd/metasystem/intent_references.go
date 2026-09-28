@@ -186,9 +186,15 @@ func (inv *intentInvocation) noReference(ref string, kinds []string) *intentResu
 			searched = append(searched, refKindNames[kind])
 		}
 	}
-	return &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "reference", ID: ref}},
-		Summary: fmt.Sprintf("no %s names %s; nothing was done", strings.Join(searched, " or "), shellCommand([]string{ref})),
-		next:    inv.publicArgv("work", "status", "--all"), nextReason: "lists this user's launches and this repository's dispatch jobs with their references"}
+	result := &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "reference", ID: ref}},
+		Summary: fmt.Sprintf("no %s names %s; nothing was done", strings.Join(searched, " or "), shellCommand([]string{ref}))}
+	if slices.Equal(searched, []string{refKindNames[refProof]}) {
+		// work status lists launches and jobs, never proof attempts (EM-18).
+		result.Decision = "a proof attempt's id is the proof:ID that metasystem test run printed when it started"
+		return result
+	}
+	result.next, result.nextReason = inv.publicArgv("work", "status", "--all"), "lists this user's launches and this repository's dispatch jobs with their references"
+	return result
 }
 
 // knownGoal reports whether the ledger of the selected repository knows the

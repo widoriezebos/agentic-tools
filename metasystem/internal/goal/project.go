@@ -11,6 +11,7 @@ package goal
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -117,6 +118,10 @@ func (dependencies projectionDependencies) withDefaults() projectionDependencies
 // Project reads the accepted tree. With fetchFirst, the read-side
 // validator runs before the read (the --fetch flag); otherwise the
 // read is offline-capable and banners staleness.
+// ErrLedgerNotFetched is a projection of a checkout with no accepted goal
+// ledger yet: the first fetch creates it.
+var ErrLedgerNotFetched = errors.New("this checkout has not fetched the goal ledger yet; metasystem goal list --fetch fetches it")
+
 func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
 	return project(e, fetchFirst, now, projectionDependencies{})
 }
@@ -133,7 +138,7 @@ func project(e Endpoint, fetchFirst bool, now time.Time, dependencies projection
 		return Projection{}, err
 	}
 	if !present {
-		return Projection{}, fmt.Errorf("no accepted tree; the first fetch or the migration bootstraps it")
+		return Projection{}, ErrLedgerNotFetched
 	}
 	tree, err := loadTreeFor(e, tip)
 	if err != nil {
