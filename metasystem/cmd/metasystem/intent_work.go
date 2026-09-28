@@ -1336,11 +1336,14 @@ func runIntentWaitResume(inv *intentInvocation, id string) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
+	targets := []intentTarget{{Kind: "wait", ID: id}}
+	if row, _, err := metarun.FindWaiterByID(inv.stateRoot, id); err == nil && row.Selector.Poll == "channel" {
+		return inv.render(inv.resumeChannelWait(id, row, timeout, targets))
+	}
 	args := []string{"--root", inv.layout.InstallationRoot, "--resume", id}
 	if timeout > 0 {
 		args = append(args, "--timeout", timeout.String())
 	}
-	targets := []intentTarget{{Kind: "wait", ID: id}}
 	var waited *metarun.WaitResult
 	code := inv.work().wait(args, func(result metarun.WaitResult, _ bool) { waited = &result })
 	if waited == nil {
@@ -1918,4 +1921,27 @@ func stopMovesSnapshot(root string) string {
 		snapshot.WriteString(entry.Name() + "\x00" + string(data) + "\x00")
 	}
 	return snapshot.String()
+}
+
+// resumeChannelWait continues a durable wait on a channel answer through the
+// channel wait owner in this process, which polls the provider as it waits;
+// this process is the waiting caller its registration names.
+func (inv *intentInvocation) resumeChannelWait(id string, row metarun.Waiter, timeout time.Duration, targets []intentTarget) intentResult {
+	args := []string{"--root", inv.stateRoot, "--resume", id}
+	if timeout > 0 {
+		args = append(args, "--timeout", fmt.Sprint(max(int(timeout.Minutes()), 1)))
+	}
+	caller, lineage := currentProcessIdentity(), ""
+	if inv.owners.dependencies.ownerLineage != nil {
+		lineage = inv.owners.dependencies.ownerLineage()
+	}
+	ran := ownerCall(func(stdout, stderr io.Writer) int {
+		return inv.ownerCalls().channelWait(caller, lineage, stdout, stderr, args)
+	})
+	result := ownerVerbResult(ran, targets, "the channel question "+row.Selector.Question+" is answered", nil)
+	if result.Outcome != intentConfirmed {
+		result.Outcome = intentInProgress
+		result.next, result.nextReason = inv.publicArgv("work", "wait", waitRefPrefix+id), "the same wait continues; delivery or the answer is still pending"
+	}
+	return result
 }

@@ -34,13 +34,13 @@ func TestHCL12KindCarryRequiresWants(t *testing.T) {
 		{name: "missing", args: []string{"--kind", "carry"}},
 		{name: "malformed", args: []string{"--kind", "carry", "--wants", "carry workspace=short goal=g past=missing-declaration"}},
 		{name: "extra field", args: []string{"--kind", "carry", "--wants", valid + " budget=forged"}},
-		{name: "budget flag", args: []string{"--kind", "carry", "--wants", valid, "--attempt-limit", "1"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			stderr, code := captureStderr(t, func() int { return runChannelAsk(test.args) })
-			if code != 2 || !strings.Contains(stderr, "requires --wants exactly") || !strings.Contains(stderr, "refuses every budget flag") {
-				t.Fatalf("carry channel question admitted invalid input: exit=%d stderr=%q", code, stderr)
+			b := newProcessBed(t)
+			args := append([]string{"question", "ask", "goal-a", "--question", "Carry it?", "--option", "yes: carry"}, test.args...)
+			if code, result := b.runJSON(b.owners(), args...); code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "needs --wants exactly") || len(b.asked) != 0 {
+				t.Fatalf("carry channel question admitted invalid input: exit=%d %+v", code, result)
 			}
 		})
 	}
@@ -68,53 +68,15 @@ func TestConfigurationIndependentChannelVerbs(t *testing.T) {
 	if _, err := channel.ReadQuestion(root, q.ID); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, problem := captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", root, "--question", q.ID}) }); code != 67 || !strings.Contains(problem, "no ledgerCursor") {
-		t.Fatalf("legacy cursor-less question was not refused: code=%d stderr=%q", code, problem)
+	var stdout, stderr bytes.Buffer
+	if code := channelWaitWith(int64(os.Getpid()), "", &stdout, &stderr, []string{"--root", root, "--question", q.ID}, nil); code != 67 || !strings.Contains(stderr.String(), "no ledgerCursor") {
+		t.Fatalf("legacy cursor-less question was not refused: code=%d stderr=%q", code, stderr.String())
 	}
-	if code, out, problem := captureChannelOutput(t, func() int { return runChannelFakeCode([]string{"--secret", "JBSWY3DPEHPK3PXP", "--at", "59"}) }); code != 0 || strings.TrimSpace(out) == "" {
-		t.Fatal(code, out, problem)
+	if code, err := channel.TOTPCode("JBSWY3DPEHPK3PXP", time.Unix(59, 0)); err != nil || strings.TrimSpace(code) == "" {
+		t.Fatal(code, err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "metasystem.conf")); !os.IsNotExist(err) {
 		t.Fatal("configuration-independent verbs created or required metasystem.conf")
-	}
-}
-
-func TestChannelFakeServeRequiresBoundedLifetime(t *testing.T) {
-	t.Parallel()
-	deps := fixtureLifetimeTestDependencies(nil, nil, nil)
-	var stderr bytes.Buffer
-	deps.stderr = &stderr
-	called := false
-	code := runChannelFakeServeWithDependencies([]string{"--dir", t.TempDir()}, deps, func(context.Context, string, chan<- string) error {
-		called = true
-		return nil
-	})
-	if code != 2 || called {
-		t.Fatalf("unbounded fake server exit=%d called=%t, want refusal before serve", code, called)
-	}
-	if got, want := stderr.String(), "channel fake serve: an exact fixture leash or --max-seconds is required\n"; got != want {
-		t.Fatalf("unbounded fake server refusal = %q, want %q", got, want)
-	}
-}
-
-func TestChannelFakeServeStopsAtInjectedExpiry(t *testing.T) {
-	t.Parallel()
-	expiry := make(chan time.Time, 1)
-	deps := fixtureLifetimeTestDependencies(nil, func(time.Duration) <-chan time.Time { return expiry }, nil)
-	started := make(chan struct{})
-	done := make(chan int, 1)
-	dir := t.TempDir()
-	go func() {
-		done <- runChannelFakeServeWithDependencies([]string{"--dir", dir, "--max-seconds", "1"}, deps, func(ctx context.Context, _ string, _ chan<- string) error {
-			close(started)
-			<-ctx.Done()
-			return nil
-		})
-	}()
-	<-started
-	expiry <- time.Unix(1, 0)
-	if code := <-done; code != 0 {
-		t.Fatalf("injected-expiry fake server exit = %d, want 0", code)
 	}
 }
 
@@ -344,7 +306,7 @@ func TestChannelStatusPostSeedsAnUnbootedBrainStatus(t *testing.T) {
 	}
 
 	code, _, problem := captureChannelOutput(t, func() int {
-		return runChannelStatusWithInputs([]string{"--root", root, "--post"}, resolveMachine, resolveEndpoint, landingLog)
+		return channelStatus(root, true, os.Stdout, os.Stderr, resolveMachine, resolveEndpoint, landingLog)
 	})
 	if code != 0 || problem != "" {
 		t.Fatalf("first status post failed: code=%d stderr=%q", code, problem)
@@ -389,7 +351,7 @@ func TestChannelStatusUsesOnlyTheRootAuthorizedSemanticClock(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes="+test.runtime+"\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			command := exec.Command(commandTestExecutable(t), "channel", "status", "--root", root)
+			command := exec.Command(commandTestExecutable(t), channelStatusHelperCommand, root)
 			command.Env = fixtureCommandEnvironment(t, "TZ=UTC", "METASYSTEM_GOAL_NOW="+test.fixtureNow)
 			output, err := command.CombinedOutput()
 			if test.wantFailure {
@@ -406,4 +368,24 @@ func TestChannelStatusUsesOnlyTheRootAuthorizedSemanticClock(t *testing.T) {
 			}
 		})
 	}
+}
+
+// channelStatusHelperCommand runs the channel status owner for one root in a
+// child of this test binary, so the semantic clock it reads is that child's
+// own environment (testHelperCommands, TestMain).
+const channelStatusHelperCommand = "test-helper-channel-status"
+
+func init() {
+	testHelperCommands[channelStatusHelperCommand] = func(args []string) int {
+		if len(args) != 1 {
+			return 2
+		}
+		return channelStatus(args[0], false, os.Stdout, os.Stderr, nil, nil, nil)
+	}
+}
+
+// runChannelWaitWithMachine waits for a channel answer as a waiting command
+// does: the registered caller is this process's parent.
+func runChannelWaitWithMachine(args []string, resolveMachine func(string) (string, error)) int {
+	return channelWaitWith(waitCallerPID(), os.Getenv("METASYSTEM_OWNER_LINEAGE"), os.Stdout, os.Stderr, args, resolveMachine)
 }

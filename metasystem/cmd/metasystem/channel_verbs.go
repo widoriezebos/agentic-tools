@@ -7,15 +7,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
-	channelFake "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
@@ -57,24 +54,6 @@ func channelPollContext(root string) (context.Context, context.CancelFunc, error
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
 	return ctx, cancel, nil
-}
-
-func runChannelStatus(args []string) int {
-	return runChannelStatusWithInputs(args, nil, nil, nil)
-}
-
-func runChannelStatusWithInputs(args []string, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), landingLog func(string, time.Time) ([]byte, error)) int {
-	return runChannelStatusTo(args, os.Stdout, os.Stderr, resolveMachine, resolveEndpoint, landingLog)
-}
-
-func runChannelStatusTo(args []string, stdout, stderr io.Writer, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), landingLog func(string, time.Time) ([]byte, error)) int {
-	f := flag.NewFlagSet("channel status", flag.ContinueOnError)
-	root := pathFlag(f, "root", ".", "repository root")
-	post := f.Bool("post", false, "post now")
-	if f.Parse(args) != nil {
-		return 2
-	}
-	return channelStatus(*root, *post, stdout, stderr, resolveMachine, resolveEndpoint, landingLog)
 }
 
 // channelStatus composes the checkout's status report, printing it and, with
@@ -159,56 +138,6 @@ func channelStatus(checkout string, postNow bool, stdout, stderr io.Writer, reso
 	return 0
 }
 
-func runChannelAsk(args []string) int {
-	f := flag.NewFlagSet("channel ask", flag.ContinueOnError)
-	root := pathFlag(f, "root", ".", "repository root")
-	id := f.String("goal", "", "goal id")
-	kind := f.String("kind", "", "question kind")
-	recommend := f.String("recommend", "", "recommended option")
-	wants := f.String("wants", "", "strict answer token")
-	elapsed := f.String("elapsed-limit", "", "proposed elapsed limit for a budget or stop question")
-	attempts := f.Int64("attempt-limit", 0, "proposed attempt limit for a budget or stop question")
-	minutes := f.Int64("reserved-job-minutes-limit", 0, "proposed reserved job minutes for a budget or stop question")
-	active := f.Int64("active-job-limit", 0, "proposed active job limit for a budget or stop question")
-	reviewRounds := f.Int64("review-round-limit", -1, "proposed critic review-round limit for a budget or stop question")
-	var facts, options repeatedStrings
-	f.Var(&facts, "fact", "question fact")
-	f.Var(&options, "option", "label: consequence")
-	if f.Parse(args) != nil {
-		return 2
-	}
-	if *kind == "carry" {
-		budgetGiven := *elapsed != "" || *attempts != 0 || *minutes != 0 || *active != 0 || *reviewRounds != -1
-		if !goal.ValidCarryToken(*wants) || budgetGiven {
-			fmt.Fprintln(os.Stderr, "channel ask --kind carry requires --wants exactly `carry workspace=<sha40> goal=<id> past=<name>` and refuses every budget flag")
-			return 2
-		}
-	}
-	var proposedBudget *goal.Budget
-	if *kind == "stop" || *kind == "budget-above-norm" {
-		budget, budgetErr := goal.NewBudget(*elapsed, *attempts, *minutes, *active, *reviewRounds)
-		if budgetErr != nil {
-			fmt.Fprintf(os.Stderr, "a %s question requires a complete valid proposed budget tuple: %v\n", *kind, budgetErr)
-			return 2
-		}
-		if *kind == "stop" {
-			*wants = goal.ResumeApprovalToken(*id, budget)
-		} else {
-			proposedBudget = &budget
-		}
-	}
-	question, warnings, code, err := askChannelQuestion(*root, channelAskInput{Goal: *id, Kind: *kind, Facts: facts, Options: options, Recommendation: *recommend, Wants: *wants, Budget: proposedBudget})
-	for _, warning := range warnings {
-		fmt.Fprintln(os.Stderr, warning)
-	}
-	if err != nil && !errors.Is(err, errQuestionAlreadyOpen) {
-		fmt.Fprintln(os.Stderr, err)
-		return code
-	}
-	fmt.Println(question.ID)
-	return 0
-}
-
 // channelAskInput is one question as its asker states it; Options are
 // "label: consequence".
 type channelAskInput struct {
@@ -288,14 +217,6 @@ var errQuestionAlreadyOpen = errors.New("this exact question is already open; no
 // is printed.
 var channelWaitCommand = func(args []string, poll func(context.Context) error, callerPID int64, stdout io.Writer) int {
 	return runWaitCommand(args, poll, callerPID, func(result metarun.WaitResult, jsonOutput bool) { writeWaitResult(stdout, result, jsonOutput) })
-}
-
-func runChannelWait(args []string) int {
-	return runChannelWaitWithMachine(args, nil)
-}
-
-func runChannelWaitWithMachine(args []string, resolveMachine func(string) (string, error)) int {
-	return channelWaitWith(waitCallerPID(), os.Getenv("METASYSTEM_OWNER_LINEAGE"), os.Stdout, os.Stderr, args, resolveMachine)
 }
 
 // channelWaitWith waits for one channel question's answer under an explicit
@@ -406,160 +327,4 @@ func channelWaitWith(callerPID int64, lineage string, stdout, stderr io.Writer, 
 		fmt.Fprintln(stdout, answered.Answer.Text)
 	}
 	return code
-}
-func runChannelPoll(args []string) int {
-	f := flag.NewFlagSet("channel poll", flag.ContinueOnError)
-	root := pathFlag(f, "root", ".", "repository root")
-	if f.Parse(args) != nil {
-		return 2
-	}
-	l, err := phase.Load(*root, true)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if l.Provider == nil {
-		return 0
-	}
-	machine, lineage, err := channelIdentity(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	ctx, cancel, err := channelPollContext(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer cancel()
-	now, err := goalCommandNow(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	r, err := channel.Poll(ctx, channel.PollConfig{RepoRoot: *root, Destination: "fleet", ProviderName: l.Adapter, HumanUserID: l.HumanUserID, TOTPSecret: l.TOTPSecret, Machine: machine, Lineage: lineage, Provider: l.Provider, DestinationConfig: l.Destination, Now: now})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if r.Busy {
-		fmt.Println("busy")
-		return 0
-	}
-	printJSON(r)
-	return 0
-}
-
-func runChannelFakeServe(args []string) int {
-	return runChannelFakeServeWithDependencies(args, defaultFixtureLifetimeDependencies(), channelFake.ServeReady)
-}
-
-func runChannelFakeServeWithDependencies(args []string, deps fixtureLifetimeDependencies, serve func(context.Context, string, chan<- string) error) int {
-	f := flag.NewFlagSet("channel fake-serve", flag.ContinueOnError)
-	f.SetOutput(deps.stderr)
-	dir := f.String("dir", "", "state directory")
-	maxSecondsText := f.String("max-seconds", "0", "terminal lifetime when no owner leash closes")
-	readyFD := f.Int("ready-fd", 0, "inherited descriptor that receives the listening address")
-	if f.Parse(args) != nil || *dir == "" {
-		return 2
-	}
-	maxSeconds, err := strconv.ParseInt(*maxSecondsText, 10, 64)
-	if err != nil || maxSeconds < 0 {
-		fmt.Fprintln(deps.stderr, "channel fake serve: --max-seconds must be a non-negative integer of seconds")
-		return 2
-	}
-	signalContext, stopSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stopSignal()
-	ctx, stopLifetime, err := fixtureLifetimeContext(signalContext, maxSeconds, deps)
-	if err != nil {
-		fmt.Fprintln(deps.stderr, "channel fake serve:", err)
-		return 2
-	}
-	defer stopLifetime()
-	if *readyFD == 0 {
-		if err := serve(ctx, *dir, nil); err != nil {
-			fmt.Fprintln(deps.stderr, err)
-			return 1
-		}
-		return 0
-	}
-	if *readyFD < 3 {
-		fmt.Fprintln(deps.stderr, "channel fake serve: --ready-fd must name an inherited descriptor")
-		return 2
-	}
-	readyFile := os.NewFile(uintptr(*readyFD), "channel-fake-ready")
-	if readyFile == nil {
-		fmt.Fprintln(deps.stderr, "channel fake serve: readiness descriptor is unavailable")
-		return 2
-	}
-	info, statErr := readyFile.Stat()
-	if statErr != nil || info.Mode()&os.ModeNamedPipe == 0 {
-		_ = readyFile.Close()
-		fmt.Fprintln(deps.stderr, "channel fake serve: readiness descriptor must be a pipe")
-		return 2
-	}
-	ready := make(chan string, 1)
-	served := make(chan error, 1)
-	go func() { served <- serve(ctx, *dir, ready) }()
-	select {
-	case address := <-ready:
-		_, err = fmt.Fprintln(readyFile, address)
-		closeErr := readyFile.Close()
-		if err == nil {
-			err = closeErr
-		}
-		if err != nil {
-			stopLifetime()
-			<-served
-			fmt.Fprintln(deps.stderr, "channel fake serve: publish readiness:", err)
-			return 1
-		}
-	case err = <-served:
-		_ = readyFile.Close()
-		if err != nil {
-			fmt.Fprintln(deps.stderr, err)
-			return 1
-		}
-		return 0
-	}
-	if err := <-served; err != nil {
-		fmt.Fprintln(deps.stderr, err)
-		return 1
-	}
-	return 0
-}
-func runChannelFakeCode(args []string) int {
-	f := flag.NewFlagSet("channel fake-code", flag.ContinueOnError)
-	secretValue := f.String("secret", "", "base32 secret")
-	at := f.Int64("at", 0, "Unix time")
-	if f.Parse(args) != nil || *secretValue == "" {
-		return 2
-	}
-	t := time.Now()
-	if *at != 0 {
-		t = time.Unix(*at, 0)
-	}
-	code, err := channel.TOTPCode(*secretValue, t)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Println(code)
-	return 0
-}
-
-func runChannelFake(args []string) int {
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "channel fake needs serve or code")
-		return 2
-	}
-	switch args[0] {
-	case "serve":
-		return runChannelFakeServe(args[1:])
-	case "code":
-		return runChannelFakeCode(args[1:])
-	default:
-		fmt.Fprintf(os.Stderr, "unknown channel fake verb %q\n", args[0])
-		return 2
-	}
 }

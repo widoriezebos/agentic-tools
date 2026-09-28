@@ -554,12 +554,10 @@ func waitResult(row Waiter, code int, state, reason, outcome, evidence, ledgerTi
 	return result
 }
 
-// WaitResumeCommand keeps recovery on the command family that owns any
-// provider work recorded in the selector.
+// WaitResumeCommand is the one public form that resumes a durable wait;
+// it hands a wait with provider work recorded in its selector (a channel
+// answer) to that provider's owner.
 func WaitResumeCommand(row Waiter) string {
-	if row.Selector.Poll == "channel" {
-		return "metasystem internal channel wait --resume " + row.WaitID
-	}
 	return "metasystem work wait wait:" + row.WaitID
 }
 

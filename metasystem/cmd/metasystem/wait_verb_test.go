@@ -347,7 +347,7 @@ func TestWaitPlainResumeRefusesChannelRegistration(t *testing.T) {
 	waitCallerPID = func() int64 { return self }
 	t.Cleanup(func() { waitCallerPID = originalPID })
 	code, _, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--resume", waitID}) })
-	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "metasystem internal channel wait --resume "+waitID) {
+	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "metasystem work wait wait:"+waitID) {
 		t.Fatalf("plain channel resume code=%d stderr=%q", code, problem)
 	}
 }

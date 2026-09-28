@@ -105,15 +105,18 @@ var retiredWithDeletedVerb = map[string]string{
 	"context-standard/TestContextPruneVerb":                                "context prune",
 	// U9b: internal verbs no launcher starts; the census scan and cadence
 	// owners they wrapped keep their own tests.
-	"command-interface-smoke/TestProcFixtureSurvivorsVerb":                                    "proc fixture-survivors",
-	"command-interface-smoke/TestProcFixtureSurvivorsReapsALiveSurvivor":                      "proc fixture-survivors",
-	"landing-command-standard/TestGateCadenceTickRefusesEveryNonOwnerAndPrintsOneOwnerResult": "gate cadence-tick",
-	"landing-command-standard/TestGateCadenceTickClassifiesOnlyTickRefusalsNonZero":           "gate cadence-tick",
-	"landing-command-standard/TestCadenceResultNamesTriggerForJoinedAndOccupiedClaims":        "gate cadence-tick",
-	"batch-buildcd-standard/TestGateUnitGreenOutputAndAggregatedSteps":                        "gate unit",
-	"batch-buildcd-standard/TestGateUnitRedOutputAndExitCode":                                 "gate unit",
-	"command-interface-smoke/TestAuditStopDecisionSurfaceVerb":                                "audit stop-decision-surface",
-	"command-interface-smoke/TestAuditStopDecisionSurfaceRefusesRecordTheGoalParserRejects":   "audit stop-decision-surface",
+	"command-interface-smoke/TestProcFixtureSurvivorsVerb":                                           "proc fixture-survivors",
+	"command-interface-smoke/TestProcFixtureSurvivorsReapsALiveSurvivor":                             "proc fixture-survivors",
+	"landing-command-standard/TestGateCadenceTickRefusesEveryNonOwnerAndPrintsOneOwnerResult":        "gate cadence-tick",
+	"landing-command-standard/TestGateCadenceTickClassifiesOnlyTickRefusalsNonZero":                  "gate cadence-tick",
+	"landing-command-standard/TestCadenceResultNamesTriggerForJoinedAndOccupiedClaims":               "gate cadence-tick",
+	"batch-buildcd-standard/TestGateUnitGreenOutputAndAggregatedSteps":                               "gate unit",
+	"batch-buildcd-standard/TestGateUnitRedOutputAndExitCode":                                        "gate unit",
+	"command-interface-smoke/TestAuditStopDecisionSurfaceVerb":                                       "audit stop-decision-surface",
+	"command-interface-smoke/TestAuditStopDecisionSurfaceRefusesRecordTheGoalParserRejects":          "audit stop-decision-surface",
+	"command-interface-smoke/TestChannelFakeServePublicCommandListensUnderSyntheticFixtureAuthority": "channel fake",
+	"command-interface-smoke/TestChannelFakeServeRequiresBoundedLifetime":                            "channel fake",
+	"command-interface-smoke/TestChannelFakeServeStopsAtInjectedExpiry":                              "channel fake",
 }
 
 // retiredWithDeletedBed names legacy mandatory tests whose only subject was a
