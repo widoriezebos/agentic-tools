@@ -68,3 +68,25 @@ func TestGreenTipProofClearsCoveredGroupOnlyFromNativePassingSource(t *testing.T
 		t.Fatalf("covered clears=%+v launches=%d", ledger.cleared, bed.launches)
 	}
 }
+
+// A group go test served wholly from its test cache passes the proof as a
+// cached pass, never as an execution; a group with one executed package
+// stays an execution.
+func TestFinishProofListsCachedPassesApartFromExecutions(t *testing.T) {
+	t.Parallel()
+	store := NewStore(t.TempDir(), nil)
+	must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, State: StateProving, Proof: &Proof{Status: "planned"}}))
+	exit := 0
+	cached := proofrun.GroupResult{ID: "cached", Status: "passed", NativeLaunched: true, NativeExitStatus: &exit, CollectionComplete: true,
+		Execution: []proofrun.PackageExecution{{Shard: 1, Package: "p", Mode: proofrun.PackageGoTestCache}}}
+	mixed := proofrun.GroupResult{ID: "mixed", Status: "passed", NativeLaunched: true, NativeExitStatus: &exit, CollectionComplete: true,
+		Execution: []proofrun.PackageExecution{{Shard: 1, Package: "p", Mode: proofrun.PackageGoTestCache}, {Shard: 1, Package: "q", Mode: proofrun.PackageExecuted}}}
+	result := proofrun.TestResult{AttemptID: "tip-cached", BaseCommit: "c", CandidateTree: "t", Delivery: proofrun.DeliveryJudgment{Sufficient: true},
+		Groups: []proofrun.GroupResult{cached, mixed}}
+	must(t, FinishProof(store, testBatchID, "owner", result, nil, time.Unix(11, 0)))
+	proof := load(t, store).Proof
+	if !slices.Equal(proof.CachedPasses, []string{"cached"}) || !slices.Equal(proof.Executions, []string{"mixed"}) ||
+		!slices.Equal(proof.Passed, []string{"cached", "mixed"}) {
+		t.Fatalf("cached=%v executions=%v passed=%v", proof.CachedPasses, proof.Executions, proof.Passed)
+	}
+}

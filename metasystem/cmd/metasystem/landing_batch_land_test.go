@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -221,6 +222,24 @@ func TestBatchProofInputsMovedIgnoresSiblingEnginePaths(t *testing.T) {
 	for _, outside := range []string{"internal/other/x.go", "cmd/metasystem/main.go", "go.mod"} {
 		if batchProofInputsMoved(record, []string{outside}, "metasystem") {
 			t.Fatalf("sibling path %q was mapped into the installation engine", outside)
+		}
+	}
+}
+
+func TestPrefixGroupExecutionListsCachedPassesApart(t *testing.T) {
+	t.Parallel()
+	cached := proofrun.GroupResult{Status: "passed", NativeLaunched: true,
+		Execution: []proofrun.PackageExecution{{Package: "p", Mode: proofrun.PackageGoTestCache}}}
+	mixed := proofrun.GroupResult{Status: "passed", NativeLaunched: true,
+		Execution: []proofrun.PackageExecution{{Package: "p", Mode: proofrun.PackageGoTestCache}, {Package: "q", Mode: proofrun.PackageExecuted}}}
+	legacy := proofrun.GroupResult{Status: "passed", NativeLaunched: true}
+	for _, row := range []struct {
+		group    proofrun.GroupResult
+		reusable bool
+		want     string
+	}{{cached, false, "cached"}, {mixed, false, "executed"}, {legacy, false, "executed"}, {cached, true, ""}, {proofrun.GroupResult{}, false, ""}} {
+		if got := prefixGroupExecution(row.group, row.reusable); got != row.want {
+			t.Errorf("prefixGroupExecution(%+v, %t) = %q, want %q", row.group.Execution, row.reusable, got, row.want)
 		}
 	}
 }

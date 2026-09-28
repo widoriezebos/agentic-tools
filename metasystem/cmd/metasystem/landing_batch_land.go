@@ -516,7 +516,10 @@ func executeBatchPrefixReceiptWithDependencies(root, id string, record batch.Rec
 	out := batch.PrefixRunResult{AttemptID: result.AttemptID, ResultPath: resultPath, Reused: map[string]string{}}
 	reusableExit := command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitReusableSuccess
 	for _, group := range result.Groups {
-		if group.NativeLaunched && !reusableExit {
+		switch prefixGroupExecution(group, reusableExit) {
+		case "cached":
+			out.CachedPass = append(out.CachedPass, group.ID)
+		case "executed":
 			out.Executed = append(out.Executed, group.ID)
 		}
 		if group.ReuseAttempt != "" {
@@ -538,6 +541,20 @@ func executeBatchPrefixReceiptWithDependencies(root, id string, record batch.Rec
 		return out, nil
 	}
 	return out, runErr
+}
+
+// prefixGroupExecution is how a prefix proof's group counts: "executed"
+// when this command launched it and a package ran, "cached" when go test
+// served it wholly from its test cache (a pass by cache, not an execution),
+// else "" (reused or not launched here).
+func prefixGroupExecution(group proofrun.GroupResult, reusableExit bool) string {
+	switch {
+	case !group.NativeLaunched || reusableExit:
+		return ""
+	case group.PassedByGoTestCache():
+		return "cached"
+	}
+	return "executed"
 }
 
 func batchAdmissionRefusalCode(reason string) string {

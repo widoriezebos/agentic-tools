@@ -28,6 +28,7 @@ type Proof struct {
 	Sample          proofrun.LoadSample `json:"sample"`
 	Launchers       int                 `json:"launchers"`
 	Executions      []string            `json:"executions,omitempty"`
+	CachedPasses    []string            `json:"cachedPasses,omitempty"`
 	Passed          []string            `json:"passed,omitempty"`
 	Reuse           map[string]string   `json:"reuse,omitempty"`
 	GroupIdentities map[string]string   `json:"groupIdentities,omitempty"`
@@ -125,7 +126,10 @@ func FinishProof(store Store, id, actor string, result proofrun.TestResult, laun
 				}
 				record.Proof.GroupIdentities[group.ID] = group.ExecutionIdentity
 			}
-			if group.NativeLaunched {
+			if group.NativeLaunched && group.PassedByGoTestCache() {
+				record.Proof.CachedPasses = append(record.Proof.CachedPasses, group.ID)
+				record.Proof.Passed = append(record.Proof.Passed, group.ID)
+			} else if group.NativeLaunched {
 				record.Proof.Executions = append(record.Proof.Executions, group.ID)
 				if group.Status == "passed" {
 					record.Proof.Passed = append(record.Proof.Passed, group.ID)
