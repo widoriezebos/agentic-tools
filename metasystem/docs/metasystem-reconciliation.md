@@ -139,6 +139,7 @@ verbs directly, the mission domain's seven families merged into one:
 | mission-ledger init/append | mission ledger-init/ledger-append |
 | mission-jobs drain/close-chains, mission-ledger verify/count | deleted (no callers; c72f662) |
 | mission fence-check-job/fence-reserve-cycle/contract-measure/ledger-append, mission turn-adjudicate/turn-conclude/turn-record-failure/turn-park | deleted (no callers; verbs-object-action U2) |
+| mission ledger-init/state-init/state-verify | deleted (their last caller, the benchmark kit's drivers, retired; verbs-object-action U8b) |
 
 The delegate-job domain followed in the same consolidation:
 

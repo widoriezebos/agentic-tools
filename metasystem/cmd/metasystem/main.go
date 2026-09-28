@@ -503,9 +503,7 @@ func families() []family {
 			name:    "mission",
 			summary: "the mission domain: state, fences, contract, prompt, runner, turns, ledger",
 			verbs: []verb{
-				{"state-init", "create a mission's initial state from its sealed contract", runMissionStateInit},
 				{"state-write", "advance the state via a compare-and-write on its hash", runMissionStateWrite},
-				{"state-verify", "validate the state's shape, aggregation, hash chain, and anchor", runMissionStateVerify},
 				{"state-anchor", "write the local anchor commit binding the state hash and ledger", runMissionStateAnchor},
 				{"state-reconcile", "reconcile the state against its ledger and anchor, parking on disagreement", runMissionStateReconcile},
 				{"fence-reserve-job", "check the job fences and reserve the job", runMissionFenceReserve("fence-reserve-job", true)},
@@ -525,7 +523,6 @@ func families() []family {
 				{"answer", "record a human answer to an open ask", runMissionRunnerAnswer},
 				{"resolve-taint", "apply a typed human resolution (--restore <treeId> | --adopt --waives <claim>) to a workspace taint", runMissionRunnerResolveTaint},
 				{"run-loop", "the detached mission loop (internal; spawned by start/resume)", runMissionRunnerRunLoop},
-				{"ledger-init", "create a ledger with cycle and no-gain budgets", runMissionLedgerInit},
 			},
 		},
 		{

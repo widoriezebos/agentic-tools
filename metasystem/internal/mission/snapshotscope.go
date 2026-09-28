@@ -132,25 +132,6 @@ func CaptureAdmissionOrigins(root, missionID string) (map[string]any, error) {
 	return origins, nil
 }
 
-// VerifyBaselineIsLive checks that a supplied E0 IS the workspace's
-// live filtered projection: the identity-space tree the wall preflight
-// would record for a clean or human-sealed admission at this instant.
-func VerifyBaselineIsLive(root, missionID, baseline string) error {
-	workspace := gittree.Workspace{Dir: root}
-	raw, err := workspace.Snapshot("HEAD")
-	if err != nil {
-		return stateErr("cannot verify the supplied baseline: %v", err)
-	}
-	record, err := workspace.FilterTree(raw, []string{"artifacts/agents/missions/" + missionID + "/ledger.md"})
-	if err != nil {
-		return stateErr("cannot verify the supplied baseline: %v", err)
-	}
-	if record != baseline {
-		return stateErr("supplied baseline %s is not the live filtered projection %s; every mission is born from what the repository holds", baseline, record)
-	}
-	return nil
-}
-
 // ValidateStagedPosture checks the logical staged posture shape: the
 // stage-0 entries as a tree id and every unmerged entry serialized
 // beside it. nil is lawful where a scope does not apply (a toplevel
