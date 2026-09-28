@@ -16,7 +16,6 @@
 package review
 
 import (
-	"errors"
 	"fmt"
 	"path"
 	"regexp"
@@ -75,7 +74,18 @@ const (
 )
 
 // ErrNothingReviewed is a review whose Reviewed line names no commit yet.
-var ErrNothingReviewed = errors.New("this review names no commits yet; write them on its Reviewed line")
+var ErrNothingReviewed error = &Refusal{Reason: "this review names no commits yet; write them on its Reviewed line"}
+
+// Refusal is a read refused on what it asked for — a path outside the tree, a
+// range past the file, a binary file — as distinct from a read Git could not
+// make. The route answers one as a bad request in its own words.
+type Refusal struct{ Reason string }
+
+func (r *Refusal) Error() string { return r.Reason }
+
+func refused(format string, args ...any) error {
+	return &Refusal{Reason: fmt.Sprintf(format, args...)}
+}
 
 var commitID = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
 
@@ -299,14 +309,14 @@ func (o Owner) ChangesSince(reviewed Reviewed) (Index, error) {
 
 func (o Owner) moved(reviewed Reviewed) (Comparison, error) {
 	if reviewed.Tip == "" {
-		return Comparison{}, errors.New("a review of landed commits has no branch tip to move")
+		return Comparison{}, refused("a review of landed commits has no branch tip to move")
 	}
 	now, _, err := o.resolved(Branch(reviewed.Goal))
 	if err != nil {
 		return Comparison{}, err
 	}
 	if now == reviewed.Tip {
-		return Comparison{}, fmt.Errorf("%s has not moved since it was reviewed", Branch(reviewed.Goal))
+		return Comparison{}, refused("%s has not moved since it was reviewed", Branch(reviewed.Goal))
 	}
 	return Comparison{From: reviewed.Tip, To: now}, nil
 }
@@ -421,7 +431,7 @@ func (o Owner) Diff(reviewed Reviewed, file string, since bool) (Diff, error) {
 		diff.Parts = append(diff.Parts, Part{Comparison: pair, Hunks: hunks})
 	}
 	if !touched {
-		return Diff{}, fmt.Errorf("%s did not change in what this review reads", clean)
+		return Diff{}, refused("%s did not change in what this review reads", clean)
 	}
 	diff.Supplied = bound(diff.Parts, MaxDiffLines)
 	return diff, nil
@@ -529,10 +539,10 @@ func (o Owner) Source(reviewed Reviewed, file string, from, to int) (Source, err
 		return Source{}, err
 	}
 	if !found {
-		return Source{}, fmt.Errorf("%s is not in the reviewed tree at %s", clean, short(at))
+		return Source{}, refused("%s is not in the reviewed tree at %s", clean, short(at))
 	}
 	if binary(body) {
-		return Source{}, fmt.Errorf("%s is a binary file, and the desk shows text", clean)
+		return Source{}, refused("%s is a binary file, and the desk shows text", clean)
 	}
 	lines := strings.Split(strings.TrimSuffix(string(body), "\n"), "\n")
 	total := len(lines)
@@ -544,9 +554,9 @@ func (o Owner) Source(reviewed Reviewed, file string, from, to int) (Source, err
 	}
 	switch {
 	case to < from:
-		return Source{}, fmt.Errorf("a range runs forwards: line %d to line %d is not one", from, to)
+		return Source{}, refused("a range runs forwards: line %d to line %d is not one", from, to)
 	case from > total:
-		return Source{}, fmt.Errorf("%s has %d lines; line %d is past its end", clean, total, from)
+		return Source{}, refused("%s has %d lines; line %d is past its end", clean, total, from)
 	}
 	if to-from+1 > MaxSourceLines {
 		to = from + MaxSourceLines - 1
@@ -591,7 +601,7 @@ func inside(file string) (string, error) {
 	clean := path.Clean(trimmed)
 	if trimmed == "" || strings.HasPrefix(trimmed, "/") || clean == "." || clean == ".." ||
 		strings.HasPrefix(clean, "../") || strings.ContainsRune(trimmed, 0) {
-		return "", fmt.Errorf("%q is not a path inside the reviewed tree", file)
+		return "", refused("%q is not a path inside the reviewed tree", file)
 	}
 	return clean, nil
 }

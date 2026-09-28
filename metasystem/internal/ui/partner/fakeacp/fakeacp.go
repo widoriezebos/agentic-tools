@@ -67,6 +67,10 @@ type Script struct {
 	// Answers, when set, are answers narrowed to the prompts that carry their
 	// text; the first that matches is streamed instead of Chunks.
 	Answers []Answer
+	// Prompted, when set, is told every prompt this server receives, in the
+	// order it read them, so a test can wait for a turn to be in flight at the
+	// runtime rather than for a clock.
+	Prompted chan<- string
 	// StopReason is what the prompt settles with; empty is end_turn.
 	StopReason string
 	// Words is what this server "said" on its error stream.
@@ -288,7 +292,16 @@ func (s *server) dispatch(in frame) {
 		s.tripped()
 	case "session/prompt":
 		s.heard(in.Params)
-		go s.prompt(in.ID, promptText(in.Params))
+		// A cancellation is about the prompt in flight, so the flag is cleared
+		// here, in the order the wire carries them, and never later by the
+		// prompt itself: a cancel that arrived before its goroutine ran would
+		// otherwise be forgotten.
+		s.cancelled.Store(false)
+		asked := promptText(in.Params)
+		if s.script.Prompted != nil {
+			s.script.Prompted <- asked
+		}
+		go s.prompt(in.ID, asked)
 	default:
 		s.fail(in.ID, "the fake server does not answer "+in.Method)
 	}
@@ -297,7 +310,6 @@ func (s *server) dispatch(in frame) {
 // prompt runs the script: the activity line, the refused permission request,
 // then the answer in its chunks, then the settled response.
 func (s *server) prompt(id json.RawMessage, asked string) {
-	s.cancelled.Store(false)
 	if s.script.Hold != nil {
 		<-s.script.Hold
 	}

@@ -221,7 +221,8 @@ func TestATurnOnAnotherConversationStopsTheRunningOneFirst(t *testing.T) {
 func TestAnUnsettledTurnRefusesTheSwitchInWords(t *testing.T) {
 	t.Parallel()
 	hold := make(chan struct{})
-	held := reviewService(t, fakeacp.Script{Chunks: []string{"An answer."}, Hold: hold})
+	prompted := make(chan string, 8)
+	held := reviewService(t, fakeacp.Script{Chunks: []string{"An answer."}, Hold: hold, Prompted: prompted})
 	partner.SettleWithin(held.service, 0)
 	events, stop := held.service.Subscribe()
 	defer stop()
@@ -229,6 +230,8 @@ func TestAnUnsettledTurnRefusesTheSwitchInWords(t *testing.T) {
 
 	_, err := held.service.Sit(ctx, "Wido", reviewOf(reviewA), partner.PurposeReview, inTheRoom(reviewA))
 	testutil.Require(t, "the review opened", err, nil)
+	// A's answer is in flight at the runtime, which will not settle it.
+	<-prompted
 
 	_, err = held.service.Submit(ctx, "Wido", "k1", "the board?", partner.Page{})
 	testutil.Expect(t, "the switch is refused in words", err, partner.ErrUnsettled)

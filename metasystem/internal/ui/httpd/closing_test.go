@@ -32,8 +32,9 @@ func TestTheCloseRouteAsksTheClosingTurnAndEndsNothing(t *testing.T) {
 		post(t, served, partnerSittingPath, onARecord, nil).Code, http.StatusOK)
 	drain(t, events)
 
+	// A sitting is a conversation of its own (g1-s65 D16), and the close names it.
 	closed := post(t, served, partnerSittingClosePath,
-		`{"about":{"section":"Project","path":"/project"}}`, nil)
+		`{"conversation":"plans/designs/sessions.md","about":{"section":"Project","path":"/project"}}`, nil)
 	testutil.Require(t, "the close was asked", closed.Code, http.StatusOK)
 	answer := partnerSnapshot(t, closed)
 	testutil.Require(t, "the sitting still stands", answer.Sitting != nil, true)
@@ -48,7 +49,7 @@ func TestTheCloseRouteAsksTheClosingTurnAndEndsNothing(t *testing.T) {
 
 	// And ending it is still the other route, which is what the page reaches
 	// after the human has recorded the outcome or left without it.
-	ended := post(t, served, partnerSittingEndPath, `{}`, nil)
+	ended := post(t, served, partnerSittingEndPath, `{"conversation":"plans/designs/sessions.md"}`, nil)
 	testutil.Require(t, "it ended", ended.Code, http.StatusOK)
 	testutil.Expect(t, "with no sitting on the conversation", partnerSnapshot(t, ended).Sitting == nil, true)
 }
@@ -95,14 +96,14 @@ func TestTheReadRouteResumesASittingWhoseSessionHasEnded(t *testing.T) {
 	drain(t, events)
 
 	// A read while the session is alive asks nothing: the Partner remembers.
-	warm := partnerSnapshot(t, get(t, served, partnerPath, nil))
+	warm := partnerSnapshot(t, get(t, served, partnerPath+"?conversation=plans/designs/sessions.md", nil))
 	testutil.Expect(t, "the transcript is where it was", len(warm.Messages), 2)
 
 	// The session ends, as it does when this server restarts or the process is
 	// torn down for being idle.
 	service.Close()
 
-	read := partnerSnapshot(t, get(t, served, partnerPath, nil))
+	read := partnerSnapshot(t, get(t, served, partnerPath+"?conversation=plans/designs/sessions.md", nil))
 	testutil.Require(t, "the sitting resumes with its chip", read.Sitting != nil, true)
 	testutil.Expect(t, "on the record it was on", read.Sitting.Subject.ID, "plans/designs/sessions.md")
 	testutil.Require(t, "and the resuming turn is already in the transcript", len(read.Messages) >= 3, true)
@@ -136,7 +137,8 @@ func TestTheProjectPayloadMarksTheSittingThatStandsNow(t *testing.T) {
 	testutil.Expect(t, "with nothing recorded into it", after.Sittings[0].Counts, project.PileCounts{})
 	testutil.Expect(t, "and it says a sitting stands", after.Sittings[0].Standing, true)
 
-	testutil.Require(t, "it ended", post(t, served, partnerSittingEndPath, `{}`, nil).Code, http.StatusOK)
+	testutil.Require(t, "it ended", post(t, served, partnerSittingEndPath,
+		`{"conversation":"plans/designs/sessions.md"}`, nil).Code, http.StatusOK)
 	ended := projectPayload(t, get(t, served, projectPath, nil))
 	testutil.Expect(t, "and the list is empty again, because nothing was recorded", len(ended.Sittings), 0)
 }

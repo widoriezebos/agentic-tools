@@ -41,7 +41,12 @@ const (
 	pileDecisions = "Decisions"
 	pileQuestions = "Open questions"
 	pileOutcome   = "Outcome"
+	// pileFindings is the review's own pile (g1-s65 D8).
+	pileFindings = "Findings"
 )
+
+// unanswered is what a finding's Answer line says until the human answers it.
+const unanswered = "unanswered"
 
 // The mark an entry carries, as it is written: the deposit's identity, in
 // brackets, at the end of the entry's own line. What is read from it is only
@@ -68,6 +73,11 @@ type PileCounts struct {
 	Proposals int `json:"proposals"`
 	Decisions int `json:"decisions"`
 	Questions int `json:"questions"`
+	// Findings is a review's findings, and Unanswered the ones whose Answer
+	// line still says so: the door's counts and End's refusal read these,
+	// because an unanswered finding is a fact of the record (Astra S65-01).
+	Findings   int `json:"findings"`
+	Unanswered int `json:"unanswered"`
 }
 
 // Sitting is one row of the Sittings tab.
@@ -80,6 +90,9 @@ type Sitting struct {
 	LastAt string `json:"lastAt"`
 	// Standing says a sitting is open on this record right now.
 	Standing bool `json:"standing"`
+	// SteppedOutAt is when the human last touched the room of a standing
+	// sitting: the door line's "you stepped out 2h ago" (g1-s65 D9).
+	SteppedOutAt string `json:"steppedOutAt,omitempty"`
 }
 
 // sittingsOf is every record carrying recorded sitting material, newest entry
@@ -128,6 +141,7 @@ func newestFirst(rows []Sitting) {
 func satOn(body []string) (PileCounts, string, bool) {
 	counts, last, marked := PileCounts{}, "", false
 	pile, level := "", 0
+	lastFinding := false
 	for _, line := range body {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "#") {
@@ -144,6 +158,7 @@ func satOn(body []string) (PileCounts, string, bool) {
 				continue
 			}
 			pile, level = headed(strings.TrimSpace(strings.TrimLeft(trimmed, "#"))), deep
+			lastFinding = false
 			continue
 		}
 		if pile == "" {
@@ -163,10 +178,17 @@ func satOn(body []string) (PileCounts, string, bool) {
 			}
 			continue
 		}
+		if pile == pileFindings && answeredLine(line) != "" && lastFinding {
+			if answeredLine(line) == unanswered {
+				counts.Unanswered++
+			}
+			continue
+		}
 		item, is := pileEntry(line)
 		if !is {
 			continue
 		}
+		lastFinding = pile == pileFindings
 		countOne(&counts, pile)
 		if !hasMark(item) {
 			continue
@@ -208,7 +230,7 @@ func hasMark(said string) bool {
 // headed is which of the five sections a heading names, or "" for any other
 // heading — which ends whichever section was open.
 func headed(said string) string {
-	for _, one := range []string{pileFacts, pileProposals, pileDecisions, pileQuestions, pileOutcome} {
+	for _, one := range []string{pileFacts, pileProposals, pileDecisions, pileQuestions, pileOutcome, pileFindings} {
 		if strings.EqualFold(said, one) {
 			return one
 		}
@@ -226,7 +248,28 @@ func countOne(counts *PileCounts, pile string) {
 		counts.Decisions++
 	case pileQuestions:
 		counts.Questions++
+	case pileFindings:
+		counts.Findings++
 	}
+}
+
+// answeredLine is what one finding's nested Answer line says, the answer's own
+// first word or phrase before its dash, or "" for any other line: "unanswered",
+// "fix", "follow-up", "accepted", "left open".
+func answeredLine(line string) string {
+	if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+		return ""
+	}
+	item, is := pileEntry(strings.TrimSpace(line))
+	if !is {
+		return ""
+	}
+	said, found := strings.CutPrefix(item, "Answer:")
+	if !found {
+		return ""
+	}
+	answer, _, _ := strings.Cut(strings.TrimSpace(said), " — ")
+	return strings.TrimSpace(answer)
 }
 
 // entryParts is the separator an entry's dated, attributed head is written
@@ -281,17 +324,24 @@ func footDate(said string) string {
 // record the human is sitting on, and saying so with the little that is known is
 // better than dropping the one row they are working in.
 func (p *Pane) MarkStanding(subject string) {
+	p.MarkStandingAt(subject, "")
+}
+
+// MarkStandingAt is MarkStanding with the time the sitting's room was last kept,
+// which the door line says (g1-s65 D9).
+func (p *Pane) MarkStandingAt(subject, at string) {
 	subject = strings.TrimSpace(subject)
 	if subject == "" {
 		return
 	}
-	for at := range p.Sittings {
-		if p.Sittings[at].Record.Path == subject {
-			p.Sittings[at].Standing = true
+	for index := range p.Sittings {
+		if p.Sittings[index].Record.Path == subject {
+			p.Sittings[index].Standing = true
+			p.Sittings[index].SteppedOutAt = at
 			return
 		}
 	}
-	row := Sitting{Record: SatOn{Path: subject}, Standing: true}
+	row := Sitting{Record: SatOn{Path: subject}, Standing: true, SteppedOutAt: at}
 	for _, record := range p.Records {
 		if record.Path == subject {
 			row.Record = SatOn{Kind: record.Kind, ID: record.ID, Path: record.Path, Title: record.Title}

@@ -67,9 +67,12 @@ const partnerMessages = 100
 // turnBody is one send: the key the page minted so a retry is the same turn,
 // the question, and where the human was when they asked it.
 type turnBody struct {
-	Key   string       `json:"key"`
-	Text  string       `json:"text"`
-	About partner.Page `json:"about"`
+	// Conversation names a sitting's record, whose own conversation the turn
+	// is asked in; absent, the human's own (g1-s65 D16).
+	Conversation string       `json:"conversation"`
+	Key          string       `json:"key"`
+	Text         string       `json:"text"`
+	About        partner.Page `json:"about"`
 }
 
 // partnerRouteOf reports which Partner write route a path names.
@@ -90,6 +93,9 @@ func partnerRouteOf(path string) (written, bool) {
 	}
 	if path == partnerSittingClosePath {
 		return written{route: routePartnerClose}, true
+	}
+	if path == partnerWalkPath {
+		return written{route: routePartnerWalk}, true
 	}
 	if path == partnerSittingPath {
 		return written{route: routePartnerSitting}, true
@@ -205,8 +211,11 @@ func (h *handler) partner(w http.ResponseWriter, r *http.Request) {
 		writeActRefusal(w, "partner", h.partnerRefusal())
 		return
 	}
-	_, _ = h.info.Partner.Resume(r.Context(), h.partnerHuman(r))
-	snapshot, err := h.info.Partner.Snapshot(h.partnerHuman(r), partnerMessages)
+	// Which conversation the page is showing: a sitting's, named by its
+	// record, or the human's own (g1-s65 D16).
+	where := strings.TrimSpace(r.URL.Query().Get("conversation"))
+	_, _ = h.info.Partner.ResumeIn(r.Context(), h.partnerHuman(r), where)
+	snapshot, err := h.info.Partner.SnapshotIn(h.partnerHuman(r), where, partnerMessages)
 	if err != nil {
 		writeFailure(w, err.Error())
 		return
@@ -241,7 +250,8 @@ func (h *handler) partnerTurn(w http.ResponseWriter, r *http.Request) {
 	if !decodeDocument(w, r, &body) {
 		return
 	}
-	id, err := h.info.Partner.Submit(r.Context(), h.partnerHuman(r), body.Key, body.Text, body.About)
+	id, err := h.info.Partner.SubmitIn(r.Context(), h.partnerHuman(r), strings.TrimSpace(body.Conversation),
+		body.Key, body.Text, body.About)
 	if err == nil {
 		w.WriteHeader(http.StatusAccepted)
 		_ = json.NewEncoder(w).Encode(struct {
@@ -303,7 +313,16 @@ type sittingBody struct {
 	Subject partner.Subject `json:"subject"`
 	Title   string          `json:"title"`
 	About   partner.Page    `json:"about"`
+	// Conversation and Room are the room's keep (g1-s65 D9): the desk, the
+	// face and the unfinished words, written onto that sitting's mark through
+	// this route rather than a second one.
+	Conversation string        `json:"conversation"`
+	Room         *partner.Room `json:"room"`
 }
+
+// reviewSubject is the kind a review's subject is named by on Start: the goal it
+// reviews. The server turns it into the review record the sitting is about.
+const reviewSubject = "goal"
 
 // partnerSitting opens a sitting, and answers the conversation as it now stands
 // — with the sitting on it and the opening turn already in the transcript.
@@ -338,8 +357,16 @@ func (h *handler) partnerSitting(w http.ResponseWriter, r *http.Request) {
 	if !decodeDocument(w, r, &body) {
 		return
 	}
+	if body.Room != nil {
+		h.keepRoom(w, r, body)
+		return
+	}
 	if err := h.info.Partner.Admits(r.Context(), body.Purpose); err != nil {
 		h.refuseTurn(w, err, "")
+		return
+	}
+	if strings.TrimSpace(body.Purpose) == partner.PurposeReview && strings.TrimSpace(body.Subject.Kind) == reviewSubject {
+		h.startReview(w, r, body)
 		return
 	}
 	subject := body.Subject
@@ -356,7 +383,22 @@ func (h *handler) partnerSitting(w http.ResponseWriter, r *http.Request) {
 		h.refuseTurn(w, err, draft)
 		return
 	}
-	h.answerPartner(w, r)
+	// A sitting is a conversation of its own (g1-s65 D16), and the answer is
+	// that conversation, with the sitting on it and its opening turn in it.
+	h.answerPartnerIn(w, r, subject.ID)
+}
+
+// keepRoom writes the room's working state onto one sitting's mark, and answers
+// when it was kept.
+func (h *handler) keepRoom(w http.ResponseWriter, r *http.Request, body sittingBody) {
+	if err := h.info.Partner.KeepRoom(h.partnerHuman(r), strings.TrimSpace(body.Conversation), *body.Room); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		writeError(w, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(struct {
+		Kept string `json:"kept"`
+	}{Kept: h.now().UTC().Format(time.RFC3339)})
 }
 
 // draftFor creates the draft a sitting was started on, and reports whether the
@@ -405,16 +447,19 @@ func (h *handler) partnerClose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		About partner.Page `json:"about"`
+		Conversation string       `json:"conversation"`
+		Verdict      string       `json:"verdict"`
+		About        partner.Page `json:"about"`
 	}
 	if !decodeDocument(w, r, &body) {
 		return
 	}
-	if _, err := h.info.Partner.Closing(r.Context(), h.partnerHuman(r), body.About); err != nil {
+	where := strings.TrimSpace(body.Conversation)
+	if _, err := h.info.Partner.ClosingIn(r.Context(), h.partnerHuman(r), where, strings.TrimSpace(body.Verdict), body.About); err != nil {
 		h.refuseTurn(w, err, "")
 		return
 	}
-	h.answerPartner(w, r)
+	h.answerPartnerIn(w, r, where)
 }
 
 // partnerRise ends the sitting, and answers the conversation without it. What
@@ -425,21 +470,26 @@ func (h *handler) partnerRise(w http.ResponseWriter, r *http.Request) {
 		writeActRefusal(w, "partner", h.partnerRefusal())
 		return
 	}
-	var body struct{}
+	var body struct {
+		Conversation string `json:"conversation"`
+	}
 	if !decode(w, r, &body) {
 		return
 	}
-	if err := h.info.Partner.Rise(h.partnerHuman(r)); err != nil {
+	where := strings.TrimSpace(body.Conversation)
+	if err := h.info.Partner.RiseIn(h.partnerHuman(r), where); err != nil {
 		writeFailure(w, err.Error())
 		return
 	}
-	h.answerPartner(w, r)
+	h.answerPartnerIn(w, r, where)
 }
 
 // answerPartner writes the conversation as it stands, which is what every route
 // that changes it answers with.
-func (h *handler) answerPartner(w http.ResponseWriter, r *http.Request) {
-	snapshot, err := h.info.Partner.Snapshot(h.partnerHuman(r), partnerMessages)
+// answerPartnerIn writes one conversation as it stands: a sitting's, or the
+// human's own where the record is "".
+func (h *handler) answerPartnerIn(w http.ResponseWriter, r *http.Request, where string) {
+	snapshot, err := h.info.Partner.SnapshotIn(h.partnerHuman(r), where, partnerMessages)
 	if err != nil {
 		writeFailure(w, err.Error())
 		return
@@ -461,6 +511,13 @@ func (h *handler) refuseTurn(w http.ResponseWriter, err error, draft string) {
 	if errors.Is(err, partner.ErrBusy) {
 		w.WriteHeader(http.StatusConflict)
 		writeDraftRefusal(w, "busy", err.Error(), "", draft)
+		return
+	}
+	// The handoff to another conversation that could not wait for the running
+	// answer to settle (S65-06): a state, like busy, that asking again clears.
+	if errors.Is(err, partner.ErrUnsettled) {
+		w.WriteHeader(http.StatusConflict)
+		writeDraftRefusal(w, "unsettled", err.Error(), "", draft)
 		return
 	}
 	var start *partner.StartError
@@ -506,6 +563,9 @@ type proposalBody struct {
 	// that moves a line to `applying` claims it, and the settle that follows must
 	// carry the attempt the entry holds. A dismissal carries none.
 	Attempt string `json:"attempt"`
+	// Conversation names the sitting's conversation the proposal was made in;
+	// absent, the human's own (g1-s65 D16).
+	Conversation string `json:"conversation"`
 }
 
 // partnerProposal records what the human's press did to one proposed action.
@@ -535,7 +595,8 @@ func (h *handler) partnerProposal(w http.ResponseWriter, r *http.Request, turn, 
 	if !decode(w, r, &body) {
 		return
 	}
-	held, err := h.info.Partner.Proposed(h.partnerHuman(r), turn, index,
+	where := strings.TrimSpace(body.Conversation)
+	held, err := h.info.Partner.ProposedIn(h.partnerHuman(r), where, turn, index,
 		body.Version, body.State, body.Words, body.Attempt)
 	if err != nil {
 		var conflict *partner.ProposalConflict
@@ -561,7 +622,7 @@ func (h *handler) partnerProposal(w http.ResponseWriter, r *http.Request, turn, 
 	}
 	// The entry as it now stands goes back with the conversation, so one press
 	// is one request: the page has the new version without reading again.
-	snapshot, err := h.info.Partner.Snapshot(h.partnerHuman(r), partnerMessages)
+	snapshot, err := h.info.Partner.SnapshotIn(h.partnerHuman(r), where, partnerMessages)
 	if err != nil {
 		writeFailure(w, err.Error())
 		return
@@ -595,11 +656,17 @@ func (h *handler) partnerStop(w http.ResponseWriter, r *http.Request, id string)
 		writeActRefusal(w, "partner", h.partnerRefusal())
 		return
 	}
+	var body struct {
+		Conversation string `json:"conversation"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
 	if err := h.info.Partner.Stop(r.Context(), id); err != nil {
 		writeFailure(w, err.Error())
 		return
 	}
-	snapshot, err := h.info.Partner.Snapshot(h.partnerHuman(r), partnerMessages)
+	snapshot, err := h.info.Partner.SnapshotIn(h.partnerHuman(r), strings.TrimSpace(body.Conversation), partnerMessages)
 	if err != nil {
 		writeFailure(w, err.Error())
 		return

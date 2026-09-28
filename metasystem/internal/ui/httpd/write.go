@@ -268,6 +268,8 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.partnerClose(w, r)
 	case routePartnerRise:
 		h.partnerRise(w, r)
+	case routePartnerWalk:
+		h.partnerWalk(w, r)
 	}
 }
 

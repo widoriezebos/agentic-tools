@@ -39,6 +39,10 @@ type backlogPayload struct {
 	Draft          backlog.DraftGap             `json:"draft"`
 	Rows           []boardRow                   `json:"rows"`
 	Closed         []boardRow                   `json:"closed"`
+	// Reviews is every review record naming a goal, with the door its card
+	// shows in the Review lane: the record's counts and whether the human's
+	// review of it stands (g1-s65 D9).
+	Reviews []reviewDoor `json:"reviews"`
 }
 
 // boardRow is the interface's own row: the backlog projection's row exactly
@@ -183,16 +187,17 @@ func (h *handler) backlog(w http.ResponseWriter, r *http.Request) {
 	if h.info.Fetch != nil && r.URL.Query().Has(fetchQuery) {
 		h.info.Fetch()
 	}
-	_ = json.NewEncoder(w).Encode(h.backlogPayload())
+	_ = json.NewEncoder(w).Encode(h.backlogPayload(r))
 }
 
 // backlogPayload is the whole resource: what the accepted ledger says, what
 // this server may do to it, and the budget law an approval prefills from. The
 // two act routes answer with it too, so a board that moves a card is moving
 // it because the ledger moved.
-func (h *handler) backlogPayload() backlogPayload {
+func (h *handler) backlogPayload(r *http.Request) backlogPayload {
 	observed := h.info.Observe()
 	payload := backlogOf(observed)
+	payload.Reviews = h.reviewDoors(r)
 	h.joinHolders(observed, &payload)
 	payload.Authority = authorityPayload{
 		Proven: h.info.Authority.Proven,
@@ -253,6 +258,7 @@ func backlogOf(observation snapshot.Observation) backlogPayload {
 		Counts:         map[backlog.Lane]int{},
 		Draft:          backlog.DraftGap{Statement: backlog.DraftStatement},
 		Rows:           []boardRow{},
+		Reviews:        []reviewDoor{},
 		Closed:         []boardRow{},
 	}
 	payload.Ledger.Freshness = freshnessOf(observation)

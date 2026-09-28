@@ -311,3 +311,16 @@ func TestADoneGoalsSourceIsItsLastCommitsTree(t *testing.T) {
 	testutil.Require(t, "the source", err, nil)
 	testutil.Expect(t, "the last commit", read.Commit, commit("2"))
 }
+
+// A read refused on what it asked for is a Refusal, told apart from a read Git
+// could not make, so the route can answer the one as the human's request and the
+// other as the server's failure.
+func TestARefusedReadIsARefusal(t *testing.T) {
+	t.Parallel()
+	owner := Owner{Git: waiting()}
+	_, err := owner.Source(Reviewed{Goal: "g1-s64", Tip: commit("e")}, "../x", 1, 1)
+	var refusal *Refusal
+	testutil.Expect(t, "a path outside the tree is a refusal", errors.As(err, &refusal), true)
+	_, err = Owner{Git: fakeGit{refs: map[string]string{}}}.Changes(Reviewed{Goal: "g1-s64", Tip: commit("e")})
+	testutil.Expect(t, "a ref Git cannot read is not", errors.As(err, &refusal), false)
+}
