@@ -11,6 +11,7 @@
   "cmd/devgate": 76.7,
   "internal/acp": 88.7,
   "internal/adapter": 85.5,
+  "internal/applaunch": 82.0,
   "internal/atif": 75.0,
   "internal/atomicfile": 71.6,
   "internal/audit": 92.4,

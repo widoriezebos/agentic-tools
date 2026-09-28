@@ -289,7 +289,7 @@ func Supervise(o SuperviseOptions) error {
 // emptying, which is the moment the group itself must be ended.
 func (o SuperviseOptions) awaitGroupEmpty(ctx context.Context, record Record) bool {
 	for {
-		members, err := o.groupMembers(record.Group)
+		members, err := o.ownedMembers(record)
 		if err != nil || len(members) == 0 {
 			return true
 		}
@@ -311,7 +311,7 @@ func (o SuperviseOptions) finish(record Record, exitStatus atomic.Value, exited 
 	}
 	deadline := time.Now().Add(time.Duration(o.Contract.StopWaitMS()) * time.Millisecond)
 	for time.Now().Before(deadline) {
-		members, err := o.groupMembers(record.Group)
+		members, err := o.ownedMembers(record)
 		if err != nil || len(members) == 0 {
 			break
 		}
@@ -328,14 +328,20 @@ func (o SuperviseOptions) finish(record Record, exitStatus atomic.Value, exited 
 	})
 }
 
-// groupMembers reports the live members of the supervisor's own group other
-// than the supervisor itself, which leads the group and is in it.
-func (o SuperviseOptions) groupMembers(pgid int64) ([]Member, error) {
+// ownedMembers reports the live members of the supervisor's own group other
+// than the supervisor itself, which leads the group and is in it. A process
+// that does not lead the recorded group owns none of it: it can neither wait
+// for it nor signal it, because nothing there is provably its own.
+func (o SuperviseOptions) ownedMembers(record Record) ([]Member, error) {
+	group, leads := o.leadsGroup()
+	if !leads || record.Group < 1 || group != record.Group {
+		return nil, nil
+	}
 	reader := o.Group
 	if reader == nil {
 		reader = KernelGroup
 	}
-	members, err := reader(pgid)
+	members, err := reader(record.Group)
 	if err != nil {
 		return nil, err
 	}
@@ -368,11 +374,7 @@ func (o SuperviseOptions) endChild(record Record, exited <-chan struct{}) {
 // too, so the ended record and the evidence copy after it belong to whoever
 // asked for the stop.
 func (o SuperviseOptions) endGroup(record Record) {
-	group, leads := o.leadsGroup()
-	if !leads || group != record.Group || record.Group < 1 {
-		return
-	}
-	members, err := o.groupMembers(record.Group)
+	members, err := o.ownedMembers(record)
 	if err != nil || len(members) == 0 {
 		return
 	}
@@ -383,7 +385,7 @@ func (o SuperviseOptions) endGroup(record Record) {
 	_ = send(record.Group, syscall.SIGTERM)
 	deadline := time.Now().Add(time.Duration(o.Contract.StopWaitMS()) * time.Millisecond)
 	for time.Now().Before(deadline) {
-		members, err := o.groupMembers(record.Group)
+		members, err := o.ownedMembers(record)
 		if err != nil || len(members) == 0 {
 			return
 		}
