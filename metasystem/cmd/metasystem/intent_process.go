@@ -1782,9 +1782,9 @@ func runIntentSystemSetup(inv *intentInvocation) int {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: refusal.Reason, Decision: refusal.Remedy})
 		}
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets,
-			Summary: "the hooks were not switched to the engine: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnose the checkout"})
+			Summary: "the hooks were not switched to the engine: " + err.Error(), Decision: "diagnose the checkout with: metasystem system check"})
 	}
-	lines := []string{"engine " + report.Engine + " serves the hook entry"}
+	lines := []string{fmt.Sprintf("the engine at %s serves the hook entry", report.Engine)}
 	changed := map[string]bool{}
 	for _, path := range report.Changed {
 		changed[path] = true
