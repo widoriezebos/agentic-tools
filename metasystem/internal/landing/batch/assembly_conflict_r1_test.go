@@ -167,7 +167,7 @@ func TestGLEBatchMovedBaseClosesTwoDependentConflictsBeforeReopen(t *testing.T) 
 	record := load(t, store)
 	if record.State != StateOpen || record.BaseTree != newBase || record.TipTree != cOnly || !slices.Equal(record.PrefixTrees, []string{cOnly}) || record.Proof != nil || len(record.Receipts) != 0 ||
 		record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitReturnPending || record.Units[2].State != UnitJoined ||
-		!strings.Contains(record.Units[0].Failure, "cannot apply on moved base") ||
+		!strings.Contains(record.Units[0].Failure, "CONFLICT with what landed on main") ||
 		!strings.Contains(record.Units[1].Failure, "cannot apply after returning goal-a") {
 		t.Fatalf("moved-base dependent closure did not retain C: %+v", record)
 	}
@@ -207,10 +207,10 @@ func TestGLEBatchPortableOwnerMovedBaseReturnsTwoConflictsAndLandsSurvivor(t *te
 		record.Transition(StateSealed, time.Unix(6, 0), "seal", "owner", "")
 		return nil
 	}))
-	if _, err := RequireProofPlan(store, testBatchID, "owner", "expired", proofrun.LoadSample{}, testpolicy.Plan{SelectedGroups: []string{"group"}}, time.Unix(7, 0)); err != nil {
+	if _, err := RequireProofPlan(store, testBatchID, "owner", "expired", "token", proofrun.LoadSample{}, testpolicy.Plan{SelectedGroups: []string{"group"}}, time.Unix(7, 0)); err != nil {
 		t.Fatal(err)
 	}
-	must(t, FinishProof(store, testBatchID, "owner", proofrun.TestResult{AttemptID: "survivor-green", CandidateTree: cOnly,
+	must(t, FinishProof(store, testBatchID, "owner", "token", proofrun.TestResult{AttemptID: "survivor-green", CandidateTree: cOnly,
 		Delivery: proofrun.DeliveryJudgment{Sufficient: true}, Groups: []proofrun.GroupResult{{ID: "group", Status: "passed", NativeLaunched: true}}}, nil, time.Unix(8, 0)))
 	if proved := load(t, store); proved.State != StateLanding || proved.Proof == nil || proved.Proof.Status != "green" || proved.Proof.Tree != cOnly ||
 		proved.Proof.AttemptID != "survivor-green" || proved.Proof.Window != "expired" {

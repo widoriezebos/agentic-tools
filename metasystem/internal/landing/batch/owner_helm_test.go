@@ -11,7 +11,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 // Batch ids chosen so A sorts before C in the queue glob.
@@ -55,8 +54,8 @@ func newHelmBed(t *testing.T, seatless ...bool) *helmBed {
 		return newProofLock(bed.owner.store, bed.lockDir, bed.queueDir, id, 7, func() time.Time { return now })
 	}
 	bed.owner.helmActive = func(root string) bool { return helm.Active(root).Active }
-	bed.owner.launch = func(id string, _ proofrun.LoadSample, _ string) error {
-		bed.launchedBatches = append(bed.launchedBatches, id)
+	bed.owner.launch = func(request Dispatch) error {
+		bed.launchedBatches = append(bed.launchedBatches, request.ID)
 		return nil
 	}
 	return bed
@@ -100,6 +99,7 @@ func TestLandingOwnerHoldsHelmSeatBatchAcrossCheckouts(t *testing.T) {
 		before := bed.recordBytes(t, helmBatchA)
 		takeHelm(t, bed.seatA)
 		bed.owner.Resume()
+		bed.owner.settle()
 		if !slices.Equal(bed.launchedBatches, []string{helmBatchC}) {
 			t.Fatalf("launched=%v under seat A's helm, want only C", bed.launchedBatches)
 		}
@@ -110,14 +110,17 @@ func TestLandingOwnerHoldsHelmSeatBatchAcrossCheckouts(t *testing.T) {
 			t.Fatalf("Held()=%+v, want A newly held for seat A", held)
 		}
 		bed.owner.Resume()
+		bed.owner.settle()
 		if held := bed.owner.Held(); len(held) != 1 || held[0].New {
 			t.Fatalf("second held pass Held()=%+v, want A held and not new", held)
 		}
 		returnHelm(t, bed.seatA)
 		bed.launchedBatches = nil
 		bed.owner.Resume()
-		if !slices.Equal(bed.launchedBatches, []string{helmBatchA, helmBatchC}) || len(bed.owner.Held()) != 0 {
-			t.Fatalf("after return launched=%v held=%v, want both and none", bed.launchedBatches, bed.owner.Held())
+		bed.owner.settle()
+		// This bed's batches share one lock, so C waits behind A's run.
+		if !slices.Equal(bed.launchedBatches, []string{helmBatchA}) || len(bed.owner.Held()) != 0 {
+			t.Fatalf("after return launched=%v held=%v, want A and none held", bed.launchedBatches, bed.owner.Held())
 		}
 	})
 }
@@ -128,6 +131,7 @@ func TestLandingOwnerNeverHoldsUnitWithoutSeat(t *testing.T) {
 		bed := newHelmBed(t, true)
 		bed.owner.helmActive = func(string) bool { return true }
 		bed.owner.Resume()
+		bed.owner.settle()
 		if !slices.Contains(bed.launchedBatches, helmBatchA) || slices.Contains(bed.launchedBatches, helmBatchC) {
 			t.Fatalf("launched=%v, want A (no seat, never held) and not C", bed.launchedBatches)
 		}
@@ -154,6 +158,7 @@ func TestHeldBatchWithdrawsQueueRegistration(t *testing.T) {
 		takeHelm(t, bed.seatA)
 		bed.prober[4242] = identity.Dead
 		bed.owner.Resume()
+		bed.owner.settle()
 		names := queueEntries(t, bed.queueDir)
 		if slices.ContainsFunc(names, func(name string) bool { return strings.Contains(name, helmBatchA) }) {
 			t.Fatalf("queue=%v, held A's registration was not withdrawn", names)
@@ -210,8 +215,9 @@ func TestWithdrawThenReregister(t *testing.T) {
 		bed.queueTwo(t)
 		bed.prober[4242] = identity.Dead
 		bed.owner.Resume()
-		if !slices.Equal(bed.launchedBatches, []string{helmBatchA, helmBatchC}) {
-			t.Fatalf("launched=%v, want A then C", bed.launchedBatches)
+		bed.owner.settle()
+		if !slices.Equal(bed.launchedBatches, []string{helmBatchA}) {
+			t.Fatalf("launched=%v, want A, with C waiting behind A's run on this bed's shared lock", bed.launchedBatches)
 		}
 	})
 }

@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -241,5 +246,205 @@ func TestPrefixGroupExecutionListsCachedPassesApart(t *testing.T) {
 		if got := prefixGroupExecution(row.group, row.reusable); got != row.want {
 			t.Errorf("prefixGroupExecution(%+v, %t) = %q, want %q", row.group.Execution, row.reusable, got, row.want)
 		}
+	}
+}
+
+// R6 (a): batch A landed a records commit while B waited to land. B's landing
+// run meets the moved base at its one push: nothing B's proof selected moved,
+// so the series rebases once, the retained verifier runs once on the rebased
+// tip, and B lands on the proof it has, with no new proof attempt.
+func TestFirstGreenLandsOthersRebaseWhenNoInputMoved(t *testing.T) {
+	t.Parallel()
+	root, id := t.TempDir(), "01j5x00000000000000000ba22"
+	claim := batch.Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
+	record := batch.Record{Schema: 1, BatchID: id, State: batch.StateLanding, BaseTree: "base-1", PrefixTrees: []string{"tip-1"}, TipTree: "tip-1",
+		Units: []batch.Unit{{GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: batch.UnitJoined}},
+		Proof: &batch.Proof{Status: "green", AttemptID: "tip-proof", BaseCommit: "commit-1", SelectedGroups: []string{"unit-standard"},
+			InputManifests: map[string][]string{"unit-standard": {"internal/**"}}},
+		History: []batch.HistoryEntry{{At: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), To: batch.StateLanding, Actor: "owner"}}}
+	store := batch.NewStore(root, nil).WithReassembly(func(string, []batch.Unit) ([]string, error) { return []string{"tip-2"}, nil },
+		func(string, string) error { return nil }, nil)
+	if err := store.Create(record); err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	var verified [][]string
+	edges := movedBaseEdges{
+		readGit: func(_ string, args ...string) (string, error) {
+			switch strings.Join(args, " ") {
+			case "rev-parse commit-2^{tree}":
+				return "base-2", nil
+			case "rev-parse HEAD":
+				return "rebased-tip", nil
+			case "log --first-parent --reverse --format=%T commit-2..rebased-tip":
+				return "rebased-tree", nil
+			}
+			return "", errors.New("unstubbed git " + strings.Join(args, " "))
+		},
+		onEndpoint: func(string, string, string) (bool, error) { return false, nil },
+		paths: func(_, from, to string) ([]string, string, error) {
+			calls = append(calls, "paths "+from+".."+to)
+			return []string{"records/2026-09-28.md"}, "", nil
+		},
+		advance:   func(string) error { calls = append(calls, "advance"); return nil },
+		held:      func(_, base, commit, _, _ string) error { calls = append(calls, "held "+base+" "+commit); return nil },
+		verify:    func(_ string, _ batch.Record, trees []string) error { verified = append(verified, trees); return nil },
+		authorize: func(string, batch.Store, batch.Record, string, time.Time) error { return nil },
+		now:       func(string) (time.Time, error) { return time.Unix(3, 0), nil },
+		publish:   func(_, _, expected, tip string) error { calls = append(calls, "publish "+expected+" "+tip); return nil },
+		push:      func(_, _, base, tip string) error { calls = append(calls, "push "+base+" "+tip); return nil },
+		fetch: func(string) (string, string, error) {
+			return "", "", errors.New("no fetch after a push that succeeded")
+		},
+	}
+	stalePushes := 0
+	seams := batch.LandSeams{Prepare: func(string) error { return nil }, Apply: func(batch.Unit) error { return nil },
+		AppendReceipt: func(batch.Unit, batch.PrefixReceipt) error { return nil },
+		Commit:        func(batch.Unit, batch.PrefixReceipt) (string, error) { return "old-tip", nil },
+		Held:          func(string, string) error { return nil }, PublishBranch: func(string, string) error { return nil },
+		Push: func(string, string) error {
+			stalePushes++
+			return &batch.EndpointPushError{StaleLease: true, Cause: errors.New("stale info")}
+		},
+		Origin: func() (string, error) { return "commit-2", nil }, OriginTree: func(string) (string, error) { return "base-2", nil },
+		Abandon: func(string, string) error { return nil }, SeriesOnOrigin: func(string, string) (bool, error) { return false, nil },
+		LeaseBase: "commit-1",
+		RecoverPush: func(origin, baseTree, tip string) (batch.PushRecovery, error) {
+			return recoverMovedBatchPushWith(root, id, record, "owner", "commit-1", origin, baseTree, tip, edges)
+		},
+	}
+	if err := batch.LandSeries(store, id, "owner", time.Unix(2, 0), seams); err != nil {
+		t.Fatal(err)
+	}
+	landed, err := store.Load(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"paths base-1..base-2", "advance", "held commit-2 rebased-tip", "publish old-tip rebased-tip", "push commit-2 rebased-tip"}
+	if stalePushes != 1 || !slices.Equal(calls, want) || len(verified) != 1 || !slices.Equal(verified[0], []string{"rebased-tree"}) {
+		t.Fatalf("rebase at the tick: stale pushes=%d calls=%q verified=%q", stalePushes, calls, verified)
+	}
+	if landed.State != batch.StateLanding || landed.Landing == nil || !landed.Landing.PushComplete || landed.Landing.PushedTip != "rebased-tip" ||
+		landed.Proof.AttemptID != "tip-proof" || landed.Proof.Status != "green" {
+		t.Fatalf("B did not land on its proof: %+v landing=%+v", landed, landed.Landing)
+	}
+}
+
+// Two batch proofs on bases T1 < T2 re-arm the one control root: never at
+// once, and never back from T2 to T1 (the tip proof runs in its own detached
+// worktree, so a root already past the batch base stays where it is).
+func TestConcurrentRearmsNeverOverlapNorMoveTheControlRootBack(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	var (
+		mu               sync.Mutex
+		head             = "T0"
+		active, overlaps int
+		moves            []string
+	)
+	order := map[string]int{"T0": 0, "T1": 1, "T2": 2}
+	entered, proceed := make(chan struct{}), make(chan struct{})
+	step := func(name string) {
+		mu.Lock()
+		active++
+		if active > 1 {
+			overlaps++
+		}
+		mu.Unlock()
+		if !laneCheckoutFor(root).held() {
+			mu.Lock()
+			overlaps++
+			mu.Unlock()
+		}
+		if name == "fast-forward T2" {
+			close(entered)
+			<-proceed
+		}
+		mu.Lock()
+		active--
+		mu.Unlock()
+	}
+	edges := batchRearmEdges{
+		head:       func(string) (string, string, error) { mu.Lock(); defer mu.Unlock(); return head, "tree-" + head, nil },
+		baseCommit: func(_, tree string) (string, error) { return strings.TrimPrefix(tree, "tree-"), nil },
+		descends:   func(_, descendant, ancestor string) (bool, error) { return order[descendant] > order[ancestor], nil },
+		fastForward: func(_ context.Context, _, commit string) error {
+			step("fast-forward " + commit)
+			mu.Lock()
+			moves, head = append(moves, head+"->"+commit), commit
+			mu.Unlock()
+			return nil
+		},
+		rebuild: func(context.Context, string) error { step("rebuild"); return nil },
+		up:      func(context.Context, string, string) (upOutcome, error) { step("up"); return upOutcome{}, nil },
+	}
+	errs := make(chan error, 2)
+	go func() { errs <- rearmBatchBaseWith(root, "tree-T2", edges) }()
+	<-entered
+	go func() { errs <- rearmBatchBaseWith(root, "tree-T1", edges) }()
+	close(proceed)
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if overlaps != 0 || !slices.Equal(moves, []string{"T0->T2"}) || head != "T2" {
+		t.Fatalf("rearms overlapped %d time(s) or moved the control root back: moves=%q head=%s", overlaps, moves, head)
+	}
+}
+
+// TestLandingsAndRearmsTakeTurnsOnTheLaneCheckout: two green batches landing
+// at once and a proof start's re-arm all move the one lane checkout, so while
+// batch A's landing holds it, batch B's production landing and the re-arm
+// wait; neither runs over A's unlanded tree (B1).
+func TestLandingsAndRearmsTakeTurnsOnTheLaneCheckout(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	checkout := laneCheckoutFor(root)
+	var inside atomic.Int32
+	var landedDuringA, rearmedDuringA atomic.Bool
+	entered, release := make(chan struct{}), make(chan struct{})
+	first := make(chan error, 1)
+	go func() {
+		first <- withLaneCheckout(root, func() error {
+			inside.Add(1)
+			close(entered)
+			<-release
+			inside.Add(-1)
+			return nil
+		})
+	}()
+	<-entered
+	landed, rearmed := make(chan error, 1), make(chan error, 1)
+	go func() {
+		err := executeBatchLanding(root, "batch-b", "owner", time.Unix(0, 0))
+		landedDuringA.Store(inside.Load() != 0)
+		landed <- err
+	}()
+	edges := batchRearmEdges{
+		head: func(string) (string, string, error) {
+			rearmedDuringA.Store(inside.Load() != 0)
+			return "T1", "tree-T1", nil
+		},
+		rebuild: func(context.Context, string) error { return nil },
+		up:      func(context.Context, string, string) (upOutcome, error) { return upOutcome{}, nil },
+	}
+	go func() { rearmed <- rearmBatchBaseWith(root, "tree-T1", edges) }()
+	for checkout.waiting.Load() != 2 && !landedDuringA.Load() && !rearmedDuringA.Load() {
+		runtime.Gosched()
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	<-landed // batch-b has no record in this bed; only the order is witnessed
+	if err := <-rearmed; err != nil {
+		t.Fatal(err)
+	}
+	if landedDuringA.Load() || rearmedDuringA.Load() {
+		t.Fatalf("the lane checkout was moved while batch A's landing held it: landing=%v rearm=%v", landedDuringA.Load(), rearmedDuringA.Load())
+	}
+	if checkout.held() {
+		t.Fatal("the lane checkout stayed held after every step finished")
 	}
 }

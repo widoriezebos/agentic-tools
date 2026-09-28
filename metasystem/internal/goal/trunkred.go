@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,6 +20,50 @@ const (
 	trunkRedPath         = "plans/goals/trunk-red.json"
 	trunkRedTimeLayout   = "2006-01-02T15:04:05Z"
 )
+
+// The register's classes (D1). An absent class reads as trunk-red, and only a
+// trunk red holds a landing.
+const (
+	TrunkRedClassTrunkRed     = "trunk-red"
+	TrunkRedClassPendingFlake = "pending-flake"
+	TrunkRedClassKnownFlake   = "known-flake"
+	TrunkRedClassHang         = "hang"
+	TrunkRedClassQuality      = "quality"
+	flakeClosingPasses        = 3
+)
+
+// TrunkRedRerun is the executed rerun, on the tree of the red attempt, that passed.
+type TrunkRedRerun struct {
+	Attempt   string `json:"attempt"`
+	LogPath   string `json:"logPath"`
+	LogDigest string `json:"logDigest"`
+	Sample    string `json:"sample"`
+}
+
+// TrunkRedHang is the watchdog's evidence of a stalled group.
+type TrunkRedHang struct {
+	EvidenceDir           string `json:"evidenceDir"`
+	Dump                  string `json:"dump"`
+	Section               string `json:"section"`
+	LastStartedTest       string `json:"lastStartedTest"`
+	LongestSilentSeconds  int64  `json:"longestSilentSeconds"`
+	LongestZeroCPUSeconds int64  `json:"longestZeroCpuSeconds"`
+}
+
+// TrunkRedPass is one executed pass counted toward closing a flake or hang entry.
+type TrunkRedPass struct {
+	Attempt    string `json:"attempt"`
+	BaseCommit string `json:"baseCommit"`
+	At         string `json:"at"`
+	Opid       string `json:"opid"`
+}
+
+// TrunkRedFixProof is the main commit that changed the entry's owner unit and
+// the executed passes seen after it.
+type TrunkRedFixProof struct {
+	Commit string         `json:"commit"`
+	Passes []TrunkRedPass `json:"passes"`
+}
 
 type TrunkRedFailure struct {
 	Report    string `json:"report"`
@@ -37,6 +82,12 @@ type TrunkRedSighting struct {
 	LogDigest  string `json:"logDigest"`
 	SeenAt     string `json:"seenAt"`
 	Opid       string `json:"opid"`
+	// Where is "tip" for a batch tip; absent for a base (main) tree.
+	Where  string         `json:"where,omitempty"`
+	Tree   string         `json:"tree,omitempty"`
+	Sample string         `json:"sample,omitempty"`
+	Rerun  *TrunkRedRerun `json:"rerun,omitempty"`
+	Hang   *TrunkRedHang  `json:"hang,omitempty"`
 }
 
 type TrunkRedOwner struct {
@@ -92,6 +143,38 @@ type TrunkRedEntry struct {
 	Holds        []string           `json:"holds"`
 	Opened       string             `json:"opened"`
 	Closed       *TrunkRedClosure   `json:"closed"`
+	Class        string             `json:"class,omitempty"`
+	// AllowanceUntil ends a known flake's landing allowance; nothing renews it.
+	AllowanceUntil string            `json:"allowanceUntil,omitempty"`
+	FixProof       *TrunkRedFixProof `json:"fixProof,omitempty"`
+}
+
+// EntryClass reads an absent class as trunk-red.
+func (entry TrunkRedEntry) EntryClass() string {
+	if entry.Class == "" {
+		return TrunkRedClassTrunkRed
+	}
+	return entry.Class
+}
+
+// AllowanceExpired reports whether a known flake's allowance has passed at now;
+// expiry blocks landings again and never closes the entry.
+func (entry TrunkRedEntry) AllowanceExpired(now time.Time) bool {
+	until, err := time.Parse(trunkRedTimeLayout, entry.AllowanceUntil)
+	return entry.Class == TrunkRedClassKnownFlake && (err != nil || !now.Before(until))
+}
+
+// KnownFlakeAllowanceUntil is promoted plus three working days, Monday to
+// Friday, counted on the wall clock of loc (Q8).
+func KnownFlakeAllowanceUntil(promoted time.Time, loc *time.Location) time.Time {
+	at := promoted.In(loc)
+	for days := 0; days < 3; {
+		at = at.AddDate(0, 0, 1)
+		if at.Weekday() != time.Saturday && at.Weekday() != time.Sunday {
+			days++
+		}
+	}
+	return at
 }
 
 type trunkRedFile struct {
@@ -169,7 +252,11 @@ func ParseTrunkRed(data []byte) ([]TrunkRedEntry, []Problem) {
 			if !validOpidShape(sighting.Opid) {
 				addf("%s sighting %d has invalid opid %q", label, sightingIndex+1, sighting.Opid)
 			}
+			if sighting.Where != "" && (sighting.Where != "tip" || sighting.Tree == "") || sighting.Rerun != nil && sighting.Rerun.Attempt == "" {
+				addf("%s sighting %d needs where tip with a tree, and a rerun with an attempt", label, sightingIndex+1)
+			}
 		}
+		validateTrunkRedClass(label, entry, addf)
 		validateTrunkRedOwner(label, entry.Owner, addf)
 		if err := entry.FixBranch.Validate(); err != nil {
 			addf("%s: %v", label, err)
@@ -239,11 +326,36 @@ func validateTrunkRedOwner(label string, owner TrunkRedOwner, addf func(string, 
 	if owner.Machine == "" || !validTrunkRedTime(owner.Since) {
 		addf("%s owner needs a machine and valid since time", label)
 	}
-	if owner.How != "joiner" && owner.How != "taken" && owner.How != "hand" {
+	if owner.How != "joiner" && owner.How != "taken" && owner.How != "hand" && owner.How != "approver" {
 		addf("%s owner has unknown how %q", label, owner.How)
 	}
-	if (owner.How == "hand") != (owner.By != "") {
-		addf("%s owner by is present exactly when how is hand", label)
+	if (owner.How == "hand" || owner.How == "approver") != (owner.By != "") {
+		addf("%s owner by is present exactly when how is hand or approver", label)
+	}
+}
+
+func validateTrunkRedClass(label string, entry *TrunkRedEntry, addf func(string, ...any)) {
+	switch entry.Class {
+	case "", TrunkRedClassTrunkRed, TrunkRedClassPendingFlake, TrunkRedClassHang, TrunkRedClassQuality:
+		if entry.AllowanceUntil != "" {
+			addf("%s allowanceUntil belongs to a known flake only", label)
+		}
+	case TrunkRedClassKnownFlake:
+		if !validTrunkRedTime(entry.AllowanceUntil) || entry.Owner == (TrunkRedOwner{}) {
+			addf("%s known flake needs an owner and a valid allowanceUntil", label)
+		}
+	default:
+		addf("%s has unknown class %q", label, entry.Class)
+	}
+	if proof := entry.FixProof; proof != nil {
+		if entry.EntryClass() == TrunkRedClassTrunkRed || proof.Commit == "" || len(proof.Passes) > flakeClosingPasses {
+			addf("%s fix proof needs a flake or hang entry, a commit, and at most %d passes", label, flakeClosingPasses)
+		}
+		for _, pass := range proof.Passes {
+			if pass.Attempt == "" || !validTrunkRedTime(pass.At) || !validOpidShape(pass.Opid) {
+				addf("%s fix proof pass needs attempt, at, and opid", label)
+			}
+		}
 	}
 }
 
@@ -271,13 +383,25 @@ func validateTrunkRedClosure(label string, closed *TrunkRedClosure, addf func(st
 func stringContainsLineBreak(entry *TrunkRedEntry) bool {
 	stringsToCheck := []string{entry.ID, entry.Identity, entry.Group, entry.Status, entry.NotRunReason,
 		entry.Owner.Machine, entry.Owner.Since, entry.Owner.How, entry.Owner.By, entry.FixGoal,
-		entry.FixBranch.Name, entry.FixBranch.Commit, entry.FixBranch.State, entry.Opened}
+		entry.FixBranch.Name, entry.FixBranch.Commit, entry.FixBranch.State, entry.Opened, entry.Class, entry.AllowanceUntil}
 	for _, failure := range entry.Failures {
 		stringsToCheck = append(stringsToCheck, failure.Report, failure.Classname, failure.Name, failure.Status, failure.Reason)
 	}
 	for _, sighting := range entry.Sightings {
 		stringsToCheck = append(stringsToCheck, sighting.Attempt, sighting.Batch, sighting.BaseCommit, sighting.BaseTree,
-			sighting.LogPath, sighting.LogDigest, sighting.SeenAt, sighting.Opid)
+			sighting.LogPath, sighting.LogDigest, sighting.SeenAt, sighting.Opid, sighting.Where, sighting.Tree, sighting.Sample)
+		if sighting.Rerun != nil {
+			stringsToCheck = append(stringsToCheck, sighting.Rerun.Attempt, sighting.Rerun.LogPath, sighting.Rerun.LogDigest, sighting.Rerun.Sample)
+		}
+		if hang := sighting.Hang; hang != nil {
+			stringsToCheck = append(stringsToCheck, hang.EvidenceDir, hang.Dump, hang.Section, hang.LastStartedTest)
+		}
+	}
+	if entry.FixProof != nil {
+		stringsToCheck = append(stringsToCheck, entry.FixProof.Commit)
+		for _, pass := range entry.FixProof.Passes {
+			stringsToCheck = append(stringsToCheck, pass.Attempt, pass.BaseCommit, pass.At, pass.Opid)
+		}
 	}
 	stringsToCheck = append(stringsToCheck, entry.Holds...)
 	if entry.Closed != nil {
@@ -330,6 +454,26 @@ func cleanTrunkRedEntry(entry TrunkRedEntry) TrunkRedEntry {
 		sighting.BaseCommit, sighting.BaseTree = clean(sighting.BaseCommit), clean(sighting.BaseTree)
 		sighting.LogPath, sighting.LogDigest = clean(sighting.LogPath), clean(sighting.LogDigest)
 		sighting.SeenAt, sighting.Opid = clean(sighting.SeenAt), clean(sighting.Opid)
+		sighting.Where, sighting.Tree, sighting.Sample = clean(sighting.Where), clean(sighting.Tree), clean(sighting.Sample)
+		if sighting.Rerun != nil {
+			rerun := TrunkRedRerun{Attempt: clean(sighting.Rerun.Attempt), LogPath: clean(sighting.Rerun.LogPath),
+				LogDigest: clean(sighting.Rerun.LogDigest), Sample: clean(sighting.Rerun.Sample)}
+			sighting.Rerun = &rerun
+		}
+		if sighting.Hang != nil {
+			hang := *sighting.Hang
+			hang.EvidenceDir, hang.Dump, hang.Section, hang.LastStartedTest = clean(hang.EvidenceDir), clean(hang.Dump), clean(hang.Section), clean(hang.LastStartedTest)
+			sighting.Hang = &hang
+		}
+	}
+	entry.Class, entry.AllowanceUntil = clean(entry.Class), clean(entry.AllowanceUntil)
+	if entry.FixProof != nil {
+		proof := TrunkRedFixProof{Commit: clean(entry.FixProof.Commit), Passes: append([]TrunkRedPass{}, entry.FixProof.Passes...)}
+		for index := range proof.Passes {
+			pass := &proof.Passes[index]
+			pass.Attempt, pass.BaseCommit, pass.At, pass.Opid = clean(pass.Attempt), clean(pass.BaseCommit), clean(pass.At), clean(pass.Opid)
+		}
+		entry.FixProof = &proof
 	}
 	entry.Holds = append([]string(nil), entry.Holds...)
 	if entry.Holds == nil {
@@ -358,6 +502,14 @@ type TrunkRedRecordArgs struct {
 	Cadence          *CadenceStatus        `json:"cadence,omitempty"`
 	CadenceClaim     *CadenceClaim         `json:"cadenceClaim,omitempty"`
 	CadenceClaimOpid string                `json:"cadenceClaimOpid,omitempty"`
+	// Class is absent for a trunk red. A flake's red attempt carries its passing Rerun.
+	Class          string         `json:"class,omitempty"`
+	Where          string         `json:"where,omitempty"`
+	Tree           string         `json:"tree,omitempty"`
+	Sample         string         `json:"sample,omitempty"`
+	Rerun          *TrunkRedRerun `json:"rerun,omitempty"`
+	Approver       string         `json:"approver,omitempty"`
+	AllowanceUntil string         `json:"allowanceUntil,omitempty"`
 }
 
 type TrunkRedRecordGroup struct {
@@ -368,6 +520,7 @@ type TrunkRedRecordGroup struct {
 	LogPath      string            `json:"logPath"`
 	LogDigest    string            `json:"logDigest"`
 	Failures     []TrunkRedFailure `json:"failures"`
+	Hang         *TrunkRedHang     `json:"hang,omitempty"`
 }
 
 // EntryRef identifies one register entry and the proof group it represents.
@@ -386,7 +539,50 @@ func RecordTrunkRed(r VerbRequest, args TrunkRedRecordArgs) (PublishResult, erro
 			return PublishResult{}, fmt.Errorf("trunk-red record requires at least one group")
 		}
 	}
+	if err := validateTrunkRedRecordClass(args); err != nil {
+		return PublishResult{}, err
+	}
 	return Publish(r.Endpoint, trunkRedRecordRequest(r, args))
+}
+
+// PromoteKnownFlake records main's red then executed green for each group: a
+// known-flake entry opens, or the open pending entry of that identity is
+// promoted, with an allowance of three working days in loc from r.Now.
+func PromoteKnownFlake(r VerbRequest, args TrunkRedRecordArgs, loc *time.Location) (PublishResult, error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	args.Class = TrunkRedClassKnownFlake
+	args.AllowanceUntil = KnownFlakeAllowanceUntil(r.Now, loc).UTC().Format(trunkRedTimeLayout)
+	return RecordTrunkRed(r, args)
+}
+
+func validateTrunkRedRecordClass(args TrunkRedRecordArgs) error {
+	rerunOK := args.Rerun != nil && args.Rerun.Attempt != "" && args.Rerun.Attempt != args.Attempt && args.Attempt != ""
+	switch args.Class {
+	case "", TrunkRedClassTrunkRed:
+		return nil
+	case TrunkRedClassKnownFlake:
+		if args.Where != "" || args.BaseCommit == "" || args.BaseTree == "" || !rerunOK {
+			return fmt.Errorf("TRUNK_RED_FLAKE_NEEDS_MAIN: a flake becomes known only from a red and an executed green run of one origin/main tree, never from a batch tip or a branch")
+		}
+		if args.Approver == "" || !validTrunkRedTime(args.AllowanceUntil) {
+			return fmt.Errorf("TRUNK_RED_FLAKE_NEEDS_MAIN: a known flake needs an owner and an allowance")
+		}
+	case TrunkRedClassPendingFlake:
+		if args.Where != "tip" || args.Tree == "" || !rerunOK {
+			return fmt.Errorf("TRUNK_RED_FLAKE_NEEDS_MAIN: a pending flake needs both tip attempts on one tip tree")
+		}
+	case TrunkRedClassHang:
+		for _, group := range args.Groups {
+			if group.Hang == nil {
+				return fmt.Errorf("trunk-red hang record needs the watchdog evidence for group %s", group.Group)
+			}
+		}
+	default:
+		return fmt.Errorf("trunk-red record has unknown class %q", args.Class)
+	}
+	return nil
 }
 
 func trunkRedBatchObservation(args TrunkRedRecordArgs) bool {
@@ -433,7 +629,16 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 					continue
 				}
 				sighting := TrunkRedSighting{Attempt: args.Attempt, Batch: args.Batch, BaseCommit: args.BaseCommit,
-					BaseTree: args.BaseTree, LogPath: group.LogPath, LogDigest: group.LogDigest, SeenAt: args.SeenAt, Opid: r.opid()}
+					BaseTree: args.BaseTree, LogPath: group.LogPath, LogDigest: group.LogDigest, SeenAt: args.SeenAt, Opid: r.opid(),
+					Where: args.Where, Tree: args.Tree, Sample: args.Sample, Rerun: args.Rerun, Hang: group.Hang}
+				class := args.Class
+				if class == TrunkRedClassTrunkRed {
+					class = ""
+				}
+				approver := TrunkRedOwner{Machine: args.OwnerMachine, Since: r.stamp(), How: "approver", By: args.Approver}
+				if approver.Machine == "" {
+					approver.Machine = r.Actor.Machine
+				}
 				entry := openTrunkRedByIdentity(tree.TrunkRed, group.Identity)
 				if entry == nil {
 					id := group.Identity
@@ -454,11 +659,29 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 					if args.Batch != "" {
 						holds = append(holds, args.Batch)
 					}
+					allowance := ""
+					if class != "" {
+						owner, holds = TrunkRedOwner{}, []string{}
+					}
+					if class == TrunkRedClassKnownFlake {
+						owner, allowance = approver, args.AllowanceUntil
+					}
 					tree.TrunkRed = append(tree.TrunkRed, TrunkRedEntry{ID: id, Identity: group.Identity, Group: group.Group,
 						Status: group.Status, Failures: append([]TrunkRedFailure(nil), group.Failures...), NotRunReason: group.NotRunReason,
-						Sightings: []TrunkRedSighting{sighting}, Owner: owner, Holds: holds, Opened: args.SeenAt})
+						Sightings: []TrunkRedSighting{sighting}, Owner: owner, Holds: holds, Opened: args.SeenAt, Class: class, AllowanceUntil: allowance})
 					continue
 				}
+				if class != "" {
+					// A flake or hang sighting never renews an allowance; main's
+					// red-then-green promotes a pending entry.
+					entry.Sightings = append(entry.Sightings, sighting)
+					if class == TrunkRedClassKnownFlake && entry.Class == TrunkRedClassPendingFlake {
+						entry.Class, entry.AllowanceUntil, entry.Owner = class, args.AllowanceUntil, approver
+					}
+					continue
+				}
+				// Red twice on the base: the identity is a trunk red whatever it was.
+				entry.Class, entry.AllowanceUntil, entry.FixProof = "", "", nil
 				entry.Group, entry.Status, entry.NotRunReason = group.Group, group.Status, group.NotRunReason
 				entry.Failures = append([]TrunkRedFailure(nil), group.Failures...)
 				entry.Sightings = append(entry.Sightings, sighting)
@@ -523,6 +746,9 @@ type TrunkRedClearArgs struct {
 	Group         string        `json:"group"`
 	BranchMerged  bool          `json:"branchMerged"`
 	ExpectedEntry TrunkRedEntry `json:"expectedEntry"`
+	// Executed and FixCommit count a pass toward closing a flake or hang entry.
+	Executed      bool   `json:"executed,omitempty"`
+	FixCommit     string `json:"fixCommit,omitempty"`
 	legacyUnbound bool
 }
 
@@ -534,6 +760,9 @@ func ClearTrunkRed(r VerbRequest, args TrunkRedClearArgs) (PublishResult, error)
 func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest {
 	intentArgs := map[string]string{"entry": args.Entry, "attempt": args.Attempt, "baseCommit": args.BaseCommit,
 		"baseTree": args.BaseTree, "group": args.Group, "branchMerged": strconv.FormatBool(args.BranchMerged)}
+	if args.Executed || args.FixCommit != "" {
+		intentArgs["executed"], intentArgs["fixCommit"] = strconv.FormatBool(args.Executed), args.FixCommit
+	}
 	var expectedEntry []byte
 	if !args.legacyUnbound {
 		expectedEntry, _ = json.Marshal(args.ExpectedEntry)
@@ -552,6 +781,9 @@ func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest 
 			if entry == nil {
 				return nil, fmt.Errorf("TRUNK_RED_UNKNOWN: entry %s is not in the register", args.Entry)
 			}
+			if entry.FixProof != nil && slices.ContainsFunc(entry.FixProof.Passes, func(pass TrunkRedPass) bool { return pass.Opid == r.opid() }) {
+				return nil, AlreadyApplied{}
+			}
 			if entry.Closed != nil {
 				if entry.Closed.Opid == r.opid() {
 					return nil, AlreadyApplied{}
@@ -564,6 +796,9 @@ func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest 
 					return nil, fmt.Errorf("TRUNK_RED_CHANGED: entry %s changed after its clear inputs were classified", args.Entry)
 				}
 			}
+			if entry.EntryClass() != TrunkRedClassTrunkRed {
+				return trunkRedChanges(tree, countFlakePass(entry, args, r))
+			}
 			entry.Closed = &TrunkRedClosure{At: r.stamp(), Attempt: args.Attempt, BaseCommit: args.BaseCommit, How: "green", Opid: r.opid()}
 			entry.Holds = []string{}
 			if args.BranchMerged && entry.FixBranch.Name != "" {
@@ -573,6 +808,36 @@ func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest 
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
+}
+
+// countFlakePass counts an executed pass after a main commit that changed the
+// entry's owner unit; the third closes the entry. Time never closes it.
+func countFlakePass(entry *TrunkRedEntry, args TrunkRedClearArgs, r VerbRequest) error {
+	if !args.Executed {
+		return fmt.Errorf("TRUNK_RED_PASS_NOT_EXECUTED: entry %s is a %s; a pass reused by identity never counts toward closing it", entry.ID, entry.Class)
+	}
+	if args.FixCommit == "" {
+		return fmt.Errorf("TRUNK_RED_FIX_UNPROVEN: entry %s is a %s; it closes after a main commit changing its owner unit and %d executed passes, or by a person's close", entry.ID, entry.Class, flakeClosingPasses)
+	}
+	if entry.FixProof == nil || entry.FixProof.Commit != args.FixCommit {
+		entry.FixProof = &TrunkRedFixProof{Commit: args.FixCommit, Passes: []TrunkRedPass{}}
+	}
+	if slices.ContainsFunc(entry.FixProof.Passes, func(pass TrunkRedPass) bool { return pass.Attempt == args.Attempt }) {
+		return AlreadyApplied{}
+	}
+	entry.FixProof.Passes = append(entry.FixProof.Passes, TrunkRedPass{Attempt: args.Attempt, BaseCommit: args.BaseCommit, At: r.stamp(), Opid: r.opid()})
+	if len(entry.FixProof.Passes) >= flakeClosingPasses {
+		entry.Closed = &TrunkRedClosure{At: r.stamp(), Attempt: args.Attempt, BaseCommit: args.BaseCommit, How: "green", Opid: r.opid()}
+		entry.Holds = []string{}
+	}
+	return nil
+}
+
+func trunkRedChanges(tree *TreeGoals, err error) ([]Change, error) {
+	if err != nil {
+		return nil, err
+	}
+	return []Change{{Path: trunkRedPath, Content: renderTrunkRedState(tree.TrunkRed, tree.Cadence, tree.CadenceClaim)}}, nil
 }
 
 type TrunkRedOwnArgs struct {

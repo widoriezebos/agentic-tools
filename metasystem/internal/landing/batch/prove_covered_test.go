@@ -45,7 +45,7 @@ func TestGreenTipProofClearsCoveredGroupOnlyFromNativePassingSource(t *testing.T
 	result := proofrun.TestResult{AttemptID: "tip-green", BaseCommit: "next-commit", CandidateTree: "next-tree",
 		Delivery: proofrun.DeliveryJudgment{Sufficient: true},
 		Groups:   []proofrun.GroupResult{source, covered, red, coveredByRed, borrowed, coveredByBorrowed}}
-	must(t, FinishProof(store, testBatchID, "owner", result, nil, time.Unix(11, 0)))
+	must(t, FinishProof(store, testBatchID, "owner", "", result, nil, time.Unix(11, 0)))
 	proof := load(t, store).Proof
 	if !slices.Equal(proof.Passed, []string{"source", "covered"}) || !slices.Equal(proof.Executions, []string{"source", "red"}) {
 		t.Fatalf("covered proof passed=%v executions=%v", proof.Passed, proof.Executions)
@@ -83,7 +83,7 @@ func TestFinishProofListsCachedPassesApartFromExecutions(t *testing.T) {
 		Execution: []proofrun.PackageExecution{{Shard: 1, Package: "p", Mode: proofrun.PackageGoTestCache}, {Shard: 1, Package: "q", Mode: proofrun.PackageExecuted}}}
 	result := proofrun.TestResult{AttemptID: "tip-cached", BaseCommit: "c", CandidateTree: "t", Delivery: proofrun.DeliveryJudgment{Sufficient: true},
 		Groups: []proofrun.GroupResult{cached, mixed}}
-	must(t, FinishProof(store, testBatchID, "owner", result, nil, time.Unix(11, 0)))
+	must(t, FinishProof(store, testBatchID, "owner", "", result, nil, time.Unix(11, 0)))
 	proof := load(t, store).Proof
 	if !slices.Equal(proof.CachedPasses, []string{"cached"}) || !slices.Equal(proof.Executions, []string{"mixed"}) ||
 		!slices.Equal(proof.Passed, []string{"cached", "mixed"}) {

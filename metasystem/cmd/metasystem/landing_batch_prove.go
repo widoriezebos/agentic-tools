@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -21,6 +23,7 @@ import (
 
 type batchProofLaunch struct {
 	Root, BatchID, GoalID, Tree, CandidateTip, ResultPath string
+	Token                                                 string // the plan this run's completion binds to
 	FreshEpisode, FreshExpiresAt                          string
 	Mode                                                  testpolicy.Mode
 	Groups                                                []string
@@ -34,6 +37,7 @@ type batchProofDependencies struct {
 	plan          func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error)
 	launch        func(batchProofLaunch) (proofrun.TestResult, error)
 	freshDecision func(string, []batch.Unit, string) (batch.PrefixDecision, error)
+	sources       func(string, batch.Record) (map[string]string, error)
 }
 
 var productionBatchProofDependencies = batchProofDependencies{
@@ -54,6 +58,39 @@ var productionBatchProofDependencies = batchProofDependencies{
 	},
 	launch:        launchBatchTipProof,
 	freshDecision: productionPrefixDecision,
+	sources:       batchRetainedSources,
+}
+
+// batchRetainedSources runs the retained verifier once on the batch tip tree
+// (D4) and answers, per selected group, the attempt that holds its pass.
+func batchRetainedSources(root string, record batch.Record) (map[string]string, error) {
+	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
+	if len(joined) == 0 || record.Proof == nil {
+		return nil, fmt.Errorf("batch %s has no joined units or proof to resolve", record.BatchID)
+	}
+	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(record.TipTree)
+	if err != nil {
+		return nil, err
+	}
+	defer detached.Close()
+	head := joined[len(joined)-1]
+	episode := record.PrefixEpisodes[head.GoalID]
+	result, err := verifyRetainedTesting(testingSelectionRequest{Root: batch.ModuleRoot(detached.Workspace().Dir), ControlRoot: batch.ModuleRoot(root),
+		GoalID: head.GoalID, Tree: record.TipTree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
+		BatchRequirements: slices.Clone(record.Proof.SelectedGroups), BatchPrefixReceipt: true, FreshEpisode: episode.Token, FreshExpiresAt: episode.ExpiresAt})
+	return batchSourcesFromVerification(result), err
+}
+
+// batchSourcesFromVerification is the verifier's per-group source: a group
+// the verification resolved to a passing attempt, and nothing else.
+func batchSourcesFromVerification(result proofrun.TestResult) map[string]string {
+	sources := map[string]string{}
+	for _, group := range result.Groups {
+		if group.Status == "reused" && group.ReuseAttempt != "" {
+			sources[group.ID] = group.ReuseAttempt
+		}
+	}
+	return sources
 }
 
 func proofPlanCovers(plan testpolicy.Plan, union []string) bool {
@@ -67,7 +104,7 @@ func proofPlanCovers(plan testpolicy.Plan, union []string) bool {
 	return true
 }
 
-func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSample, at time.Time, dependencies batchProofDependencies) error {
+func executeBatchProof(root, id, actor, window, token string, sample proofrun.LoadSample, at time.Time, dependencies batchProofDependencies) error {
 	controlRoot := batch.ModuleRoot(root)
 	store := batch.NewStore(root, nil)
 	record, err := store.Load(id)
@@ -183,13 +220,13 @@ func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSampl
 		}
 		return errors.New(reason)
 	}
-	admitted, err := batch.RequireProofPlan(store, id, actor, window, sample, plan, at)
+	admitted, err := batch.RequireProofPlan(store, id, actor, window, token, sample, plan, at)
 	if err != nil {
 		return err
 	}
 	resultPath := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", id+".json")
 	sealed := admitted.Seal[head.GoalID]
-	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: head.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath,
+	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: head.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath, Token: token,
 		Mode: plan.ExecutedMode, Groups: slices.Clone(plan.SelectedGroups), GoalRevision: sealed.Revision, AccountingRevision: sealed.AccountingRevision}
 	if dependencies.freshDecision != nil {
 		joined := make([]batch.Unit, 0, len(admitted.Units))
@@ -227,11 +264,14 @@ func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSampl
 			return batch.ReassembleSurvivorsWithReturns(store, id, actor, at,
 				[]batch.ReturnDecision{{GoalID: head.GoalID, Outcome: batch.UnitEjected, Reason: refused.Error()}})
 		default:
-			return batch.RefuseProofAdmission(store, id, actor, "admission-refused", refused.Error(), at)
+			return batch.RefuseProofAdmission(store, id, actor, token, "admission-refused", refused.Error(), at)
 		}
 	}
-	if finishErr := batch.FinishProof(store, id, actor, result, launchErr, at); finishErr != nil {
+	if finishErr := batch.FinishProof(store, id, actor, token, result, launchErr, at); finishErr != nil {
 		return finishErr
+	}
+	if launchErr == nil && dependencies.sources != nil {
+		return batch.RecordSources(store, id, actor, at, func(record batch.Record) (map[string]string, error) { return dependencies.sources(root, record) })
 	}
 	return launchErr
 }
@@ -363,44 +403,113 @@ var batchBaseRearm = struct {
 	up          func(context.Context, string, string) (upOutcome, error)
 }{landing.FastForwardPreservingRegisters, landedRearmRebuild, landedRearmUp}
 
+// laneCheckout serializes every step that moves the one lane checkout
+// (settings.Root) across the owner's concurrent runs: a landing (branch prep,
+// apply, commit, reset, push recovery, the re-arm at the pushed tip) and a
+// proof start's re-arm at its base. Proofs still overlap: each runs in its own
+// detached worktree, and a re-arm holds the checkout only while it re-arms.
+type laneCheckout struct {
+	slot    chan struct{}
+	waiting atomic.Int32
+}
+
+var laneCheckouts sync.Map // cleaned root -> *laneCheckout
+
+func laneCheckoutFor(root string) *laneCheckout {
+	value, _ := laneCheckouts.LoadOrStore(filepath.Clean(root), &laneCheckout{slot: make(chan struct{}, 1)})
+	return value.(*laneCheckout)
+}
+
+// withLaneCheckout runs one checkout-moving step with the checkout held.
+func withLaneCheckout(root string, run func() error) error {
+	checkout := laneCheckoutFor(root)
+	checkout.waiting.Add(1)
+	checkout.slot <- struct{}{}
+	checkout.waiting.Add(-1)
+	defer func() { <-checkout.slot }()
+	return run()
+}
+
+func (checkout *laneCheckout) held() bool { return len(checkout.slot) == 1 }
+
+// batchRearmEdges are the control root's Git reads and the re-arm steps.
+type batchRearmEdges struct {
+	head        func(root string) (commit, tree string, err error)
+	baseCommit  func(root, tree string) (string, error)
+	descends    func(root, descendant, ancestor string) (bool, error)
+	fastForward func(context.Context, string, string) error
+	rebuild     func(context.Context, string) error
+	up          func(context.Context, string, string) (upOutcome, error)
+}
+
 func rearmBatchBase(root, baseTree string) error {
+	return rearmBatchBaseWith(root, baseTree, batchRearmEdges{
+		head: func(root string) (string, string, error) {
+			workspace := gittree.Workspace{Dir: root}
+			head, unborn, err := workspace.HeadCommit()
+			if err != nil || unborn {
+				return "", "", fmt.Errorf("re-arm batch base: committed HEAD required")
+			}
+			tree, err := workspace.TreeOf(head)
+			return head, tree, err
+		},
+		baseCommit: func(root, tree string) (string, error) {
+			commit, err := commitForTree(root, "origin/main", tree)
+			if err != nil {
+				return "", fmt.Errorf("BATCH_BASE_MOVED: origin/main ancestry has no commit for recorded base tree %s", tree)
+			}
+			return commit, nil
+		},
+		descends: func(root, descendant, ancestor string) (bool, error) {
+			command := exec.Command("git", "-C", root, "merge-base", "--is-ancestor", ancestor, descendant)
+			command.Env = gittree.ScrubbedEnviron()
+			err := command.Run()
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 1 {
+				return false, nil
+			}
+			return err == nil, err
+		},
+		fastForward: func(ctx context.Context, root, commit string) error {
+			return batchBaseRearm.fastForward(ctx, root, commit)
+		},
+		rebuild: func(ctx context.Context, root string) error { return batchBaseRearm.rebuild(ctx, root) },
+		up: func(ctx context.Context, root, control string) (upOutcome, error) {
+			return batchBaseRearm.up(ctx, root, control)
+		},
+	})
+}
+
+// rearmBatchBaseWith arms the control root at a batch's base, one run at a
+// time, and never moves it back: a root already past the base (a later
+// landing moved it) stays, since the tip proof runs in its own detached
+// worktree at the batch tree.
+func rearmBatchBaseWith(root, baseTree string, edges batchRearmEdges) error {
+	return withLaneCheckout(root, func() error { return rearmBatchBaseHeld(root, baseTree, edges) })
+}
+
+func rearmBatchBaseHeld(root, baseTree string, edges batchRearmEdges) error {
 	controlRoot := batch.ModuleRoot(root)
-	workspace := gittree.Workspace{Dir: root}
-	head, unborn, err := workspace.HeadCommit()
-	if err != nil || unborn {
-		return fmt.Errorf("re-arm batch base: committed HEAD required")
-	}
-	headTree, err := workspace.TreeOf(head)
+	head, headTree, err := edges.head(root)
 	if err != nil {
 		return err
 	}
-	baseCommit := head
 	if headTree != baseTree {
-		command := exec.Command("git", "-C", root, "log", "--first-parent", "--format=%H %T", "origin/main")
-		command.Env = gittree.ScrubbedEnviron()
-		output, err := command.Output()
+		baseCommit, err := edges.baseCommit(root, baseTree)
 		if err != nil {
 			return err
 		}
-		baseCommit = ""
-		for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
-			fields := strings.Fields(line)
-			if len(fields) == 2 && fields[1] == baseTree {
-				baseCommit = fields[0]
-				break
-			}
+		if past, err := edges.descends(root, head, baseCommit); err != nil || past {
+			return err
 		}
-		if baseCommit == "" {
-			return fmt.Errorf("BATCH_BASE_MOVED: origin/main ancestry has no commit for recorded base tree %s", baseTree)
-		}
-		if err := batchBaseRearm.fastForward(context.Background(), controlRoot, baseCommit); err != nil {
+		if err := edges.fastForward(context.Background(), controlRoot, baseCommit); err != nil {
 			return err
 		}
 	}
-	if err := batchBaseRearm.rebuild(context.Background(), controlRoot); err != nil {
+	if err := edges.rebuild(context.Background(), controlRoot); err != nil {
 		return err
 	}
-	_, err = batchBaseRearm.up(context.Background(), controlRoot, controlRoot)
+	_, err = edges.up(context.Background(), controlRoot, controlRoot)
 	return err
 }
 

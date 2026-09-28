@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
 // JoinAdmissionRun uses the shared testing owner after the claim reaches the
@@ -151,6 +152,7 @@ func ResumeJoinAdmission(store Store, batchID, goalID, actor string, at time.Tim
 	if result.Status != "verified" || result.Tree != unit.Admission.Tree {
 		return fmt.Errorf("BATCH_JOIN_TEST_DROPPED: member %s has no verified admission on %s", goalID, unit.Admission.Tree)
 	}
+	closure := unitClosure(store.root, record.BaseTree, result.Tree)
 	return store.locked(func() error {
 		if err := store.updateLocked(batchID, func(current *Record) error {
 			if current.State != StateOpen {
@@ -167,7 +169,7 @@ func ResumeJoinAdmission(store Store, batchID, goalID, actor string, at time.Tim
 				if candidate.State != UnitJoining || candidate.Admission == nil || candidate.Admission.Tree != result.Tree || candidate.Claim != unit.Claim {
 					return fmt.Errorf("BATCH_JOIN_PENDING: member %s changed during admission", goalID)
 				}
-				candidate.Admission = &result
+				candidate.Admission, candidate.Closure = &result, closure
 				if result.AttemptID != "" {
 					candidate.Gate = append(candidate.Gate, result.AttemptID)
 				}
@@ -181,4 +183,22 @@ func ResumeJoinAdmission(store Store, batchID, goalID, actor string, at time.Tim
 		}
 		return store.seams.publish(UnitJoined)
 	})
+}
+
+// unitClosure asks the checkout's language adapter for a member's changed and
+// dependent units at its admitted tree, outside the store lock. A checkout no
+// single adapter recognises, or a closure the adapter cannot compute, records
+// none: naming by owner unit then cannot name the member, so a red only it
+// owns returns every member instead of guessing.
+func unitClosure(root, baseTree, tree string) *adapter.Closure {
+	moduleRoot := ModuleRoot(root)
+	language, err := adapter.Detect(moduleRoot)
+	if err != nil {
+		return nil
+	}
+	closure, err := language.Closure(moduleRoot, baseTree, tree)
+	if err != nil {
+		return nil
+	}
+	return &closure
 }

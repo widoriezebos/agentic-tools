@@ -3,8 +3,13 @@ package batch
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
+	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 )
 
 // LandingProgress is the durable boundary between local construction, the
@@ -82,14 +87,18 @@ type LandSeams struct {
 	SeriesOnOrigin     func(origin, tip string) (bool, error)
 	LeaseBase          string
 	RecoverPush        func(refusedOrigin, base, tip string) (PushRecovery, error)
+	// FlakeRegister and Now recheck, immediately before any publication, the
+	// known flakes a composed proof landed on (BL3S-01).
+	FlakeRegister func() ([]OpenEntry, error)
+	Now           func() (time.Time, error)
 }
 
 // PushRecovery is the one bounded decision after an endpoint lease refusal.
 // A changed proof input reopens the batch; otherwise the rebased, identity-
 // verified series is reported as one completed endpoint push.
 type PushRecovery struct {
-	Origin, BaseTree, Tip string
-	Reopen, Pushed        bool
+	Origin, BaseTree, Tip, LandedBy string
+	Reopen, Pushed                  bool
 }
 
 const maxRecoveryPushRounds = 3
@@ -188,7 +197,36 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		}
 		return false, ReopenRefusedPush(store, id, baseTree, actor, at)
 	}
+	// recheckFlakes refuses publication when a known flake the composed proof
+	// used is no longer carried: every member returns and nothing publishes.
+	recheckFlakes := func() error {
+		if len(record.Proof.Flakes) == 0 {
+			return nil
+		}
+		if seams.FlakeRegister == nil || seams.Now == nil {
+			return fmt.Errorf("BATCH_LAND_UNWIRED: the flake register recheck is absent")
+		}
+		open, err := seams.FlakeRegister()
+		now, nowErr := seams.Now()
+		if err = errors.Join(err, nowErr); err != nil {
+			return err
+		}
+		if carried := flakesStillCarried(record.Proof.Flakes, open, now); carried != nil {
+			if seams.Reset != nil {
+				if err := seams.Reset(record.BaseTree); err != nil {
+					return errors.Join(carried, err)
+				}
+			}
+			reason := "BATCH_FLAKE_ALLOWANCE_REFUSED: " + carried.Error() + "; nothing was published; " +
+				diagnosticFailure(DiagnosticResult{AttemptID: record.Proof.AttemptID}, record.Proof.RedGroups)
+			return errors.Join(errors.New(reason), returnEveryMember(store, record, actor, at, reason))
+		}
+		return nil
+	}
 	recoverNow := func(recoveryOrigin, candidateTip string, pushErr error) (bool, error) {
+		if err := recheckFlakes(); err != nil {
+			return false, err
+		}
 		if seams.RecoverPush == nil {
 			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s refused the complete series: %w", recoveryOrigin, pushErr)
 		}
@@ -252,7 +290,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			if abandonErr := seams.Abandon(candidateTip, recovery.Origin); abandonErr != nil {
 				return false, abandonErr
 			}
-			return false, ReopenMovedTrunk(store, id, recovery.BaseTree, actor, at)
+			return false, ReopenMovedBase(store, id, recovery.BaseTree, recovery.LandedBy, actor, at)
 		}
 		if !recovery.Pushed || recovery.Tip == "" {
 			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s is unchanged after the refused push: %w", recoveryOrigin, pushErr)
@@ -266,6 +304,9 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		return true, nil
 	}
 	attemptPush := func(candidateTip string) (bool, error) {
+		if err := recheckFlakes(); err != nil {
+			return false, err
+		}
 		if seams.VerifySeries != nil {
 			if err := seams.VerifySeries(units, cloneStrings(progress.Commits)); err != nil {
 				return false, fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: final series: %w", err)
@@ -491,28 +532,125 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 // ReopenMovedTrunk makes a proof-input-changing origin move cross seal and
 // proof again on the new base. It never retries the old landing candidate.
 func ReopenMovedTrunk(store Store, id, newBaseTree, actor string, at time.Time) error {
-	return reopenLandingCandidate(store, id, newBaseTree, actor, at, false, "selected proof input moved")
+	return ReopenMovedBase(store, id, newBaseTree, "", actor, at)
+}
+
+// ReopenMovedBase reopens an open, sealed, proving or landing batch on the
+// base another landing moved main to (D2 (b), (c)): the survivors reassemble
+// there, a member whose changes conflict with what batch landedBy landed is
+// ejected with the files named, and a proof in flight is discarded by its
+// token, because the plan it ran is cleared.
+func ReopenMovedBase(store Store, id, newBaseTree, landedBy, actor string, at time.Time) error {
+	return reopenLandingCandidate(store, id, newBaseTree, landedBy, actor, at, false, "selected proof input moved")
 }
 
 // ReopenRefusedPush gives up a bounded endpoint transaction. Unlike a moved-
 // input reopen, the endpoint may still be the batch's recorded base.
 func ReopenRefusedPush(store Store, id, newBaseTree, actor string, at time.Time) error {
-	return reopenLandingCandidate(store, id, newBaseTree, actor, at, true, "endpoint push refused")
+	return reopenLandingCandidate(store, id, newBaseTree, "", actor, at, true, "endpoint push refused")
 }
 
-func reopenLandingCandidate(store Store, id, newBaseTree, actor string, at time.Time, allowSameBase bool, detail string) error {
+func reopenLandingCandidate(store Store, id, newBaseTree, landedBy, actor string, at time.Time, allowSameBase bool, detail string) error {
 	record, err := store.Load(id)
 	if err != nil {
 		return err
 	}
-	if record.State != StateLanding || newBaseTree == "" || (!allowSameBase && newBaseTree == record.BaseTree) {
+	reopenable := record.State == StateLanding || !allowSameBase && slices.Contains([]string{StateOpen, StateSealed, StateProving}, record.State)
+	if !reopenable || newBaseTree == "" || (!allowSameBase && newBaseTree == record.BaseTree) {
 		return fmt.Errorf("BATCH_LAND_PUSH_REFUSED: moved trunk did not supply a new landing base")
 	}
 	units := joinedUnits(record.Units)
 	if len(units) == 0 {
 		return fmt.Errorf("BATCH_LAND_STATE_REFUSED: batch %s has no joined units", id)
 	}
-	return reassembleSurvivorsOnBase(store, id, actor, at, nil, newBaseTree, detail)
+	return reassembleSurvivorsOnBase(store, id, actor, at, nil, newBaseTree, detail, landedBy)
+}
+
+// BaseMove is what moved main under a batch: the changed paths, the
+// installation prefix they are relative to, and the batch whose landing
+// moved it (empty when no batch of this store did).
+type BaseMove struct {
+	Changed          []string
+	Prefix, LandedBy string
+}
+
+// MovedBase is the moved-base decision: reopen, or rebase and keep the proof.
+type MovedBase struct {
+	Reopen bool
+}
+
+// DecideMovedBase is the one moved-base decision (D2, R6), made at the
+// owner's tick and at the push: the batch reopens on the new base when a
+// changed path is an engine path of this installation or lies in a selected
+// group's recorded input manifest (a proof without one reopens); otherwise
+// the series rebases and keeps its proof. An open or sealed batch and a
+// planned proof learn their manifests with the proof's result, so only an
+// engine move reopens them at the tick; their landing decides again.
+func DecideMovedBase(record Record, changed []string, installationPrefix string) MovedBase {
+	policy, err := behaviorsurface.Load()
+	if err != nil {
+		return MovedBase{Reopen: true}
+	}
+	installationPrefix = strings.Trim(filepath.ToSlash(installationPrefix), "/")
+	for _, changedPath := range changed {
+		policyPath := filepath.ToSlash(changedPath)
+		if installationPrefix != "" && policyPath != installationPrefix && !strings.HasPrefix(policyPath, installationPrefix+"/") {
+			continue
+		}
+		// ENGINE changes invalidate proof inputs only when the changed path is
+		// part of this installation; sibling repositories have separate engines.
+		if included, err := policy.Includes(behaviorsurface.Engine, policyPath, installationPrefix); err != nil || included {
+			return MovedBase{Reopen: true}
+		}
+	}
+	if record.State == StateOpen || record.State == StateSealed || record.State == StateProving && record.Proof != nil && record.Proof.Status == "planned" {
+		return MovedBase{}
+	}
+	if record.Proof == nil {
+		return MovedBase{Reopen: true}
+	}
+	for _, groupID := range record.Proof.SelectedGroups {
+		manifest := record.Proof.InputManifests[groupID]
+		if len(manifest) == 0 {
+			return MovedBase{Reopen: true}
+		}
+		for _, changedPath := range changed {
+			if slices.ContainsFunc(manifest, func(declaration string) bool {
+				matched, err := pathpattern.MatchManifestEntry(declaration, changedPath)
+				return err != nil || matched
+			}) {
+				return MovedBase{Reopen: true}
+			}
+		}
+	}
+	return MovedBase{}
+}
+
+// LandedBatch names the batch of this store whose pushed tip is one of the
+// commits main moved by; empty when none is.
+func LandedBatch(store Store, commits []string) string {
+	paths, _ := filepath.Glob(filepath.Join(store.root, "artifacts", "agents", "landing-batches", "*.json"))
+	for _, path := range paths {
+		record, err := store.Load(strings.TrimSuffix(filepath.Base(path), ".json"))
+		if err == nil && record.Landing != nil && record.Landing.PushedTip != "" && slices.Contains(commits, record.Landing.PushedTip) {
+			return record.BatchID
+		}
+	}
+	return ""
+}
+
+// movedBaseConflictLine is the return of a member whose changes do not apply
+// on the moved base: BATCH_JOIN_CONFLICT's files and the next command.
+func movedBaseConflictLine(conflict *assemblyConflict, landedBy string) string {
+	files := strings.Join(conflict.Paths, ", ")
+	if files == "" {
+		files = conflict.Error()
+	}
+	with := "what landed on main"
+	if landedBy != "" {
+		with = "what landed in batch " + landedBy
+	}
+	return fmt.Sprintf("CONFLICT with %s (files %s). Rebase goal/%s on main, then metasystem work land %s.", with, files, conflict.GoalID, conflict.GoalID)
 }
 
 func ejectRefusedMember(store Store, id, actor string, at time.Time, base string, unit Unit, err error, reset func(string) error) error {

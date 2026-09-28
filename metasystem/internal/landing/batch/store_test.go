@@ -400,10 +400,6 @@ func TestBatchJoinSelectsGroupsFromEachUnitsOwnTree(t *testing.T) {
 		!slices.Equal(record.Units[1].SelectedGroups, []string{"shared", "group-b"}) {
 		t.Fatalf("per-unit selections=%v / %v", record.Units[0].SelectedGroups, record.Units[1].SelectedGroups)
 	}
-	named := namedDiagnosticUnits(record.Units, []RedGroup{{ID: "group-a"}})
-	if !named["goal-a"] || named["goal-b"] {
-		t.Fatalf("group-a named units=%v", named)
-	}
 }
 
 func TestBatchJoinPlanningPinsMergeBaseToBatchBase(t *testing.T) {

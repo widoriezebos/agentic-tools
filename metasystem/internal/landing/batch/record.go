@@ -1,6 +1,10 @@
 package batch
 
-import "time"
+import (
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
+)
 
 const StateOpen, StateSealed, StateProving, StateDiagnosing, StateLanding, StateLanded, StateHeldTrunkRed, StateHeldUnclassified, StateDissolved = "open", "sealed", "proving", "diagnosing", "landing", "landed", "held-trunk-red", "held-unclassified", "dissolved"
 
@@ -41,6 +45,9 @@ type Unit struct {
 	GoalLast       bool           `json:"goalLast,omitempty"`
 	BranchTip      string         `json:"branchTip,omitempty"`
 	Builds         []BranchBuild  `json:"builds,omitempty"`
+	// Closure is the member's changed and dependent units at its admitted
+	// tree, from the language adapter; red naming asks it for owner units.
+	Closure *adapter.Closure `json:"closure,omitempty"`
 
 	unitRecordFields
 }

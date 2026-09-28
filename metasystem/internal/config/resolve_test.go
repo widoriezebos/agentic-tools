@@ -62,13 +62,28 @@ func noGitCalls(t *testing.T) gitRunner {
 	}
 }
 
+// TestMaxWaitDefaultIsTenMinutes: with batches proving side by side, waiting
+// for a partner no longer buys a proof slot, so an unset
+// landing.batch-max-wait resolves to ten minutes (Q6).
+func TestMaxWaitDefaultIsTenMinutes(t *testing.T) {
+	t.Parallel()
+	seat, landing := t.TempDir(), t.TempDir()
+	conf := filepath.Join(seat, "metasystem.conf")
+	putFile(t, conf, BatchRootKey+"="+landing+"\n")
+	now := time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)
+	settings, err := resolveBatchLandingWithRunner(conf, seat, func() time.Time { return now }, oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil))
+	if err != nil || settings.MaxWait != 10*time.Minute || DefaultBatchMaxWait != 10*time.Minute {
+		t.Fatalf("unset %s resolved to %v (default %v), err=%v; want 10m", BatchMaxWaitKey, settings.MaxWait, DefaultBatchMaxWait, err)
+	}
+}
+
 func TestResolveBatchLandingConfiguration(t *testing.T) {
 	seat, landing := t.TempDir(), t.TempDir()
 	conf := filepath.Join(seat, "metasystem.conf")
 	putFile(t, conf, BatchRootKey+"="+landing+"\n")
 	now := time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)
 	settings, err := resolveBatchLandingWithRunner(conf, seat, func() time.Time { return now }, oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil))
-	if err != nil || settings.Root != resolvePath(landing) || settings.MaxWait != 45*time.Minute {
+	if err != nil || settings.Root != resolvePath(landing) || settings.MaxWait != DefaultBatchMaxWait {
 		t.Fatalf("default batch settings: settings=%+v err=%v", settings, err)
 	}
 	for _, wait := range []string{"0s", "-1m", "30s", "6h1s"} {

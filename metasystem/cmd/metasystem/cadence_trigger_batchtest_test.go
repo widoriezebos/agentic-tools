@@ -217,7 +217,8 @@ exit 1
 		},
 		DescendsFrom: func(string, string) (bool, error) { return true, nil }, Sample: func() proofrun.LoadSample { return proofrun.LoadSample{OverlapKnown: true} },
 		Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{Max: 1} },
-		Launch:    func(string, proofrun.LoadSample, string) error { landings++; return nil }, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) },
+		Launch:    func(batch.Dispatch) error { landings++; return nil },
+		ProbeRun:  func(string, batch.Record) (batch.RunProbe, error) { return batch.RunProbe{}, nil }, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) },
 		Report: func(string, error) {}})
 	if err != nil {
 		t.Fatal(err)

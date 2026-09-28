@@ -190,6 +190,15 @@ func runBatchLandingLifecycleScenario(t *testing.T, scenario string) {
 	batchStatusNow = func() time.Time { return now }
 	batchPrefixReceiptExecutable = func() (string, error) { return engine.path, nil }
 	batchVerifyPrefixEvidence = func(_ string, _ batch.Unit, _ string, _ batch.PrefixDecision) error { return nil }
+	// The fixture proof's result is synthetic, so the retained verifier is
+	// doubled like the prefix verification: every group's pass is the tip's.
+	productionBatchProofDependencies.sources = func(_ string, record batch.Record) (map[string]string, error) {
+		sources := map[string]string{}
+		for _, group := range record.Proof.SelectedGroups {
+			sources[group] = record.Proof.AttemptID
+		}
+		return sources, nil
+	}
 	_ = os.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
 	_ = os.Setenv("GO_WANT_BATCH_E2E_COMMAND", "1")
 	_ = os.Setenv("METASYSTEM_OWNER_LINEAGE", "lineage-goal-b")
@@ -284,7 +293,7 @@ func runBatchLandingLifecycleEjectRed(t *testing.T, harness *batchE2EHarness, en
 	fixture.tick(batchID)
 	record := fixture.load(batchID)
 	unit := batchE2EUnit(record, "goal-b")
-	if unit.State != batch.UnitReturnPending || unit.Outcome != batch.UnitEjected || !strings.Contains(unit.Failure, "TestGoalB") {
+	if unit.State != batch.UnitReturnPending || unit.Outcome != batch.UnitEjected || !strings.Contains(unit.Failure, "app-unit") {
 		t.Fatalf("diagnosed unit = %+v", unit)
 	}
 	fixture.tick(batchID)

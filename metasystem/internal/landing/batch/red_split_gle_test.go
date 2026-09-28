@@ -36,7 +36,7 @@ func dependentPolicyStore(t *testing.T, form string) (assemblyBed, Store, string
 	case "bridge":
 		patches["chain-a"] = []byte("diff --git a/bridge.txt b/bridge.txt\nnew file mode 100644\n--- /dev/null\n+++ b/bridge.txt\n@@ -0,0 +1 @@\n+created by A\n")
 		patches["chain-b"] = []byte("diff --git a/bridge.txt b/bridge.txt\n--- a/bridge.txt\n+++ b/bridge.txt\n@@ -1 +1 @@\n-created by A\n+changed by B\n")
-		bed.record.Units[0].SelectedGroups = []string{"bridge-check"}
+		bed.record.Units[0].SelectedGroups, bed.record.Units[0].ChangedPaths = []string{"bridge-check"}, []string{"bridge.txt"}
 	case "delete-readd":
 		patches = deleteReaddPolicyPatches()
 	default:
@@ -130,7 +130,7 @@ func TestGLEBatchSplitReturnsInapplicableDependentAndKeepsIndependentMember(t *t
 
 	runs := 0
 	diagnose := func() error {
-		return DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "bridge-check", Status: "failed"}}, "", time.Unix(2, 0), RedSeams{
+		return DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "bridge-check", Status: "failed", InputManifest: []string{"bridge.txt"}}}, "", time.Unix(2, 0), RedSeams{
 			Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
 				runs++
 				if request.Tree != bed.base || !request.NeverReuse {
@@ -188,7 +188,7 @@ func TestGLEBatchSplitHoldsUnreadableSurvivorWithoutReturningMember(t *testing.T
 				}
 			}},
 	)
-	err := DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "bridge-check", Status: "failed"}}, "", time.Unix(2, 0), RedSeams{
+	err := DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "bridge-check", Status: "failed", InputManifest: []string{"bridge.txt"}}}, "", time.Unix(2, 0), RedSeams{
 		Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
 			if request.Tree != bed.base || !request.NeverReuse {
 				t.Fatalf("base diagnosis request=%+v", request)

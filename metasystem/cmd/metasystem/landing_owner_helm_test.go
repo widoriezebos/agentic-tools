@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -33,13 +34,14 @@ func (p *ownerHelmProber) Probe(pid int64) (identity.Exact, identity.Liveness, e
 }
 
 // ownerHelmBed is a landing checkout L (a directory with .git) holding batches
-// A (seat A) and C (seat C), queued by one owner pid (7) on a fixed clock
-// behind a busy foreign proof lock (pid 4242).
+// A (seat A) and C (seat C), queued by one owner pid (7) on a fixed clock,
+// each behind its own busy proof lock held by a foreign pid (4242).
 type ownerHelmBed struct {
 	landing, seatA, seatC, lockDir, queueDir string
 	prober                                   *ownerHelmProber
 	owner                                    *batch.Owner
 	launched                                 []string
+	launchMu                                 sync.Mutex
 	resumes, cadences                        int
 	out                                      bytes.Buffer
 	now                                      time.Time
@@ -88,19 +90,24 @@ func newOwnerHelmBed(t *testing.T) *ownerHelmBed {
 		DescendsFrom: func(string, string) (bool, error) { return true, nil },
 		Sample:       func() proofrun.LoadSample { return proofrun.LoadSample{OverlapKnown: true} },
 		Admission:    func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{Max: 8} },
-		Launch: func(id string, _ proofrun.LoadSample, _ string) error {
-			bed.launched = append(bed.launched, id)
+		Launch: func(request batch.Dispatch) error {
+			bed.launchMu.Lock()
+			defer bed.launchMu.Unlock()
+			bed.launched = append(bed.launched, request.ID)
 			return nil
-		}, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {},
+		}, ProbeRun: func(string, batch.Record) (batch.RunProbe, error) { return batch.RunProbe{State: batch.RunLive}, nil },
+		After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {},
 		HelmActive: func(root string) bool { return helm.Active(root).Active }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(bed.lockDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(bed.lockDir, "owner"), []byte("m1e 4242 2030-01-01T00:00:00Z hand\n"), 0o644); err != nil {
-		t.Fatal(err)
+	for _, id := range []string{ownerHelmA, ownerHelmC} {
+		if err := os.MkdirAll(filepath.Join(bed.lockDir, "batch-"+id), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(bed.lockDir, "batch-"+id, "owner"), []byte("m1e 4242 2030-01-01T00:00:00Z hand\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return bed
 }
@@ -112,20 +119,20 @@ func (bed *ownerHelmBed) pass() {
 }
 
 func (bed *ownerHelmBed) queue(t *testing.T) []string {
-	entries, err := os.ReadDir(bed.queueDir)
-	if err != nil && !os.IsNotExist(err) {
+	entries, err := filepath.Glob(filepath.Join(bed.queueDir, "batch-*", "*"))
+	if err != nil {
 		t.Fatal(err)
 	}
 	var names []string
 	for _, entry := range entries {
-		names = append(names, entry.Name())
+		names = append(names, filepath.Base(entry))
 	}
 	return names
 }
 
 func (bed *ownerHelmBed) snapshot(t *testing.T) string {
 	var parts []string
-	for _, path := range []string{filepath.Join(bed.lockDir, "owner"),
+	for _, path := range []string{filepath.Join(bed.lockDir, "batch-"+ownerHelmA, "owner"), filepath.Join(bed.lockDir, "batch-"+ownerHelmC, "owner"),
 		filepath.Join(bed.landing, "artifacts", "agents", "landing-batches", ownerHelmA+".json"),
 		filepath.Join(bed.landing, "artifacts", "agents", "landing-batches", ownerHelmC+".json")} {
 		data, err := os.ReadFile(path)
@@ -190,6 +197,9 @@ func TestLandingSeatHelmWithdrawsEveryRegistration(t *testing.T) {
 		bed.prober.dead[4242] = true
 		bed.prober.mu.Unlock()
 		bed.pass()
+		bed.owner.Complete(<-bed.owner.Completions())
+		bed.owner.Complete(<-bed.owner.Completions())
+		slices.Sort(bed.launched)
 		if strings.Join(bed.launched, ",") != ownerHelmA+","+ownerHelmC {
 			t.Fatalf("launched=%v, want A then C once the lock is free", bed.launched)
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 type ownerBed struct {
@@ -84,11 +85,11 @@ func newOwnerBed(t *testing.T, record Record, now time.Time) *ownerBed {
 			sample := bed.samples[0]
 			bed.samples = bed.samples[1:]
 			return sample
-		}, Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{Max: 8} }, Launch: func(id string, sample proofrun.LoadSample, window string) error {
+		}, Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{Max: 8} }, Launch: func(request Dispatch) error {
 			bed.launches++
-			bed.launched, bed.window = sample, window
+			bed.launched, bed.window = request.Sample, request.Window
 			return nil
-		}, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {}})
+		}, ProbeRun: func(string, Record) (RunProbe, error) { return RunProbe{State: RunLive}, nil }, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {}})
 	must(t, err)
 	return bed
 }
@@ -181,7 +182,7 @@ func TestBatchOwnerSkipsRecordedHoldAndReleasesLockBeforeLedger(t *testing.T) {
 		}
 		bed.owner.locks[testBatchID] = lock
 		bed.store = bed.store.WithLedgerOwner(recordOwner(func(string, TrunkRed) ([]EntryRef, error) {
-			if _, err := os.Stat(bed.lockDir); !errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Stat(filepath.Join(bed.lockDir, "batch-"+testBatchID)); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("ledger call retained the proof lock: %v", err)
 			}
 			return []EntryRef{{ID: "entry", Group: "fast"}}, nil
@@ -221,17 +222,19 @@ func TestBatchOwnerRetriesGreenTipClearAfterLandingFinishes(t *testing.T) {
 	ledger := &clearingLedger{open: []OpenEntry{{ID: "entry", Group: "fast", LastBaseCommit: "old-commit"}}, openErrors: []error{os.ErrPermission, nil}}
 	bed.store = bed.store.WithLedgerOwner(ledger)
 	bed.owner.store = bed.store
-	bed.owner.launch = func(string, proofrun.LoadSample, string) error {
+	bed.owner.launch = func(Dispatch) error {
 		bed.launches++
 		return bed.store.Update(testBatchID, func(record *Record) error { record.State = StateLanded; return nil })
 	}
 	var reports []error
 	bed.owner.report = func(_ string, errorValue error) { reports = append(reports, errorValue) }
 	must(t, bed.owner.Tick(testBatchID))
+	bed.owner.settle()
 	if record := load(t, bed.store); record.State != StateLanded || len(ledger.cleared) != 0 || len(reports) != 1 {
 		t.Fatalf("first pass record=%+v clears=%+v reports=%v", record, ledger.cleared, reports)
 	}
 	bed.owner.Resume()
+	bed.owner.settle()
 	final := load(t, bed.store)
 	_, complete := greenTipClearStatus(final)
 	if len(ledger.cleared) != 1 || ledger.cleared[0].green.AttemptID != "tip-green" || !complete || bed.launches != 1 {
@@ -254,6 +257,7 @@ func TestBatchOwnerResumesLandingAfterTrunkRedClearError(t *testing.T) {
 		reported = err
 	}
 	must(t, bed.owner.Tick(testBatchID))
+	bed.owner.settle()
 	if bed.launches != 1 || reported == nil || !strings.Contains(reported.Error(), os.ErrPermission.Error()) {
 		t.Fatalf("launches=%d reported=%v", bed.launches, reported)
 	}
@@ -278,11 +282,12 @@ func TestBatchOwnerHoldsLandingOnRegisteredTrunkRedButNotStatusAlone(t *testing.
 			ledger := &clearingLedger{open: slices.Clone(test.open)}
 			bed.store = bed.store.WithLedgerOwner(ledger)
 			bed.owner.store = bed.store
-			bed.owner.launch = func(string, proofrun.LoadSample, string) error {
+			bed.owner.launch = func(Dispatch) error {
 				bed.launches++
 				return bed.store.Update(testBatchID, func(record *Record) error { record.State = StateLanded; return nil })
 			}
 			must(t, bed.owner.Tick(testBatchID))
+			bed.owner.settle()
 			got := load(t, bed.store)
 			if got.State != test.state || bed.launches != test.launches {
 				t.Fatalf("record=%+v launches=%d", got, bed.launches)
@@ -305,6 +310,7 @@ func TestBatchOwnerLaunchesAtMaximumWait(t *testing.T) {
 	bed.now = joined.Add(time.Minute)
 	bed.samples = []proofrun.LoadSample{{OverlapKnown: true}, {OverlapKnown: true, OverlappingLocal: 2}}
 	must(t, bed.owner.Tick(testBatchID))
+	bed.owner.settle()
 	witness(t, bed.launches == 1 && bed.window == "expired" && bed.launched.OverlappingLocal == 2, "deadline launch=%d/%s sample=%+v", bed.launches, bed.window, bed.launched)
 }
 
@@ -418,4 +424,160 @@ func TestBatchOwnerReportsResumeEnumerationFailure(t *testing.T) {
 	default:
 		t.Fatal("Resume dropped the Glob failure")
 	}
+}
+
+func TestOnlyTrunkRedHoldsALanding(t *testing.T) {
+	t.Parallel()
+	flakes := []OpenEntry{
+		{ID: "pending", Group: "fast", Class: ClassPendingFlake, LastBaseCommit: "trunk-before"},
+		{ID: "known", Group: "fast", Class: ClassKnownFlake, LastBaseCommit: "trunk-before", AllowanceUntil: time.Unix(10, 0)},
+		{ID: "hang", Group: "fast", Class: ClassHang, LastBaseCommit: "trunk-before"},
+		{ID: "quality", Group: "fast", Class: ClassQuality, LastBaseCommit: "trunk-before"},
+	}
+	for _, test := range []struct {
+		name  string
+		open  []OpenEntry
+		state string
+	}{
+		{name: "flake, hang and quality entries", open: flakes, state: StateLanded},
+		{name: "trunk red", open: append(slices.Clone(flakes), OpenEntry{ID: "trunk", Group: "slow", Class: ClassTrunkRed, LastBaseCommit: "trunk-before"}), state: StateHeldTrunkRed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			now := time.Unix(20, 0)
+			record := ownerRecord(testBatchID, StateLanding, now.Add(-time.Minute))
+			record.BaseTree = "tree"
+			record.Proof = &Proof{Status: "green", AttemptID: "tip-green", BaseCommit: "trunk-after", Passed: []string{"fast"}}
+			bed := newOwnerBed(t, record, now)
+			ledger := &clearingLedger{open: slices.Clone(test.open)}
+			bed.store = bed.store.WithLedgerOwner(ledger)
+			bed.owner.store = bed.store
+			bed.owner.launch = func(Dispatch) error {
+				bed.launches++
+				return bed.store.Update(testBatchID, func(record *Record) error { record.State = StateLanded; return nil })
+			}
+			must(t, bed.owner.Tick(testBatchID))
+			bed.owner.settle()
+			got := load(t, bed.store)
+			if got.State != test.state || len(ledger.cleared) != 0 {
+				t.Fatalf("state=%s launches=%d cleared=%+v, want %s and no flake closed by a green tip", got.State, bed.launches, ledger.cleared, test.state)
+			}
+			if test.state == StateHeldTrunkRed && (len(got.TrunkRed.Entries) != 1 || got.TrunkRed.Entries[0].ID != "trunk") {
+				t.Fatalf("held on %+v, want only the trunk red", got.TrunkRed.Entries)
+			}
+		})
+	}
+}
+
+// movedBaseBed seals batch B on base-1 behind the production Launch shape: a
+// run seals an open batch, plans with its token, then waits for the test and
+// finishes green with the group reused by identity, as a delivery proof on an
+// unchanged group identity does. Main then moves to base-2, where the store's
+// reassembly composes the members with the given outcome.
+func movedBaseBed(t *testing.T, units []Unit, move BaseMove, assemble func(string, []Unit) ([]string, error)) (*ownerBed, chan Dispatch, chan struct{}, *[]string) {
+	t.Helper()
+	now := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	record := ownerRecord(testBatchID, StateSealed, now.Add(-time.Minute))
+	if units != nil {
+		record.Units = units
+	}
+	record.BaseTree, record.SelectedGroups, record.TipTree = "base-1", []string{"unit-standard"}, "tip-1"
+	for range joinedUnits(record.Units) {
+		record.PrefixTrees = append(record.PrefixTrees, "tip-1")
+	}
+	bed := newOwnerBed(t, record, now)
+	bed.tree, bed.sample = "base-1", hostSample(1)
+	minted := 0
+	bed.owner.mint = func() (string, error) { minted++; return "token-" + string(rune('0'+minted)), nil }
+	entered, gate, reported := make(chan Dispatch, 4), make(chan struct{}), &[]string{}
+	bed.owner.store = bed.owner.store.WithReassembly(assemble, nil, nil)
+	bed.owner.report = func(id string, err error) { *reported = append(*reported, id+": "+err.Error()) }
+	bed.owner.baseMove = func(from, to string) (BaseMove, error) {
+		if from != "base-1" || to != "base-2" {
+			return BaseMove{}, errors.New("unexpected move " + from + ".." + to)
+		}
+		return move, nil
+	}
+	plan := testpolicy.Plan{SelectedGroups: []string{"unit-standard"}}
+	bed.owner.launch = func(request Dispatch) error {
+		if err := bed.owner.store.Update(request.ID, func(record *Record) error {
+			if record.State == StateOpen {
+				record.Transition(StateSealed, bed.now, "seal", "owner", "")
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		if _, err := RequireProofPlan(bed.owner.store, request.ID, "owner", request.Window, request.Token, request.Sample, plan, bed.now); err != nil {
+			return err
+		}
+		entered <- request
+		<-gate
+		return FinishProof(bed.owner.store, request.ID, "owner", request.Token, proofrun.TestResult{AttemptID: "attempt-" + request.Token,
+			Groups:   []proofrun.GroupResult{{ID: "unit-standard", Status: "reused", ReuseAttempt: "attempt-before", InputManifest: []string{"internal/**"}}},
+			Delivery: proofrun.DeliveryJudgment{Sufficient: true}}, nil, bed.now)
+	}
+	return bed, entered, gate, reported
+}
+
+// R6 (b): a proof in flight on base-1 when a landing moved an engine path in
+// its manifest is reopened on base-2 at the tick, its completion is discarded
+// by its token, and one ordinary re-proof lands on what reuse by identity kept.
+func TestOthersReopenAndReproveWhenAnInputMoved(t *testing.T) {
+	t.Parallel()
+	move := BaseMove{Changed: []string{"records/2026-09-28.md"}, LandedBy: dispatchB}
+	bed, entered, gate, reported := movedBaseBed(t, nil, move, func(base string, units []Unit) ([]string, error) {
+		return []string{"tip-" + strings.TrimPrefix(base, "base-")}, nil
+	})
+	must(t, bed.owner.Tick(testBatchID))
+	first := <-entered
+	bed.tree = "base-2"
+	must(t, bed.owner.Tick(testBatchID))
+	kept := load(t, bed.owner.store)
+	witness(t, kept.State == StateProving && kept.BaseTree == "base-1" && kept.Proof.Token == first.Token,
+		"a records-only move reopened a proof whose inputs arrive with its result: %+v", kept)
+	bed.owner.baseMove = func(string, string) (BaseMove, error) {
+		return BaseMove{Changed: []string{"internal/landing/batch/owner.go"}, LandedBy: dispatchB}, nil
+	}
+	must(t, bed.owner.Tick(testBatchID))
+	reopened := load(t, bed.owner.store)
+	witness(t, reopened.State == StateOpen && reopened.BaseTree == "base-2" && reopened.TipTree == "tip-2" && reopened.Proof == nil &&
+		reopened.History[len(reopened.History)-1].Verb == "trunk-moved", "an engine move did not reopen the proving batch on base-2: %+v", reopened)
+	gate <- struct{}{}
+	bed.owner.Complete(<-bed.owner.completions)
+	witness(t, len(*reported) == 1 && strings.Contains((*reported)[0], "BATCH_PROOF_STALE_COMPLETION"), "old completion: reports=%q", *reported)
+	must(t, bed.owner.Tick(testBatchID))
+	second := <-entered
+	gate <- struct{}{}
+	bed.owner.settle()
+	landed := load(t, bed.owner.store)
+	witness(t, second.Token != first.Token && landed.State == StateLanding && landed.Proof.Token == second.Token && landed.Proof.Tree == "tip-2" &&
+		landed.Proof.Reuse["unit-standard"] == "attempt-before" && len(landed.Proof.Executions) == 0,
+		"re-proof: first=%+v second=%+v proof=%+v", first, second, landed.Proof)
+}
+
+// R6 (c): a member whose changes conflict with what the other batch landed is
+// ejected with the files named and the next command; the survivors reopen.
+func TestRebaseConflictEjectsTheMemberAndNamesFiles(t *testing.T) {
+	t.Parallel()
+	claim := Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 2, AccountingRevision: 1}
+	units := []Unit{{GoalID: "goal-c", Chain: "chain-c", Claim: claim, State: UnitJoined}, {GoalID: "goal-d", Chain: "chain-d", Claim: claim, State: UnitJoined}}
+	move := BaseMove{Changed: []string{"internal/landing/batch/shared.go"}, LandedBy: dispatchB}
+	bed, _, _, _ := movedBaseBed(t, units, move, func(base string, members []Unit) ([]string, error) {
+		if members[0].GoalID == "goal-c" {
+			return nil, &assemblyConflict{GoalID: "goal-c", Paths: []string{"internal/landing/batch/shared.go"},
+				Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit goal-c paths internal/landing/batch/shared.go")}
+		}
+		return []string{"tip-d"}, nil
+	})
+	launches := 0
+	bed.owner.launch = func(Dispatch) error { launches++; return nil }
+	bed.tree = "base-2"
+	must(t, bed.owner.Tick(testBatchID))
+	record := load(t, bed.owner.store)
+	want := "CONFLICT with what landed in batch " + dispatchB + " (files internal/landing/batch/shared.go). Rebase goal/goal-c on main, then metasystem work land goal-c."
+	witness(t, record.State == StateOpen && record.BaseTree == "base-2" && record.TipTree == "tip-d" && launches == 0,
+		"survivors did not reopen on base-2: %+v", record)
+	witness(t, record.Units[0].State == UnitReturnPending && record.Units[0].Outcome == UnitEjected && record.Units[0].Failure == want &&
+		record.Units[1].State == UnitJoined, "conflicting member: %+v", record.Units)
 }

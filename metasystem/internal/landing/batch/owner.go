@@ -26,14 +26,19 @@ type ownerSeams struct {
 	descendsFrom        func(string, string) (bool, error)
 	sample              func() proofrun.LoadSample
 	admission           func(proofrun.LoadSample) proofrun.AdmissionCap
-	launch              func(string, proofrun.LoadSample, string) error
+	launch              func(Dispatch) error
+	probeRun            func(string, Record) (RunProbe, error)
+	runners             func(proofrun.LoadSample, proofrun.AdmissionCap) []RunnerCapacity
 	lock                func(string) *proofLock
 	after               func(time.Duration) <-chan time.Time
 	report              func(string, error)
 	glob                func(string) ([]string, error)
 	helmActive          func(string) bool
+	baseMove            func(string, string) (BaseMove, error)
 	locks               map[string]*proofLock
 	held                map[string]HeldBatch
+	inflight            map[string]*proofRun
+	completions         chan Completion
 	standing            bool
 }
 
@@ -69,12 +74,16 @@ type OwnerOptions struct {
 	DescendsFrom        func(string, string) (bool, error)
 	Sample              func() proofrun.LoadSample
 	Admission           func(proofrun.LoadSample) proofrun.AdmissionCap
-	Launch              func(string, proofrun.LoadSample, string) error
+	Launch              func(Dispatch) error
+	ProbeRun            func(string, Record) (RunProbe, error) // a planned proof's launcher, read from the proof store after a restart
 	After               func(time.Duration) <-chan time.Time
 	Report              func(string, error)
 	Glob                func(string) ([]string, error)
 	// HelmActive reports whether a unit's seat is at the helm; nil holds nothing.
 	HelmActive func(root string) bool
+	// BaseMove reads what moved main between two base trees; nil leaves a
+	// batch on the base it was sealed on until its landing decides.
+	BaseMove func(fromTree, toTree string) (BaseMove, error)
 }
 
 type Owner struct {
@@ -88,7 +97,7 @@ type Owner struct {
 func NewOwner(options OwnerOptions) (*Owner, error) {
 	if options.Now == nil || options.FetchTree == nil || options.ReadClaim == nil || options.Rebind == nil || options.Mint == nil || options.LogRed == nil ||
 		options.BaseCommit == nil || options.RunDiagnostic == nil || options.DescendsFrom == nil ||
-		options.Sample == nil || options.Admission == nil || options.Launch == nil || options.After == nil || options.Report == nil {
+		options.Sample == nil || options.Admission == nil || options.Launch == nil || options.ProbeRun == nil || options.After == nil || options.Report == nil {
 		return nil, fmt.Errorf("construct batch owner: every owner seam is required")
 	}
 	if options.PID < 1 {
@@ -102,16 +111,32 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 		now: options.Now, fetchTree: options.FetchTree, readClaim: options.ReadClaim, resumeJoinAdmission: options.ResumeJoinAdmission,
 		returns: options.Returns, rebind: options.Rebind, mint: options.Mint, logRed: options.LogRed,
 		baseCommit: options.BaseCommit, runDiagnostic: options.RunDiagnostic, descendsFrom: options.DescendsFrom, sample: options.Sample,
-		admission: options.Admission, launch: options.Launch, after: options.After,
-		report: options.Report, glob: options.Glob, helmActive: options.HelmActive, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
+		admission: options.Admission, launch: options.Launch, probeRun: options.ProbeRun, after: options.After,
+		report: options.Report, glob: options.Glob, helmActive: options.HelmActive, baseMove: options.BaseMove, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
+		inflight: map[string]*proofRun{}, completions: make(chan Completion, 64),
+		runners: func(sample proofrun.LoadSample, admission proofrun.AdmissionCap) []RunnerCapacity {
+			return []RunnerCapacity{hostRunner(sample, admission)}
+		},
 	}
 	owner.lock = func(id string) *proofLock {
-		return newProofLock(options.Store, options.LockDir, options.QueueDir, id, options.PID, options.Now)
+		return newBatchProofLock(options.Store, options.LockDir, options.QueueDir, id, options.PID, options.Now)
 	}
 	return owner, nil
 }
 
+// Tick advances one batch. A batch with a run in flight returns at once; a
+// decided run is dispatched and completes on the owner's loop.
 func (owner *Owner) Tick(id string) error {
+	if run := owner.inflight[id]; run != nil && !run.attached {
+		tree, err := owner.fetchTree()
+		if err == nil {
+			_, err = owner.followMovedBase(id, tree, true)
+		}
+		return err
+	}
+	if err := owner.restart(id); err != nil {
+		return err
+	}
 	tree, err := owner.fetchTree()
 	if err != nil {
 		return err
@@ -138,6 +163,9 @@ func (owner *Owner) Tick(id string) error {
 	}
 	if err = owner.rebind(id, tree); err != nil {
 		return err
+	}
+	if moved, err := owner.followMovedBase(id, tree, false); err != nil || moved {
+		return errors.Join(err, owner.release(id))
 	}
 	record, err := owner.store.Load(id)
 	if err != nil {
@@ -172,16 +200,17 @@ func (owner *Owner) Tick(id string) error {
 		}
 	}
 	if record.State == StateDiagnosing || record.State == StateLanding {
-		lock := owner.locks[id]
-		if lock == nil {
-			lock = owner.lock(id)
-			owner.locks[id] = lock
-		}
+		lock := owner.batchLock(id)
 		polled, pollErr := lock.poll()
 		if pollErr != nil || polled != lockAcquired {
 			return pollErr
 		}
-		return lock.whileHeld(func() error { return owner.launch(id, proofrun.LoadSample{}, "resume") })
+		token := ""
+		if record.Proof != nil {
+			token = record.Proof.Token
+		}
+		owner.dispatch(lock, Dispatch{ID: id, Window: "resume", Token: token, Runner: "host"})
+		return nil
 	}
 	if record.State == StateHeldTrunkRed && record.TrunkRed != nil && len(record.TrunkRed.Entries) == 0 {
 		if err := owner.release(id); err != nil {
@@ -214,24 +243,20 @@ func (owner *Owner) Tick(id string) error {
 		return owner.release(id)
 	}
 	sample := owner.sample()
-	start, window, err := owner.start(&record, sample, at)
+	start, _, err := owner.start(&record, sample, at)
 	if err != nil {
 		return err
 	}
 	if !start {
 		return owner.release(id)
 	}
-	lock := owner.locks[id]
-	if lock == nil {
-		lock = owner.lock(id)
-		owner.locks[id] = lock
-	}
+	lock := owner.batchLock(id)
 	polled, err := lock.poll()
 	if err != nil || polled != lockAcquired {
 		return err
 	}
 	sample = owner.sample()
-	start, window, err = owner.start(&record, sample, at)
+	start, window, err := owner.start(&record, sample, at)
 	if err != nil || !start {
 		if err != nil {
 			_ = lock.release()
@@ -239,13 +264,60 @@ func (owner *Owner) Tick(id string) error {
 		}
 		return lock.release()
 	}
-	return lock.whileHeld(func() error { return owner.launch(id, sample, window) })
+	admission := owner.admission(sample)
+	runner, room := owner.chooseRunner(sample, admission)
+	if !room {
+		return errors.Join(owner.recordCap(id, sample, admission, at), lock.release())
+	}
+	token, err := owner.mint()
+	if err != nil {
+		return errors.Join(err, lock.release())
+	}
+	owner.dispatch(lock, Dispatch{ID: id, Window: window, Token: token, Runner: runner, Sample: sample})
+	return nil
 }
 
-// TickOnce releases a queue registration when a caller will not poll again.
+// followMovedBase runs the moved-base decision (D2, R6) for a batch whose
+// base another landing moved: a proving batch, or a sealed batch or an open
+// one without a join in flight when no run of this owner is sealing it. A
+// reopen puts it on the new base; a rebase keeps it, and its landing
+// rebases the series. A landing batch decides in its landing run.
+func (owner *Owner) followMovedBase(id, tree string, inflight bool) (bool, error) {
+	record, err := owner.store.Load(id)
+	if err != nil || owner.baseMove == nil || tree == "" || record.BaseTree == "" || tree == record.BaseTree {
+		return false, err
+	}
+	joining := slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State == UnitJoining })
+	settled := !inflight && (record.State == StateSealed || record.State == StateOpen && !joining)
+	if record.State != StateProving && !settled || len(joinedUnits(record.Units)) == 0 {
+		return false, nil
+	}
+	move, err := owner.baseMove(record.BaseTree, tree)
+	if err != nil || !DecideMovedBase(record, move.Changed, move.Prefix).Reopen {
+		return false, err
+	}
+	return true, ReopenMovedBase(owner.store, id, tree, move.LandedBy, owner.actor, owner.now())
+}
+
+// TickOnce waits for the run its tick started and releases a queue
+// registration when a caller will not poll again.
 func (owner *Owner) TickOnce(id string) (err error) {
-	defer func() { err = errors.Join(err, owner.release(id)) }()
-	return owner.Tick(id)
+	defer func() {
+		if run := owner.inflight[id]; run != nil && run.attached {
+			delete(owner.inflight, id)
+		}
+		err = errors.Join(err, owner.release(id))
+	}()
+	err = owner.Tick(id)
+	for run := owner.inflight[id]; run != nil && !run.attached; run = owner.inflight[id] {
+		done := <-owner.completions
+		if done.ID == id {
+			err = errors.Join(err, owner.complete(done))
+		} else {
+			owner.Complete(done)
+		}
+	}
+	return err
 }
 
 func greenTipClearDetail(proof *Proof) string {
@@ -278,9 +350,12 @@ func (owner *Owner) clearGreenTipTrunkRed(id string, record Record, at time.Time
 	if _, unbound := owner.store.LedgerOwner().(UnboundLedgerOwner); unbound {
 		return nil, nil
 	}
+	// Only a trunk red holds a landing or clears on a green tip; a flake, hang
+	// or quality entry closes by a proven fix or a person, never here.
+	ledger := holdingLedger{owner.store.LedgerOwner()}
 	pending, complete := greenTipClearStatus(record)
 	if complete {
-		return owner.store.LedgerOwner().Open()
+		return ledger.Open()
 	}
 	detail := greenTipClearDetail(record.Proof)
 	if !pending {
@@ -294,7 +369,7 @@ func (owner *Owner) clearGreenTipTrunkRed(id string, record Record, at time.Time
 			return nil, err
 		}
 	}
-	open, err := clearGreenTipEntries(record.Proof, trunkRedClearSeams{mint: owner.mint, ledger: owner.store.LedgerOwner(), descendsFrom: owner.descendsFrom})
+	open, err := clearGreenTipEntries(record.Proof, trunkRedClearSeams{mint: owner.mint, ledger: ledger, descendsFrom: owner.descendsFrom})
 	if err != nil {
 		return nil, err
 	}
@@ -311,8 +386,18 @@ func (owner *Owner) clearGreenTipTrunkRed(id string, record Record, at time.Time
 	return open, err
 }
 
+// holdingLedger narrows a ledger to the entries that hold a landing.
+type holdingLedger struct{ LedgerOwner }
+
+func (ledger holdingLedger) Open() ([]OpenEntry, error) {
+	open, err := ledger.LedgerOwner.Open()
+	return slices.DeleteFunc(open, func(entry OpenEntry) bool { return !entry.HoldsLanding() }), err
+}
+
+// release gives up a batch's queue registration or lock; a run in flight keeps
+// its lock until its completion is applied.
 func (owner *Owner) release(id string) error {
-	if lock := owner.locks[id]; lock != nil {
+	if lock := owner.locks[id]; lock != nil && owner.inflight[id] == nil {
 		return lock.release()
 	}
 	return nil
@@ -423,6 +508,7 @@ func (owner *Owner) Withdraw() (first bool, withdrawn []string, err error) {
 }
 
 func (owner *Owner) Resume() {
+	owner.drain()
 	owner.standing = false
 	previous := owner.held
 	owner.held = map[string]HeldBatch{}
@@ -469,6 +555,8 @@ func (owner *Owner) Loop(interval time.Duration, wake <-chan struct{}, stop <-ch
 		select {
 		case <-wake:
 		case <-timer:
+		case done := <-owner.completions:
+			owner.Complete(done)
 		case <-stop:
 			return
 		}

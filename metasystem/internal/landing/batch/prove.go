@@ -16,6 +16,7 @@ import (
 // tip proof. Planned is written before the charged runner can start.
 type Proof struct {
 	Status          string              `json:"status"`
+	Token           string              `json:"token,omitempty"`
 	Tree            string              `json:"tree"`
 	Window          string              `json:"window"`
 	RequiredMode    testpolicy.Mode     `json:"requiredMode"`
@@ -36,11 +37,114 @@ type Proof struct {
 	RedGroups       []RedGroup          `json:"redGroups,omitempty"`
 	PrefixGoal      string              `json:"prefixGoal,omitempty"`
 	Failure         string              `json:"failure,omitempty"`
+	// Sources is the retained verifier's answer per selected group on the tip
+	// (D4). Flakes are the known flakes a composed proof landed on, rechecked
+	// immediately before publication (BL3S-01).
+	Sources map[string]Source `json:"sources,omitempty"`
+	Flakes  []FlakeUse        `json:"flakes,omitempty"`
+	// SourcesUnresolved says why an ordinary green proof's Sources were not
+	// recorded; the proof still lands, since nothing reads Sources before U5.
+	SourcesUnresolved string `json:"sourcesUnresolved,omitempty"`
+}
+
+// The kinds of a group's source: executed in the tip attempt, reused by
+// identity from another retained attempt, or covered by other tip groups.
+const SourceExecuted, SourceReused, SourceCovered = "executed", "reused", "covered"
+
+// Source names the attempt that holds one group's pass.
+type Source struct {
+	Kind    string `json:"kind"`
+	Attempt string `json:"attempt"`
+}
+
+// FlakeUse is one known-flake entry a composed proof relied on.
+type FlakeUse struct {
+	Identity       string    `json:"identity"`
+	EntryID        string    `json:"entryId"`
+	AllowanceUntil time.Time `json:"allowanceUntil"`
+}
+
+// ResolveSources projects the retained verifier's per-group attempt onto
+// Sources. A selected group without a source, or a red group of the tip
+// attempt cited from that attempt, does not resolve.
+func ResolveSources(proof Proof, resolved map[string]string) (map[string]Source, error) {
+	sources := map[string]Source{}
+	for _, group := range proof.SelectedGroups {
+		attempt := resolved[group]
+		red := slices.ContainsFunc(proof.RedGroups, func(red RedGroup) bool { return red.ID == group })
+		switch {
+		case attempt == "" || attempt == proof.AttemptID && red:
+			return nil, fmt.Errorf("group %s does not resolve to a passing attempt through the retained verifier on tip %s", group, proof.Tree)
+		case attempt != proof.AttemptID:
+			sources[group] = Source{Kind: SourceReused, Attempt: attempt}
+		case slices.Contains(proof.Executions, group):
+			sources[group] = Source{Kind: SourceExecuted, Attempt: attempt}
+		default:
+			sources[group] = Source{Kind: SourceCovered, Attempt: attempt}
+		}
+	}
+	return sources, nil
+}
+
+// RecordSources fills an ordinary green proof's Sources through the retained
+// verifier, best effort: a verifier error or a group that does not resolve
+// (another batch's fresh base run can block reuse or leave a newer failed
+// observation) is recorded as the reason and the proof still lands. Only the
+// composed-proof path, which lands on the classification attempt, returns
+// every member when a group does not resolve.
+func RecordSources(store Store, id, actor string, at time.Time, resolve func(Record) (map[string]string, error)) error {
+	record, err := store.Load(id)
+	if err != nil || record.State != StateLanding || record.Proof == nil || record.Proof.Status != "green" || record.Proof.Sources != nil {
+		return err
+	}
+	var sources map[string]Source
+	resolved, unresolved := resolve(record)
+	if unresolved == nil {
+		sources, unresolved = ResolveSources(*record.Proof, resolved)
+	}
+	return store.Update(id, func(current *Record) error {
+		if current.Proof == nil || current.Proof.AttemptID != record.Proof.AttemptID {
+			return fmt.Errorf("BATCH_PROOF_INPUT_MOVED: batch changed before its sources were recorded")
+		}
+		current.Proof.Sources, current.Proof.SourcesUnresolved = sources, ""
+		if unresolved != nil {
+			current.Proof.SourcesUnresolved = unresolved.Error()
+		}
+		return nil
+	})
+}
+
+func returnEveryMember(store Store, record Record, actor string, at time.Time, reason string) error {
+	var decisions []ReturnDecision
+	for _, unit := range joinedUnits(record.Units) {
+		decisions = append(decisions, ReturnDecision{GoalID: unit.GoalID, Outcome: UnitEjected, Reason: reason})
+	}
+	return ReassembleSurvivorsWithReturns(store, record.BatchID, actor, at, decisions)
+}
+
+// flakesStillCarried rechecks every known flake a composed proof used
+// against the register at now: closed, reclassified or expired is refused.
+func flakesStillCarried(uses []FlakeUse, open []OpenEntry, now time.Time) error {
+	for _, use := range uses {
+		index := slices.IndexFunc(open, func(entry OpenEntry) bool { return entry.ID == use.EntryID && entry.Identity == use.Identity })
+		switch {
+		case index < 0 || open[index].Class != ClassKnownFlake:
+			return fmt.Errorf("known flake %s is no longer an open known flake", use.EntryID)
+		case !open[index].CarriesLanding(now):
+			return fmt.Errorf("known flake %s's landing allowance expired at %s; it blocks every batch until fixed at its cause",
+				use.EntryID, open[index].AllowanceUntil.UTC().Format(time.RFC3339))
+		}
+	}
+	return nil
 }
 
 // RequireProofPlan closes membership and proves that the selected tip plan
-// covers every group accumulated from member plans.
-func RequireProofPlan(store Store, id, actor, window string, sample proofrun.LoadSample, plan testpolicy.Plan, at time.Time) (Record, error) {
+// covers every group accumulated from member plans. The owner's minted token
+// binds the plan: only a completion carrying it may finish or refuse it.
+func RequireProofPlan(store Store, id, actor, window, token string, sample proofrun.LoadSample, plan testpolicy.Plan, at time.Time) (Record, error) {
+	if token == "" {
+		return Record{}, fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s proof plan has no token", id)
+	}
 	record, err := store.Load(id)
 	if err != nil {
 		return Record{}, err
@@ -65,7 +169,7 @@ func RequireProofPlan(store Store, id, actor, window string, sample proofrun.Loa
 		if current.Landing != nil {
 			candidateTip = current.Landing.candidateTip()
 		}
-		current.Proof = &Proof{Status: "planned", Tree: current.TipTree, CandidateTip: candidateTip, Window: window, RequiredMode: plan.RequiredMode,
+		current.Proof = &Proof{Status: "planned", Token: token, Tree: current.TipTree, CandidateTip: candidateTip, Window: window, RequiredMode: plan.RequiredMode,
 			ExecutedMode: plan.ExecutedMode, SelectedGroups: selected, Sample: sample, Launchers: sample.OverlappingHost}
 		current.Transition(StateProving, at, "prove", actor, "planned")
 		return nil
@@ -91,8 +195,11 @@ func RecordUnionRefusal(store Store, id, actor, reason string, at time.Time) err
 
 // RefuseProofAdmission records a pre-run refusal without scheduling red
 // diagnosis. Retryable capacity refusals return to the sealed admission edge.
-func RefuseProofAdmission(store Store, id, actor, status, reason string, at time.Time) error {
+func RefuseProofAdmission(store Store, id, actor, token, status, reason string, at time.Time) error {
 	return store.Update(id, func(record *Record) error {
+		if err := staleCompletion(*record, token); err != nil {
+			return err
+		}
 		if record.State != StateProving || record.Proof == nil || record.Proof.Status != "planned" {
 			return fmt.Errorf("BATCH_PROOF_NOT_ADMITTED: batch %s has no planned proof", id)
 		}
@@ -104,8 +211,11 @@ func RefuseProofAdmission(store Store, id, actor, status, reason string, at time
 
 // FinishProof attaches the exact execution and reuse evidence to the planned
 // attempt. A failed launch remains durable and is not silently retried.
-func FinishProof(store Store, id, actor string, result proofrun.TestResult, launchErr error, at time.Time) error {
+func FinishProof(store Store, id, actor, token string, result proofrun.TestResult, launchErr error, at time.Time) error {
 	return store.Update(id, func(record *Record) error {
+		if err := staleCompletion(*record, token); err != nil {
+			return err
+		}
 		if record.State != StateProving || record.Proof == nil || record.Proof.Status != "planned" {
 			return fmt.Errorf("BATCH_PROOF_NOT_ADMITTED: batch %s has no planned proof", id)
 		}
@@ -146,14 +256,7 @@ func FinishProof(store Store, id, actor string, result proofrun.TestResult, laun
 				record.Proof.Reuse[group.ID] = group.ReuseAttempt
 			}
 			if group.Status != "passed" && group.Status != "reused" {
-				red := RedGroup{ID: group.ID, Status: group.Status, NotRunReason: group.NotRunReason, LogPath: group.LogPath,
-					LogDigest: group.LogDigest, InputManifest: slices.Clone(group.InputManifest)}
-				for _, observed := range group.Observed {
-					if observed.Status == "failed" {
-						red.Failures = append(red.Failures, Failure{Report: observed.Report, Classname: observed.Classname, Name: observed.Name, Status: observed.Status, Reason: observed.Reason})
-					}
-				}
-				record.Proof.RedGroups = append(record.Proof.RedGroups, red)
+				record.Proof.RedGroups = append(record.Proof.RedGroups, RedGroupFromResult(group))
 			}
 		}
 		if launchErr != nil {
@@ -168,6 +271,15 @@ func FinishProof(store Store, id, actor string, result proofrun.TestResult, laun
 		}
 		return nil
 	})
+}
+
+// staleCompletion refuses a completion whose plan was cleared or replaced,
+// as a reopen or a survivor reassembly does, while its run was in flight.
+func staleCompletion(record Record, token string) error {
+	if record.Proof == nil || record.Proof.Token != token {
+		return fmt.Errorf("BATCH_PROOF_STALE_COMPLETION: batch %s proof plan %q is not the one this completion ran", record.BatchID, token)
+	}
+	return nil
 }
 
 // WithdrawBudgetMember returns the authority member when P2 cannot preserve
@@ -197,13 +309,13 @@ type ReturnDecision struct {
 }
 
 func ReassembleSurvivorsWithReturns(store Store, id, actor string, at time.Time, decisions []ReturnDecision) error {
-	return reassembleSurvivorsOnBase(store, id, actor, at, decisions, "", "")
+	return reassembleSurvivorsOnBase(store, id, actor, at, decisions, "", "", "")
 }
 
 // reassembleSurvivorsOnBase is the one owner for both returned-member and
 // moved-base composition. A moved base can reveal the first typed conflict;
 // subsequent conflicts are closed in original join order.
-func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, decisions []ReturnDecision, newBaseTree, detail string) error {
+func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, decisions []ReturnDecision, newBaseTree, detail, landedBy string) error {
 	record, err := store.Load(id)
 	if err != nil {
 		return err
@@ -272,7 +384,7 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 		}
 		reason := "cannot apply after returning " + knownRemoved() + ": " + err.Error()
 		if knownRemoved() == "" {
-			reason = "cannot apply on moved base: " + err.Error()
+			reason = movedBaseConflictLine(conflict, landedBy)
 		}
 		decision := ReturnDecision{GoalID: conflict.GoalID, Outcome: UnitEjected, Reason: reason}
 		if err := requestUnitReturn(&record, decision.GoalID, decision.Outcome, decision.Reason, actor, at); err != nil {

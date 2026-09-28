@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -21,7 +20,13 @@ import (
 	receiptpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 )
 
+// executeBatchLanding lands one batch with the lane checkout held: concurrent
+// landings and base re-arms move the same checkout, so they take turns.
 func executeBatchLanding(root, id, actor string, at time.Time) error {
+	return withLaneCheckout(root, func() error { return landBatchInCheckout(root, id, actor, at) })
+}
+
+func landBatchInCheckout(root, id, actor string, at time.Time) error {
 	store := batch.NewStore(root, nil)
 	record, err := store.Load(id)
 	if err != nil {
@@ -77,16 +82,9 @@ func reopenBatchBeforeReceiptsWhenProofBaseMoved(root string, store batch.Store,
 	if err != nil || origin == record.Proof.BaseCommit {
 		return false, err
 	}
-	changed, err := (gittree.Workspace{Dir: root}).ChangedPaths(record.BaseTree, originTree)
-	if err != nil {
+	changed, prefix, err := batchMovedPaths(root, record.BaseTree, originTree)
+	if err != nil || !batch.DecideMovedBase(record, changed, prefix).Reopen {
 		return false, err
-	}
-	prefix, err := (gittree.Workspace{Dir: root}).Prefix()
-	if err != nil {
-		return false, err
-	}
-	if !batchProofInputsMoved(record, changed, prefix) {
-		return false, nil
 	}
 	tip := ""
 	if record.Landing != nil {
@@ -98,7 +96,44 @@ func reopenBatchBeforeReceiptsWhenProofBaseMoved(root string, store batch.Store,
 	if err := batchLandAbandon(root, id, tip, origin); err != nil {
 		return false, err
 	}
-	return true, batch.ReopenMovedTrunk(store, id, originTree, actor, at)
+	return true, batch.ReopenMovedBase(store, id, originTree, landedBatchOn(root, gitOutput, record.Proof.BaseCommit, origin), actor, at)
+}
+
+// batchMovedPaths reads the paths main changed between two base trees and
+// the installation prefix they are relative to.
+func batchMovedPaths(root, fromTree, toTree string) ([]string, string, error) {
+	workspace := gittree.Workspace{Dir: root}
+	changed, err := workspace.ChangedPaths(fromTree, toTree)
+	if err != nil {
+		return nil, "", err
+	}
+	prefix, err := workspace.Prefix()
+	return changed, prefix, err
+}
+
+// landedBatchOn names the batch whose pushed tip is in the range main moved
+// by, for a member's conflict return; empty when no batch landed it.
+func landedBatchOn(root string, readGit func(string, ...string) (string, error), fromCommit, toCommit string) string {
+	output, err := readGit(root, "rev-list", fromCommit+".."+toCommit)
+	if err != nil {
+		return ""
+	}
+	return batch.LandedBatch(batch.NewStore(root, nil), strings.Fields(output))
+}
+
+// batchBaseMove is the owner's view of a moved base between two trees.
+func batchBaseMove(root string) func(string, string) (batch.BaseMove, error) {
+	return func(fromTree, toTree string) (batch.BaseMove, error) {
+		changed, prefix, err := batchMovedPaths(root, fromTree, toTree)
+		if err != nil {
+			return batch.BaseMove{}, err
+		}
+		move := batch.BaseMove{Changed: changed, Prefix: prefix}
+		if from, commitErr := commitForTree(root, "refs/remotes/origin/main", fromTree); commitErr == nil {
+			move.LandedBy = landedBatchOn(root, gitOutput, from, "refs/remotes/origin/main")
+		}
+		return move, nil
+	}
 }
 
 var batchLandFetchOrigin = fetchBatchOrigin
@@ -196,6 +231,14 @@ func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, ac
 		OriginTree: func(commit string) (string, error) {
 			return batchLandOriginTree(root, commit)
 		},
+		FlakeRegister: func() ([]batch.OpenEntry, error) {
+			ledger, err := productionTrunkRedLedgerOwner(controlRoot)
+			if err != nil {
+				return nil, err
+			}
+			return ledger.Open()
+		},
+		Now:            func() (time.Time, error) { return goalCommandNow(controlRoot) },
 		Abandon:        func(tip, detachAt string) error { return batchLandAbandon(root, id, tip, detachAt) },
 		SeriesOnOrigin: func(origin, tip string) (bool, error) { return batchSeriesOnEndpoint(root, origin, tip) },
 		LeaseBase:      baseCommit,
@@ -253,15 +296,66 @@ func recoverMovedBatchPush(root, id string, record batch.Record, actor, expected
 	return recoverMovedBatchPushWithInputs(root, id, record, actor, expectedBase, originCommit, baseTree, tip, gitOutput, func(cmd *exec.Cmd) error { return cmd.Run() })
 }
 
+// movedBaseEdges are the Git and proof edges of the moved-base rebase at the
+// push; production binds them in productionMovedBaseEdges, a test stubs each.
+type movedBaseEdges struct {
+	readGit    func(string, ...string) (string, error)
+	onEndpoint func(root, origin, tip string) (bool, error)
+	paths      func(root, fromTree, toTree string) ([]string, string, error)
+	advance    func(root string) error
+	held       func(root, base, commit, remote, ref string) error
+	verify     func(string, batch.Record, []string) error
+	authorize  func(string, batch.Store, batch.Record, string, time.Time) error
+	now        func(string) (time.Time, error)
+	publish    func(root, id, expected, tip string) error
+	push       func(root, id, base, tip string) error
+	fetch      func(string) (string, string, error)
+}
+
+func productionMovedBaseEdges(readGit func(string, ...string) (string, error), runGit func(*exec.Cmd) error) movedBaseEdges {
+	return movedBaseEdges{readGit: readGit,
+		onEndpoint: func(root, origin, tip string) (bool, error) {
+			return batchSeriesOnEndpointWithRunner(root, origin, tip, runGit)
+		},
+		paths: batchMovedPaths,
+		advance: func(root string) error {
+			var output bytes.Buffer
+			if err := landing.Advance(root, "refs/remotes/origin/main", &output, &output); err != nil {
+				return fmt.Errorf("%w: %s", err, strings.TrimSpace(output.String()))
+			}
+			return nil
+		},
+		held: func(root, base, commit, remote, ref string) error {
+			return batchOwnerCalls.held(root, base, commit, remote, ref)
+		},
+		verify: func(root string, record batch.Record, trees []string) error {
+			return batchVerifyRebasedSeries(root, record, trees)
+		},
+		authorize: func(root string, store batch.Store, record batch.Record, actor string, at time.Time) error {
+			return batchAuthorizeRebasedSeries(root, store, record, actor, at)
+		},
+		now: goalCommandNow, publish: batch.PublishLandingBranch,
+		push:  func(root, id, base, tip string) error { return batchMovedEndpointPush(root, id, base, tip) },
+		fetch: fetchBatchOrigin,
+	}
+}
+
 func recoverMovedBatchPushWithInputs(root, id string, record batch.Record, actor, expectedBase, originCommit, baseTree, tip string,
 	readGit func(root string, args ...string) (string, error), runGit func(*exec.Cmd) error) (batch.PushRecovery, error) {
+	return recoverMovedBatchPushWith(root, id, record, actor, expectedBase, originCommit, baseTree, tip, productionMovedBaseEdges(readGit, runGit))
+}
+
+// recoverMovedBatchPushWith is the moved-base decision at the push: a changed
+// input reopens; otherwise the series rebases onto origin, the retained
+// verifier re-verifies it by identity on the rebased tip, and it is pushed.
+func recoverMovedBatchPushWith(root, id string, record batch.Record, actor, expectedBase, originCommit, baseTree, tip string, edges movedBaseEdges) (batch.PushRecovery, error) {
 	controlRoot := batch.ModuleRoot(root)
-	originTree, err := readGit(root, "rev-parse", originCommit+"^{tree}")
+	originTree, err := edges.readGit(root, "rev-parse", originCommit+"^{tree}")
 	recovery := batch.PushRecovery{Origin: originCommit, BaseTree: originTree}
 	if err != nil {
 		return recovery, err
 	}
-	landed, err := batchSeriesOnEndpointWithRunner(root, originCommit, tip, runGit)
+	landed, err := edges.onEndpoint(root, originCommit, tip)
 	if err != nil {
 		return recovery, err
 	}
@@ -272,58 +366,55 @@ func recoverMovedBatchPushWithInputs(root, id string, record batch.Record, actor
 	if originCommit == expectedBase {
 		return recovery, nil
 	}
-	changed, err := (gittree.Workspace{Dir: root}).ChangedPaths(baseTree, originTree)
+	changed, prefix, err := edges.paths(root, baseTree, originTree)
 	if err != nil {
 		return recovery, err
 	}
-	prefix, err := (gittree.Workspace{Dir: root}).Prefix()
-	if err != nil {
-		return recovery, err
-	}
-	if batchProofInputsMoved(record, changed, prefix) {
+	recovery.LandedBy = landedBatchOn(root, edges.readGit, expectedBase, originCommit)
+	if batch.DecideMovedBase(record, changed, prefix).Reopen {
 		recovery.Reopen = true
 		return recovery, nil
 	}
-	var output bytes.Buffer
-	if err := landing.Advance(root, "refs/remotes/origin/main", &output, &output); err != nil {
-		return reopenMovedBatchAfterRecoveryFailure(root, id, tip, originCommit, recovery,
-			fmt.Errorf("rebase landing series: %w: %s", err, strings.TrimSpace(output.String())))
+	if err := edges.advance(root); err != nil {
+		// A conflicting rebase reopens: the reassembly on the new base ejects
+		// the member whose changes do not apply, naming the files.
+		return reopenMovedBatchAfterRecoveryFailure(root, id, tip, originCommit, recovery, fmt.Errorf("rebase landing series: %w", err))
 	}
-	rebasedTip, err := gitOutput(root, "rev-parse", "HEAD")
+	rebasedTip, err := edges.readGit(root, "rev-parse", "HEAD")
 	if err != nil {
 		return recovery, err
 	}
-	if err := batchOwnerCalls.held(controlRoot, originCommit, rebasedTip, "origin", "refs/heads/main"); err != nil {
+	if err := edges.held(controlRoot, originCommit, rebasedTip, "origin", "refs/heads/main"); err != nil {
 		return reopenMovedBatchAfterRecoveryFailure(root, id, tip, originCommit, recovery, fmt.Errorf("rebased landing held: %w", err))
 	}
 	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
 	if len(joined) == 0 {
 		return recovery, fmt.Errorf("rebased landing has no joined authority member")
 	}
-	finalTrees, err := rebasedPrefixTrees(root, originCommit, rebasedTip, joined)
+	finalTrees, err := rebasedPrefixTreesWith(root, originCommit, rebasedTip, joined, edges.readGit)
 	if err != nil {
 		return reopenMovedBatchAfterRecoveryFailure(root, id, tip, originCommit, recovery, err)
 	}
-	if err := batchVerifyRebasedSeries(root, record, finalTrees); err != nil {
+	if err := edges.verify(root, record, finalTrees); err != nil {
 		return reopenMovedBatchAfterRecoveryFailure(root, id, tip, originCommit, recovery, fmt.Errorf("rebased prefix verification: %w", err))
 	}
 	// The first endpoint attempt's authority check cannot authorize this
 	// retry: a member can be fenced or revised while the moved series is
 	// rebased and reproved. A typed refusal returns that member and rebuilds
 	// the survivors before either rebased publication or endpoint push.
-	at, err := goalCommandNow(controlRoot)
+	at, err := edges.now(controlRoot)
 	if err != nil {
 		return recovery, err
 	}
-	if err := batchAuthorizeRebasedSeries(root, batch.NewStore(root, nil), record, actor, at); err != nil {
+	if err := edges.authorize(root, batch.NewStore(root, nil), record, actor, at); err != nil {
 		return recovery, err
 	}
-	if err := batch.PublishLandingBranch(root, id, tip, rebasedTip); err != nil {
+	if err := edges.publish(root, id, tip, rebasedTip); err != nil {
 		return recovery, err
 	}
 	recovery.Tip = rebasedTip
-	if err := batchMovedEndpointPush(root, id, originCommit, rebasedTip); err != nil {
-		latest, latestTree, fetchErr := fetchBatchOrigin(root)
+	if err := edges.push(root, id, originCommit, rebasedTip); err != nil {
+		latest, latestTree, fetchErr := edges.fetch(root)
 		if fetchErr == nil {
 			recovery.Origin, recovery.BaseTree = latest, latestTree
 		}
@@ -372,43 +463,9 @@ func fetchBatchOrigin(root string) (string, string, error) {
 	return commit, tree, err
 }
 
+// batchProofInputsMoved is the moved-base decision's reopen answer.
 func batchProofInputsMoved(record batch.Record, changed []string, installationPrefix string) bool {
-	if record.Proof == nil {
-		return true
-	}
-	policy, err := behaviorsurface.Load()
-	if err != nil {
-		return true
-	}
-	installationPrefix = strings.Trim(filepath.ToSlash(installationPrefix), "/")
-	for _, changedPath := range changed {
-		policyPath := filepath.ToSlash(changedPath)
-		if installationPrefix != "" && policyPath != installationPrefix && !strings.HasPrefix(policyPath, installationPrefix+"/") {
-			continue
-		}
-		// ENGINE changes invalidate proof inputs only when the changed path is
-		// part of this installation; sibling repositories have separate engines.
-		included, err := policy.Includes(behaviorsurface.Engine, policyPath, installationPrefix)
-		if err != nil || included {
-			return true
-		}
-	}
-	for _, groupID := range record.Proof.SelectedGroups {
-		manifest := record.Proof.InputManifests[groupID]
-		if len(manifest) == 0 {
-			return true
-		}
-		for _, changedPath := range changed {
-			if testInputManifestContains(manifest, changedPath) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func rebasedPrefixTrees(root, base, tip string, units []batch.Unit) ([]string, error) {
-	return rebasedPrefixTreesWith(root, base, tip, units, gitOutput)
+	return batch.DecideMovedBase(record, changed, installationPrefix).Reopen
 }
 
 func rebasedPrefixTreesWith(root, base, tip string, units []batch.Unit, readGit func(string, ...string) (string, error)) ([]string, error) {

@@ -156,18 +156,16 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	actor := binding.Machine + "+" + binding.Lineage
 	store := batch.NewStore(request.LandingRoot, dependencies.prober)
 	record := batch.Record{BatchID: id, BaseTree: baseTree, TipTree: baseTree, State: batch.StateOpen}
+	// A join addresses an open batch (the newest on the current base, else the
+	// newest on any base), else a new batch on the current base; batches sealed
+	// or proving prove side by side while new joins open beside them.
 	records, err := store.Records()
 	if err != nil {
 		return batch.Record{}, err
 	}
-	foundOpen := false
-	for _, candidate := range records {
-		if candidate.State == batch.StateOpen && candidate.ClosedReason == "" {
-			if foundOpen {
-				return batch.Record{}, fmt.Errorf("more than one open landing batch exists")
-			}
-			record, foundOpen = candidate, true
-		}
+	open, foundOpen := batch.JoinableOpen(records, baseTree)
+	if foundOpen {
+		record = open
 	}
 	if request.Last || request.Through != "" {
 		if dependencies.transportMember == nil {
@@ -203,26 +201,23 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	if unit.Claim.AccountingRevision == 0 {
 		return batch.Record{}, fmt.Errorf("BATCH_JOIN_REVISION_MOVED: goal %s has no accounting revision", request.GoalID)
 	}
-	prefixes, err := dependencies.assemble(request.LandingRoot, record.BaseTree, []batch.Unit{unit})
-	if err != nil || len(prefixes) != 1 {
-		return batch.Record{}, fmt.Errorf("prepare join unit tree: prefixes=%d: %w", len(prefixes), err)
-	}
-	if dependencies.protectedTests == nil {
-		return batch.Record{}, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: protected test gate is unavailable")
-	}
-	if err := dependencies.protectedTests(request.LandingRoot, record.BaseTree, prefixes[0]); err != nil {
+	// The unit is prepared on the addressed batch's base. When the batch it
+	// finally joins has another base (the addressed one was sealed meanwhile and
+	// a batch on a newer base took its place), the unit is reassembled there.
+	prepared := record.BaseTree
+	if err := prepareJoinUnit(request.LandingRoot, prepared, unit, dependencies); err != nil {
 		return batch.Record{}, err
 	}
-	// The candidate was prepared on the open batch's own base, which trunk may have
-	// passed since; only a batch that changed under the preparation refuses.
-	prepared := record
-	if foundOpen {
-		record, err = batch.FindOrCreateOpen(store, baseTree, id, actor, request.At)
-		if err != nil {
-			return batch.Record{}, err
+	materialize := func() error {
+		if record, err = batch.FindOrCreateOpen(store, baseTree, id, actor, request.At); err != nil || record.BaseTree == prepared {
+			return err
 		}
-		if record.BaseTree != prepared.BaseTree {
-			return batch.Record{}, fmt.Errorf("BATCH_JOIN_BASE_MOVED: open batch base changed during preparation")
+		prepared = record.BaseTree
+		return prepareJoinUnit(request.LandingRoot, prepared, unit, dependencies)
+	}
+	if foundOpen {
+		if err := materialize(); err != nil {
+			return batch.Record{}, err
 		}
 	}
 	handover := func() error { return dependencies.handover(request, record.BatchID, unit.Claim) }
@@ -258,12 +253,8 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	// forecast fits, materialize the open record and let the publication CAS
 	// reject any intervening membership or base change before handover.
 	if !foundOpen {
-		record, err = batch.FindOrCreateOpen(store, baseTree, id, actor, request.At)
-		if err != nil {
+		if err := materialize(); err != nil {
 			return batch.Record{}, err
-		}
-		if record.BaseTree != prepared.BaseTree {
-			return batch.Record{}, fmt.Errorf("BATCH_JOIN_BASE_MOVED: open batch base changed during preparation")
 		}
 	}
 	runAdmission := func(batchID string, joined batch.Unit) (batch.JoinAdmission, error) {
@@ -290,6 +281,19 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 		return batch.Record{}, err
 	}
 	return store.Load(record.BatchID)
+}
+
+// prepareJoinUnit assembles the unit alone on base and checks that the
+// candidate keeps every protected test.
+func prepareJoinUnit(root, base string, unit batch.Unit, dependencies batchJoinDependencies) error {
+	prefixes, err := dependencies.assemble(root, base, []batch.Unit{unit})
+	if err != nil || len(prefixes) != 1 {
+		return fmt.Errorf("prepare join unit tree: prefixes=%d: %w", len(prefixes), err)
+	}
+	if dependencies.protectedTests == nil {
+		return fmt.Errorf("BATCH_JOIN_TEST_DROPPED: protected test gate is unavailable")
+	}
+	return dependencies.protectedTests(root, base, prefixes[0])
 }
 
 func fetchLandingBaseTree(root string) (string, error) {

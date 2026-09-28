@@ -85,7 +85,7 @@ func TestGLEBatchSplitNativeRedReprovesAndPublishesIndependentSurvivor(t *testin
 		t.Fatal(err)
 	}
 	at := time.Unix(10, 0)
-	if err := batch.FinishProof(store, batchID, "owner", tip, errors.New("native test failed"), at); err != nil {
+	if err := batch.FinishProof(store, batchID, "owner", "", tip, errors.New("native test failed"), at); err != nil {
 		t.Fatal(err)
 	}
 	redRecord, err := store.Load(batchID)
@@ -132,7 +132,7 @@ func TestGLEBatchSplitNativeRedReprovesAndPublishesIndependentSurvivor(t *testin
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := batch.FinishProof(store, batchID, "owner", survivor, nil, at.Add(2*time.Second)); err != nil {
+	if err := batch.FinishProof(store, batchID, "owner", "", survivor, nil, at.Add(2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	land := batch.LandSeams{
