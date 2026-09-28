@@ -86,9 +86,9 @@ fi
 // engine's delegate supervisor against the installation root.
 func runMissionBedHost(t *testing.T, root, runtime string, environment []string, args ...string) (int, string) {
 	t.Helper()
-	engine := commandTestExecutable(t)
-	command := exec.Command(engine, append([]string{"delegate-supervisor", runtime, args[0], "--root", root}, args[1:]...)...)
-	command.Env = fixtureCommandEnvironment(t, append([]string{"METASYSTEM_BIN=" + commandTestExecutable(t)}, environment...)...)
+	command := (proofBinaryFixture{t: t}).command(
+		fixtureCommandEnvironment(t, append([]string{"METASYSTEM_BIN=" + commandTestExecutable(t)}, environment...)...),
+		commandTestExecutable(t), append([]string{"delegate-supervisor", runtime, args[0], "--root", root}, args[1:]...)...)
 	output, err := command.CombinedOutput()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
