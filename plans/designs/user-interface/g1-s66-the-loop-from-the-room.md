@@ -14,7 +14,11 @@ suggest at the level of a whole section, so a fold is one press; and a
 sitting that can hand its record to this seat with one line, 'continue
 from the record'" — "I want this. make a great UX design for this and
 then a goal with prio 1 in my name so we can pick this up later."
-Author Fable. Every cite re-read at `83f60f56a`.
+Author Fable. Every cite re-read at `83f60f56a`; revision 2
+(2026-09-28) folds Astra's round 1, re-read at `3e1262633`: the
+decisions live in the engine's own decisions file until the close, the
+cards read the round's return, the act carries the reader budget, and
+a section is replaced only when its heading is one.
 
 ## 1. What exists and binds
 
@@ -95,14 +99,16 @@ asks for. Each card has three presses. **Fold** asks the Partner for the
 section's new text; a section card appears with the old text and the
 new side by side, the changed lines marked, and **Use** writes exactly
 that section into the design under the reading rule, then writes the
-row "folded" into the Dispositions table with the fold's one-line
-summary. **Refute** asks for your reason and writes the row "refuted:
-reason". **Defer** writes "deferred" with the field it will build on.
-When every card of the round has its row, **Send round 2** is one press;
-the page says the failsafe round is the last. Round 2 comes back the
-same way; when its findings pass the works-and-safe test the page
-prints the skill's exit line, "closed at round 2 on N fixture
-obligations", and the critique heading folds. Nothing here needed a
+row "accepted" into the round's decisions with the fold's one-line
+amendment. **Refute** asks for your reason and writes "refuted:
+reason". **Defer** writes "noted" on a small finding, and on a material
+one asks you for the evidence that it is outside the brief and writes
+"out-of-scope". When every card of the round has its row, **Answer the
+round** is one press; the page says what the engine did: "closed", when
+nothing you folded changed the design, or "round 2 requested, the
+failsafe round", when it did. Round 2 comes back the same way; you
+answer it; the page prints the engine's own closing words and the
+design gains its Dispositions table at the foot. Nothing here needed a
 terminal, and nothing here was written by anyone but you: the Partner
 drafted, Astra attacked, you decided.
 
@@ -121,36 +127,102 @@ tick and apply.
 ## 4. Decisions
 
 - D1 (step 1). **The design verbs as browser acts.** `design review
-  FILE --goal G` and `design review FILE --dispositions FILE --after N`
-  run through the act layer under the human's sign-in, the way the
-  launch act does, starting the configured critique lane and returning
-  the chain's reference; the design page reads the chain's rounds and
-  their findings from the run store. The Partner's grammar gains the two
-  statements, held against the verb table by the existing test. A
-  session no-op holds: sending a design already in a round rejoins it
-  (R-129-ui).
-- D2 (step 1). **Findings as cards.** A round's findings, in the shape
-  the brief template already demands (stable id, severity, material,
-  claim, evidence, change, the two tests), are read from the chain's
-  findings register and shown on the design page under "Round N" and in
-  the drawer as cards. Each card offers Fold, Refute and Defer; each
-  press writes one row into the design's Dispositions table through the
-  whole-source edit under the sitting's reading rule, marked with the
-  finding's id so a reload cannot write it twice; Refute requires a
-  reason.
+  FILE --goal G --tool-calls N` and `design review FILE --dispositions
+  FILE --after N --tool-calls N` run through the act layer under the
+  human's sign-in, the way the launch act does, starting the configured
+  critique lane and returning the chain's reference; the design page
+  reads the chain's rounds and state from the run store. The engine
+  refuses a review without a reader budget and never invents one
+  (`cmd/metasystem/intent_delivery.go:771`), so Send to critique is a
+  small sheet, not a bare press: the funding goal, preselected when the
+  design's `Goals:` line names one approved goal and chosen when it
+  names several, and the reader budget prefilled from the setting
+  `review.design.tool-calls` (default 30, the number every brief in this
+  directory used), both editable; the engine's own refusals (no
+  approved goal, no budget, a claim held elsewhere) are shown verbatim.
+  The Partner's grammar gains the two statements, held against the verb
+  table by the existing test. A session no-op holds: sending a design
+  already in a round rejoins it (R-129-ui).
+- D2 (step 1). **Findings as cards, from the round's return; decisions
+  in the engine's file.** A round's findings are read from that round's
+  retained return, never from the findings register: the register keeps
+  only material findings and merges a recurring id across rounds
+  (`internal/dispatch/finding_register.go:1329`, `:1119`), and the
+  structured return carries id, severity, material, claim and evidence
+  (`scripts/agents/schemas/design-critic.schema.json:38`). A card shows
+  those five, and the change asked for and the two tests only where the
+  return's prose carries them under the finding's id; the register is
+  read for the chain's state alone. A card's identity is chain, round
+  and id, so round 2's card for a recurring id is a new card. Each card
+  offers Fold, Refute and Defer; each press writes one row into the
+  engine's own decisions file for that examination, the template the
+  engine writes beside the return (`cmd/metasystem/intent_design_review
+  .go:146`, `decisions.md`, with its `Review binding` header naming the
+  goal, the record, the examination, the round and the subject and
+  return digests, `intent_review_binding.go:37`), in the engine's four
+  columns (Finding id, Disposition, Reasoning and evidence, Amendment;
+  `internal/validate/critiqueclosed.go:13`) and its four values: Fold
+  writes `accepted` with the amendment; Refute writes `refuted` with
+  the reason, required; Defer writes `noted` for a non-material finding
+  and, for a material one, `out-of-scope` with the evidence that it is
+  outside the brief's threat model, required (`critiqueclosed.go:246`,
+  where `noted` cannot answer a material finding). Nothing is written
+  into the design by a press, so the design's digest stays the reviewed
+  one until a fold changes it (D4). A row is written once per card; a
+  reload finds the row in the file.
 - D3 (step 1). **Fold by section.** `suggest` gains a target of a
   document and a heading: the Partner drafts that section anew, and the
   interface shows a section card with old and new side by side and the
   changed lines marked; Use replaces exactly that section under the
   revision check, as the Outcome is replaced today; Not this dismisses.
-  Fold on a finding card asks the Partner for the section the finding
-  names and opens that card.
-- D4 (step 1). **The next round, and the close.** When every finding of
-  the current round has a row, Send round 2 composes the dispositions
-  file from the table and runs the verb with `--dispositions --after N`;
-  the chain's own accounting refuses a third round; the page shows the
-  skill's exit line from the chain's state and never computes one
-  itself.
+  A heading identifies a section only when it occurs exactly once: the
+  Outcome writer takes the first match and appends when there is none
+  (`partner/sitting.ts:399`, `:434`), and the writer checks the
+  document's revision, not the section (`project/edit.go:89`), so the
+  section card refuses, in words and keeping the draft, a heading that
+  is absent or occurs twice, and after a revision conflict the card
+  re-reads the section and shows the comparison against the words as
+  they are now before offering Use again. Fold on a finding card asks
+  the Partner for the section the finding names and opens that card;
+  Use then writes the design and the `accepted` row (D2) in that order,
+  and a Use that succeeded without its row is offered the row again.
+- D4 (step 1). **The next round, and the close, both the engine's.**
+  When every finding of the current round has a row, one press, Answer
+  the round, runs the verb with `--dispositions FILE --after N` on the
+  engine's decisions file (D2); the engine then does what its own rule
+  says: a design whose digest is still the reviewed one closes the
+  chain (`intent_design_review.go:178`, `closeDesignCritique`), and a
+  design a fold changed gets its follow-up examination in the same
+  chain, which the chain's accounting refuses past the round limit.
+  The page shows the engine's outcome and its wording, "closed", "closed
+  on N fixture obligations", "round 2 requested", or the refusal that
+  leaves the chain open for a human, and never computes an exit line.
+  Three obligations on the engine lane, all the verb's and reached from
+  the terminal and the page alike. First, the author's validated
+  decisions reach the register: today the join persists only
+  `out-of-scope` (`internal/validate/critiqueclosed.go:55`), and the
+  close then reads the canonical register (`delegation/phases.go:369`),
+  where a still-open bounded finding refuses closure
+  (`dispatch/finding_register.go:662`), so a refuted finding on an
+  unchanged design would refuse where it should close; the verb
+  applies a validated `refuted` (and `accepted` with its amendment) to
+  the register's finding before the close, keeping the difference
+  between refuting a finding and accepting its risk, held by a fixture
+  through the real register close. Second, the final round exits by
+  the engine's own classification and nothing else
+  (`finding_register.go:651-690`, the skill at `design-critique/SKILL
+  .md:67`): clean closure, closure on fixture obligations with the
+  obligations published and their wording, or the human-required
+  refusal with the chain left unclosed; "all decided" is never a
+  closure condition of its own. Third, the close appends the design's
+  Dispositions section (one row per finding: id, finding, fold, as
+  every design here carries) composed from every answered round of the
+  chain, each round's own decisions file (`intent_design_review.go:
+  369`, `intent_review_binding.go:78`), keeping the round, the
+  reasoning and the amendment, so a recurring id shows both
+  adjudications and a quiet final round does not erase the first
+  round's trail; it is the close's last act, when the digest no longer
+  matters.
 - D5 (step 1). **From the outcome to a goal.** The End sheet and the
   design page gain Open a goal from this design: the New goal sheet
   prefilled with the intent from the Outcome's first paragraph and the
@@ -173,15 +245,23 @@ and becomes a goal in the inbox with one press. Not in step 1: D6.
 
 ## 6. Payload and routes
 
-`POST /api/design/<path>/review` `{goal, after?}` runs the verb under
-the signed-in session and answers the chain reference; `GET
-/api/design/<path>/review` answers the rounds with their findings and
-the chain's state and exit line. `suggest` gains `{document, section}`
-and the section card; the Dispositions row write is a whole-source edit
-composing one row under the table's heading, marked `[f:<id>]` as
-deposits are marked. The New goal sheet's prefill takes a next step
-beside the intent. The proposal grammar gains `design review` in its
-two forms. The cut guard's call sites gain the two reads.
+`POST /api/design/<path>/review` `{goal, toolCalls, after?}` runs the
+verb under the signed-in session and answers the chain reference and
+the engine's outcome words; `GET /api/design/<path>/review` answers the
+rounds, each with its findings read from that round's retained return
+(`artifacts/agents/<root>/rounds/<N>/return.json`,
+`intent_delivery.go:512`; `outputs.md` names the design, not the
+return) and its decisions file as it stands, and the chain's state. `PUT
+/api/design/<path>/review/<round>/decisions` `{finding, disposition,
+reasoning, amendment}` writes one row into the engine's decisions file
+under its `Review binding` header, refusing a finding the round does
+not carry, a disposition outside the four, and a material finding
+`noted`. `suggest` gains `{document, section}` and the section card,
+refusing an absent or duplicate heading. The New goal sheet's prefill
+takes a next step beside the intent. The proposal grammar gains
+`design review` in its two forms. The setting `review.design.tool-
+calls` is read with `ConfValue`. The cut guard's call sites gain the
+three reads.
 
 ## 7. Not here, later
 
@@ -192,15 +272,27 @@ once.
 
 ## 8. Verification and box
 
-Go: the act runs the verb under the session and refuses without one;
-the rejoin no-op; the findings read from the register in the brief's
-shape and nothing else; the dispositions composition round-trips the
-table; the exit line comes from the chain's state. Frontend: Send to
-critique and its state line; the round's cards with three presses; Fold
-opening the section card with old and new and Use writing exactly that
-section; Refute refusing without a reason; a reload not writing a row
-twice; Send round 2 appearing only when every card has a row; the exit
-line; Open a goal from this design prefilling intent and next step and
+Go: the act runs the verb under the session and refuses without one,
+passes the reader budget and the funding goal, and shows the engine's
+refusal for a missing budget verbatim; the rejoin no-op; the findings
+read from the round's return, a non-material finding and a recurring
+id both shown as their own cards; the decisions row write under the
+binding header, refusing an unknown finding, a fifth value and a
+material `noted`; Answer the round closing an unchanged design whose
+one material finding was refuted, through the real register close, and
+requesting the follow-up for a changed one; the final round exiting
+each of the three ways by the engine's classification (clean, on
+fixture obligations with them published, human-required with the chain
+left open); the close appending the Dispositions section from every
+answered round with a recurring id shown twice; the exit words come
+from the engine. Frontend: the Send
+to critique sheet with the goal and the budget; the round's cards with
+three presses; Fold opening the section card with old and new and Use
+writing exactly that section, refusing an absent or duplicate heading
+and re-reading after a conflict; Refute refusing without a reason,
+Defer on a material finding requiring evidence; a reload finding the
+rows in the file; Answer the round appearing only when every card has a
+row; the engine's words shown; Open a goal from this design prefilling intent and next step and
 the `Goals:` line gaining the id; the Partner proposing the two
 statements and the verb-table test holding them; the guards stay green.
 Walkthrough: a canned round of two findings, one folded, one refuted,
@@ -216,7 +308,57 @@ shapes the interface has. High on D3: one section replaced under the
 reading rule is the Outcome's own mechanism with a heading argument.
 Medium on D1: the first browser act that starts a critic, on the launch
 act's precedent; the spend it starts is the roster's and the budget's,
-not the page's. Weakest: the findings register's shape is the engine's
-and this page reads it as the brief template writes it; if a critic
-returns prose instead, the page shows the prose and offers no presses,
+not the page's. Weakest: the close's two obligations on the engine lane
+(the appended section, the human-residue close) are the one place this
+page asks the verb to grow; if a critic returns prose instead of the
+structured return, the page shows the prose and offers no presses,
 which is honest and enough.
+
+## Dispositions (Astra round 1, 2026-09-28, under R-121 and R-124)
+
+Read of revision 1 at `3e1262633`, verbatim in
+`g1-s66-astra-critique.md`. Five material findings, all folded; every
+cited line re-read at whole-function depth before folding.
+
+| id | finding | fold |
+|---|---|---|
+| S66-01 | the act as written cannot start a review: the engine requires `--tool-calls N` and refuses without it (`intent_delivery.go:771`, its test at `:223`), and nothing names the funding goal | D1: Send to critique is a sheet with the funding goal (preselected from `Goals:` when one) and the reader budget from the setting `review.design.tool-calls`, both editable, the engine's refusals shown verbatim |
+| S66-02 | the findings register keeps only material findings and merges a recurring id across rounds (`finding_register.go:1329`, `:1119`); the return schema carries five fields (`design-critic.schema.json:38`); a document-wide `[f:<id>]` mark makes round 2 look answered by round 1 | D2: cards read from the round's retained return, five fields plus prose where present; the register for state only; identity is chain, round and id |
+| S66-03 | a dispositions file composed from a "folded/refuted/deferred" table lacks the `Review binding` header and the engine's four columns and four values, and `noted` cannot answer a material finding (`intent_review_binding.go:37`, `critiqueclosed.go:13`, `:246`); the design template has no Dispositions section (`write.go:120`) | D2: rows are written into the engine's own decisions template beside the return, in its columns and values; Fold → accepted, Refute → refuted, Defer → noted or, for a material finding, out-of-scope with evidence |
+| S66-04 | every row written into the design changes its digest, so the engine requests a follow-up instead of closing (`intent_delivery.go:894`, `intent_design_review.go:178`); no explicit close after the final round | D2 and D4: nothing is written into the design by a press; Answer the round runs the verb and the engine closes an unchanged design or requests the follow-up; two obligations on the engine lane: the close appends the Dispositions section from the file, and a decided file on a design changed after the final round closes as human residue |
+| S66-05 | a heading names the first match and appends when absent (`sitting.ts:399`, `:434`); the writer checks the revision, not the section (`edit.go:89`) | D3: the section card refuses an absent or duplicate heading and keeps the draft; after a revision conflict it re-reads and compares again before Use |
+
+Astra also verified, and the design leans on, that the launch act
+requires a live session proof (`launch.go:72`), that review
+continuation retains its operation identity and rejoins its child
+(`intent_design_review.go:231`), that the recorder keeps words after a
+revision conflict (`recording.ts:159`), and that goal ids are appended
+space-separated (`write.go:402`). Two build lanes were judged not a
+violation of the smallest thing.
+
+**Round 2, the declared failsafe (2026-09-28, at `0324a0cc4`):**
+S66-01, S66-02, S66-03 and S66-05 confirmed answered; S66-04 held
+open through three new material findings on the close, all folded
+into D4. S66-06: the join persists only `out-of-scope`
+(`critiqueclosed.go:55`) and the close reads the canonical register
+(`phases.go:369`, `finding_register.go:662`), so a refuted finding on
+an unchanged design would refuse where it should close; fold: the verb
+applies validated refutations and acceptances to the register before
+the close, with a fixture through the real close. S66-07: my "human
+residue" rule replaced the engine's exit classification
+(`finding_register.go:651-690`, the skill at `:67`); fold: the final
+round exits only by that classification, clean, on fixture
+obligations, or human-required with the chain left open. S66-08: the
+appendix from the closing round's file alone omitted earlier
+adjudications, since each round has its own decisions file
+(`intent_design_review.go:369`, `intent_review_binding.go:78`); fold:
+the appendix composes from every answered round. Non-material: §6's
+`outputs.md` corrected to `return.json`. Closed at the failsafe round
+on three folds, with one scoped confirmation read on S66-06 to S66-08
+alone.
+
+**Confirmation read (2026-09-28, at `c93f0483d`):** S66-06, S66-07 and
+S66-08 confirmed answered as design obligations, no new finding, zero
+material; the read says, rightly, that it certifies the design and not
+the implementation, which Sol's read of the build will. The loop is
+CLOSED.

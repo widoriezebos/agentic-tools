@@ -82,10 +82,14 @@ tip `7ed3baf`, and the goal's branch is now at `9c1f0a2`; two commits
 landed on it after the sitting ended (it read the record and the
 branch). **How to recover:** the branch has to be reviewed at its new
 tip; the room offers Review the new tip, which appends the old tip as
-Previously. Under it, a card: *Open the review room on
-backlog-ordered-by-priority* with Apply. You press Apply; the room
-opens; the banner says the branch moved. You ask "what changed in
-those two commits?" and the conversation goes on.
+Previously. Under it, a link: *the review room on
+backlog-ordered-by-priority*. You follow it; the room opens; the banner
+says the branch moved. You ask "what changed in those two commits?"
+and the conversation goes on. Another day, Approve on a card is refused
+because the goal is parked; you press Ask what happened; the Partner
+says who parked it and why, from the history, and under the answer
+stands a card, *Unpark backlog-ordered-by-priority*, with Apply, since
+unpark is one of the acts a proposal can be.
 
 The same press on "The backlog could not be read": the Partner reads
 the board itself and says it got the same refusal, that the checkout's
@@ -112,10 +116,18 @@ to report it: the sentence and the time.
   rendered any other way, so the next site cannot forget. A trouble
   carries what a reader needs and no more: the sentence, the code where
   there is one, where it happened (the page's section, path and
-  subject), the act where there was one (the verb, the object and the
-  arguments the page sent, as words), when, the tip the page had, and
-  whether the sign-in sheet is the remedy. The sign-in case keeps its
-  behaviour: the sheet opens, and the line can still be asked.
+  subject), the act where there was one (the verb, the object, and the
+  goal or record it named, as words; never the request's arguments as
+  sent), when, the tip the page had, and whether the sign-in sheet is
+  the remedy. Secrets never travel: the sign-in sheet's trouble carries
+  no code (the sheet exists to keep it, `shell/SignInSheet.tsx:20`,
+  `session.ts:105`), and before a trouble is kept or sent, its
+  sentence is scrubbed of any value the page holds as a secret at that
+  moment (the code being typed, a token field's value), replaced by
+  "[withheld]"; a fixture proves a failed sign-in's trouble reaches
+  neither the transcript nor the runtime with the code in it. The
+  sign-in case keeps its behaviour: the sheet opens, and the line can
+  still be asked.
 - D2. **One press asks; nothing to type.** The press opens the
   conversation the human is in (the drawer's own, or the room's when
   the address is a room) and sends one fixed request in their name,
@@ -124,21 +136,60 @@ to report it: the sentence and the time.
   travels as a block beside the page block, composed by the server
   from the payload, so what is said in the human's name is one
   sentence in one place, and the chip under the turn shows what
-  travelled: the act or the pane, the code, the time. If a turn is
-  running, the request waits in the composer with its chip and Send
-  sends it, since a press must never be refused as busy.
+  travelled: the act or the pane, the code, the time. The press never
+  touches the human's own words: a question half-written in the
+  composer, and the attachments under it, stay exactly as they were
+  whether the request is accepted, refused or has to wait (the store's
+  `send` clears the draft and retires attachments on a sent turn,
+  `partner/store.tsx:958-984`, so a trouble request is its own send
+  path that takes no draft and clears none, the way a suggestion
+  respects a half-written sentence, `store.tsx:1282`). If a turn is
+  running, the trouble waits as a pending chip above the composer,
+  beside the draft, owned by the conversation the press was made in
+  (the chip carries it, and the trouble shows it: "waiting for the
+  room on backlog-ordered-by-priority"); it is offered and sent only
+  there, first, with the draft untouched, and a Send in another
+  conversation neither sends it nor loses it, since the selection a
+  send names is the address on screen (`store.tsx:850`, `:974`) and
+  navigation replaces the shown conversation (`:884`). A press must
+  never be refused as busy. A press must also reach a conversation the
+  human can read: the bell's panel closes on the press and the drawer
+  opens on the answer; the sign-in sheet, which is window-modal by
+  design (`SignInSheet.tsx:78`, `Sheet.tsx:68`), hands off on the press
+  by closing with its typed handle and its pending retry kept, and
+  reopens from the sign-in control as today; and where the pane that
+  threw was the room itself, whose boundary replaces the conversation's
+  renderer until a reload (`Shell.tsx:416`, `ErrorBoundary.tsx:26`),
+  the trouble line says "this room cannot show its conversation; ask
+  from the drawer after a reload" and offers the reload, never a
+  control whose answer nobody can read. The control is
+  rendered only where a press can reach a colleague: the bell's panel
+  and the sign-in sheet are drawn by providers that stand above the
+  Partner's (`App.tsx:30`, `shell/Shell.tsx:73`, `notifications/
+  store.tsx:161`, `shell/identity.tsx:137`), where the Partner context
+  is the no-op one (`store.tsx:581`), so the Partner's store registers
+  one `ask` on a small trouble context mounted above every provider,
+  the trouble line presses that, and until it is registered the line
+  shows no control at all rather than one that sends nothing. A press
+  from the bell while a room is on screen reaches the room's
+  conversation, since the registered `ask` reads the conversation on
+  screen as every send does (`store.tsx:846-855`).
 - D3. **The answer is three parts and ends with the recovery.** The
   Partner's instructions gain one rule: on a trouble, answer **What
   happened**, **Why** and **How to recover**, each a few sentences,
   in the human's terms (the act and the subject, not the route);
   read before saying why (the register row for the code, the goal, the
   record, the board, the fleet, the notifications, and the resource
-  that could not be read, tried again); when the recovery is an act
-  this interface has, propose it as a card and say what Apply will do;
-  when it is a human's verb, say the exact verb and that it runs from
-  an enrolled terminal; when it is a wait, say what to watch and where;
-  when the cause is not in the records, say so and what would
-  establish it. Never a cause that was not read.
+  that could not be read, tried again); when the recovery is one of the
+  ten goal acts the proposal grammar holds (`uitools/propose.go:44`;
+  an unknown act is refused there, `:497`), propose it as a card and
+  say what Apply will do; when it is a press somewhere in this
+  interface (a room, a sheet, a page), name the press and give the
+  place as a link, never a card; when it is a human's verb, say the
+  exact verb and that it runs from an enrolled terminal; when it is a
+  wait, say what to watch and where; when the cause is not in the
+  records, say so and what would establish it. Never a cause that was
+  not read, and never a card for something Apply cannot do.
 - D4. **The Partner reads the register.** One new reader, `refusal`,
   answers a code with its row: the owner, the shape and what the shape
   means, the human verb that carries past it and how many commands it
@@ -164,19 +215,27 @@ happened in another human's browser.
 
 ## 6. Payload and routes
 
-`POST /api/partner/turn` accepts `trouble` beside `page`: `{text,
-code?, where: {section, path, subject?, kind?}, act?: {verb, object,
-args?}, at, tip?, signIn?}`, bounded (the sentence at most 2,000
-characters, the arguments at most 1,000). The server composes the
-human's turn from `TroubleRequest` and a block "The trouble:" with
-those fields as lines, and records the turn as it records any; the
-transcript shows the chip from the same fields. The `refusal` reader:
-`refusal code=CODE` → the register row as text, or "the register has
-no row for CODE". The skill and its four mirrors gain the three-part
-rule. `Trouble` in `src/shell/Trouble.tsx`; the structural rule in
-`src/trouble.test.ts` walks `src/` like the cut guard does and refuses
-a `ms-*-refusal`, `ms-*-problem`, `ms-partner-failed` or `ms-error-*`
-class outside it. Routes unchanged.
+The turn route (`/api/partner/turns`, `partner/api.ts:613`) accepts
+`trouble` beside `page` and `about`: `{text, code?, where: {section,
+path, subject?, kind?}, act?: {verb, object, target?}, at, tip?,
+signIn?}`, bounded (the sentence at most 2,000 characters), scrubbed
+by the page before it is sent and never carrying request arguments.
+The server composes the human's turn from `TroubleRequest` and a
+block "The trouble:" with those fields as lines, and records the turn
+as it records any; the transcript shows the chip from the same fields.
+The `refusal` reader: `refusal code=CODE` → the register row as text,
+or "the register has no row for CODE" (the register also has
+exclusions and prose rows, `refusal/register.go:391`, `:470`, and the
+interface's own codes `one-line` and `partner` have no row; all answer
+that honest line). The skill and its four mirrors gain the three-part
+rule and the card rule. `Trouble` in `src/shell/Trouble.tsx`, the
+trouble context in `src/shell/trouble.tsx` mounted in `App.tsx` above
+the providers, the pending chip beside the composer in `src/shell/
+Composer.tsx`; the structural rule in `src/trouble.test.ts` walks
+`src/` like the cut guard does and refuses a `ms-*-refusal`,
+`ms-*-problem`, `ms-partner-failed` or `ms-error-*` class outside it.
+The reader joins the reader catalogue (`uitools.go:92`), not the ten
+proposal actions. Routes unchanged.
 
 ## 7. Not here, later
 
@@ -195,11 +254,28 @@ one in words; the reader is in the catalogue and the Partner's ten
 actions test grows by one read. Frontend: every site renders
 `Trouble` (the structural rule fails against the code before the
 change); the press opens the drawer, or the room's conversation in a
-room, and sends the request with the chip; a running turn leaves it in
-the composer with the chip and Send sends it; the sign-in refusal
-opens the sheet and keeps the control; the boundary's trouble carries
-the error's name; a bell row's press asks; the cut guard's rows; the
-guards green. Walkthrough: a refused act, a pane that could not be
+room, and sends the request with the chip; a half-written question and
+its attachments survive the press unchanged, idle and busy alike; a
+running turn leaves the trouble as a pending chip and the next Send
+in that conversation sends it first (`pending_trouble_stays_in_origin_
+room`: Ask while room A is busy, switch to room B, B cannot send A's
+pending trouble, back in A it sends with the draft and attachments
+intact); the press reveals a usable conversation
+(`trouble_ask_reaches_usable_partner`: from a real bell row the panel
+closes and the drawer shows the answer with the composer focusable;
+from the sign-in sheet the sheet closes keeping its handle and retry
+and the answer is readable; from a room whose renderer the boundary
+replaced the line offers the reload and no control); the sign-in refusal opens the sheet, keeps the
+control, and its trouble carries no code (asserted on the transcript
+and on what the fake runtime received); a sentence holding the secret
+the page has is scrubbed; the boundary's trouble carries the error's
+name; a press from a real bell row, rendered by the notifications
+provider, while a room is on screen reaches the room's conversation,
+and before the Partner has registered its ask the row shows no
+control; a recovery that is not one of the ten acts arrives as a link
+and never as a card (a negative fixture with the fake Partner
+proposing "open the room" and the interface refusing the card); the
+cut guard's rows; the guards green. Walkthrough: a refused act, a pane that could not be
 read and a failed turn, each asked, the fake Partner answering in
 three parts with one card; screenshots at 1280 and 400, light and
 dark. Landing checks as g1-s67 §8. Box: Astra's critique of this
@@ -216,3 +292,50 @@ checks the shape, not the quality, which only use will show. Weakest:
 a pane that could not be read is asked about in a drawer that may be
 in the same trouble; when the Partner itself cannot be reached the
 line says so, and there is nobody to ask.
+
+## Dispositions (Astra round 1, 2026-09-28, under R-121 and R-124)
+
+Read of revision 1 at `3e1262633`, verbatim in
+`g1-s68-astra-critique.md`. Four material findings, all folded; two
+non-material, folded as corrections; every cited line re-read at
+whole-function depth before folding.
+
+| id | finding | fold |
+|---|---|---|
+| S68-01 | "the arguments the page sent" would carry the sign-in code into the transcript and the prompt (`SignInSheet.tsx:20`, `:62`, `session.ts:105`); a bound of 1,000 characters does not protect a six-digit secret | D1: a trouble carries the act's verb, object and target as words, never the request's arguments; the sign-in trouble carries no code; the sentence is scrubbed of any secret the page holds; a fixture proves the code reaches neither destination |
+| S68-02 | the store's `send` clears the draft and retires attachments on a sent turn (`store.tsx:958-984`), so reusing it for the fixed request deletes a half-written question; the busy path could overwrite it | D2: the trouble request is its own send path that takes no draft and clears none; while a turn runs the trouble waits as a pending chip beside the draft and the next Send sends it first |
+| S68-03 | the bell's panel and the sign-in sheet are drawn by providers above the Partner's (`App.tsx:30`, `Shell.tsx:73`, `notifications/store.tsx:161`, `identity.tsx:137`), where the Partner context is the no-op one (`store.tsx:581`): a mechanical `Trouble` there shows a control that sends nothing | D2: one `ask` registered by the Partner's store on a trouble context above every provider; no control until it is registered; a bell press while a room is on screen reaches the room's conversation; tested from a real bell row |
+| S68-04 | a proposal can only be one of the ten goal acts (`propose.go:44`, `:497`, the skill at `:33`), so the "open the review room" card of §3 could never be applied | D3 and §3: Apply cards only for the ten acts; a press elsewhere in the interface is named and linked, never a card; the example is now a link, and an unpark card shows the supported case; a negative fixture |
+| S68-05 | non-material: not every code has a row (exclusions, prose rows, the interface's own `one-line` and `partner`) | §6 says so; the honest line "the register has no row for CODE" covers them |
+| S68-06 | non-material: pointers were wrong (the composer lives under `shell/`, the turn route is `/turns` with `about`, the readers' catalogue is not the ten proposal actions) | §6 corrected |
+
+Astra also verified, and the design leans on, that a fixed question
+sent by an explicit press is the human's act and authorizes no
+recovery, that turns already carry server-owned attribution in the
+human's name (`service.go:653`), that the conversation on screen is
+what a send names (`store.tsx:846`), and that the register can be
+matched by `Row.Code` directly (`register_test.go:300`).
+
+**Round 2, the declared failsafe (2026-09-28, at `0324a0cc4`):**
+S68-01 to S68-04 confirmed answered. Two new material findings, both
+in D2, both folded. S68-07: a pending trouble had no owner, and a Send
+names the conversation on screen (`store.tsx:850`, `:974`; navigation
+replaces it, `:884`), so a trouble asked in room A while busy could be
+sent into room B; fold: the pending chip is owned by the conversation
+of the press and is offered and sent only there, with the named
+fixture. S68-08: registration proves a live store, not a readable
+conversation: the bell's panel and the sign-in sheet are window-modal
+(`workmodal.tsx:48`, `Sheet.tsx:68`, `SignInSheet.tsx:78`), and a room
+whose renderer the boundary replaced keeps the store above it
+(`Shell.tsx:416`, `ErrorBoundary.tsx:26`); fold: the press reveals a
+usable conversation (the panel closes, the sheet hands off keeping its
+form and retry, the broken room offers the reload and no control),
+with the named fixture. S68-09 non-material: the class guard cannot
+prove future sites; the converted sites are named. Closed at the
+failsafe round on two folds, with one scoped confirmation read on
+S68-07 and S68-08 alone.
+
+**Confirmation read (2026-09-28, at `b5c870ebe`):** S68-07 and S68-08
+confirmed answered, zero material, no first-use case left where words
+are lost, a trouble reaches another conversation, or an answer cannot
+be read. The loop is CLOSED.
