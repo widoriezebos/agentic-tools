@@ -167,28 +167,6 @@ func TestCommandDetectsOmittedExpectedTestsAfterFirstFailure(t *testing.T) {
 	}
 }
 
-func TestSectionPrerequisiteIsBlockedNotPassed(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "stage.tsv")
-	if err := os.WriteFile(path, []byte("section\tneeds-engine\tgated\t0\tengine prerequisite failed\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	status, _, blocked, complete := parseSectionResult(path, "needs-engine")
-	if status != "unavailable" || complete || len(blocked) != 1 || blocked[0].Reason != "engine prerequisite failed" {
-		t.Fatalf("blocked section status=%s complete=%v blocked=%+v", status, complete, blocked)
-	}
-}
-
-func TestSectionPreservesNativeExitStatus(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "stage.tsv")
-	if err := os.WriteFile(path, []byte("section\texact-status\tfail\t23\tfirst failure\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	status, exit, _, complete := parseSectionResult(path, "exact-status")
-	if status != "failed" || exit != 23 || !complete {
-		t.Fatalf("section result status=%s exit=%d complete=%v", status, exit, complete)
-	}
-}
-
 func TestGoCollectionKeepsSubtestsAndDetectsMissingTerminalEvents(t *testing.T) {
 	completeOutput := []byte("" +
 		`{"Action":"run","Package":"example/app","Test":"TestApplication"}` + "\n" +

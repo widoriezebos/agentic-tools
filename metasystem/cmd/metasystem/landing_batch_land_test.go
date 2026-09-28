@@ -48,7 +48,7 @@ func TestBatchLandReceiptsRunFromNestedModuleRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	seams := batchLandSeams(repository, "batch", batch.Record{}, "base", "actor")
+	seams := batchLandSeamsWithRead(repository, "batch", batch.Record{}, "base", "actor", gitOutput, plantedBatchCommit)
 	if err := seams.AppendReceipt(batch.Unit{GoalID: "goal-a"}, batch.PrefixReceipt{Tree: "tree"}); err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestBatchLandCommitWrapperRunsFromNestedModuleRoot(t *testing.T) {
 		readCount++
 		return result, nil
 	}
-	seams := batchLandSeamsWithRead(repository, "batch", batch.Record{}, "base", "actor", readGit)
+	seams := batchLandSeamsWithRead(repository, "batch", batch.Record{}, "base", "actor", readGit, plantedBatchCommit)
 	head, err := seams.Commit(batch.Unit{GoalID: "goal-a", Chain: "chain-a", AuthorName: "Owner", AuthorEmail: "owner@example.invalid"}, batch.PrefixReceipt{Tree: "tree"})
 	if err != nil {
 		t.Fatal(err)
@@ -142,8 +142,8 @@ func TestBatchLandCommitWrapperRunsFromNestedModuleRoot(t *testing.T) {
 	}
 	messageFile := strings.TrimPrefix(lines[8], "arg=")
 	wantLines := []string{want, "arg=--chain", "arg=chain-a", "arg=--goal", "arg=goal-a", "arg=--test-receipt", "arg=" + filepath.Join(module, "artifacts", "agents", "proof-runs", "batch", "batch.json"), "arg=-F", "arg=" + messageFile, "author-name=Owner", "author-email=owner@example.invalid", "committer-name=Owner", "committer-email=owner@example.invalid", "landed-by=actor"}
-	if !reflect.DeepEqual(lines, wantLines) || filepath.Dir(messageFile) != module || !strings.HasPrefix(filepath.Base(messageFile), ".batch-commit-message-") {
-		t.Fatalf("wrapper invocation=%q, want %q and a temporary message under %s", lines, wantLines, module)
+	if !reflect.DeepEqual(lines, wantLines) || strings.HasPrefix(messageFile, module+string(filepath.Separator)) || !strings.HasPrefix(filepath.Base(messageFile), "metasystem-batch-commit-message-") {
+		t.Fatalf("wrapper invocation=%q, want %q and a temporary message outside the work tree %s", lines, wantLines, module)
 	}
 	if _, err := os.Stat(messageFile); !os.IsNotExist(err) {
 		t.Fatalf("temporary commit message remains: %v", err)

@@ -12,7 +12,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -66,6 +65,10 @@ type Enrollment struct {
 	TerminalID    string     `json:"terminalId"`
 	TerminalRef   ProcessRef `json:"terminalRef"`
 	SessionLeader ProcessRef `json:"sessionLeaderRef"`
+	// Repeat marks an Enroll whose enrollment already held (R-129-ui): the
+	// same person at the same terminal and session, so the recorded
+	// enrollment was returned and nothing was written. Never persisted.
+	Repeat bool `json:"-"`
 }
 
 // Node is one stable process observation. Argument bytes are represented only
@@ -616,34 +619,18 @@ func sameArguments(first, second []string) bool {
 }
 
 func signatureSet(root string) ([]census.Signature, string, error) {
-	paths, err := filepath.Glob(filepath.Join(root, "scripts", "agents", "adapters", "*.sh"))
+	signatures, names, texts, err := census.InstalledAdapterSignatures(root)
 	if err != nil {
 		return nil, "", err
 	}
-	sort.Strings(paths)
+	if len(signatures) == 0 {
+		return nil, "", fmt.Errorf("no adapter signatures are declared for %s", root)
+	}
 	hash := sha256.New()
-	var signatures []census.Signature
-	for _, path := range paths {
-		runtime := strings.TrimSuffix(filepath.Base(path), ".sh")
-		if runtime == "runtime-common" {
-			continue
-		}
-		text, err := census.SignatureText(path)
-		if err != nil {
-			return nil, "", err
-		}
-		matches, excludes := census.ParseSignatureText(text)
-		signature, err := census.CompileSignature(runtime, matches, excludes)
-		if err != nil {
-			return nil, "", err
-		}
-		signatures = append(signatures, signature)
+	for index, runtime := range names {
 		hash.Write([]byte(runtime))
 		hash.Write([]byte{0})
-		hash.Write([]byte(text))
-	}
-	if len(signatures) == 0 {
-		return nil, "", fmt.Errorf("no adapter signatures are installed under %s", root)
+		hash.Write([]byte(texts[index]))
 	}
 	return signatures, hex.EncodeToString(hash.Sum(nil)), nil
 }
@@ -830,6 +817,13 @@ func Enroll(root string, invokerPID int64, reader Reader, human string, now time
 	}
 	generation := uint64(1)
 	if prior, readErr := ReadEnrollment(root); readErr == nil {
+		// The same person enrolled at this very terminal and session is a
+		// repeat whose effect holds: no second enrollment generation.
+		if prior.Human == human && prior.TerminalID == proof.observedTerminalID &&
+			sameRef(prior.TerminalRef, proof.InvokerRef) && sameRef(prior.SessionLeader, proof.TerminalRef) {
+			prior.Repeat = true
+			return prior, nil
+		}
 		generation = prior.Generation + 1
 	} else if !os.IsNotExist(readErr) {
 		return Enrollment{}, readErr

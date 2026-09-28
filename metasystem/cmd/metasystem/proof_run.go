@@ -60,9 +60,7 @@ func runProofRunLaunchWithInputs(args []string,
 	progress := flags.String("progress", "", "append-only progress JSONL")
 	logPath := flags.String("log", "", "suite output log")
 	banner := flags.String("banner", "", "one-line cost banner")
-	selector := flags.String("selector", "", "validation section selector")
 	selected := flags.String("selected", "", "single selected section")
-	enumerated := flags.Bool("enumerated", false, "expect every section listed for this enumeration run")
 	var tmpPaths repeatedFlag
 	flags.Var(&tmpPaths, "tmp", "temporary evidence path (repeatable)")
 	var identityInputs repeatedFlag
@@ -79,7 +77,7 @@ func runProofRunLaunchWithInputs(args []string,
 	}
 	command := flags.Args()
 	if len(command) == 0 || *root == "" || *conf == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal proof-run launch --suite S --root R --conf F --progress P --log L --banner B [--selector F] -- COMMAND...")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal proof-run launch --suite S --root R --conf F --progress P --log L --banner B [--selected SECTION] -- COMMAND...")
 		return 2
 	}
 	executionRoot, err := canonicalProofRoot(*root)
@@ -130,7 +128,7 @@ func runProofRunLaunchWithInputs(args []string,
 	if *evidenceMaxBytes > 0 {
 		limits.evidenceMax = *evidenceMaxBytes
 	}
-	expected, repeated, err := selectedSections(*selector, *selected, *enumerated)
+	expected, repeated, err := selectedSections(*selected)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "proof-run launch:", err)
 		return 1
@@ -1620,6 +1618,12 @@ type proofRunLimits struct {
 	concurrency      int
 	workers          int
 	admissionMaximum int
+	// automaticWorkers is set when testing.workers is unconfigured and the
+	// allowance came from this host's CPU and available-memory reading.
+	// automaticWorkerCeiling is the most that policy could choose here: the
+	// CPU candidate under any inherited ceiling. Memory only lowers it.
+	automaticWorkers       bool
+	automaticWorkerCeiling int
 }
 
 // defaultTestingConcurrency is how many groups of one stage run at once when
@@ -1727,8 +1731,12 @@ func resolveProofRunLimits(confPath string) (proofRunLimits, error) {
 	return resolveProofRunLimitsWithEnvironment(confPath, os.LookupEnv)
 }
 
+// testingAvailableMemory is the available-memory reading behind the automatic
+// testing allowance; tests inject readings here.
+var testingAvailableMemory = hostload.AvailableMemory
+
 func resolveProofRunLimitsWithEnvironment(confPath string, lookup func(string) (string, bool)) (proofRunLimits, error) {
-	return resolveProofRunLimitsWithInputs(confPath, lookup, runtime.GOMAXPROCS(0), runtime.NumCPU(), hostload.AvailableMemory)
+	return resolveProofRunLimitsWithInputs(confPath, lookup, runtime.GOMAXPROCS(0), runtime.NumCPU(), testingAvailableMemory)
 }
 
 func validateProofRunLimits(confPath string) error {
@@ -1797,8 +1805,10 @@ func resolveProofRunLimitsWithInputs(confPath string, lookup func(string) (strin
 			workerValue = confirmedValue
 		}
 	}
+	automaticCeiling := 0
 	if !workersConfigured {
 		cpuWorkers := defaultTestingWorkers(capturedGOMAXPROCS, admission.Max)
+		automaticCeiling = cpuWorkers
 		availableBytes, available := uint64(0), false
 		if memoryProbe != nil {
 			availableBytes, _, available = memoryProbe()
@@ -1815,6 +1825,9 @@ func resolveProofRunLimitsWithInputs(confPath string, lookup func(string) (strin
 			return proofRunLimits{}, fmt.Errorf("inherited %s must be a positive integer, got %q", proofrun.TestWorkersEnvironment, inherited)
 		}
 		workers = min(workers, ceiling)
+		if automaticCeiling > 0 {
+			automaticCeiling = min(automaticCeiling, ceiling)
+		}
 	}
 	return proofRunLimits{
 		silence:          time.Duration(silence) * time.Minute,
@@ -1824,6 +1837,9 @@ func resolveProofRunLimitsWithInputs(confPath string, lookup func(string) (strin
 		concurrency:      concurrency,
 		workers:          workers,
 		admissionMaximum: admission.Max,
+
+		automaticWorkers:       !workersConfigured,
+		automaticWorkerCeiling: automaticCeiling,
 	}, nil
 }
 
@@ -1841,70 +1857,14 @@ func resolvedTestWorkerEnvironment(base []string, workers int) []string {
 	return append(result, proofrun.TestWorkersEnvironment+"="+strconv.Itoa(workers))
 }
 
-func selectedSections(selector, selected string, enumerated bool) ([]string, map[string]bool, error) {
-	if selector == "" {
-		if selected != "" {
-			return []string{selected}, map[string]bool{}, nil
-		}
-		return nil, map[string]bool{}, nil
+// selectedSections is the progress expectation of one launch: the one named
+// section, or none. The validation section selector that listed a whole run's
+// sections was deleted with validate-metasystem.sh (verbs-object-action U7b).
+func selectedSections(selected string) ([]string, map[string]bool, error) {
+	if selected != "" {
+		return []string{selected}, map[string]bool{}, nil
 	}
-	command := exec.Command("bash", selector, "list")
-	output, err := command.Output()
-	if err != nil {
-		return nil, nil, fmt.Errorf("list validation selector: %w", err)
-	}
-	var sections []string
-	known := map[string]bool{}
-	for _, line := range bytes.Split(bytes.TrimSpace(output), []byte{'\n'}) {
-		id, _, found := bytes.Cut(line, []byte{'\t'})
-		if !found || len(id) == 0 {
-			return nil, nil, fmt.Errorf("selector emitted invalid row %q", line)
-		}
-		section := string(id)
-		sections = append(sections, section)
-		known[section] = true
-	}
-	// Enumeration owns one progress interval for every row returned by this
-	// invocation of the selector. Twice-consulted declarations apply only to
-	// a full validation run, where separate call sites may revisit a section.
-	if enumerated {
-		return sections, map[string]bool{}, nil
-	}
-
-	command = exec.Command("bash", selector, "twice")
-	output, err = command.Output()
-	if err != nil {
-		return nil, nil, fmt.Errorf("read twice-consulted validation sections: %w", err)
-	}
-	declaredTwice := map[string]bool{}
-	trimmed := bytes.TrimSpace(output)
-	if len(trimmed) > 0 {
-		for _, line := range bytes.Split(trimmed, []byte{'\n'}) {
-			section := string(line)
-			if !known[section] {
-				return nil, nil, fmt.Errorf("twice-consulted section %q is absent from the selector", section)
-			}
-			declaredTwice[section] = true
-		}
-	}
-	if selected == "" {
-		return sections, declaredTwice, nil
-	}
-	if !known[selected] {
-		command = exec.Command("bash", selector, "fixture", selected)
-		output, err = command.Output()
-		if err != nil {
-			return nil, nil, fmt.Errorf("selected section %q is absent from the selector and bounded fixture declarations: %w", selected, err)
-		}
-		lines := bytes.Split(bytes.TrimSpace(output), []byte{'\n'})
-		id, _, found := bytes.Cut(lines[0], []byte{'\t'})
-		if len(lines) != 1 || !found || string(id) != selected {
-			return nil, nil, fmt.Errorf("bounded fixture declaration for %q emitted invalid row %q", selected, output)
-		}
-	}
-	// A selected run drives one call site, so it expects one interval even
-	// when the full validation run consults that section more than once.
-	return []string{selected}, map[string]bool{}, nil
+	return nil, map[string]bool{}, nil
 }
 
 func runProofRunWatchdog(args []string) int {
@@ -1943,6 +1903,21 @@ func runProofRunWatchdog(args []string) int {
 	flags.Var(&logs, "log", "watched output log (repeatable)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || (!*resourceCustody && *conf == "") {
 		return 2
+	}
+	// The sibling watchdog is started with stdio and no ExtraFiles, so every
+	// other descriptor it holds without close-on-exec was inherited from the
+	// launcher's ancestors by accident. On 2026-09-28 that was the Lima suite
+	// runner's flock descriptor (flock(1) runs its command with the lock
+	// descriptor open and inheritable, go test and the test binary pass it on
+	// because Go never sets close-on-exec on descriptors it inherited): an
+	// orphaned watchdog then held the lock and wedged every later suite run.
+	// The resource custodian receives its descriptors by number and keeps
+	// them.
+	if !*resourceCustody {
+		if err := closeInheritedDescriptorsAbove(2); err != nil {
+			fmt.Fprintln(os.Stderr, "proof-run watchdog:", err)
+			return 1
+		}
 	}
 	// Re-read the layered configuration in the sibling process immediately
 	// before watchdog startup. A conf.local or environment change between
@@ -2052,12 +2027,11 @@ func runProofRunAssert(args []string) int {
 	flags := flag.NewFlagSet("proof-run assert", flag.ContinueOnError)
 	progress := flags.String("progress", "", "progress JSONL")
 	suite := flags.String("suite", "", "suite name")
-	selector := flags.String("selector", "", "section selector")
 	selected := flags.String("selected", "", "single selected section")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
-	expected, repeated, err := selectedSections(*selector, *selected, false)
+	expected, repeated, err := selectedSections(*selected)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "proof-run assert:", err)
 		return 1

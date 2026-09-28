@@ -170,8 +170,8 @@ func TestGroupOwnedRecordedProofMismatchExitsIndeterminate(t *testing.T) {
 }
 
 func TestProcSetsidRefusesWithoutACommandAndAnAbsentOne(t *testing.T) {
-	// The exec path replaces the test process and is proven by the goal-cli
-	// bed's proof-grades scenario; only the refusals are checked here.
+	// The exec path replaces the test process; only the refusals are checked
+	// here.
 	if got := runProcSetsid([]string{"--"}); got != 2 {
 		t.Fatalf("proc setsid without a command exit = %d, want 2", got)
 	}

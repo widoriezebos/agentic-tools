@@ -3,15 +3,12 @@ package run
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 // pairProber replays a btime step: the same live process, constant pair,
@@ -35,80 +32,9 @@ func (p restartProber) Probe(pid int64) (identity.Exact, identity.Liveness, erro
 }
 
 func TestSuccessorRefusesWrongSessionRow(t *testing.T) {
-	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
-		t.Run("installed process death resumes from rows", func(t *testing.T) {
-			binary := testutil.InstalledWaitBinary(t, binary)
-			root := t.TempDir()
-			self := int64(os.Getpid())
-			exact, state, err := (identity.KernelProber{}).Probe(self)
-			if err != nil || state != identity.Alive {
-				t.Fatalf("current process identity=%+v state=%s err=%v", exact, state, err)
-			}
-			announce := exec.Command(binary, "lease", "announce", "--root", root, "--session", "wait-restart-session", "--pid", strconv.FormatInt(self, 10), "--start", strconv.FormatInt(exact.StartedAt.Unix(), 10), "--start-ticks", strconv.FormatInt(exact.StartTicks, 10), "--boot-id", exact.BootID, "--tag", "wait-restart-test", "--runtime", "fake", "--owner-lineage", "wait-restart-lineage")
-			if output, announceErr := announce.CombinedOutput(); announceErr != nil {
-				t.Fatalf("announce installed restart holder: %v %s", announceErr, output)
-			}
-			jobs := filepath.Join(root, "artifacts", "agents", "jobs")
-			if err := os.MkdirAll(jobs, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			jobPath := filepath.Join(jobs, "job-restart.json")
-			if err := os.WriteFile(jobPath, []byte(`{"jobId":"job-restart","operationId":"reserve-restart","round":1,"status":"running","startedAt":"2026-09-13T12:00:00Z"}`), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			output, err := os.CreateTemp(t.TempDir(), "installed-wait-output-*")
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer output.Close()
-			cmd := exec.Command(binary, "wait", "--root", root, "--job", "job-restart", "--timeout", "1m", "--json")
-			cmd.Stdout, cmd.Stderr = output, output
-			if err := cmd.Start(); err != nil {
-				t.Fatal(err)
-			}
-			done := make(chan error, 1)
-			go func() { done <- cmd.Wait() }()
-			var row Waiter
-			registrationWait := scaledFixtureDuration(10 * waiterLockWait)
-			deadline := time.Now().Add(registrationWait)
-			for row.WaitID == "" && time.Now().Before(deadline) {
-				select {
-				case waitErr := <-done:
-					data, _ := os.ReadFile(output.Name())
-					t.Fatalf("installed waiter exited before registration: %v output=%s", waitErr, data)
-				default:
-				}
-				rows, failures := PendingWaitersForLineages(root, []string{"wait-restart-lineage"})
-				if len(failures) != 0 {
-					t.Fatalf("read pending installed waiter: %v", failures)
-				}
-				if len(rows) == 1 {
-					row = rows[0]
-					break
-				}
-				time.Sleep(25 * time.Millisecond)
-			}
-			if row.WaitID == "" {
-				_ = cmd.Process.Kill()
-				<-done
-				t.Fatalf("installed waiter did not publish its pending row within %s", registrationWait)
-			}
-			if err := cmd.Process.Kill(); err != nil {
-				t.Fatal(err)
-			}
-			if waitErr := <-done; waitErr == nil {
-				t.Fatal("killed installed waiter unexpectedly exited successfully")
-			}
-			if err := os.WriteFile(jobPath, []byte(`{"jobId":"job-restart","operationId":"reserve-restart","round":1,"status":"completed","startedAt":"2026-09-13T12:00:00Z"}`), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			resume := exec.Command(binary, "wait", "--root", root, "--resume", row.WaitID, "--json")
-			resumed, err := resume.CombinedOutput()
-			if err != nil || !strings.Contains(string(resumed), `"exitCode":0`) {
-				t.Fatalf("installed resume did not recover from the row: err=%v output=%s", err, resumed)
-			}
-		})
-	}
+	// The installed kill-and-resume leg lives in cmd/metasystem as
+	// TestSupervisionBedAWaitRestartKilledWaiterResumesFromItsRow, where the
+	// package TestMain always supplies the source-built engine.
 	root := t.TempDir()
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
 	boot := time.Hour

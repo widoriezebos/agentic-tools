@@ -67,7 +67,23 @@ func (values *humanVerbValues) bindGoalView(file *goal.GoalFile, tierBox goal.Bu
 	}
 }
 
+// alreadyCarriesBox is the remedy that says a budget request completes to the
+// box the goal already carries.
+const alreadyCarriesBox = "the goal already carries that box, so there is no new act to record"
+
 func refuseHumanVerb(values *humanVerbValues, code int, sentence string, remedy humanVerbRemedy) int {
+	// A budget request that completes to the box the goal already carries
+	// asks for an effect that holds: success with no record (R-129-ui,
+	// U-idem), not a refusal with no way forward.
+	if remedy.command == "" && remedy.words == alreadyCarriesBox && values.box != nil {
+		detail := fmt.Sprintf("goal %s already carries the box %s; nothing new was recorded", values.id, goalbudget.FormatBox(*values.box))
+		if values.report != nil {
+			values.report.result = &goal.PublishResult{Outcome: goal.OutcomeAbandoned, Unchanged: true, Detail: detail}
+			return 0
+		}
+		fmt.Println(detail)
+		return 0
+	}
 	sentence = strings.Join(strings.Fields(strings.TrimSpace(sentence)), " ")
 	sentence = strings.TrimSuffix(sentence, ".") + "."
 	if values.report != nil {
@@ -148,9 +164,12 @@ func (values *humanVerbValues) sameCommandWithout(drop ...string) string {
 	for _, name := range drop {
 		dropped[strings.TrimPrefix(name, "--")] = true
 	}
-	// The caller used the goal family's own form, which is reached through
-	// the explicit internal entry.
+	// A public command's remedy is the public form of the same act; the
+	// goal family's own form is reached through the explicit internal entry.
 	args := []string{"metasystem", "internal", "goal", values.verb}
+	if action, public := publicGoalActions[values.verb]; public && values.report != nil && publicGoalTakesKept(action, values.rawArgs, dropped) {
+		args = []string{"metasystem", "goal", action}
+	}
 	for index := 0; index < len(values.rawArgs); index++ {
 		token := values.rawArgs[index]
 		if !strings.HasPrefix(token, "--") {
@@ -171,6 +190,13 @@ func (values *humanVerbValues) sameCommandWithout(drop ...string) string {
 		}
 	}
 	return shellCommand(args)
+}
+
+// publicGoalActions are the public goal actions of the goal family's verbs
+// whose remedies repeat the caller's command.
+var publicGoalActions = map[string]string{
+	"accept-risk": "accept-risk", "budget": "budget", "set-budget": "budget", "approve": "approve",
+	"unapprove": "unapprove", "resume": "resume", "unpark": "resume",
 }
 
 func shellCommand(args []string) string {
@@ -204,4 +230,32 @@ func goalBooleanFlag(name string) bool {
 	default:
 		return false
 	}
+}
+
+// publicGoalTakesKept reports whether the public goal action accepts every
+// option the remedy keeps. A kept option only the family form takes (the
+// approval --sweep) makes the remedy the family form, so the printed command
+// runs instead of being refused.
+func publicGoalTakesKept(action string, raw []string, dropped map[string]bool) bool {
+	command, found := findIntentAction("goal", action)
+	if !found {
+		return false
+	}
+	accepted := map[string]bool{"repo": true, "root": true, "json": true}
+	for _, flag := range command.flags {
+		accepted[flag.name] = true
+		for _, alias := range flag.aliases {
+			accepted[alias] = true
+		}
+	}
+	for _, token := range raw {
+		if !strings.HasPrefix(token, "--") {
+			continue
+		}
+		name, _, _ := strings.Cut(strings.TrimPrefix(token, "--"), "=")
+		if !dropped[name] && !accepted[name] {
+			return false
+		}
+	}
+	return true
 }

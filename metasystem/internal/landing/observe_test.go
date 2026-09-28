@@ -944,27 +944,32 @@ func TestObservePromotionRecordIsStrictAndAbsentMeansObserve(t *testing.T) {
 }
 
 func TestObserveVerdictSurvivesLanding(t *testing.T) {
-	commitWrapper, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "commit.sh"))
-	if err != nil {
-		t.Fatal(err)
+	// The landing path (internal/landing/landpath) is the one commit
+	// chokepoint: its commit boundary observes the landing tree with the
+	// declared root job and receipt and stamps the verdict it decided, and its
+	// driver carries every landing declaration to the boundary.
+	source := func(name string) string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join("landpath", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
 	}
-	landDriver, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "land.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	commitBoundary := source("commit.go") + source("commit_record.go")
 	for _, required := range []string{
-		`landing observe --root "$root" --tree "$landing_tree"`,
-		`--root-job "$landing_root_job"`,
-		`--test-receipt "$landing_test_receipt"`,
-		`--trailer "Landing-Provenance: $landing_provenance"`,
-		`--trailer "Landing-Provenance-Verdict: $landing_verdict"`,
+		`judge.Observe(`,
+		`RootJob: request.RootJob, TestReceipt: request.TestReceipt`,
+		`"Landing-Provenance: " + decided.provenance`,
+		`"Landing-Provenance-Verdict: " + decided.verdict`,
 	} {
-		if !strings.Contains(string(commitWrapper), required) {
+		if !strings.Contains(commitBoundary, required) {
 			t.Fatalf("commit chokepoint lost %q", required)
 		}
 	}
-	for _, required := range []string{"--chain", "--direct-fix", "--revert-of", "--root-job", "--tests", "landing test-receipt"} {
-		if !strings.Contains(string(landDriver), required) {
+	landDriver := source("land.go")
+	for _, required := range []string{"request.Chain", "request.DirectFix", "request.RevertOf", "request.RootJob", "request.Tests", "d.createTestReceipt"} {
+		if !strings.Contains(landDriver, required) {
 			t.Fatalf("landing driver does not carry %s", required)
 		}
 	}

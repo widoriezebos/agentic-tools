@@ -3,7 +3,6 @@ package missionrunner
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -58,7 +57,7 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 	// the heartbeat must beat in milliseconds so a lawful cap-length drain
 	// reads as a live runner, but a job cannot become provably dead more
 	// often than the reap facts change — and each reap pass re-scans the
-	// jobs directory and spawns dispatch.sh per active job. At the old
+	// jobs directory and reaps each active job. At the old
 	// 100ms coupling, one 30-minute drain was ~18,000 subprocess spawns
 	// manufacturing exactly the machine load the timing fixtures flake
 	// under. Fixtures override the seconds-scale default through the env.
@@ -66,7 +65,6 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 	if err != nil {
 		return nil, err
 	}
-	dispatchScript := filepath.Join(e.Root, "scripts", "agents", "dispatch.sh")
 	var lastReap time.Time
 	for {
 		if err := e.heartbeat(turnID); err != nil {
@@ -87,7 +85,7 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 				return nil, err
 			}
 			for _, record := range active {
-				e.dispatchReap(dispatchScript, jobRecordID(record))
+				e.dispatchReap(jobRecordID(record))
 			}
 		}
 		live := activeJobRecords(e.Root, e.Mission)
@@ -106,7 +104,7 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 			// reap never serves. Run the dispatch reap for every live record NOW,
 			// re-read, and only park what a fresh reap could not resolve.
 			for _, record := range live {
-				e.dispatchReap(dispatchScript, jobRecordID(record))
+				e.dispatchReap(jobRecordID(record))
 			}
 			// The marker-aware Go reap gets the same fresh pass: a
 			// shell verdict voided by an in-progress cancellation
@@ -131,12 +129,12 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 	}
 }
 
-// dispatchReap runs the kill-capable dispatch reap for one job and
+// dispatchReap runs the kill-capable delegate reap for one job and
 // WITNESSES its answer: dropping runCaptured's stdout, stderr, and exit
 // code would leave a failed reap undiagnosable by artifact, with the
 // runner log empty exactly when a stalled drain needs it.
-func (e *Engine) dispatchReap(dispatchScript, jobID string) {
-	stdout, stderr, code := runCaptured(e.Root, nil, dispatchScript, "reap", "--job", jobID)
+func (e *Engine) dispatchReap(jobID string) {
+	stdout, stderr, code := e.delegate("reap", "--job", jobID)
 	if code != 0 {
 		fmt.Fprintf(os.Stderr, "drain reap %s exited %d: %s\n", jobID, code, firstDetail(stderr, stdout))
 		e.emit("job-refused", "drain reap failed for "+jobID, map[string]string{

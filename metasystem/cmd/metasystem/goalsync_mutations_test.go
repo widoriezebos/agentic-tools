@@ -26,7 +26,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type goalSyncEnrollmentReader struct {
@@ -70,14 +69,9 @@ func (r goalSyncEnrollmentReader) SessionLeader(int64) (int64, error) {
 
 func goalSyncTerminalReader(t *testing.T, root, terminalID string) goalSyncEnrollmentReader {
 	t.Helper()
-	adapters := filepath.Join(root, "scripts", "agents", "adapters")
-	if err := os.MkdirAll(adapters, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	adapter := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-an-attended-human-shell'\n"
-	if err := testexec.WriteFile(filepath.Join(adapters, "human-fixture.sh"), []byte(adapter), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// The ancestry is classified against the engine registry's runtime
+	// signatures; the installation needs no adapter script.
+	_ = root
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe enrollment fixture process: state=%s err=%v", state, err)
@@ -215,13 +209,7 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 	if err := os.WriteFile(backlog, repository.rawFile(t, "metasystem/plans/goals/backlog.md"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	guard := filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")
-	if err := os.MkdirAll(filepath.Dir(guard), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	plantFenceEngine(t, root)
 	reads := repository.reads()
 	dependencies := syncRequestDependencies{
 		authorityFacts: goalAuthorityReadFacts{
@@ -244,7 +232,7 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 			if root != repository.root {
 				return fmt.Errorf("guard root %q differs from %q", root, repository.root)
 			}
-			_, err := os.Stat(guard)
+			_, err := os.Stat(filepath.Join(root, "bin", "metasystem"))
 			return err
 		},
 		ownerLineage: func() string { return "m1" },
@@ -656,13 +644,19 @@ func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
 			fixture := newGoalBudgetResumeFixture(t, test.wantFenceCleared, test.mutate)
 			root := fixture.root()
 			writeFixtureEnrollment(t, root, "Wido")
-			code, _, stderr := captureCommandOutput(t, false, true, func() int {
+			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
 				return fixture.runBudget([]string{
 					"--root", root, "--id", "standing-validation", "4h/4/240m/2", "--fixture-human-authority", "--lineage", "m1",
 				}, fixedFixtureGoalAuthority)
 			})
-			if code != 2 {
+			// A box that completes to the one the goal already carries is a
+			// repeat (R-129-ui, U-idem): success, nothing recorded. A box
+			// that needs a fresh act still refuses and prints it.
+			if test.wantRun && code != 2 {
 				t.Fatalf("the incomplete compact box did not refuse: code=%d stderr=%q", code, stderr)
+			}
+			if !test.wantRun && (code != 0 || !strings.Contains(stdout, "already carries the box") || stderr != "") {
+				t.Fatalf("the box the goal already carries was not an unchanged success: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 			}
 			if test.wantRun {
 				if !strings.Contains(stderr, "run: metasystem goal budget") || strings.Contains(stderr, "already carries that box") {
@@ -671,8 +665,6 @@ func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
 				if test.wantRemedySuffix != "" && !strings.Contains(stderr, test.wantRemedySuffix+"\n") {
 					t.Fatalf("the printed remedy did not end in %q: stderr=%q", test.wantRemedySuffix, stderr)
 				}
-			} else if !strings.Contains(stderr, "already carries that box") || strings.Contains(stderr, "run:") {
-				t.Fatalf("an engine no-op was printed as a command: stderr=%q", stderr)
 			}
 			if fixture.repo.publications != 0 {
 				t.Fatalf("an incomplete box published %d times", fixture.repo.publications)
@@ -2189,8 +2181,14 @@ func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T)
 				t.Fatalf("machine %s enrollment journal lineage = %q, want terminal-tty-session-stop-1", root, entry.Lineage)
 			}
 		}
-		if !foundDerivedLineage {
+		// The first machine publishes the fleet cutoff. The second finds it
+		// standing: its fleet publication is a repeat whose effect holds, so
+		// it leaves no journal entry at all (R-129-ui, U-idem).
+		if root == rootA && !foundDerivedLineage {
 			t.Fatalf("machine %s recorded no enroll-terminal transaction", root)
+		}
+		if root == rootB && foundDerivedLineage {
+			t.Fatalf("machine %s journaled a fleet cutoff that already stood", root)
 		}
 	}
 	projection, err := goal.Project(endpointB, false, secondAt)
@@ -2240,13 +2238,7 @@ func syncedClaimedGoalFixtureAt(t *testing.T, now time.Time) string {
 		t.Fatal(err)
 	}
 	pinProofBinaryFixture(t, root)
-	guard := filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")
-	if err := os.MkdirAll(filepath.Dir(guard), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	plantFenceEngine(t, root)
 	rootRecord := &goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
 	}
@@ -2282,7 +2274,7 @@ func syncedClaimedGoalFixtureAt(t *testing.T, now time.Time) string {
 			t.Fatal(err)
 		}
 	}
-	goalSyncMutationGit(t, root, "add", "metasystem.conf", "plans/goals", "scripts/agents/pre-commit-guard.sh")
+	goalSyncMutationGit(t, root, "add", "metasystem.conf", "plans/goals", "scripts/agents/.gitkeep")
 	goalSyncMutationGit(t, root, "commit", "-q", "-m", "synced set-obligation fixture")
 	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
 	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")

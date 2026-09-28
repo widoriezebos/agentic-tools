@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -80,8 +82,13 @@ type scratchPublicFixture struct {
 }
 
 // command shadows the shared fixture's unbounded call: every CLI call of
-// this fixture runs in its own reaped process group within the fixture
-// exit bound. A timeout fails the phase; output is read only after join.
+// this fixture runs in its own reaped process group. The fixture exit bound
+// is a hang detector measured by progress, not by the clock: it fails the
+// phase only after the call made no progress (no new output and no change
+// under the control root's proof-run records) for the whole bound, so a
+// loaded host that slows a converging run does not fail it. A hung call is
+// asked for its goroutine dump (SIGQUIT) before its group is killed, so the
+// failure names where it stood. Output is read only after join.
 func (f *scratchPublicFixture) command(args ...string) (int, string) {
 	f.t.Helper()
 	bound, err := testenv.FixtureExitWaitBound()
@@ -91,8 +98,8 @@ func (f *scratchPublicFixture) command(args ...string) (int, string) {
 	command := f.proofCommand.command(f.commandEnvironment(), f.engine, args...)
 	command.Dir = f.root
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	var output bytes.Buffer
-	command.Stdout, command.Stderr = &output, &output
+	output := &progressBuffer{}
+	command.Stdout, command.Stderr = output, output
 	pid := 0
 	testenv.ReapFixtureProcessGroups(f.t, []testenv.FixtureProcessGroup{{Verb: "scratch fixture " + strings.Join(args[:min(2, len(args))], " "),
 		Resolve: func() (int, bool, error) { return pid, pid != 0, nil }}})
@@ -102,17 +109,44 @@ func (f *scratchPublicFixture) command(args ...string) (int, string) {
 	pid = command.Process.Pid
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
+	records := filepath.Join(f.control, "artifacts", "agents", "proof-runs")
+	lastOutput, lastRecords := output.size(), newestModification(records)
+	idleSince := time.Now()
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	// One ticker paces everything: the progress check, the grace after the
+	// dump request, and the join after the kill.
 	var waitErr error
-	select {
-	case waitErr = <-done:
-	case <-time.After(bound):
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
+	dumpTicks, killTicks := -1, -1
+wait:
+	for {
 		select {
-		case <-done:
-			f.t.Fatalf("metasystem %s exceeded %s; output=%s", strings.Join(args, " "), bound, output.String())
-		case <-time.After(bound):
-			f.t.Fatalf("metasystem %s exceeded %s and was not joined after SIGKILL", strings.Join(args, " "), bound)
+		case waitErr = <-done:
+			break wait
+		case <-tick.C:
 		}
+		switch {
+		case killTicks >= 0:
+			if killTicks++; time.Duration(killTicks)*time.Second >= bound {
+				f.t.Fatalf("metasystem %s made no progress for %s and was not joined after SIGKILL", strings.Join(args, " "), bound)
+			}
+		case dumpTicks >= 0:
+			if dumpTicks++; dumpTicks >= 5 {
+				_ = syscall.Kill(-pid, syscall.SIGKILL)
+				killTicks = 0
+			}
+		default:
+			if size, newest := output.size(), newestModification(records); size != lastOutput || newest.After(lastRecords) {
+				lastOutput, lastRecords, idleSince = size, newest, time.Now()
+			} else if time.Since(idleSince) >= bound {
+				_ = syscall.Kill(pid, syscall.SIGQUIT)
+				dumpTicks = 0
+			}
+		}
+	}
+	if dumpTicks >= 0 {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		f.t.Fatalf("metasystem %s made no progress for %s; output (with its goroutine dump)=%s", strings.Join(args, " "), bound, output.String())
 	}
 	if waitErr == nil {
 		return 0, output.String()
@@ -122,6 +156,47 @@ func (f *scratchPublicFixture) command(args ...string) (int, string) {
 		f.t.Fatalf("run metasystem %s: %v: %s", strings.Join(args, " "), waitErr, output.String())
 	}
 	return exit.ExitCode(), output.String()
+}
+
+// progressBuffer is the call's combined output, safe to measure while the
+// command's copier writes it.
+type progressBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *progressBuffer) Write(data []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(data)
+}
+
+func (b *progressBuffer) size() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Len()
+}
+
+func (b *progressBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
+}
+
+// newestModification is the latest modification time under root (zero when
+// root is absent): the proof-run records a converging call keeps writing.
+func newestModification(root string) time.Time {
+	var newest time.Time
+	_ = filepath.WalkDir(root, func(_ string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info, infoErr := entry.Info(); infoErr == nil && info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+		return nil
+	})
+	return newest
 }
 
 func (f *scratchPublicFixture) requireCommand(args ...string) string {

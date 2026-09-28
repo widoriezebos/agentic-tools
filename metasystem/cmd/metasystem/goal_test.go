@@ -6,14 +6,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
@@ -77,26 +76,40 @@ func TestStopVerdictWaitingLinesFromGateOnly(t *testing.T) {
 // adoption-shaped, and is refused every holder-only verb; the human
 // passes both.
 
-// delegateRoot builds a root whose adapter signatures match this test
-// process's own command, so classifying a child of ours there reads
-// DELEGATE (the lease package's own fixture pattern).
+// delegateRoot builds a fixture-mode root (metasystem.runtimes=fake), whose
+// recognizers classify against the built-in fake runtime's signature only;
+// agentChildPid is a process that signature matches.
 func delegateRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	command, ok := lease.ProcessCommand(int64(os.Getpid()), nil)
-	if !ok {
-		t.Skip("cannot read our own command to build a matching signature")
-	}
-	adapterDir := filepath.Join(root, "scripts/agents/adapters")
-	if err := os.MkdirAll(adapterDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	line := "match " + regexp.QuoteMeta(command)
-	script := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' '" + line + "'\n"
-	if err := testexec.WriteFile(filepath.Join(adapterDir, "fake.sh"), []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return root
+}
+
+// agentChildPid spawns a grandchild of ours whose parent's command the fake
+// runtime's built-in signature matches (argv0 metasystem-fake-agent), so
+// classifying it in a delegateRoot reads DELEGATE: the ancestry walk starts
+// at the caller's parent.
+func agentChildPid(t *testing.T) int64 {
+	t.Helper()
+	pidFile := filepath.Join(t.TempDir(), "agent-child.pid")
+	// The inner shell is a child, not an exec: the trailing `:` keeps the
+	// outer one alive as its parent.
+	inner := "printf '%s' \\$\\$ >'" + pidFile + "'; printf x >&3; IFS= read -r _ || :"
+	command := exec.Command("/bin/sh", "-c", "/bin/sh -c \""+inner+"\"; :")
+	command.Args[0] = "metasystem-fake-agent"
+	testutil.StartHeldProcess(t, command)
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pid
 }
 
 // childPid spawns a child whose parent is this process, so its ancestry
@@ -115,6 +128,68 @@ func writeLedger(t *testing.T, root, body string) {
 	if err := os.WriteFile(filepath.Join(root, "plans", "goals.md"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// plantFenceEngine installs the stub engine a fixture needs when none of its
+// commits asks the pre-commit guard for a judgment: ledgerfence.Ensure
+// enrolls only a checkout with an executable engine at bin/metasystem, and
+// the hook it composes runs that engine's `internal pre-commit`, which this
+// stub passes. It also keeps the installation shape (a scripts/agents
+// directory beside metasystem.conf) with a trackable placeholder, which the
+// retired guard script used to provide.
+func plantFenceEngine(t *testing.T, root string) {
+	t.Helper()
+	engine := filepath.Join(root, "bin", "metasystem")
+	for _, directory := range []string{filepath.Dir(engine), filepath.Join(root, "scripts", "agents")} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := testexec.WriteFile(engine, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "scripts", "agents", ".gitkeep"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// preCommitEngineDispatch is the stub-engine line that hands the hook's
+// `internal pre-commit` to this package's real built engine, so a fixture
+// whose commits must meet the production guard runs its real owner.
+func preCommitEngineDispatch(t *testing.T) string {
+	t.Helper()
+	return "if [[ ${1:-} == internal && ${2:-} == pre-commit ]]; then exec " + shellQuote(intentTestEngine(t)) + " \"$@\"; fi\n"
+}
+
+// stagePersonAtThisTerminal stages this test process as a person at a
+// terminal and every ancestor as neutral, so an engine the test starts
+// through Git (the pre-commit guard) classifies its caller as that person
+// wherever the suite runs. extra pids are staged as terminals too.
+func stagePersonAtThisTerminal(t *testing.T, root string, extra ...int64) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	identities := map[string]map[string]any{fmt.Sprint(os.Getpid()): {"terminal": true}}
+	seen := map[int64]bool{int64(os.Getpid()): true}
+	current, ok := identity.ParentPid(int64(os.Getpid()))
+	for ok && !seen[current] {
+		seen[current] = true
+		identities[fmt.Sprint(current)] = map[string]any{"pidStartedAt": 1, "command": "fixture-neutral-ancestor"}
+		current, ok = identity.ParentPid(current)
+	}
+	for _, pid := range extra {
+		identities[fmt.Sprint(pid)] = map[string]any{"terminal": true}
+	}
+	data, err := json.Marshal(identities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := filepath.Join(t.TempDir(), "terminal-table.json")
+	if err := os.WriteFile(table, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
 }
 
 // stageHumanTerminal pins the caller's controlling-terminal fact:
@@ -139,7 +214,7 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 	t.Run("delegate reconcile on an adoption-shaped root is genesis-admitted", func(t *testing.T) {
 		root := delegateRoot(t)
 		writeLedger(t, root, goalFree)
-		caller, err := goalCaller(root, childPid(t), "reconcile")
+		caller, err := goalCaller(root, agentChildPid(t), "reconcile")
 		if err != nil {
 			t.Fatalf("adoption-shaped genesis must admit a delegate: %v", err)
 		}
@@ -151,7 +226,7 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 	t.Run("delegate reconcile on a goal-bearing root is refused", func(t *testing.T) {
 		root := delegateRoot(t)
 		writeLedger(t, root, withGoals)
-		if _, err := goalCaller(root, childPid(t), "reconcile"); err == nil ||
+		if _, err := goalCaller(root, agentChildPid(t), "reconcile"); err == nil ||
 			!strings.Contains(err.Error(), "genesis admits a non-holder") {
 			t.Fatalf("a goal-bearing ledger must refuse a delegate genesis: %v", err)
 		}
@@ -159,7 +234,7 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 
 	t.Run("delegate open is holder-only refused", func(t *testing.T) {
 		root := delegateRoot(t)
-		if _, err := goalCaller(root, childPid(t), "open"); err == nil ||
+		if _, err := goalCaller(root, agentChildPid(t), "open"); err == nil ||
 			!strings.Contains(err.Error(), "lease holder") {
 			t.Fatalf("open must stay holder-only for a delegate: %v", err)
 		}
@@ -201,7 +276,7 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 		root := delegateRoot(t)
 		writeLedger(t, root, goalFree)
 		t.Setenv("PATH", t.TempDir())
-		_, err := goalCaller(root, childPid(t), "reconcile")
+		_, err := goalCaller(root, agentChildPid(t), "reconcile")
 		if err == nil || !strings.Contains(err.Error(), "adoption-shape probe failed") {
 			t.Fatalf("a delegate refused on a broken probe must see the probe error: %v", err)
 		}
@@ -213,7 +288,7 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "plans", "goals-accepted.json"), []byte("{}"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := goalCaller(root, childPid(t), "reconcile"); err == nil ||
+		if _, err := goalCaller(root, agentChildPid(t), "reconcile"); err == nil ||
 			!strings.Contains(err.Error(), "lease holder") {
 			t.Fatalf("an initialized root must be holder-only even for reconcile: %v", err)
 		}
@@ -233,25 +308,17 @@ func TestFreshInitializationUsesHumanGitCommitThenRealMigration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	guardBytes, err := os.ReadFile("../../scripts/agents/pre-commit-guard.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh"), guardBytes, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Only the terminal fact is simulated. The installed production guard,
-	// ordinary Git commit and goal migration all execute their real owners.
-	stub := `#!/usr/bin/env bash
-set -euo pipefail
-if [[ ${1:-} == lease && ${2:-} == classify ]]; then printf '%s\n' '{"class":"HUMAN"}'; exit 0; fi
+	// Only the terminal fact is simulated. The production guard (the real
+	// engine's pre-commit entry), ordinary Git commit and goal migration all
+	// execute their real owners.
+	stub := "#!/usr/bin/env bash\nset -euo pipefail\n" + preCommitEngineDispatch(t) + `if [[ ${1:-} == lease && ${2:-} == classify ]]; then printf '%s\n' '{"class":"HUMAN"}'; exit 0; fi
 if [[ ${1:-} == json && ${2:-} == get ]]; then printf '%s\n' HUMAN; exit 0; fi
 exit 1
 `
 	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := testexec.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"), []byte("#!/bin/sh\nexec \""+filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")+"\"\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"), []byte("#!/bin/sh\nexec \""+filepath.Join(root, "bin", "metasystem")+"\" internal pre-commit --root \""+root+"\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	legacy := "# Goals\n\n## Goal-free: declared 2026-09-09T00:00:00Z by human over " + strings.Repeat("ab", 32) + "\n"
@@ -266,6 +333,9 @@ exit 1
 	if err := os.WriteFile(filepath.Join(root, "plans", "goals-accepted.json"), baseline, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The person commits the initialization at their terminal: the real
+	// guard classifies the commit's caller from the staged process facts.
+	stagePersonAtThisTerminal(t, root)
 	runReceiptGit(t, root, "add", ".")
 	runReceiptGit(t, root, "commit", "-qm", "human initialization")
 	initial := runReceiptGit(t, root, "rev-parse", "HEAD")
@@ -332,5 +402,4 @@ func TestGoalCommandClockOverrideIsFixtureOnly(t *testing.T) {
 	if _, _, err := goalCommandBootClock(fixture); err == nil {
 		t.Fatal("a partial boot-clock fixture must fail loudly in a fake root")
 	}
-	t.Run("stop proof cancellation keeps the frozen instant fixture-only", testStopProofCancelCommandKeepsFrozenInstantFixtureOnly)
 }

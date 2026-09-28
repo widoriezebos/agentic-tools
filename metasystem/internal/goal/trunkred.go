@@ -617,6 +617,9 @@ func trunkRedOwnRequest(r VerbRequest, args TrunkRedOwnArgs) PublishRequest {
 			if tree.Live[args.Goal] == nil {
 				return nil, fmt.Errorf("TRUNK_RED_FIX_GOAL_UNKNOWN: goal %s is not live", args.Goal)
 			}
+			if held := trunkRedOwnHolds(*entry, r.Actor.Machine, args); held != "" {
+				return nil, AlreadyHolds{Reason: held}
+			}
 			if args.By == "" {
 				if entry.Owner.Machine != "" && entry.Owner.Machine != r.Actor.Machine {
 					return nil, fmt.Errorf("TRUNK_RED_OWNED_ELSEWHERE: entry %s is owned by %s", args.Entry, entry.Owner.Machine)
@@ -641,6 +644,32 @@ func trunkRedOwnRequest(r VerbRequest, args TrunkRedOwnArgs) PublishRequest {
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
+}
+
+// trunkRedOwnHolds says what already holds when an own request asks for the
+// owner, fix goal and fix branch the open entry already records (R-129-ui);
+// empty when the request changes anything. The machine is the one the
+// request assigns: --to for a person's hand-over, else the actor's.
+func trunkRedOwnHolds(entry TrunkRedEntry, actorMachine string, args TrunkRedOwnArgs) string {
+	machine := args.To
+	if machine == "" {
+		machine = actorMachine
+	}
+	if entry.Owner.Machine != machine || entry.FixGoal != args.Goal {
+		return ""
+	}
+	if args.Branch != "" && (entry.FixBranch.Name != args.Branch || entry.FixBranch.Commit != args.BranchCommit || entry.FixBranch.State != TrunkRedBranchOpen) {
+		return ""
+	}
+	reason := fmt.Sprintf("incident %s is already owned by %s", entry.ID, machine)
+	if entry.Owner.Since != "" {
+		reason += " (since " + entry.Owner.Since + ")"
+	}
+	reason += " with fix goal " + args.Goal
+	if entry.FixBranch.Name != "" {
+		reason += " on branch " + entry.FixBranch.Name
+	}
+	return reason
 }
 
 type TrunkRedCloseArgs struct {
@@ -671,8 +700,19 @@ func trunkRedCloseRequest(r VerbRequest, args TrunkRedCloseArgs) PublishRequest 
 			if entry == nil {
 				return nil, fmt.Errorf("TRUNK_RED_UNKNOWN: entry %s is not in the register", args.Entry)
 			}
-			if entry.Closed != nil {
-				return nil, fmt.Errorf("TRUNK_RED_CLOSED: entry %s is closed", args.Entry)
+			if closed := entry.Closed; closed != nil {
+				// Closing a closed incident is the state already holding
+				// (R-129-ui): success, and nothing is recorded again.
+				detail := "closed at " + closed.At
+				if closed.By != "" {
+					detail += " by " + closed.By
+				}
+				if closed.Why != "" {
+					detail += ": " + closed.Why
+				} else if closed.How == "green" {
+					detail += " after a green proof"
+				}
+				return nil, AlreadyHolds{Reason: fmt.Sprintf("incident %s is already closed (%s)", args.Entry, detail)}
 			}
 			entry.Closed = &TrunkRedClosure{At: r.stamp(), How: "hand", Opid: r.opid(), By: args.By, Why: args.Why}
 			entry.Holds = []string{}

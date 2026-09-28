@@ -109,7 +109,7 @@ func groupHasSubstantiveMember(pgid int) bool {
 // whose argv went unreadable, while a provably foreign group is never
 // signaled.
 func groupOwnership(pgid int, tag string, grant fixtureauth.GroupOwnershipGrant) janitor.GroupOwnershipOutcome {
-	outcome := janitor.GroupOwnership(int64(pgid), tag)
+	outcome := janitor.GroupOwnershipAt(grant.Root(), int64(pgid), tag)
 	if outcome == janitor.GroupOwned {
 		return outcome
 	}

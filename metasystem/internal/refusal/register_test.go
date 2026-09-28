@@ -293,7 +293,7 @@ func TestHCL03ProofAdmissionRowsNameEmissions(t *testing.T) {
 		"PROOF_AUTHORITY_ARC_MATE_REFUSED": {Owner: "cmd/metasystem", Site: "proof_run.go:863", Shape: Question},
 		"CANDIDATE_EXTENSION_REFUSED":      {Owner: "internal/dispatch", Site: "admission.go:428", Shape: Question},
 		"RETRY_PRIOR_OUTSIDE_TREE":         {Owner: "internal/proofrun", Site: "attempt.go:1236", Shape: Question},
-		"SET_BUDGET_FENCED_SAME_TUPLE":     {Owner: "internal/goal", Site: "verbs.go:1697", Shape: Question},
+		"SET_BUDGET_FENCED_SAME_TUPLE":     {Owner: "internal/goal", Site: "verbs.go:1709", Shape: Question},
 		"REBIND_EPOCH_UNAUTHENTICATED":     {Owner: "internal/goal", Site: "verbs.go:261", Shape: Identity},
 	}
 	root := moduleRoot(t)
@@ -377,7 +377,7 @@ func TestHCL03PendingRowsNamed(t *testing.T) {
 	}
 	for _, row := range Rows {
 		rowCodes[row.Code] = struct{}{}
-		if row.Pending != "" && (row.Pending != "human-carried-landing" || !strings.HasPrefix(row.Override, "land.sh --carried")) {
+		if row.Pending != "" && (row.Pending != "human-carried-landing" || row.Override != CarriedLanding) {
 			t.Errorf("row %q has invalid pending marker %q or override %q", row.Code, row.Pending, row.Override)
 		}
 		if row.Shape == Agent && row.Override == "" {
@@ -608,7 +608,7 @@ func TestHCL03NoPendingAfterSlice2(t *testing.T) {
 		if row.Pending != "" {
 			t.Errorf("refusal %s still has pending marker %q", row.Code, row.Pending)
 		}
-		if strings.HasPrefix(row.Override, "land.sh --carried") {
+		if row.Override == CarriedLanding {
 			carriedRows++
 		}
 		if strings.HasPrefix(row.Code, "carry-") && (row.Shape != Question || row.Override != "") {
@@ -618,12 +618,15 @@ func TestHCL03NoPendingAfterSlice2(t *testing.T) {
 	if carriedRows == 0 {
 		t.Fatal("the register has no carried refusal rows")
 	}
-	for _, row := range ShellRows {
+	for _, row := range ProseRows {
 		if row.Override == "" && !row.Record {
-			t.Errorf("shell row %s:%s has neither override nor record-failure marker", row.Script, row.Line)
+			t.Errorf("prose row %s/%s has neither override nor record-failure marker", row.Owner, row.Site)
 		}
 		if row.Record && row.Override != "" {
-			t.Errorf("shell row %s:%s is both overridable and a record failure", row.Script, row.Line)
+			t.Errorf("prose row %s/%s is both overridable and a record failure", row.Owner, row.Site)
+		}
+		if !proseRowSiteEmits(t, root, row) {
+			t.Errorf("prose row %s/%s does not name the line that emits %q", row.Owner, row.Site, row.Prose)
 		}
 	}
 	read := func(path string) string {
@@ -638,9 +641,10 @@ func TestHCL03NoPendingAfterSlice2(t *testing.T) {
 		{"goal carry", "cmd/metasystem/main.go", `{"carry",`},
 		{"goal carrying", "cmd/metasystem/main.go", `{"carrying",`},
 		{"goal carried", "cmd/metasystem/main.go", `{"carried",`},
-		{"landing carry-status", "cmd/metasystem/main.go", `{"carry-status",`},
-		{"land argument", "scripts/agents/land.sh", `--carried <opid>`},
-		{"commit argument-loop case", "scripts/agents/commit.sh", "\n    --carried)\n"},
+		{"carry status owner", "cmd/metasystem/landing_path.go", `CarryStatus:     landingPathCarryStatus,`},
+		{"work land exception option", "cmd/metasystem/intent_delivery.go", `{name: "exception", value: "CODE"`},
+		{"work land using-exception option", "cmd/metasystem/intent_delivery.go", `{name: "using-exception", value: "ID"`},
+		{"commit boundary carried declaration", "internal/landing/landpath/commit.go", `if request.Carried != "" && (!request.GoalSet`},
 	}
 	sources := map[string]string{}
 	for _, check := range checks {
@@ -670,11 +674,38 @@ func TestHCL03NoPendingAfterSlice2(t *testing.T) {
 	}
 }
 
+// proseRowSiteEmits reports whether the row's site line, within the site
+// window, carries the prose's fixed opening (the text before its first
+// placeholder).
+func proseRowSiteEmits(t *testing.T, root string, row Prose) bool {
+	t.Helper()
+	file, line, ok := strings.Cut(row.Site, ":")
+	number, err := strconv.Atoi(line)
+	if !ok || err != nil || number < 1 {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(row.Owner), filepath.FromSlash(file)))
+	if err != nil {
+		return false
+	}
+	opening := row.Prose
+	if cut := strings.IndexAny(opening, "<"); cut >= 0 {
+		opening = opening[:cut]
+	}
+	lines := strings.Split(string(data), "\n")
+	for index := max(1, number-refusalSiteWindowRadius); index <= min(len(lines), number+refusalSiteWindowRadius); index++ {
+		if strings.Contains(lines[index-1], opening) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestHCL11EntryPointsPresent(t *testing.T) {
 	carriedOverrides := 0
 	carryQuestions := map[string]bool{}
 	for _, row := range Rows {
-		if strings.HasPrefix(row.Override, "land.sh --carried") {
+		if row.Override == CarriedLanding {
 			carriedOverrides++
 			if row.Pending != "" {
 				t.Errorf("carried override %s is still pending: %s", row.Code, row.Pending)

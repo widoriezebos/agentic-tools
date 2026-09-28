@@ -1,0 +1,89 @@
+package supervisor
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+)
+
+// builtinOps carries the operations a Go built-in shares with every other
+// built-in: describe from the runtime registry, and the probe, contract,
+// identity and self-test functions each built-in names. A built-in embeds it
+// and adds prepare, observe, finalize (and repair when it declares one).
+type builtinOps struct {
+	name           string
+	cli            string
+	usage          string // native, unavailable, or metered
+	host, repair   bool
+	configIdentity func(Deps) (string, error)
+	probe          func(Deps, []string) int
+	contract       func(Deps) ([]byte, error)
+	selftest       func(Deps) int
+}
+
+func (b builtinOps) Describe(Deps) (Description, error) {
+	d := Description{Name: b.name, CLI: b.cli, SchemaVersion: OperationsSchemaVersion,
+		Capabilities: Capabilities{Resume: true, FollowUp: true, Repair: b.repair, WaitDelivery: true, Host: b.host, Usage: b.usage},
+	}
+	for _, shape := range runtimes.CLIInvocations(b.name) {
+		d.Invocations = append(d.Invocations, InvocationShape{Includes: shape.Includes, TagFlag: shape.TagFlag,
+			TagPrefix: shape.TagPrefix, TagPathBase: shape.TagPathBase})
+	}
+	text, err := runtimes.SignatureText(b.name)
+	if err != nil {
+		return Description{}, err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
+		verb, pattern, _ := strings.Cut(line, " ")
+		if verb == "match" {
+			d.Match = append(d.Match, pattern)
+		} else {
+			d.Exclude = append(d.Exclude, pattern)
+		}
+	}
+	if declaration, ok := runtimes.Lookup(b.name); ok {
+		d.Positive, d.Lookalike = declaration.SignatureVectors.Positive, declaration.SignatureVectors.Lookalike
+	}
+	d.ConfigPaths, _ = runtimes.LocalConfigPaths(b.name)
+	d.Enforcement, _ = runtimes.EnforcementMapJSON(b.name)
+	return d, nil
+}
+
+func (b builtinOps) ConfigIdentity(d Deps) (string, error) { return b.configIdentity(d) }
+func (b builtinOps) Probe(d Deps, args []string) int       { return b.probe(d, args) }
+func (b builtinOps) Contract(d Deps) ([]byte, error)       { return b.contract(d) }
+func (b builtinOps) Selftest(d Deps) int                   { return b.selftest(d) }
+
+// Repair is absent unless a built-in declares and implements it.
+func (b builtinOps) Repair(*Turn, RepairInput) RepairResult { return RepairResult{Status: 1} }
+
+// Cancel has no runtime-specific step: the shared cancellation.
+func (b builtinOps) Cancel(d Deps, job string) int {
+	return d.Dispatch.Run(d.Stdout, d.Stderr, "__cancel-owned", "--job", job)
+}
+
+// OperationsFor is the operation interface of a runtime for an installation
+// through the registry: a built-in, an external runtime, or an overridden
+// built-in. ok is false for a runtime the installation does not have.
+func OperationsFor(d Deps, name string) (Operations, bool) {
+	ops, err := OperationsAt(d, name)
+	return ops, err == nil
+}
+
+// OperationsAt is OperationsFor with the reason a runtime is unavailable
+// (a refused adapter names its fix).
+func OperationsAt(d Deps, name string) (Operations, error) {
+	entry, err := registryEntry(d, name)
+	if err != nil {
+		return nil, err
+	}
+	if entry.Adapter != nil {
+		return newExternalOps(entry), nil
+	}
+	a := registry[name]
+	if a.ops == nil {
+		return nil, fmt.Errorf("%w: %s", ErrNotInstalled, name)
+	}
+	return a.ops, nil
+}

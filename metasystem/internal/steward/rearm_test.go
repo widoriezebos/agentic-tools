@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -429,19 +428,14 @@ func TestEnrollmentBuildSourceCheckSeparatesNotAnAncestorFromARepositoryFailure(
 	}
 }
 
-func TestEnrollmentSkewPathspecsMatchDispatch(t *testing.T) {
-	script, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "dispatch.sh"))
-	if err != nil {
-		t.Fatal(err)
+func TestEngineSkewPathspecsAreTheEnrollmentSkewPaths(t *testing.T) {
+	got := EngineSkewPathspecs()
+	if !reflect.DeepEqual(got, enrollmentSkewPathspecs[:]) {
+		t.Fatalf("engine skew paths %v differ from the enrollment skew paths %v", got, enrollmentSkewPathspecs)
 	}
-	matches := regexp.MustCompile(`"\$protected_prefix"([^|)]+)/\*`).FindAllStringSubmatch(string(script), -1)
-	got := make([]string, 0, len(matches))
-	for _, match := range matches {
-		got = append(got, match[1])
-	}
-	want := enrollmentSkewPathspecs[:]
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("steward enrollment skew paths %v differ from dispatch paths %v", want, got)
+	got[0] = "mutated"
+	if enrollmentSkewPathspecs[0] == "mutated" {
+		t.Fatal("the shared paths leaked a mutable view")
 	}
 }
 

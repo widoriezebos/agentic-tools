@@ -158,7 +158,15 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		// RECORDED ruling — never from this call's arguments — or
 		// refuse when there is nothing left to do.
 		if e.openBoundAsks(taintID) == 0 {
-			fmt.Fprintf(os.Stderr, "resolve refused: taint %d is already resolved\n", taintID)
+			// The same resolution again is the state already holding
+			// (R-129-ui): success, and nothing is written or anchored.
+			// Another resolution of a resolved taint stays refused.
+			if sameTaintResolution(recorded, variant, tree, waived) {
+				fmt.Printf("mission=%s taint=%d %s(%s by %s); nothing was recorded\n",
+					e.Mission, taintID, TaintAlreadyResolved, recorded["variant"], recorded["resolvedBy"])
+				return 0
+			}
+			fmt.Fprintf(os.Stderr, "resolve refused: taint %d is already resolved differently (%s by %s)\n", taintID, recorded["variant"], recorded["resolvedBy"])
 			return 3
 		}
 		if err := e.answerWallViolationAsks(taintID, recorded); err != nil {
@@ -616,4 +624,37 @@ func (e *Engine) openAskIDsExcludingTaint(taintID int64) []string {
 		}
 	}
 	return ids
+}
+
+// TaintAlreadyResolved marks the line a repeated resolution prints: the
+// command layer reads it as the requested state already holding.
+const TaintAlreadyResolved = "is already resolved "
+
+// sameTaintResolution says whether a request asks for the resolution already
+// recorded: the same variant, for a restore the same tree, for an adoption
+// the same waived claims. Who ruled and why annotate a resolution; they do
+// not make another one.
+func sameTaintResolution(recorded map[string]any, variant, tree string, waived []string) bool {
+	if recorded["variant"] != variant {
+		return false
+	}
+	if variant == "restore" {
+		return recorded["treeId"] == tree
+	}
+	claims, _ := recorded["waivedClaims"].([]any)
+	if len(claims) != len(waived) {
+		return false
+	}
+	want := map[string]int{}
+	for _, claim := range waived {
+		want[strings.TrimSpace(claim)]++
+	}
+	for _, raw := range claims {
+		claim, _ := raw.(string)
+		if want[claim] == 0 {
+			return false
+		}
+		want[claim]--
+	}
+	return true
 }

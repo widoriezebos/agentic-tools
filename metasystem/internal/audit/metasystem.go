@@ -28,9 +28,9 @@ var auditRequiredFiles = []string{
 }
 
 // The outside-reference scan roots: explicit metasystem-owned files only.
-// docs/project-rules.md is project-owned and deliberately absent, and so are
-// the audit's own shim and adopt.sh (both legitimately contain dot-dot
-// segments for root resolution).
+// docs/project-rules.md is project-owned and deliberately absent, and so is
+// the audit's own shim (it legitimately contains dot-dot segments for root
+// resolution).
 func auditScanRoots() []string {
 	return append(runtimereg.InstructionFiles(), []string{
 		"wow.md",
@@ -38,7 +38,6 @@ func auditScanRoots() []string {
 		"docs/working-with-agents.md", "docs/project-adaptation.md", "docs/metasystem-reconciliation.md",
 		"docs/design/design-principles.md", "docs/design/design-obligation-gate.md", "docs/examples",
 		"skills", "optional-skills", "meta",
-		"scripts/validate-metasystem.sh",
 		"scripts/enforcement",
 		"plans/README.md", "memory/README.md", "memory/instruction-ledger.md", "memory/known-issues.md",
 	}...)
@@ -66,7 +65,7 @@ type AuditResult struct {
 // AuditOptions mirror the shim's environment knobs.
 type AuditOptions struct {
 	MaxAlwaysLoadedWords int  // 0 uses DefaultMaxAlwaysLoadedWords
-	AllowPlaceholders    bool // adopt.sh's structural pass, pre-fill
+	AllowPlaceholders    bool // adoption's structural pass, pre-fill
 }
 
 // AuditMetasystem runs the full audit under root.

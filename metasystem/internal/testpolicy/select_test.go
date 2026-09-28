@@ -204,13 +204,13 @@ func TestMetaSystemGroupSelectionScenario(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	groups := []string{"section/adoption-fixtures", "section/watch-background-jobs-fixtures"}
+	groups := []string{"section/adoption-fixtures", "watch-jobs-standard"}
 	for _, mode := range []Mode{ModeCanary, ModeAuto, ModeStandard, ModeDeep} {
 		plan, selectErr := Select(contract, SelectionRequest{ChangedPaths: []string{"internal/testpolicy/select.go"},
 			RequestedMode: mode, Purpose: PurposeDiagnostic, Groups: groups})
 		if mode == ModeCanary {
-			want := []string{"policy-canary", "adapter-canary", "command-interface-smoke", "verb-ratchet", "section/adoption-fixtures",
-				"section/watch-background-jobs-fixtures", "fast-static-build", "refusal-register-standard"}
+			want := []string{"policy-canary", "adapter-canary", "command-interface-smoke", "verb-ratchet", "delegation-layering", "section/adoption-fixtures",
+				"watch-jobs-standard", "fast-static-build", "refusal-register-standard"}
 			if selectErr != nil || len(plan.SelectedGroups) != len(want) {
 				t.Fatalf("canary selected %v of %d groups, err=%v; want %v", plan.SelectedGroups, len(contract.Groups), selectErr, want)
 			}

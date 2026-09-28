@@ -1,0 +1,25 @@
+package supervisor
+
+import (
+	"os"
+	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+)
+
+func TestMain(m *testing.M) {
+	// The external adapter fixture (external_test.go): this binary run as
+	// an adapter executable answers one operation and exits.
+	if os.Getenv("EXTERNAL_ENGINE_STANDIN") == "1" && len(os.Args) > 1 && os.Args[1] == "internal" {
+		os.Exit(runExternalEngineStandIn())
+	}
+	if mode := os.Getenv("EXTERNAL_FIXTURE_MODE"); mode != "" {
+		os.Exit(runExternalAdapterFixture(mode))
+	}
+	// Git is stubbed for the whole package, before any test runs and never
+	// changed after: every fixture root is a temporary directory outside
+	// any repository, and no test reads a real work tree. The stub is
+	// constant, so parallel tests share no mutable fake.
+	gitOutput = func(string, ...string) (string, bool) { return "", false }
+	os.Exit(testenv.Main(m))
+}

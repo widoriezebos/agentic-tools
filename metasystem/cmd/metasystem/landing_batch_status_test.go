@@ -200,10 +200,16 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 	if status != 0 || !diagnostic.NoReuse || diagnostic.Purpose != "diagnostic" {
 		t.Fatalf("diagnostic request=%+v status=%d", diagnostic, status)
 	}
-	if _, _, status := parseTestingSelection("test run", []string{
-		"--root", root, "--purpose", "delivery", "--no-reuse",
-	}, true); status != 2 {
-		t.Fatalf("delivery --no-reuse status=%d, want usage refusal", status)
+	// The refusal writes the process's stderr: it runs under the capture
+	// lock, so a parallel test capturing stderr never receives it.
+	status, _, refusal := captureCommandOutput(t, false, true, func() int {
+		_, _, status := parseTestingSelection("test run", []string{
+			"--root", root, "--purpose", "delivery", "--no-reuse",
+		}, true)
+		return status
+	})
+	if status != 2 || refusal != "--no-reuse is available only for diagnostic purpose\n" {
+		t.Fatalf("delivery --no-reuse status=%d stderr=%q, want usage refusal", status, refusal)
 	}
 	const batchID = "01j5x00000000000000000ba12"
 	resultPath := filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", batchID+"-diagnostic.json")
@@ -605,7 +611,7 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 				pushes++
 				return originalPush(root, id, base, tip)
 			}
-			seams := batchLandSeams(root, record.BatchID, record, baseCommit, "owner")
+			seams := batchLandSeamsWithRead(root, record.BatchID, record, baseCommit, "owner", gitOutput, plantedBatchCommit)
 			seams.Prepare = func(string) error { return nil }
 			seams.Apply = func(batch.Unit) error { return nil }
 			seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }
@@ -726,7 +732,7 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 		recoveries++
 		return batch.PushRecovery{Origin: origin}, errors.New("recovery transport unavailable")
 	}
-	seams := batchLandSeams(root, record.BatchID, record, baseCommit, "owner")
+	seams := batchLandSeamsWithRead(root, record.BatchID, record, baseCommit, "owner", gitOutput, plantedBatchCommit)
 	seams.Prepare = func(string) error { return nil }
 	seams.Apply = func(batch.Unit) error { return nil }
 	seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }

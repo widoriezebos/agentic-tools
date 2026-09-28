@@ -3,15 +3,17 @@ package steward
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type fakeCensus struct {
@@ -73,6 +75,10 @@ func TestKilledWatcherIsRoutedToItsOwnerWithinOneTick(t *testing.T) {
 }
 
 func scanBreachStopsInRoleHealthBed(t *testing.T, bed *roleHealthProjectionBed) []BreachStopReport {
+	return scanBreachStopsWith(t, bed, nil)
+}
+
+func scanBreachStopsWith(t *testing.T, bed *roleHealthProjectionBed, stop func(string, uint64) (string, error)) []BreachStopReport {
 	t.Helper()
 	reads := 0
 	repository := roleHealthRepository{bed: bed}
@@ -100,7 +106,7 @@ func scanBreachStopsInRoleHealthBed(t *testing.T, bed *roleHealthProjectionBed) 
 					reads++
 					return goal.Endpoint{Root: bed.root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: repository}, nil
 				})
-		})
+		}, stop)
 	if reads != 2 {
 		t.Fatalf("stop scan raw reads = %d, want 2", reads)
 	}
@@ -136,23 +142,25 @@ func TestBreachStopCustodianReportsIndeterminateFailureAndCommandOutcome(t *test
 	if err := goal.WriteStopBatch(commandBed.root, batch); err != nil {
 		t.Fatal(err)
 	}
-	script := filepath.Join(commandBed.root, "scripts", "agents", "dispatch.sh")
-	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
-		t.Fatal(err)
+	var stopped []string
+	failing := func(goalID string, revision uint64) (string, error) {
+		stopped = append(stopped, fmt.Sprintf("%s/%d", goalID, revision))
+		return "stop failed\n", errors.New("exit status 1")
 	}
-	if err := testexec.WriteFile(script, []byte("#!/bin/sh\nprintf 'stop failed\\n'\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	reports = scanBreachStopsInRoleHealthBed(t, commandBed)
+	reports = scanBreachStopsWith(t, commandBed, failing)
 	if len(reports) != 1 || reports[0].State != "FAILED" || reports[0].Detail != "stop failed" {
 		t.Fatalf("failed stop command was not reported: %+v", reports)
 	}
-	if err := testexec.WriteFile(script, []byte("#!/bin/sh\nprintf 'stop complete\\n'\n"), 0o755); err != nil {
-		t.Fatal(err)
+	if !reflect.DeepEqual(stopped, []string{"bounded-goal/2"}) {
+		t.Fatalf("the custodian stopped %v, want the breached revision", stopped)
 	}
-	reports = scanBreachStopsInRoleHealthBed(t, commandBed)
+	reports = scanBreachStopsWith(t, commandBed, func(string, uint64) (string, error) { return "stop complete\n", nil })
 	if len(reports) != 1 || reports[0].State != "COMPLETE" || reports[0].Detail != "stop complete" {
 		t.Fatalf("successful stop command was not reported: %+v", reports)
+	}
+	reports = scanBreachStopsWith(t, commandBed, nil)
+	if len(reports) != 1 || reports[0].State != "FAILED" || !strings.Contains(reports[0].Detail, "no delegate lifecycle wired") {
+		t.Fatalf("an unwired tick must fail the route by name: %+v", reports)
 	}
 }
 

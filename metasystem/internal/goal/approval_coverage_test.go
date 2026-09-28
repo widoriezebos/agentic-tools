@@ -41,8 +41,8 @@ func TestUnapproveWithdrawsApprovedAndClaimedWork(t *testing.T) {
 		retry := verbReqFor(endpoint, "01J5X00000000000000000RV30", "mac-a")
 		retry.Actor.Human = "Wido"
 		result, err = Unapprove(retry, "revoke-waiting", "withdraw again", proof)
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "APPROVAL_REQUIRED") || !strings.Contains(result.Detail, "this unapprove is refused") {
-			t.Fatalf("a second unapproval did not refuse by name: %+v %v", result, err)
+		if err != nil || result.Outcome != OutcomeAbandoned || !result.Unchanged || !strings.Contains(result.Detail, "is already not approved") {
+			t.Fatalf("a second unapproval was not a no-op: %+v %v", result, err)
 		}
 	})
 

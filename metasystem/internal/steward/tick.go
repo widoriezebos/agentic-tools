@@ -3,14 +3,13 @@ package steward
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -43,7 +42,22 @@ type TickConfig struct {
 	// from the identity it was enrolled with. A tick with no runner context
 	// publishes no presence, so a command process running the manual tick
 	// verb can never publish this machine's rollout confirmation.
-	Runner            *seat.RunnerContext
+	Runner *seat.RunnerContext
+	// BreachStop closes one breached goal revision and completes its
+	// cancellation pass through the delegate lifecycle, returning the
+	// lifecycle's report. The lifecycle composes above the steward (design
+	// 6.3), so the command layer supplies it; a tick without one reports
+	// every stoppable route FAILED by name.
+	BreachStop func(goalID string, revision uint64) (string, error)
+	// BreachStopReady reports whether this process may act as the stop
+	// custodian yet. The resident runner defers its breach-stop passes until
+	// its standing is its own (a session leader no recognized ancestor
+	// claims), because while the arming process is still its parent the
+	// stop-custodian gate classifies that ancestor and the pass would only
+	// write a FAILED report. A deferred pass scans nothing and reports
+	// nothing; the breach stays for the next tick. nil is always ready (the
+	// external tick verb).
+	BreachStopReady   func() bool
 	narrationLocation *time.Location
 }
 
@@ -98,12 +112,17 @@ type BreachStopReport struct {
 	Detail   string `json:"detail,omitempty"`
 }
 
-func runBreachStopCustodian(repoRoot string, now time.Time) []BreachStopReport {
-	return runBreachStopCustodianWithScanner(repoRoot, now, dispatch.FindBreachStops)
+// custodialBreachStops is the tick's breach-stop pass: deferred, with no
+// scan and no report, while the configured custodian is not ready.
+func custodialBreachStops(repoRoot string, cfg TickConfig, scanner func(string, time.Time) ([]dispatch.StopRoute, error)) []BreachStopReport {
+	if cfg.BreachStopReady != nil && !cfg.BreachStopReady() {
+		return nil
+	}
+	return runBreachStopCustodianWithScanner(repoRoot, cfg.now(), scanner, cfg.BreachStop)
 }
 
 func runBreachStopCustodianWithScanner(repoRoot string, now time.Time,
-	scanner func(string, time.Time) ([]dispatch.StopRoute, error)) []BreachStopReport {
+	scanner func(string, time.Time) ([]dispatch.StopRoute, error), stop func(string, uint64) (string, error)) []BreachStopReport {
 	routes, err := scanner(repoRoot, now)
 	if err != nil {
 		return []BreachStopReport{{State: "FAILED", Detail: err.Error()}}
@@ -116,19 +135,21 @@ func runBreachStopCustodianWithScanner(repoRoot string, now time.Time,
 			reports = append(reports, report)
 			continue
 		}
-		cmd := exec.Command(filepath.Join(repoRoot, "scripts", "agents", "dispatch.sh"),
-			"__breach-stop-goal", "--goal", route.GoalID, "--revision", fmt.Sprint(route.Revision))
-		cmd.Dir = repoRoot
-		out, runErr := cmd.CombinedOutput()
-		if runErr != nil {
+		if stop == nil {
+			report.State, report.Detail = "FAILED", "the steward tick has no delegate lifecycle wired to run the breach stop"
+			reports = append(reports, report)
+			continue
+		}
+		out, stopErr := stop(route.GoalID, route.Revision)
+		if stopErr != nil {
 			report.State = "FAILED"
-			report.Detail = strings.TrimSpace(string(out))
+			report.Detail = strings.TrimSpace(out)
 			if report.Detail == "" {
-				report.Detail = runErr.Error()
+				report.Detail = stopErr.Error()
 			}
 		} else {
 			report.State = "COMPLETE"
-			report.Detail = strings.TrimSpace(string(out))
+			report.Detail = strings.TrimSpace(out)
 		}
 		reports = append(reports, report)
 	}
@@ -164,6 +185,13 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if err != nil {
 		return TickResult{}, fmt.Errorf("record tick attempt: %w", err)
 	}
+	// A seat at the helm is the person's: the tick publishes presence,
+	// completes its attempt as HELM and decides nothing (HM-7). The check
+	// sits after the attempt exists and before the completion defer, so no
+	// health, alert or narration pass runs either.
+	if state := helm.Active(repoRoot); state.Active {
+		return helmTick(repoRoot, cfg, generation, selfExact.Ref(), tickAttempt.AttemptSeq, state)
+	}
 	tickCompleted := false
 	defer func() {
 		if result.Health.Schema == 0 {
@@ -187,7 +215,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// Budget healing runs before health and notification. A successful stop is
 	// machinery history only; a failure remains visible to the ordinary health
 	// breaker, which is the sole escalation owner.
-	goalStops := runBreachStopCustodian(repoRoot, cfg.now())
+	goalStops := custodialBreachStops(repoRoot, cfg, dispatch.FindBreachStops)
 	governedRefreshFailures := refreshGovernedObligations(repoRoot, cfg.now())
 	if len(governedRefreshFailures) > 0 {
 		return degradedTick(repoRoot, "governed-obligation observation failed: "+strings.Join(governedRefreshFailures, "; "))
@@ -203,6 +231,60 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	}
 	result, tickCompleted, returnErr = runTickAfterCustodial(repoRoot, cfg, census, generation, selfExact.Ref(), tickAttempt.AttemptSeq, goalStops, defaultTickContinuationDependencies())
 	return result, returnErr
+}
+
+// VerdictHelm is the tick's verdict for a seat at the helm: nothing decided.
+const VerdictHelm Verdict = "helm"
+
+// helmTick is the whole tick of a seat at the helm: presence is still
+// published (the fleet sees the seat alive) and the tick attempt completes
+// with outcome HELM. No breach stop, reap, ledger attention, decision,
+// narration or notification runs.
+func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.Ref, attemptSeq int64, state helm.State) (TickResult, error) {
+	reason := "human at the helm: " + state.By
+	result := TickResult{Decision: Decision{VerdictHelm, ActNone, reason}}
+	seatReport, presenceErr := seatPresenceComponent(repoRoot, cfg, generation, process)
+	result.SeatPresence = seatReport
+	if _, err := completeComponentAttempt(repoRoot, "steward-tick", generation, attemptSeq,
+		ComponentOK, "HELM", reason, nil, cfg.now()); err != nil {
+		return result, fmt.Errorf("record helm tick completion: %w", err)
+	}
+	return result, presenceErr
+}
+
+// seatPresenceComponent runs the seat-presence component with its own
+// attempt record. A component that could not write its own durable evidence
+// follows the tick's rule for every component: the observation is not
+// recorded, so the tick does not claim it was.
+func seatPresenceComponent(repoRoot string, cfg TickConfig, generation int, process identity.Ref) (SeatPresenceReport, error) {
+	seatAttempt, err := beginComponentAttempt(repoRoot, "seat-presence", generation, process, cfg.now())
+	if err != nil {
+		return SeatPresenceReport{}, fmt.Errorf("record seat-presence attempt: %w", err)
+	}
+	seatReport, seatEvidenceErr := RunSeatPresence(repoRoot, cfg.Runner, generation, cfg.now())
+	seatResult, seatOutcome := ComponentOK, "PASS_COMPLETE"
+	var seatEvidence string
+	switch {
+	case seatEvidenceErr != nil:
+		seatResult, seatOutcome, seatEvidence = ComponentError, "STATE_WRITE_FAILED", seatEvidenceErr.Error()
+	case seatReport.Outcome == seat.OutcomeSkipped:
+		seatOutcome, seatEvidence = "SKIPPED", "skipped: "+seatReport.Reason
+	case seatReport.Outcome == seat.OutcomeFailed:
+		seatResult, seatOutcome, seatEvidence = ComponentError, "PUBLISH_FAILED", "failed: "+seatReport.Detail
+	default:
+		seatEvidence = fmt.Sprintf("published on rung %d", seatReport.Rung)
+		if seatReport.Detail != "" {
+			seatEvidence += "; " + seatReport.Detail
+		}
+	}
+	if _, err := completeComponentAttempt(repoRoot, "seat-presence", generation, seatAttempt.AttemptSeq,
+		seatResult, seatOutcome, seatEvidence, nil, cfg.now()); err != nil {
+		return seatReport, fmt.Errorf("record seat-presence completion: %w", err)
+	}
+	if seatEvidenceErr != nil {
+		return seatReport, fmt.Errorf("record seat-presence evidence: %w", seatEvidenceErr)
+	}
+	return seatReport, nil
 }
 
 type tickContinuationDependencies struct {
@@ -260,35 +342,9 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	// before the evidence-store reads whose failure ends the tick degraded,
 	// so a torn evidence store on this machine does not make it read dead to
 	// its peers. The component owns both its fetch and its publish.
-	seatAttempt, err := beginComponentAttempt(repoRoot, "seat-presence", generation, process, cfg.now())
+	seatReport, err := seatPresenceComponent(repoRoot, cfg, generation, process)
 	if err != nil {
-		return TickResult{}, false, fmt.Errorf("record seat-presence attempt: %w", err)
-	}
-	seatReport, seatEvidenceErr := RunSeatPresence(repoRoot, cfg.Runner, generation, cfg.now())
-	seatResult, seatOutcome := ComponentOK, "PASS_COMPLETE"
-	var seatEvidence string
-	switch {
-	case seatEvidenceErr != nil:
-		seatResult, seatOutcome, seatEvidence = ComponentError, "STATE_WRITE_FAILED", seatEvidenceErr.Error()
-	case seatReport.Outcome == seat.OutcomeSkipped:
-		seatOutcome, seatEvidence = "SKIPPED", "skipped: "+seatReport.Reason
-	case seatReport.Outcome == seat.OutcomeFailed:
-		seatResult, seatOutcome, seatEvidence = ComponentError, "PUBLISH_FAILED", "failed: "+seatReport.Detail
-	default:
-		seatEvidence = fmt.Sprintf("published on rung %d", seatReport.Rung)
-		if seatReport.Detail != "" {
-			seatEvidence += "; " + seatReport.Detail
-		}
-	}
-	if _, err := completeComponentAttempt(repoRoot, "seat-presence", generation, seatAttempt.AttemptSeq,
-		seatResult, seatOutcome, seatEvidence, nil, cfg.now()); err != nil {
-		return TickResult{}, false, fmt.Errorf("record seat-presence completion: %w", err)
-	}
-	// A component that could not write its own durable evidence follows the
-	// tick's rule for every component: the observation is not recorded, so
-	// the tick does not claim it was.
-	if seatEvidenceErr != nil {
-		return TickResult{}, false, fmt.Errorf("record seat-presence evidence: %w", seatEvidenceErr)
+		return TickResult{}, false, err
 	}
 
 	evPath := EvidencePath(repoRoot)

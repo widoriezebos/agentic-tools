@@ -20,76 +20,13 @@ cp "$root/scripts/agents/event-registry.json" "$checkout/scripts/agents/"
 
 fail() { echo "flight recorder fixture failed: $1" >&2; exit 1; }
 
-# 1. Harmlessness at the caller boundary: chmod-000 stream, missing helper,
-#    and a broken PATH each leave a set -e caller alive.
-run_caller() { # extra setup commands
-  bash -c "
-set -euo pipefail
-$1
-source '$root/scripts/agents/emit-event.sh'
-_metasystem_event_root='$checkout'
-emit_event lease lease-claimed epoch=1 summary=probe
-echo SURVIVED"
-}
-touch "$stream"; chmod 000 "$stream"
-[[ "$(run_caller ':')" == SURVIVED ]] || fail "chmod-000 stream aborted the caller"
-chmod 644 "$stream"
-[[ "$(run_caller 'PATH=/nonexistent')" == SURVIVED ]] || fail "a broken PATH aborted the caller"
-broken="$tmp/broken-root"; mkdir -p "$broken/scripts/agents"
-[[ "$(bash -c "
-set -euo pipefail
-source '$root/scripts/agents/emit-event.sh'
-_metasystem_event_root='$broken'
-_metasystem_event_bin='$broken/bin/metasystem'
-emit_event lease lease-claimed epoch=1 summary=probe
-echo SURVIVED")" == SURVIVED ]] || fail "a missing engine binary aborted the caller"
-
-# 2. Concurrent writers: framing keeps every writer's every event parseable,
-#    per-writer seq gapless.
-rm -f "$stream"
-for i in 1 2 3 4 5 6; do bash -c "
-source '$root/scripts/agents/emit-event.sh'
-_metasystem_event_root='$checkout'
-for j in \$(seq 1 30); do emit_event dispatch job-created jobId=w$i-\$j summary=s; done
-" & done; wait
-event_count=0
-: >"$tmp/writer-seqs"
-while IFS= read -r event_line || [[ -n "$event_line" ]]; do
-  [[ -n "${event_line//[[:space:]]/}" ]] || continue
-  "$root/bin/metasystem" util json-validate --value "$event_line" \
-    || fail "torn line under concurrency"
-  event_pid=$("$root/bin/metasystem" json get --value "$event_line" --field pid) \
-    || fail "an event carries no writer pid"
-  event_seq=$("$root/bin/metasystem" json get --value "$event_line" --field seq) \
-    || fail "an event carries no seq"
-  printf '%s %s\n' "$event_pid" "$event_seq" >>"$tmp/writer-seqs"
-  event_count=$((event_count + 1))
-done <"$stream"
-[[ $event_count -eq 180 ]] || fail "$event_count events, want 180"
-for writer_pid in $(awk '{print $1}' "$tmp/writer-seqs" | sort -u); do
-  awk -v pid="$writer_pid" '$1 == pid {print $2}' "$tmp/writer-seqs" | sort -n >"$tmp/writer-got"
-  seq 1 "$(($(wc -l <"$tmp/writer-got")))" >"$tmp/writer-want"
-  cmp -s "$tmp/writer-got" "$tmp/writer-want" || fail "seq gap for writer $writer_pid"
-done
-
-# 3. A torn fragment cannot poison the next writer: simulate a short write
-#    (raw fragment without framing), then emit normally -- the new event parses.
-printf '\n{"torn": tru' >>"$stream"
-bash -c "
-source '$root/scripts/agents/emit-event.sh'
-_metasystem_event_root='$checkout'
-emit_event lease lease-renewed epoch=2 summary=after-torn"
-renewed_seen=0
-while IFS= read -r event_line || [[ -n "$event_line" ]]; do
-  [[ -n "${event_line//[[:space:]]/}" ]] || continue
-  [[ "$event_line" == '{"torn"'* ]] && continue
-  "$root/bin/metasystem" util json-validate --value "$event_line" \
-    || fail "a healthy line failed to parse after the torn fragment"
-  if [[ "$("$root/bin/metasystem" json get --value "$event_line" --field event --default '')" == lease-renewed ]]; then
-    renewed_seen=1
-  fi
-done <"$stream"
-[[ $renewed_seen -eq 1 ]] || fail "event after torn fragment did not survive"
+# Sections 1-3 (the shell emitter's caller harmlessness, concurrent writers,
+# the torn fragment) retired with scripts/agents/emit-event.sh
+# (verbs-object-action U6b): every emitter is the Go one, and
+# internal/events/emit_writers_test.go proves the same properties as
+# TestEmitNeverFailsItsCallerOnAnUnwritableStream,
+# TestConcurrentWritersKeepEveryEventParseableAndEachSequenceGapless and
+# TestATornFragmentDoesNotPoisonTheNextEvent.
 
 # Sections 4 (oversize degradation), 5 (registry conformance) and the
 # FRCC-001/FRCC-002 door-and-cap legs retired to the go gate
@@ -97,9 +34,8 @@ done <"$stream"
 # and internal/events/emit_test.go proves the same properties as
 # TestEmitWritesRegisteredEvent, TestEmitDropsUnregisteredEventAndWrong-
 # Emitter, TestEmitHonorsHardCap, and TestEmitShrinksOptionalFieldsUnder-
-# Cap. What stays here needs real processes: caller harmlessness under
-# set -e, concurrent writers, the torn fragment, and the two
-# witness-not-authority lease legs below.
+# Cap. What stays here needs a real lease: the two witness-not-authority
+# legs below.
 
 # 6. Witness, not authority: with the stream unwritable, a real lease claim in
 #    a scratch checkout still succeeds and emits nothing.

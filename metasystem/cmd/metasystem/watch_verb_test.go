@@ -17,7 +17,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	watchsurface "github.com/widoriezebos/agentic-tools/metasystem/internal/watch"
 )
 
@@ -47,85 +46,9 @@ func TestWaitCompatibilityMappings(t *testing.T) {
 			t.Fatalf("job watch wait exit %d mapped to %d", test.code, code)
 		}
 	}
-
-	dispatchSource, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "dispatch.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(dispatchSource)
-	for _, mapping := range []string{
-		`0) return 0 ;;`, `1) return 3 ;;`, `2) return 4 ;;`, `3) return 8 ;;`, `4) return 5 ;;`,
-	} {
-		if !strings.Contains(source, mapping) {
-			t.Fatalf("delegate --wait compatibility mapping missing %q", mapping)
-		}
-	}
-	if !strings.Contains(source, `unknown family "wait"`) || !strings.Contains(source, `wait_for_job_legacy "$job"`) {
-		t.Fatal("delegate --wait lost its old-engine fallback")
-	}
-	start := strings.Index(source, "wait_for_job_legacy()")
-	if start < 0 {
-		t.Fatal("delegate wait functions could not be isolated")
-	}
-	end := strings.Index(source[start:], "aggregate_chain_usage()")
-	if end < 0 {
-		t.Fatal("delegate wait functions could not be isolated")
-	}
-	functionsPath := filepath.Join(t.TempDir(), "wait-functions.sh")
-	if err := os.WriteFile(functionsPath, []byte(source[start:start+end]), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	harnessPath := filepath.Join(t.TempDir(), "harness.sh")
-	harness := `#!/usr/bin/env bash
-set -euo pipefail
-root=$1
-jobs=$2
-heartbeats=$3
-ms=$4
-functions=$5
-current_claim_epoch=1
-lease_run_held() { return 0; }
-json_field() { printf '%s\n' "${FIXTURE_STATUS:-completed}"; }
-source "$functions"
-wait_for_job compat
-`
-	if err := testexec.WriteFile(harnessPath, []byte(harness), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	stateRoot := t.TempDir()
-	jobs := filepath.Join(stateRoot, "artifacts", "agents", "jobs")
-	heartbeats := filepath.Join(stateRoot, "artifacts", "agents", "heartbeats")
-	if err := os.MkdirAll(jobs, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(heartbeats, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	stub := filepath.Join(t.TempDir(), "metasystem")
-	for _, mapping := range []struct{ wait, delegate int }{{0, 0}, {1, 3}, {2, 4}, {3, 8}, {4, 5}} {
-		stubSource := fmt.Sprintf("#!/bin/sh\nexit %d\n", mapping.wait)
-		if err := testexec.WriteFile(stub, []byte(stubSource), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		command := exec.Command(harnessPath, stateRoot, jobs, heartbeats, stub, functionsPath)
-		err := command.Run()
-		got := 0
-		if err != nil {
-			got = err.(*exec.ExitError).ExitCode()
-		}
-		if got != mapping.delegate {
-			t.Fatalf("delegate --wait mapped wait exit %d to %d, want %d", mapping.wait, got, mapping.delegate)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(jobs, "compat.json"), []byte("{\"status\":\"completed\"}\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(stub, []byte("#!/bin/sh\necho 'metasystem: unknown family \"wait\"' >&2\nexit 2\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if output, err := exec.Command(harnessPath, stateRoot, jobs, heartbeats, stub, functionsPath).CombinedOutput(); err != nil {
-		t.Fatalf("old-engine delegate fallback failed: %v %s", err, output)
-	}
+	// The delegate --wait mapping of these exits (0/1/2/3/4 -> 0/3/4/8/5)
+	// is the delegation lifecycle's: internal/delegation
+	// TestWaitReapsOnlyThroughTheLeaseHeldEntry.
 }
 
 func TestWatchReadSurfaceAllTrackedClassesAndZeroWrite(t *testing.T) {

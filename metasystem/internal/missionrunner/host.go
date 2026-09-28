@@ -3,7 +3,10 @@ package missionrunner
 import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"math"
 	"os"
 	"os/exec"
@@ -330,13 +333,77 @@ func (e *Engine) launchHost(turnID, turnDir string, turn map[string]any, leasePa
 	return e.superviseHostToExit(l)
 }
 
-// assembleHostCommand resolves the adapter, builds its argument list and
+// hostEngine is the engine a host turn runs on: METASYSTEM_BIN, else the
+// checkout's own bin/metasystem, as the shell hosts resolved it.
+func hostEngine(root string) string {
+	if engine := os.Getenv("METASYSTEM_BIN"); engine != "" {
+		return engine
+	}
+	return filepath.Join(root, "bin", "metasystem")
+}
+
+// hostFixtureCarriers leads a fixture-owned host's argv with the fixture
+// owner and attempt words, so a survivor scan finds the host by its argv
+// where the environment is unreadable; the entry checks they match the
+// environment it inherits.
+func hostFixtureCarriers() []string {
+	owner := os.Getenv(identity.FixtureOwnerEnv)
+	if owner == "" {
+		return nil
+	}
+	carriers := []string{identity.FixtureOwnerEnv + "=" + owner}
+	if attempt := os.Getenv(identity.FixtureAttemptEnv); attempt != "" {
+		carriers = append(carriers, identity.FixtureAttemptEnv+"="+attempt)
+	}
+	return carriers
+}
+
+// hostRuntimeUnavailable is why a runtime cannot serve a host turn in this
+// installation, through the runtime registry (design 3.5): a built-in with
+// a host launcher, or an external runtime or override whose describe
+// declares the host role. Empty is available.
+func hostRuntimeUnavailable(root, runtime string) string {
+	reg, err := external.Load(root)
+	if err != nil {
+		return err.Error()
+	}
+	entry, found := reg.Lookup(runtime)
+	if !found {
+		if refusal, refused := reg.Refusal(runtime); refused {
+			return refusal.Error()
+		}
+		return "no such runtime"
+	}
+	if entry.Refused != nil {
+		return entry.Refused.Error()
+	}
+	if entry.Builtin && entry.Adapter == nil {
+		if declaration, _ := runtimes.Lookup(runtime); declaration.HasHostLauncher {
+			return ""
+		}
+		return "the runtime serves no host turns"
+	}
+	if !entry.Description.Capabilities.Host {
+		if declaration, builtin := runtimes.Lookup(runtime); builtin && declaration.HasHostLauncher && entry.Description.Capabilities == (external.Capabilities{}) {
+			return ""
+		}
+		return "its describe does not declare the host capability"
+	}
+	return ""
+}
+
+// assembleHostCommand resolves the host entry, builds its argument list and
 // environment, and opens the host log; nothing has started yet.
 func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 	l.runtime = TurnRecordOf(l.turn).Runtime()
-	adapter := filepath.Join(e.Root, "scripts", "agents", "hosts", l.runtime+".sh")
-	if info, err := os.Stat(adapter); err != nil || !info.Mode().IsRegular() || unix.Access(adapter, unix.X_OK) != nil {
-		return failf(3, "host adapter is not installed or executable: %s", adapter)
+	// The host turn is the engine's delegate-supervisor entry: one process
+	// of its own, leading its group and carrying the turn's tag.
+	if reason := hostRuntimeUnavailable(e.Root, l.runtime); reason != "" {
+		return failf(3, "host adapter is not installed for runtime %q: %s", l.runtime, reason)
+	}
+	engine := hostEngine(e.Root)
+	if info, err := os.Stat(engine); err != nil || !info.Mode().IsRegular() || unix.Access(engine, unix.X_OK) != nil {
+		return failf(3, "host adapter is not installed or executable: %s", engine)
 	}
 	prompt := filepath.Join(l.turnDir, "prompt.md")
 	l.resultPath = filepath.Join(l.turnDir, "result.json")
@@ -344,8 +411,8 @@ func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 	l.hostGate = filepath.Join(l.turnDir, "host.start")
 	l.tag = "metasystem-host-" + l.turnID
 	l.fakeRuntime = l.runtime == "fake"
-	args := []string{
-		"start-turn",
+	flags := []string{
+		"--root", e.Root,
 		"--mission", e.Mission,
 		"--turn-id", l.turnID,
 		"--prompt", prompt,
@@ -358,13 +425,17 @@ func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 	// commit may not narrow that, even where narrowing looks saner
 	// (typed-documents rule: the projection is a lens, never a filter).
 	if session, ok := l.turn["hostSession"].(string); ok {
-		args = append(args, "--resume-session", session)
+		flags = append(flags, "--resume-session", session)
 	}
 	gateTimeout, err := ScaledWaitAtLeast(10, 3*time.Second)
 	if err != nil {
 		return err
 	}
-	command := exec.Command(adapter, args...)
+	// Fixture carriers lead the entry's arguments (after its word), so a
+	// survivor scan finds a fixture-owned host by its argv.
+	args := runtimes.SupervisorArgs(l.runtime, runtimes.SupervisorHostTurn, flags...)
+	args = append(append([]string{args[0]}, hostFixtureCarriers()...), args[1:]...)
+	command := exec.Command(engine, args...)
 	command.Dir = e.Root
 	command.Env = append(gitAuthorEnvironment(l.turnID),
 		"METASYSTEM_MISSION_ID="+e.Mission,

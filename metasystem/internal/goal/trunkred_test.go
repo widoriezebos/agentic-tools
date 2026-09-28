@@ -213,6 +213,16 @@ func TestTrunkRedRecordOwnClearAndCloseTransactions(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("take entry: %+v %v", result, err)
 	}
+	// The same claim again already holds (R-129-ui): success, nothing
+	// published.
+	takenTip := acceptedTipForEndpoint(t, endpoint)
+	retake := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000S5", "mac-a")
+	retake.Now = own.Now.Add(time.Minute)
+	result, err = OwnTrunkRed(retake, TrunkRedOwnArgs{Entry: ownedID, Goal: "solo-goal", Branch: "fix/red", BranchCommit: "abc123"})
+	if err != nil || result.Outcome != OutcomeAbandoned || !result.Unchanged || !strings.Contains(result.Detail, "already owned by mac-a") ||
+		acceptedTipForEndpoint(t, endpoint) != takenTip {
+		t.Fatalf("repeated take: %+v %v", result, err)
+	}
 	other := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000R6", "mac-b")
 	result, err = OwnTrunkRed(other, TrunkRedOwnArgs{Entry: ownedID, Goal: "solo-goal"})
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "TRUNK_RED_OWNED_ELSEWHERE") {
@@ -231,6 +241,15 @@ func TestTrunkRedRecordOwnClearAndCloseTransactions(t *testing.T) {
 	result, err = CloseTrunkRed(closeRequest, TrunkRedCloseArgs{Entry: ownedID, By: "Wido", Why: "the failure was external"})
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("human close: %+v %v", result, err)
+	}
+	closedTip := acceptedTipForEndpoint(t, endpoint)
+	reclose := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000S8", "mac-b")
+	reclose.Actor.Human = "Wido"
+	reclose.Now = closeRequest.Now.Add(time.Minute)
+	repeat, err := CloseTrunkRed(reclose, TrunkRedCloseArgs{Entry: ownedID, By: "Wido", Why: "again"})
+	if err != nil || repeat.Outcome != OutcomeAbandoned || !repeat.Unchanged || !strings.Contains(repeat.Detail, "already closed") ||
+		acceptedTipForEndpoint(t, endpoint) != closedTip {
+		t.Fatalf("repeated close: %+v %v", repeat, err)
 	}
 	projected, _ = trunkRedProjectAt(endpoint, result.Tip)
 	closed := projected.Tree.TrunkRed[1]

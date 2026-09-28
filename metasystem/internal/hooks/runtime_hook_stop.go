@@ -1,6 +1,8 @@
 package hooks
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -8,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 )
 
 // lifecycle is one receipt, Stop worker or SessionEnd invocation: the
@@ -76,6 +80,9 @@ func runLifecycle(inv Invocation, ops Ops) int {
 	if inv.Event == "stop" && inv.env(stopDeadlineParentEnv) != strconv.Itoa(inv.Ppid) {
 		return runStopDeadlineParent(inv, ops, l.harnessRoot)
 	}
+	if l.helmAnswers() {
+		return 0
+	}
 	l.stopStarted = inv.Now().Unix()
 	if started := inv.env(stopDeadlineStartedEnv); digits.MatchString(started) {
 		if parsed, err := strconv.ParseInt(started, 10, 64); err == nil {
@@ -95,6 +102,35 @@ func runLifecycle(inv Invocation, ops Ops) int {
 		l.end()
 	}
 	return 0
+}
+
+// helmAnswers answers a lifecycle event first while the seat is at the helm:
+// before prepare, delegate custody, the engine, the registry or the state
+// root. Stop prints a valid allow form; end and receipt only record their
+// yield. Nothing is armed, checked or decided.
+func (l *lifecycle) helmAnswers() bool {
+	state := helm.Active(l.harnessRoot)
+	if !state.Active {
+		return false
+	}
+	gate := map[string]string{"stop": "turn-verdict", "end": "session-end", "receipt": "receipt"}[l.inv.Event]
+	helm.RecordYield(l.harnessRoot, helm.Yield{At: l.inv.Now(), Boundary: l.inv.Event + "-hook", Gate: gate, Would: "not evaluated", PID: l.inv.Ppid})
+	if l.inv.Event != "stop" {
+		_ = writeLine(l.inv.Stderr, helmNotice(state))
+		return true
+	}
+	form, _ := json.Marshal(map[string]string{"systemMessage": helmNotice(state) + " Stop allowed."})
+	_ = writeLine(l.inv.Stdout, string(form))
+	return true
+}
+
+// helmNotice is the one-line reminder every hook gives under the helm.
+func helmNotice(state helm.State) string {
+	who := fmt.Sprintf("%s since %s (%s)", state.By, state.Since.Local().Format("15:04 MST"), state.Reason)
+	if state.Malformed != "" {
+		who = "the signature is unreadable, so the helm is taken; metasystem helm return ends it"
+	}
+	return "helm: HUMAN AT THE HELM: " + who + ". MetaSystem decides nothing on this seat; follow the person's direction."
 }
 
 // prepare resolves the installation, session, runtime identity and holder
@@ -391,6 +427,35 @@ type stopRun struct {
 	armingStderr, armingCapture   string
 	healthCapture, digestCapture  string
 	receiptCapture, receiptStderr string
+	// phases is the Stop worker's own cost trace, one name=milliseconds
+	// entry per owner call, written to hooks.log beside the verdict line so
+	// a slow Stop names the owner that spent its budget.
+	phases []string
+}
+
+// evidenceGCInterval bounds how often a Stop runs evidence collection.
+const evidenceGCInterval = 15 * time.Minute
+
+// readEvidenceGCStamp reads when a Stop last completed evidence collection.
+// An absent or unreadable stamp means collection is due.
+func readEvidenceGCStamp(path string) (time.Time, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return time.Time{}, false
+	}
+	last, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+	return last, err == nil
+}
+
+// timed runs one owner call and records its elapsed milliseconds.
+func (s *stopRun) timed(name string, call func()) {
+	if s.inv.Monotonic == nil {
+		call()
+		return
+	}
+	started := s.inv.Monotonic()
+	call()
+	s.phases = append(s.phases, name+"="+strconv.FormatInt(int64((s.inv.Monotonic()-started)/time.Millisecond), 10)+"ms")
 }
 
 func appendLine(base, line string) string {
@@ -413,7 +478,9 @@ func (l *lifecycle) stop() {
 	// its attempt evidence. The parent treats no other empty or malformed
 	// result as a skip, preserving the fail-closed deadline behavior.
 	turnKey := sha256Text(l.session + "\n" + l.payload)
-	attempt, status := ops.HookAttempt(l.repo, inv.Pid, turnKey)
+	var attempt string
+	var status int
+	s.timed("attempt", func() { attempt, status = ops.HookAttempt(l.repo, inv.Pid, turnKey) })
 	attempt = trimNewlines(attempt)
 	if status != 0 || attempt == "" {
 		l.evidenceFail = "HEALTH unknown — hook-freshness=unknown (attempt evidence could not be recorded)"
@@ -426,9 +493,9 @@ func (l *lifecycle) stop() {
 			l.recordFailure("attempt evidence was unreadable", "turn-evidence")
 		}
 	}
-	l.classifyHolder()
+	s.timed("classify", l.classifyHolder)
 	s.arm()
-	s.check()
+	s.timed("protocol", s.check)
 	s.decide()
 }
 
@@ -439,6 +506,10 @@ func (s *stopRun) arm() {
 	session, absent := s.runtimeSession()
 	var upOut strings.Builder
 	var upErr strings.Builder
+	upStarted := time.Duration(0)
+	if inv.Monotonic != nil {
+		upStarted = inv.Monotonic()
+	}
 	if s.identityPid != "" {
 		s.upRC = ops.Up(UpRequest{
 			Runtime: inv.Runtime, MetasystemRoot: s.world, Repo: s.repo, Session: s.session,
@@ -452,6 +523,9 @@ func (s *stopRun) arm() {
 			Runtime: inv.Runtime, MetasystemRoot: s.world, Repo: s.repo, RecoverOnly: true, IfDown: true,
 			RuntimeSession: session, NoRuntimeSession: absent, CallerPid: inv.Pid,
 		}, &upOut, &upErr)
+	}
+	if inv.Monotonic != nil {
+		s.phases = append(s.phases, "up="+strconv.FormatInt(int64((inv.Monotonic()-upStarted)/time.Millisecond), 10)+"ms")
 	}
 	s.armingStderr = s.workFile("arming.stderr")
 	_ = os.WriteFile(s.armingStderr, []byte(upErr.String()), 0o600)
@@ -501,7 +575,9 @@ func (s *stopRun) arm() {
 	}
 
 	s.healthCapture = s.workFile("health.json")
-	health, healthRC := ops.HealthPreview(s.repo, s.world)
+	var health string
+	var healthRC int
+	s.timed("health", func() { health, healthRC = ops.HealthPreview(s.repo, s.world) })
 	_ = os.WriteFile(s.healthCapture, []byte(health), 0o600)
 	s.healthLine = jsonValue(health, "line")
 	if healthRC > 2 || s.healthLine == "" {
@@ -509,7 +585,9 @@ func (s *stopRun) arm() {
 		s.recordFailure("the health engine returned no verdict", "health")
 	}
 
-	digest, digestRC := ops.DigestPending(s.repo)
+	var digest string
+	var digestRC int
+	s.timed("digest", func() { digest, digestRC = ops.DigestPending(s.repo) })
 	digest = trimNewlines(digest)
 	if digestRC == 0 {
 		message, messageRC := jsonValueStatus(digest, "message")
@@ -537,7 +615,9 @@ func (s *stopRun) arm() {
 	}
 	s.receiptCapture = s.workFile("receipt.txt")
 	s.receiptStderr = s.workFile("receipt.stderr")
-	receiptOut, receiptErr, receiptRC := ops.ReceiptCheck(s.harnessRoot)
+	var receiptOut, receiptErr string
+	var receiptRC int
+	s.timed("receipt", func() { receiptOut, receiptErr, receiptRC = ops.ReceiptCheck(s.harnessRoot) })
 	s.receiptRC = receiptRC
 	_ = os.WriteFile(s.receiptCapture, []byte(receiptOut), 0o600)
 	_ = os.WriteFile(s.receiptStderr, []byte(receiptErr), 0o600)
@@ -634,7 +714,9 @@ func (s *stopRun) decide() {
 	}
 	if s.identityPid != "" {
 		pid, _ := strconv.Atoi(s.identityPid)
-		if ops.RenewLease(s.repo, pid) != 0 {
+		renewRC := 0
+		s.timed("lease", func() { renewRC = ops.RenewLease(s.repo, pid) })
+		if renewRC != 0 {
 			s.recordFailure("the checkout holder lease could not be renewed", "holder-lease")
 		}
 	}
@@ -642,7 +724,9 @@ func (s *stopRun) decide() {
 	// The watchdog path calls the verdict like every other path: the
 	// report's text stays hook-side, its digest rides to the verdict, and
 	// the verdict's surfaceWatchdog answer decides exactly-once surfacing.
-	watchdogText, watchdogRC := ops.WatchdogReport(s.repo)
+	var watchdogText string
+	var watchdogRC int
+	s.timed("watchdog", func() { watchdogText, watchdogRC = ops.WatchdogReport(s.repo) })
 	watchdogText = trimNewlines(watchdogText)
 	if watchdogRC != 0 {
 		s.recordFailure("the supervision watchdog state could not be read", "watchdog")
@@ -654,13 +738,25 @@ func (s *stopRun) decide() {
 
 	// Leave evidence that this ran: without it a hook that fired and found
 	// nothing cannot be told from one that never fired.
-	gcRC := 1
-	if log, err := os.OpenFile(filepath.Join(s.supervisionDir, "hooks.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
-		gcRC = ops.EvidenceGC(s.world, log)
-		_ = log.Close()
-	}
-	if gcRC != 0 {
-		s.recordFailure("the hook evidence state could not be maintained", "hook-evidence")
+	// Evidence collection keeps a 90-minute grace, so it runs at most once
+	// per evidenceGCInterval rather than on every turn end: on seat m1e it
+	// walked 132,000 files for 4-5 s of every Stop. A skipped turn still
+	// leaves its line.
+	stamp := filepath.Join(s.supervisionDir, "evidence-gc.last")
+	now := inv.Now().UTC()
+	if last, ok := readEvidenceGCStamp(stamp); ok && !now.Before(last) && now.Sub(last) < evidenceGCInterval {
+		_ = s.appendHookLog(nowStamp(now) + " evidence-gc skipped: last ran " + last.Format(time.RFC3339) + "; next after " + last.Add(evidenceGCInterval).Format(time.RFC3339) + "\n")
+	} else {
+		gcRC := 1
+		if log, err := os.OpenFile(filepath.Join(s.supervisionDir, "hooks.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			s.timed("evidence-gc", func() { gcRC = ops.EvidenceGC(s.world, log) })
+			_ = log.Close()
+		}
+		if gcRC != 0 {
+			s.recordFailure("the hook evidence state could not be maintained", "hook-evidence")
+		} else {
+			_ = os.WriteFile(stamp, []byte(now.Format(time.RFC3339)+"\n"), 0o644)
+		}
 	}
 
 	// One structured decision: the verdict owns open work, the goal clause,
@@ -674,10 +770,14 @@ func (s *stopRun) decide() {
 	degradedLine := ""
 	factsFailure, completionFailure := "", ""
 	var shouldBlock, display, surfaceWatchdog, brainStatusDue, verdictClass, countSpent, verdict string
-	stdout, stderr, status := ops.TurnVerdict(TurnVerdictRequest{
-		Root: s.repo, Session: s.session, SessionAbsent: s.sessionAbsent, Watchdog: watchdogDigest,
-		MainID: s.mainID, StopHookActive: s.stopHookActive, Transcript: s.transcript, Runtime: inv.Runtime,
-		FactsFile: s.factsFile, CompletionFile: s.completionFile,
+	var stdout, stderr string
+	var status int
+	s.timed("verdict", func() {
+		stdout, stderr, status = ops.TurnVerdict(TurnVerdictRequest{
+			Root: s.repo, Session: s.session, SessionAbsent: s.sessionAbsent, Watchdog: watchdogDigest,
+			MainID: s.mainID, StopHookActive: s.stopHookActive, Transcript: s.transcript, Runtime: inv.Runtime,
+			FactsFile: s.factsFile, CompletionFile: s.completionFile,
+		})
 	})
 	if status == 0 {
 		verdict = trimNewlines(stdout)
@@ -742,6 +842,9 @@ func (s *stopRun) decide() {
 
 	if verdictReadable {
 		_ = s.appendHookLog(nowStamp(inv.Now()) + " stop verdict block=" + shouldBlock + "\n")
+		if len(s.phases) > 0 {
+			_ = s.appendHookLog(nowStamp(inv.Now()) + " stop phases " + strings.Join(s.phases, " ") + "\n")
+		}
 		brainPostFailure := ""
 		if brainStatusDue == "true" {
 			statusPath := filepath.Join(s.repo, "artifacts", "agents", "brain-status.json")

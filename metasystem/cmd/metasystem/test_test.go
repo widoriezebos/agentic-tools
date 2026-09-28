@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -368,6 +369,48 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 		executed.ExecutedWorkers = prepared.Workers
 		if result := verify(executed); !result.Delivery.Sufficient || result.Workers != prepared.Workers {
 			t.Fatalf("executed allowance %d lost its retained proof: workers=%d groups=%+v", prepared.Workers, result.Workers, result.Groups)
+		}
+	})
+	t.Run("automatic allowance is the run's reading, not the verifier's", func(t *testing.T) {
+		// The run and the verification each read available memory. The run
+		// read enough for the recorded allowance; the verification reads
+		// less. It checks the run, so it must accept the unchanged tree.
+		automatic := prepared
+		automatic.ConfPath = filepath.Join(t.TempDir(), "metasystem.conf")
+		writeTestingFixtureFile(t, automatic.ConfPath, []byte("metasystem.runtimes=fake\n"), 0o644)
+		reading := func(workers uint64) func() (uint64, string, bool) {
+			return func() (uint64, string, bool) {
+				return testingWorkerMemoryHeadroom + workers*testingWorkerMemoryBytes, "fixture", true
+			}
+		}
+		previous := testingAvailableMemory
+		t.Cleanup(func() { testingAvailableMemory = previous })
+		testingAvailableMemory = reading(uint64(prepared.Workers))
+		atRun, err := resolveProofRunLimits(automatic.ConfPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if atRun.workers != prepared.Workers || !atRun.automaticWorkers {
+			t.Logf("this host's automatic ceiling %d cannot choose the recorded allowance %d", atRun.automaticWorkerCeiling, prepared.Workers)
+			return
+		}
+		testingAvailableMemory = reading(uint64(prepared.Workers - 1))
+		if atVerify, err := resolveProofRunLimits(automatic.ConfPath); err != nil || atVerify.workers == prepared.Workers {
+			t.Fatalf("the verifier's reading resolves %d workers (err=%v), want another allowance than %d", atVerify.workers, err, prepared.Workers)
+		}
+		fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
+		fixture.queueBed(ordinaryProjectTree)
+		queueProjection()
+		result, err := verifyRetainedTestingPrepared(request, automatic, retainedTestingVerification{
+			clock: fixedClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+			workspace: workspace, candidateIO: fixture.dependency(), openCandidate: fixture.openBed,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !result.Delivery.Sufficient || result.Workers != prepared.Workers {
+			t.Fatalf("verification re-sampled memory and refused the run's proof: workers=%d want %d; missing=%v groups=%+v",
+				result.Workers, prepared.Workers, result.Delivery.MissingGroups, result.Groups)
 		}
 	})
 	for _, boundary := range []struct {
@@ -1102,7 +1145,7 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 
 	group := testpolicy.Group{ID: "candidate-bed", Kind: "integration", Adapter: "section", CWD: "metasystem",
 		Inputs: []string{"metasystem/cmd/metasystem/engine.txt"}, Obligations: []string{"candidate-engine"},
-		Platforms: []string{"any"}, TargetMS: 1, Section: "candidate-bed"}
+		Platforms: []string{"any"}, TargetMS: 1, Section: "candidate-bed", Argv: []string{"bash", "scripts/bed.sh"}}
 	contract := testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}}
 	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard,
 		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
@@ -1638,18 +1681,38 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTestingFixtureFile(t, installedEngine, data, 0o755)
-	preflight := func(stamp string) ([]byte, error) {
-		command := exec.Command("bash", "scripts/agents/dispatch.sh", "__engine-skew-preflight", stamp)
-		command.Dir = candidateRoot
-		command.Env = append(testingEnvironment(os.Environ()), "METASYSTEM_BIN="+installedEngine)
-		return command.CombinedOutput()
+	// The preflight is the delegate lifecycle's, run in process over the
+	// materialized checkout; with no stamp it judges the stamp the installed
+	// candidate engine reports, as the dispatch that engine runs would.
+	reportedStamp := func(engine, root string) string {
+		command := (proofBinaryFixture{t: t}).command(testingEnvironment(os.Environ()), engine, "supervise", "status", "--repo", root)
+		output, err := command.Output()
+		if err != nil {
+			t.Fatalf("installed candidate engine did not report its build: %v", err)
+		}
+		var status struct {
+			EngineBuild string `json:"engineBuild"`
+		}
+		if err := json.Unmarshal(output, &status); err != nil || status.EngineBuild == "" {
+			t.Fatalf("installed candidate engine reported %q: %v", output, err)
+		}
+		return status.EngineBuild
 	}
-	oldOutput, oldErr := preflight(fixture.baseCommit)
-	if exit, ok := oldErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 || !strings.Contains(string(oldOutput), "is older than checkout commit") {
-		t.Fatalf("untouched refusal was not reproduced with the enrolled engine stamp: err=%v output=%s", oldErr, oldOutput)
+	preflightAt := func(root, engine, stamp string) ([]byte, int) {
+		if stamp == "" {
+			stamp = reportedStamp(engine, root)
+		}
+		var output bytes.Buffer
+		code := runDelegateAt(root, []string{"__engine-skew-preflight", stamp}, &output, &output)
+		return output.Bytes(), code
 	}
-	if output, err := preflight(""); err != nil {
-		t.Fatalf("installed candidate engine's reported stamp did not pass dispatch skew preflight: %v\n%s", err, output)
+	preflight := func(stamp string) ([]byte, int) { return preflightAt(candidateRoot, installedEngine, stamp) }
+	oldOutput, oldCode := preflight(fixture.baseCommit)
+	if oldCode != 1 || !strings.Contains(string(oldOutput), "is older than checkout commit") {
+		t.Fatalf("untouched refusal was not reproduced with the enrolled engine stamp: exit=%d output=%s", oldCode, oldOutput)
+	}
+	if output, code := preflight(""); code != 0 {
+		t.Fatalf("installed candidate engine's reported stamp did not pass dispatch skew preflight: exit %d\n%s", code, output)
 	}
 	ancestry := exec.Command("git", "-C", detached.Workspace().Dir, "log", "--ancestry-path", built.Commit+"..HEAD")
 	ancestry.Env = gittree.ScrubbedEnviron()
@@ -1657,19 +1720,17 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 		t.Fatalf("candidate stamp unexpectedly has an ancestry path to its materialized checkout: err=%v output=%s", err, output)
 	}
 	for _, stamp := range []string{"witness-0123456789ab", "dev-0123456789ab-dirty", "dev", "adopted-target"} {
-		if output, err := preflight(stamp); err != nil {
-			t.Fatalf("non-commit engine stamp %q was refused: %v\n%s", stamp, err, output)
+		if output, code := preflight(stamp); code != 0 {
+			t.Fatalf("non-commit engine stamp %q was refused: exit %d\n%s", stamp, code, output)
 		}
 	}
 	freshProject := t.TempDir()
 	freshCandidateRoot := filepath.Join(freshProject, "metasystem")
-	for _, relative := range []string{"dispatch.sh", "checkout-execution-guard.sh"} {
-		script, err := os.ReadFile(filepath.Join(candidateRoot, "scripts", "agents", relative))
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeTestingFixtureFile(t, filepath.Join(freshCandidateRoot, "scripts", "agents", relative), script, 0o755)
+	script, err := os.ReadFile(filepath.Join(candidateRoot, "scripts", "agents", "checkout-execution-guard.sh"))
+	if err != nil {
+		t.Fatal(err)
 	}
+	writeTestingFixtureFile(t, filepath.Join(freshCandidateRoot, "scripts", "agents", "checkout-execution-guard.sh"), script, 0o755)
 	freshEngine := filepath.Join(freshCandidateRoot, "bin", "metasystem")
 	writeTestingFixtureFile(t, freshEngine, data, 0o755)
 	testingFixtureGit(t, freshProject, "init", "-q", "-b", "main")
@@ -1680,11 +1741,8 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	if err := missingCandidate.Run(); err == nil {
 		t.Fatalf("fresh fixture repository unexpectedly contains candidate stamp %s", built.Commit)
 	}
-	freshPreflight := exec.Command("bash", "scripts/agents/dispatch.sh", "__engine-skew-preflight")
-	freshPreflight.Dir = freshCandidateRoot
-	freshPreflight.Env = append(testingEnvironment(os.Environ()), "METASYSTEM_BIN="+freshEngine)
-	if output, err := freshPreflight.CombinedOutput(); err != nil {
-		t.Fatalf("fresh repository refused its installed candidate engine's reported stamp: %v\n%s", err, output)
+	if output, code := preflightAt(freshCandidateRoot, freshEngine, ""); code != 0 {
+		t.Fatalf("fresh repository refused its installed candidate engine's reported stamp: exit %d\n%s", code, output)
 	}
 }
 
@@ -1944,14 +2002,12 @@ chmod +x "$3"
 `
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "go-build.sh"), []byte(buildScript), 0o755)
 	writeFixtureDevgate(t, installationRoot)
-	for _, relative := range []string{"dispatch.sh", "checkout-execution-guard.sh"} {
-		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", relative))
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", relative), data, 0o755)
+	guardScript, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "checkout-execution-guard.sh"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "validate-section-selector.sh"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
+	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "checkout-execution-guard.sh"), guardScript, 0o755)
+	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "bed.sh"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "cmd", "metasystem", "engine.txt"), []byte("enrolled engine source\n"), 0o644)
 	testingFixtureGit(t, projectRoot, "init", "-q", "-b", "main")
 	testingFixtureGit(t, projectRoot, "add", ".")
@@ -2511,7 +2567,7 @@ func prepareFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout
 		Argv:    []string{"sh", "-c", `mkdir -p reports-smoke; printf '%s\n' '<testsuite><testcase classname="candidate" name="smoke"/></testsuite>' > reports-smoke/result.xml`},
 		Reports: []string{"metasystem/reports-smoke"}, Format: "junit-xml", ExpectedTests: []testpolicy.ExpectedTest{{Report: "metasystem/reports-smoke/result.xml", Classname: "candidate", Name: "smoke"}}}
 	groups := []testpolicy.Group{group, smoke}
-	for index, id := range []string{"fast-static-build", "section/dispatcher-adapter-and-mission-runner-fixtures", "section/goal-cli-fixtures", "section/land-fixtures", "section/adoption-fixtures"} {
+	for index, id := range []string{"fast-static-build", "section/dispatcher-adapter-and-mission-runner-fixtures", "goal-cli-standard", "landing-command-standard", "section/adoption-fixtures"} {
 		reportDir := fmt.Sprintf("reports-transition-%d", index)
 		projectReportDir := "metasystem/" + reportDir
 		fixtureCommand := fmt.Sprintf(`test -s testing.json && mkdir -p %s && printf '%%s\n' '<testsuite><testcase classname="transition" name="case-%d"/></testsuite>' > %s/result.xml`, reportDir, index, reportDir)

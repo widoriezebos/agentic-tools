@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -33,7 +34,7 @@ import (
 // into a follow-up, close a finished chain and land a goal. Each one resolves
 // the named subject to its recorded evidence and hands it to the existing
 // owner: the delegate boundary for critic dispatch and follow-ups, the goal
-// branch read for a unit commit, dispatch.sh for the whole chain close, and
+// branch read for a unit commit, the delegate lifecycle for the whole chain close, and
 // the batch join or the hand land-prep and land-push for landing. The owners
 // keep their authority, proof and retry identity; these commands never judge
 // a finding, certify a standalone result or conclude a goal.
@@ -139,7 +140,8 @@ func intentDeliveryCommands() []intentCommand {
 			object: "work", action: "land", primary: true, audience: "both", summary: "land a goal's reviewed work",
 			usage: []string{"metasystem work land G [--through COMMIT]", "metasystem work land G --queue-only", "metasystem work land j2:J",
 				"metasystem work land G --exception CODE --reason TEXT --by NAME [--expires 2h] [--replace-exception ID [--transfer]]",
-				"metasystem work land G --using-exception ID"},
+				"metasystem work land G --using-exception ID",
+				"metasystem work land [G] --message FILE (--staged | --path P...) [--chain J | --direct-fix CLASS ...]"},
 			administrationUsage: []string{"metasystem work land G --exception CODE --reason TEXT --by NAME --upgrade-goals [--expires 2h] [--replace-exception ID [--transfer]]"},
 			details: []string{
 				"--queue-only marks the held goal built and waiting to land, and nothing else: no proof runs, no read is collected and nothing is pushed.",
@@ -152,8 +154,10 @@ func intentDeliveryCommands() []intentCommand {
 				"Without it, the read-clean goal branch is proved on its landing candidate, prepared and pushed by hand.",
 				"Missing reads, proof or approval refuse with the missing input; no other route is tried instead.",
 				"A repeat reuses the retained receipt and prepared landing; a moved endpoint starts from a new proof. The goal is not concluded: that stays goal done G.",
+				"--message lands a hand-made change instead: the named paths (or the staged set) are staged, committed through the commit",
+				"boundary with the landing's declarations, rebased onto origin, proved against retained delivery proof, and pushed.",
 			},
-			flags: []intentFlag{
+			flags: append([]intentFlag{
 				{name: "through", value: "COMMIT", usage: "land a human-approved prefix ending at this unit commit"},
 				{name: "queue-only", usage: "only mark the held goal waiting to land, for a later work land G"},
 				{name: "exception", value: "CODE", advanced: true, usage: "a person's exception: the one refusal code or group:NAME this landing is carried past"},
@@ -165,7 +169,7 @@ func intentDeliveryCommands() []intentCommand {
 				{name: "upgrade-goals", advanced: true, usage: "with --exception: raise the goal ledger's format in the same act"},
 				{name: "using-exception", value: "ID", advanced: true, usage: "land under this already recorded exception (local or answered through the channel)"},
 				intentLineageFlag,
-			},
+			}, stagedLandingFlags...),
 			maxArgs:  1,
 			accepts:  []string{refGoal, refJ2},
 			examples: []string{"metasystem work land verbs-match-intent", "metasystem work land verbs-match-intent --queue-only", "metasystem work land verbs-match-intent --through 3f2a9c1", "metasystem work land j2:impl-01"},
@@ -212,11 +216,17 @@ type intentDeliveryOwners struct {
 	// engine may write the named chain's records, before anything writes.
 	recordWriter func(root, job string) (cause string, err error)
 	process      func(intentProcess) intentProcessResult
-	executable   func() (string, error)
-	branchRead   func([]string) (branch.BranchReadResult, int, error)
-	branchState  func(root, goalID string) (intentBranchState, error)
-	landPrep     func([]string) (goalBranchLandPrepOutcome, int, error)
-	landPush     func([]string) (branch.PreparedLanding, string, int, error)
+	// landCarried runs one carried landing through the landing path and
+	// returns what it printed and its exit status.
+	landCarried func(landpath.LandRequest) intentProcessResult
+	// closeOwner runs the delegate lifecycle's close command (the whole
+	// chain close) for an installation root.
+	closeOwner  func(root string, args []string) intentProcessResult
+	executable  func() (string, error)
+	branchRead  func([]string) (branch.BranchReadResult, int, error)
+	branchState func(root, goalID string) (intentBranchState, error)
+	landPrep    func([]string) (goalBranchLandPrepOutcome, int, error)
+	landPush    func([]string) (branch.PreparedLanding, string, int, error)
 	// landCandidate composes the pending landing and returns the candidate
 	// tree its receipt must prove.
 	landCandidate func([]string) (goalBranchLandPrepOutcome, int, error)
@@ -246,10 +256,23 @@ type intentBranchState struct {
 	Sources []string
 }
 
+// landCarriedInProcess runs one carried landing in this process.
+func landCarriedInProcess(request landpath.LandRequest) intentProcessResult {
+	return landCarriedWithOwners(landingPathOwners(), request)
+}
+
+func landCarriedWithOwners(owners landpath.Owners, request landpath.LandRequest) intentProcessResult {
+	var stdout, stderr bytes.Buffer
+	code := landpath.Land(owners, request, &stdout, &stderr)
+	return intentProcessResult{stdout: stdout.Bytes(), stderr: stderr.Bytes(), code: code}
+}
+
 func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 	return &intentDeliveryOwners{
 		recordWriter: recordWriterPreflight,
 		process:      runIntentOwnerProcess,
+		landCarried:  landCarriedInProcess,
+		closeOwner:   inProcessCloseOwner,
 		executable:   os.Executable,
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 			return goalBranchReadRun(args, goalBranchReadDependencies{})
@@ -282,6 +305,12 @@ func (inv *intentInvocation) delivery() *intentDeliveryOwners {
 		inv.owners.delivery = defaultIntentDeliveryOwners()
 	}
 	return inv.owners.delivery
+}
+
+// inProcessCloseOwner runs the delegate lifecycle's close in this process.
+func inProcessCloseOwner(root string, args []string) intentProcessResult {
+	stdout, stderr, code := delegateInProcess(root)(args...)
+	return intentProcessResult{stdout: []byte(stdout), stderr: []byte(stderr), code: code}
 }
 
 // runIntentOwnerProcess runs one owner with its own output pipes; the
@@ -1370,11 +1399,15 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 	if problem := inv.rebindCritiqueBudget(targets, job); problem != nil {
 		return *problem
 	}
-	argv := []string{filepath.Join(inv.layout.InstallationRoot, "scripts", "agents", "dispatch.sh"), "close", "--job", job}
+	argv := []string{"close", "--job", job}
 	if evidence := inv.input.text("evidence"); evidence != "" {
 		argv = append(argv, "--reconcile-evidence", evidence)
 	}
-	ran := inv.delivery().process(intentProcess{argv: argv, dir: inv.layout.InstallationRoot})
+	closeOwner := inv.delivery().closeOwner
+	if closeOwner == nil {
+		closeOwner = inProcessCloseOwner
+	}
+	ran := closeOwner(inv.layout.InstallationRoot, argv)
 	after, readErr := inv.jobRecord(job)
 	closed := false
 	if readErr == nil {
@@ -1413,6 +1446,14 @@ func nonEmptyLines(text string) []string {
 // ---- land
 
 func runIntentLand(inv *intentInvocation) int {
+	if inv.input.has("message") {
+		return runIntentLandStaged(inv)
+	}
+	for _, option := range stagedLandingOptions {
+		if inv.input.has(option) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--" + option + " belongs to landing a hand-made change with --message FILE; nothing was done"})
+		}
+	}
 	if len(inv.input.args) != 1 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work land names a goal, or a dispatch job j2:J",
 			nextReason: "for example: metasystem work land verbs-match-intent"})
@@ -1528,8 +1569,14 @@ func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchJoin
 	}
 	switch unit.State {
 	case batch.UnitLanded:
-		return intentResult{Targets: targets, Outcome: intentConfirmed, Data: data,
-			Summary: fmt.Sprintf("goal %s landed through batch %s; the goal stays open until done", request.GoalID, record.BatchID)}
+		// The batch owner recorded the landing; this call only reads it, so
+		// the repeat is success that changes nothing (R-129-ui).
+		landed := ""
+		if unit.LandedCommit != "" {
+			landed = " as " + shortCommit(unit.LandedCommit)
+		}
+		return intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
+			Summary: fmt.Sprintf("goal %s already landed%s through batch %s; the goal stays open until done", request.GoalID, landed, record.BatchID)}
 	case batch.UnitEjected, batch.UnitWithdrawn, batch.UnitWithdrawnBudget:
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
 			Summary: fmt.Sprintf("goal %s left batch %s as %s", request.GoalID, record.BatchID, unit.State)}

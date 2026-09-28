@@ -372,13 +372,15 @@ func activeHostResourceSlots(directory string) (int, error) {
 }
 
 func hostLeaseState(directory string) (int, map[string]bool, error) {
-	return hostLeaseStateWithReclaim(directory, false)
+	return hostLeaseStateWithReclaim(directory, false, nil)
 }
 
 // reclaim is permitted only while the caller holds admission.lock. A clean
 // marker is discarded after this scanner itself acquires its flock, proving
-// no owner or borrower still holds the marker descriptor.
-func hostLeaseStateWithReclaim(directory string, reclaim bool) (int, map[string]bool, error) {
+// no owner or borrower still holds the marker descriptor. A dirty marker is
+// discarded only when the reclaimer proves its owner dead, the owner's group
+// empty and the owner's detached fixtures gone (lease_reclaim.go).
+func hostLeaseStateWithReclaim(directory string, reclaim bool, reclaimer *leaseReclaimer) (int, map[string]bool, error) {
 	paths, err := filepath.Glob(filepath.Join(directory, "lease-*"))
 	if err != nil {
 		return 0, nil, err
@@ -417,6 +419,20 @@ func hostLeaseStateWithReclaim(directory string, reclaim bool) (int, map[string]
 			}
 			_ = releaseHostProbe(file)
 			continue
+		}
+		if !record.Cleared && reclaim && reclaimer != nil {
+			// Still under admission.lock and this scanner's own flock on the
+			// reloaded inode: no owner, custodian or inheriting child holds
+			// the marker descriptor. The reclaimer decides the rest.
+			reclaimed, reclaimErr := reclaimer.settle(directory, path, file, record)
+			if reclaimErr != nil {
+				_ = releaseHostProbe(file)
+				return 0, nil, reclaimErr
+			}
+			if reclaimed {
+				_ = releaseHostProbe(file)
+				continue
+			}
 		}
 		if !record.Cleared {
 			if record.Class == "heavy" {
@@ -690,6 +706,7 @@ func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPat
 	}
 	started := time.Now()
 	observedWait := false
+	reclaimer := leaseReclaimerFromContext(ctx, controlRoot)
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -703,7 +720,7 @@ func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPat
 		if err != nil {
 			return nil, err
 		}
-		_, dirtyNamed, err := hostLeaseStateWithReclaim(directory, true)
+		_, dirtyNamed, err := hostLeaseStateWithReclaim(directory, true, reclaimer)
 		if err != nil {
 			_ = releaseHostProbe(guard)
 			return nil, err

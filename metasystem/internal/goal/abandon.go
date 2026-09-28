@@ -215,9 +215,14 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 				// successor asks for a re-pointing the record does not hold.
 				// Either answered applied would tell the human the ledger says
 				// something it does not, so both keep the refusal.
-				if fromSignedInSession(proof) && archived.State == StateAbandoned &&
+				// At every authority (U-idem): the same abandon again is a
+				// repeat, success with no record, whoever made the first.
+				if archived.State == StateAbandoned &&
 					archived.Abandoned != nil && archived.Abandoned.Carried == spec.Carried {
-					return nil, NothingToDo{Reason: "goal " + id + " is already abandoned: the same abandon from this signed-in session"}
+					if fromSignedInSession(proof) {
+						return nil, AlreadyHolds{Reason: "goal " + id + " is already abandoned: the same abandon from this signed-in session"}
+					}
+					return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already abandoned (since %s, reason %s)", id, archived.Abandoned.At, archived.Abandoned.Because)}
 				}
 				return nil, LostToCompetitor{Winner: lastOpid(archived)}
 			}
@@ -410,7 +415,7 @@ func abandonCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id stri
 			return err
 		}
 		if consumption.Kind == "origin" {
-			return fmt.Errorf("goal %s has carried commit %s without its ledger row; close it with land.sh --carried %s, even if the word has expired; then retry abandon", id, consumption.ID, word.History.Opid)
+			return fmt.Errorf("goal %s has carried commit %s without its ledger row; close it with metasystem work land %s --using-exception %s, even if the word has expired; then retry abandon", id, consumption.ID, id, word.History.Opid)
 		}
 		if reservation := CarryReservationAt(tree, id, word.History.Opid, now); reservation.State == "open" {
 			seat, err := OpidMachine(reservation.History.Opid)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
@@ -27,6 +28,9 @@ func TestMain(m *testing.M) {
 	if err := os.Unsetenv("METASYSTEM_STEWARD_TEST_CANDIDATE_ENGINE"); err != nil {
 		panic(err)
 	}
+	// The proof admission directory is host-wide; no package test reads or
+	// reclaims the real one.
+	inspectHostLeases = func(string) ([]proofrun.HostLeaseReport, error) { return nil, nil }
 	os.Exit(testenv.Main(m, declarations...))
 }
 

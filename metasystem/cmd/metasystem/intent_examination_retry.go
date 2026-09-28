@@ -7,6 +7,7 @@ import (
 	"os"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 )
 
 // runJobExaminationRetry is the dispatch follow-up's eligibility question for
@@ -23,7 +24,7 @@ func runJobExaminationRetry(args []string) int {
 	}
 	latest, err := dispatchcore.ReadRecordObject(*record)
 	if err == nil {
-		err = dispatchcore.ExaminationRetryAdmissibleWith(*root, latest, dispatchcore.CustodyDeathDependencies{MatchesTag: positionedJobTag})
+		err = dispatchcore.ExaminationRetryAdmissibleWith(*root, latest, dispatchcore.CustodyDeathDependencies{MatchesTag: dispatchproc.PositionedJobTagAt(*root)})
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

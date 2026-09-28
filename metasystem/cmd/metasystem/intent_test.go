@@ -443,8 +443,8 @@ func TestIntentGoalAuthorityAndState(t *testing.T) {
 			t.Fatalf("unpark = %d %+v; record %s approved %+v", code, result, file.State, file.Approved)
 		}
 		code, result = bed.runJSON(bed.owners(), "goal", "resume", bedGoal, "--lineage", "m1")
-		if code != 1 || result.Next == nil || result.Next.Argv[2] != "approve" {
-			t.Fatalf("resume of a queued goal must name approval as its own act: %d %+v", code, result)
+		if code != 0 || result.Outcome != intentUnchanged || result.Next == nil || result.Next.Argv[2] != "approve" {
+			t.Fatalf("resume of a queued goal is a repeat that names approval as its own act: %d %+v", code, result)
 		}
 	})
 

@@ -90,7 +90,7 @@ func processTransition(scope processScope, scale int) *stoptransition.Transition
 		Root: scope.Root, Checkout: scope.Checkout, ScaleMilli: scale,
 		Families: stoptransition.LocalFamilies(stoptransition.LocalConfig{
 			Root: scope.Root, Checkout: scope.Checkout, Installation: scope.Installation,
-			Binary: scope.Binary, ScaleMilli: scale,
+			Binary: scope.Binary, ScaleMilli: scale, CancelJob: delegateCancel(scope.Installation),
 		}),
 	}
 }
@@ -160,7 +160,16 @@ type processOwners struct {
 	repositoryTop func(string) (string, error)
 	classify      processCallerClassifier
 	transition    func(processScope, int) *stoptransition.Transition
-	armSteps      func(processScope, int, processArmAuthority) ([]string, error)
+	armSteps      func(processScope, int, processArmAuthority) (processArmResult, error)
+}
+
+// processArmResult is the arm sequence's report: its lines, and whether it
+// found everything already running (the steward's same live runner kept and
+// no helper started), with that runner's pid.
+type processArmResult struct {
+	lines     []string
+	unchanged bool
+	runnerPid int64
 }
 
 // processArmAuthority is the human authority an arm was granted under.
@@ -286,12 +295,28 @@ func (o processOwners) arm(scope processScope, scale int, temporaryWord, reviewB
 	}
 	transition := o.transition(scope, scale)
 	authority := processArmAuthority{fixtureGranted: fixtureGranted, temporaryWord: temporaryWord, reviewBy: reviewBy}
-	transition.ArmFunc = func() ([]string, error) { return o.armSteps(scope, scale, authority) }
+	var steps processArmResult
+	transition.ArmFunc = func() ([]string, error) {
+		var err error
+		steps, err = o.armSteps(scope, scale, authority)
+		return steps.lines, err
+	}
 	report, err := transition.Arm()
 	if err != nil {
 		return report, &processRefusal{verb: "arm", checkout: scope.Checkout, sentence: err.Error(), second: armRefusalSecondLine(scope, err), code: 1}
 	}
+	// The start is a repeat only when the fence was already open and the arm
+	// sequence found everything running; otherwise it started something.
+	report.Unchanged = report.Unchanged && steps.unchanged
+	if report.Unchanged {
+		report.Lines = append(report.Lines, alreadyRunsSentence(steps.runnerPid, report.Since))
+	}
 	return report, nil
+}
+
+// alreadyRunsSentence is a repeated start's answer: what already runs.
+func alreadyRunsSentence(pid int64, since string) string {
+	return fmt.Sprintf("MetaSystem already runs for this checkout (pid %d since %s)", pid, since)
 }
 
 // processArmEffects are the effects of the arm sequence: seeding the landing
@@ -300,6 +325,10 @@ type processArmEffects struct {
 	seed func(root string) (stewardLandingRefSeed, error)
 	arm  func(root, binary string, authority processArmAuthority) (string, error)
 	up   func(up.Options) up.Result
+	// runner is the steward's live runner pid, read before and after the
+	// arm: the same live runner on both sides is an arm that changed
+	// nothing. Nil reads as changed.
+	runner func(root string) (int64, bool)
 }
 
 func defaultProcessArmEffects() processArmEffects {
@@ -315,23 +344,31 @@ func defaultProcessArmEffects() processArmEffects {
 			return steward.Arm(root, binary)
 		},
 		up: up.Run,
+		runner: func(root string) (int64, bool) {
+			record, alive := steward.LiveRunner(root)
+			return record.Pid, alive
+		},
 	}
 }
 
 // armCheckoutSteps is the arm sequence with its production effects.
-func armCheckoutSteps(scope processScope, scale int, authority processArmAuthority) ([]string, error) {
+func armCheckoutSteps(scope processScope, scale int, authority processArmAuthority) (processArmResult, error) {
 	return defaultProcessArmEffects().steps(scope, scale, authority)
 }
 
 // steps seeds the landing ref, arms the steward under the granted authority,
 // and starts the missing supervision rings. Every step works in the
 // checkout's state root; the installation supplies the engine.
-func (effects processArmEffects) steps(scope processScope, scale int, authority processArmAuthority) ([]string, error) {
-	if seed, seedErr := effects.seed(scope.Root); seedErr != nil {
-		return nil, seedErr
-	} else if seed.Ref != "" {
-		// The durable git configuration is the result; arm's report does
-		// not need a second provenance line for the seeding mechanism.
+func (effects processArmEffects) steps(scope processScope, scale int, authority processArmAuthority) (processArmResult, error) {
+	seed, seedErr := effects.seed(scope.Root)
+	if seedErr != nil {
+		return processArmResult{}, seedErr
+	}
+	// The durable git configuration is the seed's result; arm's report does
+	// not need a second provenance line for the seeding mechanism.
+	beforePid, beforeLive := int64(0), false
+	if effects.runner != nil {
+		beforePid, beforeLive = effects.runner(scope.Root)
 	}
 	message, armErr := effects.arm(scope.Root, scope.Binary, authority)
 	lines := []string{}
@@ -339,8 +376,13 @@ func (effects processArmEffects) steps(scope processScope, scale int, authority 
 		lines = append(lines, message)
 	}
 	if armErr != nil {
-		return lines, armErr
+		return processArmResult{lines: lines}, armErr
 	}
+	afterPid, afterLive := int64(0), false
+	if effects.runner != nil {
+		afterPid, afterLive = effects.runner(scope.Root)
+	}
+	stewardKept := effects.runner != nil && seed.Ref == "" && beforeLive && afterLive && beforePid == afterPid
 	upResult := effects.up(up.Options{
 		Root: scope.Root, MetasystemRoot: scope.Installation, Scope: scope.Checkout,
 		Binary: scope.Binary, RecoverOnly: true, IfDown: true, WaitScaleMilli: scale,
@@ -348,9 +390,9 @@ func (effects processArmEffects) steps(scope processScope, scale int, authority 
 	})
 	lines = append(lines, upResult.Lines()...)
 	if upResult.ExitCode() != 0 {
-		return lines, fmt.Errorf("up ended with outcome %s", upResult.Outcome)
+		return processArmResult{lines: lines}, fmt.Errorf("up ended with outcome %s", upResult.Outcome)
 	}
-	return lines, nil
+	return processArmResult{lines: lines, unchanged: stewardKept && upResult.Outcome == "recovery-not-needed", runnerPid: afterPid}, nil
 }
 
 func armRefusalSecondLine(scope processScope, err error) string {

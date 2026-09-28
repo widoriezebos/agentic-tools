@@ -122,11 +122,15 @@ func batchLandReceipt(controlRoot, goalID, note string) error {
 	return err
 }
 
+// batchCommitBoundary is the commit boundary the landing owner commits each
+// unit through: the landing path in this process.
+var batchCommitBoundary batch.CommitBoundary = landingPathCommit
+
 func batchLandSeams(root, id string, record batch.Record, baseCommit, actor string) batch.LandSeams {
-	return batchLandSeamsWithRead(root, id, record, baseCommit, actor, gitOutput)
+	return batchLandSeamsWithRead(root, id, record, baseCommit, actor, gitOutput, batchCommitBoundary)
 }
 
-func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, actor string, readGit func(root string, args ...string) (string, error)) batch.LandSeams {
+func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, actor string, readGit func(root string, args ...string) (string, error), boundary batch.CommitBoundary) batch.LandSeams {
 	controlRoot := batch.ModuleRoot(root)
 	return batch.LandSeams{
 		Prepare: func(_ string) error { return batch.PrepareLandingBranch(root, id, baseCommit) },
@@ -140,7 +144,7 @@ func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, ac
 				path = filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", id+".json")
 			}
 			message := fmt.Sprintf("land %s in batch %s\n\nOriginal join order; prefix tree %s.\n", unit.GoalID, id, receipt.Tree)
-			if err := batch.CommitWithWrapperWithRead(controlRoot, batch.ChainDeclaration(unit.Chain), unit.GoalID, path, message, unit.AuthorName, unit.AuthorEmail, actor, readGit); err != nil {
+			if err := batch.CommitWithWrapperWithRead(controlRoot, batch.ChainDeclaration(unit.Chain), unit.GoalID, path, message, unit.AuthorName, unit.AuthorEmail, actor, landingOwnerLineage, boundary, readGit); err != nil {
 				return "", err
 			}
 			return readGit(root, "rev-parse", "HEAD")
@@ -158,7 +162,7 @@ func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, ac
 			}
 			last := unit.GoalLast && len(unit.CommitIDs) != 0 && build.Commit == unit.CommitIDs[len(unit.CommitIDs)-1]
 			declaration := batch.AttestedDeclaration(build.Commit, unit.BranchTip, baseCommit)
-			if err := batch.CommitWithWrapperWithRead(controlRoot, declaration, unit.GoalID, path, batch.BranchLandingMessage(unit.GoalID, build, last), unit.AuthorName, unit.AuthorEmail, actor, readGit); err != nil {
+			if err := batch.CommitWithWrapperWithRead(controlRoot, declaration, unit.GoalID, path, batch.BranchLandingMessage(unit.GoalID, build, last), unit.AuthorName, unit.AuthorEmail, actor, landingOwnerLineage, boundary, readGit); err != nil {
 				return "", err
 			}
 			commit, err := readGit(root, "rev-parse", "HEAD")

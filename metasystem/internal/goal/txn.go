@@ -536,6 +536,19 @@ type AlreadySatisfied struct{ Reason string }
 
 func (a AlreadySatisfied) Error() string { return "already satisfied: " + a.Reason }
 
+// AlreadyHolds is an idempotent repeat (R-129-ui, Wido 2026-09-27: "if we
+// pause an already paused goal, that should be fine"): the effect this act
+// asks for already stands, whoever made it. It is success, and it leaves no
+// record at all: no commit, no push, no history line, and the journal entry
+// the operation opened is discarded rather than terminalized, because the
+// operation never acted. Reason says what already holds, in the words a
+// person reads ("goal G is already paused (since T, reason R)"). The result's
+// outcome is OutcomeAbandoned with Unchanged set, so every caller that reads
+// a no-op keeps reading it as one.
+type AlreadyHolds struct{ Reason string }
+
+func (a AlreadyHolds) Error() string { return "already holds: " + a.Reason }
+
 // NothingToDo classifies a fresh operation whose desired state
 // already holds without this opid's involvement: abandoned by its
 // own reading of the world, never confirmed.
@@ -595,6 +608,9 @@ type PublishResult struct {
 	Commit     string // our transaction commit, when one was built
 	Detail     string
 	RiskRaised bool // the edit transaction raised the approved goal's risk derivation
+	// Unchanged marks an idempotent repeat (AlreadyHolds): success, and
+	// nothing was recorded.
+	Unchanged bool
 }
 
 // Publish runs the whole transaction under the journal's rules:
@@ -898,6 +914,14 @@ func terminalFromMutate(e Endpoint, req PublishRequest, tip string, err error) (
 		}
 		CleanupRefs(e, opid)
 		return PublishResult{Outcome: OutcomeConfirmed, Tip: tip, Detail: v.Reason}, nil
+	case AlreadyHolds:
+		if dErr := DiscardUnpushed(e.Root, opid); dErr != nil {
+			if mErr := MarkTerminal(e.Root, opid, OutcomeAbandoned, v.Reason); mErr != nil {
+				return PublishResult{}, errors.Join(dErr, mErr)
+			}
+		}
+		CleanupRefs(e, opid)
+		return PublishResult{Outcome: OutcomeAbandoned, Tip: tip, Detail: v.Reason, Unchanged: true}, nil
 	case NothingToDo:
 		if mErr := MarkTerminal(e.Root, opid, OutcomeAbandoned, v.Reason); mErr != nil {
 			return PublishResult{}, mErr

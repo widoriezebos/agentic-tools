@@ -321,7 +321,7 @@ print(f"benchmark consistency: {count} case version(s), no seams")
 PY
 
 # 3. Provisioning, end to end against a committed snapshot of the working
-# tree (adopt.sh rightly refuses a dirty template, and the gate must test the
+# tree (system adopt rightly refuses a dirty template, and the gate must test the
 # tree as it is now, not as it was last committed).
 srcrepo="$tmp/snapshot"
 mkdir -p "$srcrepo"
@@ -347,7 +347,7 @@ git -C "$srcrepo" add .
 git -C "$srcrepo" -c user.name=kit -c user.email=kit@example.invalid commit -qm snapshot
   # Benchmark provisioning owns the complete bridge from a held-out spec kit
   # to the human seal/sign boundary. Exercise the real BM-1 manifest through a
-  # clean source snapshot because adopt.sh correctly refuses a dirty source.
+  # clean source snapshot because system adopt correctly refuses a dirty source.
   provision_target="$tmp/provision-bm-1"
   provision_contract="$provision_target/plans/mission-taskrun.contract.md"
   provision_output="$tmp/provision-bm-1.out"
@@ -463,11 +463,11 @@ PY
     echo "benchmark provision: a RAW agent commit passed the target's guard" >&2
     exit 1
   fi
-  grep -q "requires scripts/agents/commit.sh" "$tmp/raw-control.out" \
+  grep -q "an agent commit goes through metasystem work land" "$tmp/raw-control.out" \
     || { echo "benchmark provision: raw-commit refusal lost its message" >&2; cat "$tmp/raw-control.out" >&2; exit 1; }
   (cd "$provision_target" && GIT_AUTHOR_NAME=m GIT_AUTHOR_EMAIL=m@example.invalid \
       GIT_COMMITTER_NAME=m GIT_COMMITTER_EMAIL=m@example.invalid \
-      scripts/agents/commit.sh -qm "wrapped control commit") \
+      bin/metasystem work land --message - --staged --local <<<"wrapped control commit" >/dev/null) \
     || { echo "benchmark provision: the wrapper route failed to carry a commit" >&2; exit 1; }
   git -C "$provision_target" reset -q --hard HEAD~1
   "$provision_target/bin/metasystem" lease retire --root "$provision_target" \

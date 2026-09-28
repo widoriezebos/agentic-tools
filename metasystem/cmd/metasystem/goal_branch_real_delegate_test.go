@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,11 +16,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 // TestGoalBranchReadRealDelegateReachesSelectedClaude drives `goal branch
 // read --selected-installation` from a generated goal worktree through the
-// built engine's delegate, the worktree's real dispatch.sh and claude.sh
+// built engine's delegate lifecycle, the worktree's real claude.sh
 // adapter, to an absolute fake `claude` executable. The worktree's tracked
 // roster names a different model and it has no local overlay; the model the
 // fake receives is the selected installation's code-critic for the frozen
@@ -68,10 +68,18 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
-			probe := exec.Command(filepath.Join(worktree, "scripts", "agents", "adapters", "claude.sh"), "probe")
-			probe.Dir, probe.Env = worktree, append(os.Environ(), "METASYSTEM_BIN="+filepath.Join(worktree, "bin", "metasystem"))
-			if output, err := probe.CombinedOutput(); err != nil {
-				t.Fatalf("claude adapter probe: %v: %s", err, output)
+			// The claude probe runs in process through the delegate-supervisor
+			// entry, the code the worktree's engine carries.
+			// METASYSTEM_BIN names the worktree's engine for the probe only.
+			previousBin, hadBin := os.LookupEnv("METASYSTEM_BIN")
+			t.Setenv("METASYSTEM_BIN", filepath.Join(worktree, "bin", "metasystem"))
+			if code := runDelegateSupervisor([]string{"claude", "probe", "--root", worktree}); code != 0 {
+				t.Fatalf("claude adapter probe exited %d", code)
+			}
+			if hadBin {
+				t.Setenv("METASYSTEM_BIN", previousBin)
+			} else {
+				os.Unsetenv("METASYSTEM_BIN")
 			}
 
 			selected := t.TempDir()
@@ -194,17 +202,11 @@ func realDelegateRosterFields(fields map[string]any) map[string]any {
 func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, string) {
 	t.Helper()
 	main, _, _ := goalBranchMainCLIFixtureBelow(t, "m1", ".")
-	guard := filepath.Join(main, "scripts", "agents", "pre-commit-guard.sh")
-	stub, err := os.ReadFile(guard)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, dir := range []string{"scripts", "docs", "skills"} {
 		if output, err := exec.Command("cp", "-R", filepath.Join(moduleRoot, dir), main).CombinedOutput(); err != nil {
 			t.Fatalf("install %s: %v: %s", dir, err, output)
 		}
 	}
-	writeTestingFixtureFile(t, guard, stub, 0o755)
 	conf := filepath.Join(main, "metasystem.conf")
 	existing, err := os.ReadFile(conf)
 	if err != nil {

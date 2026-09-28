@@ -1323,11 +1323,10 @@ func (e *Engine) deliverLandedUnconsumed(ledger string, cycle int64, state map[s
 // closeTerminalChains reaps and closes each fully-terminal delegation chain
 // at mission end, so no chain outlives the mission unclosed.
 func (e *Engine) closeTerminalChains() error {
-	dispatch := filepath.Join(e.Root, "scripts", "agents", "dispatch.sh")
 	var failures []string
 	for _, rootJob := range CloseableChains(e.Root, e.Mission) {
-		runCaptured(e.Root, nil, dispatch, "reap", "--job", rootJob)
-		stdout, stderr, code := runCaptured(e.Root, nil, dispatch, "close", "--job", rootJob, "--runner-closed")
+		e.delegate("reap", "--job", rootJob)
+		stdout, stderr, code := e.delegate("close", "--job", rootJob, "--runner-closed")
 		if code != 0 {
 			// One refusing chain must not strand the chains behind it:
 			// finish the sweep, then report every failure by name.

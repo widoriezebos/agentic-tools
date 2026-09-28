@@ -261,24 +261,3 @@ func TestEventsPortLiveRegistrations(t *testing.T) {
 		}
 	}
 }
-
-// The devin half of the implication (design: honestly weaker,
-// shell-side): devin's probe declares nativeEvents false and its
-// inline argv must carry no stream output mode. The wall-rule
-// verbatim-pin precedent: a static read of the live authority.
-func TestDevinArgvCarriesNoStreamMode(t *testing.T) {
-	data, err := os.ReadFile("../../scripts/agents/adapters/devin.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	content := string(data)
-	if strings.Contains(content, "stream-json") {
-		t.Fatal("devin.sh mentions a stream output mode its probe declares false")
-	}
-	if !strings.Contains(content, `"nativeEvents": false`) {
-		t.Fatal("devin.sh no longer declares nativeEvents false; revisit the implication pin")
-	}
-	if !strings.Contains(content, `config_file="$round_dir/$instance_tag"`) {
-		t.Fatal("Devin's CLI config argument does not carry the reservation instance tag")
-	}
-}

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -29,10 +30,13 @@ func TestClaimLaunchCapabilitySurvivesRelativeExecutableProcessShape(t *testing.
 			DispatchMode: dispatchcore.DispatchModeFresh, AdapterVerb: "dispatch",
 		}
 		root := os.Getenv("METASYSTEM_RELATIVE_EXECUTABLE_ROOT")
-		if !claimLaunchInternalAuthorized(root, binding, true) {
+		surface := func() dispatchproc.ClaimSurface {
+			return dispatchproc.ClaimSurface{DelegateInternal: os.Getenv("METASYSTEM_DELEGATE_INTERNAL") == "1", Capability: os.Getenv(delegateClaimCapabilityEnv)}
+		}
+		if !dispatchproc.ClaimAuthorized(root, surface(), binding, true) {
 			t.Fatal("delegate capability did not authorize preflight across the relative executable process shape")
 		}
-		if !claimLaunchInternalAuthorized(root, binding, false) {
+		if !dispatchproc.ClaimAuthorized(root, surface(), binding, false) {
 			t.Fatal("delegate capability did not authorize consumption across the relative executable process shape")
 		}
 		return

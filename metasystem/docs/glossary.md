@@ -132,9 +132,8 @@ not paths.
 - **Event registry** — `scripts/agents/event-registry.json`, the closed
   catalogue of event names, allowed emitters, required ids, and typed
   payloads. An event not in the registry is a bug, not a feature.
-- **Emitter** — the never-fail append helper
-  (`scripts/agents/emit-event.sh`, a thin wrapper over `metasystem event
-  emit`; `internal/events`). An emit may silently lose its own
+- **Emitter** — the never-fail append helper (`internal/events`; scripts
+  reach it through `metasystem internal event emit`). An emit may silently lose its own
   event; it may never fail its caller.
 - **executionId** — the cohort id, exported by the benchmark driver to
   everything it spawns so one run's events can be joined across the
@@ -228,13 +227,18 @@ not paths.
   (`capMin`). Dispatch creates it, the adapter runs it, the reaper and the
   sweep judge it. A bare "job" in this repository always means this; a
   mission's host TURNS are not jobs.
-- **Adapter** — the per-runtime driver (`scripts/agents/adapters/*.sh`)
-  that turns one dispatched job into one runtime session — one per
-  registered runtime (`bin/metasystem internal runtime list`; today claude,
-  codex, devin, and the fixture-only `fake`). A **host adapter**
-  (`scripts/agents/hosts/*.sh`) does the same for mission turns.
+- **Adapter** — the per-runtime driver that turns one dispatched job into
+  one runtime session: the runtime's operations
+  (`internal/adapter/supervisor/<runtime>.go`) run by the engine's
+  `delegate-supervisor` process — one per registered runtime
+  (`bin/metasystem internal runtime list`; today claude, codex, devin, and
+  the fixture-only `fake`). The same operations with role host serve a
+  mission's host turns (`internal/missionrunner/hostturn`). An external
+  adapter (`<installation>/adapters/<name>`, `docs/agent-adapters.md`)
+  implements them as an executable, for a new agent or as an override of a
+  built-in.
 - **Capability snapshot** — the probed record of what a runtime CLI can
-  actually do and enforce, captured by `<adapter> probe`. Its
+  actually do and enforce, captured by the runtime's probe. Its
   **envelopeEnforcement** declares, per boundary, `mapped` (the runtime
   enforces it) or `notEnforced` (it cannot).
 - **Envelope / waiver** — the permission bounds a job requests (write
@@ -254,7 +258,7 @@ not paths.
 ## Verification
 
 - **Gates** — the checks that must pass, chained with the push in one
-  command: the metasystem **suite** (`scripts/validate-metasystem.sh`) and
+  command: the metasystem **suite** (the testing contract, run by `metasystem test run`) and
   the benchmark **kit gate** (`benchmark/validate-kit.sh`). A verdict is
   read from the verifying command's own exit code, captured — never
   from a log tail, and never from the exit of a composite or

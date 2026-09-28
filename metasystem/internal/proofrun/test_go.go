@@ -13,7 +13,6 @@ import (
 	"go/token"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -833,38 +832,11 @@ func sortedStringSet(values map[string]bool) []string {
 
 // CheckNativeDiscovery validates the committed native inventories without
 // compiling or executing application tests. Go declarations are parsed from
-// source and section identifiers are compared with the finite selector
-// catalog exposed by the installed plumbing. The base environment must be the
+// source; a section group declares its script bed by argv. The base
+// environment must be the
 // same prepared environment used for actual group execution.
 func CheckNativeDiscovery(ctx context.Context, projectRoot, installation string, contract testpolicy.Contract, baseEnvironment []string) error {
-	sectionIDs := map[string]bool{}
 	discoveryCache := &goDiscoveryCache{catalogs: map[string]goPackageCatalog{}}
-	needsSections := false
-	for _, group := range contract.Groups {
-		if group.PackageSelection != "" {
-			continue
-		}
-		if group.Adapter == "section" {
-			needsSections = true
-		}
-	}
-	if needsSections {
-		selector := filepath.Join(installation, "scripts", "agents", "validate-section-selector.sh")
-		command := exec.CommandContext(ctx, selector, "catalog")
-		command.Env = append([]string(nil), os.Environ()...)
-		var output, stderr bytes.Buffer
-		command.Stdout, command.Stderr = &output, &stderr
-		err := RunResourceCommand(ctx, command, HostResourceLeaseFromContext(ctx))
-		if err != nil {
-			return fmt.Errorf("read section selector catalog: %w: %s", err, strings.TrimSpace(stderr.String()))
-		}
-		for _, line := range strings.Split(output.String(), "\n") {
-			id, _, ok := strings.Cut(line, "\t")
-			if ok && id != "" {
-				sectionIDs[id] = true
-			}
-		}
-	}
 	for _, group := range contract.Groups {
 		if group.PackageSelection != "" {
 			continue
@@ -883,10 +855,6 @@ func CheckNativeDiscovery(ctx context.Context, projectRoot, installation string,
 				if identity.Classname == "" {
 					return fmt.Errorf("testing group %s declares missing Go test %s", group.ID, identity.Name)
 				}
-			}
-		case "section":
-			if !sectionIDs[group.Section] {
-				return fmt.Errorf("testing group %s references unknown section %s", group.ID, group.Section)
 			}
 		}
 	}

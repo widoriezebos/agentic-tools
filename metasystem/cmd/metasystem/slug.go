@@ -12,20 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
-
-// runUtilSlug prints a stable slug of its positional argument. The sanitize
-// rule's one home is lease.Slug: instance tags derived here must match the
-// announcement filenames the lease writes.
-func runUtilSlug(args []string) int {
-	input := ""
-	if len(args) > 0 {
-		input = args[0]
-	}
-	fmt.Println(lease.Slug(input))
-	return 0
-}
 
 // runUtilJSONValidate exits 0 when the --file or --value content is valid JSON,
 // else 1.

@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -40,18 +41,11 @@ func seedClaimLaunchGoalFiles(t *testing.T, root string) {
 	}
 }
 
-func setClaimLaunchCapability(t *testing.T, root string, mode dispatchcore.DispatchMode) {
-	t.Helper()
-	raw, err := dispatchcore.MintDelegateClaimCapability(root, mode)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = dispatchcore.RemoveDelegateClaimCapability(root, raw) })
-	t.Setenv("METASYSTEM_DELEGATE_INTERNAL", "1")
-	t.Setenv(delegateClaimCapabilityEnv, raw)
-}
-
-func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
+// The claim-launch owner publishes the goal's first-slice fact on the shared
+// ledger before it writes the reservation, and refuses a changed launch
+// identity under the same operation (moved off the deleted job claim-launch
+// verb, U6b).
+func TestClaimLaunchPublishesSliceStartBeforeReservation(t *testing.T) {
 	repository := newProofAdmissionRepositoryFixture(t, time.Now().UTC(), false)
 	root := repository.root
 	seedClaimLaunchGoalFiles(t, root)
@@ -82,51 +76,53 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 	digestA := strings.Repeat("a", 64)
 	digestB := strings.Repeat("b", 64)
 	preparation := filepath.Join(root, "claim-occupancy.json")
-	if code := runDispatchClaimOccupancyPrepare([]string{
-		"--root", root,
-		"--session", "codex:claim-cli",
-		"--output", preparation,
-	}); code != 0 {
-		t.Fatalf("claim-occupancy-prepare exit=%d", code)
+	if err := dispatchcore.WriteClaimOccupancyPreparation(root, "codex:claim-cli", preparation); err != nil {
+		t.Fatalf("claim occupancy preparation: %v", err)
 	}
-	args := []string{
-		"--root", root,
-		"--opid", "claim-cli",
-		"--session", "codex:claim-cli",
-		"--dispatch-mode", "fresh",
-		"--runtime", "codex",
-		"--model", "gpt-5.6-sol",
-		"--role", "implementer",
-		"--destructive-reach", "MECHANICAL",
-		"--adapter-verb", "dispatch",
-		"--launch-mode", "worktree",
-		"--permission-envelope-digest", digestA,
-		"--product-root", product,
-		"--cap-min", "120",
-		"--input-hash", digestB,
-		"--main-id", "main-1",
-		"--claim-epoch", "5",
-		"--goal", "goal-a",
-		"--goal-revision", "3",
-		"--goal-tier", "2",
-		"--machine-id", "m-test",
-		"--creator-pid", strconv.Itoa(os.Getpid()),
-		"--occupancy-preparation", preparation,
+	prepared, err := dispatchcore.ReadClaimOccupancyPreparation(preparation, "codex:claim-cli")
+	if err != nil {
+		t.Fatal(err)
 	}
-	setClaimLaunchCapability(t, root, dispatchcore.DispatchModeFresh)
-	out, code := captureStdout(t, func() int { return runDispatchClaimLaunchWithGoalReads(args, &reads) })
-	if code != 0 {
-		t.Fatalf("claim-launch exit=%d output=%q", code, out)
+	resolvedCap, _, _, err := dispatchcore.ResolveCap(filepath.Join(root, "metasystem.conf"), "implementer", "codex", config.CanonicalModel("gpt-5.6-sol"), "", "120")
+	if err != nil {
+		t.Fatal(err)
 	}
-	var result struct {
-		Outcome  string         `json:"outcome"`
-		Evidence map[string]any `json:"evidence"`
+	startReader, err := dispatchproc.StartReader(root)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
-		t.Fatalf("claim-launch output is not JSON: %q: %v", out, err)
+	resumed := ""
+	params := dispatchcore.ClaimLaunchParams{
+		Root: root, OpID: "claim-cli", MainID: "main-1", ClaimEpoch: "5", GoalID: "goal-a",
+		GoalRevision: 3, GoalTier: 2, MachineID: "m-test", AdapterVerb: "dispatch",
+		Request: dispatchcore.LaunchFingerprintRequest{
+			SessionKey: "codex:claim-cli", DispatchMode: dispatchcore.DispatchModeFresh,
+			ResumedSessionID: &resumed, Runtime: "codex", Model: "gpt-5.6-sol", Role: "implementer",
+			LaunchMode: dispatchcore.LaunchMode("worktree"), PermissionEnvelopeDigest: digestA,
+			ProductRoots: []string{product}, CapMinutes: resolvedCap, InputHash: digestB,
+			GoalID: "goal-a", GoalRevision: 3, DestructiveReach: dispatchcore.HazardClass("MECHANICAL"),
+		},
+		DefaultCapMinutes:    resolvedCap,
+		OccupancyPreparation: &prepared,
 	}
-	if result.Outcome != "WON" || result.Evidence["fingerprint"] == "" || result.Evidence["launchCapability"] == "" {
-		t.Fatalf("claim-launch result = %+v", result)
+	dependencies := dispatchcore.ClaimLaunchDependencies{
+		CreatorPID: int64(os.Getpid()), IdentityReader: startReader, ProcessVerifier: dispatchproc.ClaimProcessVerifier{},
+		Reconcile: func(root, job string) (dispatchcore.ReconciliationResult, error) {
+			return dispatchcore.ReconcileReservation(root, job, dispatchcore.ReconciliationDependencies{
+				Scanner: dispatchproc.TaggedProcessScanner{Root: root}, Creator: startReader,
+				Emit: func(line string) { t.Log(line) },
+			})
+		},
+		MarkFirstSlice: func(params dispatchcore.ClaimLaunchParams, now time.Time) error {
+			return dispatchcore.MarkFirstSliceWithReads(params, now, reads)
+		},
+	}
+	result, err := dispatchcore.ClaimLaunch(params, dependencies)
+	if err != nil {
+		t.Fatalf("claim launch: %v", err)
+	}
+	if result.Outcome != "WON" || dispatchcore.ClaimOutcomeExitCode(result.Outcome) != 0 || result.Evidence["fingerprint"] == "" || result.Evidence["launchCapability"] == "" {
+		t.Fatalf("claim launch result = %+v", result)
 	}
 	if repository.goalFile(t, "goal-a").Sliced == nil {
 		t.Fatal("claim launch did not publish slice-start before its reservation")
@@ -158,57 +154,11 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 		t.Fatalf("reservation product roots = %#v, want [%s]", record["productRoots"], canonicalProduct)
 	}
 
-	mismatch := append([]string(nil), args...)
-	for index, value := range mismatch {
-		if value == "--input-hash" {
-			mismatch[index+1] = strings.Repeat("c", 64)
-			break
-		}
-	}
-	setClaimLaunchCapability(t, root, dispatchcore.DispatchModeFresh)
-	out, code = captureStdout(t, func() int { return runDispatchClaimLaunchWithGoalReads(mismatch, &reads) })
-	if code != 1 {
-		t.Fatalf("mismatch exit=%d output=%q", code, out)
-	}
-	if err := json.Unmarshal([]byte(out), &result); err != nil || result.Outcome != "REFUSED-OPID-MISMATCH" {
-		t.Fatalf("mismatch output=%q result=%+v err=%v", out, result, err)
-	}
-}
-
-func TestClaimLaunchInternalSurfaceRequiresMarkerAndBearerCapability(t *testing.T) {
-	root := t.TempDir()
-	binding := dispatchcore.DelegateClaimCapabilityBinding{
-		JobID: "claim-auth", OperationID: "claim-auth", DispatchMode: dispatchcore.DispatchModeFresh, AdapterVerb: "dispatch",
-	}
-	raw, err := dispatchcore.MintDelegateClaimCapability(root, dispatchcore.DispatchModeFresh)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = dispatchcore.RemoveDelegateClaimCapability(root, raw) })
-	t.Setenv(delegateClaimCapabilityEnv, raw)
-	t.Setenv("METASYSTEM_DELEGATE_INTERNAL", "")
-	if claimLaunchInternalAuthorized(root, binding, true) {
-		t.Fatal("bearer capability without the internal route marker was authorized")
-	}
-	t.Setenv("METASYSTEM_DELEGATE_INTERNAL", "1")
-	t.Setenv(delegateClaimCapabilityEnv, "")
-	if claimLaunchInternalAuthorized(root, binding, true) {
-		t.Fatal("internal route marker without a bearer capability was authorized")
-	}
-	t.Setenv(delegateClaimCapabilityEnv, raw)
-	if !claimLaunchInternalAuthorized(root, binding, true) {
-		t.Fatal("delegate capability did not authorize claim preflight")
-	}
-	if !claimLaunchInternalAuthorized(root, binding, false) {
-		t.Fatal("delegate capability did not authorize its bound claim")
-	}
-	if claimLaunchInternalAuthorized(root, binding, false) {
-		t.Fatal("spent delegate capability authorized a replay")
-	}
-}
-
-func TestClaimLaunchVerbRequiresTheFingerprintTuple(t *testing.T) {
-	if code := runDispatchClaimLaunch([]string{"--root", t.TempDir(), "--opid", "incomplete"}); code != 2 {
-		t.Fatalf("incomplete claim-launch exit=%d, want 2", code)
+	mismatch := params
+	mismatch.OccupancyPreparation = nil
+	mismatch.Request.InputHash = strings.Repeat("c", 64)
+	result, err = dispatchcore.ClaimLaunch(mismatch, dependencies)
+	if err != nil || result.Outcome != "REFUSED-OPID-MISMATCH" || dispatchcore.ClaimOutcomeExitCode(result.Outcome) != 1 {
+		t.Fatalf("mismatch result=%+v err=%v", result, err)
 	}
 }

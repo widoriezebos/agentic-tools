@@ -165,24 +165,28 @@ func TestDelegateInternalRefusalDetailPreservesInternalFailure(t *testing.T) {
 	}
 }
 
-func TestDelegateCommandEnvironmentReplacesInheritedInternalAuthority(t *testing.T) {
-	environment := delegateCommandEnvironment([]string{
-		"KEEP=value",
-		"METASYSTEM_DELEGATE_INTERNAL=stale",
-		"METASYSTEM_DELEGATE_OUTCOME_FILE=stale",
-		delegateClaimCapabilityEnv + "=stale",
-	}, "/tmp/outcome", "fresh-capability")
-	want := map[string]int{
-		"KEEP=value":                                     1,
-		"METASYSTEM_DELEGATE_INTERNAL=1":                 1,
-		"METASYSTEM_DELEGATE_OUTCOME_FILE=/tmp/outcome":  1,
-		delegateClaimCapabilityEnv + "=fresh-capability": 1,
+func TestDelegateOperatorEnvReplacesInheritedInternalAuthority(t *testing.T) {
+	inherited := map[string]string{
+		"METASYSTEM_DELEGATE_INTERNAL":     "stale",
+		"METASYSTEM_DELEGATE_OUTCOME_FILE": "",
+		delegateClaimCapabilityEnv:         "stale",
+		"METASYSTEM_OWNER_LINEAGE":         "lineage-7",
 	}
-	got := make(map[string]int)
-	for _, entry := range environment {
-		got[entry]++
+	env := delegateOperatorEnv(func(key string) (string, bool) {
+		value, ok := inherited[key]
+		return value, ok
+	}, "fresh-capability")
+	if !env.RecordOutcome || !env.DelegateInternal || env.ClaimCapability != "fresh-capability" || env.OwnerLineage != "lineage-7" {
+		t.Fatalf("operator env = %#v; want the boundary's own standing and the inherited lineage", env)
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("delegate environment = %#v, want %#v", got, want)
+}
+
+func TestDelegateCriticWithoutReviewsRefusesAtTheFrontDoor(t *testing.T) {
+	t.Parallel()
+	for _, role := range []string{"code-critic", "warden"} {
+		_, _, err := normalizeDelegateArgs([]string{"--role", role, "--brief", "brief.md", "--goal", "none-explicit", "--destructive-reach", "MECHANICAL"})
+		if want := role + " dispatch requires --reviews <implementer-job-id>"; err == nil || err.Error() != want {
+			t.Fatalf("%s dispatch without --reviews = %v, want %q", role, err, want)
+		}
 	}
 }

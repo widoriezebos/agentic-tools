@@ -181,6 +181,9 @@ func frontierRecordWithGit(opts FrontierOptions, gitRead func(repo string, args 
 	if _, err := gitRead(opts.Repo, "rev-parse", "--is-inside-work-tree"); err != nil {
 		return nil, frontierFail(2, "not inside a git repository")
 	}
+	if lines, standing := frontierAlreadyRecorded(opts, gitRead); standing {
+		return lines, nil
+	}
 	dirty, err := gitRead(opts.Repo, "status", "--porcelain")
 	if err != nil || dirty != "" {
 		return nil, frontierFail(1, "worktree is dirty; a frontier must be an exact committed state")
@@ -262,6 +265,46 @@ func frontierRecordWithGit(opts FrontierOptions, gitRead func(repo string, args 
 		fmt.Sprintf("frontier recorded: score %s at %s", opts.Score, shortSHA),
 		fmt.Sprintf("commit %s with the frontier checkpoint", opts.File),
 	}, nil
+}
+
+// frontierAlreadyRecorded answers a record whose exact entry already stands
+// (R-129-ui): the same score, evaluation and artifact at the same commit,
+// with the same noise floor, window and direction, still inside its window.
+// That is success and nothing is written, even though the uncommitted
+// frontier file itself dirties the worktree. A --force re-baseline, or any
+// other parameter, is not a repeat and takes the ordinary path.
+func frontierAlreadyRecorded(opts FrontierOptions, gitRead func(repo string, args ...string) (string, error)) ([]string, bool) {
+	if opts.Force {
+		return nil, false
+	}
+	fields, err := frontierReadFields(opts.File)
+	if err != nil || fields["score"] != opts.Score || fields["eval"] != opts.Eval || fields["artifact"] != opts.Artifact {
+		return nil, false
+	}
+	minDelta, ferr := opts.resolveMinDelta(fields["min_delta"])
+	if ferr != nil || formatFloat(minDelta) != fields["min_delta"] {
+		return nil, false
+	}
+	window, ferr := opts.resolveWindow(fields["max_age_minutes"])
+	if ferr != nil || window != fields["max_age_minutes"] {
+		return nil, false
+	}
+	stored := fields["direction"]
+	if stored == "" {
+		stored = "max"
+	}
+	direction, ferr := opts.resolveDirection(stored)
+	if ferr != nil || direction != stored {
+		return nil, false
+	}
+	if expired, ferr := opts.frontierExpired(window, fields, opts.File); ferr != nil || expired {
+		return nil, false
+	}
+	head, err := gitRead(opts.Repo, "rev-parse", "HEAD")
+	if err != nil || head == "" || head != fields["sha"] {
+		return nil, false
+	}
+	return []string{fmt.Sprintf("frontier already records score %s at %s for this evaluation; nothing was written", opts.Score, head)}, true
 }
 
 // FrontierChallenge implements `frontier challenge`.

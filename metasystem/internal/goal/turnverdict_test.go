@@ -29,7 +29,7 @@ func openItem(detail string) Item { return Item{Kind: "plan", Id: detail, Detail
 
 const fixtureContextLine = "CONTEXT: 121K of trigger 100K (proof line 150K, maximum 200K, ceiling 240K)"
 
-// The ladder keeps its leading rows (goal-cli-fixtures.sh:1082-1090 reads them
+// The ladder keeps its leading rows (TestGoalCLIBrainStopSeeded reads them
 // by position) and the line sits directly above the full-verdict path.
 func TestTurnVerdictPrintsTheContextLine(t *testing.T) {
 	t.Parallel()
@@ -207,6 +207,9 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) 
 			}
 			target = metarun.WaiterTarget{ProofDigest: attempt.ProofIdentity.IdentityDigest}
 		}
+	case "path":
+		path := filepath.Join(root, "outside-work", "ALL-BUILDERS-DONE")
+		selector = metarun.WaitSelector{Kind: "path", TargetID: metarun.PathWaitTargetID(path), Path: path, Until: "present"}
 	case "landing", "human-act", "channel":
 		tip := acceptedTipForEndpoint(t, endpoint)
 		selector.Kind, selector.TargetID, selector.GoalID, selector.After = "goal", pendingWaitGoalID, pendingWaitGoalID, tip

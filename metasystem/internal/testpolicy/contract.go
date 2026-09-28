@@ -496,6 +496,9 @@ func validateGroup(group Group) error {
 	}
 	switch group.Adapter {
 	case "go":
+		if len(group.Argv) != 0 || group.Section != "" {
+			return fmt.Errorf("go adapter discovers its tests; argv and section belong to the command and section adapters")
+		}
 		if group.Resources.Workers != nil {
 			return fmt.Errorf("resource workers are declared only by command and section adapters")
 		}
@@ -537,6 +540,15 @@ func validateGroup(group Group) error {
 		}
 		if !identifier.MatchString(group.Section) {
 			return fmt.Errorf("section adapter requires one stable section id")
+		}
+		if len(group.Argv) == 0 || group.Argv[0] == "" {
+			return fmt.Errorf("section adapter requires the argv of its script bed")
+		}
+		if group.Argv[0] == "true" || (len(group.Argv) >= 3 && strings.HasSuffix(group.Argv[0], "sh") && group.Argv[1] == "-c" && strings.TrimSpace(group.Argv[2]) == "true") {
+			return fmt.Errorf("blanket success commands are not testing evidence")
+		}
+		if group.Format != "" || len(group.Reports) != 0 || len(group.ExpectedTests) != 0 {
+			return fmt.Errorf("section adapter judges its script bed by exit status; format, reports and expectedTests belong to the command adapter")
 		}
 	case "command":
 		if group.PackageSelection != "" {

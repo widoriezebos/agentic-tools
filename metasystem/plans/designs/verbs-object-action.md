@@ -156,7 +156,7 @@ predecessor in the same slice.
 | | build | `build` (and `build --resume RUN` as `work build ID`) |
 | | review | `review G`, `review goal G`, `review G --changes/--patch`, `review commit SHA --goal G`, `review changes`, `review diff`, `review job J`, `review run RUN`, `review G --finding F --test` |
 | | revise | `revise G`, `revise job R`, `revise run RUN` |
-| | land | `land G ...`, `land job J` |
+| | land | `land G ...`, `land job J`, and `land [G] --message FILE (--staged \| --path P...)` for a hand-made change (`scripts/agents/land.sh`, U5) |
 | | wait | `wait G`, `wait goal G`, `wait job/run/proof/resume/review ID`, `wait G --for`, and `wait file PATH --until present\|absent` as `work wait --path PATH --until present\|absent` (caller-relative path, same observation and durable resumption, `intent_work.go:193,1219`) |
 | | stop | `stop job J`, `stop review REF` |
 | | status | `status job J`, `status run RUN`, `status work`, `show review REF` |
@@ -466,6 +466,45 @@ mission runner uses the same interface with role `host` (today
 delegate jobs and mission host turns.
 
 **Built-ins** (claude, codex, devin, fake) implement it in Go (U6a).
+Built (U6a): process recognition (census, lease classification, human
+authority) used the built-ins' signatures only until U6c. Built (U6c): the
+registry (`internal/runtimes/external`, `Load`) holds the built-ins and the
+named, trusted externals as one effective declaration per name with the
+cross-check and the VOA-31 merge; every recognizer, the janitor's shapes,
+configuration validation, wait delivery, dispatch, probes, self-test and the
+mission runner read it; the executable implementation of the operations is
+`internal/adapter/supervisor/external.go`; `docs/agent-adapters.md` is the
+contract. A refused override leaves the built-in's declaration to the
+recognizers and refuses running the runtime until fixed; a launch an
+override's own prepare made must be observed and finalized by it (a built-in
+cannot continue a launch it did not prepare). The Fable read's F1-F3 and
+F5(ii) are folded: a refused override keeps protecting its built-in in the
+cross-check; an override that leaves describe to its built-in keeps the
+built-in's whole description (repair included); a named but unsafe override
+refuses running the runtime with the fix; the shared self-test runs against
+an external runtime. Later (U6c read), one line each:
+
+- F4: adapter trust checks the file only: not the `adapters/` directory's
+  owner and mode, not a symlink's target (os.Stat follows it), and the check
+  and the exec are separate (a swap between them is not refused).
+- F6: an override may declare its own positive vector and stop claiming the
+  built-in's real CLI while its prepare falls back to the built-in, which then
+  launches that CLI unrecognized; require an override to claim the built-in's
+  positive vector unless it also answers prepare.
+- F7: the cross-check tests declared vectors only; a signature matching a flag
+  real claude or codex processes carry is admitted and, sorting first by name,
+  labels them (both are DELEGATE, so only the runtime label is wrong).
+- F8: the host path skips LookPath for an argv[0] containing '/', so a missing
+  absolute program fails at start instead of with 127.
+- F9 (fixed at U6c): a relative --root no longer hides the installation's
+  external adapters; the entry answers with its usage.
+- F10: every named adapter's describe runs in every recognizing process (hook,
+  census, janitor, settings show, system check), memoized per process only;
+  a cost and exposure to weigh when adapters multiply.
+- F11: still on the compiled runtime set: `internal runtime` list and lookup,
+  the hook's start context, steward context sampling, config tailor, the seat
+  manifest, LocalConfigManifest and runtimes.Lookup itself; route them through
+  the registry when a real external agent is adopted.
 **External runtimes** implement it as an executable at
 `<installation>/adapters/<name>` (any language; an extension point under rule
 S1): `<executable> OPERATION`, JSON request on stdin, JSON response on stdout
@@ -624,6 +663,43 @@ reconciliation owner's scoped publication (3.4, VOA-21).
   the Go path, switches the guard stub to `internal pre-commit`, and deletes the
   scripts. `landing/batch/transport.go:301` and `intent_exception.go:227` call Go.
   Fixtures port.
+
+  U5 build notes (step A, as built): the composition package is
+  `internal/landing/landpath` (`Commit` is the commit boundary, `Land` the
+  driver with its carried transaction, `Guard` the pre-commit guard body); every
+  owner and Git are reached through injected `Owners`, which
+  `cmd/metasystem/landing_path.go` wires to the owner functions in the
+  landing's own process (6.2: the current process is the supplied identity,
+  the lineage is named on the request). The public form for a hand-made change
+  is `work land [G] --message FILE (--staged | --path P...)` with land.sh's
+  declarations as options (`--chain`, `--recertification`, `--test-receipt`,
+  `--direct-fix`, `--revert-of`, `--root-job`, `--tests`, `--allow-new-plan`,
+  `--skip-transport`). The wrapper token keeps the shell format
+  (`wrapperPid`, `wrapperPidStartedAt`, a 32-hex nonce, `createdAt`), minted by
+  the landing process. By rule C1 the contract-off branch of commit.sh is not
+  ported: the boundary refuses without a testing contract (coverage delta,
+  `go-gate.sh --fast --proof-out` static re-proof, `internal audit metasystem`
+  and `--ratchet` are gone). The in-process engine always has `landing drift`,
+  `advance` and `receipt-line`, so the older-engine fallbacks are not ported.
+  Carried asks name the public forms (`work land G --using-exception X`,
+  `work land G --exception PAST --replace-exception X`). Step B adds the
+  `pre-commit` entry, switches the enrolled hook composer to it, and deletes
+  the scripts.
+
+  U5 build notes (step B, as built): the composer
+  (`ledgerfence.composerFor`) is the shebang, one `prefix='...'` line and a
+  fixed body that runs `bin/metasystem internal pre-commit --root
+  <installation>` (a linked worktree without its own engine runs its primary
+  checkout's), then `pre-commit.local`; a retired script-guard composer is
+  recognized and upgraded in place by the next `Ensure` (any goal mutation), and
+  `adopt.sh` writes the same bytes. `work land --message FILE --staged --local`
+  is the former `commit.sh` without `--push` (benchmark provisioning uses it).
+  The internal verbs whose only callers were the deleted scripts are deleted
+  under 6.1 (`landing advance`, `drift`, `carry-status`, `held`,
+  `receipt-line`, `sync-transport`, `gate weight-add`, `output spill`,
+  `validate wrapper-token`); their owners stay and the landing path calls them.
+  `landing park` stays: the recertified-landing bed drives the park owner's
+  failure path through it.
 - U6c External runtimes (revision 8). The external-executable implementation of the runtime interface, the registry and its trust rules, every consumer on the registry, `docs/agent-adapters.md`, R13. After U6a.
 - U6a Runtimes. `adapters/runtime-common.sh`, the four adapters,
   `host-common.sh` and the four hosts into Go; the `delegate-supervisor` entry;

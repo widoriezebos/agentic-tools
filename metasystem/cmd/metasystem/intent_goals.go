@@ -408,7 +408,16 @@ func runIntentShow(inv *intentInvocation) int {
 	return inv.render(result)
 }
 
+// budgetTargetFirst reads goal budget --id G BOX as goal budget G BOX: with
+// the goal named by --id, the one word left is the box.
+func (inv *intentInvocation) budgetTargetFirst() {
+	if flagged := inv.input.text("id"); flagged != "" && len(inv.input.args) == 1 && inv.input.args[0] != flagged {
+		inv.input.args = []string{flagged, inv.input.args[0]}
+	}
+}
+
 func runIntentBudget(inv *intentInvocation) int {
+	inv.budgetTargetFirst()
 	id, problem := inv.singleTarget()
 	if problem != nil {
 		return inv.render(*problem)
@@ -771,13 +780,15 @@ func runIntentResume(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: inv.targets(id),
 			Summary: fmt.Sprintf("%s is running under its standing box; there is nothing to resume", id)})
 	case file.State == goal.StateQueued:
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
-			Summary: id + " is queued, not parked or stopped; resuming never grants approval; nothing was done",
+		// Not paused is what a resume asks for, so the repeat is success
+		// (R-129-ui, U-idem); resuming never grants approval, so the next
+		// step names the person's own act.
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: inv.targets(id),
+			Summary: id + " is already not paused (it is queued); resuming never grants approval",
 			next:    inv.publicArgv("goal", "approve", id), nextReason: "approval is a person's own act"})
 	}
-	return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
-		Summary:  fmt.Sprintf("%s is %s, not parked or stopped; nothing was done", id, file.State),
-		Decision: "an approved goal waits to be claimed; nothing needs resuming"})
+	return inv.render(intentResult{Outcome: intentUnchanged, Targets: inv.targets(id),
+		Summary: fmt.Sprintf("%s is already not paused (it is %s); an approved goal waits to be claimed", id, file.State)})
 }
 
 func runIntentDone(inv *intentInvocation) int {

@@ -69,35 +69,6 @@ func TestFenceBeforeLaunchLeavesOpenCheckoutForLaterAdmission(t *testing.T) {
 	}
 }
 
-func TestDispatchChecksTheFenceBeforeCensusAdmission(t *testing.T) {
-	data, err := os.ReadFile("../../scripts/agents/dispatch.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(data)
-	for _, test := range []struct {
-		name, begin, end, after string
-	}{
-		{name: "fresh dispatch", begin: "dispatch_job() {", end: "\nauthorize_job_cap() {", after: "job claim-launch --preflight"},
-		{name: "follow-up", begin: "follow_up() {", end: "\ncancel_job() {", after: "report_plan_drift"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			start := strings.Index(script, test.begin)
-			end := strings.Index(script, test.end)
-			if start < 0 || end <= start {
-				t.Fatalf("%s section is absent", test.name)
-			}
-			section := script[start:end]
-			fence := strings.Index(section, "require_open_dispatch_fence")
-			census := strings.Index(section, "require_fresh_census")
-			after := strings.Index(section, test.after)
-			if fence < 0 || census < 0 || after < 0 || !(fence < census && census < after) {
-				t.Fatalf("%s order is fence=%d census=%d next=%d", test.name, fence, census, after)
-			}
-		})
-	}
-}
-
 func TestClaimLaunchPublishesGenerationAndCreationClaim(t *testing.T) {
 	root := t.TempDir()
 	if err := stopfence.Write(root, stopfence.Record{

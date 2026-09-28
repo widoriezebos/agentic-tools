@@ -44,16 +44,7 @@ func goalCommandNow(root string) (time.Time, error) {
 // command receives one stable semantic instant; production commands continue
 // to sample the wall clock on every call.
 func goalCommandClock(root string) (func() time.Time, bool, error) {
-	authorization, err := fixtureauth.New(root)
-	if err != nil {
-		return nil, false, err
-	}
-	if fixtureNow, ok, err := authorization.Clock().GoalNow(); err != nil {
-		return nil, false, err
-	} else if ok {
-		return func() time.Time { return fixtureNow }, true, nil
-	}
-	return func() time.Time { return time.Now().UTC() }, false, nil
+	return fixtureauth.GoalClock(root, func() time.Time { return time.Now().UTC() })
 }
 
 // goalCommandBootClock is the monotonic companion to goalCommandNow. Fixture

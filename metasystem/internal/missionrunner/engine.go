@@ -67,13 +67,19 @@ type Engine struct {
 	// Now supplies this engine's artifact clock. Nil keeps wall-clock
 	// behavior; fixtures set it without changing time for another engine.
 	Now func() time.Time
-	// Output and Errors receive Answer's report; nil keeps the process
-	// streams. A public command gives each engine its own.
+	// Output and Errors receive Answer's report and Status's line; nil keeps
+	// the process streams. A public command gives each engine its own.
 	Output io.Writer
 	Errors io.Writer
 	// AnchorEffect replaces the anchor commit for this engine only; nil
 	// anchors through mission.AnchorNamed. Fixtures without Git set it.
 	AnchorEffect func(statePath, ledgerPath, identityName string) error
+	// Delegate runs one delegate lifecycle command (reap, close) in this
+	// process and returns its standard output, diagnostics and exit code.
+	// The lifecycle composes above the runner (design 6.3), so the command
+	// layer supplies it; an engine without one refuses every delegate
+	// command by name.
+	Delegate func(args ...string) (stdout, stderr string, code int)
 	// ArmSupervision replaces arming this engine's checkout (the engine's
 	// `up` entry) for this engine only; nil execs the checkout's engine.
 	// Fixtures without live supervision set it.
@@ -203,6 +209,14 @@ func NewEngine(root, mission string) *Engine {
 		Mission: mission,
 		emitter: events.Emitter{Component: "runner", Pid: int64(os.Getpid())},
 	}
+}
+
+// delegate runs one delegate lifecycle command through Delegate.
+func (e *Engine) delegate(args ...string) (string, string, int) {
+	if e.Delegate == nil {
+		return "", "the mission runner has no delegate lifecycle wired", 1
+	}
+	return e.Delegate(args...)
 }
 
 func (e *Engine) beginSignalHandling(ignore bool) func() {

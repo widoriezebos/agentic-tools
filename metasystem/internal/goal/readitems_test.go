@@ -180,7 +180,9 @@ func TestReadItemsAcceptedRefusesBlankReason(t *testing.T) {
 	}
 }
 
-func TestReadItemsCloseRefusesClosedItem(t *testing.T) {
+// The same close again is a repeat whose effect already holds (R-129-ui):
+// success, nothing written. Another disposition of a closed item is refused.
+func TestReadItemsCloseRepeatsAndRefusesAnotherDisposition(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := readItemBed(t, "source")
 	if result, err := AddReadItems(readItemRequest(endpoint, 61), "source", "critic", []string{"One decision."}); err != nil || result.Outcome != OutcomeConfirmed {
@@ -190,9 +192,18 @@ func TestReadItemsCloseRefusesClosedItem(t *testing.T) {
 	if result, err := closeReadItem(readItemRequest(endpoint, 62), "source", "critic-1", ReadItemClosure{Accepted: &reason}, strictCodeRefResolver(t, endpoint)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("first close: %+v %v", result, err)
 	}
+	before := acceptedTipForEndpoint(t, endpoint)
 	result, err := CloseReadItem(readItemRequest(endpoint, 63), "source", "critic-1", ReadItemClosure{Accepted: &reason})
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "already accepted") {
+	if err != nil || result.Outcome != OutcomeAbandoned || !result.Unchanged || !strings.Contains(result.Detail, "already accepted") {
 		t.Fatalf("second close: %+v %v", result, err)
+	}
+	if after := acceptedTipForEndpoint(t, endpoint); after != before {
+		t.Fatalf("the repeated close wrote: %s to %s", before, after)
+	}
+	other := "another reason"
+	result, err = CloseReadItem(readItemRequest(endpoint, 64), "source", "critic-1", ReadItemClosure{Accepted: &other})
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "already accepted") {
+		t.Fatalf("another disposition of a closed item: %+v %v", result, err)
 	}
 }
 

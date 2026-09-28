@@ -32,16 +32,12 @@ func stageCheckout(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	// The runtime and its signature adapter drive classification; the marker
-	// matches no real process, so the live scan classifies nothing in scope.
+	// The runtime's registry signature drives classification; no fake agent
+	// runs in this scope, so the live scan classifies nothing in scope.
 	write("metasystem.conf", "metasystem.runtimes=fake\n", 0o644)
-	write("scripts/agents/adapters/fake.sh",
-		"#!/usr/bin/env bash\ncase \"$1\" in signature) echo 'match metasystem-fake-runtime-marker' ;; esac\n", 0o755)
 	// The remaining fingerprint inputs need only exist and be readable.
 	for _, rel := range []string{
-		"scripts/agents/dispatch.sh",
 		"bin/metasystem",
-		"scripts/agents/adapters/runtime-common.sh",
 	} {
 		write(rel, "# fingerprint input placeholder\n", 0o644)
 	}

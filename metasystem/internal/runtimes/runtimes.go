@@ -44,7 +44,7 @@ type Declaration struct {
 	Name            string
 	HasAdapter      bool
 	HasHostLauncher bool
-	// Adoptable gates scripts/adopt.sh's population; fake is never
+	// Adoptable gates system adopt's runtime selection; fake is never
 	// adoptable. AdoptionDefault marks the one default (claude).
 	Adoptable       bool
 	AdoptionDefault bool
@@ -109,9 +109,9 @@ type Declaration struct {
 	// S4-7 fixture consumes: the honest
 	// positive process word and a lookalike that must stay out.
 	SignatureVectors SignatureVectors
-	// CommonLifecycleAdapter marks adapters sharing the common
-	// initializer/writer source shape (runtime-common.sh); fake
-	// deliberately does not. Independent of the static
+	// CommonLifecycleAdapter marks adapters whose delegate supervisor
+	// runs the common lifecycle (internal/adapter/supervisor
+	// lifecycle.go); fake deliberately does not. Independent of the static
 	// enforcement map.
 	CommonLifecycleAdapter bool
 	// CollisionRoots are this runtime's contributed adoption collision

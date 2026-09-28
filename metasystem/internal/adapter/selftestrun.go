@@ -22,8 +22,8 @@ import (
 // return validation, session-identity resume, cancellation, the permission
 // probes against the runtime's own envelope declaration, and the pass record
 // stating what was actually proven. Composition stays with the entry-point
-// scripts: dispatch.sh, the adapter script, and the return-completeness
-// assertion are EXEC'D, never reimplemented, because they are the authority
+// owners: the delegate lifecycle, the adapter script, and the
+// return-completeness assertion are reached, never reimplemented, because they are the authority
 // paths every real job rides. The decisions live here: the model-placeholder
 // check, the denial taxonomy, session equality, and the evidence assertions
 // as parsed reads of return.json.
@@ -34,24 +34,44 @@ import (
 // Devin turn routinely runs for minutes, and a runtime that ends the turn on
 // a denied tool must run the permission legs as separate turns.
 type SelftestParams struct {
-	Root           string // checkout root
-	Runtime        string
-	AdapterPath    string // the adapter script, exec'd for identity and probe
+	Root    string // checkout root
+	Runtime string
+	// RunIdentity and RunProbe are the runtime adapter's identity read and
+	// capability probe, run in process by the delegate supervisor.
+	RunIdentity func() error
+	RunProbe    func() error
+	// ExtraEnv are assignments every delegate child of the self-test
+	// inherits (a runtime's model override for the critic role).
+	ExtraEnv []string
+	// Engine is the binary the delegate children run; empty is
+	// ROOT/bin/metasystem.
+	Engine         string
 	Usage          string // native, unavailable, or metered
 	Probe          *SelftestProbe
 	TurnCeilingSec int  // how long one self-test turn may take
 	DenialEndsTurn bool // the runtime ends a turn on a denied tool
-	statusProbe    func(string) string
-	reapProbe      func(string)
-	returnCheck    func(root, job string) []string
+	// Status and Reap are the delegate lifecycle's status and single-job
+	// reap. The lifecycle composes above the adapter owner (design 6.3), so
+	// the command layer supplies them.
+	Status func(job string) string
+	Reap   func(job string)
+	// returnCheck replaces the shipped job-mode return checker; nil is
+	// returnschema.ReturnCompleteJob.
+	returnCheck func(root, job string) []string
 }
 
 func (p SelftestParams) agentsDir() string { return filepath.Join(p.Root, "artifacts", "agents") }
 func (p SelftestParams) jobsDir() string   { return filepath.Join(p.agentsDir(), "jobs") }
-func (p SelftestParams) dispatch() string {
-	return filepath.Join(p.Root, "scripts", "agents", "dispatch.sh")
+
+// delegate is the engine the self-test's delegate children run: Engine (the
+// running binary, because the delegate front door admits --adapter-selftest
+// only from a parent of the same executable), else ROOT/bin/metasystem.
+func (p SelftestParams) delegate() string {
+	if p.Engine != "" {
+		return p.Engine
+	}
+	return filepath.Join(p.Root, "bin", "metasystem")
 }
-func (p SelftestParams) delegate() string { return filepath.Join(p.Root, "bin", "metasystem") }
 
 // checkReturn runs the shipped job-mode return checker on a self-test job.
 func (p SelftestParams) checkReturn(job string) error {
@@ -195,10 +215,13 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if p.TurnCeilingSec < 1 {
 		return fmt.Errorf("selftest turn ceiling must be a positive number of seconds")
 	}
-	if err := runQuiet(p.AdapterPath, "identity"); err != nil {
+	if p.RunIdentity == nil || p.RunProbe == nil {
+		return fmt.Errorf("selftest requires the runtime's identity and probe")
+	}
+	if err := p.RunIdentity(); err != nil {
 		return err
 	}
-	if err := runQuiet(p.AdapterPath, "probe"); err != nil {
+	if err := p.RunProbe(); err != nil {
 		return err
 	}
 	dir, err := os.MkdirTemp("", "metasystem-"+p.Runtime+"-selftest.")
@@ -218,14 +241,14 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 		"Read README.md, then return a valid empty-findings design critique proving the read in evidence."); err != nil {
 		return err
 	}
-	if err := runSelftestDelegateQuiet(p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
+	if err := runSelftestDelegateQuiet(p.ExtraEnv, p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
 		"--brief", filepath.Join(dir, "brief.md"), "--workspace", scratch, "--op", mainJob); err != nil {
 		return err
 	}
 	// Probe after the runtime has established its session, while the turn is
 	// live or in its terminal delivery window; the pre-dispatch probe above
 	// is necessary because capability snapshots gate dispatch itself.
-	if err := runQuiet(p.AdapterPath, "probe"); err != nil {
+	if err := p.RunProbe(); err != nil {
 		return err
 	}
 	if !p.waitForJob(mainJob) {
@@ -243,7 +266,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if err := os.WriteFile(filepath.Join(dir, "follow.md"), []byte(selftestFollowUp), 0o644); err != nil {
 		return err
 	}
-	if err := runQuiet(p.delegate(), "internal", "delegate", "--follow-up", mainJob,
+	if err := runQuietEnv(p.ExtraEnv, p.delegate(), "internal", "delegate", "--follow-up", mainJob,
 		"--brief", filepath.Join(dir, "follow.md")); err != nil {
 		return err
 	}
@@ -264,7 +287,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 		"Inspect repository files one at a time and continue until the orchestrator cancels this scratch turn."); err != nil {
 		return err
 	}
-	if err := runSelftestDelegateQuiet(p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
+	if err := runSelftestDelegateQuiet(p.ExtraEnv, p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
 		"--brief", filepath.Join(dir, "cancel.md"), "--workspace", scratch, "--op", cancelJob); err != nil {
 		return err
 	}
@@ -308,7 +331,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 			if err := writeBrief(briefPath, attempt.goal); err != nil {
 				return err
 			}
-			_ = runSelftestDelegateSilent(p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
+			_ = runSelftestDelegateSilent(p.ExtraEnv, p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
 				"--brief", briefPath, "--workspace", scratch, "--op", attemptJob)
 			p.waitForJob(attemptJob)
 			outcome := AttemptOutcome{
@@ -331,7 +354,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if err := writeBrief(filepath.Join(dir, "permissions.md"), permittedGoal+skillInstruction); err != nil {
 		return err
 	}
-	if err := runSelftestDelegateQuiet(p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
+	if err := runSelftestDelegateQuiet(p.ExtraEnv, p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
 		"--brief", filepath.Join(dir, "permissions.md"), "--workspace", scratch, "--op", permissionJob); err != nil {
 		return err
 	}
@@ -431,22 +454,16 @@ func (p SelftestParams) waitForJob(job string) bool {
 }
 
 func (p SelftestParams) dispatchStatus(job string) string {
-	if p.statusProbe != nil {
-		return p.statusProbe(job)
-	}
-	out, err := exec.Command(p.dispatch(), "status", "--job", job).Output()
-	if err != nil {
+	if p.Status == nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return p.Status(job)
 }
 
 func (p SelftestParams) reapJob(job string) {
-	if p.reapProbe != nil {
-		p.reapProbe(job)
-		return
+	if p.Reap != nil {
+		p.Reap(job)
 	}
-	_ = runSilent(p.dispatch(), "reap", "--job", job)
 }
 
 // jobField reads one string field from a job record; absence is an empty
@@ -512,26 +529,25 @@ func runQuiet(command string, args ...string) error {
 	return cmd.Run()
 }
 
-func runSelftestDelegateQuiet(command string, args ...string) error {
+func runQuietEnv(extra []string, command string, args ...string) error {
 	cmd := exec.Command(command, args...)
-	cmd.Env = append(os.Environ(), "METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1")
+	cmd.Env = append(os.Environ(), extra...)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
-// runSilent discards both streams — the tolerated calls (reap between polls,
-// a denial-shaped dispatch) whose noise the shell suppressed entirely.
-func runSilent(command string, args ...string) error {
+func runSelftestDelegateQuiet(extra []string, command string, args ...string) error {
 	cmd := exec.Command(command, args...)
+	cmd.Env = append(append(os.Environ(), extra...), "METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1")
 	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
-func runSelftestDelegateSilent(command string, args ...string) error {
+func runSelftestDelegateSilent(extra []string, command string, args ...string) error {
 	cmd := exec.Command(command, args...)
-	cmd.Env = append(os.Environ(), "METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1")
+	cmd.Env = append(append(os.Environ(), extra...), "METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1")
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	return cmd.Run()

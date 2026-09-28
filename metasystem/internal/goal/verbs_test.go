@@ -552,7 +552,7 @@ func TestSetBudgetUnchangedIsNoOp(t *testing.T) {
 	unchanged := verbReqFor(endpoint, "01J5X00000000000000000EA01", "mac-a")
 	unchanged.Now = request.Now.Add(time.Hour)
 	result, err := setBudgetApprovedForTest(t, unchanged, "unchanged-budget", testBudget())
-	if err != nil || result.Outcome != OutcomeAbandoned || !strings.Contains(result.Detail, "already reads exactly") {
+	if err != nil || result.Outcome != OutcomeAbandoned || !result.Unchanged || !strings.Contains(result.Detail, "already has exactly this budget") {
 		t.Fatalf("identical budget was not a typed no-op: %+v %v", result, err)
 	}
 	if afterTip := acceptedTipForEndpoint(t, endpoint); afterTip != beforeTip || result.Tip != beforeTip {
@@ -853,8 +853,8 @@ func TestLabelVerbWritesCanonicalWholeFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err = Edit(verbReqFor(aEndpoint, "01J5X00000000000000000Q520", "mac-a"), "labeled", EditFields{Labels: &unchanged})
-	if err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("an equal final set follows the shipped edit behavior: %+v %v", res, err)
+	if err != nil || res.Outcome != OutcomeAbandoned || !res.Unchanged {
+		t.Fatalf("an equal final set is a repeat with no record: %+v %v", res, err)
 	}
 	if _, err := ApplyLabelDelta(edited.Labels, []string{"alpha"}, []string{"alpha"}); err == nil || !strings.Contains(err.Error(), "both --label and --unlabel") {
 		t.Fatalf("a contradictory edit refuses by name: %v", err)
@@ -1861,7 +1861,7 @@ func TestFreshNoOpsAbandonHonestly(t *testing.T) {
 	// A fresh claim of an already-ours goal abandons (F8): its opid
 	// is nowhere, so confirmed would be a lie.
 	res, err := Claim(verbReqFor(aEndpoint, "01J5X00000000000000000F910", "mac-a"), "held-fast")
-	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "not by this operation") {
+	if err != nil || res.Outcome != OutcomeAbandoned || !res.Unchanged || !strings.Contains(res.Detail, "is already claimed by this session") {
 		t.Fatalf("claim-already-ours abandons: %+v %v", res, err)
 	}
 	// A fresh steal of an already-ours goal abandons the same way.
@@ -1873,15 +1873,14 @@ func TestFreshNoOpsAbandonHonestly(t *testing.T) {
 	}
 	// Detach without an arc abandons with its reason.
 	res, err = Detach(verbReqFor(bEndpoint, "01J5X00000000000000000F930", "mac-b"), "held-fast")
-	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "not in an arc") {
+	if err != nil || res.Outcome != OutcomeAbandoned || !res.Unchanged || !strings.Contains(res.Detail, "is already in no group") {
 		t.Fatalf("detach-without-arc abandons: %+v %v", res, err)
 	}
-	// Every abandoned entry is journaled with its reason — no
-	// confirmed entry whose opid is nowhere.
+	// A repeat whose effect already holds leaves no journal entry at all
+	// (R-129-ui, U-idem) — and never a confirmed entry whose opid is nowhere.
 	for _, ulid := range []string{"01J5X00000000000000000F910", "01J5X00000000000000000F920"} {
-		entry, err := ReadEntry(a, Opid(ulid, "mac-a", "lin-1"))
-		if err != nil || entry.Outcome != OutcomeAbandoned {
-			t.Fatalf("the no-op journals abandoned: %+v %v", entry, err)
+		if entry, err := ReadEntry(a, Opid(ulid, "mac-a", "lin-1")); err == nil {
+			t.Fatalf("the no-op left a journal entry: %+v", entry)
 		}
 	}
 }
