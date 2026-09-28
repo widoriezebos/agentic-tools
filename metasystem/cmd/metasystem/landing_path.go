@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
@@ -199,8 +200,11 @@ func landingPathBaseJudge(toplevel, prefix string, stderr io.Writer) (landpath.J
 		return landpath.Judge{}, nil, err
 	}
 	engine := filepath.Join(scratch, "judge")
-	build := exec.Command("go", "build", "-o", engine, "./cmd/metasystem")
+	// Trimmed and in the machine engine cache (disk-lifetimes A3/A5): the
+	// detached worktree's path never keys the build.
+	build := exec.Command("go", "build", "-trimpath", "-o", engine, "./cmd/metasystem")
 	build.Dir = filepath.Join(worktree, strings.TrimSuffix(prefix, "/"))
+	build.Env = gocache.Carry(os.Environ())
 	build.Stdout, build.Stderr = stderr, stderr
 	buildErr := build.Run()
 	remove := exec.Command("git", "-C", toplevel, "worktree", "remove", "--force", worktree)
