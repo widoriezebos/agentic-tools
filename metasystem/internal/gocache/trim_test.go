@@ -75,7 +75,7 @@ func (c *syntheticCache) executable(relative string, age time.Duration, children
 		c.t.Fatal(err)
 	}
 	for name, size := range children {
-		if err := os.WriteFile(c.path(relative, name), make([]byte, size), 0o755); err != nil {
+		if err := os.WriteFile(c.path(relative, name), make([]byte, size), 0o644); err != nil {
 			c.t.Fatal(err)
 		}
 	}
