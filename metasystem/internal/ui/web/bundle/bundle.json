@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:aaa8a6f6b83a0d0891e1c3bcf673416fbd695413797208a9b4f4af35deed0725",
+  "sourceDigest": "sha256:3306690e79562b0ee96f5403bb4ecb499d81ba9b96fb7227fbfc873678fe5658",
   "source": [
     {
       "path": ".npmrc",
@@ -728,7 +728,7 @@
     },
     {
       "path": "src/partner/recording.ts",
-      "sha256": "836f9d2f7de573a2c27210f56b60c2dafc4db23446023c295989322da314d4e7"
+      "sha256": "15335c54743cc6529fb56bd820616f9a03f895222d684af8f940646ca42cb064"
     },
     {
       "path": "src/partner/references.test.ts",
@@ -768,7 +768,7 @@
     },
     {
       "path": "src/partner/store.tsx",
-      "sha256": "223c875d9e0233751c001a7a3904ba45807615c4f9d4f4764230354851298586"
+      "sha256": "4caac1b877333499dbdad5bdccddb84ec8261c4e6ea06411dbc1fd6f9ace7ede"
     },
     {
       "path": "src/partner/subject.test.ts",
@@ -896,15 +896,15 @@
     },
     {
       "path": "src/review/Desk.tsx",
-      "sha256": "e6e197590fd6b3854411c983c2aee15f5838b878b589b6730ecfaa1e56d7147a"
+      "sha256": "2be55371ed23e0a0419fa5f6033c75a15c8e821fbfa6263256792f454fd1f271"
     },
     {
       "path": "src/review/Door.tsx",
-      "sha256": "7dcad7ceeb4fb25424af0f471b81c4b10954dbce8e6406753f1e3c9c533cfac4"
+      "sha256": "7b8074516807c0fbf841afcc61945dd850b794ec7fdf9ff212015b7ebd0ffa94"
     },
     {
       "path": "src/review/ReviewRoom.tsx",
-      "sha256": "fdf40b2a85c2d1e60534bbd8391210b2f1cea91d8722edf334879a0dc48e58a5"
+      "sha256": "00af6bed32a793d3e05114a84025c12422bb3d9ef087936c602681e27a89e103"
     },
     {
       "path": "src/review/anchors.tsx",
@@ -912,7 +912,7 @@
     },
     {
       "path": "src/review/api.ts",
-      "sha256": "af1941ef84e4d65faaea949564747e0faa9cee91ce609f13def43c4f06a80664"
+      "sha256": "7ac358e0131047ce2716430d77d378ec388183ad2eb658adf8b9b17a1c3f74f0"
     },
     {
       "path": "src/review/desk.test.ts",
@@ -920,19 +920,19 @@
     },
     {
       "path": "src/review/room.css",
-      "sha256": "5483fdfdaf6f3304ab8f925dfc3470c0e1dea5db18130dbe7cd212ea4b6808bf"
+      "sha256": "bc7167581801c6423a4149fb2ff4b0d869ecaad49453e921e7ecb236fa432f66"
     },
     {
       "path": "src/review/room.test.ts",
-      "sha256": "1129b071108289f02048b55bef73d2902e2a2bc6f9161d778f08944154471e29"
+      "sha256": "ff7d2c4bca97b1db128aad5f69f692175bc371213aa2600cd94599e7e8c7ad97"
     },
     {
       "path": "src/review/room.ts",
-      "sha256": "5fceca4e9d62c54e9a32fd692e9f649b23c8958de30911afed416fe72eda44f1"
+      "sha256": "bc2aa1ce65381e5ffaea0eb9d83e9e733a5a0db2fb9231b610e00badd4308b64"
     },
     {
       "path": "src/review/screens.test.tsx",
-      "sha256": "0689e92e43279f5f933cd91f800175c2b1d6ee4a04fa86d9e41bd7615a5ffd41"
+      "sha256": "7e64e3724987bc0bfaaef9984f1594e279443b1556a5a4672c34e47d83436f35"
     },
     {
       "path": "src/routes.test.ts",
@@ -944,7 +944,7 @@
     },
     {
       "path": "src/shell/Composer.tsx",
-      "sha256": "491128d34a3f833bdf7103ab69f28d917203bebc097d36fda1cd9d448a9fabd6"
+      "sha256": "1adc6f72bbbe2dcc4ff5e6279546313775a92e0da3828ebc640a6487cd896d8b"
     },
     {
       "path": "src/shell/Drawer.test.tsx",
@@ -1146,11 +1146,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "b1b6848c9bafbba6b04eaa5c9f6baacc9f6292760b0a893f314b54b8bf53dfaf"
+      "sha256": "cc0c469bc1d5ba1d6b129812a73b1508762ba63608eb6897c22c1469e40b6db5"
     },
     {
       "path": "assets/index.js",
-      "sha256": "7e8d2b969c23b2d038d6a516d9e973d853e6bf3c412ddc5f772eb9ec3b3b922c"
+      "sha256": "b7c3f19a548b7d58645523cc9f7c981f3ac8d2891c6d3b46efca8a35686c12f8"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

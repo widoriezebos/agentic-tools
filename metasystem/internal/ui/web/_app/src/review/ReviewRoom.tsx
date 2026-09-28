@@ -238,7 +238,12 @@ export function Room({ record }: { record: string }) {
         </p>
       )}
       <Group id="ms-room" className="ms-room-panes" orientation="horizontal">
-        <Panel id="desk" className="ms-room-desk" defaultSize="60%" minSize="30%">
+        <Panel
+          id="desk"
+          className={`ms-room-desk${room.face === "desk" && room.desk.items.length === 0 ? " ms-room-desk--empty" : ""}`}
+          defaultSize="60%"
+          minSize="30%"
+        >
           {room.face === "desk" ? (
             <Desk record={record} />
           ) : (
@@ -266,15 +271,17 @@ export function Room({ record }: { record: string }) {
                 <Button onClick={partner.stopPresenting}>Stop presenting</Button>
               )}
             </div>
-            <div className="ms-room-transcript ms-dock-statement">
-              <Transcript />
-              {shownLocal.length > 0 && (
-                <section className="ms-room-mine" aria-label="Findings you made">
-                  {shownLocal.map((card) => (
-                    <DepositCard key={card.id} id={card.id} />
-                  ))}
-                </section>
-              )}
+            <div className="ms-room-talk">
+              <div className="ms-room-transcript ms-dock-statement">
+                <Transcript />
+                {shownLocal.length > 0 && (
+                  <section className="ms-room-mine" aria-label="Findings you made">
+                    {shownLocal.map((card) => (
+                      <DepositCard key={card.id} id={card.id} />
+                    ))}
+                  </section>
+                )}
+              </div>
             </div>
             <Composer />
           </DeskAnchors.Provider>

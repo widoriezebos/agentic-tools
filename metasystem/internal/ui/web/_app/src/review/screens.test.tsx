@@ -1,4 +1,6 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
@@ -145,6 +147,24 @@ describe("the room", () => {
     const shown = around(<Desk record={RECORD} />, roomHeld(REVIEW_SOURCE));
     expect(shown.indexOf("owner.go:14-27")).toBeLessThan(shown.indexOf(">changes<"));
     expect(shown).toMatch(/ms-desk-tab--up"[^>]*aria-current="true"[^>]*>owner.go:14-27</u);
+  });
+
+  it("puts the Latest pill on the composer's top edge, outside the conversation's scroller (UX-1)", () => {
+    const shown = around(<Room record={RECORD} />, roomHeld(REVIEW_SOURCE));
+    expect(shown).toMatch(/<div class="ms-room-talk"><div class="ms-room-transcript/u);
+    const css = readFileSync(fileURLToPath(new URL("./room.css", import.meta.url)), "utf8");
+    expect(css).toMatch(/\.ms-room-talk \.ms-partner-latest \{[^}]*position: absolute;/u);
+    expect(css).toMatch(/\.ms-room-talk \.ms-partner-transcript \{[^}]*position: static;/u);
+  });
+
+  it("collapses an empty desk to its one line at phone width, and keeps a desk with an item (UX-2)", () => {
+    const held = roomHeld(REVIEW_SOURCE);
+    const empty = around(<Room record={RECORD} />, { ...held, room: { ...held.room, desk: { items: [], current: -1 } } });
+    expect(empty).toContain("ms-room-desk ms-room-desk--empty");
+    expect(around(<Room record={RECORD} />, held)).not.toContain("ms-room-desk--empty");
+    const css = readFileSync(fileURLToPath(new URL("./room.css", import.meta.url)), "utf8");
+    const phone = css.slice(css.indexOf("@media (max-width: 640px)"));
+    expect(phone).toMatch(/\[data-panel\]:has\(> \.ms-room-desk--empty\) \{\s*flex: 0 0 auto !important;/u);
   });
 
   it("flips to the board, where a finding carries its answers", () => {
