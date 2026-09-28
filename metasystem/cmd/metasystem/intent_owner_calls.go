@@ -36,6 +36,12 @@ type intentOwnerCalls struct {
 	configValidate func(stdout, stderr io.Writer, conf, repo string) int
 	// delegate is the delegate boundary: dispatch, review, follow-up.
 	delegate func(request delegateRequest, stdout, stderr io.Writer) int
+	// goalReconcile and goalMigrate are the goal owners with the argv their
+	// former children carried after the verb; the supplied caller in
+	// dependencies.authorityFacts is what their classification and human
+	// proof start from.
+	goalReconcile func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int
+	goalMigrate   func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int
 	// missionStatus prints a mission's runner status line.
 	missionStatus func(stdout, stderr io.Writer, root, mission string) int
 	// missionLaunch starts or resumes a mission's detached run loop; a
@@ -99,6 +105,12 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 			return engine.Status()
 		},
 		missionLaunch: missionLaunchTo,
+		goalReconcile: func(dependencies syncRequestDependencies, stdout, stderr io.Writer, _ string, args []string) int {
+			return goalReconcileWith(dependencies, stdout, stderr, args)
+		},
+		goalMigrate: func(dependencies syncRequestDependencies, stdout, stderr io.Writer, _ string, args []string) int {
+			return goalMigrateWith(dependencies, stdout, stderr, args)
+		},
 		missionResolveTaint: func(caller processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int {
 			engine := missionrunner.NewEngine(cleanOwnerRoot(request.root), request.mission)
 			engine.Output, engine.Errors, engine.Caller = stdout, stderr, caller.pid
@@ -132,6 +144,17 @@ func (inv *intentInvocation) ownerCalls() *intentOwnerCalls {
 		delivery.calls = defaultIntentOwnerCalls()
 	}
 	return delivery.calls
+}
+
+// goalOwnerCall runs one argv-shaped goal owner in this process where a
+// child used to run it: the invocation's request dependencies, with this
+// process as the supplied caller (the parent the child classified) and the
+// owner's report on fresh buffers rather than the public result.
+func (inv *intentInvocation) goalOwnerCall(owner func(syncRequestDependencies, io.Writer, io.Writer, string, []string) int, args ...string) intentProcessResult {
+	dependencies, dir := inv.owners.dependencies, inv.layout.InstallationRoot
+	dependencies.report = nil
+	dependencies.authorityFacts.caller = currentProcessIdentity()
+	return ownerCall(func(stdout, stderr io.Writer) int { return owner(dependencies, stdout, stderr, dir, args) })
 }
 
 // ownerCall runs one owner function in this process on fresh buffers and

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -54,5 +56,34 @@ func TestMissionOwnersRunInThisProcess(t *testing.T) {
 	}
 	if len(suppliedLaunch) != 1 || len(suppliedResolve) != 1 {
 		t.Fatalf("owner calls: launch %d, resolve %d", len(suppliedLaunch), len(suppliedResolve))
+	}
+}
+
+// TestMissionRepairHumanGateRefusesAnUnannouncedAgent is the R7 witness for
+// the replaced resolve-taint child: an unannounced agent runtime with a
+// controlling terminal runs `mission repair` directly, and the runner's
+// human-reserved gate, called in this process, refuses it as the child did.
+// The child classified from itself, whose parent was the public command; the
+// call supplies the public command's process, whose parent is the agent, so
+// the walk starts at the same runtime. The control supplies the command's own
+// caller instead: the walk starts above the agent, and the gate's answer
+// changes, so the fixture discriminates exactly the identity rule.
+func TestMissionRepairHumanGateRefusesAnUnannouncedAgent(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stageUnannouncedAgentParent(t, root)
+	request := missionResolveRequest{root: root, mission: "demo", taint: 2, variant: "restore", tree: strings.Repeat("b", 40), by: "Wido", reason: "restored"}
+	calls := defaultIntentOwnerCalls()
+	var stdout, stderr bytes.Buffer
+	if code := calls.missionResolveTaint(currentProcessIdentity(), &stdout, &stderr, request); code != 3 ||
+		!strings.Contains(stderr.String(), "taint resolution is a human-reserved act") {
+		t.Fatalf("the unannounced agent's resolution was not refused by the human gate: %d %q", code, stderr.String())
+	}
+	var control bytes.Buffer
+	calls.missionResolveTaint(entryCallerIdentity(), io.Discard, &control, request)
+	if strings.Contains(control.String(), "taint resolution is a human-reserved act") {
+		t.Fatalf("control: the caller-of-caller identity was refused too, so the fixture does not discriminate: %q", control.String())
 	}
 }

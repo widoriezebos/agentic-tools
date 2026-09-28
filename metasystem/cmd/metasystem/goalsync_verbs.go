@@ -27,15 +27,21 @@ func ensureGuardEnrolled(root string) error { return ledgerfence.Ensure(root) }
 
 func environWithoutGitSteeringCLI() []string { return ledgerfence.EnvironWithoutGitSteering() }
 
-func goalActor(root string, human string) (goal.Actor, error) {
-	machine, err := goal.ResolveMachine(root)
+// goalActorFromDependencies is the actor from request dependencies: their
+// machine reader and the lineage they carry.
+func goalActorFromDependencies(dependencies syncRequestDependencies, root, human string) (goal.Actor, error) {
+	lineage := ""
+	if dependencies.ownerLineage != nil {
+		lineage = dependencies.ownerLineage()
+	}
+	return goalActorWith(dependencies.machine, root, human, lineage)
+}
+
+func goalActorWith(resolveMachine func(string) (string, error), root, human, lineage string) (goal.Actor, error) {
+	machine, err := resolveMachine(root)
 	if err != nil {
 		return goal.Actor{}, err
 	}
-	// METASYSTEM_OWNER_LINEAGE is the runner's real export (the same
-	// variable arming and succession read); a second spelling here
-	// collapsed every real session to the literal "session".
-	lineage := os.Getenv("METASYSTEM_OWNER_LINEAGE")
 	if lineage == "" {
 		lineage = "session"
 	}
@@ -49,7 +55,15 @@ func goalUlid() (string, error) {
 // runGoalMigrate is the cutover: one commit, one opid, the reviewed
 // source digest gating everything.
 func runGoalMigrate(args []string) int {
+	return goalMigrateWith(defaultSyncRequestDependencies(), os.Stdout, os.Stderr, args)
+}
+
+// goalMigrateWith is the cutover under explicit request dependencies: the
+// human word classifies from their supplied caller, the actor carries their
+// lineage and machine, and the report goes to the caller's streams.
+func goalMigrateWith(dependencies syncRequestDependencies, stdout, stderr io.Writer, args []string) int {
 	flags := flag.NewFlagSet("goal migrate", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", "", "checkout root")
 	sourceDigest := flags.String("source-digest", "", "the reviewed goals.md sha256 literal")
 	manifest := flags.String("manifest", "", "amendment manifest path (omit for a bare migration)")
@@ -60,12 +74,12 @@ func runGoalMigrate(args []string) int {
 		return 2
 	}
 	if *root == "" || *sourceDigest == "" || *by == "" {
-		fmt.Fprintln(os.Stderr, "goal migrate: --root, --source-digest, and --by are required — the cutover is a human act on reviewed bytes")
+		fmt.Fprintln(stderr, "goal migrate: --root, --source-digest, and --by are required — the cutover is a human act on reviewed bytes")
 		return 2
 	}
-	classification, classErr := brainHumanWordClassification("migrate", *root, *by, nil)
+	classification, classErr := brainHumanWordClassificationWithFacts("migrate", *root, *by, nil, dependencies.authorityFacts)
 	if classErr != nil {
-		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", classErr)
+		fmt.Fprintf(stderr, "goal migrate: %v\n", classErr)
 		return 1
 	}
 	adoption := *identity
@@ -77,29 +91,29 @@ func runGoalMigrate(args []string) int {
 		} else {
 			minted, err := goalUlid()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+				fmt.Fprintf(stderr, "goal migrate: %v\n", err)
 				return 1
 			}
 			adoption = minted
 		}
 	}
-	if err := ensureGuardEnrolled(*root); err != nil {
-		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+	if err := dependencies.ensureGuard(*root); err != nil {
+		fmt.Fprintf(stderr, "goal migrate: %v\n", err)
 		return 1
 	}
-	actor, err := goalActor(*root, *by)
+	actor, err := goalActorFromDependencies(dependencies, *root, *by)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+		fmt.Fprintf(stderr, "goal migrate: %v\n", err)
 		return 1
 	}
 	ulid, err := goalUlid()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+		fmt.Fprintf(stderr, "goal migrate: %v\n", err)
 		return 1
 	}
-	endpoint, err := goal.ResolveEndpoint(*root)
+	endpoint, err := dependencies.endpoint(*root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+		fmt.Fprintf(stderr, "goal migrate: %v\n", err)
 		return 1
 	}
 	configureCarriedCounselor(&endpoint)
@@ -110,13 +124,13 @@ func runGoalMigrate(args []string) int {
 		Identity: adoption, SyncMode: *syncMode,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+		fmt.Fprintf(stderr, "goal migrate: %v\n", err)
 		return 1
 	}
 	out, _ := json.MarshalIndent(map[string]any{
 		"outcome": res.Outcome, "tip": res.Tip, "identity": adoption, "detail": res.Detail,
 	}, "", "  ")
-	fmt.Println(string(out))
+	fmt.Fprintln(stdout, string(out))
 	if res.Outcome != goal.OutcomeConfirmed {
 		return 1
 	}

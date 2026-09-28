@@ -197,6 +197,11 @@ type legacyMutationInputs struct {
 	repositoryTop func(string) (string, error)
 	ensureGuard   func(string) error
 	reporter      func(metrics.Options) (metrics.Result, error)
+	// stdout and stderr are where the verb reports; nil is the process's
+	// own. caller, when set, is the supplied identity classification starts
+	// from (owner_invocation.go) where no --caller-pid names one.
+	stdout, stderr io.Writer
+	caller         processIdentity
 }
 
 func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet) []*string,
@@ -220,6 +225,13 @@ func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet
 	if inputs.reporter == nil {
 		inputs.reporter = generateMetricsReport
 	}
+	stdout, stderr := io.Writer(os.Stdout), io.Writer(os.Stderr)
+	if inputs.stdout != nil {
+		stdout = inputs.stdout
+	}
+	if inputs.stderr != nil {
+		stderr = inputs.stderr
+	}
 	if code, handled := trySync(name, args); handled {
 		return code
 	}
@@ -233,9 +245,12 @@ func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	if *callerPid == 0 {
+		*callerPid = inputs.caller.pid
+	}
 	caller, err := goalCallerWithRepositoryTop(*root, *callerPid, name, inputs.repositoryTop)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	// Enrollment runs AFTER authorization: it executes the target's
@@ -243,7 +258,7 @@ func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet
 	// caller must not be able to trigger foreign hook code through a
 	// refused mutation.
 	if err := inputs.ensureGuard(*root); err != nil {
-		fmt.Fprintln(os.Stderr, "goal "+name+": "+err.Error())
+		fmt.Fprintln(stderr, "goal "+name+": "+err.Error())
 		return 1
 	}
 	values := make([]string, len(extras))
@@ -253,15 +268,15 @@ func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet
 	store := &goal.Store{Root: *root}
 	result, err := run(store, caller, values)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	fmt.Println(result.Message)
+	fmt.Fprintln(stdout, result.Message)
 	for _, dropped := range result.Dropped {
-		fmt.Println("dropped: " + dropped)
+		fmt.Fprintln(stdout, "dropped: "+dropped)
 	}
 	if name == "done" && len(values) > 0 {
-		return reportAfterConfirmedDoneWithReporter(0, *root, values[0], os.Stderr, inputs.reporter)
+		return reportAfterConfirmedDoneWithReporter(0, *root, values[0], stderr, inputs.reporter)
 	}
 	return 0
 }
@@ -296,10 +311,24 @@ func runGoalDoneWithSync(args []string, trySync func(string, []string) (int, boo
 }
 
 func runGoalReconcile(args []string) int {
-	return goalMutation("reconcile", args, nil,
-		func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-			return s.Reconcile(c)
-		})
+	return goalMutation("reconcile", args, nil, goalReconcileLegacy)
+}
+
+func goalReconcileLegacy(s *goal.Store, c goal.Caller, _ []string) (goal.Result, error) {
+	return s.Reconcile(c)
+}
+
+// goalReconcileWith is goal reconcile under explicit request dependencies:
+// the synced reconcile's request and proof start from their supplied caller
+// and carry their lineage, the legacy one classifies from that caller, and
+// both report on the caller's streams.
+func goalReconcileWith(dependencies syncRequestDependencies, stdout, stderr io.Writer, args []string) int {
+	dependencies.stdout, dependencies.stderr = stdout, stderr
+	trySync := func(name string, args []string) (int, bool) {
+		return trySyncMutationWithDependencies(name, args, goalCommandNow, dependencies, goalParkBranchCheck)
+	}
+	return goalMutationWithInputs("reconcile", args, nil, goalReconcileLegacy, trySync,
+		legacyMutationInputs{stdout: stdout, stderr: stderr, caller: dependencies.authorityFacts.caller})
 }
 
 // boolAsString adapts a boolean flag into the shared string plumbing.

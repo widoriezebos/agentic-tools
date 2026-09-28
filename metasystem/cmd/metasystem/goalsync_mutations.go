@@ -741,10 +741,6 @@ func defaultGoalAuthorityReadFacts() goalAuthorityReadFacts {
 	}
 }
 
-func brainHumanWordClassification(verb, root, by string, observedProof *humanauthority.Proof) (lease.ClassifyResult, error) {
-	return brainHumanWordClassificationWithFacts(verb, root, by, observedProof, defaultGoalAuthorityReadFacts())
-}
-
 func brainHumanWordClassificationWithFacts(verb, root, by string, observedProof *humanauthority.Proof, facts goalAuthorityReadFacts) (lease.ClassifyResult, error) {
 	classification, classifyErr := lease.ClassifyResult{}, error(nil)
 	if callerPid, err := facts.caller.classifiablePid(identity.KernelProber{}); err != nil {
@@ -2035,7 +2031,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		// and the session runs either way; the edits that do need one — a
 		// blocker removed before it is done — ask for it themselves and name
 		// the edge when it is missing.
-		if proven, _, proofErr := provenGoalRequest("reconcile", f, humanauthority.ProveOrTemporaryGoalAuthority); proofErr == nil {
+		if proven, _, proofErr := provenGoalRequestWithInputs("reconcile", f, humanauthority.ProveOrTemporaryGoalAuthority, commandNow, dependencies); proofErr == nil {
 			req = proven
 		}
 		req.ReconcileScope = f.ids
@@ -2191,6 +2187,13 @@ func proveGoalHumanAuthority(name string, f *syncFlags, prove goalAuthorityProve
 }
 
 func proveGoalHumanAuthorityAt(name string, f *syncFlags, prove goalAuthorityProver, commandNow func(string) (time.Time, error)) (humanauthority.Proof, error) {
+	return proveGoalHumanAuthorityFor(entryCallerIdentity(), name, f, prove, commandNow)
+}
+
+// proveGoalHumanAuthorityFor proves the enrolled human from the supplied
+// caller identity (owner_invocation.go): a process entry's own caller, or the
+// current process on an edge that replaced a child.
+func proveGoalHumanAuthorityFor(caller processIdentity, name string, f *syncFlags, prove goalAuthorityProver, commandNow func(string) (time.Time, error)) (humanauthority.Proof, error) {
 	if f.fixtureHumanAuthority {
 		if f.temporaryWord != "" || f.reviewBy != "" {
 			return humanauthority.Proof{}, fmt.Errorf("goal %s fixture authority does not combine with a temporary human word or review date", name)
@@ -2201,7 +2204,11 @@ func proveGoalHumanAuthorityAt(name string, f *syncFlags, prove goalAuthorityPro
 	if err != nil {
 		return humanauthority.Proof{}, err
 	}
-	proof, err := prove(f.root, int64(os.Getppid()), nil, f.temporaryWord, f.reviewBy, ancestryNow)
+	callerPid, err := caller.classifiablePid(identity.KernelProber{})
+	if err != nil {
+		return humanauthority.Proof{}, fmt.Errorf("goal %s could not prove enrolled human ancestry: %w", name, err)
+	}
+	proof, err := prove(f.root, callerPid, nil, f.temporaryWord, f.reviewBy, ancestryNow)
 	if err != nil {
 		if f.temporaryWord == "" && f.reviewBy == "" {
 			return humanauthority.Proof{}, fmt.Errorf("goal %s could not prove enrolled human ancestry: %w", name, err)
@@ -2228,12 +2235,6 @@ func claimsAHuman(f *syncFlags) bool {
 	return f.by != "" || f.fixtureHumanAuthority || f.temporaryWord != ""
 }
 
-// provenGoalRequest assembles the request a goal verb runs under, with the
-// human proof where the command claims a person and without one otherwise.
-func provenGoalRequest(name string, f *syncFlags, prove goalAuthorityProver) (goal.VerbRequest, *humanauthority.Proof, error) {
-	return provenGoalRequestWithInputs(name, f, prove, goalCommandNow, defaultSyncRequestDependencies())
-}
-
 func provenGoalRequestWithInputs(name string, f *syncFlags, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) (goal.VerbRequest, *humanauthority.Proof, error) {
 	if !claimsAHuman(f) {
 		request, err := syncReqWithProofAtWithDependencies(name, f.root, f.by, f.lineage, nil, commandNow, dependencies)
@@ -2243,7 +2244,7 @@ func provenGoalRequestWithInputs(name string, f *syncFlags, prove goalAuthorityP
 	if err != nil {
 		return goal.VerbRequest{}, nil, err
 	}
-	proof, err := proveGoalHumanAuthorityAt(name, f, prove, commandNow)
+	proof, err := proveGoalHumanAuthorityFor(dependencies.authorityFacts.caller, name, f, prove, commandNow)
 	if err != nil {
 		return goal.VerbRequest{}, nil, err
 	}

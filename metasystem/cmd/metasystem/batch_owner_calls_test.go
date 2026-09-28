@@ -85,6 +85,14 @@ func recordingOwnerCalls(prefix []string, record func([]string)) *intentOwnerCal
 			record(words(append([]string{"delegate"}, request.args...)...))
 			return real.delegate(request, stdout, stderr)
 		},
+		goalReconcile: func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
+			record(words(append([]string{"goal", "reconcile"}, args...)...))
+			return real.goalReconcile(dependencies, stdout, stderr, dir, args)
+		},
+		goalMigrate: func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
+			record(words(append([]string{"goal", "migrate"}, args...)...))
+			return real.goalMigrate(dependencies, stdout, stderr, dir, args)
+		},
 		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
 			record(words("mission", "status", "--root", root, "--mission", mission))
 			return real.missionStatus(stdout, stderr, root, mission)
@@ -148,6 +156,12 @@ func processBackedOwnerCalls(executable func() (string, error), process func(int
 		},
 		delegate: func(request delegateRequest, stdout, stderr io.Writer) int {
 			return run(request.dir, stdout, stderr, append([]string{"delegate"}, request.args...)...)
+		},
+		goalReconcile: func(_ syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
+			return run(dir, stdout, stderr, append([]string{"goal", "reconcile"}, args...)...)
+		},
+		goalMigrate: func(_ syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
+			return run(dir, stdout, stderr, append([]string{"goal", "migrate"}, args...)...)
 		},
 		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
 			return run(root, stdout, stderr, "mission", "status", "--root", root, "--mission", mission)

@@ -66,6 +66,13 @@ func TestGoalLandingHostContractRetainsPriorGroupsAndGoGate(t *testing.T) {
 		}
 	}
 	assertLegacyHostContractCoverage(t, contract)
+	// A test retires with its verb only when the verb is gone.
+	registered := families()
+	for test, verb := range retiredWithDeletedVerb {
+		if words := strings.Fields(verb); len(words) == 2 && familyHasVerb(registered, words[0], words[1]) {
+			t.Errorf("%s retired with %s, which still routes", test, verb)
+		}
+	}
 }
 
 // The frozen schema-1 fixture is independent of the detached candidate HEAD.
@@ -84,6 +91,20 @@ var retiredWithDeletedVerb = map[string]string{
 	// U7c step B: proc fixture-key lost its last caller with the fixture
 	// libraries; identity.EncodeKey, its owner, stays.
 	"command-interface-smoke/TestProcFixtureKeyPrintsAnEncodedKey": "proc fixture-key",
+	// U9a: verbs only tests, or only text, ran; each test's subject was the
+	// verb's own argument handling or output, and the verb went.
+	"command-interface-smoke/TestHealthNamesTheCertainFixtureSurvivor":     "health",
+	"command-interface-smoke/TestProcDefaultSignalsHelper":                 "proc default-signals",
+	"command-interface-smoke/TestProcDefaultSignalsRestoresIgnoredSignals": "proc default-signals",
+	"landing-command-standard/TestProveRoundFindsTheAttemptByCandidate":    "job prove-round",
+	"batch-buildcd-standard/TestGateUnitGreenOutputAndAggregatedSteps":     "gate unit",
+	"batch-buildcd-standard/TestGateUnitRedOutputAndExitCode":              "gate unit",
+	"launch-standard/TestRoundTaskRefusals":                                "launch round-task",
+	"launch-standard/TestLaunchStartRejectsRemovedPoll":                    "launch start",
+	"launch-standard/TestLaunchSettingsPrintsEachValueAndSource":           "launch settings",
+	"launch-standard/TestLaunchWaitNamesTheCapAndThePendingState":          "launch wait",
+	"goal-decision-standard/TestRestampVerbRefusesTheByFlag":               "goal restamp",
+	"context-standard/TestContextPruneVerb":                                "context prune",
 }
 
 // retiredWithDeletedBed names legacy mandatory tests whose only subject was a
