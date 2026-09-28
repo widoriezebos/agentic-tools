@@ -36,6 +36,98 @@ type Proof struct {
 	RedGroups       []RedGroup          `json:"redGroups,omitempty"`
 	PrefixGoal      string              `json:"prefixGoal,omitempty"`
 	Failure         string              `json:"failure,omitempty"`
+	// Sources is the retained verifier's answer per selected group on the tip
+	// (D4). Flakes are the known flakes a composed proof landed on, rechecked
+	// immediately before publication (BL3S-01).
+	Sources map[string]Source `json:"sources,omitempty"`
+	Flakes  []FlakeUse        `json:"flakes,omitempty"`
+}
+
+// The kinds of a group's source: executed in the tip attempt, reused by
+// identity from another retained attempt, or covered by other tip groups.
+const SourceExecuted, SourceReused, SourceCovered = "executed", "reused", "covered"
+
+// Source names the attempt that holds one group's pass.
+type Source struct {
+	Kind    string `json:"kind"`
+	Attempt string `json:"attempt"`
+}
+
+// FlakeUse is one known-flake entry a composed proof relied on.
+type FlakeUse struct {
+	Identity       string    `json:"identity"`
+	EntryID        string    `json:"entryId"`
+	AllowanceUntil time.Time `json:"allowanceUntil"`
+}
+
+// ResolveSources projects the retained verifier's per-group attempt onto
+// Sources. A selected group without a source, or a red group of the tip
+// attempt cited from that attempt, does not resolve.
+func ResolveSources(proof Proof, resolved map[string]string) (map[string]Source, error) {
+	sources := map[string]Source{}
+	for _, group := range proof.SelectedGroups {
+		attempt := resolved[group]
+		red := slices.ContainsFunc(proof.RedGroups, func(red RedGroup) bool { return red.ID == group })
+		switch {
+		case attempt == "" || attempt == proof.AttemptID && red:
+			return nil, fmt.Errorf("group %s does not resolve to a passing attempt through the retained verifier on tip %s", group, proof.Tree)
+		case attempt != proof.AttemptID:
+			sources[group] = Source{Kind: SourceReused, Attempt: attempt}
+		case slices.Contains(proof.Executions, group):
+			sources[group] = Source{Kind: SourceExecuted, Attempt: attempt}
+		default:
+			sources[group] = Source{Kind: SourceCovered, Attempt: attempt}
+		}
+	}
+	return sources, nil
+}
+
+// RecordSources fills a green proof's Sources through the retained verifier;
+// a group that does not resolve returns every member with the reason.
+func RecordSources(store Store, id, actor string, at time.Time, resolve func(Record) (map[string]string, error)) error {
+	record, err := store.Load(id)
+	if err != nil || record.State != StateLanding || record.Proof == nil || record.Proof.Status != "green" || record.Proof.Sources != nil {
+		return err
+	}
+	resolved, err := resolve(record)
+	if err != nil {
+		return err
+	}
+	sources, err := ResolveSources(*record.Proof, resolved)
+	if err != nil {
+		return returnEveryMember(store, record, actor, at, err.Error()+"; nothing lands on it")
+	}
+	return store.Update(id, func(current *Record) error {
+		if current.Proof == nil || current.Proof.AttemptID != record.Proof.AttemptID {
+			return fmt.Errorf("BATCH_PROOF_INPUT_MOVED: batch changed before its sources were recorded")
+		}
+		current.Proof.Sources = sources
+		return nil
+	})
+}
+
+func returnEveryMember(store Store, record Record, actor string, at time.Time, reason string) error {
+	var decisions []ReturnDecision
+	for _, unit := range joinedUnits(record.Units) {
+		decisions = append(decisions, ReturnDecision{GoalID: unit.GoalID, Outcome: UnitEjected, Reason: reason})
+	}
+	return ReassembleSurvivorsWithReturns(store, record.BatchID, actor, at, decisions)
+}
+
+// flakesStillCarried rechecks every known flake a composed proof used
+// against the register at now: closed, reclassified or expired is refused.
+func flakesStillCarried(uses []FlakeUse, open []OpenEntry, now time.Time) error {
+	for _, use := range uses {
+		index := slices.IndexFunc(open, func(entry OpenEntry) bool { return entry.ID == use.EntryID && entry.Identity == use.Identity })
+		switch {
+		case index < 0 || open[index].Class != ClassKnownFlake:
+			return fmt.Errorf("known flake %s is no longer an open known flake", use.EntryID)
+		case !open[index].CarriesLanding(now):
+			return fmt.Errorf("known flake %s's landing allowance expired at %s; it blocks every batch until fixed at its cause",
+				use.EntryID, open[index].AllowanceUntil.UTC().Format(time.RFC3339))
+		}
+	}
+	return nil
 }
 
 // RequireProofPlan closes membership and proves that the selected tip plan
@@ -153,14 +245,7 @@ func FinishProof(store Store, id, actor, token string, result proofrun.TestResul
 				record.Proof.Reuse[group.ID] = group.ReuseAttempt
 			}
 			if group.Status != "passed" && group.Status != "reused" {
-				red := RedGroup{ID: group.ID, Status: group.Status, NotRunReason: group.NotRunReason, LogPath: group.LogPath,
-					LogDigest: group.LogDigest, InputManifest: slices.Clone(group.InputManifest)}
-				for _, observed := range group.Observed {
-					if observed.Status == "failed" {
-						red.Failures = append(red.Failures, Failure{Report: observed.Report, Classname: observed.Classname, Name: observed.Name, Status: observed.Status, Reason: observed.Reason})
-					}
-				}
-				record.Proof.RedGroups = append(record.Proof.RedGroups, red)
+				record.Proof.RedGroups = append(record.Proof.RedGroups, RedGroupFromResult(group))
 			}
 		}
 		if launchErr != nil {

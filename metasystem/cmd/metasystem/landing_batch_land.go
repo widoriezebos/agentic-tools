@@ -196,6 +196,14 @@ func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, ac
 		OriginTree: func(commit string) (string, error) {
 			return batchLandOriginTree(root, commit)
 		},
+		FlakeRegister: func() ([]batch.OpenEntry, error) {
+			ledger, err := productionTrunkRedLedgerOwner(controlRoot)
+			if err != nil {
+				return nil, err
+			}
+			return ledger.Open()
+		},
+		Now:            func() (time.Time, error) { return goalCommandNow(controlRoot) },
 		Abandon:        func(tip, detachAt string) error { return batchLandAbandon(root, id, tip, detachAt) },
 		SeriesOnOrigin: func(origin, tip string) (bool, error) { return batchSeriesOnEndpoint(root, origin, tip) },
 		LeaseBase:      baseCommit,

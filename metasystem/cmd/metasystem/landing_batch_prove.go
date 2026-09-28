@@ -35,6 +35,7 @@ type batchProofDependencies struct {
 	plan          func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error)
 	launch        func(batchProofLaunch) (proofrun.TestResult, error)
 	freshDecision func(string, []batch.Unit, string) (batch.PrefixDecision, error)
+	sources       func(string, batch.Record) (map[string]string, error)
 }
 
 var productionBatchProofDependencies = batchProofDependencies{
@@ -55,6 +56,39 @@ var productionBatchProofDependencies = batchProofDependencies{
 	},
 	launch:        launchBatchTipProof,
 	freshDecision: productionPrefixDecision,
+	sources:       batchRetainedSources,
+}
+
+// batchRetainedSources runs the retained verifier once on the batch tip tree
+// (D4) and answers, per selected group, the attempt that holds its pass.
+func batchRetainedSources(root string, record batch.Record) (map[string]string, error) {
+	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
+	if len(joined) == 0 || record.Proof == nil {
+		return nil, fmt.Errorf("batch %s has no joined units or proof to resolve", record.BatchID)
+	}
+	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(record.TipTree)
+	if err != nil {
+		return nil, err
+	}
+	defer detached.Close()
+	head := joined[len(joined)-1]
+	episode := record.PrefixEpisodes[head.GoalID]
+	result, err := verifyRetainedTesting(testingSelectionRequest{Root: batch.ModuleRoot(detached.Workspace().Dir), ControlRoot: batch.ModuleRoot(root),
+		GoalID: head.GoalID, Tree: record.TipTree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
+		BatchRequirements: slices.Clone(record.Proof.SelectedGroups), BatchPrefixReceipt: true, FreshEpisode: episode.Token, FreshExpiresAt: episode.ExpiresAt})
+	return batchSourcesFromVerification(result), err
+}
+
+// batchSourcesFromVerification is the verifier's per-group source: a group
+// the verification resolved to a passing attempt, and nothing else.
+func batchSourcesFromVerification(result proofrun.TestResult) map[string]string {
+	sources := map[string]string{}
+	for _, group := range result.Groups {
+		if group.Status == "reused" && group.ReuseAttempt != "" {
+			sources[group.ID] = group.ReuseAttempt
+		}
+	}
+	return sources
 }
 
 func proofPlanCovers(plan testpolicy.Plan, union []string) bool {
@@ -233,6 +267,9 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 	}
 	if finishErr := batch.FinishProof(store, id, actor, token, result, launchErr, at); finishErr != nil {
 		return finishErr
+	}
+	if launchErr == nil && dependencies.sources != nil {
+		return batch.RecordSources(store, id, actor, at, func(record batch.Record) (map[string]string, error) { return dependencies.sources(root, record) })
 	}
 	return launchErr
 }

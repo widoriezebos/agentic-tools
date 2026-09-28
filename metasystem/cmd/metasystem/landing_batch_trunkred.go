@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -175,7 +176,7 @@ func (owner ledgerTrunkRedOwner) Open() ([]batch.OpenEntry, error) {
 		allowance, _ := time.Parse(time.RFC3339, entry.AllowanceUntil)
 		open = append(open, batch.OpenEntry{ID: entry.ID, Group: entry.Group, OwnerMachine: entry.Owner.Machine,
 			FixGoal: entry.FixGoal, Holds: append([]string(nil), entry.Holds...), LastBaseCommit: lastBaseCommit,
-			Class: entry.EntryClass(), AllowanceUntil: allowance})
+			Class: entry.EntryClass(), AllowanceUntil: allowance, Identity: entry.Identity, Owner: cmp.Or(entry.Owner.By, entry.Owner.Machine)})
 	}
 	return open, nil
 }

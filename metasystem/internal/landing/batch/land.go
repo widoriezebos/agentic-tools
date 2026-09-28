@@ -82,6 +82,10 @@ type LandSeams struct {
 	SeriesOnOrigin     func(origin, tip string) (bool, error)
 	LeaseBase          string
 	RecoverPush        func(refusedOrigin, base, tip string) (PushRecovery, error)
+	// FlakeRegister and Now recheck, immediately before any publication, the
+	// known flakes a composed proof landed on (BL3S-01).
+	FlakeRegister func() ([]OpenEntry, error)
+	Now           func() (time.Time, error)
 }
 
 // PushRecovery is the one bounded decision after an endpoint lease refusal.
@@ -188,7 +192,36 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		}
 		return false, ReopenRefusedPush(store, id, baseTree, actor, at)
 	}
+	// recheckFlakes refuses publication when a known flake the composed proof
+	// used is no longer carried: every member returns and nothing publishes.
+	recheckFlakes := func() error {
+		if len(record.Proof.Flakes) == 0 {
+			return nil
+		}
+		if seams.FlakeRegister == nil || seams.Now == nil {
+			return fmt.Errorf("BATCH_LAND_UNWIRED: the flake register recheck is absent")
+		}
+		open, err := seams.FlakeRegister()
+		now, nowErr := seams.Now()
+		if err = errors.Join(err, nowErr); err != nil {
+			return err
+		}
+		if carried := flakesStillCarried(record.Proof.Flakes, open, now); carried != nil {
+			if seams.Reset != nil {
+				if err := seams.Reset(record.BaseTree); err != nil {
+					return errors.Join(carried, err)
+				}
+			}
+			reason := "BATCH_FLAKE_ALLOWANCE_REFUSED: " + carried.Error() + "; nothing was published; " +
+				diagnosticFailure(DiagnosticResult{AttemptID: record.Proof.AttemptID}, record.Proof.RedGroups)
+			return errors.Join(errors.New(reason), returnEveryMember(store, record, actor, at, reason))
+		}
+		return nil
+	}
 	recoverNow := func(recoveryOrigin, candidateTip string, pushErr error) (bool, error) {
+		if err := recheckFlakes(); err != nil {
+			return false, err
+		}
 		if seams.RecoverPush == nil {
 			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s refused the complete series: %w", recoveryOrigin, pushErr)
 		}
@@ -266,6 +299,9 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		return true, nil
 	}
 	attemptPush := func(candidateTip string) (bool, error) {
+		if err := recheckFlakes(); err != nil {
+			return false, err
+		}
 		if seams.VerifySeries != nil {
 			if err := seams.VerifySeries(units, cloneStrings(progress.Commits)); err != nil {
 				return false, fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: final series: %w", err)

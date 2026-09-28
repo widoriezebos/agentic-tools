@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch/goadapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter/fakeadapter"
@@ -176,5 +178,55 @@ func TestBatchRedGroupLanguageFromTheTestingContract(t *testing.T) {
 	}
 	if fresh := (goadapter.Adapter{}).FreshExecution(); !slices.Equal(fresh, []string{"-count=1"}) {
 		t.Fatalf("Go fresh execution=%v", fresh)
+	}
+}
+
+// TestBatchDiagnosticCarriesCompleteRedEvidence: the lane judges the known-
+// flake predicate from the record, so the classification run carries every
+// group's execution evidence, its load sample, the collection facts of each
+// red group and the adapter that produced them.
+func TestBatchDiagnosticCarriesCompleteRedEvidence(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	execute := func(_ string, args []string, _ string, _ []string) ([]byte, int, error) {
+		exit := 1
+		result := proofrun.TestResult{AttemptID: "class", Groups: []proofrun.GroupResult{
+			{ID: "fake-green", Status: "passed", ExecutionIdentity: "id-green", NativeLaunched: true, CollectionComplete: true, LogPath: "green.log"},
+			{ID: "fake-red", Status: "failed", NativeExitStatus: &exit, LogPath: "red.log",
+				Observed: []proofrun.NativeTestIdentity{{Classname: "com.example.PaymentTest", Name: "pays", Status: "failed"}},
+				Missing:  []proofrun.NativeTestIdentity{{Classname: "com.example.PaymentTest", Name: "settles", Status: "missing-terminal"}}}}}
+		data, _ := json.Marshal(result)
+		path := args[slices.Index(args, "--result")+1]
+		return nil, 1, errors.Join(errors.New("exit 1"), os.MkdirAll(filepath.Dir(path), 0o755), os.WriteFile(path, data, 0o644))
+	}
+	result, err := launchBatchDiagnosticWithExecute(root, "batch-evidence", batch.DiagnosticRequest{GoalID: "goal-a", Tree: "tip",
+		Groups: []string{"fake-green", "fake-red"}}, execute)
+	if err != nil || result.Sample.At == "" || len(result.Evidence) != 2 || result.Evidence[0] != (batch.GroupEvidence{ID: "fake-green",
+		Status: "passed", ExecutionIdentity: "id-green", LogPath: "green.log", NativeLaunched: true, CollectionComplete: true}) {
+		t.Fatalf("diagnostic evidence=%+v err=%v", result, err)
+	}
+	red := result.Groups[0]
+	if len(result.Groups) != 1 || red.CollectionComplete || red.NativeExitStatus == nil || *red.NativeExitStatus != 1 ||
+		len(red.Missing) != 1 || red.Missing[0].Name != "settles" || len(red.Failures) != 1 {
+		t.Fatalf("red group evidence=%+v", result.Groups)
+	}
+	named := batchNameRedAdapters(testpolicy.Contract{Groups: []testpolicy.Group{{ID: "go-affected", Adapter: "go", PackageSelection: "changed-and-consumers"},
+		{ID: "junit", Adapter: "command", Format: "junit-xml"}, {ID: "exit", Adapter: "command", Format: "exit-status"}, {ID: "section/land", Adapter: "section"}}},
+		[]batch.RedGroup{{ID: "go-affected/cmd-metasystem"}, {ID: "junit"}, {ID: "exit"}, {ID: "section/land"}, {ID: "retired"}})
+	for index, want := range []string{"go", "command:junit-xml", "command:exit-status", "section", ""} {
+		if named[index].Adapter != want {
+			t.Fatalf("group %s adapter=%q, want %q", named[index].ID, named[index].Adapter, want)
+		}
+	}
+}
+
+// TestBatchLandSeamsRecheckFlakesBeforePublication is the production half of
+// TestExpiredAllowanceBetweenPredicateAndPublicationRefusesPublication: the
+// landing step reads the register and the command clock before it publishes.
+func TestBatchLandSeamsRecheckFlakesBeforePublication(t *testing.T) {
+	t.Parallel()
+	seams := batchLandSeamsWithRead(t.TempDir(), "batch-flakes", batch.Record{}, "base-commit", "owner", gitOutput, batchCommitBoundary)
+	if seams.FlakeRegister == nil || seams.Now == nil {
+		t.Fatal("the production landing seams do not recheck the known flakes before publication")
 	}
 }
