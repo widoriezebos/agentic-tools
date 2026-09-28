@@ -95,6 +95,19 @@ func WriteFile(path string, data []byte, mode os.FileMode, anchor string) (durab
 	})
 }
 
+// AnchorForArtifacts derives the durable-chain anchor for a path under a
+// checkout's artifacts/ tree: the checkout root, which pre-exists by
+// construction (the deepest one when artifacts trees nest). Paths outside
+// an artifacts tree anchor nowhere ("").
+func AnchorForArtifacts(path string) string {
+	clean := filepath.ToSlash(filepath.Clean(path))
+	index := strings.LastIndex(clean, "/artifacts/")
+	if index <= 0 {
+		return ""
+	}
+	return filepath.FromSlash(clean[:index])
+}
+
 // publish is the ONE publication sequence: make the
 // directory chain durable, fill a synced temp file in the target's own
 // directory, rename it into place, then sync the directory — with the

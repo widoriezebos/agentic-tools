@@ -297,3 +297,17 @@ func TestWriteVolatileFilePublishesWithTheNamedMode(t *testing.T) {
 		t.Fatalf("temporaries left behind: %v", leftovers)
 	}
 }
+
+// A writer under a checkout's artifacts/ tree anchors at the checkout root
+// above it; transient paths anchor nowhere.
+func TestAnchorForArtifacts(t *testing.T) {
+	if got := AnchorForArtifacts("/repo/x/artifacts/agents/jobs/j.json"); got != "/repo/x" {
+		t.Fatalf("anchor = %q, want /repo/x", got)
+	}
+	if got := AnchorForArtifacts("/tmp/staging/file.json"); got != "" {
+		t.Fatalf("non-artifacts path must not anchor: %q", got)
+	}
+	if got := AnchorForArtifacts("/a/artifacts/agents/x/artifacts/agents/jobs/j.json"); got != "/a/artifacts/agents/x" {
+		t.Fatalf("nested artifacts anchors at the DEEPEST checkout: %q", got)
+	}
+}

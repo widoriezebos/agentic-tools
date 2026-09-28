@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"time"
 )
 
@@ -160,11 +159,7 @@ func atomicJSON(path string, value any) error {
 	// Through the durable-write owner, under its two-outcome contract:
 	// the anchor is the checkout root derived from the path, and doubt
 	// is witnessed, never swallowed.
-	anchor := ""
-	clean := filepath.ToSlash(filepath.Clean(path))
-	if index := strings.LastIndex(clean, "/artifacts/"); index > 0 {
-		anchor = filepath.FromSlash(clean[:index])
-	}
+	anchor := atomicfile.AnchorForArtifacts(path)
 	durable, writeErr := atomicfile.WriteText(path, string(encoded), anchor)
 	if writeErr == nil && !durable && anchor != "" {
 		fmt.Fprintf(os.Stderr, "durability doubt: %s published without directory sync\n", path)
