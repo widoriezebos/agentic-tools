@@ -248,7 +248,6 @@ func families() []family {
 			name:    "report",
 			summary: "turn-end report decisions",
 			verbs: []verb{
-				{"stop-response", "resolve one runtime Stop payload to its immutable report", runReportStopResponse},
 				{"stop-status", "read one exact immutable Stop report", runReportStopStatus},
 				{"turn-verdict", "the one structured turn-end decision: scan, goal, block-once state", runReportTurnVerdict},
 				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},
