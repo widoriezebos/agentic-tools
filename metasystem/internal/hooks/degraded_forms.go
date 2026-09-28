@@ -9,9 +9,9 @@ import (
 // when no verdict can be produced. They depend on no engine state, no file and
 // no environment: the forms are the last word when everything else failed.
 // This table is their one source. The runtime hook renders them directly, the
-// plumbing stub carries the generated copy it needs when no engine can run,
-// and the shipped Claude Stop launcher carries the bootstrap form; tests
-// compare both copies with this renderer and the golden contract.
+// rendered settings command prints the engine-missing form when no engine is
+// installed, and the shipped Claude Stop launcher carries the bootstrap form;
+// tests compare each copy with this renderer and the golden contract.
 
 type degradedCause struct {
 	key, text, remedy string

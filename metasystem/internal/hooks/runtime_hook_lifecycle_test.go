@@ -361,7 +361,7 @@ func TestStopFromALinkedWorktreeCompletesInThePrimary(t *testing.T) {
 	if err := testexec.WriteFile(filepath.Join(primary.root, "metasystem", "bin", "metasystem"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	worktree := hookInstallation{root: harness, script: filepath.Join(harness, "scripts", "agents", "supervision-hook.sh")}
+	worktree := hookInstallation{root: harness}
 	ops := newFakeOps(t, primary)
 	ops.git = func(args ...string) (string, error) {
 		switch strings.Join(args[2:], " ") {

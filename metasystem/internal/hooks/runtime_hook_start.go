@@ -77,8 +77,8 @@ var StartIntentionalOutcomes = []string{
 	"authenticated-delegate", "foreign-runtime", "context-ready", "screen-context-ready", "notices-ready", "healthy-no-context", "helm",
 }
 
-// StartEngineMissingNotice is the SessionStart notice the plumbing stub
-// prints when no engine can run the hook.
+// StartEngineMissingNotice is the SessionStart notice the rendered settings
+// command prints when no engine is installed to run the hook.
 func StartEngineMissingNotice() string { return StartOutcomeNotices["engine-missing"].text }
 
 const screenOnlyNotice = "this runtime has no session-context channel; the packet reached the screen only"

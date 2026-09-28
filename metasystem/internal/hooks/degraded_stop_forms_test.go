@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
 
 const (
-	degradedHook       = "scripts/agents/supervision-hook.sh"
 	degradedTemplate   = "scripts/enforcement/claude-code-hooks.json"
 	degradedGolden     = "internal/hooks/testdata/stop-degraded-forms.golden"
 	degradedStatusText = "Status un" + "available"
@@ -81,41 +79,9 @@ func TestDegradedStopFormsMatchTheGoldenContract(t *testing.T) {
 	}
 }
 
-// TestStubCarriesTheGeneratedDegradedForms proves the plumbing stub's copy of
-// the forms it prints when no engine can run: each is the renderer's.
-func TestStubCarriesTheGeneratedDegradedForms(t *testing.T) {
-	t.Parallel()
-	root := degradedModuleRoot(t)
-	stub := degradedRead(t, filepath.Join(root, degradedHook))
-	block, before, after := degradedMarkedBlock(t, stub, "# BEGIN GENERATED degraded forms (internal/hooks renders them; do not edit)", "# END GENERATED degraded forms")
-	want := map[string]string{
-		"hook_stop_engine_missing":   mustForm(t, "allowed", "engine-missing"),
-		"hook_stop_bootstrap_failed": mustForm(t, "allowed", "bootstrap-failed"),
-		"hook_start_engine_missing":  StartEngineMissingNotice(),
-	}
-	assignment := regexp.MustCompile(`^([a-z_]+)='([^']*)'$`)
-	seen := map[string]bool{}
-	for _, line := range strings.Split(block, "\n") {
-		match := assignment.FindStringSubmatch(line)
-		if match == nil {
-			t.Fatalf("generated block line is not one quoted assignment: %q", line)
-		}
-		if want[match[1]] != match[2] {
-			t.Fatalf("generated %s = %q, want the renderer's %q", match[1], match[2], want[match[1]])
-		}
-		seen[match[1]] = true
-	}
-	if len(seen) != len(want) {
-		t.Fatalf("generated block carries %v, want %d forms", seen, len(want))
-	}
-	if strings.Contains(before+after, degradedStatusText) {
-		t.Fatal("the stub carries a degraded Status literal outside the generated block")
-	}
-}
-
 // TestDegradedFormsHaveOneSource keeps every degraded payload literal in the
 // renderer: Go sources, tests and scripts name forms through it; only the
-// golden contract, the stub's generated block and the shipped launcher
+// golden contract, and the shipped launcher
 // fallback carry the text.
 func TestDegradedFormsHaveOneSource(t *testing.T) {
 	t.Parallel()
@@ -123,7 +89,6 @@ func TestDegradedFormsHaveOneSource(t *testing.T) {
 	allowed := map[string]bool{
 		"internal/hooks/degraded_forms.go":                   true,
 		"internal/hooks/testdata/stop-degraded-forms.golden": true,
-		degradedHook:     true,
 		degradedTemplate: true,
 	}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
@@ -212,21 +177,6 @@ func degradedGoldenPayload(t *testing.T, rows []degradedFormRow, outcome, cause,
 	}
 	t.Fatalf("golden has no %s/%s/%s form", outcome, cause, qualifiers)
 	return ""
-}
-
-func degradedMarkedBlock(t *testing.T, contents, begin, end string) (block, before, after string) {
-	t.Helper()
-	beginAt := strings.Index(contents, begin+"\n")
-	if beginAt < 0 {
-		t.Fatalf("missing marker %q", begin)
-	}
-	blockAt := beginAt + len(begin) + 1
-	endAt := strings.Index(contents[blockAt:], "\n"+end)
-	if endAt < 0 {
-		t.Fatalf("missing marker %q", end)
-	}
-	endAt += blockAt
-	return contents[blockAt:endAt], contents[:beginAt], contents[endAt+1+len(end):]
 }
 
 func degradedClaudeStopCommand(t *testing.T, path string) string {

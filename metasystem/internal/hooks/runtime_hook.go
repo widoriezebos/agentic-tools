@@ -11,14 +11,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
 )
 
-// RuntimeHookScript is the plumbing stub every installed runtime setting
-// names, relative to the installation. The stub locates the engine and runs
-// `internal hook RUNTIME EVENT`; this package is that entry's body.
-const RuntimeHookScript = "scripts/agents/supervision-hook.sh"
-
-// RuntimeHookScriptEnv carries the stub's own path, as invoked, to the entry.
-const RuntimeHookScriptEnv = "METASYSTEM_HOOK_SCRIPT"
-
 // stopDeadlineParentEnv names the deadline parent to its Stop worker, and
 // stopDeadlineStartedEnv carries the parent's start (epoch seconds).
 const (
@@ -113,13 +105,6 @@ func runToolGate(inv Invocation) int {
 		return 0
 	}
 	cache := inv.Installation + "/artifacts/agents/context/engine-path"
-	if inv.Script != "" {
-		scriptDir := inv.Script
-		if index := strings.LastIndex(scriptDir, "/"); index >= 0 {
-			scriptDir = scriptDir[:index]
-		}
-		cache = scriptDir + "/../../artifacts/agents/context/engine-path"
-	}
 	data, err := os.ReadFile(cache)
 	if err != nil {
 		return 0
@@ -297,28 +282,12 @@ func worldInstallation(ops Ops, harnessRoot string) (string, bool) {
 }
 
 // installationRoot is the physical installation the hook serves: the
-// directory the direct settings command entered, or, when the cutover stub
-// launched the entry, the stub's grandparent directory.
+// directory the direct settings command entered.
 func (inv Invocation) installationRoot() (string, bool) {
-	if inv.Script == "" {
-		if inv.Installation == "" {
-			return "", false
-		}
-		return physicalDirectory(inv.Installation)
-	}
-	scriptDir, ok := physicalDirectory(scriptParent(inv.Script))
-	if !ok {
+	if inv.Installation == "" {
 		return "", false
 	}
-	return physicalDirectory(scriptDir + "/../..")
-}
-
-// scriptParent is the directory the stub was invoked from.
-func scriptParent(script string) string {
-	if index := strings.LastIndex(script, "/"); index >= 0 {
-		return script[:index]
-	}
-	return "."
+	return physicalDirectory(inv.Installation)
 }
 
 // writeLine prints one line; its error is the stream's.

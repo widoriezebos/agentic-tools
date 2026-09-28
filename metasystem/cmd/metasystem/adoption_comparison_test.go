@@ -287,7 +287,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	if evidence := mustRun(filled, engine, "internal", "covenant", "evidence", "--root", filled); !strings.Contains(evidence, "(proof greets): ") {
 		t.Fatalf("the filled target's covenant evidence gate did not judge its requirement:\n%s", evidence)
 	}
-	for _, path := range []string{"wow.md", "scripts/agents/supervision-hook.sh", "internal/hooks/runtime_hook_start.go", "internal/hooks/runtime_hook_start_test.go"} {
+	for _, path := range []string{"wow.md", "internal/hooks/runtime_hook_start.go", "internal/hooks/runtime_hook_start_test.go"} {
 		if _, err := os.Stat(filepath.Join(filled, path)); err != nil {
 			t.Fatalf("the installed target omitted the SessionStart audit surface: %s", path)
 		}

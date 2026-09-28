@@ -16,7 +16,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // The Release 1 bed: one temporary seat (a fake .git, no Git) with an
@@ -36,10 +35,8 @@ func newReleaseBed(t *testing.T) *helmBed {
 	bed := newHelmBed(t, 20, true)
 	top, err := filepath.EvalSymlinks(bed.inst)
 	helmMust(t, err)
-	hook := filepath.Join(bed.inst, "scripts", "agents", "supervision-hook.sh")
 	helmMust(t, os.MkdirAll(filepath.Join(bed.inst, "plans"), 0o755),
 		os.WriteFile(filepath.Join(bed.inst, "plans", "goals.md"), []byte("# Goals\n\n## Current goal: fix-it — Repair the thing\n- Origin: main\n- Next step: Repair it.\n"), 0o644),
-		testexec.WriteFile(hook, []byte("#!/usr/bin/env bash\n"), 0o755),
 		os.MkdirAll(filepath.Dir(steward.RepoIdentityPath(top)), 0o755))
 	helmMust(t, steward.MintIdentity(steward.RepoIdentityPath(top), steward.InstallIdentity{RepoIdentity: top, Generation: 1,
 		InstallPath: "/bin/true", MintedAt: "2026-09-28T09:00:00Z", Enrollment: steward.EnrollmentFixture}))
@@ -54,7 +51,7 @@ func (b *helmBed) stopWorker() (int, string) {
 	status := hooks.RunRuntimeHook(hooks.Invocation{
 		Runtime: "claude", Event: "stop", Stdin: strings.NewReader(`{"session_id":"s-1"}`), Stdout: &out, Stderr: &errs,
 		Lookup: func(name string) (string, bool) { value, ok := env[name]; return value, ok },
-		Pid:    os.Getpid(), Ppid: 777, Script: filepath.Join(b.inst, "scripts", "agents", "supervision-hook.sh"),
+		Pid:    os.Getpid(), Ppid: 777, Installation: b.inst,
 		Now: func() time.Time { return helmNow }, Sleep: func(time.Duration) {}, Environ: os.Environ, TempDir: b.t.TempDir(),
 	}, hookOwners{diagnostics: &errs})
 	return status, out.String()

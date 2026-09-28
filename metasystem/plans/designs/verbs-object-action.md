@@ -755,7 +755,9 @@ reconciliation owner's scoped publication (3.4, VOA-21).
   settings are regenerated in the same landing, so a seat that pulls runs the
   direct command from its next session; its `system setup` then validates the
   engine and re-enrolls its fence. The stub is deleted in a following commit
-  once every seat has switched.
+  once every seat has switched; with it go the entry's stub path
+  (`METASYSTEM_HOOK_SCRIPT`, `Invocation.Script`) and its tests, while setup
+  keeps recognizing stub-era settings so a late checkout still switches.
 
 ## 6. Protocols
 

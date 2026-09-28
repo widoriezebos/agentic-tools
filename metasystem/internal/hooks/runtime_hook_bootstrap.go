@@ -14,7 +14,7 @@ import (
 // symbolic link whose target is the pid of its holder. A holder that is no
 // longer alive leaves a stale fence the next claimant takes over, so a hook
 // killed at any point, or a builder that ended, never blocks a later
-// rebuild. The plumbing stub keeps the same fence in shell.
+// rebuild.
 
 // BootstrapFencePath and BootstrapLogPath are installation-relative.
 const (

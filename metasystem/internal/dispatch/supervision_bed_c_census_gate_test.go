@@ -168,7 +168,7 @@ func TestSupCJobRecordCarriesTheCensusJoinKey(t *testing.T) {
 		t.Fatal("S4-1/S4-10: the host-turn contract does not document pidStartedAt")
 	}
 	for _, asset := range []string{
-		"internal/delegation/lifecycle.go", "scripts/agents/supervision-hook.sh",
+		"internal/delegation/lifecycle.go", "internal/hooks/runtime_hook.go",
 		"scripts/enforcement/claude-code-hooks.json", "scripts/enforcement/codex-hooks.json",
 		"scripts/enforcement/devin-hooks.json",
 	} {

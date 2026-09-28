@@ -35,9 +35,11 @@ const (
 	// `go version -m` parser, was deleted on main (U7c) before this merge.
 	verbRatchetInternalVerbCeiling = 279
 	// R4: shell lines that reference the engine.
-	verbRatchetShellEngineCeiling = 32
+	verbRatchetShellEngineCeiling = 28
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
-	verbRatchetScriptLinesCeiling = 99
+	// U9's stub deletion took the last one: the ceiling is zero, the end state
+	// the redesign drives it to.
+	verbRatchetScriptLinesCeiling = 0
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
 	// U6a raised it by the process boundaries that were shell before: the
@@ -451,8 +453,22 @@ func TestVerbRatchetShellScriptLines(t *testing.T) {
 			sites = append(sites, ratchetSite{path: filepath.ToSlash(rel), line: i + 1})
 		}
 	}
-	if total == 0 {
+	if total == 0 && verbRatchetScriptLinesCeiling != 0 {
 		t.Fatal("found no shell lines under metasystem/scripts; the walk no longer reaches them")
+	}
+	if total == 0 {
+		// Zero is the end state, not a walk that lost its way: the same walk
+		// still finds a shell file placed under a scripts tree.
+		fixture := filepath.Join(t.TempDir(), "scripts", "agents")
+		if err := os.MkdirAll(fixture, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(fixture, "probe.sh"), []byte("#!/usr/bin/env bash\ntrue\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if found := ratchetShellFiles(t, filepath.Dir(fixture), nil); len(found) != 1 {
+			t.Fatalf("the shell walk found %d files in a scripts tree holding one; it no longer reaches them", len(found))
+		}
 	}
 	checkVerbRatchet(t, "shell lines under metasystem/scripts", "verbRatchetScriptLinesCeiling", total, verbRatchetScriptLinesCeiling, sites)
 }

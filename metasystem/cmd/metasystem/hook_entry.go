@@ -39,10 +39,9 @@ import (
 
 // runHookEntry is the `hook RUNTIME EVENT` entry the runtime settings run
 // directly from the installation directory (plans/designs/verbs-object-action.md
-// 3.3): the runtime lifecycle hook body. During the cutover the plumbing stub
-// scripts/agents/supervision-hook.sh may still exec it, naming itself in
-// METASYSTEM_HOOK_SCRIPT. `hook --accepts` answers whether this engine serves
-// the entry at all; `system setup` asks it before switching a checkout over.
+// 3.3): the runtime lifecycle hook body. `hook --accepts` answers whether this
+// engine serves the entry at all; `system setup` asks it before connecting a
+// checkout's hooks.
 func runHookEntry(args []string) int {
 	if len(args) == 1 && args[0] == "--accepts" {
 		return 0
@@ -54,12 +53,8 @@ func runHookEntry(args []string) int {
 	if len(args) > 1 {
 		event = args[1]
 	}
-	script := os.Getenv(hooks.RuntimeHookScriptEnv)
-	installation := ""
-	if script == "" {
-		// The direct settings command entered the installation first.
-		installation, _ = os.Getwd()
-	}
+	// The settings command entered the installation first.
+	installation, _ := os.Getwd()
 	var signals chan os.Signal
 	if event == "start" {
 		signals = make(chan os.Signal, 4)
@@ -74,7 +69,7 @@ func runHookEntry(args []string) int {
 	return hooks.RunRuntimeHook(hooks.Invocation{
 		Runtime: runtime, Event: event,
 		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
-		Lookup: os.LookupEnv, Pid: os.Getpid(), Ppid: os.Getppid(), Script: script, Installation: installation,
+		Lookup: os.LookupEnv, Pid: os.Getpid(), Ppid: os.Getppid(), Installation: installation,
 		Now:       time.Now,
 		Monotonic: func() time.Duration { return time.Since(origin) },
 		After:     time.After, Sleep: time.Sleep, Signals: signals,

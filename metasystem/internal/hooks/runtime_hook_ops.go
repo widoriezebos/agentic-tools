@@ -199,14 +199,8 @@ type Invocation struct {
 	// Pid and Ppid are this process and its parent: the parent is the
 	// runtime (or the Stop deadline parent for a worker).
 	Pid, Ppid int
-	// Script is the stub's path as it was invoked, when the cutover stub
-	// scripts/agents/supervision-hook.sh launched the entry; relative paths
-	// resolve against the working directory, exactly as the stub resolved
-	// them. Empty when the runtime settings run the entry directly.
-	Script string
-	// Installation is the directory the direct settings command entered
-	// before running the entry: the installation the hook serves. It is read
-	// only when Script is empty.
+	// Installation is the directory the settings command entered before
+	// running the entry: the installation the hook serves.
 	Installation string
 	// Now is the wall clock.
 	Now func() time.Time

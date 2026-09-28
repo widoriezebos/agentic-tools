@@ -140,7 +140,6 @@ func TestShippedInstallationRoutedAssetsExist(t *testing.T) {
 		"scripts/agents/permissions/workspace.json",
 		"metasystem.conf",
 		"scripts/agents/templates/design-common.md",
-		"scripts/agents/supervision-hook.sh",
 		"scripts/agents/schemas/mission-state.schema.json",
 		"scripts/agents/schemas/wall-evidence.schema.json",
 		"scripts/agents/path-classes.txt",

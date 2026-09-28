@@ -305,7 +305,7 @@ func TestContextCostHookHelper(t *testing.T) {
 			}
 			return os.LookupEnv(name)
 		},
-		Pid: os.Getpid(), Ppid: os.Getppid(), Script: os.Getenv("METASYSTEM_CONTEXT_COST_HOOK_SCRIPT"),
+		Pid: os.Getpid(), Ppid: os.Getppid(), Installation: os.Getenv("METASYSTEM_CONTEXT_COST_HOOK_INSTALLATION"),
 		Now: time.Now, Environ: os.Environ, TempDir: os.TempDir(),
 	}, owners)
 	os.Exit(status)
@@ -604,7 +604,7 @@ func newContextCostBed(t *testing.T, runtimeName, candidate, readerHelper string
 		t: t, runtime: runtimeName, session: "context-cost-" + runtimeName,
 		outer: outer, installation: installation, home: home,
 		engine:       filepath.Join(installation, "bin", "metasystem"),
-		hook:         filepath.Join(installation, "scripts", "agents", "supervision-hook.sh"),
+		hook:         installation,
 		healthRecord: filepath.Join(outer, "hook-context-role.json"), testBinary: testBinary,
 		readerHelper: readerHelper,
 		fixture:      testutil.Fixture(t),
@@ -631,7 +631,7 @@ func (bed *contextCostBed) environment(wrapper bool) []string {
 		"METASYSTEM_CONTEXT_COST_READER_RUNTIME=", "METASYSTEM_CONTEXT_COST_READER_SESSION=",
 		"METASYSTEM_CONTEXT_COST_READER_TRANSCRIPT=", "METASYSTEM_CONTEXT_COST_READER_HOME=",
 		"METASYSTEM_CONTEXT_COST_READER_TOPLEVEL=", "METASYSTEM_CONTEXT_COST_READER_PAUSE=",
-		"METASYSTEM_CONTEXT_COST_HOOK_HELPER=", "METASYSTEM_CONTEXT_COST_HOOK_SCRIPT=",
+		"METASYSTEM_CONTEXT_COST_HOOK_HELPER=", "METASYSTEM_CONTEXT_COST_HOOK_INSTALLATION=",
 		"HOME=",
 	}
 	environment := make([]string, 0, len(os.Environ())+7)
@@ -651,7 +651,7 @@ func (bed *contextCostBed) environment(wrapper bool) []string {
 	if wrapper {
 		environment = append(environment,
 			"METASYSTEM_CONTEXT_COST_HOOK_HELPER=1",
-			"METASYSTEM_CONTEXT_COST_HOOK_SCRIPT="+bed.hook,
+			"METASYSTEM_CONTEXT_COST_HOOK_INSTALLATION="+bed.hook,
 			"METASYSTEM_CONTEXT_COST_RUNTIME="+bed.runtime,
 			fmt.Sprintf("METASYSTEM_CONTEXT_COST_PID=%d", os.Getpid()),
 			fmt.Sprintf("METASYSTEM_CONTEXT_COST_STARTED=%d", bed.startedAt),

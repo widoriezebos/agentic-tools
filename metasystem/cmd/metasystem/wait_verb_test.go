@@ -698,24 +698,12 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		// synthetic runtime intentionally has neither a staged signature adapter
 		// nor a start-context channel; the announced holder must still recover its
 		// durable wait row through the hook's system message.
-		sourceHook, err := filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "supervision-hook.sh"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		hook := filepath.Join(root, "scripts", "agents", "supervision-hook.sh")
 		canonicalEngine := filepath.Join(root, "bin", "metasystem")
-		if err := os.MkdirAll(filepath.Dir(hook), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.MkdirAll(filepath.Dir(canonicalEngine), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		hookBytes, err := os.ReadFile(sourceHook)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := testexec.WriteFile(hook, hookBytes, 0o755); err != nil {
-			t.Fatal(err)
+		// scripts/agents marks the installation the state root resolves.
+		for _, directory := range []string{filepath.Dir(canonicalEngine), filepath.Join(root, "scripts", "agents")} {
+			if err := os.MkdirAll(directory, 0o755); err != nil {
+				t.Fatal(err)
+			}
 		}
 		engineBytes, err := os.ReadFile(binary)
 		if err != nil {
@@ -729,7 +717,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		if err := testexec.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		command := exec.Command("bash", hook, "fake", "start")
+		command := directHookCommand(wrapper, root)
 		commandEnvironment := make([]string, 0, len(os.Environ())+2)
 		for _, value := range os.Environ() {
 			if strings.HasPrefix(value, "METASYSTEM_HOOK_DELEGATE_") || strings.HasPrefix(value, "METASYSTEM_BIN=") || strings.HasPrefix(value, "METASYSTEM_WAIT_REAL_ENGINE=") {
@@ -743,7 +731,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		if hookErr != nil || !strings.Contains(string(hookOutput), want) {
 			t.Fatalf("session-start hook did not relay the durable wait line: err=%v output=%s", hookErr, hookOutput)
 		}
-		nonHolder := exec.Command("bash", hook, "fake", "start")
+		nonHolder := directHookCommand(wrapper, root)
 		nonHolder.Env = append(append([]string(nil), commandEnvironment...), "METASYSTEM_BIN="+wrapper, "METASYSTEM_WAIT_REAL_ENGINE="+binary)
 		nonHolder.Stdin = strings.NewReader(`{"session_id":"another-session","cwd":"` + root + `","source":"startup"}`)
 		nonHolderOutput, nonHolderErr := nonHolder.CombinedOutput()
@@ -759,7 +747,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 			if err := os.Remove(leasePath); err != nil {
 				t.Fatal(err)
 			}
-			withoutLease := exec.Command("bash", hook, "fake", "start")
+			withoutLease := directHookCommand(wrapper, root)
 			withoutLease.Env = append(append([]string(nil), commandEnvironment...), "METASYSTEM_BIN="+wrapper, "METASYSTEM_WAIT_REAL_ENGINE="+binary)
 			withoutLease.Stdin = strings.NewReader(`{"session_id":"session-new","cwd":"` + root + `","source":"startup"}`)
 			withoutLeaseOutput, withoutLeaseErr := withoutLease.CombinedOutput()
@@ -1173,16 +1161,8 @@ func copyExecutableFixture(t *testing.T, source, target string) {
 
 func installPendingWaitHookFixture(t *testing.T, root, binary string) (hook, canonical string, owners *pendingWaitHookOwners) {
 	t.Helper()
-	sourceRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, relative := range []string{
-		"scripts/agents/supervision-hook.sh",
-	} {
-		copyExecutableFixture(t, filepath.Join(sourceRoot, relative), filepath.Join(root, relative))
-	}
-	hook = filepath.Join(root, "scripts", "agents", "supervision-hook.sh")
+	// The runtime settings run the engine's hook entry in the installation.
+	hook = root
 	canonical = filepath.Join(root, "bin", "metasystem")
 	copyExecutableFixture(t, binary, canonical)
 	fixtureRoot, err := filepath.EvalSymlinks(root)
@@ -1460,7 +1440,7 @@ func runPendingWaitHook(t *testing.T, fixture *installedWaitFixture, hook string
 	before := len(owners.upRequests)
 	status := hooks.RunRuntimeHook(hooks.Invocation{
 		Runtime: "fake", Event: event, Stdin: strings.NewReader(payload), Stdout: &stdout, Stderr: &stderr,
-		Lookup: os.LookupEnv, Pid: os.Getpid(), Ppid: os.Getpid(), Script: hook,
+		Lookup: os.LookupEnv, Pid: os.Getpid(), Ppid: os.Getpid(), Installation: hook,
 		Now: time.Now, Environ: os.Environ, TempDir: t.TempDir(),
 	}, owners)
 	var holdErr error
@@ -1668,19 +1648,12 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 		jobStatus: "pending-setup", writeWaiter: true, requireHook: true,
 	})
 	hookSession := hookFixture.session
-	sourceRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
+	hook := hookRoot
+	canonical := filepath.Join(hookRoot, "bin", "metasystem")
+	if err := os.MkdirAll(filepath.Dir(canonical), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	hook := filepath.Join(hookRoot, "scripts", "agents", "supervision-hook.sh")
-	canonical := filepath.Join(hookRoot, "bin", "metasystem")
-	for _, target := range []string{hook, canonical} {
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
 	for source, target := range map[string]string{
-		filepath.Join(sourceRoot, "scripts", "agents", "supervision-hook.sh"): hook,
 		binary: canonical,
 	} {
 		data, readErr := os.ReadFile(source)
@@ -2265,4 +2238,12 @@ func TestWaitLeaseTakeoverRepairsAndResumes(t *testing.T) {
 		t.Fatalf("resume crossed semantic clocks: now=%s/%s boot=%s/%s elapsed=%s/%s err=%v",
 			beforeNow, afterOptions.Now(), bootID, afterBootID, elapsed, afterElapsed, err)
 	}
+}
+
+// directHookCommand runs the engine's hook entry as the runtime settings do:
+// in the installation directory, through the engine the settings select.
+func directHookCommand(engine, installation string) *exec.Cmd {
+	command := exec.Command(engine, "internal", "hook", "fake", "start")
+	command.Dir = installation
+	return command
 }

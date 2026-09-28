@@ -75,8 +75,7 @@ func runHookTestWorker() int {
 // hookInstallation is one fixture installation: the stub's directory, an
 // executable engine placeholder and the runtime adapters' directory.
 type hookInstallation struct {
-	root   string
-	script string
+	root string
 }
 
 func newHookInstallation(t *testing.T) hookInstallation {
@@ -90,14 +89,10 @@ func newHookInstallation(t *testing.T) hookInstallation {
 			t.Fatal(err)
 		}
 	}
-	script := filepath.Join(root, "scripts", "agents", "supervision-hook.sh")
-	if err := testexec.WriteFile(script, []byte("#!/usr/bin/env bash\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("#!/bin/sh\nexit 97\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return hookInstallation{root: root, script: script}
+	return hookInstallation{root: root}
 }
 
 // fakeOps is one test's owner operations: every call is recorded, and each
@@ -622,7 +617,7 @@ func runHook(t *testing.T, installation hookInstallation, ops Ops, call hookCall
 		Runtime: call.runtime, Event: call.event, Stdin: strings.NewReader(call.payload),
 		Stdout: out, Stderr: &stderr,
 		Lookup: func(name string) (string, bool) { value, ok := env[name]; return value, ok },
-		Pid:    os.Getpid(), Ppid: call.ppid, Script: installation.script,
+		Pid:    os.Getpid(), Ppid: call.ppid, Installation: installation.root,
 		Now: now, Monotonic: call.monotonic, After: call.after, Sleep: func(time.Duration) { runtime.Gosched() },
 		Signals: call.signals, Exec: call.exec,
 		Environ:     func() []string { return os.Environ() },

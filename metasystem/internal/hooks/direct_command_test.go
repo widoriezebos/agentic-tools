@@ -28,7 +28,6 @@ const directFakeEngine = `#!/bin/sh
   printf 'argv=%s\n' "$*"
   printf 'pwd=%s\n' "$(pwd -P)"
   printf 'self=%s\n' "$0"
-  printf 'script=%s\n' "${METASYSTEM_HOOK_SCRIPT-}"
   while IFS= read -r line || [ -n "$line" ]; do printf 'stdin=%s\n' "$line"; done
 } >>"${DIRECT_ENGINE_RECORD:?}"
 printf 'engine stdout\n'
@@ -212,7 +211,7 @@ func TestDirectCommandRunsTheEngineEntry(t *testing.T) {
 			t.Fatal(err)
 		}
 		status, stdout, stderr := bed.run(t, bed.repo, commands[event], "payload one\npayload two\n", "DIRECT_ENGINE_STATUS=0")
-		want := "argv=internal hook claude " + event + "\npwd=" + bed.installation + "\nself=" + engine + "\nscript=\nstdin=payload one\nstdin=payload two\n"
+		want := "argv=internal hook claude " + event + "\npwd=" + bed.installation + "\nself=" + engine + "\nstdin=payload one\nstdin=payload two\n"
 		if status != 0 || stdout != "engine stdout\n" || stderr != "" || bed.recorded(t) != want {
 			t.Fatalf("%s = status %d stdout %q stderr %q record:\n%s\nwant:\n%s", event, status, stdout, stderr, bed.recorded(t), want)
 		}
@@ -233,7 +232,7 @@ func TestDirectCommandRunsTheEngineEntry(t *testing.T) {
 	if status, _, _ := bed.run(t, bed.repo, commands["tool"], "{}", "DIRECT_ENGINE_STATUS=2"); status != 0 {
 		t.Fatalf("failed tool gate = %d", status)
 	}
-	if _, err := os.Stat(filepath.Join(bed.installation, filepath.FromSlash(RuntimeHookScript))); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(bed.installation, "scripts", "agents", "supervision-hook.sh")); !os.IsNotExist(err) {
 		t.Fatalf("the bed carries the stub: %v", err)
 	}
 }
@@ -365,8 +364,8 @@ func runHookTestEngine() int {
 	return RunRuntimeHook(Invocation{
 		Runtime: args[2], Event: args[3], Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
 		Lookup: os.LookupEnv, Pid: os.Getpid(), Ppid: os.Getppid(),
-		Script: os.Getenv(RuntimeHookScriptEnv), Installation: installation,
-		Now: time.Now, Monotonic: func() time.Duration { return time.Since(origin) },
+		Installation: installation,
+		Now:          time.Now, Monotonic: func() time.Duration { return time.Since(origin) },
 		// No deadline fires: the worker's exit is the event the parent waits
 		// on, so nothing here waits on wall time.
 		After: func(time.Duration) <-chan time.Time { return nil }, Sleep: func(time.Duration) { runtime.Gosched() },
@@ -429,7 +428,7 @@ func TestDirectStopEndToEndWithoutTheStub(t *testing.T) {
 				!strings.Contains(worker, " ppid="+parentPid+" ") || !strings.Contains(worker, want+" deadline-parent="+parentPid) {
 				t.Fatalf("parent %q worker %q", parent, worker)
 			}
-			if _, err := os.Stat(filepath.Join(bed.installation, filepath.FromSlash(RuntimeHookScript))); !os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(bed.installation, "scripts", "agents", "supervision-hook.sh")); !os.IsNotExist(err) {
 				t.Fatalf("the bed carries the stub: %v", err)
 			}
 		})

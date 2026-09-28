@@ -33,7 +33,7 @@ func finishDirect(t *testing.T, setup func(*startRun), family, key string, stdou
 		stdout = &buffer
 	}
 	installation := newHookInstallation(t)
-	s := &startRun{inv: Invocation{Runtime: "fake", Event: "start", Stdout: stdout, Stderr: &stderr, Script: installation.script}.withDefaults(),
+	s := &startRun{inv: Invocation{Runtime: "fake", Event: "start", Stdout: stdout, Stderr: &stderr, Installation: installation.root}.withDefaults(),
 		ops: newFakeOps(t, installation), contextKind: "none", contextBytes: 2048}
 	if setup != nil {
 		setup(s)
@@ -370,7 +370,7 @@ func TestHookStartFailureBranchFixtures(t *testing.T) {
 			return i
 		}},
 		{key: "installation-directory", mode: "healthy", mutate: func(i hookInstallation, _ *fakeOps) hookInstallation {
-			i.script = "/metasystem-fixture-directory-does-not-exist/supervision-hook.sh"
+			i.root = "/metasystem-fixture-directory-does-not-exist"
 			return i
 		}},
 		{key: "checkout-identification", mode: "healthy", mutate: func(i hookInstallation, ops *fakeOps) hookInstallation {
@@ -434,7 +434,7 @@ func TestHookStartFailureBranchFixtures(t *testing.T) {
 		ops := fullPathOps(t, installation, "healthy")
 		var stdout, stderr bytes.Buffer
 		status := RunRuntimeHook(Invocation{Runtime: "claude", Event: "start", Stdin: failingReader{}, Stdout: &stdout, Stderr: &stderr,
-			Script: installation.script, Ppid: 1}, ops)
+			Installation: installation.root, Ppid: 1}, ops)
 		if status != 0 || stdout.String() != noticeOf("payload-storage") {
 			t.Fatalf("unreadable input = status %d stdout %q", status, stdout.String())
 		}
