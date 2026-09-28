@@ -92,6 +92,7 @@ func reviewSource() string {
 type servedReview struct {
 	handler http.Handler
 	service *partner.Service
+	root    string
 	created []project.NewReview
 }
 
@@ -121,7 +122,7 @@ func serveReviewOn(t *testing.T, opener func(context.Context) (partner.Endpoint,
 	service := partner.NewService(runtime, host,
 		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
 		partner.Facts{Document: document}, func() time.Time { return time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC) })
-	served := &servedReview{service: service}
+	served := &servedReview{service: service, root: root}
 	info := Info{
 		Observe: withALanding, Authority: proven(), Partner: service, PartnerConfigured: true,
 		Document: document,
@@ -428,4 +429,57 @@ func TestAStartThatFailedToOpenIsRetriedOnItsOwnRecord(t *testing.T) {
 	drain(t, events)
 	testutil.Expect(t, "one record", len(served.created), 1)
 	testutil.Expect(t, "on that record", partnerSnapshot(t, again).Conversation, reviewed)
+}
+
+// The verdict is a fact of the Outcome card, not of the page (Sol SOL-A-02,
+// SOL-A-07): the closing turn's deposit carries the verdict the human chose on
+// the stream, in the answer the read route gives, and in the transcript on disk
+// — so a card rebuilt after a reload records under the same shape.
+func TestTheClosingDepositCarriesItsVerdict(t *testing.T) {
+	t.Parallel()
+	served := serveReview(t, fakeacp.Script{
+		Reads: []fakeacp.Read{{Name: "mcp__metasystem__deposit", Title: "deposit(outcome)",
+			Result: "prepared\nDeposit: outcome\n--- the deposit follows, whole and to the end ---\n" +
+				"Verdict: clear to land\nExamined: the owner and its test\n"}},
+		Chunks: []string{"Here is what it came to."},
+	})
+	events, stop := served.service.Subscribe()
+	defer stop()
+	testutil.Require(t, "the review opened", post(t, served.handler, partnerSittingPath, reviewLanding, nil).Code, http.StatusOK)
+	drain(t, events)
+
+	closed := post(t, served.handler, partnerSittingClosePath,
+		`{"conversation":"`+reviewed+`","verdict":"clear to land","about":{"section":"Review"}}`, nil)
+	testutil.Require(t, "the close was asked", closed.Code, http.StatusOK)
+	streamed := ""
+	for beat := range events {
+		if beat.Deposit != nil && beat.Deposit.Kind == "outcome" {
+			streamed = beat.Deposit.Verdict
+		}
+		if beat.Kind == partner.EventDone || beat.Kind == partner.EventStopped || beat.Kind == partner.EventError {
+			break
+		}
+	}
+	testutil.Expect(t, "the stream carries the verdict", streamed, partner.VerdictClear)
+
+	outcomeOf := func(messages []partner.Message) *partner.Deposit {
+		for at := len(messages) - 1; at >= 0; at-- {
+			for index := range messages[at].Deposits {
+				if messages[at].Deposits[index].Kind == "outcome" {
+					return &messages[at].Deposits[index]
+				}
+			}
+		}
+		return nil
+	}
+	room := partnerSnapshot(t, get(t, served.handler, partnerPath+"?conversation="+reviewed, nil))
+	read := outcomeOf(room.Messages)
+	testutil.Require(t, "the read route carries the outcome", read != nil, true)
+	testutil.Expect(t, "with its verdict", read.Verdict, partner.VerdictClear)
+
+	kept, err := partner.OpenConversation(served.root, "Wido", reviewed)
+	testutil.Require(t, "the transcript reopened from disk", err, nil)
+	persisted := outcomeOf(kept.Messages(100))
+	testutil.Require(t, "the transcript keeps the outcome", persisted != nil, true)
+	testutil.Expect(t, "and its verdict", persisted.Verdict, partner.VerdictClear)
 }

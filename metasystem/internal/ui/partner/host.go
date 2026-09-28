@@ -200,6 +200,11 @@ type Deposit struct {
 	// service from the sitting. The page writes an admitted deposit into that
 	// record and no other, so which record it is cannot be the browser's guess.
 	Subject Subject `json:"subject,omitzero"`
+	// Verdict is the verdict the human chose on the End sheet, stamped by the
+	// service on the outcome a review's closing turn offers (g1-s65 D10). It
+	// is the card's, not the page's: a card rebuilt after a reload records
+	// under the verdict it was drafted with.
+	Verdict string `json:"verdict,omitempty"`
 	// Offered says whether the human was shown it as something to record.
 	//
 	// The host never sets it: it reads what the tool prepared, and whether a

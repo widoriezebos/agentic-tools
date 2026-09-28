@@ -259,6 +259,12 @@ export type Deposit = {
    * record it is cannot be this browser's guess.
    */
   subject?: Subject;
+  /**
+   * The verdict a review's closing turn was asked with, stamped by the server
+   * on the Outcome it offers (g1-s65 D10). It is the card's, so a card rebuilt
+   * after a reload records under it.
+   */
+  verdict?: string;
   /** Whether the human was shown it as something to record. */
   offered: boolean;
   /**

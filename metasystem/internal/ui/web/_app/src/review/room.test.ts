@@ -9,6 +9,7 @@ import {
   steppingOut,
   CLEAR_REFUSED,
   reviewOutcome,
+  outcomeShape,
   answerLine,
   retipped,
   reviewedOf,
@@ -32,7 +33,7 @@ import {
   type Desk,
   type DeskItem,
 } from "./room";
-import { appended, type Entry } from "../partner/sitting";
+import { appended, cardsIn, entryOf, type Entry } from "../partner/sitting";
 import { recorder, type Written } from "../partner/recording";
 
 /**
@@ -179,6 +180,54 @@ describe("ending", () => {
     const back = await record.press(outcome, "outcome", "r.md", reviewOutcome("send back", "Examined: x"));
     expect(back.kind).toBe("conflict");
     expect(saves[1]).toContain("Verdict: send back\n\nExamined: x\n\nFine.");
+  });
+
+  it("treats an Examined line with nothing after its colon as missing (Sol SOL-A-07)", () => {
+    expect(outcomeWithVerdict("send back", "Examined:\n\nFine.", "Examined: the change index")).toEqual({
+      text: "Verdict: send back\n\nExamined: the change index\n\nFine.",
+    });
+    expect(outcomeWithVerdict("send back", "Verdict: send back\nExamined:   \nFine.", "")).toEqual({
+      text: "Verdict: send back\n\nExamined: nothing was put on the desk\n\nFine.",
+    });
+  });
+
+  it("records a card rebuilt after a reload under the verdict the card carries, not the page's (Sol SOL-A-02, SOL-A-07)", async () => {
+    // The reload: the page holds no verdict and no marks; the card is rebuilt
+    // from the conversation's messages, whose closing deposit carries its verdict.
+    const carried = [{
+      turn: "t3",
+      deposits: [{ kind: "outcome", text: "Fine.", offered: true, verdict: "clear to land",
+        subject: { kind: "record", id: "r.md", title: "Review of g" } }],
+    }];
+    const [card] = cardsIn(carried, {}, "r.md", new Map());
+    const entry = entryOf(card, "Wido", "2026-09-28");
+    const shape = outcomeShape(card, "review", []);
+    expect(shape).toBeDefined();
+
+    const empty = "# Review of g\n\n## Findings\n\n## Outcome\n";
+    const open = appended(empty, {
+      when: "2026-09-28", who: "Wido", text: "the lock is never released", clause: "owner.go:60-72",
+      consequence: "a dead press holds the lock", section: "Findings", mark: "deposit:t9#0", answer: "unanswered",
+    }, "finding");
+    const saves: string[] = [];
+    const save = (_id: string, source: string): Promise<Written> => {
+      saves.push(source);
+      return Promise.resolve({ revision: String(saves.length + 1), source });
+    };
+    const reread = () => Promise.reject(new Error("no reread"));
+    const refused = await recorder({ id: "r.md", revision: "1", source: open }, save, reread, () => false)
+      .press(entry, "outcome", "r.md", shape);
+    expect(refused).toEqual({ kind: "failed", reason: expect.stringContaining(CLEAR_REFUSED) });
+    expect(saves).toHaveLength(0);
+
+    const answered = open.replace("Answer: unanswered", "Answer: fix");
+    const recorded = await recorder({ id: "r.md", revision: "1", source: answered }, save, reread, () => false)
+      .press(entry, "outcome", "r.md", shape);
+    expect(recorded.kind).toBe("recorded");
+    expect(saves).toHaveLength(1);
+    const outcome = saves[0].slice(saves[0].indexOf("## Outcome"));
+    expect(outcome).toContain("Verdict: clear to land\n\nExamined: nothing was put on the desk\n\nFine.");
+    expect(outcome).toMatch(/Verdict: clear to land\n\nExamined: \S/u);
   });
 
   it("says a nod plainly when the piles are empty", () => {

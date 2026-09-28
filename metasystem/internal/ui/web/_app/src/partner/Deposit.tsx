@@ -78,7 +78,7 @@ export function copyable(text: string, clause: string, label: string): string {
 }
 
 export function DepositCard({ id }: { id: string }) {
-  const { deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, sitting, verdict } =
+  const { deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, sitting } =
     usePartner();
   const card = cardIn(deposits, id);
   const entryField = useId();
@@ -194,10 +194,10 @@ export function DepositCard({ id }: { id: string }) {
               sheet, and names what they examined after it (g1-s65 D10): the
               card says so before Record it, so the words written are the words
               read. */}
-          {card.kind === "outcome" && sitting?.purpose === "review" && verdict !== "" && (
+          {card.kind === "outcome" && sitting?.purpose === "review" && (card.verdict ?? "") !== "" && (
             <p className="ms-deposit-clause">
               <span className="ms-deposit-label">Verdict</span>
-              {`${verdict} — recorded as the first line of the Outcome, with what you examined after it`}
+              {`${card.verdict} — recorded as the first line of the Outcome, with what you examined after it`}
             </p>
           )}
           <label className="ms-visually-hidden" htmlFor={entryField}>

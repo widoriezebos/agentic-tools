@@ -1,4 +1,4 @@
-import type { Subject } from "../partner/api";
+import type { Deposit, Subject } from "../partner/api";
 import { ACCEPTED, entriesIn, FIX, followUp, LEFT_OPEN, type Entry } from "../partner/sitting";
 
 /**
@@ -264,7 +264,8 @@ function examinedAs(item: DeskItem): string {
  * The Outcome's words with the verdict as its first line and what was examined
  * after it, so a nod cannot pass as a review. The first line is exactly
  * `Verdict: <the chosen verdict>` and an `Examined:` line follows it before any
- * other words; a draft missing either gets it, once. A draft that opens with
+ * other words; a draft missing either gets it, once, and an `Examined:` line
+ * with nothing after its colon is missing (Sol SOL-A-07). A draft that opens with
  * another verdict line is refused in words rather than rewritten (Sol SOL-A-07).
  */
 export function outcomeWithVerdict(verdict: string, text: string, examined: string): { text: string } | { refusal: string } {
@@ -280,7 +281,12 @@ export function outcomeWithVerdict(verdict: string, text: string, examined: stri
     said = said.slice(said.indexOf(first) + first.length).replace(/^\s+/u, "");
   }
   const parts = [line];
-  if (!/^examined\s*:/iu.test(said)) {
+  const next = said.split("\n", 1)[0];
+  const named = /^examined\s*:(.*)$/iu.exec(next.trim());
+  if (named !== null && named[1].trim() === "") {
+    said = said.slice(next.length).replace(/^\s+/u, "");
+  }
+  if (named === null || named[1].trim() === "") {
     parts.push(examined.trim() === "" ? examinedLine([]) : examined);
   }
   if (said !== "") {
@@ -307,6 +313,28 @@ export function reviewOutcome(verdict: string, examined: string): (source: strin
     const composed = outcomeWithVerdict(verdict, entry.text, examined);
     return "refusal" in composed ? composed : { ...entry, text: composed.text };
   };
+}
+
+/** What a review's Outcome that carries no verdict is refused with: only End drafts one that does. */
+export const NO_VERDICT =
+  "This Outcome carries no verdict, so it was not drafted by End. Press End, choose how this review ends, and record the Outcome that draft offers.";
+
+/**
+ * How a press of Record it shapes this card, from the card alone: a review's
+ * Outcome records under the verdict its closing deposit carries, whatever this
+ * page remembers, so a card rebuilt after a reload records under the same shape
+ * (Sol SOL-A-02, SOL-A-07). Every other card is recorded as it reads.
+ */
+export function outcomeShape(
+  card: Pick<Deposit, "kind" | "verdict">,
+  purpose: string | undefined,
+  items: readonly DeskItem[],
+): ((source: string, entry: Entry) => Entry | { refusal: string }) | undefined {
+  if (card.kind !== "outcome" || purpose !== "review") {
+    return undefined;
+  }
+  const verdict = card.verdict ?? "";
+  return verdict === "" ? () => ({ refusal: NO_VERDICT }) : reviewOutcome(verdict, examinedLine(items));
 }
 
 /* ------------------------------------------------------------- the door -- */
