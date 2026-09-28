@@ -1,7 +1,9 @@
 package validate
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"regexp"
 	"strings"
@@ -41,8 +43,11 @@ func declaredBudget(lines []string, name string) string {
 // stop-loss trigger fired, 2 the ledger is unreadable.
 func StopLoss(file string) (out, errs []string, code int) {
 	data, err := os.ReadFile(file)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, []string{fmt.Sprintf("no ledger at %s; nothing was checked", file)}, 2
+	}
 	if err != nil {
-		return nil, []string{"missing --file ledger"}, 2
+		return nil, []string{fmt.Sprintf("cannot read the ledger at %s: %v; nothing was checked", file, err)}, 2
 	}
 	lines := strings.Split(string(data), "\n")
 	if len(lines) > 0 && lines[len(lines)-1] == "" {

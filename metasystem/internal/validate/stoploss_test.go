@@ -55,8 +55,15 @@ func TestStopLoss(t *testing.T) {
 			}
 		})
 	}
-	if _, errs, code := StopLoss(filepath.Join(t.TempDir(), "absent.md")); code != 2 ||
-		errs[0] != "missing --file ledger" {
+	// EM-03: the flag was given; what is missing is the ledger it names.
+	absent := filepath.Join(t.TempDir(), "absent.md")
+	if _, errs, code := StopLoss(absent); code != 2 ||
+		errs[0] != "no ledger at "+absent+"; nothing was checked" {
 		t.Fatalf("absent ledger wrong: %v %d", errs, code)
+	}
+	directory := t.TempDir()
+	if _, errs, code := StopLoss(directory); code != 2 ||
+		!strings.HasPrefix(errs[0], "cannot read the ledger at "+directory+": ") || !strings.HasSuffix(errs[0], "; nothing was checked") {
+		t.Fatalf("unreadable ledger wrong: %v %d", errs, code)
 	}
 }
