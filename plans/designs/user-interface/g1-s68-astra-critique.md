@@ -143,3 +143,25 @@ Proposed receipt, unwritten: “S68 design critique round 2: four prior findings
 
 Commit reviewed: `0324a0cc4b0a3ce71265aee42d67e829995c3b41`. Limitations: static design/code review only; no tests, browser walkthrough or real Partner run. No edits or subagents. Prohibited paths were not read.
 
+
+## Confirmation read on S68-07 and S68-08
+
+(Taken from the companion job log; the job hung in its finalizing phase after the report was complete.)
+
+---
+
+Findings: none. No new S68-10 finding.
+
+Verified by reading:
+
+- **S68-07 — CONFIRMED ANSWERED.** [D2, line 147](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s68-ask-what-happened.md:147) assigns pending trouble to the conversation of the press, permits sending only there, and requires another conversation’s Send neither to send nor discard it. This addresses the actual routing: [store.tsx:850](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/store.tsx:850) selects the current conversation, line 884 replaces the displayed store on navigation, and line 974 sends to that selection. [§8, line 260](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s68-ask-what-happened.md:260) requires `pending_trouble_stays_in_origin_room` to exercise A → B → A, prevent sending A’s trouble in B, and preserve the draft and attachments.
+
+- **S68-08 — CONFIRMED ANSWERED.** [D2, line 155](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s68-ask-what-happened.md:155) explicitly requires a readable destination: close the bell panel; close sign-in while retaining its handle and pending retry; offer reload without Ask when the room renderer has failed. The code supports the premise: [Panel.tsx:29](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/notifications/Panel.tsx:29) uses `Sheet`; [workmodal.tsx:48](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/shell/workmodal.tsx:48) supplies the null default host, which makes [Sheet.tsx:68](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/shell/Sheet.tsx:68) window-modal. [SignInSheet.tsx:78](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/shell/SignInSheet.tsx:78) explicitly selects window modality. The Partner provider at [Shell.tsx:79](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/shell/Shell.tsx:79) survives the room boundary at line 421, while [ErrorBoundary.tsx:26](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/shell/ErrorBoundary.tsx:26) replaces the renderer. [§8, line 264](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s68-ask-what-happened.md:264) requires `trouble_ask_reaches_usable_partner` to prove all three outcomes.
+
+Within these folds, I found **no remaining first-use case** that requires losing the human’s words, sending trouble into another conversation, or producing an unreadable answer. D2 also explicitly separates the trouble send from the ordinary send that clears drafts and retires attachments at [store.tsx:979](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/store.tsx:979).
+
+Under **R-124**, both original corrections were material: they change step-1 routing or handoff behavior (**test 1**), and omitting them permits a wrong destination or unusable answer on first use (**test 2**). Those requirements are now explicit; no further material correction emerged.
+
+**VERDICT: 0 material findings: none.**  
+Commit reviewed: `b5c870ebe5d11558451b14a752ff194d0981596b` (`ui-development`).  
+Limitations: scoped static confirmation of the design obligations; fixtures and runtime behavior were not executed. No edits or subagents; prohibited paths remained unread.

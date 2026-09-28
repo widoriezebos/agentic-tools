@@ -333,4 +333,9 @@ form and retry, the broken room offers the reload and no control),
 with the named fixture. S68-09 non-material: the class guard cannot
 prove future sites; the converted sites are named. Closed at the
 failsafe round on two folds, with one scoped confirmation read on
-S68-07 and S68-08 alone (recorded below when it returns).
+S68-07 and S68-08 alone.
+
+**Confirmation read (2026-09-28, at `b5c870ebe`):** S68-07 and S68-08
+confirmed answered, zero material, no first-use case left where words
+are lost, a trouble reaches another conversation, or an answer cannot
+be read. The loop is CLOSED.
