@@ -22,7 +22,17 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
    child writes to, state on disk, one loopback listener) and `ui serve`
    takes `--repo`, `--metasystem-root` and `--listen`
    (`cmd/metasystem/ui.go:44-52`). A second interface from another
-   checkout on another port is already one command.
+   checkout on another port is already one command. The lifecycle
+   behind those verbs is `internal/ui/lifecycle`, and it is the model
+   this design copies: `launch.go` starts the child detached in its own
+   session with a log and a readiness pipe; the serving process writes
+   its own record, with its native identity ref, after it listens
+   (`serve.go:159-176`) and removes it on exit; `state.go` reads six
+   states, running, stopped, stale, uninspectable, unreadable and busy,
+   by re-proving the ref (`Read`, `readInactive`, the lock authorizing
+   removal of a stale record); and `stop.go` re-proves the identity
+   immediately before every signal through `identity.SignalExact`
+   (`internal/identity/ref.go:131-150`) and never signals a bare number.
 2. **A project's commands have two homes, of two kinds.**
    `docs/project-rules.md` carries prose lines a person fills in, among
    them "Local run: `<command>`" (line 27), which nothing runs; the
@@ -38,7 +48,14 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
 3. **Process control the engine already owns.** `launch start` returns
    after its child is recorded, `launch status` reconciles one launch,
    and `launch cancel` "ends a launch group and proves every recorded
-   process dead" (`cmd/metasystem/main.go:432`). A critique runs in its
+   process dead" (`cmd/metasystem/main.go:432`). Cancel is not the model
+   for stop: it signals the recorded process group by its number before
+   it proves anything and checks identities only afterwards
+   (`internal/launch/launch.go:532-578`, `process.go:103-121`), so a
+   reused group id would be signalled (Astra ALC-01). Nor is
+   `boundedexec.Run` an owner for a serving app: it waits for the command
+   to finish and kills its group at the deadline
+   (`internal/boundedexec/boundedexec.go:84-121`). A critique runs in its
    own worktree (`internal/launch/codex.go:91`); a goal's built work
    lives on `goal/<id>` at origin (`cmd/metasystem/goal_branch.go:293,
    495`), and `work land` proves that branch and pushes it to main
@@ -103,36 +120,74 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
     tcp address that must accept, a log line matching a pattern, or
     none, where ready means the process tree is alive. A worker, a
     batch job or a desktop application has nothing to probe, and the
-    contract says so rather than pretending.
+    contract says so rather than pretending. The http and tcp forms are
+    probes: they can go dark and are asked again by status. The log and
+    none forms are startup observations scoped to this run: the pattern
+    is sought in the log from the offset at which this run's supervisor
+    opened it, and once seen it is ready for the run's life; for these
+    two forms stopping is proven by the death of every recorded process
+    alone, never by a log that cannot unmatch (Astra ALC-04).
   - **The start command runs the app in the foreground**, and the
     engine detaches it, so the tree it records is the app. A start
     script that backgrounds a process and exits leaves nothing to stop,
     and validation says so where it can (the command exits before the
     probe answers). Where the app must be stopped its own way (a
     compose stack, a service manager), the `stop` command does it, and
-    the proof of stopping is the probe going dark and the recorded tree
-    gone.
+    the proof of stopping is the recorded processes dead and, for the
+    http and tcp forms, the probe dark.
   - **Stdout and stderr are captured to the log** unless the contract
     names the application's own log file, in which case that file is
     the log.
   A project with no contract has no `app` verbs, and the refusal says
   which file to write. Not a section of `metasystem.conf`, because the
-  testing contract is a file and a merge driver already exists for that
-  shape.
-- D2. **Four verbs, one object.** `metasystem app start|stop|restart|
-  status`, audience both, forms mirroring `ui`. Start runs the start
-  command detached under the bounded supervisor, writes the run record
-  (name, pid tree, started at, commit of the tree it runs, address, log,
-  contract digest, goal if any) under `artifacts/agents/app/`, waits for
-  the ready probe up to `readyMs`, and prints the address; a record
-  whose process is alive makes a second start rejoin it. Stop runs the
-  stop command where the contract has one, otherwise TERM then KILL at
-  `stopMs`, and in either case proves every recorded process dead before
-  it clears the record. Restart is stop then start with what is on disk.
-  Status reads the record and probes, and says one of three things:
-  running this commit at this address since then and answering; not
-  running; or the record says running and the process is gone, which is
-  named as stale rather than hidden.
+  testing contract is a file and `settings check` already validates a
+  project-owned command contract beside the settings. The testing
+  contract's merge driver is specific to its schema
+  (`internal/testpolicy/contractmerge`), so `launch.json` merges as a
+  plain file in step 1 (Astra ALC-05). Declared tools are an
+  availability check, the executable found and its version line
+  printed into the record; a version constraint is later (ALC-06).
+- D2. **Four verbs, one object, and a supervisor that owns the run.**
+  `metasystem app start|stop|restart|status`, audience both, forms
+  mirroring `ui`. The owner is an internal `app serve`, the shape of
+  `ui serve`: `app start` launches it detached the way `ui start`
+  launches the interface (its own session, the log, a readiness pipe),
+  and returns when the pipe reports ready or failed, or at `readyMs`.
+  The supervisor writes the run record first, before it spawns
+  anything: its own native identity ref, the group it leads, the
+  contract digest, the commit of the tree, the address, the log and the
+  goal if any, under `artifacts/agents/app/`. Then it spawns the
+  contract's start command as its child, in the supervisor's own group,
+  and writes the child's native ref into the record as the very next
+  act, before any readiness wait. Only then does it wait for readiness
+  and report ready, and it waits on the child for the run's life; its
+  orderly exit removes the record. That ordering is the ownership
+  handoff (Astra ALC-02, held at round 2): an engine that dies before
+  the supervisor started has left no run; a supervisor that dies leaves
+  a record whose supervisor ref is dead, and status reads it as
+  "orphaned: the application may still run" and stop ends the child by
+  its recorded ref, re-proven; a readiness timeout ends the child by its
+  ref, never only the supervisor. The one window left is the instant
+  between the spawn and the child's ref write; a supervisor killed
+  inside it leaves a record naming its group and no child, and status
+  says so, "supervisor gone, group G, child not recorded", listing what
+  the inspection finds in that group by identity, never signalling by
+  number. That window is a fixture obligation of the build, not a
+  mechanism of this design. Status reads liveness
+  from the record's refs, the six states the interface's lifecycle
+  reads, and readiness from the probe, and says them separately: running
+  and answering; running and not answering since a time; starting;
+  stopped; stale, the record's process gone, removed under the lock and
+  said; uninspectable (ALC-03). A second start with a live supervisor
+  rejoins it and still waits for readiness before it says started. Stop
+  runs the contract's stop command where there is one; otherwise TERM to
+  the child, re-proven by identity immediately before the signal, then
+  KILL at `stopMs`, then the supervisor; no signal is ever sent to a
+  bare number, and a recorded process whose identity cannot be proven is
+  refused by name rather than signalled (ALC-01). Stopping is proven
+  when every recorded ref is dead and the group is gone, and, for the
+  http and tcp forms, the probe is dark. Restart is stop then start
+  with what is on disk.
 - D3. **`--goal G` runs the candidate.** The engine takes a worktree of
   `goal/<id>` at its tip under `artifacts/`, runs the contract's build
   command there if it has one, allocates an address from the candidate
@@ -175,16 +230,22 @@ free with the verbs; its browser half waits for the interface's slice.
 
 Contract: validation refuses a missing start, an http or tcp probe
 without an address, a candidate range that overlaps the standing
-address, an unknown placeholder, and a declared tool that is absent or
-answers a wrong version, and names each fault; `settings check` reports
+address, an unknown placeholder, and a declared tool that is absent,
+and names each fault; `settings check` reports
 it beside the testing contract. Each readiness form is proven with the
 fixture: http, tcp, a log line, and none; a start command that exits
 before readiness is reported as such and not as running. Verbs, against a fixture application (a small Go server in
 testdata that answers its health URL after a delay and can be told to
-ignore TERM): start waits for ready and records; a second start rejoins;
-status is truthful in all three states, including a record whose
-process was killed behind the engine's back; stop proves death for a
-child that ignores TERM; restart replaces the process and the record.
+ignore TERM): start waits for ready and records; a second start rejoins
+and still waits for readiness; status says liveness and readiness
+separately in every state, including running and not answering, a
+supervisor alive before readiness, and a record whose process was
+killed behind the engine's back; a recorded pid reused by an unrelated
+process is refused by name and never signalled; an engine killed
+between the launch and the record leaves no run and the next status
+says stopped; stop proves death for a child that ignores TERM; a log
+readiness form stops on death alone; restart replaces the process and
+the record.
 Candidate: `--goal G` builds in a worktree at the tip, runs on an
 address from the range with its own state root, leaves the standing
 record untouched, and a moved tip replaces the run. Self-hosting: this
@@ -196,12 +257,49 @@ after Astra's read of this page; two attempts, 240 to 360 job-minutes.
 
 ## 6. Self-grade
 
-High on D2 and D3: the verbs copy a lifecycle the interface already has,
-and the worktree and the proven stop copy what launch already does.
-Medium on D1: a second contract file is a second thing for an adopter to
-write, and the schema is deliberately small so that it is one screen.
-Medium on D5: the candidate build needs the committed bundle to be
-fresh, which the bundle test already enforces on the tree. Weakest: a
-port range is a convention, not a guarantee, on a developer host; the
-start refuses and names the address when it is taken, which is honest
-and enough for now.
+High on D2 and D3: the verbs and the supervisor copy the lifecycle the
+interface already has, identity re-proven before every signal, and the
+worktree copies what a critique already gets. Medium on D1: a second
+contract file is a second thing for an adopter to write, and the schema
+is deliberately small so that it is one screen. Medium on D5: a Go
+build and a green health answer do not prove the bundle fresh; the
+candidate's freshness is established by running the existing bundle
+test against the candidate tree before its build, and step 1 does that
+(Astra ALC-07). Weakest: a port range is a convention, not a guarantee,
+on a developer host; the start refuses and names the address when it is
+taken, which is honest and enough for now.
+
+## Dispositions (Astra round 1, 2026-09-28, under R-121 and R-124)
+
+Read at `647234149`, verbatim in `app-launch-contract-astra-critique.md`.
+Four material findings, all folded; three deferred. Every cited line was
+re-read at whole-function depth before folding, and the fold names the
+owner the design had missed, `internal/ui/lifecycle`.
+
+| id | finding | fold |
+|---|---|---|
+| ALC-01 | stop modelled on `launch cancel` signals a recorded group number before proving identity; a reused id would be signalled | D2: identity refs in the record, `identity.SignalExact` before every signal including escalation, an unprovable identity refused by name; §1 names cancel as the wrong model |
+| ALC-02 | no durable owner: `boundedexec.Run` waits and kills at its deadline; an engine dying before the record leaves an uncontrollable app and a false "not running" | D2: an internal `app serve` supervisor in the shape of `ui serve`, launched detached with a readiness pipe, writes the record before ready and owns the child for the run's life; a run without a record is no run |
+| ALC-03 | three status answers cannot say "alive but not answering" or "starting" | D2: liveness (the lifecycle's six states) and readiness reported separately; rejoin waits for readiness |
+| ALC-04 | a log-pattern readiness cannot go dark, so stop could never be proven for that form | D1: log and none forms are startup observations scoped to the run's log offset; stop for them is proven by death alone; probe darkness only for http and tcp |
+| ALC-05 | the testing merge driver decodes the testing schema and cannot merge a launch contract | deferred: D1 says plain git merge in step 1 |
+| ALC-06 | tool declarations check availability, not version policy | deferred: D1 says availability and a printed version line; constraints later |
+| ALC-07 | a build and a health answer do not run the bundle test | deferred as non-material: §6 says freshness is the bundle test run against the candidate tree before its build |
+
+**Round 2, the declared failsafe (2026-09-28, same chain, at
+`9eb7cf433`):** ALC-01, ALC-03 and ALC-04 confirmed answered; ALC-02
+held, because the supervisor still spawned the application before
+publishing its identity, so a supervisor killed in that interval (the
+copied launcher's readiness timeout kills only its immediate child)
+left an untracked application and a false "stopped". Folded in D2: the
+record is written before the spawn with the supervisor's ref and its
+group; the child's ref is written as the very next act after the spawn;
+a supervisor gone with a child recorded reads as orphaned and stop ends
+the child by its re-proven ref; a readiness timeout ends the child by
+its ref, never only the supervisor. The one instant left, between the
+spawn and the child's write, is the round's fixture obligation, as
+Astra named it: interrupt the supervisor there and assert the
+application is dead or discoverable and stoppable by identity through
+the recorded group, never signalled by number. Two wording residues
+fixed (an unconditional "probe going dark", a "wrong version" in
+validation). The loop is closed at round 2 on one fixture obligation.
