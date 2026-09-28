@@ -76,9 +76,7 @@ func families() []family {
 			summary: "the fleet brain seat: designation, boot context, and checkout-local fences",
 			verbs: []verb{
 				{"declare", "human-only: designate this quiescent checkout as the brain", runBrainDeclare},
-				{"show", "show the declared, undeclared, or corrupt brain state", runBrainShow},
 				{"withdraw", "human-only: remove this checkout's brain declaration", runBrainWithdraw},
-				{"fence", "report whether a guarded act is refused", runBrainFence},
 				{"boot", "compose the declared brain's bounded standing context", runBrainBoot},
 				{"boot-inputs", "read optional brain boot inputs in the bounded child (internal)", runBrainBootInputs},
 			},
@@ -94,9 +92,7 @@ func families() []family {
 				{"watchdog", "watch suite output growth and enforce the section ceiling (internal)", runProofRunWatchdog},
 				{"custody-exec", "hold a resource-active command until its custodian binds exact identity (internal)", runProofRunCustodyExec},
 				{"preserve", "copy bounded watchdog evidence (internal)", runProofRunPreserve},
-				{"assert", "assert selector sections produced well-formed start and end events", runProofRunAssert},
 				{"coverage-delta", "check coverage for the packages a landing names or touches against their ratchet floors", runProofRunCoverageDelta},
-				{"fixture-selection", "select the owned fixture scenario set (internal)", runProofRunFixtureSelection},
 			},
 		},
 		{
@@ -117,11 +113,9 @@ func families() []family {
 			name:    "config",
 			summary: "configuration and identity helpers",
 			verbs: []verb{
-				{"canonical-model", "print the canonical model key for a name", runConfigCanonicalModel},
 				{"get", "resolve a config key with flag/env/local/mode/conf/default precedence", runConfigGet},
 				{"validate", "validate the whole metasystem.conf domain", runConfigValidate},
 				{"keys", "enumerate config keys, optionally by prefix", runConfigKeys},
-				{"conf-value", "print a single conf value (exit 3 absent, 1 on duplicate)", runConfigConfValue},
 				{"tailor", "rewrite metasystem.conf in place for a selected runtime set", runConfigTailor},
 			},
 		},
@@ -130,9 +124,7 @@ func families() []family {
 			summary: "whole-artifact validators the assert scripts exec into",
 			verbs: []verb{
 				{"turn-prompt", "validate an assembled host-turn prompt against its turn record and the shipped preamble", runValidateTurnPrompt},
-				{"plan-consistency", "report retired terms still prescribed in plans", runValidatePlanConsistency},
 				{"critique-closed", "join a critic return's findings against the dispositions table", runValidateCritiqueClosed},
-				{"preamble-quotes", "verify role-preamble quote blocks are byte-exact substrings of their sources", runValidatePreambleQuotes},
 				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
 				{"refactor-baseline", "record or check the trusted refactor baseline", runValidateRefactorBaseline},
 				{"skills", "validate every present skill's SKILL.md frontmatter, or the named skill directories", runValidateSkills},
@@ -140,7 +132,6 @@ func families() []family {
 				{"design-obligations", "check the structure and declared state of design-obligation matrices", runValidateDesignObligations},
 				{"moved-effects", "check a design page's moved-effect inventory and code paths", runValidateMovedEffects},
 				{"conformance", "review, recertify, or merge conformance for an implementer job", runValidateConformance},
-				{"stop-loss", "block further investigation cycles when a ledger trigger fired", runValidateStopLoss},
 			},
 		},
 		{
@@ -151,7 +142,6 @@ func families() []family {
 				{"observe", "emit a provenance verdict for the prospective project tree", runLandingObserve},
 				{"workspace", "print the delivery workspace projection of a whole-project tree", runLandingWorkspace},
 				{"park", "durably record one stopped recertified landing attempt", runLandingPark},
-				{"adoption-rulings", "prepare required landing authority while preserving application rulings", runLandingAdoptionRulings},
 				{"test-receipt", "run tests against one exact candidate tree and record their result", runLandingTestReceipt},
 			},
 		},
@@ -204,7 +194,6 @@ func families() []family {
 			summary: "versioned byte projections shared by witness, landing, adoption, and weight laws",
 			verbs: []verb{
 				{"select", "filter newline- or NUL-delimited paths through one projection", runBehaviorSurfaceSelect},
-				{"skip-allowed", "exit 0 only for a family declared under the caller's witness or delivery scope", runBehaviorSurfaceSkipAllowed},
 			},
 		},
 		{
@@ -221,7 +210,6 @@ func families() []family {
 			verbs: []verb{
 				{"unit", "gate changed Go packages and every transitive reverse dependent", runGateUnit},
 				{"register", "record that this process is a running gate", runGateRegister},
-				{"fence", "exit 1 naming every live gate run foreign to --self-pid's chain", runGateFence},
 				{"weight-discharge", "reset validation weight at the exact authorized green-run boundary", runGateWeightDischarge},
 				{"cadence-tick", "run one landing-owner deep validation cadence decision", runGateCadenceTick},
 			},
@@ -232,10 +220,7 @@ func families() []family {
 			verbs: []verb{
 				{"stop-status", "read one exact immutable Stop report", runReportStopStatus},
 				{"turn-verdict", "the one structured turn-end decision: scan, goal, block-once state", runReportTurnVerdict},
-				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},
-				{"running-work", "print the turn-end active clause: live jobs, missions, gate runs", runReportRunningWork},
 				{"watch-jobs", "watch background job records and report every reportable job", runReportWatchJobs},
-				{"frontier", "record, challenge, or show the measured-improvement frontier", runReportFrontier},
 			},
 		},
 		{
@@ -244,9 +229,6 @@ func families() []family {
 			verbs: []verb{
 				{"add", "append one task receipt at completion", func(args []string) int { return runReceipt(append([]string{"add"}, args...)) }},
 				{"correct", "append a correction referencing an existing receipt line", func(args []string) int { return runReceipt(append([]string{"correct"}, args...)) }},
-				{"check", "exit 1 when a metasystem retro is due", func(args []string) int { return runReceipt(append([]string{"check"}, args...)) }},
-				{"stats", "print the period numbers as key=value lines", func(args []string) int { return runReceipt(append([]string{"stats"}, args...)) }},
-				{"retro", "record that a retro ran and reset the cadence", func(args []string) int { return runReceipt(append([]string{"retro"}, args...)) }},
 			},
 		},
 		{

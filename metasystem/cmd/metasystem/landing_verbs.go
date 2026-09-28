@@ -383,25 +383,6 @@ func canonicalValidatorEnvironmentFrom(inherited []string) []string {
 	return append(environment, "GOFLAGS=-mod=readonly -trimpath", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1")
 }
 
-func runLandingAdoptionRulings(args []string) int {
-	flags := flag.NewFlagSet("landing adoption-rulings", flag.ContinueOnError)
-	source := flags.String("source", "", "staged template installation")
-	target := flags.String("target", "", "application installation")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *source == "" || *target == "" {
-		return 2
-	}
-	data, err := landing.AdoptionRulings(*source, *target)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if _, err := os.Stdout.Write(data); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
 // runLandingPark durably records one stopped recertified landing attempt
 // (`landing park`); the landing path parks through the same owner.
 func runLandingPark(args []string) int {

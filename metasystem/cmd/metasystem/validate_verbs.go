@@ -39,39 +39,6 @@ func runValidateTurnPrompt(args []string) int {
 	return 0
 }
 
-// runValidatePlanConsistency fails when a plan prescribes a term
-// another plan has retired via a RETIRED: marker. Exit 0 consistent;
-// 1 a retired term is still prescribed; 2 usage or a missing directory.
-func runValidatePlanConsistency(args []string) int {
-	flags := flag.NewFlagSet("validate plan-consistency", flag.ContinueOnError)
-	plansDir := flags.String("plans-dir", "", "directory holding the plans")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *plansDir == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate plan-consistency --plans-dir D")
-		return 2
-	}
-	retired, violations, err := validate.PlanConsistency(*plansDir)
-	if err != nil {
-		// The real error, not a guessed label: an EACCES or not-a-directory
-		// mislabeled "no such plans directory" sends an investigation the
-		// wrong way.
-		fmt.Fprintf(os.Stderr, "plan-consistency: %s: %v\n", *plansDir, err)
-		return 2
-	}
-	if len(violations) > 0 {
-		fmt.Fprintln(os.Stderr, "plan consistency: a retired term is still prescribed")
-		for _, item := range violations {
-			fmt.Fprintf(os.Stderr, "  %s\n", item)
-		}
-		fmt.Fprintln(os.Stderr, "  Either state the change on that line (say it was replaced, or mark it SUPERSEDED) or bring the line up to date.")
-		return 1
-	}
-	fmt.Printf("plan consistency: %d retired term(s), none prescribed\n", retired)
-	return 0
-}
-
 // runValidateCritiqueClosed joins a critic return's findings array
 // against the Markdown dispositions table on finding id. Exit 0 closed;
 // 1 open or unjoinable; 2 usage.
@@ -100,30 +67,6 @@ func runValidateCritiqueClosed(args []string) int {
 	}
 	for _, item := range violations {
 		fmt.Fprintf(os.Stderr, "violation: %s\n", item)
-	}
-	if len(violations) > 0 {
-		return 1
-	}
-	return 0
-}
-
-// runValidatePreambleQuotes verifies every role preamble's quote block
-// is a byte-exact, contiguous substring of its named source under the
-// metasystem root. Exit 0 pass; 1 drift or malformed quote; 2 usage.
-func runValidatePreambleQuotes(args []string) int {
-	flags := flag.NewFlagSet("validate preamble-quotes", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "metasystem root quote sources resolve under")
-	rolesDir := flags.String("roles-dir", "", "directory holding the role preambles")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *rolesDir == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate preamble-quotes --root R --roles-dir D")
-		return 2
-	}
-	violations := validate.PreambleQuotes(*root, *rolesDir)
-	for _, item := range violations {
-		fmt.Fprintf(os.Stderr, "quote violation: %s\n", item)
 	}
 	if len(violations) > 0 {
 		return 1

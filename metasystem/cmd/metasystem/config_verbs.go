@@ -206,32 +206,6 @@ func configKeysTo(stdout io.Writer, conf, matching string, environment []string)
 	return 0
 }
 
-// runConfigConfValue reads a single value from a metasystem.conf-format file.
-// Exit 0 prints the value; exit 3 means the key is absent; exit 1 means the
-// file is unreadable or the key appears more than once.
-func runConfigConfValue(args []string) int {
-	flags := flag.NewFlagSet("config conf-value", flag.ContinueOnError)
-	file := flags.String("file", "", "path to a metasystem.conf-format file")
-	key := flags.String("key", "", "key to read")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *file == "" || *key == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal config conf-value --file F --key K")
-		return 2
-	}
-	value, found, err := config.ConfLookup(*file, *key)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if !found {
-		return 3
-	}
-	fmt.Println(value)
-	return 0
-}
-
 // configRepositoryScope is the repository a configuration file is validated
 // against when none is named: the Git toplevel holding it, resolved, or the
 // file's own directory outside Git.

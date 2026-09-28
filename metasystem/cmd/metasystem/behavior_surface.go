@@ -71,28 +71,3 @@ func runBehaviorSurfaceSelect(args []string) int {
 	}
 	return 0
 }
-
-func runBehaviorSurfaceSkipAllowed(args []string) int {
-	flags := flag.NewFlagSet("behavior-surface skip-allowed", flag.ContinueOnError)
-	family := flags.String("family", "", "validation family name")
-	scopeName := flags.String("scope", "", "WITNESS or DELIVERY proof scope")
-	if flags.Parse(args) != nil || *family == "" || *scopeName == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal behavior-surface skip-allowed --scope WITNESS|DELIVERY --family NAME")
-		return 2
-	}
-	scope, err := behaviorsurface.ParseSkipScope(*scopeName)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
-	}
-	policy, err := behaviorsurface.Load()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if !policy.SkipAllowed(scope, *family) {
-		fmt.Fprintf(os.Stderr, "behavior-surface policy version %d does not authorize %s skip family %q\n", policy.Version, scope, *family)
-		return 3
-	}
-	return 0
-}

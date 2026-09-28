@@ -96,7 +96,6 @@ func TestBrainBedActorSeamCoverage(t *testing.T) {
 }
 
 const expectedBrainActorSites = `cmd/metasystem/brain.go:			return classifyVerbCaller(root, callerPid)
-cmd/metasystem/census.go:	view, err := classifyVerbCaller(*root, parent)
 cmd/metasystem/dispatch_verbs.go:	caller, err := classifyVerbCaller(*root, int64(os.Getppid()))
 cmd/metasystem/gate_cadence.go:	actor := goal.Actor{Machine: machine, Lineage: landingOwnerLineage}
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)

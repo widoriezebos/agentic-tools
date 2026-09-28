@@ -2023,30 +2023,6 @@ func runProofRunPreserve(args []string) int {
 	return 0
 }
 
-func runProofRunAssert(args []string) int {
-	flags := flag.NewFlagSet("proof-run assert", flag.ContinueOnError)
-	progress := flags.String("progress", "", "progress JSONL")
-	suite := flags.String("suite", "", "suite name")
-	selected := flags.String("selected", "", "single selected section")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		return 2
-	}
-	expected, repeated, err := selectedSections(*selected)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run assert:", err)
-		return 1
-	}
-	run, err := proofrun.ReadLatestProgressRun(*progress)
-	if err == nil {
-		err = proofrun.AssertSectionProgress(run, *suite, expected, repeated)
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run assert:", err)
-		return 1
-	}
-	return 0
-}
-
 // coverageReuseLines projects matching retained full coverage for packages,
 // one "coverage reuse" line per package.
 func coverageReuseLines(controlRoot, executionRoot, baseline string, packages, environment []string) ([]string, bool, error) {
@@ -2101,24 +2077,6 @@ func runProofRunHeartbeat(args []string) int {
 		return 1
 	}
 	fmt.Println(heartbeat)
-	return 0
-}
-
-func runProofRunFixtureSelection(args []string) int {
-	flags := flag.NewFlagSet("proof-run fixture-selection", flag.ContinueOnError)
-	family := flags.String("family", "", "fixture family")
-	selection := flags.String("selection", "", "all or comparison")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *family == "" || *selection == "" {
-		fmt.Fprintln(os.Stderr, "proof-run fixture-selection requires --family and --selection")
-		return 2
-	}
-	scenarios, err := proofrun.FixtureScenarios(*family, *selection)
-	if err != nil {
-		return recordExit(err)
-	}
-	for _, scenario := range scenarios {
-		fmt.Println(scenario)
-	}
 	return 0
 }
 

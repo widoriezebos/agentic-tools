@@ -202,33 +202,6 @@ func sortedGoalIDs(items map[string]*goal.GoalFile) []string {
 	return ids
 }
 
-func runBrainShow(args []string) int {
-	flags := flag.NewFlagSet("brain show", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout state root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	result := brain.Read(*root, goal.ExistingLedgerIdentity(*root))
-	object := map[string]any{"state": result.State}
-	if result.Record != nil {
-		object["record"] = result.Record
-	}
-	if result.Reason != "" {
-		object["reason"] = result.Reason
-		object["remedy"] = brain.RemedialRefusal(result.Reason, *root)
-	}
-	printJSON(object)
-	switch result.State {
-	case brain.Declared:
-		return 0
-	case brain.Undeclared:
-		return 3
-	default:
-		fmt.Fprintln(os.Stderr, brain.RemedialRefusal(result.Reason, *root))
-		return 1
-	}
-}
-
 func runBrainWithdraw(args []string) int {
 	flags := flag.NewFlagSet("brain withdraw", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout state root")
@@ -279,24 +252,6 @@ func brainWithdrawWith(caller processIdentity, stdout, stderr io.Writer, root, b
 		return 0
 	}
 	writeJSONLine(stdout, stderr, map[string]any{"state": brain.Undeclared})
-	return 0
-}
-
-func runBrainFence(args []string) int {
-	flags := flag.NewFlagSet("brain fence", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout state root")
-	act := flags.String("act", "", "guarded act")
-	if flags.Parse(args) != nil || *act == "" {
-		fmt.Fprintln(os.Stderr, "brain fence needs --act")
-		return 2
-	}
-	ledgerIdentity := goal.ExistingLedgerIdentity(*root)
-	state := brain.Read(*root, ledgerIdentity)
-	detail := brain.Fence(*root, *act, ledgerIdentity)
-	printJSON(map[string]any{"state": state.State, "fenced": detail != "", "detail": detail})
-	if detail != "" {
-		return 2
-	}
 	return 0
 }
 
