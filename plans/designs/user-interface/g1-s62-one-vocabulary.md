@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3GZ2C1CA55JSYT796S4RX4V
-- Status: draft
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-27, with the verbs seat's word that the object-and-action
