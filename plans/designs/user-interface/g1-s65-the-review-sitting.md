@@ -211,9 +211,37 @@ Each decision names the slice that builds it: A, B, C or D (§5).
   page of a goal that waits to land, and on a done goal's page. It opens
   the room at `/review/<record>`, a route of its own that hides the rail
   and carries Step out; the drawer is not shown inside the room, because
-  the conversation is the room's own pane. Purpose `review`; the
-  sitting's subject is the review record, so every rule of the sitting
-  holds unchanged.
+  the room's own pane is the sitting's conversation (D16). Purpose
+  `review`; the sitting's subject is the review record, so every rule of
+  the sitting holds unchanged.
+- D16 (A). **A sitting is a conversation.** Wido, 2026-09-28: "fold it
+  into slice A as 'a sitting is a conversation'", on the question
+  whether a human can start a review, leave the room, start another,
+  and come back to finish the first. Today the Partner keeps one
+  conversation per human per checkout and the sitting is a mark on it
+  (`conversation.go`, "one per human per checkout"; the routes name no
+  sitting by id "because there is one sitting on one conversation",
+  `httpd/partner.go`), so a second sitting would replace the first. Now
+  a sitting has a conversation of its own, in the same private store
+  under the same owner, keyed by the human and the sitting's record,
+  beside the ordinary conversation the drawer shows. The room shows its
+  sitting's conversation; two reviews have two transcripts, two desks
+  and two sets of drafts, and neither reaches the other. One Partner
+  session is live at a time, the one whose conversation is on screen:
+  entering a room ends the drawer's session and opens the sitting's,
+  fresh, and the service replays that conversation's own retained
+  history into it, which is the fresh-session path that exists
+  (`service.go`, the `fresh` branch), applied to the sitting's
+  conversation; Step out ends the session and keeps the conversation;
+  the next turn in the drawer reopens the ordinary conversation the same
+  way. The one running turn stays one: a turn in flight when a room is
+  entered or left ends at its next boundary as attendance already
+  provides. The Sittings tab lists every standing sitting with its door
+  line, and the door reopens that sitting's conversation, desk and
+  drafts. The mark that D9 describes lives on the sitting's
+  conversation. A sitting that shapes intent or a design gets the same
+  conversation of its own, because one rule for sittings is cheaper
+  than two, and it costs nothing more.
 - D3 (A). **The reviewer's Partner is fresh.** The review's turns run in
   a provider session started at Start with the boot context and the
   review brief, and none of the conversation's earlier turns. That
@@ -222,8 +250,11 @@ Each decision names the slice that builds it: A, B, C or D (§5).
   branch that reads `conversation.History()`) and the proposals block
   it composes from the whole transcript (`proposalsBlock`), and it holds
   on recovery too: a review session's opening carries the boot context,
-  the review brief and the review record, and nothing of the
-  conversation (Astra, round 1). The
+  the review brief and the review record, and nothing of the ordinary
+  conversation (Astra, round 1). With D16 the review has a conversation
+  of its own, and what a fresh session replays on return is that
+  conversation's history alone, the review's own words, never the
+  drawer's and never a design room's. The
   Partner's instructions gain the review rules: bring what the record
   holds in the five parts; anchor every claim; name what the examination
   did not try, what the tests assume and what is not recorded; offer the
@@ -279,8 +310,8 @@ Each decision names the slice that builds it: A, B, C or D (§5).
   and `Answer:` lines; the piles are a property of the record's kind. A
   finding the human states in words is offered back by the Partner as a
   card with the anchor it found.
-- D9 (A). **Step out and come back.** The sitting mark on the
-  conversation carries the room's working state: the desk strip and the
+- D9 (A). **Step out and come back.** The sitting mark on the sitting's
+  own conversation (D16) carries the room's working state: the desk strip and the
   current item, the board or desk face, and the human's unfinished
   words, that is every unrecorded card's edited text and clause and the
   fields of an open Decide sheet, keyed by deposit id (Astra S65-03). It
@@ -358,11 +389,13 @@ Each decision names the slice that builds it: A, B, C or D (§5).
 
 ## 5. The four slices
 
-**A, the room (step 1):** D1 to D10. What exists after it: Review it
-on a goal waiting to land; the room with the desk, the conversation,
-the walks and the counts; the candidate's code and diff on the desk;
-selection to Ask and Finding; findings answered four ways and recorded;
-Step out and the door; the moved-tip banner; End with the verdict line.
+**A, the room (step 1):** D1 to D10 and D16. What exists after it:
+Review it on a goal waiting to land; the room with the desk, the
+sitting's own conversation, the walks and the counts; the candidate's
+code and diff on the desk; selection to Ask and Finding; findings
+answered four ways and recorded; Step out and the door, and a second
+room while the first waits; the moved-tip banner; End with the verdict
+line.
 The board is the existing table behind the Board press; drawings are
 code blocks; the verdict changes nothing yet.
 
@@ -382,7 +415,17 @@ with the code on the desk.
 `POST /api/partner/sitting` takes purpose `review` with subject
 `{kind: goal, id}`; the server resolves the reviewed tree (the branch
 tip, or the trailer commits for a done goal), creates the review record
-with its head, and opens the sitting on it. The record creator gains the
+with its head, opens a conversation for the sitting in the private
+store under the key of the human and the record (`OpenConversation`
+gains the sitting's key beside the human's), and marks it. The Partner
+routes, the read, turns, stop, seeing, the sitting's end and close and
+the proposal outcome, take an optional `conversation` naming a
+sitting's record; absent, they mean the ordinary conversation as
+today. The event stream carries the conversation on each partner
+event, and a page shows only its own. The service's one live session
+follows the conversation last asked: a turn on another conversation
+closes the live session and opens that conversation's, fresh, with its
+own history replayed. `GET /api/project` lists every standing sitting. The record creator gains the
 kind, its template and its home; the resolver its kind. Three reads:
 `GET /api/review/<record>/source?path=&from=&to=` (a text file at the
 reviewed tree, at most four hundred lines per call, with the touched
@@ -412,7 +455,12 @@ the board stacked.
 ## 8. Verification and box, slice A
 
 Go: `admitsPurpose` admits review and `admitsSubject` the review
-record; the kind's template and home; the head's `Reviewed:` line from
+record; the store opens a sitting's conversation by its own key beside
+the human's, the grants test still reaches neither, and two sittings'
+conversations never share a file; a turn on a second conversation
+closes the live session and opens the second's with only its own
+history replayed (proven by what the fake runtime received); the
+kind's template and home; the head's `Reviewed:` line from
 the branch tip and from trailer commits, and the "none found" line; the
 three reads' bounds and refusals (a path outside the tree, a range past
 the file, a binary file named as such); the fresh provider session
@@ -432,8 +480,12 @@ an open Decide sheet; a moved tip shows the banner and Show what
 changed; a done goal's change index shows its commits' own changes and
 never an empty diff; End refuses Clear to land with a recorded
 unanswered finding and lists it; the nod line with empty piles; the
-guards stay green. Walkthrough: the fake Partner answers a canned
-opening turn, one walk that presents a file, one finding; screenshots
+guards stay green; two rooms: start a review, step out, start a second
+on another goal, return to the first through its door and find its
+transcript, desk and drafts, with the drawer's ordinary conversation
+untouched throughout. Walkthrough: the fake Partner answers a canned
+opening turn, one walk that presents a file, one finding, and a second
+room; screenshots
 at 1280 and 400: the room, the desk with a file and with the change
 index, a finding card and its four answers, the door line on the
 Review lane card, the moved-tip banner, the End sheet. Box: two build
@@ -446,7 +498,13 @@ this page; two attempts, 360 to 540 job-minutes.
 
 High on D1, D3, D6, D8 and D10: a record, a fresh session, fixed
 requests and a card shape the sitting already has. High on D2 and D9:
-a route, a hidden rail and a mark on the conversation are small. Medium
+a route, a hidden rail and a mark on the conversation are small.
+Medium on D16: the store already keys conversations and the service
+already holds a map of them and replays a conversation's history into
+a fresh session, so a sitting's conversation is one more key and one
+more argument on the routes; the delicate part is the one live session
+following the conversation on screen, which attendance and the one
+running turn already bound. Medium
 on D4 and D5: the first reads over a git tree that is not the checkout,
 and the first display suggestion from the Partner; both bounded and both
 served by one owner. Medium on the room's width at 1280: two panes of
@@ -482,3 +540,10 @@ material findings". The loop is closed at round 2 with zero material
 findings. One mechanical check for the build, not a mechanism: the
 drafts' one-second debounce must flush on Step out and on unload, so
 the last keystroke before leaving is not the one that is lost.
+
+**Fold after the close, on Wido's word (2026-09-28):** D16, a sitting
+is a conversation, so a human can leave one room, open another and
+come back to the first. It changes slice A's shape (a store key, a
+route argument, the live session following the conversation), so it
+gets one scoped confirmation read from Astra on D16 alone, not a third
+round.
