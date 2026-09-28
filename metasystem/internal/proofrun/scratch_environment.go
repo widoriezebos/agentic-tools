@@ -84,6 +84,11 @@ type ScratchEnvironmentGroup struct {
 	// Dependencies are the module-store locations this group's Go would have
 	// used before its HOME was managed; they stay literal in identity.
 	Dependencies []ScratchEnvironmentValue `json:"dependencies,omitempty"`
+	// Lease is the v2 slot directory holding this group's managed tree and
+	// candidate worktree (scratch_lease.go); the run owns it until cleanup
+	// releases it. Its path is the same for every sequential run of the
+	// group's environment identity, which is what Go's test cache keys on.
+	Lease string `json:"lease,omitempty"`
 }
 
 // declarable names keep a group-declared value literally, outside cleanup.
@@ -94,7 +99,35 @@ var scratchDeclarable = []string{"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XD
 var scratchRunnerOwned = []string{"XDG_CACHE_HOME", "TMPDIR", "TMP", "TEMP", "GOTMPDIR", "GOCACHE", "STATICCHECK_CACHE"}
 
 func (e *ScratchEnvironment) groupDir(group string) string {
+	if lease := e.groupLease(group); lease != "" {
+		return filepath.Join(lease, scratchEnvironmentDir)
+	}
 	return filepath.Join(e.Root, "groups", filepath.FromSlash(group), scratchEnvironmentDir)
+}
+
+// groupLease is the group's v2 lease slot, empty under v1.
+func (e *ScratchEnvironment) groupLease(group string) string {
+	if e.Policy != ScratchEnvironmentPolicyV2 {
+		return ""
+	}
+	prepared, _ := e.group(group)
+	return prepared.Lease
+}
+
+// leaseOf is nil-safe: the lease a v2 group's candidate goes in.
+func (e *ScratchEnvironment) leaseOf(group string) string {
+	if e == nil || group == "" {
+		return ""
+	}
+	return e.groupLease(group)
+}
+
+// groupRoot is the directory every generated path of the group lies under.
+func (e *ScratchEnvironment) groupRoot(group string) string {
+	if lease := e.groupLease(group); lease != "" {
+		return lease
+	}
+	return e.Root
 }
 
 func (e *ScratchEnvironment) goEnvPath() string {
@@ -300,6 +333,15 @@ func PrepareScratchEnvironmentFor(request *TestRunRequest, run *ScratchRun, poli
 			return fmt.Errorf("scratch environment: selected testing group %s is absent", id)
 		}
 		prepared := ScratchEnvironmentGroup{ID: id}
+		if policy == ScratchEnvironmentPolicyV2 {
+			// The lease key is the group's environment identity, which
+			// tokenizes every generated path and so never names a slot.
+			key := scratchLeaseKey(policy, id, digestGroupEnvironment(group, groupTestEnvironment(*request, group)))
+			if prepared.Lease, err = run.ClaimLease(policy, key); err != nil {
+				return fmt.Errorf("scratch environment: group %s: %w", id, err)
+			}
+		}
+		descriptor.Groups = append(descriptor.Groups, prepared)
 		goEnv := contents
 		declared, isDeclared := group.Env["GOENV"]
 		if isDeclared || descriptor.GoEnv != "file" {
@@ -344,7 +386,7 @@ func PrepareScratchEnvironmentFor(request *TestRunRequest, run *ScratchRun, poli
 				return fmt.Errorf("scratch environment: group %s default Go env snapshot: %w", id, err)
 			}
 		}
-		descriptor.Groups = append(descriptor.Groups, prepared)
+		descriptor.Groups[len(descriptor.Groups)-1] = prepared
 	}
 	request.ScratchEnvironment = descriptor
 	return nil
@@ -399,8 +441,16 @@ func ValidateScratchEnvironment(request TestRunRequest, run *ScratchRun) error {
 			return fmt.Errorf("scratch environment: unexpected group %q", prepared.ID)
 		}
 		seen[prepared.ID] = true
+		if (descriptor.Policy == ScratchEnvironmentPolicyV2) != (prepared.Lease != "") {
+			return fmt.Errorf("scratch environment: group %s lease does not match policy %s", prepared.ID, descriptor.Policy)
+		}
+		if prepared.Lease != "" {
+			if filepath.Dir(filepath.Dir(prepared.Lease)) != run.leaseRoot(descriptor.Policy) || !leaseOwnedBy(prepared.Lease, ScratchRecord{Root: run.Root()}) {
+				return fmt.Errorf("scratch environment: group %s lease %s is not this run's", prepared.ID, prepared.Lease)
+			}
+		}
 		for _, dir := range descriptor.groupDirectories(prepared.ID) {
-			if err := requireScratchDirectory(descriptor.Root, dir); err != nil {
+			if err := requireScratchDirectory(descriptor.groupRoot(prepared.ID), dir); err != nil {
 				return fmt.Errorf("scratch environment: group %s: %w", prepared.ID, err)
 			}
 		}
@@ -701,7 +751,7 @@ func validateDefaultGoEnv(descriptor *ScratchEnvironment, base []string, group t
 		return nil
 	}
 	if managed {
-		if err := requireScratchDirectory(descriptor.Root, filepath.Dir(post)); err != nil {
+		if err := requireScratchDirectory(descriptor.groupRoot(group.ID), filepath.Dir(post)); err != nil {
 			return fmt.Errorf("scratch environment: group %s default Go env: %w", prepared.ID, err)
 		}
 	}

@@ -107,7 +107,8 @@ func TestScratchEnvironmentManagesEveryAdapterInBothModes(t *testing.T) {
 	}
 	for _, group := range request.Contract.Groups {
 		environment := groupTestEnvironment(request, group)
-		dir := filepath.Join(run.Root(), "groups", group.ID, scratchEnvironmentDir)
+		// Under v2 the managed tree lies in the group's lease (A5.2s).
+		dir := request.ScratchEnvironment.groupDir(group.ID)
 		want := map[string]string{
 			"HOME": filepath.Join(dir, "home"), "XDG_CONFIG_HOME": filepath.Join(dir, "home", ".config"),
 			"XDG_CACHE_HOME": filepath.Join(dir, "home", ".cache"), "XDG_DATA_HOME": filepath.Join(dir, "home", ".local", "share"),
@@ -288,7 +289,7 @@ func TestScratchEnvironmentIdentity(t *testing.T) {
 		}
 		// A variable claiming a generated-looking value is not normalized unless
 		// it equals this descriptor's path for this group.
-		forged := append(groupTestEnvironment(first, groups[1]), "HOME="+filepath.Join(secondRun.Root(), "groups", groups[1].ID, scratchEnvironmentDir, "home"))
+		forged := append(groupTestEnvironment(first, groups[1]), "HOME="+filepath.Join(second.ScratchEnvironment.groupDir(groups[1].ID), "home"))
 		if digestScratchGroupEnvironment(first, groups[1], forged) == firstDigests[groups[1].ID] {
 			t.Fatal("foreign root path normalized")
 		}
@@ -376,7 +377,7 @@ func TestScratchEnvironmentValidationRejectsTampering(t *testing.T) {
 	// A group tree replaced by a symlink to user bytes is refused before the
 	// worker reads or removes anything through it.
 	outside := t.TempDir()
-	home := filepath.Join(run.Root(), "groups", groups[0].ID, scratchEnvironmentDir, "home")
+	home := filepath.Join(request.ScratchEnvironment.groupDir(groups[0].ID), "home")
 	if err := os.RemoveAll(home); err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +628,7 @@ func TestWrite(t *testing.T) {
 		t.Fatalf("written = %q", written)
 	}
 	for _, path := range written {
-		if !strings.HasPrefix(path, filepath.Join(run.Root(), "groups", "workload", scratchEnvironmentDir)+string(filepath.Separator)) {
+		if !strings.HasPrefix(path, request.ScratchEnvironment.groupDir("workload")+string(filepath.Separator)) {
 			t.Errorf("workload wrote outside its managed tree: %s", path)
 		}
 	}
@@ -974,7 +975,7 @@ func TestScratchEnvironmentCarriesTheResolvedEngineCache(t *testing.T) {
 		if lookupEnvironment(environment, "GOCACHE") != outer.GoCache || lookupEnvironment(environment, "STATICCHECK_CACHE") != outer.StaticcheckCache {
 			t.Fatalf("%s managed caches = %q %q", group.ID, lookupEnvironment(environment, "GOCACHE"), lookupEnvironment(environment, "STATICCHECK_CACHE"))
 		}
-		if home := lookupEnvironment(environment, "HOME"); home == fixture.host || !strings.HasPrefix(home, run.Root()) {
+		if home := lookupEnvironment(environment, "HOME"); home == fixture.host || !strings.HasPrefix(home, request.ScratchEnvironment.groupDir(group.ID)) {
 			t.Fatalf("%s HOME = %q, want the managed home", group.ID, home)
 		}
 		if got := strings.TrimSpace(scratchGoEnvOutput(t, request, group, "GOCACHE")); got != outer.GoCache {

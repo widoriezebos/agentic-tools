@@ -126,8 +126,29 @@ func (request *TestRunRequest) WithCandidateOpener(open func(projectRoot, candid
 }
 
 func (request TestRunRequest) candidateWorkspace() (candidateWorkspace, error) {
+	return request.groupCandidateWorkspace("")
+}
+
+// groupCandidateWorkspace places a v2 group's candidate at its lease's
+// run-invariant path, stamped with content-derived times so Go's test cache
+// sees the same path, size, mode and time for unchanged files.
+func (request TestRunRequest) groupCandidateWorkspace(group string) (candidateWorkspace, error) {
 	if request.openCandidate != nil {
 		return request.openCandidate(request.ProjectRoot, request.CandidateTree)
+	}
+	if lease := request.ScratchEnvironment.leaseOf(group); request.scratch != nil && lease != "" {
+		plan, err := request.scratch.PlanLeasedWorktree(gittree.Workspace{Dir: request.ProjectRoot}, lease)
+		if err != nil {
+			return nil, err
+		}
+		detached, err := plan.Create(request.CandidateTree)
+		if err != nil {
+			return nil, err
+		}
+		if err := detached.ContentTimes(); err != nil {
+			return nil, errors.Join(err, detached.Close())
+		}
+		return detached, nil
 	}
 	if request.scratch != nil {
 		// Recorded before add, created under the run root with the writer
@@ -1710,7 +1731,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		}
 		result.LogDigest = digestBytes(logBytes)
 	}()
-	detached, err := request.candidateWorkspace()
+	detached, err := request.groupCandidateWorkspace(group.ID)
 	if err != nil {
 		result.Status = "invalid"
 		result.NotRunReason = err.Error()
