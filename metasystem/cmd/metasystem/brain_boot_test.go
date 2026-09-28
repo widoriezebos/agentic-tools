@@ -19,7 +19,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-
 func useNonFiringBrainBootTimer(t *testing.T) {
 	t.Helper()
 	originalNow, originalTimer := brainBootNow, newBrainBootTimer

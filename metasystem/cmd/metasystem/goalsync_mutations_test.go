@@ -1465,7 +1465,9 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 	if projection.Tip != fixture.repo.accepted || projection.Tree.Live[accepted.Id] == nil {
 		t.Fatalf("projected accepted goal does not match accepted tip %s", fixture.repo.accepted)
 	}
-	policyFiles := map[string][]byte{"memory/rulings.md": []byte("| R-35-m0 | landing class authority |\n| R-54-m1 | tier-1 landing authority |\n")}
+	// The landing classes' ruling authority is compiled policy: the base
+	// tree's rulings register is not read to admit a class.
+	policyFiles := map[string][]byte{}
 	for _, name := range []string{"internal/pathclass/path-classes.txt", "internal/landing/landing-classes.json"} {
 		policyFiles[name], err = os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(name)))
 		if err != nil {
@@ -1477,7 +1479,6 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 	pathOID := map[string]string{
 		"internal/landing/landing-classes.json": strings.Repeat("1", 40),
 		"internal/pathclass/path-classes.txt":   strings.Repeat("2", 40),
-		"memory/rulings.md":                     strings.Repeat("3", 40),
 	}
 	blobs := map[string][]byte{}
 	for path, data := range policyFiles {
@@ -1553,7 +1554,7 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 	}
 	delete(calls, prefixKey)
 	wantCalls := [][]string{{"rev-parse", "HEAD^{tree}"}, {"diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none", baseTree, candidateTree, "--"}}
-	for _, path := range []string{"internal/landing/landing-classes.json", "memory/rulings.md", "internal/pathclass/path-classes.txt", riskPath} {
+	for _, path := range []string{"internal/landing/landing-classes.json", "internal/pathclass/path-classes.txt", riskPath} {
 		wantCalls = append(wantCalls, []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", baseTree, "--", path})
 		if oid := pathOID[path]; oid != "" {
 			wantCalls = append(wantCalls, []string{"cat-file", "blob", oid})
