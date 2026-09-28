@@ -6,14 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -453,5 +456,45 @@ func TestIntentSettingsKeysAndCheck(t *testing.T) {
 	if code, accepted := run("settings", "check"); code != 0 || accepted.Outcome != intentConfirmed ||
 		!strings.Contains(accepted.Summary, "their launch contract are valid") {
 		t.Fatalf("check settings on a contract of start alone: code=%d %+v", code, accepted)
+	}
+}
+
+// TestIntentQuestionWaitRunsTheChannelWaitInThisProcess is the U9a witness
+// that wait question Q reaches the channel wait owner in this process
+// (design 6.2): no engine child runs `channel wait`, the owner receives the
+// argv the child carried, and it is supplied this process as the waiting
+// caller (the parent the child registered) with the invocation's lineage.
+func TestIntentQuestionWaitRunsTheChannelWaitInThisProcess(t *testing.T) {
+	t.Parallel()
+	b := newProcessBed(t)
+	owners := b.owners()
+	owners.processes.question = channel.ReadQuestion
+	root := b.root()
+	writeQuestionFixture(t, filepath.Join(root, "artifacts", "agents", "channel", "questions", "posted.json"),
+		map[string]any{"id": "posted", "goal": bedGoal, "kind": "other", "state": "open", "facts": []string{"Land it?"}, "options": []any{map[string]any{"label": "yes", "consequence": "land"}}})
+	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+		process: func(process intentProcess) intentProcessResult {
+			t.Errorf("an engine child ran: %v", process.argv)
+			return intentProcessResult{code: 1}
+		}}
+	calls := defaultIntentOwnerCalls()
+	var supplied []processIdentity
+	var reached [][]string
+	calls.channelWait = func(caller processIdentity, lineage string, stdout, stderr io.Writer, args []string) int {
+		supplied = append(supplied, caller)
+		reached = append(reached, args)
+		io.WriteString(stderr, "the question is not answered yet\n")
+		return 124
+	}
+	owners.delivery.calls = calls
+	_, waited := b.runJSON(owners, "question", "wait", "channel:posted", "--timeout", "1m")
+	if want := [][]string{{"--root", root, "--question", "posted", "--timeout", "1"}}; !reflect.DeepEqual(reached, want) {
+		t.Fatalf("channel wait owner argv = %q, want %q; result %+v", reached, want, waited)
+	}
+	if len(supplied) != 1 || supplied[0].pid != int64(os.Getpid()) {
+		t.Fatalf("the channel wait owner was supplied %+v, want this process %d", supplied, os.Getpid())
+	}
+	if waited.Next == nil || !slices.Equal(waited.Next.Argv, []string{"metasystem", "question", "wait", "channel:posted"}) {
+		t.Fatalf("a bounded wait keeps the channel qualification: %+v", waited)
 	}
 }

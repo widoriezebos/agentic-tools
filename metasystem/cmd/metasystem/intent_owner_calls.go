@@ -44,6 +44,10 @@ type intentOwnerCalls struct {
 	goalMigrate   func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int
 	// goalCarry records a person's carry word for one landing candidate.
 	goalCarry func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int
+	// channelWait waits for one channel question's answer; caller is the
+	// waiting process the durable wait registers, lineage the channel ledger
+	// identity's.
+	channelWait func(caller processIdentity, lineage string, stdout, stderr io.Writer, args []string) int
 	// missionStatus prints a mission's runner status line.
 	missionStatus func(stdout, stderr io.Writer, root, mission string) int
 	// missionLaunch starts or resumes a mission's detached run loop; a
@@ -107,6 +111,9 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 			return engine.Status()
 		},
 		missionLaunch: missionLaunchTo,
+		channelWait: func(caller processIdentity, lineage string, stdout, stderr io.Writer, args []string) int {
+			return channelWaitWith(caller.pid, lineage, stdout, stderr, args, nil)
+		},
 		goalReconcile: func(dependencies syncRequestDependencies, stdout, stderr io.Writer, _ string, args []string) int {
 			return goalReconcileWith(dependencies, stdout, stderr, args)
 		},

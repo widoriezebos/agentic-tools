@@ -97,6 +97,10 @@ func recordingOwnerCalls(prefix []string, record func([]string)) *intentOwnerCal
 			record(words(append([]string{"goal", "carry"}, args...)...))
 			return real.goalCarry(dependencies, stdout, stderr, dir, args)
 		},
+		channelWait: func(caller processIdentity, lineage string, stdout, stderr io.Writer, args []string) int {
+			record(words(append([]string{"channel", "wait"}, args...)...))
+			return real.channelWait(caller, lineage, stdout, stderr, args)
+		},
 		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
 			record(words("mission", "status", "--root", root, "--mission", mission))
 			return real.missionStatus(stdout, stderr, root, mission)
@@ -169,6 +173,9 @@ func processBackedOwnerCalls(executable func() (string, error), process func(int
 		},
 		goalCarry: func(_ syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
 			return run(dir, stdout, stderr, append([]string{"goal", "carry"}, args...)...)
+		},
+		channelWait: func(_ processIdentity, _ string, stdout, stderr io.Writer, args []string) int {
+			return run(flagValue(args, "--root"), stdout, stderr, append([]string{"channel", "wait"}, args...)...)
 		},
 		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
 			return run(root, stdout, stderr, "mission", "status", "--root", root, "--mission", mission)

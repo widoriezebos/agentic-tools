@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -162,16 +163,21 @@ func (inv *intentInvocation) waitQuestion(ref string) intentResult {
 	if q.channel.Answer != nil || q.channel.State == "closed" {
 		return inv.questionView(q)
 	}
-	args := []string{"channel", "wait", "--root", inv.stateRoot, "--question", q.id}
+	args := []string{"--root", inv.stateRoot, "--question", q.id}
 	if timeout, problem := inv.waitTimeout(); problem != nil {
 		return *problem
 	} else if timeout > 0 {
 		args = append(args, "--timeout", fmt.Sprint(max(int(timeout.Minutes()), 1)))
 	}
-	ran, problem := inv.engineVerb(args...)
-	if problem != nil {
-		return *problem
+	// The wait runs in this process (design 6.2): this process is the waiting
+	// caller the child registered, and the lineage is this invocation's.
+	caller, lineage := currentProcessIdentity(), ""
+	if inv.owners.dependencies.ownerLineage != nil {
+		lineage = inv.owners.dependencies.ownerLineage()
 	}
+	ran := ownerCall(func(stdout, stderr io.Writer) int {
+		return inv.ownerCalls().channelWait(caller, lineage, stdout, stderr, args)
+	})
 	result := ownerVerbResult(ran, []intentTarget{{Kind: "question", ID: q.id}}, "channel question "+q.id+" is answered", nil)
 	if result.Outcome != intentConfirmed {
 		result.Outcome = intentInProgress

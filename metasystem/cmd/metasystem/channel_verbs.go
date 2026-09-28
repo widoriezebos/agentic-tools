@@ -26,6 +26,12 @@ func channelIdentity(root string) (string, string, error) {
 }
 
 func channelIdentityWithMachine(root string, resolveMachine func(string) (string, error)) (string, string, error) {
+	return channelIdentityFor(root, resolveMachine, os.Getenv("METASYSTEM_OWNER_LINEAGE"))
+}
+
+// channelIdentityFor is the channel ledger identity under an explicit
+// lineage, the one an owner call carries.
+func channelIdentityFor(root string, resolveMachine func(string) (string, error), lin string) (string, string, error) {
 	if resolveMachine == nil {
 		resolveMachine = goal.ResolveMachine
 	}
@@ -33,7 +39,6 @@ func channelIdentityWithMachine(root string, resolveMachine func(string) (string
 	if err != nil {
 		return "", "", err
 	}
-	lin := os.Getenv("METASYSTEM_OWNER_LINEAGE")
 	if lin == "" {
 		return "", "", fmt.Errorf("export METASYSTEM_OWNER_LINEAGE for channel ledger operations")
 	}
@@ -278,14 +283,29 @@ func askChannelQuestionVia(root string, in channelAskInput, surface channelAskSu
 // (R-129-ui): the question is returned with it, and nothing was asked again.
 var errQuestionAlreadyOpen = errors.New("this exact question is already open; nothing was asked again")
 
-var channelWaitCommand = runWaitWithPoll
+// channelWaitCommand is the durable wait cycle a channel wait drives: its
+// selector argv, the provider poll, the waiting caller and where the result
+// is printed.
+var channelWaitCommand = func(args []string, poll func(context.Context) error, callerPID int64, stdout io.Writer) int {
+	return runWaitCommand(args, poll, callerPID, func(result metarun.WaitResult, jsonOutput bool) { writeWaitResult(stdout, result, jsonOutput) })
+}
 
 func runChannelWait(args []string) int {
 	return runChannelWaitWithMachine(args, nil)
 }
 
 func runChannelWaitWithMachine(args []string, resolveMachine func(string) (string, error)) int {
+	return channelWaitWith(waitCallerPID(), os.Getenv("METASYSTEM_OWNER_LINEAGE"), os.Stdout, os.Stderr, args, resolveMachine)
+}
+
+// channelWaitWith waits for one channel question's answer under an explicit
+// invocation context: callerPID is the waiting caller the durable wait
+// registers (a process entry's parent, or the current process on an edge
+// that replaced a child), lineage is the channel ledger identity's, and the
+// report goes to the caller's streams.
+func channelWaitWith(callerPID int64, lineage string, stdout, stderr io.Writer, args []string, resolveMachine func(string) (string, error)) int {
 	f := flag.NewFlagSet("channel wait", flag.ContinueOnError)
+	f.SetOutput(stderr)
 	root := pathFlag(f, "root", ".", "repository root")
 	id := f.String("question", "", "question id")
 	resume := f.String("resume", "", "durable channel wait identifier")
@@ -299,23 +319,23 @@ func runChannelWaitWithMachine(args []string, resolveMachine func(string) (strin
 	if *resume != "" {
 		stateRoot, resolveErr := goal.ResolveStateRoot(*root)
 		if resolveErr != nil {
-			fmt.Fprintln(os.Stderr, resolveErr)
+			fmt.Fprintln(stderr, resolveErr)
 			return 65
 		}
 		row, _, rowErr := metarun.FindWaiterByID(stateRoot, *resume)
 		if rowErr != nil {
-			fmt.Fprintln(os.Stderr, "channel wait cannot read its durable registration:", rowErr)
+			fmt.Fprintln(stderr, "channel wait cannot read its durable registration:", rowErr)
 			return 4
 		}
 		if row.Selector.Poll != "channel" {
-			fmt.Fprintln(os.Stderr, "channel wait cannot resume a wait that has no channel poll selector")
+			fmt.Fprintln(stderr, "channel wait cannot resume a wait that has no channel poll selector")
 			return 67
 		}
 		questionID = row.Selector.Question
 	}
 	q, err := channel.ReadQuestion(*root, questionID)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	cursor := ""
@@ -325,25 +345,25 @@ func runChannelWaitWithMachine(args []string, resolveMachine func(string) (strin
 			cursor = q.LedgerCursor
 		}
 		if cursor == "" {
-			fmt.Fprintln(os.Stderr, "channel wait: this legacy question has no ledgerCursor; pass --after with the accepted cursor recorded before the question")
+			fmt.Fprintln(stderr, "channel wait: this legacy question has no ledgerCursor; pass --after with the accepted cursor recorded before the question")
 			return 67
 		}
 	} else if *after != "" {
-		fmt.Fprintln(os.Stderr, "channel wait --resume accepts no replacement ledger cursor")
+		fmt.Fprintln(stderr, "channel wait --resume accepts no replacement ledger cursor")
 		return 67
 	}
 	loaded, err := phase.Load(*root, true)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "channel wait provider is unavailable:", err)
+		fmt.Fprintln(stderr, "channel wait provider is unavailable:", err)
 		return 1
 	}
 	if loaded.Provider == nil {
-		fmt.Fprintln(os.Stderr, "channel wait requires a configured channel provider")
+		fmt.Fprintln(stderr, "channel wait requires a configured channel provider")
 		return 1
 	}
-	machine, lineage, err := channelIdentityWithMachine(*root, resolveMachine)
+	machine, lineage, err := channelIdentityFor(*root, resolveMachine, lineage)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	nextPoll := time.Time{}
@@ -376,14 +396,14 @@ func runChannelWaitWithMachine(args []string, resolveMachine func(string) (strin
 	} else if *resume == "" {
 		waitArgs = append(waitArgs, "--timeout", (24 * time.Hour).String())
 	}
-	code := channelWaitCommand(waitArgs, poll)
+	code := channelWaitCommand(waitArgs, poll, callerPID, stdout)
 	if code == 0 {
 		answered, readErr := channel.ReadQuestion(*root, q.ID)
 		if readErr != nil || answered.Answer == nil {
-			fmt.Fprintln(os.Stderr, "channel wait matched an answer act but its accepted answer text is unavailable")
+			fmt.Fprintln(stderr, "channel wait matched an answer act but its accepted answer text is unavailable")
 			return 1
 		}
-		fmt.Println(answered.Answer.Text)
+		fmt.Fprintln(stdout, answered.Answer.Text)
 	}
 	return code
 }

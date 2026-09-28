@@ -153,8 +153,8 @@ func TestIntentWaitGoalLandingGitAdapterObservesTheRealLanding(t *testing.T) {
 }
 
 // TestIntentWaitQuestionGitAdapterContinuesToTheRealAnswer: wait question Q
-// runs the real channel wait owner (the freshly built engine, as its own
-// process) with the adapter's exact argv. The channel provider is the
+// runs the real channel wait owner (in this process, recorded as the argv
+// its former child carried) with the adapter's exact argv. The channel provider is the
 // repository's fake provider served for this test, configured in the
 // synthetic root with a synthetic TOTP secret. With no reply the owner's
 // first poll posts the question and its one controlled one-minute wait ends
@@ -204,6 +204,9 @@ func TestIntentWaitQuestionGitAdapterContinuesToTheRealAnswer(t *testing.T) {
 			return runIntentOwnerProcess(process)
 		},
 		executable: func() (string, error) { return engine, nil },
+		// The channel wait owner runs in this process (design 6.2); each call
+		// is recorded as the argv its former child carried.
+		calls: recordingOwnerCalls([]string{engine, "internal"}, func(argv []string) { calls = append(calls, argv) }),
 	}
 	run := func(args ...string) (int, intentResult) {
 		t.Helper()
