@@ -140,3 +140,45 @@ func TestActiveAfterSimulatedRestart(t *testing.T) {
 		}
 	})
 }
+
+func TestYieldAppendsLine(t *testing.T) {
+	t.Parallel()
+	t.Run("HM-12", func(t *testing.T) {
+		roots := fakeSeat(t)
+		seat := take(t, roots[0], since)
+		for range 2 {
+			RecordYield(roots[2], Yield{At: since, Boundary: "stop-hook", Gate: "turn-verdict", Would: "not evaluated", PID: 48213})
+		}
+		data, err := os.ReadFile(seat.Yields)
+		line := `{"at":"2026-09-28T19:14:03Z","boundary":"stop-hook","gate":"turn-verdict","would":"not evaluated","by":"Wido","pid":48213}` + "\n"
+		if err != nil || string(data) != line+line {
+			t.Fatalf("yield log = %q, %v; want two lines %q", data, err, line)
+		}
+	})
+}
+
+func TestYieldUnwritableReturns(t *testing.T) {
+	t.Parallel()
+	t.Run("HM-12", func(t *testing.T) {
+		root := fakeSeat(t)[0]
+		seat := take(t, root, since)
+		must(t, os.MkdirAll(seat.Yields, 0o700), os.Chmod(seat.Dir, 0o500))
+		t.Cleanup(func() { _ = os.Chmod(seat.Dir, 0o700) })
+		RecordYield(root, Yield{Boundary: "stop-hook"})
+		if RecordYield(t.TempDir(), Yield{Boundary: "stop-hook"}); !Active(root).Active {
+			t.Fatal("an unwritable yield log changed the helm")
+		}
+	})
+}
+
+func TestLogAppendsTakeAndReturn(t *testing.T) {
+	t.Parallel()
+	root := fakeSeat(t)[1]
+	must(t, Log(root, Entry{At: since, Action: "take", By: "Ann", Reason: "r", Replaced: "Wido"}), Log(root, Entry{At: since, Action: "return", By: "Ann"}))
+	seat, _ := Locate(root)
+	data, err := os.ReadFile(seat.Log)
+	want := `{"at":"2026-09-28T19:14:03Z","action":"take","by":"Ann","reason":"r","replaced":"Wido"}` + "\n" + `{"at":"2026-09-28T19:14:03Z","action":"return","by":"Ann"}` + "\n"
+	if err != nil || string(data) != want {
+		t.Fatalf("helm.log = %q, %v; want %q", data, err, want)
+	}
+}
