@@ -184,7 +184,7 @@ func (p *Project) check() {
 		}
 		if record.Kind != "" && !contains(Kinds, record.Kind) {
 			p.problem(record.Path, record.line("Kind"),
-				"the kind "+record.Kind+" is not one of intent, doctrine, decision, design")
+				"the kind "+record.Kind+" is not one of "+strings.Join(Kinds, ", "))
 		}
 		if record.Status != "" && !contains(Statuses, record.Status) {
 			p.problem(record.Path, record.line("Status"),

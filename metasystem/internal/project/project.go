@@ -47,6 +47,10 @@ const (
 	KindDecision = "decision"
 	KindDesign   = "design"
 	KindQuestion = "question"
+	// KindReview is a human's review of one goal's built work (g1-s65 D1): a
+	// record of its own, beside the designs, which the interface creates when
+	// a review sitting starts and nothing else does.
+	KindReview = "review"
 )
 
 // The four statuses a record carries. Status is maintained by hand, as every
@@ -64,8 +68,8 @@ const WholeProject = "project"
 
 // Kinds is what a head may declare, in reading order rather than alphabetical
 // order: intent, then the doctrine that serves it, then the decisions, then
-// the designs.
-var Kinds = []string{KindIntent, KindDoctrine, KindDecision, KindDesign}
+// the designs, then the reviews of the work the designs led to.
+var Kinds = []string{KindIntent, KindDoctrine, KindDecision, KindDesign, KindReview}
 
 // QueryKinds is every kind a query answers about: the four a head declares,
 // then the questions, which are rows and not pages.
@@ -201,6 +205,10 @@ func Homes(roots Roots) []Home {
 		{Kind: KindDoctrine, Path: filepath.Join(roots.StateRoot, "docs", "doctrine"), Book: true},
 		{Kind: KindDecision, Path: filepath.Join(roots.StateRoot, "docs", "decisions")},
 		{Kind: KindDesign, Path: filepath.Join(roots.StateRoot, "plans", "designs")},
+		// The reviews live beside the designs, in the state root alone: a
+		// review is of this application's work, and the kit's own history has
+		// none.
+		{Kind: KindReview, Path: filepath.Join(roots.StateRoot, "plans", "reviews")},
 	}
 	if SelfHosted(roots) {
 		homes = append(homes,
