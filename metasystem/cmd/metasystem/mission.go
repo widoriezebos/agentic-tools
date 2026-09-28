@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
@@ -102,53 +101,6 @@ func stateVerbRoot(statePath string) string {
 	return filepath.Dir(dir)
 }
 
-// requireHumanStateCaller gates the state family's mutating verbs:
-// the lease-holding runner is the only
-// ordinary writer and it writes in-process, so every CLI caller that
-// classifies as an announced agent — MAIN, DELEGATE, supervision,
-// adapter — refuses. The posture stays the design's cooperative
-// tamper-evident tier: classification is ancestry-based, and the human
-// remains the out-of-band authority.
-func requireHumanStateCaller(statePath, verb string) int {
-	root := stateVerbRoot(statePath)
-	if root == "" {
-		if wd, err := os.Getwd(); err == nil {
-			root = wd
-		}
-	}
-	view, err := lease.Classify(root, int64(os.Getpid()))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s refused: caller classification failed: %v\n", verb, err)
-		return 3
-	}
-	if view.Class != lease.ClassHuman {
-		fmt.Fprintf(os.Stderr, "%s refused: mission state is runner-owned; this caller classifies %s\n", verb, view.Class)
-		return 3
-	}
-	return 0
-}
-
-func runMissionStateWrite(args []string) int {
-	flags := flag.NewFlagSet("mission state-write", flag.ContinueOnError)
-	state := flags.String("state", "", "state path")
-	source := flags.String("source", "", "proposed next state path")
-	expect := flags.String("expect", "", "expected current state hash")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if code := requireHumanStateCaller(*state, "state-write"); code != 0 {
-		return code
-	}
-	// The writer additionally refuses resolution-shaped transitions
-	// inside WriteState itself: resolutions and segment moves land
-	// only through resolve-taint's verified path.
-	if err := mission.WriteState(*state, *source, *expect); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
 func runMissionStateVerify(args []string) int {
 	flags := flag.NewFlagSet("mission state-verify", flag.ContinueOnError)
 	state := flags.String("state", "", "state path")
@@ -179,77 +131,7 @@ func runMissionStateVerify(args []string) int {
 	return 0
 }
 
-func runMissionStateAnchor(args []string) int {
-	flags := flag.NewFlagSet("mission state-anchor", flag.ContinueOnError)
-	state := flags.String("state", "", "state path")
-	repo := pathFlag(flags, "repo", "", "repository")
-	ledger := flags.String("ledger", "", "ledger path")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if code := requireHumanStateCaller(*state, "state-anchor"); code != 0 {
-		return code
-	}
-	if err := mission.Anchor(*state, *repo, *ledger); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-func runMissionStateReconcile(args []string) int {
-	flags := flag.NewFlagSet("mission state-reconcile", flag.ContinueOnError)
-	state := flags.String("state", "", "state path")
-	repo := pathFlag(flags, "repo", "", "repository")
-	ledger := flags.String("ledger", "", "ledger path")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if gate := requireHumanStateCaller(*state, "state-reconcile"); gate != 0 {
-		return gate
-	}
-	code, err := mission.Reconcile(*state, *repo, *ledger)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		if code == 0 {
-			code = 1
-		}
-	}
-	return code
-}
-
 // The mission-fence family owns the lifecycle fences, cap authority, and usage.
-
-func runMissionFenceReserve(name string, reserve bool) func([]string) int {
-	return func(args []string) int {
-		flags := flag.NewFlagSet("mission "+name, flag.ContinueOnError)
-		repo := pathFlag(flags, "repo", "", "repository")
-		missionID := flags.String("mission", "", "mission id")
-		job := flags.String("job", "", "job id")
-		capMin := flags.Int("cap-min", 0, "per-job cap in minutes")
-		if flags.Parse(args) != nil {
-			return 2
-		}
-		if !missionIDRe.MatchString(*missionID) {
-			fmt.Fprintln(os.Stderr, "invalid mission id")
-			return 2
-		}
-		if !missionIDRe.MatchString(*job) || *capMin < 1 {
-			fmt.Fprintln(os.Stderr, "invalid mission job reservation")
-			return 2
-		}
-		commandClock, _, err := goalCommandClock(*repo)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		if err := mission.CheckOrReserveWithClock(*repo, *missionID, *job, *capMin, reserve, commandClock); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		return 0
-	}
-}
 
 func runMissionFenceAuthorizeCap(args []string) int {
 	flags := flag.NewFlagSet("mission fence-authorize-cap", flag.ContinueOnError)
@@ -293,68 +175,5 @@ func runMissionFenceAuthorizeCap(args []string) int {
 	}
 	encoded, _ := json.Marshal(result)
 	fmt.Println(string(encoded))
-	return 0
-}
-
-func runMissionFenceAggregateUsage(args []string) int {
-	flags := flag.NewFlagSet("mission fence-aggregate-usage", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "repository")
-	missionID := flags.String("mission", "", "mission id")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if !missionIDRe.MatchString(*missionID) {
-		fmt.Fprintln(os.Stderr, "invalid mission id")
-		return 2
-	}
-	if err := mission.AggregateUsage(*repo, *missionID); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-func runMissionFenceReleaseJob(args []string) int {
-	flags := flag.NewFlagSet("mission fence-release-job", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "repository")
-	missionID := flags.String("mission", "", "mission id")
-	job := flags.String("job", "", "job id whose reservation to release")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if !missionIDRe.MatchString(*missionID) || *job == "" {
-		fmt.Fprintln(os.Stderr, "fence-release-job requires --repo, --mission and --job")
-		return 2
-	}
-	commandClock, _, err := goalCommandClock(*repo)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if err := mission.ReleaseJobWithClock(*repo, *missionID, *job, commandClock); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-func runMissionFenceRefuse(args []string) int {
-	flags := flag.NewFlagSet("mission fence-refuse", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "repository")
-	missionID := flags.String("mission", "", "mission id")
-	reason := flags.String("reason", "", "fence refusal reason")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if !missionIDRe.MatchString(*missionID) {
-		fmt.Fprintln(os.Stderr, "invalid mission id")
-		return 2
-	}
-	ask, err := mission.Refuse(*repo, *missionID, *reason)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Println(ask)
 	return 0
 }

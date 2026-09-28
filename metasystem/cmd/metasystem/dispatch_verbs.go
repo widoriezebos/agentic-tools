@@ -156,56 +156,6 @@ func runDispatchCapContinuation(args []string) int {
 	return 0
 }
 
-func runDispatchGoalRevision(args []string) int {
-	flags := flag.NewFlagSet("job goal-revision", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	goalID := flags.String("goal", "", "goal id")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" || *goalID == "" {
-		fmt.Fprintln(os.Stderr, "job goal-revision: --root and --goal are required")
-		return 2
-	}
-	revision, _, err := dispatchcore.ResolveGoalRevision(*root, *goalID)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Println(revision)
-	return 0
-}
-
-func runDispatchGoalBinding(args []string) int {
-	flags := flag.NewFlagSet("job goal-binding", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	goalID := flags.String("goal", "", "goal id")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" || *goalID == "" {
-		fmt.Fprintln(os.Stderr, "job goal-binding: --root and --goal are required")
-		return 2
-	}
-	now, err := goalCommandNow(*root)
-	if err != nil {
-		return recordExit(err)
-	}
-	binding, err := dispatchcore.ResolveGoalBinding(*root, *goalID, now)
-	if err != nil {
-		return recordExit(err)
-	}
-	printJSON(map[string]any{
-		"goalId": binding.GoalID, "goalRevision": binding.Revision,
-		"goalTier":  binding.Tier,
-		"gateWidth": binding.GateWidth,
-		"machineId": binding.Machine, "claimEpoch": binding.Capability.ClaimEpoch,
-		"capabilityGeneration": binding.Capability.Generation,
-		"fenceEpoch":           binding.Capability.FenceEpoch, "fenced": binding.Fence != nil,
-	})
-	return 0
-}
-
 func runDispatchGoalAdmission(args []string) int {
 	flags := flag.NewFlagSet("job goal-admission", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "checkout root")
@@ -407,31 +357,6 @@ func runDispatchBreachStopRoutes(args []string) int {
 	return 0
 }
 
-func runDispatchStopBatchReconcile(args []string) int {
-	flags := flag.NewFlagSet("job stop-batch-reconcile", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	stopID := flags.String("stop", "", "stop batch id")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" || *stopID == "" {
-		return 2
-	}
-	now, err := goalCommandNow(*root)
-	if err != nil {
-		return recordExit(err)
-	}
-	batch, err := dispatchcore.ReconcileStopBatch(*root, *stopID, now)
-	if err != nil {
-		return recordExit(err)
-	}
-	printJSON(batch)
-	if batch.State == "INDETERMINATE" {
-		return 11
-	}
-	return 0
-}
-
 // refuseRepeatedFlags is the strict-parse gate for authority-bearing
 // verbs: a repeated flag would let a caller redirect the endpoint AFTER
 // its wrapper's authority check authorized the first occurrence
@@ -491,22 +416,6 @@ func runDispatchCritiqueRegisterClose(args []string) int {
 		return 2
 	}
 	outcome, err := dispatchcore.CritiqueRegisterClose(*repo, *rootJob)
-	if err != nil {
-		return recordExit(err)
-	}
-	fmt.Println(outcome)
-	return 0
-}
-
-func runDispatchCritiqueBudgetRebind(args []string) int {
-	flags := flag.NewFlagSet("job critique-budget-rebind", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", ".", "checkout root")
-	rootJob := flags.String("root-job", "", "critic root")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *rootJob == "" {
-		fmt.Fprintln(os.Stderr, "job critique-budget-rebind: --root-job is required")
-		return 2
-	}
-	outcome, err := dispatchcore.CritiqueBudgetRebind(*repo, *rootJob)
 	if err != nil {
 		return recordExit(err)
 	}
