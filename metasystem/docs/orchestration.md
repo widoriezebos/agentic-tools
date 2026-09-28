@@ -268,7 +268,7 @@ For implementation, `metasystem work review j2:J` runs the review-stage boundary
 
 ## Mission Contracts
 
-An unattended mission starts from `plans/mission-<mission-id>.contract.md`. The file is human authority, not runner state: the human authors its prose and key/value block, `metasystem internal mission contract-seal` records the frozen baseline and integrity data, and only then does the human add the approval line. `metasystem internal mission contract-preflight` refuses an unsigned, unsealed, changed, stale, or operationally unready contract.
+An unattended mission starts from `plans/mission-<mission-id>.contract.md`. The file is human authority, not runner state: the human authors its prose and key/value block, `metasystem mission seal <mission-id>` checks it and records the frozen baseline and integrity data, and only then does the human add the approval line. `metasystem mission start <mission-id>` runs the launch checks first and refuses an unsigned, unsealed, changed, stale, or operationally unready contract.
 
 The prose has `# Intent`, `# Non-goals`, and `# Initial streams` sections. One fenced `mission` block contains the authored keys below. Repeated scalar keys are invalid; metric, guard, stream, and envelope names use lowercase ids with hyphens.
 

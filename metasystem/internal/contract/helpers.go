@@ -34,6 +34,10 @@ type ContractError struct{ msg string }
 
 func (e *ContractError) Error() string { return e.msg }
 
+// ErrAlreadySealed is Seal's answer for a contract that carries its seal:
+// the seal holds, and a repeat changes nothing.
+var ErrAlreadySealed error = &ContractError{msg: "contract is already sealed"}
+
 func stateErr(format string, args ...any) error {
 	return &ContractError{msg: fmt.Sprintf(format, args...)}
 }

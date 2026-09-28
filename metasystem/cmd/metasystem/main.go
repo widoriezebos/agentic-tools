@@ -258,19 +258,9 @@ func families() []family {
 		},
 		{
 			name:    "mission",
-			summary: "the mission domain: state, fences, contract, prompt, runner, turns, ledger",
+			summary: "the mission domain's detached loop",
 			verbs: []verb{
-				{"state-init", "create a mission's initial state from its sealed contract", runMissionStateInit},
-				{"state-verify", "validate the state's shape, aggregation, hash chain, and anchor", runMissionStateVerify},
-				{"contract-validate", "validate a mission contract's authored block", runMissionContractValidate},
-				{"contract-seal", "seal a validated contract and print its digest", runMissionContractSeal},
-				{"contract-preflight", "preflight a sealed, signed contract and emit its verified bytes", runMissionContractPreflight},
-				{"start", "start a mission's detached run loop", runMissionRunnerStart},
-				{"resume", "resume a parked or interrupted mission", runMissionRunnerResume},
-				{"status", "print the mission's runner status line", runMissionRunnerStatus},
-				{"resolve-taint", "apply a typed human resolution (--restore <treeId> | --adopt --waives <claim>) to a workspace taint", runMissionRunnerResolveTaint},
 				{"run-loop", "the detached mission loop (internal; spawned by start/resume)", runMissionRunnerRunLoop},
-				{"ledger-init", "create a ledger with cycle and no-gain budgets", runMissionLedgerInit},
 			},
 		},
 		{

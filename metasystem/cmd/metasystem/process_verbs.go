@@ -454,17 +454,6 @@ func classificationDataRefusal(verb, checkout, retryCommand string, err error) *
 	return &processRefusal{verb: verb, checkout: checkout, sentence: "caller classification is blocked by " + input + ": " + failure.Reason(), second: second, code: 1}
 }
 
-// missionFenceBeforeArm gives a closed checkout its stopped answer before the
-// mission launcher can reach supervision arming or any gate that depends on
-// live supervision.
-func missionFenceBeforeArm(root, mode string) (int64, int) {
-	return missionFenceBeforeArmWith(root, mode, stateroot.RepositoryTop, lease.ClassifyAt)
-}
-
-func missionFenceBeforeArmWith(root, mode string, repositoryTop func(string) (string, error), classify processCallerClassifier) (int64, int) {
-	return missionFenceBeforeArmFor(processIdentity{pid: int64(os.Getpid())}, os.Stderr, root, mode, repositoryTop, classify)
-}
-
 // missionFenceBeforeArmFor is the fence check with its caller and report
 // stream explicit: the process a human classification starts from (the
 // launching command supplies itself) and where refusals are written.

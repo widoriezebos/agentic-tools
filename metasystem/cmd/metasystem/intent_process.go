@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -153,8 +154,10 @@ func processIntentCommands() []intentCommand {
 		},
 		{
 			object: "mission", action: "start", audience: "both", summary: "start an autonomous mission",
-			usage: []string{"metasystem mission start M"}, maxArgs: 1, examples: []string{"metasystem mission start demo"},
-			run: func(inv *intentInvocation) int { return runIntentMissionNamed(inv, "start") },
+			usage: []string{"metasystem mission start M [--wait]"}, maxArgs: 1, examples: []string{"metasystem mission start demo"},
+			details: []string{"The mission's signed contract passes its launch checks first. Without --wait the mission runs on its own and this returns once its first turn starts."},
+			flags:   []intentFlag{missionWaitFlag},
+			run:     func(inv *intentInvocation) int { return runIntentMissionNamed(inv, "start") },
 		},
 		{
 			object: "mission", action: "status", audience: "both", summary: "a mission's runner status",
@@ -163,8 +166,20 @@ func processIntentCommands() []intentCommand {
 		},
 		{
 			object: "mission", action: "resume", audience: "human", summary: "resume a parked or interrupted mission",
-			usage: []string{"metasystem mission resume M"}, maxArgs: 1, examples: []string{"metasystem mission resume demo"},
-			run: func(inv *intentInvocation) int { return runIntentMissionNamed(inv, "resume") },
+			usage: []string{"metasystem mission resume M [--wait]"}, maxArgs: 1, examples: []string{"metasystem mission resume demo"},
+			flags: []intentFlag{missionWaitFlag},
+			run:   func(inv *intentInvocation) int { return runIntentMissionNamed(inv, "resume") },
+		},
+		{
+			object: "mission", action: "seal", audience: "human", summary: "check a mission contract and seal it so a person can sign it",
+			usage: []string{"metasystem mission seal M"},
+			details: []string{
+				"M is the mission id (plans/mission-M.contract.md) or the contract file.",
+				"Checks the authored contract and prints any sizing warnings, then records its baseline and priced exposure in the file.",
+				"Add the approval line it names, commit it, and run metasystem mission start M. A sealed contract is left as it is.",
+			},
+			maxArgs: 1, examples: []string{"metasystem mission seal demo"},
+			run: runIntentMissionSeal,
 		},
 		{
 			object: "mission", action: "repair", audience: "human", summary: "record a person's resolution of one mission workspace problem",
@@ -1683,9 +1698,9 @@ func runIntentMission(inv *intentInvocation, verb, mission string) int {
 // this process (design 6.2); this process is the caller a closed fence's
 // reopening classifies.
 func (inv *intentInvocation) missionOwnerLaunch(mission, mode string) intentProcessResult {
-	caller, root := currentProcessIdentity(), inv.stateRoot
+	caller, root, wait := currentProcessIdentity(), inv.stateRoot, inv.input.switched("wait")
 	return ownerCall(func(stdout, stderr io.Writer) int {
-		return inv.ownerCalls().missionLaunch(caller, stdout, stderr, root, mission, mode)
+		return inv.ownerCalls().missionLaunch(caller, stdout, stderr, root, mission, mode, wait)
 	})
 }
 
@@ -1704,6 +1719,45 @@ func missionAlreadyRunning(ran intentProcessResult) (string, bool) {
 }
 
 // runIntentMissionNamed starts, resumes or reads the one named mission.
+// missionWaitFlag runs a started or resumed mission in this terminal until
+// it ends, instead of on its own.
+var missionWaitFlag = intentFlag{name: "wait", usage: "run the mission here until it ends instead of on its own"}
+
+// runIntentMissionSeal checks and seals one mission contract through the
+// contract owner in this process. A sealed contract is unchanged (R-129).
+func runIntentMissionSeal(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "mission seal needs the mission: metasystem mission seal M; nothing was done"})
+	}
+	if problem := inv.selectLayoutRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	named := inv.input.args[0]
+	path := inv.callerPath(named)
+	if missionIDRe.MatchString(named) {
+		if _, err := os.Stat(path); err != nil {
+			path = filepath.Join(inv.layout.GitRoot, "plans", "mission-"+named+".contract.md")
+		}
+	}
+	targets := []intentTarget{{Kind: "contract", ID: path}}
+	digest, warnings, err := inv.ownerCalls().missionSeal(path)
+	switch {
+	case errors.Is(err, contract.ErrAlreadySealed):
+		return inv.render(intentResult{Targets: targets, Outcome: intentUnchanged, Summary: "the contract is already sealed; nothing changed: " + path})
+	case err != nil:
+		return inv.render(intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the contract was not sealed: " + err.Error() + "; nothing was changed",
+			nextReason: "fix the contract and run metasystem mission seal again; a contract that already carries an approval line is sealed before the line is added"})
+	}
+	lines := make([]string, 0, len(warnings)+1)
+	for _, warning := range warnings {
+		lines = append(lines, "warning: "+warning)
+	}
+	lines = append(lines, "sign it: add the line  Approval: name=NAME; date=YYYY-MM-DD; contract-sha256="+digest+"  and commit the contract")
+	return inv.render(intentResult{Targets: targets, Outcome: intentConfirmed, text: lines,
+		Summary: "mission contract sealed: " + path + " (contract-sha256=" + digest + ")",
+		Data:    map[string]any{"contract": path, "contractSha256": digest, "warnings": nonNilLines(warnings)}})
+}
+
 func runIntentMissionNamed(inv *intentInvocation, verb string) int {
 	if len(inv.input.args) != 1 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("mission %s needs the mission: metasystem mission %s M; nothing was done", verb, verb)})

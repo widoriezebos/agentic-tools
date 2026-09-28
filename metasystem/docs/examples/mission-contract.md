@@ -1,6 +1,6 @@
 # Mission Contract Example
 
-This is a draft contract shape, not signed authority. Replace the repository facts, run `metasystem internal mission contract-validate --file <path>`, price the exposure, run `contract-seal`, commit the signed bytes to the shared default branch, arm supervision, and then run `--preflight`.
+This is a draft contract shape, not signed authority. Replace the repository facts, price the exposure, run `metasystem mission seal <mission-id>` (it checks the contract first and names what is wrong), add the approval line it prints, commit the signed bytes to the shared default branch, and then run `metasystem mission start <mission-id>`, which runs the launch checks before anything starts.
 
 # Intent
 

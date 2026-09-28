@@ -2196,8 +2196,8 @@ func TestReservationReparksOrphanedEvidence(t *testing.T) {
 	assertOrphanResume(t, bed, "alpha-t9-orphan")
 }
 
-// The freshly compiled command handles both typed resolutions and publishes
-// each fixture's state anchor through native Git.
+// The freshly compiled public mission repair handles both typed resolutions
+// and publishes each fixture's state anchor through native Git.
 func TestResolveTaintThroughWrapper(t *testing.T) {
 	restoreBed := parkedSoloBuildMission(t)
 	statePath := filepath.Join(restoreBed.missionDir(), "state.json")
@@ -2208,14 +2208,14 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 	}
 	runWrapper := func(bed *Engine, args ...string) (string, error) {
 		t.Helper()
-		full := append([]string{"internal", "mission", args[0], "--root", bed.Root}, args[1:]...)
+		full := append([]string{"mission", args[0], bed.Mission, "--repo", bed.Root}, args[1:]...)
 		cmd := exec.Command(filepath.Join(bed.Root, "bin", "metasystem"), full...)
 		cmd.Dir = bed.Root
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
-	out, err := runWrapper(restoreBed, "resolve-taint", "--mission", restoreBed.Mission,
-		"--taint", "1", "--restore", preTree, "--by", "Wido", "--reason", "restored through the entrypoint")
+	out, err := runWrapper(restoreBed, "repair",
+		"--problem", "1", "--confirm-restored", preTree, "--by", "Wido", "--reason", "restored through the entrypoint")
 	if err != nil {
 		t.Fatalf("the wrapper restore must succeed: %v\n%s", err, out)
 	}
@@ -2230,9 +2230,9 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 
 	adoptBed := parkedSoloBuildMission(t)
 	adoptState := filepath.Join(adoptBed.missionDir(), "state.json")
-	out, err = runWrapper(adoptBed, "resolve-taint", "--mission", adoptBed.Mission,
-		"--taint", "1", "--adopt", "--by", "Wido", "--reason", "adopted through the entrypoint",
-		"--waives", "authorship of solo.go")
+	out, err = runWrapper(adoptBed, "repair",
+		"--problem", "1", "--accept-workspace", "--by", "Wido", "--reason", "adopted through the entrypoint",
+		"--waive", "authorship of solo.go")
 	if err != nil {
 		t.Fatalf("the wrapper adoption must succeed: %v\n%s", err, out)
 	}
@@ -2266,8 +2266,8 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 	}
 
 	// Malformed shapes refuse at the wrapper too, exit 2, no state read.
-	if _, err := runWrapper(adoptBed, "resolve-taint", "--mission", adoptBed.Mission,
-		"--taint", "1", "--restore", "not-a-tree", "--by", "Wido", "--reason", "r"); err == nil {
+	if _, err := runWrapper(adoptBed, "repair",
+		"--problem", "1", "--confirm-restored", "not-a-tree", "--by", "Wido", "--reason", "r"); err == nil {
 		t.Fatal("a malformed tree id must refuse through the wrapper")
 	}
 }

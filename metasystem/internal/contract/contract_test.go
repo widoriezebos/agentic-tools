@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
@@ -224,7 +225,7 @@ func TestContractSealWritesBlockAndDigest(t *testing.T) {
 	}
 
 	// A sealed contract may not be resealed.
-	if _, err := contractSealWithSource(contractPath, f.repository, f.source()); err == nil || !strings.Contains(err.Error(), "already sealed") {
+	if _, err := contractSealWithSource(contractPath, f.repository, f.source()); !errors.Is(err, ErrAlreadySealed) {
 		t.Fatalf("expected already-sealed refusal, got %v", err)
 	}
 	failed := newContractSource(t, 1, false)

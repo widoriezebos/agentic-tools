@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 
-	missionpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 )
 
@@ -18,23 +16,9 @@ import (
 // the bottom of this file IS that runner: the long-lived process that drives
 // a mission's cycles end to end.
 
-// The mission-runner family: the runner process itself. start and resume
-// launch the detached run loop and hold the caller until the first host turn
-// verifiably starts; run-loop is that detached child; status is the
-// human/driver surface over a mission's artifacts (a person answers a
-// mission's ask with question answer M/Q).
-
-// missionRunnerUsage prints the runner's public usage, which names the shell
-// entry point callers actually invoke.
-func missionRunnerUsage() {
-	fmt.Fprint(os.Stderr,
-		"Usage:\n"+
-			"  metasystem mission start --mission <id> [--foreground]\n"+
-			"  metasystem mission resume --mission <id> [--foreground]\n"+
-			"  metasystem mission status --mission <id>\n"+
-			"  metasystem internal mission resolve-taint --mission <id> --taint <n> --by <name> --reason <text>\n"+
-			"      (--restore <treeId> | --adopt --waives <claim> [--waives <claim> ...])\n")
-}
+// run-loop is the detached child the public mission start and resume launch
+// (missionrunner.launch.go); a person answers a mission's ask with question
+// answer M/Q.
 
 // parseRunnerArgs reads --key value pairs and bare switches with the
 // runner's strict grammar: only the given keys, every valued key valued, and
@@ -63,14 +47,6 @@ func parseRunnerArgs(args []string, valued map[string]*string, switches map[stri
 	return true
 }
 
-func runMissionRunnerStart(args []string) int {
-	return runMissionRunnerLaunch("start", args)
-}
-
-func runMissionRunnerResume(args []string) int {
-	return runMissionRunnerLaunch("resume", args)
-}
-
 func missionRunnerCommandEngine(root, mission string) (*missionrunner.Engine, error) {
 	commandClock, _, err := goalCommandClock(root)
 	if err != nil {
@@ -80,109 +56,6 @@ func missionRunnerCommandEngine(root, mission string) (*missionrunner.Engine, er
 	engine.Now = commandClock
 	engine.Delegate = delegateInProcess(root)
 	return engine, nil
-}
-
-func runMissionRunnerLaunch(mode string, args []string) int {
-	var root, mission string
-	foreground := false
-	ok := parseRunnerArgs(args,
-		map[string]*string{"--root": &root, "--mission": &mission},
-		map[string]*bool{"--foreground": &foreground})
-	if !ok || root == "" || !missionIDRe.MatchString(mission) {
-		missionRunnerUsage()
-		return 2
-	}
-	if !foreground {
-		// The entry supplies itself as the caller, as it always did.
-		return missionLaunchTo(processIdentity{pid: int64(os.Getpid())}, os.Stdout, os.Stderr, root, mission, mode)
-	}
-	generation, code := missionFenceBeforeArm(root, mode)
-	if code != 0 {
-		return code
-	}
-	engine, err := missionRunnerCommandEngine(root, mission)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "mission "+mode+":", err)
-		return 1
-	}
-	return engine.LaunchAtGeneration(mode, foreground, generation)
-}
-
-func runMissionRunnerStatus(args []string) int {
-	var root, mission string
-	ok := parseRunnerArgs(args, map[string]*string{"--root": &root, "--mission": &mission}, nil)
-	if !ok || root == "" || !missionIDRe.MatchString(mission) {
-		missionRunnerUsage()
-		return 2
-	}
-	return missionrunner.NewEngine(root, mission).Status()
-}
-
-func runMissionRunnerResolveTaint(args []string) int {
-	// ONE strict left-to-right scan over the RAW tokens: every token
-	// in flag position must be a known
-	// flag; --adopt is a bare switch; every valued flag consumes exactly
-	// the next token, which must not itself look like a flag; duplicates
-	// refuse (only --waives repeats). No token is lifted, filtered, or
-	// repaired before this scan, so no malformed spelling can collapse
-	// into a lawful one.
-	values := map[string]string{}
-	var waived []string
-	adopt := false
-	for index := 0; index < len(args); {
-		flag := args[index]
-		switch flag {
-		case "--adopt":
-			if adopt {
-				missionRunnerUsage()
-				return 2
-			}
-			adopt = true
-			index++
-		case "--root", "--mission", "--taint", "--restore", "--by", "--reason", "--waives":
-			if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
-				missionRunnerUsage()
-				return 2
-			}
-			value := args[index+1]
-			if flag == "--waives" {
-				waived = append(waived, value)
-			} else {
-				if _, duplicate := values[flag]; duplicate {
-					missionRunnerUsage()
-					return 2
-				}
-				values[flag] = value
-			}
-			index += 2
-		default:
-			missionRunnerUsage()
-			return 2
-		}
-	}
-	root, mission := values["--root"], values["--mission"]
-	restoreTree, by, reason := values["--restore"], values["--by"], values["--reason"]
-	taintID, err := strconv.ParseInt(values["--taint"], 10, 64)
-	blankWaiver := false
-	for _, claim := range waived {
-		if missionpkg.BlankString(claim) {
-			blankWaiver = true
-		}
-	}
-	if root == "" || !missionIDRe.MatchString(mission) || err != nil || taintID < 1 ||
-		adopt == (restoreTree != "") ||
-		(restoreTree != "" && !treeIDRe.MatchString(restoreTree)) ||
-		missionpkg.BlankString(by) || missionpkg.BlankString(reason) ||
-		(adopt && (len(waived) == 0 || blankWaiver)) ||
-		(!adopt && len(waived) > 0) {
-		missionRunnerUsage()
-		return 2
-	}
-	variant, tree := "restore", restoreTree
-	if adopt {
-		variant, tree = "adopt-disputed-tree", ""
-	}
-	return missionrunner.NewEngine(root, mission).ResolveTaint(taintID, variant, tree, by, reason, waived)
 }
 
 // runMissionRunnerRunLoop is the detached child that start/resume spawn; it
