@@ -33,12 +33,17 @@ const (
 	// The launch contract raised it by one: `app serve` is the supervisor that
 	// owns one run of the project's application for its life, in the shape of
 	// `ui serve`, and like it it is a process entrypoint a person never types.
-	verbRatchetInternalVerbCeiling = 295
+	// +1: disk-lifetimes A1 adds `util engine-stamp`, the one shell-callable
+	// stamp reader (rule A3). Its first caller, fixture-budget.sh's
+	// `go version -m` parser, was deleted on main (U7c) before this merge.
 	// U9a made the scan count delegate-supervisor, routed through the
-	// runtimes.SupervisorEntry constant, which the literal-only scan missed:
-	// the measurement rose by one with no new verb.
+	// runtimes.SupervisorEntry constant, which the literal-only scan missed
+	// (the measurement rose by one with no new verb), and then deleted the
+	// verbs no caller, only tests, or only text ran (design 6.1), giving the
+	// ones a person runs by hand a public home first.
+	verbRatchetInternalVerbCeiling = 95
 	// R4: shell lines that reference the engine.
-	verbRatchetShellEngineCeiling = 28
+	verbRatchetShellEngineCeiling = 27
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
 	// U9's stub deletion took the last one: the ceiling is zero, the end state
 	// the redesign drives it to.
@@ -63,14 +68,22 @@ const (
 	// contract's own runner instead of running a test itself (intent_app.go).
 	// U5 added one: the Go landing path runs the engine's landing workspace
 	// (landing_path.go), a hop commit.sh made from shell.
-	// U9a +1, a false positive held until its cause goes: work stop G's
-	// next command, publicArgv("goal", "resume", id), reads as the family
-	// pair goal resume followed by a non-literal; it drops when U9a deletes
-	// that family verb.
-	verbRatchetSelfSubprocessCeiling = 129
+	// U9's hook part raised it by three, each a process boundary of its
+	// design (3.3, VOA-18, VOA-19): the Stop deadline parent launches its
+	// worker as the engine's own `internal hook` entry where it ran the stub
+	// script (runtime_hook_worker.go: the executable and its launch), and
+	// `system setup` asks the selected engine `internal hook --accepts`
+	// before switching a checkout (hookswitch).
+	// U9a replaced the avoidable self-subprocess edges with calls in the
+	// calling process (design 6.2): mission status/start/resume/repair, goal
+	// sync's reconcile and migrate, the exception's carry, question wait's
+	// channel wait, land's test receipt, test run and app check's testing
+	// runner, the mission runner's prompt check and fence preflight, and the
+	// launch supervisor's proc setsid hop.
+	verbRatchetSelfSubprocessCeiling = 104
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
-	verbRatchetInstructionCeiling = 46
+	verbRatchetInstructionCeiling = 40
 )
 
 type ratchetSite struct {

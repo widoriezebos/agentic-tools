@@ -97,8 +97,6 @@ var retiredWithDeletedVerb = map[string]string{
 	"command-interface-smoke/TestProcDefaultSignalsHelper":                 "proc default-signals",
 	"command-interface-smoke/TestProcDefaultSignalsRestoresIgnoredSignals": "proc default-signals",
 	"landing-command-standard/TestProveRoundFindsTheAttemptByCandidate":    "job prove-round",
-	"batch-buildcd-standard/TestGateUnitGreenOutputAndAggregatedSteps":     "gate unit",
-	"batch-buildcd-standard/TestGateUnitRedOutputAndExitCode":              "gate unit",
 	"launch-standard/TestRoundTaskRefusals":                                "launch round-task",
 	"launch-standard/TestLaunchStartRejectsRemovedPoll":                    "launch start",
 	"launch-standard/TestLaunchSettingsPrintsEachValueAndSource":           "launch settings",
