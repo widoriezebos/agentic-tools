@@ -1790,7 +1790,7 @@ func TestGoalSetObligationWithoutTemporaryWordStillProvesAncestry(t *testing.T) 
 	stderr, code := captureStderr(t, func() int {
 		return runGoalSetObligationWithAuthorityFacts(completeSetObligationArgs(root), humanauthority.ProveOrTemporaryGoalAuthority, facts)
 	})
-	if code != 1 || !strings.Contains(stderr, "could not prove enrolled human ancestry") {
+	if code != 1 || !strings.Contains(stderr, "only a person at the enrolled terminal may run this") {
 		t.Fatalf("ordinary set-obligation no longer failed closed on missing ancestry: code=%d stderr=%q", code, stderr)
 	}
 }
@@ -1804,7 +1804,7 @@ func TestGoalSetObligationAnnouncesTemporaryAuthority(t *testing.T) {
 		!strings.Contains(stdout, "re-approval due 2026-09-06 at an agent-free terminal") {
 		t.Fatalf("temporary set-obligation did not announce its status: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	if strings.Contains(stderr, "could not prove enrolled human ancestry") {
+	if strings.Contains(stderr, "only a person at the enrolled terminal may run this") {
 		t.Fatalf("temporary set-obligation still attempted enrolled ancestry: %q", stderr)
 	}
 	fixture.expectTransactions(1, 0)

@@ -121,7 +121,7 @@ func registeredFamilies() []family {
 		{
 			name: "test", summary: "proof runs on another engine or as the landing owner's child",
 			verbs: []verb{
-				{name: "plan", summary: "compute a candidate's risk-selected groups for a pinned or candidate engine", run: runTestPlan, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"plan\"", required: []string{"root"}},
+				{name: "plan", summary: "compute a candidate's risk-selected groups for a pinned or candidate engine", run: func(args []string) int { return runTestPlanAs("internal test plan", args) }, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"plan\"", required: []string{"root"}},
 				{name: "run", summary: "run one proof as the landing owner's own child", run: runTestRun, launcher: "cmd/metasystem/landing_batch_prove.go", evidence: "\"internal\", \"test\", \"run\"", required: []string{"root"}},
 				{name: "verify", summary: "verify retained proof on the base engine a carried landing builds", run: runTestVerify, launcher: "cmd/metasystem/landing_path.go", evidence: "\"test\", \"verify\"", required: []string{"root"}},
 				{name: "worker-capabilities", summary: "report the testing worker protocol of a pinned engine", run: runTestWorkerCapabilities, launcher: "cmd/metasystem/test.go", evidence: "\"test\", \"worker-capabilities\""},

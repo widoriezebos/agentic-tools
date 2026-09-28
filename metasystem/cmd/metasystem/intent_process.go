@@ -1321,7 +1321,7 @@ func runIntentDoctor(inv *intentInvocation) int {
 		code = max(code, 1)
 	}
 	result := intentResult{Outcome: intentConfirmed, code: code, Targets: inv.checkoutTarget(scope),
-		Summary: verdict.Line(), text: lines, Data: additiveData(steward.NewHookHealthPreview(verdict), map[string]any{"publicRemedies": remedies, "covenant": covenantData, "adapters": adapters, "skills": skillsData})}
+		Summary: verdict.LineWithoutRemedies(), text: lines, Data: additiveData(steward.NewHookHealthPreview(verdict), map[string]any{"publicRemedies": remedies, "covenant": covenantData, "adapters": adapters, "skills": skillsData})}
 	if first != nil {
 		result.next, result.nextReason = first, "the first public remedy check found"
 	}
@@ -1387,7 +1387,7 @@ func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, strin
 	}
 	switch role.Role {
 	case steward.RoleStewardRunner, steward.RoleSupervisionOwner, steward.RoleRepoWatcher, steward.RoleNarratorFreshness,
-		steward.RoleCensusFreshness, steward.RoleHookFreshness:
+		steward.RoleCensusFreshness, steward.RoleHookFreshness, steward.RoleSessionMain:
 		if stopped {
 			return []string{"metasystem", "system", "start"}, ""
 		}
@@ -1395,17 +1395,33 @@ func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, strin
 	case steward.RoleLedgerAttention:
 		return []string{"metasystem", "goal", "list"}, ""
 	case steward.RoleNonterminalJobs:
-		return nil, "the job reaper reconciles these on its next pass; metasystem status lists the work"
+		return nil, "metasystem work stop j2:JOB records a job whose process is gone as ended; metasystem status lists the work"
 	case steward.RoleRetroDebt:
 		return nil, "run the retro and record its receipt"
 	case steward.RoleTrunkRed:
+		if strings.Contains(role.Reason, "cadence") {
+			// The landing owner records the deep validation cadence on its
+			// own runs.
+			return []string{"metasystem", "system", "start"}, ""
+		}
 		return []string{"metasystem", "incident", "list"}, ""
+	case steward.RoleCapabilitySnapshots:
+		return nil, "the next delegated job for each runtime named probes it and records a fresh snapshot; nothing needs doing now"
 	case steward.RoleSpendFence:
 		return nil, "a person raises the spend ceiling in metasystem.conf"
 	case steward.RoleProofAttempts:
 		return []string{"metasystem", "test", "run"}, ""
 	}
-	return nil, "no public command repairs this; the reason above names what a person must change"
+	return nil, reasonRemedy(role.Reason)
+}
+
+// reasonRemedy is the instruction for a role whose reason is its own
+// remedy: the command it names, or the change it names.
+func reasonRemedy(reason string) string {
+	if strings.Contains(reason, "run ") {
+		return "run the command the reason above names"
+	}
+	return "a person changes what the reason above names; no metasystem command does it"
 }
 
 // publicRemedyForFact is the public act for one typed cause.
@@ -1428,7 +1444,7 @@ func publicRemedyForFact(fact steward.RemedyFact) ([]string, string) {
 	case steward.CauseStopCapabilityMissing:
 		return nil, "a person repairs goal " + fact.Goal + "'s record (" + fact.Record + "), which has no stop capability"
 	}
-	return nil, "no public command repairs this; the reason above names what a person must change"
+	return nil, "a person changes what the reason above names; no metasystem command does it"
 }
 
 // runUIVerb runs the interface's status or restart through its lifecycle

@@ -388,9 +388,17 @@ func TestAppResetWithoutPrepareIsARestart(t *testing.T) {
 func TestAppCheckAnswersAndRefuses(t *testing.T) {
 	address := appFreePort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
+	// EM-09: nothing was checked, so it is not a success, and it names
+	// where a check is declared.
 	code, out := bed.run("app", "check")
-	if code != 0 || !strings.Contains(out, "no check is declared") {
-		t.Fatalf("a contract with no check answers so:\n%s", out)
+	if code != 1 || !strings.Contains(out, "the launch contract declares no check; nothing was checked") || !strings.Contains(out, `"check"`) {
+		t.Fatalf("a contract with no check answers so: %d\n%s", code, out)
+	}
+	// EM-31: a log that does not exist yet is said plainly, with the act
+	// that makes one.
+	if code, out := bed.run("app", "log"); code != 1 || !strings.Contains(out, "the application has not run here yet; there is no log to read") ||
+		!strings.Contains(out, "metasystem app start") || strings.Contains(out, "no such file") {
+		t.Fatalf("app log before any run: %d\n%s", code, out)
 	}
 
 	withCheck := appHTTPContract(appFixtureApp(t), appFreePort(t))
@@ -629,7 +637,7 @@ func TestAppContractOfStartAloneWorksWithEveryVerb(t *testing.T) {
 	if code, out := bed.run("app", "reset"); code != 0 || !strings.Contains(out, "no prepare declared: reset is a restart") {
 		t.Fatalf("reset with no prepare: %d\n%s", code, out)
 	}
-	if code, out := bed.run("app", "check"); code != 0 || !strings.Contains(out, "no check is declared") {
+	if code, out := bed.run("app", "check"); code != 1 || !strings.Contains(out, "declares no check; nothing was checked") {
 		t.Fatalf("check with none declared: %d\n%s", code, out)
 	}
 	if code, out := bed.run("app", "stop"); code != 0 || !strings.Contains(out, "every recorded process is dead") {

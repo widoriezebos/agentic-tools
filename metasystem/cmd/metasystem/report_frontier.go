@@ -15,7 +15,7 @@ func runReportFrontier(args []string) int {
 		return 2
 	}
 	action := args[0]
-	flags := newFlagSet("report frontier " + action)
+	flags := newFlagSet("experiment " + action)
 	opts := report.FrontierOptions{Repo: "."}
 	flags.StringVar(&opts.File, "file", "plans/frontier", "frontier file")
 	flags.StringVar(&opts.Score, "score", "", "candidate score")

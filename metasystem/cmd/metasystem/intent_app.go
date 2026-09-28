@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -248,9 +250,14 @@ func (inv *intentInvocation) appLog(run appRun, targets []intentTarget) intentRe
 		lines = parsed
 	}
 	tail, err := applaunch.Tail(path, lines)
+	if errors.Is(err, fs.ErrNotExist) {
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+			Summary: "the application has not run here yet; there is no log to read",
+			next:    inv.publicArgv("app", "start"), nextReason: "starts the application, whose output becomes its log"}
+	}
 	if err != nil {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary: "there is no log to read at " + path + ": " + err.Error()}
+			Summary: "the log at " + path + " cannot be read: " + err.Error()}
 	}
 	if !inv.input.has("follow") {
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the last " + strconv.Itoa(len(tail)) + " line(s) of " + path,
@@ -430,8 +437,10 @@ func (inv *intentInvocation) appStop(run appRun, targets []intentTarget, wait ti
 // contract's own runner and nothing else, against a run that is answering.
 func (inv *intentInvocation) appCheck(run appRun, targets []intentTarget) intentResult {
 	if run.contract.Check == "" {
-		return intentResult{Outcome: intentConfirmed, Targets: targets,
-			Summary: "no check is declared in the launch contract", Data: map[string]any{"run": run.key, "check": nil}}
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+			Summary:  "the launch contract declares no check; nothing was checked",
+			Decision: "name a testing group as \"check\" in the launch contract at " + run.contractPath + " to give the application a check",
+			Data:     map[string]any{"run": run.key, "check": nil}}
 	}
 	status, err := run.status()
 	if err != nil {

@@ -98,7 +98,41 @@ func newFlagSet(name string, errs ...io.Writer) *flag.FlagSet {
 	if len(errs) > 0 {
 		out = errs[0]
 	}
+	if publicCommand != nil {
+		if command, ok := publicCommand(name); ok {
+			shown := publicOptions(command)
+			return cliflags.NewShown(name, "metasystem "+name, out, func(option string) bool { return shown[option] })
+		}
+	}
 	return cliflags.New(name, commandLabel(name), out)
+}
+
+// publicCommand finds the public action a flag set is named after; bound in
+// init, as internalEntrypoint is.
+var publicCommand func(name string) (intentCommand, bool)
+
+// publicOptions are the options a public action's help documents: its
+// shown flags and every --NAME its usage lines spell.
+func publicOptions(command intentCommand) map[string]bool {
+	shown := map[string]bool{}
+	for _, flag := range command.flags {
+		if flag.hidden {
+			continue
+		}
+		shown[flag.name] = true
+		for _, alias := range flag.aliases {
+			shown[alias] = true
+		}
+	}
+	for _, line := range command.usage {
+		for _, word := range strings.Fields(line) {
+			word = strings.Trim(word, "[]|")
+			if strings.HasPrefix(word, "--") {
+				shown[strings.SplitN(strings.TrimPrefix(word, "--"), "=", 2)[0]] = true
+			}
+		}
+	}
+	return shown
 }
 
 // helpAware makes a lone --help or -h a successful request: a handler whose
@@ -134,6 +168,10 @@ func commandLabel(name string) string {
 var internalEntrypoint func(words []string) bool
 
 func init() {
+	publicCommand = func(name string) (intentCommand, bool) {
+		command, ok := findIntentCommand(name)
+		return command, ok && !command.hidden
+	}
 	internalEntrypoint = func(words []string) bool {
 		for _, entry := range topLevelEntries() {
 			if entry.name == words[0] {
@@ -167,7 +205,7 @@ func requireFlags(flags *flag.FlagSet, errs io.Writer, names ...string) bool {
 			if errs == nil {
 				errs = os.Stderr
 			}
-			fmt.Fprintf(errs, "%s: --%s is required; nothing was done\n", commandLabel(flags.Name()), name)
+			fmt.Fprintf(errs, "%s: --%s is required; nothing was done\n", cliflags.Label(flags), name)
 			return false
 		}
 	}

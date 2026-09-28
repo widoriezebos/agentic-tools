@@ -513,7 +513,7 @@ func TestIntentArgumentsAndRemedies(t *testing.T) {
 		t.Fatalf("conflicting duplicates = %d %+v", code, result)
 	}
 	code, result = bed.runJSON(bed.owners(), "goal", "pause", bedGoal, "other-goal", "--lineage", "m1")
-	if code != 2 || !strings.Contains(result.Summary, "at most 1") {
+	if code != 2 || !strings.Contains(result.Summary, "goal pause takes one target; unexpected other-goal") {
 		t.Fatalf("extra positional = %d %+v", code, result)
 	}
 	code, result = bed.runJSON(bed.owners(), "goal", "pause", "--reason", "x", "--lineage", "m1")

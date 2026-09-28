@@ -116,6 +116,18 @@ func intentCommands() []intentCommand {
 		if command.group == "" {
 			command.group = intentObjectGroup(command.object)
 		}
+		// --lineage is shown where an agent may act: it is the remedy an
+		// actor refusal names. A person's act keeps it out of sight.
+		if command.audience == "agent" || command.audience == "both" {
+			flags := slices.Clone(command.flags)
+			for i := range flags {
+				if flags[i].name == "lineage" {
+					flags[i].hidden = false
+					flags[i].usage = "the acting agent session, as its launcher named it in METASYSTEM_OWNER_LINEAGE (default: that variable)"
+				}
+			}
+			command.flags = flags
+		}
 	}
 	return commands
 }
@@ -385,7 +397,11 @@ func parseIntentArgs(command intentCommand, raw []string) (intentInput, *intentI
 	for _, one := range pairs {
 		definition, _ := command.lookupFlag(one.name)
 		if err := set.Set(one.name, one.value); err != nil {
-			return input, &intentInputError{summary: fmt.Sprintf("--%s cannot be %q: %v", one.name, one.value, err), reason: "see metasystem help " + command.name}
+			summary := fmt.Sprintf("--%s cannot be %q: %v", one.name, one.value, err)
+			if definition.value == "" {
+				summary = fmt.Sprintf("--%s takes true or false, not %q", one.name, one.value)
+			}
+			return input, &intentInputError{summary: summary, reason: "see metasystem help " + command.name}
 		}
 		value := set.Lookup(one.name).Value.String()
 		previous := input.values[one.name]
@@ -406,8 +422,12 @@ func parseIntentArgs(command intentCommand, raw []string) (intentInput, *intentI
 	}
 	if command.maxArgs >= 0 && len(input.args) > command.maxArgs {
 		extra := input.args[command.maxArgs:]
+		takes := map[int]string{0: "no target", 1: "one target"}[command.maxArgs]
+		if takes == "" {
+			takes = fmt.Sprintf("at most %d targets", command.maxArgs)
+		}
 		return input, &intentInputError{
-			summary: fmt.Sprintf("takes at most %d word(s) before its options; unexpected %s", command.maxArgs, shellCommand(extra)),
+			summary: fmt.Sprintf("%s takes %s; unexpected %s", command.name, takes, shellCommand(extra)),
 			reason:  "quote a text value as one argument, or see metasystem help " + command.name,
 		}
 	}
@@ -442,6 +462,11 @@ func unknownIntentFlag(command intentCommand, raw []string, index int, name stri
 				near = append(near, candidate.name)
 			}
 		}
+	}
+	// A guess is offered only when it is close for the name's length: a
+	// far one names an unrelated option.
+	if closest*3 > len(name) {
+		near = nil
 	}
 	if len(near) == 1 {
 		corrected := append(append([]string{"metasystem"}, command.words()...), raw...)

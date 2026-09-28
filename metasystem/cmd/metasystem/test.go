@@ -169,8 +169,8 @@ func runTestList(args []string) int {
 	flags := newFlagSet("test list")
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test list --root INSTALLATION [--json]")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || !requireFlags(flags, nil, "root") {
+		fmt.Fprintln(os.Stderr, "metasystem test list --help shows its forms and options")
 		return 2
 	}
 	installation, contract, path, err := loadPhysicalTestingContract(*root)
@@ -218,8 +218,12 @@ func testingContractReady(root string, discovery bool) (string, int, error) {
 	return path, len(contract.Groups), nil
 }
 
-func runTestPlan(args []string) int {
-	request, jsonOutput, status := parseTestingSelection("test plan", args, false)
+func runTestPlan(args []string) int { return runTestPlanAs("test plan", args) }
+
+// runTestPlanAs is test plan answering as name: the public action, or the
+// internal entrypoint a pinned engine is started with.
+func runTestPlanAs(name string, args []string) int {
+	request, jsonOutput, status := parseTestingSelection(name, args, false)
 	if status != 0 {
 		return status
 	}
@@ -357,10 +361,14 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		flags.StringVar(&request.AppAddress, "app-address", "", "the address of the application run a named group is run against")
 	}
 	if flags.Parse(args) != nil || !requireFlags(flags, nil, "root") || flags.NArg() != 0 || request.Root == "" {
-		fmt.Fprintf(os.Stderr, "usage: metasystem %s --root INSTALLATION [--goal ID] [--authority ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
+		if _, public := publicCommand(name); public {
+			fmt.Fprintf(os.Stderr, "metasystem %s --help shows its forms and options\n", name)
+		} else {
+			fmt.Fprintf(os.Stderr, "usage: metasystem internal %s --root INSTALLATION [--goal ID] [--authority ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
+		}
 		return request, false, 2
 	}
-	if request.PolicyChild && (name != "test plan" || execution) {
+	if request.PolicyChild && (strings.TrimPrefix(name, "internal ") != "test plan" || execution) {
 		fmt.Fprintln(os.Stderr, "--policy-child is internal to the pinned test plan child")
 		return request, false, 2
 	}
@@ -1779,7 +1787,7 @@ func bindMaterializedCandidateCommit(ctx context.Context, workspace gittree.Work
 
 func runTestRun(args []string) (exit int) {
 	// The entry supplies its own caller, as it always did.
-	return runTestRunWith(testRunInvocation{callerPID: int64(os.Getppid()), stdout: os.Stdout, stderr: os.Stderr}, args)
+	return runTestRunWith(testRunInvocation{callerPID: int64(os.Getppid()), stdout: os.Stdout, stderr: os.Stderr, name: "internal test run"}, args)
 }
 
 // testRunInvocation is the explicit context of one test run (design 6.2): the
@@ -1790,11 +1798,17 @@ func runTestRun(args []string) (exit int) {
 type testRunInvocation struct {
 	callerPID      int64
 	stdout, stderr io.Writer
+	// name is the command it answers as (default: test run).
+	name string
 }
 
 func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	commandStarted := time.Now().UTC()
-	request, _, status := parseTestingSelection("test run", args, true)
+	name := invocation.name
+	if name == "" {
+		name = "test run"
+	}
+	request, _, status := parseTestingSelection(name, args, true)
 	if status != 0 {
 		return status
 	}
@@ -2469,13 +2483,17 @@ func frozenPolicyProbeRefusal(request proofrun.TestRunRequest, resultPath string
 	}
 }
 
-func runTestVerify(args []string) int {
-	request, jsonOutput, status := parseTestingSelection("test verify", args, false)
+func runTestVerify(args []string) int { return runTestVerifyAs("test verify", args) }
+
+// runTestVerifyAs is test verify answering as name: the internal entrypoint
+// or the public test status.
+func runTestVerifyAs(name string, args []string) int {
+	request, jsonOutput, status := parseTestingSelection(name, args, false)
 	if status != 0 {
 		return status
 	}
 	if request.Tree == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test status --tree TREE [--goal ID] [--root INSTALLATION] [--json]")
+		fmt.Fprintf(os.Stderr, "%s: needs the tree: metasystem test status --tree TREE [--goal G]; nothing was read\n", commandLabel(name))
 		return 2
 	}
 	return testVerifyTo(os.Stdout, os.Stderr, request, jsonOutput)

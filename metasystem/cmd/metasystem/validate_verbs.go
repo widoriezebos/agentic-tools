@@ -184,9 +184,8 @@ Run it before contracting a new cycle.
 Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 `)
 	}
-	flags := newFlagSet("validate stop-loss")
-	flags.Usage = usage
-	file := flags.String("file", "", "investigation ledger")
+	flags := newFlagSet("experiment check")
+	file := flags.String("file", "", "the investigation ledger")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -198,7 +197,11 @@ Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 		return 2
 	}
 	if *file == "" {
-		fmt.Fprintln(os.Stderr, "missing --file ledger")
+		fmt.Fprintln(os.Stderr, "metasystem experiment check: needs the ledger: metasystem experiment check --file LEDGER; nothing was checked")
+		return 2
+	}
+	if _, err := os.Stat(*file); err != nil {
+		fmt.Fprintf(os.Stderr, "metasystem experiment check: no ledger at %s; nothing was checked\n", *file)
 		return 2
 	}
 	out, errs, code := validate.StopLoss(*file)
@@ -277,13 +280,15 @@ Exit codes: 0 safe; 1 blocked; 2 usage or environment error.`)
 	var p validate.RefactorBaselineParams
 	p.Command = args[0]
 	flags := newFlagSet("test baseline")
-	flags.SetOutput(io.Discard)
 	flags.StringVar(&p.File, "file", "plans/refactor-baseline", "baseline file path")
 	flags.StringVar(&p.Gate, "gate", "", "record: the acceptance gate command that passed")
 	maxAge := flags.String("max-age-minutes", "", "check: maximum baseline age")
 	maxCommits := flags.String("max-commits", "", "check: maximum commits since the baseline")
 	root := pathFlag(flags, "root", "", "installation whose metasystem.conf supplies the cadence (default: this engine's)")
-	if flags.Parse(args[1:]) != nil || flags.NArg() != 0 {
+	if flags.Parse(args[1:]) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
 		return usage()
 	}
 	set := map[string]bool{}

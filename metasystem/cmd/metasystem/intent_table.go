@@ -1,7 +1,10 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,8 +23,80 @@ import (
 // passthroughAction is a public action whose words go, unchanged, to an
 // existing handler with its own parser, output and exit codes.
 func passthroughAction(object, action, audience, summary string, usage []string, flags []intentFlag, examples []string, run func([]string) int) intentCommand {
-	return intentCommand{object: object, action: action, audience: audience, summary: summary, usage: usage,
-		flags: flags, examples: examples, maxArgs: -1, passthrough: run}
+	command := intentCommand{object: object, action: action, audience: audience, summary: summary, usage: usage,
+		flags: flags, examples: examples, maxArgs: -1}
+	command.passthrough = func(args []string) int { return runPassthrough(command, run, args, os.Stderr) }
+	return command
+}
+
+// runPassthrough gives a passthrough action what every public command has:
+// --repo, and the installation found from the current directory or --repo
+// when its help shows --root as optional (its owner takes it as --root; a
+// receipt action also takes the ledger it writes). What the owner answers
+// is its own.
+func runPassthrough(command intentCommand, run func([]string) int, args []string, stderr io.Writer) int {
+	label := "metasystem " + command.object + " " + command.action
+	repo, repoGiven, rest := takeIntentFlag(args, "repo", true)
+	if repoGiven && repo == "" {
+		fmt.Fprintf(stderr, "%s: --repo needs a value (PATH); nothing was done\n", label)
+		return 2
+	}
+	documentsRoot := slices.ContainsFunc(command.flags, func(flag intentFlag) bool { return flag.name == "root" })
+	_, rootGiven, _ := takeIntentFlag(rest, "root", true)
+	_, fileGiven, _ := takeIntentFlag(rest, "file", true)
+	if repoGiven && !documentsRoot {
+		fmt.Fprintf(stderr, "%s: works on the files it names and takes no --repo; nothing was done\n", label)
+		return 2
+	}
+	receipts := command.object == "receipt" && !fileGiven
+	if !documentsRoot || rootGiven && !receipts {
+		return run(rest)
+	}
+	path := repo
+	if path == "" {
+		path = "."
+	}
+	if absolute, err := filepath.Abs(path); err == nil {
+		path = absolute
+	}
+	resolver := stateroot.NewResolver(stateroot.RepositoryTop, os.Executable)
+	layout, err := resolver.ResolveLayout(path)
+	if err != nil {
+		if repoGiven {
+			fmt.Fprintf(stderr, "%s: %s is not inside a metasystem installation; name the repository with --repo PATH; nothing was done\n", label, path)
+			return 2
+		}
+		// Outside a repository the owner answers for its own --root.
+		return run(rest)
+	}
+	var extra []string
+	if !rootGiven {
+		extra = append(extra, "--root", layout.InstallationRoot)
+	}
+	if receipts {
+		stateRoot, err := resolver.RootForInstallation(layout.InstallationRoot)
+		relative, relErr := stateroot.RelativeRoot(stateroot.Receipts)
+		if err == nil && relErr == nil {
+			extra = append(extra, "--file", filepath.Join(stateRoot, relative, "receipts.log"))
+		}
+	}
+	// The options go after the leading words the usage shows before them
+	// (receipt retro SUMMARY), before any other word.
+	leading := 0
+	if len(command.usage) > 0 {
+		words := strings.Fields(command.usage[0])
+		for _, word := range words[min(3, len(words)):] {
+			if strings.HasPrefix(word, "[") || strings.HasPrefix(word, "-") {
+				break
+			}
+			leading++
+		}
+	}
+	at := 0
+	for at < len(rest) && at < leading && !strings.HasPrefix(rest[at], "-") {
+		at++
+	}
+	return run(slices.Concat(rest[:at], extra, rest[at:]))
 }
 
 // withLead gives a handler that takes its action word first the same words.
@@ -38,11 +113,11 @@ func designIntentCommands() []intentCommand {
 		designCommand(),
 		{
 			object: "design", action: "show", audience: "both", summary: "one goal's design attempts and proposal",
-			usage:    []string{"metasystem design show --goal G [--out FILE] [--attempt N]"},
+			usage:    []string{"metasystem design show G [--out FILE] [--attempt N]"},
 			details:  []string{"Shows the goal's design attempts, or with --attempt N one attempt and its proposal."},
-			flags:    []intentFlag{{name: "goal", value: "G", usage: "the goal whose design records are shown"}, {name: "attempt", value: "N", usage: "one design attempt and its proposal"}, {name: "out", value: "FILE", usage: "the design document, when the goal has several"}},
-			maxArgs:  0,
-			examples: []string{"metasystem design show --goal verbs-match-intent"},
+			flags:    []intentFlag{{name: "goal", value: "G", advanced: true, usage: "the goal, as an alternative to naming it first"}, {name: "attempt", value: "N", usage: "one design attempt and its proposal"}, {name: "out", value: "FILE", usage: "the design document, when the goal has several"}},
+			maxArgs:  1,
+			examples: []string{"metasystem design show verbs-match-intent"},
 			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "design", inv.input.args) },
 		},
 		{
@@ -232,7 +307,7 @@ func practiceIntentCommands() []intentCommand {
 		passthroughAction("session", "status", "agent", "why this session may or may not stop: one exact Stop report",
 			[]string{"metasystem session status --id ID [--root INSTALLATION]"},
 			[]intentFlag{documented("id", "ID", "the Stop report's short alias, as the Stop line printed it"), documented("root", "INSTALLATION", "the installation")},
-			[]string{"metasystem session status --id r-7f3a"}, runReportStopStatus),
+			[]string{"metasystem session status --id 7f3a"}, runReportStopStatus),
 		passthroughAction("session", "handoff", "agent", "hand this session's work to a successor, cancel a handoff, or read the session's context budget",
 			[]string{"metasystem session handoff --root ROOT --note FILE [--no-delegates]", "metasystem session handoff --root ROOT --cancel NONCE",
 				"metasystem session handoff --status --root ROOT [--json]", "metasystem session handoff --verify NONCE --root ROOT"},
@@ -404,7 +479,14 @@ func sessionHandoffRoute(args []string) (func([]string) int, []string) {
 // runTestStatus reads whether retained proof covers an exact tree, or with
 // --result the measured cost of one recorded result; neither runs a test.
 func runTestStatus(args []string) int {
-	return testStatusRoute(args)(args)
+	route := testStatusRoute(args)
+	if _, result, _ := takeIntentFlag(args, "result", true); result {
+		// A recorded result is read on its own; the installation found for
+		// it is not an option the report takes.
+		_, _, args = takeIntentFlag(args, "root", true)
+		return route(args)
+	}
+	return runTestVerifyAs("test status", args)
 }
 
 // testStatusRoute is the owner a test status's words reach: the result
@@ -477,6 +559,19 @@ func runIntentTopStatus(inv *intentInvocation) int {
 // baseline, --check asks whether another edit batch may start; both reach
 // the refactor baseline owner.
 func runTestBaseline(args []string) int {
+	// Its options are judged first, in the public style.
+	options := newFlagSet("test baseline")
+	options.Bool("check", false, "")
+	options.String("gate", "", "the gate command that passed, e.g. metasystem test baseline --gate 'go test ./...'")
+	for _, name := range []string{"file", "max-age-minutes", "max-commits", "root"} {
+		options.String(name, "", "")
+	}
+	if err := options.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
 	words, err := testBaselineArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test baseline:", err)
@@ -498,7 +593,7 @@ func testBaselineArgs(args []string) ([]string, error) {
 	case gate:
 		return append([]string{"record"}, rest...), nil
 	}
-	return nil, fmt.Errorf("record the baseline with --gate COMMAND, or check it with --check")
+	return nil, fmt.Errorf("needs --gate COMMAND to record the baseline (e.g. metasystem test baseline --gate 'go test ./...') or --check to check it; nothing was done")
 }
 
 // runIntentDesignCheck judges the obligation matrices of the named files

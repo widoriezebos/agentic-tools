@@ -395,7 +395,7 @@ func TestGoalCLIAuthorityProofGrades(t *testing.T) {
 		bed.lineage = ""
 		headless := newGcliAuthorityCaller(t, bed, gcliAuthorityHeadless)
 		code, stdout, stderr := headless.release("--id", "ship-widget", "--by", "Wido")
-		if code == 0 || !strings.Contains(stderr, "TERMINAL_NOT_REACHED") {
+		if code == 0 || !strings.Contains(stderr, "does not descend from the terminal enrolled on this machine") {
 			t.Fatalf("headless human-word caller did not receive the terminal-not-reached refusal: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 		}
 	})

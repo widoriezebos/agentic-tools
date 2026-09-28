@@ -2193,12 +2193,12 @@ func proveGoalHumanAuthorityFor(caller processIdentity, name string, f *syncFlag
 	}
 	callerPid, err := caller.classifiablePid(identity.KernelProber{})
 	if err != nil {
-		return humanauthority.Proof{}, fmt.Errorf("goal %s could not prove enrolled human ancestry: %w", name, err)
+		return humanauthority.Proof{}, fmt.Errorf("only a person at the enrolled terminal may run this: %s", humanauthority.PlainReason(err))
 	}
 	proof, err := prove(f.root, callerPid, nil, f.temporaryWord, f.reviewBy, ancestryNow)
 	if err != nil {
 		if f.temporaryWord == "" && f.reviewBy == "" {
-			return humanauthority.Proof{}, fmt.Errorf("goal %s could not prove enrolled human ancestry: %w", name, err)
+			return humanauthority.Proof{}, fmt.Errorf("only a person at the enrolled terminal may run this: %s", humanauthority.PlainReason(err))
 		}
 		return humanauthority.Proof{}, fmt.Errorf("goal %s could not bind its temporary recorded relay: %w", name, err)
 	}

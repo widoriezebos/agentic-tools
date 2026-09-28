@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -275,9 +276,18 @@ func (v HealthVerdict) ExitCode() int {
 
 // Line is the one-line operator view. Every role remains on the line so an
 // all-clear is self-evident rather than implied by silence.
-func (v HealthVerdict) Line() string {
+func (v HealthVerdict) Line() string { return v.line(true) }
+
+// LineWithoutRemedies is Line for a surface that lists its public remedies
+// on their own: each role with its reason, no owner remedy.
+func (v HealthVerdict) LineWithoutRemedies() string { return v.line(false) }
+
+func (v HealthVerdict) line(remedies bool) string {
 	items := make([]string, 0, len(v.Roles))
 	for _, role := range v.Roles {
+		if !remedies {
+			role.Remedy = ""
+		}
 		items = append(items, role.Line())
 	}
 	prefix := "HEALTH "
@@ -596,7 +606,9 @@ func checkHookFreshness(repoRoot string, now time.Time) RoleVerdict {
 }
 
 func checkHookFreshnessAt(repoRoot string, now time.Time, currentAttempt bool) RoleVerdict {
-	remedy := fmt.Sprintf("metasystem system check --repo %q", repoRoot)
+	// A hook turn is recorded by the next agent turn the registered hooks
+	// see; registering them is the act a person can take.
+	remedy := fmt.Sprintf("the next agent turn in this checkout records one; if none does, register the hooks with metasystem system register --repo %q", repoRoot)
 	record, durabilityPending, err := loadComponentEvidenceForHealth(repoRoot, "supervision-hook")
 	if err != nil {
 		var busy *ComponentEvidenceBusyError
@@ -1491,7 +1503,7 @@ func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
 			unknown = append(unknown, jobID)
 		}
 	}
-	remedy := fmt.Sprintf("%q internal delegate reap", filepath.Join(repoRoot, "bin", "metasystem"))
+	remedy := "metasystem work stop j2:JOB records a job whose process is gone as ended; metasystem status lists the work"
 	if len(dead) > 0 {
 		return roleDead(RoleNonterminalJobs, "non-terminal jobs with dead recorded processes: "+strings.Join(dead, ","), remedy)
 	}
@@ -1506,14 +1518,14 @@ func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) Ro
 		Key: "metasystem.runtimes", ConfPath: filepath.Join(metasystemRoot, "metasystem.conf"),
 	})
 	if err != nil {
-		return roleUnknown(RoleCapabilitySnapshots, "metasystem.runtimes is unreadable", "metasystem internal config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
+		return roleUnknown(RoleCapabilitySnapshots, "metasystem.runtimes is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot))
 	}
 	if runtimeValue == "none" {
 		return roleAlive(RoleCapabilitySnapshots, "no runtime capability snapshots are configured")
 	}
 	maxAgeDays, err := nonnegativeConfig(metasystemRoot, "capability.snapshot-max-age-days", 30)
 	if err != nil {
-		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "metasystem internal config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
+		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot))
 	}
 	runtimes := strings.Split(runtimeValue, ",")
 	paths, _ := filepath.Glob(filepath.Join(repoRoot, "artifacts", "agents", "capabilities", "*.json"))
@@ -1574,16 +1586,23 @@ func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) Ro
 	}
 	remedyFor := func(names []string) string {
 		commands := make([]string, 0, len(names))
+		var probed []string
 		for _, name := range names {
 			name = strings.TrimSuffix(name, ":CLOCK_REGRESSED")
 			if name == "empty-runtime" || strings.HasSuffix(name, ":NO_ADAPTER") {
-				commands = append(commands, "metasystem internal config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
+				if settings := "metasystem settings check --repo " + strconv.Quote(metasystemRoot); !slices.Contains(commands, settings) {
+					commands = append(commands, settings)
+				}
 				continue
 			}
-			commands = append(commands, fmt.Sprintf("%q internal %s %s probe --root %q",
-				filepath.Join(metasystemRoot, "bin", "metasystem"), runtimereg.SupervisorEntry, name, metasystemRoot))
+			probed = append(probed, name)
 		}
-		return strings.Join(commands, " && ")
+		if len(probed) > 0 {
+			// A delegated job's admission probes a runtime whose snapshot is
+			// missing or stale and records a fresh one.
+			commands = append(commands, "the next delegated job for "+strings.Join(probed, ", ")+" probes the runtime and records a fresh snapshot")
+		}
+		return strings.Join(commands, "; ")
 	}
 	if len(dead) > 0 {
 		return roleDead(RoleCapabilitySnapshots, "missing or stale capability snapshots: "+strings.Join(dead, ","), remedyFor(dead))

@@ -27,11 +27,21 @@ func HelpAnswered() int64 { return helpAnswered.Load() }
 // command as a person types it) and are written to errs (standard error at
 // the time of the error when errs is nil).
 func New(name, label string, errs io.Writer) *flag.FlagSet {
+	return NewShown(name, label, errs, nil)
+}
+
+// NewShown is New for a command whose help documents only some of the
+// options its parser takes: an error lists only the options shown reports
+// (every option when shown is nil); the others still parse.
+func NewShown(name, label string, errs io.Writer, shown func(option string) bool) *flag.FlagSet {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
-	writer := &errorWriter{flags: flags, command: label, out: errs}
+	writer := &errorWriter{flags: flags, command: label, out: errs, shown: shown}
 	flags.SetOutput(writer)
 	flags.Usage = func() {
-		if writer.errored {
+		// The flag package calls Usage after an error it wrote, and for a
+		// help request; an owner that replaced the output took over its
+		// errors.
+		if writer.errored || flags.Output() != writer {
 			return
 		}
 		fmt.Fprintf(os.Stdout, "usage: %s [options]\n", label)
@@ -49,6 +59,16 @@ type errorWriter struct {
 	command string
 	out     io.Writer
 	errored bool
+	shown   func(string) bool
+}
+
+// Label is the command a flag set built here answers as ("metasystem test
+// list"), for its owner's own messages; the set's name otherwise.
+func Label(flags *flag.FlagSet) string {
+	if writer, ok := flags.Output().(*errorWriter); ok {
+		return writer.command
+	}
+	return flags.Name()
 }
 
 func (w *errorWriter) Write(p []byte) (int, error) {
@@ -61,10 +81,14 @@ func (w *errorWriter) Write(p []byte) (int, error) {
 		switch {
 		case strings.HasPrefix(line, "flag provided but not defined: -"):
 			name := strings.TrimPrefix(line, "flag provided but not defined: -")
-			fmt.Fprintf(out, "%s: does not take --%s; %s; nothing was done\n", w.command, strings.TrimPrefix(name, "-"), Takes(w.flags))
+			fmt.Fprintf(out, "%s: does not take --%s; %s; nothing was done\n", w.command, strings.TrimPrefix(name, "-"), takes(w.flags, w.shown))
 		case strings.HasPrefix(line, "flag needs an argument: -"):
-			name := strings.TrimPrefix(line, "flag needs an argument: -")
-			fmt.Fprintf(out, "%s: --%s needs a value; nothing was done\n", w.command, strings.TrimPrefix(name, "-"))
+			name := strings.TrimPrefix(strings.TrimPrefix(line, "flag needs an argument: -"), "-")
+			if f := w.flags.Lookup(name); f != nil && f.Usage != "" {
+				fmt.Fprintf(out, "%s: --%s needs a value: %s; nothing was done\n", w.command, name, f.Usage)
+			} else {
+				fmt.Fprintf(out, "%s: --%s needs a value; nothing was done\n", w.command, name)
+			}
 		case strings.HasPrefix(line, "invalid value "), strings.HasPrefix(line, "invalid boolean value "):
 			fmt.Fprintf(out, "%s: %s; nothing was done\n", w.command, strings.Replace(line, " for flag -", " for --", 1))
 		case line == "":
@@ -77,9 +101,15 @@ func (w *errorWriter) Write(p []byte) (int, error) {
 
 // Takes names a flag set's options: "it takes --a, --b" or "it takes no
 // options".
-func Takes(flags *flag.FlagSet) string {
+func Takes(flags *flag.FlagSet) string { return takes(flags, nil) }
+
+func takes(flags *flag.FlagSet, shown func(string) bool) string {
 	var names []string
-	flags.VisitAll(func(f *flag.Flag) { names = append(names, "--"+f.Name) })
+	flags.VisitAll(func(f *flag.Flag) {
+		if shown == nil || shown(f.Name) {
+			names = append(names, "--"+f.Name)
+		}
+	})
 	if len(names) == 0 {
 		return "it takes no options"
 	}

@@ -506,13 +506,18 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 		return append(args, "--by", typed), nil, nil
 	}
 	if err != nil {
-		summary := fmt.Sprintf("%s is a person's act and no enrolled person was proven here (%v); nothing was done", verb, err)
+		// In the words the caller typed: the public command, who may run
+		// it, and the plain reason this shell is not that actor.
+		public := "metasystem " + inv.command.name
+		reason := strings.TrimPrefix(humanauthority.PlainReason(err), "only a person at the enrolled terminal may run this: ")
+		summary := fmt.Sprintf("%s is a person's act, and %s; nothing was done", public, reason)
+		decision := "a person runs " + public + " at the terminal enrolled on this machine (metasystem system enroll enrolls one)"
 		if actor == actorEither && typed == "" {
-			summary = fmt.Sprintf("cannot tell who acts: no agent lineage, and no enrolled person was proven here (%v); nothing was done", err)
+			summary = fmt.Sprintf("cannot tell who runs %s: %s, and no agent session is named; nothing was done", public, reason)
+			decision = "a person runs it at the terminal enrolled on this machine; an agent runs it from the session its launcher started, which names itself in METASYSTEM_OWNER_LINEAGE, or passes --lineage LINEAGE"
 		}
-		decision := "a person runs it at the enrolled terminal; an agent session passes --lineage LINEAGE"
 		if stopping && typed == "" {
-			decision = "a person names themself with --by NAME (a terminal that is not enrolled is proven by its own ancestry) or runs it at the enrolled terminal; an agent session passes --lineage LINEAGE"
+			decision = "a person names themself with --by NAME at a terminal no agent started, or runs it at the terminal enrolled on this machine; an agent passes --lineage LINEAGE"
 		}
 		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target), Summary: summary, Decision: decision}
 	}

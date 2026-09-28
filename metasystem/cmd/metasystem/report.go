@@ -10,7 +10,7 @@ import (
 )
 
 func runReportStopStatus(args []string) int {
-	flags := newFlagSet("report stop-status")
+	flags := newFlagSet("session status")
 	id := flags.String("id", "", "exact short Stop report alias or legacy full id")
 	root := pathFlag(flags, "root", "", "explicit metasystem installation")
 	if flags.Parse(args) != nil {
@@ -21,16 +21,16 @@ func runReportStopStatus(args []string) int {
 		return 2
 	}
 	if err := report.ValidateStopStatusID(*id); err != nil {
-		fmt.Fprintln(os.Stderr, "report stop-status:", err)
+		fmt.Fprintf(os.Stderr, "metasystem session status: %s is not a Stop report id (the ids are lowercase hexadecimal); copy the id from the Stop line; nothing was read\n", *id)
 		return 2
 	}
 	data, _, err := report.ReadStopStatus(*root, *id)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "report stop-status:", err)
+		fmt.Fprintln(os.Stderr, "metasystem session status:", err)
 		return 1
 	}
 	if _, err := os.Stdout.Write(data); err != nil {
-		fmt.Fprintln(os.Stderr, "report stop-status:", err)
+		fmt.Fprintln(os.Stderr, "metasystem session status:", err)
 		return 1
 	}
 	return 0

@@ -75,7 +75,7 @@ func waitRegisterOptions(root string) (metarun.WaitOptions, error) {
 }
 
 func runWaitRegister(args []string) int {
-	flags := newFlagSet("wait register")
+	flags := newFlagSet("session wait")
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	pid := flags.Int64("pid", 0, "tracked process identifier")
 	label := flags.String("label", "", "description of the tracked work")
@@ -151,7 +151,7 @@ func runWaitRegister(args []string) int {
 }
 
 func runWaitEnd(args []string) int {
-	flags := newFlagSet("wait end")
+	flags := newFlagSet("session wait")
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	waitID := flags.String("wait-id", "", "registered wait identifier")
 	jsonOutput := flags.Bool("json", false, "print the ended row as JSON")

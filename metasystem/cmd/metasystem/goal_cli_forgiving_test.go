@@ -777,8 +777,8 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "accept-risk", "ship-widget", "--finding", "RISK-1", "--review", "fixture-risk", "--reason", "fixture pair",
 		"--by", "Wido", gcliForgivingFixture, "--temporary-human-word", "Wido authorizes this relay")
 	gcliForgivingWords(t, "the public accept-risk pair", "goal accept-risk", code, stderr,
-		"accept-risk is a person's act and no enrolled person was proven here (goal accept-risk fixture authority does not combine with a temporary human word or review date)",
-		"a person runs it at the enrolled terminal")
+		"metasystem goal accept-risk is a person's act, and goal accept-risk fixture authority does not combine with a temporary human word or review date",
+		"a person runs metasystem goal accept-risk at the terminal enrolled on this machine")
 	if bed.tip() != tip {
 		t.Fatal("a refused accept-risk published")
 	}
