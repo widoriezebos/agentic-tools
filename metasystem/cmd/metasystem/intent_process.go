@@ -279,10 +279,10 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentWorkStatus,
 		},
 		{
-			object: "work", action: "stop", audience: "both", summary: "stop exactly one running job or diagnostic read, or finish a goal's recorded stop",
+			object: "work", action: "stop", audience: "both", summary: "stop one running job or diagnostic read, or every running job of a goal",
 			usage: []string{"metasystem work stop REF", "metasystem work stop G"},
-			details: []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read); nothing else stops.",
-				"G is a goal whose budget stopped it: its recorded stop is advanced from the job records, and completes once none of its jobs still runs; a stop that already completed is left as it is."},
+			details: []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read): exactly that one stops.",
+				"G is a goal: every running job of that goal stops, and no other goal's. A goal its budget stopped completes its recorded stop by itself once none of its jobs runs."},
 			maxArgs:  1,
 			accepts:  []string{refGoal, refJ1, refJ2, refRead},
 			examples: []string{"metasystem work stop j2:design-r2-4f1c", "metasystem work stop verbs-match-intent"},
@@ -748,12 +748,58 @@ func jobPurpose(job intentJob) string {
 // unless --all includes ended ones, each with its public reference.
 func runIntentStatusWork(inv *intentInvocation) int {
 	all := inv.input.switched("all")
+	jobs, scope, problem := inv.listJobs(all)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	views, lines := []map[string]any{}, []string{}
+	for _, job := range jobs {
+		ref := jobReference(job)
+		ended := jobEnded(job)
+		view := map[string]any{"reference": ref, "kind": job.kind, "purpose": jobPurpose(job), "status": inv.publicArgv("work", "status", ref)}
+		line := fmt.Sprintf("  %s: %s", ref, jobPurpose(job))
+		if !ended {
+			view["wait"], view["stop"] = inv.publicArgv("work", "wait", ref), inv.publicArgv("work", "stop", ref)
+			line += "; " + shellCommand(inv.publicArgv("work", "wait", ref)) + " or " + shellCommand(inv.publicArgv("work", "stop", ref))
+		}
+		views = append(views, view)
+		lines = append(lines, line)
+	}
+	word := "running"
+	if all {
+		word = "known"
+	}
+	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"scope": scope, "all": all, "jobs": views},
+		Summary: fmt.Sprintf("%d %s job(s) among %s", len(jobs), word, scope)}
+	if !all {
+		result.next, result.nextReason = inv.publicArgv("work", "status", "--all"), "also lists ended jobs"
+	}
+	return inv.render(result)
+}
+
+// jobEnded reports whether a launch or dispatch job has ended.
+func jobEnded(job intentJob) bool {
+	return (job.kind == "launch" && job.launch.State.Terminal()) || (job.kind == "dispatch" && dispatchcore.TerminalStatus(fmt.Sprint(job.dispatch["status"])))
+}
+
+// jobGoal is the goal a launch or dispatch job works for.
+func jobGoal(job intentJob) string {
+	if job.kind == "launch" {
+		return job.launch.Goal
+	}
+	goalID, _ := job.dispatch["goalId"].(string)
+	return goalID
+}
+
+// listJobs is this user's launches and the selected repository's dispatch
+// jobs, running only unless all includes ended ones, and the scope read.
+func (inv *intentInvocation) listJobs(all bool) ([]intentJob, string, *intentResult) {
 	var jobs []intentJob
 	var records []launch.Record
 	if inv.owners.processes.launches != nil {
 		listed, err := inv.owners.processes.launches().List()
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "this user's launches cannot be listed: " + err.Error()})
+			return nil, "", &intentResult{Outcome: intentFailed, code: 1, Summary: "this user's launches cannot be listed: " + err.Error()}
 		}
 		records = listed
 	}
@@ -780,29 +826,7 @@ func runIntentStatusWork(inv *intentInvocation) int {
 	} else {
 		scope += " (no repository here, so no dispatch jobs)"
 	}
-	views, lines := []map[string]any{}, []string{}
-	for _, job := range jobs {
-		ref := jobReference(job)
-		ended := (job.kind == "launch" && job.launch.State.Terminal()) || (job.kind == "dispatch" && dispatchcore.TerminalStatus(fmt.Sprint(job.dispatch["status"])))
-		view := map[string]any{"reference": ref, "kind": job.kind, "purpose": jobPurpose(job), "status": inv.publicArgv("work", "status", ref)}
-		line := fmt.Sprintf("  %s: %s", ref, jobPurpose(job))
-		if !ended {
-			view["wait"], view["stop"] = inv.publicArgv("work", "wait", ref), inv.publicArgv("work", "stop", ref)
-			line += "; " + shellCommand(inv.publicArgv("work", "wait", ref)) + " or " + shellCommand(inv.publicArgv("work", "stop", ref))
-		}
-		views = append(views, view)
-		lines = append(lines, line)
-	}
-	word := "running"
-	if all {
-		word = "known"
-	}
-	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"scope": scope, "all": all, "jobs": views},
-		Summary: fmt.Sprintf("%d %s job(s) among %s", len(jobs), word, scope)}
-	if !all {
-		result.next, result.nextReason = inv.publicArgv("work", "status", "--all"), "also lists ended jobs"
-	}
-	return inv.render(result)
+	return jobs, scope, nil
 }
 
 func (inv *intentInvocation) stopJob(ref string) int {
@@ -810,20 +834,26 @@ func (inv *intentInvocation) stopJob(ref string) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	return inv.render(inv.stopResolvedJob(job))
+}
+
+// stopResolvedJob stops one launch or dispatch job; one already ended is
+// already stopped (R-129-ui).
+func (inv *intentInvocation) stopResolvedJob(job intentJob) intentResult {
 	id := job.id
 	targets := []intentTarget{{Kind: "job", ID: jobReference(job)}}
 	if job.kind == "launch" {
 		if job.launch.State.Terminal() {
-			return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: fmt.Sprintf("launch %s already ended: %s", id, job.launch.State),
-				text: []string{launchReport(job.launch)}, Data: map[string]any{"kind": "launch", "record": job.launch}})
+			return intentResult{Outcome: intentUnchanged, Targets: targets, Summary: fmt.Sprintf("launch %s already ended: %s", id, job.launch.State),
+				text: []string{launchReport(job.launch)}, Data: map[string]any{"kind": "launch", "record": job.launch}}
 		}
 		record, err := inv.owners.processes.launches().Cancel(id)
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("launch %s cancel: %v", id, err),
-				Data: map[string]any{"kind": "launch", "record": record}})
+			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("launch %s cancel: %v", id, err),
+				Data: map[string]any{"kind": "launch", "record": record}}
 		}
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("launch %s cancelled: %s", id, record.State),
-			text: []string{launchReport(record)}, Data: map[string]any{"kind": "launch", "record": record}})
+		return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("launch %s cancelled: %s", id, record.State),
+			text: []string{launchReport(record)}, Data: map[string]any{"kind": "launch", "record": record}}
 	}
 	if status, _ := job.dispatch["status"].(string); dispatchcore.TerminalStatus(status) {
 		// A job that already ended is already stopped: the repeat is success
@@ -832,11 +862,11 @@ func (inv *intentInvocation) stopJob(ref string) int {
 		if ended, _ := job.dispatch["endedAt"].(string); ended != "" {
 			summary += " (at " + ended + ")"
 		}
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: summary, Data: map[string]any{"kind": "dispatch", "status": status}})
+		return intentResult{Outcome: intentUnchanged, Targets: targets, Summary: summary, Data: map[string]any{"kind": "dispatch", "status": status}}
 	}
 	outcome, code, err := inv.owners.processes.cancelDispatch(inv.layout.GitRoot, id)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: max(code, 1), Targets: targets, Summary: fmt.Sprintf("dispatch job %s cancel: %v", id, err)})
+		return intentResult{Outcome: intentFailed, code: max(code, 1), Targets: targets, Summary: fmt.Sprintf("dispatch job %s cancel: %v", id, err)}
 	}
 	result := intentResult{Targets: targets, code: code, Data: map[string]any{"kind": "dispatch", "owner": outcome}}
 	label, _ := outcome["outcome"].(string)
@@ -847,7 +877,7 @@ func (inv *intentInvocation) stopJob(ref string) int {
 		result.Outcome, result.Summary = intentRefused, strings.TrimSpace(fmt.Sprintf("dispatch job %s not cancelled: %s %s", id, label, detail))
 		result.code = max(code, 1)
 	}
-	return inv.render(result)
+	return result
 }
 
 // runIntentCheckoutStatus is the overview of this checkout: its
@@ -966,11 +996,11 @@ func runIntentWorkStop(inv *intentInvocation) int {
 	return inv.stopJob(ref.qualified())
 }
 
-// runIntentWorkStopGoal finishes a breach-stopped goal's recorded stop: it
-// advances the goal's stop batch from the authoritative job records (the
-// dispatch owner's ReconcileStopBatch, formerly the internal job
-// stop-batch-reconcile). It cancels nothing itself; a job still running is
-// named with the command that stops it.
+// runIntentWorkStopGoal stops every running job of goal G, and no other
+// goal's. A goal its budget stopped keeps its recorded stop: once none of its
+// jobs runs, the stop completes by itself (the steward's next pass advances
+// it), and this act advances it at once as well. A repeat with nothing
+// running stops nothing and is success (R-129-ui).
 func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -985,39 +1015,50 @@ func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
 		// Neither a goal nor a record of any kind work stop takes.
 		return inv.render(*inv.noReference(id, inv.command.accepts))
 	}
-	if file.StopFence == nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary: fmt.Sprintf("goal %s has no stop in progress; nothing was done", id),
-			next:    inv.publicArgv("work", "status", id), nextReason: "lists the goal's running work, each with the reference work stop takes"})
+	jobs, _, problem := inv.listJobs(false)
+	if problem != nil {
+		return inv.render(*problem)
 	}
-	stopID := file.StopFence.StopID
-	before, readErr := goal.ReadStopBatch(inv.stateRoot, stopID)
-	if readErr == nil && before.State == goal.StopBatchComplete {
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: map[string]any{"stop": stopID, "state": string(before.State)},
-			Summary: fmt.Sprintf("goal %s: stop %s is already complete; nothing was changed", id, stopID)})
+	var stopped, failed []string
+	var lines []string
+	for _, job := range jobs {
+		if jobGoal(job) != id || jobEnded(job) {
+			continue
+		}
+		result := inv.stopResolvedJob(job)
+		lines = append(lines, jobReference(job)+": "+result.Summary)
+		if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
+			stopped = append(stopped, jobReference(job))
+		} else {
+			failed = append(failed, jobReference(job))
+		}
 	}
-	batch, err := dispatchcore.ReconcileStopBatch(inv.stateRoot, stopID, now)
-	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: map[string]any{"stop": stopID},
-			Summary: fmt.Sprintf("goal %s: stop %s could not be advanced: %v", id, stopID, err)})
+	data := map[string]any{"stopped": nonNilLines(stopped), "failed": nonNilLines(failed)}
+	stopLine := ""
+	if file.StopFence != nil {
+		// The recorded stop's bookkeeping, as the steward's pass does it.
+		stopID := file.StopFence.StopID
+		if batch, err := dispatchcore.ReconcileStopBatch(inv.stateRoot, stopID, now); err == nil {
+			data["stop"], data["stopState"] = stopID, string(batch.State)
+			if batch.State == goal.StopBatchComplete {
+				stopLine = "its budget stop " + stopID + " is complete; metasystem goal resume " + id + " lifts it"
+			} else {
+				stopLine = "its budget stop " + stopID + " completes by itself once none of its jobs runs"
+			}
+			lines = append(lines, stopLine)
+		}
 	}
-	data := map[string]any{"stop": stopID, "state": string(batch.State), "pending": nonNilLines(batch.Pending)}
-	switch batch.State {
-	case goal.StopBatchComplete:
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
-			Summary: fmt.Sprintf("goal %s: stop %s is complete; the goal can be resumed", id, stopID),
-			next:    inv.publicArgv("goal", "resume", id), nextReason: "lifts the stop under the goal's standing box"})
-	case goal.StopBatchIndeterminate:
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data,
-			Summary: fmt.Sprintf("goal %s: stop %s is indeterminate: a job record could not be judged; nothing was lifted", id, stopID),
+	switch {
+	case len(failed) > 0:
+		return inv.render(intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: data, text: lines,
+			Summary: fmt.Sprintf("goal %s: %d job(s) stopped, %d not stopped", id, len(stopped), len(failed)),
 			next:    inv.publicArgv("work", "status", id), nextReason: "shows each of the goal's jobs and its state"})
+	case len(stopped) == 0:
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, text: lines,
+			Summary: fmt.Sprintf("no job of goal %s is running; nothing was stopped", id)})
 	}
-	result := intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: data, text: nonNilLines(batch.Pending),
-		Summary: fmt.Sprintf("goal %s: stop %s still waits for %d job(s) to end", id, stopID, len(batch.Pending))}
-	if len(batch.Pending) > 0 {
-		result.next, result.nextReason = inv.publicArgv("work", "stop", refJ2+":"+batch.Pending[0]), "stops the first job the stop waits for; then run work stop "+id+" again"
-	}
-	return inv.render(result)
+	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: lines,
+		Summary: fmt.Sprintf("goal %s: %d running job(s) stopped", id, len(stopped))})
 }
 
 // runIntentSystemRestart stops this checkout's machinery and, only once
