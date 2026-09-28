@@ -82,13 +82,16 @@ func LaunchSupervisor(spec LaunchSpec, spawn Spawn, wait time.Duration) (string,
 	return "", 0, fmt.Errorf("the application did not become ready; see %s", spec.LogPath)
 }
 
-// Reap collects one exited child of this process, briefly. It is a no-op for
-// a process this one did not start.
+// Reap collects one exited child of this process, waiting for it to exit. It
+// is a no-op for a process this one did not start, and it is how a launcher
+// that outlives its supervisor keeps a zombie out of the process table: a
+// zombie is signalable and readable, so an identity check would read it as a
+// living owner.
 func Reap(pid int) {
 	if pid <= 0 {
 		return
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(2 * time.Minute)
 	for time.Now().Before(deadline) {
 		var status syscall.WaitStatus
 		reaped, err := syscall.Wait4(pid, &status, syscall.WNOHANG, nil)

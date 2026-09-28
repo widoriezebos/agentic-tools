@@ -418,10 +418,15 @@ func (r *appRun) endRun(record *applaunch.Record, clean bool, out io.Writer) err
 	return nil
 }
 
+// appEngine names the engine that supervises a run. It is this executable,
+// as `ui start` launches this executable; it is a variable only so that a
+// test can point at an engine it built for the purpose.
+var appEngine = os.Executable
+
 // launchSupervisor starts this run's supervisor detached and waits for its
 // one readiness answer.
 func (r appRun) launchSupervisor() (string, error) {
-	executable, err := os.Executable()
+	executable, err := appEngine()
 	if err != nil {
 		return "", fmt.Errorf("the engine executable is unavailable: %w", err)
 	}
