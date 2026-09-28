@@ -114,14 +114,6 @@ func families() []family {
 			},
 		},
 		{
-			name:    "job",
-			summary: "the delegate-job domain: records, chains, locks, caps, snapshots, authority",
-			verbs: []verb{
-				{"goal-revision-admission", "judge one exact revision and proposed cap under its lock", runDispatchGoalRevisionAdmission},
-				{"snapshot-select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},
-			},
-		},
-		{
 			name:    "adapter",
 			summary: "shared runtime-adapter plumbing: permissions, patches, snapshots",
 			verbs: []verb{
@@ -262,15 +254,6 @@ func families() []family {
 			verbs: []verb{
 				{"launch", "reserve, spawn the wrapped command detached, print the watch line", runRunLaunch},
 				{"wrap", "the setsid leader: bind, run the workload, write the exit sidecar (internal)", runRunWrap},
-			},
-		},
-		{
-			name:    "lease",
-			summary: "checkout write-authority: announce/classify/hold/renew",
-			verbs: []verb{
-				{"announce", "record this process as a main and claim the checkout lease", runLeaseAnnounce},
-				{"retire", "remove this process's announcement", runLeaseRetire},
-				{"require-holder", "gate a write on the caller being the authenticated holder", runLeaseRequireHolder},
 			},
 		},
 		{
