@@ -3,8 +3,8 @@
 Captured 2026-08-23 from the bm-2d rep-1 review with Wido, the first
 live run of a Devin-hosted mission under the wall. Companion doctrine:
 the native-versus-metasystem subagent boundary in
-`docs/orchestration.md`; the working design is
-`records/acp/acp-transport-design.md` while it ships.
+`docs/orchestration.md`; the design's history is
+`records/acp/acp-transport-design.md`.
 
 ## Why the ACP shape
 
@@ -141,7 +141,9 @@ motion Wido asked about is real.
 
 **The scope finding that reframes both reps.** The flipped key is
 `dispatch.transport.devin`: it governs DELEGATE dispatch only.
-`scripts/agents/hosts/devin.sh` — the host-turn launcher — has no
+`scripts/agents/hosts/devin.sh` — the host-turn launcher then, since
+replaced by the engine's host-turn operations
+(`internal/missionrunner/hostturn`) — had no
 transport selector and still runs legacy `devin -p
 --permission-mode dangerous` with workspace-wide write permission.
 Both reps' hosts therefore ran ungraded; ACP prevention has never

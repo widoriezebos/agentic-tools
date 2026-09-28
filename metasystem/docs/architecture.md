@@ -26,8 +26,9 @@ plumbing — process launching, polling, signaling, environment glue,
 fixture drivers — remains in scripts, because that is what scripts are
 for. A Go programmer must never read the engine and find a shell script
 wearing Go syntax; a script must never make a decision the engine
-owns. In practice: `scripts/agents/*.sh` launch, wait, and wire
-environments, and call back into engine verbs at every decision point.
+owns. In practice the plumbing has moved into the engine too: no
+`scripts/agents/*.sh` remains, and scripts are left only where adopters
+extend the system.
 The delegate-job choreography that once lived in `dispatch.sh` is Go now
 (`internal/delegation`, verbs-object-action U6b): a composition package
 above the owners, reached through `metasystem internal delegate`.

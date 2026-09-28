@@ -50,8 +50,8 @@ each with the deciding rule.
   written for an agent to execute with human review points.
 - **Upgrade an adopted repository to a newer template** → the upgrade
   procedure in the same reconciliation manual (the recorded adoption SHA and
-  the three-bucket rule). Currently a documented manual procedure; a script
-  is on the backlog.
+  the three-bucket rule). Currently a documented manual procedure; an
+  engine verb is on the backlog.
 - **Work with goals and agents day to day** → `metasystem help human` for
   your actions (goals, approval, budgets, start and stop) and
   `metasystem help agent` for build, review and land; the manual is
