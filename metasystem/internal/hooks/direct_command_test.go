@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -366,7 +367,10 @@ func runHookTestEngine() int {
 		Lookup: os.LookupEnv, Pid: os.Getpid(), Ppid: os.Getppid(),
 		Script: os.Getenv(RuntimeHookScriptEnv), Installation: installation,
 		Now: time.Now, Monotonic: func() time.Duration { return time.Since(origin) },
-		After: time.After, Sleep: time.Sleep, Exec: syscall.Exec, Environ: os.Environ,
+		// No deadline fires: the worker's exit is the event the parent waits
+		// on, so nothing here waits on wall time.
+		After: func(time.Duration) <-chan time.Time { return nil }, Sleep: func(time.Duration) { runtime.Gosched() },
+		Exec: syscall.Exec, Environ: os.Environ,
 		StartWorker: LaunchEngineWorker, TempDir: os.TempDir(),
 		Deadline: DeadlineDeps{BootClock: identity.BootClock, Prober: identity.KernelProber{}, ParentPid: identity.ParentPid,
 			EventInterval: 10 * time.Millisecond},

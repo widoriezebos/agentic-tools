@@ -21,7 +21,7 @@ import (
 
 const systemSetupFakeEngine = `#!/bin/sh
 case "$1 $2 $3" in
-  "internal hook --accepts") exit "${SETUP_ACCEPTS_STATUS:-0}" ;;
+  "internal hook --accepts") if [ -e "$0.old" ]; then echo 'metasystem: unknown command "hook"' >&2; exit 2; fi; exit 0 ;;
   "internal pre-commit --root")
     if [ -n "${METASYSTEM_GUARD_PROBE:-}" ]; then printf 'guard-probe-ack %s\n' "$METASYSTEM_GUARD_PROBE"; exit 42; fi
     exit 0 ;;
@@ -46,6 +46,15 @@ fi
 exit 0
 `
 
+// stubEraClaudeSettings are Claude settings whose lifecycle handlers run the
+// plumbing stub scripts/agents/supervision-hook.sh, as an earlier setup wrote
+// them.
+const stubEraClaudeSettings = `{"hooks":{
+"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR/metasystem\" && bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],
+"Stop":[{"hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR/metasystem\" && bash scripts/agents/supervision-hook.sh claude stop","timeout":60}]}],
+"SessionEnd":[{"hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR/metasystem\" && bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}
+`
+
 type systemSetupBed struct {
 	repo, installation, hook string
 }
@@ -60,15 +69,11 @@ func systemSetupGit(t *testing.T, dir string, args ...string) (string, error) {
 
 func newSystemSetupBed(t *testing.T) systemSetupBed {
 	t.Helper()
-	repo, installation := setupCLIFixture(t)
+	repo, _ := setupCLIFixture(t)
 	repo, _ = filepath.EvalSymlinks(repo)
-	installation = filepath.Join(repo, "metasystem")
+	installation := filepath.Join(repo, "metasystem")
 	setupCLIWrite(t, filepath.Join(installation, "bin", "metasystem"), systemSetupFakeEngine, 0o755)
-	stubEra, err := os.ReadFile(filepath.Join("testdata", "stub-era-claude-settings.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	setupCLIWrite(t, filepath.Join(repo, ".claude", "settings.json"), string(stubEra), 0o644)
+	setupCLIWrite(t, filepath.Join(repo, ".claude", "settings.json"), stubEraClaudeSettings, 0o644)
 	if output, err := systemSetupGit(t, repo, "init", "-q"); err != nil {
 		t.Fatalf("git init: %v %s", err, output)
 	}
@@ -77,15 +82,11 @@ func newSystemSetupBed(t *testing.T) systemSetupBed {
 	return systemSetupBed{repo: repo, installation: installation, hook: hook}
 }
 
-func (b systemSetupBed) run(t *testing.T, env ...string) (int, intentResult) {
+func (b systemSetupBed) run(t *testing.T) (int, intentResult) {
 	t.Helper()
 	command, rest, ok := resolveIntentArgv([]string{"system", "setup", "--json"})
 	if !ok {
 		t.Fatal("system setup is not a public command")
-	}
-	for _, entry := range env {
-		name, value, _ := strings.Cut(entry, "=")
-		t.Setenv(name, value)
 	}
 	var stdout, stderr bytes.Buffer
 	code := runIntentIn(command, rest, &stdout, &stderr, b.repo, intentOwners{resolver: stateroot.NewResolver(stateroot.RepositoryTop, noExecutable)})
@@ -100,6 +101,7 @@ func (b systemSetupBed) run(t *testing.T, env ...string) (int, intentResult) {
 // retired composer that refused every commit without a fix is re-enrolled,
 // and a commit then runs the engine guard.
 func TestSystemSetupSwitchesAStubEraCheckoutToTheEngine(t *testing.T) {
+	t.Parallel()
 	bed := newSystemSetupBed(t)
 	setupCLIWrite(t, filepath.Join(bed.repo, "file.txt"), "content\n", 0o644)
 	if output, err := systemSetupGit(t, bed.repo, "add", "file.txt"); err != nil {
@@ -140,10 +142,13 @@ func TestSystemSetupSwitchesAStubEraCheckoutToTheEngine(t *testing.T) {
 // An engine that does not serve the hook entry, or none at all, is refused
 // before any write, and the refusal names the build that fixes it (H1).
 func TestSystemSetupRefusesWithoutAnEngineThatServesTheHook(t *testing.T) {
+	t.Parallel()
 	bed := newSystemSetupBed(t)
+	// An engine older than the hook entry: the fixture refuses --accepts.
+	setupCLIWrite(t, filepath.Join(bed.installation, "bin", "metasystem.old"), "", 0o644)
 	before := idemTreeDigest(t, bed.repo)
 	hookBefore, _ := os.ReadFile(bed.hook)
-	code, result := bed.run(t, "SETUP_ACCEPTS_STATUS=2")
+	code, result := bed.run(t)
 	if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Decision, "go run ./cmd/devgate build") ||
 		!strings.Contains(result.Decision, "metasystem system setup") {
 		t.Fatalf("old engine = %d %+v", code, result)
