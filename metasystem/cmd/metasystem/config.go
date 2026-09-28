@@ -17,4 +17,3 @@ func runConfigCanonicalModel(args []string) int {
 	fmt.Println(config.CanonicalModel(args[0]))
 	return 0
 }
-

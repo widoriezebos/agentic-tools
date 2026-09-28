@@ -358,7 +358,6 @@ func families() []family {
 				{"get", "print a dotted field from a JSON file or string", runJSONGet},
 				{"object", "build a compact JSON object from key=value args", runJSONObject},
 				{"set", "set top-level fields in a JSON object file atomically", runJSONSet},
-				{"strip", "print a JSON object with named top-level keys removed", runJSONStrip},
 			},
 		},
 		{
@@ -540,7 +539,6 @@ func families() []family {
 			summary: "the supervision lifecycle (docs/design/supervision-lifecycle.md)",
 			verbs: []verb{
 				{"fingerprint", "print a checkout's supervision fingerprint (code, signatures, configuration)", runCensusFingerprint},
-				{"derive-ceiling", "derive the watcher cap ceiling from config, environment, and the declared maximum", runSuperviseDeriveCeiling},
 				{"verify-armed", "exit 0 when supervision is verifiably armed at this instant", runSuperviseVerifyArmed},
 				{"owner", "run the owner loop for a checkout (internal; launched by up)", runSuperviseOwnerLoop},
 				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},

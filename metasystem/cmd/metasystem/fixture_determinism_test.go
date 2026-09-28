@@ -1291,32 +1291,3 @@ func runFakeHostLifetimeWitness(t *testing.T, resistTerm bool) {
 		t.Fatalf("fake host orderly-stop acknowledgement = %q, %v", stopped, err)
 	}
 }
-
-func TestSupervisionGoFixtureSuppliesCensusInputsAndRetainsFailures(t *testing.T) {
-	t.Parallel()
-	data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "supervision-go-fixtures.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(data)
-	for _, required := range []string{
-		`cp "$bin" "$fixture_root/bin/metasystem"`,
-		`export METASYSTEM_CENSUS_PROCESS_FILE="$process_fixture"`,
-		`--metasystem-root "$fixture_root" --scope "$repo"`,
-		`--fingerprint "$fingerprint" --watcher-cap "$watcher_cap"`,
-		`local status=$?`,
-		`exit "$status"`,
-		`cp "$registry" "$failure_dir/registry.jsonl"`,
-		`"$repo/owner.out"`,
-		`"$repo/artifacts/agents/supervision/owner.ndjson"`,
-		`"$repo/artifacts/agents/supervision/state.json"`,
-		`"$repo/artifacts/agents/supervision/last-census.json"`,
-	} {
-		if !strings.Contains(script, required) {
-			t.Errorf("supervision Go fixture lacks %q", required)
-		}
-	}
-	if strings.Contains(script, `census_generation_one "$census1" || true`) {
-		t.Fatal("generation-one census assertion was weakened")
-	}
-}

@@ -30,11 +30,11 @@ const (
 	// The launch contract raised it by one: `app serve` is the supervisor that
 	// owns one run of the project's application for its life, in the shape of
 	// `ui serve`, and like it it is a process entrypoint a person never types.
-	verbRatchetInternalVerbCeiling = 288
+	verbRatchetInternalVerbCeiling = 286
 	// R4: shell lines that reference the engine.
-	verbRatchetShellEngineCeiling = 111
+	verbRatchetShellEngineCeiling = 85
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
-	verbRatchetScriptLinesCeiling = 1893
+	verbRatchetScriptLinesCeiling = 1648
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
 	// U6a raised it by the process boundaries that were shell before: the
