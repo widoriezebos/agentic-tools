@@ -283,8 +283,8 @@ func TestAuditDiskEngineNeverRunsGoClean(t *testing.T) {
 	}
 	for source, want := range map[string]int{
 		`package p; import "os/exec"; func f() { exec.Command("go", "clean", "-cache") }`: 1,
-		`package p; var argv = []string{"clean", "-testcache"}`:                             1,
-		`package p; func f(run func(...string)) { run("git", "clean", "-fdq") }`:            0,
+		`package p; var argv = []string{"clean", "-testcache"}`:                           1,
+		`package p; func f(run func(...string)) { run("git", "clean", "-fdq") }`:          0,
 	} {
 		parsed, err := parser.ParseFile(token.NewFileSet(), "fixture.go", source, 0)
 		if err != nil {

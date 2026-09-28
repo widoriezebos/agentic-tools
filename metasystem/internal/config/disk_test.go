@@ -59,6 +59,7 @@ func TestCacheTrimSettingsResolution(t *testing.T) {
 
 // The five keys are validated beside the other numeric knobs.
 func TestValidateCacheTrimKnobs(t *testing.T) {
+	t.Parallel()
 	for _, key := range []string{DiskGoCacheCapGiBKey, DiskDelegateGoCacheCapGiBKey, DiskStaticcheckCacheCapGiBKey, DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey} {
 		if problems := validateRepo(t, validConf+key+"=0\n"); !hasProblem(problems, key+" must be a positive integer") {
 			t.Fatalf("%s=0: %v", key, problems)
