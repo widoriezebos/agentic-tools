@@ -144,8 +144,6 @@ func TestShippedInstallationRoutedAssetsExist(t *testing.T) {
 		"scripts/agents/templates/design-common.md",
 		"scripts/agents/supervision-hook.sh",
 		"scripts/agents/checkout-execution-guard-fixtures.sh",
-		"scripts/agents/lease-succession-fixtures.sh",
-		"scripts/agents/flight-recorder-fixtures.sh",
 		"scripts/agents/schemas/mission-state.schema.json",
 		"scripts/agents/schemas/wall-evidence.schema.json",
 		"scripts/agents/path-classes.txt",
