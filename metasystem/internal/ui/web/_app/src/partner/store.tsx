@@ -134,8 +134,7 @@ import { readDrawerSitting, writeDrawerSitting } from "../storage";
 import {
   answerLine,
   EMPTY_DESK,
-  examinedLine,
-  reviewOutcome,
+  outcomeShape,
   retipped,
   keepDue,
   onDesk,
@@ -420,8 +419,6 @@ type Partner = {
    * the old tip is kept as Previously (D9). It answers "" or the refusal.
    */
   reviewNewTip: (current: string) => Promise<string>;
-  /** The verdict the End sheet chose, which the Outcome opens with (D10), or "". */
-  verdict: string;
 
   /**
    * The sitting this conversation is, or null. It is the server's answer, read
@@ -641,7 +638,6 @@ const nothing: Partner = {
   noteAccepting: () => {},
   drafts: {},
   reviewNewTip: async () => "",
-  verdict: "",
   sitting: null,
   startSitting: async () => "",
   closeSitting: async () => {},
@@ -784,7 +780,6 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const [locals, setLocals] = useState<Readonly<Record<string, Draft>>>({});
   const [accepting, setAccepting] = useState<Readonly<Record<string, string>>>({});
   const [stoppedPresenting, setStoppedPresenting] = useState("");
-  const [verdict, setVerdict] = useState("");
   const roomTaken = useRef("");
   const lastKept = useRef("");
   const keptAt = useRef(0);
@@ -1427,7 +1422,6 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    * without it.
    */
   const close = useCallback(async (verdict = "") => {
-    setVerdict(verdict);
     setSittingBusy(true);
     setSittingRefusal("");
     setSittingEnded("");
@@ -1618,12 +1612,13 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       changeMark(id, (mark) => ({ ...mark, recording: true, refusal: "" }));
       const entry = entryOf(card, nameOf(store.human), stampOf(new Date()), records);
       // A review's Outcome opens with the verdict the human chose, and names
-      // what they examined, so a nod cannot pass as a review (g1-s65 D10). It is
-      // composed inside the recorder's queue, over the record as it then reads,
-      // so a Clear meets every finding recorded since the sheet opened.
-      const shape = card.kind === "outcome" && sitting?.purpose === "review" && verdict !== ""
-        ? reviewOutcome(verdict, examinedLine(desk.items))
-        : undefined;
+      // what they examined, so a nod cannot pass as a review (g1-s65 D10). The
+      // verdict is the card's own, stamped by the server on the closing deposit,
+      // so a card rebuilt after a reload records under the same shape (Sol
+      // SOL-A-02, SOL-A-07). It is composed inside the recorder's queue, over
+      // the record as it then reads, so a Clear meets every finding recorded
+      // since the sheet opened.
+      const shape = outcomeShape(card, sitting?.purpose, desk.items);
       void held.press(entry, records?.kind ?? card.kind, into, shape).then((outcome) => {
         if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
           setReading(outcome.reading);
@@ -1647,7 +1642,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         }
       });
     },
-    [deposits, changeMark, store.human, end, sitting, verdict, desk],
+    [deposits, changeMark, store.human, end, sitting, desk],
   );
 
   /**
@@ -2254,7 +2249,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       wanted, returnFocus,
       conversation: where, showSitting, leaveSitting, room, putOnDesk, showOnDesk, setFace, keepRoomNow, walk,
       stoppedPresenting, stopPresenting, startFinding, answerFinding, accepting, noteAccepting, drafts,
-      reviewNewTip, verdict,
+      reviewNewTip,
       sitting, startSitting: begin, closeSitting: close, endSitting: end,
       endWithoutRecording: endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
@@ -2272,7 +2267,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus,
       where, showSitting, leaveSitting, room, putOnDesk, showOnDesk, setFace, keepRoomNow, walk,
       stoppedPresenting, stopPresenting, startFinding, answerFinding, accepting, noteAccepting, drafts,
-      reviewNewTip, verdict,
+      reviewNewTip,
       sitting, begin, close, end, endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
       proposals, tickProposal, selectProposals, applyProposals, continueProposals, tryProposal,

@@ -22,6 +22,10 @@ import (
 // here for the admission that keeps it to a review.
 const DepositFinding = "finding"
 
+// DepositOutcome is the closing deposit, spelled here for the admission that
+// writes a review's verdict on it (D10).
+const DepositOutcome = "outcome"
+
 // noFindingHere is what a finding offered outside a review is refused with.
 const noFindingHere = "a finding is offered in a review sitting, and this sitting shapes a record; " +
 	"say it as a fact or an open question instead"

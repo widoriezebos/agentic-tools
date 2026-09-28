@@ -218,7 +218,10 @@ type turn struct {
 	// the one thing that says which editor opening the human handed over and
 	// which of its fields they may be written into, so it is what a suggestion
 	// is admitted against.
-	page     Page
+	page Page
+	// verdict is the verdict a review's closing turn was asked with, stamped on
+	// the outcome it offers (g1-s65 D10), and "" for every other turn.
+	verdict  string
 	seq      int
 	text     strings.Builder
 	activity []string
@@ -654,6 +657,12 @@ func (s *Service) SubmitIn(ctx context.Context, human, sitting, key, text string
 // be able to: a browser that could claim a question was the interface's could
 // dress up a question the human typed as one they did not.
 func (s *Service) submit(ctx context.Context, human, sitting, key, text string, page Page, byInterface bool) (string, error) {
+	return s.submitClosing(ctx, human, sitting, key, text, page, byInterface, "")
+}
+
+// submitClosing is submit for a turn that carries the verdict a review's
+// closing was asked with, so the outcome it offers carries it too.
+func (s *Service) submitClosing(ctx context.Context, human, sitting, key, text string, page Page, byInterface bool, verdict string) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", errors.New("a turn needs a question")
@@ -704,7 +713,7 @@ func (s *Service) submit(ctx context.Context, human, sitting, key, text string, 
 	// second confirmation read). A startup that refuses releases it again,
 	// below, so a runtime that is not installed leaves no turn behind.
 	id := mintTurn()
-	running := &turn{id: id, human: human, key: key, page: page, where: conversation.key,
+	running := &turn{id: id, human: human, key: key, page: page, verdict: verdict, where: conversation.key,
 		conversation: conversation, done: make(chan struct{})}
 	s.current = running
 	s.mu.Unlock()
@@ -1129,15 +1138,15 @@ func (s *Service) ClosingIn(ctx context.Context, human, where, verdict string, p
 	if sitting == nil {
 		return Sitting{}, errors.New(noSittingToClose)
 	}
-	request := ClosingRequest(*sitting)
+	request, chosen := ClosingRequest(*sitting), ""
 	if sitting.Purpose == PurposeReview {
 		said, err := ReviewClosingRequest(*sitting, verdict)
 		if err != nil {
 			return Sitting{}, err
 		}
-		request = said
+		request, chosen = said, verdict
 	}
-	if _, err := s.submit(ctx, human, where, "", request, page, true); err != nil {
+	if _, err := s.submitClosing(ctx, human, where, "", request, page, true, chosen); err != nil {
 		return Sitting{}, err
 	}
 	return *sitting, nil
@@ -1279,6 +1288,12 @@ func (s *Service) admitDeposit(running *turn, prepared Deposit) {
 		return
 	}
 	prepared.Subject = sitting.Subject
+	// The verdict is the service's to write, never the Partner's: it is the
+	// one the closing turn was asked with, and only on a review's outcome.
+	prepared.Verdict = ""
+	if prepared.Kind == DepositOutcome && sitting.Purpose == PurposeReview {
+		prepared.Verdict = running.verdict
+	}
 	prepared.Offered = true
 	s.record(running, Event{Kind: EventDeposit, Deposit: &prepared})
 }
