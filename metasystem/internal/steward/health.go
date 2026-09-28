@@ -16,13 +16,12 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
@@ -328,15 +327,11 @@ func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity
 	if err := os.MkdirAll(filepath.Dir(healthLockPath(repoRoot)), 0o755); err != nil {
 		return HealthVerdict{}, err
 	}
-	lockFile, err := os.OpenFile(healthLockPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
+	lockFile, err := lock.File(healthLockPath(repoRoot), 0o644, lock.Exclusive)
 	if err != nil {
 		return HealthVerdict{}, err
 	}
-	defer lockFile.Close()
-	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX); err != nil {
-		return HealthVerdict{}, err
-	}
-	defer unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)
+	defer lockFile.Release()
 
 	previous, err := loadHealthRecord(HealthRecordPath(repoRoot))
 	stateUnreadable := err != nil && !os.IsNotExist(err)

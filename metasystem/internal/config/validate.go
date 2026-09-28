@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/adapterfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -34,7 +35,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	if readErr != nil {
 		return false, nil, fmt.Errorf("cannot read metasystem configuration: %s: %w", confPath, readErr)
 	}
-	repo := resolvePath(repoRoot)
+	repo := realpath.Resolve(repoRoot)
 
 	var errs []string
 	add := func(format string, args ...any) { errs = append(errs, fmt.Sprintf(format, args...)) }
@@ -660,7 +661,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	case !filepath.IsAbs(evidence):
 		add("evidence.root must be absolute")
 	default:
-		if withinRepo(resolvePath(evidence), repo) {
+		if withinRepo(realpath.Resolve(evidence), repo) {
 			add("evidence.root must be outside the repository")
 		}
 	}
@@ -811,33 +812,6 @@ func atoi(s string) int {
 func isDir(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
-}
-
-// resolvePath makes path absolute and follows symlinks. Parts that do not exist
-// yet cannot be resolved, so it follows symlinks on the deepest existing
-// ancestor and re-attaches the remaining tail lexically — the same way the
-// evidence-root check must compare a not-yet-created directory against the repo.
-func resolvePath(path string) string {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		abs = filepath.Clean(path)
-	}
-	remainder := ""
-	current := abs
-	for {
-		if resolved, err := filepath.EvalSymlinks(current); err == nil {
-			if remainder == "" {
-				return resolved
-			}
-			return filepath.Join(resolved, remainder)
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return abs
-		}
-		remainder = filepath.Join(filepath.Base(current), remainder)
-		current = parent
-	}
 }
 
 // withinRepo reports whether path is the repository root or lives beneath it.

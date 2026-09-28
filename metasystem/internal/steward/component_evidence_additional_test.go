@@ -7,14 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 func TestComponentEvidenceHealthReadIsBoundedWhenWriterIsBusy(t *testing.T) {
 	root := t.TempDir()
-	lock, err := lockComponentEvidence(root, "supervision-hook", unix.LOCK_EX|unix.LOCK_NB)
+	lock, err := lockComponentEvidence(root, "supervision-hook", lock.TryExclusive)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -24,9 +24,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wallclock"
 )
 
 // Deps are the process facts and seams one supervisor runs against. The
@@ -64,10 +64,7 @@ type Deps struct {
 }
 
 // Clock is the supervisor's time: wall readings and waits.
-type Clock interface {
-	Now() time.Time
-	Sleep(time.Duration)
-}
+type Clock = wallclock.Clock
 
 // Dispatcher runs one delegate lifecycle command (`ENGINE internal delegate
 // ARGS`) with the given output streams.
@@ -75,13 +72,8 @@ type Dispatcher interface {
 	Run(stdout, stderr io.Writer, args ...string) int
 }
 
-type systemClock struct{}
-
-func (systemClock) Now() time.Time        { return time.Now() }
-func (systemClock) Sleep(d time.Duration) { time.Sleep(d) }
-
 // SystemClock is the wall clock.
-func SystemClock() Clock { return systemClock{} }
+func SystemClock() Clock { return wallclock.System() }
 
 // EngineDispatcher execs the installation's delegate entry, `ENGINE internal
 // delegate ARGS`, with METASYSTEM_DELEGATE_ROOT naming the installation (the

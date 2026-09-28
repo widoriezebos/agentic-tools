@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"golang.org/x/sys/unix"
 )
 
@@ -294,15 +295,11 @@ func releaseScratchLock(lock *os.File) {
 
 // lockScratchRecord takes the cross-process record mutation lock.
 func lockScratchRecord(recordPath string) (*os.File, error) {
-	lock, err := os.OpenFile(scratchRecordLockPath(recordPath), os.O_CREATE|os.O_RDWR, 0o600)
+	held, err := lock.File(scratchRecordLockPath(recordPath), 0o600, lock.Exclusive)
 	if err != nil {
 		return nil, fmt.Errorf("scratch record lock: %w", err)
 	}
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
-		_ = lock.Close()
-		return nil, fmt.Errorf("scratch record lock: %w", err)
-	}
-	return lock, nil
+	return held.File(), nil
 }
 
 // mutate reloads the durable record under the record lock, applies change

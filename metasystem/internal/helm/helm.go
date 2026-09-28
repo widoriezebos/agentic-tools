@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
 // Record is the signature helm take writes.
@@ -146,16 +148,7 @@ func Write(root string, record Record) (Seat, error) {
 	record.Schema = 1
 	encoded, _ := json.MarshalIndent(record, "", "  ")
 	_ = os.MkdirAll(seat.Dir, 0o700)
-	temp, err := os.CreateTemp(seat.Dir, ".helm-*.json") // mode 0600
-	if err != nil {
-		return seat, err
-	}
-	_, writeErr := temp.Write(append(encoded, '\n'))
-	if err = errors.Join(writeErr, temp.Sync(), temp.Close()); err == nil {
-		err = os.Rename(temp.Name(), seat.Signature)
-	}
-	if err != nil {
-		_ = os.Remove(temp.Name())
+	if _, err := atomicfile.WriteFile(seat.Signature, append(encoded, '\n'), 0o600, ""); err != nil {
 		return seat, err
 	}
 	return seat, nil

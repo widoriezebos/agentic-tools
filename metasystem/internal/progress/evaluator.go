@@ -8,8 +8,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 const (
@@ -99,7 +100,7 @@ func CaptureProductRootScopes(launchMode, workspace string, roots []string) ([]P
 	if workspace == "" {
 		return nil, fmt.Errorf("progress launch requires the workspace root")
 	}
-	workspace = resolvePath(workspace)
+	workspace = realpath.Resolve(workspace)
 	scopes := make([]ProductRootScope, 0, len(roots))
 	for _, root := range roots {
 		if root == "" || !filepath.IsAbs(root) {
@@ -112,9 +113,9 @@ func CaptureProductRootScopes(launchMode, workspace string, roots []string) ([]P
 			scopes = append(scopes, scope)
 			continue
 		}
-		resolved := resolvePath(root)
+		resolved := realpath.Resolve(root)
 		switch {
-		case !pathWithin(resolved, workspace):
+		case !realpath.Within(resolved, workspace):
 			scope.Standing = StandingAttributionOnly
 			scope.Reason = ReasonOutsideWorktreeAtLaunch
 		case excludedProductPath(workspace, resolved):
@@ -156,7 +157,7 @@ func Evaluate(record map[string]any, outputHighWater int64) (Evidence, error) {
 			Roots: make([]ProductRootEvidence, 0, len(scopes)),
 		},
 	}
-	workspace = resolvePath(workspace)
+	workspace = realpath.Resolve(workspace)
 	for _, scope := range scopes {
 		root := observeProductRoot(scope, launchMode, workspace)
 		evidence.Products.Roots = append(evidence.Products.Roots, root)
@@ -217,10 +218,10 @@ func observeProductRoot(scope ProductRootScope, launchMode, workspace string) Pr
 	if scope.Standing != StandingLiveness {
 		return result
 	}
-	resolved := resolvePath(scope.Path)
+	resolved := realpath.Resolve(scope.Path)
 	result.ResolvedPath = resolved
 	switch {
-	case !pathWithin(resolved, workspace):
+	case !realpath.Within(resolved, workspace):
 		result.Reason = ReasonResolutionOutsideWorktree
 		result.Status = RootStatusDemoted
 		return result
@@ -258,7 +259,7 @@ func newestProductFileEvent(root, workspace string) (*time.Time, string, string)
 		if walkErr != nil {
 			return walkErr
 		}
-		if path != root && excludedProductPath(workspace, resolvePath(path)) {
+		if path != root && excludedProductPath(workspace, realpath.Resolve(path)) {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}
@@ -317,42 +318,12 @@ func productRootScopes(value any) ([]ProductRootScope, error) {
 	return scopes, nil
 }
 
-// resolvePath follows the deepest existing ancestor and preserves a missing
-// suffix. Calling it again later observes an intermediate symlink that did not
-// exist when the launch was recorded.
-func resolvePath(path string) string {
-	if absolute, err := filepath.Abs(path); err == nil {
-		path = absolute
-	}
-	suffix := ""
-	current := path
-	for {
-		if resolved, err := filepath.EvalSymlinks(current); err == nil {
-			return filepath.Join(resolved, suffix)
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return filepath.Clean(path)
-		}
-		suffix = filepath.Join(filepath.Base(current), suffix)
-		current = parent
-	}
-}
-
-func pathWithin(path, root string) bool {
-	relative, err := filepath.Rel(root, path)
-	if err != nil {
-		return false
-	}
-	return relative == "." || (relative != ".." && !strings.HasPrefix(relative, "../"))
-}
-
 func excludedProductPath(workspace, path string) bool {
 	for _, excluded := range []string{
-		resolvePath(filepath.Join(workspace, ".git")),
-		resolvePath(filepath.Join(workspace, "artifacts", "agents")),
+		realpath.Resolve(filepath.Join(workspace, ".git")),
+		realpath.Resolve(filepath.Join(workspace, "artifacts", "agents")),
 	} {
-		if pathWithin(path, excluded) {
+		if realpath.Within(path, excluded) {
 			return true
 		}
 	}

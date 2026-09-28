@@ -19,10 +19,9 @@ import (
 	"strings"
 	"syscall"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // ErrEnrollmentDrift marks a recovery refusal caused by changed, incomplete,
@@ -294,18 +293,15 @@ func (b *EnrolledBinary) PrepareForExecution() error {
 	// One preparer owns publication through the descriptor open, so another
 	// process can reuse but never replace a valid pin retained by this caller.
 	prepareLockPath := filepath.Join(directory, ".prepare.flock")
-	prepareLock, err := os.OpenFile(prepareLockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	prepareLock, err := lock.File(prepareLockPath, 0o600, lock.Exclusive)
+	var lockErr *lock.LockError
+	if errors.As(err, &lockErr) {
+		return fmt.Errorf("take engine pin preparation lock %s: %w", prepareLockPath, err)
+	}
 	if err != nil {
 		return fmt.Errorf("open engine pin preparation lock %s: %w", prepareLockPath, err)
 	}
-	if err := unix.Flock(int(prepareLock.Fd()), unix.LOCK_EX); err != nil {
-		_ = prepareLock.Close()
-		return fmt.Errorf("take engine pin preparation lock %s: %w", prepareLockPath, err)
-	}
-	defer func() {
-		_ = unix.Flock(int(prepareLock.Fd()), unix.LOCK_UN)
-		_ = prepareLock.Close()
-	}()
+	defer prepareLock.Release()
 	finalPath := EnrolledExecutionPath(b.repoRoot, b.Install)
 	if existing, err := os.Open(finalPath); err == nil {
 		if digest, digestErr := digestOpenFile(existing); digestErr == nil && digest == b.Install.InstallDigest {

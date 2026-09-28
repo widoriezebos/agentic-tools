@@ -24,7 +24,7 @@ func TestKindsFollowPathsAndJobRecords(t *testing.T) {
 	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	slug := claudeCodeProjectFolder(root)
 	directory := filepath.Join(home, ".claude", "projects", slug)
 	writeSeatTranscript(t, filepath.Join(directory, "top.jsonl"), "top", root, "top-request", 1, 2)
 	writeSeatTranscript(t, filepath.Join(directory, "parent", "subagents", "child.jsonl"), "child", root, "child-request", 3, 4)
@@ -206,7 +206,7 @@ func TestHealthAttributionUsesTheZoneDay(t *testing.T) {
 }
 func TestSeamKeepsEveryVisibleGap(t *testing.T) {
 	bed := newSpendBed(t)
-	slug := strings.ReplaceAll(filepath.Clean(bed.root), string(filepath.Separator), "-")
+	slug := claudeCodeProjectFolder(bed.root)
 	projects := filepath.Join(os.Getenv("HOME"), ".claude", "projects")
 	blocked := filepath.Join(projects, slug+"-blocked")
 	mustSpendTest(t, os.MkdirAll(blocked, 0o755))
@@ -230,7 +230,7 @@ func TestCallIdentityReproducesThePrototype(t *testing.T) {
 	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	dir := filepath.Join(home, ".claude", "projects", strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-"))
+	dir := filepath.Join(home, ".claude", "projects", claudeCodeProjectFolder(root))
 	mustSpendTest(t, os.MkdirAll(dir, 0o755))
 	usage := func(in, create, read, out, reason int) map[string]any {
 		return map[string]any{"input_tokens": in, "cache_creation_input_tokens": create, "cache_read_input_tokens": read, "output_tokens": out, "thinking_tokens": reason}
@@ -296,5 +296,34 @@ func TestJobDigestCoversOnlyOwnershipFields(t *testing.T) {
 	base["status"] = "failed"
 	if got, _ := digest("a.json", base); got != want {
 		t.Fatal("status invalidated the job digest")
+	}
+}
+
+// claudeCodeProjectFolder spells Claude Code's own transcript-folder rule:
+// every byte outside [A-Za-z0-9] becomes '-'.
+func claudeCodeProjectFolder(cwd string) string {
+	folder := []byte(filepath.Clean(cwd))
+	for index, value := range folder {
+		if (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z') || (value >= '0' && value <= '9') {
+			continue
+		}
+		folder[index] = '-'
+	}
+	return string(folder)
+}
+
+func TestDiscoveryFindsTranscriptsOfACheckoutWhosePathHasDotUnderscoreAndSpace(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "seat.dir_with space")
+	mustSpendTest(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
+	home := t.TempDir()
+	folder := claudeCodeProjectFolder(root)
+	if strings.ContainsAny(folder, "._ ") {
+		t.Fatalf("test encoding left a separator in %q", folder)
+	}
+	writeSeatTranscript(t, filepath.Join(home, ".claude", "projects", folder, "seat.jsonl"), "seat", root, "request", 1, 2)
+	discovered := discoverClaudeTranscriptsUnder(root, func() (string, error) { return home, nil })
+	if discovered.fatal || len(discovered.files) != 1 || discovered.files[0].session != "seat" {
+		t.Fatalf("discovery under %q missed the Claude Code transcript folder %q: %+v", root, folder, discovered.files)
 	}
 }

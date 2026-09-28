@@ -22,7 +22,22 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
+
+// WriteFile renders value with RenderValue and publishes it at path through
+// the durable-write owner (atomicfile.WriteText) with the empty anchor: only
+// the target's own directory is synced and the durability outcome is
+// dropped, the contract adapter's and host's artifact writers keep.
+func WriteFile(path string, value any) error {
+	encoded, err := RenderValue(value)
+	if err != nil {
+		return err
+	}
+	_, err = atomicfile.WriteText(path, string(encoded), "")
+	return err
+}
 
 // Doc is the lossless envelope: the raw decoded document plus nothing else.
 // Family packages wrap it with their typed projections; Doc itself never

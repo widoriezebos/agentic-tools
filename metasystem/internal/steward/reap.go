@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -69,11 +70,7 @@ func ReapContinuations(repoRoot string) ([]ReapReport, error) {
 			return reports, err
 		}
 		path := filepath.Join(consumedDir(repoRoot), it.Nonce+".json")
-		tmp := path + ".tmp"
-		if err := os.WriteFile(tmp, data, 0o644); err != nil {
-			return reports, err
-		}
-		if err := os.Rename(tmp, path); err != nil {
+		if _, err := atomicfile.WriteFile(path, data, 0o644, ""); err != nil {
 			return reports, err
 		}
 		reports = append(reports, ReapReport{Nonce: it.Nonce, JobId: it.JobId, Outcome: outcome})
@@ -170,11 +167,8 @@ func closeContinuationChain(repoRoot, jobId string) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	_, err = atomicfile.WriteFile(path, out, 0o644, "")
+	return err
 }
 
 // continuationOutcome decides whether one continuation's story ended

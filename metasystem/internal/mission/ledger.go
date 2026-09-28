@@ -21,7 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"golang.org/x/sys/unix"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // Classifications are the verdicts a cycle may carry.
@@ -512,30 +512,18 @@ func oneLine(value, label string) (string, error) {
 	return value, nil
 }
 
-type fileLock struct{ f *os.File }
+type fileLock struct{ held *lock.FileLock }
 
+// lockFile takes the exclusive lock on file's sibling ".lock".
 func lockFile(file string) (*fileLock, error) {
-	lockPath := file + ".lock"
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
-		return nil, err
-	}
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
-		f.Close()
-		return nil, err
-	}
-	return &fileLock{f: f}, nil
+	return lockFileAt(file + ".lock")
 }
 
 func (l *fileLock) release() {
-	if l == nil || l.f == nil {
+	if l == nil {
 		return
 	}
-	_ = unix.Flock(int(l.f.Fd()), unix.LOCK_UN)
-	_ = l.f.Close()
+	_ = l.held.Release()
 }
 
 func atomicWriteText(path, text string) error {

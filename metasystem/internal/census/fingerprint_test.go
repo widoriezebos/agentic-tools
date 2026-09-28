@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -59,7 +60,7 @@ func TestEveryRegistrySignatureIsWellFormed(t *testing.T) {
 // canonicalJSON emits compact, key-sorted JSON with no HTML escaping and no
 // trailing newline.
 func TestCanonicalJSON(t *testing.T) {
-	got, err := canonicalJSON(map[string]any{"b": "x<y>&z", "a": 1})
+	got, err := config.CanonicalConfigJSON(map[string]any{"b": "x<y>&z", "a": 1})
 	if err != nil {
 		t.Fatal(err)
 	}

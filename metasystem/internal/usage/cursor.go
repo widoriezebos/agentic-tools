@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"golang.org/x/sys/unix"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 const maxCallLineBytes = 32 * 1024 * 1024
@@ -54,17 +54,17 @@ var writeCallCursor = atomicWriteJSON
 
 func readUnderCursor(stateRoot, runtime, session, path string, parse lineParser, opts ReadOptions) (Reading, error) {
 	lockPath := CursorPath(stateRoot, runtime, session) + ".lock"
-	var lock *os.File
+	var held *lock.FileLock
 	var err error
 	if opts.NonBlocking {
-		lock, err = tryLockCallFile(lockPath)
+		held, err = tryLockCallFile(lockPath)
 	} else {
-		lock, err = lockCallFile(lockPath)
+		held, err = lockCallFile(lockPath)
 	}
 	if err != nil {
 		return Reading{}, err
 	}
-	defer unlockCallFile(lock)
+	defer unlockCallFile(held)
 
 	cursorPath := CursorPath(stateRoot, runtime, session)
 	if opts.MaxBytes > 0 || !opts.Deadline.IsZero() {
@@ -438,21 +438,21 @@ func registerSession(stateRoot, runtime, session string, pid, pidStartedAt int64
 func registerSessionUnderMaintenance(stateRoot, runtime, session string, pid, pidStartedAt int64, nonBlocking bool) error {
 	path := filepath.Join(stateRoot, "artifacts", "agents", "context", "sessions.jsonl")
 	lockPath := path + ".lock"
-	var lock *os.File
+	var held *lock.FileLock
 	var err error
 	if nonBlocking {
-		lock, err = tryLockCallFile(lockPath)
+		held, err = tryLockCallFile(lockPath)
 		var busy *CursorBusyError
 		if errors.As(err, &busy) {
 			return &SessionRegistryBusyError{Path: busy.Path}
 		}
 	} else {
-		lock, err = lockCallFile(lockPath)
+		held, err = lockCallFile(lockPath)
 	}
 	if err != nil {
 		return err
 	}
-	defer unlockCallFile(lock)
+	defer unlockCallFile(held)
 
 	needsSeparator := false
 	observeCallOpen(path)
@@ -730,36 +730,31 @@ func withoutSidechainCount(source string) string {
 	return source[:position]
 }
 
-func lockCallFile(path string) (*os.File, error) {
-	return lockCallFileWithFlags(path, unix.LOCK_EX)
+func lockCallFile(path string) (*lock.FileLock, error) {
+	return lockCallFileWithMode(path, lock.Exclusive)
 }
 
-func tryLockCallFile(path string) (*os.File, error) {
-	return lockCallFileWithFlags(path, unix.LOCK_EX|unix.LOCK_NB)
+func tryLockCallFile(path string) (*lock.FileLock, error) {
+	return lockCallFileWithMode(path, lock.TryExclusive)
 }
 
-func lockCallFileWithFlags(path string, flags int) (*os.File, error) {
+func lockCallFileWithMode(path string, mode lock.Mode) (*lock.FileLock, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
 	observeCallOpen(path)
-	lock, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	held, err := lock.File(path, 0o644, mode)
 	if err != nil {
-		return nil, err
-	}
-	if err := unix.Flock(int(lock.Fd()), flags); err != nil {
-		lock.Close()
-		if flags&unix.LOCK_NB != 0 && (errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN)) {
+		if mode == lock.TryExclusive && lock.Busy(err) {
 			return nil, &CursorBusyError{Path: path}
 		}
 		return nil, err
 	}
-	return lock, nil
+	return held, nil
 }
 
-func unlockCallFile(lock *os.File) {
-	_ = unix.Flock(int(lock.Fd()), unix.LOCK_UN)
-	_ = lock.Close()
+func unlockCallFile(held *lock.FileLock) {
+	_ = held.Release()
 }
 
 type observedCallReader struct {

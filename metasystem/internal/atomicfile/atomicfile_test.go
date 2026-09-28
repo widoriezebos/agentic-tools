@@ -258,3 +258,59 @@ func TestChainNonAncestorAnchor(t *testing.T) {
 		t.Fatalf("self anchor: %v", got)
 	}
 }
+
+// WriteFile publishes bytes with the mode the caller names, set on the
+// temporary before the rename, so the file never appears with CreateTemp's
+// 0600.
+func TestWriteFilePublishesWithTheNamedMode(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for _, mode := range []os.FileMode{0o644, 0o600, 0o755} {
+		path := filepath.Join(root, "file-"+mode.String())
+		if durable, err := WriteFile(path, []byte("body\n"), mode, root); err != nil || !durable {
+			t.Fatalf("mode %v: durable=%v err=%v", mode, durable, err)
+		}
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm() != mode {
+			t.Fatalf("mode %v: got %v, %v", mode, info.Mode().Perm(), err)
+		}
+		if data, _ := os.ReadFile(path); string(data) != "body\n" {
+			t.Fatalf("mode %v: got %q", mode, data)
+		}
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(root, "*.tmp")); len(leftovers) != 0 {
+		t.Fatalf("temporaries left behind: %v", leftovers)
+	}
+}
+
+// WriteVolatileFile is WriteVolatile for bytes with the named mode.
+func TestWriteVolatileFilePublishesWithTheNamedMode(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, "nested", "script.sh")
+	if err := WriteVolatileFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o755 {
+		t.Fatalf("got %v, %v", info, err)
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(root, "nested", "*.tmp")); len(leftovers) != 0 {
+		t.Fatalf("temporaries left behind: %v", leftovers)
+	}
+}
+
+// A writer under a checkout's artifacts/ tree anchors at the checkout root
+// above it; transient paths anchor nowhere.
+func TestAnchorForArtifacts(t *testing.T) {
+	t.Parallel()
+	if got := AnchorForArtifacts("/repo/x/artifacts/agents/jobs/j.json"); got != "/repo/x" {
+		t.Fatalf("anchor = %q, want /repo/x", got)
+	}
+	if got := AnchorForArtifacts("/tmp/staging/file.json"); got != "" {
+		t.Fatalf("non-artifacts path must not anchor: %q", got)
+	}
+	if got := AnchorForArtifacts("/a/artifacts/agents/x/artifacts/agents/jobs/j.json"); got != "/a/artifacts/agents/x" {
+		t.Fatalf("nested artifacts anchors at the DEEPEST checkout: %q", got)
+	}
+}

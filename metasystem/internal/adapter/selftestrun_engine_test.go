@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -50,7 +51,7 @@ func TestSelftestRunUsesTheEngineAndPassesExtraEnv(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "engine.log")
 	engine := filepath.Join(t.TempDir(), "recording-engine")
 	script := "#!/usr/bin/env bash\nprintf '%s %s %s\\n' \"$3\" \"${SELFTEST_EXTRA:-missing}\" \"${METASYSTEM_DELEGATE_SELFTEST_INTERNAL:-0}\" >>" +
-		shellQuote(log) + "\nexec " + shellQuote(filepath.Join(root, "bin", "metasystem")) + " \"$@\"\n"
+		shellquote.Word(log) + "\nexec " + shellquote.Word(filepath.Join(root, "bin", "metasystem")) + " \"$@\"\n"
 	if err := testexec.WriteFile(engine, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

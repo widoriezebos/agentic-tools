@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 func claudeTranscript(opts ReadOptions, session string) (path string, reason string) {
@@ -24,10 +26,10 @@ func claudeTranscript(opts ReadOptions, session string) (path string, reason str
 		if cwd == "" {
 			continue
 		}
-		directory := filepath.Join(home, ".claude", "projects", claudeSlug(cwd))
+		directory := filepath.Join(ClaudeProjectsRoot(home), ClaudeProjectFolder(cwd))
 		candidate := filepath.Join(directory, session+".jsonl")
 		candidates = append(candidates, candidate)
-		if !pathWithin(directory, candidate) {
+		if !realpath.Within(candidate, directory) {
 			continue
 		}
 		info, err := os.Lstat(candidate)
@@ -51,15 +53,15 @@ func MemoryDirectory(opts ReadOptions) (path string, reason string) {
 	if reason != "" {
 		return "", reason
 	}
-	projects := filepath.Join(home, ".claude", "projects")
+	projects := ClaudeProjectsRoot(home)
 	var candidates []string
 	for _, cwd := range []string{opts.Toplevel, opts.Installation} {
 		if cwd == "" {
 			continue
 		}
-		candidate := filepath.Join(projects, claudeSlug(cwd), "memory")
+		candidate := filepath.Join(projects, ClaudeProjectFolder(cwd), "memory")
 		candidates = append(candidates, candidate)
-		if !pathWithin(projects, candidate) {
+		if !realpath.Within(candidate, projects) {
 			continue
 		}
 		info, err := os.Lstat(candidate)
@@ -70,7 +72,16 @@ func MemoryDirectory(opts ReadOptions) (path string, reason string) {
 	return "", fmt.Sprintf("unknown (no memory directory at %s)", strings.Join(candidates, " or "))
 }
 
-func claudeSlug(cwd string) string {
+// ClaudeProjectsRoot is the directory under a home directory where Claude Code
+// keeps one folder per working directory (see ClaudeProjectFolder).
+func ClaudeProjectsRoot(home string) string {
+	return filepath.Join(home, ".claude", "projects")
+}
+
+// ClaudeProjectFolder names the folder under ~/.claude/projects where Claude
+// Code keeps a working directory's transcripts and memory: every byte outside
+// [A-Za-z0-9] becomes '-'. It is the one owner of that encoding.
+func ClaudeProjectFolder(cwd string) string {
 	bytes := []byte(cwd)
 	for index, value := range bytes {
 		if (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z') || (value >= '0' && value <= '9') {
@@ -146,11 +157,6 @@ func parseClaudeLine(line []byte, ordinal int64, runtime, session string) (sampl
 		Ordinal:       ordinal,
 		Source:        "claude-transcript",
 	}, nil, false
-}
-
-func pathWithin(directory, candidate string) bool {
-	relative, err := filepath.Rel(directory, candidate)
-	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func callTimestamp(raw any) time.Time {

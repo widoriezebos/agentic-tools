@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"golang.org/x/sys/unix"
 )
 
 type Entry struct {
@@ -118,7 +118,7 @@ func lockPathWithLayoutReader(repoRoot string, resolveLayout func(string) (state
 	return filepath.Join(digestRootWithLayoutReader(repoRoot, resolveLayout), stateDirectory(stateroot.Steward), "narrator-digest.flock")
 }
 
-type digestLock struct{ file *os.File }
+type digestLock struct{ held *lock.FileLock }
 
 func acquire(repoRoot string) (*digestLock, error) {
 	return acquireWithLayoutReader(repoRoot, stateroot.ResolveLayout)
@@ -128,26 +128,15 @@ func acquireWithLayoutReader(repoRoot string, resolveLayout func(string) (stater
 	if err := os.MkdirAll(filepath.Dir(lockPathWithLayoutReader(repoRoot, resolveLayout)), 0o755); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(lockPathWithLayoutReader(repoRoot, resolveLayout), os.O_CREATE|os.O_RDWR, 0o644)
+	held, err := lock.File(lockPathWithLayoutReader(repoRoot, resolveLayout), 0o644, lock.Exclusive)
 	if err != nil {
 		return nil, err
 	}
-	for {
-		err = unix.Flock(int(file.Fd()), unix.LOCK_EX)
-		if err != unix.EINTR {
-			break
-		}
-	}
-	if err != nil {
-		file.Close()
-		return nil, err
-	}
-	return &digestLock{file: file}, nil
+	return &digestLock{held: held}, nil
 }
 
 func (l *digestLock) release() {
-	_ = unix.Flock(int(l.file.Fd()), unix.LOCK_UN)
-	_ = l.file.Close()
+	_ = l.held.Release()
 }
 
 func flatten(value string) string {
