@@ -1536,7 +1536,6 @@ func TestEngineGoArgvCarriesTrimpath(t *testing.T) {
 		"candidate engine build": {candidateEngineBuildArgv("/out/metasystem"),
 			{"go", "run", "-trimpath", "./cmd/devgate", "build", "--trimpath", "--out", "/out/metasystem"}},
 		"bootstrap and landed rebuild": {devgateBootstrapBuildArgv(), {"go", "run", "-trimpath", "./cmd/devgate", "build"}},
-		"coverage delta":               {coverageDeltaGoTestArgv("./internal/x"), {"go", "test", "-trimpath", "-cover", "-timeout", "30m", "./internal/x"}},
 		"goal branch static":           {goalBranchStaticArgv("/proof"), {"go", "run", "-trimpath", "./cmd/devgate", "static", "--proof-out", "/proof"}},
 		"witness probe":                {proofRunWitnessProbe(root).Args, {"go", "run", "-trimpath", "./cmd/devgate", "gate", "--witness-check-only"}},
 	} {

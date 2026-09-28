@@ -201,6 +201,7 @@ func families() []family {
 			summary: "small utilities for shell callers",
 			verbs: []verb{
 				{"sha256", "print the hex sha-256 of --file or stdin", runUtilSHA256},
+				{"engine-stamp", "print the build stamp read from an engine file's bytes; exit 1 when it has none", runUtilEngineStamp},
 				{"now-ns", "print the current wall-clock time in nanoseconds", runUtilNowNs},
 				{"hold", "stay alive carrying --tag until SIGTERM, then write the stopped file", runUtilHold},
 			},
