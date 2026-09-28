@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -31,7 +32,7 @@ func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error
 	evidenceResolved := resolvePath(evidence)
 	checkoutResolved := resolvePath(checkout)
 	if pathWithin(evidenceResolved, checkoutResolved) {
-		return fmt.Errorf("evidence.root is inside the repository")
+		return fmt.Errorf("%s is inside the repository", config.EvidenceRootKey)
 	}
 	agents := filepath.Join(repoRoot, "artifacts", "agents")
 	recordPath := filepath.Join(agents, "jobs", job+".json")

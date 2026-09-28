@@ -40,6 +40,9 @@ type Config struct {
 	// Engine is the engine binary path, named in texts and handed to the
 	// launched adapters as METASYSTEM_BIN; empty is Root/bin/metasystem.
 	Engine string
+	// LookupEnv answers the environment the evidence root resolves under
+	// (its variable and HOME); nil is os.LookupEnv.
+	LookupEnv func(string) (string, bool)
 }
 
 // Lifecycle is the composed delegate lifecycle. It owns no decision of its
@@ -50,6 +53,7 @@ type Lifecycle struct {
 	root      string
 	repoScope string
 	engine    string
+	lookupEnv func(string) (string, bool)
 }
 
 // New composes a lifecycle over a complete port set.
@@ -71,7 +75,7 @@ func New(config Config, ports Ports) (*Lifecycle, error) {
 	if engine == "" {
 		engine = filepath.Join(root, "bin", "metasystem")
 	}
-	l := &Lifecycle{ports: ports, root: root, repoScope: config.RepoScope, engine: engine}
+	l := &Lifecycle{ports: ports, root: root, repoScope: config.RepoScope, engine: engine, lookupEnv: config.LookupEnv}
 	if l.repoScope == "" {
 		out, _, gitErr := ports.Git.Run(context.Background(), root, "rev-parse", "--show-toplevel")
 		if gitErr != nil {

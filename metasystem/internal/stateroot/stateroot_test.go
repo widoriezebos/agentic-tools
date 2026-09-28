@@ -113,13 +113,6 @@ func TestStateRootResolvesEveryKindInTemplateAndAdoptedModes(t *testing.T) {
 					t.Errorf("StateRoot(%q) = %q, %v; want %q", test.kind, got, err, filepath.Join(base, filepath.FromSlash(test.rel)))
 				}
 			}
-			if !template {
-				top.expect(installation, app, nil)
-			}
-			got, err := resolver.StateRoot(Evidence)
-			if err != nil || got != filepath.Join(app, "durable") {
-				t.Errorf("StateRoot(%q) = %q, %v; want configured durable root", Evidence, got, err)
-			}
 		})
 	}
 }
@@ -295,16 +288,12 @@ func TestRepositoryTopBuildsCommandAndScrubsEverySteeringVariable(t *testing.T) 
 	}
 }
 
-func TestEvidenceRootMustBeConfiguredAndAbsolute(t *testing.T) {
+// The evidence root is not a state root: its one owner is
+// config.ResolveEvidenceRoot, so the kind is unknown here.
+func TestEvidenceIsNotAStateRootKind(t *testing.T) {
 	t.Parallel()
-	installation, app := installFixture(t, false)
-	resolver, top := resolverFixture(t, installation)
-	if err := os.WriteFile(filepath.Join(app, "metasystem.conf"), []byte("evidence.root=relative\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	top.expect(installation, app, nil)
-	if _, err := resolver.StateRoot(Evidence); err == nil {
-		t.Fatal("a relative durable evidence root must refuse")
+	if _, err := RelativeRoot(Kind("evidence")); err == nil || !strings.Contains(err.Error(), "unknown kind") {
+		t.Fatalf("RelativeRoot(evidence) = %v; want unknown kind", err)
 	}
 }
 
