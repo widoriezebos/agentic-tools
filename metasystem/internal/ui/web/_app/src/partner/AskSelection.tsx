@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { usePartner } from "./store";
 import type { Chosen } from "./subject";
+import { selectionPress } from "../review/room";
 
 /**
  * Selected text is a subject.
@@ -35,18 +36,18 @@ type Standing = {
   x: number;
   y: number;
   /**
-   * Where a finding made of this selection is anchored, on the review room's
-   * desk, or "" anywhere else (g1-s65 D7): the file and the lines the selection
+   * Where a card made of this selection is anchored, on a room's desk, or ""
+   * anywhere else (g1-s65 D7, g1-s67 D4): the file and the lines the selection
    * covers, or the record and its section.
    */
   finding: string;
 };
 
-/** The surface a review room's desk marks itself with. */
+/** The surface a room's desk marks itself with. */
 const DESK = "desk";
 
 export function AskSelection() {
-  const { askPassage, startFinding } = usePartner();
+  const { askPassage, startCard, sitting } = usePartner();
   const [standing, setStanding] = useState<Standing | null>(null);
 
   useEffect(() => {
@@ -96,9 +97,11 @@ export function AskSelection() {
   if (!desk) {
     return ask;
   }
-  // On the review room's desk, selected lines offer a Finding beside Ask: a card
-  // with the anchor filled and the words left for the human's own (g1-s65 D7).
-  // Remark comes with the board, in the next slice.
+  // On a room's desk, selected lines offer a card beside Ask with the anchor
+  // filled and the words left for the human's own: a review's Finding (g1-s65
+  // D7) and a shaping sitting's Fact (g1-s67 D4). Remark comes with the board,
+  // in the next slice.
+  const press = selectionPress(sitting?.purpose ?? "review");
   return (
     <div
       className="ms-ask-selection ms-ask-selection--desk"
@@ -117,11 +120,11 @@ export function AskSelection() {
           event.preventDefault();
         }}
         onClick={() => {
-          startFinding(standing.finding);
+          startCard(standing.finding, press.kind);
           setStanding(null);
         }}
       >
-        Finding
+        {press.label}
       </button>
     </div>
   );

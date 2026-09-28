@@ -129,19 +129,22 @@ import { useSession } from "../shell/identity";
 import { editDocument, isStale, loadDocument } from "../project/api";
 import { captured } from "../stickies/stickies";
 import { useStickies } from "../stickies/store";
-import { reviewIdFromPath } from "../routes";
-import { readDrawerSitting, writeDrawerSitting } from "../storage";
+import { roomIdFromPath } from "../routes";
 import {
   answerLine,
   EMPTY_DESK,
+  localDeposit,
   outcomeShape,
   retipped,
+  keepAfterSilence,
   keepDue,
+  RoomKeeper,
   onDesk,
   roomOf,
   withDraft,
   withoutDraft,
   type AnswerKind,
+  type Desk,
   type DeskItem,
   type Draft,
   type Drafts,
@@ -368,15 +371,11 @@ type Partner = {
   returnFocus: () => void;
 
   /**
-   * Which conversation is on screen (g1-s65 D16): a review room's record, a
-   * sitting the drawer is showing, or "" for the human's own. Every request and
-   * every beat is about this one.
+   * Which conversation is on screen (g1-s65 D16, g1-s67 D1): the room's record
+   * where the address is a room, or "" for the human's own, which is the one the
+   * drawer shows. Every request and every beat is about this one.
    */
   conversation: string;
-  /** Show one sitting's conversation in the drawer: a door to a sitting that shapes a record. */
-  showSitting: (record: string) => void;
-  /** Leave the sitting's conversation the drawer shows, and go back to your own. */
-  leaveSitting: () => void;
   /**
    * The review room's working state (g1-s65 D9): the desk's strip and the item
    * up, the face of the desk pane, and every unfinished card's words. It is kept
@@ -386,6 +385,8 @@ type Partner = {
   room: RoomState;
   /** Put one thing on the desk, which is what an anchor, the strip and a walk do. */
   putOnDesk: (item: DeskItem) => void;
+  /** Lay a whole desk down: a shaping room's first, its record's sections (g1-s67 D2). */
+  openDesk: (desk: Desk) => void;
   /** Bring one item of the strip back up. */
   showOnDesk: (at: number) => void;
   /** Flip the desk pane to the board or back. */
@@ -393,14 +394,18 @@ type Partner = {
   /** Keep the room now, whatever the second says: leaving a field, stepping out, leaving the page. */
   /** Keep the room on its mark; answers whether the keep landed. */
   keepRoomNow: (leaving?: boolean) => Promise<boolean>;
-  /** One of the five walks, asked by the interface in the human's name (D6). */
+  /** One of the room's walks, asked by the interface in the human's name (D6, g1-s67 D3). */
   walk: (part: string) => Promise<void>;
   /** The turn whose presenting the human stopped, or "". */
   stoppedPresenting: string;
   /** Stop the running walk putting things on the desk, for this turn. */
   stopPresenting: () => void;
-  /** A finding card the human makes from a selection on the desk, with its anchor filled (D7). */
-  startFinding: (anchor: string) => void;
+  /**
+   * A card the human makes from a selection on the desk, with its anchor filled
+   * and the words left empty: a review's finding (D7), a shaping sitting's fact
+   * (g1-s67 D4).
+   */
+  startCard: (anchor: string, kind: string) => void;
   /**
    * Answer one recorded finding: its Answer line rewritten by its mark through
    * the recorder (D8). It answers "" when the record took it, and the refusal
@@ -622,17 +627,16 @@ const nothing: Partner = {
   wanted: 0,
   returnFocus: () => {},
   conversation: "",
-  showSitting: () => {},
-  leaveSitting: () => {},
   room: { desk: EMPTY_DESK, face: "desk", drafts: {} },
   putOnDesk: () => {},
+  openDesk: () => {},
   showOnDesk: () => {},
   setFace: () => {},
   keepRoomNow: async () => true,
   walk: async () => {},
   stoppedPresenting: "",
   stopPresenting: () => {},
-  startFinding: () => {},
+  startCard: () => {},
   answerFinding: async () => "",
   accepting: {},
   noteAccepting: () => {},
@@ -781,7 +785,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const [accepting, setAccepting] = useState<Readonly<Record<string, string>>>({});
   const [stoppedPresenting, setStoppedPresenting] = useState("");
   const roomTaken = useRef("");
-  const lastKept = useRef("");
+  const [keeper] = useState(() => new RoomKeeper(keepRoom));
   const keptAt = useRef(0);
   // The sitting's one current reading of its record: source and revision, taken
   // when the sitting starts and replaced by the answer of every successful
@@ -844,12 +848,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // the reading above, which the recorder hands back after every write.
   const recording = useRef<Recorder | null>(null);
   const location = useLocation();
-  // Which conversation is on screen (g1-s65 D16): the room's own where the
-  // address is a room, else the sitting the drawer was left showing, else the
-  // human's own. It is read here, once, and every request below names it.
-  const roomRecord = reviewIdFromPath(location.pathname);
-  const [drawerSitting, setDrawerSitting] = useState(() => readDrawerSitting());
-  const where = roomRecord !== "" ? roomRecord : drawerSitting;
+  // Which conversation is on screen (g1-s65 D16, g1-s67 D1): the room's own
+  // where the address is a room, else the human's own, which is the drawer's.
+  // The drawer never shows a sitting. It is read here, once, and every request
+  // below names it.
+  const roomRecord = roomIdFromPath(location.pathname);
+  const where = roomRecord;
   const whereNow = useRef(where);
   whereNow.current = where;
   const { askToSignIn } = useSession();
@@ -1391,13 +1395,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       try {
         const answered = await startSitting({ ...asked, about: capture });
         const opened = answered.conversation ?? "";
-        // A sitting is a conversation of its own (g1-s65 D16). A review opens
-        // in its room, which its caller goes to; a sitting that shapes a record
-        // is shown in the drawer from here until it ends or is left.
-        if (asked.purpose !== "review") {
-          writeDrawerSitting(opened);
-          setDrawerSitting(opened);
-        }
+        // A sitting is a conversation of its own (g1-s65 D16), and every
+        // sitting opens in its room, which its caller goes to (g1-s67 D1).
         if (opened === whereNow.current) {
           setStore((held) => loaded(held, answered));
         }
@@ -1442,19 +1441,13 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     try {
       const answered = await endSitting(where);
       setStore((held) => loaded(held, answered));
-      // The drawer goes back to the human's own conversation once the sitting it
-      // was showing has ended: what was recorded is in the record.
-      if (roomRecord === "" && where !== "") {
-        writeDrawerSitting("");
-        setDrawerSitting("");
-      }
     } catch (error: unknown) {
       setSittingRefusal(reasonOf(error));
       throw error;
     } finally {
       setSittingBusy(false);
     }
-  }, [where, roomRecord]);
+  }, [where]);
 
   const endWithout = useCallback(async () => {
     await end();
@@ -1480,14 +1473,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       subjectID,
       recorded,
     );
-    // The findings the human made from a selection on the desk (g1-s65 D7).
-    // They are cards like any other — Record it, Dismiss, the four answers —
+    // The cards the human made from a selection on the desk: a review's
+    // findings (g1-s65 D7) and a shaping sitting's facts (g1-s67 D4). They are
+    // cards like any other — Record it, Dismiss, a finding's four answers —
     // and until one is recorded it lives in the room's drafts and nowhere else.
     const mine = Object.entries(locals).map(([id, local]) => {
-      const deposit: Deposit = {
-        kind: "finding", text: local.text, anchor: local.clause, consequence: local.consequence ?? "",
-        offered: true, subject: sitting?.subject,
-      };
+      const deposit: Deposit = localDeposit(local, sitting?.subject);
       const entry = recorded.get(id);
       const held = depositMarks[id] ?? { ...marked(deposit), text: local.text, clause: local.clause };
       const mark = entry === undefined
@@ -1664,17 +1655,6 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
 
   /* --------------------------------------------------------------- the room -- */
 
-  /** Show one sitting's conversation in the drawer: a door to a sitting that shapes a record. */
-  const showSitting = useCallback((record: string) => {
-    writeDrawerSitting(record);
-    setDrawerSitting(record);
-  }, []);
-
-  const leaveSitting = useCallback(() => {
-    writeDrawerSitting("");
-    setDrawerSitting("");
-  }, []);
-
   /**
    * The room as the mark carried it back, taken once per visit to a
    * conversation: a reread on reconnect answers what this page last kept, and
@@ -1704,11 +1684,15 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     setLocals(mine);
     setDepositMarks((held) => ({ ...marks, ...held }));
     setAccepting(reasons);
-    lastKept.current = JSON.stringify(kept);
-  }, []);
+    keeper.open(asked, kept, snapshot.sitting?.room?.seq ?? 0);
+  }, [keeper]);
 
   const putOnDesk = useCallback((item: DeskItem) => {
     setDesk((held) => onDesk(held, item));
+  }, []);
+
+  const openDesk = useCallback((laid: Desk) => {
+    setDesk(laid);
   }, []);
 
   const showOnDesk = useCallback((at: number) => {
@@ -1772,39 +1756,21 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
 
   /**
    * Keep the room on its mark (g1-s65 D9). While a human types it is kept at
-   * most once a second; the last words before they leave are kept by the
-   * leaving itself — the field's blur, Step out, and the page going away — so
-   * the keystroke before leaving is never the one that is lost. This build sets
-   * no timer, so the second is measured between changes rather than waited out.
+   * most once a second, and a second after the last keystroke the words typed
+   * last are kept, so words typed just before the typing stops are kept without
+   * a blur; the leaving keeps them as well — the field's blur, Step out, and the
+   * page going away — so the keystroke before leaving is never the one that is
+   * lost. The keeper sends them in order, so older words never land last.
    */
   const keepRoomNow = useCallback(async (leaving = false): Promise<boolean> => {
     const record = whereNow.current;
-    const kept = JSON.stringify(roomNow.current);
-    if (record === "" || roomRecord === "" || sittingNow.current === null) {
+    if (record === "" || roomRecord === "" || roomTaken.current !== record || sittingNow.current === null) {
       return true;
     }
-    // These very words are being kept, or were: the answer is that keep's.
-    if (kept === lastKept.current) {
-      return keeping.current;
-    }
-    lastKept.current = kept;
     keptAt.current = Date.now();
-    const landed = keepRoom(record, JSON.parse(kept) as RoomState, leaving).then(
-      () => true,
-      () => {
-        // The next change keeps it again, and Step out stays in the room and
-        // says so: a keep that could not be made is words still on the screen.
-        if (lastKept.current === kept) {
-          lastKept.current = "";
-        }
-        return false;
-      },
-    );
-    keeping.current = landed;
-    return landed;
-  }, [roomRecord]);
+    return keeper.keep(() => roomNow.current, leaving);
+  }, [roomRecord, keeper]);
 
-  const keeping = useRef<Promise<boolean>>(Promise.resolve(true));
   const roomNow = useRef<RoomState>(room);
   roomNow.current = room;
   const sittingNow = useRef<Sitting | null>(null);
@@ -1816,6 +1782,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     if (keepDue(keptAt.current, Date.now())) {
       void keepRoomNow();
     }
+    return keepAfterSilence(() => {
+      void keepRoomNow();
+    });
   }, [room, roomRecord, keepRoomNow]);
 
   // The page going away keeps the room, asked of the browser to finish after
@@ -1847,9 +1816,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     setStoppedPresenting(store.live.turn);
   }, [store.live.turn]);
 
-  const startFinding = useCallback((anchor: string) => {
+  const startCard = useCallback((anchor: string, kind: string) => {
     const id = `${LOCAL}${mintLocal()}`;
-    setLocals((held) => ({ ...held, [id]: { text: "", clause: anchor, kind: "finding" } }));
+    setLocals((held) => ({ ...held, [id]: { text: "", clause: anchor, kind } }));
   }, []);
 
   const reviewNewTip = useCallback(async (current: string): Promise<string> => {
@@ -2247,8 +2216,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert,
       wanted, returnFocus,
-      conversation: where, showSitting, leaveSitting, room, putOnDesk, showOnDesk, setFace, keepRoomNow, walk,
-      stoppedPresenting, stopPresenting, startFinding, answerFinding, accepting, noteAccepting, drafts,
+      conversation: where, room, putOnDesk, openDesk, showOnDesk, setFace, keepRoomNow, walk,
+      stoppedPresenting, stopPresenting, startCard, answerFinding, accepting, noteAccepting, drafts,
       reviewNewTip,
       sitting, startSitting: begin, closeSitting: close, endSitting: end,
       endWithoutRecording: endWithout, sittingEnded, sittingRefusal, sittingBusy,
@@ -2265,8 +2234,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       offered, use, useAndSave, undo, dismiss, reopen, show, showing, clearShowing, noteField, revealed,
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus,
-      where, showSitting, leaveSitting, room, putOnDesk, showOnDesk, setFace, keepRoomNow, walk,
-      stoppedPresenting, stopPresenting, startFinding, answerFinding, accepting, noteAccepting, drafts,
+      where, room, putOnDesk, openDesk, showOnDesk, setFace, keepRoomNow, walk,
+      stoppedPresenting, stopPresenting, startCard, answerFinding, accepting, noteAccepting, drafts,
       reviewNewTip,
       sitting, begin, close, end, endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,

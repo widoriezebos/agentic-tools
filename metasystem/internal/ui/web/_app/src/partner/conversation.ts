@@ -169,6 +169,12 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
   // beat that has already been sent.
   const running =
     snapshot.busy && !messages.some((message) => message.turn === snapshot.turn && message.role === "partner");
+  // An act's answer is a snapshot taken when its turn was admitted, and the
+  // turn's first beats can reach this page on the stream before it does. A
+  // running turn the beats have already carried further than the snapshot is
+  // kept as they left it: a joined beat is never sent again, so replacing it
+  // with the older snapshot would lose it until a reload (g1-s67 walkthrough).
+  const ahead = running && store.live.turn === snapshot.turn && store.live.seq > snapshot.partialSeq;
   return {
     ...store,
     state: "ready",
@@ -179,7 +185,9 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
     messages,
     index: snapshot.index ?? { goals: [], records: [] },
     sitting: snapshot.sitting,
-    live: running
+    live: ahead
+      ? store.live
+      : running
       ? {
           turn: snapshot.turn,
           seq: snapshot.partialSeq,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -30,13 +31,22 @@ const DepositOutcome = "outcome"
 const noFindingHere = "a finding is offered in a review sitting, and this sitting shapes a record; " +
 	"say it as a fact or an open question instead"
 
-// Walks are the five parts of the narrator's report, in the order the room
-// shows their presses (D6).
-var Walks = []string{"asked", "built", "examined", "proven", "behaves"}
+// Walks are the fixed requests a room offers under its conversation, by the
+// sitting's purpose, in the order the room shows their presses (g1-s67 D3): a
+// review keeps the five parts of the narrator's report (g1-s65 D6), and a
+// sitting that shapes a record has four of its own.
+var Walks = map[string][]string{
+	PurposeReview:      {"asked", "built", "examined", "proven", "behaves"},
+	PurposeShapeDesign: shapingWalks,
+	PurposeShapeIntent: shapingWalks,
+}
+
+var shapingWalks = []string{"records", "today", "cases", "open"}
 
 // walkNames are what each part is called where a human reads it.
 var walkNames = map[string]string{
 	"asked": "Asked", "built": "Built", "examined": "Examined", "proven": "Proven", "behaves": "Behaves",
+	"records": "Records", "today": "Today", "cases": "Cases", "open": "Open",
 }
 
 // walkAbout is what each walk asks the Partner to walk the human through.
@@ -46,6 +56,25 @@ var walkAbout = map[string]string{
 	"examined": "how it was examined: the reviews and critiques recorded against it, what each found and what was done about it",
 	"proven":   "how it was proven: the tests and the proof recorded for it, what each one holds, and what they all assume",
 	"behaves":  "how it behaves: what a person using it would see, and the evidence recorded of it running",
+	"records": "what the records already hold that touches this subject: the standing rulings, the recorded " +
+		"decisions, the open questions, and the intent and design records that name it",
+	"today": "what the application does today where this subject touches it",
+	"cases": "the cases at the edge of this subject: the awkward instances a rule here has to survive",
+	"open":  "what this sitting has not settled yet, and what would settle each of it",
+}
+
+// shapingHow is what each shaping walk asks beyond its subject: where its
+// answer is read from, and what it offers the human to record.
+var shapingHow = map[string]string{
+	"records": "Anchor every claim in the record and the section it is written in, and offer what you find " +
+		"with the deposit tool as facts, decisions and open questions.",
+	"today": "Answer from the code: read the checkout as it stands with your own reads — the files as they are " +
+		"now, uncommitted edits included — and name each place as path:lines, the file and its lines, which " +
+		"are the lines the desk reads. Put each file on the desk with the present tool as you come to it.",
+	"cases": "Offer each case with the deposit tool as a case, with the clause it would become and the " +
+		"consequence of leaving it open; the human decides it or leaves it open.",
+	"open": "Offer each unsettled thing with the deposit tool as an open question, with the consequence of " +
+		"leaving it open.",
 }
 
 // ReviewOpeningRequest is the review brief: the one question the interface asks
@@ -65,8 +94,15 @@ func ReviewOpeningRequest(sitting Sitting) string {
 		"Never say whether to accept this work. The human decides; you make sure they can see it."
 }
 
-// WalkRequest is one walk's fixed request.
+// WalkRequest is one walk's fixed request, in the words of the sitting's
+// purpose.
 func WalkRequest(part string, sitting Sitting) string {
+	if sitting.Purpose != PurposeReview {
+		return "Walk me through " + walkNames[part] + " for the sitting on " + sitting.Subject.ID + ": " +
+			walkAbout[part] + ".\n\n" + shapingHow[part] + "\n\n" +
+			"Weigh nothing: do not recommend, do not rank, and do not say which option you would pick. " +
+			"Where nothing is recorded, say that nothing is recorded."
+	}
 	return "Walk me through " + walkNames[part] + " for the review in " + sitting.Subject.ID + ": " +
 		walkAbout[part] + ".\n\n" +
 		"Put each thing on the desk with the present tool as you come to it, in the order you explain it, " +
@@ -100,19 +136,20 @@ func ReviewClosingRequest(sitting Sitting, verdict string) (string, error) {
 		"reads it, edits it and presses Record it.", nil
 }
 
-// Walk asks one of the five walks in one review's conversation (D6). It is the
-// interface's question, marked as such, exactly as the opening turn is.
+// Walk asks one of the walks of one sitting's room (g1-s65 D6, g1-s67 D3). It
+// is the interface's question, marked as such, exactly as the opening turn is.
 func (s *Service) Walk(ctx context.Context, human, record, part string, page Page) (string, error) {
-	if _, known := walkNames[part]; !known {
-		return "", fmt.Errorf("a walk is one of %s; %s is none of them", strings.Join(Walks, ", "), part)
-	}
 	conversation, err := s.conversationOf(human, record)
 	if err != nil {
 		return "", err
 	}
 	sitting := conversation.Sitting()
-	if sitting == nil || sitting.Purpose != PurposeReview {
-		return "", fmt.Errorf("no review is open on %s, so there is nothing to walk through", record)
+	if sitting == nil {
+		return "", fmt.Errorf("no sitting is open on %s, so there is nothing to walk through", record)
+	}
+	offered := Walks[sitting.Purpose]
+	if !slices.Contains(offered, part) {
+		return "", fmt.Errorf("a walk of this sitting is one of %s; %s is none of them", strings.Join(offered, ", "), part)
 	}
 	return s.submit(ctx, human, record, "", WalkRequest(part, *sitting), page, true)
 }
@@ -140,7 +177,7 @@ func (s *Service) Unopened(human, record string) bool {
 	if _, err := os.Stat(state); err != nil {
 		return false
 	}
-	conversation, err := s.conversationOf(human, record)
+	conversation, err := s.openedOf(human, record)
 	if err != nil {
 		return false
 	}
@@ -166,7 +203,7 @@ func (s *Service) Standing(human string) ([]Sitting, error) {
 		return nil, err
 	}
 	for _, record := range records {
-		conversation, err := s.conversationOf(human, record)
+		conversation, err := s.openedOf(human, record)
 		if err != nil {
 			return nil, err
 		}
@@ -178,7 +215,7 @@ func (s *Service) Standing(human string) ([]Sitting, error) {
 	return found, nil
 }
 
-// Present is one thing the Partner puts on the review's desk while it explains
+// Present is one thing the Partner puts on a room's desk while it explains
 // (D5): a file of the reviewed tree at a range, the change index, one file's
 // diff, or a record's section. It is a display suggestion and nothing else — it
 // navigates nowhere, and the human's Stop ends a walk's presenting.
@@ -192,16 +229,16 @@ type Present struct {
 }
 
 // admitPresent offers one display suggestion to the page, where the turn is a
-// review's. Anywhere else there is no desk to put it on, and the activity line
-// says so rather than dropping it in silence.
+// sitting's: every sitting has a room with a desk (g1-s67 D4). Outside a sitting
+// there is no desk to put it on, and the activity line says so rather than
+// dropping it in silence.
 func (s *Service) admitPresent(running *turn, prepared Present) {
 	s.mu.Lock()
 	conversation := running.conversation
 	s.mu.Unlock()
-	sitting := conversation.Sitting()
-	if sitting == nil || sitting.Purpose != PurposeReview {
+	if conversation.Sitting() == nil {
 		s.record(running, Event{Kind: EventActivity, Text: "The Partner offered something for a desk, " +
-			"and only a review room has one."})
+			"and only a sitting's room has one."})
 		return
 	}
 	s.record(running, Event{Kind: EventPresent, Present: &prepared})

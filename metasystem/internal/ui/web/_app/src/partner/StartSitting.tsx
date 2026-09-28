@@ -1,33 +1,19 @@
 import { useId, useState } from "react";
+import { useNavigate } from "react-router";
 
 import { draftOf } from "./api";
 import { usePartner } from "./store";
-import {
-  DRAFTING,
-  draftMadeLine,
-  END,
-  END_SAID,
-  END_WITHOUT,
-  PURPOSES,
-  purposeLabel,
-  SECTIONS,
-  sittingChip,
-  START,
-  TABLE,
-  type Purpose,
-} from "./sitting";
+import { draftMadeLine, PURPOSES, purposeLabel, START, type Purpose } from "./sitting";
 import { Help } from "../help/Help";
+import { roomPath } from "../routes";
 import { Button } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
 import "./sitting.css";
 
 /**
- * Starting a sitting, and what a sitting looks like once it has started.
- *
- * Three things, in one file because they are one act seen from three places: the
- * sheet that opens one, the control that opens that sheet — on a record's page
- * and in the Partner's own header, which is where a human is when they decide to
- * sit down — and the four counts that say what the record now holds.
+ * Starting a sitting: the sheet, on the record's own page, which opens the
+ * sitting's room (g1-s67 D1, D6). What a sitting looks like once it has started
+ * is the room's, and the drawer shows none of it.
  *
  * What a human chooses is small on purpose: what the sitting is for, and which
  * record it is about. Nothing else is asked, because nothing else is needed: the
@@ -54,6 +40,7 @@ export function StartSittingSheet({
   subject: { kind: string; id: string; title: string } | null;
 }) {
   const { startSitting, sittingBusy, sittingRefusal } = usePartner();
+  const navigate = useNavigate();
   const [purpose, setPurpose] = useState<Purpose>("shape a design");
   const [title, setTitle] = useState("");
   // The draft a refused press created before it was refused, or "". It is the
@@ -77,8 +64,12 @@ export function StartSittingSheet({
 
   const start = () => {
     void startSitting(asked()).then(
-      () => {
+      (opened) => {
         onOpenChange(false);
+        // Every sitting opens in its room (g1-s67 D1).
+        if (opened !== "") {
+          void navigate(roomPath(purpose, opened));
+        }
       },
       (error: unknown) => {
         // The refusal is on the sheet, in the server's own words, and the sheet
@@ -169,206 +160,5 @@ export function StartSittingSheet({
         </Button>
       </div>
     </Sheet>
-  );
-}
-
-/**
- * The control in the Partner's own header: Start a sitting, or, while one
- * stands, which record it is on with the four counts beside it.
- *
- * It is one component so the drawer places one element. The counts are the
- * record's own four sections as the sitting's reading holds them, and pressing
- * them opens the table — because the counts are the summary and the table is the
- * thing (D7).
- *
- * Closed, the drawer's bar also carries the one-line composer, the Seeing line
- * and the drawer's own two controls, and forty-eight pixels will not hold the
- * strip beside them: the chip clipped to "Sitting: T…" and four counts cut off
- * mid-word say less than nothing. So closed the bar keeps the chip — which is
- * the answer to "which sitting is this" and is itself the way to the table — and
- * the strip stands in the bar the moment the drawer is open, where the composer
- * has moved into the panel and there is room for it.
- */
-export function SittingControl({
-  onOpenTable,
-  compact = false,
-}: {
-  onOpenTable: () => void;
-  /** True while the drawer is closed and its bar is carrying the composer. */
-  compact?: boolean;
-}) {
-  const { sitting, sittingBusy, sittingEnded, conversation, leaveSitting } = usePartner();
-  const [starting, setStarting] = useState(false);
-  const [ending, setEnding] = useState(false);
-
-  if (sitting === null) {
-    return (
-      <>
-        <button
-          type="button"
-          className="ms-sitting-start"
-          onClick={() => {
-            setStarting(true);
-          }}
-        >
-          {START}
-        </button>
-        {/* What the last end left behind, where the press was made. A sitting
-            ended without an outcome wrote nothing, and this is the one act of
-            this section that has to say so. */}
-        {sittingEnded !== "" && (
-          <span className="ms-sitting-ended" role="status">
-            {sittingEnded}
-          </span>
-        )}
-        <StartSittingSheet open={starting} onOpenChange={setStarting} subject={null} />
-      </>
-    );
-  }
-  return (
-    <span className="ms-sitting-standing">
-      <button
-        type="button"
-        className="ms-sitting-chip"
-        title={`${sitting.subject.id} · open ${TABLE}`}
-        onClick={onOpenTable}
-      >
-        {sittingChip(sitting)}
-      </button>
-      <Help id="sitting" />
-      {!compact && <SittingCounts onOpen={onOpenTable} />}
-      <button
-        type="button"
-        className="ms-sitting-end"
-        disabled={sittingBusy}
-        onClick={() => {
-          setEnding(true);
-        }}
-      >
-        {END}
-      </button>
-      {/* A sitting is a conversation of its own (g1-s65 D16). Leaving it
-          keeps it standing — Project → Sittings is its door — and brings the
-          drawer back to the human's own conversation. */}
-      {conversation !== "" && (
-        <button
-          type="button"
-          className="ms-sitting-leave"
-          title="Leave this sitting standing and go back to your own conversation"
-          onClick={leaveSitting}
-        >
-          Your conversation
-        </button>
-      )}
-      <EndSittingSheet open={ending} onOpenChange={setEnding} onOpenTable={onOpenTable} />
-    </span>
-  );
-}
-
-/**
- * Ending a sitting: the two ways out, and what each one leaves behind
- * (g1-s55 D2).
- *
- * It is a sheet and not a button, because ending a sitting is two acts that read
- * as one. The first asks the Partner to draft what the sitting came to; the
- * sitting is still standing when it answers, and it ends when the human presses
- * Record it on the card. The second ends it now, with nothing written.
- *
- * The second is why this is a sheet at all. Leaving without an outcome is
- * allowed — a sitting that came to nothing is a thing that happens — but it is
- * also the easiest mistake this design allows, so it is said before it is done
- * and said again afterwards, rather than sitting in the bar one press away from
- * the way out that records.
- */
-export function EndSittingSheet({
-  open,
-  onOpenChange,
-  onOpenTable,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  /** The way to where the card will appear, which is the table's own page. */
-  onOpenTable: () => void;
-}) {
-  const { closeSitting, endWithoutRecording, sittingBusy, sittingRefusal } = usePartner();
-  const draft = () => {
-    void closeSitting().then(
-      () => {
-        onOpenChange(false);
-        // The card arrives in the transcript, so the human is taken to where the
-        // transcript is read: the press that ends a sitting should not leave them
-        // looking at a closed drawer wondering what happened.
-        onOpenTable();
-      },
-      () => {
-        // The refusal is on the sheet, in the server's own words, and the sheet
-        // stays open beside it.
-      },
-    );
-  };
-  return (
-    <Sheet
-      open={open}
-      onOpenChange={onOpenChange}
-      side="right"
-      label={END}
-      title={END}
-      closeLabel="Close without ending the sitting"
-      bodyClassName="ms-sitting-sheet"
-      sheetName={END}
-    >
-      <p className="ms-sitting-said">
-        {END_SAID}
-        <Help id="the-outcome" />
-      </p>
-      {sittingRefusal !== "" && (
-        <p className="ms-sitting-refusal" role="status">
-          {sittingRefusal}
-        </p>
-      )}
-      <div className="ms-sitting-foot">
-        <Button primary disabled={sittingBusy} onClick={draft}>
-          {sittingBusy ? DRAFTING : END}
-        </Button>
-        <Button
-          disabled={sittingBusy}
-          onClick={() => {
-            void endWithoutRecording().then(
-              () => {
-                onOpenChange(false);
-              },
-              () => {
-                // Said on the sheet, which stays open.
-              },
-            );
-          }}
-        >
-          {END_WITHOUT}
-        </Button>
-      </div>
-    </Sheet>
-  );
-}
-
-/**
- * The four counts: what the record's four sections hold, as a strip that opens
- * the table.
- *
- * They are counts of the RECORD and not of the conversation, which is the whole
- * of what makes them honest: a card the Partner offered and nobody recorded is
- * not counted here, because it is not in the record and a fresh worker reading
- * the record would not find it.
- */
-export function SittingCounts({ onOpen }: { onOpen: () => void }) {
-  const { table } = usePartner();
-  return (
-    <button type="button" className="ms-sitting-counts" onClick={onOpen} title={`Open ${TABLE}`}>
-      {SECTIONS.map((section) => (
-        <span key={section} className="ms-sitting-count">
-          <span className="ms-sitting-count-name">{section}</span>
-          <span className="ms-sitting-count-number">{table.counts[section]}</span>
-        </span>
-      ))}
-    </button>
   );
 }

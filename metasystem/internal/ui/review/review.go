@@ -16,13 +16,19 @@
 package review
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 )
 
 // Git is the reads this owner makes. gittree.Workspace over the checkout is the
@@ -38,11 +44,15 @@ type Git interface {
 	LineCommits(rev, path string) ([]string, error)
 }
 
-// Owner reads one checkout's candidates.
+// Owner reads one checkout's candidates, and the checkout as it stands for a
+// sitting that shapes a record (g1-s67 D2).
 type Owner struct {
 	Git Git
 	// Canonical is the branch a goal lands on. Empty is main.
 	Canonical string
+	// Checkout is the root the document reader opens: a shaping desk's source
+	// reads are opened beneath it and nowhere else.
+	Checkout string
 }
 
 // The bounds. A source read carries at most four hundred lines, the change
@@ -55,6 +65,9 @@ const (
 	// binaryProbe is how much of a file is looked at for a NUL, which is
 	// Git's own rule for calling a file binary.
 	binaryProbe = 8000
+	// maxCheckoutBytes bounds what one read of the checkout takes in: a source
+	// file past it is not one a desk shows.
+	maxCheckoutBytes = 8 << 20
 )
 
 // NoneFound is the Reviewed line of a review whose subject names no commits.
@@ -509,14 +522,16 @@ type SourceLine struct {
 	Touched bool   `json:"touched,omitempty"`
 }
 
-// Source is one text file of the reviewed tree at a range of lines.
+// Source is one text file of the reviewed tree at a range of lines, or of the
+// checkout as it stands, where Checkout says so and Commit is "".
 type Source struct {
-	Path   string       `json:"path"`
-	Commit string       `json:"commit"`
-	From   int          `json:"from"`
-	To     int          `json:"to"`
-	Total  int          `json:"total"`
-	Lines  []SourceLine `json:"lines"`
+	Path     string       `json:"path"`
+	Commit   string       `json:"commit"`
+	Checkout bool         `json:"checkout,omitempty"`
+	From     int          `json:"from"`
+	To       int          `json:"to"`
+	Total    int          `json:"total"`
+	Lines    []SourceLine `json:"lines"`
 	// Unmarked says the touched lines could not be established and none are
 	// marked; "" where the marks stand.
 	Unmarked string `json:"unmarked,omitempty"`
@@ -548,6 +563,86 @@ func (o Owner) Source(reviewed Reviewed, file string, from, to int) (Source, err
 	if binary(body) {
 		return Source{}, refused("%s is a binary file, and the desk shows text", clean)
 	}
+	touched, unmarked := o.touched(reviewed, pairs, at, clean)
+	read, err := ranged(clean, body, from, to, touched)
+	if err != nil {
+		return Source{}, err
+	}
+	read.Commit, read.Unmarked = at, unmarked
+	return read, nil
+}
+
+// AsItStands reads one file of the checkout as it stands, uncommitted edits
+// included, from line from to line to (g1-s67 D2): the desk of a sitting that
+// shapes a record reads the same bytes the Partner's own reads see. The file is
+// opened beneath the checkout root, so a name that leaves it — a step out or a
+// link — is refused on the open and never followed; the path check, the binary
+// refusal and the bounds are Source's own. What the interface never serves is
+// refused by the document reader's own rule, on the name asked and on the path
+// it resolves to, and bytes that are not UTF-8 are refused rather than shown as
+// other characters. Nothing is marked, because nothing is
+// compared.
+func (o Owner) AsItStands(file string, from, to int) (Source, error) {
+	clean, err := insideOf(file, "the checkout")
+	if err != nil {
+		return Source{}, err
+	}
+	if strings.TrimSpace(o.Checkout) == "" {
+		return Source{}, errors.New("this reader was given no checkout to read")
+	}
+	if !project.Served(clean) {
+		return Source{}, refused("%s is a file this interface never serves", clean)
+	}
+	resolved, ok := resolvedIn(o.Checkout, clean)
+	if !ok {
+		return Source{}, refused("%s is not a file of the checkout", clean)
+	}
+	if !project.Served(resolved) {
+		return Source{}, refused("%s is a file this interface never serves", clean)
+	}
+	root, err := os.OpenRoot(o.Checkout)
+	if err != nil {
+		return Source{}, fmt.Errorf("cannot open the checkout at %s: %w", o.Checkout, err)
+	}
+	defer func() { _ = root.Close() }()
+	// The resolved path is the one opened, and the descriptor must be the file
+	// that path names, so a link put in its place after the judgment is refused.
+	opened, err := root.Open(resolved)
+	if err != nil {
+		return Source{}, refused("%s is not a file of the checkout", clean)
+	}
+	defer func() { _ = opened.Close() }()
+	info, err := opened.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return Source{}, refused("%s is not a file of the checkout", clean)
+	}
+	if named, err := root.Lstat(resolved); err != nil || !os.SameFile(info, named) {
+		return Source{}, refused("%s is not a file of the checkout", clean)
+	}
+	body, err := io.ReadAll(io.LimitReader(opened, maxCheckoutBytes+1))
+	if err != nil {
+		return Source{}, fmt.Errorf("cannot read %s: %w", clean, err)
+	}
+	if len(body) > maxCheckoutBytes {
+		return Source{}, refused("%s is larger than the desk reads", clean)
+	}
+	if !binary(body) && !utf8.Valid(body) {
+		return Source{}, refused("%s is not UTF-8 text, and the desk shows text as it is", clean)
+	}
+	read, err := ranged(clean, body, from, to, nil)
+	if err != nil {
+		return Source{}, err
+	}
+	read.Checkout = true
+	return read, nil
+}
+
+// ranged is one text file's lines from line from to line to, with the marks
+// given, held to the bounds: Source's and AsItStands' one reading of a body.
+func ranged(clean string, body []byte, from, to int, touched map[int]bool) (Source, error) {
+	if binary(body) {
+		return Source{}, refused("%s is a binary file, and the desk shows text", clean)
+	}
 	lines := strings.Split(strings.TrimSuffix(string(body), "\n"), "\n")
 	total := len(lines)
 	if from <= 0 {
@@ -568,9 +663,7 @@ func (o Owner) Source(reviewed Reviewed, file string, from, to int) (Source, err
 	if to > total {
 		to = total
 	}
-	touched, unmarked := o.touched(reviewed, pairs, at, clean)
-	read := Source{Path: clean, Commit: at, From: from, To: to, Total: total, Unmarked: unmarked,
-		Lines: make([]SourceLine, 0, to-from+1)}
+	read := Source{Path: clean, From: from, To: to, Total: total, Lines: make([]SourceLine, 0, to-from+1)}
 	for number := from; number <= to; number++ {
 		read.Lines = append(read.Lines, SourceLine{Number: number, Text: lines[number-1], Touched: touched[number]})
 	}
@@ -625,13 +718,41 @@ func (o Owner) touched(reviewed Reviewed, pairs []Comparison, at, file string) (
 // inside is a path of the reviewed tree, or the refusal that names it as not
 // one: relative, with no step out of the tree.
 func inside(file string) (string, error) {
+	return insideOf(file, "the reviewed tree")
+}
+
+// insideOf is inside for the tree it names in its refusal.
+func insideOf(file, tree string) (string, error) {
 	trimmed := strings.TrimSpace(file)
 	clean := path.Clean(trimmed)
 	if trimmed == "" || strings.HasPrefix(trimmed, "/") || clean == "." || clean == ".." ||
 		strings.HasPrefix(clean, "../") || strings.ContainsRune(trimmed, 0) {
-		return "", refused("%q is not a path inside the reviewed tree", file)
+		return "", refused("%q is not a path inside %s", file, tree)
 	}
 	return clean, nil
+}
+
+// resolvedIn is the checkout-relative path a clean name reaches once every
+// link on the way is followed, and false where it reaches nothing or leaves the
+// checkout.
+func resolvedIn(checkout, clean string) (string, bool) {
+	base, err := filepath.EvalSymlinks(checkout)
+	if err != nil {
+		return "", false
+	}
+	target, err := filepath.EvalSymlinks(filepath.Join(base, filepath.FromSlash(clean)))
+	if err != nil {
+		return "", false
+	}
+	relative, err := filepath.Rel(base, target)
+	if err != nil {
+		return "", false
+	}
+	relative = filepath.ToSlash(relative)
+	if relative == "." || relative == ".." || strings.HasPrefix(relative, "../") {
+		return "", false
+	}
+	return relative, true
 }
 
 func binary(body []byte) bool {
