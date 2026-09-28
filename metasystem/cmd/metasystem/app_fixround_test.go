@@ -75,10 +75,10 @@ func TestAppStartThroughTheAtSpellingRecordsTheGoal(t *testing.T) {
 	}
 }
 
-// A goal run whose evidence cannot be copied is not closed: without an
-// evidence root the process is ended, the record survives, and the next stop
-// with the root configured closes it.
-func TestAppGoalRunWithoutAnEvidenceRootIsNotClosed(t *testing.T) {
+// A goal run whose evidence cannot be copied is not closed: with an invalid
+// evidence root (a relative one; an unset root has a default) the process is
+// ended, the record survives, and the next stop with a valid root closes it.
+func TestAppGoalRunWithAnInvalidEvidenceRootIsNotClosed(t *testing.T) {
 	address := appFreePort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	bed.git("branch", "goal/g1")
@@ -91,9 +91,16 @@ func TestAppGoalRunWithoutAnEvidenceRootIsNotClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	local := filepath.Join(bed.installation, "metasystem.conf.local")
+	if err := os.WriteFile(local, []byte("evidence.root=relative\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	code, out := bed.run("app", "stop", "--goal", "g1")
-	if code == 0 || !strings.Contains(out, "evidence.root") || !strings.Contains(out, "stopped, but its run could not be closed") {
-		t.Fatalf("a goal run without an evidence root refuses closure by naming the setting: %d\n%s", code, out)
+	if code == 0 || !strings.Contains(out, `evidence.root must be absolute (metasystem.conf.local reads "relative")`) || !strings.Contains(out, "stopped, but its run could not be closed") {
+		t.Fatalf("a goal run with an invalid evidence root refuses closure by naming the setting: %d\n%s", code, out)
+	}
+	if err := os.Remove(local); err != nil {
+		t.Fatal(err)
 	}
 	if answered(started.Address) {
 		t.Fatalf("the process is ended even though the run is not closed:\n%s", out)

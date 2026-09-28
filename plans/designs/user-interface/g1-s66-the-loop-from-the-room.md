@@ -149,7 +149,7 @@ tick and apply.
   only material findings and merges a recurring id across rounds
   (`internal/dispatch/finding_register.go:1329`, `:1119`), and the
   structured return carries id, severity, material, claim and evidence
-  (`scripts/agents/schemas/design-critic.schema.json:38`). A card shows
+  (the design-critic return schema, `scripts/agents/schemas/design-critic.schema.json:38` at the cited commit; after the engine's batch 11 it is compiled in and read by role through `protocol.RoleSchema("design-critic")`, so the page names the role, never a path). A card shows
   those five, and the change asked for and the two tests only where the
   return's prose carries them under the finding's id; the register is
   read for the chain's state alone. A card's identity is chain, round

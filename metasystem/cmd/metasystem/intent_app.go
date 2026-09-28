@@ -155,6 +155,7 @@ func (inv *intentInvocation) appVerb(verb string) int {
 		return inv.render(*problem)
 	}
 	run := resolveAppRun(roots, contract, contractPath, ref, goal)
+	run.lookupEnv = inv.owners.lookupEnv
 	targets = []intentTarget{{Kind: "app", ID: run.key}}
 	switch verb {
 	case "status":

@@ -1345,6 +1345,11 @@ func effectiveProofConfigurationDigest(configurationPath string, environment []s
 		if key == AdmissionCapKey {
 			continue
 		}
+		// Where evidence is mirrored is a host-local destination with a
+		// per-checkout default, not an input to what the tests prove.
+		if key == config.EvidenceRootKey {
+			continue
+		}
 		// The shipped template's model slot is metadata, not a resolvable key.
 		// Concrete local/runtime bindings below carry the effective model;
 		// the source manifest still binds the template's original bytes.

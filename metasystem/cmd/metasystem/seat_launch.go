@@ -281,16 +281,26 @@ func seatLaunchFacts(request launch.Request, record launch.Record) (launch.Facts
 	if err != nil {
 		return launch.Facts{}, err
 	}
-	evidence, _, err := config.Get(config.GetParams{Key: "evidence.root", Default: "", DefaultSet: true,
-		ConfPath: filepath.Join(request.From, installation, "metasystem.conf")})
+	evidence, err := seatLaunchEvidenceRoot(filepath.Join(request.From, installation, "metasystem.conf"), nil)
 	if err != nil {
 		return launch.Facts{}, err
 	}
-	facts := launch.Facts{This: this, Taken: names, EvidenceRoot: strings.TrimSpace(evidence)}
+	facts := launch.Facts{This: this, Taken: names, EvidenceRoot: evidence}
 	if request.Resuming() {
 		facts.Created = record.Created
 	}
 	return facts, nil
+}
+
+// seatLaunchEvidenceRoot is this seat's evidence root as the engine's one
+// owner resolves it (lookup nil is os.LookupEnv); a refusal is the launch's
+// evidence-root refusal, raised before the lock.
+func seatLaunchEvidenceRoot(conf string, lookup func(string) (string, bool)) (string, error) {
+	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{ConfPath: conf, LookupEnv: lookup})
+	if err != nil {
+		return "", &launch.Refusal{Code: launch.CodeEvidenceRootUnsafe, Message: err.Error()}
+	}
+	return resolved.Path, nil
 }
 
 // seatLaunchDestination is where a machine lands when nobody says: beside

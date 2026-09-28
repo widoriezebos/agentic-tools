@@ -10,7 +10,7 @@ Replace this file when adopting the metasystem. Keep facts concrete and reposito
 - Test roots: `<paths>`
 - Generated files: `<paths and ownership>`
 - Sensitive or protected areas: `<paths>`
-- Durable evidence root: `<path outside the repository>`. Outside the repository and every build tree; holds the only-copy run evidence that must survive (rules in `plans/README.md`).
+- Durable evidence root: `~/metasystem-evidence/<checkout name>` by default; set `evidence.root` in `metasystem.conf.local` only to change it. Outside the repository and every build tree; holds the only-copy run evidence that must survive (rules in `plans/README.md`).
 
 ## Commands
 

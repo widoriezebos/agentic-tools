@@ -9,8 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
 // Kind names one application-state directory whose ownership does not change
@@ -35,7 +33,6 @@ const (
 	Goals     Kind = "goals"
 	OpenWork  Kind = "openwork"
 	Steward   Kind = "steward"
-	Evidence  Kind = "evidence"
 )
 
 // Resolver owns repository and executable discovery for one operation or fixture.
@@ -121,18 +118,6 @@ func (r Resolver) StateRoot(kind Kind) (string, error) {
 	appRoot, err := r.RootForInstallation(installationRoot)
 	if err != nil {
 		return "", err
-	}
-	if kind == Evidence {
-		value, _, err := config.Get(config.GetParams{
-			Key: "evidence.root", ConfPath: filepath.Join(appRoot, "metasystem.conf"),
-		})
-		if err != nil {
-			return "", fmt.Errorf("state root: evidence root: %w", err)
-		}
-		if !filepath.IsAbs(value) {
-			return "", fmt.Errorf("state root: evidence.root must be absolute: %q", value)
-		}
-		return filepath.Clean(value), nil
 	}
 	return filepath.Join(appRoot, filepath.FromSlash(relative)), nil
 }
@@ -298,8 +283,6 @@ func relativeRoot(kind Kind) (string, error) {
 		return "plans", nil
 	case Steward:
 		return "artifacts/agents/steward", nil
-	case Evidence:
-		return "", nil
 	default:
 		return "", fmt.Errorf("state root: unknown kind %q", kind)
 	}

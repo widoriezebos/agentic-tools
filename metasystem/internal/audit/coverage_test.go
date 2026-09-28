@@ -244,6 +244,23 @@ func TestAuditMetasystemRefusals(t *testing.T) {
 			t.Fatalf("allow-placeholders did not tolerate: %v", result.Violations)
 		}
 	})
+	t.Run("adopted legacy evidence placeholder passes", func(t *testing.T) {
+		// ERD-04: the evidence root has a compiled-in default, so an adopted
+		// metasystem.conf still carrying the old placeholder line is not
+		// told to fill it; every other placeholder still fails.
+		root := build(t)
+		legacy := "evidence.root=<durable evidence root, outside the repository>\n"
+		os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(legacy), 0o644)
+		result, _ := AuditMetasystem(root, AuditOptions{})
+		if len(result.Violations) != 0 {
+			t.Fatalf("legacy evidence placeholder refused: %v", result.Violations)
+		}
+		os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(legacy+"role.default.model.fake=<model>\n"), 0o644)
+		result, _ = AuditMetasystem(root, AuditOptions{})
+		if len(result.Violations) != 1 || !strings.Contains(result.Violations[0], "unreplaced placeholders") {
+			t.Fatalf("<model> beside the legacy line not caught: %v", result.Violations)
+		}
+	})
 	t.Run("word budget override", func(t *testing.T) {
 		root := build(t)
 		result, _ := AuditMetasystem(root, AuditOptions{MaxAlwaysLoadedWords: 3})

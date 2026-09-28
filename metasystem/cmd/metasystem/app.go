@@ -157,6 +157,9 @@ type appRun struct {
 	dataRoot     string
 	logPath      string
 	runDir       string
+	// lookupEnv answers the environment the evidence root resolves under;
+	// nil is os.LookupEnv.
+	lookupEnv func(string) (string, bool)
 }
 
 // resolveAppRun derives every path of one run from the roots, the contract
@@ -435,14 +438,12 @@ func (r appRun) preserveRunEvidence(record *applaunch.Record, out io.Writer) err
 	if goal == "" {
 		return nil
 	}
-	root, _, err := config.Get(config.GetParams{Key: "evidence.root", Default: "", DefaultSet: true,
-		ConfPath: filepath.Join(r.roots.Installation, "metasystem.conf")})
+	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{
+		ConfPath: filepath.Join(r.roots.Installation, "metasystem.conf"), LookupEnv: r.lookupEnv})
 	if err != nil {
-		return fmt.Errorf("evidence.root could not be read (%v), so goal %s's run evidence was not copied and its record is kept", err, goal)
+		return fmt.Errorf("%v, so goal %s's run evidence was not copied and its record is kept; fix the evidence root, then stop or start again to close the run", err, goal)
 	}
-	if !filepath.IsAbs(root) {
-		return fmt.Errorf("evidence.root is not set to an absolute path in metasystem.conf, so goal %s's run evidence was not copied and its record is kept; set evidence.root, then stop or start again to close the run", goal)
-	}
+	root := resolved.Path
 	staging, err := os.MkdirTemp("", "app-evidence.")
 	if err != nil {
 		return err

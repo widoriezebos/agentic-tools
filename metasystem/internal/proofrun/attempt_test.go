@@ -1283,3 +1283,30 @@ func TestReserveLockedRefusesGovernedReservationWhoseCapHasPassed(t *testing.T) 
 		t.Fatalf("passed governed cap did not retain typed facts: %#v, %v", passed, err)
 	}
 }
+
+// Where evidence is mirrored never changes what a proof proves: two checkouts
+// that differ only in their evidence root (a hand-set one, or the per-checkout
+// default the general readers now report) have one configuration digest.
+func TestProofConfigurationDigestIgnoresTheEvidenceRoot(t *testing.T) {
+	t.Parallel()
+	digest := func(local string) string {
+		t.Helper()
+		conf := filepath.Join(t.TempDir(), "metasystem.conf")
+		if err := os.WriteFile(conf, []byte("suite.section-cap-min=30\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if local != "" {
+			if err := os.WriteFile(conf+".local", []byte(local), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		value, err := effectiveProofConfigurationDigest(conf, []string{"HOME=" + t.TempDir()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	if a, b := digest(""), digest(config.EvidenceRootKey+"=/somewhere/else\n"); a != b {
+		t.Fatalf("digest differs only by evidence root: %s vs %s", a, b)
+	}
+}
