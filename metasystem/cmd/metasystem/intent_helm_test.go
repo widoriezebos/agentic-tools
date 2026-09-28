@@ -13,7 +13,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 var helmNow = time.Date(2026, 9, 28, 19, 14, 3, 0, time.UTC)
@@ -47,7 +46,7 @@ func (tree helmTree) SessionLeader(pid int64) (int64, error) {
 // person is zsh (20) under login (10, the session leader on tty-1) under launchd.
 func person() helmTree {
 	return helmTree{1: {0, "launchd", ""}, 10: {1, "login -pf wido", "tty-1"}, 20: {10, "-zsh", "tty-1"},
-		50: {1, "sshd wido", "tty-2"}, 60: {50, "-zsh", "tty-2"}, 70: {10, "codex-agent exec", "tty-1"}, 80: {70, "bash -c", "tty-1"},
+		50: {1, "sshd wido", "tty-2"}, 60: {50, "-zsh", "tty-2"}, 70: {10, "/opt/homebrew/bin/codex exec", "tty-1"}, 80: {70, "bash -c", "tty-1"},
 		90: {1, "python3 pty.py", "tty-9"}, 95: {90, "zsh", "tty-9"}, 99: {1, "launchd-child", ""}}
 }
 
@@ -61,13 +60,11 @@ func newHelmBed(t *testing.T, invoker int64, enrolled bool) *helmBed {
 	t.Helper()
 	root := t.TempDir()
 	inst := filepath.Join(root, "metasystem")
-	adapters := filepath.Join(inst, "scripts", "agents", "adapters")
-	for _, dir := range []string{filepath.Join(root, ".git"), filepath.Join(root, "development"), adapters} {
+	for _, dir := range []string{filepath.Join(root, ".git"), filepath.Join(root, "development"), filepath.Join(inst, "scripts", "agents")} {
 		helmMust(t, os.MkdirAll(dir, 0o755))
 	}
 	helmMust(t, os.WriteFile(filepath.Join(root, "development", "metasystem-design.md"), []byte("x\n"), 0o644),
-		os.WriteFile(filepath.Join(inst, "metasystem.conf"), []byte(""), 0o644),
-		testexec.WriteFile(filepath.Join(adapters, "codex.sh"), []byte("#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match codex-agent'\n"), 0o755))
+		os.WriteFile(filepath.Join(inst, "metasystem.conf"), []byte(""), 0o644))
 	if enrolled {
 		_, err := humanauthority.Enroll(inst, 20, person(), "Wido", helmNow)
 		helmMust(t, err)
@@ -120,7 +117,17 @@ func (b *helmBed) wantTake(args []string, code int, enrollment, by string) helm.
 
 func TestHelmTakeRefusesAgentAncestry(t *testing.T) {
 	t.Parallel()
-	t.Run("HM-1", func(t *testing.T) { newHelmBed(t, 80, true).wantTake(nil, 3, "", "") })
+	// The agent ancestor (pid 70, "/opt/homebrew/bin/codex exec") matches the
+	// built-in codex signature of the Go runtime registry, the same
+	// registry-backed ProveTerminal every human verb uses; no adapter script
+	// is planted.
+	t.Run("HM-1", func(t *testing.T) {
+		bed := newHelmBed(t, 80, true)
+		bed.wantTake(nil, 3, "", "")
+		if _, out := bed.run("helm", "take", "--reason", "by hand"); !strings.Contains(out, humanauthority.OutcomeAgent) {
+			t.Fatalf("take under an agent ancestry must name %s:\n%s", humanauthority.OutcomeAgent, out)
+		}
+	})
 }
 
 func TestHelmTakeRefusesNoTerminal(t *testing.T) {
