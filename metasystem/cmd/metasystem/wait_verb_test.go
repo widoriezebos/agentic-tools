@@ -2241,9 +2241,11 @@ func TestWaitLeaseTakeoverRepairsAndResumes(t *testing.T) {
 }
 
 // directHookCommand runs the engine's hook entry as the runtime settings do:
-// in the installation directory, through the engine the settings select.
-func directHookCommand(engine, installation string) *exec.Cmd {
-	command := exec.Command(engine, "internal", "hook", "fake", "start")
+// in the installation directory, through the engine the settings select. It
+// launches the SessionStart hook entry, never a proof attempt, so it stays
+// outside proofBinaryFixture.command (TestProofAttemptBinaryLaunchesUseSharedIsolation).
+func directHookCommand(hookEntry, installation string) *exec.Cmd {
+	command := exec.Command(hookEntry, "internal", "hook", "fake", "start")
 	command.Dir = installation
 	return command
 }
