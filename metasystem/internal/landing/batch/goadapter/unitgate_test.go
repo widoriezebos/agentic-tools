@@ -444,3 +444,40 @@ func packageWorkingGit(t *testing.T, root string, streams []string) func(*exec.C
 		return err
 	}
 }
+
+// A deleted package selects its nearest existing parent directory, since the
+// package itself no longer exists to test; a file created and deleted inside
+// the change (absent from the base) selects nothing. This carries the
+// guarantee of the retired changedGoPackages test into the production
+// working selection.
+func TestDeletedGoPackagesSelectNearestExistingDirectory(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "outer"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "outer", "keep.txt"), []byte("keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	packages, err := changedWorkingGoPackages(root, gateChanges{"outer/missing/inner/value.go": {Deleted: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(packages, []string{"./outer/..."}) {
+		t.Fatalf("nested deletion packages=%v, want the nearest existing parent", packages)
+	}
+	packages, err = changedWorkingGoPackages(root, gateChanges{"gone/inner/value.go": {Deleted: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(packages, []string{"./..."}) {
+		t.Fatalf("deletion with no existing parent packages=%v, want the module", packages)
+	}
+	packages, err = changedWorkingGoPackages(root, gateChanges{"fresh/inner/value.go": {Deleted: true, BaseAbsent: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packages) != 0 {
+		t.Fatalf("create-delete path selected packages=%v", packages)
+	}
+}

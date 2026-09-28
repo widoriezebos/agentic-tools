@@ -605,8 +605,8 @@ func executeBatchPrefixReceiptWithDependencies(root, id string, record batch.Rec
 }
 
 // prefixGroupExecution is how a prefix proof's group counts: "executed"
-// when this command launched it and a package ran, "cached" when go test
-// served it wholly from its test cache (a pass by cache, not an execution),
+// when this command launched it and a package ran, "cached" when the test tool
+// served it wholly from its result cache (a pass by cache, not an execution),
 // else "" (reused or not launched here).
 func prefixGroupExecution(group proofrun.GroupResult, reusableExit bool) string {
 	switch {

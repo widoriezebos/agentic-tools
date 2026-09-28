@@ -420,12 +420,26 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 					"TestTemporaryGoalProofEnforcesReviewExpiryAndHorizon",
 				}
 			}
-			if old.ID == "landing-command-standard" && name == "TestProductionJoinGateSelectsPackagesAgainstTheLandingRoot" {
+			if old.ID == "landing-command-standard" && (name == "TestProductionJoinGateSelectsPackagesAgainstTheLandingRoot" || name == "TestDeletedGoPackagesSelectNearestExistingDirectory") {
 				// The replacement tests retain deleted-package selection and the
-				// configured contract and project-root guarantees for this group.
-				requiredNames = []string{
-					"TestDeletedGoPackagesSelectNearestExistingDirectory",
-					"TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD",
+				// configured contract and project-root guarantees. Deleted-package
+				// selection moved with the Go selection into the Go adapter
+				// (batch lane U0), so its test is carried by a group that covers
+				// that package, not by this one.
+				requiredNames = nil
+				if name == "TestProductionJoinGateSelectsPackagesAgainstTheLandingRoot" {
+					requiredNames = []string{"TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD"}
+				}
+				carriedByAdapter := false
+				for _, group := range current.Groups {
+					var names []string
+					if slices.Contains(group.Packages, "internal/landing/batch/goadapter") &&
+						json.Unmarshal(group.Tests, &names) == nil && slices.Contains(names, "TestDeletedGoPackagesSelectNearestExistingDirectory") {
+						carriedByAdapter = true
+					}
+				}
+				if !carriedByAdapter {
+					t.Errorf("%s dropped mandatory TestDeletedGoPackagesSelectNearestExistingDirectory: no group covering internal/landing/batch/goadapter lists it", old.ID)
 				}
 			}
 			if old.ID == "test-environment-standard" && name == "TestAgedSweepRemovesFixtureRecordFiles" {

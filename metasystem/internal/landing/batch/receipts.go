@@ -22,7 +22,7 @@ type PrefixReceipt struct {
 	LastUnit                            string   `json:"LastUnit,omitempty"`
 	Reused                              map[string]string
 	Executed                            []string
-	// CachedPass are groups go test served wholly from its test cache.
+	// CachedPass are groups the test tool served wholly from its result cache.
 	CachedPass []string `json:"CachedPass,omitempty"`
 }
 
