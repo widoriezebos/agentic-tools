@@ -63,7 +63,7 @@ func TestSeverityTieredRigorAcceptedRiskLifecycle(t *testing.T) {
 
 	req.Ulid = "01J5X00000000000000000SR31"
 	result, err = AcceptedRiskDecision(req, "risk-goal", "F-1", "critic-a", "Wido", "same decision", &proof)
-	if err != nil || result.Outcome != OutcomeConfirmed || result.Detail != "idempotent" {
+	if err != nil || result.Outcome != OutcomeAbandoned || !result.Unchanged || !strings.Contains(result.Detail, "is already accepted by Wido") {
 		t.Fatalf("matching accepted-risk replay = %+v, %v", result, err)
 	}
 	req.Ulid = "01J5X00000000000000000SR32"
@@ -208,7 +208,7 @@ func TestSeverityTieredRigorUtilityWrappers(t *testing.T) {
 	}
 	req.Ulid = "01J5X00000000000000000SR53"
 	result, err = SetBudgetApproved(req, "utility-goal", testBudget(), &proof)
-	if err != nil || result.Outcome != OutcomeAbandoned || !strings.Contains(result.Detail, "already reads exactly") {
+	if err != nil || result.Outcome != OutcomeAbandoned || !result.Unchanged || !strings.Contains(result.Detail, "already has exactly this budget") {
 		t.Fatalf("unchanged approved budget = %+v, %v", result, err)
 	}
 	unclaimedEndpoint := obligationAuthorityLocalEndpoint(t, "unclaimed-budget")

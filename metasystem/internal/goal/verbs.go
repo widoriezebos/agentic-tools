@@ -907,8 +907,13 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blo
 				// comparison is of the record and never of the id alone — an
 				// open of one id stating anything else is a SECOND act on that
 				// id and still loses to the first.
-				if session && openAlreadyReads(t, f, intent, nextStep, tier, canonical, blocks, blockedBy) {
-					return nil, NothingToDo{Reason: "goal " + id + " already reads exactly this way: the same open from this signed-in session"}
+				// At every authority (U-idem): the same open of an existing
+				// goal is a repeat, success with no record.
+				if openAlreadyReads(t, f, intent, nextStep, tier, canonical, blocks, blockedBy) {
+					if session {
+						return nil, AlreadyHolds{Reason: "goal " + id + " already reads exactly this way: the same open from this signed-in session"}
+					}
+					return nil, AlreadyHolds{Reason: "goal " + id + " is already open and reads exactly this way"}
 				}
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
@@ -1450,7 +1455,7 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 			}
 			if f.State == StateClaimed {
 				if ownPair(f.Claimed, r.Actor) {
-					return nil, NothingToDo{Reason: "already claimed by this pair (not by this operation)"}
+					return nil, AlreadyHolds{Reason: "goal " + id + " is already claimed by this session (" + f.Claimed.Machine + "+" + f.Claimed.Lineage + ", since " + f.Claimed.At + ")"}
 				}
 				if f.Claimed != nil && f.Claimed.Machine == r.Actor.Machine {
 					return nil, fmt.Errorf("goal %s is claimed by this machine's lineage %s; the pair is the ownership key and a second lineage is refused by name", id, f.Claimed.Lineage)
@@ -1565,7 +1570,14 @@ func extendBudgetRequest(r VerbRequest, id string, offer BudgetExtensionOffer) P
 			if !ownPair(f.Claimed, r.Actor) {
 				return nil, fmt.Errorf("goal %s is claimed by %s+%s; only that pair may extend its budget", id, f.Claimed.Machine, f.Claimed.Lineage)
 			}
-			if f.BudgetExtension != nil {
+			if extension := f.BudgetExtension; extension != nil {
+				// The same offer again is a repeat of the extension that
+				// stands: success with no record (R-129-ui, U-idem). Another
+				// offer asks for a second raise, which is a person's act.
+				if extension.EvidenceKind == offer.EvidenceKind && extension.EvidenceID == offer.EvidenceID &&
+					extension.AttemptLimitFrom == offer.AttemptLimitFrom && extension.ReservedJobMinutesFrom == offer.ReservedJobMinutesFrom {
+					return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already extended on %s:%s (at %s)", id, extension.EvidenceKind, extension.EvidenceID, extension.At)}
+				}
 				return nil, fmt.Errorf("goal %s extended once at %s; a further raise is a person's set-budget", id, f.BudgetExtension.At)
 			}
 			if offer.EvidenceKind != "review" && offer.EvidenceKind != "landing" && offer.EvidenceKind != "receipt" ||
@@ -1710,7 +1722,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 				}
 			}
 			if f.Approved != nil && f.Budget != nil && *f.Budget == budget && r.ApprovedRef == "" && f.Claimed.Revision > 0 {
-				return nil, NothingToDo{Reason: "the complete budget tuple already reads exactly that"}
+				return nil, AlreadyHolds{Reason: "goal " + id + " already has exactly this budget"}
 			}
 			approval, err := goalNormApproval(r.Endpoint.Root, t, f, budget, r.ApprovedRef, r.opid(), proof)
 			if err != nil {
@@ -1718,7 +1730,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			}
 			bound := f.Claimed.Revision > 0
 			if f.Approved != nil && f.Budget != nil && *f.Budget == budget && sameGoalNormApproval(f.NormApproval, approval) && bound {
-				return nil, NothingToDo{Reason: "the complete budget tuple already reads exactly that"}
+				return nil, AlreadyHolds{Reason: "goal " + id + " already has exactly this budget"}
 			}
 			displaced := ""
 			if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
@@ -1915,6 +1927,16 @@ func Grant(r VerbRequest, proof *humanauthority.Proof, tiers []uint8, verbs []st
 			if _, exists := rootAttorney(t.Root, r.opid()); exists {
 				return nil, AlreadyApplied{}
 			}
+			// The same power of attorney from the same person, still live,
+			// is the requested state existing exactly: a repeat, success
+			// with no second entry (R-129-ui, U-idem). Any other scope or
+			// expiry is a new grant.
+			for _, standing := range t.Root.PowerOfAttorney {
+				if standing.Revoked == "" && standing.By == r.Actor.historyActor() && standing.Expires == expires &&
+					renderTiers(standing.Tiers) == renderTiers(tiers) && strings.Join(standing.Verbs, ",") == strings.Join(canonicalVerbs, ",") {
+					return nil, AlreadyHolds{Reason: fmt.Sprintf("power of attorney %s already grants exactly this (%s, since %s)", standing.ID, reason, standing.Since)}
+				}
+			}
 			t.Root.PowerOfAttorney = append(t.Root.PowerOfAttorney, PowerOfAttorneyEntry{
 				ID: r.opid(), By: r.Actor.historyActor(), Tiers: append([]uint8(nil), tiers...), Verbs: canonicalVerbs,
 				Since: r.stamp(), Expires: expires,
@@ -1961,7 +1983,7 @@ func Revoke(r VerbRequest, proof *humanauthority.Proof, id string) (PublishResul
 					if rootOpidLanded(t.Root, r) {
 						return nil, AlreadyApplied{}
 					}
-					return nil, NothingToDo{Reason: "power of attorney " + id + " was revoked at " + entry.Revoked}
+					return nil, AlreadyHolds{Reason: "power of attorney " + id + " is already revoked (at " + entry.Revoked + ")"}
 				}
 				entry.Revoked = r.stamp()
 				entry.RevokedBy = r.Actor.historyActor()
@@ -2097,7 +2119,9 @@ func releaseRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 				return nil, AlreadyApplied{}
 			}
 			if f.State != StateClaimed || f.Claimed == nil {
-				return nil, fmt.Errorf("goal %s is %s, not claimed", id, f.State)
+				// No claim stands, which is what a release asks for: a
+				// repeat, success with no record (R-129-ui, U-idem).
+				return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already released (it is %s, not claimed)", id, f.State)}
 			}
 			if !ownPair(f.Claimed, r.Actor) {
 				missing := fmt.Sprintf("goal %s is claimed by %s+%s; a foreign release is a human act (steal has its own verb)", id, f.Claimed.Machine, f.Claimed.Lineage)
@@ -2163,7 +2187,7 @@ func landReadyRequest(r VerbRequest, id string) PublishRequest {
 				return nil, fmt.Errorf("goal %s is breach-stopped by %s; only goal resume, a human act, clears the fence", id, f.StopFence.StopID)
 			}
 			if f.Landing != nil {
-				return nil, NothingToDo{Reason: "already in landing since " + f.Landing.At + " (not by this operation)"}
+				return nil, AlreadyHolds{Reason: "goal " + id + " is already queued to land (since " + f.Landing.At + ")"}
 			}
 			for _, other := range t.Live {
 				// A fenced landing claim still holds the slot: the resume
@@ -2485,7 +2509,12 @@ func AcceptedRiskDecision(r VerbRequest, id, finding, chain, by, why string, pro
 							return nil, fmt.Errorf("accepted-risk replay refused: why differs: recorded=%s given=%s", prior.Reason, why)
 						}
 					}
-					return nil, AlreadyApplied{}
+					if existing.Opid == r.opid() {
+						return nil, AlreadyApplied{}
+					}
+					// The same acceptance by the same person is a repeat:
+					// success with no record (R-129-ui, U-idem).
+					return nil, AlreadyHolds{Reason: fmt.Sprintf("finding %s on chain %s of goal %s is already accepted by %s", finding, chain, id, existing.By)}
 				}
 			}
 			f.AcceptedRisks = append(f.AcceptedRisks, AcceptedRiskRecord{Finding: finding, Chain: chain, By: by, Opid: r.opid()})
@@ -2566,6 +2595,12 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			if f, archived := t.Archived(id); archived {
 				if opidLanded(f, r) {
 					return nil, AlreadyApplied{}
+				}
+				// A done goal concluded again is a repeat (R-129-ui, U-idem):
+				// the conclusion stands and nothing is written. An abandoned
+				// goal is not done; that stays the competitor's answer.
+				if f.State == StateDone {
+					return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already done (%s)", id, f.Conclude)}
 				}
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
@@ -2690,6 +2725,19 @@ func fromSignedInSession(proof *humanauthority.Proof) bool {
 	return proof != nil && proof.Outcome == humanauthority.OutcomeSession
 }
 
+// alreadyPausedReason says what already holds when a pause repeats: since
+// when, by whom and why the goal is paused.
+func alreadyPausedReason(f *GoalFile) string {
+	if f.Parked == nil {
+		return "goal " + f.Id + " is already paused"
+	}
+	reason := f.Parked.Because
+	if f.Parked.Blocker != "" && reason == "" {
+		reason = "waits for " + f.Parked.Blocker
+	}
+	return fmt.Sprintf("goal %s is already paused (since %s, reason %s)", f.Id, f.Parked.At, reason)
+}
+
 // Park pauses a goal with its reason. Parking another machine's
 // claim is a human act, and the displaced claimant is recorded —
 // displacement is a stop signal the serving machine hears (the
@@ -2746,10 +2794,11 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 				// reason it carries does not change that: the reason is why the
 				// pause was made, and the pause is the effect, so a second press
 				// with other words is still a repeat and writes nothing.
+				// At every authority (U-idem), the same.
 				if fromSignedInSession(r.Authority) {
-					return nil, NothingToDo{Reason: "goal " + id + " is already parked: the same pause from this signed-in session"}
+					return nil, AlreadyHolds{Reason: "goal " + id + " is already parked: the same pause from this signed-in session"}
 				}
-				return nil, LostToCompetitor{Winner: lastOpid(f)}
+				return nil, AlreadyHolds{Reason: alreadyPausedReason(f)}
 			}
 			if f.State != StateQueued && f.State != StateApproved && f.State != StateClaimed {
 				return nil, fmt.Errorf("goal %s is %s; only queued, approved, or claimed goals park", id, f.State)
@@ -2862,10 +2911,11 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 				// not: from a browser session, resuming a running goal is the
 				// act having its effect (R-129-ui) rather than a refusal the
 				// human has to read as one.
+				// At every authority (U-idem), the same.
 				if fromSignedInSession(r.Authority) {
-					return nil, NothingToDo{Reason: "goal " + id + " is not parked: the same resume from this signed-in session"}
+					return nil, AlreadyHolds{Reason: "goal " + id + " is not parked: the same resume from this signed-in session"}
 				}
-				return nil, fmt.Errorf("goal %s is %s, not parked", id, f.State)
+				return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is not paused (it is %s)", id, f.State)}
 			}
 			var entry PowerOfAttorneyEntry
 			if r.Attorney != nil {
@@ -3006,7 +3056,7 @@ func blockRequest(r VerbRequest, id, blocker string, human bool) PublishRequest 
 					return nil, AlreadyApplied{}
 				}
 				if contains(f.Blocked, blocker) {
-					return nil, NothingToDo{Reason: "goal " + id + " already waits for " + blocker}
+					return nil, AlreadyHolds{Reason: "goal " + id + " already waits for " + blocker}
 				}
 			}
 			f, err := recordBlockerEdge(t, r, id, blocker, blockerEdge{
@@ -3078,7 +3128,7 @@ func unblockRequest(r VerbRequest, id, blocker string, proof *humanauthority.Pro
 				return nil, AlreadyApplied{}
 			}
 			if !contains(f.Blocked, blocker) {
-				return nil, NothingToDo{Reason: "goal " + id + " does not wait for " + blocker}
+				return nil, AlreadyHolds{Reason: "goal " + id + " already does not wait for " + blocker}
 			}
 			hand, temporary, handErr := humanHand(r, proof)
 			if handErr != nil {
@@ -3326,7 +3376,9 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 				if opidLanded(f, r) {
 					return nil, AlreadyApplied{}
 				}
-				return nil, LostToCompetitor{Winner: lastOpid(f)}
+				// The goal is open, which is what a reopen asks for: a
+				// repeat, success with no record (R-129-ui, U-idem).
+				return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already open (it is %s)", id, f.State)}
 			}
 			f, archived := t.Done[id]
 			if !archived {
@@ -3571,15 +3623,18 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 					}
 				}
 			}
-			// An identical edit under this hand's own signed-in session is an
+			// An identical edit, from any hand (R-129-ui, U-idem), is an
 			// explicit no-op, as an identical approval above it is: every
 			// field the request carries already reads exactly this way, so a
 			// second press of one proposal's Apply writes nothing. The
 			// browser is the one hand with two tabs on one card, and its
 			// second press used to land a second edit with a second History
 			// line.
-			if editChangesNothing(f, fields, r.Authority) {
-				return nil, NothingToDo{Reason: "goal " + id + " already reads exactly this way: the same edit from this signed-in session"}
+			if editChangesNothing(f, fields) {
+				if fromSignedInSession(r.Authority) {
+					return nil, AlreadyHolds{Reason: "goal " + id + " already reads exactly this way: the same edit from this signed-in session"}
+				}
+				return nil, AlreadyHolds{Reason: "goal " + id + " already reads exactly this way"}
 			}
 			displaced := ""
 			if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
@@ -3649,10 +3704,7 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 // word is still its own word. It answers for the three fields that hand sends
 // — the intent, the next step and the labels — and an edit carrying anything
 // else is not the repeat this rule is about, so it lands as it always did.
-func editChangesNothing(f *GoalFile, fields EditFields, proof *humanauthority.Proof) bool {
-	if proof == nil || proof.Outcome != humanauthority.OutcomeSession {
-		return false
-	}
+func editChangesNothing(f *GoalFile, fields EditFields) bool {
 	if fields.Tier != nil || fields.Risk != nil || fields.Blocked != nil || fields.NextStepAppend != nil {
 		return false
 	}
@@ -3812,7 +3864,7 @@ func stealRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 				return nil, fmt.Errorf("goal %s is %s; steal reassigns a standing claim (claim takes a queued goal)", id, f.State)
 			}
 			if ownPair(f.Claimed, r.Actor) {
-				return nil, NothingToDo{Reason: "already claimed by this pair (not by this operation)"}
+				return nil, AlreadyHolds{Reason: "goal " + id + " is already claimed by this session (" + f.Claimed.Machine + "+" + f.Claimed.Lineage + ", since " + f.Claimed.At + ")"}
 			}
 			// Steal follows the selected old pair across the arc. Other
 			// independently claimed, parked, or queued members neither move
@@ -4424,7 +4476,7 @@ func detachRequest(r VerbRequest, id string) PublishRequest {
 				return nil, AlreadyApplied{}
 			}
 			if f.Arc == "" {
-				return nil, NothingToDo{Reason: "the goal is not in an arc"}
+				return nil, AlreadyHolds{Reason: "goal " + id + " is already in no group"}
 			}
 			if f.State == StateParked && r.Actor.Human == "" {
 				return nil, fmt.Errorf("goal %s is parked; a parked arc's membership edits are human acts", id)
@@ -4521,7 +4573,7 @@ func setPinRequest(r VerbRequest, id, pin string) PublishRequest {
 				next = ""
 			}
 			if f.Pinned == next {
-				return nil, NothingToDo{Reason: "the pin already reads exactly that"}
+				return nil, AlreadyHolds{Reason: "the pin already reads exactly that"}
 			}
 			// A standing claim on another machine outlives a new pin
 			// only by explicit direction: refuse so the human decides
@@ -4565,7 +4617,7 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 				return nil, AlreadyApplied{}
 			}
 			if f.Arc == arc {
-				return nil, NothingToDo{Reason: "already a member of that arc"}
+				return nil, AlreadyHolds{Reason: "goal " + id + " is already in group " + arc}
 			}
 			displaced := ""
 			sourceWasClaimed := false

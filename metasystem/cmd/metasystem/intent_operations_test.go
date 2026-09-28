@@ -79,7 +79,6 @@ func TestIntentRepairAuthority(t *testing.T) {
 		// not an authority refusal.
 		{[]string{"goal", "sync", "--accept-remote-history", "--by", "Wido"}, []string{"goal", "repair", "--accept-remote", "--by", "Wido", "--root"}, "git fetch"},
 		{[]string{"settings", "coordinator", "--declare", "--by", "Wido"}, []string{"brain", "declare", "--root"}, "is a human act; run it from an agent-free terminal"},
-		{[]string{"settings", "coordinator", "--withdraw", "--by", "Wido"}, []string{"brain", "withdraw", "--root"}, "is a human act; run it from an agent-free terminal"},
 		{[]string{"mission", "repair", "demo", "--problem", "2", "--confirm-restored", strings.Repeat("b", 40), "--by", "Wido", "--reason", "restored"}, []string{"mission", "resolve-taint", "--root"}, "human-reserved act"},
 		{[]string{"mission", "repair", "demo", "--problem", "2", "--accept-workspace", "--waive", "claim-a", "--by", "Wido", "--reason", "accepted"}, []string{"mission", "resolve-taint", "--root"}, "human-reserved act"},
 	} {
@@ -87,6 +86,12 @@ func TestIntentRepairAuthority(t *testing.T) {
 		if result.Outcome != intentRefused || code == 0 || len(ran) < len(row.verb)+1 || !slicesHasPrefix(ran[2:], row.verb) || !strings.Contains(result.Summary, row.reason) {
 			t.Errorf("%v without a person's proof = %d %+v (owner argv %v)", row.args, code, result, ran)
 		}
+	}
+	// Withdrawing where nothing is declared is the owner's idempotent repeat
+	// (R-129-ui): success at every authority, and nothing is touched.
+	if code, result, ran := owner("settings", "coordinator", "--withdraw", "--by", "Wido"); code != 0 || result.Outcome != intentUnchanged ||
+		len(ran) < 3 || !slicesHasPrefix(ran[2:], []string{"brain", "withdraw", "--root"}) || !strings.Contains(result.Summary, "nothing to withdraw") {
+		t.Errorf("withdraw of an undeclared coordinator = %d %+v (owner argv %v)", code, result, ran)
 	}
 	if _, result, ran := owner("mission", "repair", "demo", "--problem", "2", "--accept-workspace", "--waive", "claim-a", "--by", "Wido", "--reason", "accepted"); !strings.Contains(strings.Join(ran, " "), "--adopt --waives claim-a --by Wido --reason accepted") {
 		t.Errorf("accept-workspace inputs: %v %+v", ran, result)

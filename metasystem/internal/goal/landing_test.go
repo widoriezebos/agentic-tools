@@ -60,7 +60,7 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 	}
 	// A repeat is nothing to do; the ledger does not move.
 	before := acceptedTipForEndpoint(t, a)
-	if res, err := LandReady(landingReqFor(a, "01J5X00000000000000000NA14", "mac-a", landAt.Add(time.Minute)), "built-a"); err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "already in landing") {
+	if res, err := LandReady(landingReqFor(a, "01J5X00000000000000000NA14", "mac-a", landAt.Add(time.Minute)), "built-a"); err != nil || res.Outcome != OutcomeAbandoned || !res.Unchanged || !strings.Contains(res.Detail, "is already queued to land") {
 		t.Fatalf("a repeated land-ready is nothing to do: %+v %v", res, err)
 	}
 	if acceptedTipForEndpoint(t, a) != before {

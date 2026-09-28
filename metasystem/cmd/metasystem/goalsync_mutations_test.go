@@ -656,13 +656,19 @@ func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
 			fixture := newGoalBudgetResumeFixture(t, test.wantFenceCleared, test.mutate)
 			root := fixture.root()
 			writeFixtureEnrollment(t, root, "Wido")
-			code, _, stderr := captureCommandOutput(t, false, true, func() int {
+			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
 				return fixture.runBudget([]string{
 					"--root", root, "--id", "standing-validation", "4h/4/240m/2", "--fixture-human-authority", "--lineage", "m1",
 				}, fixedFixtureGoalAuthority)
 			})
-			if code != 2 {
+			// A box that completes to the one the goal already carries is a
+			// repeat (R-129-ui, U-idem): success, nothing recorded. A box
+			// that needs a fresh act still refuses and prints it.
+			if test.wantRun && code != 2 {
 				t.Fatalf("the incomplete compact box did not refuse: code=%d stderr=%q", code, stderr)
+			}
+			if !test.wantRun && (code != 0 || !strings.Contains(stdout, "already carries the box") || stderr != "") {
+				t.Fatalf("the box the goal already carries was not an unchanged success: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 			}
 			if test.wantRun {
 				if !strings.Contains(stderr, "run: metasystem goal budget") || strings.Contains(stderr, "already carries that box") {
@@ -671,8 +677,6 @@ func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
 				if test.wantRemedySuffix != "" && !strings.Contains(stderr, test.wantRemedySuffix+"\n") {
 					t.Fatalf("the printed remedy did not end in %q: stderr=%q", test.wantRemedySuffix, stderr)
 				}
-			} else if !strings.Contains(stderr, "already carries that box") || strings.Contains(stderr, "run:") {
-				t.Fatalf("an engine no-op was printed as a command: stderr=%q", stderr)
 			}
 			if fixture.repo.publications != 0 {
 				t.Fatalf("an incomplete box published %d times", fixture.repo.publications)
@@ -2189,8 +2193,14 @@ func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T)
 				t.Fatalf("machine %s enrollment journal lineage = %q, want terminal-tty-session-stop-1", root, entry.Lineage)
 			}
 		}
-		if !foundDerivedLineage {
+		// The first machine publishes the fleet cutoff. The second finds it
+		// standing: its fleet publication is a repeat whose effect holds, so
+		// it leaves no journal entry at all (R-129-ui, U-idem).
+		if root == rootA && !foundDerivedLineage {
 			t.Fatalf("machine %s recorded no enroll-terminal transaction", root)
+		}
+		if root == rootB && foundDerivedLineage {
+			t.Fatalf("machine %s journaled a fleet cutoff that already stood", root)
 		}
 	}
 	projection, err := goal.Project(endpointB, false, secondAt)

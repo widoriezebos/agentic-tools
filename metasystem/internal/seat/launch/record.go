@@ -338,3 +338,43 @@ func dyingStep(record Record) string {
 	}
 	return StepClone
 }
+
+// Launched is the launch that already joined this machine on this host, when
+// the request is a repeat whose effect holds (R-129-ui): a fresh request for
+// a machine whose launch ended done or armed (enrolled, its runner up) into a
+// clone that is still there, at the destination asked for when one was; or a
+// resume of a launch that already ended done. Anything else is a launch to
+// run, and the preflight judges it as before.
+func Launched(checkout string, request Request) (Record, bool, error) {
+	if request.Resuming() {
+		record, err := Load(checkout, request.Resume)
+		if err != nil {
+			return Record{}, false, err
+		}
+		return record, record.Outcome == OutcomeDone && present(record.Destination), nil
+	}
+	records, err := List(checkout)
+	if err != nil {
+		return Record{}, false, err
+	}
+	for _, record := range records {
+		if record.Machine != request.Machine || (record.Outcome != OutcomeDone && record.Outcome != OutcomeArmed) {
+			continue
+		}
+		if request.Destination != "" && filepath.Clean(request.Destination) != filepath.Clean(record.Destination) {
+			continue
+		}
+		if present(record.Destination) {
+			return record, true, nil
+		}
+	}
+	return Record{}, false, nil
+}
+
+func present(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := os.Lstat(path)
+	return err == nil
+}

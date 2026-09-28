@@ -1529,13 +1529,13 @@ func completedBudgetRemedy(values *humanVerbValues, file *goal.GoalFile, complet
 			return humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")}
 		}
 		if values.approvedRef == "" {
-			return humanVerbRemedy{words: "the goal already carries that box, so there is no new act to record"}
+			return humanVerbRemedy{words: alreadyCarriesBox}
 		}
 	case goal.StateApproved, goal.StateParked:
 		expired, _ := file.ApprovalExpired(horizon)
 		if file.Approved != nil && file.Approved.Authority == goal.ApprovalAuthorityProven &&
 			values.temporaryWord == "" && values.reviewBy == "" && !expired {
-			return humanVerbRemedy{words: "the goal already carries that box, so there is no new act to record"}
+			return humanVerbRemedy{words: alreadyCarriesBox}
 		}
 	}
 	return humanVerbRemedy{command: values.budgetCommand(box)}
@@ -3577,11 +3577,34 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
 	req.Now = enrollment.EnrolledAt
+	// A repeated enrollment (the same person at the same terminal) whose
+	// fleet cutoff is already recorded publishes nothing (R-129-ui): no
+	// ledger operation is journaled for an effect that holds. One whose
+	// earlier publication failed still publishes it now.
+	if enrollment.Repeat {
+		if projection, projectErr := goal.Project(req.Endpoint, false, req.Now); projectErr == nil && projection.Tree != nil &&
+			projection.Tree.Root != nil && projection.Tree.Root.FleetEnrollment != nil {
+			res := goal.PublishResult{Outcome: goal.OutcomeAbandoned, Unchanged: true,
+				Detail: fmt.Sprintf("this terminal is already enrolled for %s (generation %d since %s) and the fleet cutoff is recorded",
+					enrollment.Human, enrollment.Generation, enrollment.EnrolledAt.UTC().Format(time.RFC3339))}
+			if dependencies.report != nil {
+				dependencies.report.result = &res
+				return 0
+			}
+			printJSON(enrollment)
+			return 0
+		}
+	}
 	res, err := goal.RecordFleetEnrollment(req, enrollment.Generation)
 	// Another machine may already own the immutable fleet cutoff. That leaves
 	// this machine's completed local enrollment valid and needs no root rewrite.
 	if err != nil || (res.Outcome != goal.OutcomeConfirmed && res.Outcome != goal.OutcomeConfirmedLate && res.Outcome != goal.OutcomeAbandoned) {
 		return refuseHumanVerb(values, 1, fmt.Sprint("the terminal enrolled locally but its fleet cutoff did not publish: ", err, " ", res.Detail), humanVerbRemedy{words: "the local enrollment stands; repair fleet synchronization without re-enrolling"})
+	}
+	// A fresh local enrollment is a change even when the fleet cutoff it
+	// would publish already stands; only a repeated enrollment is unchanged.
+	if !enrollment.Repeat {
+		res.Unchanged = false
 	}
 	if dependencies.report != nil {
 		dependencies.report.result = &res

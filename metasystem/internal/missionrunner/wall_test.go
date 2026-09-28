@@ -1,6 +1,7 @@
 package missionrunner
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
@@ -1166,9 +1167,16 @@ func TestResolveTaintRestore(t *testing.T) {
 	if askAfter["answeredAt"] == nil || askAfter["answer"] == nil {
 		t.Fatalf("the resolution must answer the wall-violation ask: %v", askAfter)
 	}
-	// Double resolution refuses.
-	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "again", nil); code == 0 {
-		t.Fatal("a resolved taint must refuse a second resolution")
+	// The same resolution again is success and records nothing (R-129-ui).
+	resolvedBytes, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "again", nil); code != 0 {
+		t.Fatalf("the same resolution again must be success: %d", code)
+	}
+	if again, err := os.ReadFile(statePath); err != nil || !bytes.Equal(again, resolvedBytes) {
+		t.Fatalf("a repeated resolution rewrote the state: %v", err)
 	}
 
 	// The mission MOVES again — and the wall keeps watching: this bed's
@@ -1386,9 +1394,20 @@ func TestResolveTaintTailCompletion(t *testing.T) {
 	if completed["answeredAt"] == nil || !strings.Contains(answer, "resolved by Wido") || !strings.Contains(answer, "restore") {
 		t.Fatalf("the completed answer must carry the RECORDED ruling: %v", completed)
 	}
-	// With the tail complete, a further resolve refuses.
-	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "again", nil); code != 3 {
-		t.Fatalf("a completed resolution must refuse: %d", code)
+	// With the tail complete, the recorded resolution again is success
+	// that records nothing (R-129-ui); another resolution refuses.
+	before, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "again", nil); code != 0 {
+		t.Fatalf("the recorded resolution again must be success: %d", code)
+	}
+	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Wido", "keep it instead", []string{"x"}); code != 3 {
+		t.Fatalf("another resolution of a completed taint must refuse: %d", code)
+	}
+	if after, err := os.ReadFile(statePath); err != nil || !bytes.Equal(after, before) {
+		t.Fatalf("a repeated or refused resolution rewrote the state: %v", err)
 	}
 }
 

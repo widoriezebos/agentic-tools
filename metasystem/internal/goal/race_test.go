@@ -149,7 +149,7 @@ func TestConcurrentSameGoalRaceNamesOneWinner(t *testing.T) {
 		go func(slot int, endpoint Endpoint, machine string) {
 			defer done.Done()
 			start.Wait()
-			results[slot], errs[slot] = Open(verbReqFor(endpoint, ulids[slot], machine), "contested", "Raced create.", "main", "Go.")
+			results[slot], errs[slot] = Open(verbReqFor(endpoint, ulids[slot], machine), "contested", "Raced create "+string(rune('a'+slot))+".", "main", "Go.")
 		}(i, leg.endpoint, leg.machine)
 	}
 	start.Done()

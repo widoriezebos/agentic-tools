@@ -174,7 +174,7 @@ func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 	}
 	// The pair itself replays idempotent-shaped.
 	res, err = Claim(verbReqFor(a, "01J5X00000000000000000AK40", "mac-a"), "pair-keyed")
-	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "already claimed by this pair") {
+	if err != nil || res.Outcome != OutcomeAbandoned || !res.Unchanged || !strings.Contains(res.Detail, "is already claimed by this session") {
 		t.Fatalf("the pair's re-claim abandons by name: %+v %v", res, err)
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -58,6 +59,11 @@ func runSessionStop(args []string) int {
 		fmt.Fprintln(os.Stderr, refusal)
 		return code
 	}
+	if refusal != "" {
+		// The authorization already held (R-129-ui); the sentence says so.
+		fmt.Println(refusal)
+		return 0
+	}
 	fmt.Printf("session stop authorized once for %s at holder %s epoch %d by %s\n",
 		marker.SessionId, marker.HolderMainId, marker.ClaimEpoch, marker.By)
 	return 0
@@ -65,7 +71,9 @@ func runSessionStop(args []string) int {
 
 // authorizeSessionStop mints one quiet-stop authorization for the current
 // announced main session at a proven human terminal. A refusal returns its
-// sentence and exit code and writes nothing.
+// sentence and exit code and writes nothing. When the same person's
+// authorization already holds, it returns that authorization, exit 0 and the
+// sentence saying what already holds, and writes nothing (R-129-ui).
 func authorizeSessionStop(stateRoot, by string) (goal.SessionStop, string, int) {
 	callerPID := int64(os.Getpid())
 	classification, err := classifySessionStopCaller(stateRoot, callerPID)
@@ -106,6 +114,10 @@ func authorizeSessionStop(stateRoot, by string) (goal.SessionStop, string, int) 
 			PidStartTicks: humanProof.InvokerRef.StartTicks, BootID: humanProof.InvokerRef.BootID,
 		},
 	}, humanProof)
+	var already goal.AlreadyHolds
+	if errors.As(err, &already) {
+		return marker, already.Reason, 0
+	}
 	if err != nil {
 		return goal.SessionStop{}, fmt.Sprintf("session stop: %v", err), 1
 	}

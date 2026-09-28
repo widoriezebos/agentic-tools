@@ -82,15 +82,16 @@ func TestAWithdrawOfAGoalThatIsNotLiveFromASessionIsRefused(t *testing.T) {
 	}
 }
 
-func TestAWithdrawOfAnUnapprovedGoalFromATerminalIsUnchanged(t *testing.T) {
+// U-idem: the same repeat from a terminal is success with no record.
+func TestAWithdrawOfAnUnapprovedGoalFromATerminalIsANoOp(t *testing.T) {
 	t.Parallel()
 	endpoint := sessionEffectGoals(t, 7, "seat-effect-withdraw")
 
 	request := sessionEffectTerminalRequest(t, endpoint, 7, 2)
 	refused, err := Unapprove(request, "seat-effect-withdraw", "the board changed", request.Authority)
-	if err != nil || refused.Outcome != OutcomeRejected ||
-		!strings.Contains(refused.Detail, "APPROVAL_REQUIRED") {
-		t.Fatalf("a terminal's withdrawal of an unapproved goal was not the engine's own refusal: %+v %v", refused, err)
+	if err != nil || refused.Outcome != OutcomeAbandoned || !refused.Unchanged ||
+		!strings.Contains(refused.Detail, "is already not approved") {
+		t.Fatalf("a terminal's withdrawal of an unapproved goal was not a no-op: %+v %v", refused, err)
 	}
 }
 
@@ -228,7 +229,7 @@ func TestAnOpenOfAnExistingGoalThatDiffersFromASessionIsRefused(t *testing.T) {
 	}
 }
 
-func TestARepeatedOpenFromATerminalIsUnchanged(t *testing.T) {
+func TestARepeatedOpenFromATerminalIsANoOp(t *testing.T) {
 	t.Parallel()
 	endpoint := sessionEffectGoals(t, 0, "seat-effect-holds")
 	budget := testBudget()
@@ -243,7 +244,14 @@ func TestARepeatedOpenFromATerminalIsUnchanged(t *testing.T) {
 	second := sessionEffectTerminalRequest(t, endpoint, 0, 3)
 	result, err := OpenRisked(second, "seat-effect-open", "The work a person asked for.", OriginHuman,
 		"Start it.", nil, nil, edgeRisk(), 0, "", &budget, second.Authority)
-	if err != nil || result.Outcome != OutcomeLost || !strings.Contains(result.Detail, "winner: ") {
-		t.Fatalf("a terminal's repeated open was not the competitor refusal: %+v %v", result, err)
+	if err != nil || result.Outcome != OutcomeAbandoned || !result.Unchanged || !strings.Contains(result.Detail, "is already open and reads exactly this way") {
+		t.Fatalf("a terminal's repeated open was not a no-op: %+v %v", result, err)
+	}
+	// An open of the same id saying anything else is a second act, and loses.
+	third := sessionEffectTerminalRequest(t, endpoint, 0, 4)
+	other, err := OpenRisked(third, "seat-effect-open", "Something else entirely.", OriginHuman,
+		"Start it.", nil, nil, edgeRisk(), 0, "", &budget, third.Authority)
+	if err != nil || other.Outcome != OutcomeLost || !strings.Contains(other.Detail, "winner: ") {
+		t.Fatalf("a different open of an existing id was not the competitor refusal: %+v %v", other, err)
 	}
 }

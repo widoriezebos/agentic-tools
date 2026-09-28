@@ -418,8 +418,16 @@ func runIntentStopDesign(inv *intentInvocation, id string) int {
 		}
 		attempt = attempts[number-1]
 	}
-	record, err := manager.Cancel(attempt.LaunchID)
 	targets := []intentTarget{{Kind: "design", ID: destination}}
+	if current, readErr := manager.Store.Read(attempt.LaunchID); readErr == nil && current.State.Terminal() {
+		// An attempt that already ended is already stopped (R-129-ui).
+		summary := fmt.Sprintf("design attempt %d is already stopped: %s", attempt.Attempt, current.State)
+		if current.FinishedAt != "" {
+			summary += " (at " + current.FinishedAt + ")"
+		}
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: map[string]any{"attempt": attempt.Attempt, "state": current.State}, Summary: summary})
+	}
+	record, err := manager.Cancel(attempt.LaunchID)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "the design author was not stopped: " + err.Error()})
 	}
