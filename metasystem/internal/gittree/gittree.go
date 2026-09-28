@@ -15,6 +15,7 @@ package gittree
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -151,6 +152,38 @@ func ScrubbedEnvironFrom(base []string, extra ...string) []string {
 		out = append(out, entry)
 	}
 	return append(out, extra...)
+}
+
+// anchorPins are the pins every mission- and contract-side git call
+// carries: object replacement disabled, so a planted replace ref can never
+// re-route what the anchor machinery reads or writes, and no background
+// maintenance riding the invocation.
+var anchorPins = []string{"-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
+
+// PinnedGit builds one mission- or contract-side git invocation in repo:
+// the anchor pins, the scrubbed environment plus extraEnv, and the local
+// bound read from repo's metasystem.conf. The caller sets stdin and output
+// streams, runs it with boundedexec.Run, and maps errors into its own
+// package's errors.
+func PinnedGit(repo string, extraEnv []string, args ...string) (*exec.Cmd, boundedexec.Bound) {
+	full := append(append([]string{"-C", repo}, anchorPins...), args...)
+	cmd := exec.Command("git", full...)
+	cmd.Env = ScrubbedEnviron(extraEnv...)
+	return cmd, boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
+}
+
+// ExitCode is a bounded run's exit-code answer: 0 on success, git's own
+// nonzero exit, or -1 when git could not run (spawn failure or timeout), a
+// runner outcome callers keep off the repository-verdict ramps.
+func ExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode()
+	}
+	return -1
 }
 
 // git runs one bounded git invocation in the workspace with the package's

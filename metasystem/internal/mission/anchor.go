@@ -28,25 +28,13 @@ func couldNotRun(op string) error {
 	return fmt.Errorf("mission anchor: %w", &gittree.RunFailure{Op: op, Err: errors.New("spawn failure or timeout")})
 }
 
-// anchorGitArgs builds every anchor-side git invocation on the runner's
-// own surface: object replacement disabled, so a planted replace ref can
-// never re-route what the anchor machinery reads or writes (the same pin
-// every gittree invocation carries).
-func anchorGitArgs(repo string, args []string) []string {
-	return append([]string{"-C", repo, "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}, args...)
-}
-
-// gitOutput runs a git command and returns its stdout, failing on a nonzero
-// exit.
+// gitOutput runs a git command on the runner's pinned anchor surface
+// (gittree.PinnedGit) and returns its stdout, failing on a nonzero exit.
 func gitOutput(repo string, args ...string) (string, error) {
-	cmd := exec.Command("git", anchorGitArgs(repo, args)...)
-	cmd.Env = gittree.ScrubbedEnviron()
+	cmd, limit := gittree.PinnedGit(repo, nil, args...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	// Bounded like every other external call: a git that never
-	// returns must not hang the caller.
-	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
 	if err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " ")); err != nil {
 		// A spawn failure or timeout is the runner's could-not-run, kept
 		// TYPED so callers can route it off the verdict ramps; only
@@ -61,26 +49,13 @@ func gitOutput(repo string, args ...string) (string, error) {
 }
 
 // gitTry runs a git command and returns its stdout and exit code without
-// treating a nonzero exit as an error.
+// treating a nonzero exit as an error; could-not-run is -1.
 func gitTry(repo string, args ...string) (string, int) {
-	cmd := exec.Command("git", anchorGitArgs(repo, args)...)
-	cmd.Env = gittree.ScrubbedEnviron()
+	cmd, limit := gittree.PinnedGit(repo, nil, args...)
 	var stdout strings.Builder
 	cmd.Stdout = &stdout
-	// Bounded like every other external call; a timeout is a failure
-	// answer, not an exit code.
-	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
-	err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " "))
-	if err == nil {
-		return stdout.String(), 0
-	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return stdout.String(), exit.ExitCode()
-	}
-	// Could-not-run (spawn failure or timeout) is -1 — a runner outcome
-	// callers must keep off the repository-verdict ramps.
-	return stdout.String(), -1
+	code := gittree.ExitCode(boundedexec.Run(cmd, limit, "git "+strings.Join(args, " ")))
+	return stdout.String(), code
 }
 
 // anchorOperations isolates the four raw Git calls made while publishing and
@@ -413,13 +388,11 @@ func anchorWriteHeldWithOperations(ops anchorOperations, statePath, repo, ledger
 // gitStdinOutput runs git feeding the given bytes on stdin — the anchor
 // stores exactly the bytes it hashed, never a second file read.
 func gitStdinOutput(repo string, stdin []byte, args ...string) (string, error) {
-	cmd := exec.Command("git", anchorGitArgs(repo, args)...)
-	cmd.Env = gittree.ScrubbedEnviron()
+	cmd, limit := gittree.PinnedGit(repo, nil, args...)
 	cmd.Stdin = bytes.NewReader(stdin)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
 	if err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " ")); err != nil {
 		return "", stateErr("git %s failed: %s", strings.Join(args, " "), strings.TrimSpace(stderr.String()))
 	}
@@ -429,12 +402,10 @@ func gitStdinOutput(repo string, stdin []byte, args ...string) (string, error) {
 // gitEnvOutput runs git with extra environment, capturing stdout —
 // bounded like every other external call.
 func gitEnvOutput(repo string, extraEnv []string, args ...string) (string, error) {
-	cmd := exec.Command("git", anchorGitArgs(repo, args)...)
-	cmd.Env = gittree.ScrubbedEnviron(extraEnv...)
+	cmd, limit := gittree.PinnedGit(repo, extraEnv, args...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
 	if err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " ")); err != nil {
 		detail := strings.TrimSpace(stderr.String())
 		if detail == "" {

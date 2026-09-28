@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -72,27 +71,15 @@ var (
 	positiveIntRe = regexp.MustCompile(`^[1-9][0-9]*$`)
 )
 
-// contractGitArgs builds every contract-side git invocation on the
-// runner's own surface: object replacement disabled and (via the caller
-// setting ScrubbedEnviron) the repository-steering environment stripped,
-// so measurement and gate pins read the objects themselves.
-func contractGitArgs(repo string, args []string) []string {
-	return append([]string{"-C", repo, "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}, args...)
-}
-
-// gitOutput runs a git subcommand in a checkout, returning its stdout and
-// carrying git's own stderr into the failure. Contract preflight reads the
-// repository this way (freshness, provenance); mission keeps its own copy
-// because its errors are mission errors.
+// gitOutput runs a git subcommand in a checkout on the runner's pinned
+// surface (gittree.PinnedGit), returning its stdout and carrying git's own
+// stderr into the failure. Contract preflight reads the repository this way
+// (freshness, provenance); mission maps the same call into mission errors.
 func gitOutput(repo string, args ...string) (string, error) {
-	cmd := exec.Command("git", contractGitArgs(repo, args)...)
-	cmd.Env = gittree.ScrubbedEnviron()
+	cmd, limit := gittree.PinnedGit(repo, nil, args...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	// Bounded like every other external call: a git that never
-	// returns must not hang the caller.
-	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
 	if err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " ")); err != nil {
 		return stdout.String(), stateErr("git %s failed: %s", strings.Join(args, " "), strings.TrimSpace(stderr.String()))
 	}
@@ -107,22 +94,11 @@ func gitTry(repo string, args ...string) (string, int) {
 }
 
 func gitTryWithRunner(repo string, run func(*exec.Cmd, boundedexec.Bound, string) error, args ...string) (string, int) {
-	cmd := exec.Command("git", contractGitArgs(repo, args)...)
-	cmd.Env = gittree.ScrubbedEnviron()
+	cmd, limit := gittree.PinnedGit(repo, nil, args...)
 	var stdout strings.Builder
 	cmd.Stdout = &stdout
-	// Bounded like every other external call; a timeout is a failure
-	// answer, not an exit code.
-	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
-	err := run(cmd, limit, "git "+strings.Join(args, " "))
-	if err == nil {
-		return stdout.String(), 0
-	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return stdout.String(), exit.ExitCode()
-	}
-	return stdout.String(), -1
+	code := gittree.ExitCode(run(cmd, limit, "git "+strings.Join(args, " ")))
+	return stdout.String(), code
 }
 
 // requiredFenceKeys are the fence bounds every contract must declare. The
