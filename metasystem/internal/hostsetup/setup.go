@@ -130,7 +130,7 @@ func plan(layout stateroot.Layout, selected []string, copySkills, hooksOnly bool
 	var actions []action
 	if layout.Template && len(selected) > 0 && !hooksOnly {
 		for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
-			item, needed, err := instructionAction(filepath.Join(layout.RepositoryRoot, name), managedPointers())
+			item, needed, err := instructionAction(filepath.Join(layout.RepositoryRoot, name), managedPointers(layout.RepositoryRoot))
 			if err != nil {
 				return nil, err
 			}
@@ -222,10 +222,17 @@ func plan(layout stateroot.Layout, selected []string, copySkills, hooksOnly bool
 	return actions, nil
 }
 
-func managedPointers() string {
-	return pointerBegin + "\n" +
-		"MetaSystem's canonical agent contract is `metasystem/AGENTS.md`; use `metasystem/wow.md` to route to task-specific guidance.\n" +
-		"This repository's local development facts are in `development/project-rules-local.md`.\n" + pointerEnd
+// localRulesPath is the repository's own local development rules, named in
+// the pointer block only when the repository has that file.
+const localRulesPath = "development/project-rules-local.md"
+
+func managedPointers(repositoryRoot string) string {
+	block := pointerBegin + "\n" +
+		"MetaSystem's canonical agent contract is `metasystem/AGENTS.md`; use `metasystem/wow.md` to route to task-specific guidance.\n"
+	if info, err := os.Stat(filepath.Join(repositoryRoot, filepath.FromSlash(localRulesPath))); err == nil && info.Mode().IsRegular() {
+		block += "This repository's local development facts are in `" + localRulesPath + "`.\n"
+	}
+	return block + pointerEnd
 }
 
 func instructionAction(path, block string) (action, bool, error) {

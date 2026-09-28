@@ -7,7 +7,7 @@
 
 Design for defect-analysis-gate, against repository commit 0acef6eb6. This page is the umbrella context for the three members in section 6.
 Drafted by a Codex design round for the m1b seat on 2026-09-13 (chain implementer-873925bde8faae7cf849fd18) on the seat's brief; the rostered Codex design read is the next act, then the members are opened and built on the roster lane.
-The contract is the intent and next step in `metasystem/plans/goals/defect-analysis-gate.md:6` and the ladder in `metasystem/docs/paper/12-learning-systems.md:17`.
+The contract is the intent and next step in `metasystem/plans/goals/defect-analysis-gate.md:6` and the ladder in `paper/12-learning-systems.md:17`.
 The chosen boundary is dispatch admission. A goal may hold an investigation before its analysis survives. It cannot authorize a fix dispatch until then.
 
 ## 1. What a defect-fix item is today and where one can enter

@@ -70,10 +70,6 @@ List only rules that cannot be inferred from code or tooling and apply broadly i
   withdraw --goal G` only before seal; the owner remains the only process that
   returns or releases the handed-over claim.
 
-## Paper prose
-
-For `docs/paper`, use Wido's plain English. Keep the prose concise and easy to understand. Use ASCII only, with no em dashes. Avoid unnecessary abstractions or metaphors, "not this, but that" framing, and stock groups of three used for rhythm. Preserve the running story and the order in which the argument develops. New chapters must improve readability. Check chapter references and the build order after moving chapters.
-
 ## Decisions Reserved for Humans
 
 These require explicit in-task approval even when technically easy. Default set, which adaptation may extend but should not silently shrink:

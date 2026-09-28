@@ -13,13 +13,13 @@ are from this worktree at commit c34e77a2 (no source under internal/,
 cmd/ or scripts/ changed since revision 1's 4142106d).
 
 Changelog: revision 2 folds critique round 1 (chain cap-settle-crit,
-dispositions in plans/dispatch-cap-settlement-dispositions.md):
+dispositions in records/misc/dispatch-cap-settlement-dispositions.md):
 DCS-R1-TIMESTAMP-AUTHORITY, DCS-R1-START-PROOF (accepted in part),
 DCS-R1-REFUSAL-COVERAGE, DCS-R1-DISCHARGED-HUSK, DCS-R1-GOVERNED-COMPONENT-PROOF.
-Revision 3 folds critique round 2 (plans/dispatch-cap-settlement-dispositions-r2.md):
+Revision 3 folds critique round 2 (records/misc/dispatch-cap-settlement-dispositions-r2.md):
 DCS-R2-STALE-RESERVED-SNAPSHOT, DCS-R2-END-BEFORE-DEATH,
 DCS-R2-MIXED-START-END-CLOCKS. Revision 4 folds the failsafe round
-(plans/dispatch-cap-settlement-dispositions-r3.md):
+(records/misc/dispatch-cap-settlement-dispositions-r3.md):
 DCS-R3-RETRY-SELF-PROJECTION, DCS-R3-PROJECTION-WIRING,
 DCS-R3-LATE-START-INSTANT; it also corrects revision 3's import-graph
 claim in 1.9 (measured with `go list`, section 4.3).

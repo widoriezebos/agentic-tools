@@ -45,8 +45,8 @@ const (
 )
 
 // PayloadAllow is the payload allowlist: what is not named here does not
-// ship. The measuring kit (benchmark/), the development ledgers and the
-// roster stay home because nothing ships by default. cmd/, internal/, go.mod
+// ship. The paper, the development ledgers and the roster stay home because
+// nothing ships by default. cmd/, internal/, go.mod
 // and go.sum are the engine source: the payload ships source and the target
 // rebuilds, so scripts and engine prove their coherence by building.
 var PayloadAllow = []string{
@@ -593,10 +593,10 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 		return refuse(CodeRefused, fmt.Sprintf("cannot unpack the template payload: %v", err), "repair the template checkout")
 	}
 
-	// One engine input and the brain's role packet live under records/;
-	// keep those two files without shipping the template's history.
+	// The brain's role packet lives under records/; keep it without
+	// shipping the template's history.
 	kept := map[string][]byte{}
-	for _, rel := range []string{"records/misc/goals-migration-manifest.md", "records/misc/fleet-coordinator-brain-role-packet.md"} {
+	for _, rel := range []string{"records/misc/fleet-coordinator-brain-role-packet.md"} {
 		path := filepath.Join(stage, filepath.FromSlash(rel))
 		if !regularFile(path) {
 			return refuse(CodeRefused, "the payload is missing "+rel, "restore it in the template, commit, then run the same command again")
@@ -609,6 +609,9 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 	}
 	if err := os.RemoveAll(filepath.Join(stage, "records")); err != nil {
 		return refuse(CodeRefused, err.Error(), "retry")
+	}
+	if refusal := dropTemplateProjectState(stage); refusal != nil {
+		return refusal
 	}
 	// The landing owner selects required authority and preserves the
 	// application's own rulings.
@@ -665,6 +668,38 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 	}
 	if err := os.RemoveAll(filepath.Join(stage, "optional-skills")); err != nil {
 		return refuse(CodeRefused, err.Error(), "retry")
+	}
+	return nil
+}
+
+// templateProjectDocs are the template repository's own project state under
+// docs/: its project homes (the engine reads docs/intent, docs/doctrine and
+// docs/decisions as the application's own) and its history. An application
+// starts with none of them and writes its own.
+var templateProjectDocs = []string{"docs/intent", "docs/doctrine", "docs/decisions", "docs/journey.md", "docs/reviews"}
+
+// stopMoveDocs is the Stop-surface protocol's directory: its README ships,
+// the template's declarations for its own goals do not.
+const stopMoveDocs = "docs/stop-decision-moves"
+
+// dropTemplateProjectState removes the template's own project state from the
+// staged payload, so docs/ ships documentation alone.
+func dropTemplateProjectState(stage string) *Refusal {
+	for _, rel := range templateProjectDocs {
+		if err := os.RemoveAll(filepath.Join(stage, filepath.FromSlash(rel))); err != nil {
+			return refuse(CodeRefused, err.Error(), "retry")
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(stage, filepath.FromSlash(stopMoveDocs)))
+	if err != nil && !os.IsNotExist(err) {
+		return refuse(CodeRefused, err.Error(), "repair the template checkout")
+	}
+	for _, entry := range entries {
+		if entry.Name() != "README.md" {
+			if err := os.RemoveAll(filepath.Join(stage, filepath.FromSlash(stopMoveDocs), entry.Name())); err != nil {
+				return refuse(CodeRefused, err.Error(), "retry")
+			}
+		}
 	}
 	return nil
 }

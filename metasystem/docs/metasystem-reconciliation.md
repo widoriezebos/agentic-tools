@@ -102,7 +102,7 @@ checklist; no step is optional and none may be reordered:
 7. Hand the ledger to the human for review before merging the branch.
 
 This procedure is currently manual by an agent following it verbatim; a
-mechanical `upgrade.sh` for buckets one and two is planned, and until it
+mechanical engine verb for buckets one and two is planned, and until it
 exists this checklist is the only authority.
 
 Record the new template SHA in `docs/project-rules.md` when done.

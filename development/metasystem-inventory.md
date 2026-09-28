@@ -17,7 +17,7 @@ exactly one of three verdicts, and each verdict has a deciding rule:
   already holds.
 
 Anything that fits none of the three belongs beside the metasystem
-(`../development/`, `../benchmark/`) or outside the repository entirely.
+(`../development/`, `../paper/`) or outside the repository entirely.
 
 ## Top level (tracked)
 

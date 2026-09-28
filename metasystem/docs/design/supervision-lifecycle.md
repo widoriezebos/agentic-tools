@@ -6,6 +6,13 @@ measurement, proof obligations, implementation order, and the critique
 chain, CLOSED at its cap). `internal/supervise` implements them. A
 change to any D rule is a contract change, not a cleanup.
 
+Three scripts this contract names are gone and have no script successor:
+`provision.sh` and `run-cohort.sh` belonged to the benchmark kit, which
+left the repository (it is kept under the tag `benchmark-kit-final`), and
+`scripts/agents/reap-orphans.sh` was retired with the shell supervision
+layer. The rules that name them stand as the history of each D rule; the
+engine's `internal/supervise` is what runs today.
+
 ## D-1. Purpose from the state file, currency from the lock; exit means teardown
 
 Rounds 1-3 tried to DERIVE checkout identity from repository

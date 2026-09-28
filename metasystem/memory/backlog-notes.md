@@ -1,6 +1,6 @@
 # Backlog notes
 
-- Goal and current status: DETAIL NOTES for queued goals — the queue itself lives in plans/goals.md (the goal ledger) per the human's 2026-08-15 ruling: the goal queue IS the backlog. Items 15-20 below are migrated (their goals reference these notes); items 1-13 remain historical/queued matter pending their own migration or retirement.
+- Goal and current status: DETAIL NOTES for queued goals — the queue itself lives in the goal ledger (plans/goals/, one file per goal) per the human's 2026-08-15 ruling: the goal queue IS the backlog. Items 15-20 below are migrated (their goals reference these notes); items 1-13 remain historical/queued matter pending their own migration or retirement.
 - Next step: none
 - In flight right now: nothing
 - Waiting on: nothing — items here are deliberately queued
