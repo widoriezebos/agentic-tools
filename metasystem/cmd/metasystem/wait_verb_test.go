@@ -670,7 +670,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, output, problem := captureChannelOutput(t, func() int {
-		return runSessionStart([]string{"--root", root, "--session", "session-new"})
+		return sessionStartRecovery(root, "session-new", os.Stdout, os.Stderr)
 	})
 	want := "WAITING attempt attempt-a until 2026-09-14T12:00:00Z: metasystem work wait wait:" + strings.Repeat("a", 32)
 	if code != 0 || strings.TrimSpace(output) != want || problem != "" {
@@ -765,7 +765,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, invoke := range map[string]func() int{
-		"session start": func() int { return runSessionStart([]string{"--root", root, "--session", "session-new"}) },
+		"session start": func() int { return sessionStartRecovery(root, "session-new", os.Stdout, os.Stderr) },
 		"goal next":     func() int { return runGoalNext([]string{"--root", root}) },
 		"turn verdict": func() int {
 			return runReportTurnVerdict([]string{"--root", root, "--session", "session-new", "--main-id", mainID})
@@ -777,7 +777,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		}
 	}
 	if code, _, _ := captureChannelOutput(t, func() int {
-		return runSessionStart([]string{"--root", root, "--session", "another-session"})
+		return sessionStartRecovery(root, "another-session", os.Stdout, os.Stderr)
 	}); code != metarun.ExitWaiterBusy {
 		t.Fatalf("another session received this holder's recovery rows: exit=%d", code)
 	}
@@ -785,7 +785,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 
 func TestWaitSessionStartWithoutLeaseReturnsBusy(t *testing.T) {
 	code, output, problem := captureChannelOutput(t, func() int {
-		return runSessionStart([]string{"--root", t.TempDir(), "--session", "session-without-lease"})
+		return sessionStartRecovery(t.TempDir(), "session-without-lease", os.Stdout, os.Stderr)
 	})
 	if code != metarun.ExitWaiterBusy || output != "" || problem != "" {
 		t.Fatalf("session start without lease code=%d output=%q stderr=%q", code, output, problem)
@@ -1267,7 +1267,6 @@ func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFi
 		var failures []error
 		for _, arguments := range [][]string{
 			{"up", "--metasystem-root", root, "--repo", root, "--shutdown"},
-			{"steward", "disarm", "--repo", root},
 		} {
 			command := exec.Command(canonical, arguments...)
 			command.Env = environment
@@ -1275,6 +1274,11 @@ func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFi
 			if err != nil {
 				failures = append(failures, fmt.Errorf("%s: %w: %s", strings.Join(arguments, " "), err, output))
 			}
+		}
+		// The steward's disarm owner, which the retired internal steward
+		// disarm ran.
+		if _, err := steward.Disarm(root); err != nil {
+			failures = append(failures, fmt.Errorf("steward disarm: %w", err))
 		}
 		if len(failures) == 0 {
 			stopped = true

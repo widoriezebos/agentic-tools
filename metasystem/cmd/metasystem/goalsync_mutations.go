@@ -1279,18 +1279,6 @@ func runGoalDischargeReviewObligationWithDependencies(args []string, requestBuil
 	return dependencies.publish(res, err)
 }
 
-func runGoalAcceptRisk(args []string) int {
-	return runGoalAcceptRiskWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
-}
-
-func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) int {
-	return runGoalAcceptRiskWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies())
-}
-
-func runGoalAcceptRiskWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
-	return runGoalAcceptRiskWithFacts(args, prove, commandNow, dependencies, nil)
-}
-
 func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, commitMessage func(root, commit string) ([]byte, error)) int {
 	values := newHumanVerbValues("accept-risk", args)
 	values.bindDependencies(dependencies)
@@ -2172,19 +2160,6 @@ func runSyncOnlyWithDependencies(name string, run func(req goal.VerbRequest, f *
 		}
 		return code
 	}
-}
-
-func runGoalReleaseWithDependencies(args []string, requestBuilder func(string, string, string, string) (goal.VerbRequest, error), dependencies syncRequestDependencies) int {
-	return runSyncOnlyWithDependencies("release", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
-		if f.arc != "" {
-			return goal.ReleaseArc(req, f.id)
-		}
-		return goal.Release(req, f.id)
-	}, requestBuilder, dependencies, "id")(args)
-}
-
-func runGoalReleaseWithRequest(args []string, requestBuilder func(string, string, string, string) (goal.VerbRequest, error)) int {
-	return runGoalReleaseWithDependencies(args, requestBuilder, defaultSyncRequestDependencies())
 }
 
 func runGoalTrunkRed(args []string) int {
@@ -3754,11 +3729,7 @@ var (
 	runGoalRestamp = runSyncOnly("restamp", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.Restamp(req, f.id)
 	}, "id")
-	runGoalRelease   = func(args []string) int { return runGoalReleaseWithRequest(args, nil) }
 	runGoalLandReady = runSyncOnly("land-ready", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.LandReady(req, f.id)
-	}, "id")
-	runGoalEdit = runSyncOnly("edit", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
-		return goalEditEffect(req, f, goalCommandNow)
 	}, "id")
 )

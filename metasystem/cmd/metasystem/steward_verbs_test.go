@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
@@ -205,17 +207,12 @@ func TestStewardLandingRefSeedRefusesInvalidUpstreamAndWriteFailure(t *testing.T
 
 func TestStewardHookCompleteRejectsNegativeElapsedBeforeRepositoryAccess(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "must-not-exist")
-	_, problem, code := captureRelay(t, func() int {
-		return runStewardHookComplete([]string{
-			"--repo", repo,
-			"--generation", "1",
-			"--attempt", "1",
-			"--result", "ERROR",
-			"--outcome", "EMISSION_FAILED",
-			"--elapsed-sec", "-1",
-		})
-	})
-	if code != 2 || !strings.Contains(problem, "--elapsed-sec must be non-negative") {
+	var stderr bytes.Buffer
+	code := completeHookAttempt(hooks.HookCompletion{
+		Repo: repo, Generation: "1", Attempt: "1", Result: "ERROR", Outcome: "EMISSION_FAILED",
+		ElapsedSec: -1, HasElapsed: true,
+	}, &stderr)
+	if problem := stderr.String(); code != 2 || !strings.Contains(problem, "--elapsed-sec must be non-negative") {
 		t.Fatalf("negative Stop elapsed seconds returned code %d and stderr %q, want a usage refusal", code, problem)
 	}
 	if _, err := os.Stat(repo); !os.IsNotExist(err) {
@@ -226,11 +223,9 @@ func TestStewardHookCompleteRejectsNegativeElapsedBeforeRepositoryAccess(t *test
 func TestStewardHookCompleteResolvesTheReportFromTheResponseRecord(t *testing.T) {
 	forStopResponseCases(t, func(t *testing.T, runtime string, blocked bool) {
 		root, published, attempt, health, payloadPath := stewardHookCompleteFixture(t, runtime, blocked)
-		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-			return runStewardHookComplete(stewardHookCompleteArgs(root, attempt, health, payloadPath))
-		})
-		if code != 0 || stdout != "" || stderr != "" {
-			t.Fatalf("response-record settlement returned code=%d stdout=%q stderr=%q", code, stdout, stderr)
+		var stderr bytes.Buffer
+		if code := completeHookAttempt(stewardHookCompletion(root, attempt, health, payloadPath), &stderr); code != 0 || stderr.Len() != 0 {
+			t.Fatalf("response-record settlement returned code=%d stderr=%q", code, stderr.String())
 		}
 
 		data, err := os.ReadFile(steward.ComponentEvidencePath(root, "supervision-hook"))
@@ -258,13 +253,12 @@ func TestStewardHookCompleteResolvesTheReportFromTheResponseRecord(t *testing.T)
 func TestStewardHookCompleteRefusesAContradictoryLegacyReportFlag(t *testing.T) {
 	forStopResponseCases(t, func(t *testing.T, runtime string, blocked bool) {
 		root, _, attempt, health, payloadPath := stewardHookCompleteFixture(t, runtime, blocked)
-		args := append(stewardHookCompleteArgs(root, attempt, health, payloadPath), "--report-alias", "contradicts-response-record")
-		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-			return runStewardHookComplete(args)
-		})
-		if code != 1 || stdout != "" || strings.Count(stderr, "\n") != 1 ||
-			!strings.Contains(stderr, "alias flag does not match the response record") {
-			t.Fatalf("contradictory legacy flag returned code=%d stdout=%q stderr=%q", code, stdout, stderr)
+		request := stewardHookCompletion(root, attempt, health, payloadPath)
+		request.ReportAlias = "contradicts-response-record"
+		var stderr bytes.Buffer
+		if code := completeHookAttempt(request, &stderr); code != 1 || strings.Count(stderr.String(), "\n") != 1 ||
+			!strings.Contains(stderr.String(), "alias flag does not match the response record") {
+			t.Fatalf("contradictory legacy flag returned code=%d stderr=%q", code, stderr.String())
 		}
 
 		data, err := os.ReadFile(steward.ComponentEvidencePath(root, "supervision-hook"))
@@ -301,15 +295,12 @@ func stewardHookCompleteFixture(t *testing.T, runtime string, blocked bool) (str
 	return root, published, attempt, health, payloadPath
 }
 
-func stewardHookCompleteArgs(root string, attempt steward.ComponentEvidence, health, payloadPath string) []string {
-	return []string{
-		"--repo", root,
-		"--generation", strconv.Itoa(attempt.Generation),
-		"--attempt", strconv.FormatInt(attempt.AttemptSeq, 10),
-		"--result", "OK",
-		"--outcome", "EMITTED",
-		"--health-line", health,
-		"--payload-file", payloadPath,
+// stewardHookCompletion is the completion the Stop hook hands its owner
+// (completeHookAttempt) in process.
+func stewardHookCompletion(root string, attempt steward.ComponentEvidence, health, payloadPath string) hooks.HookCompletion {
+	return hooks.HookCompletion{
+		Repo: root, Generation: strconv.Itoa(attempt.Generation), Attempt: strconv.FormatInt(attempt.AttemptSeq, 10),
+		Result: "OK", Outcome: "EMITTED", HealthLine: health, PayloadFile: payloadPath,
 	}
 }
 

@@ -72,7 +72,7 @@ var textInternalCommandPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.\-/])(?:b
 // to a top-level internal form, a hidden entry, or a registered family verb.
 // A public object without internal is the public check's to judge.
 func textInternalCommandProblem(registered []family, topLevel map[string]bool, internal bool, first, second string) string {
-	if !internal && (isIntentObject(first) || !slices.Contains(ratchetFrozenFirstWords, first)) {
+	if !internal && (isIntentObject(first) || first == "status" || first == "help" || !slices.Contains(ratchetFrozenFirstWords, first)) {
 		return ""
 	}
 	if topLevel[first] || textProseAfterObject[second] {

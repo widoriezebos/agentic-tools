@@ -236,9 +236,8 @@ func TestSessionStopAttendedHumanEndsQuietly(t *testing.T) {
 	}
 	sessionStopNow = func() time.Time { return now }
 
-	_, code := captureStdout(t, func() int {
-		return runSessionStop([]string{"--root", root, "--by", "Wido"})
-	})
+	// The owner the public session stop calls (processes.sessionStop).
+	_, _, code := authorizeSessionStop(root, "Wido")
 	if code != 0 {
 		t.Fatalf("an attended human must obtain the one-shot authorization: exit %d", code)
 	}
@@ -278,9 +277,8 @@ func TestSessionStopAgentClassifiedCallerCannotReachTheWriter(t *testing.T) {
 		return humanauthority.Proof{}, nil
 	}
 
-	_, code := captureStdout(t, func() int {
-		return runSessionStop([]string{"--root", root, "--by", "Agent"})
-	})
+	// The owner the public session stop calls (processes.sessionStop).
+	_, _, code := authorizeSessionStop(root, "Agent")
 	if code != 3 {
 		t.Fatalf("an agent-classified caller must be refused before persistence: exit %d", code)
 	}

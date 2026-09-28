@@ -158,32 +158,6 @@ func goalFetchTo(stdout, stderr io.Writer, root string, resolve func(string) (go
 	return 0
 }
 
-// runGoalRepair deliberately accepts the current canonical tip after
-// the ordinary read-side advance has refused a rewind.
-func runGoalRepair(args []string) int {
-	return runGoalRepairWithInputs(args, defaultGoalAuthorityReadFacts(), goal.ResolveEndpoint)
-}
-
-func runGoalRepairWithInputs(args []string, facts goalAuthorityReadFacts, resolveEndpoint func(string) (goal.Endpoint, error)) int {
-	flags := flag.NewFlagSet("goal repair", flag.ContinueOnError)
-	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "usage: metasystem goal sync --accept-remote-history --by <human> [--repo <checkout>]")
-		flags.PrintDefaults()
-	}
-	acceptRemote := flags.Bool("accept-remote", false, "accept the current remote tip despite a rewind")
-	by := flags.String("by", "", "human authorizing the repair")
-	root := pathFlag(flags, "root", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if !*acceptRemote {
-		fmt.Fprintln(os.Stderr, "goal repair: --accept-remote is required")
-		flags.Usage()
-		return 2
-	}
-	return goalRepairAcceptRemoteTo(os.Stdout, os.Stderr, *root, *by, facts, resolveEndpoint)
-}
-
 // goalRepairAcceptRemoteTo is the accept-remote repair owner on the caller's
 // streams; facts carry the supplied caller identity the brain's human-word
 // gate classifies.

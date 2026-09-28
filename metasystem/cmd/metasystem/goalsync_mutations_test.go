@@ -1293,7 +1293,7 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 		}
 	}
 	stderr, code := captureStderr(t, func() int {
-		return runGoalAcceptRiskWithInputs(blankWhy, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies)
+		return runGoalAcceptRiskWithFacts(blankWhy, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies, nil)
 	})
 	if code != 2 || !strings.Contains(stderr, "goal accept-risk: needs --id, --finding, --chain, and --why") ||
 		!strings.Contains(stderr, "no command completes this: add the missing decision value named in the refusal") {
@@ -1301,7 +1301,7 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 	}
 	paired := append(append([]string(nil), base...), "--temporary-human-word", "Wido accepts this severe risk")
 	stderr, code = captureStderr(t, func() int {
-		return runGoalAcceptRiskWithInputs(paired, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies)
+		return runGoalAcceptRiskWithFacts(paired, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies, nil)
 	})
 	if code != 2 || !strings.Contains(stderr, "--temporary-human-word and --review-by travel together") {
 		t.Fatalf("unpaired authority flags = exit %d stderr %q", code, stderr)
@@ -1311,7 +1311,7 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 	var stdout string
 	stderr, code = captureStderr(t, func() int {
 		stdout, code = captureStdout(t, func() int {
-			return runGoalAcceptRiskWithInputs(args, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies)
+			return runGoalAcceptRiskWithFacts(args, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies, nil)
 		})
 		return code
 	})
@@ -1378,7 +1378,7 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 		"--temporary-human-word", "Wido accepts this bounded risk", "--review-by", "2026-09-06",
 	}
 	stderr, code = captureStderr(t, func() int {
-		return runGoalAcceptRiskWithInputs(boundedArgs, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies)
+		return runGoalAcceptRiskWithFacts(boundedArgs, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies, nil)
 	})
 	if code != 1 || !strings.Contains(stderr, "bounded findings defer at close, not by acceptance") {
 		t.Fatalf("bounded finding acceptance = exit %d stderr %q", code, stderr)
@@ -2699,18 +2699,23 @@ func (f *parkArcCommandFixture) trySync(name string, args []string) (int, bool) 
 	return trySyncMutationWithDependencies(name, args, goalCommandNow, deps, f.parkBranchCheck)
 }
 
+// park and unpark run the synced-ledger owner the public goal pause and goal
+// resume reach; the fixture's checkout is synced, so the owner always takes
+// the act.
 func (f *parkArcCommandFixture) park(args []string) int {
-	return runGoalParkWithSync(args, f.trySync)
+	code, _ := f.trySync("park", args)
+	return code
 }
 
 func (f *parkArcCommandFixture) unpark(args []string) int {
-	return runGoalUnparkWithSync(args, f.trySync)
+	code, _ := f.trySync("unpark", args)
+	return code
 }
 
 func (f *parkArcCommandFixture) release(args []string) int {
-	return runGoalReleaseWithRequest(args, func(verb, root, by, lineage string) (goal.VerbRequest, error) {
+	return runGoalReleaseWithDependencies(args, func(verb, root, by, lineage string) (goal.VerbRequest, error) {
 		return syncStoppingReqWithProofWithDependencies(verb, root, by, lineage, nil, goalCommandNow, f.terminalDependencies())
-	})
+	}, defaultSyncRequestDependencies())
 }
 
 func (f *parkArcCommandFixture) terminal(t *testing.T) {

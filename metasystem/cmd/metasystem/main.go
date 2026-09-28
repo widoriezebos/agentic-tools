@@ -292,36 +292,21 @@ func families() []family {
 				{"handover", "transfer this holder's claim to the guarded landing owner", runGoalHandover},
 				{"open", "declare a goal; Current when none exists, queued otherwise", runGoalOpen},
 				{"carry", "human-only: name the live successor carrying an abandoned goal, or carry a landing past one named refusal or testing group", runGoalCarry},
-				{"set-next", "rewrite the Current goal's next step", runGoalSetNext},
-				{"park", "park a goal; parking the Current one requires --then or --and-none", runGoalPark},
 				{"done", "conclude the Current goal; requires --then or --and-none", runGoalDone},
 				{"claim", "claim a goal (or its whole arc with --arc) for this machine", runGoalClaim},
 				{"restamp", "move this holder's stop capability to the live lease epoch", runGoalRestamp},
 				{"approve", "human-only (or a seat --under a power of attorney): approve a goal for execution (its box goes through goal budget), or run the grandfather sweep", runGoalApprove},
-				{"tier-probe", "report the backlog's recorded and derived tiers and the goals a person may lower", runGoalTierProbe},
 				{"set-budget", "human-only long form of goal budget, kept for one release (or a seat --under a power of attorney)", runGoalSetBudget},
 				{"extend-budget", "extend attempts and reserved minutes once after accepted advancement consumes the box", runGoalExtendBudget},
-				{"accept-risk", "human-only: accept one severe or unproven critic finding", runGoalAcceptRisk},
 				{"enroll-terminal", "enroll this agent-free interactive terminal for human-only goal authority", runGoalEnrollTerminal},
-				{"release", "release this machine's claim (or the arc's with --arc)", runGoalRelease},
 				{"trunk-red", "own or close a trunk-red register entry (own is an agent act; close, and own --by, are human acts)", runGoalTrunkRed},
 				{"land-ready", "mark this machine's claimed goal as built and waiting to land; the claim leaves the one-claim quota and its elapsed fence until it lands", runGoalLandReady},
-				{"edit", "edit a goal's intent or next step in place", runGoalEdit},
 				{"list", "print a bounded ledger summary (--json for the records without history, --json --history for the full records, --done to list archived goals)", runGoalList},
 				{"show", "print one goal without ledger history (--history for the full record)", runGoalShow},
 				{"next", "select ordered claimable work for one machine (read-only)", runGoalNext},
 				{"reconcile", "adopt, restore, or authority-replay bytes the verbs did not write", runGoalReconcile},
 				{"migrate", "the cutover: one commit turns the legacy ledger into the multi-machine tree (human act, reviewed bytes)", runGoalMigrate},
 				{"fetch", "the read-side advance: validate the canonical tip and move the accepted ref", runGoalFetch},
-				{"repair", "human-only: accept a non-descending canonical tip with --accept-remote", runGoalRepair},
-			},
-		},
-		{
-			name:    "session",
-			summary: "the announced main session's restart orientation and human-only stop authority",
-			verbs: []verb{
-				{"start", "print durable wait recovery commands for this holder session", runSessionStart},
-				{"stop", "human-only: authorize one quiet stop for the current announced main session", runSessionStop},
 			},
 		},
 		{
@@ -337,13 +322,10 @@ func families() []family {
 			verbs: []verb{
 				{"tick", "one scheduled observation: decide, age the evidence, report the action", runStewardTick},
 				{"status", "the operator's view: evidence age, live intents, pending notifications", runStewardStatus},
-				{"authorize-dispatch", "gate the unattended continuation: steward caller, consumed unstamped intent, staged tuple out", runStewardAuthorizeDispatch},
 				{"revive", "one revival end to end: stage, mint, arbitrate, dispatch once", runStewardRevive},
 				{"run", "the runner's body: tick until disarmed (spawned by arm; callable by any external ticker)", runStewardRun},
 				{"arm", "explicit human enrollment and runner start (long form of metasystem system start)", runStewardArm},
 				{"restart", "replace and re-arm the runner (long form of metasystem system start)", runStewardRestart},
-				{"disarm", "end the runner", runStewardDisarm},
-				{"hook-complete", "record a supervision-hook completion after payload emission (internal)", runStewardHookComplete},
 			},
 		},
 		{
@@ -542,24 +524,6 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 	if args[0] == runtimes.SupervisorEntry {
 		return runDelegateSupervisor(args[1:])
 	}
-	if args[0] == "stop" {
-		return runProcessStop(args[1:])
-	}
-	if args[0] == "status" {
-		return runProcessStatus(args[1:])
-	}
-	if args[0] == "arm" {
-		return runProcessArm(args[1:])
-	}
-	if args[0] == "health" {
-		if len(args) > 1 && args[1] == "acknowledge-alert" {
-			return runHealthAcknowledgeAlert(args[2:])
-		}
-		return runStewardHealth(args[1:])
-	}
-	if args[0] == "watch" {
-		return runWatch(args[1:])
-	}
 	if args[0] == "wait" {
 		return runWait(args[1:])
 	}
@@ -636,13 +600,6 @@ func writeUsage(w io.Writer, registered []family) {
 	fmt.Fprintln(w, "       metasystem internal hook <runtime> <start|stop|end|receipt|tool>  (run by the runtime settings system setup writes)")
 	fmt.Fprintln(w, "       metasystem internal pre-commit --root <installation>  (run by the enrolled git pre-commit hook)")
 	fmt.Fprintln(w, "       metasystem internal delegate-supervisor <runtime> <verb> --root <installation> [flags]  (launched by internal/delegation and internal/missionrunner/host.go)")
-	fmt.Fprintln(w, "       metasystem internal stop [--repo <path>] [--installation <dir>] [--all]")
-	fmt.Fprintln(w, "       metasystem internal status [--repo <path>] [--installation <dir>] [--all]")
-	fmt.Fprintln(w, "       metasystem internal arm [--repo <path>] [--installation <dir>] [--all] [--temporary-human-word <word> --review-by <date>]")
-	fmt.Fprintln(w, "       metasystem internal health --repo <checkout>")
-	fmt.Fprintln(w, "       metasystem internal health acknowledge-alert --episode <id> [--repo <checkout>]")
-	fmt.Fprintln(w, "       metasystem internal watch [--root <checkout>] [--json]")
-	fmt.Fprintln(w, "       metasystem internal watch --job <id> [--root <checkout>] [--poll-ms <milliseconds>]")
 	fmt.Fprintln(w, "       metasystem internal wait (--job <id>|--run <id>|--attempt <id>|--goal <id>|--path <absolute-path> --until <present|absent>|--resume <wait-id>) [--timeout <duration>] [--json]")
 	fmt.Fprintln(w, "       metasystem internal wait register --pid <pid> --label <text> [--job <id>] [--timeout <duration>] [--json]")
 	fmt.Fprintln(w, "       metasystem internal wait register --human --question <text> --timeout <duration> [--json]")

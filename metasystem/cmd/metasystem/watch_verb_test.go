@@ -54,19 +54,14 @@ func TestWaitCompatibilityMappings(t *testing.T) {
 func TestWatchReadSurfaceAllTrackedClassesAndZeroWrite(t *testing.T) {
 	root := watchFixture(t)
 	before := watchTreeHash(t, root)
-	out, code := captureStdout(t, func() int {
-		return dispatch([]string{"internal", "watch", "--root", root, "--json"})
-	})
+	// The read surface's owner, which the retired internal watch printed.
+	snapshot := watchsurface.Read(root)
 	after := watchTreeHash(t, root)
 	if before != after {
 		t.Fatalf("watch changed the checkout tree: before=%s after=%s", before, after)
 	}
-	if code != 1 {
-		t.Fatalf("known persisted failures must return attention exit 1: code=%d out=%s", code, out)
-	}
-	var snapshot watchsurface.Snapshot
-	if err := json.Unmarshal([]byte(out), &snapshot); err != nil {
-		t.Fatalf("watch JSON must parse: %v\n%s", err, out)
+	if code := snapshot.ExitCode(); code != 1 {
+		t.Fatalf("known persisted failures must return attention exit 1: code=%d snapshot=%+v", code, snapshot)
 	}
 	if snapshot.SchemaVersion != 1 || snapshot.Aggregate != watchsurface.AggregateAttention || snapshot.Empty {
 		t.Fatalf("unexpected snapshot envelope: %+v", snapshot)
@@ -116,19 +111,13 @@ func TestWatchReadSurfaceAllTrackedClassesAndZeroWrite(t *testing.T) {
 func TestWatchAbsentHealthIsDeadAndZeroWrite(t *testing.T) {
 	root := t.TempDir()
 	before := watchTreeHash(t, root)
-	out, code := captureStdout(t, func() int {
-		return dispatch([]string{"internal", "watch", "--root", root, "--json"})
-	})
+	snapshot := watchsurface.Read(root)
 	after := watchTreeHash(t, root)
 	if before != after {
 		t.Fatalf("empty watch changed the checkout tree: before=%s after=%s", before, after)
 	}
-	if code != 1 {
-		t.Fatalf("an absent steward health record must be dead: code=%d out=%s", code, out)
-	}
-	var snapshot watchsurface.Snapshot
-	if err := json.Unmarshal([]byte(out), &snapshot); err != nil {
-		t.Fatal(err)
+	if code := snapshot.ExitCode(); code != 1 {
+		t.Fatalf("an absent steward health record must be dead: code=%d snapshot=%+v", code, snapshot)
 	}
 	if snapshot.Empty || snapshot.Aggregate != watchsurface.AggregateAttention || len(snapshot.Sections) != 8 {
 		t.Fatalf("absent health fail-safe contract drifted: %+v", snapshot)
@@ -166,22 +155,18 @@ func TestWatchStaleHealthAndGoalFailurePrintsDeadRecordAge(t *testing.T) {
 			"roles": []map[string]any{{"role": "claimed-goal-delivery", "status": "alive"}},
 		},
 	})
-	out, code := captureStdout(t, func() int {
-		return dispatch([]string{"internal", "watch", "--root", root})
-	})
-	if code != 1 || !strings.Contains(out, "WATCH ATTENTION") ||
-		!strings.Contains(out, "health-freshness health-record dead") ||
-		!strings.Contains(out, "artifacts/agents/steward/health.json") || !strings.Contains(out, "age=") {
-		t.Fatalf("stale health did not print a dead record and age: code=%d out=%s", code, out)
+	snapshot := watchsurface.Read(root)
+	var record watchsurface.Item
+	for _, section := range snapshot.Sections {
+		for _, item := range section.Items {
+			if item.Kind == "health-freshness" && item.ID == "health-record" {
+				record = item
+			}
+		}
 	}
-}
-
-func TestWatchPreservesJobWaitSelection(t *testing.T) {
-	if !requestsJobWait([]string{"--job", "job-one"}) || !requestsJobWait([]string{"--job=job-one"}) {
-		t.Fatal("both existing job waiter spellings must select the waiter")
-	}
-	if requestsJobWait([]string{"--root", "contains--job"}) || requestsJobWait([]string{"--json"}) {
-		t.Fatal("snapshot flags must not select the waiter")
+	if snapshot.ExitCode() != 1 || snapshot.Aggregate != watchsurface.AggregateAttention || record.Verdict != "dead" ||
+		!strings.Contains(record.Evidence, "artifacts/agents/steward/health.json") || !strings.Contains(record.Problem, "age=") {
+		t.Fatalf("stale health did not name a dead record and its age: %+v in %+v", record, snapshot)
 	}
 }
 

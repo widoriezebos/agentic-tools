@@ -806,8 +806,8 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	// The family accept-risk prints the public command (U-idem) without the word;
 	// running it accepts the real fixture finding.
 	code, report = gcliForgivingFamily(bed, func(dependencies syncRequestDependencies) int {
-		return runGoalAcceptRiskWithInputs([]string{"--root", bed.root, "--id", "ship-widget", "--finding", "RISK-1", "--chain", "fixture-risk", "--why", "fixture pair",
-			"--by", "Wido", gcliForgivingFixture, "--temporary-human-word", "Wido authorizes this relay"}, bed.prove, bed.commandNow, dependencies)
+		return runGoalAcceptRiskWithFacts([]string{"--root", bed.root, "--id", "ship-widget", "--finding", "RISK-1", "--chain", "fixture-risk", "--why", "fixture pair",
+			"--by", "Wido", gcliForgivingFixture, "--temporary-human-word", "Wido authorizes this relay"}, bed.prove, bed.commandNow, dependencies, nil)
 	})
 	if code == 0 || report.refusal == nil || !strings.HasPrefix(report.refusal.remedy.command, "metasystem goal accept-risk ") ||
 		strings.Contains(report.refusal.remedy.command, "--temporary-human-word") {
@@ -815,7 +815,7 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	}
 	accept := shellWords(report.refusal.remedy.command)
 	if code, report := gcliForgivingFamily(bed, func(dependencies syncRequestDependencies) int {
-		return runGoalAcceptRiskWithInputs(accept[3:], bed.prove, bed.commandNow, dependencies)
+		return runGoalAcceptRiskWithFacts(accept[3:], bed.prove, bed.commandNow, dependencies, nil)
 	}); code != 0 || report.refusal != nil {
 		t.Fatalf("accept-risk's printed remedy did not complete: code=%d refusal=%+v failure=%v", code, report.refusal, report.failure)
 	}

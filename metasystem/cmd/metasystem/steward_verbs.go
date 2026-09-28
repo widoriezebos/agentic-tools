@@ -9,7 +9,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -25,7 +24,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
@@ -48,7 +46,6 @@ func stewardCensusFor(repo string) steward.WorkerCensus {
 
 var stewardHealthNow = time.Now
 var stewardPreviewHealthAt = steward.PreviewHealthAt
-var stewardObserveHealth = steward.ObserveHealth
 
 func stewardClockRoot(explicit, fallback string) string {
 	if explicit != "" {
@@ -92,76 +89,6 @@ func stewardRunClockRoot(repo string) string {
 	return filepath.Dir(filepath.Dir(installed.InstallPath))
 }
 
-// runStewardHealth prints every role on one line and returns the aggregate
-// health code: zero healthy, one when any role is dead, two when unknown is
-// the worst result.
-func runStewardHealth(args []string) int {
-	flags := flag.NewFlagSet("health", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	metasystemRoot := flags.String("metasystem-root", "", "installed metasystem root (defaults to checkout root)")
-	hookPreview := flags.Bool("hook-preview", false, "render current hook facts without advancing the tick-owned alert breaker (internal)")
-	format := flags.String("format", "text", "health output format: text or json")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *format != "text" && *format != "json" {
-		fmt.Fprintln(os.Stderr, "health: --format must be text or json")
-		return 2
-	}
-	if *format == "json" && !*hookPreview {
-		fmt.Fprintln(os.Stderr, "health: --format=json requires --hook-preview")
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "health: --repo is required")
-		return 2
-	}
-	if *hookPreview {
-		return writeHookHealthPreview(*repo, *metasystemRoot, *format == "json", os.Stdout, os.Stderr)
-	}
-	clockRoot := stewardClockRoot(*metasystemRoot, *repo)
-	if *metasystemRoot == "" {
-		*metasystemRoot = *repo
-	}
-	now := stewardHealthNow().UTC()
-	if fixtureNow, ok, err := stewardFixtureNow(clockRoot); err != nil {
-		fmt.Fprintln(os.Stderr, "health: fixture clock:", err)
-		return 2
-	} else if ok {
-		now = fixtureNow
-	}
-	verdict, err := stewardObserveHealth(*repo, now, nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "health: health evidence is unknown: %v\n", err)
-		return 2
-	}
-	alertView := verdict
-	alertView.ShouldAlert = false
-	if _, err := steward.UpdateAlertEpisodes(*repo, alertView, verdict.Line(), now); err != nil {
-		fmt.Fprintf(os.Stderr, "health: alert episode state is unknown: %v\n", err)
-		return 2
-	}
-	fmt.Println(verdict.Line())
-	code := verdict.ExitCode()
-	prober, processes, _, enumErr := census.FixtureSurvivorSource(*metasystemRoot)
-	if enumErr != nil {
-		fmt.Printf("fixture-survivors: process table is unreadable: %v\n", enumErr)
-		return code
-	}
-	lines, certain, scanErr := census.FixtureSurvivorLines(prober, processes)
-	if scanErr != nil {
-		fmt.Printf("fixture-survivors: process table is unreadable: %v\n", scanErr)
-		return code
-	}
-	for _, line := range lines {
-		fmt.Println(line)
-	}
-	if code == 0 && certain {
-		return 1
-	}
-	return code
-}
-
 // writeHookHealthPreview renders the hook's health preview without
 // advancing the tick-owned alert breaker: the Stop hook's health facts.
 func writeHookHealthPreview(repo, metasystemRoot string, asJSON bool, stdout, stderr io.Writer) int {
@@ -188,43 +115,6 @@ func writeHookHealthPreview(repo, metasystemRoot string, asJSON bool, stdout, st
 	return verdict.ExitCode()
 }
 
-func runHealthAcknowledgeAlert(args []string) int {
-	flags := flag.NewFlagSet("health acknowledge-alert", flag.ContinueOnError)
-	episodeID := flags.String("episode", "", "alert episode id")
-	repo := pathFlag(flags, "repo", ".", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *episodeID == "" {
-		fmt.Fprintln(os.Stderr, "health acknowledge-alert: --episode is required")
-		return 2
-	}
-	// L8 will replace this observed invoker record with enrolled-terminal
-	// ancestry enforcement. Until then this records the immediate caller
-	// exactly and makes no claim that it was an agent-free terminal.
-	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
-	if err != nil || state != identity.Alive {
-		fmt.Fprintln(os.Stderr, "health acknowledge-alert: the immediate caller identity is unavailable")
-		return 1
-	}
-	argvDigest := ""
-	if exact.ArgvKnown {
-		argv := sha256.Sum256([]byte(strings.Join(exact.Argv, "\x00")))
-		argvDigest = hex.EncodeToString(argv[:])
-	}
-	invoker := steward.AlertInvoker{
-		Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(), PidStartTicks: exact.StartTicks,
-		BootID: exact.BootID, UID: os.Getuid(), ArgvDigest: argvDigest,
-	}
-	episode, err := steward.AcknowledgeAlert(*repo, *episodeID, invoker, time.Now())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "health acknowledge-alert: %v\n", err)
-		return 1
-	}
-	fmt.Printf("acknowledged alert %s\n", episode.EpisodeID)
-	return 0
-}
-
 // beginHookAttempt records a Stop attempt for the exact hook process and
 // returns its generation and attempt sequence as one JSON line.
 func beginHookAttempt(repo string, pid int64, turnKey string) (string, error) {
@@ -238,35 +128,6 @@ func beginHookAttempt(repo string, pid int64, turnKey string) (string, error) {
 	}
 	data, _ := json.Marshal(map[string]any{"generation": record.Generation, "attemptSeq": record.AttemptSeq})
 	return string(data), nil
-}
-
-func runStewardHookComplete(args []string) int {
-	flags := flag.NewFlagSet("steward hook-complete", flag.ContinueOnError)
-	var request hooks.HookCompletion
-	pathFlagVar(flags, &request.Repo, "repo", "", "checkout root")
-	generation := flags.Int("generation", 0, "hook turn generation")
-	attempt := flags.Int64("attempt", 0, "hook attempt sequence")
-	flags.StringVar(&request.Result, "result", "", "OK | ERROR | INDETERMINATE")
-	flags.StringVar(&request.Outcome, "outcome", "", "completion outcome")
-	flags.StringVar(&request.HealthLine, "health-line", "", "health verdict carried by the payload")
-	flags.StringVar(&request.PayloadFile, "payload-file", "", "file containing the emitted payload")
-	flags.StringVar(&request.ReportPath, "report-path", "", "exact immutable Stop report path")
-	flags.StringVar(&request.ReportID, "report-id", "", "exact immutable Stop report id")
-	flags.StringVar(&request.ReportAlias, "report-alias", "", "exact short Stop report alias used by the payload")
-	flags.StringVar(&request.ReportSHA256, "report-sha256", "", "sha256 of the immutable Stop report")
-	flags.StringVar(&request.Installation, "installation", "", "installation bound to the report lookup")
-	flags.Int64Var(&request.ElapsedSec, "elapsed-sec", 0, "whole seconds elapsed since the Stop deadline parent started")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	flags.Visit(func(parsed *flag.Flag) {
-		if parsed.Name == "elapsed-sec" {
-			request.HasElapsed = true
-		}
-	})
-	request.Generation = strconv.Itoa(*generation)
-	request.Attempt = strconv.FormatInt(*attempt, 10)
-	return completeHookAttempt(request, os.Stderr)
 }
 
 // completeHookAttempt records one Stop attempt's completion: the payload it
@@ -390,45 +251,6 @@ func runStewardTick(args []string) int {
 		report["deliveryProblem"] = deliverErr.Error()
 	}
 	out, _ := json.MarshalIndent(report, "", "  ")
-	fmt.Println(string(out))
-	return 0
-}
-
-// runStewardAuthorizeDispatch is the dispatcher's gate for the
-// unattended continuation: the caller must classify STEWARD, the
-// consumed intent must exist unstamped, and the staged tuple is
-// printed for dispatch to USE — nothing in this mode is
-// caller-selectable.
-func runStewardAuthorizeDispatch(args []string) int {
-	flags := flag.NewFlagSet("steward authorize-dispatch", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	callerPid := flags.Int64("caller-pid", 0, "the dispatching process")
-	nonce := flags.String("intent", "", "the consumed intent's nonce")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" || *callerPid == 0 || *nonce == "" {
-		fmt.Fprintln(os.Stderr, "steward authorize-dispatch: --repo, --caller-pid, and --intent are required")
-		return 2
-	}
-	classification, err := lease.Classify(*repo, *callerPid)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: %v\n", err)
-		return 1
-	}
-	if classification.Class != lease.ClassSteward {
-		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: caller is %s, not the steward; the continuation mode admits exactly one caller\n", classification.Class)
-		return 1
-	}
-	authorization, err := steward.AuthorizeDispatch(*repo, *nonce)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: %v\n", err)
-		return 1
-	}
-	out, _ := json.MarshalIndent(map[string]any{
-		"goal": authorization.Goal, "jobId": authorization.JobId, "runtime": authorization.Runtime, "model": authorization.Model,
-		"role": authorization.Role, "permissions": authorization.Permissions, "brief": authorization.Brief,
-	}, "", "  ")
 	fmt.Println(string(out))
 	return 0
 }
@@ -806,25 +628,6 @@ func printStewardStopped(checkout string, record stopfence.Record) {
 	}
 	fmt.Fprintln(os.Stderr, description)
 	fmt.Fprintln(os.Stderr, "run: "+command)
-}
-
-func runStewardDisarm(args []string) int {
-	flags := flag.NewFlagSet("steward disarm", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "steward disarm: --repo is required")
-		return 2
-	}
-	outcome, err := steward.Disarm(*repo)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward disarm: %v\n", err)
-		return 1
-	}
-	fmt.Println(outcome.LongForm())
-	return 0
 }
 
 // runStewardPending prints one line naming undelivered incidents —

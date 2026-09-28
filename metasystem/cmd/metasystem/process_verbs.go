@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -117,24 +116,6 @@ func processVerbRetryCommand(scope processScope, verb string) string {
 	return command
 }
 
-func runProcessStop(args []string) int {
-	return runProcessStopWith(args, stateroot.RepositoryTop, lease.ClassifyAt)
-}
-
-func runProcessStopWith(args []string, repositoryTop func(string) (string, error), classify processCallerClassifier) int {
-	scope, scale, code := parseProcessScopeWith("stop", args, repositoryTop)
-	if code != 0 {
-		return code
-	}
-	owners := defaultProcessOwners()
-	owners.repositoryTop, owners.classify = repositoryTop, classify
-	report, refusal := owners.stop(scope, scale)
-	if refusal != nil {
-		return refusal.print()
-	}
-	return printProcessReport(report)
-}
-
 // processRefusal is one process verb's refusal as its legacy call prints it:
 // the sentence, the second line naming what to run, and the exit code.
 type processRefusal struct {
@@ -239,48 +220,6 @@ func processStopCrashStep(root string) (int, error) {
 		return 0, fmt.Errorf("METASYSTEM_STOP_CRASH_AFTER must name a numbered section-4 step from 1 through 9")
 	}
 	return step, nil
-}
-
-func runProcessStatus(args []string) int {
-	return runProcessStatusWith(args, stateroot.RepositoryTop)
-}
-
-func runProcessStatusWith(args []string, repositoryTop func(string) (string, error)) int {
-	scope, scale, code := parseProcessScopeWith("status", args, repositoryTop)
-	if code != 0 {
-		return code
-	}
-	report, err := defaultProcessOwners().status(scope, scale)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "metasystem status: %v.\n", err)
-		return 1
-	}
-	return printProcessReport(report)
-}
-
-func runProcessArm(args []string) int {
-	return runProcessArmWith(args, stateroot.RepositoryTop, lease.ClassifyAt)
-}
-
-func runProcessArmWith(args []string, repositoryTop func(string) (string, error), classify processCallerClassifier) int {
-	var temporaryWord, reviewBy string
-	scope, scale, code := parseProcessScopeWith("arm", args, repositoryTop, func(flags *flag.FlagSet) {
-		flags.StringVar(&temporaryWord, "temporary-human-word", "", "verbatim remote human authorization")
-		flags.StringVar(&reviewBy, "review-by", "", "human re-approval date")
-	})
-	if code != 0 {
-		return code
-	}
-	owners := defaultProcessOwners()
-	owners.repositoryTop, owners.classify = repositoryTop, classify
-	report, refusal := owners.arm(scope, scale, temporaryWord, reviewBy)
-	if refusal != nil {
-		for _, line := range report.Lines {
-			fmt.Println(line)
-		}
-		return refusal.print()
-	}
-	return printProcessReport(report)
 }
 
 // arm is the human-terminal arm: the transition opens the stop fence and runs
@@ -428,60 +367,11 @@ func armRefusalSecondLine(scope processScope, err error) string {
 	return second
 }
 
-func parseProcessScopeWith(verb string, args []string, repositoryTop func(string) (string, error), register ...func(*flag.FlagSet)) (processScope, int, int) {
-	flags := flag.NewFlagSet("metasystem "+verb, flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
-	repo := pathFlag(flags, "repo", ".", "repository or path inside it")
-	installation := flags.String("installation", "", "metasystem installation for this checkout")
-	all := flags.Bool("all", false, "every checkout on this host")
-	for _, add := range register {
-		add(flags)
-	}
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		return processScope{}, 0, 2
-	}
-	scope, err := resolveProcessScopeWith(*repo, *installation, repositoryTop)
-	if err != nil {
-		return processScope{}, 0, processScopeRefusal(verb, *repo, *installation, err)
-	}
-	if *all {
-		return processScope{}, 0, refuseProcessVerb(verb, scope.Checkout, "the fleet form is not built yet", "run: "+processVerbRetryCommand(scope, verb))
-	}
-	scale := upWaitScale()
-	if scale < 1 {
-		fmt.Fprintf(os.Stderr, "metasystem %s: METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer\n", verb)
-		return processScope{}, 0, 2
-	}
-	return scope, scale, 0
-}
-
-func processScopeRefusal(verb, repo, installation string, err error) int {
-	sentence := err.Error()
-	scope := processScope{Checkout: "<a path inside the checkout>", Installation: installation, InstallationExplicit: installation != ""}
-	if strings.Contains(sentence, "carries no metasystem installation") {
-		scope.Checkout = strings.TrimSuffix(sentence, " carries no metasystem installation")
-		scope.Installation = "<dir>, where <dir> holds this checkout's bin/metasystem"
-		scope.InstallationExplicit = true
-	} else if strings.Contains(sentence, "carries no engine") {
-		scope.Checkout = repo
-		scope.Installation = "<dir>, where <dir> holds this checkout's bin/metasystem"
-		scope.InstallationExplicit = true
-	}
-	return refuseProcessVerb(verb, repo, sentence, "run: "+processVerbRetryCommand(scope, verb))
-}
-
 func refuseProcessVerb(verb, checkout, sentence, second string) int {
 	sentence = strings.TrimSuffix(strings.TrimSpace(sentence), ".")
 	fmt.Fprintf(os.Stderr, "metasystem %s: %s.\n", publicProcessVerb(verb), sentence)
 	fmt.Fprintln(os.Stderr, second)
 	return 1
-}
-
-func printProcessReport(report stoptransition.Report) int {
-	for _, line := range report.Lines {
-		fmt.Println(line)
-	}
-	return report.ExitCode
 }
 
 // requireHumanTerminal is the common classifier gate for process stopping and

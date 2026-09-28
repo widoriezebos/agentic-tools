@@ -7,20 +7,6 @@ import (
 	"testing"
 )
 
-// goal park's flag setup once registered and-none TWICE (a stray
-// f.Bool beside boolAsString) and panicked on every invocation — the
-// verb's first real use, parking runtime-install-execution, found it.
-// Any non-panicking return proves the registration is sane.
-func TestGoalParkFlagRegistrationDoesNotPanic(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("goal park panicked at flag registration: %v", r)
-		}
-	}()
-	root := t.TempDir()
-	_ = runGoalPark([]string{"--root", root, "--id", "nope", "--because", "x"})
-}
-
 // --blocks and --blocked-by belong to goal open alone: every other verb
 // refuses them at the flag edge, and open carries both to the verb. Each is
 // repeatable and each takes a comma-separated line, because a human naming
@@ -79,19 +65,6 @@ func TestUnderBelongsToTheAttorneyVerbs(t *testing.T) {
 	g, ok := parseSyncFlags("grant", []string{"--root", root, "--by", "Wido", "--tiers", "1", "--verbs", "approve", "--expires", "2026-09-19"})
 	if !ok || g.tiers != "1" || g.verbs != "approve" || g.expires != "2026-09-19" {
 		t.Fatalf("goal grant carries its flags: ok=%v %+v", ok, g)
-	}
-}
-
-// goal tier-probe registers its flags and refuses a root with no ledger
-// without panicking.
-func TestGoalTierProbeFlagRegistrationDoesNotPanic(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("goal tier-probe panicked: %v", r)
-		}
-	}()
-	if code := runGoalTierProbe([]string{"--root", t.TempDir(), "--pretty"}); code == 0 {
-		t.Fatal("a root with no ledger is not a probe result")
 	}
 }
 
