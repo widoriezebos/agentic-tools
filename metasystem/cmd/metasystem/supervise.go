@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -36,37 +35,6 @@ func runSuperviseVerifyArmed(args []string) int {
 		return 0
 	}
 	return 1
-}
-
-// runCensusFingerprint prints the supervision fingerprint for --repo, using
-// --root as the metasystem root (defaults to the binary's checkout). It lives
-// here because it registers under the supervise family.
-func runCensusFingerprint(args []string) int {
-	flags := flag.NewFlagSet("supervise fingerprint", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root to fingerprint")
-	root := pathFlag(flags, "root", "", "metasystem root (defaults to this checkout)")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "supervise fingerprint: --repo is required")
-		return 2
-	}
-	metasystemRoot := *root
-	if metasystemRoot == "" {
-		if exe, err := os.Executable(); err == nil {
-			// <root>/bin/metasystem is two deep: Dir^2, not Dir^3 — a
-			// third Dir points the default at the checkout's parent.
-			metasystemRoot = filepath.Dir(filepath.Dir(exe))
-		}
-	}
-	fp, err := census.Fingerprint(metasystemRoot, *repo)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "supervise fingerprint:", err)
-		return 1
-	}
-	fmt.Println(fp)
-	return 0
 }
 
 // runSuperviseStatus reads a checkout's supervision surface — lock,

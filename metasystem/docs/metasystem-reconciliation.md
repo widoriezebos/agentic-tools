@@ -155,7 +155,7 @@ moved to the family whose staleness it detects:
 | --- | --- |
 | identity started-at/probe/exists/group-exists | proc started-at/probe/exists/group-exists |
 | census run/alive/signature-check/find-ancestor | proc census/alive/signature-check/find-ancestor |
-| census fingerprint | supervise fingerprint |
+| census fingerprint | supervise fingerprint, deleted (no callers; verbs-object-action U7c) |
 | census classify, census authentication-identity | deleted (no callers; c72f662) |
 
 The disposition registry (scripts/agents/shell-dispositions.json) is

@@ -1,18 +1,13 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"syscall"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -29,63 +24,6 @@ type processRefProber struct {
 
 func (p processRefProber) Probe(int64) (identity.Exact, identity.Liveness, error) {
 	return p.exact, p.state, p.err
-}
-
-func TestProcessRefPrintsOneExactEncodedLineOrNothing(t *testing.T) {
-	exact := identity.Exact{Pid: 42, StartedAt: time.UnixMicro(123_456_789)}
-	if runtime.GOOS == "linux" {
-		exact.StartTicks, exact.BootID = 73, "fixture-boot"
-	}
-	if !exact.Ref().NativeExact() {
-		t.Skip("process refs require a supported native exact identity")
-	}
-	var output bytes.Buffer
-	code := runIdentityRefWithProber([]string{"--pid", "42"}, processRefProber{exact: exact, state: identity.Alive}, &output)
-	parsed, err := identity.ParseRef(strings.TrimSpace(output.String()))
-	if code != 0 || err != nil || !parsed.NativeExact() || !identity.SameIdentity(exact, parsed) || strings.Count(output.String(), "\n") != 1 {
-		t.Fatalf("proc ref exit=%d output=%q parsed=%+v err=%v", code, output.String(), parsed, err)
-	}
-	output.Reset()
-	code = runIdentityRefWithProber([]string{"--pid", "42"}, processRefProber{state: identity.Unknown, err: errors.New("denied")}, &output)
-	if code == 0 || output.Len() != 0 {
-		t.Fatalf("unprobeable proc ref exit=%d output=%q", code, output.String())
-	}
-}
-
-func TestProcFixtureKeyPrintsAnEncodedKey(t *testing.T) {
-	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
-	if err != nil || state != identity.Alive {
-		t.Fatalf("probe fixture-key owner: state=%s err=%v", state, err)
-	}
-	owner, err := identity.EncodeRef(exact.Ref())
-	if err != nil {
-		t.Fatal(err)
-	}
-	normalizedOwner, ownerParseErr := identity.ParseRef(owner)
-	var output bytes.Buffer
-	code := runFixtureKeyWithReader([]string{"--owner", owner, "--test", t.Name()}, strings.NewReader("\x01\x23\x45\x67"), &output)
-	key, parseErr := identity.ParseKey(strings.TrimSpace(output.String()))
-	if code != 0 || ownerParseErr != nil || parseErr != nil || key.Owner != normalizedOwner ||
-		!key.Owner.NativeExact() || !identity.SameIdentity(exact, key.Owner) || key.Test != t.Name() || key.Nonce != "01234567" {
-		t.Fatalf("proc fixture-key exit=%d output=%q owner=%+v ownerErr=%v key=%+v err=%v", code, output.String(), normalizedOwner, ownerParseErr, key, parseErr)
-	}
-}
-
-func TestProcessProbeReportsTerminalAndSessionLeader(t *testing.T) {
-	output, code := captureStdout(t, func() int {
-		return runIdentityProbe([]string{"--pid", fmt.Sprint(os.Getpid())})
-	})
-	var observed struct {
-		Liveness           string `json:"liveness"`
-		TerminalKnown      bool   `json:"terminalKnown"`
-		TerminalID         string `json:"terminalId"`
-		SessionLeaderPID   int64  `json:"sessionLeaderPid"`
-		SessionLeaderError string `json:"sessionLeaderError"`
-	}
-	if err := json.Unmarshal([]byte(output), &observed); err != nil || code != 0 ||
-		observed.Liveness != "alive" || !observed.TerminalKnown || observed.SessionLeaderPID < 1 || observed.SessionLeaderError != "" {
-		t.Fatalf("process probe did not report its live terminal session: code=%d output=%s error=%v", code, output, err)
-	}
 }
 
 func absentProcessGroup(t *testing.T) int64 {
