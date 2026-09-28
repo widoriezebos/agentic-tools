@@ -389,7 +389,11 @@ func TestU6bPortChainSweepGoesThroughTheDelegateSeam(t *testing.T) {
 // any host launch.
 func TestPromptCheckerRunsInTheRunnerNotTheCheckoutEngine(t *testing.T) {
 	t.Parallel()
-	engine := u6bportHostCycle(t, "FAKEHOST:return-ok")
+	// The host-turn instruction is compiled into the engine, so the refused
+	// prompt comes from the mission contract: a second required heading.
+	engine := u6bportHostCycleWithContract(t, "FAKEHOST:return-ok", func(contract string) string {
+		return contract + "\n## Streams\n"
+	})
 	binary := filepath.Join(engine.Root, "bin", "metasystem")
 	real := binary + "-real"
 	if err := os.Rename(binary, real); err != nil {
@@ -397,14 +401,6 @@ func TestPromptCheckerRunsInTheRunnerNotTheCheckoutEngine(t *testing.T) {
 	}
 	approving := "#!/bin/sh\nif [ \"$1\" = validate ] && [ \"$2\" = turn-prompt ]; then exit 0; fi\nexec '" + real + "' \"$@\"\n"
 	if err := testexec.WriteFile(binary, []byte(approving), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	instruction := filepath.Join(engine.Root, "scripts", "agents", "templates", "host-turn-instruction.md")
-	data, err := os.ReadFile(instruction)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(instruction, append(data, []byte("\n## Streams\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	signal := filepath.Join(t.TempDir(), "start.json")
