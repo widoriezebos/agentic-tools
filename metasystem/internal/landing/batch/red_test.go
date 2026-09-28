@@ -1114,7 +1114,10 @@ func TestComposedPathVerifierErrorIsBoundedThenReturnsEveryMember(t *testing.T) 
 	script := &flakeScript{tip: passedAt("identity-"+red.ID, red)}
 	seams := flakeSeams(script, ledger, nil)
 	verifications := 0
-	seams.Sources = func(Record) (map[string]string, error) { verifications++; return nil, fmt.Errorf("retained worktree unavailable") }
+	seams.Sources = func(Record) (map[string]string, error) {
+		verifications++
+		return nil, fmt.Errorf("retained worktree unavailable")
+	}
 	for attempt := 1; attempt < MaxComposedVerifierAttempts; attempt++ {
 		err := DiagnoseRed(store, testBatchID, "owner", []RedGroup{red}, "", flakeNow, seams)
 		record := load(t, store)
