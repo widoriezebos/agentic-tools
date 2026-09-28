@@ -176,35 +176,10 @@ not paths.
   with a reason and an **ask**; a human answers; `resume` continues it.
   "Running with no live runner but a cleanly concluded record" is the
   legitimate awaiting-resume state, distinct from a crashed runner.
-- **Benchmark case** — WHAT a benchmark builds and how it is judged: the
-  task specification, seed repository, held-out grader and probes,
-  instruments (gate, guards), metrics and noise floors, and what the task
-  itself needs of any environment. Immutable per version:
-  `benchmark/cases/<caseId>/<caseVersion>/`; identity `taskrun@0.1`. Any
-  change to spec, seed, grader, instruments or `case.json` is a new
-  version directory (`benchmark/README.md`).
-- **Benchmark configuration** — WHO builds a case and under WHAT limits:
-  the roster, the fences, host caps, network allowance, machine
-  constraint, exposure and **purpose** (`capability` measures;
-  `orchestration-health` probes and is never verdict-eligible). Immutable
-  per version: `benchmark/configurations/<configId>/<configVersion>.json`;
-  identity `cheap@1`. Reusable across cases.
-- **Benchmark run / trial** — one case version under one configuration
-  version ("run CASE under CONFIG"), repetition n, on one machine, at one
-  metasystem sha; pinned by the git object ids of both (`caseTree`,
-  `configTree`). "The benchmark taskrun@0.1 under cheap@1" is the pair
-  named in one breath; a bare id is never a benchmark.
-- **Cohort / repetition / target** — N **repetitions** of one pair, each in
-  its own freshly provisioned **target** repository, graded by a held-out
-  grader the mission must not read. Driven by `benchmark/run-cohort.sh`.
-- **Alias (benchmark)** — a retired spec id (`bm-1` … `bm-2d-og`) that
-  resolves, read-only, to a pair (`benchmark/aliases.json`); alias mode
-  keeps the legacy naming so pre-migration cohorts stay uniform.
-- **Roster** — the pinned assignment of runtimes and models in a
-  configuration: which model hosts, which model delegates (per role when
-  they differ), and whether the code critic's independence is
-  `session-only`. Changing it is a new configuration version and a human
-  ruling.
+- **Roster** — the pinned assignment of runtimes and models: which model
+  hosts, which model delegates (per role when they differ), and whether
+  the code critic's independence is `session-only`. Changing it is a
+  human ruling.
 
 ## Delegation plumbing
 
@@ -258,8 +233,8 @@ not paths.
 ## Verification
 
 - **Gates** — the checks that must pass, chained with the push in one
-  command: the metasystem **suite** (the testing contract, run by `metasystem test run`) and
-  the benchmark **kit gate** (`benchmark/validate-kit.sh`). A verdict is
+  command: the metasystem **suite** (the testing contract, run by
+  `metasystem test run`). A verdict is
   read from the verifying command's own exit code, captured — never
   from a log tail, and never from the exit of a composite or
   background invocation that wraps the command and reports its own

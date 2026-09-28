@@ -37,14 +37,6 @@
   ],
   "repositoryOperationalDataPaths": [
     "artifacts/**",
-    "benchmark/__pycache__/**",
-    "benchmark/results/**",
-    "benchmark/specs/bm-1/grader/__pycache__/**",
-    "benchmark/specs/bm-2/grader/__pycache__/**",
-    "benchmark/specs/bm-2d/grader/__pycache__/**",
-    "benchmark/specs/bm-2dc/grader/__pycache__/**",
-    "benchmark/specs/bm-2s/grader/__pycache__/**",
-    "benchmark/trials-root.local",
     "evidence/**"
   ],
   "tailoredPaths": {

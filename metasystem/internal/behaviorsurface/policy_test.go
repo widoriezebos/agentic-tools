@@ -78,16 +78,9 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 	}; !reflect.DeepEqual(policy.PayloadRoots, want) {
 		t.Fatalf("PAYLOAD allowlist drifted: got %q want %q", policy.PayloadRoots, want)
 	}
-	if want := []string{
-		"artifacts/**",
-		"benchmark/__pycache__/**", "benchmark/results/**",
-		"benchmark/specs/bm-1/grader/__pycache__/**",
-		"benchmark/specs/bm-2/grader/__pycache__/**",
-		"benchmark/specs/bm-2d/grader/__pycache__/**",
-		"benchmark/specs/bm-2dc/grader/__pycache__/**",
-		"benchmark/specs/bm-2s/grader/__pycache__/**",
-		"benchmark/trials-root.local", "evidence/**",
-	}; !reflect.DeepEqual(policy.RepositoryOperationalDataPaths, want) {
+	// The measuring kit left the repository (tag benchmark-kit-final), and
+	// with it every operational-data row that named its paths.
+	if want := []string{"artifacts/**", "evidence/**"}; !reflect.DeepEqual(policy.RepositoryOperationalDataPaths, want) {
 		t.Fatalf("LANDING operational-data exclusions drifted: got %q want %q", policy.RepositoryOperationalDataPaths, want)
 	}
 	tests := []struct {
@@ -141,14 +134,6 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 func TestLandingRepositoryOperationalDataBoundaries(t *testing.T) {
 	policy := mustPolicy(t)
 	excluded := []string{
-		"benchmark/__pycache__/extractor.pyc",
-		"benchmark/results/run/result.json",
-		"benchmark/specs/bm-1/grader/__pycache__/grader.pyc",
-		"benchmark/specs/bm-2/grader/__pycache__/grader.pyc",
-		"benchmark/specs/bm-2d/grader/__pycache__/grader.pyc",
-		"benchmark/specs/bm-2dc/grader/__pycache__/grader.pyc",
-		"benchmark/specs/bm-2s/grader/__pycache__/grader.pyc",
-		"benchmark/trials-root.local",
 		"evidence",
 		"evidence/run/envelope.json",
 	}
@@ -166,9 +151,8 @@ func TestLandingRepositoryOperationalDataBoundaries(t *testing.T) {
 
 		for _, path := range []string{
 			"benchmark/evidence-drift-fixtures.sh",
-			"benchmark/results-fixtures.sh",
-			"benchmark/specs/bm-1/grader/grader.py",
-			"benchmark/trials-root.local.example",
+			"benchmark/results/run/result.json",
+			"benchmark/trials-root.local",
 			"evidence-drift-fixtures.sh",
 		} {
 			included, err := policy.Includes(Landing, path, prefix)
@@ -298,7 +282,7 @@ func TestLandingDigestIsRepositoryWideAndExcludesNestedCoordination(t *testing.T
 	if err != nil || second == first {
 		t.Fatalf("outside-prefix repository bytes did not affect LANDING: %s then %s (%v)", first, second, err)
 	}
-	operational := filepath.Join(nested, "benchmark", "results", "run.json")
+	operational := filepath.Join(nested, "evidence", "run", "run.json")
 	if err := os.MkdirAll(filepath.Dir(operational), 0o755); err != nil {
 		t.Fatal(err)
 	}
