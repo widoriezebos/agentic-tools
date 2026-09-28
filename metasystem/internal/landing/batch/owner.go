@@ -278,9 +278,12 @@ func (owner *Owner) clearGreenTipTrunkRed(id string, record Record, at time.Time
 	if _, unbound := owner.store.LedgerOwner().(UnboundLedgerOwner); unbound {
 		return nil, nil
 	}
+	// Only a trunk red holds a landing or clears on a green tip; a flake, hang
+	// or quality entry closes by a proven fix or a person, never here.
+	ledger := holdingLedger{owner.store.LedgerOwner()}
 	pending, complete := greenTipClearStatus(record)
 	if complete {
-		return owner.store.LedgerOwner().Open()
+		return ledger.Open()
 	}
 	detail := greenTipClearDetail(record.Proof)
 	if !pending {
@@ -294,7 +297,7 @@ func (owner *Owner) clearGreenTipTrunkRed(id string, record Record, at time.Time
 			return nil, err
 		}
 	}
-	open, err := clearGreenTipEntries(record.Proof, trunkRedClearSeams{mint: owner.mint, ledger: owner.store.LedgerOwner(), descendsFrom: owner.descendsFrom})
+	open, err := clearGreenTipEntries(record.Proof, trunkRedClearSeams{mint: owner.mint, ledger: ledger, descendsFrom: owner.descendsFrom})
 	if err != nil {
 		return nil, err
 	}
@@ -309,6 +312,14 @@ func (owner *Owner) clearGreenTipTrunkRed(id string, record Record, at time.Time
 		return nil
 	})
 	return open, err
+}
+
+// holdingLedger narrows a ledger to the entries that hold a landing.
+type holdingLedger struct{ LedgerOwner }
+
+func (ledger holdingLedger) Open() ([]OpenEntry, error) {
+	open, err := ledger.LedgerOwner.Open()
+	return slices.DeleteFunc(open, func(entry OpenEntry) bool { return !entry.HoldsLanding() }), err
 }
 
 func (owner *Owner) release(id string) error {

@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -642,5 +644,124 @@ func TestBatchOwnerLoopStopJoinsCadenceTick(t *testing.T) {
 	}
 	if returnedBeforeTick {
 		t.Fatal("owner loop stop returned before its in-flight cadence tick ended")
+	}
+}
+
+func flakeLedgerFixture(t *testing.T, now time.Time) *ledgerTrunkRedOwner {
+	t.Helper()
+	repository := newProofAdmissionRepositoryFixture(t, now.UTC(), false)
+	return proofLedgerTrunkRedOwner(t, repository, "mac-landing", "landing-lineage", now.UTC())
+}
+
+func flakeOpid(suffix string) string {
+	return goal.Opid("01J5X0000000000000000000"+suffix, "mac-landing", "landing-lineage")
+}
+
+func flakeSighting(test, red, green, tipTree string, seen time.Time) batch.FlakeSighting {
+	failure := batch.Failure{Report: "junit", Classname: "com.example.PaymentTest", Name: test, Status: "failed", Reason: "red"}
+	return batch.FlakeSighting{BatchID: "batch-" + red, BaseCommit: "base-commit", BaseTree: "base-tree", TipTree: tipTree, RedAttempt: red,
+		Groups:    []batch.RedGroup{{ID: "payments-group", Status: "failed", LogPath: "logs/" + red + ".log", Failures: []batch.Failure{failure}}},
+		RedSample: proofrun.LoadSample{Sample: hostload.Sample{Load1m: 3.5, Cores: 18}}, GreenAttempt: green, GreenLogPath: "logs/" + green + ".log",
+		GreenSample: proofrun.LoadSample{Sample: hostload.Sample{Load1m: 4.25, Cores: 18}}, SeenAt: seen}
+}
+
+func flakeRegister(t *testing.T, owner *ledgerTrunkRedOwner, refs []batch.EntryRef) goal.TrunkRedEntry {
+	t.Helper()
+	projection, err := goal.Project(owner.endpoint, false, owner.now())
+	if err != nil || len(refs) != 1 {
+		t.Fatalf("project register for %+v: %v", refs, err)
+	}
+	for _, entry := range projection.Tree.TrunkRed {
+		if entry.ID == refs[0].ID {
+			return entry
+		}
+	}
+	t.Fatalf("entry %s is not in the register %+v", refs[0].ID, projection.Tree.TrunkRed)
+	return goal.TrunkRedEntry{}
+}
+
+func TestBaseRedThenGreenOpensOrPromotesAKnownFlake(t *testing.T) {
+	t.Parallel()
+	cest := time.FixedZone("CEST", 2*60*60)
+	thursday := time.Date(2026, 10, 1, 15, 0, 0, 0, cest)
+	if got := goal.KnownFlakeAllowanceUntil(thursday, cest); !got.Equal(time.Date(2026, 10, 6, 15, 0, 0, 0, cest)) {
+		t.Fatalf("Thursday 15:00 allowance = %s, want Tuesday 15:00", got)
+	}
+	if got := goal.KnownFlakeAllowanceUntil(time.Date(2026, 10, 2, 18, 0, 0, 0, cest), cest); !got.Equal(time.Date(2026, 10, 7, 18, 0, 0, 0, cest)) {
+		t.Fatalf("Friday 18:00 allowance = %s, want Wednesday 18:00", got)
+	}
+	owner := flakeLedgerFixture(t, thursday)
+	promotion := batch.Promotion{FlakeSighting: flakeSighting("TestX", "base-red", "base-green", "", thursday.Add(-time.Hour)), Owner: "Wido", Location: cest}
+	refs, err := owner.Promote(flakeOpid("K1"), promotion)
+	if err != nil {
+		t.Fatalf("promote from main evidence: %v", err)
+	}
+	entry := flakeRegister(t, owner, refs)
+	sighting := entry.Sightings[0]
+	if entry.Class != goal.TrunkRedClassKnownFlake || entry.AllowanceUntil != "2026-10-06T13:00:00Z" || entry.Owner.By != "Wido" || entry.Owner.How != "approver" ||
+		len(entry.Sightings) != 1 || len(entry.Holds) != 0 || sighting.Where != "" || sighting.Attempt != "base-red" || sighting.BaseCommit != "base-commit" ||
+		sighting.BaseTree != "base-tree" || sighting.Rerun == nil || sighting.Rerun.Attempt != "base-green" ||
+		!strings.Contains(sighting.Sample, "load1m=3.50") || !strings.Contains(sighting.Rerun.Sample, "load1m=4.25") {
+		t.Fatalf("known flake from main evidence = %+v", entry)
+	}
+	tip := promotion
+	tip.TipTree = "tip-tree"
+	bare := promotion
+	bare.GreenAttempt = ""
+	for name, refused := range map[string]batch.Promotion{"a tip attempt": tip, "no executed base green": bare} {
+		if _, err := owner.Promote(flakeOpid("K2"), refused); err == nil || !strings.Contains(err.Error(), "TRUNK_RED_FLAKE_NEEDS_MAIN") {
+			t.Fatalf("promotion from %s: %v", name, err)
+		}
+	}
+	if again := flakeRegister(t, owner, refs); len(again.Sightings) != 1 {
+		t.Fatalf("a refused promotion changed the entry: %+v", again)
+	}
+
+	pendingRefs, err := owner.RecordPending(flakeOpid("K3"), flakeSighting("TestY", "tip-red", "tip-green", "tip-tree", thursday.Add(-2*time.Hour)))
+	if err != nil {
+		t.Fatalf("record pending: %v", err)
+	}
+	promoteY := promotion
+	promoteY.FlakeSighting = flakeSighting("TestY", "base-red-y", "base-green-y", "", thursday.Add(-time.Hour))
+	promotedRefs, err := owner.Promote(flakeOpid("K4"), promoteY)
+	if err != nil || len(promotedRefs) != 1 || promotedRefs[0].ID != pendingRefs[0].ID {
+		t.Fatalf("promote pending %+v: %+v %v", pendingRefs, promotedRefs, err)
+	}
+	promoted := flakeRegister(t, owner, promotedRefs)
+	if promoted.Class != goal.TrunkRedClassKnownFlake || promoted.AllowanceUntil != "2026-10-06T13:00:00Z" || promoted.Owner.By != "Wido" ||
+		len(promoted.Sightings) != 2 || promoted.Sightings[0].Where != "tip" || promoted.Sightings[1].Attempt != "base-red-y" ||
+		promoted.Sightings[1].Rerun == nil || promoted.Sightings[1].Rerun.Attempt != "base-green-y" {
+		t.Fatalf("promoted pending entry = %+v", promoted)
+	}
+}
+
+func TestPendingFlakeBecomesKnownOnlyWithMainEvidence(t *testing.T) {
+	t.Parallel()
+	cest := time.FixedZone("CEST", 2*60*60)
+	now := time.Date(2026, 10, 1, 15, 0, 0, 0, cest)
+	owner := flakeLedgerFixture(t, now)
+	refs, err := owner.RecordPending(flakeOpid("P1"), flakeSighting("TestW", "tip-red-1", "tip-green-1", "tip-tree-1", now.Add(-3*time.Hour)))
+	if err != nil {
+		t.Fatalf("first tip sighting: %v", err)
+	}
+	if _, err = owner.RecordPending(flakeOpid("P2"), flakeSighting("TestW", "tip-red-2", "tip-green-2", "tip-tree-2", now.Add(-2*time.Hour))); err != nil {
+		t.Fatalf("second tip sighting: %v", err)
+	}
+	if entry := flakeRegister(t, owner, refs); entry.Class != goal.TrunkRedClassPendingFlake || entry.AllowanceUntil != "" ||
+		entry.Owner != (goal.TrunkRedOwner{}) || len(entry.Sightings) != 2 || entry.Sightings[1].Tree != "tip-tree-2" {
+		t.Fatalf("a second tip sighting must leave the flake pending: %+v", entry)
+	}
+	known, err := owner.OpenByClass(batch.ClassKnownFlake)
+	if err != nil || len(known) != 0 {
+		t.Fatalf("known flakes before main evidence: %+v %v", known, err)
+	}
+	promotion := batch.Promotion{FlakeSighting: flakeSighting("TestW", "base-red", "base-green", "", now.Add(-time.Hour)), Owner: "Wido", Location: cest}
+	if _, err := owner.Promote(flakeOpid("P3"), promotion); err != nil {
+		t.Fatalf("promote on main evidence: %v", err)
+	}
+	known, err = owner.OpenByClass(batch.ClassKnownFlake)
+	if err != nil || len(known) != 1 || known[0].ID != refs[0].ID || known[0].HoldsLanding() ||
+		!known[0].CarriesLanding(now) || known[0].Expired(now) || !known[0].Expired(time.Date(2026, 10, 6, 15, 0, 0, 0, cest)) {
+		t.Fatalf("known flake after main evidence: %+v %v", known, err)
 	}
 }

@@ -344,7 +344,8 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 			return PublishRequest{}, fmt.Errorf("the stored trunk-red clear has an invalid branchMerged value; close it by hand")
 		}
 		args := TrunkRedClearArgs{Entry: in.Args["entry"], Attempt: in.Args["attempt"],
-			BaseCommit: in.Args["baseCommit"], BaseTree: in.Args["baseTree"], Group: in.Args["group"], BranchMerged: branchMerged}
+			BaseCommit: in.Args["baseCommit"], BaseTree: in.Args["baseTree"], Group: in.Args["group"], BranchMerged: branchMerged,
+			Executed: in.Args["executed"] == "true", FixCommit: in.Args["fixCommit"]}
 		expectedEntry, hasExpectedEntry := in.Args["expectedEntry"]
 		if hasExpectedEntry {
 			if err := json.Unmarshal([]byte(expectedEntry), &args.ExpectedEntry); err != nil {

@@ -3,6 +3,7 @@ package goal
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -638,5 +639,92 @@ func assertUnreadableTrunkRedBindingRejectedFor(t *testing.T, endpoint Endpoint,
 	}
 	if entry := projectedTrunkRedEntryFor(t, endpoint, at.Add(2*time.Hour)); entry.Closed != nil {
 		t.Fatalf("unreadable binding closed the entry: %+v", entry)
+	}
+}
+
+func knownFlakeRecordFixture(identity, red, green, seen string) TrunkRedRecordArgs {
+	args := trunkRedRecordFixture(identity, "batch-"+red, red, "base-"+red, seen)
+	args.Groups[0].Failures = []TrunkRedFailure{{Report: "junit", Classname: "com.example.PaymentTest", Name: "TestX", Status: "failed"}}
+	args.Rerun, args.Approver = &TrunkRedRerun{Attempt: green}, "Wido"
+	return args
+}
+
+func TestFlakeEntryClosesOnAProvenFixNeverByTime(t *testing.T) {
+	t.Parallel()
+	endpoint := localTrunkRedEndpoint(t)
+	cest := time.FixedZone("CEST", 2*60*60)
+	identity := "tr-payments-flake00001"
+	promote := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000F1", "mac-a")
+	promote.Now = time.Date(2026, 10, 1, 13, 0, 0, 0, time.UTC)
+	if result, err := PromoteKnownFlake(promote, knownFlakeRecordFixture(identity, "red-1", "green-1", promote.stamp()), cest); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("promote: %+v %v", result, err)
+	}
+	entry := projectedTrunkRedEntryFor(t, endpoint, promote.Now)
+	allowance := entry.AllowanceUntil
+	if allowance != "2026-10-06T13:00:00Z" || entry.AllowanceExpired(promote.Now) || !entry.AllowanceExpired(promote.Now.AddDate(0, 0, 5)) {
+		t.Fatalf("allowance of %+v", entry)
+	}
+	again := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000F2", "mac-a")
+	again.Now = promote.Now.AddDate(0, 0, 2)
+	if result, err := PromoteKnownFlake(again, knownFlakeRecordFixture(identity, "red-2", "green-2", again.stamp()), cest); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("second red-then-green: %+v %v", result, err)
+	}
+	if entry = projectedTrunkRedEntryFor(t, endpoint, again.Now); len(entry.Sightings) != 2 || entry.AllowanceUntil != allowance {
+		t.Fatalf("a second red-then-green must add a sighting and keep the allowance: %+v", entry)
+	}
+	later := promote.Now.AddDate(0, 0, 90)
+	pass := func(ulid, attempt string, executed bool, fix string) PublishResult {
+		t.Helper()
+		request := trunkRedVerbReqFor(endpoint, ulid, "mac-a")
+		request.Now = later
+		result, err := ClearTrunkRed(request, TrunkRedClearArgs{Entry: entry.ID, Attempt: attempt, BaseCommit: "base-" + attempt, BaseTree: "tree-" + attempt,
+			Group: entry.Group, ExpectedEntry: projectedTrunkRedEntryFor(t, endpoint, later), Executed: executed, FixCommit: fix})
+		if err != nil {
+			t.Fatalf("pass %s: %v", attempt, err)
+		}
+		return result
+	}
+	if result := pass("01J5X0000000000000000000F3", "no-fix", true, ""); result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "TRUNK_RED_FIX_UNPROVEN") {
+		t.Fatalf("a pass 90 days on without a fix: %+v", result)
+	}
+	if result := pass("01J5X0000000000000000000F4", "reused", false, "fix-commit"); result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "TRUNK_RED_PASS_NOT_EXECUTED") {
+		t.Fatalf("a reused pass: %+v", result)
+	}
+	if entry = projectedTrunkRedEntryFor(t, endpoint, later); entry.Closed != nil || entry.FixProof != nil {
+		t.Fatalf("90 days on the entry must stay open with no pass counted: %+v", entry)
+	}
+	for index, ulid := range []string{"01J5X0000000000000000000F5", "01J5X0000000000000000000F6", "01J5X0000000000000000000F7"} {
+		if result := pass(ulid, fmt.Sprintf("pass-%d", index+1), true, "fix-commit"); result.Outcome != OutcomeConfirmed {
+			t.Fatalf("executed pass %d: %+v", index+1, result)
+		}
+		entry = projectedTrunkRedEntryFor(t, endpoint, later)
+		if (entry.Closed != nil) != (index == 2) {
+			t.Fatalf("after executed pass %d: %+v", index+1, entry)
+		}
+	}
+	if entry.Closed.How != "green" || entry.Closed.Attempt != "pass-3" || entry.FixProof.Commit != "fix-commit" || len(entry.FixProof.Passes) != 3 {
+		t.Fatalf("closed entry %+v closure %+v", entry, entry.Closed)
+	}
+}
+
+func TestTrunkRedTwiceOnTheBaseMakesAFlakeIdentityATrunkRed(t *testing.T) {
+	t.Parallel()
+	endpoint := localTrunkRedEndpoint(t)
+	identity := "tr-payments-flake00002"
+	promote := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000E1", "mac-a")
+	promote.Now = time.Date(2026, 10, 1, 13, 0, 0, 0, time.UTC)
+	if result, err := PromoteKnownFlake(promote, knownFlakeRecordFixture(identity, "red-1", "green-1", promote.stamp()), time.UTC); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("promote: %+v %v", result, err)
+	}
+	red := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000E2", "mac-a")
+	red.Now = promote.Now.Add(time.Hour)
+	args := knownFlakeRecordFixture(identity, "red-2", "", red.stamp())
+	args.Rerun = nil
+	if result, err := RecordTrunkRed(red, args); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("trunk red: %+v %v", result, err)
+	}
+	entry := projectedTrunkRedEntryFor(t, endpoint, red.Now)
+	if entry.EntryClass() != TrunkRedClassTrunkRed || entry.AllowanceUntil != "" || len(entry.Holds) != 1 || len(entry.Sightings) != 2 {
+		t.Fatalf("a base red twice must turn the known flake into a holding trunk red: %+v", entry)
 	}
 }

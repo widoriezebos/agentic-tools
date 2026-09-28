@@ -419,3 +419,45 @@ func TestBatchOwnerReportsResumeEnumerationFailure(t *testing.T) {
 		t.Fatal("Resume dropped the Glob failure")
 	}
 }
+
+func TestOnlyTrunkRedHoldsALanding(t *testing.T) {
+	t.Parallel()
+	flakes := []OpenEntry{
+		{ID: "pending", Group: "fast", Class: ClassPendingFlake, LastBaseCommit: "trunk-before"},
+		{ID: "known", Group: "fast", Class: ClassKnownFlake, LastBaseCommit: "trunk-before", AllowanceUntil: time.Unix(10, 0)},
+		{ID: "hang", Group: "fast", Class: ClassHang, LastBaseCommit: "trunk-before"},
+		{ID: "quality", Group: "fast", Class: ClassQuality, LastBaseCommit: "trunk-before"},
+	}
+	for _, test := range []struct {
+		name  string
+		open  []OpenEntry
+		state string
+	}{
+		{name: "flake, hang and quality entries", open: flakes, state: StateLanded},
+		{name: "trunk red", open: append(slices.Clone(flakes), OpenEntry{ID: "trunk", Group: "slow", Class: ClassTrunkRed, LastBaseCommit: "trunk-before"}), state: StateHeldTrunkRed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			now := time.Unix(20, 0)
+			record := ownerRecord(testBatchID, StateLanding, now.Add(-time.Minute))
+			record.BaseTree = "tree"
+			record.Proof = &Proof{Status: "green", AttemptID: "tip-green", BaseCommit: "trunk-after", Passed: []string{"fast"}}
+			bed := newOwnerBed(t, record, now)
+			ledger := &clearingLedger{open: slices.Clone(test.open)}
+			bed.store = bed.store.WithLedgerOwner(ledger)
+			bed.owner.store = bed.store
+			bed.owner.launch = func(string, proofrun.LoadSample, string) error {
+				bed.launches++
+				return bed.store.Update(testBatchID, func(record *Record) error { record.State = StateLanded; return nil })
+			}
+			must(t, bed.owner.Tick(testBatchID))
+			got := load(t, bed.store)
+			if got.State != test.state || len(ledger.cleared) != 0 {
+				t.Fatalf("state=%s launches=%d cleared=%+v, want %s and no flake closed by a green tip", got.State, bed.launches, ledger.cleared, test.state)
+			}
+			if test.state == StateHeldTrunkRed && (len(got.TrunkRed.Entries) != 1 || got.TrunkRed.Entries[0].ID != "trunk") {
+				t.Fatalf("held on %+v, want only the trunk red", got.TrunkRed.Entries)
+			}
+		})
+	}
+}
