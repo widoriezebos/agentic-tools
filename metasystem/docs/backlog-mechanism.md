@@ -289,6 +289,19 @@ array continues to contain all live goals, also listed in their state arrays;
 the text summary prints each goal once. `--label` remains repeatable with
 AND matching, and `--fetch` validates and advances the accepted backlog.
 
+Labels are zero or more tokens matching `^[a-z][a-z0-9-]{0,31}$` (their own
+grammar, not the goal-id grammar), written as `- Labels: a, b` and left out
+when there are none. Verb writes and reconcile republication store them
+sorted and deduplicated. The parser keeps a hand-edited line as written, so
+reconcile can see it and republish it in canonical form. One edit computes
+(current ∪ adds) ∖ removes, and the same token in both refuses. Two
+concurrent edits are last-publish-wins over the whole field, the same as
+Blocked. A lost additive edit is re-run by its author, and there is no
+set-merge. `--label` on `goal next` narrows only the recommendation
+candidates. It never changes the claim quota, blocker gating, arc order or
+the rule that a held claim answers first. An empty filtered set reports
+"no goal matches --label <x>", never the empty-backlog wording.
+
 `metasystem internal goal show --id <id>` keeps the JSON page envelope and goal fields, with an
 empty `History` list by default. Add `--history` for the complete record.
 
@@ -310,34 +323,12 @@ silently tolerated.
 
 ## Concluding a goal
 
-A goal is not done until its story is told. Concluding a goal appends
-its paragraph to `docs/journey.md` — what it changed and why it
-mattered, in plain English for a reader, not a grep — in the same
-landing as the conclusion. The narrator goal owns the file's shape;
-every concluder writes in it. Mechanically: append the chapter at
-the end of the file — never anchor an edit on existing prose, which
-wraps across lines and fails silently.
+A concluded goal's ledger entry (`records/goals/<id>.md`) is its record.
+The working records the goal produced on the way (critiques, code reads,
+dispositions, briefs, handoffs) leave the tree once it is done, after
+anything durable in them is distilled into `memory/rulings.md`,
+`docs/doctrine/`, the design page of the mechanism, `docs/decisions/` or
+`docs/baselines.md`; git history keeps the rest. Concluding a goal writes
+no separate story chapter: the journey file and its per-goal chapter rule
+were retired on 2026-09-28.
 
-An abandoned goal writes no journey chapter; its reason on the record is its
-story.
-
-How a chapter is written (Wido's standard, 2026-08-23): the journey
-is for a casual reader who has never seen this repository. Every
-chapter must be understandable on its own after one read — a story
-a person could retell. Concretely:
-
-- No acronyms, identifiers, decision numbers, or commit hashes in
-  the prose. Reference numbers live in commit messages and records,
-  never in the story.
-- Abstractions are welcome, including ones that borrow familiar
-  words (the wall, the kit, the ledger) — but the FIRST use in a
-  chapter explains what the thing means inside this system, in one
-  plain clause, before the story leans on it.
-- Say what actually happened — who did what, what broke, what
-  changed — before any principle drawn from it. Concrete first,
-  meaning second.
-- Prefer everyday words over the system's internal vocabulary:
-  "the success signal a command exits with", not "the rc"; "a small
-  embedded Python program", not "a heredoc".
-- The test is reading a chapter aloud to someone who was not there:
-  every sentence must survive that.
