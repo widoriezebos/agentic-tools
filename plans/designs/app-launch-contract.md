@@ -262,7 +262,7 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   time. The standing app's record, address and data are never touched
   by another run's start, stop or reset. `app reset --at REF` re-runs
   `prepare`, which is what a learning sitting needs to repeat an
-  experiment from a known state (docs/paper/14-how-engineers-learn.md).
+  experiment from a known state (paper/14-how-engineers-learn.md).
 - D4. **Who may press it.** A person at the enrolled terminal; a
   signed-in browser session through the act layer, as the next browser
   acts, with the verbs joining the Partner's proposal grammar and the

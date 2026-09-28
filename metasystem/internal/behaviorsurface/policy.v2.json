@@ -37,7 +37,9 @@
   ],
   "repositoryOperationalDataPaths": [
     "artifacts/**",
-    "evidence/**"
+    "evidence/**",
+    "paper/.obsidian/**",
+    "paper/rendered/**"
   ],
   "tailoredPaths": {
     "configuration": [
@@ -68,8 +70,6 @@
   "nonRepositoryPaths": [
     ".git/**",
     "bin/**",
-    "docs/paper/.obsidian/**",
-    "docs/paper/rendered/**",
     "internal/ui/web/_app/node_modules/**",
     "metasystem.conf.local"
   ],

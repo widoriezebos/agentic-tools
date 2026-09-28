@@ -80,7 +80,9 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 	}
 	// The measuring kit left the repository (tag benchmark-kit-final), and
 	// with it every operational-data row that named its paths.
-	if want := []string{"artifacts/**", "evidence/**"}; !reflect.DeepEqual(policy.RepositoryOperationalDataPaths, want) {
+	// The paper lives at the repository root, outside the payload; its
+	// rendered output and editor state are repository operational data.
+	if want := []string{"artifacts/**", "evidence/**", "paper/.obsidian/**", "paper/rendered/**"}; !reflect.DeepEqual(policy.RepositoryOperationalDataPaths, want) {
 		t.Fatalf("LANDING operational-data exclusions drifted: got %q want %q", policy.RepositoryOperationalDataPaths, want)
 	}
 	tests := []struct {
@@ -110,9 +112,8 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 		{"bin/metasystem", NonRepository, false, false, false},
 		// NON_REPOSITORY is content on disk that is not repository content,
 		// so it is outside every projection, PAYLOAD included (g1-s8
-		// revision 5, the exclusion slice): these two lie under docs/**.
-		{"docs/paper/rendered/paper.pdf", NonRepository, false, false, false},
-		{"docs/paper/.obsidian/workspace.json", NonRepository, false, false, false},
+		// revision 5, the exclusion slice).
+		{"internal/ui/web/_app/node_modules/x/index.js", NonRepository, false, false, false},
 		{".git/index", NonRepository, false, false, false},
 		{"metasystem.conf.local", Tailored, false, false, false},
 		{"skills/verify/SKILL.md", Standard, false, true, true},
@@ -134,6 +135,8 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 func TestLandingRepositoryOperationalDataBoundaries(t *testing.T) {
 	policy := mustPolicy(t)
 	excluded := []string{
+		"paper/rendered/the-metasystem-1.pdf",
+		"paper/.obsidian/workspace.json",
 		"evidence",
 		"evidence/run/envelope.json",
 	}

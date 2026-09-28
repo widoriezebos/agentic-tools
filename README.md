@@ -10,6 +10,7 @@ and humans build software together. One question organizes everything here:
 | Folder | What it is | Ships? |
 | --- | --- | --- |
 | [`metasystem/`](metasystem/) | **The product.** The template that gets installed into other repositories. Its payload is an explicit allowlist; nothing else leaves. | The allowlisted parts, via `metasystem system adopt` |
+| [`paper/`](paper/) | **The paper.** The book about the metasystem: why it exists and how it works, chapter by chapter, with its PDF build. This project's intent quotes it. | Never |
 | [`development/`](development/) | **The building of it.** Design docs, analysis, finished reports, this repository's own local rules, the evidence index. | Never |
 | `evidence/` | Gitignored symlink to the durable evidence store, where full run transcripts and archived mission repositories live. Hundreds of megabytes a day of raw evidence would sink git; the tracked index of it is [`development/evidence-index.md`](development/evidence-index.md). | Never |
 

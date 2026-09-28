@@ -2,4 +2,4 @@ metasystem/metasystem.conf.local
 /evidence
 artifacts/
 .obsidian/
-metasystem/docs/paper/rendered/
+paper/rendered/
