@@ -368,7 +368,7 @@ var Rows = []Row{
 	{Code: "carry-battery-unverified", Owner: "internal/landing", Site: "carried.go:236", Shape: Question, H1: StandingInput},
 	{Code: "carry-unneeded", Owner: "internal/landing", Site: "carried.go:257", Shape: Question, H1: StandingInput},
 	{Code: "carry-refusal-mismatch", Owner: "internal/landing", Site: "carried.go:182", Shape: Question, H1: StandingInput},
-	{Code: "STOP_SURFACE_GOAL_REFUSED", Owner: "internal/audit", Site: "stopsurface.go:728", Shape: Question, H1: StandingGuide, Forward: "goal allow"},
+	{Code: "STOP_SURFACE_GOAL_REFUSED", Owner: "internal/audit", Site: "stopsurface.go:749", Shape: Question, H1: StandingGuide, Forward: "goal allow"},
 	{Code: "SEAT_MACHINE_NICKNAME_INVALID", Owner: "internal/seat", Site: "record.go:43", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_PRESENCE_MALFORMED", Owner: "internal/seat", Site: "record.go:125", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_PRESENCE_CONFLICT", Owner: "internal/seat", Site: "publish.go:314", Shape: Question, H1: StandingInput},
