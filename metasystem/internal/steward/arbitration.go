@@ -26,6 +26,13 @@ type ArbitrationLock struct{ f *os.File }
 
 var beforeArbitrationWait = func() {}
 
+// arbitrationWantPath is where a blocking acquirer queues: it holds this
+// file shared while it waits, and the disk sweeper, which only ever takes
+// arbitration without waiting, yields to any queued waiter. So a hook that
+// waits for arbitration during a sweep waits at most one nonce's critical
+// section (Part B 3.3).
+func arbitrationWantPath(repoRoot string) string { return ArbitrationLockPath(repoRoot) + ".want" }
+
 // AcquireArbitration blocks until the critical section is ours.
 func AcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	path := ArbitrationLockPath(repoRoot)
@@ -36,23 +43,56 @@ func AcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	if err != nil {
 		return nil, err
 	}
+	want, err := os.OpenFile(arbitrationWantPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	defer want.Close()
+	if err := flockWaiting(want, unix.LOCK_SH); err != nil {
+		f.Close()
+		return nil, err
+	}
 	beforeArbitrationWait()
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
+	if err := flockWaiting(f, unix.LOCK_EX); err != nil {
 		f.Close()
 		return nil, err
 	}
 	return &ArbitrationLock{f: f}, nil
 }
 
+func flockWaiting(f *os.File, operation int) error {
+	for {
+		err := unix.Flock(int(f.Fd()), operation)
+		if !errors.Is(err, unix.EINTR) {
+			return err
+		}
+	}
+}
+
 // ErrArbitrationHeld is a nonblocking acquisition finding the lock held.
 var ErrArbitrationHeld = errors.New("steward arbitration is held")
 
 // TryAcquireArbitration takes the lock LOCK_EX|LOCK_NB: the disk sweeper's
-// acquisition, which never waits inside a pass (Part B R14).
+// acquisition, which never waits inside a pass (Part B R14) and yields to a
+// queued blocking acquirer: a held lock or a queued waiter is
+// ErrArbitrationHeld.
 func TryAcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	path := ArbitrationLockPath(repoRoot)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
+	}
+	want, err := os.OpenFile(arbitrationWantPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	queued := unix.Flock(int(want.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+	want.Close()
+	if queued != nil {
+		if errors.Is(queued, unix.EWOULDBLOCK) || errors.Is(queued, unix.EAGAIN) {
+			return nil, ErrArbitrationHeld
+		}
+		return nil, queued
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {

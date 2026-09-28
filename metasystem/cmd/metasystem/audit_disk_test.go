@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
 // auditDiskTestMainAllowance names the one TestMain still allowed to allocate
@@ -481,5 +483,38 @@ func c() { clock.Sleep(1) }
 		if got := auditDiskVariableRm(line); got != want {
 			t.Errorf("rm %q = %v, want %v", line, got, want)
 		}
+	}
+}
+
+// auditDiskSettingOwners are the only files that spell a disk-lifetime key:
+// the table of 3.13 and the evidence root's one owner.
+var auditDiskSettingOwners = map[string]bool{"internal/config/disksettings.go": true, "internal/config/evidenceroot.go": true}
+
+// TestAuditDiskSettingsAreSpelledOnce is the settings witness's static half
+// (Part B 3.13, R7): no production file but the table spells a key of 3.13,
+// so every number lives in its one compiled default and is read through
+// diskstore.LoadSettings.
+func TestAuditDiskSettingsAreSpelledOnce(t *testing.T) {
+	t.Parallel()
+	keys := map[string]bool{}
+	for _, row := range config.DiskSettings() {
+		keys[row.Key] = true
+	}
+	sites := auditDiskGoSites(t, func(rel string) bool { return !auditDiskSettingOwners[rel] }, func(fileSet *token.FileSet, file *ast.File) []int {
+		var lines []int
+		ast.Inspect(file, func(node ast.Node) bool {
+			literal, ok := node.(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
+				return true
+			}
+			if value, err := strconv.Unquote(literal.Value); err == nil && keys[value] {
+				lines = append(lines, fileSet.Position(literal.Pos()).Line)
+			}
+			return true
+		})
+		return lines
+	})
+	if len(sites) != 0 {
+		t.Fatalf("disk-lifetime keys spelled outside their table; use the config constants:\n%s", ratchetSiteList(sites))
 	}
 }

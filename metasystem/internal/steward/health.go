@@ -91,6 +91,7 @@ var healthRoleOrder = []HealthRole{
 	RoleProofAttempts,
 	RoleProofAdmission,
 	RoleCapabilitySnapshots,
+	RoleDisk,
 }
 
 // KnownHealthRole reports whether role belongs to the closed health schema.
@@ -479,6 +480,7 @@ func evaluateHealthRolesWithMeasure(repoRoot, metasystemRoot string, now time.Ti
 		timed(func() RoleVerdict { return checkProofAttempts(repoRoot, prober) }),
 		timed(func() RoleVerdict { return checkProofAdmission(repoRoot, now, inspectHostLeases) }),
 		timed(func() RoleVerdict { return checkCapabilitySnapshots(repoRoot, metasystemRoot, now) }),
+		timed(func() RoleVerdict { return checkDisk(repoRoot) }),
 	}, spendObservation
 }
 

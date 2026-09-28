@@ -24,6 +24,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -135,7 +136,7 @@ func runnerContext(repoRoot, lineage string) *seat.RunnerContext {
 func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig) error {
 	return runLoopWithDependencies(repoRoot, census, revive, interval, cfg, runnerLoopDependencies{
 		Tick: RunTick, DeliverPending: DeliverPending, Resumable: ResumableIntent, Channel: channelphase.Run,
-		Now: runnerNow, Sleep: runnerSleep, AfterRecordPublished: runnerAfterRecordPublished,
+		Now: runnerNow, Sleep: runnerSleep, AfterRecordPublished: runnerAfterRecordPublished, SweepDisk: runnerSweepDisk,
 	})
 }
 
@@ -147,6 +148,21 @@ type runnerLoopDependencies struct {
 	Now                  func() time.Time
 	Sleep                func(time.Duration)
 	AfterRecordPublished func()
+	// SweepDisk runs the disk sweeper's passes after the tick has returned
+	// and released arbitration (Part B 3.3); helm reports without acting.
+	SweepDisk func(top string, now time.Time, helm bool)
+}
+
+// runnerSweepDisk is the production sweep: both passes under the budget,
+// failures reported on stderr and never fatal to the loop.
+func runnerSweepDisk(top string, now time.Time, helmActive bool) {
+	mode := diskstore.ModeApply
+	if helmActive {
+		mode = diskstore.ModeReport
+	}
+	if _, err := SweepDiskStores(context.Background(), top, DiskPass{Mode: mode, Now: now, Clock: time.Now}); err != nil {
+		fmt.Fprintf(os.Stderr, "disk sweep: %v\n", err)
+	}
 }
 
 func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig, deps runnerLoopDependencies) error {
@@ -221,6 +237,12 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		result, err := deps.Tick(top, cfg, census)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
+		}
+		// The disk sweep runs after the tick released arbitration and before
+		// the helm check: disk space belongs to the whole machine, so at the
+		// helm it still reports (the 2026-09-29 amendment) and acts on nothing.
+		if deps.SweepDisk != nil {
+			deps.SweepDisk(top, deps.Now(), helm.Active(top).Active)
 		}
 		// The helm is resolved here, after the tick returned and before any
 		// post-tick act, whatever the tick's outcome: a take that lands during
