@@ -84,3 +84,79 @@ Proposed receipt, unwritten: `g1-s69 design critique, round 1 — four material 
 
 Commit reviewed: `d719503f844a6d536d1df465184e92a83dce6606`. Limitations: static design/code review; no tests or runtime actions executed. No files changed, no subagents used, and neither the local secrets configuration nor `artifacts/` was read.
 
+
+## Round 2, the declared failsafe
+
+---
+
+**Three material findings remain. S69-02–04 are answered; S69-01 remains open.** Revision 2 fixes the original publication and identity problems, but Send back still fails in supported first-use states, and a pending Outcome can acquire the wrong reviewed tip.
+
+All code evidence below was checked against `04bc1fdd5`. Failure scenarios are inferred from the cited paths; none was executed.
+
+**Round-1 dispositions**
+
+| Finding | Result | Evidence |
+|---|---|---|
+| S69-01 | **STILL OPEN** | [D2:101–125](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s69-verdicts-that-do-something.md:101) correctly moves revision to the holder and explicitly owns withdrawal from Review. However, the withdrawal violates the claim quota in an ordinary state, and revision still names no work unit. See S69-05 and S69-06. |
+| S69-02 | **CONFIRMED ANSWERED** | [D1:81–90](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s69-verdicts-that-do-something.md:81) requires `Goals: G`, derives the tip from `Reviewed:`, and identifies the authenticated confirmer without claiming authorship. Those fields exist in [review/review.go:151](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/review/review.go:151). This answers the original cross-goal substitution; S69-07 concerns a separate change of tip within one record. |
+| S69-03 | **CONFIRMED ANSWERED** | [D1:92–96](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s69-verdicts-that-do-something.md:92) specifies create-only publication, identical-byte replay and refusal of differing bytes inside each rebuild. This protects the replacement operation in [goal/txn.go:310](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/txn.go:310) when publication retries. |
+| S69-04 | **CONFIRMED ANSWERED** | [D3:126–140](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s69-verdicts-that-do-something.md:126) carries both commits and explicitly disqualifies a mismatched run as evidence. The running commit is available in [intent_app.go:199](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/intent_app.go:199). |
+
+**S69-05 — High — material: yes — Clearing `Landing` can make Send back unpublishable.**
+
+**Claim and evidence:** [D2:115–117](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s69-verdicts-that-do-something.md:115) clears `Landing` while retaining the holder’s claim. But land-ready deliberately frees that machine’s active-claim quota ([goal/verbs.go:2149](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/verbs.go:2149)). The validator excludes landing claims, then rejects multiple ordinary claims outside one arc ([goal/validate.go:436](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/validate.go:436), [line 475](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/validate.go:475)). Transaction validation happens before publication ([goal/txn.go:801](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/txn.go:801)).
+
+**Concrete failure:** Seat M leaves G in Review and lawfully claims H. The human’s first Send back clears G’s `Landing`, giving M two active claims. Validation rejects the transaction: neither the verdict nor brief publishes, and G remains in Review. No race or repeated use is required.
+
+**Change to the design:** Define a quota-valid withdrawal when the holder already has other work. Specify how the correction remains pending and when it becomes active, without displacing H or bypassing validation; make the lane and message describe that state.
+
+**Test 1 — DIFFERENT/WRONG:** **WRONG.** The specified transition produces an invalid ledger; its state mapping and test must change.  
+**Test 2 — WORKS/SAFE:** **WORKS fails** on this supported first use. **SAFE passes through refusal**; weakening the validator is not a remedy.
+
+**S69-06 — High — material: yes — The holder still cannot select the work Send back means.**
+
+**Claim and evidence:** [D2:118–120](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s69-verdicts-that-do-something.md:118) directs the holder to run `work revise G --brief FILE`. That command selects failed work first, then finished work ([intent_selection.go:672](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/intent_selection.go:672)). Multiple eligible units are explicitly refused unless `--work NAME` selects one ([intent_selection.go:375–403](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/intent_selection.go:375)). The retained-request rejoin operates **after selection, within a particular run** ([unit_revise.go:117–144](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/launch/unit_revise.go:117)).
+
+**Concrete failure:** G has two completed named work units—the design itself uses two build lanes. Send back publishes and removes G from Review, but the holder’s command refuses with “name one with --work NAME.” Repeating the loop cannot produce the promised attempt. Findings and file anchors do not define that selection.
+
+**Change to the design:** Bind the correction to an explicit work/run and corrected attempt, retaining that binding for retries. Define the human-visible resolution when multiple units qualify; do not silently choose one or promise revision before resolving the ambiguity.
+
+**Test 1 — DIFFERENT/WRONG:** **DIFFERENT.** The handoff needs a target relationship and selection rule beyond G plus brief.  
+**Test 2 — WORKS/SAFE:** **WORKS fails** for a multi-unit goal. The existing refusal is safe, but leaves the promised correction unstarted.
+
+**S69-07 — High — material: yes — Moving `Reviewed:` can relabel an already-drafted verdict.**
+
+**Claim and evidence:** [D1:84–87](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s69-verdicts-that-do-something.md:84) takes the verdict’s tip from the record’s current header, while D4 preserves the recorder. The closing deposit carries the chosen verdict, with no reviewed-tip binding ([partner/service.go:1290–1295](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:1290)). “Review the new tip” rewrites the header without invalidating that deposit ([partner/store.tsx:1855](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/store.tsx:1855), [review/room.ts:603](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/review/room.ts:603)). Outcome shaping checks the verdict and findings, not the tip the draft concerned ([review/room.ts:305–337](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/review/room.ts:305)).
+
+**Concrete failure:** End drafts Clear to land for A. Before recording that card, the human presses Review the new tip, advancing the header to B. Recording the existing Outcome then satisfies every D1 check and publishes `tip=B`, although the verdict was drafted for A. This is a false goal fact immediately; a later gate comparing against current B would not expose it.
+
+**Change to the design:** Bind a closing Outcome to its reviewed tip. Retipping must require renewed closing confirmation while preserving edited words. Recording/publication must reject a changed subject rather than deriving new authority from the latest header alone.
+
+**Test 1 — DIFFERENT/WRONG:** **WRONG.** The Outcome-to-tip admission rule and moved-tip test must change.  
+**Test 2 — WORKS/SAFE:** **Both fail:** the act answers with the wrong reviewed subject and silently attributes that verdict to the human.
+
+**Deferred and non-material**
+
+These pass Test 2: step 1 works safely without additional machinery. Test 1 offers refinements rather than necessary corrections:
+
+- An honestly recorded old-tip verdict can remain; current-tip acceptance belongs to slice D.
+- Broader shared-review authorship policy, history-line presentation and richer proposal vocabulary can wait.
+- Polling and pill presentation refinements can wait. Existing liveness/readiness distinctions remain binding: a retained address alone does not prove a running candidate.
+
+**What I verified holds**
+
+- The record writer saves locally with revision checks. The ledger’s isolated-index builder can include non-ledger records, publish to the configured canonical branch—main by default—and advance `refs/metasystem/goals/accepted` ([txn.go:276](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/txn.go:276), [line 418](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/txn.go:418), [line 862](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/txn.go:862)).
+- The launch route checks both a live session and proof valid for this checkout; ordinary `mayAct` has weaker boot-authority fallback. Revision 2 explicitly selects the stronger rule.
+- Revision freezes its brief before launching and rejoins identical requests for the selected run. S69-06 concerns selecting that run.
+- App candidates use separate run identities and worktrees, exclude the standing address, refuse missing contracts, and distinguish liveness from readiness.
+- The proposal join currently covers goal actions; extending it to app is explicitly included.
+- **V5 holds:** Clear to land adds no landing trigger. Send back and Run require explicit acts. Step 1 does not provide slice D’s acceptance gate, and the paper’s nod supplies no additional authority.
+
+This is the declared failsafe. The quota-valid transition remains a contract decision, so the residue is not wholly mechanical. The skill’s exit is `cap-exhausted-human-raise`, through a recorded re-scope (`metasystem goal edit`) or explicit risk disposition (`metasystem goal accept-risk`), not a third design round.
+
+Proposed receipt, unwritten: `g1-s69 design critique round 2 — three material findings; S69-01 open, S69-02–04 answered`.
+
+**VERDICT: 3 material findings (fail test 2): S69-05, S69-06, S69-07**
+
+Commit reviewed: `04bc1fdd56f302f961aff69cee722018d18e9c42`. Limitations: static review only; no tests, runtime actions, edits or subagents. The checkout advanced during review; comparison confirmed the reviewed files were unchanged from the dispatched commit. Neither the excluded configuration nor anything under `artifacts/` was read.
+

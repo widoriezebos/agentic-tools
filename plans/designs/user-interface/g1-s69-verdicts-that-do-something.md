@@ -94,7 +94,17 @@ under you, the pill would have said "running 4d2e7b1, not the reviewed
   the act confirms; different bytes at that path, another human's
   review, are refused, inside the transaction's rebuild on a moved tip
   (`internal/goal/txn.go:310`, `:869`), so no recorded words are ever
-  overwritten. Clear to land in the room performs it after Record it,
+  overwritten. The Outcome is bound to the tip it was drafted for: the
+  service stamps the record's reviewed tip on the closing deposit as it
+  stamps the verdict (`partner/service.go:1290`), the recorder writes it
+  into the Outcome as `Reviewed at:` under `Verdict:`, Record it refuses
+  when the record's head names another tip ("the branch was retipped
+  since this Outcome was drafted; press End again"), Review the new tip
+  while an unrecorded Outcome card stands asks for End again and keeps
+  the edited words in the draft (today it rewrites the head without
+  touching the card, `partner/store.tsx:1855`, `review/room.ts:603`),
+  and the act refuses an Outcome whose `Reviewed at:` is not the head's
+  `Reviewed:`. Clear to land in the room performs it after Record it,
   under the human's sign-in through the act layer; No verdict performs
   nothing. The line is what slice D's gate reads; until D lands, the
   line is the human's recorded word and the goal stays where it is.
@@ -112,17 +122,34 @@ under you, the pill would have said "running 4d2e7b1, not the reviewed
   shows it as a card the human can read and edit, and performs the D1
   act with `--verdict send-back`, whose history line carries the brief
   as a record beside the review record (published the same create-only
-  way) and withdraws the goal from landing by clearing its Landing
-  record in the same ledger transaction, so the goal leaves the Review
-  lane by the ledger's effect and every seat sees it. The holding seat,
-  on its next pass over its claims (the same loop slice D's clock uses),
-  finds the send-back line, runs `work revise G --brief FILE` on the
-  published brief with the verb's own rejoin rule, and records the
-  attempt on the history; the room says "sent back; the holder
-  revises" and the card in the lane says "sent back by Wido · awaiting
-  the holder" until the attempt's line arrives. A Send back with no
-  finding marked fix is refused in words, and one pressed while the
-  room's closing turn is unsettled waits for it, as End does today.
+  way). The Landing record is not touched: a landing claim stands
+  outside the machine's one-claim quota (`goal/verbs.go:2149`,
+  `goal/validate.go:436`), so a holder that lawfully claimed a second
+  goal would be left with an invalid ledger if the Landing were cleared
+  (`validate.go:475`, checked before publication, `txn.go:801`). The
+  goal leaves the Review lane by reading instead: the board's lane rule
+  treats a claimed goal whose history carries a send-back line newer
+  than its Landing record's `At` as sent back, a phase of In progress
+  (`backlog/project.go:215`), until a later land-ready writes a newer
+  Landing; every seat reads the same history, and slice D's gate reads
+  a send-back newer than the Landing as no permission to land. The
+  holding seat, on its next activity over its claims (as slice D has
+  it), finds the send-back line and runs `work revise G --brief FILE`
+  on the published brief. When the goal has one eligible work unit the
+  verb selects it; when it has several the verb refuses and names them
+  (`cmd/metasystem/intent_selection.go:375-403`, the candidates in its
+  data), and the holder records that on the history (`send-back
+  needs-work candidates=A,B`), the card reads "the holder needs to know
+  which work: A or B" with a press per name that performs the act again
+  with `--work NAME`, the line carries `work=NAME`, and the holder runs
+  `work revise G --work NAME --brief FILE`; the verb's own rejoin rule
+  holds within the selected run (`launch/unit_revise.go:117`), and the
+  holder records the attempt it started, so a later pass finds the
+  attempt line and revises nothing twice. The room says "sent back; the
+  holder revises" and the card in the lane says "sent back by Wido ·
+  awaiting the holder" until the attempt's line arrives. A Send back
+  with no finding marked fix is refused in words, and one pressed while
+  the room's closing turn is unsettled waits for it, as End does today.
 - D3. **The candidate runs from the room.** The room's header carries a
   pill that reads `app status --goal G` (alive, ready, address, since,
   and the running commit the status already returns,
@@ -154,20 +181,25 @@ standing run is that).
 
 ## 6. Payload and routes
 
-`POST /api/goals/<id>/review` `{record, verdict, brief?}` performs
-`goal review` under the signed-in session, as the approve route
-performs approve (`httpd/acts.go`, `actRouteOf`), with the launch
-route's stronger session rule (a live session proof, never boot
+`POST /api/goals/<id>/review` `{record, verdict, brief?, work?}`
+performs `goal review` under the signed-in session, as the approve
+route performs approve (`httpd/acts.go`, `actRouteOf`), with the
+launch route's stronger session rule (a live session proof, never boot
 authority), and answers the history line; with `send-back` the brief's
 text is written as a record beside the review record and both are
-published create-only. `POST /api/app/<goal>/start|stop` and `GET
-/api/app/<goal>/status` wrap the three app forms; status carries the
-running commit. The holding seat's loop gains one step: a send-back
-line without an attempt line runs `work revise` on the published
-brief. The proposal grammar gains `app start --goal` and `goal review`
-and the join test that holds the grammar against the verb table grows
-to the app object. The Behaves walk request gains the address and the
-two commits. The cut guard's call sites gain the three reads.
+published create-only, and the Landing record is left as it is. The
+closing deposit carries `tip` beside `verdict`, and the Outcome's
+`Reviewed at:` line is the recorder's. The board's lane reading gains
+the sent-back phase from the history. `POST /api/app/<goal>/start|stop`
+and `GET /api/app/<goal>/status` wrap the three app forms; status
+carries the running commit. The holding seat's activity over its
+claims gains one step: a send-back line without an attempt line runs
+`work revise` on the published brief, with `--work` when the line
+names it, and records the attempt or the needs-work line. The proposal
+grammar gains `app start --goal` and `goal review`, and the join test
+that holds the grammar against the verb table grows to the app object.
+The Behaves walk request gains the address and the two commits. The
+cut guard's call sites gain the three reads.
 
 ## 7. Not here, later
 
@@ -182,9 +214,15 @@ record's head, and refuses a record whose `Goals:` does not name the
 goal (a review of A offered for B), whose Outcome lacks the verdict, or
 that is not in its home; the record lands with the ledger commit; the
 same bytes at the path are a replay and different bytes are refused,
-also on a moved tip inside the rebuild; send-back clears the Landing
-record in the same transaction and publishes the brief; the holder's
-loop runs `work revise` once on the brief and never twice; the app
+also on a moved tip inside the rebuild; send-back publishes the brief
+and leaves the Landing record, so a holder with a second claim still
+publishes and the ledger stays valid; the board reads a send-back
+newer than the Landing as sent back and a later land-ready as Review
+again; the holder runs `work revise` once on the brief and never
+twice, selects the one eligible unit, and with two records the
+needs-work line whose choice carries `--work`; the closing deposit
+carries the tip, Record it refuses after a retip, and the act refuses
+an Outcome whose `Reviewed at:` is not the head's `Reviewed:`; the app
 routes refuse a goal without a contract in words and status carries
 the running commit; every new act under the session rule and the
 idempotency rows; the public forms test. Frontend: Clear to land after
@@ -230,3 +268,25 @@ can include a non-ledger record in its landing (`txn.go:276-340`,
 identical request (`unit_revise.go:117-215`), that the launch route's
 session rule is the stronger precedent, and that V5 holds: nothing in
 step 1 lands a goal on a nod.
+
+**Round 2, the declared failsafe (2026-09-28, at `04bc1fdd5`):**
+S69-02, S69-03 and S69-04 confirmed answered; S69-01 held open through
+three new material findings, all folded. S69-05: clearing the Landing
+record would put a holder with a lawful second claim over the
+one-claim quota, since a landing claim stands outside it
+(`goal/verbs.go:2149`, `validate.go:436`, `:475`, checked before
+publication at `txn.go:801`); fold, D2: the Landing record is left
+alone and the goal leaves Review by reading, a send-back line newer
+than the Landing being the sent-back phase. S69-06: `work revise`
+selects one work unit and refuses several without `--work`
+(`intent_selection.go:375-403`, `:672`), and the rejoin is within a
+run (`unit_revise.go:117`); fold, D2: the holder's refusal becomes a
+needs-work line, the card offers the names, the act repeats with
+`--work NAME`. S69-07: the closing deposit carried the verdict but not
+the tip (`service.go:1290`), and Review the new tip rewrote the head
+under an unrecorded Outcome (`store.tsx:1855`, `room.ts:603`, the
+shape check at `:305`); fold, D1: the deposit carries the tip, the
+Outcome gains `Reviewed at:`, Record it refuses after a retip, and the
+act compares the two. Every cited line re-read. Closed at the failsafe
+round on three folds, with one scoped confirmation read on S69-05 to
+S69-07 alone (recorded below when it returns).
