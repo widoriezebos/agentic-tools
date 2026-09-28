@@ -3,6 +3,7 @@ cmd/metasystem/goal_landing_portable_lifecycle_test.go	5	Three pauses poll exact
 cmd/metasystem/goal_landing_workers_public_test.go	4	Three deadlines cap readiness, launcher registration, and cancellation of real child processes; the 10ms pause polls a recorded running process, and success requires observed process events rather than elapsed time.
 cmd/metasystem/proof_run_test.go	1	The ticker polls for a real public proof child file; success requires the published file or the exact child result.
 cmd/metasystem/test_scratch_public_test.go	3	One ticker paces the CLI call's progress-measured hang detector (idle for the bound, then a dump request, then the kill and its join) and one deadline bounds the blocked launcher join; the 50ms pause polls recovery of a drained run root, and success requires the process result or the observed removal.
+cmd/metasystem/test_test.go	1	The frozen corpus phase deadline is the package deadline less a cleanup reserve, so a real engine build or worker that overruns fails naming its phase instead of the package timeout panicking in TempDir removal; it never paces a passing run.
 cmd/metasystem/wait_verb_test.go	2	Both deadlines are fixed in the past to test cancellation propagation and never wait.
 internal/adapter/supervisor/devin_test.go	1	The pause polls a real ACP stub's journal for the sent prompt before the signal; success requires the observed wire record.
 internal/adapter/supervisor/fake_helpers_test.go	1	The pause polls a real fixture hold's pid file until its whole content lands; success requires the observed file.

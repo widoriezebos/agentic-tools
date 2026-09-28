@@ -148,12 +148,27 @@ func TestMain(m *testing.M) {
 	}
 	for _, argument := range os.Args {
 		if argument == "--takeover-component-helper" {
+			signalTakeoverComponentReady()
 			for {
 				time.Sleep(time.Hour)
 			}
 		}
 	}
 	os.Exit(testenv.Main(m))
+}
+
+// takeoverComponentReadyFlag asks a component helper to report, on its first
+// extra file (fd 3), that it is running its own main. Only callers that pass
+// the flag also pass the pipe, so no helper writes to an fd it does not own.
+const takeoverComponentReadyFlag = "--takeover-component-ready"
+
+func signalTakeoverComponentReady() {
+	if !slices.Contains(os.Args, takeoverComponentReadyFlag) {
+		return
+	}
+	ready := os.NewFile(3, "takeover-component-ready")
+	_, _ = ready.Write([]byte("ready\n"))
+	_ = ready.Close()
 }
 
 func armingOwnerHelper(args []string) error {
@@ -1376,14 +1391,20 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 
 	watcherTag := ownerTag + "-watcher-1"
 	componentArgs := []string{
-		"-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper",
+		"-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper", takeoverComponentReadyFlag,
 		"supervise", "component", "--component", "watcher", "--tag", watcherTag, "--generation", "1", "--repo", root,
+	}
+	readyReader, readyWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
 	}
 	componentCommand := exec.Command(os.Args[0], componentArgs...)
 	componentCommand.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	componentCommand.ExtraFiles = []*os.File{readyWriter}
 	if err := componentCommand.Start(); err != nil {
 		t.Fatal(err)
 	}
+	_ = readyWriter.Close()
 	componentDone := make(chan error, 1)
 	go func() { componentDone <- componentCommand.Wait() }()
 	componentWaited := false
@@ -1393,18 +1414,31 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 			<-componentDone
 		}
 	})
+	// On Linux, Start returns once the exec has passed its point of no
+	// return, but /proc/<pid>/cmdline stays empty until the new image has
+	// laid out its arguments. A probe inside that window reads no argv, and a
+	// census row built from it carries no tag, so the sweep (correctly) never
+	// selects it. The helper reports from its own main, after that window.
+	line, readErr := bufio.NewReader(readyReader).ReadString('\n')
+	_ = readyReader.Close()
+	if readErr != nil || line != "ready\n" {
+		t.Fatalf("pre-publication watcher readiness = %q, %v", line, readErr)
+	}
 	componentExact, state, err := (identity.KernelProber{}).Probe(int64(componentCommand.Process.Pid))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("read pre-publication watcher: state=%s err=%v", state, err)
 	}
-	prior := enumerateTakeoverProcesses
-	enumerateTakeoverProcesses = func(string) ([]census.Process, error) {
-		return []census.Process{{
-			Pid: componentExact.Pid, PGID: componentExact.Pid, Started: componentExact.StartedAt.Unix(),
-			StartTicks: componentExact.StartTicks, BootID: componentExact.BootID, Alive: true,
-			Argv: strings.Join(componentExact.Argv, " "),
-		}}, nil
+	if !componentExact.ArgvKnown || !identity.HasExactToken(componentExact.Argv, watcherTag) {
+		t.Fatalf("pre-publication watcher argv is not tag-readable, so the census below could not name it: known=%t argv=%q",
+			componentExact.ArgvKnown, componentExact.Argv)
 	}
+	censusRows := []census.Process{{
+		Pid: componentExact.Pid, PGID: componentExact.Pid, Started: componentExact.StartedAt.Unix(),
+		StartTicks: componentExact.StartTicks, BootID: componentExact.BootID, Alive: true,
+		Argv: strings.Join(componentExact.Argv, " "),
+	}}
+	prior := enumerateTakeoverProcesses
+	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return censusRows, nil }
 	t.Cleanup(func() { enumerateTakeoverProcesses = prior })
 
 	result, err := EnsureArmed(armingOptions(root))
@@ -1414,7 +1448,15 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 	if result.Action != "taken-over" || !result.Inspection.Armed() || result.Generation != 1 {
 		t.Fatalf("dead-owner takeover did not establish a verified generation: %+v", result)
 	}
+	// A takeover that returns has already proved every swept group absent,
+	// so the watcher's group must be gone now, not eventually.
+	if absent, absentErr := kernelGroupAbsent(componentExact.Pid); absentErr != nil || !absent {
+		t.Fatalf("takeover returned %q but the pre-publication watcher's group survives (absent=%t err=%v)\n%s",
+			result.Action, absent, absentErr, takeoverSweepCensusDump(root, ownerTag, componentExact.Pid, censusRows))
+	}
 	appendPreviousOwnerRows(t, registryPath, root, result)
+	// The group is proven absent, so the kernel has already reaped the
+	// watcher through the Wait below; the receive cannot block.
 	componentErr := <-componentDone
 	componentWaited = true
 	if componentErr == nil {
@@ -1424,6 +1466,98 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 	if _, err := ShutdownAt(root, root, root, "metasystem-supervision-owner-test-", 1); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// The VM hang's identity facts: a Linux ticks-plus-boot-id watcher that the
+// dead owner launched before publishing state. The sweep must select it from
+// the census, authenticate it by that pair and its tag, and signal its group;
+// the same row with no readable argv is never signalled.
+func TestTakeoverSweepSignalsLinuxIdentifiedPrePublicationWatcher(t *testing.T) {
+	const (
+		pid    = int64(61747)
+		ticks  = int64(14909)
+		bootID = "db591173-e135-4077-af48-76bfce257e06"
+	)
+	root := t.TempDir()
+	ownerTag := "metasystem-supervision-owner-test-crashed"
+	watcherTag := ownerTag + "-watcher-1"
+	argv := []string{"metasystem.test", "-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper",
+		"supervise", "component", "--component", "watcher", "--tag", watcherTag, "--generation", "1", "--repo", root}
+	started := time.Unix(1790000000, 0).Add(time.Duration(ticks) * 10 * time.Millisecond)
+	for _, testCase := range []struct {
+		name    string
+		argv    string
+		signals string
+	}{
+		{name: "tag-readable", argv: strings.Join(argv, " "), signals: "61747:15"},
+		{name: "argv-unreadable", argv: "", signals: ""},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			absent := false
+			var signals []string
+			priorControl, priorEnumeration := takeoverComponentControl, enumerateTakeoverProcesses
+			takeoverComponentControl = func() recordedComponentControl {
+				return recordedComponentControl{
+					prober: armingProbeFunc(func(probed int64) (identity.Exact, identity.Liveness, error) {
+						if probed != pid || absent {
+							return identity.Exact{}, identity.Dead, nil
+						}
+						return identity.Exact{Pid: pid, StartedAt: started, StartTicks: ticks, BootID: bootID, Argv: argv, ArgvKnown: true}, identity.Alive, nil
+					}),
+					groupAbsent: func(int64) (bool, error) { return absent, nil },
+					signalGroup: func(group int64, signal syscall.Signal) error {
+						signals = append(signals, fmt.Sprintf("%d:%d", group, signal))
+						absent = true
+						return nil
+					},
+				}
+			}
+			enumerateTakeoverProcesses = func(string) ([]census.Process, error) {
+				return []census.Process{{
+					Pid: pid, PGID: pid, Started: started.Unix(), StartTicks: ticks, BootID: bootID,
+					Alive: true, Argv: testCase.argv, Unreadable: testCase.argv == "",
+				}}, nil
+			}
+			t.Cleanup(func() { takeoverComponentControl, enumerateTakeoverProcesses = priorControl, priorEnumeration })
+
+			outcomes, err := stopTakeoverComponents(root, root, ownerTag, 1000, false)
+			if err != nil {
+				t.Fatalf("takeover sweep: %v", err)
+			}
+			if got := strings.Join(signals, ","); got != testCase.signals {
+				t.Fatalf("takeover sweep signals = %q, want %q (outcomes %+v)", got, testCase.signals, outcomes)
+			}
+			if testCase.signals == "" {
+				return
+			}
+			if len(outcomes) != 1 || outcomes[0].Result != ShutdownStopped || outcomes[0].Signal != ShutdownSignalTerm ||
+				outcomes[0].Tag != watcherTag || outcomes[0].Identity.Mode() != identity.CompareLinuxTicksBootID {
+				t.Fatalf("takeover sweep outcome = %+v", outcomes)
+			}
+		})
+	}
+}
+
+// takeoverSweepCensusDump renders what the sweep saw and what the kernel says
+// now, so a surviving component fails with the evidence rather than a hang.
+func takeoverSweepCensusDump(root, ownerTag string, pid int64, rows []census.Process) string {
+	var dump strings.Builder
+	for _, row := range rows {
+		fmt.Fprintf(&dump, "census row: pid=%d pgid=%d started=%d ticks=%d boot=%s alive=%t unreadable=%t argv=%q\n",
+			row.Pid, row.PGID, row.Started, row.StartTicks, row.BootID, row.Alive, row.Unreadable, row.Argv)
+	}
+	exact, state, probeErr := (identity.KernelProber{}).Probe(pid)
+	fmt.Fprintf(&dump, "kernel now: pid=%d state=%s err=%v ticks=%d boot=%s zombie=%t exiting=%t argvKnown=%t argv=%q\n",
+		pid, state, probeErr, exact.StartTicks, exact.BootID, exact.Zombie, exact.Exiting, exact.ArgvKnown, exact.Argv)
+	absent, absentErr := kernelGroupAbsent(pid)
+	fmt.Fprintf(&dump, "kernel group %d absent=%t err=%v\n", pid, absent, absentErr)
+	held, heldErr := takeoverComponents(root, root, ownerTag)
+	fmt.Fprintf(&dump, "sweep selection re-run now for owner tag %q (recorded rows are the new generation): %+v err=%v\n", ownerTag, held, heldErr)
+	for _, name := range []string{"owner.log", "state.json"} {
+		content, readErr := os.ReadFile(filepath.Join(SupervisionDir(root), name))
+		fmt.Fprintf(&dump, "--- %s (err=%v)\n%s\n", name, readErr, content)
+	}
+	return dump.String()
 }
 
 func TestLiveGenerationReplacementStopsAndReplacesTheRecordedOwner(t *testing.T) {

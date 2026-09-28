@@ -80,8 +80,10 @@ func (source productionProcessSource) enumerateProcesses(retainEmptyArgv bool) (
 			continue
 		}
 		argv := ""
+		var vector []string
 		if exact.ArgvKnown {
 			argv = strings.Join(exact.Argv, " ")
+			vector = exact.Argv
 		}
 		if argv == "" && !retainEmptyArgv {
 			continue
@@ -102,7 +104,7 @@ func (source productionProcessSource) enumerateProcesses(retainEmptyArgv bool) (
 		processes = append(processes, Process{
 			Pid: pid, PPID: ppid, PGID: int64(pgid),
 			Started: exact.StartedAt.Unix(), StartedExactMicro: exact.StartedAt.UnixMicro(),
-			StartTicks: exact.StartTicks, BootID: exact.BootID, Argv: argv,
+			StartTicks: exact.StartTicks, BootID: exact.BootID, Argv: argv, ArgvVector: vector,
 			Environ: environ, Exe: executable,
 			Cwd: "", CwdError: false, Alive: true,
 			Unreadable: argv == "" || !exact.ArgvKnown || !exact.EnvironKnown,

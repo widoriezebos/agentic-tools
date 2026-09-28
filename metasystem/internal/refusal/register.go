@@ -271,7 +271,7 @@ var Rows = []Row{
 	{Code: "REDUNDANT_READ", Owner: "internal/dispatch", Site: "read_admission.go:259", Shape: Agent, Override: "metasystem work finish j2:<prior critic root>", Commands: 1, H1: StandingGuide, Forward: "work finish"},
 	{Code: "DELEGATE_RECEIPT_REFUSED", Owner: "internal/validate", Site: "conformance.go:771", Shape: Agent, Override: "remove the delegate change to memory/receipts.log, then work review j2:<that round> --check-only --stage review", Commands: 2},
 	{Code: "TEST_POLICY_ENGINE_REQUIRED", Owner: "internal/enginecause", Site: "cause.go:252", Shape: Agent, Override: "the run: command of the line's cause (internal/enginecause.Table)", Commands: 9},
-	{Code: "PARALLEL_RATCHET_REFUSED", Owner: "cmd/metasystem", Site: "audit.go:120", Shape: Question, H1: StandingInput},
+	{Code: "PARALLEL_RATCHET_REFUSED", Owner: "cmd/devgate", Site: "owners.go:92", Shape: Question, H1: StandingInput},
 	{Code: "TEST_CONTRACT_REQUIRED", Owner: "internal/testpolicy", Site: "contract.go:254", Shape: Question, H1: StandingInput},
 	{Code: "TEST_CONTRACT_INVALID", Owner: "cmd/metasystem", Site: "runtime_setup.go:68", Shape: Question, H1: StandingInput},
 	{Code: "TEST_GROUP_SELECTION_REFUSED", Owner: "internal/testpolicy", Site: "select.go:125", Shape: Question, H1: StandingInput},

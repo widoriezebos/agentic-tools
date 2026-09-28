@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -67,107 +66,5 @@ func runJSONObject(args []string) int {
 		return 1
 	}
 	fmt.Println(line)
-	return 0
-}
-
-// runJSONGet prints a dotted field from a JSON file, exiting 3 when the
-// field is absent and 1 when the file is absent or the JSON is unparseable.
-// Scalar values print bare (no quotes) and composite values print as compact
-// JSON, because dozens of shell call sites string-compare the output.
-func runJSONGet(args []string) int {
-	flags := flag.NewFlagSet("json get", flag.ContinueOnError)
-	file := flags.String("file", "", "JSON file to read")
-	value := flags.String("value", "", "JSON string to read (instead of --file)")
-	field := flags.String("field", "", "dotted field path (a.b.c)")
-	def := flags.String("default", "", "value to print when the field is missing or null (exit 0)")
-	shellSafe := flags.Bool("shell-safe", false, "require a UTF-8 string without NUL for shell capture")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	var defValue *string
-	flags.Visit(func(f *flag.Flag) {
-		if f.Name == "default" {
-			defValue = def
-		}
-	})
-	if *field == "" || (*file == "") == (*value == "") {
-		fmt.Fprintln(os.Stderr, "json get: --field and exactly one of --file or --value are required")
-		return 2
-	}
-	content := []byte(*value)
-	if *file != "" {
-		read, err := os.ReadFile(*file)
-		if err != nil {
-			return 1
-		}
-		content = read
-	}
-	var out string
-	var ok bool
-	if *shellSafe {
-		out, ok = jsonedit.GetShellString(content, *field, defValue)
-	} else {
-		out, ok = jsonedit.Get(content, *field, defValue)
-	}
-	if !ok {
-		if *shellSafe {
-			if _, present := jsonedit.Get(content, *field, nil); present {
-				return 1
-			}
-			if !jsonedit.FieldAbsent(content, *field) {
-				return 1
-			}
-		}
-		// A default makes a structurally absent path resolvable while malformed
-		// JSON remains an error. The first lookup already accepted present null,
-		// so this probe preserves the distinction shell callers need.
-		missingMarker := "json-get-field-absent"
-		if _, absent := jsonedit.Get(content, *field, &missingMarker); absent {
-			return 3
-		}
-		return 1
-	}
-	if *shellSafe {
-		fmt.Print(out)
-	} else {
-		fmt.Println(out)
-	}
-	return 0
-}
-
-// runJSONStrip prints a JSON object with named top-level keys removed
-// (indented, key-sorted) — the structural way to derive a runtime config
-// from an annotated enforcement asset.
-func runJSONStrip(args []string) int {
-	flags := flag.NewFlagSet("json strip", flag.ContinueOnError)
-	file := flags.String("file", "", "JSON object file to read")
-	var keys []string
-	flags.Func("key", "top-level key to remove (repeatable)", func(v string) error {
-		keys = append(keys, v)
-		return nil
-	})
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *file == "" || len(keys) == 0 {
-		fmt.Fprintln(os.Stderr, "json strip: --file and at least one --key are required")
-		return 2
-	}
-	data, err := os.ReadFile(*file)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	object, err := jsonedit.StripKeys(data, keys)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	encoded, err := json.MarshalIndent(object, "", "  ")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Println(string(encoded))
 	return 0
 }

@@ -2,15 +2,17 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport/stopreporttest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport/stopreporttest"
 )
 
-func TestReportStopResponseResolvesUnderChangedWording(t *testing.T) {
+func TestStopResponseResolvesUnderChangedWording(t *testing.T) {
 	forStopResponseCases(t, func(t *testing.T, runtime string, blocked bool) {
 		root := stopResponseCommandRoot(t, runtime)
 		published := stopreporttest.Publish(t, stopreporttest.Options{
@@ -21,22 +23,17 @@ func TestReportStopResponseResolvesUnderChangedWording(t *testing.T) {
 		if err := os.WriteFile(payloadPath, append(published.Payload, '\n'), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-			return runReportStopResponse([]string{"--root", root, "--payload-file", payloadPath, "--runtime", runtime, "--session", "command"})
-		})
-		if code != 0 || stderr != "" || stdout != string(published.Report) {
-			t.Fatalf("stop-response returned code=%d stdout=%q stderr=%q", code, stdout, stderr)
+		resolved, err := resolveStopResponseFile(root, payloadPath, runtime, "command")
+		if err != nil || string(resolved.Report) != string(published.Report) {
+			t.Fatalf("stop response resolved report=%q err=%v", resolved.Report, err)
 		}
-		code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-			return runReportStopResponse([]string{"--root", root, "--payload-file", payloadPath, "--json"})
-		})
-		var response stopreport.Response
-		if code != 0 || stderr != "" || json.Unmarshal([]byte(stdout), &response) != nil || response != published.Response {
-			t.Fatalf("stop-response --json returned code=%d response=%+v stderr=%q", code, response, stderr)
+		resolved, err = resolveStopResponseFile(root, payloadPath, "", "")
+		if err != nil || resolved.Response != published.Response {
+			t.Fatalf("stop response resolved record=%+v err=%v", resolved.Response, err)
 		}
 	})
 }
-func TestReportStopResponseRefusesAnUnreadableResponse(t *testing.T) {
+func TestStopResponseRefusesAnUnreadableResponse(t *testing.T) {
 	forStopResponseCases(t, func(t *testing.T, runtime string, blocked bool) {
 		root := stopResponseCommandRoot(t, runtime)
 		published := stopreporttest.Publish(t, stopreporttest.Options{
@@ -57,29 +54,17 @@ func TestReportStopResponseRefusesAnUnreadableResponse(t *testing.T) {
 		if err := os.WriteFile(payloadPath, published.Payload, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-			return runReportStopResponse([]string{"--root", root, "--payload-file", payloadPath})
-		})
-		if code == 0 || stdout != "" || strings.Count(stderr, "\n") != 1 || !strings.Contains(stderr, "Stop response is unreadable") || !strings.Contains(stderr, "report") {
-			t.Fatalf("unreadable response returned code=%d stdout=%q stderr=%q", code, stdout, stderr)
+		resolved, err := resolveStopResponseFile(root, payloadPath, "", "")
+		if err == nil || resolved.Report != nil || !strings.Contains(err.Error(), "Stop response is unreadable") || !strings.Contains(err.Error(), "report") {
+			t.Fatalf("unreadable response resolved report=%q err=%v", resolved.Report, err)
 		}
 	})
 }
-func TestBedsResolveStopReportsThroughTheEngine(t *testing.T) {
-	resolverPath := filepath.Join("..", "..", "scripts", "agents", "fixture-stop-report.sh")
-	resolver, err := os.ReadFile(resolverPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, wording := range []string{"Stop allowed", "Stop blocked", "Report: ", "Do not stop"} {
-		if strings.Contains(string(resolver), wording) {
-			t.Errorf("fixture resolver still interprets wording %q", wording)
-		}
-	}
-	if !strings.Contains(string(resolver), "report stop-response") {
-		t.Error("fixture resolver does not call report stop-response")
-	}
 
+// TestBedsResolveStopReportsThroughTheEngine: no script derives a report
+// reference from console text. The fixture resolver it also pinned retired
+// to the stopreport owner (verbs-object-action U7c).
+func TestBedsResolveStopReportsThroughTheEngine(t *testing.T) {
 	// These lines assert rendered wording or construct fixture bytes. None
 	// derives a report reference from the visible text.
 	allowed := map[string]string{}
@@ -137,4 +122,19 @@ func forStopResponseCases(t *testing.T, run func(*testing.T, string, bool)) {
 			})
 		}
 	}
+}
+
+// resolveStopResponseFile is the owner path the retired `report
+// stop-response` verb relayed: the installation's state root, then the
+// immutable report the payload names (verbs-object-action U7c).
+func resolveStopResponseFile(installation, payloadPath, runtime, session string) (stopreport.ResolvedResponse, error) {
+	root, err := report.StopStatusRoot(installation)
+	if err != nil {
+		return stopreport.ResolvedResponse{}, err
+	}
+	payload, err := os.ReadFile(payloadPath)
+	if err != nil {
+		return stopreport.ResolvedResponse{}, err
+	}
+	return stopreport.ResolveResponse(root, payload, runtime, session)
 }

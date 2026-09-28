@@ -1,14 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func fixtureSource(t *testing.T, relative ...string) string {
@@ -40,7 +36,7 @@ func TestFixturePruningRetainsEveryDistinctFaultWitness(t *testing.T) {
 		{"severe core cap", "severe finding at exhausted round", "cap-exhausted-human-raise at terminal round 3", "cap-contract", "TestCritiqueSevereTerminalBoundary", 1},
 		{"severe cap", "severe finding at exhausted round", "exit 10 and terminal round 3", "cap-contract", "TestDispatchCritiqueAdvanceVerbsPath", 1},
 		{"copied engine mismatch", "change non-tailored engine bytes", "ENGINE equality refusal", "adopt", "copied target changed non-tailored %s bytes", 1},
-		{"copied payload mismatch", "change non-tailored payload bytes", "PAYLOAD equality refusal", "adopt", `for _, projection := range []string{"ENGINE", "PAYLOAD"}`, 1},
+		{"copied payload mismatch", "change non-tailored payload bytes", "PAYLOAD equality refusal", "adopt", `for _, projection := range []behaviorsurface.Projection{behaviorsurface.Engine, behaviorsurface.Payload}`, 1},
 		{"copied Claude drift", "mutate copied Claude skill", "registration path named", "adopt", `range []string{".claude/skills/verify", ".agents/skills/verify"}`, 1},
 		{"copied Codex drift", "mutate copied Codex skill", "registration path named", "adopt", `registration+": existing copied skill differs from its source at SKILL.md"`, 1},
 		{"generation replacement", "arm an older live engine generation", "component=supervision-owner outcome=replaced", "supervision", "func TestLiveGenerationReplacementStopsAndReplacesTheRecordedOwner(", 1},
@@ -65,67 +61,6 @@ func TestFixturePruningRetainsEveryDistinctFaultWitness(t *testing.T) {
 	}
 }
 
-func TestDispatcherSharedEngineCapabilityRejectsTamperAndForeignBed(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	shim := filepath.Join(root, "bin", "metasystem")
-	if err := testexec.WriteFile(shim, []byte("#!/usr/bin/env bash\nset -euo pipefail\n[[ $1 == util && $2 == sha256 && $3 == --file ]]\nshasum -a 256 \"$4\" | awk '{print $1}'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	owner := t.TempDir()
-	engine := filepath.Join(owner, "fixture-engine")
-	build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=fixture-shared-build", "-o", engine, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build shared capability fixture engine: %v\n%s", err, output)
-	}
-	helper, err := filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "fixture-budget.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	run := func(script string) (string, error) {
-		command := exec.Command("bash", "-c", "set -euo pipefail\nfixture_bed_root=$1\nsource $2\n"+script, "fixture-capability", root, helper, owner, engine)
-		output, commandErr := command.CombinedOutput()
-		return string(output), commandErr
-	}
-	out, err := run("cap=$(harness_dispatch_fixture_bed_mint_capability \"$3\" 1 dispatch \"$4\")\nharness_dispatch_fixture_bed_child_scenario dispatch --fixture-bed-child dispatch \"$cap\"\nprintf '%s|%s|%s\\n' \"$harness_fixture_child_scenario\" \"$harness_fixture_shared_engine\" \"$harness_fixture_shared_engine_digest\"")
-	if err != nil || !strings.HasPrefix(strings.TrimSpace(out), "dispatch|"+engine+"|") {
-		t.Fatalf("valid private capability refused: err=%v output=%q", err, out)
-	}
-	out, err = run("cap=$(harness_dispatch_fixture_bed_mint_capability \"$3\" 2 dispatch \"$4\")\nprintf tamper >>\"$4\"\nharness_dispatch_fixture_bed_child_scenario dispatch --fixture-bed-child dispatch \"$cap\"")
-	if err == nil || !strings.Contains(out, "shared immutable engine digest mismatch") {
-		t.Fatalf("tampered engine did not refuse exactly: err=%v output=%q", err, out)
-	}
-	out, err = run("cap=$(harness_dispatch_fixture_bed_mint_capability \"$3\" 3 dispatch \"$4\")\nawk 'NR == 4 {$0=\"foreign-build\"} {print}' \"$cap\" >\"$cap.changed\"\nmv \"$cap.changed\" \"$cap\"\nharness_dispatch_fixture_bed_child_scenario dispatch --fixture-bed-child dispatch \"$cap\"")
-	if err == nil || !strings.Contains(out, "shared immutable engine build descriptor mismatch") {
-		t.Fatalf("tampered engine descriptor did not refuse exactly: err=%v output=%q", err, out)
-	}
-	foreign := t.TempDir()
-	foreignEngine := filepath.Join(foreign, "fixture-engine")
-	if err := testexec.WriteFile(foreignEngine, []byte("foreign engine\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	digestCommand := exec.Command(shim, "util", "sha256", "--file", foreignEngine)
-	digestBytes, err := digestCommand.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	capability := filepath.Join(owner, "foreign.capability")
-	if err := os.WriteFile(capability, []byte(fmt.Sprintf("dispatch\n%s\n%s\nforeign-build\n", foreignEngine, strings.TrimSpace(string(digestBytes)))), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	out, err = run("harness_dispatch_fixture_bed_child_scenario dispatch --fixture-bed-child dispatch \"$3/foreign.capability\"")
-	if err == nil || !strings.Contains(out, "shared immutable engine locator is foreign to the private parent") {
-		t.Fatalf("foreign-bed engine did not refuse exactly: err=%v output=%q", err, out)
-	}
-	out, err = run("cap=$(harness_fixture_bed_mint_capability \"$3\" 4 unaffected)\nharness_fixture_bed_child_scenario unaffected --fixture-bed-child unaffected \"$cap\"")
-	if err != nil || strings.TrimSpace(out) != "unaffected" {
-		t.Fatalf("legacy private three-argument fixture capability changed shape: err=%v output=%q", err, out)
-	}
-}
-
 // The dispatcher bed's optimizations retired with the bed (verbs-object-action
 // U6b: its scenarios are Go tests); the adoption pruning keeps its witnesses.
 func TestAdoptionOptimizationsKeepPrivateOwnersAndUniqueAssertions(t *testing.T) {
@@ -137,7 +72,7 @@ func TestAdoptionOptimizationsKeepPrivateOwnersAndUniqueAssertions(t *testing.T)
 		`run(filled, nil, engine, "system", "check", "--repo", filled, "--json")`,
 		`fillAdoptionHarnessTestingContract(t, filepath.Join(source, "testing.json"), filepath.Join(target, "testing.json"))`,
 		`TEST_CONTRACT_READY`,
-		`for _, projection := range []string{"ENGINE", "PAYLOAD"}`,
+		`for _, projection := range []behaviorsurface.Projection{behaviorsurface.Engine, behaviorsurface.Payload}`,
 		`"internal", "runtime", "setup", "--repo", target, "--runtimes", runtimes}`,
 		`range []string{".claude/skills/verify", ".agents/skills/verify"}`,
 		`registration+": existing copied skill differs from its source at SKILL.md"`,

@@ -3,11 +3,7 @@ package batch
 import (
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
-	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 
@@ -16,14 +12,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-func readRepo(t *testing.T, path ...string) []byte {
-	data, err := os.ReadFile(filepath.Join(append([]string{"..", "..", ".."}, path...)...))
-	must(t, err)
-	return data
-}
-func fixtureMap(t *testing.T) []byte {
-	return readRepo(t, "scripts", "agents", "fixture-bed-groups.tsv")
-}
 func TestBatchJoinRefusesDroppedProtectedTest(t *testing.T) {
 	root := t.TempDir()
 	group := testpolicy.Group{ID: "protected", Kind: "unit", Adapter: "go", CWD: "metasystem", Inputs: []string{"pkg/**", "second/**"},
@@ -125,115 +113,4 @@ func TestBranchMemberPatchKeepsTheDeletion(t *testing.T) {
 			t.Fatalf("branch deletion changes=%v", changes)
 		}
 	})
-}
-
-func isSharedFixtureHarness(path string) bool {
-	switch path {
-	case "scripts/agents/fixture-bed-scenarios.sh", "scripts/agents/fixture-budget.sh":
-		return true
-	}
-	return false
-}
-
-var sectionScriptPattern = regexp.MustCompile(`^scripts/(?:agents/)?[[:alnum:]_.-]+\.sh$`)
-
-func scriptsInSection(source string) []string {
-	var paths []string
-	for _, line := range strings.Split(source, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
-		}
-		for _, field := range strings.Fields(line) {
-			path := strings.TrimPrefix(strings.Trim(field, `"'();`), "$root/")
-			if sectionScriptPattern.MatchString(path) {
-				paths = append(paths, path)
-			}
-		}
-	}
-	return paths
-}
-
-// fixtureRowsFromContract derives the fixture-bed map from the testing
-// contract: every section group named for a fixture bed runs its scripts by
-// declared argv, and each script it names (shared harness libraries aside)
-// maps to that group.
-func fixtureRowsFromContract(t *testing.T, contract []byte) []string {
-	t.Helper()
-	var decoded struct {
-		Groups []struct {
-			ID      string   `json:"id"`
-			Adapter string   `json:"adapter"`
-			Argv    []string `json:"argv"`
-		} `json:"groups"`
-	}
-	must(t, json.Unmarshal(contract, &decoded))
-	rows := map[string]bool{}
-	for _, group := range decoded.Groups {
-		if group.Adapter != "section" || !strings.HasPrefix(group.ID, "section/") || !strings.HasSuffix(group.ID, "-fixtures") {
-			continue
-		}
-		for _, script := range scriptsInSection(strings.Join(group.Argv, " ")) {
-			if !isSharedFixtureHarness(script) {
-				rows[script+"\t"+group.ID] = true
-			}
-		}
-	}
-	result := make([]string, 0, len(rows))
-	for row := range rows {
-		result = append(result, row)
-	}
-	sort.Strings(result)
-	return result
-}
-
-func TestFixtureBedGroupMapMatchesSections(t *testing.T) {
-	want := fixtureRowsFromContract(t, readRepo(t, "testing.json"))
-	mapPath := filepath.Join("..", "..", "..", "scripts", "agents", "fixture-bed-groups.tsv")
-	if os.Getenv("UPDATE_FIXTURE_BED_GROUPS") == "1" {
-		must(t, os.WriteFile(mapPath, []byte(strings.Join(want, "\n")+"\n"), 0o644))
-	}
-	got := strings.Split(strings.TrimSpace(string(fixtureMap(t))), "\n")
-	sort.Strings(got)
-	if !slices.Equal(got, want) {
-		t.Fatalf("fixture bed map=%v, section beds=%v", got, want)
-	}
-	var contract struct {
-		Groups []struct {
-			ID string `json:"id"`
-		} `json:"groups"`
-	}
-	must(t, json.Unmarshal(readRepo(t, "testing.json"), &contract))
-	known := map[string]bool{}
-	for _, group := range contract.Groups {
-		known[group.ID] = true
-	}
-	for _, row := range want {
-		if group := strings.SplitN(row, "\t", 2)[1]; !known[group] {
-			t.Errorf("fixture group %s is absent from testing.json", group)
-		}
-	}
-}
-
-func TestFixtureGroupsForChangedBeds(t *testing.T) {
-	t.Parallel()
-	contract, err := testpolicy.Load("../../../testing.json")
-	must(t, err)
-	for _, row := range strings.Split(strings.TrimSpace(string(fixtureMap(t))), "\n") {
-		fields := strings.Split(row, "\t")
-		if len(fields) != 2 {
-			t.Fatalf("invalid fixture bed row %q", row)
-		}
-		path, required := "metasystem/"+fields[0], fields[1]
-		plan, err := testpolicy.Select(contract, testpolicy.SelectionRequest{
-			ChangedPaths: []string{path}, RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
-		})
-		if err != nil {
-			t.Errorf("%s: select delivery proof: %v", path, err)
-			continue
-		}
-		if !slices.Contains(plan.SelectedGroups, required) {
-			t.Errorf("%s: fixture group %s absent from delivery selection; affected=%v selected=%v", path, required,
-				plan.AffectedSurfaces, plan.SelectedGroups)
-		}
-	}
 }

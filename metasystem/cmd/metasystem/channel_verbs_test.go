@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +15,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	channelFake "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -367,64 +364,6 @@ func TestChannelStatusPostSeedsAnUnbootedBrainStatus(t *testing.T) {
 	status, err := brain.ReadStatus(root)
 	if err != nil || status.Line != brain.StatusLine(record) || status.LastPostedAt == "" {
 		t.Fatalf("first status post did not seed and mark brain status: status=%+v err=%v", status, err)
-	}
-}
-
-func TestTelegramPeekWorksWithoutConfiguredAdapterOrChatID(t *testing.T) {
-	dir, base := commandFakeBed(t)
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("channel.destination.fleet.telegram.api-base="+base+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(config.EnvName("channel.destination.fleet.telegram.bot-token"), "environment-token")
-	if err := os.WriteFile(filepath.Join(dir, "replies.jsonl"), []byte(`{"face":"telegram","user":7001,"chat":1000,"text":"hello from the phone"}`+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	code, out, problem := captureChannelOutput(t, func() int { return runChannelTelegram([]string{"peek", "--root", root}) })
-	if code != 0 || strings.TrimSpace(out) != "chat=1000 user=7001 text=hello from the phone" || problem != "" {
-		t.Fatal(code, out, problem)
-	}
-}
-
-func TestTelegramPeekTokenNeverAppearsInErrors(t *testing.T) {
-	const token = "command-secret-token"
-	t.Setenv(config.EnvName("channel.destination.fleet.telegram.bot-token"), token)
-	cases := []struct {
-		name string
-		base func() (string, func())
-	}{
-		{"transport", func() (string, func()) { return "http://127.0.0.1:1", func() {} }},
-		{"redirect", func() (string, func()) {
-			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				http.Redirect(w, r, "/bot"+token+r.URL.Path, http.StatusFound)
-			}))
-			return s.URL, s.Close
-		}},
-		{"echoed 401", func() (string, func()) {
-			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusUnauthorized)
-				fmt.Fprintf(w, `{"ok":false,"description":%q}`, token)
-			}))
-			return s.URL, s.Close
-		}},
-		{"malformed JSON", func() (string, func()) {
-			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, token+" not json") }))
-			return s.URL, s.Close
-		}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			base, cleanup := tc.base()
-			defer cleanup()
-			root := t.TempDir()
-			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("channel.destination.fleet.telegram.api-base="+base+"\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			code, _, problem := captureChannelOutput(t, func() int { return runChannelTelegram([]string{"peek", "--root", root}) })
-			if code == 0 || strings.Contains(problem, token) || strings.Contains(problem, "/bot"+token+"/") {
-				t.Fatal(code, problem)
-			}
-		})
 	}
 }
 

@@ -79,6 +79,11 @@ var retiredWithDeletedVerb = map[string]string{
 	"launch-standard/TestPackCheckVerbPrintsOneLine": "launch pack-check",
 	"launch-standard/TestUnitRunPrintsOneLine":       "unit run",
 	"launch-standard/TestUnitFamilyIsRegistered":     "unit run",
+	// U7c: the only caller was dependency-tree-guard.sh.
+	"batch-buildcd-standard/TestAuditParallelRatchetVerbRefusesAndLowers": "audit parallel-ratchet",
+	// U7c step B: proc fixture-key lost its last caller with the fixture
+	// libraries; identity.EncodeKey, its owner, stays.
+	"command-interface-smoke/TestProcFixtureKeyPrintsAnEncodedKey": "proc fixture-key",
 }
 
 // retiredWithDeletedBed names legacy mandatory tests whose only subject was a
@@ -87,6 +92,11 @@ var retiredWithDeletedVerb = map[string]string{
 var retiredWithDeletedBed = map[string]string{
 	"batch-buildcd-standard/TestLandFixtureConfigurationsPinProofAdmission": "land-fixtures.sh",
 	"batch-buildcd-standard/TestLandFixtureScenarioRegistryMatchesCount":    "land-fixtures.sh",
+	// U7c: the landing lane worker had no caller; the fixture-bed group map
+	// was derived from sections that no longer run fixture scripts.
+	"launch-standard/TestLandingLaneFixtureScenariosHaveGoWitness":   "landing-lane-worker.sh",
+	"landing-command-standard/TestFixtureGroupsForChangedBeds":       "fixture-bed-groups.tsv",
+	"landing-command-standard/TestFixtureBedGroupMapMatchesSections": "fixture-bed-groups.tsv",
 }
 
 // retiredWithDeletedScript names legacy mandatory tests (group/test) whose only
@@ -103,6 +113,10 @@ var retiredWithDeletedScript = map[string]string{
 	// The proof scripts' relaunch custody moved into devgate with go-gate.sh (U7a).
 	"proof-standard/TestProofScriptsRefuseUnauthorizedRelaunchedChildren": "TestGateRefusesAnUnauthorizedRelaunchedChild",
 	"proof-standard/TestProofScriptsExportDepthAndAuthenticationEngine":   "TestGateRelaunchesAStandaloneRunUnderItsRetainedProofOwner",
+	// fixture-stop-report.sh and report stop-response (U7c): the tests drive
+	// the stopreport owner under their new names.
+	"wait-stop-standard/TestReportStopResponseResolvesUnderChangedWording": "TestStopResponseResolvesUnderChangedWording",
+	"wait-stop-standard/TestReportStopResponseRefusesAnUnreadableResponse": "TestStopResponseRefusesAnUnreadableResponse",
 }
 
 // providerTransitions names legacy groups whose command moved to a new
@@ -196,10 +210,9 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		"section/brain-fixtures":                  {replacement: "brain-bed-standard"},
 		"section/return-schema-fixtures":          {replacement: "return-schema-bed-standard"},
 		"section/static-reproof-fixtures":         {replacement: "static-reproof-bed-standard"},
-		"section/fixture-bed-scenarios-fixtures": {replacement: "runtime-owner-standard", tests: []string{
-			"TestFixtureBedBudgetSelfInitializes", "TestFixtureBedCeilingReapsGroup", "TestFixtureBedSignalReapsGroup",
-			"TestFixtureBedLeashReleasesChildOnOwnerDeath", "TestFixtureBedCollectsEveryFailure",
-		}},
+		// U7c: the Bash fixture libraries it tested are deleted with their last
+		// user, and their Go witnesses with them.
+		"section/fixture-bed-scenarios-fixtures": {reason: "fixture-budget.sh and fixture-bed-scenarios.sh are deleted (verbs-object-action U7c)"},
 		// U7b-1: validate-metasystem.sh's inline sections became Go groups.
 		"section/engine-delivery-contract":       {replacement: "shipped-installation-standard"},
 		"section/static-placeholder-scan":        {replacement: "shipped-installation-standard", tests: []string{"TestAuditMetasystemRefusals"}},
@@ -255,7 +268,10 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 	}
 	// The landing path's shell beds retired into the landing-path-standard
 	// Go group (U5), and the beds' own surfaces went with them.
-	retiredSurfaces := map[string]bool{"land-fixture": true, "pre-commit-guard-fixture": true}
+	// U7c: the supervision-go fixture and the fixture-bed libraries were
+	// deleted; their surfaces' only paths went with them.
+	retiredSurfaces := map[string]bool{"land-fixture": true, "pre-commit-guard-fixture": true,
+		"supervision-go-fixture": true, "fixture-bed-scenarios-fixture": true}
 	for _, old := range previous.Surfaces {
 		now, ok := currentSurfaces[old.ID]
 		if !ok && retiredSurfaces[old.ID] {

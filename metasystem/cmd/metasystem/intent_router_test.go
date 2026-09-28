@@ -137,8 +137,8 @@ func TestIntentRouterTransitionalFallthrough(t *testing.T) {
 	t.Parallel()
 	sentinel := &sentinelFamilies{}
 	registered := sentinel.registry()
-	if code, _, problem := routeWith(registered, "json", "get", "--file", "f"); code != 0 || problem != "" || !slices.Equal(sentinel.taken(), []string{"json get --file f"}) {
-		t.Errorf("json get did not fall through to its family: %d %q", code, problem)
+	if code, _, problem := routeWith(registered, "json", "object", "a=b"); code != 0 || problem != "" || !slices.Equal(sentinel.taken(), []string{"json object a=b"}) {
+		t.Errorf("json object did not fall through to its family: %d %q", code, problem)
 	}
 	if code, _, problem := routeWith(registered, "goal", "set-next", "--id", "g"); code != 0 || problem != "" || !slices.Equal(sentinel.taken(), []string{"goal set-next --id g"}) {
 		t.Errorf("goal set-next did not fall through to its family: %d %q", code, problem)

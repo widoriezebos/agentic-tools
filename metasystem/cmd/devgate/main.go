@@ -7,8 +7,8 @@
 // Actions:
 //
 //   - build: the one fenced, pinned, stamped engine build (go-production-grade
-//     Phase 0a), which replaced the body of scripts/agents/go-build.sh. The
-//     gate and adoption both build through here, so no second unfenced path
+//     Phase 0a); the go-build.sh stub that named it is gone (verbs-object-action
+//     U7c). The gate and adoption both build through here, so no second unfenced path
 //     can swap bin/metasystem under a live gate run.
 //   - static: the fast static/build leaf the fast-static-build group runs
 //     (dependency and parallel ratchets, gofmt, the bash -n shell parse, vet,

@@ -17,7 +17,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	channelFake "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
-	channelTelegram "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/telegram"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -566,47 +565,4 @@ func runChannelFake(args []string) int {
 		fmt.Fprintf(os.Stderr, "unknown channel fake verb %q\n", args[0])
 		return 2
 	}
-}
-
-func runChannelTelegram(args []string) int {
-	if len(args) == 0 || args[0] != "peek" {
-		fmt.Fprintln(os.Stderr, "channel telegram needs peek")
-		return 2
-	}
-	f := flag.NewFlagSet("channel telegram peek", flag.ContinueOnError)
-	root := pathFlag(f, "root", ".", "repository root")
-	if f.Parse(args[1:]) != nil {
-		return 2
-	}
-	const tokenKey = phase.TelegramBotTokenKey
-	token, err := phase.Secret(*root, tokenKey)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, channel.ErrUnconfigured(tokenKey+": "+err.Error()))
-		return 1
-	}
-	base, err := phase.Get(*root, phase.TelegramAPIBaseKey, "https://api.telegram.org")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	dest := channel.DestinationConfig{Provider: "telegram", Token: token, APIBase: base, Secrets: []string{token}}
-	ctx, cancel, err := channelPollContext(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer cancel()
-	updates, err := channelTelegram.New(nil).Peek(ctx, dest)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	for _, update := range updates {
-		text := []rune(update.Text)
-		if len(text) > 40 {
-			text = text[:40]
-		}
-		fmt.Printf("chat=%d user=%d text=%s\n", update.ChatID, update.UserID, string(text))
-	}
-	return 0
 }

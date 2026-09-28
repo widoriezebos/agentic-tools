@@ -2,8 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -11,17 +9,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 )
-
-type surfaceDigestReport struct {
-	PolicyVersion int                        `json:"policyVersion"`
-	Projection    behaviorsurface.Projection `json:"projection"`
-	Endpoint      string                     `json:"endpoint"`
-	Digest        string                     `json:"surfaceDigest"`
-}
-
-func writeBehaviorSurfaceJSON(value any) error {
-	return json.NewEncoder(os.Stdout).Encode(value)
-}
 
 func runBehaviorSurfaceSelect(args []string) int {
 	flags := flag.NewFlagSet("behavior-surface select", flag.ContinueOnError)
@@ -79,61 +66,6 @@ func runBehaviorSurfaceSelect(args []string) int {
 		}
 	}
 	if err := writer.Flush(); err != nil {
-		fmt.Fprintln(os.Stderr, "behavior-surface output:", err)
-		return 1
-	}
-	return 0
-}
-
-func runBehaviorSurfaceDigest(args []string) int {
-	flags := flag.NewFlagSet("behavior-surface digest", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "root whose bytes are projected")
-	projectionName := flags.String("projection", "", "ENGINE, LANDING, or PAYLOAD")
-	endpoint := flags.String("endpoint", "", "human-readable endpoint identity")
-	prefix := flags.String("prefix", "", "optional metasystem prefix below --root")
-	pathsFrom := flags.String("paths-from", "", "optional NUL-delimited source projection manifest")
-	if flags.Parse(args) != nil || *root == "" || *projectionName == "" || *endpoint == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal behavior-surface digest --root DIR --projection ENGINE|LANDING|PAYLOAD --endpoint NAME [--prefix PREFIX] [--paths-from NUL-MANIFEST]")
-		return 2
-	}
-	policy, err := behaviorsurface.Load()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	projection, err := behaviorsurface.ParseProjection(*projectionName)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
-	}
-	var digest string
-	if *pathsFrom == "" {
-		digest, err = policy.DigestWithPrefix(*root, projection, *prefix)
-	} else {
-		data, readErr := os.ReadFile(*pathsFrom)
-		if readErr != nil {
-			fmt.Fprintln(os.Stderr, readErr)
-			return 1
-		}
-		if len(data) > 0 && data[len(data)-1] != 0 {
-			fmt.Fprintln(os.Stderr, "behavior-surface path manifest is not NUL-terminated")
-			return 1
-		}
-		parts := bytes.Split(data, []byte{0})
-		if len(parts) > 0 && len(parts[len(parts)-1]) == 0 {
-			parts = parts[:len(parts)-1]
-		}
-		paths := make([]string, len(parts))
-		for index := range parts {
-			paths[index] = string(parts[index])
-		}
-		digest, err = policy.DigestListed(*root, projection, paths)
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if err := writeBehaviorSurfaceJSON(surfaceDigestReport{PolicyVersion: policy.Version, Projection: projection, Endpoint: *endpoint, Digest: digest}); err != nil {
 		fmt.Fprintln(os.Stderr, "behavior-surface output:", err)
 		return 1
 	}

@@ -92,7 +92,7 @@ func TestShellCommandWordsFindsCommandsNestedInArithmetic(t *testing.T) {
 	}
 }
 
-func TestAuditDependenciesReportsEveryForbiddenCommandAndPythonDebt(t *testing.T) {
+func TestAuditDependenciesReportsEveryForbiddenCommandIncludingPython(t *testing.T) {
 	root := t.TempDir()
 	writeDependencyTestFile(t, filepath.Join(root, "scripts", "agents", "bad.sh"), strings.Join([]string{
 		"#!/usr/bin/env bash",
@@ -107,14 +107,17 @@ func TestAuditDependenciesReportsEveryForbiddenCommandAndPythonDebt(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(findings) != 3 {
-		t.Fatalf("findings = %#v, want three", findings)
+	// The Python debt closed with channel-fixtures.sh (verbs-object-action
+	// U7c): python3 is banned everywhere, that basename included.
+	if len(findings) != 4 {
+		t.Fatalf("findings = %#v, want four", findings)
 	}
-	got := []string{findings[0].String(), findings[1].String(), findings[2].String()}
+	got := []string{findings[0].String(), findings[1].String(), findings[2].String(), findings[3].String()}
 	for index, want := range []string{
 		"banned interpreter node: scripts/agents/bad.sh:2",
 		"banned interpreter perl: scripts/agents/bad.sh:3",
-		"python3 outside the declared legacy sites python3: scripts/agents/bad.sh:4",
+		"banned interpreter python3: scripts/agents/bad.sh:4",
+		"banned interpreter python3: scripts/agents/channel-fixtures.sh:1",
 	} {
 		if got[index] != want {
 			t.Fatalf("finding %d = %q, want %q", index, got[index], want)
@@ -151,7 +154,7 @@ func TestAuditDependenciesPreservesLogicalContextAndPhysicalLines(t *testing.T) 
 			}
 			var gotLines []int
 			for _, finding := range findings {
-				if finding.Interpreter != "node" || finding.Path != "scripts/context.sh" || finding.PythonDebt {
+				if finding.Interpreter != "node" || finding.Path != "scripts/context.sh" {
 					t.Errorf("unexpected finding: %#v", finding)
 				}
 				gotLines = append(gotLines, finding.Line)
