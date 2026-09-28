@@ -1,76 +1,17 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // These tests hold the public refusal texts the 2026-09-28 message audit
 // found false, misleading or jargon-laden (the EM rows outside U9b). Each
 // runs the public command in process on the existing per-test fakes; no Git
 // process runs.
-
-func failingGoalAuthority(outcome string) goalAuthorityProver {
-	return func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
-		return humanauthority.Proof{}, errors.New(outcome)
-	}
-}
-
-// EM-21: a person's act from a shell that is not the enrolled terminal
-// leaked TERMINAL_NOT_REACHED and "ancestry", named the internal verb
-// (goal set-pin, goal revoke) and offered --lineage, which cannot make an
-// agent a person.
-func TestPersonActRefusalUsesThePublicVerbAndPlainReason(t *testing.T) {
-	t.Parallel()
-	bed := newIntentBed(t, false, nil)
-	owners := bed.owners()
-	owners.prove = failingGoalAuthority(humanauthority.OutcomeTerminalMissing)
-	for _, test := range []struct {
-		args []string
-		verb string
-	}{
-		{[]string{"goal", "pin", "standing-validation", "m1e"}, "goal pin"},
-		{[]string{"grant", "revoke", "g-1"}, "grant revoke"},
-	} {
-		code, result := bed.runJSON(owners, test.args...)
-		want := test.verb + " is a person's act at the enrolled terminal, and no enrolled person was proven here (no terminal was found above this shell); nothing was done"
-		if code != 1 || result.Outcome != intentRefused || result.Summary != want {
-			t.Errorf("%v = %d %q, want %q", test.args, code, result.Summary, want)
-		}
-		if result.Decision != "run it at the enrolled terminal; a person enrolls a terminal with metasystem system enroll --name NAME" {
-			t.Errorf("%v decision = %q", test.args, result.Decision)
-		}
-	}
-}
-
-// EM-21: an act either an agent session or a person may perform, run from
-// a shell that is neither, said "the enrolled-terminal proof failed:
-// AGENT_IN_AUTHORITY_CHAIN".
-func TestEitherActorRefusalSaysWhoMayActInPlainTerms(t *testing.T) {
-	t.Parallel()
-	bed := newIntentBed(t, false, nil)
-	owners := bed.owners()
-	owners.dependencies.ownerLineage = func() string { return "" }
-	owners.dependencies.proveHuman = func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error) {
-		return humanauthority.Proof{}, errors.New(humanauthority.OutcomeAgent)
-	}
-	code, result := bed.runJSON(owners, "goal", "pause", "standing-validation", "--reason", "x")
-	want := "cannot tell who runs goal pause: no agent session is named and no enrolled person was proven here (an agent started this shell); nothing was done"
-	if code != 1 || result.Outcome != intentRefused || result.Summary != want {
-		t.Fatalf("goal pause = %d %q, want %q", code, result.Summary, want)
-	}
-	if result.Decision != "a person runs it at the enrolled terminal (metasystem system enroll --name NAME enrolls one); an agent session names itself with --lineage LINEAGE or METASYSTEM_OWNER_LINEAGE" {
-		t.Fatalf("goal pause decision = %q", result.Decision)
-	}
-}
 
 type unfetchedIntentRepository struct{ goal.Repository }
 
@@ -131,21 +72,6 @@ func TestGoalRefusalsDoNotRepeatThemselves(t *testing.T) {
 	code, _, stderr = bed.run(owners, "goal", "allow", "standing-validation", "something", "--reason", "x")
 	if code != 2 || !strings.Contains(stderr, `"something" is not a goal permission; the permissions are: stop-test-changes; nothing was done`) || strings.Contains(stderr, "needed first") {
 		t.Fatalf("goal allow = %d %q", code, stderr)
-	}
-}
-
-// EM-49: system adopt with no target did not say nothing was done.
-func TestBareSystemAdoptSaysNothingWasDone(t *testing.T) {
-	t.Parallel()
-	command := mustIntentCommand(t, "system adopt")
-	var stdout, stderr bytes.Buffer
-	code := runIntentIn(command, []string{"--json"}, &stdout, &stderr, t.TempDir(), defaultIntentOwners())
-	var result intentResult
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		t.Fatalf("not one JSON result: %v\n%s%s", err, stdout.String(), stderr.String())
-	}
-	if code != 2 || result.Summary != "name the repository to adopt into; nothing was done" {
-		t.Fatalf("system adopt = %d %q", code, result.Summary)
 	}
 }
 

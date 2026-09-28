@@ -122,9 +122,6 @@ func (o *Options) cadence(key, flagValue string, flagSet bool, def string) (int6
 		LookupEnv: o.LookupEnv,
 	})
 	if err != nil {
-		if r := notAnInstallation(o.Root); r != nil {
-			return 0, r
-		}
 		r := fail(code, "%v", err)
 		return 0, &r
 	}
@@ -547,9 +544,6 @@ func Stats(opts Options) Result {
 	if readItems != nil {
 		lines, present, readErr := readItems(opts.Root)
 		if readErr != nil {
-			if r := notAnInstallation(opts.Root); r != nil {
-				return *r
-			}
 			return fail(2, "cannot read goal ledger for retro: %v", readErr)
 		}
 		if present {
@@ -562,29 +556,6 @@ func Stats(opts Options) Result {
 		}
 	}
 	return ok(out...)
-}
-
-// notAnInstallation is the refusal for a root that holds no metasystem.conf:
-// its configuration and goal ledger live in an installation, so reading
-// them here reports the root, not the ledger, as what is wrong (EM-02).
-func notAnInstallation(root string) *Result {
-	if _, err := os.Stat(filepath.Join(root, "metasystem.conf")); !os.IsNotExist(err) {
-		return nil
-	}
-	if absolute, err := filepath.Abs(root); err == nil {
-		root = absolute
-	}
-	way := "run this inside the installation, or name it with --root INSTALLATION"
-	if nested := filepath.Join(root, "metasystem"); fileExists(filepath.Join(nested, "metasystem.conf")) {
-		way = "name the installation with --root " + nested
-	}
-	r := fail(2, "%s is not a metasystem installation (it has no metasystem.conf); nothing was read; %s", root, way)
-	return &r
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 func hasGitCheckout(root string) bool {

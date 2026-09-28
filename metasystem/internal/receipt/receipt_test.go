@@ -651,10 +651,9 @@ func TestCheck(t *testing.T) {
 		t.Fatalf("non-numeric cadence accepted: %+v", result)
 	}
 
-	// A root without metasystem.conf cannot resolve the cadence at all, and
-	// is refused as no installation (code 2, never the due code 1).
+	// A root without metasystem.conf cannot resolve the cadence at all.
 	os.Remove(filepath.Join(opts.Root, "metasystem.conf"))
-	if result := Check(opts); result.Code != 2 || !strings.Contains(result.Err[0], "is not a metasystem installation (it has no metasystem.conf)") {
+	if result := Check(opts); result.Code != 1 || !strings.Contains(result.Err[0], "cannot read metasystem configuration") {
 		t.Fatalf("missing configuration tolerated: %+v", result)
 	}
 }

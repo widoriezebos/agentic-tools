@@ -506,43 +506,17 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 		return append(args, "--by", typed), nil, nil
 	}
 	if err != nil {
-		name, reason := inv.command.name, actorProofReason(err)
-		summary := fmt.Sprintf("%s is a person's act at the enrolled terminal, and no enrolled person was proven here (%s); nothing was done", name, reason)
-		decision := "run it at the enrolled terminal; a person enrolls a terminal with metasystem system enroll --name NAME"
+		summary := fmt.Sprintf("%s is a person's act and no enrolled person was proven here (%v); nothing was done", verb, err)
 		if actor == actorEither && typed == "" {
-			summary = eitherActorSummary(name, reason)
-			decision = eitherActorDecision
+			summary = fmt.Sprintf("cannot tell who acts: no agent lineage, and no enrolled person was proven here (%v); nothing was done", err)
 		}
+		decision := "a person runs it at the enrolled terminal; an agent session passes --lineage LINEAGE"
 		if stopping && typed == "" {
-			decision = "a person at a terminal no agent started names themself with --by NAME, or runs it at the enrolled terminal; an agent session names itself with --lineage LINEAGE or METASYSTEM_OWNER_LINEAGE"
+			decision = "a person names themself with --by NAME (a terminal that is not enrolled is proven by its own ancestry) or runs it at the enrolled terminal; an agent session passes --lineage LINEAGE"
 		}
 		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target), Summary: summary, Decision: decision}
 	}
 	return append(args, "--by", flags.by), &proof, nil
-}
-
-// eitherActorDecision is who may run an act an agent session or a person
-// performs, for a shell that is neither.
-const eitherActorDecision = "a person runs it at the enrolled terminal (metasystem system enroll --name NAME enrolls one); an agent session names itself with --lineage LINEAGE or METASYSTEM_OWNER_LINEAGE"
-
-func eitherActorSummary(name, reason string) string {
-	return fmt.Sprintf("cannot tell who runs %s: no agent session is named and no enrolled person was proven here (%s); nothing was done", name, reason)
-}
-
-// actorProofReason is why this shell was not proven to be a person at a
-// terminal, in the reader's terms rather than the proof's outcome code; an
-// error the proof does not classify is kept as it is.
-func actorProofReason(err error) string {
-	text := err.Error()
-	switch {
-	case strings.Contains(text, humanauthority.OutcomeAgent):
-		return "an agent started this shell"
-	case strings.Contains(text, humanauthority.OutcomeTerminalMissing):
-		return "no terminal was found above this shell"
-	case strings.Contains(text, humanauthority.OutcomeNotEnrolled):
-		return "this terminal is not the enrolled one"
-	}
-	return text
 }
 
 // textValue is a TEXT option given inline or read from its --NAME-file,
