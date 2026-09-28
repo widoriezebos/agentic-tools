@@ -352,7 +352,7 @@ func intentPlanningCommands() []intentCommand {
 				intentTargetFlag,
 				{name: "all", usage: "include closed items"},
 				{name: "add", value: "TEXT", repeat: true, usage: "an item to record (repeatable)"},
-				{name: "add-file", value: "FILE", advanced: true, usage: "record each line of FILE as its own note (the read-items --items-file format), not one note"},
+				{name: "add-file", value: "FILE", advanced: true, usage: "record each line of FILE as its own note, not one note"},
 				{name: "read", value: "LABEL", usage: "with --add: the read the items came from"},
 				{name: "close", value: "ITEM", usage: "the item to close"},
 				{name: "fixed", value: "COMMIT", usage: "with --close: the commit that fixed it"},

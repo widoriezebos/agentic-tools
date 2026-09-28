@@ -112,7 +112,7 @@ func processIntentCommands() []intentCommand {
 		{
 			object: "system", action: "check", primary: true, audience: "both", summary: "diagnose problems with this checkout, changing nothing",
 			usage:    []string{"metasystem system check"},
-			details:  []string{"Checks this checkout once, with its skills and the shape of its app covenant when it has one, and repairs nothing.", "Each problem names the command that fixes it, where there is one."},
+			details:  []string{"Checks this checkout once: its machinery, what system setup would change, its skills, and its app covenant (shape and evidence) when it has one; it repairs nothing.", "Each problem names the command that fixes it, where there is one."},
 			flags:    []intentFlag{intentInstallationFlag},
 			maxArgs:  0,
 			examples: []string{"metasystem system check", "metasystem system check --json"},

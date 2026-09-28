@@ -449,7 +449,7 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 		}
 		return inv.render(inv.showDesignAttempts(goalID))
 	case kind != "design" && (inv.input.has("attempt") || inv.input.has("out")):
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--attempt and --out belong to design show --goal G; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--attempt and --out belong to design show G; nothing was done"})
 	case (kind == "designs" || kind == "decisions") && len(args) != 0:
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: inv.command.name + " takes no further words; nothing was done"})
 	}

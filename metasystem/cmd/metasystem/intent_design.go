@@ -31,7 +31,7 @@ func designCommand() intentCommand {
 		details: []string{
 			"The design author works in this checkout and writes a staged draft; the goal's design document is updated only",
 			"when it still holds the bytes the request was made against. A document someone edited meanwhile is left as it is",
-			"and the proposal is kept: design show --goal G --attempt N shows it.",
+			"and the proposal is kept: design show G --attempt N shows it.",
 			"Without --out: the goal's one draft design, or a new <goal>.md in the project's design home. --out names a file",
 			"inside a design home. An accepted design is never rewritten; ask for a new draft file instead.",
 			"The same request again reports the same attempt; --after N asks for one new attempt after attempt N.",

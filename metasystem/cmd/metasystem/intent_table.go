@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,8 +24,28 @@ import (
 // passthroughAction is a public action whose words go, unchanged, to an
 // existing handler with its own parser, output and exit codes.
 func passthroughAction(object, action, audience, summary string, usage []string, flags []intentFlag, examples []string, run func([]string) int) intentCommand {
-	command := intentCommand{object: object, action: action, audience: audience, summary: summary, usage: usage,
-		flags: flags, examples: examples, maxArgs: -1}
+	// An owner's --root is the repository every public command takes as
+	// --repo (its --root spelling still parses): the help says so, and the
+	// installation is found from the current directory when neither is given.
+	shown := make([]intentFlag, 0, len(flags))
+	for _, flag := range flags {
+		if flag.name == "root" {
+			flag = intentRepoFlag
+		}
+		shown = append(shown, flag)
+	}
+	optionalRoot := regexp.MustCompile(`\[--root [A-Z]+\]`)
+	requiredRoot := regexp.MustCompile(` --root [A-Z.]+`)
+	lines := make([]string, len(usage))
+	for index, line := range usage {
+		lines[index] = requiredRoot.ReplaceAllString(optionalRoot.ReplaceAllString(line, "[--repo PATH]"), "")
+	}
+	shownExamples := make([]string, len(examples))
+	for index, example := range examples {
+		shownExamples[index] = strings.ReplaceAll(example, " --root .", "")
+	}
+	command := intentCommand{object: object, action: action, audience: audience, summary: summary, usage: lines,
+		flags: shown, examples: shownExamples, maxArgs: -1}
 	command.passthrough = func(args []string) int { return runPassthrough(command, run, args, os.Stderr) }
 	return command
 }
@@ -41,7 +62,7 @@ func runPassthrough(command intentCommand, run func([]string) int, args []string
 		fmt.Fprintf(stderr, "%s: --repo needs a value (PATH); nothing was done\n", label)
 		return 2
 	}
-	documentsRoot := slices.ContainsFunc(command.flags, func(flag intentFlag) bool { return flag.name == "root" })
+	documentsRoot := slices.ContainsFunc(command.flags, func(flag intentFlag) bool { return flag.name == "repo" })
 	_, rootGiven, _ := takeIntentFlag(rest, "root", true)
 	_, fileGiven, _ := takeIntentFlag(rest, "file", true)
 	if repoGiven && !documentsRoot {
@@ -321,19 +342,19 @@ func practiceIntentCommands() []intentCommand {
 			[]intentFlag{documented("root", "INSTALLATION", "the installation whose checkout the session isolates from")},
 			[]string{"metasystem session isolate"}, runSessionIsolate),
 		passthroughAction("test", "plan", "both", "preview the risk-selected tests and their reasons without running them",
-			[]string{"metasystem test plan --root INSTALLATION [--goal G] --json"},
+			[]string{"metasystem test plan [--goal G] [--root INSTALLATION] [--json]"},
 			[]intentFlag{documented("root", "INSTALLATION", "the installation"), documented("goal", "G", "the goal owning the delivery")},
-			[]string{"metasystem test plan --root . --json"}, runTestPlan),
+			[]string{"metasystem test plan", "metasystem test plan --goal verbs-match-intent --json"}, runTestPlan),
 		passthroughAction("test", "add", "agent", "add verified Go tests to a group of the testing contract",
 			[]string{"metasystem test add --file FILE --group ID --tests NAME,NAME"},
 			[]intentFlag{documented("file", "FILE", "the testing contract"), documented("group", "ID", "the group the tests join"),
 				documented("tests", "NAME,NAME", "Go test names, each verified in the group's packages")},
-			[]string{"metasystem test add --file testing.json --group verb-ratchet --tests TestVerbRatchetInternalVerbCount"}, runTestingAddTests),
+			[]string{"metasystem test add --file testing.json --group verb-ratchet --tests TestEveryInternalVerbHasALauncherThatStartsIt"}, runTestingAddTests),
 		passthroughAction("test", "remove", "agent", "take deleted Go tests, or a whole group, out of the testing contract",
 			[]string{"metasystem test remove --file FILE --group ID --tests NAME,NAME", "metasystem test remove --file FILE --group ID"},
 			[]intentFlag{documented("file", "FILE", "the testing contract"), documented("group", "ID", "the group the tests leave; without --tests the group itself and every reference to it"),
 				documented("tests", "NAME,NAME", "Go test names the group lists; a name it no longer lists is already removed")},
-			[]string{"metasystem test remove --file testing.json --group verb-ratchet --tests TestVerbRatchetInternalVerbCount"}, runTestingRemoveTests),
+			[]string{"metasystem test remove --file testing.json --group verb-ratchet --tests TestLauncherRuleRefusesAVerbNothingStarts"}, runTestingRemoveTests),
 		passthroughAction("test", "baseline", "agent", "record or check the trusted baseline a refactor proceeds from",
 			[]string{"metasystem test baseline --gate COMMAND [--file FILE] [--root INSTALLATION]",
 				"metasystem test baseline --check [--file FILE] [--max-age-minutes N] [--max-commits N] [--root INSTALLATION]"},
