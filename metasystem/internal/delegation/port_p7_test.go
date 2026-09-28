@@ -209,10 +209,15 @@ func TestP7ReapOfAMissionJobAtItsCapRaisesTheFenceAsk(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name, mission, truncatedBy, reason string
+		resolution                         map[string]any
 	}{
-		{"job cap", "mission-timeout", "", "job-cap-min"},
-		{"wall clock truncation", "mission-wall", "wall-clock", "wall-clock-hours"},
-		{"no mission", "", "", ""},
+		{"job cap", "mission-timeout", "", "job-cap-min", nil},
+		{"wall clock truncation", "mission-wall", "wall-clock", "wall-clock-hours", nil},
+		{"signed pair cap", "mission-pair", "", "cap.min.codex.gpt-5-6-sol",
+			map[string]any{"rule": "contract-pair", "origin": "contract", "key": "cap.min.codex.gpt-5-6-sol", "signedMin": 60, "requestedMin": 60}},
+		{"own lower cap", "mission-lower", "", "",
+			map[string]any{"rule": "argument", "origin": "argument", "key": "cap.min.codex.gpt-5-6-sol", "signedMin": 180, "requestedMin": 60}},
+		{"no mission", "", "", "", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -225,6 +230,9 @@ func TestP7ReapOfAMissionJobAtItsCapRaisesTheFenceAsk(t *testing.T) {
 				resolution := map[string]any{"capMin": 60}
 				if tc.truncatedBy != "" {
 					resolution["truncatedBy"] = tc.truncatedBy
+				}
+				for key, value := range tc.resolution {
+					resolution[key] = value
 				}
 				fields["capResolution"] = resolution
 			}
@@ -244,12 +252,18 @@ func TestP7ReapOfAMissionJobAtItsCapRaisesTheFenceAsk(t *testing.T) {
 				}
 				return
 			}
-			ask, err := os.ReadFile(filepath.Join(missions, tc.mission, "asks", "fence-bound.json"))
-			if err != nil {
-				t.Fatalf("the capped mission job raised no batched ask: %v; stderr %q", err, b.stderr.String())
-			}
-			if !strings.Contains(string(ask), "`"+tc.reason+"`") {
-				t.Fatalf("the ask does not name %s: %s", tc.reason, ask)
+			if tc.reason == "" {
+				if _, err := os.Stat(filepath.Join(missions, tc.mission, "asks", "fence-bound.json")); !os.IsNotExist(err) {
+					t.Fatalf("a timeout below the signed cap raised a fence ask: %v", err)
+				}
+			} else {
+				ask, err := os.ReadFile(filepath.Join(missions, tc.mission, "asks", "fence-bound.json"))
+				if err != nil {
+					t.Fatalf("the capped mission job raised no batched ask: %v; stderr %q", err, b.stderr.String())
+				}
+				if !strings.Contains(string(ask), "`"+tc.reason+"`") {
+					t.Fatalf("the ask does not name %s: %s", tc.reason, ask)
+				}
 			}
 			if _, err := os.Stat(filepath.Join(missions, tc.mission, "usage.json")); err != nil {
 				t.Fatalf("the terminal mission job's usage was not aggregated: %v", err)
