@@ -135,6 +135,13 @@ func TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback(t *te
 }
 
 func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
+	// The worker allowances below are this test's own: the fixture
+	// configuration's two workers for the retained run and the injected
+	// memory readings for the automatic policy. An inherited ceiling (the
+	// full gate exports METASYSTEM_TEST_WORKERS=1) would pin every
+	// resolution to one worker and leave the verifier no other allowance to
+	// read, so the ambient value is cleared; empty is no ceiling.
+	t.Setenv(proofrun.TestWorkersEnvironment, "")
 	fixture := newOrdinaryCandidateFixture(t)
 	writeTestingFixtureFile(t, filepath.Join(fixture.root, "metasystem.conf"), []byte("metasystem.runtimes=fake\ntesting.workers=2\n"), 0o644)
 	pinProofBinaryFixture(t, fixture.root)
@@ -358,8 +365,7 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 			return result
 		}
 		if resolved := verify(request); resolved.Workers == prepared.Workers {
-			// An inherited ceiling of one worker pins every resolution.
-			t.Logf("inherited %s=%q leaves no other allowance to resolve", proofrun.TestWorkersEnvironment, os.Getenv(proofrun.TestWorkersEnvironment))
+			t.Fatalf("the moved configuration resolves the executed allowance %d, want another", prepared.Workers)
 		} else if resolved.Delivery.Sufficient {
 			t.Fatalf("resolved allowance %d reused proof executed with %d workers: groups=%+v", resolved.Workers, prepared.Workers, resolved.Groups)
 		}

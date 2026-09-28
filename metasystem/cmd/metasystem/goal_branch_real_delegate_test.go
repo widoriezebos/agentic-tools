@@ -184,6 +184,22 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 	}
 }
 
+// stewardRunnerOutlived reports whether the probed process is the recorded
+// steward runner, still running. A zombie or a process the kernel is tearing
+// down has exited, as testutil.AwaitExactExit counts it: an orphaned runner
+// stays a zombie until its new parent reaps it, which under load can be
+// after the join and before this probe.
+func stewardRunnerOutlived(runner steward.RunnerRecord, live identity.Exact, state identity.Liveness) bool {
+	if state != identity.Alive || live.Zombie || live.Exiting {
+		return false
+	}
+	same := runner.PidStartedAt > 0 && live.StartedAt.Unix() == runner.PidStartedAt
+	if runner.StartTicks > 0 && runner.BootID != "" && live.StartTicks > 0 && live.BootID != "" {
+		same = live.StartTicks == runner.StartTicks && live.BootID == runner.BootID
+	}
+	return same
+}
+
 func realDelegateRosterFields(fields map[string]any) map[string]any {
 	out := map[string]any{}
 	for key, value := range fields {
@@ -338,11 +354,7 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 			t.Errorf("probe steward runner %d: %v", runner.Pid, err)
 			return
 		}
-		same := runner.PidStartedAt > 0 && live.StartedAt.Unix() == runner.PidStartedAt
-		if runner.StartTicks > 0 && runner.BootID != "" && live.StartTicks > 0 && live.BootID != "" {
-			same = live.StartTicks == runner.StartTicks && live.BootID == runner.BootID
-		}
-		if state == identity.Alive && same {
+		if stewardRunnerOutlived(runner, live, state) {
 			t.Errorf("steward runner %d outlived fixture cleanup: disarm=%s/%s", runner.Pid, outcome.Result, outcome.Reason)
 		}
 	})

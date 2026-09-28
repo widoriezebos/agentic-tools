@@ -71,6 +71,20 @@ func ArgvPaths(argv string, cwd string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("argv tokenization failed: %w", err)
 	}
+	return tokenPaths(tokens, cwd), nil
+}
+
+// processArgvPaths reads the paths a census row's argv names: from the
+// kernel's argument vector when the live table supplied one, since those
+// arguments need no tokenizing, and from the shell line otherwise.
+func processArgvPaths(process Process, cwd string) ([]string, error) {
+	if process.ArgvVector != nil {
+		return tokenPaths(process.ArgvVector, cwd), nil
+	}
+	return ArgvPaths(process.Argv, cwd)
+}
+
+func tokenPaths(tokens []string, cwd string) []string {
 	var paths []string
 	previousPathFlag := false
 	for _, token := range tokens {
@@ -102,5 +116,5 @@ func ArgvPaths(argv string, cwd string) ([]string, error) {
 		}
 		paths = append(paths, realpath(path))
 	}
-	return paths, nil
+	return paths
 }
