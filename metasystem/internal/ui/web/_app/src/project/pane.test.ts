@@ -331,17 +331,17 @@ describe("what one Sittings row says", () => {
 
   it("says what the press will do before it is pressed, because the press is the consent", () => {
     expect(opensLine(row, false)).toBe(
-      "Open the conversation on plans/designs/sessions.md and start a sitting on it",
+      "Start a sitting on plans/designs/sessions.md and open its room",
     );
-    // A sitting already standing on it is opened and not started again.
+    // A sitting already standing on it is its room, opened and not started again (g1-s67 D6).
     expect(opensLine({ ...row, standing: true }, true)).toBe(
-      "Open the conversation on plans/designs/sessions.md",
+      "Go back into the sitting's room on plans/designs/sessions.md",
     );
     // And a row nothing stands on, while a sitting stands on another record: a
     // sitting is a conversation of its own (g1-s65 D16), so a second one starts
     // beside the first and ends nothing.
     expect(opensLine(row, true)).toBe(
-      "Open the conversation on plans/designs/sessions.md and start a sitting on it",
+      "Start a sitting on plans/designs/sessions.md and open its room",
     );
     // A review's row is its door where it stands, and its record where it does not.
     const review = { ...row, record: { ...row.record, kind: "review", path: "plans/reviews/r.md" } };

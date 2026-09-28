@@ -101,8 +101,13 @@ func TestBedsResolveStopReportsThroughTheEngine(t *testing.T) {
 func stopResponseCommandRoot(t *testing.T, runtime string) string {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "installation")
-	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if marker, err := os.OpenFile(filepath.Join(root, "metasystem.conf"), os.O_CREATE|os.O_WRONLY, 0o644); err != nil {
+		t.Fatal(err)
+	} else {
+		marker.Close()
 	}
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes="+runtime+"\n"), 0o644); err != nil {
 		t.Fatal(err)

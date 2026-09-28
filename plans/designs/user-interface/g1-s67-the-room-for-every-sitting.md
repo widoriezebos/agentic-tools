@@ -302,3 +302,71 @@ Closing, deposits and KeepRoom all pass through the one resolution
 point, that Standing and the unopened check stay sound, and that End
 clearing the mark is what lets the next Start open a record-keyed
 sitting (`conversation.go:1299`).
+
+## Built (2026-09-28)
+
+Step 1 built by Claude on Opus 5.5 in worktree `agentic-tools-sit`, branch
+`room-every-sitting` from main `12611b98c`: five build commits
+(`1374e6828` the service side, `98f07533b` the routes, `a32ec2b82` the
+room for every purpose, `17cd132ca` a snapshot fix found by the
+walkthrough, `698765dff` the cut guard's row) across two runs, the first
+cut off by a usage limit and the second continuing from the branch; then
+two fix rounds. Report: `~/LocalStorage/agentic-tools-evidence/
+review-room-20260928/opus-build-report-room-every-sitting.md`;
+screenshots under `g1-s67/` (19 scenes and the pre-D16 walk, at 1280 and
+400, light and dark). Every decision D1 to D7 as written, including the
+S67-04 resolution rule with its fixture and the S67-05 cautions; nothing
+unbuildable; left out with reasons: a Start-press component test (the
+suite has no DOM; the walkthrough holds it), and the pre-D16 service
+fixture holds a fact offered rather than recorded (the walkthrough shows
+the recorded one).
+
+**Sol's read** (`g1-s67-sol-read.md`, verbatim): one material finding,
+SOL-S67-01, the checkout source read admitted what the document reader
+refuses (`.git`, `artifacts`, the local configuration, invalid UTF-8) and
+checked no standing sitting. **Fix round 1** (`d01874552`): one admission
+rule shared with the document reader (`project.Served`), the resolved
+path and a descriptor check against symlink aliases, invalid UTF-8
+refused in words, a shaping source read answered only in a standing
+sitting of the signed-in human; and, on Wido's grant of 2026-09-28, the
+room's drafts are kept a second after the last keystroke through one
+timer named in the cut guard's exceptions (Sol's SOL-A-01 on slice A);
+the board's fact anchor became a desk press (D5); the checkout test lost
+its Git. **Sol's re-read**: SOL-S67-01 fixed; one new material finding,
+SOL-S67-02, keeps could land out of order and an older snapshot
+overwrite newer words. **Fix round 2** (`4ad1ac539`): one keep in flight
+with coalescing (`RoomKeeper`), every keep numbered per room above what
+the mark held, the server ignoring a keep that is not above it; and the
+branch's comments say why, not who asked (SOL-S67-03). **Sol's scoped
+re-read of fix round 2**: SOL-S67-02 held, since the server still wrote
+the state file outside the conversation's lock and two admitted keeps
+could publish in reverse; and SOL-S67-04, a keep on leaving the page
+sent no request of its own when the same words were already in flight.
+**Fix round 3** (`96647e2cf`): the keep's admission, change and
+publication under one lock, held by a test that forces the reversed
+interleaving through an injected publisher; the leaving keep always
+sent, numbered above the one in flight. **Sol's re-read of fix round
+3**: both fixed; one last finding on the same path, SOL-S67-05, the
+state file was written with a truncate and a write, so a sign-in
+scanning the seat's sittings between the two could skip a torn file
+and move nothing. **Fix round 4** (`cce0b7d0d`): a state file is
+written beside itself and renamed over, so every reader finds the old
+state or the new one, and a sign-in refuses by name a state it cannot
+read rather than skipping it. That round was read by the design's
+author, not by Sol, under Wido's rule of 2026-09-28 to stop a critique
+loop once the remaining defects are of one class and its root is
+changed: four Sol passes had narrowed to one file's write, and the
+atomic write ends the class. Read verbatim, the four passes are in
+`g1-s67-sol-read.md`.
+
+Residuals, none material at first use: an 8 MiB whole-file cap on the
+checkout read that the Partner's own reads do not have; a parent
+directory swapped for a symlink between resolving and opening needs a
+writer already inside the checkout; when two pages keep one room the
+page opened later wins by number and the older page's keeps are
+ignored.
+
+Landed through `room-every-sitting-landing`, merged with main (the
+engine's batches 9 and 10, the evidence-root default) and
+ui-development, the bundle rebuilt at the landing, every landing check
+green; the standing interface restarted onto it.

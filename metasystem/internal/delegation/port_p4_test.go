@@ -245,7 +245,6 @@ func TestP4ReapRecollectsAReturnDeliveredBeforeTheLoss(t *testing.T) {
 		returned, status string
 	}{{p4DeliveredReturn, "completed"}, {`{`, "failed"}} {
 		b := newBed(t)
-		b.installAsset("scripts/agents/schemas/design-critic.schema.json")
 		b.writeRecord("recollect-loss", map[string]any{"status": "running", "role": "design-critic", "round": 1,
 			"pid": 8201, "pgid": 8201, "sessionId": "fake-session", "requestedModel": "fake-model", "effectiveModel": "fake-model",
 			"startedAt": b.doubles.Clock.Now().Format(time.RFC3339), "capMin": 60})

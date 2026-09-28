@@ -204,11 +204,11 @@ func TestAdjudicateTurnAfterRepairInvalidGoesProtocolError(t *testing.T) {
 
 func TestAdjudicateTurnRepairsBareImplementerDiffBoundaryAtAcceptance(t *testing.T) {
 	dir := t.TempDir()
-	schemaSource, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "schemas", "implementer.schema.json"))
+	schemaSource, err := os.ReadFile(filepath.Join("..", "..", "internal", "protocol", "schemas", "implementer.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	schemaDir := filepath.Join(dir, "scripts", "agents", "schemas")
+	schemaDir := filepath.Join(dir, "internal", "protocol", "schemas")
 	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

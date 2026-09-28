@@ -12,6 +12,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -48,12 +50,21 @@ const (
 // ship. The paper, the development ledgers and the roster stay home because
 // nothing ships by default. cmd/, internal/, go.mod
 // and go.sum are the engine source: the payload ships source and the target
-// rebuilds, so scripts and engine prove their coherence by building.
+// rebuilds, and the engine's data (the agent protocol, the landing and path
+// policy, the runtime hook settings and this workflow) is compiled into it.
+// The coverage floors are the template's own development test policy and
+// stay home.
 var PayloadAllow = []string{
 	".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md", "cmd", "docs", "go.mod", "go.sum",
-	"internal", "memory", "metasystem.conf", "optional-skills", "plans", "records", "scripts",
+	"internal", "memory", "metasystem.conf", "optional-skills", "plans", "records",
 	"skills", "testing-parallel-ratchet.json", "testing.json", "wow.md",
 }
+
+// githubActionsWorkflow is the runtime-neutral CI enforcement adoption
+// installs at workflowPath.
+//
+//go:embed github-actions-metasystem.yml
+var githubActionsWorkflow []byte
 
 // ForeignAssets are the file-shaped instruction assets adoption can detect.
 // Any of them in a target means the repository is not fresh.
@@ -105,6 +116,9 @@ type Deps struct {
 	Genesis func(target string) error
 	// Now is the clock for the goal-free declaration.
 	Now func() time.Time
+	// LookupEnv answers the environment the target's evidence root resolves
+	// under; nil is os.LookupEnv.
+	LookupEnv func(string) (string, bool)
 }
 
 // Refusal is a stop before or during adoption. Remedy names the way forward:
@@ -397,7 +411,7 @@ func Adopt(options Options) (Result, error) {
 	}
 
 	// Runtime-neutral enforcement.
-	if err := copyFile(filepath.Join(target, "scripts", "enforcement", "github-actions-metasystem.yml"), filepath.Join(target, filepath.FromSlash(workflowPath)), 0o644); err != nil {
+	if err := installFile(filepath.Join(target, filepath.FromSlash(workflowPath)), githubActionsWorkflow, 0o644); err != nil {
 		return Result{}, err
 	}
 
@@ -426,7 +440,18 @@ func Adopt(options Options) (Result, error) {
 	} else {
 		result.Notes = append(result.Notes, "the target is not a git repository; the pre-commit guard is enrolled by the first goal action after git init")
 	}
+	result.Notes = append(result.Notes, evidenceRootNote(target, d.LookupEnv))
 	return result, nil
+}
+
+// evidenceRootNote is the one line adoption says about the target's evidence
+// root; it never requires one, so a refusal is said, not raised.
+func evidenceRootNote(target string, lookup func(string) (string, bool)) string {
+	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{ConfPath: filepath.Join(target, "metasystem.conf"), LookupEnv: lookup})
+	if err != nil {
+		return "evidence root: " + err.Error()
+	}
+	return resolved.Line()
 }
 
 func displayStamp(stamp string) string {
@@ -924,6 +949,12 @@ func copyFile(from, to string, mode fs.FileMode) error {
 	if err != nil {
 		return err
 	}
+	return installFile(to, data, mode)
+}
+
+// installFile publishes data at to with mode, leaving an identical file as
+// it is.
+func installFile(to string, data []byte, mode fs.FileMode) error {
 	if present, err := os.ReadFile(to); err == nil && bytes.Equal(present, data) {
 		if info, statErr := os.Stat(to); statErr == nil && info.Mode().Perm() == mode {
 			return nil

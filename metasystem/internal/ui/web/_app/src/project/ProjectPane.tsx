@@ -37,6 +37,7 @@ import {
   lastAtLine,
   opensLine,
   pilesLine,
+  sittingRowPress,
   sliceCount,
   SITTINGS_TAB,
   SITTINGS_TITLE,
@@ -76,7 +77,7 @@ import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
 import { useOffersRefresh } from "../shell/refresh";
 import { Tabs, tabShown, type Tab } from "../panes/Tabs";
-import { backlogPath, documentPath, goalPath, projectPath, reviewPath } from "../routes";
+import { backlogPath, documentPath, goalPath, projectPath, sittingPath } from "../routes";
 import { CardMenu } from "../backlog/CardMenu";
 import { opensMenu, type At } from "../backlog/menu";
 import { ProposedChip } from "../partner/ProposedChip";
@@ -1559,47 +1560,35 @@ export function timeOf(stamp: string): string {
  * a sitting stands on right now is listed even where nothing has been recorded
  * into it yet, because that is the sitting a human is in the middle of.
  *
- * Pressing a row opens the conversation on that record and starts a sitting on
- * it where none stands at all. The press is the consent: a row that said "open"
- * and then quietly opened a sitting would be starting one behind a human's back,
- * so the row says which of the two it will do before it is pressed.
- *
- * And no row starts one while a sitting stands, its own or another's. There is
- * one sitting on one conversation: starting a second replaces the standing mark,
- * which ends the sitting a human is in the middle of without its outcome ever
- * being written. The record's own page already offers no Start while one stands
- * (DocumentPane.tsx); this is that rule where the rows are.
+ * Pressing a row opens that sitting's room (g1-s67 D6), and starts a sitting on
+ * the record where none stands at all. The press is the consent: a row that said
+ * "open" and then quietly opened a sitting would be starting one behind a
+ * human's back, so the row says which of the two it will do before it is
+ * pressed. A sitting standing on the human's ordinary conversation from before
+ * every sitting had its own is listed like any other, and its room is that
+ * conversation (the service's one resolution rule).
  */
 function Sittings({ rows, nothing }: { rows: readonly SittingRow[]; nothing: ReactNode }) {
-  const { startSitting, showSitting } = usePartner();
+  const { startSitting } = usePartner();
   const navigate = useNavigate();
   const stands = rows.some((row) => row.standing);
   const open = (row: SittingRow) => {
-    // A review's row is its door: the room where it stands (g1-s65 D9), and its
-    // record where it has ended.
-    if (row.record.kind === "review") {
-      void navigate(row.standing ? reviewPath(row.record.path) : documentPath(row.record.path));
+    const press = sittingRowPress(row);
+    if ("go" in press) {
+      void navigate(press.go);
       return;
     }
-    const go = () => {
-      void navigate("/brain");
-    };
-    // A sitting is a conversation of its own (g1-s65 D16): a standing one is
-    // opened in the drawer where it was left, and one that has ended is started
-    // again on its own conversation, beside every other.
-    if (row.standing) {
-      showSitting(row.record.path);
-      go();
-      return;
-    }
-    void startSitting({
-      purpose: row.record.kind === "intent" ? "shape intent" : "shape a design",
-      subject: { kind: "record", id: row.record.path, title: row.record.title },
-    }).then(go, () => {
-      // The refusal is the Partner's own, and the drawer says it where every
-      // other Start refusal is said. Nothing here navigates on one: a sitting
-      // that was not opened is not a conversation to be taken to.
-    });
+    void startSitting(press.start).then(
+      (opened) => {
+        if (opened !== "") {
+          void navigate(sittingPath(opened));
+        }
+      },
+      () => {
+        // The refusal is the Partner's own, and nothing here navigates on one:
+        // a sitting that was not opened is not a room to be taken to.
+      },
+    );
   };
   if (rows.length === 0) {
     return <Block title={SITTINGS_TITLE}>{nothing}</Block>;

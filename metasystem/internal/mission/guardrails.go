@@ -42,13 +42,18 @@ func (g *GuardrailClass) Empty() bool {
 // artifact and to every guardrail declaration — the wall custodies
 // them itself, on both the contract side and the covenant side, so
 // the ONE predicate lives here where both readers can reach it.
-var protectedArtifactPrefixes = []string{"scripts/agents/", "plans/goals/"}
+var protectedArtifactPrefixes = []string{"internal/protocol/", "plans/goals/"}
 
 var protectedArtifactFiles = map[string]bool{
-	"plans/goals.md":               true,
-	"plans/goals-accepted.json":    true,
-	"memory/instruction-ledger.md": true,
-	"memory/known-issues.md":       true,
+	"internal/pathclass/path-classes.txt":   true,
+	"internal/landing/landing-classes.json": true,
+	"internal/events/event-registry.json":   true,
+	"testing-coverage-floors.json":          true,
+	"testing-coverage-floors-linux.json":    true,
+	"plans/goals.md":                        true,
+	"plans/goals-accepted.json":             true,
+	"memory/instruction-ledger.md":          true,
+	"memory/known-issues.md":                true,
 }
 
 // ProtectedArtifactPath reports whether the wall's protected-path

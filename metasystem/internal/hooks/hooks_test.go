@@ -11,7 +11,7 @@ import (
 )
 
 func TestShippedStartMatcherComesFromRuntimeRegistry(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "enforcement", "claude-code-hooks.json"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "internal", "runtimes", "enforcement", "claude-code-hooks.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestShippedStartMatcherComesFromRuntimeRegistry(t *testing.T) {
 }
 
 func TestShippedHooksInstallPreToolUseWithFallback(t *testing.T) {
-	shippedPath := filepath.Join("..", "..", "scripts", "enforcement", "claude-code-hooks.json")
+	shippedPath := filepath.Join("..", "..", "internal", "runtimes", "enforcement", "claude-code-hooks.json")
 	data, err := os.ReadFile(shippedPath)
 	if err != nil {
 		t.Fatal(err)

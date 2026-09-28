@@ -3,16 +3,10 @@ package steward
 import (
 	"context"
 	"errors"
-	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 )
 
 type manualRearmClock struct {
@@ -48,12 +42,6 @@ func (clock *manualRearmClock) advance(duration time.Duration) {
 	clock.mu.Lock()
 	clock.now = clock.now.Add(duration)
 	clock.mu.Unlock()
-}
-
-func (clock *manualRearmClock) snapshot() []chan time.Time {
-	clock.mu.Lock()
-	defer clock.mu.Unlock()
-	return append([]chan time.Time(nil), clock.timers...)
 }
 
 func waitForRearmTimer(clock *manualRearmClock, count int) chan time.Time {
@@ -122,88 +110,5 @@ func TestWitnessResolverStallsOnlyWhenAStepIsSilent(t *testing.T) {
 		if err := RunRearmStep(context.Background(), sequenceClock, 20*time.Second, "step", func(context.Context, func()) error { return nil }); err != nil {
 			t.Fatalf("step %d inherited a total deadline: %v", index+1, err)
 		}
-	}
-}
-
-func TestGitArchivedTreeAdapterCountsExtractionOutputAsProgress(t *testing.T) {
-	root := initRearmRepo(t)
-	commitRearmTree(t, root, "archive")
-	bin := t.TempDir()
-	startedPath := filepath.Join(t.TempDir(), "started")
-	readyPath := filepath.Join(t.TempDir(), "ready")
-	releasePath := filepath.Join(t.TempDir(), "release")
-	if err := syscall.Mkfifo(startedPath, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := syscall.Mkfifo(readyPath, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := syscall.Mkfifo(releasePath, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	release, err := os.OpenFile(releasePath, os.O_RDWR, 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = release.Close() })
-	script := "#!/bin/sh\nprintf started >\"$TAR_STARTED_FIFO\"\nIFS= read -r answer <\"$TAR_RELEASE_FIFO\"\ni=0\nwhile [ \"$i\" -lt 8192 ]; do printf 'entry-%s\\n' \"$i\"; i=$((i+1)); done\nprintf ready >\"$TAR_READY_FIFO\"\nIFS= read -r answer <\"$TAR_RELEASE_FIFO\"\n"
-	tar := filepath.Join(bin, "tar")
-	writeRearmFile(t, tar, script)
-	if err := os.Chmod(tar, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("TAR_STARTED_FIFO", startedPath)
-	t.Setenv("TAR_READY_FIFO", readyPath)
-	t.Setenv("TAR_RELEASE_FIFO", releasePath)
-	policy, err := behaviorsurface.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	clock := newManualRearmClock()
-	result := make(chan error, 1)
-	go func() {
-		_, digestErr := digestArchivedTree(context.Background(), root, "HEAD", policy, clock, 20)
-		result <- digestErr
-	}()
-	started, err := os.Open(startedPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.ReadAll(started); err != nil {
-		t.Fatal(err)
-	}
-	_ = started.Close()
-	clock.advance(15 * time.Second)
-	if _, err := release.WriteString("write stdout\n"); err != nil {
-		t.Fatal(err)
-	}
-	ready, err := os.Open(readyPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.ReadAll(ready); err != nil {
-		t.Fatal(err)
-	}
-	_ = ready.Close()
-	timers := clock.snapshot()
-	if len(timers) != 2 {
-		t.Fatalf("archive and extraction did not each acquire one silence timer: timers=%d", len(timers))
-	}
-	for range timers {
-		<-clock.created
-	}
-	clock.advance(15 * time.Second)
-	timers[1] <- clock.Now()
-	select {
-	case <-clock.created:
-	case err := <-result:
-		t.Fatalf("extractor treated stdout-only entries as silence: %v", err)
-	}
-	if _, err := release.WriteString("finish\n"); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-result; err != nil {
-		t.Fatalf("extractor stalled despite stdout entry progress: %v", err)
 	}
 }

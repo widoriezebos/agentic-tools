@@ -32,7 +32,7 @@ func TestPortP2EngineSkewPreflight(t *testing.T) {
 	t.Run("agent script change refuses", func(t *testing.T) {
 		t.Parallel()
 		b := newBed(t)
-		b.doubles.Git.Responses[logKey(stamp)] = fake.GitResponse{Stdout: "commit " + head + "\n\nscripts/agents/dispatch.sh\n"}
+		b.doubles.Git.Responses[logKey(stamp)] = fake.GitResponse{Stdout: "commit " + head + "\n\ninternal/protocol/roles/implementer.md\n"}
 		result := b.run("__engine-skew-preflight", stamp)
 		requireExit(t, result, 1, b.stderr.String())
 		stderr := b.stderr.String()
@@ -75,8 +75,6 @@ func TestPortP2DispatchWithoutAnyRosterRefuses(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
 	b.writeFile("metasystem.conf", "metasystem.runtimes=fake\nevidence.root="+b.root+"/../evidence\n")
-	b.writeFile("scripts/agents/roles/verifier.md", "# Verifier\n")
-	b.writeFile("scripts/agents/roles/verifier.requirements.json", "{}\n")
 	brief := b.writeFile("verifier.md", "Working Mode: verify\n")
 	result := b.run("dispatch", "--role", "verifier", "--brief", brief, "--permissions", "none",
 		"--destructive-reach", "MECHANICAL", "--job-id", "no-role-default")

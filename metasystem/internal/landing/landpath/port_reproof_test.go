@@ -130,13 +130,14 @@ func TestReproofVendoredInstallationObservesItsSubtree(t *testing.T) {
 	b.git.prefix = "metasystem/"
 	b.git.on("rev-parse t1:metasystem", func(GitCall) GitResult { return ok("sub1\n") })
 	b.git.on("diff --cached --name-only -z --", func(GitCall) GitResult { return ok("README\x00") })
-	detail := "path README has no class in scripts/agents/path-classes.txt; no classified ancestor; add a row for README or its directory to scripts/agents/path-classes.txt"
+	detail := "path README has no class in the engine's path-class policy (internal/pathclass/path-classes.txt); no classified ancestor"
 	requests := reproofObserve(b, func(ObserveRequest) (landing.Observation, int) {
 		return landing.Observation{Mode: "refuse", RefusesAgent: true, Code: "path-unclassified", Provenance: "none change=x",
 			VerdictTrailer: "would-refuse code=path-unclassified", Refusal: detail}, 0
 	})
 	b.expect(b.commit(CommitRequest{Goal: "fx", GoalSet: true, DirectFix: "register-carriage", OwnerLineage: "human"}), 1,
-		"would-refuse code=path-unclassified", detail)
+		"would-refuse code=path-unclassified", detail,
+		"classify every named path in the engine's path-class policy (internal/pathclass/path-classes.txt, engine source), rebuild the engine, then retry")
 	if len(*requests) != 1 || (*requests)[0].Tree != "sub1" {
 		t.Fatalf("vendored observation %+v", *requests)
 	}

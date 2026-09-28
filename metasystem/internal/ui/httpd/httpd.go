@@ -467,7 +467,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if id, beneath := strings.CutPrefix(r.URL.Path, documentPrefix); beneath && id != "" {
-		h.document(w, id)
+		h.document(w, r, id)
 		return
 	}
 	if rest, beneath := strings.CutPrefix(r.URL.Path, reviewPrefix); beneath && rest != "" {
@@ -602,7 +602,7 @@ func (h *handler) project(w http.ResponseWriter, r *http.Request) {
 // document answers one document. Every refusal the reader makes is the same
 // 404 naming the id, so a caller learns that this checkout serves no document
 // at that id and nothing else about the filesystem.
-func (h *handler) document(w http.ResponseWriter, id string) {
+func (h *handler) document(w http.ResponseWriter, r *http.Request, id string) {
 	w.Header().Set("Content-Type", "application/json")
 	if h.info.Document == nil {
 		writeFailure(w, "this engine was built without a document reader")
@@ -618,7 +618,36 @@ func (h *handler) document(w http.ResponseWriter, id string) {
 		writeFailure(w, err.Error())
 		return
 	}
-	_ = json.NewEncoder(w).Encode(document)
+	_ = json.NewEncoder(w).Encode(struct {
+		project.Document
+		Sitting *sittingDoor `json:"sitting,omitempty"`
+	}{Document: document, Sitting: h.sittingOn(r, id)})
+}
+
+// sittingDoor is the sitting that stands on one record, as its page's door
+// reads it (g1-s67 D6): what it is for and when its room was last kept.
+type sittingDoor struct {
+	Purpose      string `json:"purpose"`
+	SteppedOutAt string `json:"steppedOutAt,omitempty"`
+}
+
+// sittingOn is the sitting this human has standing on one record, or nil. It is
+// best effort, for the project route's reason: a conversation this server
+// cannot read costs the page its door and never the document.
+func (h *handler) sittingOn(r *http.Request, record string) *sittingDoor {
+	if h.info.Partner == nil || r == nil {
+		return nil
+	}
+	standing, err := h.info.Partner.Standing(h.partnerHuman(r))
+	if err != nil {
+		return nil
+	}
+	for _, sitting := range standing {
+		if sitting.Subject.ID == record {
+			return &sittingDoor{Purpose: sitting.Purpose, SteppedOutAt: keptAt(sitting)}
+		}
+	}
+	return nil
 }
 
 // writeFailure is the 500 every route shares. writeError, which writes the

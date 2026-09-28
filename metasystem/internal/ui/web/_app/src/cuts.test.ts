@@ -55,6 +55,19 @@ const NETWORK = ["fetch", "EventSource", "WebSocket", "XMLHttpRequest", "sendBea
 /** A timer is how a poll is written when it cannot be called a poll. */
 const TIMERS = ["setInterval", "setTimeout"];
 
+/**
+ * The timers a human granted by name: the file, how many timers it sets, and
+ * the grant. Each row is one exception read by a reviewer, as a call site is,
+ * and none of them may reach the network or repeat on its own.
+ */
+const TIMER_EXCEPTIONS: readonly (readonly [string, number, string])[] = [
+  // The room keeps its drafts a second after the last keystroke, so words
+  // typed and left are kept without a blur, Step out or the page going away.
+  // One setTimeout, reset by every change of the room and cleared with it; it
+  // calls the room's own keep and reads nothing (g1-s67, the drafts timer).
+  ["review/room.ts", 1, "g1-s67: the drafts are kept a second after the last keystroke — Wido, 2026-09-28"],
+];
+
 /** The window events a refetch hides behind. */
 const LIFECYCLE_EVENTS = ["focus", "online", "offline", "visibilitychange", "pageshow"];
 const LIFECYCLE_HANDLERS = ["onfocus", "ononline", "onoffline", "onvisibilitychange", "onpageshow"];
@@ -227,6 +240,9 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // record and answered from the candidate's own tree. The two suffixes are
   // listed on their own because the record's own path lies between the prefix
   // and them. Nothing here polls: a moved tip is read once, on return.
+  // Every sitting's room (g1-s67 D2) reads its desk through the same call site
+  // and the same source read, answered for a record a sitting shapes from the
+  // checkout as it stands; no read is added, and /changes is refused there.
   ["review/api.ts", 1, ["/api/review/", "/source", "/changes"]],
 ];
 
@@ -752,9 +768,15 @@ describe("the first cut", () => {
     expect(stringsMatching((value) => NETWORK.includes(value.trim()))).toEqual([]);
   });
 
-  it("sets no timer", () => {
+  it("sets no timer but the ones granted by name, and those only once each", () => {
     expect(filesNaming(["setInterval"])).toEqual([]);
-    expect(filesNaming(TIMERS)).toEqual([]);
+    expect(filesNaming(TIMERS)).toEqual(TIMER_EXCEPTIONS.map(([file]) => file));
+    for (const [file, timers] of TIMER_EXCEPTIONS) {
+      expect({ file, timers: scanned.get(file)?.identifiers.get("setTimeout") }).toEqual({ file, timers });
+      for (const name of NETWORK) {
+        expect({ file, name, named: scanned.get(file)?.identifiers.get(name) }).toEqual({ file, name, named: undefined });
+      }
+    }
     expect(stringsMatching((value) => TIMERS.includes(value.trim()))).toEqual([]);
   });
 

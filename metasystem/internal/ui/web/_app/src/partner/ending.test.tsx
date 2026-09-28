@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
-import type { Sitting } from "./api";
 import { DepositCard } from "./Deposit";
 import {
   cardsIn,
@@ -17,8 +16,10 @@ import {
   RECORD_OUTCOME,
   recordedIn,
 } from "./sitting";
-import { SittingControl } from "./StartSitting";
 import { PartnerAs } from "./store";
+import type { DocumentPayload } from "../project/api";
+import { FileActions } from "../project/DocumentPane";
+import { EndShapingWays } from "../review/ReviewRoom";
 
 /**
  * The two cards step 2 adds and the two ways a sitting ends, read from the
@@ -28,12 +29,6 @@ import { PartnerAs } from "./store";
  */
 
 const SUBJECT = "plans/designs/sessions.md";
-
-const standing: Sitting = {
-  subject: { kind: "record", id: SUBJECT, title: "Session limits" },
-  purpose: "shape a design",
-  startedAt: "2026-09-26T09:00:00Z",
-};
 
 function rendered(node: React.ReactNode): string {
   return renderToStaticMarkup(
@@ -115,15 +110,15 @@ describe("the outcome card", () => {
   });
 });
 
+// The End sheet moved from the drawer into the room (g1-s67 D7), and its two
+// ways out moved with it; what each says is unchanged.
 describe("ending a sitting", () => {
-  it("is one press in the bar while a sitting stands", () => {
-    const markup = rendered(
-      <PartnerAs held={{ sitting: standing }}>
-        <SittingControl onOpenTable={() => undefined} />
-      </PartnerAs>,
-    );
+  it("is two presses on the room's sheet: the one that drafts, and the way out that writes nothing", () => {
+    const markup = rendered(<EndShapingWays busy={false} onDraft={() => undefined} onWithout={() => undefined} />);
     expect(markup).toContain(`>${END}<`);
-    expect(markup).toContain("Sitting: Session limits");
+    expect(markup).toContain(`>${END_WITHOUT}<`);
+    expect(rendered(<EndShapingWays busy onDraft={() => undefined} onWithout={() => undefined} />))
+      .toMatch(/<button[^>]*disabled=""[^>]*>Drafting the outcome…</u);
   });
 
   // The sheet itself renders through a portal, which a static render does not
@@ -135,22 +130,24 @@ describe("ending a sitting", () => {
     expect(END_WITHOUT).toBe("End without recording");
   });
 
-  it("says what ending without recording left behind, where the press was made", () => {
+  it("says what ending without recording left behind, on the record's page where the room closes", () => {
+    const page = {
+      kind: "document", id: SUBJECT, title: "Session limits", revision: "r1", source: "# Session limits\n",
+      owner: "wido", path: `/checkout/${SUBJECT}`, bytes: 1, modifiedAt: "", readAt: "", state: "readable",
+      reason: "", record: { kind: "design" }, referencedBy: [], supersededBy: [], headings: [], blocks: [],
+    } as unknown as DocumentPayload;
     const markup = rendered(
       <PartnerAs held={{ sitting: null, sittingEnded: ENDED_WITHOUT }}>
-        <SittingControl onOpenTable={() => undefined} />
+        <FileActions path={page.path} document={page} onEdit={null} onNewGoal={null} busy="" />
       </PartnerAs>,
     );
     expect(markup).toContain("Start a sitting");
     expect(markup).toContain("no outcome was written into the record");
-  });
-
-  it("says nothing about an outcome where no sitting has been ended", () => {
-    const markup = rendered(
+    const quiet = rendered(
       <PartnerAs held={{ sitting: null }}>
-        <SittingControl onOpenTable={() => undefined} />
+        <FileActions path={page.path} document={page} onEdit={null} onNewGoal={null} busy="" />
       </PartnerAs>,
     );
-    expect(markup).not.toContain("no outcome was written");
+    expect(quiet).not.toContain("no outcome was written");
   });
 });

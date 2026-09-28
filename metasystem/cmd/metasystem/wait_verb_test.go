@@ -437,8 +437,13 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		if commandErr != nil || !strings.Contains(string(data), `"exitCode":0`) {
 			t.Fatalf("installed job wait output=%s err=%v", data, commandErr)
 		}
-		if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
+		if err := os.MkdirAll(root, 0o755); err != nil {
 			t.Fatal(err)
+		}
+		if marker, err := os.OpenFile(filepath.Join(root, "metasystem.conf"), os.O_CREATE|os.O_WRONLY, 0o644); err != nil {
+			t.Fatal(err)
+		} else {
+			marker.Close()
 		}
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.cap-max=120\nmetasystem.runtimes=fake\n"), 0o600); err != nil {
 			t.Fatal(err)
@@ -448,8 +453,8 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		// executing this test; the fake-runtime root authorizes this temp slot.
 		t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(root, "proof-admission"))
 		t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
-		for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-			if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
+		for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+			if err := os.WriteFile(filepath.Join(root, name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -699,11 +704,12 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		// nor a start-context channel; the announced holder must still recover its
 		// durable wait row through the hook's system message.
 		canonicalEngine := filepath.Join(root, "bin", "metasystem")
-		// scripts/agents marks the installation the state root resolves.
-		for _, directory := range []string{filepath.Dir(canonicalEngine), filepath.Join(root, "scripts", "agents")} {
-			if err := os.MkdirAll(directory, 0o755); err != nil {
-				t.Fatal(err)
-			}
+		// metasystem.conf marks the installation the state root resolves.
+		if err := os.MkdirAll(filepath.Dir(canonicalEngine), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+			t.Fatal(err)
 		}
 		engineBytes, err := os.ReadFile(binary)
 		if err != nil {

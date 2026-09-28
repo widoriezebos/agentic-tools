@@ -1,10 +1,9 @@
 package launch
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,6 +14,10 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 
 	"golang.org/x/sys/unix"
 )
@@ -134,10 +137,7 @@ func manager(t *testing.T) (*Manager, *fakeProcesses, *fakeProber, *time.Time) {
 		}
 	}
 	m := &Manager{Store: Store{Root: t.TempDir()}, Adapters: map[string]Adapter{"codex-exec": fakeAdapter{}}, Processes: processes, Prober: probe, Now: func() time.Time { return now }, Sleep: func(d time.Duration) { now = now.Add(d) }, Grace: time.Second, Poll: time.Second}
-	field := reflect.ValueOf(m).Elem().FieldByName("TemplateDirectory")
-	if field.IsValid() {
-		field.SetString(templates)
-	}
+	m.Templates = os.DirFS(templates)
 	return m, processes, probe, &now
 }
 func brief(t *testing.T) string {
@@ -605,18 +605,23 @@ func TestCoreRecordNamesNoRuntime(t *testing.T) {
 func TestCritiqueCopiesTheReportAndRecordsTheExit(t *testing.T) {
 	worktree, source, state := t.TempDir(), t.TempDir(), t.TempDir()
 	os.MkdirAll(filepath.Join(worktree, "metasystem"), 0o700)
-	task, page, design, common := filepath.Join(source, "task"), filepath.Join(source, "page"), filepath.Join(source, "design"), filepath.Join(source, "common")
-	for _, path := range []string{task, page, design, common} {
+	task, page, design := filepath.Join(source, "task"), filepath.Join(source, "page"), filepath.Join(source, "design")
+	for _, path := range []string{task, page, design} {
 		os.WriteFile(path, []byte(filepath.Base(path)), 0o600)
 	}
 	data := map[string]json.RawMessage{}
 	setString(data, "brief", task)
 	setInt64(data, "window", 200000)
 	record := Record{Kind: "critique", Tag: "tag", WorkingDirectory: worktree, Inputs: []Input{{Path: task}, {Path: page}, {Path: design}}, AdapterData: data}
-	adapter := CodexExec{CommonTemplate: common}
+	adapter := CodexExec{}
 	command, err := adapter.Command(record, state)
 	if err != nil || command.Directory != filepath.Join(worktree, "metasystem") {
 		t.Fatal(err)
+	}
+	copied, err := os.ReadFile(filepath.Join(worktree, "metasystem", "artifacts", "reports", "design-common.md"))
+	shipped, shippedErr := protocol.Template("design-common.md")
+	if err != nil || shippedErr != nil || !bytes.Equal(copied, shipped) {
+		t.Fatalf("the critic's common instructions are not the engine's: %v %v", err, shippedErr)
 	}
 	reportDir := filepath.Join(worktree, "metasystem", "artifacts", "reports")
 	os.WriteFile(filepath.Join(reportDir, "tag-critique-r1.md"), []byte("material: yes\nVERDICT: revise\n"), 0o600)

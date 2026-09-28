@@ -11,6 +11,8 @@ package launch
 import (
 	"fmt"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
 // The preflight's refusals, judged before any step and before the lock, and
@@ -72,7 +74,7 @@ func (r *Refusal) Error() string {
 		// Rule H1: the one damage refusal of the launch guides. The new
 		// machine's evidence would land in this seat's root or outside
 		// the evidence tree; the person fixes the root and resumes.
-		return r.Code + ": " + r.Message + "; the new machine's evidence would mix with another root's, so set evidence.root in this seat's metasystem.conf.local to a directory of its own under the fleet's evidence tree, then retry the launch (Retry on the fleet page, or metasystem machine start NAME --resume ID)"
+		return r.Code + ": " + r.Message + "; the new machine's evidence would mix with another root's, so set " + config.EvidenceRootKey + " in this seat's metasystem.conf.local to a directory of its own under the fleet's evidence tree, then retry the launch (Retry on the fleet page, or metasystem machine start NAME --resume ID)"
 	}
 	return r.Code + ": " + r.Message
 }

@@ -25,7 +25,7 @@ func missionBedHostRoot(t *testing.T, conf string) string {
 	t.Helper()
 	root := t.TempDir()
 	for _, relative := range []string{
-		filepath.Join("scripts", "agents", "schemas", "orchestrator.schema.json"),
+		filepath.Join("internal", "protocol", "schemas", "orchestrator.schema.json"),
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", relative))
 		if err != nil {

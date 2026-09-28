@@ -63,7 +63,7 @@ func TestShippedEnforcementConfigurationsWireTheLifecycle(t *testing.T) {
 	t.Parallel()
 	root := shippedRoot(t)
 	for _, name := range []string{"claude-code-hooks.json", "codex-hooks.json", "devin-hooks.json"} {
-		data, err := os.ReadFile(filepath.Join(root, "scripts", "enforcement", name))
+		data, err := os.ReadFile(filepath.Join(root, "internal", "runtimes", "enforcement", name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -92,9 +92,9 @@ func TestShippedDispatchableRoleAssetsExist(t *testing.T) {
 	root := shippedRoot(t)
 	for _, role := range []string{"design-critic", "implementer", "code-critic", "verifier", "investigator", "behavior-judge"} {
 		for _, rel := range []string{
-			filepath.Join("scripts", "agents", "roles", role+".md"),
-			filepath.Join("scripts", "agents", "roles", role+".requirements.json"),
-			filepath.Join("scripts", "agents", "schemas", role+".schema.json"),
+			filepath.Join("internal", "protocol", "roles", role+".md"),
+			filepath.Join("internal", "protocol", "roles", role+".requirements.json"),
+			filepath.Join("internal", "protocol", "schemas", role+".schema.json"),
 		} {
 			if info, err := os.Stat(filepath.Join(root, rel)); err != nil || !info.Mode().IsRegular() {
 				t.Errorf("missing %s role asset: %s", role, rel)

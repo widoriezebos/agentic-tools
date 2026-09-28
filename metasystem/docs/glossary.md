@@ -16,9 +16,8 @@ the collision-prone subset: **delegate job**, **recorder event**,
 distinctive names (lease, census, reaper, arming, sweep, fence, flight
 recorder) need no qualification — which is the pattern to imitate when
 naming anything new. Code identifiers (`jobId`, `artifacts/agents/jobs/`)
-are unaffected: paths are already namespaced under `scripts/agents/` and
-`artifacts/agents/`, and the confusion this rule prevents lives in prose,
-not paths.
+are unaffected: paths are already namespaced under `artifacts/agents/`,
+and the confusion this rule prevents lives in prose, not paths.
 
 ## Custody: who may write to a checkout
 
@@ -129,7 +128,7 @@ not paths.
   A diary entry, not a message: nothing consumes events, nothing waits on
   them, and losing one loses detail, never correctness. A bare "event" in
   this repository always means this.
-- **Event registry** — `scripts/agents/event-registry.json`, the closed
+- **Event registry** — `internal/events/event-registry.json` (compiled into the engine), the closed
   catalogue of event names, allowed emitters, required ids, and typed
   payloads. An event not in the registry is a bug, not a feature.
 - **Emitter** — the never-fail append helper (`internal/events`, called
@@ -307,7 +306,7 @@ the engine's `metasystem goal` family (`internal/goal`).
   open delegated work is never silently idle, and what the steward
   tells an agent is covenant, not advice.
 - **Review brief** — the contract a critique chain starts from
-  (`scripts/agents/templates/review-brief.md`): round budget, threat
+  (`internal/protocol/templates/review-brief.md`): round budget, threat
   model, and scope, fixed before round one.
 - **Flake registry** — the shared table of known-flaky suite legs and
   the rerun protocol (`docs/flake-registry.md`): a listed leg earns one

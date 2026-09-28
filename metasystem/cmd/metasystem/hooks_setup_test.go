@@ -38,9 +38,9 @@ func TestHooksCheckSupportsEveryHost(t *testing.T) {
 		t.Fatalf("setup exit = %d", code)
 	}
 	paths := map[string][2]string{
-		"claude": {filepath.Join(repo, ".claude", "settings.json"), filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json")},
-		"codex":  {filepath.Join(repo, ".codex", "hooks.json"), filepath.Join(installation, "scripts", "enforcement", "codex-hooks.json")},
-		"devin":  {filepath.Join(repo, ".devin", "config.json"), filepath.Join(installation, "scripts", "enforcement", "devin-hooks.json")},
+		"claude": {filepath.Join(repo, ".claude", "settings.json"), filepath.Join(installation, "internal", "runtimes", "enforcement", "claude-code-hooks.json")},
+		"codex":  {filepath.Join(repo, ".codex", "hooks.json"), filepath.Join(installation, "internal", "runtimes", "enforcement", "codex-hooks.json")},
+		"devin":  {filepath.Join(repo, ".devin", "config.json"), filepath.Join(installation, "internal", "runtimes", "enforcement", "devin-hooks.json")},
 	}
 	for runtime, pair := range paths {
 		recorder.expect(pair[0])
@@ -123,7 +123,7 @@ func TestHooksCheckRequiresSynchronousLifecycleAndAllCodexStartSources(t *testin
 	if err := os.WriteFile(claudePath, append(data, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	shipped := filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json")
+	shipped := filepath.Join(installation, "internal", "runtimes", "enforcement", "claude-code-hooks.json")
 	recorder.expect(claudePath)
 	if err := checkLiveHooks("claude", claudePath, shipped, recorder.resolve); err == nil {
 		t.Fatal("async Claude Stop passed the hook check")

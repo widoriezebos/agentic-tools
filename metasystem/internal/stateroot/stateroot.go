@@ -9,8 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
 // Kind names one application-state directory whose ownership does not change
@@ -35,7 +33,6 @@ const (
 	Goals     Kind = "goals"
 	OpenWork  Kind = "openwork"
 	Steward   Kind = "steward"
-	Evidence  Kind = "evidence"
 )
 
 // Resolver owns repository and executable discovery for one operation or fixture.
@@ -121,18 +118,6 @@ func (r Resolver) StateRoot(kind Kind) (string, error) {
 	appRoot, err := r.RootForInstallation(installationRoot)
 	if err != nil {
 		return "", err
-	}
-	if kind == Evidence {
-		value, _, err := config.Get(config.GetParams{
-			Key: "evidence.root", ConfPath: filepath.Join(appRoot, "metasystem.conf"),
-		})
-		if err != nil {
-			return "", fmt.Errorf("state root: evidence root: %w", err)
-		}
-		if !filepath.IsAbs(value) {
-			return "", fmt.Errorf("state root: evidence.root must be absolute: %q", value)
-		}
-		return filepath.Clean(value), nil
 	}
 	return filepath.Join(appRoot, filepath.FromSlash(relative)), nil
 }
@@ -246,10 +231,12 @@ func adoptedAncestor(path string) string {
 	}
 }
 
+// installationShape reports an installation root: the directory holding its
+// metasystem.conf. The engine's data is compiled in, so the configuration is
+// the whole marker.
 func installationShape(root string) bool {
-	conf, confErr := os.Stat(filepath.Join(root, "metasystem.conf"))
-	scripts, scriptsErr := os.Stat(filepath.Join(root, "scripts", "agents"))
-	return confErr == nil && !conf.IsDir() && scriptsErr == nil && scripts.IsDir()
+	conf, err := os.Stat(filepath.Join(root, "metasystem.conf"))
+	return err == nil && !conf.IsDir()
 }
 
 // RootForCandidate validates and canonicalizes an installation named by a caller.
@@ -296,8 +283,6 @@ func relativeRoot(kind Kind) (string, error) {
 		return "plans", nil
 	case Steward:
 		return "artifacts/agents/steward", nil
-	case Evidence:
-		return "", nil
 	default:
 		return "", fmt.Errorf("state root: unknown kind %q", kind)
 	}
@@ -322,10 +307,8 @@ func (r Resolver) installationRoot() (string, error) {
 }
 
 func validateInstallationShape(root string) error {
-	if _, confErr := os.Stat(filepath.Join(root, "metasystem.conf")); confErr != nil {
-		if info, scriptsErr := os.Stat(filepath.Join(root, "scripts", "agents")); scriptsErr != nil || !info.IsDir() {
-			return fmt.Errorf("state root: %q is not a metasystem installation", root)
-		}
+	if !installationShape(root) {
+		return fmt.Errorf("state root: %q is not a metasystem installation", root)
 	}
 	return nil
 }

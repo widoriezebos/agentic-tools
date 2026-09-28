@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -46,11 +48,13 @@ type processBed struct {
 	question   channel.Question
 	// engineCalls are the engine verbs a public command ran.
 	engineCalls [][]string
+	// home is the HOME the bed's evidence root resolves under.
+	home string
 }
 
 func newProcessBed(t *testing.T) *processBed {
 	t.Helper()
-	b := &processBed{intentBed: newIntentBed(t, false, nil), class: lease.ClassHuman, launchDir: t.TempDir()}
+	b := &processBed{intentBed: newIntentBed(t, false, nil), class: lease.ClassHuman, launchDir: t.TempDir(), home: t.TempDir()}
 	b.writeEngine("engine build 1")
 	return b
 }
@@ -80,6 +84,9 @@ func (b *processBed) owners() intentOwners {
 				// own fence, lock and report are what is exercised.
 				return &stoptransition.Transition{Root: scope.Root, Checkout: scope.Checkout, ScaleMilli: scale, Families: b.families,
 					Self: func() (identity.Ref, error) { return self, nil }}
+			},
+			evidenceRoot: func(conf string) (config.EvidenceRoot, error) {
+				return config.ResolveEvidenceRoot(config.EvidenceRootParams{ConfPath: conf, LookupEnv: homeOnly(b.home)})
 			},
 			armSteps: func(processScope, int, processArmAuthority) (processArmResult, error) {
 				b.armCalls++
@@ -535,4 +542,40 @@ func samePath(left, right string) bool {
 	left, _ = filepath.EvalSymlinks(left)
 	right, _ = filepath.EvalSymlinks(right)
 	return left == right
+}
+
+// system start says where evidence goes, and an explicitly invalid root
+// refuses by the owner's sentence before the fence moves; unset never does.
+func TestSystemStartSaysTheEvidenceRoot(t *testing.T) {
+	t.Parallel()
+	t.Run("nothing configured prints the default line first", func(t *testing.T) {
+		t.Parallel()
+		b := newProcessBed(t)
+		code, result := b.runJSON(b.owners(), "system", "start")
+		data, _ := result.Data.(map[string]any)
+		lines, _ := data["lines"].([]any)
+		want := "evidence root: " + filepath.Join(b.home, "metasystem-evidence", filepath.Base(b.root())) + " (default; set evidence.root in metasystem.conf.local to change)"
+		if code != 0 || len(lines) == 0 || lines[0] != want {
+			t.Fatalf("start = %d %+v; want first line %q", code, result, want)
+		}
+	})
+	t.Run("a relative .local root refuses before the fence", func(t *testing.T) {
+		t.Parallel()
+		b := newProcessBed(t)
+		if code, result := b.runJSON(b.owners(), "system", "stop"); code != 0 || b.fence().State == stopfence.StateOpen {
+			t.Fatalf("stop = %d %+v; fence %+v", code, result, b.fence())
+		}
+		if err := os.WriteFile(filepath.Join(b.root(), "metasystem.conf.local"), []byte("evidence.root=relative\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		before := b.fence()
+		code, stdout, stderr := b.run(b.owners(), "system", "start")
+		sentence := `evidence.root must be absolute (metasystem.conf.local reads "relative")`
+		if code == 0 || !strings.Contains(stdout+stderr, sentence) || b.armCalls != 0 {
+			t.Fatalf("start = %d stdout=%q stderr=%q arms=%d", code, stdout, stderr, b.armCalls)
+		}
+		if after := b.fence(); !reflect.DeepEqual(after, before) {
+			t.Fatalf("the fence moved: %+v, then %+v", before, after)
+		}
+	})
 }

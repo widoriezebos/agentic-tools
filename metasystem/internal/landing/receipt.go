@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 const (
@@ -759,10 +760,7 @@ func readTestReceiptWithWorkspace(params ObserveParams, workspace gittree.Worksp
 			if !bytes.Equal(recorded, projected) {
 				return TestReceipt{}, fmt.Errorf("canonical validator coverage differs from its retained producer evidence")
 			}
-			baseline := filepath.Join(params.RepoRoot, "scripts", "agents", "coverage-ratchet.json")
-			if runtime.GOOS == "linux" {
-				baseline = filepath.Join(params.RepoRoot, "scripts", "agents", "coverage-ratchet-linux.json")
-			}
+			baseline := filepath.Join(params.RepoRoot, testpolicy.CoverageFloorsFile(runtime.GOOS))
 			_, found, reuseErr := proofrun.ReusableCoverageForAttempt(params.RepoRoot, params.RepoRoot, baseline,
 				attempt.AttemptID, receipt.Coverage.PackageInventory)
 			if reuseErr != nil || !found {

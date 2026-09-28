@@ -35,7 +35,7 @@ func newCarriedStageFixture(t *testing.T) *carriedStageFixture {
 	if err := os.MkdirAll(seed, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	classes, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "path-classes.txt"))
+	classes, err := os.ReadFile(filepath.Join("..", "..", "internal", "pathclass", "path-classes.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func newCarriedStageFixture(t *testing.T) *carriedStageFixture {
 	writeAdvanceFile(t, seed, "benchmark/run.sh", "seed\n")
 	writeAdvanceFile(t, seed, "metasystem/.gitignore", "artifacts/\n")
 	writeAdvanceFile(t, seed, "metasystem/product.txt", "one\ntwo\nthree\n")
-	writeAdvanceFile(t, seed, "metasystem/scripts/agents/path-classes.txt", string(classes)+"install:product.txt behavior\ninstall:added.txt behavior\n")
+	writeAdvanceFile(t, seed, "metasystem/internal/pathclass/path-classes.txt", string(classes)+"install:product.txt behavior\ninstall:added.txt behavior\n")
 	writeAdvanceFile(t, seed, carriedFixtureLedgerPath, "1|1970-01-01T00:00:00Z|RECEIPT|type=seed|outcome=shipped\n")
 	writeAdvanceFile(t, seed, "metasystem/records/narrator-digest.log", "digest=seed\n")
 	runAdvanceGit(t, seed, "add", ".")
@@ -214,7 +214,7 @@ func TestCarriedStagePreservesCheckout(t *testing.T) {
 		code    string
 	}{
 		{name: "unstaged installation file", code: "carried-checkout-dirty", prepare: func(f *carriedStageFixture) {
-			writeAdvanceFile(f.t, f.root, "scripts/agents/path-classes.txt", "edited\n")
+			writeAdvanceFile(f.t, f.root, "internal/pathclass/path-classes.txt", "edited\n")
 		}},
 		{name: "untracked beside the installation", code: "carried-checkout-dirty", prepare: func(f *carriedStageFixture) {
 			writeAdvanceFile(f.t, f.top, "notes.txt", "a person's scratch\n")

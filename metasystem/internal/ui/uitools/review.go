@@ -12,7 +12,7 @@ import (
 // One read and one offer. The changes read is the desk's own: it reads a review
 // record's head and answers from the same review owner the human's desk reads
 // through, so the colleague and the human read one tree — the candidate's, not
-// this checkout (D4). The present offer puts one thing on the review's desk while
+// this checkout (D4). The present offer puts one thing on a sitting's desk while
 // the Partner explains it (D5). It reads nothing and navigates nowhere: it says
 // what it prepared, and the human's own server decides whether there is a desk to
 // put it on.

@@ -20,12 +20,12 @@ func repoRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "scripts", "agents", "roles", "orchestrator.md")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "internal", "protocol", "roles", "orchestrator.md")); err == nil {
 			return dir
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatal("repository root with scripts/agents/roles/orchestrator.md not found above the package directory")
+			t.Fatal("repository root with internal/protocol/roles/orchestrator.md not found above the package directory")
 		}
 		dir = parent
 	}
@@ -41,8 +41,8 @@ const subagentRule = "Your runtime's built-in subagents are your own hands: use 
 func TestSubagentRuleVerbatimInBothLiveAuthorities(t *testing.T) {
 	root := repoRoot(t)
 	for _, rel := range []string{
-		filepath.Join("scripts", "agents", "templates", "host-turn-instruction.md"),
-		filepath.Join("scripts", "agents", "roles", "orchestrator.md"),
+		filepath.Join("internal", "protocol", "templates", "host-turn-instruction.md"),
+		filepath.Join("internal", "protocol", "roles", "orchestrator.md"),
 	} {
 		data, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
@@ -57,8 +57,8 @@ func TestSubagentRuleVerbatimInBothLiveAuthorities(t *testing.T) {
 func TestWallRuleVerbatimInBothLiveAuthorities(t *testing.T) {
 	root := repoRoot(t)
 	for _, rel := range []string{
-		filepath.Join("scripts", "agents", "templates", "host-turn-instruction.md"),
-		filepath.Join("scripts", "agents", "roles", "orchestrator.md"),
+		filepath.Join("internal", "protocol", "templates", "host-turn-instruction.md"),
+		filepath.Join("internal", "protocol", "roles", "orchestrator.md"),
 	} {
 		data, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
@@ -85,14 +85,6 @@ func TestWallRuleScopesToRunnerMissionsOnly(t *testing.T) {
 
 func TestAssembledPromptCarriesWallRuleBytes(t *testing.T) {
 	repo := promptSandbox(t)
-	instr := filepath.Join(repo, "scripts", "agents", "templates", "host-turn-instruction.md")
-	data, err := os.ReadFile(instr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(instr, append(data, []byte("\n"+wallRule+"\n")...), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	out := filepath.Join(t.TempDir(), "prompt.md")
 	if err := AssemblePrompt(repo, "m1", "t1", out); err != nil {
 		t.Fatal(err)

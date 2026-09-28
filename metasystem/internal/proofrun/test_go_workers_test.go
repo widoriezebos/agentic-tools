@@ -69,10 +69,10 @@ func TestReal(t *testing.T) {
  if Value() != 1 { t.Fatal("value") }
 }
 `, 0o644),
-		"cmd/tool/main.go":                           testSnapshotFile("package main\n", 0o644),
-		"cmd/tool/main_test.go":                      testSnapshotFile("package main\nimport \"testing\"\nfunc TestTool(t *testing.T) {}\n", 0o644),
-		"scripts/agents/coverage-ratchet.json":       testSnapshotFile(`{"floors":{"internal/real":50,"internal/empty":0},"exempt":{}}`, 0o644),
-		"scripts/agents/coverage-ratchet-linux.json": testSnapshotFile(`{"floors":{"internal/real":50,"internal/empty":0},"exempt":{}}`, 0o644),
+		"cmd/tool/main.go":                   testSnapshotFile("package main\n", 0o644),
+		"cmd/tool/main_test.go":              testSnapshotFile("package main\nimport \"testing\"\nfunc TestTool(t *testing.T) {}\n", 0o644),
+		"testing-coverage-floors.json":       testSnapshotFile(`{"floors":{"internal/real":50,"internal/empty":0},"exempt":{}}`, 0o644),
+		"testing-coverage-floors-linux.json": testSnapshotFile(`{"floors":{"internal/real":50,"internal/empty":0},"exempt":{}}`, 0o644),
 	}
 	snapshot := newTestSnapshotFactory(t, root, strings.Repeat("2", 40), sources, 1)
 	tree := snapshot.tree

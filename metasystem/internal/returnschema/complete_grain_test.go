@@ -36,7 +36,7 @@ func TestMechanicalRigorRequiresBehaviourAndFixture(t *testing.T) {
 func TestReturnVersionFiveRoleGateAndNoValidatorClosePolicy(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	dir := filepath.Join(root, "scripts", "agents", "schemas")
+	dir := filepath.Join(root, "internal", "protocol", "schemas")
 	requireReturnGrain(t, os.MkdirAll(dir, 0o755) == nil, "create schema directory")
 	schema := []byte(`{"title":"test","type":"object","additionalProperties":false,"required":["findings","materialCount","model"],"properties":{"findings":{"type":"array","items":{"type":"object"}},"materialCount":{"type":"integer"},"model":{"type":"object","additionalProperties":false,"required":[],"properties":{}}}}`)
 	for _, role := range []string{"design-critic", "implementer"} {
@@ -48,6 +48,12 @@ func TestReturnVersionFiveRoleGateAndNoValidatorClosePolicy(t *testing.T) {
 		return path
 	}
 	valid := []byte(`{"schemaVersion":5,"claimed":{"sessionId":null,"model":null},"findings":[],"materialCount":0,"model":{},"rigor":[]}`)
+	fixtureSchemas := func(role string) ([]byte, error) { return os.ReadFile(filepath.Join(dir, role+".schema.json")) }
+	ReturnCompleteRole := func(root, role, file string) []string {
+		checker := &returnChecker{root: root, roleSchema: fixtureSchemas}
+		checker.checkReturn(role, file, nil, "")
+		return checker.violations
+	}
 	violations := ReturnCompleteRole(root, "design-critic", write("v5.json", valid))
 	requireReturnGrain(t, len(violations) == 0, "version 5 critic refused: %v", violations)
 	for role, version := range map[string]int{"implementer": 5, "design-critic": 6} {

@@ -92,11 +92,12 @@ describe("the Sittings row press", () => {
     // A sitting is a conversation of its own (g1-s65 D16), so a start from
     // another row no longer replaces the mark a human is in the middle of: it
     // starts beside it. What still must not happen is a second start on a row
-    // that stands — that row's own conversation is opened where it was left.
-    expect(sittings).toContain("if (row.standing) {\n      showSitting(row.record.path);\n      go();\n      return;\n    }");
-    // A review's row is its door and never starts anything.
-    expect(sittings).toContain("reviewPath(row.record.path)");
-    // One start in the whole of it, reached only past those two.
+    // that stands — that row's room is opened where it was left (g1-s67 D6);
+    // which row goes where is sittingRowPress's, tested in the room's tests.
+    expect(sittings).toContain("const press = sittingRowPress(row);\n    if (\"go\" in press) {\n      void navigate(press.go);\n      return;\n    }");
+    // The start, once it opened, goes into its room.
+    expect(sittings).toContain("void navigate(sittingPath(opened));");
+    // One start in the whole of it, reached only past the doors.
     expect(sittings.match(/startSitting\(/g)).toHaveLength(1);
     // And the row says which of the two the press will do before it is pressed.
     expect(sittings).toContain("title={opensLine(row, stands)}");

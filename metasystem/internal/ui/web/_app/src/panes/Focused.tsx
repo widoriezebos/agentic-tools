@@ -1,6 +1,5 @@
 import { FontControl } from "../partner/FontControl";
 import { PinnedSubject } from "../partner/Pinned";
-import { SittingTable } from "../partner/Table";
 import { Transcript } from "../partner/Transcript";
 import { Composer } from "../shell/Composer";
 
@@ -18,11 +17,8 @@ import { Composer } from "../shell/Composer";
  * There is no second draft: the store holds one, so expanding into this view
  * carries whatever was half-written in the drawer rather than stranding it.
  *
- * While a sitting stands, the room's table stands beside the conversation: the
- * four sections of the sitting's record — Facts, Proposals, Decisions, Open
- * questions — as the record itself holds them. It is not a second store, which is
- * why it shows what was recorded and nothing a human has not pressed Record it on
- * (g1-s53 D7).
+ * It is the ordinary conversation and nothing else: every sitting sits in its
+ * room, where its board is (g1-s67 D1, D6).
  */
 export function Focused() {
   return (
@@ -42,7 +38,6 @@ export function Focused() {
           </div>
           <Composer />
         </div>
-        <SittingTable />
       </div>
     </main>
   );

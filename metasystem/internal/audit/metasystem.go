@@ -2,13 +2,14 @@ package audit
 
 import (
 	"fmt"
-	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+
+	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 // The metasystem audit, the decision engine behind the
@@ -38,7 +39,7 @@ func auditScanRoots() []string {
 		"docs/working-with-agents.md", "docs/project-adaptation.md", "docs/metasystem-reconciliation.md",
 		"docs/design/design-principles.md", "docs/design/design-obligation-gate.md", "docs/examples",
 		"skills", "optional-skills", "meta",
-		"scripts/enforcement",
+		"internal/runtimes/enforcement",
 		"plans/README.md", "memory/README.md", "memory/instruction-ledger.md", "memory/known-issues.md",
 	}...)
 }
@@ -52,7 +53,7 @@ var (
 	// declaring residue must link the open backlog item that schedules it.
 	auditResidueMarkerRe = regexp.MustCompile(`(?m)^\s*RESIDUE:`)
 	auditResidueLinkRe   = regexp.MustCompile(`goal:([a-z0-9][a-z0-9-]*)`)
-	auditPlaceholderRe   = regexp.MustCompile(`<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>`)
+	auditPlaceholderRe   = regexp.MustCompile(`<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<cheapest model class>|<middle model class>|<costliest model class>|<model>`)
 )
 
 // AuditResult carries the audit's verdict: refusals, and the informational
@@ -210,8 +211,8 @@ var collisionQualifier = regexp.MustCompile(`(?i)(?:delegate|mission|host|record
 func auditQualifiedNames(root string) ([]string, error) {
 	var violations []string
 	for _, rel := range []string{
-		filepath.Join("scripts", "agents", "templates"),
-		filepath.Join("scripts", "agents", "roles"),
+		filepath.Join("internal", "protocol", "templates"),
+		filepath.Join("internal", "protocol", "roles"),
 		"skills",
 		"optional-skills",
 	} {
@@ -481,8 +482,7 @@ func auditGoalSystem(root string) []string {
 			violations = append(violations, "delivery contract lacks a conformance row for "+runtime)
 			continue
 		}
-		config := filepath.Join(root, "scripts", "enforcement", declaration.ShippedEnforcementConfig)
-		if _, err := os.Stat(config); err != nil {
+		if _, err := runtimereg.ShippedEnforcement(runtime); err != nil {
 			violations = append(violations,
 				"delivery contract claims a shipped Stop config for "+runtime+" but "+enforcementConfigFor(runtime)+" is absent")
 		}

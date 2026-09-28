@@ -487,15 +487,14 @@ func attributeLandings(landings []landingCommit, receipts []*receiptRecord) []la
 	return landings
 }
 
-func evidenceRoot(root string) string {
-	value, _, err := config.Get(config.GetParams{
-		Key: "evidence.root", Default: "", DefaultSet: true,
-		ConfPath: filepath.Join(root, "metasystem.conf"),
-	})
-	if err != nil || !filepath.IsAbs(value) {
-		return ""
+// evidenceRoot is the checkout's evidence root as the owner resolves it; a
+// refusal is returned for the caller to report, never swallowed.
+func evidenceRoot(root string) (string, error) {
+	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{ConfPath: filepath.Join(root, "metasystem.conf")})
+	if err != nil {
+		return "", err
 	}
-	return filepath.Clean(value)
+	return resolved.Path, nil
 }
 
 func loadJobs(root string) ([]jobRecord, Coverage) {
@@ -504,7 +503,10 @@ func loadJobs(root string) ([]jobRecord, Coverage) {
 	var paths []string
 	local, _ := filepath.Glob(filepath.Join(localDir, "*.json"))
 	paths = append(paths, local...)
-	if evidence := evidenceRoot(root); evidence != "" {
+	if evidence, err := evidenceRoot(root); err != nil {
+		coverage.Rejected++
+		coverage.Details = append(coverage.Details, "evidence root rejected: "+cleanLine(err.Error()))
+	} else {
 		current, _ := filepath.Glob(filepath.Join(evidence, "agents", "*", "*", "jobs", "*.json"))
 		legacy, _ := filepath.Glob(filepath.Join(evidence, "agents", "*", "jobs", "*.json"))
 		paths = append(paths, current...)

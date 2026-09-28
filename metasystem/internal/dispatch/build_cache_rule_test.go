@@ -1,10 +1,10 @@
 package dispatch
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 // Every build brief carries the delegate cache rule (disk-lifetimes A7,
@@ -22,8 +22,8 @@ func TestBuildBriefsCarryTheDelegateCacheRule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join("..", "..", "scripts", "agents", "templates", "brief.md")
-	data, err := os.ReadFile(path)
+	path := "protocol:templates/brief.md"
+	data, err := protocol.Template("brief.md")
 	if err != nil {
 		t.Fatal(err)
 	}

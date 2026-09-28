@@ -25,14 +25,21 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 // OSHost answers the sequencer's questions from this host.
-type OSHost struct{}
+type OSHost struct {
+	// Env is the environment an installation's evidence root resolves
+	// under. Nil answers only HOME from this process, which is the scrubbed
+	// view the machine's own steps run under (Scrubbed drops METASYSTEM_*).
+	Env func(string) (string, bool)
+}
 
 // Exists reports whether a path is there. An error that is not "absent" is
 // carried: a directory that cannot be read is not a directory that is free.
@@ -47,12 +54,32 @@ func (OSHost) Exists(path string) (bool, error) {
 	return false, err
 }
 
-// Canonical resolves a path's symlinks.
-func (OSHost) Canonical(path string) (string, error) { return filepath.EvalSymlinks(path) }
+// Canonical resolves a path's symlinks through its deepest existing ancestor,
+// so a path whose leaf is absent still names the directory it would land in.
+func (OSHost) Canonical(path string) (string, error) { return realpath.Resolve(path), nil }
+
+// EvidenceRoot is an installation's evidence root as the engine's one owner
+// resolves it under this host's view of the environment.
+func (h OSHost) EvidenceRoot(installation string) (config.EvidenceRoot, error) {
+	lookup := h.Env
+	if lookup == nil {
+		lookup = func(name string) (string, bool) {
+			if name != "HOME" {
+				return "", false
+			}
+			return os.LookupEnv("HOME")
+		}
+	}
+	return config.ResolveEvidenceRoot(config.EvidenceRootParams{ConfPath: filepath.Join(installation, "metasystem.conf"), LookupEnv: lookup})
+}
 
 // MakeDir creates a directory and says whether this call created it, which is
-// what the evidence root's own refusal turns on.
+// what the evidence root's own refusal turns on. Missing parents are made
+// first; the leaf itself is exclusive.
 func (OSHost) MakeDir(path string) (bool, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false, err
+	}
 	err := os.Mkdir(path, 0o755)
 	if err == nil {
 		return true, nil
@@ -64,14 +91,15 @@ func (OSHost) MakeDir(path string) (bool, error) {
 }
 
 // CopyLocalConf copies one seat's metasystem.conf.local to another as bytes
-// and rewrites the one key this verb knows is wrong for a second machine.
+// and blanks the one key this verb knows is wrong for a second machine, the
+// evidence root, so the clone resolves its own.
 //
 // The bytes are never parsed here: the file carries this fleet's roster and
 // the channel's secret, and a verb that read them would be a verb that could
 // leak them. The rewrite goes through the engine's own conf-key writer on a
 // temporary copy, and the result is published with one rename, so no half
 // written configuration is ever visible at the destination.
-func (OSHost) CopyLocalConf(source, destination, evidenceRoot string) error {
+func (OSHost) CopyLocalConf(source, destination string) error {
 	data, err := os.ReadFile(source)
 	if err != nil {
 		return err
@@ -92,7 +120,7 @@ func (OSHost) CopyLocalConf(source, destination, evidenceRoot string) error {
 	if err := staged.Close(); err != nil {
 		return err
 	}
-	if err := validate.SetConfKeys(name, []validate.ConfSetting{{Key: "evidence.root", Value: evidenceRoot}}); err != nil {
+	if err := validate.SetConfKeys(name, []validate.ConfSetting{{Key: config.EvidenceRootKey, Value: ""}}); err != nil {
 		return err
 	}
 	rewritten, err := os.ReadFile(name)

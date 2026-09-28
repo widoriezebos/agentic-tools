@@ -139,6 +139,12 @@ func run(ctx context.Context, args []string) error {
 	// Application page's reader does.
 	register := flag.String("register", registerKit,
 		"which known-issues column set this fixture plants: kit or adopted")
+	// A shaping sitting as a human who sat before every sitting had a
+	// conversation of its own left it: marked on their ordinary conversation,
+	// with its words there (g1-s67 D6). Off by default, because it is a
+	// migration's case and not the room's ordinary look.
+	satBeforeRooms := flag.String("sat-before-rooms", "",
+		"plant a shaping sitting on this human's ordinary conversation, as before D16; empty plants none")
 	// Two test seams for the kept-checkout witness: handlers whose context
 	// the shutdown does not cancel, and a shorter shutdown bound.
 	uncancelledHandlers := flag.Bool("test-uncancelled-handlers", false, "test seam: handlers outlive the shutdown's cancellation")
@@ -345,7 +351,9 @@ func run(ctx context.Context, args []string) error {
 		CreateReview: func(asked project.NewReview) (project.Written, error) {
 			return project.CreateReview(roots, asked, time.Now().UTC())
 		},
-		Review: &review.Owner{Git: fixtureGit{branches: branchesFile(checkout)}},
+		// And a sitting that shapes a record reads the fixture checkout as it
+		// stands, under the root the document reader opens (g1-s67 D2).
+		Review: &review.Owner{Git: fixtureGit{branches: branchesFile(checkout)}, Checkout: checkout},
 		// The two writes a design's own page makes, over the fixture checkout
 		// and through the same package the engine wires: marking a design done
 		// rewrites its Status line, and naming a goal on it rewrites its Goals
@@ -407,6 +415,11 @@ func run(ctx context.Context, args []string) error {
 	}
 	var partnerService *partner.Service
 	if *partnerRuntime != "" {
+		if *satBeforeRooms != "" {
+			if err := plantBeforeRooms(fixtureConversations(checkout), *satBeforeRooms); err != nil {
+				return err
+			}
+		}
 		// The Partner reads what the pages read, so the "Seeing:" sheet shows
 		// this fixture's own board rather than an empty block.
 		service := fakePartner(checkout, partner.Facts{
@@ -651,9 +664,6 @@ func fixtureCheckout(calm bool, register string) (checkout string, err error) {
 			_ = os.RemoveAll(directory)
 		}
 	}()
-	if err := os.MkdirAll(filepath.Join(directory, "scripts", "agents"), 0o755); err != nil {
-		return "", fmt.Errorf("cannot make the walkthrough checkout: %v", err)
-	}
 	for _, planted := range []struct{ relative, text string }{
 		{"metasystem.conf", ""},
 		{"plans/goals/backlog.md", "# backlog\n\n- SyncMode: local\n"},
@@ -686,6 +696,11 @@ func fixtureCheckout(calm bool, register string) (checkout string, err error) {
 		{"README.md", walkthroughReadme},
 		{"docs/concepts.md", walkthroughConcepts},
 		{"docs/glossary.md", walkthroughGlossary},
+		// The shaping room's design, the pre-D16 one and the code the Today
+		// walk reads (g1-s67).
+		{shapingRecord, shapingText},
+		{beforeRoomsRecord, beforeRoomsText},
+		{shapingFile, shapingCode},
 	} {
 		full := filepath.Join(directory, filepath.FromSlash(planted.relative))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 type promptHeldGoals struct {
@@ -112,9 +113,6 @@ func promptSandbox(t *testing.T) string {
 	}
 
 	write("metasystem.conf", "metasystem.runtimes=fake\n")
-	write("scripts/agents/roles/orchestrator.md", "# Orchestrator\n\nYou orchestrate.\n")
-	write("scripts/agents/templates/host-turn-instruction.md",
-		"Cycle: <cycle-number>\nFence headroom: <fence-headroom>\nReconciliation: <yes | no>\n\nAdvance active streams.\n")
 	write("plans/mission-m1.contract.md",
 		"# Mission m1\n\n```mission\nfence.cycles=10\nfence.jobs=4\nfence.concurrency=2\nstream.s1=Do the thing\n```\n")
 
@@ -332,11 +330,15 @@ func TestAssemblePromptEnforcesSizeCeiling(t *testing.T) {
 	t.Setenv("METASYSTEM_MISSION_MAX_PROMPT_KB", "1")
 	out := filepath.Join(t.TempDir(), "prompt.txt")
 	// Make the contract dominate so the oversized block is named.
-	big := "# Mission m1\n\n```mission\nfence.cycles=10\nfence.jobs=4\nfence.concurrency=2\n```\n" + strings.Repeat("x", 2048)
+	preamble, err := protocol.RoleInstructions("orchestrator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	big := "# Mission m1\n\n```mission\nfence.cycles=10\nfence.jobs=4\nfence.concurrency=2\n```\n" + strings.Repeat("x", len(preamble)+2048)
 	if err := os.WriteFile(filepath.Join(repo, "plans/mission-m1.contract.md"), []byte(big), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := AssemblePrompt(repo, "m1", "t1", out)
+	err = AssemblePrompt(repo, "m1", "t1", out)
 	if err == nil {
 		t.Fatal("a prompt over the size ceiling must be refused")
 	}

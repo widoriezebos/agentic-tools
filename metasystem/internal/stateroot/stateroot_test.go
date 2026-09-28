@@ -113,13 +113,6 @@ func TestStateRootResolvesEveryKindInTemplateAndAdoptedModes(t *testing.T) {
 					t.Errorf("StateRoot(%q) = %q, %v; want %q", test.kind, got, err, filepath.Join(base, filepath.FromSlash(test.rel)))
 				}
 			}
-			if !template {
-				top.expect(installation, app, nil)
-			}
-			got, err := resolver.StateRoot(Evidence)
-			if err != nil || got != filepath.Join(app, "durable") {
-				t.Errorf("StateRoot(%q) = %q, %v; want configured durable root", Evidence, got, err)
-			}
 		})
 	}
 }
@@ -191,7 +184,10 @@ func TestRootForCandidateCanonicalizesAndValidatesTheInstallation(t *testing.T) 
 	t.Parallel()
 	outer := t.TempDir()
 	installation := filepath.Join(outer, "metasystem")
-	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(installation, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(outer, "development"), 0o755); err != nil {
@@ -219,7 +215,10 @@ func TestRootForCandidateKeepsNestedAdoptedStateAtTheInstallation(t *testing.T) 
 	t.Parallel()
 	outer := t.TempDir()
 	installation := filepath.Join(outer, "vendor", "metasystem-runtime")
-	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(installation, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got, err := RootForCandidate(installation)
@@ -295,16 +294,12 @@ func TestRepositoryTopBuildsCommandAndScrubsEverySteeringVariable(t *testing.T) 
 	}
 }
 
-func TestEvidenceRootMustBeConfiguredAndAbsolute(t *testing.T) {
+// The evidence root is not a state root: its one owner is
+// config.ResolveEvidenceRoot, so the kind is unknown here.
+func TestEvidenceIsNotAStateRootKind(t *testing.T) {
 	t.Parallel()
-	installation, app := installFixture(t, false)
-	resolver, top := resolverFixture(t, installation)
-	if err := os.WriteFile(filepath.Join(app, "metasystem.conf"), []byte("evidence.root=relative\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	top.expect(installation, app, nil)
-	if _, err := resolver.StateRoot(Evidence); err == nil {
-		t.Fatal("a relative durable evidence root must refuse")
+	if _, err := RelativeRoot(Kind("evidence")); err == nil || !strings.Contains(err.Error(), "unknown kind") {
+		t.Fatalf("RelativeRoot(evidence) = %v; want unknown kind", err)
 	}
 }
 
@@ -322,7 +317,10 @@ func TestResolveLayoutSupportsNestedAndAdoptedRepositoriesFromSubdirectories(t *
 				writeLayoutFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "design\n")
 			}
 			writeLayoutFile(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=claude\n")
-			if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+			if err := os.MkdirAll(installation, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), nil, 0o644); err != nil {
 				t.Fatal(err)
 			}
 			subdir := filepath.Join(repo, "sub", "directory")
@@ -348,7 +346,10 @@ func TestResolveLayoutSupportsFreshAdoptedTargetBeforeGitInit(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(t.TempDir(), "fresh adopted target")
 	writeLayoutFile(t, filepath.Join(root, "metasystem.conf"), "metasystem.runtimes=claude\n")
-	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	child := filepath.Join(root, "skills", "demo")
@@ -375,13 +376,19 @@ func TestResolveLayoutSelectsExplicitNestedAdoptedInstallation(t *testing.T) {
 	}
 
 	writeLayoutFile(t, filepath.Join(app, "metasystem.conf"), "metasystem.runtimes=claude\n")
-	if err := os.MkdirAll(filepath.Join(app, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(app, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	installation := filepath.Join(app, "vendor", "nested runtime")
 	writeLayoutFile(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=codex\n")
 	child := filepath.Join(installation, "skills", "demo")
-	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(installation, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(child, 0o755); err != nil {
@@ -417,5 +424,38 @@ func writeLayoutFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The installation marker is its metasystem.conf: the engine's data is
+// compiled in, so no data directory marks an installation.
+func TestInstallationShapeIsTheConfiguration(t *testing.T) {
+	t.Parallel()
+	conf := t.TempDir()
+	if err := os.WriteFile(filepath.Join(conf, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !installationShape(conf) {
+		t.Fatal("a directory holding metasystem.conf is not an installation")
+	}
+	if _, err := RootForCandidate(conf); err != nil {
+		t.Fatalf("RootForCandidate refused a configured installation: %v", err)
+	}
+	legacy := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(legacy, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if installationShape(legacy) {
+		t.Fatal("a scripts/agents directory without metasystem.conf passed as an installation")
+	}
+	if _, err := RootForCandidate(legacy); err == nil {
+		t.Fatal("RootForCandidate accepted a scripts/agents directory without metasystem.conf")
+	}
+	directory := t.TempDir()
+	if err := os.Mkdir(filepath.Join(directory, "metasystem.conf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if installationShape(directory) {
+		t.Fatal("a metasystem.conf directory passed as an installation")
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"syscall"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 // gateRun is one invocation of the static or full gate against one root. A
@@ -253,10 +254,7 @@ func (g *gateRun) full(options gateOptions) int {
 	// descendants (a run that is not one relaunched above). The producer
 	// decision and claim wait until the exact point this process starts the
 	// full measurement, so a fence or static refusal cannot consume the slot.
-	baselineRel := "scripts/agents/coverage-ratchet.json"
-	if runtime.GOOS == "linux" {
-		baselineRel = "scripts/agents/coverage-ratchet-linux.json"
-	}
+	baselineRel := testpolicy.CoverageFloorsFile(runtime.GOOS)
 	coverageCandidate := false
 	if g.env.get("METASYSTEM_PROOF_CONTROL_ROOT") != "" || g.env.get("METASYSTEM_PROOF_ATTEMPT") != "" {
 		if g.env.get("METASYSTEM_PROOF_CONTROL_ROOT") == "" {

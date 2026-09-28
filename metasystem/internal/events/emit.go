@@ -7,6 +7,7 @@
 package events
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -183,18 +184,24 @@ func shrink(record map[string]any) string {
 	return line
 }
 
+// registrySource is the closed event catalogue compiled into the engine.
+//
+//go:embed event-registry.json
+var registrySource []byte
+
+// registryFor names the catalogue an emission into root is judged by: the
+// engine's own. Tests substitute a catalogue per root.
+var registryFor = func(root string) []byte { return registrySource }
+
 func registryAllows(root, component, event string) bool {
-	data, err := os.ReadFile(filepath.Join(root, "scripts", "agents", "event-registry.json"))
-	if err != nil {
-		return true // a broken/absent registry must not silence the witness
-	}
+	data := registryFor(root)
 	var registry struct {
 		Events map[string]struct {
 			Emitters []string `json:"emitters"`
 		} `json:"events"`
 	}
 	if json.Unmarshal(data, &registry) != nil {
-		return true
+		return true // a malformed catalogue must not silence the witness
 	}
 	entry, ok := registry.Events[event]
 	if !ok {

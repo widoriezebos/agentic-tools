@@ -174,8 +174,7 @@ func plan(layout stateroot.Layout, selected []string, copySkills, hooksOnly bool
 				}
 				actions = append(actions, items...)
 			case runtimes.OpCopyFile, runtimes.OpJSONStripKey:
-				source := filepath.Join(layout.InstallationRoot, filepath.FromSlash(row.Source))
-				shipped, err := os.ReadFile(source)
+				shipped, err := runtimes.ShippedEnforcement(runtime)
 				if err != nil {
 					return nil, fmt.Errorf("host setup: read %s enforcement source: %w", runtime, err)
 				}

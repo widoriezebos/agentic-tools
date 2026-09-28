@@ -53,13 +53,6 @@ func newHostFixture(t *testing.T, conf string) *hostFixture {
 		t.Fatal(err)
 	}
 	f := &hostFixture{t: t, root: root, stubDir: filepath.Join(root, "stub")}
-	for _, name := range []string{"schemas/orchestrator.schema.json", "permissions/workspace.json"} {
-		data, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "agents", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		f.write(filepath.Join(root, "scripts", "agents", name), string(data))
-	}
 	f.write(filepath.Join(root, "metasystem.conf"), conf)
 	stub := filepath.Join(f.stubDir, "devin")
 	f.write(stub, hostDevinStub)
