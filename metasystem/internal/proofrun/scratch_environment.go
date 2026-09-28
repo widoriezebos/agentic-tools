@@ -20,7 +20,7 @@ import (
 // ScratchEnvironmentPolicy names the managed group layout this engine writes
 // when its destination worker reads it. Changing a generated path, variable
 // or token bumps it, which changes every managed group's environment identity.
-const ScratchEnvironmentPolicy = ScratchEnvironmentPolicyV1
+const ScratchEnvironmentPolicy = ScratchEnvironmentPolicyV2
 
 const (
 	// ScratchEnvironmentPolicyV1 keeps the compiler caches run-private. A

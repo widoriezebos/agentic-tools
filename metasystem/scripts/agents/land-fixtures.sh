@@ -34,7 +34,7 @@ if (( fixture_bed_child )); then
   fixture_outer_gocache=$(go env GOCACHE)
   fixture_outer_gopath=$(go env GOPATH)
   export GOMODCACHE=$fixture_outer_gomodcache
-  export GOCACHE=$fixture_outer_gocache
+  export GOCACHE=$fixture_outer_gocache STATICCHECK_CACHE=${STATICCHECK_CACHE:-$(dirname "$(env -u GOCACHE go env GOCACHE)")/staticcheck}
   export GOPATH=$fixture_outer_gopath
   fixture_isolated_home=${METASYSTEM_FIXTURE_NAMESPACE:-}
   if [[ -z "$fixture_isolated_home" ]]; then
@@ -177,7 +177,7 @@ is_carried_two_seat_scenario() {
 prepare_receipt_environment() { # process identity file, registry, fake-runtime checkout
   local identity_file=$1 registry=$2 checkout=$3 name value
   receipt_environment=()
-  for name in GOCACHE GOMODCACHE GOFLAGS GOPATH GOROOT HOME LANG LC_ALL METASYSTEM_TEST_WORKERS PATH SYSTEMROOT TEMP TMP TMPDIR TZ; do
+  for name in GOCACHE STATICCHECK_CACHE GOMODCACHE GOFLAGS GOPATH GOROOT HOME LANG LC_ALL METASYSTEM_TEST_WORKERS PATH SYSTEMROOT TEMP TMP TMPDIR TZ; do
     if value=$(printenv "$name" 2>/dev/null); then
       receipt_environment+=("$name=$value")
     fi

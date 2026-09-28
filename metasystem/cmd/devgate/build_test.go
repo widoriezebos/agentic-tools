@@ -37,6 +37,8 @@ type buildFixture struct {
 	goFails   bool
 	noGo      bool
 	fenceHits int
+	environ   []string
+	cacheDir  func() (string, error)
 	fence     func(string, int64) []gaterun.Holder
 	selfPid   int64
 	stdout    bytes.Buffer
@@ -57,6 +59,8 @@ func newBuildFixture(t *testing.T) *buildFixture {
 	return &buildFixture{
 		t: t, root: root, env: map[string]string{}, head: fixtureCommit + "\n", prefix: "metasystem/\n",
 		fence: gaterun.Fence, selfPid: int64(os.Getpid()),
+		environ:  []string{"PATH=/fixture/bin", "GOMAXPROCS=99"},
+		cacheDir: func() (string, error) { return "/fixture/user-cache", nil },
 	}
 }
 
@@ -114,11 +118,12 @@ func (f *buildFixture) deps() deps {
 			f.fenceHits++
 			return f.fence(root, selfPid)
 		},
-		selfPid: f.selfPid,
-		getenv:  func(key string) string { return f.env[key] },
-		environ: func() []string { return []string{"PATH=/fixture/bin", "GOMAXPROCS=99"} },
-		stdout:  &f.stdout,
-		stderr:  &f.stderr,
+		selfPid:      f.selfPid,
+		getenv:       func(key string) string { return f.env[key] },
+		environ:      func() []string { return append([]string(nil), f.environ...) },
+		userCacheDir: func() (string, error) { return f.cacheDir() },
+		stdout:       &f.stdout,
+		stderr:       &f.stderr,
 	}
 }
 
@@ -184,6 +189,32 @@ func TestBuildCleanTreeInstallsEngineStampedWithHead(t *testing.T) {
 	}
 	if f.fenceHits != 0 {
 		t.Fatalf("fence ran with no bin/metasystem present: %d", f.fenceHits)
+	}
+}
+
+// Both branches set the engine cache explicitly: an inherited absolute value
+// is kept, else it is computed from the user cache directory seam.
+func TestBuildCarriesTheEngineCacheOnBothBranches(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		environ []string
+		want    []string
+	}{
+		{"computed", []string{"PATH=/fixture/bin", "GOCACHE=relative"}, []string{"GOCACHE=/fixture/user-cache/go-build", "STATICCHECK_CACHE=/fixture/user-cache/staticcheck"}},
+		{"inherited", []string{"PATH=/fixture/bin", "GOCACHE=/outer/go-build", "STATICCHECK_CACHE=/outer/staticcheck"}, []string{"GOCACHE=/outer/go-build", "STATICCHECK_CACHE=/outer/staticcheck"}},
+	} {
+		for _, args := range [][]string{nil, {"--out", filepath.Join(t.TempDir(), "proof-engine")}} {
+			f := newBuildFixture(t)
+			f.environ = test.environ
+			if code := f.run(args...); code != 0 {
+				t.Fatalf("%s %q: exit %d; stderr:\n%s", test.name, args, code, f.stderr.String())
+			}
+			env := f.onlyGoCall().env
+			if got := env[len(env)-4 : len(env)-2]; !slices.Equal(got, test.want) {
+				t.Fatalf("%s %q: go env = %q, want the engine cache %q before GOMAXPROCS and CGO_ENABLED", test.name, args, env, test.want)
+			}
+		}
 	}
 }
 
@@ -354,6 +385,9 @@ func TestBuildRefusalsBeforeAnyEffect(t *testing.T) {
 		{name: "invalid workers", setup: func(f *buildFixture) { f.env["METASYSTEM_TEST_WORKERS"] = "nope" }, code: 1, stderr: "METASYSTEM_TEST_WORKERS must be a positive integer"},
 		{name: "zero workers", setup: func(f *buildFixture) { f.env["METASYSTEM_TEST_WORKERS"] = "0" }, code: 1, stderr: "METASYSTEM_TEST_WORKERS must be a positive integer"},
 		{name: "no toolchain", setup: func(f *buildFixture) { f.noGo = true }, code: 1, stderr: "no go toolchain on PATH"},
+		{name: "no engine cache", setup: func(f *buildFixture) {
+			f.cacheDir = func() (string, error) { return "", errors.New("$HOME is not defined") }
+		}, code: 1, stderr: "engine cache: cannot resolve the user cache directory"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()

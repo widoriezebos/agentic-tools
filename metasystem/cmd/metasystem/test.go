@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
@@ -98,7 +99,8 @@ type testingWorkerCapabilities struct {
 func currentTestingWorkerCapabilities() testingWorkerCapabilities {
 	return testingWorkerCapabilities{SchemaVersion: 1, Protocol: testWorkerProtocol,
 		ProtocolVersion: proofrun.TestWorkerProtocolVersion, TestResultSchemaVersion: proofrun.TestResultSchemaVersion,
-		GroupExecutionIdentityVersion: proofrun.GroupExecutionIdentityVersion, WorkerPolicyVersion: proofrun.TestWorkerPolicyVersion}
+		GroupExecutionIdentityVersion: proofrun.GroupExecutionIdentityVersion, WorkerPolicyVersion: proofrun.TestWorkerPolicyVersion,
+		ScratchEnvironmentPolicies: proofrun.ScratchEnvironmentPolicies}
 }
 
 func runTestWorkerCapabilities(args []string) int {
@@ -1550,12 +1552,12 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 	installationRoot := filepath.Join(detached.Workspace().Dir, filepath.FromSlash(installationPrefix))
 	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	command.Dir = installationRoot
-	command.Env = candidateEngineBuildEnvironment(environment, candidateCommit)
+	// The compiler caches are the resolved machine engine cache, set
+	// explicitly; module and user caches stay inherited.
+	command.Env = gocache.Carry(candidateEngineBuildEnvironment(environment, candidateCommit))
 	if scratch != nil {
-		// The run's compiler caches and temp live in its root; module and
-		// user caches stay inherited.
-		command.Env = append(command.Env, "GOCACHE="+scratch.Dir("gocache"), "STATICCHECK_CACHE="+scratch.Dir("staticcheck"),
-			"GOTMPDIR="+scratch.Dir("engine"), "TMPDIR="+scratch.Dir("engine"))
+		// The run's temp lives in its root.
+		command.Env = append(command.Env, "GOTMPDIR="+scratch.Dir("engine"), "TMPDIR="+scratch.Dir("engine"))
 	}
 	proofrun.AttachHostResourceLease(ctx, command)
 	command.WaitDelay = 5 * time.Second

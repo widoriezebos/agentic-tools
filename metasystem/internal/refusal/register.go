@@ -36,7 +36,7 @@ type Shell struct {
 type Defect struct{ Code, Why string }
 
 var Rows = []Row{
-	{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Owner: "cmd/metasystem", Site: "test.go:83", Shape: Question, H1: StandingInput},
+	{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Owner: "cmd/metasystem", Site: "test.go:84", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go:251", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_SETTING_INVALID", Owner: "internal/launch", Site: "settings.go:120", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_BRIEF_OVERSIZE", Owner: "internal/launch", Site: "admit.go:105", Shape: Question, H1: StandingInput},
@@ -264,7 +264,7 @@ var Rows = []Row{
 	{Code: "RETRY_PRIOR_OUTSIDE_TREE", Owner: "internal/proofrun", Site: "attempt.go:1236", Shape: Question, H1: StandingInput},
 	{Code: "ADMISSION_OVERLAP_UNKNOWN", Owner: "internal/proofrun", Site: "admission.go:74", Shape: Question, H1: StandingInput},
 	{Code: "ADMISSION_NESTING_UNKNOWN", Owner: "internal/proofrun", Site: "admission.go:78", Shape: Question, H1: StandingInput},
-	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "cmd/metasystem", Site: "test.go:879", Shape: Question, H1: StandingGuide, Forward: "test run"},
+	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "cmd/metasystem", Site: "test.go:881", Shape: Question, H1: StandingGuide, Forward: "test run"},
 	{Code: "TESTING_MERGE_CONFLICT", Owner: "internal/testpolicy/contractmerge", Site: "merge.go:36", Shape: Question, H1: StandingInput},
 	{Code: "TESTING_CONTRACT_INVALID", Owner: "internal/testpolicy/contractmerge", Site: "merge.go:40", Shape: Question, H1: StandingInput},
 	{Code: "TESTING_ADD_TESTS_REFUSED", Owner: "internal/testpolicy/contractmerge", Site: "addtests.go:72", Shape: Question, H1: StandingInput},
@@ -327,7 +327,7 @@ var Rows = []Row{
 	{Code: "unknown-direct-fix-class", Owner: "internal/landing", Site: "observe.go:1520", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "chain-full-gate-refused", Owner: "internal/landing", Site: "observe.go:455", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "chain-test-receipt-refused", Owner: "internal/landing", Site: "observe.go:445", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "proof-input-moved-after-receipt", Owner: "cmd/metasystem", Site: "test.go:2634", Shape: Agent, Override: "reset to the pushed tip, re-stage, landing test-receipt --mode auto, land again", Commands: 4},
+	{Code: "proof-input-moved-after-receipt", Owner: "cmd/metasystem", Site: "test.go:2636", Shape: Agent, Override: "reset to the pushed tip, re-stage, landing test-receipt --mode auto, land again", Commands: 4},
 	{Code: "tier1-declaration-refused", Owner: "internal/landing", Site: "tierone.go:35", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "tier1-policy-unreadable", Owner: "internal/landing", Site: "tierone.go:62", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "tier1-root-refused", Owner: "internal/landing", Site: "tierone.go:39", Shape: Agent, Override: "land.sh --carried", Commands: 1},

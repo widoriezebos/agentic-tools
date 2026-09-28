@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -564,9 +565,12 @@ func createProcessNamespace(mkdirTemp func(string, string) (string, error), root
 
 func sharedGoCacheEnvironment() map[string]string {
 	shared := make(map[string]string)
-	if os.Getenv("GOCACHE") == "" {
-		if cache, err := os.UserCacheDir(); err == nil && filepath.IsAbs(cache) {
-			shared["GOCACHE"] = filepath.Join(cache, "go-build")
+	// The engine cache pair, resolved before the namespace replaces HOME.
+	caches, _ := gocache.Resolve(os.Environ())
+	for _, entry := range gocache.Environment(caches) {
+		name, value, _ := strings.Cut(entry, "=")
+		if os.Getenv(name) == "" {
+			shared[name] = value
 		}
 	}
 	gopath := os.Getenv("GOPATH")

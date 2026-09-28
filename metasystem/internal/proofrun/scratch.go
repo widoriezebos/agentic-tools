@@ -45,7 +45,7 @@ const (
 )
 
 // ScratchSubdirectories are created with every root.
-var ScratchSubdirectories = []string{"engine", "groups", "gocache", "staticcheck", "goenv", "freeze", "no-hooks"}
+var ScratchSubdirectories = []string{"engine", "groups", "goenv", "freeze", "no-hooks"}
 
 // ScratchWorktree is one recorded worktree tuple, reserved before git
 // worktree add runs and closed after its removal.

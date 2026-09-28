@@ -9,6 +9,7 @@ import (
 	"os/exec"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
@@ -102,7 +103,7 @@ func executeUnitGateCommand(root string, step batch.GateStep) (result batch.Gate
 	}
 	command := exec.Command(step.Args[0], step.Args[1:]...)
 	command.Dir = root
-	command.Env = gittree.ScrubbedEnviron()
+	command.Env = gocache.Carry(gittree.ScrubbedEnviron())
 	output, commandErr := command.CombinedOutput()
 	result.Detail = string(output)
 	if commandErr != nil {

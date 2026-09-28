@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
@@ -25,7 +26,8 @@ import (
 // disposable location, reads it back, and reports name, path and token as
 // NUL-terminated fields to a probe directory outside the run, so paths with
 // spaces survive intact. An unset location fails the group: nothing falls
-// back to the caller's HOME or temp.
+// back to the caller's HOME or temp. The engine cache pair is only reported:
+// it is the carried machine cache, which a probe must not write.
 const scratchProbeCheck = `#!/bin/sh
 set -eu
 id="$1"
@@ -41,6 +43,10 @@ for name in HOME TMPDIR GOCACHE XDG_CACHE_HOME XDG_CONFIG_HOME STATICCHECK_CACHE
     printf '%s\000\000\000' "$name" >> "$probe/env"
     exit 7
   fi
+  case "$name" in GOCACHE|STATICCHECK_CACHE)
+    printf '%s\000%s\000carried-%s\000' "$name" "$dir" "$name" >> "$probe/env"
+    continue ;;
+  esac
   mkdir -p "$dir"
   printf '%s-%s\n' "$token" "$name" > "$dir/scratch-token-$name"
   printf '%s\000%s\000%s\000' "$name" "$dir" "$(cat "$dir/scratch-token-$name")" >> "$probe/env"
@@ -58,7 +64,7 @@ fi
 printf '<testsuite><testcase classname="portable" name="%s"/></testsuite>\n' "$id" > "$report/result.xml"
 `
 
-var scratchProbeLocations = []string{"HOME", "TMPDIR", "GOCACHE", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "STATICCHECK_CACHE"}
+var scratchProbeLocations = []string{"HOME", "TMPDIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME"}
 
 type scratchPublicFixture struct {
 	*portableProofFixture
@@ -221,6 +227,18 @@ func (f *scratchPublicFixture) observed() map[string]string {
 			f.t.Fatalf("workload location %s unset or unwritten: path=%q token=%q", name, path, token)
 		}
 		paths[name] = path
+	}
+	// The group got the engine cache the launcher resolved from its own
+	// environment, outside every run root (disk-lifetimes A5).
+	caches, err := gocache.Resolve(f.commandEnvironment())
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	for name, want := range map[string]string{"GOCACHE": caches.GoCache, "STATICCHECK_CACHE": caches.StaticcheckCache} {
+		if paths[name] != want || f.scratchRunOf(want) != "" {
+			f.t.Fatalf("location %s=%q, want the carried engine cache %q", name, paths[name], want)
+		}
+		delete(paths, name)
 	}
 	seen, run := map[string]string{}, ""
 	for _, name := range scratchProbeLocations {

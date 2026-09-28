@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -419,7 +420,8 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 }
 
 func canonicalValidatorEnvironment() []string {
-	owned := map[string]bool{"GOFLAGS": true, "METASYSTEM_GATE_FROZEN_TOOLCHAIN": true}
+	owned := map[string]bool{"GOFLAGS": true, "METASYSTEM_GATE_FROZEN_TOOLCHAIN": true, "GOCACHE": true, "STATICCHECK_CACHE": true}
+	caches, _ := gocache.Resolve(os.Environ())
 	environment := make([]string, 0, len(os.Environ())+2)
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
@@ -427,6 +429,7 @@ func canonicalValidatorEnvironment() []string {
 			environment = append(environment, entry)
 		}
 	}
+	environment = append(environment, gocache.Environment(caches)...)
 	// GOFLAGS must equal cmd/devgate's ownedGoFlags: the gate's frozen-tree
 	// check accepts exactly that value (disk-lifetimes A4).
 	return append(environment, "GOFLAGS=-mod=readonly -trimpath", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1")

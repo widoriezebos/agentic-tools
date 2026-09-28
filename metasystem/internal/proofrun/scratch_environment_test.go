@@ -101,6 +101,10 @@ func TestScratchEnvironmentManagesEveryAdapterInBothModes(t *testing.T) {
 	t.Parallel()
 	fixture := newScratchEnvFixture(t)
 	request, run := prepareScratchEnv(t, fixture.control, scratchEnvRequest(fixture.base, scratchEnvGroups()))
+	caches, err := gocache.Resolve(fixture.base)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, group := range request.Contract.Groups {
 		environment := groupTestEnvironment(request, group)
 		dir := filepath.Join(run.Root(), "groups", group.ID, scratchEnvironmentDir)
@@ -108,7 +112,7 @@ func TestScratchEnvironmentManagesEveryAdapterInBothModes(t *testing.T) {
 			"HOME": filepath.Join(dir, "home"), "XDG_CONFIG_HOME": filepath.Join(dir, "home", ".config"),
 			"XDG_CACHE_HOME": filepath.Join(dir, "home", ".cache"), "XDG_DATA_HOME": filepath.Join(dir, "home", ".local", "share"),
 			"TMPDIR": filepath.Join(dir, "tmp"), "TMP": filepath.Join(dir, "tmp"), "TEMP": filepath.Join(dir, "tmp"),
-			"GOTMPDIR": filepath.Join(dir, "tmp"), "GOCACHE": run.Dir("gocache"), "STATICCHECK_CACHE": run.Dir("staticcheck"),
+			"GOTMPDIR": filepath.Join(dir, "tmp"), "GOCACHE": caches.GoCache, "STATICCHECK_CACHE": caches.StaticcheckCache,
 			"GOENV": filepath.Join(run.Dir("goenv"), "env"),
 			// Dependency stores stay where the caller's Go keeps them.
 			"GOPATH": filepath.Join(fixture.host, "go"), "GOMODCACHE": filepath.Join(fixture.host, "modcache"),
@@ -907,7 +911,16 @@ func TestScratchEnvironmentV1DigestUnchangedByTrimpathArgv(t *testing.T) {
 		"GOPATH=/fixture/gopath", "GOMODCACHE=/fixture/modcache", "TMPDIR=" + filepath.Join(fixture.host, "tmp")}
 	groups := append(scratchEnvGroups(), testpolicy.Group{ID: "declared", Adapter: "go", EnvironmentMode: "explicit",
 		Env: map[string]string{"PATH": "/usr/bin:/bin", "GOFLAGS": "-tags=fixture", "GOTOOLCHAIN": "local"}})
-	request, _ := prepareScratchEnv(t, fixture.control, scratchEnvRequest(base, groups))
+	// Pinned to v1: the recorded digests are v1's; v2's one change is A5.2's.
+	run, err := CreateScratchRun(fixture.control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = run.Cleanup(nil) })
+	request := scratchEnvRequest(base, groups)
+	if err := PrepareScratchEnvironmentFor(&request, run, ScratchEnvironmentPolicyV1); err != nil {
+		t.Fatal(err)
+	}
 	inherit, explicit := "c1e5bef2a5c83e6d4b9577fe0d288cef3f8e49441caeac777c3a16d034ce917e", "d69bbd1f0f3ce1cda983897f58178222dafb5829ef96706b1bc89ac0da76640f"
 	want := map[string]string{"go-inherit": inherit, "command-inherit": inherit, "section-inherit": inherit,
 		"go-explicit": explicit, "command-explicit": explicit, "section-explicit": explicit,
@@ -943,6 +956,11 @@ func TestScratchEnvironmentCarriesTheResolvedEngineCache(t *testing.T) {
 	}
 	request, run := prepareScratchEnvV2(t, fixture.control, scratchEnvRequest(unset, groups))
 	descriptor := request.ScratchEnvironment
+	for _, name := range []string{"gocache", "staticcheck"} {
+		if _, err := os.Lstat(filepath.Join(run.Root(), name)); !os.IsNotExist(err) {
+			t.Fatalf("a v2 run has a run-private %s: %v", name, err)
+		}
+	}
 	if descriptor.GoCache != outer.GoCache || descriptor.StaticcheckCache != outer.StaticcheckCache {
 		t.Fatalf("descriptor caches = %q %q, want the outer machine values %q %q", descriptor.GoCache, descriptor.StaticcheckCache, outer.GoCache, outer.StaticcheckCache)
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 )
 
 var positiveInteger = regexp.MustCompile(`^[1-9][0-9]*$`)
@@ -70,6 +71,13 @@ func runBuild(ctx context.Context, args []string, root string, d deps) int {
 		return 1
 	}
 
+	// The engine cache is resolved here and set explicitly for both branches.
+	caches, err := gocache.ResolveUsing(d.environ(), d.userCacheDir)
+	if err != nil {
+		fmt.Fprintf(d.stderr, "go-build: %v\n", err)
+		return 1
+	}
+
 	if options.out == "" && d.getenv("METASYSTEM_ALLOW_CONCURRENT_GATE") != "1" && executableFile(filepath.Join(root, "bin", "metasystem")) {
 		holders := d.fence(root, d.selfPid)
 		for _, holder := range holders {
@@ -92,7 +100,7 @@ func runBuild(ctx context.Context, args []string, root string, d deps) int {
 		return 1
 	}
 
-	env := append(d.environ(), "GOMAXPROCS="+workers, "CGO_ENABLED=0")
+	env := append(append(d.environ(), gocache.Environment(caches)...), "GOMAXPROCS="+workers, "CGO_ENABLED=0")
 	// The stamp is linked twice: as a record in the file's data, which
 	// survives -trimpath, and as the legacy variable. Since A3 both branches
 	// build trimmed, so Go omits -ldflags from the build info and only the

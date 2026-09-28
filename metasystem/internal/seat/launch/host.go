@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -210,7 +211,8 @@ type OSRunner struct{}
 func (OSRunner) Run(command Command) (string, error) {
 	process := exec.Command(command.Name, command.Args...)
 	process.Dir = command.Dir
-	process.Env = Scrubbed(os.Environ())
+	// The engine cache is set explicitly for the bootstrap build (A5).
+	process.Env = gocache.Carry(Scrubbed(os.Environ()))
 	var out, problem strings.Builder
 	process.Stdout = &out
 	process.Stderr = &problem
