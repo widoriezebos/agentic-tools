@@ -482,6 +482,12 @@ func TestObserveTierOneDirectFixBoundsAndReceipt(t *testing.T) {
 	}{
 		{"lawful area landing with absent gateWidth", "", "docs/constant.txt", "one changed line\n", "tier-1", 1, 1},
 		{"protected floor", "area", "internal/goal/constant.txt", "protected\n", "tier1-floor-refused", 1, 1},
+		// The code that writes or checks a landing's own receipt is on the
+		// floor: a small tier-1 landing may not change the verb that proves it.
+		{"the test-receipt verb", "area", "cmd/metasystem/landing_verbs.go", "package main\n", "tier1-floor-refused", 1, 1},
+		{"the landing path's receipt line", "area", "cmd/metasystem/landing_path.go", "package main\n", "tier1-floor-refused", 1, 1},
+		{"the batch landing's receipt append", "area", "cmd/metasystem/landing_batch_land.go", "package main\n", "tier1-floor-refused", 1, 1},
+		{"the receipt ledger writer", "area", "internal/receipt/receipt.go", "package receipt\n", "tier1-floor-refused", 1, 1},
 		{"goal raised to tier two after root dispatch", "area", "docs/constant.txt", "change\n", "tier1-goal-tier-2-refused", 2, 1},
 		{"forty-one changed lines", "area", "docs/large.txt", strings.Repeat("changed\n", 41), "tier1-line-bound-refused", 1, 1},
 		{"four changed files", "area", "docs/file.txt", "change\n", "tier1-file-bound-refused", 1, 4},
