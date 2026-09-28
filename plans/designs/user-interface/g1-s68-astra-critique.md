@@ -78,3 +78,68 @@ Proposed receipt, unwritten: “S68 design critique round 1: four material findi
 
 Commit reviewed: `3e1262633880efe47927f499772d97895f5f2814`. Limitations: static review only; no tests, browser walkthrough or real Partner run. No edits or subagents; prohibited paths were not read.
 
+
+## Round 2, the declared failsafe
+
+---
+
+All four round-1 findings are answered in revision 2. Two material gaps remain in D2. Evidence was read at `0324a0cc4`; the failure scenarios below are inferred from the design and existing code, not runtime demonstrations.
+
+**Round-1 dispositions**
+
+| Finding | Disposition | Evidence and tests after the fold |
+|---|---|---|
+| S68-01 | **CONFIRMED ANSWERED** | [Design:119](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s68-ask-what-happened.md:119) excludes request arguments, requires secret scrubbing before retention/transmission, and names a sign-in fixture. This answers the credential-bearing request at [SignInSheet.tsx:62](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/shell/SignInSheet.tsx:62). **Test 1:** DIFFERENT capture contract. **Test 2:** SAFE against the original disclosure when implemented as specified. |
+| S68-02 | **CONFIRMED ANSWERED** | [Design:139](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s68-ask-what-happened.md:139) requires a separate send path preserving draft and attachments across acceptance, refusal and waiting. It explicitly avoids [store.tsx:979](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/store.tsx:979), which clears the draft. **Test 1:** DIFFERENT send ownership. **Test 2:** SAFE against the original loss of words. |
+| S68-03 | **CONFIRMED ANSWERED** | [Design:150](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s68-ask-what-happened.md:150) supplies the missing connection through a registered callback above the providers, bypassing the no-op context at [store.tsx:581](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/store.tsx:581). **Test 1:** DIFFERENT connection. **Test 2:** WORKS for the original no-op defect. Reaching a usable conversation surface remains a separate issue below. |
+| S68-04 | **CONFIRMED ANSWERED** | [Design:167](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s68-ask-what-happened.md:167) limits cards to the proposal grammar; the room example becomes a link. This matches [propose.go:497](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/uitools/propose.go:497), which rejects unsupported actions. **Test 1:** DIFFERENT recovery mapping. **Test 2:** WORKS and remains SAFE within existing proposal authority. |
+
+**S68-07 — High — material: yes. A pending trouble needs a conversation destination fixed at Ask.**
+
+**Claim:** The new pending chip preserves words but does not specify which conversation owns the waiting request. “The next Send sends it first” combines unsafely with selecting the conversation at submission time.
+
+**Evidence:** [Design:131](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s68-ask-what-happened.md:131) makes Ask the question in the conversation the human is in; line 147 defers it until the next Send, and line 158 relies on the current conversation selection. [store.tsx:850](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/store.tsx:850) derives that selection from the current address. Its navigation effect at line 884 replaces the displayed conversation, while [store.tsx:974](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/store.tsx:974) sends to the presently selected `where`.
+
+**Concrete failure:** In room A, while a turn runs, the human presses Ask. The trouble waits. They navigate to room B and press Send. Following the specified pending-first rule and existing conversation selection sends A’s already-requested explanation into B. Preserving the draft does not prevent writing into the wrong conversation.
+
+**Change to the design:** Store the originating conversation with the pending trouble at Ask. Offer and send that pending question only in its owning conversation; navigation must not silently retarget it. Add a named fixture, `pending_trouble_stays_in_origin_room`: Ask while A is busy, switch to B, verify B cannot send A’s pending trouble, return to A and send it with the original draft and attachments intact.
+
+**Test 1 — DIFFERENT/WRONG:** DIFFERENT pending-state contract and destination selection; blindly following the current Send destination is WRONG.
+
+**Test 2 — WORKS/SAFE:** **Not SAFE** without destination ownership: an ordinary first busy request can be written into another conversation.
+
+**S68-08 — Medium — material: yes. Registration proves a live store, not a reachable conversation.**
+
+**Claim:** The new callback solves the provider connection, but its visibility gate admits Ask where the answer or pending Send remains inaccessible.
+
+**Evidence:** [Design:150](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s68-ask-what-happened.md:150) gates the control on callback registration. The notification panel remains outside the shell’s work-area provider ([notifications/store.tsx:161](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/notifications/store.tsx:161)); the default work-area context has no layer ([workmodal.tsx:48](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/shell/workmodal.tsx:48)), so [Sheet.tsx:68](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/shell/Sheet.tsx:68) makes it window-modal. Sign-in explicitly uses that modality at [SignInSheet.tsx:78](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/shell/SignInSheet.tsx:78).
+
+There is also a permanent instance: [Shell.tsx:416](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/shell/Shell.tsx:416) places the whole room inside an error boundary while the Partner provider survives above it. [ErrorBoundary.tsx:26](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/shell/ErrorBoundary.tsx:26) continues rendering its fallback until reload.
+
+**Concrete failure:** Ask from the bell successfully submits behind a modal that still blocks the conversation. More decisively, Ask from a caught room-render failure reaches the surviving store, but the room’s conversation renderer has been replaced by the fallback. The response exists without a usable surface for reading it or continuing.
+
+**Change to the design:** Require the registered Ask path to reveal a usable conversation, not merely submit. Specify the bell’s dismissal and a sign-in handoff that preserves its form and pending retry. Where the sole conversation renderer has failed, use the already-declared honest unavailable fallback unless an existing working surface can be reached. Add `trouble_ask_reaches_usable_partner`, checking actual visibility and keyboard access through the real providers and the room boundary.
+
+**Test 1 — DIFFERENT/WRONG:** DIFFERENT reveal and availability behavior; registration alone gives the WRONG availability signal.
+
+**Test 2 — WORKS/SAFE:** **Does not WORK** for the included caught-room-throw case: the first press cannot deliver a usable conversation.
+
+**Deferred and non-material**
+
+- **S68-09 — Low — material: no.** The class-name guard at [design:218](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s68-ask-what-happened.md:218) cannot prove that every future error uses `Trouble`; notification messages already use other names at [Panel.tsx:91](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/notifications/Panel.tsx:91). **Test 1:** stronger guard coverage would be DIFFERENT. **Test 2:** WORKS and SAFE after the explicitly required current-site conversions; broader enforcement waits.
+- Real-model answer-quality evaluation remains deferred. **Test 1:** verification would differ. **Test 2:** no independent first-use failure is established merely because the walkthrough uses a fake Partner; that walkthrough cannot certify real-model grounding.
+
+**What I verified holds**
+
+Step 1 and its deferrals are explicit. A deliberate Ask press authorizes the fixed explanatory question, without authorizing recovery. The existing server-owned interface attribution supports that distinction ([service.go:653](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:653)).
+
+The refusal reader can match `Row.Code` directly, as [register_test.go:300](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/refusal/register_test.go:300) does. Revision 2 explicitly gives exclusions, uncoded refusals and HTTP-only codes the honest “no row” response. The new reader belongs in the reader catalogue, without expanding proposal actions.
+
+Both Partner skill copies require owner-backed claims and admission of unread evidence. D3 adds the appropriate cause and recovery constraints. D6 remains coherent as no project record, sticky or receipt: the conversation itself is expressly retained.
+
+Proposed receipt, unwritten: “S68 design critique round 2: four prior findings answered; two material findings on pending conversation ownership and access to the answer.”
+
+**VERDICT: 2 material findings (fail test 2): S68-07, S68-08**
+
+Commit reviewed: `0324a0cc4b0a3ce71265aee42d67e829995c3b41`. Limitations: static design/code review only; no tests, browser walkthrough or real Partner run. No edits or subagents. Prohibited paths were not read.
+
