@@ -554,20 +554,6 @@ func classificationDataRefusal(verb, checkout, retryCommand string, err error) *
 	return &processRefusal{verb: verb, checkout: checkout, sentence: "caller classification is blocked by " + input + ": " + failure.Reason(), second: second, code: 1}
 }
 
-func runStopFenceCreatingClose(args []string) int {
-	flags := flag.NewFlagSet("stopfence creating-close", flag.ContinueOnError)
-	claim := flags.String("claim", "", "creation claim path")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *claim == "" {
-		fmt.Fprintln(os.Stderr, "stopfence creating-close: --claim is required")
-		return 2
-	}
-	if err := stopfence.CloseClaim(*claim); err != nil && !errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintln(os.Stderr, "stopfence creating-close:", err)
-		return 1
-	}
-	return 0
-}
-
 // missionFenceBeforeArm gives a closed checkout its stopped answer before the
 // mission launcher can reach supervision arming or any gate that depends on
 // live supervision.

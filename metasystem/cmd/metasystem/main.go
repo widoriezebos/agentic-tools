@@ -84,13 +84,6 @@ func families() []family {
 			},
 		},
 		{
-			name:    "stopfence",
-			summary: "the checkout-wide process-creation barrier",
-			verbs: []verb{
-				{"creating-close", "close one completed process-creation claim (internal)", runStopFenceCreatingClose},
-			},
-		},
-		{
 			name:    "proof-run",
 			summary: "priced validation runs with structural progress and a sibling watchdog",
 			verbs: []verb{
@@ -112,14 +105,10 @@ func families() []family {
 			verbs: []verb{
 				{"fixture-survivors", "name or reap fixture children that outlived their owner", runFixtureSurvivors},
 				{"started-at", "print a pid's start time in epoch seconds", runIdentityStartedAt},
-				{"exists", "exit 0 if the pid exists (permission denial proves existence)", runIdentityExists},
-				{"group-exists", "exit 0 if the process group exists", runIdentityGroupExists},
 				{"group-owned", "exit 0 only when a group member carries a tag in a shipped argv position", runIdentityGroupOwned},
 				{"census", "compute a fixture-driven census verdict", runCensusRun},
-				{"alive", "exit 0 if a pid is live at its expected start", runCensusAlive},
 				{"classify", "print live, stale, dead, or unknown for a recorded pid and tag", runProcClassify},
 				{"find-ancestor", "walk up the process tree to the first agent-signature ancestor", runCensusFindAncestor},
-				{"acknowledge", "record one exact untracked pid as human-judged-harmless; the end-of-turn report then stays silent about it (KI-23)", runProcAcknowledge},
 				{"setsid", "run a command as the leader of a new session and exit with its status (proc setsid -- cmd args...)", runProcSetsid},
 				{"default-signals", "run a command with INT, QUIT, and HUP restored to their default disposition", runProcDefaultSignals},
 			},
@@ -293,14 +282,7 @@ func families() []family {
 			name:    "launch",
 			summary: "owned external agent processes with durable state and exact cancellation",
 			verbs: []verb{
-				{"start", "start an agent process and return after its child is recorded", runLaunchStart}, {"supervise", "own one launch child through its terminal state (internal)", runLaunchSupervise}, {"wait", "wait up to a bounded timeout for a terminal launch", runLaunchWait}, {"status", "show and reconcile one launch", runLaunchStatus}, {"cancel", "end a launch group and prove every recorded process dead", runLaunchCancel}, {"census", "name orphan records, live terminal processes, and idle plugin brokers", runLaunchCensus}, {"round-task", "derive a critique task from its predecessor", runLaunchRoundTask}, {"settings", "show launch and context settings with their sources", runLaunchSettings}, {"report", "summarize launch outcomes and refusals", runLaunchReport},
-			},
-		},
-		{
-			name:    "janitor",
-			summary: "disk-hygiene: headroom guard and (later) the artifact-class sweep",
-			verbs: []verb{
-				{"headroom", "check free space per filesystem against a floor (exit 3 below)", runJanitorHeadroom},
+				{"start", "start an agent process and return after its child is recorded", runLaunchStart}, {"supervise", "own one launch child through its terminal state (internal)", runLaunchSupervise}, {"wait", "wait up to a bounded timeout for a terminal launch", runLaunchWait}, {"status", "show and reconcile one launch", runLaunchStatus}, {"cancel", "end a launch group and prove every recorded process dead", runLaunchCancel}, {"round-task", "derive a critique task from its predecessor", runLaunchRoundTask}, {"settings", "show launch and context settings with their sources", runLaunchSettings}, {"report", "summarize launch outcomes and refusals", runLaunchReport},
 			},
 		},
 		{
@@ -330,12 +312,8 @@ func families() []family {
 			name:    "util",
 			summary: "small utilities for shell callers",
 			verbs: []verb{
-				{"token-hex", "print a random hex token of --bytes length", runUtilTokenHex},
 				{"sha256", "print the hex sha-256 of --file or stdin", runUtilSHA256},
-				{"engine-stamp", "print the build stamp read from an engine file's bytes; exit 1 when it has none", runUtilEngineStamp},
-				{"json-validate", "exit 0 if --file/--value is valid JSON, else 1", runUtilJSONValidate},
 				{"now-ns", "print the current wall-clock time in nanoseconds", runUtilNowNs},
-				{"bootclock", "print the operating-system boot identity and monotonic nanoseconds", runUtilBootClock},
 				{"hold", "stay alive carrying --tag until SIGTERM, then write the stopped file", runUtilHold},
 			},
 		},
@@ -351,7 +329,6 @@ func families() []family {
 			summary: "JSON field access for shell callers",
 			verbs: []verb{
 				{"object", "build a compact JSON object from key=value args", runJSONObject},
-				{"set", "set top-level fields in a JSON object file atomically", runJSONSet},
 			},
 		},
 		{
@@ -469,7 +446,6 @@ func families() []family {
 				{"arm", "explicit human enrollment and runner start (long form of metasystem system start)", runStewardArm},
 				{"restart", "replace and re-arm the runner (long form of metasystem system start)", runStewardRestart},
 				{"disarm", "end the runner", runStewardDisarm},
-				{"hook-attempt", "record a supervision-hook attempt before turn work (internal)", runStewardHookAttempt},
 				{"hook-complete", "record a supervision-hook completion after payload emission (internal)", runStewardHookComplete},
 			},
 		},
@@ -480,11 +456,6 @@ func families() []family {
 				{"launch", "reserve, spawn the wrapped command detached, print the watch line", runRunLaunch},
 				{"wrap", "the setsid leader: bind, run the workload, write the exit sidecar (internal)", runRunWrap},
 				{"watch", "block until the run is terminal; exit with its pinned code", runRunWatch},
-				{"register", "bind an already-running process as an adopted run", runRunRegister},
-				{"adopt", "rebind a running record to a successor process", runRunAdopt},
-				{"ack", "acknowledge a terminal run", runRunAck},
-				{"conclude", "one assessment pass over a run (the watcher's verb)", runRunConclude},
-				{"prune", "drop acked terminal runs older than 14 days, reporting drops", runRunPrune},
 			},
 		},
 		{
@@ -496,7 +467,6 @@ func families() []family {
 				{"classify", "classify a caller and report holdership as JSON", runLeaseClassify},
 				{"require-holder", "gate a write on the caller being the authenticated holder", runLeaseRequireHolder},
 				{"run-held", "run a command while holding the lease lock (gated on holdership)", runLeaseRunHeld},
-				{"commit-token", "atomically write the live commit wrapper token", runLeaseCommitToken},
 			},
 		},
 		{
@@ -532,7 +502,6 @@ func families() []family {
 			name:    "supervise",
 			summary: "the supervision lifecycle (docs/design/supervision-lifecycle.md)",
 			verbs: []verb{
-				{"verify-armed", "exit 0 when supervision is verifiably armed at this instant", runSuperviseVerifyArmed},
 				{"owner", "run the owner loop for a checkout (internal; launched by up)", runSuperviseOwnerLoop},
 				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},
 				{"status", "print the checkout's supervision state as JSON", runSuperviseStatus},

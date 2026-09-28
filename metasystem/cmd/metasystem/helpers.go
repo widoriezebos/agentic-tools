@@ -86,3 +86,12 @@ func writeIdentityJSON(path string, value any) error {
 	_, writeErr := atomicfile.WriteText(path, string(encoded), "")
 	return writeErr
 }
+
+// multiFlag collects a repeatable string flag.
+type multiFlag []string
+
+func (m *multiFlag) String() string { return fmt.Sprintf("%v", []string(*m)) }
+func (m *multiFlag) Set(v string) error {
+	*m = append(*m, v)
+	return nil
+}

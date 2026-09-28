@@ -6,36 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
-
-// runSuperviseVerifyArmed relays `supervise verify-armed`: one arming
-// attempt's verdict from supervise.ArmedNow.
-// Exit 0 armed, 1 not yet; the arming script owns the retry loop and the
-// timeout message.
-func runSuperviseVerifyArmed(args []string) int {
-	flags := flag.NewFlagSet("supervise verify-armed", flag.ContinueOnError)
-	agents := flags.String("agents", "", "artifacts/agents directory")
-	ownerPid := flags.Int64("owner-pid", 0, "owner pid")
-	ownerStart := flags.Int64("owner-start", 0, "owner start epoch seconds")
-	ownerTag := flags.String("owner-tag", "", "owner instance tag")
-	interval := flags.Int64("interval", 60, "census interval seconds")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *agents == "" || *ownerPid < 1 || *ownerStart < 1 {
-		fmt.Fprintln(os.Stderr, "supervise verify-armed: --agents, --owner-pid, and --owner-start are required")
-		return 2
-	}
-	if supervise.ArmedNow(*agents, *ownerPid, *ownerStart, *ownerTag, *interval, time.Now()) {
-		return 0
-	}
-	return 1
-}
 
 // runSuperviseStatus reads a checkout's supervision surface — lock,
 // state, heartbeats — and prints one JSON object with three-way

@@ -214,23 +214,6 @@ func launchRecordVerb(args []string, verb string, action func(*launch.Manager, s
 	fmt.Println(launchReport(record))
 	return 0
 }
-func runLaunchCensus(args []string) int {
-	flags := flag.NewFlagSet("launch census", flag.ContinueOnError)
-	reap := flags.Bool("reap", false, "terminate idle plugin brokers")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal launch census [--reap]")
-		return 2
-	}
-	lines, err := launchManager().Census(*reap)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "launch census:", err)
-		return 1
-	}
-	for _, line := range lines {
-		fmt.Println(line)
-	}
-	return 0
-}
 func runLaunchSettings(args []string) int {
 	flags := flag.NewFlagSet("launch settings", flag.ContinueOnError)
 	asJSON := flags.Bool("json", false, "print structured settings")

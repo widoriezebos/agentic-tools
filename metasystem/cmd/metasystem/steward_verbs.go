@@ -225,27 +225,6 @@ func runHealthAcknowledgeAlert(args []string) int {
 	return 0
 }
 
-func runStewardHookAttempt(args []string) int {
-	flags := flag.NewFlagSet("steward hook-attempt", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	pid := flags.Int64("pid", 0, "hook process pid")
-	turnKey := flags.String("turn-key", "", "current turn key")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" || *pid < 1 || *turnKey == "" {
-		fmt.Fprintln(os.Stderr, "steward hook-attempt: --repo, --pid, and --turn-key are required")
-		return 2
-	}
-	line, err := beginHookAttempt(*repo, *pid, *turnKey)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "steward hook-attempt:", err)
-		return 1
-	}
-	fmt.Println(line)
-	return 0
-}
-
 // beginHookAttempt records a Stop attempt for the exact hook process and
 // returns its generation and attempt sequence as one JSON line.
 func beginHookAttempt(repo string, pid int64, turnKey string) (string, error) {
