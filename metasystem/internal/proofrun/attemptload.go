@@ -22,6 +22,11 @@ type LoadSample struct {
 	OverlappingLocal int  `json:"overlappingLocal"`
 	OverlappingHost  int  `json:"overlappingHost"`
 	OverlapKnown     bool `json:"overlapKnown"`
+	// OwnHost is the part of OverlappingHost that is self's own family: the
+	// heavy slots held by live leases whose owner is self or descends from
+	// it. A caller that also counts its own runs subtracts it, so a run the
+	// census already sees is not counted twice.
+	OwnHost int `json:"ownHost,omitempty"`
 }
 
 // AttemptLoad is the attempt's start sample and, once terminal, its end
@@ -177,6 +182,7 @@ func sampleLoad(root, selfAttempt string, launcher int64, now time.Time, options
 				sample.OverlapKnown = false
 			} else {
 				sample.OverlappingHost += active
+				sample.OwnHost = min(familyHostSlots(directory, launcher), sample.OverlappingHost)
 			}
 		}
 	}
@@ -219,6 +225,51 @@ func (s LoadSample) Describe() string {
 		parts = append(parts, "load unavailable")
 	}
 	return strings.Join(parts, ", ")
+}
+
+// familyHostSlots counts the heavy leases in the admission directory that
+// hold a slot and whose owner is self or a live descendant of self. A lease
+// that cannot be read or placed counts as not self's: the census never
+// discounts what it cannot attribute.
+func familyHostSlots(directory string, self int64) int {
+	if self <= 0 {
+		return 0
+	}
+	rows, known := readProcessRows()
+	if !known {
+		return 0
+	}
+	parent := map[int64]int64{}
+	for _, row := range rows {
+		parent[row.pid] = row.parent
+	}
+	family := func(pid int64) bool {
+		seen := map[int64]bool{}
+		for current := pid; current > 0 && !seen[current]; current = parent[current] {
+			seen[current] = true
+			if current == self {
+				return true
+			}
+		}
+		return false
+	}
+	paths, err := filepath.Glob(filepath.Join(directory, "lease-heavy-*"))
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, path := range paths {
+		file, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		record, _, err := readHostLeaseRecord(file)
+		_ = file.Close()
+		if _, live := parent[record.Owner.Pid]; err == nil && live && record.Slot != "" && !record.Cleared && family(record.Owner.Pid) {
+			count++
+		}
+	}
+	return count
 }
 
 // processRow is one live process as the launcher count sees it.

@@ -219,3 +219,32 @@ func TestOwnerRestartReattachesOrRefusesAPlannedProof(t *testing.T) {
 	close(release[testBatchID])
 	bed.owner.settle()
 }
+
+// A ceiling of three admits three of the owner's own proofs. Each running
+// proof holds a host slot the census sees and names as the owner's own; the
+// owner counts that run itself, so it must not count it a second time.
+func TestCeilingOfThreeAdmitsThreeOwnProofsTheCensusAlsoSees(t *testing.T) {
+	t.Parallel()
+	const dispatchD = "01j5x00000000000000000ba04"
+	for _, foreign := range []int{0, 1} {
+		bed, release, entered := dispatchBed(t, StateSealed, testBatchID, dispatchB, dispatchC, dispatchD)
+		bed.owner.admission = func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{Max: 3} }
+		ids := []string{testBatchID, dispatchB, dispatchC, dispatchD}
+		admitted := 0
+		for _, id := range ids {
+			bed.sample.OwnHost = admitted
+			bed.sample.OverlappingHost = admitted + foreign
+			must(t, bed.owner.Tick(id))
+			if bed.owner.inflight[id] != nil {
+				<-entered
+				admitted++
+			}
+		}
+		witness(t, admitted == 3-foreign && bed.owner.inflight[ids[admitted]] == nil,
+			"foreign=%d: admitted %d own proofs under a ceiling of 3, want %d", foreign, admitted, 3-foreign)
+		for _, id := range ids {
+			close(release[id])
+		}
+		bed.owner.settle()
+	}
+}
