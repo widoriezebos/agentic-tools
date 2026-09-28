@@ -115,3 +115,28 @@ Commit reviewed: `04bc1fdd56f302f961aff69cee722018d18e9c42`.
 
 Limitations: static review only; no tests, browser execution or Mermaid proof. Mermaid remains unpinned, and g1-s67’s shaping reader is a design prerequisite at this commit. No subagents, edits, secret configuration or `artifacts/` reads. Proposed receipt, unwritten: “S71 failsafe critique: three prior findings answered; one material shaping-remark finding.”
 
+
+## Confirmation read on S71-04
+
+---
+
+Findings: none.
+
+**S71-04 CONFIRMED ANSWERED.** [D1, line 89](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s71-the-whiteboard.md:89) now requires retaining the selected text and comparing it with the displayed bytes at that range. This answers the unchanged-head failure: [DeskItem, line 22](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/review/room.ts:22) carries no content identity, and [deskReadKey, line 562](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/review/room.ts:562) identifies a read by commit and item, which cannot distinguish uncommitted edits.
+
+Verified by reading:
+
+- [g1-s67 D2, line 102](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s67-the-room-for-every-sitting.md:102) requires current checkout bytes, including uncommitted edits, and rereading on return.
+- The existing review reader obtains committed content through [TreeOf/FileAt, line 537](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/review/review.go:537) and reports its commit at [line 572](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/review/review.go:572). That guarantee does not establish shaping content identity.
+- [§8, line 179](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s71-the-whiteboard.md:179) names the required fixture: changed bytes under the same head remove the marker, preserve the remark and earlier-reading label, and restoring the bytes restores the marker.
+
+The byte comparison prevents attachment to **different selected text**. Unchanged selected text at the same path, range and head remains eligible, including after edits elsewhere. Unchanged lines can lose their inline marker when their coordinates or the head change, because D1 retains those matching conditions; the remark remains visible on the board. Identical text can also acquire different meaning through surrounding edits—byte equality establishes textual correspondence, not semantic validity.
+
+**Under R-124, no additional material first-use failure is established.** Preserving markers across moves or unrelated commits would change implementation (test 1), but step 1 works safely without it (test 2): the remark remains available and its provenance is explicit.
+
+Proposed receipt, unwritten: “Scoped S71-04 confirmation: answered; no additional material findings.”
+
+**VERDICT: 0 material findings: none**
+
+Commit reviewed: `c79a62d79b4a465e0ac6a6e08489e3cf82a63b6a` (`ui-development`). Limitations: static confirmation of this fold only; fixture specified, not executed. No edits, subagents, secret configuration or `artifacts/` reads.
+

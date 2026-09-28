@@ -69,3 +69,74 @@ Commit reviewed: `81acda402b39acf547bdac7a9af2f9a6e4c503b6`.
 
 Limitations: static, read-only review; failures above are inferred from the design and traced code, not executed reproductions. S69 was reviewed only as D’s dependency. No subagents, edits, `.local` contents or `artifacts/` contents were used. Proposed receipt, unwritten: “S70 design critique round 1 — four material findings.”
 
+
+## Round 2, the declared failsafe
+
+---
+
+Three material findings remain. S70-01, S70-03 and S70-04 are answered; S70-02’s coverage of command forms is improved, but its publication boundary remains open. Evidence below is checked by reading; failures are inferred, not executed.
+
+**Prior findings**
+
+| Finding | Disposition | Evidence |
+|---|---|---|
+| S70-01 | **CONFIRMED ANSWERED** | [S70:86](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:86) requires the shared hold before reporting an open sitting, preserves it across Step out, and releases it on all four endings. The gate and payload read history. This replaces the private source in [partner/review.go:155](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/review.go:155). Publication timing remains a separate issue below. |
+| S70-02 | **STILL OPEN** | [S70:97](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:97) explicitly covers every named form, but places enforcement at admission. Joining returns `in-progress`; publication happens later ([intent_delivery.go:1584](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/intent_delivery.go:1584)). See S70-05. |
+| S70-03 | **CONFIRMED ANSWERED** | [S70:72](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:72) specifies layered `Get` and a local-threshold fixture. [resolve.go:189](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/config/resolve.go:189) implements environment and local precedence before committed values and defaults. |
+| S70-04 | **CONFIRMED ANSWERED** | [S70:107](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:107) defines a fresh grace period after every subsequent human act, including release, with no clock under a hold. [HistoryLine](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/file.go:446) supplies timestamps and human actor attribution. |
+
+**S70-05 — High; material: yes. Admission does not protect the interval before publication.**
+
+**Claim and evidence:** D2 and D6 place the gate at admission ([S70:97](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:97), [S70:133](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:133)). Existing batches publish separately through [LandSeries](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/landing/batch/land.go:306). Their final authority check reads a fresh ledger, but checks claim identity, fences and budget—not a review hold ([landing_batch_prefix.go:47](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/landing_batch_prefix.go:47)). Appending history does not itself change the claim revision those checks compare.
+
+**Concrete failure:** An eligible tier-1 goal joins a batch. While the batch proves, the human opens a sitting and its hold is successfully published. The batch subsequently lands without revisiting the new gate. The room says the sitting stands while its work reaches main.
+
+**Change to the design:** Require the same gate against fresh ledger state at final publication and publication retries, including moved-base recovery. Use the existing series authorization boundary ([landing_batch_land.go:215](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/landing_batch_land.go:215), [409](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/landing_batch_land.go:409)). Specify that an intervening hold prevents publication and a release is evaluated under the applicable grace/permission rule. Add a fixture: join → publish hold → attempt publication → no landing.
+
+**Test 1: WRONG** — admission-only enforcement violates the standing-hold invariant.  
+**Test 2: WORKS—no; SAFE—no** — this is an ordinary first sitting during asynchronous landing, not additional scale.
+
+**S70-06 — High; material: yes. The Review-lane predicate permits bypassing the human gate by never entering Review.**
+
+**Claim and evidence:** [S70:82](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:82) applies the threshold refusal to a goal “in the Review lane.” That lane requires a Landing record ([backlog/project.go:208](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/backlog/project.go:208)). However, `work land j2:J` resolves its goal and joins directly ([intent_delivery.go:1523](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/intent_delivery.go:1523)); batch binding requires a claimed goal and capability, without requiring `Landing` ([dispatch/stop.go:77](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/dispatch/stop.go:77)). `--queue-only` is a separate, optional route.
+
+**Concrete failure:** A tier-2 goal has a certified implementation chain, a valid claim and no Landing record. Its holder invokes `work land j2:J` directly. Every form can call the new gate, yet the literal Review-lane predicate exempts this goal. It lands without either human decision.
+
+**Change to the design:** Make the threshold permission check apply whenever governed goal work is published, independent of prior board placement; alternatively require entry into Review before admitting that publication. Preserve `--queue-only` as entry into Review. Add a fixture with `Landing=nil`, tier 2 and a certified chain: publication must require the human’s current-tip word.
+
+**Test 1: WRONG** — covering command forms does not close the predicate bypass.  
+**Test 2: WORKS—no; SAFE—no** — the first direct certified-chain landing can publish work reserved for a human decision.
+
+**S70-07 — High; material: yes. The resident steward is not the claim-holding session that ordinary landing authenticates.**
+
+**Claim and evidence:** [S70:107](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:107) assigns the due landing to the holding seat through the resident steward loop, without naming the execution handoff. The runner is deliberately detached ([runner.go:892](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/steward/runner.go:892)); it and its children classify as `STEWARD` ([classify.go:427](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/lease/classify.go:427)). Ordinary hand landing calls the holder check before preparation ([goal_branch.go:614](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/goal_branch.go:614)), and [RequireHolder](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/lease/verbs.go:440) does not admit `STEWARD`. Discovering this machine’s claims supplies neither holder identity nor authority.
+
+**Concrete failure:** The resident steward is running, the actual claimant remains alive, and a tier-1 goal’s grace expires. Calling ordinary `work land` from that loop takes the steward’s identity and is refused. The clock has expired, but the promised automatic landing cannot execute through the named path.
+
+**Change to the design:** Name how a due landing reaches an authenticated execution by the current claim holder—using the existing continuation/handoff mechanism where suitable—and how changed ownership invalidates that request. Do not infer authority from machine identity or the runner’s remembered lineage. Verify the real entrypoint with a detached steward and a distinct live holder.
+
+**Test 1: DIFFERENT/WRONG** — evaluation and authorized execution need an explicit connection.  
+**Test 2: WORKS—no; SAFE—yes if existing authority refusals remain intact.**
+
+**Deferred and non-material**
+
+- Offline takeover, finer cadence and additional concurrency machinery remain deferred. **Material: no. Test 1: DIFFERENT. Test 2: WORKS/SAFE—yes** for a running, correctly authorized holder.
+- `Get` returns value/status/error, not source metadata; the required Settings source reporting needs implementation. This does not reopen S70-03. **Material: no. Test 1: neither DIFFERENT nor WRONG** beyond the already specified requirement. **Test 2: WORKS/SAFE—yes.**
+
+**What I verified holds**
+
+- Step 1 and its exclusions are explicit.
+- R-132-ui was read verbatim. The below-versus-at-or-above boundary is correct; default 2 is compatible, not numerically mandated.
+- The shared hold and restart rule answer the original visibility and clock-resumption defects.
+- Human-only authority, required reason and current-tip binding are explicit. The signed-in authority implementation validates the human and session against their proof.
+- The server owns the clock calculation; the Decisions `Need`, refusal register, workspace resource and existing sheets provide suitable extension points.
+- Confirmed publication, rather than batch admission, is correctly required before writing “landed.”
+
+**VERDICT: 3 material findings (fail test 2): S70-05, S70-06, S70-07**
+
+Commit reviewed: `04bc1fdd56f302f961aff69cee722018d18e9c42`.
+
+Limitations: static, read-only review; no tests or reproductions run. The checkout advanced concurrently; scoped comparisons found no changes to the cited code or reviewed designs. S69 was assessed only as D’s dependency. No subagents, edits, `.local` contents or `artifacts/` contents were used. This is the declared failsafe; publication and execution-authority contracts remain unresolved, so I cannot certify a fixture-only closure.
+
+Proposed receipt, unwritten: “S70 design critique round 2 — three material findings; publication boundary, lane bypass and steward execution authority.”
+

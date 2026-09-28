@@ -233,5 +233,7 @@ strings (`cuts.test.ts:727`), so the chunk's rendering compatibility
 is the proof's, not the guard's; that the review template lives in
 `project/review.go`; and that Step out already refuses to leave when
 keeping fails (`room.ts:457`). Closed at the failsafe round on one
-fold, with one scoped confirmation read on S71-04 alone (recorded
-below when it returns).
+fold, with one scoped confirmation read on S71-04 alone.
+
+**Confirmation read (2026-09-28, at `c79a62d79`):** S71-04 confirmed
+answered, no finding, zero material. The loop is CLOSED.

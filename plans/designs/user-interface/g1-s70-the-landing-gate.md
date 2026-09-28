@@ -101,8 +101,23 @@ sitting") until you end it.
   `--message` form when it names a goal, and the exceptional forms;
   an exception recorded earlier is not a current-tip decision to skip
   the sitting, and `--queue-only` still enters Review. Below the tier
-  with no hold, landing proceeds as today. The refusal is a register
-  row with the human verb that carries past it (Land without a
+  with no hold, landing proceeds as today. The gate is a rule about
+  publishing a governed goal's work, not about the Review lane: a
+  claimed goal at or above the tier needs the human's current-tip word
+  whether or not it ever carried a Landing record, so a certified
+  chain landed directly with `work land j2:J` (the batch binds a
+  claimed goal without one, `dispatch/stop.go:77`) meets it the same
+  way; `--queue-only` stays the way into Review. And admission is not
+  the last word: a batch publishes later and on retries
+  (`internal/landing/batch/land.go:306`), and its final authority check
+  reads a fresh ledger for the claim, the fences and the budget
+  (`landing_batch_prefix.go:47`, at the series boundary,
+  `landing_batch_land.go:215`, `:409`), so the gate is evaluated there
+  too, against the fresh ledger, at every publication and every retry
+  including moved-base recovery: a hold published while the batch was
+  proving stops the publication, and a release is judged under the
+  grace and permission rules as they stand then. The refusal is a
+  register row with the human verb that carries past it (Land without a
   sitting), so the room's own "Ask what happened" can explain it.
 - D3. **The clock is the holding seat's, and a human act restarts it.**
   The seat that holds the claim lands a below-tier goal by itself once
@@ -116,9 +131,20 @@ sitting") until you end it.
   seat already passes over its claims (the resident steward's loop,
   `internal/steward/runner.go:214`, over this machine's claims,
   `goal/project.go:744`), never by a timer of its own; expiry is
-  eligibility on the next pass, and the history says "landed" only
-  after the publication is confirmed. The clock never runs at or above
-  the tier.
+  eligibility on the next pass. The loop only finds the goal due; it
+  never lands it in its own name, because the runner is detached and
+  classified as the steward (`runner.go:892`, `lease/classify.go:427`)
+  and the holder check that every landing makes before preparing
+  (`goal_branch.go:614`) admits no steward (`lease/verbs.go:440`). The
+  due landing is handed to the session that holds the claim through
+  the steward's existing continuation, the same way its other work
+  reaches a holder: the holder runs `work land G` under its own
+  identity, with the gate of D2 evaluated then; a claim that changed
+  hands or was released between the finding and the landing
+  invalidates the handoff, and nothing is inferred from the machine's
+  identity or the runner's remembered lineage. The history says
+  "landed" only after the publication is confirmed. The clock never
+  runs at or above the tier.
 - D4. **Land without a sitting is a human-only act.** `goal land-without
   -sitting G --reason TEXT`, recorded on the history bound to the
   current tip, performed from the card's Decide sheet under the sign-in
@@ -180,7 +206,13 @@ at a human act, never running under a hold and never above the tier,
 evaluated on the loop with an injected clock, "landed" written only
 after confirmed publication; the act's history line and its required
 reason; the register row for the refusal; idempotency rows and public
-forms.
+forms; the gate met at publication: a goal joins a batch, a hold is
+published while it proves, the publication and its retry refuse; a
+tier-2 claimed goal with a certified chain and no Landing record
+landed with `work land j2:J` refuses without the human's word; a due
+tier-1 landing found by a detached steward with a distinct live holder
+is landed by the holder and refused in the steward's name, and a claim
+that changed hands in between voids the handoff.
 Frontend: the card's four wordings from the project payload; the Decide
 sheet's required reason and the act; the inbox row and its two answers;
 the Settings page's two facts with sources; the cut guard. Walkthrough:
@@ -222,3 +254,29 @@ expiry is eligibility on a pass; that `act.SignedIn` validates the
 human and the session against the proof (`act.go:190`); and that the
 register and the inbox's `Need` are the right extension points, with a
 batch join being in-progress until publication is confirmed.
+
+**Round 2, the declared failsafe (2026-09-28, at `04bc1fdd5`):**
+S70-01, S70-03 and S70-04 confirmed answered; S70-02 held open
+through three new material findings, all folded. S70-05: a gate at
+admission does not protect the interval before publication, since a
+batch publishes later and on retries with a final authority check that
+reads a fresh ledger for the claim, fences and budget but not a hold
+(`batch/land.go:306`, `landing_batch_prefix.go:47`,
+`landing_batch_land.go:215`, `:409`); fold, D2: the gate is evaluated
+again at every publication and retry against the fresh ledger. S70-06:
+"in the Review lane" exempted a claimed goal landed directly with
+`work land j2:J`, which binds without a Landing record
+(`intent_delivery.go:1523`, `dispatch/stop.go:77`); fold, D2: the
+threshold applies whenever a governed goal's work is published,
+whatever its lane; `--queue-only` stays the entry to Review. S70-07:
+the resident steward is detached and classified as the steward
+(`runner.go:892`, `classify.go:427`) and the holder check before every
+landing admits no steward (`goal_branch.go:614`, `lease/verbs.go:440`),
+so the loop could find a goal due but never land it; fold, D3: the loop
+only finds the goal due and hands the landing to the claim-holding
+session through the steward's continuation, which lands under its own
+identity, a changed claim voiding the handoff. Non-material: `Get`
+returns no source, so the Settings page's source line is
+implementation work. Closed at the failsafe round on three folds,
+with one scoped confirmation read on S70-05 to S70-07 alone (recorded
+below when it returns).
