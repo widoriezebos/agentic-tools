@@ -55,6 +55,7 @@ type testingPreparation struct {
 	Plan                                                     testpolicy.Plan
 	Environment                                              []string
 	AllGroups                                                bool
+	AppAddress                                               string
 	Workers, AdmissionMaximum                                int
 	WorkerCapabilitiesChecked                                bool
 	WorkerScratchPolicies                                    []string
@@ -265,8 +266,11 @@ type testingSelectionRequest struct {
 	Groups, BatchRequirements                                                           []string
 	Carried                                                                             bool
 	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups                          bool
-	BatchPrefixReceipt, BatchTipProof, BatchAdmission                                   bool
-	FreshEpisode, FreshExpiresAt                                                        string
+	// AppAddress is the launch contract's check: the address of the
+	// application run the named group is run against.
+	AppAddress                                        string
+	BatchPrefixReceipt, BatchTipProof, BatchAdmission bool
+	FreshEpisode, FreshExpiresAt                      string
 	// ExecutedWorkers is the worker allowance of the run a verification checks.
 	// Group execution identity binds that allowance, and a fresh resolution can
 	// differ because the default allowance follows available memory.
@@ -356,6 +360,7 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		flags.BoolVar(&request.NoReuse, "no-reuse", false, "execute diagnostic groups freshly")
 		flags.BoolVar(&request.RequireDiagnosticHeadroom, "require-diagnostic-headroom", false, "reserve the mandatory batch-tip diagnostic")
 		flags.BoolVar(&request.AllGroups, "all-groups", false, "run every selected delivery group after a failure")
+		flags.StringVar(&request.AppAddress, "app-address", "", "the address of the application run a named group is run against")
 	}
 	if flags.Parse(args) != nil || flags.NArg() != 0 || request.Root == "" {
 		fmt.Fprintf(os.Stderr, "usage: metasystem %s --root INSTALLATION [--goal ID] [--authority ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
@@ -448,6 +453,10 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	}
 	if request.RequireDiagnosticHeadroom && request.Purpose != testpolicy.PurposeDelivery {
 		fmt.Fprintln(os.Stderr, "--require-diagnostic-headroom is available only for delivery purpose")
+		return request, false, 2
+	}
+	if request.AppAddress != "" && (request.Purpose != testpolicy.PurposeDiagnostic || len(request.Groups) != 1) {
+		fmt.Fprintln(os.Stderr, "--app-address belongs to one named diagnostic group: --mode canary --groups ID")
 		return request, false, 2
 	}
 	if request.AllGroups && request.Purpose != testpolicy.PurposeDelivery {
@@ -770,7 +779,7 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		UnmatchedInputs:           unmatchedInputs,
 		FirstTestingTransition:    !basePresent,
 		BehaviorPolicyDigest:      bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: selectionEnvironment,
-		AllGroups: request.AllGroups}, nil
+		AllGroups: request.AllGroups, AppAddress: request.AppAddress}, nil
 }
 
 func protectedTestingContractWithCandidateFallback(baseContract, candidateContract testpolicy.Contract) testpolicy.Contract {
@@ -1099,7 +1108,8 @@ func testingRunRequest(prepared testingPreparation, attemptID, logRoot, candidat
 		PolicyEngineDigest: prepared.PolicyEngineDigest, JudgeKey: prepared.JudgeKey, PolicyEngine: prepared.PolicyEngine, BehaviorPolicyDigest: prepared.BehaviorPolicyDigest,
 		EngineRearm:     prepared.EngineRearm,
 		CandidateEngine: candidateEngine, CandidateEngineDigest: candidateEngineDigest,
-		CandidateEngineBuildIdentity: candidateEngineBuildIdentity, AllGroups: prepared.AllGroups}
+		CandidateEngineBuildIdentity: candidateEngineBuildIdentity, AllGroups: prepared.AllGroups,
+		AppAddress: prepared.AppAddress}
 	request.Workers, request.AdmissionMaximum = prepared.Workers, prepared.AdmissionMaximum
 	request.ResultSchemaVersion = chooseTestResultSchema(prepared)
 	return request

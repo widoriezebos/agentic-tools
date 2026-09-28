@@ -27,10 +27,13 @@ import (
 
 const (
 	// R1/R3 residue: (family, verb) pairs plus dispatchInternal's top-level forms.
-	// 294: disk-lifetimes A1 adds `util engine-stamp`, the one shell-callable
+	// The launch contract raised it by one: `app serve` is the supervisor that
+	// owns one run of the project's application for its life, in the shape of
+	// `ui serve`, and like it it is a process entrypoint a person never types.
+	// +1: disk-lifetimes A1 adds `util engine-stamp`, the one shell-callable
 	// stamp reader (rule A3) replacing fixture-budget.sh's `go version -m`
 	// parser; it goes when that script is ported to Go.
-	verbRatchetInternalVerbCeiling = 294
+	verbRatchetInternalVerbCeiling = 295
 	// R4: shell lines that reference the engine.
 	verbRatchetShellEngineCeiling = 165
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
@@ -49,9 +52,13 @@ const (
 	// directly, where they used to exec dispatch.sh, and the lifecycle
 	// launches the delegate-supervisor entry where it ran an adapter script.
 	// The hops existed before; the witness now sees them.
+	// The launch contract raised it by two, both real process boundaries of
+	// its design: `app start` launches the engine's own `app serve`
+	// supervisor detached (app.go), and `app check` bridges to the testing
+	// contract's own runner instead of running a test itself (intent_app.go).
 	// U5 added one: the Go landing path runs the engine's landing workspace
 	// (landing_path.go), a hop commit.sh made from shell.
-	verbRatchetSelfSubprocessCeiling = 126
+	verbRatchetSelfSubprocessCeiling = 128
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
 	verbRatchetInstructionCeiling = 46

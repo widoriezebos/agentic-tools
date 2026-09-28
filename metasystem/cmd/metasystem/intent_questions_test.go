@@ -441,4 +441,17 @@ func TestIntentSettingsKeysAndCheck(t *testing.T) {
 	if after, _ := os.ReadFile(conf); !bytes.Equal(after, valid) {
 		t.Fatal("check settings changed the valid configuration")
 	}
+	// The launch contract is validated beside the testing contract, with its
+	// fault named; a contract of start alone is a valid one.
+	os.WriteFile(conf, append(append([]byte{}, valid...), []byte("launch.contract=launch.json\n")...), 0o644)
+	os.WriteFile(filepath.Join(bed.root(), "launch.json"), []byte(`{"schemaVersion":1,"start":{"argv":["./app"]},"data":"own"}`), 0o644)
+	if code, refused := run("settings", "check"); code == 0 || refused.Outcome != intentRefused ||
+		!strings.Contains(refused.Summary, "the launch contract is not") || !strings.Contains(refused.Summary, "data: own is declared with no prepare to make it") {
+		t.Fatalf("check settings on an invalid launch contract: code=%d %+v", code, refused)
+	}
+	os.WriteFile(filepath.Join(bed.root(), "launch.json"), []byte(`{"schemaVersion":1,"start":{"argv":["./app"]}}`), 0o644)
+	if code, accepted := run("settings", "check"); code != 0 || accepted.Outcome != intentConfirmed ||
+		!strings.Contains(accepted.Summary, "their launch contract are valid") {
+		t.Fatalf("check settings on a contract of start alone: code=%d %+v", code, accepted)
+	}
 }
