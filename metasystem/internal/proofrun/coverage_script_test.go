@@ -91,4 +91,3 @@ func writeEntrypointWrapperNow(path, mode string) error {
 	wrapper := "#!/usr/bin/env bash\nexec \"$PROOF_ENTRYPOINT_HELPER\" -test.run=^TestProofScriptEntrypointHelper$ -- " + mode + " \"$@\"\n"
 	return testexec.WriteFile(path, []byte(wrapper), 0o755)
 }
-
