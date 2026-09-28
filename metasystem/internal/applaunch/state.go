@@ -76,6 +76,9 @@ type Member struct {
 	Pid  int64
 	Ref  string
 	Self bool
+	// Uncertain: the process is alive in the group and its identity could
+	// not be proved. It counts as present and is never signalled.
+	Uncertain bool
 }
 
 // Prober is the identity reader; a test supplies its own.
@@ -85,9 +88,15 @@ type Prober = identity.Prober
 // only so that a test can hold a group it did not create.
 type GroupReader func(pgid int64) ([]Member, error)
 
-// KernelGroup reads the process table and keeps the members of one group
-// whose identity can be proved.
+// KernelGroup reads the process table for the live members of one group. A
+// member whose identity cannot be proved stays in the census as uncertain:
+// the census is what proves a group empty, and a process it cannot name is
+// not proof of anything.
 func KernelGroup(pgid int64) ([]Member, error) {
+	return groupCensus(pgid, identity.KernelProber{})
+}
+
+func groupCensus(pgid int64, prober Prober) ([]Member, error) {
 	if pgid < 1 {
 		return nil, nil
 	}
@@ -95,7 +104,6 @@ func KernelGroup(pgid int64) ([]Member, error) {
 	if err != nil {
 		return nil, err
 	}
-	prober := identity.KernelProber{}
 	var members []Member
 	for _, pid := range pids {
 		group, err := unix.Getpgid(int(pid))
@@ -103,14 +111,24 @@ func KernelGroup(pgid int64) ([]Member, error) {
 			continue
 		}
 		exact, state, err := prober.Probe(pid)
-		if err != nil || state != identity.Alive || !exact.ArgvKnown {
+		switch {
+		case err == nil && state == identity.Dead:
+			// Gone between the listing and the probe.
+			continue
+		case err == nil && state == identity.Alive && exact.Zombie:
 			// A zombie keeps its group signalable but is finished work: a
 			// KILL can do no more to it, and counting it would hold a stop
-			// open for its parent's reaping debt.
+			// open for its parent's reaping debt. Only the probe may say so.
+			continue
+		case err != nil || state != identity.Alive || !exact.ArgvKnown:
+			// Alive, or not provably gone, and not provably who it is: it
+			// counts as present and is never signalled.
+			members = append(members, Member{Pid: pid, Uncertain: true})
 			continue
 		}
 		encoded, err := identity.EncodeRef(exact.Ref())
 		if err != nil {
+			members = append(members, Member{Pid: pid, Uncertain: true})
 			continue
 		}
 		members = append(members, Member{Pid: pid, Ref: encoded})
@@ -209,7 +227,13 @@ func Read(stateRoot, key string, contract Contract, o ReadOptions) (Status, erro
 		status.State, status.Readiness = Uninspectable, NoProbe
 		return status, nil
 	case identity.Dead:
-		status.Members, _ = o.group()(record.Group)
+		var groupErr error
+		status.Members, groupErr = o.group()(record.Group)
+		if groupErr != nil {
+			status.State, status.Readiness = ChildEnded, NoProbe
+			status.Problem = fmt.Sprintf("child ended; group %d could not be inspected: %v", record.Group, groupErr)
+			return status, nil
+		}
 		if len(livingBesides(status.Members, supervisor.Pid)) > 0 {
 			status.State, status.Readiness = ChildEnded, NoProbe
 			status.Problem = "child ended, descendants alive; the supervisor stays the owner"
@@ -245,6 +269,13 @@ func readinessOf(contract Contract, record *Record, o ReadOptions) Readiness {
 		return Answering
 	}
 	return NotAnswering
+}
+
+func (m Member) describe() string {
+	if m.Uncertain {
+		return "(alive, identity uncertain)"
+	}
+	return m.Ref
 }
 
 func livingBesides(members []Member, pid int64) []Member {
@@ -313,7 +344,7 @@ func (s Status) Lines() []string {
 		lines = append(lines, "check: none recorded for this run")
 	}
 	for _, member := range s.Members {
-		lines = append(lines, "group member "+strconv.FormatInt(member.Pid, 10)+" "+member.Ref)
+		lines = append(lines, "group member "+strconv.FormatInt(member.Pid, 10)+" "+member.describe())
 	}
 	return lines
 }

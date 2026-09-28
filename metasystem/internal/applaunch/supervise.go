@@ -256,7 +256,7 @@ func Supervise(o SuperviseOptions) error {
 		// never only the supervisor: the run must not outlive the engine's
 		// belief that it never started.
 		o.endChild(record, exited)
-		o.finish(record, exitStatus, exited)
+		o.finish(record, exitStatus, exited, groupReadSayer(log, record.Group))
 		return errors.New(message)
 	}
 	record.ReadyAt = o.now().UTC().Format(time.RFC3339)
@@ -277,20 +277,37 @@ func Supervise(o SuperviseOptions) error {
 	// the owner. What ends such a group is a stop, and only this process may
 	// signal that group, because only its living identity as the group's
 	// leader proves the group is ours and not a reused id.
-	if !o.awaitGroupEmpty(ctx, record) {
+	say := groupReadSayer(log, record.Group)
+	if !o.awaitGroupEmpty(ctx, record, say) {
 		o.endGroup(record)
 	}
-	o.finish(record, exitStatus, exited)
+	o.finish(record, exitStatus, exited, say)
 	return nil
+}
+
+// groupReadSayer writes into the run's log why the supervisor is still
+// waiting on a group it cannot read, once per distinct reason.
+func groupReadSayer(log *os.File, group int64) func(error) {
+	last := ""
+	return func(err error) {
+		if err == nil || err.Error() == last {
+			return
+		}
+		last = err.Error()
+		_, _ = fmt.Fprintf(log, "application supervisor: group %d could not be inspected (%v); it is not taken as empty, still waiting\n", group, err)
+	}
 }
 
 // awaitGroupEmpty waits out the run's descendants. It answers false when the
 // wait was ended by a signal to this supervisor instead of by the group
-// emptying, which is the moment the group itself must be ended.
-func (o SuperviseOptions) awaitGroupEmpty(ctx context.Context, record Record) bool {
+// emptying, which is the moment the group itself must be ended. A group that
+// cannot be read is never an empty group: the wait goes on and says why.
+func (o SuperviseOptions) awaitGroupEmpty(ctx context.Context, record Record, say func(error)) bool {
 	for {
 		members, err := o.ownedMembers(record)
-		if err != nil || len(members) == 0 {
+		if err != nil {
+			say(err)
+		} else if len(members) == 0 {
 			return true
 		}
 		select {
@@ -304,7 +321,7 @@ func (o SuperviseOptions) awaitGroupEmpty(ctx context.Context, record Record) bo
 // finish waits out the run's descendants and writes the ended record. The
 // supervisor never leaves while a process of its own group remains, so
 // ownership is never given up while something it started still runs.
-func (o SuperviseOptions) finish(record Record, exitStatus atomic.Value, exited <-chan struct{}) {
+func (o SuperviseOptions) finish(record Record, exitStatus atomic.Value, exited <-chan struct{}, say func(error)) {
 	select {
 	case <-exited:
 	case <-time.After(time.Duration(o.Contract.StopWaitMS()) * time.Millisecond):
@@ -312,7 +329,9 @@ func (o SuperviseOptions) finish(record Record, exitStatus atomic.Value, exited 
 	deadline := time.Now().Add(time.Duration(o.Contract.StopWaitMS()) * time.Millisecond)
 	for time.Now().Before(deadline) {
 		members, err := o.ownedMembers(record)
-		if err != nil || len(members) == 0 {
+		if err != nil {
+			say(err)
+		} else if len(members) == 0 {
 			break
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -374,8 +393,13 @@ func (o SuperviseOptions) endChild(record Record, exited <-chan struct{}) {
 // too, so the ended record and the evidence copy after it belong to whoever
 // asked for the stop.
 func (o SuperviseOptions) endGroup(record Record) {
-	members, err := o.ownedMembers(record)
-	if err != nil || len(members) == 0 {
+	group, leads := o.leadsGroup()
+	if !leads || record.Group < 1 || group != record.Group {
+		return
+	}
+	// A group that cannot be read is not an empty one; the leader's own
+	// signal to its group needs no census of who is in it.
+	if members, err := o.ownedMembers(record); err == nil && len(members) == 0 {
 		return
 	}
 	send := o.SendGroup
@@ -385,8 +409,7 @@ func (o SuperviseOptions) endGroup(record Record) {
 	_ = send(record.Group, syscall.SIGTERM)
 	deadline := time.Now().Add(time.Duration(o.Contract.StopWaitMS()) * time.Millisecond)
 	for time.Now().Before(deadline) {
-		members, err := o.ownedMembers(record)
-		if err != nil || len(members) == 0 {
+		if members, err := o.ownedMembers(record); err == nil && len(members) == 0 {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)

@@ -193,9 +193,13 @@ func (o StopOptions) endTree(record Record, unit time.Duration, deadline time.Ti
 		return append(lines, "the recorded supervisor identity will not parse; the group is refused by name")
 	}
 	if identity.AliveRef(prober, supervisorRef) != identity.Alive {
-		members, _ := o.group()(record.Group)
-		lines = append(lines, "the supervisor is gone; an inspection of group "+strconv.FormatInt(record.Group, 10)+" finds:")
-		lines = append(lines, memberLines(members)...)
+		members, groupErr := o.group()(record.Group)
+		if groupErr != nil {
+			lines = append(lines, "the supervisor is gone; group "+strconv.FormatInt(record.Group, 10)+" could not be inspected: "+groupErr.Error())
+		} else {
+			lines = append(lines, "the supervisor is gone; an inspection of group "+strconv.FormatInt(record.Group, 10)+" finds:")
+			lines = append(lines, memberLines(members)...)
+		}
 		lines = append(lines, "none of it was signalled: only the group's living leader can prove the group is ours")
 		return lines
 	}
@@ -308,17 +312,26 @@ func (o StopOptions) proveStopped(record Record, contract Contract) (Outcome, []
 	}
 	members, err := o.group()(record.Group)
 	if err != nil {
-		return Unprovable, append(lines, "group "+strconv.FormatInt(record.Group, 10)+" could not be inspected; it is not reported as stopped")
+		return Unprovable, append(lines, "cannot prove the group empty: group "+strconv.FormatInt(record.Group, 10)+" could not be inspected ("+err.Error()+"); it is not reported as stopped")
 	}
 	if len(members) > 0 {
 		lines = append(lines, "group "+strconv.FormatInt(record.Group, 10)+" still has members:")
 		lines = append(lines, memberLines(members)...)
 		outcome = StillRunning
+		for _, member := range members {
+			if member.Uncertain {
+				lines = append(lines, "cannot prove the group empty: pid "+strconv.FormatInt(member.Pid, 10)+" is alive and its identity cannot be proved; nothing was signalled and it is not reported as stopped")
+				outcome = Unprovable
+				break
+			}
+		}
 	}
 	if contract.Probed() && o.Probe != nil && record.Address != "" {
 		if o.Probe(contract, record.Address) == nil {
 			lines = append(lines, "the readiness probe still answers at "+record.Address)
-			outcome = StillRunning
+			if outcome != Unprovable {
+				outcome = StillRunning
+			}
 		} else {
 			lines = append(lines, "the readiness probe is dark")
 		}
@@ -332,7 +345,7 @@ func (o StopOptions) proveStopped(record Record, contract Contract) (Outcome, []
 func memberLines(members []Member) []string {
 	lines := make([]string, 0, len(members))
 	for _, member := range members {
-		lines = append(lines, "  pid "+strconv.FormatInt(member.Pid, 10)+" "+member.Ref)
+		lines = append(lines, "  pid "+strconv.FormatInt(member.Pid, 10)+" "+member.describe())
 	}
 	if len(lines) == 0 {
 		lines = append(lines, "  nothing")
