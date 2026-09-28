@@ -43,7 +43,7 @@ run() { # label, command...
 gate_done=0
 gate() {
   ((gate_done)) && return 0
-  run go-gate bash scripts/agents/go-gate.sh
+  run go-gate go run ./cmd/devgate gate
   gate_done=1
 }
 

@@ -1,18 +1,12 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 // The gate family tracks gate runs: a running gate registers a marker so the
@@ -65,114 +59,6 @@ func runGateFence(args []string) int {
 		return 1
 	}
 	return 0
-}
-
-// runGateControllerDescendant accepts only a consuming process below one
-// exact live controller identity. Exit 3 is a proof refusal rather than a
-// usage or mechanical failure.
-func runGateControllerDescendant(args []string) int {
-	flags := flag.NewFlagSet("gate controller-descendant", flag.ContinueOnError)
-	consumerPID := flags.Int64("consumer-pid", 0, "witness-consuming process pid")
-	controllerPID := flags.Int64("controller-pid", 0, "recorded controller pid")
-	controllerStartedAt := flags.Int64("controller-started-at", 0, "recorded controller start time in epoch seconds")
-	controllerStartTicks := flags.Int64("controller-start-ticks", 0, "recorded controller start ticks")
-	controllerBootID := flags.String("controller-boot-id", "", "recorded controller boot identity")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *consumerPID <= 0 || *controllerPID <= 0 || *controllerStartedAt <= 0 || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate controller-descendant --consumer-pid P --controller-pid P --controller-started-at SECONDS [--controller-start-ticks T --controller-boot-id ID]")
-		return 2
-	}
-	controller := identity.Ref{
-		Pid: *controllerPID, StartedAtSec: *controllerStartedAt,
-		StartTicks: *controllerStartTicks, BootID: *controllerBootID,
-	}
-	if err := gaterun.ControllerDescendant(*consumerPID, controller); err != nil {
-		fmt.Fprintln(os.Stderr, "gate controller-descendant:", err)
-		return 3
-	}
-	return 0
-}
-
-func runGateWitnessFreeze(args []string) int {
-	return runGateWitnessFreezeWithWriters(args, os.Stdout, os.Stderr)
-}
-
-func runGateWitnessFreezeWithWriters(args []string, stdout, stderr io.Writer) int {
-	flags := flag.NewFlagSet("gate witness-freeze", flag.ContinueOnError)
-	flags.SetOutput(stderr)
-	root := pathFlag(flags, "root", "", "metasystem tree to freeze")
-	cleanup := pathFlag(flags, "cleanup", "", "exact frozen project snapshot to remove")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if flags.NArg() != 0 || (*root == "") == (*cleanup == "") {
-		fmt.Fprintln(stderr, "usage: metasystem internal gate witness-freeze (--root R | --cleanup SNAPSHOT)")
-		return 2
-	}
-	if *cleanup != "" {
-		if err := proofrun.CleanupFrozenExport(*cleanup); err != nil {
-			fmt.Fprintln(stderr, "gate witness-freeze:", err)
-			return 1
-		}
-		return 0
-	}
-	frozen, err := proofrun.Freeze(*root)
-	if err != nil {
-		fmt.Fprintln(stderr, "gate witness-freeze:", err)
-		return 1
-	}
-	fmt.Fprintf(stdout, "%s\t%s\t%s\n", frozen.Digest, frozen.Root, frozen.SnapshotRoot)
-	return 0
-}
-
-func runGateWitnessVerify(args []string) int {
-	flags := flag.NewFlagSet("gate witness-verify", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "metasystem tree to verify")
-	witness := flags.String("witness", "", "witness JSON file or manifest digest")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" || *witness == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate witness-verify --root R --witness FILE-OR-DIGEST")
-		return 2
-	}
-	expected, err := witnessManifestDigest(*witness)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "gate witness-verify:", err)
-		return 1
-	}
-	actual, err := proofrun.Verify(*root, expected)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "gate witness-verify:", err)
-		if errors.Is(err, proofrun.ErrDigestMismatch) {
-			return 3
-		}
-		return 1
-	}
-	fmt.Println(actual)
-	return 0
-}
-
-func witnessManifestDigest(witness string) (string, error) {
-	if len(witness) == 64 && strings.ToLower(witness) == witness {
-		return witness, nil
-	}
-	data, err := os.ReadFile(witness)
-	if err != nil {
-		return "", fmt.Errorf("read witness: %w", err)
-	}
-	var record struct {
-		ManifestDigest string `json:"manifestDigest"`
-	}
-	if err := json.Unmarshal(data, &record); err != nil {
-		return "", fmt.Errorf("parse witness JSON: %w", err)
-	}
-	if record.ManifestDigest == "" {
-		return "", fmt.Errorf("witness has no manifestDigest")
-	}
-	return record.ManifestDigest, nil
 }
 
 func runGateGuardAcquire(args []string) int {

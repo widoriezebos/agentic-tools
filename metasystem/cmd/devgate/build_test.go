@@ -387,7 +387,7 @@ func TestBuildFailureLeavesTheInstalledEngine(t *testing.T) {
 func TestUnknownActionIsAUsageError(t *testing.T) {
 	t.Parallel()
 	f := newBuildFixture(t)
-	if code := run(context.Background(), []string{"gate"}, f.root, f.deps()); code != 2 {
+	if code := run(context.Background(), []string{"bogus"}, f.root, f.deps()); code != 2 {
 		t.Fatalf("exit %d, want 2", code)
 	}
 }
