@@ -351,6 +351,12 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 					"TestRegistrySidecarCleanupRetainsFailedSettlement",
 				}
 			}
+			if old.ID == "goal-decision-standard" && name == "TestReadItemsCloseRefusesClosedItem" {
+				// U-idem: closing a closed item the same way is now an
+				// unchanged success, and another disposition is still
+				// refused; the renamed test carries both guarantees.
+				requiredNames = []string{"TestReadItemsCloseRepeatsAndRefusesAnotherDisposition"}
+			}
 			if nowSelectsAll {
 				automaticallyCovered = append(automaticallyCovered, requiredNames...)
 			} else {
