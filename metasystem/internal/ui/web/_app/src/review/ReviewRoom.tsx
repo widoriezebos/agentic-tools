@@ -18,6 +18,7 @@ import {
   WALKS,
   type DeskItem,
   reviewedOf,
+  steppingOut,
   type Verdict,
 } from "./room";
 import { NotificationsBell } from "../notifications/Bell";
@@ -48,6 +49,7 @@ export function Room({ record }: { record: string }) {
   const navigate = useNavigate();
   const [ending, setEnding] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [stayed, setStayed] = useState("");
   const [moved, setMoved] = useState<{ current: string; changed: string[] } | null>(null);
   const [retipRefusal, setRetipRefusal] = useState("");
   const reviewed = reviewedOf(table.source);
@@ -129,14 +131,16 @@ export function Room({ record }: { record: string }) {
   }, [sitting, here, navigate, reviewed.goal]);
 
   const stepOut = async () => {
-    if (busy && !leaving) {
+    setStayed("");
+    const step = await steppingOut(busy, leaving, stop, () => keepRoomNow());
+    if (step.kind === "warn") {
       setLeaving(true);
       return;
     }
-    if (busy) {
-      stop();
+    if (step.kind === "stay") {
+      setStayed(step.said);
+      return;
     }
-    await keepRoomNow();
     void navigate(backlogPath(reviewed.goal));
   };
 
@@ -194,6 +198,11 @@ export function Room({ record }: { record: string }) {
           >
             Stay
           </Button>
+        </p>
+      )}
+      {stayed !== "" && (
+        <p className="ms-room-banner" role="status">
+          {stayed}
         </p>
       )}
       {moved !== null && reviewed.tip !== "" && (

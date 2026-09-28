@@ -398,6 +398,38 @@ export function keepDue(lastKeptAt: number, now: number): boolean {
   return lastKeptAt === 0 || now - lastKeptAt >= 1000;
 }
 
+/** What Step out says when the room's working state could not be kept (Sol SOL-A-01). */
+export const KEEP_REFUSED = "Your unfinished words could not be kept; try Step out again in a moment.";
+
+/** What one press of Step out comes to: say it stops the answer first, stay and say why, or leave. */
+export type StepOut = { kind: "warn" } | { kind: "stay"; said: string } | { kind: "leave" };
+
+/**
+ * One press of Step out (D9, D16). During an answer the first press only says
+ * that stepping out stops it; the next stops it and waits for the answer to
+ * settle, and an answer that has not settled keeps the human in the room with
+ * the service's words (Sol SOL-A-06). Then the room is kept, and a keep that did
+ * not land keeps them in the room too, because leaving would lose the words
+ * (Sol SOL-A-01). `stop` answers a refusal or ""; `keep` whether the keep landed.
+ */
+export async function steppingOut(
+  answering: boolean,
+  warned: boolean,
+  stop: () => Promise<string>,
+  keep: () => Promise<boolean>,
+): Promise<StepOut> {
+  if (answering && !warned) {
+    return { kind: "warn" };
+  }
+  if (answering) {
+    const refused = await stop();
+    if (refused !== "") {
+      return { kind: "stay", said: refused };
+    }
+  }
+  return (await keep()) ? { kind: "leave" } : { kind: "stay", said: KEEP_REFUSED };
+}
+
 /* ------------------------------------------------------------------ walks -- */
 
 /** The five walks, in the order the conversation's presses show them (D6). */

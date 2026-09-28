@@ -663,6 +663,12 @@ func (h *handler) partnerStop(w http.ResponseWriter, r *http.Request, id string)
 		return
 	}
 	if err := h.info.Partner.Stop(r.Context(), id); err != nil {
+		// A stop that did not settle within the wait is the handoff's own
+		// refusal, a 409 `unsettled` that asking again clears (Sol SOL-A-06).
+		if errors.Is(err, partner.ErrUnsettled) {
+			h.refuseTurn(w, err, "")
+			return
+		}
 		writeFailure(w, err.Error())
 		return
 	}

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   ANSWERS,
+  KEEP_REFUSED,
+  steppingOut,
   CLEAR_REFUSED,
   reviewOutcome,
   answerLine,
@@ -256,5 +258,36 @@ describe("the record's head", () => {
     // Everything below the head is untouched.
     expect(again.slice(again.indexOf("## Findings"))).toBe("## Findings\n");
     expect(retipped("# no head\n", now)).toBeNull();
+  });
+});
+
+describe("stepping out (Sol SOL-A-01, SOL-A-06)", () => {
+  const UNSETTLED = "the previous room's answer has not settled; try again in a moment";
+
+  it("stays in the room when the room could not be kept, and leaves once it is", async () => {
+    let kept = false;
+    const keep = () => Promise.resolve(kept);
+    const stop = () => Promise.resolve("");
+    expect(await steppingOut(false, false, stop, keep)).toEqual({ kind: "stay", said: KEEP_REFUSED });
+    expect(KEEP_REFUSED).toBe("Your unfinished words could not be kept; try Step out again in a moment.");
+    kept = true;
+    expect(await steppingOut(false, false, stop, keep)).toEqual({ kind: "leave" });
+  });
+
+  it("during an answer, says so first, then stays while the answer has not settled, and leaves once it has", async () => {
+    const keeps: string[] = [];
+    const keep = () => {
+      keeps.push("kept");
+      return Promise.resolve(true);
+    };
+    let settled = false;
+    const stop = () => Promise.resolve(settled ? "" : UNSETTLED);
+    expect(await steppingOut(true, false, stop, keep)).toEqual({ kind: "warn" });
+    expect(await steppingOut(true, true, stop, keep)).toEqual({ kind: "stay", said: UNSETTLED });
+    // Nothing is kept or left while the answer runs on.
+    expect(keeps).toEqual([]);
+    settled = true;
+    expect(await steppingOut(true, true, stop, keep)).toEqual({ kind: "leave" });
+    expect(keeps).toEqual(["kept"]);
   });
 });
