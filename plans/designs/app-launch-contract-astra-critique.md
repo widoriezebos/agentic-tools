@@ -297,3 +297,56 @@ Proposed receipt, unwritten: “App-launch design round 3 at 265aa0118: three ma
 
 Codex session ID: 01a0e6f5-36ad-7de3-8730-0bae04d1ad9d
 Resume in Codex: codex resume 01a0e6f5-36ad-7de3-8730-0bae04d1ad9d
+
+
+---
+
+# Round 4 (2026-09-28, fresh session with rounds 1 to 3 quoted via this file), against the design at `f70683e2b`. Verbatim. The loop closes here: zero material findings and the critic's agreement.
+
+**No new material findings.** Round 4 reviewed Step 1—D1, D2, D3, D5 and D6—at commit `f70683e2ba432887f00bb2c4b6eee119024b70c5`, including the complete design, dispositions and three prior rounds. Evidence was read; process behavior below is static reasoning, not an executed reproduction.
+
+No ALC-11 onward is opened.
+
+**Deferred and non-material**
+
+- **The stale-record wording needs no additional mechanism.** [Design lines 225–226](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/app-launch-contract.md:225) still describe removal under the lock. The existing [`readInactive`](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/lifecycle/state.go:133) does exactly that. It cannot be copied unchanged: the design expressly restricts removal to stop, reset or replacement start, after evidence preservation, and retains ownership until stopping is proven. Those explicit requirements already determine the necessary adaptation for ended and orphaned records. **Test 1:** no additional implementation change beyond the specified retention rules. **Test 2:** passes WORKS and SAFE when those rules are implemented; this is wording residue, not another lifecycle mechanism.
+
+- **“Group empty” necessarily excludes the supervising process while it is supervising.** The supervisor remains a member of its own group. Consequently, the transition to ended concerns the disappearance of its application members; final stop proof includes the supervisor’s death. Likewise, group KILL includes the supervisor, so it cannot perform subsequent bookkeeping itself. The retained record and the stop caller provide the already-specified observation and evidence handoff. **Test 1:** no new outcome or owner is required. **Test 2:** passes WORKS and SAFE; literal reuse of a group-existence check inside the supervisor would be an implementation error against the stated lifecycle.
+
+- Exact defaults, stronger handling of applications that deliberately escape the owned group, and browser integration remain deferred. ALC-05 through ALC-07 retain their dispositions. **Test 1:** no additional Step 1 architecture follows. **Test 2:** passes under the declared foreground-process and project-owned-command contract.
+
+**What I verified holds**
+
+**ALC-08—the default tree stop:** The group-identity argument holds under Darwin and Linux process-group semantics. A supervisor launched with `setsid` leads a group whose identifier is its own PID. While that same supervisor executes the signal, its PID cannot simultaneously identify a replacement leader. Re-proving itself and signaling its own group therefore differs materially from an external engine signaling a saved group number after its owner has disappeared.
+
+The existing launcher establishes the session at [`launch.go:101`](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/lifecycle/launch.go:101). The unsafe saved-number precedent remains correctly excluded: [`SignalGroup`](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/launch/process.go:103) performs no ownership proof. Keeping the supervisor after the direct child exits supplies the owner needed to terminate surviving foreground-wrapper descendants.
+
+When the supervisor is gone, limiting signals to an independently recorded, re-proven child and reporting the remaining group preserves safety. It does not falsely promise that every orphan can be terminated.
+
+**ALC-09—the check bridge:** The runner supports the proposed integration without a second identity scheme:
+
+- Both environment modes converge on [`groupTestEnvironment`](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/proofrun/test_build.go:2752), where the declared address overlay can be applied.
+- The resulting environment digest enters the existing group execution identity; those group identities enter attempt identity inputs. Address changes can therefore propagate through the existing identity machinery.
+- `--no-reuse` forces a new attempt and marks selected groups fresh. Freshness-episode comparison also prevents previous group results from being reused.
+- Named canary selection is diagnostic, includes the runner’s canary floor and prerequisite closure, and can succeed without satisfying delivery requirements. That fits a human-requested runtime check. The recorded answer remains the actual named group’s outcome.
+
+The design also explicitly refuses a check when the recorded run is not live and ready.
+
+**ALC-10—the terminal handoff:** An ended record now has a defined lifetime independent of process liveness. It retains the exit information, log location and last check; goal evidence is copied before record removal and worktree reclamation. Ended-run log access therefore has a surviving source. The existing inactive-state reader requires adaptation, but that adaptation follows directly from the specified states and removal rules.
+
+**Earlier rounds and premise:** Native identity verification, separate liveness and readiness, readiness on rejoin, and run-scoped log readiness remain explicit. The round-2 interruption fixture remains binding and **undischarged**: an application must be dead or discoverable and stoppable through proven ownership. Merely listing an unrecorded orphan does not satisfy it.
+
+Step 1 and its exclusions are explicit. The start-only contract has defined fallbacks. Project scripts can continue owning application-specific commands while the engine owns lifecycle observation, isolation and evidence; I found no Step 1 requirement that refutes that premise.
+
+**VERDICT: 0 material findings (fail test 2): none.**
+
+I agree that nothing material requiring an additional change to what Step 1 builds remains.
+
+Commit reviewed: `f70683e2ba432887f00bb2c4b6eee119024b70c5`.
+
+Limitations: static review only; no tests, builds, process experiments, subagents or edits. Darwin system-call documentation was read locally; Linux behavior was assessed from the shared process-group semantics, without a Linux execution. No private configuration or files under `artifacts/` were read.
+
+Proposed receipt, unwritten: “App-launch design round 4 at f70683e2b: zero new material findings; round-3 folds supported by static review; existing startup fixture obligation retained.”
+
+Codex session ID: 01a0e6ff-4600-7523-a0c4-6716d9209bc1
+Resume in Codex: codex resume 01a0e6ff-4600-7523-a0c4-6716d9209bc1

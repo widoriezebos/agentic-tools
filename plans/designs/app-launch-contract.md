@@ -223,8 +223,10 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   child ended, descendants alive; ended, with its exit status and time,
   which is a record and not a live process; stopped, no record at all;
   stale, a record whose supervisor is gone without having written
-  ended, removed under the lock and said; uninspectable (ALC-03,
-  ALC-10). A second start with a live supervisor rejoins it and still
+  ended, said as such and kept, since only `stop`, `reset` or the next
+  `start` removes a record, after the evidence copy, which is where
+  this design departs from the copied lifecycle's reader that removes a
+  stale record under its lock; uninspectable (ALC-03, ALC-10). A second start with a live supervisor rejoins it and still
   waits for readiness before it says started. Stop runs the contract's
   stop command where there is one; otherwise it ends the owned tree,
   not one process: TERM to the child, re-proven by identity immediately
@@ -235,12 +237,17 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   then KILL to the child at `stopMs`; then the supervisor. No signal is
   ever sent to a bare number by the engine, and a recorded process whose
   identity cannot be proven is refused by name rather than signalled
-  (ALC-01, ALC-08). Where the supervisor is already gone, stop ends the
-  child by its recorded ref and says what an inspection of the recorded
-  group finds by identity, and signals none of it. Stopping is proven
-  when every recorded ref is dead and the group has no member, and, for
-  the http and tcp forms, the probe is dark; the record is kept until
-  then. Restart is stop then start with what is on disk.
+  (ALC-01, ALC-08). "The group is empty" means no member but the
+  supervisor itself, which leads it and is in it; a KILL to the group
+  ends the supervisor too, so after that the bookkeeping, the ended
+  record and the evidence copy, is the stop caller's, reading the
+  record the supervisor wrote before it spawned. Where the supervisor
+  is already gone, stop ends the child by its recorded ref and says
+  what an inspection of the recorded group finds by identity, and
+  signals none of it. Stopping is proven when every recorded ref is
+  dead, the supervisor's among them, and the group has no member, and,
+  for the http and tcp forms, the probe is dark; the record is kept
+  until then. Restart is stop then start with what is on disk.
 - D3. **`--at REF` runs the application at any commit; `--goal G` is
   sugar for the goal branch's tip.** The engine takes a worktree at the
   commit REF names under `artifacts/`, runs the contract's build
@@ -430,3 +437,15 @@ check before the evidence copy; now a run ends into an ended record
 that only `stop`, `reset` or the next `start` removes, after the
 evidence copy and before the worktree is reclaimed. Round 4 asks
 whether anything material remains.
+
+**Round 4 (2026-09-28, at `f70683e2b`): closed.** "VERDICT: 0 material
+findings"; "I agree that nothing material requiring an additional
+change to what Step 1 builds remains." The author agrees. Two wording
+notes folded without mechanism: a stale record is kept and said, not
+removed under a lock as the copied reader does; "the group is empty"
+excludes the supervisor itself, and after a group KILL the ended record
+and the evidence copy are the stop caller's. One fixture obligation
+stands for the build, from round 2 and retained by every round since:
+interrupt the supervisor between the spawn and the child's write and
+prove the application dead, or discoverable and stoppable by proven
+ownership. Built next, on Wido's "ok, now build it".
