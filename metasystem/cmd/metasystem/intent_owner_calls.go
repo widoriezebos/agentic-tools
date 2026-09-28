@@ -42,6 +42,8 @@ type intentOwnerCalls struct {
 	// proof start from.
 	goalReconcile func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int
 	goalMigrate   func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int
+	// goalCarry records a person's carry word for one landing candidate.
+	goalCarry func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int
 	// missionStatus prints a mission's runner status line.
 	missionStatus func(stdout, stderr io.Writer, root, mission string) int
 	// missionLaunch starts or resumes a mission's detached run loop; a
@@ -110,6 +112,9 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 		},
 		goalMigrate: func(dependencies syncRequestDependencies, stdout, stderr io.Writer, _ string, args []string) int {
 			return goalMigrateWith(dependencies, stdout, stderr, args)
+		},
+		goalCarry: func(dependencies syncRequestDependencies, stdout, stderr io.Writer, _ string, args []string) int {
+			return goalCarryLandingWith(dependencies, stdout, stderr, args)
 		},
 		missionResolveTaint: func(caller processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int {
 			engine := missionrunner.NewEngine(cleanOwnerRoot(request.root), request.mission)

@@ -198,7 +198,16 @@ func runGoalCarry(args []string) int {
 }
 
 func runGoalCarryLanding(args []string) int {
+	return goalCarryLandingWith(defaultSyncRequestDependencies(), os.Stdout, os.Stderr, args)
+}
+
+// goalCarryLandingWith records a person's carry word under explicit request
+// dependencies: the classification, the enrolled-human proof and the request
+// start from their supplied caller and carry their lineage and machine, and
+// the report goes to the caller's streams.
+func goalCarryLandingWith(dependencies syncRequestDependencies, stdout, stderr io.Writer, args []string) int {
 	flags := flag.NewFlagSet("goal carry", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	by := flags.String("by", "", "the directing human")
@@ -214,79 +223,79 @@ func runGoalCarryLanding(args []string) int {
 	temporary := flags.String("temporary-human-word", "", "not accepted by carry")
 	reviewBy := flags.String("review-by", "", "not accepted by carry")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *by == "" || *tree == "" || *past == "" || strings.TrimSpace(*why) == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal goal carry --root ROOT --id GOAL --by NAME --tree SHA40 --past NAME --why TEXT [--expires 2h] [--supersede OPID] [--transfer] [--raise-format]")
+		fmt.Fprintln(stderr, "usage: metasystem internal goal carry --root ROOT --id GOAL --by NAME --tree SHA40 --past NAME --why TEXT [--expires 2h] [--supersede OPID] [--transfer] [--raise-format]")
 		return 2
 	}
 	if *temporary != "" || *reviewBy != "" {
-		fmt.Fprintln(os.Stderr, "carry takes no relayed word")
+		fmt.Fprintln(stderr, "carry takes no relayed word")
 		return 2
 	}
 	if strings.HasPrefix(*by, "human:") {
-		fmt.Fprintln(os.Stderr, "goal carry --by takes the human name without the human: actor prefix")
+		fmt.Fprintln(stderr, "goal carry --by takes the human name without the human: actor prefix")
 		return 2
 	}
 	if *expires <= 0 || *expires > 4*time.Hour {
-		fmt.Fprintln(os.Stderr, "the carry expiry must be positive and no more than the four-hour ceiling")
+		fmt.Fprintln(stderr, "the carry expiry must be positive and no more than the four-hour ceiling")
 		return 3
 	}
 	if *transfer && *supersede == "" {
-		fmt.Fprintln(os.Stderr, "--transfer requires --supersede")
+		fmt.Fprintln(stderr, "--transfer requires --supersede")
 		return 2
 	}
 	if len(*tree) != 40 || !allLowerHex(*tree) || gitObjectType(*root, *tree) != "tree" {
-		fmt.Fprintln(os.Stderr, "carry asks for the full 40-digit tree id of a Git tree")
+		fmt.Fprintln(stderr, "carry asks for the full 40-digit tree id of a Git tree")
 		return 3
 	}
 	projected, err := landing.ProjectWorkspaceTree(*root, *tree)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	f := &syncFlags{root: *root, id: *id, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureAuthority}
-	classification, err := classifyGoalAuthorityFirst("carry", f)
+	classification, err := classifyGoalAuthorityFirstWithFacts("carry", f, dependencies.authorityFacts)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	proof, err := proveGoalHumanAuthority("carry", f, proveEnrolledGoalHumanAuthority)
+	proof, err := proveGoalHumanAuthorityFor(dependencies.authorityFacts.caller, "carry", f, proveEnrolledGoalHumanAuthority, goalCommandNow)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	req, err := syncReqClassified(*root, *by, *lineage, &proof, classification)
+	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(*root, *by, *lineage, &proof, classification, false, goalCommandNow, dependencies)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	opid := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 	result, err := goal.Carry(req, goal.CarryArgs{Goal: *id, Workspace: projected, Past: *past, Why: *why, Supersede: *supersede, Expires: req.Now.Add(*expires), Transfer: *transfer, RaiseFormat: *raiseFormat}, &proof)
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
-		return printCarryMutationTo(os.Stdout, os.Stderr, result, "", err)
+		return printCarryMutationTo(stdout, stderr, result, "", err)
 	}
 	if err := humanauthority.RecordCarryProof(*root, opid, proof); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	projection, err := goal.Project(req.Endpoint, false, req.Now)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	file := projection.Tree.Live[*id]
 	if file == nil {
-		fmt.Fprintf(os.Stderr, "goal %s vanished after its carry word was confirmed\n", *id)
+		fmt.Fprintf(stderr, "goal %s vanished after its carry word was confirmed\n", *id)
 		return 1
 	}
 	if file.Risk == nil {
-		fmt.Println("risk: unanswered")
+		fmt.Fprintln(stdout, "risk: unanswered")
 	} else {
-		fmt.Printf("tier: %d risk: severity=%d novelty=%d exposure=%d accumulation=%d\n", file.Tier, file.Risk.Severity, file.Risk.Novelty, file.Risk.Exposure, file.Risk.Accumulation)
+		fmt.Fprintf(stdout, "tier: %d risk: severity=%d novelty=%d exposure=%d accumulation=%d\n", file.Tier, file.Risk.Severity, file.Risk.Novelty, file.Risk.Exposure, file.Risk.Accumulation)
 	}
 	reviewRounds := int64(0)
 	if file.Budget != nil {
 		reviewRounds = file.Budget.ReviewRoundLimit
 	}
-	fmt.Printf("review rounds: %d skipped by human carry\n", reviewRounds)
+	fmt.Fprintf(stdout, "review rounds: %d skipped by human carry\n", reviewRounds)
 	codeTip := "refs/remotes/origin/main"
 	if req.Endpoint.LocalMode() {
 		codeTip = "refs/heads/main"
@@ -297,19 +306,19 @@ func runGoalCarryLanding(args []string) int {
 	}
 	open, err := goal.OpenCarryWords(*root, projection.Tree, codeTip, req.Actor.Machine, req.Now)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	counts, err := goal.CountCarries(*root, projection.Tree, codeTip, req.Now)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	fmt.Printf("open carries: %d on seat %s\n", len(open), req.Actor.Machine)
-	fmt.Printf("carry debt: obligations=%d inflight=%d\n", counts.Debt, counts.Inflight)
-	fmt.Printf("expires: %s\n", req.Now.Add(*expires).UTC().Format(time.RFC3339))
-	fmt.Printf("ledger format: %s\n", projection.Tree.Root.FormatVersion)
-	fmt.Printf("carry=%s workspace=%s past=%s ledger=%s\n", opid, projected, *past, result.Tip)
+	fmt.Fprintf(stdout, "open carries: %d on seat %s\n", len(open), req.Actor.Machine)
+	fmt.Fprintf(stdout, "carry debt: obligations=%d inflight=%d\n", counts.Debt, counts.Inflight)
+	fmt.Fprintf(stdout, "expires: %s\n", req.Now.Add(*expires).UTC().Format(time.RFC3339))
+	fmt.Fprintf(stdout, "ledger format: %s\n", projection.Tree.Root.FormatVersion)
+	fmt.Fprintf(stdout, "carry=%s workspace=%s past=%s ledger=%s\n", opid, projected, *past, result.Tip)
 	return 0
 }
 
@@ -763,10 +772,6 @@ func brainHumanWordClassificationWithFacts(verb, root, by string, observedProof 
 		}
 	}
 	return classification, nil
-}
-
-func classifyGoalAuthorityFirst(verb string, f *syncFlags) (lease.ClassifyResult, error) {
-	return classifyGoalAuthorityFirstWithFacts(verb, f, defaultGoalAuthorityReadFacts())
 }
 
 func classifyGoalAuthorityFirstWithFacts(verb string, f *syncFlags, facts goalAuthorityReadFacts) (lease.ClassifyResult, error) {
