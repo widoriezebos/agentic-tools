@@ -62,6 +62,7 @@ type SelftestParams struct {
 
 func (p SelftestParams) agentsDir() string { return filepath.Join(p.Root, "artifacts", "agents") }
 func (p SelftestParams) jobsDir() string   { return filepath.Join(p.agentsDir(), "jobs") }
+
 // delegate is the engine the self-test's delegate children run: Engine (the
 // running binary, because the delegate front door admits --adapter-selftest
 // only from a parent of the same executable), else ROOT/bin/metasystem.
