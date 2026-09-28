@@ -349,7 +349,7 @@ var Rows = []Row{
 	{Code: "tier1-full-gate-refused", Owner: "internal/landing", Site: "tierone.go:131", Shape: Agent, Override: CarriedLanding, Commands: 1},
 
 	{Code: "carry-ledger-moved", Owner: "internal/landing", Site: "carried.go:44", Shape: Question, H1: StandingInput},
-	{Code: "carry-remote-required", Owner: "internal/goal", Site: "verbs.go:5313", Shape: Question, H1: StandingInput},
+	{Code: "carry-remote-required", Owner: "internal/goal", Site: "verbs.go:5352", Shape: Question, H1: StandingInput},
 	{Code: "carry-goal-not-live", Owner: "internal/landing", Site: "carried.go:167", Shape: Question, H1: StandingInput},
 	{Code: "carry-word-missing", Owner: "internal/landing", Site: "carried.go:179", Shape: Question, H1: StandingInput},
 	{Code: "carry-word-unproven", Owner: "internal/landing", Site: "carried.go:277", Shape: Question, H1: StandingInput},
@@ -364,7 +364,7 @@ var Rows = []Row{
 	{Code: "carry-battery-unverified", Owner: "internal/landing", Site: "carried.go:236", Shape: Question, H1: StandingInput},
 	{Code: "carry-unneeded", Owner: "internal/landing", Site: "carried.go:257", Shape: Question, H1: StandingInput},
 	{Code: "carry-refusal-mismatch", Owner: "internal/landing", Site: "carried.go:182", Shape: Question, H1: StandingInput},
-	{Code: "STOP_SURFACE_GOAL_REFUSED", Owner: "internal/audit", Site: "stopsurface.go:728", Shape: Question, H1: StandingGuide},
+	{Code: "STOP_SURFACE_GOAL_REFUSED", Owner: "internal/audit", Site: "stopsurface.go:728", Shape: Question, H1: StandingGuide, Forward: "goal allow"},
 	{Code: "SEAT_MACHINE_NICKNAME_INVALID", Owner: "internal/seat", Site: "record.go:43", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_PRESENCE_MALFORMED", Owner: "internal/seat", Site: "record.go:125", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_PRESENCE_CONFLICT", Owner: "internal/seat", Site: "publish.go:314", Shape: Question, H1: StandingInput},
@@ -487,7 +487,6 @@ var ProseRows = []Prose{
 
 var Defects = []Defect{
 	{Code: "GOAL_SPLIT_REFUSED", Why: "no human verb clears the sliced mark; the only path is park plus new goals"},
-	{Code: "STOP_SURFACE_GOAL_REFUSED", Why: "rule H1: no public action records a goal's StopSurface: moves permission, so the refusal cannot name the command that grants it"},
 }
 
 var Slow = []string{

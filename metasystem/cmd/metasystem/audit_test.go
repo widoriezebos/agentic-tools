@@ -112,7 +112,8 @@ func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 	code, stdout, stderr = invoke(args...)
 	if code != 1 || auditCalls != 3 || declareCalls != 0 || !strings.Contains(stdout, "removed 1") ||
 		!strings.Contains(stderr, "removed: a_test.go: base := Verdict{ShouldBlock: true}") ||
-		!strings.Contains(stderr, "--declare --goal") {
+		!strings.Contains(stderr, "--declare --goal") ||
+		!strings.Contains(stderr, "a person allows the move with metasystem goal allow <goal-id> stop-test-changes --reason <text>") {
 		t.Fatalf("refusing verb = code %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 
