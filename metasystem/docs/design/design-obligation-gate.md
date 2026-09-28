@@ -41,7 +41,7 @@ metasystem design list --goal <goal id>
 
 It prints the id, status and path of every design record whose `Goals` names that goal, and says when there is none. The design-critique skill runs it first and stops on its refusal (`skills/design-critique/SKILL.md`): a critique of a design the resolver cannot find is a critique of a document that will not be found again.
 
-`metasystem internal project check` reads every home and refuses a duplicate id, a head missing a required key, an unknown kind or status, and a `Goals` line naming a goal the ledger does not have. The fast gate runs it (`scripts/agents/go-gate.sh`), in an adopted installation from the installed executable, so a failing check blocks every delivery that consumes that gate's retained proof, an unrelated code change included. The design homes, the decision home, the intent and doctrine books and the question register are declared inputs of that group in `testing.json`, so a change to any of them invalidates the retained proof instead of inheriting it.
+`metasystem internal project check` reads every home and refuses a duplicate id, a head missing a required key, an unknown kind or status, and a `Goals` line naming a goal the ledger does not have. The fast gate runs it (`go run ./cmd/devgate static`, from the installation's own source), so a failing check blocks every delivery that consumes that gate's retained proof, an unrelated code change included. The design homes, the decision home, the intent and doctrine books and the question register are declared inputs of that group in `testing.json`, so a change to any of them invalidates the retained proof instead of inheriting it.
 
 ## Milestone Check (declared milestones only)
 

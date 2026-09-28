@@ -738,11 +738,9 @@ func TestControlledLaunchersExportTheirOwnRef(t *testing.T) {
 		t.Fatalf("shell proc ref = %+v, %v; shell pid=%d output=%q", shellRef, err, shellPID, output.String())
 	}
 
-	gate := readLauncherSource(t, filepath.Join(sourceRoot, "scripts", "agents", "go-gate.sh"))
-	exportAt, firstTestAt := strings.Index(gate, "export METASYSTEM_RUN_OWNER"), strings.Index(gate, `"$gate_build_scratch" proof-run go-gate-tests --root "$root"`)
-	if exportAt < 0 || firstTestAt < 0 || exportAt > firstTestAt {
-		t.Fatalf("go-gate run owner export position=%d, go-gate adapter position=%d", exportAt, firstTestAt)
-	}
+	// The Go gate names itself the run owner of its test children in
+	// process (cmd/devgate: TestStaticPublishesTheCollectedBuildWithoutRecompiling
+	// and TestGateFullPassRunsEveryStageInOrder witness it).
 	bed := readLauncherSource(t, filepath.Join(sourceRoot, "scripts", "agents", "fixture-bed-scenarios.sh"))
 	ownerAt, childAt := strings.Index(bed, "harness_fixture_owner \"$fixture_bed_harness_root\""), strings.Index(bed, "\"$script\" --fixture-bed-child")
 	if ownerAt < 0 || childAt < 0 || ownerAt > childAt {

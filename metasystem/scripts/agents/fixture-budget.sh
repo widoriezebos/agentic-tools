@@ -101,10 +101,12 @@ harness_fixture_go_test() { # module directory, go test arguments...
 }
 
 # A synthetic fixture installation has no real engine source, yet the engine
-# builds a tree through `go run ./cmd/devgate build ARGS`. Plant the same
-# stand-in the Go fixtures use (cmd/metasystem/devgate_fixture_test.go): a
-# cmd/devgate that runs the tree's own scripts/agents/go-build.sh with the
-# arguments after `build`, plus a minimal go.mod when the tree has none.
+# builds a tree through `go run ./cmd/devgate build ARGS` and the commit
+# boundary re-proves it through `go run ./cmd/devgate static ARGS`. Plant the
+# same stand-in the Go fixtures use (cmd/metasystem/devgate_fixture_test.go):
+# a cmd/devgate that runs the tree's own scripts/agents/go-build.sh for
+# `build`, and scripts/agents/devgate-ACTION.sh for any other action, with
+# the arguments after the action, plus a minimal go.mod when the tree has none.
 # The caller commits cmd/devgate (and go.mod) with the tree's seed.
 harness_fixture_plant_devgate() { # installation root
   local installation=$1
@@ -120,6 +122,9 @@ import (
 
 func main() {
 	args := []string{"scripts/agents/go-build.sh"}
+	if len(os.Args) > 1 && os.Args[1] != "build" {
+		args = []string{"scripts/agents/devgate-" + os.Args[1] + ".sh"}
+	}
 	if len(os.Args) > 2 {
 		args = append(args, os.Args[2:]...)
 	}

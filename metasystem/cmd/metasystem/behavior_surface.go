@@ -140,52 +140,6 @@ func runBehaviorSurfaceDigest(args []string) int {
 	return 0
 }
 
-func runBehaviorSurfaceList(args []string) int {
-	flags := flag.NewFlagSet("behavior-surface list", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "root whose existing paths are projected")
-	projectionName := flags.String("projection", "", "ENGINE, LANDING, or PAYLOAD")
-	nul := flags.Bool("nul", false, "write NUL-terminated paths")
-	if flags.Parse(args) != nil || *root == "" || *projectionName == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal behavior-surface list --root DIR --projection ENGINE|LANDING|PAYLOAD [--nul]")
-		return 2
-	}
-	policy, err := behaviorsurface.Load()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	projection, err := behaviorsurface.ParseProjection(*projectionName)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
-	}
-	paths, err := policy.ListPaths(*root, projection)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	separator := byte('\n')
-	if *nul {
-		separator = 0
-	}
-	writer := bufio.NewWriter(os.Stdout)
-	for _, path := range paths {
-		if _, err := writer.WriteString(path); err != nil {
-			fmt.Fprintln(os.Stderr, "behavior-surface output:", err)
-			return 1
-		}
-		if err := writer.WriteByte(separator); err != nil {
-			fmt.Fprintln(os.Stderr, "behavior-surface output:", err)
-			return 1
-		}
-	}
-	if err := writer.Flush(); err != nil {
-		fmt.Fprintln(os.Stderr, "behavior-surface output:", err)
-		return 1
-	}
-	return 0
-}
-
 func runBehaviorSurfaceSkipAllowed(args []string) int {
 	flags := flag.NewFlagSet("behavior-surface skip-allowed", flag.ContinueOnError)
 	family := flags.String("family", "", "validation family name")
