@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -25,6 +26,31 @@ type humanVerbValues struct {
 	// report, when set, receives the refusal for the public intent commands
 	// to render; the legacy calls print it below exactly as before.
 	report *ownerReport
+	// stdout and stderr are the caller's streams (syncRequestDependencies'),
+	// nil meaning the process's own: a refusal printed below never reaches a
+	// parallel test's capture of the process streams.
+	stdout, stderr io.Writer
+}
+
+// bindDependencies takes the owner's report and printing streams from the
+// caller's dependencies.
+func (values *humanVerbValues) bindDependencies(dependencies syncRequestDependencies) {
+	values.report = dependencies.report
+	values.stdout, values.stderr = dependencies.stdout, dependencies.stderr
+}
+
+func (values *humanVerbValues) outStream() io.Writer {
+	if values.stdout != nil {
+		return values.stdout
+	}
+	return os.Stdout
+}
+
+func (values *humanVerbValues) errStream() io.Writer {
+	if values.stderr != nil {
+		return values.stderr
+	}
+	return os.Stderr
 }
 
 type humanVerbRemedy struct {
@@ -81,7 +107,7 @@ func refuseHumanVerb(values *humanVerbValues, code int, sentence string, remedy 
 			values.report.result = &goal.PublishResult{Outcome: goal.OutcomeAbandoned, Unchanged: true, Detail: detail}
 			return 0
 		}
-		fmt.Println(detail)
+		fmt.Fprintln(values.outStream(), detail)
 		return 0
 	}
 	sentence = strings.Join(strings.Fields(strings.TrimSpace(sentence)), " ")
@@ -90,11 +116,12 @@ func refuseHumanVerb(values *humanVerbValues, code int, sentence string, remedy 
 		values.report.refusal = &ownerRefusal{code: code, sentence: sentence, remedy: remedy}
 		return code
 	}
-	fmt.Fprintf(os.Stderr, "goal %s: %s\n", values.verb, sentence)
+	stderr := values.errStream()
+	fmt.Fprintf(stderr, "goal %s: %s\n", values.verb, sentence)
 	if remedy.command != "" {
-		fmt.Fprintln(os.Stderr, "run:", remedy.command)
+		fmt.Fprintln(stderr, "run:", remedy.command)
 	} else {
-		fmt.Fprintln(os.Stderr, "no command completes this:", strings.TrimSpace(remedy.words))
+		fmt.Fprintln(stderr, "no command completes this:", strings.TrimSpace(remedy.words))
 	}
 	return code
 }

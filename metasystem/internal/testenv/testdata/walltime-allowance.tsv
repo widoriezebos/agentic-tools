@@ -1,3 +1,4 @@
+cmd/metasystem/app_verbs_test.go	3	The 100ms pause polls a real supervised fixture application's run record and status; the deadline ends a real log --follow and the 500ms pause lets that follow reach the end of the log before a line is appended; success requires the observed state, output or record.
 cmd/metasystem/goal_landing_portable_lifecycle_test.go	5	Three pauses poll exact owner, private-guard or resident-runner stop-batch state; two tickers observe real proof planning and admitted attempts, with success determined by recorded state and native evidence.
 cmd/metasystem/goal_landing_workers_public_test.go	4	Three deadlines cap readiness, launcher registration, and cancellation of real child processes; the 10ms pause polls a recorded running process, and success requires observed process events rather than elapsed time.
 cmd/metasystem/proof_run_test.go	1	The ticker polls for a real public proof child file; success requires the published file or the exact child result.
@@ -7,6 +8,8 @@ internal/adapter/supervisor/devin_test.go	1	The pause polls a real ACP stub's jo
 internal/adapter/supervisor/fake_helpers_test.go	1	The pause polls a real fixture hold's pid file until its whole content lands; success requires the observed file.
 internal/adapter/supervisor/fake_test.go	3	Two pauses poll real hold and critique children; the deadline caps a released-critique round; success requires the observed process and record state.
 internal/adapter/supervisor/protocol_acpfixtures_test.go	2	Both pauses poll a real ACP stub's journal and outcome files; success requires the observed wire records.
+internal/applaunch/run_test.go	4	Three pauses poll real detached supervisors and fixture applications: until their recorded identities are dead before cleanup, until a released supervisor is reaped, and until a status or file is observed; the fourth lets a real Follow seek the log's end before a line is appended; success requires the observed record, identity or output.
+internal/applaunch/supervise_test.go	5	Each deadline caps the join of an in-process supervisor owning a real fixture application, failing the test rather than hanging it; success requires the observed record, signals and group reads.
 internal/dispatch/proof_attempt_test.go	1	The sleeping child is the stop fixture's subject and is killed, never waited out.
 internal/identity/fixture_custodian_witness_test.go	2	The timers are failure ceilings around a real command and its forced reap; successful observation comes from the command result.
 internal/identity/survivors_test.go	2	The scans observe real kernel process membership; success is a survivor fact and the delays only avoid busy-spinning.

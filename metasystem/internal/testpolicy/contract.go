@@ -20,6 +20,15 @@ const SchemaVersion = 1
 const ExecutionContractSchemaVersion = 2
 const TestWorkersEnvironment = "METASYSTEM_TEST_WORKERS"
 
+// AppAddressEnvironment is the one declared input the launch contract's
+// check hands a testing group: the address of the application run the group
+// is to be run against. The runner overlays it the way it overlays the
+// worker count and the execution root, in both environment modes, and it is
+// part of the group's execution identity, so a result for one address is
+// never reused for another. A group may no more set it than the worker
+// count: it is the runner's to say.
+const AppAddressEnvironment = "METASYSTEM_APP_ADDRESS"
+
 var (
 	identifier      = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	groupIdentifier = regexp.MustCompile(`^[a-z][a-z0-9-]*(?:/[a-z][a-z0-9-]*)?$`)
@@ -428,6 +437,9 @@ func validateGroup(group Group) error {
 	}
 	if group.Resources.Workers != nil && *group.Resources.Workers < 0 {
 		return fmt.Errorf("resource workers must be zero or a positive integer")
+	}
+	if _, reserved := group.Env[AppAddressEnvironment]; reserved {
+		return fmt.Errorf("environment entry %s is reserved by the test runner", AppAddressEnvironment)
 	}
 	if _, reserved := group.Env[TestWorkersEnvironment]; reserved {
 		return fmt.Errorf("environment entry %s is reserved by the test runner", TestWorkersEnvironment)

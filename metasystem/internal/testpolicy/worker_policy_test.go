@@ -76,6 +76,15 @@ func TestWorkerResourceDeclarationRejectsInvalidOwnersAndOverride(t *testing.T) 
 	if err := reserved.Validate(); err == nil || !strings.Contains(err.Error(), "reserved by the test runner") {
 		t.Fatalf("reserved environment error=%v", err)
 	}
+	// The launch contract's check hands the runner one declared input, the
+	// address of the application run. A group that set it would choose what
+	// it is checked against, so the contract refuses it as it refuses the
+	// worker count.
+	address := commandWorkerContract(nil)
+	address.Groups[0].Env = map[string]string{AppAddressEnvironment: "127.0.0.1:1"}
+	if err := address.Validate(); err == nil || !strings.Contains(err.Error(), AppAddressEnvironment) {
+		t.Fatalf("reserved application address error=%v", err)
+	}
 }
 
 func TestProtectedWorkerDeclarationKeepsTheLargerAllowance(t *testing.T) {
