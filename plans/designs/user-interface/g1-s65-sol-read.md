@@ -86,3 +86,24 @@ VERDICT: 3 material findings: SOL-A-01, SOL-A-02, SOL-A-07
 
 Codex session ID: 01a0e8ca-9b20-7c11-911a-2926a554d5d1
 Resume in Codex: codex resume 01a0e8ca-9b20-7c11-911a-2926a554d5d1
+
+
+---
+
+# Sol's read of fix round 2 (2026-09-28), against `f1b7c6c5a`. Verbatim. Both held findings fixed; the reload path closed; no new material; the residual SOL-A-01 stands as recorded.
+
+**Fix-only verdict: SOL-A-02 and SOL-A-07 are FIXED.** The reload path is closed on code read. I found no new material defect to assign SOL-A-08 or later.
+
+| Finding | Result | Evidence and R-124 answer |
+| --- | --- | --- |
+| **SOL-A-02 — stale Clear to land** | **FIXED** | The service carries the chosen verdict through the closing turn and stamps it on an admitted review Outcome ([service.go](/Users/wido/LocalStorage/GitHub/agentic-tools-room/metasystem/internal/ui/partner/service.go:1132), [service.go](/Users/wido/LocalStorage/GitHub/agentic-tools-room/metasystem/internal/ui/partner/service.go:1270)). The deposit is carried in the stream and persisted with the answer. A reloaded card retains that field; Record it shapes from `card.verdict`, and the recorder checks unanswered findings against its current reading before writing ([room.ts](/Users/wido/LocalStorage/GitHub/agentic-tools-room/metasystem/internal/ui/web/_app/src/review/room.ts:301), [store.tsx](/Users/wido/LocalStorage/GitHub/agentic-tools-room/metasystem/internal/ui/web/_app/src/partner/store.tsx:1612)). **R-124:** a reloaded Clear card cannot silently bypass the check at first use. |
+| **SOL-A-07 — incomplete Outcome lines** | **FIXED** | That same card verdict supplies the required first line after reload. An `Examined:` line with only whitespace after the colon is removed and replaced with a populated line ([room.ts](/Users/wido/LocalStorage/GitHub/agentic-tools-room/metasystem/internal/ui/web/_app/src/review/room.ts:271)). A review Outcome lacking a stamped verdict is refused in words ([room.ts](/Users/wido/LocalStorage/GitHub/agentic-tools-room/metasystem/internal/ui/web/_app/src/review/room.ts:319)). **R-124:** an Outcome missing these lines cannot become the recorded review Outcome at first use. |
+
+The disclosed `NO_VERDICT` consequence is **safe at first use**: an Outcome offered outside End, or retained in a transcript from before this build, produces a refusal without writing the record. The human can use End to request a stamped Outcome. The valid choice **“no verdict”** remains distinct from a missing verdict field.
+
+**Scope and limits:** I read commit `f1b7c6c5a` against `80bfc1535`, the changed control paths and focused tests; `git diff --check` was clean. I did not rerun tests or drive the browser. The builder’s reported passing checks are read evidence, not independently observed results. SOL-A-01 remains the design owner’s untouched residual and is outside this fix-only count. Proposed review receipt, unwritten: “Fix round 2 closes SOL-A-02 and SOL-A-07 on code read; no new material finding.”
+
+VERDICT: 0 material findings: none
+
+Codex session ID: 01a0e8d9-3a45-7973-8562-d20461202f27
+Resume in Codex: codex resume 01a0e8d9-3a45-7973-8562-d20461202f27
