@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -379,5 +381,44 @@ func TestSchemaThreeResultsCarryNoExecutionRecord(t *testing.T) {
 	}
 	if !slices.Equal(TestResultSchemaVersions, []int{WorkerPolicyTestResultSchemaVersion, TestResultSchemaVersion}) {
 		t.Fatalf("written schemas = %v", TestResultSchemaVersions)
+	}
+}
+
+// A launch Go's cache may serve is split the same way whatever this
+// attempt's worker allowance is: Go keys each cached result on the launch's
+// -run pattern, and the frontend resolves the allowance per run. A launch
+// that executes regardless keeps splitting by the allowance.
+func TestGoShardCeilingIsRunInvariantForCacheEligibleLaunches(t *testing.T) {
+	t.Parallel()
+	group := testpolicy.Group{ID: "g", Adapter: "go"}
+	expected := make([]NativeTestIdentity, 0, 13)
+	for index := 0; index < 13; index++ {
+		expected = append(expected, NativeTestIdentity{Classname: "m/p", Name: fmt.Sprintf("Test%02d", index)})
+	}
+	var first []goTestPartition
+	for _, workers := range []int{6, 5, 9, 1} {
+		request := TestRunRequest{Workers: workers, ResultSchemaVersion: TestResultSchemaVersion}
+		partitions := partitionGoTests(expected, []string{"p"}, "m/", goShardCeiling(request, group, goCacheFacts{}))
+		if first == nil {
+			first = partitions
+		} else if !reflect.DeepEqual(first, partitions) {
+			t.Fatalf("workers=%d split the cache-eligible tests differently:\n%v\n%v", workers, first, partitions)
+		}
+	}
+	if len(first) != goCacheShardCeiling {
+		t.Fatalf("cache-eligible shards = %d, want %d", len(first), goCacheShardCeiling)
+	}
+	declared := group
+	declared.Shards = 3
+	if got := goShardCeiling(TestRunRequest{Workers: 6, ResultSchemaVersion: TestResultSchemaVersion}, declared, goCacheFacts{}); got != 3 {
+		t.Fatalf("declared shards = %d, want 3", got)
+	}
+	fresh := TestRunRequest{Workers: 5, ResultSchemaVersion: TestResultSchemaVersion, FreshGroups: map[string]bool{"g": true}}
+	if got := goShardCeiling(fresh, group, goCacheFacts{}); got != 5 {
+		t.Fatalf("an executing launch splits by %d, want the allowance 5", got)
+	}
+	declared.Shards = 9
+	if got := goShardCeiling(fresh, declared, goCacheFacts{}); got != 5 {
+		t.Fatalf("an executing launch with more declared shards than workers splits by %d, want 5", got)
 	}
 }

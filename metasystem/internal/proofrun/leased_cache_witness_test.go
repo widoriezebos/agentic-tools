@@ -60,6 +60,10 @@ func TestLeasedLayoutGoTestCacheWitness(t *testing.T) {
 			base = append(base, name+"="+value)
 		}
 	}
+	// A diagnostic GODEBUG (gocachetest=1) reaches the groups only when asked.
+	if value, ok := os.LookupEnv("METASYSTEM_LEASE_WITNESS_GODEBUG"); ok {
+		base = append(base, "GODEBUG="+value)
+	}
 	base, err = identity.ExportRunOwner(base)
 	if err != nil {
 		t.Fatal(err)

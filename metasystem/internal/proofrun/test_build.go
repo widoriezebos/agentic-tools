@@ -1327,15 +1327,36 @@ func (writer *cancelOnWriteError) Err() error {
 	return writer.err
 }
 
-func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group, cwd string, environment []string, expected []NativeTestIdentity,
-	inventory []string, modulePrefix string, limits supervisorLimits, sampleInterval time.Duration, logPath string,
-	output *synchronizedBuffer, facts goCacheFacts) (supervisorOutcome, error, string, []PackageExecution, error) {
-	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
+// goCacheShardCeiling is the shard count of a go group whose launches Go's
+// test cache may serve and that declares no shard count of its own.
+const goCacheShardCeiling = 8
+
+// goShardCeiling is how many go test launches a group's tests are split
+// into. Go keys a cached result on each launch's -run pattern, so a launch Go
+// may serve from its cache is partitioned independently of this attempt's
+// worker allowance, which the frontend resolves from available memory and
+// changes between runs (6, then 5, split the same tests differently and no
+// pattern ever repeated). The attempt worker pool still bounds how many
+// shards run at once. A launch that executes regardless keeps the allowance.
+func goShardCeiling(request TestRunRequest, group testpolicy.Group, facts goCacheFacts) int {
+	if countOne, _ := reusePolicy(request, group, 1, facts); !countOne {
+		if group.Shards > 0 {
+			return group.Shards
+		}
+		return goCacheShardCeiling
+	}
 	ceiling := EffectiveTestWorkers(request)
 	if group.Shards > 0 && group.Shards < ceiling {
 		ceiling = group.Shards
 	}
-	partitions := partitionGoTests(expected, inventory, modulePrefix, ceiling)
+	return ceiling
+}
+
+func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group, cwd string, environment []string, expected []NativeTestIdentity,
+	inventory []string, modulePrefix string, limits supervisorLimits, sampleInterval time.Duration, logPath string,
+	output *synchronizedBuffer, facts goCacheFacts) (supervisorOutcome, error, string, []PackageExecution, error) {
+	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
+	partitions := partitionGoTests(expected, inventory, modulePrefix, goShardCeiling(request, group, facts))
 	coverageRoot := strings.TrimSuffix(logPath, ".log") + ".coverage"
 	if group.Coverage {
 		if err := os.RemoveAll(coverageRoot); err != nil {
