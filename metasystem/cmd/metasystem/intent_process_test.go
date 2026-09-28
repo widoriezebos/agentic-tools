@@ -34,14 +34,16 @@ import (
 // channel transport are per-test fakes.
 type processBed struct {
 	*intentBed
-	class     string
-	armCalls  int
-	armErr    error
-	enrolls   int
-	launchDir string
-	families  []stoptransition.Family
-	asked     []channelAskInput
-	question  channel.Question
+	class    string
+	armCalls int
+	armErr   error
+	// helpersRun makes every arm after the first find the helpers running.
+	helpersRun bool
+	enrolls    int
+	launchDir  string
+	families   []stoptransition.Family
+	asked      []channelAskInput
+	question   channel.Question
 	// engineCalls are the engine verbs a public command ran.
 	engineCalls [][]string
 }
@@ -79,12 +81,18 @@ func (b *processBed) owners() intentOwners {
 				return &stoptransition.Transition{Root: scope.Root, Checkout: scope.Checkout, ScaleMilli: scale, Families: b.families,
 					Self: func() (identity.Ref, error) { return self, nil }}
 			},
-			armSteps: func(processScope, int, processArmAuthority) ([]string, error) {
+			armSteps: func(processScope, int, processArmAuthority) (processArmResult, error) {
 				b.armCalls++
 				if b.armErr != nil {
-					return []string{"steward arm refused"}, b.armErr
+					return processArmResult{lines: []string{"steward arm refused"}}, b.armErr
 				}
-				return []string{"steward armed"}, nil
+				// Once armed, a bed that says its helpers keep running
+				// answers a further arm as the real sequence does: the same
+				// live runner kept and nothing started.
+				if b.helpersRun && b.armCalls > 1 {
+					return processArmResult{lines: []string{"already armed (runner pid 4242)"}, unchanged: true, runnerPid: 4242}, nil
+				}
+				return processArmResult{lines: []string{"steward armed"}}, nil
 			},
 		},
 		up: func(options up.Options) up.Result {

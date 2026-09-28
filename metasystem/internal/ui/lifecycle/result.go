@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -71,8 +72,41 @@ func runningResult(rec *Record, digest func() (string, error)) Result {
 }
 
 func StopResult(stateRoot string, o StopOptions) Result {
+	result, _ := StopReport(stateRoot, o)
+	return result
+}
+
+// StopReport is StopResult with whether the stop was a repeat whose effect
+// already held (R-129-ui): no interface was running, so nothing was
+// signalled. A stale record of a dead server is removed on the way, which
+// is repair of derived state, not a second stop.
+func StopReport(stateRoot string, o StopOptions) (Result, bool) {
 	outcome, rec, err := Stop(stateRoot, o)
-	return stopResult(stateRoot, outcome, rec, o.Wait, err)
+	unchanged := err == nil && (outcome == StopOutcome(Stopped) || outcome == StopOutcome(Stale))
+	return stopResult(stateRoot, outcome, rec, o.Wait, err), unchanged
+}
+
+// StartOnce starts the interface unless one already runs for this checkout
+// at the address the start asks for (R-129-ui): that repeat is success, and
+// nothing is launched. An interface running at another address is not this
+// start's effect, so start runs and its server refuses as before. A listen
+// address with port 0 asks for any port on its host.
+func StartOnce(stateRoot string, prober identity.Prober, listen string, start func() Result) (Result, bool) {
+	status, err := Read(stateRoot, prober)
+	if err == nil && status.State == Running && sameListen(status.Record.Address, listen) {
+		rec := status.Record
+		return Result{Lines: []string{fmt.Sprintf("the interface already runs at http://%s (pid %d since %s)", rec.Address, recordPid(rec), rec.StartedAt)}}, true
+	}
+	return start(), false
+}
+
+func sameListen(running, asked string) bool {
+	if running == asked {
+		return true
+	}
+	runningHost, _, runningErr := net.SplitHostPort(running)
+	askedHost, askedPort, askedErr := net.SplitHostPort(asked)
+	return runningErr == nil && askedErr == nil && askedPort == "0" && runningHost == askedHost
 }
 
 func RestartResult(stateRoot string, o StopOptions, start func() Result) Result {

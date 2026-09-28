@@ -30,30 +30,18 @@ func weightThreshold(root string) int64 {
 	return parsed
 }
 
-func runGateWeightAdd(args []string) int {
-	flags := flag.NewFlagSet("gate weight-add", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	commit := flags.String("commit", "", "landed commit")
-	prefix := flags.String("prefix", "", "metasystem path relative to Git toplevel")
-	goalID := flags.String("goal", "", "goal owning the landing; its highest risk answer scales the weight")
-	if flags.Parse(args) != nil || *root == "" || *commit == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate weight-add --root R --commit SHA [--prefix PREFIX] [--goal ID]  (numstat -z on stdin)")
-		return 2
-	}
-	numstat, err := io.ReadAll(os.Stdin)
+// gateWeightAddTo folds one landing's numstat into the validation weight and
+// prints the accumulator on the caller's streams.
+func gateWeightAddTo(stdout, stderr io.Writer, root, commit, prefix, goalID string, numstat []byte) int {
+	scale := goalWeightScale(root, goalID)
+	state, due, err := gaterun.WeightAddScaled(root, commit, numstat, prefix, weightThreshold(root), scale)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	scale := goalWeightScale(*root, *goalID)
-	state, due, err := gaterun.WeightAddScaled(*root, *commit, numstat, *prefix, weightThreshold(*root), scale)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Printf("validation weight %d over %d landing(s) since %s (this landing scaled by goal risk %d)\n", state.Accumulated, state.Landings, state.SinceUTC, scale)
+	fmt.Fprintf(stdout, "validation weight %d over %d landing(s) since %s (this landing scaled by goal risk %d)\n", state.Accumulated, state.Landings, state.SinceUTC, scale)
 	if due {
-		fmt.Printf("validation weight reached (threshold %d): run the governed direct validator; findings fix forward\n", weightThreshold(*root))
+		fmt.Fprintf(stdout, "validation weight reached (threshold %d): run the governed direct validator; findings fix forward\n", weightThreshold(root))
 	}
 	return 0
 }

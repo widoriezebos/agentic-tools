@@ -27,11 +27,11 @@ import (
 
 const (
 	// R1/R3 residue: (family, verb) pairs plus dispatchInternal's top-level forms.
-	verbRatchetInternalVerbCeiling = 300
+	verbRatchetInternalVerbCeiling = 293
 	// R4: shell lines that reference the engine.
-	verbRatchetShellEngineCeiling = 436
+	verbRatchetShellEngineCeiling = 165
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
-	verbRatchetScriptLinesCeiling = 8912
+	verbRatchetScriptLinesCeiling = 2834
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
 	// U6a raised it by the process boundaries that were shell before: the
@@ -46,10 +46,12 @@ const (
 	// directly, where they used to exec dispatch.sh, and the lifecycle
 	// launches the delegate-supervisor entry where it ran an adapter script.
 	// The hops existed before; the witness now sees them.
-	verbRatchetSelfSubprocessCeiling = 125
+	// U5 added one: the Go landing path runs the engine's landing workspace
+	// (landing_path.go), a hop commit.sh made from shell.
+	verbRatchetSelfSubprocessCeiling = 126
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
-	verbRatchetInstructionCeiling = 47
+	verbRatchetInstructionCeiling = 46
 )
 
 type ratchetSite struct {

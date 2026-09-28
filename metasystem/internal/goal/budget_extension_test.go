@@ -71,7 +71,17 @@ func TestExtendBudgetRaisesOnlyConsumptionMembersAndWritesMarker(t *testing.T) {
 
 	second := req
 	second.Ulid = "01J5X00000000000000000EX04"
+	// The same offer again is a repeat of the extension that stands
+	// (R-129-ui, U-idem): success, nothing written.
 	secondResult, err := ExtendBudget(second, "earned-raise", offer)
+	if err != nil || secondResult.Outcome != OutcomeAbandoned || !secondResult.Unchanged || !strings.Contains(secondResult.Detail, "is already extended on landing:") {
+		t.Fatalf("the repeated extension was not a no-op: %+v %v", secondResult, err)
+	}
+	// Another offer asks for a second raise, which is a person's act.
+	another := offer
+	another.EvidenceID = "1789000001-0123456789012345678901234567890123456789"
+	second.Ulid = "01J5X00000000000000000EX06"
+	secondResult, err = ExtendBudget(second, "earned-raise", another)
 	if err != nil || secondResult.Outcome == OutcomeConfirmed || !strings.Contains(secondResult.Detail, "extended once at") {
 		t.Fatalf("second extension did not name the marker: %+v %v", secondResult, err)
 	}

@@ -95,8 +95,6 @@
     "telemetry-census-fixtures",
     "return-schema-fixtures",
     "authority-regression-fixtures",
-    "pre-commit-guard-fixtures",
-    "static-reproof-fixtures",
     "project-extra-suites",
     "record-protocol-fixtures",
     "evidence-segment-fixtures",

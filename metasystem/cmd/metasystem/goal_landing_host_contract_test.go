@@ -81,6 +81,14 @@ var retiredWithDeletedVerb = map[string]string{
 	"launch-standard/TestUnitFamilyIsRegistered":     "unit run",
 }
 
+// retiredWithDeletedBed names legacy mandatory tests whose only subject was a
+// deleted shell fixture bed; the bed's scenarios moved to named Go tests
+// (verbs-object-action 6.7, U5).
+var retiredWithDeletedBed = map[string]string{
+	"batch-buildcd-standard/TestLandFixtureConfigurationsPinProofAdmission": "land-fixtures.sh",
+	"batch-buildcd-standard/TestLandFixtureScenarioRegistryMatchesCount":    "land-fixtures.sh",
+}
+
 // retiredWithDeletedScript names legacy mandatory tests (group/test) whose only
 // subject was a script deleted by its provider transition (6.4) and maps each to
 // the test that now carries the behavior, which must be in the contract.
@@ -165,6 +173,21 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			"TestSecondSessionMintsANameAndRefusesUnlawfulOnes",
 			"TestSecondSessionStopsWhenArmingFails",
 		}},
+		// land-fixtures.sh moved into internal/landing/landpath (U5; scenario
+		// map in the unit's evidence).
+		"section/land-fixtures": {replacement: "landing-path-standard", tests: []string{
+			"TestDriverPushRetryRecoversOneMovingOriginRejection",
+			"TestCarriedFreshLandsOneCommitPastOneRefusal",
+			"TestCarriedCrashAfterPushCompletesTheRecord",
+			"TestAbandonRouteNormalRefusesAtTheFetchedParent",
+			"TestAbandonRouteRecertifiedHeldBeforePushAndParks",
+		}},
+		// pre-commit-guard-fixtures.sh moved into landpath.Guard's tests (U5).
+		"section/pre-commit-guard-fixtures": {replacement: "landing-path-standard", tests: []string{
+			"TestGuardLedgerFenceOutranksBothExceptions",
+			"TestGuardNewPlanNeedsAcknowledgment",
+			"TestGuardRefusesPatchBackups",
+		}},
 		// U7b-3: the ten fixture beds became Go bed groups.
 		"section/suite-progress-fixtures":         {replacement: "suite-progress-bed-standard"},
 		"section/supervision-and-census-fixtures": {replacement: "supervision-bed-standard"},
@@ -230,8 +253,14 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 	for _, surface := range current.Surfaces {
 		currentSurfaces[surface.ID] = surface
 	}
+	// The landing path's shell beds retired into the landing-path-standard
+	// Go group (U5), and the beds' own surfaces went with them.
+	retiredSurfaces := map[string]bool{"land-fixture": true, "pre-commit-guard-fixture": true}
 	for _, old := range previous.Surfaces {
 		now, ok := currentSurfaces[old.ID]
+		if !ok && retiredSurfaces[old.ID] {
+			continue
+		}
 		if !ok {
 			t.Errorf("legacy surface %s disappeared", old.ID)
 			continue
@@ -301,6 +330,21 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			}
 			requiredInputs = append(requiredInputs, "metasystem/internal/hooks/**")
 		}
+		if old.ID == "batch-buildcd-standard" {
+			// U5 retired the landing scripts; the landing path is the Go
+			// package the group names instead. Only these exact inputs.
+			retired := map[string]bool{
+				"metasystem/scripts/agents/commit.sh":        true,
+				"metasystem/scripts/agents/land-fixtures.sh": true,
+			}
+			requiredInputs = nil
+			for _, input := range old.Inputs {
+				if !retired[input] {
+					requiredInputs = append(requiredInputs, input)
+				}
+			}
+			requiredInputs = append(requiredInputs, "metasystem/internal/landing/landpath/**")
+		}
 		// A single-file script input leaves only with its deleted script.
 		var liveInputs []string
 		for _, input := range requiredInputs {
@@ -331,6 +375,10 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		for _, name := range oldTests {
 			if verb, retired := retiredWithDeletedVerb[old.ID+"/"+name]; retired {
 				t.Logf("%s %s retired with the deleted verb %s", old.ID, name, verb)
+				continue
+			}
+			if bed, retired := retiredWithDeletedBed[old.ID+"/"+name]; retired {
+				t.Logf("%s %s retired with the deleted bed %s", old.ID, name, bed)
 				continue
 			}
 			if replacement, retired := retiredWithDeletedScript[old.ID+"/"+name]; retired {
@@ -373,6 +421,12 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 					"TestRegistrySidecarCleanupWaitsForInheritedLeaseAndCustodian",
 					"TestRegistrySidecarCleanupRetainsFailedSettlement",
 				}
+			}
+			if old.ID == "goal-decision-standard" && name == "TestReadItemsCloseRefusesClosedItem" {
+				// U-idem: closing a closed item the same way is now an
+				// unchanged success, and another disposition is still
+				// refused; the renamed test carries both guarantees.
+				requiredNames = []string{"TestReadItemsCloseRepeatsAndRefusesAnotherDisposition"}
 			}
 			if nowSelectsAll {
 				automaticallyCovered = append(automaticallyCovered, requiredNames...)

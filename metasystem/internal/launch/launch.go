@@ -530,6 +530,11 @@ func (m *Manager) List() ([]Record, error) {
 	return records, nil
 }
 func (m *Manager) Cancel(id string) (Record, error) {
+	// A launch that already ended is already cancelled or finished: the
+	// repeat returns it and writes nothing (R-129-ui).
+	if current, err := m.Store.Read(id); err == nil && current.State.Terminal() {
+		return current, nil
+	}
 	record, err := m.Store.Update(id, func(record *Record) error {
 		if !record.State.Terminal() {
 			record.Reason = "cancel-requested"

@@ -223,7 +223,15 @@ func TestHookPreflightReadsWithoutExecuting(t *testing.T) {
 		t.Fatal(err)
 	}
 	if refusal := hookPreflight(Deps{Git: newFakeGit(t, answers).run}, t.TempDir()); refusal != nil {
-		t.Fatalf("our composer beside a local hook is already enrolled: %+v", refusal)
+		t.Fatalf("our retired composer beside a local hook is already enrolled: %+v", refusal)
+	}
+	// The engine composer (U5) is ours too.
+	engineComposer := "#!/usr/bin/env bash\nprefix=''\ninstallation=\"$(git rev-parse --show-toplevel)/$prefix\"\n\"$engine\" internal pre-commit --root \"$installation\"\n"
+	if err := writeExecutable(filepath.Join(hooks, "pre-commit"), []byte(engineComposer), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if refusal := hookPreflight(Deps{Git: newFakeGit(t, answers).run}, t.TempDir()); refusal != nil {
+		t.Fatalf("our engine composer beside a local hook is already enrolled: %+v", refusal)
 	}
 	if exists(marker) {
 		t.Fatal("the preflight executed a hook")

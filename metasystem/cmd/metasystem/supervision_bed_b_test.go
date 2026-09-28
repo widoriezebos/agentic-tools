@@ -64,7 +64,9 @@ func supBOwners(prober supBProber, armLines []string) processOwners {
 				Self:  func() (identity.Ref, error) { return identity.Ref{Pid: 10, StartedAtSec: 20}, nil },
 			}
 		},
-		armSteps: func(processScope, int, processArmAuthority) ([]string, error) { return armLines, nil },
+		armSteps: func(processScope, int, processArmAuthority) (processArmResult, error) {
+			return processArmResult{lines: armLines}, nil
+		},
 	}
 }
 

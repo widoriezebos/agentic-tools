@@ -1213,6 +1213,34 @@ func readExactLiveIntent(root, nonce string) (Intent, error) {
 	return intent, nil
 }
 
+// HandoffAlreadyCancelled answers a cancellation of a handoff that is
+// already cancelled (R-129-ui): the effect holds, so the repeat is success
+// and nothing is written. It is returned as an error value only so that the
+// one CancelHandoff signature carries it; callers treat it as success.
+type HandoffAlreadyCancelled struct {
+	Nonce   string
+	Outcome string
+}
+
+func (e *HandoffAlreadyCancelled) Error() string {
+	return fmt.Sprintf("handoff %s is already cancelled (%s)", e.Nonce, e.Outcome)
+}
+
+// cancelledHandoff is the tombstone a completed cancellation of a bound
+// handoff left; a consumed or never-bound nonce has none.
+func readCancelledHandoff(root, nonce string) (Intent, bool) {
+	data, err := os.ReadFile(filepath.Join(cancelledDir(root), nonce+".json"))
+	if err != nil {
+		return Intent{}, false
+	}
+	var intent Intent
+	if json.Unmarshal(data, &intent) != nil || intent.Nonce != nonce || intent.Reason != seatHandoffReason ||
+		intent.Handoff == nil || !strings.HasPrefix(intent.Outcome, "cancelled: ") {
+		return Intent{}, false
+	}
+	return intent, true
+}
+
 func cancelHandoffUnderLock(root, nonce, reason string) error {
 	if !handoffNoncePattern.MatchString(nonce) || reason == "" {
 		return fmt.Errorf("cancel handoff requires a valid nonce and reason")
@@ -1321,6 +1349,9 @@ func CancelHandoff(stateRoot, nonce string, canceller HandoffCanceller) error {
 	intent, err := readExactLiveIntent(root, nonce)
 	if err != nil {
 		if os.IsNotExist(err) {
+			if cancelled, ok := readCancelledHandoff(root, nonce); ok {
+				return &HandoffAlreadyCancelled{Nonce: nonce, Outcome: cancelled.Outcome}
+			}
 			return refusal("HANDOFF_NOT_LIVE", "nonce="+nonce)
 		}
 		return err

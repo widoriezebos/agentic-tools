@@ -211,7 +211,7 @@ func newObligationCommandFixture(t *testing.T) *obligationCommandFixture {
 		t.Fatal(err)
 	}
 	files := make(map[string][]byte)
-	for _, path := range []string{"metasystem.conf", "plans/goals/backlog.md", "plans/goals/standing-validation.md", "scripts/agents/pre-commit-guard.sh"} {
+	for _, path := range []string{"metasystem.conf", "plans/goals/backlog.md", "plans/goals/standing-validation.md"} {
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
 		if err != nil {
 			t.Fatal(err)

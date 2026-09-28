@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 )
@@ -117,6 +118,9 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 	if it == nil {
 		return ReviveOutcome{Reason: "intent is not live (already consumed or cancelled)"}, nil
 	}
+	if helm.Active(repoRoot).Active {
+		return holdForHelm(), nil
+	}
 
 	// Retire notification intents written by older binaries before recovery.
 	// Their presence must not preserve an alert-before-heal path after upgrade.
@@ -210,6 +214,14 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 		return ReviveOutcome{}, err
 	}
 	return ReviveOutcome{Launched: true, Reason: "continuation dispatched for " + consumed.Goal}, nil
+}
+
+// holdForHelm holds a revival of any intent kind while the seat is at the
+// helm, quietly: no notification is queued and nothing is cancelled or
+// consumed, so the intent stays resumable and is re-arbitrated at the first
+// tick after return.
+func holdForHelm() ReviveOutcome {
+	return ReviveOutcome{Held: true, Reason: "human at the helm"}
 }
 
 func holdHandoff(repoRoot string, intent Intent, reason string) (ReviveOutcome, error) {

@@ -843,8 +843,8 @@ func TestAdoptGitIntegrationFromAVendoredTemplate(t *testing.T) {
 			t.Fatal(err)
 		}
 		result := adoptWith(t, optionsFor(nested, target, io.Discard))
-		if !strings.Contains(readText(t, hook), "pre-commit-guard.sh") {
-			t.Fatal("the guard was not enrolled over the existing hook")
+		if !strings.Contains(readText(t, hook), "internal pre-commit") {
+			t.Fatal("the engine guard was not enrolled over the existing hook")
 		}
 		if info, err := os.Stat(hook + ".local"); err != nil || info.Mode()&0o111 == 0 {
 			t.Fatal("the existing hook was not preserved as pre-commit.local")
@@ -852,17 +852,26 @@ func TestAdoptGitIntegrationFromAVendoredTemplate(t *testing.T) {
 		if !strings.Contains(strings.Join(result.Notes, "\n"), "pre-commit.local") {
 			t.Fatalf("the composition was not reported: %v", result.Notes)
 		}
-		// The composed hook proves composition, not the wrapper-token rule:
-		// a refusing engine stub takes the guard down its fail-open path.
-		stub := filepath.Join(base, "compose-stub", "metasystem")
-		if err := writeExecutable(stub, []byte("#!/usr/bin/env bash\nexit 1\n"), 0o755); err != nil {
+		// The composed hook proves composition, not the guard's rules: an
+		// admitting stand-in answers the engine's pre-commit entry for this
+		// one run, and the target's own engine goes back before re-adoption.
+		engine := filepath.Join(target, "bin", "metasystem")
+		kept, err := os.ReadFile(engine)
+		if err != nil {
+			t.Fatalf("the adopted target has no engine to run its guard: %v", err)
+		}
+		if err := writeExecutable(engine, []byte("#!/usr/bin/env bash\n[[ \"$1 $2\" == \"internal pre-commit\" ]] || exit 3\nexit 0\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		run := exec.Command(hook)
 		run.Dir = target
-		run.Env = append(ledgerfence.EnvironWithoutGitSteering(), "METASYSTEM_BIN="+stub)
-		if out, err := run.CombinedOutput(); err != nil {
-			t.Fatalf("the composed hook refused a clean tree: %v\n%s", err, out)
+		run.Env = ledgerfence.EnvironWithoutGitSteering()
+		out, runErr := run.CombinedOutput()
+		if err := writeExecutable(engine, kept, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if runErr != nil {
+			t.Fatalf("the composed hook refused a clean tree: %v\n%s", runErr, out)
 		}
 		if !exists(filepath.Join(target, ".project-hook-ran")) {
 			t.Fatal("the preserved project hook no longer runs")
@@ -875,7 +884,7 @@ func TestAdoptGitIntegrationFromAVendoredTemplate(t *testing.T) {
 			t.Fatalf("re-adoption over the composed hook did not recognize the installation: %+v", again)
 		}
 		local := readText(t, hook+".local")
-		if strings.Contains(local, "pre-commit-guard.sh") || !strings.Contains(local, "touch") {
+		if strings.Contains(local, "internal pre-commit") || !strings.Contains(local, "touch") {
 			t.Fatal("re-adoption stacked the composer or clobbered the preserved hook")
 		}
 	})
@@ -903,74 +912,10 @@ func TestAdoptGitIntegrationFromAVendoredTemplate(t *testing.T) {
 	})
 }
 
-// The adopted guard refuses a brand-new plan file without acknowledgment and
-// leaves edits of tracked plans free. It is the guard shipped in the payload,
-// run with a refusing engine stub so the fail-open human path is taken and the
-// new-plan rule is what is judged.
-func TestAdoptGitIntegrationShippedGuardFencesNewPlans(t *testing.T) {
-	t.Parallel()
-	source, _ := templates(t)
-	base := t.TempDir()
-	target := filepath.Join(base, "guard-source")
-	options := optionsFor(source, target, io.Discard)
-	options.Runtimes = "none"
-	adoptWith(t, options)
-	guard := filepath.Join(target, "scripts", "agents", "pre-commit-guard.sh")
-	stub := filepath.Join(base, "refusing", "metasystem")
-	if err := writeExecutable(stub, []byte("#!/usr/bin/env bash\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runGuard := func(repository string, extra ...string) error {
-		command := exec.Command(guard)
-		command.Dir = repository
-		command.Env = append(append(ledgerfence.EnvironWithoutGitSteering(), "METASYSTEM_BIN="+stub), extra...)
-		out, err := command.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("%v: %s", err, out)
-		}
-		return nil
-	}
-	repository := filepath.Join(base, "guard-repo")
-	gitIn(t, base, "init", "-q", "-b", "main", repository)
-	if err := os.MkdirAll(filepath.Join(repository, "plans"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(repository, "plans", "existing.md"), []byte("old\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitIn(t, repository, "add", "plans/existing.md")
-	gitIn(t, repository, "commit", "-qm", "seed")
-	if err := os.WriteFile(filepath.Join(repository, "plans", "surprise.md"), []byte("new\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitIn(t, repository, "add", "plans/surprise.md")
-	if runGuard(repository) == nil {
-		t.Fatal("the guard allowed a new plan file without acknowledgment")
-	}
-	if err := runGuard(repository, "METASYSTEM_ALLOW_NEW_PLAN=1"); err != nil {
-		t.Fatalf("the guard refused an acknowledged new plan: %v", err)
-	}
-	gitIn(t, repository, "reset", "-q")
-	if err := os.WriteFile(filepath.Join(repository, "plans", "existing.md"), []byte("changed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitIn(t, repository, "add", "plans/existing.md")
-	if err := runGuard(repository); err != nil {
-		t.Fatalf("the guard refused an edit of a tracked plan: %v", err)
-	}
-	unborn := filepath.Join(base, "guard-unborn")
-	gitIn(t, base, "init", "-q", "-b", "main", unborn)
-	if err := os.MkdirAll(filepath.Join(unborn, "plans"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(unborn, "plans", "new.md"), []byte("first\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitIn(t, unborn, "add", "plans/new.md")
-	if err := runGuard(unborn); err != nil {
-		t.Fatalf("the guard refused the initial commit of an unborn branch: %v", err)
-	}
-}
+// The adopted guard's rules (IL-14's new-plan acknowledgment, the unborn
+// exception, the ledger fence) are the engine's `internal pre-commit` entry
+// since U5, proved by internal/landing/landpath TestGuard*; adoption owes the
+// enrollment, which the composition leg above proves.
 
 // Writers of an installation vendored below the application keep their state
 // in the application's trees, never under the vendored prefix. They run as

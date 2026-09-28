@@ -92,7 +92,8 @@ func TestAnIdenticalSignedInSessionEditIsANoOp(t *testing.T) {
 // its own proven authority, and the engine records it exactly as it always
 // has: this rule is about the one hand that has two tabs, and it does not
 // quietly swallow anybody else's second word.
-func TestAnIdenticalEditFromATerminalStillLands(t *testing.T) {
+// U-idem: an identical edit is a repeat from every hand, the terminal too.
+func TestAnIdenticalEditFromATerminalIsANoOp(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000SE40", "mac-a"),
@@ -115,14 +116,14 @@ func TestAnIdenticalEditFromATerminalStillLands(t *testing.T) {
 
 	human.Ulid = "01J5X00000000000000000SE60"
 	second, err := Edit(human, "terminal-edit-twice", EditFields{Intent: &intent})
-	if err != nil || second.Outcome != OutcomeConfirmed {
-		t.Fatalf("the same edit from a terminal was not recorded: %+v %v", second, err)
+	if err != nil || second.Outcome != OutcomeAbandoned || !second.Unchanged || !strings.Contains(second.Detail, "already reads exactly this way") {
+		t.Fatalf("the same edit from a terminal was not a no-op: %+v %v", second, err)
 	}
 	tree, err = loadTreeFor(endpoint, second.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := tree.Live["terminal-edit-twice"].Revision; got != revision+1 {
-		t.Fatalf("the terminal's second edit left the revision at %d, want %d", got, revision+1)
+	if got := tree.Live["terminal-edit-twice"].Revision; got != revision {
+		t.Fatalf("the terminal's second edit moved the revision to %d, want %d", got, revision)
 	}
 }

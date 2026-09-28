@@ -109,7 +109,7 @@ classification sweep takes the same four scores as `<s>,<n>,<e>,<a>` and
 renders the tier itself); `--tier` without the four answers is refused. The
 tier derives from severity and novelty alone, the worse of the two; exposure
 and accumulation scale the proof instead: the highest of the four answers
-multiplies the landing's cadence weight (`gate weight-add --goal`), and
+multiplies the landing's cadence weight (the landing weighs itself after its push), and
 accumulation 2 or higher requires the full-width selected coverage once.
 Exposure alone had lifted three
 quarters of the backlog to tier 3 (goal tier-from-severity-and-novelty);
@@ -189,9 +189,11 @@ silent fourth round.
 Tier 1 has no critique and lands as a receipted direct fix bound to the
 candidate tree.
 A carried landing is the separate, human-only landing form: a verified human
-issues `metasystem internal goal carry` for one workspace tree and exactly one named refusal code
-or `group:<id>`, and `land.sh --carried <opid>` may carry only that fact; `metasystem work land`
-never grants a carry. The landing writes the reservation and immutable commit trailers, then records one
+records one exception for one workspace tree and exactly one named refusal code
+or `group:<id>` with `metasystem work land G --exception CODE --reason R --by NAME`
+(its carry owner is `metasystem internal goal carry`), and that landing, or a later
+`metasystem work land G --using-exception X`, may carry only that fact; an agent's
+landing never grants a carry. The landing writes the reservation and immutable commit trailers, then records one
 `human-carried` review obligation on the goal. Every use increments the goal's
 budget exceptions and the fleet's `CARRIED` counters; the configured open-word
 cap, any in-flight carry, and unpaid carried-review debt prevent stacking.

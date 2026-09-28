@@ -504,7 +504,7 @@ func TestIdleBacklogBlocksTwiceThenDefersClaimAndPreparesStewardContinuation(t *
 		verdict, err := store.TurnVerdict(ScanResult{}, "same-session", "", "main-1", options)
 		if err != nil || !verdict.ShouldBlock || !verdict.IdleRefusal || verdict.BlockSource == nil || *verdict.BlockSource != "idle-backlog" ||
 			!strings.Contains(verdict.Display, "waiting") ||
-			!strings.Contains(verdict.Display, fmt.Sprintf("refusal %d of 3 for this unchanged backlog", stop)) ||
+			!strings.Contains(verdict.Display, fmt.Sprintf("refusal %d of 3 in this idle interval", stop)) ||
 			!strings.Contains(verdict.Display, "at 3 request steward continuation and allow Stop unless another branch blocks") {
 			t.Fatalf("unchanged stop %d must block on claimable backlog: %+v %v", stop, verdict, err)
 		}
@@ -1746,5 +1746,128 @@ func TestClaudeTurnExitRequiresDelegateWorkNotMerelyALiveSeat(t *testing.T) {
 	liveClaim, _ := claimStore.TurnVerdict(ScanResult{}, "live-claim", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if !liveClaim.ShouldBlock || liveClaim.BlockSource == nil || *liveClaim.BlockSource != "idle-backlog" {
 		t.Fatalf("the Claude turn exit treated its still-live seat as active work on the claim: %+v", liveClaim)
+	}
+}
+
+// servingFixtureAdvance publishes a new accepted ledger commit holding files,
+// as another seat or a person changing the shared backlog would.
+func servingFixtureAdvance(t *testing.T, client *fakeGoalRepository, machine string, files map[string]*GoalFile) {
+	t.Helper()
+	client.store.mu.Lock()
+	defer client.store.mu.Unlock()
+	client.store.serial++
+	id := fmt.Sprintf("%040x", client.store.serial)
+	client.store.commits[id] = fakeGoalCommit{files: servingFixtureFiles(machine, files), at: time.Date(2026, 8, 20, 21, 0, 0, 0, time.UTC)}
+	client.store.canonical = id
+	client.accepted = id
+}
+
+// Witness for the idle-interval count: a goal opened or approved by someone
+// else between two stops is not activity of this seat and must not restart
+// the three-refusal bound. Before the fix the digest carried the claimable
+// set, so every such change reset the count to 1 and a seat on a busy ledger
+// never reached the escape.
+func TestIdleBacklogCountSurvivesAnotherSeatsBacklogChange(t *testing.T) {
+	t.Parallel()
+	store, client, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
+		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+	})
+	store.PrepareIdleContinuation = func(IdleEscalationEvent) (string, error) { return "intent-interval", nil }
+	store.RecordIdleIncident = func(IdleEscalationEvent) (string, error) { return "alert-interval", nil }
+	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
+	first, err := store.TurnVerdict(ScanResult{}, "interval", "", "main-1", options)
+	if err != nil || !first.ShouldBlock || !strings.Contains(first.Display, "refusal 1 of 3") {
+		t.Fatalf("first refusal: %+v %v", first, err)
+	}
+	servingFixtureAdvance(t, client, "bed-m1", map[string]*GoalFile{
+		"waiting":     budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+		"other-seats": budgetedQueuedGoal("other-seats", "2026-08-23T00:00:02Z"),
+	})
+	second, err := store.TurnVerdict(ScanResult{}, "interval", "", "main-1", options)
+	if err != nil || !second.ShouldBlock || !strings.Contains(second.Display, "refusal 2 of 3") || !strings.Contains(second.Display, "other-seats") {
+		t.Fatalf("another seat's new goal restarted this seat's idle count: %+v %v", second, err)
+	}
+	options.StopHookActive = true
+	third, err := store.TurnVerdict(ScanResult{}, "interval", "", "main-1", options)
+	if err != nil || third.ShouldBlock || !strings.Contains(third.Display, "reached the bound of 3") {
+		t.Fatalf("the third idle refusal of the interval did not end the turn: %+v %v", third, err)
+	}
+}
+
+// Witness for the named next task, shaped like seat m1e on 2026-09-27: the
+// seat's own claim is breach-stopped (only a person resumes it, so by design
+// the queue is open), and the queue head waits on a person. The frozen
+// judgment that the Stop line renders as "next:" must name the same goal the
+// steward continuation takes, the first ready goal that does not wait on a
+// person. Before the fix the judgment named the queue head regardless.
+func TestIdleNextTaskSkipsAQueueHeadThatWaitsOnAPerson(t *testing.T) {
+	t.Parallel()
+	fenced := breachStoppedGoalForTest("own-fenced", "bed-m1")
+	human := budgetedQueuedGoal("head-waits-on-a-person", "2026-08-20T00:00:00Z")
+	human.Priority, human.Sequence = 1, 1
+	human.NextStep = "RULING NEEDED: choose the release boundary"
+	ready := budgetedQueuedGoal("ready-second", "2026-08-22T00:00:00Z")
+	ready.Priority, ready.Sequence = 1, 2
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
+		fenced.Id: fenced, human.Id: human, ready.Id: ready,
+	})
+	var prepared IdleEscalationEvent
+	store.PrepareIdleContinuation = func(event IdleEscalationEvent) (string, error) {
+		prepared = event
+		return "intent-ready", nil
+	}
+	store.RecordIdleIncident = func(IdleEscalationEvent) (string, error) { return "alert-ready", nil }
+	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
+	for stop := 1; stop <= 3; stop++ {
+		verdict, err := store.TurnVerdict(ScanResult{}, "next-skips-person", "", "main-1", options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if verdict.Facts == nil || verdict.Facts.Work.Selected == nil || verdict.Facts.Work.Selection != "claimable" ||
+			verdict.Facts.Work.Selected.Id != ready.Id {
+			t.Fatalf("stop %d named a next task that waits on a person: %+v", stop, verdict.Facts)
+		}
+		if !strings.Contains(verdict.Display, "FENCED own-fenced") {
+			t.Fatalf("stop %d hid the seat's own breach-stopped claim: %s", stop, verdict.Display)
+		}
+	}
+	if prepared.GoalID != ready.Id || !prepared.ClaimNeeded {
+		t.Fatalf("the steward continuation and the named next task disagree: %+v", prepared)
+	}
+}
+
+// Witness for declared outside work, shaped like seat m1e's wait
+// e6d85acab0f7df03111ea5abd61bc9ee: a pending `work wait --path FILE --until
+// present` of this seat's session and lineage counts as work in flight while
+// FILE is absent, exactly like a live delegate job, and stops counting once
+// FILE exists. Before the fix every path wait was dropped at row-coordinates
+// (targetZero=true targetRequired=true), so no sanctioned way existed for a
+// seat to declare work the engine cannot see. The idle refusal names this
+// remedy.
+func TestPendingPathWaitCountsAsWorkInFlightUntilItsFileExists(t *testing.T) {
+	t.Parallel()
+	fixture := newPendingWaitVerdictFixture(t, "path", true)
+	fixture.row.OpenWorkSignature = ""
+	fixture.writeRow(t)
+	seedPendingWaitIdleCounter(t, fixture, 2)
+	verdict, session := pendingWaitIdleOutcome(t, fixture)
+	if verdict.ShouldBlock || verdict.IdleRefusal || session.IdleBlocks != 0 {
+		t.Fatalf("a pending path wait did not count as work in flight: verdict=%+v session=%+v", verdict, session)
+	}
+	if !strings.Contains(verdict.Display, "WAITING: registered wait "+fixture.row.WaitID+" covers path "+fixture.row.Selector.Path+" until present") {
+		t.Fatalf("the path wait was not shown: %s", verdict.Display)
+	}
+	if err := os.MkdirAll(filepath.Dir(fixture.row.Selector.Path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture.row.Selector.Path, []byte("done\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	verdict, session = pendingWaitIdleOutcome(t, fixture)
+	if !verdict.ShouldBlock || !verdict.IdleRefusal || session.IdleBlocks != 1 {
+		t.Fatalf("a path wait whose file exists still counted: verdict=%+v session=%+v", verdict, session)
+	}
+	if !strings.Contains(verdict.Display, "metasystem work wait --path FILE --until present --timeout 24h") {
+		t.Fatalf("the idle refusal did not name the outside-work remedy: %s", verdict.Display)
 	}
 }

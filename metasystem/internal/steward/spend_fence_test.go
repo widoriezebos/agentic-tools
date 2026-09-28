@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
@@ -33,6 +34,9 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("HOME", home); err != nil {
 		panic(err)
 	}
+	// The proof admission directory is host-wide; no package test reads or
+	// reclaims the real one.
+	inspectHostLeases = func(string) ([]proofrun.HostLeaseReport, error) { return nil, nil }
 	code := testenv.Main(m, declarations...)
 	if err := os.RemoveAll(home); err != nil && code == 0 {
 		panic(err)

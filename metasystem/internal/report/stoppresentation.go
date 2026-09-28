@@ -1335,9 +1335,9 @@ func writeBacklogSummary(report *strings.Builder, judgment *goal.TurnVerdictFact
 	}
 	if judgment.Refusal.IdleRefusal && judgment.Refusal.Occurrence > 0 {
 		if judgment.Refusal.Occurrence < 3 {
-			fmt.Fprintf(report, "- Backlog: refusal %d of 3 for this unchanged backlog; at 3 request steward continuation and allow Stop unless another branch blocks; selected %s; %d other goals.\n", judgment.Refusal.Occurrence, selected, other)
+			fmt.Fprintf(report, "- Backlog: refusal %d of 3 in this idle interval (no new claim, job or wait from this seat); at 3 request steward continuation and allow Stop unless another branch blocks; selected %s; %d other goals.\n", judgment.Refusal.Occurrence, selected, other)
 		} else {
-			fmt.Fprintf(report, "- Backlog: refusal %d reached the bound of 3 for this unchanged backlog; selected %s; %d other goals.\n", judgment.Refusal.Occurrence, selected, other)
+			fmt.Fprintf(report, "- Backlog: refusal %d reached the bound of 3 in this idle interval; selected %s; %d other goals.\n", judgment.Refusal.Occurrence, selected, other)
 		}
 	}
 	delegateInFlight := false

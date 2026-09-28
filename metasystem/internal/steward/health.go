@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -22,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
@@ -64,6 +66,7 @@ const (
 	RoleCapabilitySnapshots HealthRole = "capability-snapshots"
 	RoleGovernedObligations HealthRole = "governed-obligations"
 	RoleProofAttempts       HealthRole = "proof-attempts"
+	RoleProofAdmission      HealthRole = "proof-admission"
 )
 
 var healthRoleOrder = []HealthRole{
@@ -87,6 +90,7 @@ var healthRoleOrder = []HealthRole{
 	RoleGovernedObligations,
 	RoleNonterminalJobs,
 	RoleProofAttempts,
+	RoleProofAdmission,
 	RoleCapabilitySnapshots,
 }
 
@@ -478,6 +482,7 @@ func evaluateHealthRolesWithMeasure(repoRoot, metasystemRoot string, now time.Ti
 		timed(func() RoleVerdict { return checkGovernedObligations(repoRoot) }),
 		timed(func() RoleVerdict { return checkNonterminalJobs(repoRoot, prober) }),
 		timed(func() RoleVerdict { return checkProofAttempts(repoRoot, prober) }),
+		timed(func() RoleVerdict { return checkProofAdmission(repoRoot, now, inspectHostLeases) }),
 		timed(func() RoleVerdict { return checkCapabilitySnapshots(repoRoot, metasystemRoot, now) }),
 	}, spendObservation
 }
@@ -1638,12 +1643,12 @@ func checkProofAttempts(repoRoot string, prober identity.Prober) RoleVerdict {
 	sort.Strings(paths)
 	var dead, unknown []string
 	for _, path := range paths {
-		value, err := readHealthObject(path)
+		value, terminal, err := readProofAttemptHead(path)
 		if err != nil {
 			unknown = append(unknown, strings.TrimSuffix(filepath.Base(path), ".json"))
 			continue
 		}
-		if value["terminal"] != nil {
+		if terminal {
 			continue
 		}
 		attemptID, _ := value["attemptId"].(string)
@@ -1675,6 +1680,59 @@ func checkProofAttempts(repoRoot string, prober identity.Prober) RoleVerdict {
 		return roleUnknown(RoleProofAttempts, "live proof attempts with unreadable launcher evidence: "+strings.Join(unknown, ","), remedy)
 	}
 	return roleAlive(RoleProofAttempts, "no live proof attempt has a dead launcher")
+}
+
+// proofAdmissionRedKey bounds how long a heavy proof lease may stay dead or
+// unknown before the role turns red; a dead one is normally reclaimed by the
+// check itself or by the next admission pass well inside it.
+const proofAdmissionRedKey = "steward.proof-admission-red-min"
+
+const defaultProofAdmissionRedMinutes = 10
+
+// inspectHostLeases is the host's heavy lease census. It takes a provably
+// dead, settled lease through the admission reclaim path when admission.lock
+// is free. Package tests replace it: the admission directory is host-wide.
+var inspectHostLeases = proofrun.InspectHostLeases
+
+// checkProofAdmission reports every dirty heavy proof-admission lease with
+// its owner, age and state, and turns red when one has been dead or unknown
+// for longer than steward.proof-admission-red-min.
+func checkProofAdmission(repoRoot string, now time.Time, inspect func(string) ([]proofrun.HostLeaseReport, error)) RoleVerdict {
+	minutes, err := boundedConfig(repoRoot, proofAdmissionRedKey, defaultProofAdmissionRedMinutes, 1)
+	if err != nil {
+		return roleUnknown(RoleProofAdmission, err.Error(), "set "+proofAdmissionRedKey+" to a positive number of minutes in metasystem.conf")
+	}
+	threshold := time.Duration(minutes) * time.Minute
+	reports, err := inspect(repoRoot)
+	if err != nil {
+		return roleUnknown(RoleProofAdmission, "heavy proof leases are unreadable: "+err.Error(),
+			"inspect ~/.metasystem/proof-admission by hand; no metasystem verb reads it")
+	}
+	var lines, red, remedies []string
+	for _, report := range reports {
+		age := now.Sub(report.Since).Round(time.Second)
+		line := fmt.Sprintf("%s owner pid %d group %d age %s %s: %s", report.Lease, report.Owner.Pid, report.Owner.Pgid, age, report.State, report.Reason)
+		lines = append(lines, line)
+		if report.Remedy != "" {
+			remedies = append(remedies, report.Lease+": "+report.Remedy)
+		}
+		if (report.State == proofrun.HostLeaseDead || report.State == proofrun.HostLeaseUnknown) && age > threshold {
+			red = append(red, line)
+		}
+	}
+	remedy := strings.Join(remedies, "; ")
+	if len(red) > 0 {
+		if remedy == "" {
+			remedy = "a waiting heavy proof reclaims a dead lease on its next admission pass"
+		}
+		return roleDead(RoleProofAdmission, fmt.Sprintf("heavy proof leases dead or unknown for over %d min: %s", minutes, strings.Join(red, "; ")), remedy)
+	}
+	if len(lines) == 0 {
+		return roleAlive(RoleProofAdmission, "no dirty heavy proof lease")
+	}
+	verdict := roleAlive(RoleProofAdmission, "heavy proof leases: "+strings.Join(lines, "; "))
+	verdict.Remedy = remedy
+	return verdict
 }
 
 func processRef(value map[string]any) (identity.Ref, bool) {
@@ -1731,6 +1789,55 @@ func boundedConfig(repoRoot, key string, fallback, minimum int) (int, error) {
 
 func supervisionRemedy(repoRoot string) string {
 	return fmt.Sprintf("metasystem session start --repo %q", repoRoot)
+}
+
+// readProofAttemptHead reads a proof attempt record only as far as the
+// proof-attempts role needs. A terminal attempt is decided at its "terminal"
+// key: the payload after it (the delivery receipt and test results, up to
+// 25 MB a record, 518 MB across seat m1e's 268 records on 2026-09-27) is
+// never parsed, because a finished attempt has no launcher to judge. That
+// full parse cost the Stop hook about three seconds of CPU per turn. A live
+// attempt is read whole and must be exactly one JSON object, as before.
+func readProofAttemptHead(path string) (map[string]any, bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(bufio.NewReader(file))
+	decoder.UseNumber()
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		if err == nil {
+			err = fmt.Errorf("not a JSON object")
+		}
+		return nil, false, err
+	}
+	value := map[string]any{}
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, false, err
+		}
+		key, _ := token.(string)
+		var field any
+		if err := decoder.Decode(&field); err != nil {
+			return nil, false, err
+		}
+		if key == "terminal" && field != nil {
+			return nil, true, nil
+		}
+		value[key] = field
+	}
+	if _, err := decoder.Token(); err != nil {
+		return nil, false, err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("multiple JSON values")
+		}
+		return nil, false, err
+	}
+	return value, false, nil
 }
 
 func readHealthObject(path string) (map[string]any, error) {

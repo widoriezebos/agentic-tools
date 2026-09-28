@@ -15,7 +15,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // proofAdmissionRepository stores complete immutable repository trees. Goal
@@ -341,13 +340,8 @@ func (r *proofAdmissionRepository) extendBudgetInputs(t *testing.T) syncRequestD
 	if err := os.WriteFile(backlog, r.rawFile(t, "metasystem/plans/goals/backlog.md"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	guard := filepath.Join(r.root, "scripts", "agents", "pre-commit-guard.sh")
-	if err := os.MkdirAll(filepath.Dir(guard), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	plantFenceEngine(t, r.root)
+	guard := filepath.Join(r.root, "bin", "metasystem")
 	reads := r.reads()
 	dependencies := defaultSyncRequestDependencies()
 	dependencies.authorityFacts = goalAuthorityReadFacts{
@@ -381,7 +375,7 @@ func (r *proofAdmissionRepository) extendBudgetInputs(t *testing.T) syncRequestD
 			return err
 		}
 		if !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
-			return fmt.Errorf("fixture guard is not executable: %s", guard)
+			return fmt.Errorf("fixture guard engine is not executable: %s", guard)
 		}
 		return nil
 	}

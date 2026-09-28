@@ -133,7 +133,7 @@ func TestGoalCLICarryDischarge(t *testing.T) {
 			bed.prove, bed.commandNow, dependencies, readCommit)
 	})
 	register, err = os.ReadFile(filepath.Join(bed.root, "records", "counselor", "accepted-risk-register.jsonl"))
-	if code != 0 || !strings.Contains(stdout, `"detail":"idempotent"`) || bed.tip() != tip || err != nil || bytes.Count(register, []byte("\n")) != 1 {
+	if code != 0 || !strings.Contains(stdout, "is already accepted by Wido") || bed.tip() != tip || err != nil || bytes.Count(register, []byte("\n")) != 1 || stderr != "" {
 		t.Fatalf("accept-risk replay was not idempotent: code=%d stdout=%q stderr=%q err=%v\n%s", code, stdout, stderr, err, register)
 	}
 }

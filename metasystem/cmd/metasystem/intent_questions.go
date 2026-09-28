@@ -227,7 +227,13 @@ func runIntentAskWithdraw(inv *intentInvocation, id string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("no channel question %s: %v; nothing was done", shellCommand([]string{id}), err)})
 	}
 	if before.State == "closed" {
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: "question " + id + " is already withdrawn"})
+		// Already closed (R-129-ui): success, and nothing is posted or
+		// written again; the channel owner's Close makes the same no-op.
+		summary := "question " + id + " is already withdrawn; nothing was changed"
+		if before.Answer != nil {
+			summary = "question " + id + " is already closed with its answer recorded; nothing was changed"
+		}
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: summary})
 	}
 	provider, destination := inv.owners.processes.channelLink(inv.stateRoot)
 	q, err := channel.Withdraw(inv.stateRoot, id, reason, provider, destination)

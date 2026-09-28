@@ -128,25 +128,22 @@ func TestWithdrawingClaimedWorkParksItRatherThanUnwindingIt(t *testing.T) {
 		"approval revoked: second thoughts")
 }
 
-// A goal that carries no approval has none to withdraw. The engine's own
-// sentence is what the browser shows, under the engine's own code.
-func TestWithdrawingUnapprovedWorkIsTheEnginesRefusal(t *testing.T) {
+// A goal that carries no approval has none to withdraw: the withdrawal's
+// effect already holds, so it is success with nothing written (R-129-ui,
+// U-idem), at the proven terminal as in the browser.
+func TestWithdrawingUnapprovedWorkIsARepeat(t *testing.T) {
 	t.Parallel()
 	bed := ledger(t)
 	openGoal(t, bed, "ui-six")
 	authority := provenFor(t, bed)
+	before := readGoal(t, bed, "ui-six").Revision
 
-	err := authority.Withdraw("ui-six", "never mind")
-
-	refusal, ok := err.(*Refusal)
-	if !ok {
-		t.Fatalf("withdraw without an approval = %v, want an act.Refusal", err)
+	if err := authority.Withdraw("ui-six", "never mind"); err != nil {
+		t.Fatalf("withdraw without an approval = %v, want success", err)
 	}
-	testutil.Expect(t, "the refusal is the engine's", refusal.Kind, KindEngine)
-	if refusal.Message == "" {
-		t.Fatal("the engine's refusal reached the browser with no words")
-	}
-	testutil.Expect(t, "the goal was not touched", readGoal(t, bed, "ui-six").State, goal.StateQueued)
+	after := readGoal(t, bed, "ui-six")
+	testutil.Expect(t, "the goal was not touched", after.State, goal.StateQueued)
+	testutil.Expect(t, "nothing was written", after.Revision, before)
 }
 
 func TestApproveRefusesAnIncompleteBudgetBeforeItReachesTheLedger(t *testing.T) {

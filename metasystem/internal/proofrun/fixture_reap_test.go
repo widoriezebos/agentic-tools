@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func proofSurvivorRef(pid, token int64) identity.Ref {
@@ -104,8 +105,29 @@ func TestLauncherReapsSurvivorsIntoTheVerdict(t *testing.T) {
 		if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
+		// The launch is owned by this test's process fixture: the suite and
+		// the sibling watchdog carry its tag, so a launcher that dies before
+		// publishing done leaves nothing the custodian cannot reap. The fake
+		// watchdog keeps the engine watchdog's contract: it ends on done or
+		// when the suite it watches is gone, and never outlives both.
+		fixture := testutil.Fixture(t)
 		watchdog := filepath.Join(root, "watchdog.sh")
-		writeExecutable(t, watchdog, "#!/usr/bin/env bash\ndone_path=\nwhile (($#)); do if [[ $1 == --done ]]; then done_path=$2; shift 2; else shift; fi; done\nwhile [[ ! -e $done_path ]]; do sleep 0.01; done\n")
+		writeExecutable(t, watchdog, "#!/bin/sh\n"+testutil.ShellPrologue+`done_path=
+suite_pid=
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    --done) done_path=$2; shift 2 ;;
+    --suite-pid) suite_pid=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf '%s' "${METASYSTEM_FIXTURE_OWNER-}" >"$done_path.owner"
+while [ ! -e "$done_path" ] && kill -0 "$suite_pid" 2>/dev/null; do sleep 0.01; done
+`)
+		wantOwner, err := identity.EncodeKey(fixture.Key())
+		if err != nil {
+			t.Fatal(err)
+		}
 		processFile := filepath.Join(root, "processes.json")
 		t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processFile)
 		fresh := rows[0]
@@ -114,12 +136,16 @@ func TestLauncherReapsSurvivorsIntoTheVerdict(t *testing.T) {
 		var recorded []int
 		logPath := filepath.Join(root, "suite.log")
 		launch := func(suite, launchLog string) int {
-			return LaunchSuite(LaunchOptions{Suite: suite, Root: root, ConfPath: conf,
+			result := LaunchSuite(LaunchOptions{Suite: suite, Root: root, ConfPath: conf,
 				ProgressPath: filepath.Join(root, suite+".progress.jsonl"), LogPath: launchLog, Banner: "fixture banner",
 				Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
 				Poll: 5 * time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
-				WatchdogExecutable: watchdog, Command: []string{"sh", "-c", "exit 0"},
+				WatchdogExecutable: watchdog, Command: []string{"sh", "-c", "exit 0"}, Environment: fixture.Env(os.Environ()),
 				Signal: func(pid int, signal syscall.Signal) error { recorded = append(recorded, pid); return nil }})
+			if owner, err := os.ReadFile(launchLog + ".done.owner"); err != nil || string(owner) != wantOwner {
+				t.Errorf("%s: sibling watchdog fixture owner = %q (%v), want this test's %q", suite, owner, err, wantOwner)
+			}
+			return result
 		}
 		if result := launch("fixture-survivor", logPath); result != 1 || len(recorded) != 1 || int64(recorded[0]) != fresh.Pid {
 			t.Fatalf("survivor launch result=%d signals=%v", result, recorded)

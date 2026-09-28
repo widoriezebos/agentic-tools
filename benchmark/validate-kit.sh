@@ -463,11 +463,11 @@ PY
     echo "benchmark provision: a RAW agent commit passed the target's guard" >&2
     exit 1
   fi
-  grep -q "requires scripts/agents/commit.sh" "$tmp/raw-control.out" \
+  grep -q "an agent commit goes through metasystem work land" "$tmp/raw-control.out" \
     || { echo "benchmark provision: raw-commit refusal lost its message" >&2; cat "$tmp/raw-control.out" >&2; exit 1; }
   (cd "$provision_target" && GIT_AUTHOR_NAME=m GIT_AUTHOR_EMAIL=m@example.invalid \
       GIT_COMMITTER_NAME=m GIT_COMMITTER_EMAIL=m@example.invalid \
-      scripts/agents/commit.sh -qm "wrapped control commit") \
+      bin/metasystem work land --message - --staged --local <<<"wrapped control commit" >/dev/null) \
     || { echo "benchmark provision: the wrapper route failed to carry a commit" >&2; exit 1; }
   git -C "$provision_target" reset -q --hard HEAD~1
   "$provision_target/bin/metasystem" lease retire --root "$provision_target" \
