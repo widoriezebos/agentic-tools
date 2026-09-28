@@ -72,7 +72,7 @@ func TestR14PublicLookupRefusesNonPublicForms(t *testing.T) {
 			t.Errorf("hidden entry %q counted as public", command.name)
 		}
 	}
-	for _, form := range []string{"goal budget", "goal claim", "work stop", "goal notes"} {
+	for _, form := range []string{"goal budget", "goal claim", "work stop", "goal notes", "helm take"} {
 		if !public[form] {
 			t.Errorf("%q must be a runnable public command", form)
 		}
