@@ -113,6 +113,33 @@ func TestCollectsClosedFullyMirroredChain(t *testing.T) {
 	}
 }
 
+// TestCollectsAChainCoveredOnlyByALegacyUnsegmentedManifest is the port of
+// evidence-segment-fixtures.sh (verbs-object-action U7c): the collector
+// still understands the pre-segmentation manifest location
+// evidence/agents/<chain>/manifest.json, so a closed chain whose payload
+// that legacy manifest covers is collected.
+func TestCollectsAChainCoveredOnlyByALegacyUnsegmentedManifest(t *testing.T) {
+	freezeClock(t)
+	root, evidenceRoot, agents, jobs := checkout(t)
+	payload := "legacy payload\n"
+	writeFile(t, filepath.Join(agents, "legacy-chain", "brief.md"), payload)
+	writeFile(t, filepath.Join(jobs, "legacy-chain.json"), `{"jobId": "legacy-chain", "parentJob": null, "status": "completed", "chainClosed": true}`)
+	writeFile(t, filepath.Join(evidenceRoot, "agents", "legacy-chain", "manifest.json"),
+		manifestJSON("2026-08-10T10:00:00Z", map[string]string{"brief.md": digestOf(payload)}))
+	if _, err := os.Stat(filepath.Join(evidenceRoot, "agents", dispatch.CheckoutSegment(root))); !os.IsNotExist(err) {
+		t.Fatalf("the bed must hold no segmented manifest: %v", err)
+	}
+
+	out := runGC(t, root, evidenceRoot)
+
+	if !strings.Contains(out, "collected legacy-chain\n") {
+		t.Fatalf("the legacy-manifest chain was not collected: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(agents, "legacy-chain")); !os.IsNotExist(err) {
+		t.Fatalf("the legacy-manifest payload was not collected: %v", err)
+	}
+}
+
 func TestKeepsChainsTheMirrorCannotVouchFor(t *testing.T) {
 	freezeClock(t)
 	root, evidenceRoot, agents, jobs := checkout(t)
