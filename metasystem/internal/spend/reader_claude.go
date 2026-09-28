@@ -230,6 +230,12 @@ func claudeReader() reader {
 	}
 }
 func discoverClaudeTranscripts(repoRoot string) discoveryResult {
+	return discoverClaudeTranscriptsUnder(repoRoot, os.UserHomeDir)
+}
+
+// discoverClaudeTranscriptsUnder is discovery with the home directory
+// supplied, so a test can name one without changing the process's HOME.
+func discoverClaudeTranscriptsUnder(repoRoot string, userHome func() (string, error)) discoveryResult {
 	var result discoveryResult
 	recordUnreadable := func(path string, err error) {
 		displayPath := path
@@ -248,7 +254,7 @@ func discoverClaudeTranscripts(repoRoot string) discoveryResult {
 		result.fatal = true
 		return result
 	}
-	home, err := os.UserHomeDir()
+	home, err := userHome()
 	if err != nil {
 		recordUnreadable("~", fmt.Errorf("cannot resolve home directory: %w", err))
 		result.fatal = true

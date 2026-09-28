@@ -10,6 +10,7 @@ import (
 // repository, is outside the repository: the weak "resolve only if it
 // exists" form kept it lexical and accepted it.
 func TestRelUnderRepoRefusesANotYetExistingPathBehindALinkOut(t *testing.T) {
+	t.Parallel()
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

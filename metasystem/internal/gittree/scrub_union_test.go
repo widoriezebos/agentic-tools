@@ -8,6 +8,7 @@ import (
 // The one steering list is the union of every copy the runner once kept:
 // gittree's own, goal's, channel's and the hook launcher's shell unset line.
 func TestScrubbedEnvironFromStripsTheWholeUnion(t *testing.T) {
+	t.Parallel()
 	steering := []string{
 		"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES",
 		"GIT_DISCOVERY_ACROSS_FILESYSTEM", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",

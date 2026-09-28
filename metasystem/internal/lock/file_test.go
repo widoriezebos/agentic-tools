@@ -8,6 +8,7 @@ import (
 )
 
 func TestFileTakesAndReleasesAnExclusiveLock(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "held.lock")
 	held, err := File(path, 0o600, Exclusive)
 	if err != nil {
@@ -36,6 +37,7 @@ func TestFileTakesAndReleasesAnExclusiveLock(t *testing.T) {
 }
 
 func TestFileSharesASharedLock(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "shared.lock")
 	first, err := File(path, 0o644, Shared)
 	if err != nil {
@@ -53,6 +55,7 @@ func TestFileSharesASharedLock(t *testing.T) {
 }
 
 func TestFileOpenFailureIsNotALockError(t *testing.T) {
+	t.Parallel()
 	_, err := File(filepath.Join(t.TempDir(), "missing", "x.lock"), 0o600, Exclusive)
 	var lockErr *LockError
 	if err == nil || errors.As(err, &lockErr) || Busy(err) {

@@ -26,6 +26,7 @@ func linkedBed(t *testing.T) (root, outside string) {
 }
 
 func TestResolveFollowsTheDeepestExistingAncestor(t *testing.T) {
+	t.Parallel()
 	root, outside := linkedBed(t)
 	missing := filepath.Join(root, "out", "not-yet", "file")
 	if got, want := Resolve(missing), filepath.Join(outside, "not-yet", "file"); got != want {
@@ -37,6 +38,7 @@ func TestResolveFollowsTheDeepestExistingAncestor(t *testing.T) {
 }
 
 func TestResolveExistingResolvesOnlyAWholeExistingPath(t *testing.T) {
+	t.Parallel()
 	root, outside := linkedBed(t)
 	if got := ResolveExisting(filepath.Join(root, "out")); got != outside {
 		t.Fatalf("an existing link resolves: %s", got)
@@ -48,6 +50,7 @@ func TestResolveExistingResolvesOnlyAWholeExistingPath(t *testing.T) {
 }
 
 func TestWithinComparesWholeSegments(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		path, root string
 		want       bool

@@ -263,6 +263,7 @@ func TestChainNonAncestorAnchor(t *testing.T) {
 // temporary before the rename, so the file never appears with CreateTemp's
 // 0600.
 func TestWriteFilePublishesWithTheNamedMode(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	for _, mode := range []os.FileMode{0o644, 0o600, 0o755} {
 		path := filepath.Join(root, "file-"+mode.String())
@@ -284,6 +285,7 @@ func TestWriteFilePublishesWithTheNamedMode(t *testing.T) {
 
 // WriteVolatileFile is WriteVolatile for bytes with the named mode.
 func TestWriteVolatileFilePublishesWithTheNamedMode(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "nested", "script.sh")
 	if err := WriteVolatileFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -301,6 +303,7 @@ func TestWriteVolatileFilePublishesWithTheNamedMode(t *testing.T) {
 // A writer under a checkout's artifacts/ tree anchors at the checkout root
 // above it; transient paths anchor nowhere.
 func TestAnchorForArtifacts(t *testing.T) {
+	t.Parallel()
 	if got := AnchorForArtifacts("/repo/x/artifacts/agents/jobs/j.json"); got != "/repo/x" {
 		t.Fatalf("anchor = %q, want /repo/x", got)
 	}

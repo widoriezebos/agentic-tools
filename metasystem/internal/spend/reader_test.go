@@ -313,16 +313,16 @@ func claudeCodeProjectFolder(cwd string) string {
 }
 
 func TestDiscoveryFindsTranscriptsOfACheckoutWhosePathHasDotUnderscoreAndSpace(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join(t.TempDir(), "seat.dir_with space")
 	mustSpendTest(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
 	home := t.TempDir()
-	t.Setenv("HOME", home)
 	folder := claudeCodeProjectFolder(root)
 	if strings.ContainsAny(folder, "._ ") {
 		t.Fatalf("test encoding left a separator in %q", folder)
 	}
 	writeSeatTranscript(t, filepath.Join(home, ".claude", "projects", folder, "seat.jsonl"), "seat", root, "request", 1, 2)
-	discovered := readerRegistry[0].discover(root)
+	discovered := discoverClaudeTranscriptsUnder(root, func() (string, error) { return home, nil })
 	if discovered.fatal || len(discovered.files) != 1 || discovered.files[0].session != "seat" {
 		t.Fatalf("discovery under %q missed the Claude Code transcript folder %q: %+v", root, folder, discovered.files)
 	}

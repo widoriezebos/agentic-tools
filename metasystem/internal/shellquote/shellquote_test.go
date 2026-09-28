@@ -3,6 +3,7 @@ package shellquote
 import "testing"
 
 func TestQuoteSingleQuotesEveryValue(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"": "''", "plain": "'plain'", "a b": "'a b'", "it's": `'it'\''s'`, "$HOME": "'$HOME'",
 	} {
@@ -13,6 +14,7 @@ func TestQuoteSingleQuotesEveryValue(t *testing.T) {
 }
 
 func TestWordLeavesSafeWordsBare(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"": "''", "/usr/bin/metasystem": "/usr/bin/metasystem", "a,b=c@d%e+f:g": "a,b=c@d%e+f:g",
 		"a b": "'a b'", "it's": `'it'\''s'`, "~x": "'~x'",
@@ -25,6 +27,7 @@ func TestWordLeavesSafeWordsBare(t *testing.T) {
 
 // Token matches bash's printf %q for the paths a refusal lists.
 func TestTokenMatchesPrintfQ(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"": "''", "a/b.go": "a/b.go", "a b": `a\ b`, "it's": `it\'s`, "~home": `\~home`, "a~b": "a~b",
 		"é": "é", "line\nbreak": `$'line\nbreak'`, "tab\there": `$'tab\there'`, "bell\a": `$'bell\007'`,

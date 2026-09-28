@@ -183,6 +183,7 @@ func TestRenderValueRefusesUnmarshalable(t *testing.T) {
 
 // WriteFile publishes RenderValue's bytes atomically at path.
 func TestWriteFilePublishesTheCanonicalRendering(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "nested", "doc.json")
 	value := map[string]any{"b": "x<y>&z", "a": 1}
 	if err := WriteFile(path, value); err != nil {

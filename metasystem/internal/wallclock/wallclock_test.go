@@ -6,6 +6,7 @@ import (
 )
 
 func TestSystemReadsAndWaitsOnTheWallClock(t *testing.T) {
+	t.Parallel()
 	var c Clock = System()
 	before := time.Now()
 	start := c.Now()
