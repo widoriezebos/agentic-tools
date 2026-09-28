@@ -1,19 +1,27 @@
-# g1-s65: the review sitting — a piece of landed work on the table
+# g1-s65: the review room — a goal on the table before it lands
 
 - Kind: design
 - Id: 01M3J3V8CBYBGP36BZYS8JM98F
 - Status: draft
 - Goals: browser-interface
 
-Wido, 2026-09-27: "read plans/paper and tell me what would be a good next
-thing to add to the UI. I'm thinking of support for human review of a
+Revision 2, 2026-09-28. Wido, 2026-09-27: "support for human review of a
 goal (explanation of design, decisions, code, coding decisions, showing
-mermaid diagrams explain, runtime behaviour etc in the form of a sitting,
-in dialogue with the project partner OR a different agent equipped for
-specifically this task ... almost like discussing a piece of work that
-was built with a fellow engineer and a whiteboard together in a room with
-the laptop and the code at hand ... UX IS KEY." Author Fable. Every cite
-re-read at `f9385b1ca`.
+mermaid diagrams explain, runtime behaviour etc) in the form of a
+sitting, in dialogue with the project partner OR a different agent
+equipped for specifically this task ... like discussing a piece of work
+that was built with a fellow engineer and a whiteboard together in a
+room with the laptop and the code at hand. UX IS KEY." Then, 2026-09-28:
+"this needs to happen BEFORE it becomes live on main. We should ideally
+be able to run it locally, so we can inspect behaviour"; and: "How can
+the human in the most optimal way be supported by the UI: understanding,
+inspecting, commenting, creating follow up goals that need to complete,
+taking the goal back into development ... without losing focus, ideally
+being able to 'step out of the room and come back later'. The virtual
+whiteboard with diagrams, remarks ... I need EXCELLENT UX on this." He
+agreed to the room and its four slices as proposed. Revision 1 was the
+same record for done goals, with the code in the transcript; it is
+superseded by this page. Author Fable. Every cite re-read at `a9ca1a278`.
 
 ## 1. What exists and binds
 
@@ -27,282 +35,367 @@ re-read at `f9385b1ca`.
    recorded authority. What leaves a review sitting is, again, records:
    findings answered one by one, a ruling, or a named demand for
    evidence. And a review sitting that ends in a nod has produced nothing
-   anyone can be held to." The machinery in the room judges nothing
-   (chapter 15, "Who is in the room"); a fresh mind is the only fresh
-   perspective, and "the partner who helped shape a design is the last
-   one who may judge it" (its title line). Chapter 13's reviewer "may
+   anyone can be held to." The machinery in the room judges nothing; a
+   fresh mind is the only fresh perspective. Chapter 13's reviewer "may
    demand more evidence, narrow or stop exposure, and authorize
-   acceptance within scope or refuse it"; "a bare approval cannot explain
-   which risk was accepted". Chapter 6 names when human review is owed:
-   a value judgment exposed, an irreversible or severe act, unfamiliar
-   work with weak tests, or builder and examiner sharing a model. Chapter
-   14: the machinery "explains what the evidence supports, and the
-   engineer's follow-up questions guide the conversation"; a person who
-   has seen the builder's reasoning may learn from it but may not examine
-   it independently. Proportion holds: "a mechanical repair with a clear
-   defect needs no sitting".
-2. **The sitting as built** (g1-s53, g1-s55): a sitting is a record with a
-   conversation attached; its working material is four sections of that
-   record, written by the human's press through one serialized recorder
-   (`partner/sitting.ts`, `partner/recording.ts`); the Partner's
-   `deposit` tool offers facts, proposals, decisions, open questions,
-   cases and the outcome, and writes nothing; a case card carries Decide,
-   Leave open and Dismiss (`partner/Deposit.tsx`, `CaseCard`); End drafts
-   the Outcome; Project → Sittings lists records that carry deposit
-   marks; the Partner's instructions forbid recommending in a sitting.
-   The service admits two purposes and says the rest itself:
-   `admitsPurpose` refuses anything but shape intent and shape a design
-   with "review and learning sittings are not in this build"
-   (`internal/ui/partner/service.go`, the sitting section), and a sitting
-   is refused on any record but an intent or a design (`admitsSubject`).
-   One conversation per human per checkout, kept outside the checkout
-   (`internal/ui/partner/conversation.go:20-50`); whether the Partner's
-   provider session is fresh is the server's one decision, and a fresh
-   session gets the opening turn again (g1-s55 D3).
-3. **What a piece of landed work leaves behind.** A goal file
-   (`internal/goal/file.go:23-91`) carries its intent, tier and risk
-   record, budget, approval, review obligations, accepted risks, read
-   items, history and, when done, one concluding sentence. It carries
-   **no landing commit**: the commit names the goal in a `Goal-Item`
-   trailer (`internal/landing/held.go:313`), and binding the two records
-   is open work (`plans/goals/commit-goal-binding.md`). A design names
-   its goals one way (`- Goals:`, g1-s26); this interface's own slices
-   bypass the ledger, name no goals, and their Built sections name the
-   commits that landed them. Beside each design stand Astra's critique
-   and Sol's read, with the dispositions folded into the design. Proof
-   runs and screenshots go to the evidence root, which is configured
-   outside the checkout (`metasystem/metasystem.conf:148`) and named only
-   by a design's Evidence line; nothing in the interface resolves it.
-   What a human can record about landed work today: approve before,
-   done after, accept-risk on a critic's finding, and rejection as prose
-   in Next step. There is no record that says a human examined a piece
-   of landed work and what they made of it.
-4. **What the interface shows** (survey of 2026-09-27): a goal page with
-   the records that name the goal, its slices and its blocks; a document
-   reader over the server's typed Markdown tree, which draws a mermaid
-   fence as a code block with its language caption ("no diagram is drawn
+   acceptance within scope or refuse it; the custodian still performs
+   the acceptance". Chapter 6 names when human review is owed. Chapter
+   14: "the machinery prepares the environment and carries out the
+   experiment the engineer chose". Proportion holds: "a mechanical
+   repair with a clear defect needs no sitting".
+2. **Where a goal waits, and where its work is.** A claimed goal whose
+   work is built and waiting to land carries a Landing record (`goal
+   land-ready`, `work land --queue-only`; `internal/goal/file.go:80-82,
+   99-104`), and the board reads it into the Review lane
+   (`internal/backlog/project.go:215`), which refuses every drop:
+   "Review is read from a claim that has built and is waiting to land;
+   nothing here can record that" (`backlog/moves.ts:74`). Nothing in
+   that lane waits for a person: `work land G` needs reads, proof and
+   the approval and lands (`cmd/metasystem/intent_delivery.go:139-152`).
+   The built work is the branch `goal/<id>` at origin
+   (`cmd/metasystem/goal_branch.go:293, 495`); a done goal carries no
+   landing commit, the `Goal-Item` trailer is the link
+   (`internal/landing/held.go:313`). What a human can record about work
+   today: approve before, done after, accept-risk on a critic's finding,
+   rejection as prose in Next step. No record says a human examined a
+   candidate and what they made of it.
+3. **The sitting as built** (g1-s53, g1-s55): a record with a
+   conversation attached, four sections written by the human's press
+   through one serialized recorder (`partner/sitting.ts`,
+   `partner/recording.ts`); the `deposit` tool offers facts, proposals,
+   decisions, open questions, cases and the outcome and writes nothing;
+   the case card carries Decide, Leave open and Dismiss
+   (`partner/Deposit.tsx`); End drafts the Outcome; Project → Sittings
+   lists records by their deposit marks. `admitsPurpose` refuses review
+   ("review and learning sittings are not in this build",
+   `internal/ui/partner/service.go`) and `admitsSubject` refuses any
+   record but an intent or a design. One conversation per human per
+   checkout, outside the checkout (`internal/ui/partner/conversation.go:
+   20-50`); whether the provider session is fresh is the server's one
+   decision (g1-s55 D3). The Partner is an ACP runtime with Read, Glob
+   and Grep inside the checkout and eleven reads plus three offers
+   (`internal/ui/uitools/uitools.go:70-83`); no git.
+4. **What the interface can show.** The document reader serves one
+   checkout file by its relative id and only a `.md` one
+   (`internal/ui/project/document.go:118-155, 339`), as a typed tree; a
+   mermaid fence is a code block with its caption ("no diagram is drawn
    in this build", `internal/ui/markdown/markdown_test.go:149-163`;
-   `project/Markdown.tsx:81-128`); no diff, no source file view, no
-   evidence view. The Partner is an ACP runtime with Read, Glob and Grep
-   inside the checkout and nothing else, plus one tool server of eleven
-   reads and three offers (`internal/ui/uitools/uitools.go:70-83`); it
-   has no git and cannot reach the evidence root. The New goal sheet
-   opens with a prefilled intent (`backlog/OpenSheet.tsx:105`). The
-   frontend carries no lazy chunk today and serves under a per-request
-   CSP nonce (`httpd/httpd.go:342-354`); the cut guard
-   (`src/cuts.test.ts`) refuses every network call outside the listed
-   sites.
+   `project/Markdown.tsx:81-128`). No source view, no diff, no evidence
+   view. Selected prose anywhere the interface renders it offers Ask,
+   which attaches the passage with its document and revision for one
+   question (`partner/AskSelection.tsx`, g1-s29). Stickies are private
+   notes bound to a goal or a document, shown on that subject's page
+   (`stickies/stickies.ts:52-66`, g1-s50). The New goal sheet opens with
+   a prefilled intent (`backlog/OpenSheet.tsx:105`). The frontend has no
+   lazy chunk and serves under a per-request CSP nonce
+   (`httpd/httpd.go:342-354`); the cut guard forbids every network call
+   outside the listed sites.
+5. **The launch contract** (`plans/designs/app-launch-contract.md`, goal
+   `app-launch-contract`, priority 1): `metasystem app start --goal G`
+   runs the candidate from `goal/<id>` in a worktree on its own port
+   with a truthful status and a proven stop. This room consumes it in
+   slice C and does not wait for it before that.
 
-## 2. Your goals as a reviewer, and the room that serves them
+## 2. What you want in the room
 
-You have a piece of work in front of you that machinery built, machinery
-examined, and machinery proved. You are the one person who can be held to
-having looked at it. What you want, in the order it happens:
+- **R1. Understand.** What was asked, what was built, why, how it was
+  examined and proven, and how it behaves, each with its anchor.
+- **R2. Inspect.** The code at hand: the lines the conversation is
+  about, large, with the changed lines marked, and the change as a
+  whole when you want it.
+- **R3. Comment.** Jot a remark on the exact spot, keep it private until
+  you decide it belongs on the record.
+- **R4. Follow up, or take it back.** Every finding answered by you, in
+  your words, with its consequence stated: a follow-up goal, a return to
+  the builder, an accepted risk, or an open question.
+- **R5. Not lose focus.** One room, the colleague beside the thing,
+  nothing else on screen pulling at you.
+- **R6. Step out and come back.** Leave at any moment; return to the
+  same desk, the same board, the same conversation; be told what moved.
+- **R7. A whiteboard.** Drawings and remarks that stay, pinned to what
+  they are about.
+- **R8. Never a nod.** What leaves the room is a record of what you
+  examined and what you answered, and a verdict the landing reads.
+- **R9. A colleague who was not in the room** that shaped the design,
+  who reads the record and the code and never says whether to accept.
 
-- **R1. See what was asked and what landed as one thing.** The intent,
-  the design's decisions and the commits that carried them, on one page,
-  not in five tabs.
-- **R2. Understand why.** Each decision in the design's own words, each
-  claim about the code anchored to a line you can read.
-- **R3. Have the code at hand, and a whiteboard.** Exact lines quoted when
-  you ask; a drawing of the mechanism when words fail.
-- **R4. Find what was not tried.** The case the examination missed, the
-  assumption the tests share with the code, the evidence that is thin.
-- **R5. Answer every finding yourself, then and there.** Demand a fix or
-  more evidence, accept the risk with your reason, or leave it open;
-  each one recorded as you say it.
-- **R6. Leave a record, never a nod.** If the session died this second, a
-  fresh worker and you could go on from what is written.
-- **R7. A colleague who was not in the room.** Someone who reads the
-  record and the code, not the conversations that produced them, and who
-  never tells you whether to accept.
+## 3. The room
 
-The room, from your chair:
+One screen, two panes, and a wall you flip to. The rail is hidden while
+you are in the room; the bell keeps its count and nothing more.
 
-You open a goal that is done, or a design whose Built section names its
-commits, and press **Review it**. The sheet says one thing worth knowing
-before you sit down: "Your Partner starts fresh for this: it reads the
-record and the code, not the conversations that shaped them", and shows
-what will be on the table: three commits, fourteen files, examined by
-Astra in two rounds, Sol's read beside it, proof green at `4acaa5e7c`.
-You press Start.
+```
+┌ Reviewing g1-s64 · at tip 84f8acfbf · 3 findings, 1 unanswered · [Board] [Step out] ┐
+│ DESK ─────────────────────────────────── │ THE CONVERSATION ───────────────────── │
+│ ‹ owner.go:41-88 › changes › design D3 › │ Partner: The lock covers publish and    │
+│                                          │ reconcile because ... (owner.go:60) ●   │
+│  41  type owner struct {                 │                                         │
+│  ..  ▌ changed lines marked              │ You: what if the press dies here?       │
+│  60  func (o *owner) begin(...)          │                                         │
+│      ▲ selected → [Ask] [Remark] [Finding]│ Partner: nothing recorded covers it ... │
+│                                          │ ┌ A finding ──────────────────────────┐ │
+│                                          │ │ [Fix in this goal] [Follow-up goal] │ │
+│                                          │ │ [Accept, with reason] [Leave open]  │ │
+│                                          │ └─────────────────────────────────────┘ │
+│                                          │ [ Ask ... ]                             │
+└──────────────────────────────────────────┴─────────────────────────────────────────┘
+```
 
-The Partner's first turn is the narrator's report, short and in five
-parts: **Asked** (the intent and the design's Outcome), **Built** (the
-commits, the files, the size), **Examined** (the rounds, the findings,
-their dispositions, what was left as a residual), **Proven** (what ran,
-at which commit, which tests failed first), **Behaves** (the screenshots
-and the walkthrough, where the record names them, and "not recorded"
-where it does not). Every claim carries its anchor as a chip. Under the
-report stand five presses, one per part: press **Built** and the Partner
-walks you through what landed, file by file, quoting the lines that
-matter with their path and line. Nothing is weighed; the parts are a
-table of contents, not a recommendation.
+**The desk** is the laptop. It shows one thing at a time, large: a
+source file of the candidate's tree at a line range with the changed
+lines marked; the change index, files with counts, each opening its
+diff; a design or intent section; a screenshot from the evidence; a
+kept drawing. A strip above it lists what has been on the desk, newest
+first, and pressing one brings it back. Every anchor in the conversation
+puts its subject on the desk. During a walk the Partner puts things on
+the desk as it explains them, the colleague pointing at the screen, and
+you can stop it with one press.
 
-You ask: "why does the act layer take one lock over publish and
-reconcile?" The Partner answers from the design's D3 and from
-`internal/ui/act/owner.go:41-88`, quoted. You ask: "draw me the path of
-a press from the card to the ledger." The Partner answers with a
-sequence diagram, drawn, with the source one press away. You ask: "what
-if the press dies between publish and settle while it holds the line?"
-The Partner says what the record holds: the takeover the design built,
-the test that holds it, and that the examination's cases were two tabs
-and a slow answer, and none of them a death with the line held. It
-offers that as **a finding**: the case, where it lives, what follows if
-it is left. The card has three answers. **Demand** opens the New goal
-sheet with the consequence written as an outcome and "from the review of
-g1-s6x" in its words; when the goal opens, the finding is recorded with
-"demanded: goal G2". **Accept** opens the small sheet you know from
-cases: the clause as heard, and your reason, required; the finding is
-recorded with "accepted" and the reason. **Leave open** records it with
-its consequence. Dismiss folds it. You can state a finding yourself in
-plain words; the Partner offers it back as a card with the anchor it
-found.
+**The conversation** stays beside the desk, always. One composer, at
+the bottom, reached with one key. It opens with the narrator's report in
+five parts, Asked, Built, Examined, Proven, Behaves, every claim with its
+anchor, and five presses under it, one per part, each a walk.
 
-The table beside the conversation now has a **Findings** pile beside
-Facts, Decisions and Open questions, each finding with its answer. You
-move to the goal page, read the design's Built section, come back; the
-chip still says "Reviewing: g1-s64". You press **End the sitting**. The
-Partner drafts what the review came to: what you examined, with the
-anchors; the findings and what you answered on each; the risks you
-accepted, with your reasons; the goals you demanded; what you left open;
-what you did not examine. You edit it and press Record it. If nothing
-was recorded, the sheet says so first: "Nothing is on the table. A
-review that ends in a nod has produced nothing anyone can be held to",
-and both ways out stay open. The review record now stands beside the
-design, named on the goal's page, and the demands are goals in the
-queue, waiting for your approval like any other.
+**The board** is the whiteboard. The desk pane flips to it and back with
+one press. It holds the four piles, Findings with their answers, Facts,
+Decisions and Open questions, and beside them your remarks and the
+drawings you kept. Every item on the board is pinned to what it is
+about; pressing it puts that back on the desk. Never more than two
+things on screen: the colleague, and either the thing or what you have
+made of it.
 
-## 3. Decisions
+**Inspecting is selection.** Select lines on the desk, a hunk, or a
+sentence of the design, and three presses appear: Ask sends the passage
+to the Partner; Remark pins a private note to that exact spot; Finding
+opens a finding card with the anchor filled.
 
-- D1. **A review is a record of its own.** Kind `review`, in a home
-  beside the designs, created at Start by the server. Its head names
-  what it reviews: `Goals:` the ledger goal where there is one;
-  `Reviews:` the design's path where the subject is a design;
-  `Reviewed:` the commits found (the `Goal-Item` trailer for a goal, the
-  hashes in the Built section for a design) with "none found; write them
-  here" where none were; `Evidence:` the path the design's Evidence line
-  names, for you rather than for the Partner. Its sections are Facts,
-  Findings, Decisions, Open questions and Outcome. The existing
-  projection lists it on the goal's page and on Project by kind; nothing
-  new lists it. Not the design record itself, because a design may span
-  goals and its piles are the design room's.
-- D2. **Review it** from a done goal's page and from a design's page.
-  Purpose `review`; the sitting's subject is the review record, so every
-  rule of the sitting holds unchanged. The sheet says the fresh-session
-  line and what will be on the table, read from the record's head.
-- D3. **The reviewer's Partner is fresh.** The review's turns run in a
-  provider session started at Start with the boot context and the review
-  brief, and none of the conversation's earlier turns; the transcript
-  stays where it is. The Partner's instructions gain the review rules:
-  bring what the record holds in the five parts; anchor every claim;
-  name what the examination did not try, what the tests assume, and what
-  is not recorded; offer the cases at the edge as findings; draw a
-  mechanism, a path or a state when words would be longer; never say
-  whether to accept. Not a second agent: one relationship, one store,
-  one help register, and the paper's narrator is a function, not a
-  person. Freshness is what "a different agent" buys, and a new session
-  buys it.
-- D4. **The opening turn and the five walks.** The opening turn is a
-  fixed request the interface submits, as the sitting's is today, in the
-  five parts. Under it, five presses, each a fixed request: Asked,
-  Built, Examined, Proven, Behaves.
-- D5. **The `landing` read.** One more operation for the Partner: for the
-  review record it is sitting on, the commits its head names, the files
-  they changed with counts, and per file the hunks, bounded per call.
-  The Partner quotes with path and line; the human's own editor is the
-  laptop in step 1.
-- D6. **Findings as cards.** `deposit` gains the kind `finding` with text,
-  anchor and consequence. The card is the case card's shape with three
-  answers. Demand opens the New goal sheet prefilled; only when the goal
-  has opened is the finding recorded, with `Answer: demanded — goal G2`.
-  Accept opens the Decide sheet with the clause as heard and a required
-  reason, and records `Answer: accepted — <reason>`. Leave open records
-  `Answer: left open`. Dismiss folds. An entry's clause block may carry
-  `Anchor:` and `Answer:` lines; the table's Findings pile shows each
-  finding with its answer. The four piles are a property of the record's
-  kind: a review's are Facts, Findings, Decisions, Open questions.
-- D7. **Drawings.** A mermaid fence renders as a diagram in the transcript
-  and in the document reader, the library loaded as its own chunk on
-  first need, the source shown by a press and shown instead when the
-  library cannot load or the diagram cannot parse. The first thing the
-  builder does is prove the diagram survives the page's CSP (a nonce for
-  the styles mermaid writes into its SVG, or a rendering mode that
-  writes none); if it cannot, this decision waits and says so. Drawings
-  the room used ride the Outcome draft; keeping one by itself is later.
-- D8. **End.** The outcome draft for a review takes the shape §2 gives it.
-  With all four piles empty, the End sheet says the nod line above its
-  two ways out. Record it and end the sitting as today.
-- D9. **No nag, no gate.** Nothing proposes a review, no inbox row, no
-  badge; a review changes no goal's state. The review record is the
-  human's account, and its demands are goals in the queue.
+**A finding has four answers**, each stating its consequence in one
+line. Fix in this goal marks it for the builder: the candidate will
+return to construction and be examined again before it comes back.
+Follow-up goal opens a new goal with the finding as its intent and lets
+this one land. Accept records the risk with your reason. Leave open
+keeps the question with its consequence. A finding is recorded the
+moment you answer it, with the answer on its line.
 
-## 4. Step 1, the smallest thing that works
+**Stepping out** is the ordinary exit, not an end. The room keeps the
+desk and its history, the board, the conversation and, in slice C, the
+running candidate. The goal's card in the Review lane becomes the door:
+"In review · you stepped out 2h ago · 3 findings, 1 unanswered", and
+pressing it reopens the room where you were. If the branch tip moved
+while you were out, the room says so on return and offers one press,
+Show what changed, which puts the diff between the two tips on the desk;
+findings whose anchors sit in files that changed are marked "may have
+moved". A push never throws a review away.
 
-All nine, in two build lanes that do not touch each other's files: the
-room (D1 to D6, D8, D9) and the drawings (D7). Not in step 1, each one
-small when it hurts: the desk (a source file at a line, a diff page for a
-review's commits, an evidence page that shows the screenshots), because
-the Partner quoting the lines already puts the code at hand; Keep a
-drawing; an `evidence` read for the Partner; a review before landing that
-the landing consumes; the four risk questions proposing which landed
-work deserves a look; Demand as `work revise` on a goal in flight;
-answers on a finding from the table; the Partner proposing Review it;
-learning sittings with the diagnosis withheld; several humans in one
-review.
+**Ending** shows the verdict the landing will read, with its
+consequence: Clear to land, which refuses while a finding is unanswered
+and lists them; Send back, which carries every finding marked fix to the
+builder as its correction brief; End without a verdict, said plainly.
+Each records the Outcome first, and the Outcome names what you examined,
+so a nod cannot pass as a review.
 
-## 5. Payload and routes
+## 4. Decisions
 
-`POST /api/partner/sitting` takes purpose `review` with subject `{kind:
-goal | design, id}`; the server creates the review record in its home
-and opens the sitting on it; the conversation's `sitting` carries
-`purpose` as today. The record creator gains the kind, its template and
-its home (`internal/ui/project/write.go`, `templates`, `homeFor`) and
-the resolver its kind. `deposit` gains `finding`; `uitools` gains
-`landing`. `entriesIn` reads an `Answer:` line beside `Anchor:`. The five
-walks and the opening turn are fixed requests with the interface's
-provenance, as the opening and closing turns are. The New goal sheet is
-opened with its prefill. The transcript and the reader render mermaid
-fences through one lazily loaded chunk.
+Each decision names the slice that builds it: A, B, C or D (§5).
 
-## 6. Not here, later
+- D1 (A). **A review is a record of its own**, kind `review`, in a home
+  beside the designs, created by the server at Start. Its head names
+  `Goals:` the goal; `Reviewed:` the tip of `goal/<id>` for a goal
+  waiting to land, or the `Goal-Item` commits for a done goal, or "none
+  found; write them here"; `Evidence:` the path a design's Evidence line
+  names, where one does. Sections: Facts, Findings, Decisions, Open
+  questions, Drawings, Outcome. The existing projection lists it on the
+  goal's page and under Project by kind. The transcript stays the private
+  sitting store.
+- D2 (A). **Review it** stands on the Review lane's card and on the goal
+  page of a goal that waits to land, and on a done goal's page. It opens
+  the room at `/review/<record>`, a route of its own that hides the rail
+  and carries Step out; the drawer is not shown inside the room, because
+  the conversation is the room's own pane. Purpose `review`; the
+  sitting's subject is the review record, so every rule of the sitting
+  holds unchanged.
+- D3 (A). **The reviewer's Partner is fresh.** The review's turns run in
+  a provider session started at Start with the boot context and the
+  review brief, and none of the conversation's earlier turns. The
+  Partner's instructions gain the review rules: bring what the record
+  holds in the five parts; anchor every claim; name what the examination
+  did not try, what the tests assume and what is not recorded; offer the
+  cases at the edge as findings; put on the desk what you are
+  explaining; draw when words would be longer; never say whether to
+  accept. Not a second agent: one relationship, one store, one help
+  register. Freshness is what "a different agent" buys, and a new
+  session buys it.
+- D4 (A). **The desk reads the candidate's tree, not the seat's
+  checkout.** Three reads over the review record's `Reviewed:` line:
+  a source file at a line range, bounded, from the reviewed tree with
+  the lines the change touched marked; the change index, files with
+  counts, between the merge base with main and the tip; one file's diff
+  as hunks. The same owner serves the Partner's `changes` operation, so
+  the colleague and the human read one tree. A record section on the
+  desk is the existing document reader.
+- D5 (A). **Anchors put things on the desk.** An anchor chip in the
+  conversation names a file and range, a change, or a record section,
+  and pressing it opens that on the desk; the strip keeps every desk
+  item of the sitting, newest first. The Partner's walk may put an item
+  on the desk through a display suggestion on the stream, never a
+  navigation elsewhere, and the human's Stop press ends the walk's
+  presenting for that turn.
+- D6 (A). **The five walks** are fixed requests the interface submits
+  with its own provenance, as the opening and closing turns are.
+- D7 (A). **Selection on the desk** offers Ask and Finding; Remark comes
+  with the board (B). Ask reuses the passage chip with the desk item as
+  its document and the tip as its revision. Finding opens a finding card
+  with the anchor filled and the text empty for the human's words.
+- D8 (A). **The finding card and its four answers.** `deposit` gains the
+  kind `finding` with text, anchor and consequence. The card is the case
+  card's shape with four answers, each writing the finding into the
+  Findings section with an `Answer:` clause line: `fix — waits for Send
+  back`, `follow-up — goal G2` after the New goal sheet opened the goal
+  with the finding as its prefilled intent, `accepted — <reason>` from
+  the Decide sheet with the reason required, `left open`. Dismiss folds.
+  An entry's clause block may carry `Anchor:` and `Answer:` lines; the
+  piles are a property of the record's kind. A finding the human states
+  in words is offered back by the Partner as a card with the anchor it
+  found.
+- D9 (A). **Step out and come back.** The sitting mark on the
+  conversation carries the room's working state: the desk strip and the
+  current item, and the board or desk face. It is written on every
+  change and read on return, in the private store. The Review lane card
+  and the goal page show the door line from the review record's counts
+  and the mark's time. On return, the room compares the record's
+  `Reviewed:` tip with the branch tip; a moved tip shows the banner,
+  Show what changed puts the diff of the two tips on the desk, and
+  findings anchored in changed files carry the "may have moved" mark
+  until the human re-anchors or answers them again. The record's
+  `Reviewed:` line is updated only by the human's press "Review the new
+  tip", which appends the old tip to the head as `Previously:`.
+- D10 (A). **End with a verdict line, no act yet.** The End sheet offers
+  Clear to land, Send back and End without a verdict; each drafts and
+  records the Outcome with `Verdict:` as its first line, and the sheet
+  refuses Clear to land while a finding is unanswered and lists them. In
+  A the verdict is recorded intent only: nothing lands or returns. The
+  nod line shows when the piles are empty.
+- D11 (B). **The board.** The desk pane's second face: the four piles,
+  each entry pinned to its anchor and pressing it puts the anchor on the
+  desk; remarks, private stickies with a new subject kind, a file and
+  range or a record section at a tip, shown on the board and on the
+  desk item they belong to, each with Record as a fact and Make a
+  finding; drawings kept from the conversation under the record's
+  Drawings section, appended, each with the question that produced it.
+- D12 (B). **Drawings.** A mermaid fence renders in the conversation, on
+  the desk and on the board, one lazily loaded chunk, source by a press
+  and shown instead when the chunk or the parse fails; the CSP is proven
+  first (a nonce for the styles the library writes into its SVG, or a
+  mode that writes none), and if it cannot be, this decision waits and
+  says so. Keep it pins a drawing to the board (D11).
+- D13 (B). **The Partner presents evidence.** Screenshots and reports
+  under the record's `Evidence:` path are desk items through an
+  `evidence` read bounded to that path; the Behaves walk shows them.
+- D14 (C). **The verdict acts.** Send back performs `work revise G` from
+  the browser as the twelfth act, with the correction brief composed
+  from the findings marked fix; the goal leaves the Review lane. Clear
+  to land records the verdict the landing reads (D15) and, until D15
+  lands, is the human's recorded word only. The candidate runs from the
+  room: a pill in the header reads `app status --goal G` and offers Run
+  and Stop through `app start|stop --goal G` as browser acts; the
+  Behaves walk names the address; the Partner may propose the run.
+- D15 (D). **The landing gate.** `work land G` refuses, naming the
+  missing fact, when the goal requires a human review and no review
+  record with `Verdict: clear to land` is bound to the branch tip. Which
+  goals require it is Wido's ruling to record at approval: a `Review:
+  human` line on the approval, or every goal above a tier. The gate is
+  engine work beside the interface and lands last, after a real review
+  record has been written at least once.
 
-The desk views; Keep a drawing; the evidence read; review as a gate; the
-risk questions' prompting; answers from the table; the Partner proposing
-a review; learning sittings; multi-human review; the "rulings always
-match the preparation" evidence; a run of the application from the room.
+## 5. The four slices
 
-## 7. Verification and box
+**A, the room (step 1):** D1 to D10. What exists after it: Review it
+on a goal waiting to land; the room with the desk, the conversation,
+the walks and the counts; the candidate's code and diff on the desk;
+selection to Ask and Finding; findings answered four ways and recorded;
+Step out and the door; the moved-tip banner; End with the verdict line.
+The board is the existing table behind the Board press; drawings are
+code blocks; the verdict changes nothing yet.
 
-Go: `admitsPurpose` admits review and `admitsSubject` the review record;
-the kind's template and home; the head's `Reviewed:` line from the
-trailer and from a Built section, and the "none found" line; `landing`'s
-bounds and refusals; `finding`'s bounds; the review's provider session
-carries no earlier turn (proven by what the fake runtime received); the
-opening turn's and the walks' provenance. Frontend: Review it on a done
-goal's page and a design's page, and not elsewhere; the sheet's lines
-from the head; the finding card's three answers and their writes, Demand
-recording only after the goal opened, Accept refusing without a reason;
-the Findings pile and the Answer lines read back; a mermaid fence drawn,
-its source by a press, and the fallback when the chunk fails; End's nod
-line with empty piles and not otherwise; the guards stay green; phone
-width. Walkthrough: the fake Partner answers a canned opening turn, one
-finding and one drawing; screenshots at 1280 and 400: the sheet, the
-opening turn with its five presses, a finding card and its three
-answers, the Findings pile, a drawing, the End sheet with the nod line.
-Box: two build lanes (Claude on Opus), one code read each (Codex on Sol)
-with one fix round under R-124, after Astra's read; two attempts, 240 to
-400 job-minutes.
+**B, the whiteboard:** D11 to D13. Remarks, kept drawings, mermaid, the
+evidence on the desk, the board as the desk's second face.
 
-## 8. Self-grade
+**C, the verdicts and the candidate:** D14, on the app launch contract.
 
-High on D1, D2 and D6: a record, a purpose and a deposit kind through the
-sitting that exists, with the case card's shape reused whole. High on D3:
-a fresh session is one server decision the code already makes. Medium on
-D5: the first read that runs git for the Partner, and the head's
-`Reviewed:` line is derived from two loose links until the commit-goal
-binding lands; the record says what it found and the human can correct
-it. Medium on D7: a large library behind a CSP nonce is the one unknown,
-named as the builder's first check. Weakest: without the desk, the code
-is in the transcript rather than in a file view, and a long review will
-want the desk; that is the first line of the later list, on purpose.
+**D, the gate:** D15, engine work, with Wido's ruling on which goals
+require a human review.
+
+Each slice is usable on its own and A already lets a goal be reviewed
+with the code on the desk.
+
+## 6. Payload and routes, slice A
+
+`POST /api/partner/sitting` takes purpose `review` with subject
+`{kind: goal, id}`; the server resolves the reviewed tree (the branch
+tip, or the trailer commits for a done goal), creates the review record
+with its head, and opens the sitting on it. The record creator gains the
+kind, its template and its home; the resolver its kind. Three reads:
+`GET /api/review/<record>/source?path=&from=&to=` (a text file at the
+reviewed tree, at most four hundred lines per call, with the touched
+lines marked), `GET /api/review/<record>/changes` (files with counts,
+merge base to tip), `GET /api/review/<record>/changes?path=` (hunks,
+bounded); the Partner's `changes` operation reads the same owner.
+`deposit` gains `finding`; `entriesIn` reads `Answer:` beside
+`Anchor:`. The sitting mark gains `desk` and `face`, written through
+the existing sitting route. The room route `/review/<record>`; the
+Review lane card's door line from the backlog payload's records naming
+the goal; the five walks as fixed requests; the New goal sheet's
+prefill; the End sheet's three ways. The cut guard's call sites gain the
+three reads.
+
+## 7. Not here, later
+
+Several humans in one review; the learning sitting with the diagnosis
+withheld; a review of a whole design's arc across goals; the four risk
+questions proposing which goals deserve a look; the "rulings always
+match the preparation" evidence; running an adopted application whose
+contract is not yet written; phone width beyond the conversation and
+the board stacked.
+
+## 8. Verification and box, slice A
+
+Go: `admitsPurpose` admits review and `admitsSubject` the review
+record; the kind's template and home; the head's `Reviewed:` line from
+the branch tip and from trailer commits, and the "none found" line; the
+three reads' bounds and refusals (a path outside the tree, a range past
+the file, a binary file named as such); the fresh provider session
+carries no earlier turn; the walks' provenance; `finding`'s bounds.
+Frontend: Review it on the Review lane card, the goal page of a waiting
+goal and a done goal's page, and nowhere else; the room hides the rail
+and Step out returns to the board; the desk shows a file at a range
+with touched lines marked, the change index, a file's diff and a record
+section; the strip restores an item; an anchor chip opens its subject;
+selection offers Ask and Finding and the finding card carries the
+anchor; the four answers write their `Answer:` lines, follow-up only
+after the goal opened, accept refusing without a reason; the door line;
+step out and return restore desk, face and item; a moved tip shows the
+banner and Show what changed; End refuses Clear to land with an
+unanswered finding and lists it; the nod line with empty piles; the
+guards stay green. Walkthrough: the fake Partner answers a canned
+opening turn, one walk that presents a file, one finding; screenshots
+at 1280 and 400: the room, the desk with a file and with the change
+index, a finding card and its four answers, the door line on the
+Review lane card, the moved-tip banner, the End sheet. Box: two build
+lanes (Claude on Opus): the desk's reads and pane, and the room, the
+sitting and the finding; one code read each (Codex on Sol) with one fix
+round under R-124, after Astra's read of this page; two attempts, 360
+to 540 job-minutes.
+
+## 9. Self-grade
+
+High on D1, D3, D6, D8 and D10: a record, a fresh session, fixed
+requests and a card shape the sitting already has. High on D2 and D9:
+a route, a hidden rail and a mark on the conversation are small. Medium
+on D4 and D5: the first reads over a git tree that is not the checkout,
+and the first display suggestion from the Partner; both bounded and both
+served by one owner. Medium on the room's width at 1280: two panes of
+code and conversation is tight, and the desk takes the larger share by
+default with the divider resizable as the drawer's is. Weakest: A
+records a verdict that changes nothing until C and D, which is honest
+and is said on the End sheet; and remarks wait for B, so in A a jotting
+is a finding left open or a fact. That is the cut Wido agreed to.
