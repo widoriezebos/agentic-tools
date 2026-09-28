@@ -106,16 +106,15 @@ the Stop. `TestPendingWaitTurnVerdict`, `TestPendingWaitIdleBacklog` and
 adapter must pass all three; a native notification may only accelerate the
 next source read.
 
-The `wait-stop-fake` bed drives both the installed plain command and the fake
-Stop hook through `TestPendingWaitInstalledVerdicts`. It also runs
-`TestPendingWaitFromChildShell`, which associates the runtime session through
-the installed SessionStart hook, registers a wait from a child shell under its
-own process identifier, and proves the matching and hostile Stop outcomes. The
-`wait-stop-claude` bed additionally reaches a real Claude Code turn end while
-the blocking command owns a pending row. Because that leg consumes a live
-provider turn, the external runtime-bed orchestrator enables it with
-`METASYSTEM_REAL_RUNTIME_BEDS=1`; the ordinary local supervision bed always
-runs the fake leg.
+`TestPendingWaitInstalledVerdicts` drives both the installed plain command
+and the fake Stop hook, and `TestPendingWaitFromChildShell` associates the
+runtime session through the installed SessionStart hook, registers a wait
+from a child shell under its own process identifier, and proves the matching
+and hostile Stop outcomes; the supervision bed group
+(`supervision-bed-standard`) runs both. The real-runtime leg that reached a
+live Claude Code turn end was retired with the shell fixture bed (verb
+redesign U7b); a live-provider check of this contract is a manual acceptance
+step.
 
 ## Conformance table (the DISTRIBUTION, not any installation)
 

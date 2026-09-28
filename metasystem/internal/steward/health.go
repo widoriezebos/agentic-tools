@@ -1014,12 +1014,16 @@ func checkCensusFreshness(repoRoot string, now time.Time, state map[string]any, 
 }
 
 func checkNarratorFreshness(repoRoot string, now time.Time) RoleVerdict {
+	return checkNarratorFreshnessWithCadence(repoRoot, now, TickSeconds)
+}
+
+func checkNarratorFreshnessWithCadence(repoRoot string, now time.Time, tickSeconds func(string) int) RoleVerdict {
 	remedy := fmt.Sprintf("metasystem session start --repo %q", repoRoot)
 	generation, err := installedGeneration(repoRoot)
 	if err != nil {
 		return roleUnknown(RoleNarratorFreshness, "the steward installation generation is unreadable", remedy)
 	}
-	return componentFreshness(repoRoot, "narrator", RoleNarratorFreshness, generation, time.Duration(2*TickSeconds(repoRoot))*time.Second, now, remedy, nil,
+	return componentFreshness(repoRoot, "narrator", RoleNarratorFreshness, generation, time.Duration(2*tickSeconds(repoRoot))*time.Second, now, remedy, nil,
 		fmt.Sprintf("narrator generation %d success is current", generation))
 }
 

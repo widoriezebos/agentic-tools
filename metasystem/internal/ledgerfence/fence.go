@@ -314,7 +314,7 @@ func parseSingleQuoted(word string) (string, bool) {
 	return out.String(), true
 }
 
-// isOurComposer recognizes a composer this program (or adopt.sh) wrote by
+// isOurComposer recognizes a composer this program (or an earlier adopter) wrote by
 // its EXACT shape: the current engine composer, or a retired script-guard
 // composer (the shebang, one guard= assignment, and one of the two retired
 // bodies byte-for-byte). A foreign or locally extended hook that merely

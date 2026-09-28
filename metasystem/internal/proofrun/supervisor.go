@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"sort"
 	"sync"
@@ -56,20 +55,19 @@ type processTreeReader interface {
 }
 
 type supervisorOptions struct {
-	Context         context.Context
-	Limits          supervisorLimits
-	SampleInterval  time.Duration
-	Activity        *outputActivity
-	StageResultPath string
-	Reader          processTreeReader
-	Prober          identity.Prober
-	Signal          identity.SignalFunc
-	OnReading       func(reading string)
-	OnVerdict       func(verdict string)
-	Now             func() time.Time
-	NewTicker       func(time.Duration) (<-chan time.Time, func())
-	WaitCommand     func() error
-	OnCancelSelect  func()
+	Context        context.Context
+	Limits         supervisorLimits
+	SampleInterval time.Duration
+	Activity       *outputActivity
+	Reader         processTreeReader
+	Prober         identity.Prober
+	Signal         identity.SignalFunc
+	OnReading      func(reading string)
+	OnVerdict      func(verdict string)
+	Now            func() time.Time
+	NewTicker      func(time.Duration) (<-chan time.Time, func())
+	WaitCommand    func() error
+	OnCancelSelect func()
 }
 
 type supervisorOutcome struct {
@@ -242,7 +240,6 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 
 	ticks, stopTicker := newTicker(options.SampleInterval)
 	defer stopTicker()
-	lastStageSize := int64(0)
 	zeroCPUStarted, zeroCPUBase := startedAt, float64(0)
 	readerFailures := 0
 	dumpRequested := false
@@ -306,9 +303,6 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 			}
 			return finishWait(errors.Join(waitErr, finishCustody()))
 		case sampledAt := <-ticks:
-			if stageResultGrew(options.StageResultPath, &lastStageSize) {
-				options.Activity.Mark(sampledAt)
-			}
 			// The numeric root is only a lookup key while it still denotes the
 			// exact worker bound to the live custodian. A reaped or uninspectable
 			// root cannot authorize another tree discovery.
@@ -423,20 +417,6 @@ func updateSupervisorDurations(outcome *supervisorOutcome, now, outputAt, zeroCP
 	if zero := int64(now.Sub(zeroCPUAt).Seconds()); zero > outcome.LongestZeroCPUSeconds {
 		outcome.LongestZeroCPUSeconds = zero
 	}
-}
-
-func stageResultGrew(path string, previous *int64) bool {
-	if path == "" {
-		return false
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	current := info.Size()
-	grew := current > *previous
-	*previous = current
-	return grew
 }
 
 func containsExactEnvironmentEntry(environment []string, wanted string) bool {

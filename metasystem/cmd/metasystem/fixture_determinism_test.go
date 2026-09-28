@@ -619,10 +619,9 @@ printf '%s|%s|%s\n' "$METASYSTEM_GATE_WITNESS" "$METASYSTEM_GATE_WITNESS_WRITE" 
 
 func TestFixtureGoConsumersUseSharedWorkerBoundary(t *testing.T) {
 	t.Parallel()
-	scripts := map[string]int{
-		"return-schema-fixtures.sh": 3,
-		"supervision-fixtures.sh":   10,
-	}
+	// Every bed that once called harness_fixture_go_test is Go now
+	// (U5 retired land-fixtures.sh; U7b-3 the rest).
+	scripts := map[string]int{}
 	for name, minimum := range scripts {
 		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", name))
 		if err != nil {

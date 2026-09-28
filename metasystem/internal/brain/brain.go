@@ -250,6 +250,10 @@ type DeclareOptions struct {
 	Machine        string
 	DeclaredBy     string
 	Now            time.Time
+	// lockClock and lockSleep drive the host-pointer lock's bounded wait;
+	// nil uses the wall clock. Only this package's tests set them.
+	lockClock func() time.Time
+	lockSleep func(time.Duration)
 }
 
 func Declare(options DeclareOptions) (Record, error) {
@@ -270,7 +274,7 @@ func Declare(options DeclareOptions) (Record, error) {
 		return Record{}, errors.New(RemedialRefusal(current.Reason, checkout))
 	}
 	pointer := PointerPath(options.RegistryHome, options.LedgerIdentity)
-	held, err := acquire(pointer+".lock.d", 5*time.Second)
+	held, err := acquireWith(pointer+".lock.d", 5*time.Second, options.lockClock, options.lockSleep)
 	if err != nil {
 		return Record{}, fmt.Errorf("another brain declaration is in progress on this host (%v); retry", err)
 	}
@@ -336,6 +340,10 @@ func Withdraw(stateRoot, registryHome, ledgerIdentity string) (bool, error) {
 }
 
 func acquire(path string, wait time.Duration) (*lock.Lock, error) {
+	return acquireWith(path, wait, nil, nil)
+}
+
+func acquireWith(path string, wait time.Duration, now func() time.Time, sleep func(time.Duration)) (*lock.Lock, error) {
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
 		return nil, fmt.Errorf("read declaring process identity: %v", err)
@@ -351,7 +359,7 @@ func acquire(path string, wait time.Duration) (*lock.Lock, error) {
 			return lock.Unknown
 		}
 	}
-	return lock.Acquire(path, self, lock.Options{Wait: wait, Poll: 25 * time.Millisecond, Probe: probe})
+	return lock.Acquire(path, self, lock.Options{Wait: wait, Poll: 25 * time.Millisecond, Probe: probe, Now: now, Sleep: sleep})
 }
 
 func canonicalPath(path string) (string, error) {

@@ -34,7 +34,7 @@ import (
 // in-test, a bare origin carrying the signed bytes, live tagged holder
 // processes behind fabricated-but-honest supervision facts, and a stub
 // armer whose fingerprint agrees at seal and preflight by construction —
-// the exact recipe scripts/agents/mission-fixtures.sh uses, ported.
+// the recipe the retired mission fixture bed used, ported.
 
 const fixtureContract = `# Intent
 

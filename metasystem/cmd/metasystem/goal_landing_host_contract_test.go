@@ -96,6 +96,13 @@ var retiredWithDeletedScript = map[string]string{
 	"proof-standard/TestGoGateCopiedRootStopsAfterOneUnauthorizedRelaunch":                "TestGateRefusesAnUnauthorizedRelaunchedChild",
 	"proof-standard/TestGoGateRelaunchUsesBuiltEngineForWorkerAuthorization":              "TestGateRelaunchesAStandaloneRunUnderItsRetainedProofOwner",
 	"batch-buildcd-standard/TestGoGateFastModeRunsParallelRatchetBesideDependencyRatchet": "TestStaticRatchetsRefuseBeforeAnyToolRuns",
+	// validate-metasystem.sh and its section selector (U7b-1): script beds
+	// declare their argv and are judged by exit status alone.
+	"proof-standard/TestSupervisorSectionResultGrowthCountsAsOutput": "TestSectionArgvBedRunsWithCandidateEngineAndJudgesExit",
+	"proof-standard/TestFailedScriptGroupKeepsPresetReason":          "TestSectionBedFailureKeepsNativeStatusAndLaterIndependentResult",
+	// The proof scripts' relaunch custody moved into devgate with go-gate.sh (U7a).
+	"proof-standard/TestProofScriptsRefuseUnauthorizedRelaunchedChildren": "TestGateRefusesAnUnauthorizedRelaunchedChild",
+	"proof-standard/TestProofScriptsExportDepthAndAuthenticationEngine":   "TestGateRelaunchesAStandaloneRunUnderItsRetainedProofOwner",
 }
 
 // providerTransitions names legacy groups whose command moved to a new
@@ -130,8 +137,11 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 	if got := fmt.Sprintf("%x", sha256.Sum256(data)); got != "0951d3c46e488ca28c13cb25c517bfef54de5836ca0beb8de3cad4859664717a" {
 		t.Fatalf("frozen legacy host contract changed: %s", got)
 	}
-	previous, err := testpolicy.Decode(data)
-	if err != nil {
+	// The frozen contract predates the declared script beds: its section
+	// groups name a selector section and no argv, which today's validation
+	// refuses. It is read as the record it is, never validated as a candidate.
+	var previous testpolicy.Contract
+	if err := json.Unmarshal(data, &previous); err != nil {
 		t.Fatal(err)
 	}
 	containsAll := func(owner string, actual, required []string) {
@@ -142,14 +152,19 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			}
 		}
 	}
+	currentGroups := map[string]testpolicy.Group{}
+	for _, group := range current.Groups {
+		currentGroups[group.ID] = group
+	}
 	// A retired fixture section may leave the contract only when every one of
 	// its scenarios was ported to named Go tests that a replacement group,
-	// itself on the cadence, discovers. Only these exact sections qualify.
-	// Empty tests means the replacement group's own named tests are the
-	// port.
+	// itself on the cadence, discovers, or when the behavior it checked was
+	// deleted with its script (no replacement, a named reason). Only these
+	// exact sections qualify.
 	retiredSections := map[string]struct {
 		replacement string
 		tests       []string
+		reason      string
 	}{
 		// second-session.sh moved into internal/seat/launch (verbs-object-action U3).
 		"section/second-session-fixtures": {replacement: "launch-machine-standard", tests: []string{
@@ -173,27 +188,67 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			"TestGuardNewPlanNeedsAcknowledgment",
 			"TestGuardRefusesPatchBackups",
 		}},
+		// U7b-3: the ten fixture beds became Go bed groups.
+		"section/suite-progress-fixtures":         {replacement: "suite-progress-bed-standard"},
+		"section/supervision-and-census-fixtures": {replacement: "supervision-bed-standard"},
+		"section/mission-fixtures":                {replacement: "mission-bed-standard"},
+		"section/conformance-fixtures":            {replacement: "conformance-bed-standard"},
+		"section/brain-fixtures":                  {replacement: "brain-bed-standard"},
+		"section/return-schema-fixtures":          {replacement: "return-schema-bed-standard"},
+		"section/static-reproof-fixtures":         {replacement: "static-reproof-bed-standard"},
+		"section/fixture-bed-scenarios-fixtures": {replacement: "runtime-owner-standard", tests: []string{
+			"TestFixtureBedBudgetSelfInitializes", "TestFixtureBedCeilingReapsGroup", "TestFixtureBedSignalReapsGroup",
+			"TestFixtureBedLeashReleasesChildOnOwnerDeath", "TestFixtureBedCollectsEveryFailure",
+		}},
+		// U7b-1: validate-metasystem.sh's inline sections became Go groups.
+		"section/engine-delivery-contract":       {replacement: "shipped-installation-standard"},
+		"section/static-placeholder-scan":        {replacement: "shipped-installation-standard", tests: []string{"TestAuditMetasystemRefusals"}},
+		"section/metasystem-audit":               {replacement: "shipped-installation-standard"},
+		"section/static-contract-audits":         {replacement: "shipped-installation-standard"},
+		"section/runtime-contract-audits":        {replacement: "runtime-contract-standard"},
+		"section/agent-protocol-fixtures":        {replacement: "agent-protocol-standard"},
+		"section/workflow-tooling-fixtures":      {replacement: "workflow-tooling-standard"},
+		"section/watch-background-jobs-fixtures": {replacement: "watch-jobs-standard"},
+		"section/covenant-evidence-pre-rebuild": {replacement: "agent-protocol-standard", tests: []string{
+			"TestCovenantEvidenceVerb", "TestCovenantEvidenceVerbRefusals"}},
+		"section/covenant-evidence-post-rebuild": {replacement: "agent-protocol-standard", tests: []string{
+			"TestCovenantEvidenceVerb", "TestCovenantEvidenceVerbRefusals"}},
+		"section/supervisor-fingerprint-heal-harness": {replacement: "runtime-owner-standard", tests: []string{
+			"TestWatcherRestartRequestReplacesOnlyTheEnrolledGenerationWithinOneCycle",
+			"TestCompletedWatcherRequestIsReplacedByANewGeneration",
+		}},
+		"section/suite-host-prerequisites":  {reason: "the host prerequisites it checked belonged to the retired validator and dispatcher bed"},
+		"section/enumeration-mode-fixtures": {reason: "enumeration mode was deleted with validate-metasystem.sh"},
 		// goal-cli-fixtures.sh moved into the goal CLI Go tests (verbs-object-action U7b part 2).
 		"section/goal-cli-fixtures": {replacement: "goal-cli-standard"},
 	}
-	currentGroups := map[string]testpolicy.Group{}
+	currentGroupIDs := map[string]bool{}
 	for _, group := range current.Groups {
-		currentGroups[group.ID] = group
+		currentGroupIDs[group.ID] = true
 	}
-	// retiredName is a legacy selection reference after its section's port:
-	// the replacement group once the section left the contract.
-	retiredNames := func(names []string) []string {
-		out := make([]string, 0, len(names))
-		for _, name := range names {
-			if retired, ok := retiredSections[name]; ok {
-				if _, still := currentGroups[name]; !still {
-					name = retired.replacement
+	// The mandatory references of a retired section move to its replacement;
+	// a section retired with its behavior leaves them.
+	retiredReferences := func(values []string) []string {
+		var out []string
+		for _, name := range values {
+			if retired, ok := retiredSections[name]; ok && !currentGroupIDs[name] {
+				if retired.replacement == "" {
+					continue
 				}
+				name = retired.replacement
 			}
 			out = append(out, name)
 		}
 		return out
 	}
+	for index := range previous.Surfaces {
+		previous.Surfaces[index].Standard = retiredReferences(previous.Surfaces[index].Standard)
+		previous.Surfaces[index].Deep = retiredReferences(previous.Surfaces[index].Deep)
+		previous.Surfaces[index].Critical = retiredReferences(previous.Surfaces[index].Critical)
+	}
+	previous.Always.Canary = retiredReferences(previous.Always.Canary)
+	previous.Always.Standard = retiredReferences(previous.Always.Standard)
+	previous.Unknown = retiredReferences(previous.Unknown)
 	currentSurfaces := map[string]testpolicy.Surface{}
 	for _, surface := range current.Surfaces {
 		currentSurfaces[surface.ID] = surface
@@ -210,27 +265,24 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			t.Errorf("legacy surface %s disappeared", old.ID)
 			continue
 		}
-		containsAll(old.ID+" standard", now.Standard, retiredNames(old.Standard))
-		containsAll(old.ID+" deep", now.Deep, retiredNames(old.Deep))
-		containsAll(old.ID+" critical", now.Critical, retiredNames(old.Critical))
-		containsAll(old.ID+" cross-cutting", now.CrossCutting, retiredNames(old.CrossCutting))
+		containsAll(old.ID+" standard", now.Standard, old.Standard)
+		containsAll(old.ID+" deep", now.Deep, old.Deep)
+		containsAll(old.ID+" critical", now.Critical, old.Critical)
+		containsAll(old.ID+" cross-cutting", now.CrossCutting, old.CrossCutting)
 	}
 	containsAll("always canary", current.Always.Canary, previous.Always.Canary)
-	containsAll("always standard", current.Always.Standard, retiredNames(previous.Always.Standard))
+	containsAll("always standard", current.Always.Standard, previous.Always.Standard)
 	containsAll("unknown", current.Unknown, previous.Unknown)
-	requiredCadence := make([]string, 0, len(previous.Cadence))
-	for _, name := range previous.Cadence {
-		if retired, ok := retiredSections[name]; ok {
-			if _, still := currentGroups[name]; !still {
-				name = retired.replacement
-			}
-		}
-		requiredCadence = append(requiredCadence, name)
-	}
-	containsAll("cadence", current.Cadence, requiredCadence)
+	containsAll("cadence", current.Cadence, retiredReferences(previous.Cadence))
 	for _, old := range previous.Groups {
 		now, ok := currentGroups[old.ID]
 		if retired, isRetired := retiredSections[old.ID]; !ok && isRetired {
+			if retired.replacement == "" {
+				if retired.reason == "" {
+					t.Errorf("retired section %s names neither a replacement nor a reason", old.ID)
+				}
+				continue
+			}
 			replacement, present := currentGroups[retired.replacement]
 			if !present {
 				t.Errorf("retired section %s has no replacement group %s", old.ID, retired.replacement)
@@ -242,7 +294,7 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 					t.Fatal(err)
 				}
 			} else if string(probe.Tests) == `"all"` || len(probe.Tests) == 0 {
-				t.Errorf("retired section %s: replacement %s names no ported tests", old.ID, retired.replacement)
+				t.Errorf("retired section %s: replacement %s must name the ported tests", old.ID, retired.replacement)
 				continue
 			}
 			probeContract := testpolicy.Contract{SchemaVersion: current.SchemaVersion, Groups: []testpolicy.Group{probe}}
@@ -293,7 +345,17 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			}
 			requiredInputs = append(requiredInputs, "metasystem/internal/landing/landpath/**")
 		}
-		containsAll(old.ID+" inputs", now.Inputs, requiredInputs)
+		// A single-file script input leaves only with its deleted script.
+		var liveInputs []string
+		for _, input := range requiredInputs {
+			if strings.HasPrefix(input, "metasystem/scripts/") && !strings.ContainsAny(input, "*?[") {
+				if _, statErr := os.Stat(filepath.Join(projectRoot, filepath.FromSlash(input))); os.IsNotExist(statErr) {
+					continue
+				}
+			}
+			liveInputs = append(liveInputs, input)
+		}
+		containsAll(old.ID+" inputs", now.Inputs, liveInputs)
 		containsAll(old.ID+" packages", now.Packages, old.Packages)
 		containsAll(old.ID+" obligations", now.Obligations, old.Obligations)
 		var oldTests []string
@@ -392,6 +454,21 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		old.Resources, now.Resources = testpolicy.GroupResources{}, testpolicy.GroupResources{}
 		old.Freshness, now.Freshness = "", ""
 		old.FreshnessMaxAgeMS, now.FreshnessMaxAgeMS = nil, nil
+		// A selector section became a declared script bed (U7b-1): the argv is
+		// the one reviewed addition.
+		// Its bed may declare the further tools that argv needs.
+		if old.Adapter == "section" && now.Adapter == "section" && len(old.Argv) == 0 && len(now.Argv) != 0 {
+			now.Argv = nil
+			var kept []testpolicy.Tool
+			for _, tool := range now.Tools {
+				if slices.ContainsFunc(old.Tools, func(prior testpolicy.Tool) bool { return reflect.DeepEqual(prior, tool) }) {
+					kept = append(kept, tool)
+				}
+			}
+			if len(kept) == len(old.Tools) {
+				now.Tools = old.Tools
+			}
+		}
 		if !reflect.DeepEqual(old, now) {
 			t.Errorf("legacy group %s changed its native definition outside the reviewed migration fields", old.ID)
 		}

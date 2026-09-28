@@ -47,8 +47,8 @@ func TestCadenceTickSurfacesPlantedDeepOnlyRedWithoutDeepLanding(t *testing.T) {
 			{ID: "ordinary", Kind: "unit", Adapter: "command", CWD: ".", Inputs: []string{"app/**"}, Outputs: []string{"reports"},
 				Platforms: []string{"any"}, TargetMS: 1000, Argv: []string{"bash", "-c", "test -f app/deep.flag"}, Reports: []string{"reports"},
 				Format: "junit-xml", ExpectedTests: []testpolicy.ExpectedTest{{Report: "reports/ordinary.xml", Classname: "Fixture", Name: "ordinary"}}},
-			{ID: "section/deep", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"app/**", "scripts/agents/validate-section-selector.sh"}, Platforms: []string{"any"},
-				TargetMS: 1000, Section: "deep-only"},
+			{ID: "section/deep", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"app/**", "scripts/bed.sh"}, Platforms: []string{"any"},
+				TargetMS: 1000, Section: "deep-only", Argv: []string{"bash", "scripts/bed.sh"}},
 		},
 		Always: testpolicy.Always{Canary: []string{"ordinary"}},
 	}
@@ -65,14 +65,15 @@ func TestCadenceTickSurfacesPlantedDeepOnlyRedWithoutDeepLanding(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(landingRoot, "app", "deep.flag"), []byte("green\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	selector := filepath.Join(landingRoot, "scripts", "agents", "validate-section-selector.sh")
-	if err := testexec.WriteFile(selector, []byte(`#!/usr/bin/env bash
+	bed := filepath.Join(landingRoot, "scripts", "bed.sh")
+	if err := os.MkdirAll(filepath.Dir(bed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.WriteFile(bed, []byte(`#!/usr/bin/env bash
 set -eu
 if grep -qx green app/deep.flag; then
-  printf 'section\tdeep-only\tpass\t0\n' >"$METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT"
   exit 0
 fi
-printf 'section\tdeep-only\tfail\t1\tplanted deep-only red\n' >"$METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT"
 printf '%s\n' '=== bed failed scenarios ===' '- deep-only (rc=1)' '=== end bed failed scenarios ==='
 exit 1
 `), 0o755); err != nil {
@@ -93,7 +94,7 @@ exit 1
 	if err := os.WriteFile(conf, append(confBytes, []byte("testing.contract=testing.json\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	goalSyncMutationGit(t, landingRoot, "add", "app/deep.flag", "testing.json", "metasystem.conf", "scripts/agents/validate-section-selector.sh")
+	goalSyncMutationGit(t, landingRoot, "add", "app/deep.flag", "testing.json", "metasystem.conf", "scripts/bed.sh")
 	goalSyncMutationGit(t, landingRoot, "commit", "-q", "-m", "green deep-only fixture")
 	goalSyncMutationGit(t, landingRoot, "push", "-q", "-u", "origin", "main")
 

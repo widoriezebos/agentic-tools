@@ -20,7 +20,7 @@ func runAuditMetasystem(args []string) int {
 	root := pathFlag(flags, "root", ".", "checkout root to audit")
 	maxWords := flags.Int("max-always-loaded-words", 0,
 		fmt.Sprintf("always-loaded word budget (0 = %d)", audit.DefaultMaxAlwaysLoadedWords))
-	allowPlaceholders := flags.Bool("allow-placeholders", false, "tolerate template placeholders (adopt.sh's structural pass)")
+	allowPlaceholders := flags.Bool("allow-placeholders", false, "tolerate template placeholders (adoption's structural pass)")
 	if flags.Parse(args) != nil {
 		return 2
 	}

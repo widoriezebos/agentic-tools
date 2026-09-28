@@ -220,3 +220,133 @@ VERDICT: 1 material findings (fail test 2): ALC-02
 
 Codex session ID: 01a0e6b3-8d93-73c1-8fb2-803da02f272e
 Resume in Codex: codex resume 01a0e6b3-8d93-73c1-8fb2-803da02f272e
+
+
+---
+
+# Round 3 (2026-09-28, fresh session with rounds 1 and 2 quoted via this file, under Wido's instruction to continue until nothing material remains), against the extended design at `265aa0118`. Verbatim.
+
+**Three material findings remain.** Round 3 reviews Step 1—D1, D2, D3, D5 and D6—at `265aa0118cec13d88d5b3eb9555be739ad92de16`.
+
+Evidence below was read at that commit. Failure traces are static deductions, not executed reproductions. “Design” refers to [app-launch-contract.md](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/app-launch-contract.md).
+
+**ALC-08 — Medium — material: yes — The default stop cannot stop a valid foreground process tree**
+
+**Claim:** Omitting `stop` selects a fallback that signals the direct child and supervisor, although the application can include surviving descendants.
+
+**Evidence:** Design lines 118, 146–153, 185–189 and 208–214. `metasystem/internal/identity/ref.go:131–150` signals the identified PID; it does not recursively terminate descendants. The copied `metasystem/internal/ui/lifecycle/stop.go:26–71` owns the serving process itself.
+
+**Concrete failure:** A valid foreground wrapper starts application C and waits for it. The supervisor records the wrapper. On `app stop`, TERM ends the wrapper without forwarding the signal; C remains in the group. The supervisor’s wait finishes and its orderly exit removes the record. Escalating against the dead wrapper cannot kill C. Stop cannot prove the required group disappearance, and a subsequent status can report stopped because ownership was removed. This does not require a start script that backgrounds its application and exits.
+
+**Change:** Make the no-`stop` fallback terminate the owned application tree, preserving ownership until group death is proven. Use identity-proven ownership for descendant termination; do not restore signaling by an unverified group number. Add a foreground-wrapper fixture whose descendant survives TERM to its parent.
+
+**Test 1 — DIFFERENT/WRONG:** Yes; changes termination targets, record-removal conditions and the stop fixture.
+
+**Test 2 — WORKS/SAFE without it:** Fails **WORKS** and **SAFE**: an advertised start-only contract can leave its application running and subsequently produce a false stopped answer.
+
+**ALC-09 — Medium — material: yes — `check` lacks the integration needed to check the selected live run**
+
+**Claim:** Passing an address in the caller’s environment through the existing testing runner does not establish execution against that address, or fresh execution.
+
+**Evidence:** Design lines 173–176 and 294–296. In `metasystem/cmd/metasystem/test.go`, lines 676 and 2869–2884 filter the environment through an allowlist containing no app-address variable. `metasystem/internal/proofrun/test_build.go:2752–2789` constructs explicit environments from the group’s declared map. `metasystem/internal/testpolicy/select.go:124–131` requires diagnostic canary mode for named groups. `test.go:1981–1994` can reuse group results; lines 337–340 expose existing fresh-execution controls.
+
+**Concrete failure:** A named HTTP check reads the advertised address variable. Through ordinary runner invocation, the variable disappears; an explicit-environment group discards it independently. The check either fails immediately or falls back to another address and checks the standing app. Even after fixing injection, an earlier successful result can be reused after the application’s runtime state changes, without contacting it again.
+
+**Change:** Specify the bridge to the existing testing owner: diagnostic named-group selection with prerequisites; an app-address binding that survives both environment modes and participates in execution identity; execution against the recorded run’s tree and identity; and fresh execution for each requested check. Store the actual group outcome and execution time against that run. Existing selection and freshness controls should remain the owners.
+
+**Test 1 — DIFFERENT/WRONG:** Yes; changes runner invocation, environment construction, identity binding and result interpretation.
+
+**Test 2 — WORKS/SAFE without it:** Fails **WORKS** and **SAFE**: the first check can target the wrong application, and a later check can silently report success without observing current runtime behavior.
+
+**ALC-10 — Medium — material: yes — Orderly exit can erase the check before its promised evidence handoff**
+
+**Claim:** The run record is the only specified owner of the last check, but the supervisor deletes it independently of the stop command that must preserve it.
+
+**Evidence:** Design lines 175–176, 188–189 and 244–248. The copied lifecycle removes its record on exit at `metasystem/internal/ui/lifecycle/serve.go:178`; `state.go:133–156` treats an absent record with no owner as stopped. The existing evidence-copy precedent explicitly preserves evidence before disposing of its source (`metasystem/internal/proofrun/evidence.go:105–110`).
+
+**Concrete failure:** Start a goal run, execute a successful check, and let the application exit normally. Its supervisor removes the record containing the check. A subsequent `app stop --goal G` cannot copy that check into goal evidence: its sole specified source has already disappeared. Normal self-termination is within the stated application model, which includes batch applications. Worktree cleanup can additionally remove an application-owned log before a stopped-run `log` invocation.
+
+**Change:** Define a terminal handoff that retains the minimal run metadata and required log until evidence preservation has completed. Distinguish retained terminal information from live process ownership. Define stopped-run log lookup and perform evidence copying before disposable worktree removal; a general run-history subsystem is unnecessary.
+
+**Test 1 — DIFFERENT/WRONG:** Yes; changes record lifetime, exit/stop coordination and cleanup ordering.
+
+**Test 2 — WORKS/SAFE without it:** Fails **WORKS** and **SAFE**: ordinary exit destroys the only specified check record before the promised preservation operation can consume it.
+
+**Deferred and non-material**
+
+- Exact default ports and deadlines, ref-alias normalization, stopped `--follow` presentation and worktree reclamation schedules can be settled in implementation. Preserve separate per-ref ownership and satisfy the retention requirement above. **Test 1:** potentially changes bounded fixture expectations. **Test 2:** passes without additional architecture.
+- Shared application data is deliberately permitted when preparation is absent. D3 still requires a private run state root; sharing must not redirect engine-provided control paths into the standing run. The blanket “data … never touched” wording cannot guarantee what application scripts do to deliberately shared storage. Stronger application sandboxing is deferred. **Test 1:** no additional isolation mechanism follows from the accepted shared default. **Test 2:** passes under that expressly declared default.
+- ALC-05 through ALC-07 retain their prior dispositions. Browser integration remains deferred.
+
+**What I verified holds**
+
+- Step 1 and its deferred scope are explicit. The four requested additions belong to the declared slice.
+- ALC-01’s identity-before-signal requirement remains explicit, including escalation and refusal when identity cannot be established.
+- ALC-02’s revised startup sequence writes ownership before spawning and immediately records the child. The round-2 obligation remains explicit: interrupt between spawn and child publication, then prove the application dead or discoverable and stoppable by identity. That obligation is retained, not discharged by this review.
+- ALC-03 still separates liveness from readiness and requires readiness when rejoining a start. ALC-04 still scopes log readiness to the current run and excludes log-pattern disappearance from stop proof.
+- D3 distinguishes the named ref from its resolved commit, requires replacement after movement, and specifies one run per ref. Equal commits do not justify collapsing the standing run and separate named runs.
+- The premise holds: `reset` composes existing lifecycle operations with project-owned preparation, supporting repeatable experiments. `check` can remain an app-facing verb while the testing contract owns group selection and execution; ALC-09 requires that boundary to be made concrete.
+
+**VERDICT: 3 material findings (fail test 2): ALC-08, ALC-09, ALC-10**
+
+Commit reviewed: `265aa0118cec13d88d5b3eb9555be739ad92de16`.
+
+Limitations: static review only; no tests, builds, process experiments, subagents or edits. Neither private configuration nor files under `artifacts/` were read. The design and prior-round record matched the reviewed commit.
+
+Proposed receipt, unwritten: “App-launch design round 3 at 265aa0118: three material findings—default tree termination, live-run testing integration, and terminal evidence retention; earlier startup fixture obligation retained.”
+
+Codex session ID: 01a0e6f5-36ad-7de3-8730-0bae04d1ad9d
+Resume in Codex: codex resume 01a0e6f5-36ad-7de3-8730-0bae04d1ad9d
+
+
+---
+
+# Round 4 (2026-09-28, fresh session with rounds 1 to 3 quoted via this file), against the design at `f70683e2b`. Verbatim. The loop closes here: zero material findings and the critic's agreement.
+
+**No new material findings.** Round 4 reviewed Step 1—D1, D2, D3, D5 and D6—at commit `f70683e2ba432887f00bb2c4b6eee119024b70c5`, including the complete design, dispositions and three prior rounds. Evidence was read; process behavior below is static reasoning, not an executed reproduction.
+
+No ALC-11 onward is opened.
+
+**Deferred and non-material**
+
+- **The stale-record wording needs no additional mechanism.** [Design lines 225–226](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/app-launch-contract.md:225) still describe removal under the lock. The existing [`readInactive`](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/lifecycle/state.go:133) does exactly that. It cannot be copied unchanged: the design expressly restricts removal to stop, reset or replacement start, after evidence preservation, and retains ownership until stopping is proven. Those explicit requirements already determine the necessary adaptation for ended and orphaned records. **Test 1:** no additional implementation change beyond the specified retention rules. **Test 2:** passes WORKS and SAFE when those rules are implemented; this is wording residue, not another lifecycle mechanism.
+
+- **“Group empty” necessarily excludes the supervising process while it is supervising.** The supervisor remains a member of its own group. Consequently, the transition to ended concerns the disappearance of its application members; final stop proof includes the supervisor’s death. Likewise, group KILL includes the supervisor, so it cannot perform subsequent bookkeeping itself. The retained record and the stop caller provide the already-specified observation and evidence handoff. **Test 1:** no new outcome or owner is required. **Test 2:** passes WORKS and SAFE; literal reuse of a group-existence check inside the supervisor would be an implementation error against the stated lifecycle.
+
+- Exact defaults, stronger handling of applications that deliberately escape the owned group, and browser integration remain deferred. ALC-05 through ALC-07 retain their dispositions. **Test 1:** no additional Step 1 architecture follows. **Test 2:** passes under the declared foreground-process and project-owned-command contract.
+
+**What I verified holds**
+
+**ALC-08—the default tree stop:** The group-identity argument holds under Darwin and Linux process-group semantics. A supervisor launched with `setsid` leads a group whose identifier is its own PID. While that same supervisor executes the signal, its PID cannot simultaneously identify a replacement leader. Re-proving itself and signaling its own group therefore differs materially from an external engine signaling a saved group number after its owner has disappeared.
+
+The existing launcher establishes the session at [`launch.go:101`](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/lifecycle/launch.go:101). The unsafe saved-number precedent remains correctly excluded: [`SignalGroup`](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/launch/process.go:103) performs no ownership proof. Keeping the supervisor after the direct child exits supplies the owner needed to terminate surviving foreground-wrapper descendants.
+
+When the supervisor is gone, limiting signals to an independently recorded, re-proven child and reporting the remaining group preserves safety. It does not falsely promise that every orphan can be terminated.
+
+**ALC-09—the check bridge:** The runner supports the proposed integration without a second identity scheme:
+
+- Both environment modes converge on [`groupTestEnvironment`](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/proofrun/test_build.go:2752), where the declared address overlay can be applied.
+- The resulting environment digest enters the existing group execution identity; those group identities enter attempt identity inputs. Address changes can therefore propagate through the existing identity machinery.
+- `--no-reuse` forces a new attempt and marks selected groups fresh. Freshness-episode comparison also prevents previous group results from being reused.
+- Named canary selection is diagnostic, includes the runner’s canary floor and prerequisite closure, and can succeed without satisfying delivery requirements. That fits a human-requested runtime check. The recorded answer remains the actual named group’s outcome.
+
+The design also explicitly refuses a check when the recorded run is not live and ready.
+
+**ALC-10—the terminal handoff:** An ended record now has a defined lifetime independent of process liveness. It retains the exit information, log location and last check; goal evidence is copied before record removal and worktree reclamation. Ended-run log access therefore has a surviving source. The existing inactive-state reader requires adaptation, but that adaptation follows directly from the specified states and removal rules.
+
+**Earlier rounds and premise:** Native identity verification, separate liveness and readiness, readiness on rejoin, and run-scoped log readiness remain explicit. The round-2 interruption fixture remains binding and **undischarged**: an application must be dead or discoverable and stoppable through proven ownership. Merely listing an unrecorded orphan does not satisfy it.
+
+Step 1 and its exclusions are explicit. The start-only contract has defined fallbacks. Project scripts can continue owning application-specific commands while the engine owns lifecycle observation, isolation and evidence; I found no Step 1 requirement that refutes that premise.
+
+**VERDICT: 0 material findings (fail test 2): none.**
+
+I agree that nothing material requiring an additional change to what Step 1 builds remains.
+
+Commit reviewed: `f70683e2ba432887f00bb2c4b6eee119024b70c5`.
+
+Limitations: static review only; no tests, builds, process experiments, subagents or edits. Darwin system-call documentation was read locally; Linux behavior was assessed from the shared process-group semantics, without a Linux execution. No private configuration or files under `artifacts/` were read.
+
+Proposed receipt, unwritten: “App-launch design round 4 at f70683e2b: zero new material findings; round-3 folds supported by static review; existing startup fixture obligation retained.”
+
+Codex session ID: 01a0e6ff-4600-7523-a0c4-6716d9209bc1
+Resume in Codex: codex resume 01a0e6ff-4600-7523-a0c4-6716d9209bc1

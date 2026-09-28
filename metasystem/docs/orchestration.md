@@ -472,7 +472,7 @@ name overrides that built-in operation by operation (exit 64 hands one back).
 `docs/agent-adapters.md` is the contract, including the trust rules and the
 registry's cross-check.
 
-Per-runtime profile templates live under `skills/<name>/agents/`, and `scripts/adopt.sh` invokes runtime setup for its selected runtimes. Project-specific delegation facts belong in `docs/project-rules.md`.
+Per-runtime profile templates live under `skills/<name>/agents/`, and `metasystem system adopt` invokes runtime setup for its selected runtimes. Project-specific delegation facts belong in `docs/project-rules.md`.
 
 All rostered delegates remain children of the dispatcher's one shared job
 owner, even when their provider process runs in a linked worktree or a

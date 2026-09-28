@@ -260,16 +260,11 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 	}()
 	confPath := filepath.Join(preparation.ExecutionRoot(), "metasystem.conf")
 	executionEnvironment := []string(nil)
-	var expected []string
 	if *command == landing.CanonicalValidatorCommand {
 		if proofRunAlternateGoInputs() {
 			return recordExit(fmt.Errorf("canonical validator refuses GOFLAGS containing -modfile or -overlay"))
 		}
 		executionEnvironment = canonicalValidatorEnvironment()
-		expected, _, err = selectedSections(filepath.Join(preparation.ExecutionRoot(), "scripts", "agents", "validate-section-selector.sh"), "", false)
-		if err != nil {
-			return recordExit(err)
-		}
 	}
 	limits, err := resolveProofRunLimits(confPath)
 	if err != nil {
@@ -282,7 +277,7 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 	}
 	attempt, decision, joined, err := admit(proofLaunchAdmission{ControlRoot: controlRoot,
 		ExecutionRoot: preparation.ExecutionRoot(), ConfPath: confPath, GoalID: *goalID, CapMin: *capMin,
-		RetryDecision: *retryDecision, ScopeClass: "full", CommandClass: "landing-test-receipt", Sections: expected,
+		RetryDecision: *retryDecision, ScopeClass: "full", CommandClass: "landing-test-receipt", Sections: nil,
 		ExpectedGoalRevision: *expectedGoalRevision, ExpectedAccountingRevision: *expectedAccountingRevision,
 		Environment: executionEnvironment, Now: commandClock()})
 	if err != nil {

@@ -171,10 +171,20 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   engine captured or the file the contract named. `reset` is stop, then
   `prepare` where the contract has one, then start, and says "no
   prepare declared: reset is a restart" where it has none. `check` runs
-  the contract's named testing group with the run's address in its
-  environment through the testing contract's own runner, records the
-  group's verdict and time on the run record, and answers that no check
-  is declared where none is. The owner is an internal `app serve`, the shape of
+  the contract's named testing group through the testing contract's own
+  runner and nothing else, over the bridge that runner lacks today
+  (Astra ALC-09): the runner's diagnostic form for one named group
+  (`--mode canary --groups <id>`, which is the only form that runs a
+  group by name), executed fresh (`--no-reuse`), with one new declared
+  input, the run's address, which the runner overlays into the group's
+  environment as `METASYSTEM_APP_ADDRESS` in both environment modes, the
+  way it overlays its worker count and execution root today, and which
+  is part of the group's execution identity so a result for one address
+  is never reused for another. The check runs against the recorded
+  run: the run must be live and answering, or the check is refused in
+  words. Its outcome and time are written on the run record; `check`
+  answers that no check is declared where the contract names none.
+  `log` on an ended run reads the retained log. The owner is an internal `app serve`, the shape of
   `ui serve`: `app start` launches it detached the way `ui start`
   launches the interface (its own session, the log, a readiness pipe),
   and returns when the pipe reports ready or failed, or at `readyMs`.
@@ -185,8 +195,16 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   contract's start command as its child, in the supervisor's own group,
   and writes the child's native ref into the record as the very next
   act, before any readiness wait. Only then does it wait for readiness
-  and report ready, and it waits on the child for the run's life; its
-  orderly exit removes the record. That ordering is the ownership
+  and report ready, and it waits on the child for the run's life. When
+  the child ends, the supervisor does not leave while any process of
+  its own group remains: it reads as "child ended, descendants alive"
+  and stays the owner, so ownership is never removed while something
+  it started still runs (Astra ALC-08). When the group is empty the
+  supervisor writes the record as **ended**, with the exit status, the
+  time, the log path and the last check, and exits; it never deletes
+  the record. A record is removed only by `stop`, `reset` or the next
+  `start` for that ref, and, where the run named a goal, only after the
+  evidence copy of D6 has completed (ALC-10). That ordering is the ownership
   handoff (Astra ALC-02, held at round 2): an engine that dies before
   the supervisor started has left no run; a supervisor that dies leaves
   a record whose supervisor ref is dead, and status reads it as
@@ -202,17 +220,34 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   from the record's refs, the six states the interface's lifecycle
   reads, and readiness from the probe, and says them separately: running
   and answering; running and not answering since a time; starting;
-  stopped; stale, the record's process gone, removed under the lock and
-  said; uninspectable (ALC-03). A second start with a live supervisor
-  rejoins it and still waits for readiness before it says started. Stop
-  runs the contract's stop command where there is one; otherwise TERM to
-  the child, re-proven by identity immediately before the signal, then
-  KILL at `stopMs`, then the supervisor; no signal is ever sent to a
-  bare number, and a recorded process whose identity cannot be proven is
-  refused by name rather than signalled (ALC-01). Stopping is proven
-  when every recorded ref is dead and the group is gone, and, for the
-  http and tcp forms, the probe is dark. Restart is stop then start
-  with what is on disk.
+  child ended, descendants alive; ended, with its exit status and time,
+  which is a record and not a live process; stopped, no record at all;
+  stale, a record whose supervisor is gone without having written
+  ended, said as such and kept, since only `stop`, `reset` or the next
+  `start` removes a record, after the evidence copy, which is where
+  this design departs from the copied lifecycle's reader that removes a
+  stale record under its lock; uninspectable (ALC-03, ALC-10). A second start with a live supervisor rejoins it and still
+  waits for readiness before it says started. Stop runs the contract's
+  stop command where there is one; otherwise it ends the owned tree,
+  not one process: TERM to the child, re-proven by identity immediately
+  before the signal, then, while any process of the supervisor's own
+  group remains, TERM then KILL to that group, sent by the supervisor
+  itself after re-proving its own identity as the group's leader, since
+  a group whose living leader is provably ours cannot be a reused id;
+  then KILL to the child at `stopMs`; then the supervisor. No signal is
+  ever sent to a bare number by the engine, and a recorded process whose
+  identity cannot be proven is refused by name rather than signalled
+  (ALC-01, ALC-08). "The group is empty" means no member but the
+  supervisor itself, which leads it and is in it; a KILL to the group
+  ends the supervisor too, so after that the bookkeeping, the ended
+  record and the evidence copy, is the stop caller's, reading the
+  record the supervisor wrote before it spawned. Where the supervisor
+  is already gone, stop ends the child by its recorded ref and says
+  what an inspection of the recorded group finds by identity, and
+  signals none of it. Stopping is proven when every recorded ref is
+  dead, the supervisor's among them, and the group has no member, and,
+  for the http and tcp forms, the probe is dark; the record is kept
+  until then. Restart is stop then start with what is on disk.
 - D3. **`--at REF` runs the application at any commit; `--goal G` is
   sugar for the goal branch's tip.** The engine takes a worktree at the
   commit REF names under `artifacts/`, runs the contract's build
@@ -243,9 +278,16 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   is how a candidate interface runs beside it.
 - D6. **What the record is for.** The run record is per seat and never
   committed; it carries the last `check`'s verdict and time and the
-  data word. When a run named a goal, stop copies the log tail and the
-  last check to the evidence root under the goal, so a review's "how it
-  behaved" survives the process. Nothing else is retained.
+  data word, and it outlives the process as an ended record (D2). When
+  a run named a goal, the evidence copy, the log tail and the last
+  check to the evidence root under the goal, runs at `stop` and at
+  `reset`, and at the next `start` of that ref where the run had ended
+  by itself, always before the record is removed and before the run's
+  worktree is reclaimed, as the proof runner preserves evidence before
+  it disposes of a candidate (Astra ALC-10). A worktree is reclaimed
+  only by the next `start` of its ref or by `stop --clean`, and never
+  while a record, live or ended, still names it. Nothing else is
+  retained.
 - D7. **Not here.** Traffic splitting and the releaser's bounds;
   production observation; remote hosts; more than one application per
   contract; Windows; the browser act and the Partner grammar (D4's
@@ -293,9 +335,19 @@ the run's state root and address in its environment; without
 run"; `data: own` without `prepare` is refused by validation. `log`
 prints the captured tail and follows it; `check` runs the named group
 with the address in its environment and records the verdict, and
-answers "no check declared" where the contract names none. Every
-optional field left out leaves a contract that validates and verbs
-that work, proven with a contract of `start` alone. Self-hosting: this
+answers "no check declared" where the contract names none; a group run
+through `check` receives the address in both environment modes, runs
+fresh, and its result is not reused for a run at another address; a
+check against a run that is not answering is refused in words. Stop
+against a foreground wrapper whose descendant survives TERM to its
+parent ends the descendant through the supervisor's own group and keeps
+the record until the group is empty; a child that ends leaving
+descendants reads as such and the supervisor stays; an application
+that exits by itself leaves an ended record with its exit status, `log`
+still reads its log, and the next `start` copies its evidence before it
+removes the record and the worktree. Every optional field left out
+leaves a contract that validates and verbs that work, proven with a
+contract of `start` alone. Self-hosting: this
 repository's contract starts a second interface on another port, its
 health answers, and `ui status` still names the standing one. The
 verify skill drives it once for real. Box: one build lane (Claude on
@@ -366,3 +418,34 @@ which for this design overrides the two-round cap: rounds continue on
 one chain while a material finding stands, each under R-124, and the
 loop closes at the first round the critic and the author both read as
 holding nothing that would change what step 1 builds.
+
+**Round 3 (2026-09-28, at `265aa0118`):** three material findings on the
+seams the additions opened, every cited line re-read, all three folded.
+ALC-08: the default stop signalled one process, so a foreground wrapper
+whose descendant survives TERM left the application running and a
+false stopped; now stop ends the owned tree through the supervisor's
+own group, re-proven as ours by its leader's identity, and the record
+stays until the group is empty. ALC-09: `check` through the testing
+runner had no bridge: the runner's environment allowlist drops an
+address variable, explicit groups build theirs from the contract alone,
+a named group needs the diagnostic canary form, and results are reused;
+now the bridge is named, one declared runner input overlaid in both
+modes and part of the group's identity, canary form, fresh execution,
+against a live run only. ALC-10: the copied lifecycle deletes its
+record on exit, so an application that ended by itself lost its last
+check before the evidence copy; now a run ends into an ended record
+that only `stop`, `reset` or the next `start` removes, after the
+evidence copy and before the worktree is reclaimed. Round 4 asks
+whether anything material remains.
+
+**Round 4 (2026-09-28, at `f70683e2b`): closed.** "VERDICT: 0 material
+findings"; "I agree that nothing material requiring an additional
+change to what Step 1 builds remains." The author agrees. Two wording
+notes folded without mechanism: a stale record is kept and said, not
+removed under a lock as the copied reader does; "the group is empty"
+excludes the supervisor itself, and after a group KILL the ended record
+and the evidence copy are the stop caller's. One fixture obligation
+stands for the build, from round 2 and retained by every round since:
+interrupt the supervisor between the spawn and the child's write and
+prove the application dead, or discoverable and stoppable by proven
+ownership. Built next, on Wido's "ok, now build it".

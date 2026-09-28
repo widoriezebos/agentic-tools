@@ -518,7 +518,7 @@ func TestGLEPathContractRejectsWildcardErrorsAndOverlap(t *testing.T) {
 
 func TestSectionGroupNamespaceIsAccepted(t *testing.T) {
 	contract := fixtureContract()
-	contract.Groups = append(contract.Groups, Group{ID: "section/example", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "example"})
+	contract.Groups = append(contract.Groups, Group{ID: "section/example", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "example", Argv: []string{"bash", "scripts/example.sh"}})
 	contract.Cadence = append(contract.Cadence, "section/example")
 	if err := contract.Validate(); err != nil {
 		t.Fatalf("canonical section group id refused: %v", err)
@@ -742,7 +742,7 @@ func TestMetaSystemContractSelectsStaticProofForGoalRecords(t *testing.T) {
 	if !contains(plan.AffectedSurfaces, "goal-records") {
 		t.Fatalf("goal record did not select its owning surface: %+v", plan)
 	}
-	for _, id := range []string{"section/static-contract-audits", "section/return-schema-fixtures"} {
+	for _, id := range []string{"shipped-installation-standard", "return-schema-bed-standard"} {
 		if !contains(plan.SelectedGroups, id) || !contains(plan.RequiredGroups, id) {
 			t.Fatalf("goal record delivery omitted static group %s: %+v", id, plan)
 		}
@@ -813,7 +813,7 @@ func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t 
 		"metasystem/internal/delegation/lifecycle.go", "metasystem/internal/delegation/launch.go",
 		"metasystem/scripts/agents/fixture-budget.sh", "metasystem/cmd/devgate/gate.go",
 		"metasystem/scripts/agents/land.sh", "metasystem/scripts/agents/landing-classes.json",
-		"metasystem/cmd/devgate/witness.go", "metasystem/scripts/validate-metasystem.sh",
+		"metasystem/cmd/devgate/witness.go",
 		"metasystem/testing.json",
 		"development/project-rules-local.md", "metasystem/memory/instruction-ledger.md",
 		"metasystem/memory/receipts.log", "metasystem/plans/application-testing-contract-design.md",
@@ -847,7 +847,7 @@ func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t 
 	}
 	for _, surface := range contract.Surfaces {
 		for _, id := range surface.Deep {
-			if id == "section/adoption-fixtures" || id == "section/supervision-and-census-fixtures" || id == "section/dispatcher-adapter-and-mission-runner-fixtures" {
+			if id == "section/adoption-fixtures" || id == "supervision-bed-standard" || id == "section/dispatcher-adapter-and-mission-runner-fixtures" {
 				t.Fatalf("surface %s still lists the cadence-only section %s as deep", surface.ID, id)
 			}
 		}
@@ -857,7 +857,7 @@ func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t 
 		t.Fatal(err)
 	}
 	for _, id := range []string{"section/go-engine-gate", "section/dispatcher-adapter-and-mission-runner-fixtures",
-		"section/adoption-fixtures", "section/supervision-and-census-fixtures"} {
+		"section/adoption-fixtures", "supervision-bed-standard"} {
 		if !contains(cadence.SelectedGroups, id) {
 			t.Fatalf("cadence lost %s: %+v", id, cadence)
 		}
@@ -936,6 +936,58 @@ func TestMetaSystemDesignChangeSelectsTheDispatcherSection(t *testing.T) {
 	for _, surface := range contract.Surfaces {
 		if contains(surface.Deep, section) {
 			t.Errorf("surface %s lists the full dispatcher section as deep", surface.ID)
+		}
+	}
+}
+
+func TestSectionArgvDeclarationsValidate(t *testing.T) {
+	t.Parallel()
+	base := Group{ID: "section/bed", Kind: "integration", Phase: "acceptance", EnvironmentMode: "inherit", Adapter: "section", CWD: ".",
+		Inputs: []string{"scripts/**"}, Outputs: []string{}, Obligations: []string{}, Platforms: []string{"any"}, TargetMS: 1000, Section: "bed"}
+	for _, test := range []struct {
+		name string
+		edit func(*Group)
+		want string
+	}{
+		{name: "script bed", edit: func(g *Group) { g.Argv = []string{"bash", "scripts/bed.sh"} }},
+		{name: "retired selector section", edit: func(*Group) {}, want: "section adapter requires the argv of its script bed"},
+		{name: "empty executable", edit: func(g *Group) { g.Argv = []string{"", "scripts/bed.sh"} }, want: "section adapter requires the argv of its script bed"},
+		{name: "blanket success", edit: func(g *Group) { g.Argv = []string{"bash", "-c", " true "} }, want: "blanket success commands are not testing evidence"},
+		{name: "junit format", edit: func(g *Group) { g.Argv = []string{"bash", "scripts/bed.sh"}; g.Format = "junit-xml" }, want: "judges its script bed by exit status"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			group := base
+			test.edit(&group)
+			err := validateGroup(group)
+			if test.want == "" {
+				if err != nil {
+					t.Fatalf("valid section declaration refused: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("section declaration error=%v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestGoGroupRefusesCommandAndSectionFields(t *testing.T) {
+	t.Parallel()
+	base := Group{ID: "unit", Kind: "unit", Phase: "acceptance", EnvironmentMode: "inherit", Adapter: "go", CWD: ".",
+		Inputs: []string{"go.mod"}, Outputs: []string{}, Obligations: []string{}, Platforms: []string{"any"}, TargetMS: 1000,
+		Packages: []string{"internal/x"}, Tests: json.RawMessage(`["TestX"]`)}
+	if err := validateGroup(base); err != nil {
+		t.Fatalf("valid go group refused: %v", err)
+	}
+	for name, edit := range map[string]func(*Group){
+		"argv":    func(g *Group) { g.Argv = []string{"bash", "scripts/bed.sh"} },
+		"section": func(g *Group) { g.Section = "bed" },
+	} {
+		group := base
+		edit(&group)
+		if err := validateGroup(group); err == nil || !strings.Contains(err.Error(), "go adapter discovers its tests") {
+			t.Errorf("go group with %s: %v", name, err)
 		}
 	}
 }

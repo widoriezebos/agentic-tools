@@ -297,7 +297,14 @@ func ResolvePath(input string) (Resolution, error) {
 	if err != nil {
 		return Resolution{}, err
 	}
-	ownership, modeText, ownerErr := stateroot.Owner(absolute)
+	return resolveDiscovered(absolute, installationRoot, repositoryRoot, stateroot.Owner)
+}
+
+// resolveDiscovered is ResolvePath after discovery: the installation and
+// repository roots are known and owner answers the ownership oracle for an
+// absolute path.
+func resolveDiscovered(absolute, installationRoot, repositoryRoot string, owner func(string) (stateroot.Ownership, string, error)) (Resolution, error) {
+	ownership, modeText, ownerErr := owner(absolute)
 	mode := Mode(modeText)
 	if ownerErr != nil {
 		if ownership == stateroot.OwnerOutside {
