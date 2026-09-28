@@ -255,7 +255,7 @@ func discoverClaudeTranscripts(repoRoot string) discoveryResult {
 		return result
 	}
 	slug := usage.ClaudeProjectFolder(result.toplevel)
-	projects := filepath.Join(home, ".claude", "projects")
+	projects := usage.ClaudeProjectsRoot(home)
 	_ = filepath.WalkDir(projects, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if path != projects || !os.IsNotExist(walkErr) {

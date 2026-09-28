@@ -24,7 +24,7 @@ func claudeTranscript(opts ReadOptions, session string) (path string, reason str
 		if cwd == "" {
 			continue
 		}
-		directory := filepath.Join(home, ".claude", "projects", ClaudeProjectFolder(cwd))
+		directory := filepath.Join(ClaudeProjectsRoot(home), ClaudeProjectFolder(cwd))
 		candidate := filepath.Join(directory, session+".jsonl")
 		candidates = append(candidates, candidate)
 		if !pathWithin(directory, candidate) {
@@ -51,7 +51,7 @@ func MemoryDirectory(opts ReadOptions) (path string, reason string) {
 	if reason != "" {
 		return "", reason
 	}
-	projects := filepath.Join(home, ".claude", "projects")
+	projects := ClaudeProjectsRoot(home)
 	var candidates []string
 	for _, cwd := range []string{opts.Toplevel, opts.Installation} {
 		if cwd == "" {
@@ -68,6 +68,12 @@ func MemoryDirectory(opts ReadOptions) (path string, reason string) {
 		}
 	}
 	return "", fmt.Sprintf("unknown (no memory directory at %s)", strings.Join(candidates, " or "))
+}
+
+// ClaudeProjectsRoot is the directory under a home directory where Claude Code
+// keeps one folder per working directory (see ClaudeProjectFolder).
+func ClaudeProjectsRoot(home string) string {
+	return filepath.Join(home, ".claude", "projects")
 }
 
 // ClaudeProjectFolder names the folder under ~/.claude/projects where Claude
