@@ -1088,35 +1088,6 @@ for pid in $pids; do wait "$pid"; done
 	}
 }
 
-func TestStandaloneChannelFixtureOwnsFakeServerAndMutableState(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join("..", "..", "scripts", "agents", "channel-fixtures.sh")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(data)
-	owner := strings.Index(source, `harness_fixture_owner "$source_root/metasystem"`)
-	server := strings.Index(source, `METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value"`)
-	if owner < 0 || server < 0 || owner > server {
-		t.Fatal("standalone channel fixture does not bind its freshly minted owner before the fake server")
-	}
-	for _, required := range []string{
-		`export HOME=$bed/home`,
-		`export TMPDIR=$bed/tmp`,
-		`export METASYSTEM_SUPERVISION_REGISTRY_HOME=$bed/registry`,
-		`export METASYSTEM_PROOF_ADMISSION_TEST_DIR=$bed/proof-admission`,
-		`export METASYSTEM_FIXTURE_NAMESPACE=$bed`,
-		`harness_fixture_key channel-fake-server`,
-		`harness_fixture_record_pid "$server_pid"`,
-		`harness_fixture_reap`,
-	} {
-		if !strings.Contains(source, required) {
-			t.Fatalf("standalone channel fixture lacks private owner contract %q", required)
-		}
-	}
-}
-
 func TestChannelFakeServePublicCommandListensUnderSyntheticFixtureAuthority(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

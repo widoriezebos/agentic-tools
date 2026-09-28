@@ -32,9 +32,9 @@ const (
 	// `ui serve`, and like it it is a process entrypoint a person never types.
 	verbRatchetInternalVerbCeiling = 294
 	// R4: shell lines that reference the engine.
-	verbRatchetShellEngineCeiling = 165
+	verbRatchetShellEngineCeiling = 143
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
-	verbRatchetScriptLinesCeiling = 2762
+	verbRatchetScriptLinesCeiling = 2504
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
 	// U6a raised it by the process boundaries that were shell before: the

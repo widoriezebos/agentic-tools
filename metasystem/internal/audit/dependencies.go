@@ -10,15 +10,11 @@ import (
 )
 
 // Bash, Git, Go, and core utilities are the supported script platform; these
-// executable interpreters must not regrow in the scripts tree.
+// executable interpreters must not regrow in the scripts tree. Python joined
+// the list when its last declared site, channel-fixtures.sh, was deleted
+// (verbs-object-action U7c).
 var forbiddenInterpreters = map[string]bool{
-	"deno": true, "node": true, "perl": true, "php": true, "ruby": true,
-}
-
-// This published fixture owner is the complete legacy Python debt.
-// The inventory is basename-exact so no new source path inherits it.
-var declaredPythonFiles = map[string]bool{
-	"channel-fixtures.sh": true,
+	"deno": true, "node": true, "perl": true, "php": true, "python3": true, "ruby": true,
 }
 
 // DependencyFinding names one executable interpreter command that violates
@@ -27,15 +23,10 @@ type DependencyFinding struct {
 	Interpreter string
 	Path        string
 	Line        int
-	PythonDebt  bool
 }
 
 func (finding DependencyFinding) String() string {
-	kind := "banned interpreter"
-	if finding.PythonDebt {
-		kind = "python3 outside the declared legacy sites"
-	}
-	return fmt.Sprintf("%s %s: %s:%d", kind, finding.Interpreter, finding.Path, finding.Line)
+	return fmt.Sprintf("banned interpreter %s: %s:%d", finding.Interpreter, finding.Path, finding.Line)
 }
 
 // AuditDependencies scans shell sources for command-position interpreter use.
@@ -70,9 +61,6 @@ func AuditDependencies(root string) ([]DependencyFinding, error) {
 			interpreter := filepath.Base(command.Word)
 			if forbiddenInterpreters[interpreter] {
 				findings = append(findings, DependencyFinding{Interpreter: interpreter, Path: filepath.ToSlash(relative), Line: command.Line})
-			}
-			if interpreter == "python3" && !declaredPythonFiles[entry.Name()] {
-				findings = append(findings, DependencyFinding{Interpreter: interpreter, Path: filepath.ToSlash(relative), Line: command.Line, PythonDebt: true})
 			}
 		}
 		return nil
