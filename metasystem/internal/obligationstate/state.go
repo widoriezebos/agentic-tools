@@ -16,9 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 const Schema = 1
@@ -224,32 +223,21 @@ func save(root string, state State) error {
 	return nil
 }
 
-type stateLock struct{ file *os.File }
+type stateLock struct{ held *lock.FileLock }
 
 func acquire(root string) (*stateLock, error) {
 	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(filepath.Join(Dir(root), ".lock"), os.O_CREATE|os.O_RDWR, 0o644)
+	held, err := lock.File(filepath.Join(Dir(root), ".lock"), 0o644, lock.Exclusive)
 	if err != nil {
 		return nil, err
 	}
-	for {
-		err = unix.Flock(int(file.Fd()), unix.LOCK_EX)
-		if err != unix.EINTR {
-			break
-		}
-	}
-	if err != nil {
-		file.Close()
-		return nil, err
-	}
-	return &stateLock{file: file}, nil
+	return &stateLock{held: held}, nil
 }
 
 func (lock *stateLock) release() {
-	_ = unix.Flock(int(lock.file.Fd()), unix.LOCK_UN)
-	_ = lock.file.Close()
+	_ = lock.held.Release()
 }
 
 // RecordTerminal commits the terminal spend before its prunable run evidence.

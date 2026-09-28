@@ -26,8 +26,9 @@ import (
 )
 
 const (
-	// R4: shell lines that reference the engine.
-	verbRatchetShellEngineCeiling = 27
+	// R4: shell lines that reference the engine. Zero since U8b deleted the
+	// benchmark kit's drivers and U9 the supervision-hook.sh stub.
+	verbRatchetShellEngineCeiling = 0
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
 	// U9's stub deletion took the last one: the ceiling is zero, the end state
 	// the redesign drives it to.
@@ -69,8 +70,9 @@ const (
 	// went with them; measured 94.
 	verbRatchetSelfSubprocessCeiling = 94
 	// R6: instruction text naming a form whose first word is not public, over
-	// the vocabulary frozen when the witness landed.
-	verbRatchetInstructionCeiling = 40
+	// the vocabulary frozen when the witness landed. Batch 9 (u9a's public
+	// homes, c3's plan deletions, distill's record removal): measured 12.
+	verbRatchetInstructionCeiling = 12
 )
 
 type ratchetSite struct {

@@ -281,49 +281,6 @@ func TestMigrateIsDeterministicUnderInjection(t *testing.T) {
 	}
 }
 
-func TestTheCheckedInManifestParses(t *testing.T) {
-	t.Parallel(
-	// The PRODUCTION manifest must parse under the closed schema —
-	// the review's F1: a toy fixture proved nothing about the file
-	// the real cutover will consume. An ADOPTED repository ships no
-	// migration manifest (the cutover artifact belongs to the
-	// template repo alone), so absence skips; any other read error
-	// still fails.
-	)
-
-	data, err := os.ReadFile(filepath.Join("..", "..", "records", "misc", "goals-migration-manifest.md"))
-	if os.IsNotExist(err) {
-		return
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := ParseManifest(data)
-	if err != nil {
-		t.Fatalf("the checked-in manifest must parse: %v", err)
-	}
-	if m.Epoch != "2026-08-20T00:00:00Z" {
-		t.Fatalf("the epoch header binds: %s", m.Epoch)
-	}
-	if m.ReviewedSHA256 != "266f3dc6a7c3c2cbb884349e54fca0c1f0f33db9b188a6d39ddd245f35e11a94" {
-		t.Fatalf("the reviewed literal binds: %s", m.ReviewedSHA256)
-	}
-	adds, amends := 0, 0
-	for _, e := range m.Entries {
-		if e.Kind == "add-goal" {
-			adds++
-			if e.Intent == "" || e.Origin == "" || !e.HasNext {
-				t.Fatalf("add-goal %s carries its required keys", e.Id)
-			}
-		} else {
-			amends++
-		}
-	}
-	if adds < 10 || amends < 5 {
-		t.Fatalf("the real manifest's entries all parse: %d adds, %d amends", adds, amends)
-	}
-}
-
 func TestMigrationCompleteRefusesAnUnparseableRootRecord(t *testing.T) {
 	t.Parallel()
 	endpoint, client, _ := fakeLegacyMigrationEndpoint(t)

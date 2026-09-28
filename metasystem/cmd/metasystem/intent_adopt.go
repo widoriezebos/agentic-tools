@@ -96,7 +96,7 @@ func runIntentSystemAdopt(inv *intentInvocation) int {
 		"finish the adoption:",
 		"  1. Replace testing.json with a reviewed application test contract; until then metasystem settings check reports it incomplete.",
 		"  2. Fill docs/project-rules.md with verified project facts (commands, invariants, budgets, reserved decisions).",
-		"  3. Fill metasystem.conf with verified models, tiers, and the durable evidence root.",
+		"  3. Optionally set models, tiers and the evidence root in metasystem.conf.local; the defaults above apply until you do.",
 		"  4. Commit those reviewed bytes from your enrolled terminal (metasystem system enroll --name NAME), then upgrade the committed goal ledger with metasystem goal sync --upgrade --by NAME before opening the first goal.",
 		"  5. Prove and land the first change with metasystem test run, metasystem work review and metasystem work land.",
 		"  Or take the guided path for these steps plus covenant v1 and the first goals: the inception interview (skills/inception/SKILL.md), on the coordinator seat, with the person present.",

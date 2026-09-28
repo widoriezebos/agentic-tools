@@ -302,11 +302,6 @@ func TestValidateRejections(t *testing.T) {
 			expect: "must be numbered contiguously from 1",
 		},
 		{
-			name:   "evidence required",
-			conf:   "metasystem.runtimes=fake\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\n",
-			expect: "evidence.root is required",
-		},
-		{
 			name:   "evidence must be absolute",
 			conf:   "metasystem.runtimes=fake\nevidence.root=relative/dir\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\n",
 			expect: "evidence.root must be absolute",
@@ -324,6 +319,51 @@ func TestValidateRejections(t *testing.T) {
 				t.Fatalf("expected a problem containing %q; got %v", c.expect, problems)
 			}
 		})
+	}
+}
+
+// TestValidateJudgesTheEffectiveEvidenceRoot: the evidence root has a
+// compiled-in default, so a conf with no key or only the placeholder passes;
+// a specified root is judged where it is set, and a relative or in-repository
+// one is still refused.
+func TestValidateJudgesTheEffectiveEvidenceRoot(t *testing.T) {
+	t.Parallel()
+	bare := "metasystem.runtimes=fake\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\n"
+	if problems := validateRepo(t, bare); hasProblem(problems, EvidenceRootKey) {
+		t.Fatalf("a conf with no evidence root was refused: %v", problems)
+	}
+	conf := "metasystem.runtimes=fake\nevidence.root=<durable evidence root, outside the repository>\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\n"
+	if problems := validateRepo(t, conf, "evidence.root="+t.TempDir()+"\n"); hasProblem(problems, EvidenceRootKey) {
+		t.Fatalf("an absolute .local root was refused: %v", problems)
+	}
+	if problems := validateRepo(t, conf); hasProblem(problems, EvidenceRootKey) {
+		t.Fatalf("the placeholder alone was refused: %v", problems)
+	}
+	if problems := validateRepo(t, conf, "evidence.root=relative/dir\n"); !hasProblem(problems, `evidence.root must be absolute (metasystem.conf.local reads "relative/dir")`) {
+		t.Fatalf("a relative .local root was not refused: %v", problems)
+	}
+}
+
+// ERD-03: validation of a candidate.conf judges the candidate's own root, not
+// the valid metasystem.conf beside it.
+func TestValidateJudgesTheCandidateConfOnItsOwnRoot(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "development"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	putFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "template\n")
+	putFile(t, filepath.Join(repo, "testing.json"), minimalTestingContract)
+	body := "metasystem.runtimes=fake\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\ntesting.contract=testing.json\n"
+	putFile(t, filepath.Join(repo, "metasystem.conf"), body+"evidence.root="+t.TempDir()+"\n")
+	candidate := filepath.Join(repo, "candidate.conf")
+	putFile(t, candidate, body+"evidence.root=relative\n")
+	_, problems, err := validateWithRunner(candidate, repo, func(gitRequest) ([]byte, error) { return nil, errors.New("no Git") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasProblem(problems, `candidate.conf reads "relative"`) {
+		t.Fatalf("the candidate's relative root was not refused: %v", problems)
 	}
 }
 
@@ -543,16 +583,5 @@ func TestValidateRefusesRetiredGoalNormFromEverySource(t *testing.T) {
 				t.Fatalf("retired key from %s was not refused with replacements: problems=%v err=%v", source, problems, err)
 			}
 		})
-	}
-}
-
-// EM-26: the shipped placeholder is named as the placeholder, with the
-// public command that sets the value.
-func TestValidateNamesTheEvidenceRootPlaceholder(t *testing.T) {
-	conf := strings.ReplaceAll(validConf, "evidence.root=@EVIDENCE@\n", "evidence.root=<durable evidence root, outside the repository>\n")
-	problems := validateRepo(t, conf)
-	if !hasProblem(problems, "evidence.root is still the template placeholder; set it: metasystem settings set evidence.root /absolute/path") ||
-		hasProblem(problems, "evidence.root must be absolute") {
-		t.Fatalf("problems %v", problems)
 	}
 }

@@ -1,10 +1,44 @@
 # The supervision lifecycle: what owners, watchers, and reapers must do
 
 The durable rules (D-1..D-7) of the supervision lifecycle, promoted
-from `records/supervision/supervision-lifecycle.md` (which keeps the incident
-measurement, proof obligations, implementation order, and the critique
-chain, CLOSED at its cap). `internal/supervise` implements them. A
-change to any D rule is a contract change, not a cleanup.
+from the supervision-lifecycle design record, whose proof obligations,
+implementation order and critique chain (CLOSED at its cap) are design
+history in the tag `records-archive-2026-09-28` (records/supervision/,
+removed 2026-09-28). `internal/supervise` implements them. A change to
+any D rule is a contract change, not a cleanup.
+
+## Why this exists (KI-32, 2026-08-09)
+
+Mid-session the machine reached load 134 with 2,126 processes: 16
+supervision owners were alive, 15 of them supervising deleted fixture
+sandboxes or finished cohorts; there were 31 watchers, 54 orphaned
+lock-owner helpers and 149 concurrent census processes, all 0-1 s old.
+Killing the children did nothing, because the owners respawned them.
+Only killing the owners first stopped it (load 31, 1,641 processes).
+Three root causes:
+
+- No self-termination: the owner loop had no exit path and never checked
+  that its checkout still existed.
+- No crash-loop breaker: a component dying every cycle was relaunched
+  like a single transient death, at full rate, forever.
+- Cleanup was the only defense, and it is the weakest layer: every
+  guarantee rested on a caller reaching its trap or shutdown path, and
+  those paths do not run when a run is killed, crashes or is interrupted.
+  That is exactly when leaks matter.
+
+A self-heal with no liveness condition on its own purpose degenerates
+into a respawn loop once that purpose is gone, and the stronger the
+self-heal, the worse the failure. D-1 answers the first cause, D-2 the
+second, and D-3/D-4 (custody, arming gate, janitor) the third. The
+general rule is in `docs/doctrine/failure-modes.md`, "Self-heal outlives
+its purpose".
+
+Three scripts this contract names are gone and have no script successor:
+`provision.sh` and `run-cohort.sh` belonged to the benchmark kit, which
+left the repository (it is kept under the tag `benchmark-kit-final`), and
+`scripts/agents/reap-orphans.sh` was retired with the shell supervision
+layer. The rules that name them stand as the history of each D rule; the
+engine's `internal/supervise` is what runs today.
 
 ## D-1. Purpose from the state file, currency from the lock; exit means teardown
 
@@ -451,6 +485,23 @@ teardown and must not be guessed from:
   target: bounded (one owner within cap K, idling), visible in the
   registry, and the human's call — approval-wait is human territory by
   definition.
+
+THE CUSTODIAN ENFORCES ITS OWN DEADLINES (F4, 2026-08): the orphan window, a
+job's CLI outliving its handshake or cap deadline with no killer positioned,
+is closed where liveness already lives. The adapter supervisor is launched
+detached into its own session and process group, survives the waiter's
+death, and already custodies the CLI child. Its wait loop therefore enforces
+the record's own stamped `handshakeDeadline` and `capDeadline`: TERM the
+child's subtree, grace, re-check, KILL, then CAS the terminal verdict through
+the same authority path every adapter failure takes. The poll interval bounds
+overshoot. Rejected: letting the reaper or a new actor ADOPT the job, which
+would need a terminating-claim protocol, a second lifecycle-lock/CAS path, a
+new authority class and write-once waiter identity. The rule that only a
+process that owns what it kills may kill stays true in fact. Accepted
+residual: if the custodian itself dies leaving tagged grandchildren, the
+reaper acts on the provably dead custodian and survivors stay census-visible
+as untracked strays; reopen if the census shows it recurring. Enforced by
+`internal/adapter/supervisor/deadline_test.go`.
 
 ## D-4. The registry is the machine-wide view; the arming gate and the janitor enforce it
 

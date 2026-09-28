@@ -1468,15 +1468,9 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 	}
 	binary := testutil.InstalledWaitBinary(t, candidate)
 
-	plainRoot := t.TempDir()
-	plainSession, plainMainID := pendingWaitVerdictCommandFixture(t, plainRoot, "fake")
-	plain := exec.Command(binary, "report", "turn-verdict", "--root", plainRoot, "--session", plainSession, "--main-id", plainMainID)
-	plainOutput, err := plain.CombinedOutput()
-	if err != nil {
-		t.Fatalf("installed plain turn verdict: %v %s", err, plainOutput)
-	}
-	assertPendingWaitVerdictOutput(t, plainOutput)
-
+	// The installed binary has no plain turn-verdict verb since U9a: the
+	// handler above is judged in process, and the installed binary through
+	// its Stop hook below.
 	hookRoot := t.TempDir()
 	hookFixture := pendingWaitVerdictCommandFixtureWithOptions(t, hookRoot, "fake", pendingWaitVerdictCommandOptions{
 		jobStatus: "pending-setup", writeWaiter: true, requireHook: true,
@@ -1675,7 +1669,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 		_ = childStderr.Close()
 		t.Fatal(err)
 	}
-	child := exec.Command("/bin/bash", "-c", `exec "$0" job watch --root "$1" --job "$2" --caller-pid $$`, binary, root, "wait-stop-job")
+	child := exec.Command("/bin/bash", "-c", `exec "$0" work wait "j2:$2" --exit-code --repo "$1" --caller-pid $$`, binary, root, "wait-stop-job")
 	child.Env = fixture.Env(append(os.Environ(), waitRegisteredFDEnvironment+"=3"))
 	child.ExtraFiles = []*os.File{readyWrite}
 	child.Stdout, child.Stderr = childStdout, childStderr

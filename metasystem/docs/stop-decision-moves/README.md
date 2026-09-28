@@ -9,6 +9,15 @@ reported and allowed. Removed or changed assertions are refused because a
 change is one removed line plus one added line. Reordering assertions inside a
 file does not change the surface.
 
+A changed assertion whose Stop decision is untouched is reported as
+`reworded` and needs no declaration: the removed and the added line are in
+the same Go test file and have the same Go tokens, except for string literals
+that name no decision (none of block, allow, decision, refusal or spent in
+them). Renaming a command inside an assertion is a reword. Flipping a
+comparison, changing `block` to `allow`, touching a Stop identifier or its
+operand, or deleting the assertion is a move. Fixture-bed lines are never
+reworded.
+
 A landing may move an assertion only when its goal is allowed stop-test
 changes and the landing adds an exact declaration. Allowing it is a person's
 act, run at the enrolled terminal:

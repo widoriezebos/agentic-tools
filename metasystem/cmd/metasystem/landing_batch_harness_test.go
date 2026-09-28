@@ -203,6 +203,10 @@ func runBatchOwnerWithSource(args []string, source *batchOwnerSource) (code int)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	if err := batchOwnerSweepSources(settings.Root); err != nil {
+		line, _ := json.Marshal(map[string]any{"component": "landing-owner", "sweep": "retained-sources", "error": err.Error()})
+		fmt.Fprintln(os.Stderr, string(line))
+	}
 	wake, stop, cleanup := batchOwnerSignals()
 	defer cleanup()
 	if err := loopBatchOwner(owner, held, settings.Root, clock, interval, wake, stop); err != nil {

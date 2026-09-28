@@ -519,9 +519,12 @@ func editDistance(left, right string) int {
 // intentOwners are the existing owners a public command calls. Production
 // uses the real ones; tests give each invocation its own fakes.
 type intentOwners struct {
-	resolver        stateroot.Resolver
-	prove           goalAuthorityProver
-	commandNow      func(string) (time.Time, error)
+	resolver   stateroot.Resolver
+	prove      goalAuthorityProver
+	commandNow func(string) (time.Time, error)
+	// lookupEnv answers the environment app runs resolve their evidence
+	// root under; nil is os.LookupEnv.
+	lookupEnv       func(string) (string, bool)
 	dependencies    syncRequestDependencies
 	binding         goalBindingResolver
 	parkBranchCheck func(string, goal.Endpoint) func(string, string) (string, error)

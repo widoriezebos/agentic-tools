@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
@@ -494,7 +495,7 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 	}
 	productRoots := append([]string(nil), p.ProductRoots...)
 	if len(productRoots) == 0 {
-		productRoots = []string{resolvePath(p.Workspace)}
+		productRoots = []string{realpath.Resolve(p.Workspace)}
 	}
 	base, err := facts.Head(p.Workspace)
 	if err != nil {
@@ -629,7 +630,7 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 		"error":                    nil,
 		"mainId":                   nullableString(p.MainID),
 		"claimEpoch":               epoch,
-		"workspaceRoot":            resolvePath(p.Workspace),
+		"workspaceRoot":            realpath.Resolve(p.Workspace),
 		"baseSha":                  base,
 		"branch":                   branch,
 		"permissions": map[string]any{
@@ -646,7 +647,7 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 		"custodyProcesses":             []any{},
 		"launchMode":                   p.LaunchMode,
 		"productRoots":                 stringValues(productRoots),
-		"outputStream":                 resolvePath(p.OutputStream),
+		"outputStream":                 realpath.Resolve(p.OutputStream),
 		"sessionId":                    nil,
 		"turnId":                       nullableString(p.MissionTurn),
 		"requestedModel":               p.Model,
@@ -981,7 +982,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"pgid":                         nil,
 		"custodyProcesses":             []any{},
 		"launchMode":                   p.LaunchMode,
-		"outputStream":                 resolvePath(p.OutputStream),
+		"outputStream":                 realpath.Resolve(p.OutputStream),
 		"sessionId":                    session,
 		"turnId":                       nullableString(p.MissionTurn),
 		"capMin":                       authority.capMin,
@@ -1017,7 +1018,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		record["productRoots"] = value
 	}
 	if productRootsEmpty(record["productRoots"]) {
-		record["productRoots"] = []any{resolvePath(asString(parent["workspaceRoot"]))}
+		record["productRoots"] = []any{realpath.Resolve(asString(parent["workspaceRoot"]))}
 	}
 	return writeRecord(p.Output, record)
 }

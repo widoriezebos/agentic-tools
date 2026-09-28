@@ -35,6 +35,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 const (
@@ -330,7 +331,7 @@ func contractLoadWithRepository(path string, repository func(string) (string, er
 }
 
 func contractLoadWithSource(path string, repository func(string) (string, error), source *Source) (*contractDoc, string, string, error) {
-	resolved := resolvePath(path)
+	resolved := realpath.ResolveExisting(path)
 	doc, err := contractRead(resolved)
 	if err != nil {
 		return nil, "", "", err
@@ -853,7 +854,7 @@ func (d *contractDoc) contractExpandPaths(repo, projectRoot, ref string, globs [
 	if err != nil {
 		return nil, err
 	}
-	rel, err := filepath.Rel(resolvePath(repo), resolvePath(projectRoot))
+	rel, err := filepath.Rel(realpath.Resolve(repo), realpath.Resolve(projectRoot))
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return nil, stateErr("metasystem project root is outside its git repository")
 	}
@@ -1607,7 +1608,7 @@ func contractRepositoryFor(path string) (string, error) {
 	if code != 0 {
 		return "", stateErr("mission contract is not inside a git repository")
 	}
-	return resolvePath(strings.TrimSpace(out)), nil
+	return realpath.ResolveExisting(strings.TrimSpace(out)), nil
 }
 
 // contractProjectRoot returns the metasystem checkout that owns the contract
@@ -1616,7 +1617,7 @@ func contractRepositoryFor(path string) (string, error) {
 func contractProjectRoot(contractPath, repo string) string {
 	root := contractMetasystemRoot()
 	if root != "" && contractPathWithin(contractPath, root) && contractPathWithin(root, repo) {
-		return resolvePath(root)
+		return realpath.ResolveExisting(root)
 	}
 	return repo
 }
@@ -1633,7 +1634,7 @@ func contractMetasystemRoot() string {
 	// calls (the depth a scripts/agents/<script> origin would need)
 	// land on the checkout's PARENT and
 	// make the confirmation below fail everywhere.
-	root := resolvePath(filepath.Dir(filepath.Dir(exe)))
+	root := realpath.ResolveExisting(filepath.Dir(filepath.Dir(exe)))
 	if fileExists(filepath.Join(root, "metasystem.conf")) || contractDirExists(filepath.Join(root, "scripts", "agents")) {
 		return root
 	}
@@ -1642,7 +1643,7 @@ func contractMetasystemRoot() string {
 
 // contractPathWithin reports whether inner is outer or a descendant of it.
 func contractPathWithin(inner, outer string) bool {
-	rel, err := filepath.Rel(resolvePath(outer), resolvePath(inner))
+	rel, err := filepath.Rel(realpath.Resolve(outer), realpath.Resolve(inner))
 	if err != nil {
 		return false
 	}

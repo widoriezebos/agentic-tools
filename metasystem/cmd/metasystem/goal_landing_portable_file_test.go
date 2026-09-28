@@ -35,6 +35,9 @@ type portableFileProof struct {
 	files    map[string]portableFile
 	contract testpolicy.Contract
 	sequence int
+	// retry is the accountable retry decision the next execution admits under
+	// (a classification run after a failed attempt at the same identity).
+	retry string
 }
 
 func newPortableFileProof(t *testing.T) *portableFileProof {
@@ -202,6 +205,7 @@ func (f *portableFileProof) execute(request proofrun.TestRunRequest, wantGreen b
 	admission := proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root, GoalID: "portable", GoalRevision: 2, AccountingRevision: 2, CandidateGoalID: "portable", CandidateRevision: 2, CandidateTree: request.CandidateTree,
 		ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: now, ComponentIdentities: ids, SharedComponents: true, ForceAttempt: true,
 		FreshnessEpisode: request.FreshnessEpisode, FreshnessBinding: request.FreshnessBinding, FreshnessExpiresAt: request.FreshnessExpiresAt, FreshGroups: request.FreshGroups}
+	admission.RetryDecisionPath = f.retry
 	admission = privateProofAdmissionRequest(proofrun.WithTestHostLoadSampler(admission, "0"))
 	attempt, decision, err := proofrun.ReserveLocked(admission)
 	if err != nil || decision.Disposition != proofrun.DispositionExecuted {

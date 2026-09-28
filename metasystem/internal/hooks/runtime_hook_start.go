@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 )
 
@@ -755,16 +756,7 @@ func (s *startRun) writeEngineCache() {
 	if os.MkdirAll(directory, 0o755) != nil {
 		return
 	}
-	temporary, err := os.CreateTemp(directory, ".engine-path.")
-	if err != nil {
-		return
-	}
-	name := temporary.Name()
-	_, writeErr := temporary.WriteString(s.engine + "\n" + s.world + "\n")
-	closeErr := temporary.Close()
-	if writeErr != nil || closeErr != nil || os.Rename(name, filepath.Join(directory, "engine-path")) != nil {
-		_ = os.Remove(name)
-	}
+	_ = atomicfile.WriteVolatileFile(filepath.Join(directory, "engine-path"), []byte(s.engine+"\n"+s.world+"\n"), 0o600)
 }
 
 // bootstrapEngine is the hook side of a generation cutover: when the

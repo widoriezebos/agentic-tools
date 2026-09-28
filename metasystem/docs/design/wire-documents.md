@@ -54,6 +54,18 @@ If unification is ever wanted, it is a migration with a version story.
    is a stop.
 3. **Equivalence always**: a converted writer diffs `bytes.Equal` against
    the corpus in its package's tests, on every run, forever.
+4. **Old records lack new members**: a member added to a record is
+   absent from every record written before the change. Readers take
+   absent as the pre-change meaning (empty, zero, the old path), never
+   as malformed; only a present member of the wrong shape refuses. The
+   compatibility test seeds exactly the rows the previous binary wrote,
+   not the shape the new code expects. Three landings broke this:
+   critic roots without round counters or `demotions` (2026-09-04), and
+   a custody guard that read checkout paths from reservation rows no
+   production owner ever wrote, which locked out every armed checkout
+   (2026-09-05). An optional member is added without a schema bump
+   (`docs/doctrine/failure-modes.md`, "A schema bump announces an
+   optional field and refuses the fleet").
 
 ## Durability (the companion contract, owned by internal/atomicfile)
 

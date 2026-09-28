@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 )
 
@@ -56,10 +57,9 @@ type fakeRunner struct {
 func newRunner() *fakeRunner {
 	return &fakeRunner{
 		said: map[string]string{
-			"git -C " + destRoot + " rev-parse HEAD":                                                                  headCommit + "\n",
-			"git -C " + fromRoot + " config --local --list -z":                                                        "goal.sync-remote\norigin\x00goal.human.wido\nWido <wido@example.invalid>\x00user.name\nfixture\x00",
-			"metasystem config get --key evidence.root --conf " + filepath.Join(fromRoot, install, "metasystem.conf"): "/w/evidence/m1u\n",
-			"metasystem goal next --root " + destRoot:                                                                 "g1-s44 is claimable here\n",
+			"git -C " + destRoot + " rev-parse HEAD":           headCommit + "\n",
+			"git -C " + fromRoot + " config --local --list -z": "goal.sync-remote\norigin\x00goal.human.wido\nWido <wido@example.invalid>\x00user.name\nfixture\x00",
+			"metasystem goal next --root " + destRoot:          "g1-s44 is claimable here\n",
 		},
 		refused: map[string]string{
 			// An unset key is what git answers with an exit code, which is
@@ -99,7 +99,14 @@ func (r *fakeRunner) ranCommand(key string) bool {
 	return false
 }
 
-type copiedConf struct{ source, destRoot, evidenceRoot string }
+type copiedConf struct{ source, destRoot string }
+
+// The evidence roots the fake resolver answers: this seat's own, and the
+// clone's default once its copied .local is blanked.
+const (
+	sourceEvidence = "/w/evidence/m1u"
+	cloneEvidence  = "/w/evidence/agentic-tools-m1f"
+)
 
 type fakeHost struct {
 	exists    map[string]bool
@@ -125,12 +132,21 @@ type fakeHost struct {
 	copied             []copiedConf
 	manifests          []string
 	madeDirs           []string
+	// evidenceRoots answers the resolver per installation, and
+	// evidenceErrs refuses one.
+	evidenceRoots map[string]config.EvidenceRoot
+	evidenceErrs  map[string]error
 }
 
 func newHost() *fakeHost {
 	return &fakeHost{
-		exists:           map[string]bool{},
-		canonical:        map[string]string{"/w/evidence/m1u": "/w/evidence/m1u", "/w/evidence/m1f": "/w/evidence/m1f"},
+		exists:    map[string]bool{},
+		canonical: map[string]string{},
+		evidenceRoots: map[string]config.EvidenceRoot{
+			filepath.Join(fromRoot, install): {Path: sourceEvidence, Origin: "conf-local"},
+			destInstall():                    {Path: cloneEvidence, Origin: "default"},
+		},
+		evidenceErrs:     map[string]error{},
 		present:          map[string]bool{},
 		stamp:            map[string]string{destBinary(): headCommit},
 		identity:         Identity{RepoIdentity: repoIdentity, Generation: generation},
@@ -145,11 +161,23 @@ func newHost() *fakeHost {
 
 func (h *fakeHost) Exists(path string) (bool, error) { return h.exists[path], nil }
 
+// Canonical answers a path's resolution; a path the test names nothing for
+// resolves to itself, as a link-free tree does.
 func (h *fakeHost) Canonical(path string) (string, error) {
 	if resolved, known := h.canonical[path]; known {
 		return resolved, nil
 	}
-	return "", fmt.Errorf("no such path %s", path)
+	return path, nil
+}
+
+func (h *fakeHost) EvidenceRoot(installation string) (config.EvidenceRoot, error) {
+	if err := h.evidenceErrs[installation]; err != nil {
+		return config.EvidenceRoot{}, err
+	}
+	if root, known := h.evidenceRoots[installation]; known {
+		return root, nil
+	}
+	return config.EvidenceRoot{}, fmt.Errorf("no evidence root for %s", installation)
 }
 
 func (h *fakeHost) MakeDir(path string) (bool, error) {
@@ -161,8 +189,8 @@ func (h *fakeHost) MakeDir(path string) (bool, error) {
 	return true, nil
 }
 
-func (h *fakeHost) CopyLocalConf(source, target, evidenceRoot string) error {
-	h.copied = append(h.copied, copiedConf{source: source, destRoot: target, evidenceRoot: evidenceRoot})
+func (h *fakeHost) CopyLocalConf(source, target string) error {
+	h.copied = append(h.copied, copiedConf{source: source, destRoot: target})
 	return nil
 }
 

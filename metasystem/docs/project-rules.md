@@ -10,7 +10,7 @@ Replace this file when adopting the metasystem. Keep facts concrete and reposito
 - Test roots: `<paths>`
 - Generated files: `<paths and ownership>`
 - Sensitive or protected areas: `<paths>`
-- Durable evidence root: `<path outside the repository>`. Outside the repository and every build tree; holds the only-copy run evidence that must survive (rules in `plans/README.md`).
+- Durable evidence root: `~/metasystem-evidence/<checkout name>` by default; set `evidence.root` in `metasystem.conf.local` only to change it. Outside the repository and every build tree; holds the only-copy run evidence that must survive (rules in `plans/README.md`).
 
 ## Commands
 
@@ -68,10 +68,6 @@ List only rules that cannot be inferred from code or tooling and apply broadly i
 - The shipped Claude settings carry the seat context window, and `metasystem settings show` reports drift from the configured value.
 - The landing owner remains the only process that returns or releases a
   claim handed over to a landing batch.
-
-## Paper prose
-
-For `docs/paper`, use Wido's plain English. Keep the prose concise and easy to understand. Use ASCII only, with no em dashes. Avoid unnecessary abstractions or metaphors, "not this, but that" framing, and stock groups of three used for rhythm. Preserve the running story and the order in which the argument develops. New chapters must improve readability. Check chapter references and the build order after moving chapters.
 
 ## Decisions Reserved for Humans
 

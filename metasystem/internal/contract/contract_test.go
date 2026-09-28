@@ -2,6 +2,7 @@ package contract
 
 import (
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
@@ -306,7 +307,7 @@ func TestContractApprovalHashStable(t *testing.T) {
 	data, _ := os.ReadFile(contractPath)
 	signed := string(data) + "\nApproval: name=Human; date=2026-08-04; contract-sha256=" + digest + "\n"
 	writeFileMode(t, contractPath, signed, 0o644)
-	doc, err := contractRead(resolvePath(contractPath))
+	doc, err := contractRead(realpath.ResolveExisting(contractPath))
 	if err != nil {
 		t.Fatalf("read failed: %v", err)
 	}

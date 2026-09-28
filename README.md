@@ -10,7 +10,7 @@ and humans build software together. One question organizes everything here:
 | Folder | What it is | Ships? |
 | --- | --- | --- |
 | [`metasystem/`](metasystem/) | **The product.** The template that gets installed into other repositories. Its payload is an explicit allowlist; nothing else leaves. | The allowlisted parts, via `metasystem system adopt` |
-| [`benchmark/`](benchmark/) | **The measuring kit.** Specs, held-out graders, the scorecard extractor, rubrics, and the provisioner that stage benchmark runs to measure how well the metasystem makes agents build. It measures the product from outside, so it lives outside. | Never |
+| [`paper/`](paper/) | **The paper.** The book about the metasystem: why it exists and how it works, chapter by chapter, with its PDF build. This project's intent quotes it. | Never |
 | [`development/`](development/) | **The building of it.** Design docs, analysis, finished reports, this repository's own local rules, the evidence index. | Never |
 | `evidence/` | Gitignored symlink to the durable evidence store, where full run transcripts and archived mission repositories live. Hundreds of megabytes a day of raw evidence would sink git; the tracked index of it is [`development/evidence-index.md`](development/evidence-index.md). | Never |
 
@@ -50,13 +50,12 @@ each with the deciding rule.
   written for an agent to execute with human review points.
 - **Upgrade an adopted repository to a newer template** → the upgrade
   procedure in the same reconciliation manual (the recorded adoption SHA and
-  the three-bucket rule). Currently a documented manual procedure; a script
-  is on the backlog.
+  the three-bucket rule). Currently a documented manual procedure; an
+  engine verb is on the backlog.
 - **Work with goals and agents day to day** → `metasystem help human` for
   your actions (goals, approval, budgets, start and stop) and
   `metasystem help agent` for build, review and land; the manual is
   [`metasystem/docs/working-with-agents.md`](metasystem/docs/working-with-agents.md).
-- **Run a benchmark** → [`benchmark/README.md`](benchmark/README.md).
 - **Change the metasystem itself** → work in this repository under its own
-  rules; the gates of record are the testing contract (`metasystem test run`)
-  and `benchmark/validate-kit.sh`, and nothing is pushed on red.
+  rules; the gate of record is the testing contract (`metasystem test run`),
+  and nothing is pushed on red.

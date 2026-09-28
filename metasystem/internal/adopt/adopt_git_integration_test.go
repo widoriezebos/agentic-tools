@@ -93,8 +93,7 @@ func moduleRoot(t *testing.T) string {
 // entries only: adoption drops it, and the tests prove it is dropped.
 func copyModule(from, to string) error {
 	history := map[string]bool{"plans/README.md": true, "plans/designs/verbs-object-action.md": true,
-		"records/misc/goals-migration-manifest.md": true, "records/misc/fleet-coordinator-brain-role-packet.md": true,
-		"records/README.md": true}
+		"records/misc/fleet-coordinator-brain-role-packet.md": true, "records/README.md": true}
 	return filepath.WalkDir(from, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -322,6 +321,35 @@ func names(t *testing.T, dir string) string {
 	return strings.Join(out, " ")
 }
 
+// assertShipsNoTemplateProjectState holds what an application must never
+// inherit from the template: this repository's own project homes (intent,
+// doctrine, decisions) and history under docs/ (the journey, the reviews,
+// the Stop-surface declarations of its own goals), the goals migration
+// manifest of its own ledger, and a pointer at the template's local
+// development rules in any instruction file. The Stop-surface protocol ships
+// without a declaration.
+func assertShipsNoTemplateProjectState(t *testing.T, target string) {
+	t.Helper()
+	for _, rel := range []string{"docs/intent", "docs/doctrine", "docs/decisions", "docs/journey.md", "docs/reviews",
+		"records/misc/goals-migration-manifest.md"} {
+		if exists(filepath.Join(target, filepath.FromSlash(rel))) {
+			t.Errorf("adoption shipped the template's own %s", rel)
+		}
+	}
+	if got := names(t, filepath.Join(target, "docs", "stop-decision-moves")); got != "README.md" {
+		t.Errorf("docs/stop-decision-moves/ carries %q, want the protocol README alone", got)
+	}
+	if !exists(filepath.Join(target, "docs", "project-rules.md")) || !exists(filepath.Join(target, "docs", "orchestration.md")) {
+		t.Error("adoption dropped the shipped documentation with the template's project state")
+	}
+	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
+		path := filepath.Join(target, name)
+		if exists(path) && strings.Contains(readText(t, path), "development/project-rules-local.md") {
+			t.Errorf("%s points at the template's local development rules", name)
+		}
+	}
+}
+
 // treeState is every entry below root: symlink targets and file bytes.
 func treeState(t *testing.T, root string) map[string]string {
 	t.Helper()
@@ -427,9 +455,7 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 	if readText(t, filepath.Join(target, "README.md")) != "project readme\n" {
 		t.Fatal("the project's own README was touched")
 	}
-	if readText(t, filepath.Join(source.root, "records", "misc", "goals-migration-manifest.md")) != readText(t, filepath.Join(target, "records", "misc", "goals-migration-manifest.md")) {
-		t.Fatal("the goals migration manifest did not ship byte for byte")
-	}
+	assertShipsNoTemplateProjectState(t, target)
 	if got := names(t, filepath.Join(target, "plans")); got != "README.md goals-accepted.json goals.md" {
 		t.Fatalf("plans/ carries %q", got)
 	}
@@ -464,23 +490,23 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 	// Unreplaced placeholders fail the full audit, which the structural
 	// pass tolerated, and the audit names them as the adopted placeholder
 	// refusal (the retired validator's static scan carried this message;
-	// the audit owns it): first in the project rules, then, with those
-	// filled, in the configuration.
-	for _, fill := range []string{"docs/project-rules.md", ""} {
-		audited, err := audit.AuditMetasystem(target, audit.AuditOptions{})
-		if err != nil || len(audited.Violations) == 0 {
-			t.Fatalf("the audit accepted unreplaced placeholders (%q still unfilled): %v", fill, err)
-		}
-		if !hasLine(audited.Violations, "adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf") {
-			t.Fatalf("the audit did not name the adopted placeholder refusal (%q still unfilled): %q", fill, audited.Violations)
-		}
-		if fill != "" {
-			path := filepath.Join(target, fill)
-			filled := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(readText(t, path), "filled")
-			if err := os.WriteFile(path, []byte(filled), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
+	// the audit owns it) in the project rules. With those filled the audit
+	// passes: the configuration carries nothing to fill, since the evidence
+	// root has a compiled-in default (ERD-04).
+	audited, err := audit.AuditMetasystem(target, audit.AuditOptions{})
+	if err != nil || !hasLine(audited.Violations, "adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf") {
+		t.Fatalf("the audit did not name the adopted placeholder refusal in the project rules: %v %q", err, audited.Violations)
+	}
+	path := filepath.Join(target, "docs", "project-rules.md")
+	filled := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(readText(t, path), "filled")
+	if err := os.WriteFile(path, []byte(filled), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if audited, err := audit.AuditMetasystem(target, audit.AuditOptions{}); err != nil || len(audited.Violations) != 0 {
+		t.Fatalf("the filled adoption still fails the audit: %v %q", err, audited.Violations)
+	}
+	if last := result.Notes[len(result.Notes)-1]; !strings.HasPrefix(last, "evidence root: ") {
+		t.Fatalf("adoption did not say the evidence root: %v", result.Notes)
 	}
 }
 
@@ -499,10 +525,15 @@ func TestAdoptGitIntegrationRuntimeSelections(t *testing.T) {
 				t.Fatalf("devin registration lacks %s", path)
 			}
 		}
-		for _, link := range []string{".agents/skills/verify", ".devin/skills/verify", ".devin/skills/code-critique"} {
+		for _, link := range []string{".agents/skills/verify", ".agents/skills/code-critique"} {
 			if info, err := os.Lstat(filepath.Join(target, link)); err != nil || info.Mode()&fs.ModeSymlink == 0 {
 				t.Fatalf("devin skill registration %s is missing", link)
 			}
+		}
+		// Devin discovers project skills through .agents/skills; a second
+		// tree under .devin/skills would list every skill twice.
+		if exists(filepath.Join(target, ".devin", "skills")) {
+			t.Fatal("devin skills were registered twice, under .devin/skills too")
 		}
 		if !hasLine(confLines(t, target), "metasystem.runtimes=devin") || !hasLine(confLines(t, target), "role.default.runtime=devin") {
 			t.Fatal("the devin selection was not recorded as the default")
@@ -807,6 +838,10 @@ func TestAdoptGitIntegrationFromAVendoredTemplate(t *testing.T) {
 		if exists(filepath.Join(application, ".claude")) || readText(t, filepath.Join(application, "README.md")) != "application readme\n" {
 			t.Fatal("adoption beneath an application modified the application's own files")
 		}
+		if exists(filepath.Join(application, "AGENTS.md")) || exists(filepath.Join(application, "CLAUDE.md")) {
+			t.Fatal("adoption beneath an application wrote instruction pointers into the application's root")
+		}
+		assertShipsNoTemplateProjectState(t, install)
 		if _, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: filepath.Join(install, "skills", "verify"), Runtimes: []string{"claude"}, Check: true}); err != nil {
 			t.Fatalf("the nested installation fails the shared setup check: %v", err)
 		}
@@ -822,6 +857,7 @@ func TestAdoptGitIntegrationFromAVendoredTemplate(t *testing.T) {
 		if exists(filepath.Join(target, "benchmark")) || exists(filepath.Join(target, "development")) {
 			t.Fatal("adoption leaked the measuring kit or development/")
 		}
+		assertShipsNoTemplateProjectState(t, target)
 		for _, register := range []string{"instruction-ledger.md", "known-issues.md"} {
 			if regexp.MustCompile(`(?m)^\| (IL|KI)-[0-9]`).MatchString(readText(t, filepath.Join(target, "memory", register))) {
 				t.Fatalf("adoption shipped the template's own %s rows", register)
@@ -1034,7 +1070,7 @@ func TestAdoptGitIntegrationWritesOnlyTheDeclaredInventory(t *testing.T) {
 		"metasystem.conf": true, "plans/goals-accepted.json": true, "bin/metasystem": true, ".github/workflows/metasystem.yml": true,
 		"memory/known-issues.md": true, "memory/instruction-ledger.md": true, "memory/rulings.md": true,
 		"plans/goals.md": true, "plans/README.md": true, "memory/README.md": true, "records/README.md": true,
-		"records/misc/goals-migration-manifest.md": true, "records/misc/fleet-coordinator-brain-role-packet.md": true,
+		"records/misc/fleet-coordinator-brain-role-packet.md": true,
 	}
 	for _, runtime := range []string{"claude", "codex"} {
 		t.Run(runtime, func(t *testing.T) {

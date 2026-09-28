@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // A verbatim quote block in a role preamble:
@@ -27,8 +29,8 @@ var quoteBlockRe = regexp.MustCompile(`(?ms)^<!-- quote source="([^"\r\n]+)" -->
 // violation found.
 func PreambleQuotes(root, rolesDir string) []string {
 	var violations []string
-	rootResolved := resolvePath(root)
-	rolesResolved := resolvePath(rolesDir)
+	rootResolved := realpath.ResolveExisting(root)
+	rolesResolved := realpath.ResolveExisting(rolesDir)
 
 	info, err := os.Stat(rolesResolved)
 	if err != nil || !info.IsDir() {
@@ -72,8 +74,8 @@ func PreambleQuotes(root, rolesDir string) []string {
 			if !filepath.IsAbs(candidate) {
 				candidate = filepath.Join(rootResolved, sourceName)
 			}
-			source := resolvePath(candidate)
-			if !pathWithin(rootResolved, source) {
+			source := realpath.Resolve(candidate)
+			if !realpath.Within(source, rootResolved) {
 				violations = append(violations, fmt.Sprintf(
 					"%s: quote source escapes the metasystem root: %s", preamble, sourceName))
 				continue

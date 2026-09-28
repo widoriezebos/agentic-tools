@@ -102,7 +102,7 @@ checklist; no step is optional and none may be reordered:
 7. Hand the ledger to the human for review before merging the branch.
 
 This procedure is currently manual by an agent following it verbatim; a
-mechanical `upgrade.sh` for buckets one and two is planned, and until it
+mechanical engine verb for buckets one and two is planned, and until it
 exists this checklist is the only authority.
 
 Record the new template SHA in `docs/project-rules.md` when done.
@@ -139,6 +139,7 @@ verbs directly, the mission domain's seven families merged into one:
 | mission-ledger init/append | mission ledger-init/ledger-append |
 | mission-jobs drain/close-chains, mission-ledger verify/count | deleted (no callers; c72f662) |
 | mission fence-check-job/fence-reserve-cycle/contract-measure/ledger-append, mission turn-adjudicate/turn-conclude/turn-record-failure/turn-park | deleted (no callers; verbs-object-action U2) |
+| mission ledger-init/state-init/state-verify | deleted (their last caller, the benchmark kit's drivers, retired; verbs-object-action U8b) |
 
 The delegate-job domain followed in the same consolidation:
 
@@ -156,6 +157,7 @@ moved to the family whose staleness it detects:
 | identity started-at/probe/exists/group-exists | proc started-at/probe/exists/group-exists |
 | census run/alive/signature-check/find-ancestor | proc census/alive/signature-check/find-ancestor |
 | census fingerprint | supervise fingerprint, deleted (no callers; verbs-object-action U7c) |
+| proc started-at, lease announce/retire/require-holder | deleted (their last caller, the benchmark kit's drivers, retired; verbs-object-action U8b) |
 | census classify, census authentication-identity | deleted (no callers; c72f662) |
 
 The disposition registry (scripts/agents/shell-dispositions.json) is

@@ -190,9 +190,10 @@ docs/
   examples/          worked examples (filled matrix, filled ledger)
 skills/              triggered workflows: verify, design-critique, refactor, improve, retro, take-a-step-back
 optional-skills/     opt-in specialists (debug-java), enabled per project
-scripts/             deterministic checks and shipped enforcement configs
+scripts/             engine data files and shipped enforcement configs
 plans/               live intent: goals, goal drafts, designs, handoff notes
 memory/              living registers: rulings, issues, flakes, receipts, notes
+records/             concluded history: finished goals, critique rounds, finished designs
 ```
 
 Template maintenance notes and rationale live one level above this
@@ -217,7 +218,7 @@ Scripts check structure and declared state. They cannot prove that a named test 
 
 The canonical steps live in [`docs/project-adaptation.md`](docs/project-adaptation.md). The short version is three steps:
 
-1. From the template checkout, run `bin/metasystem system adopt <target> [--runtimes <names>] [--enable debug-java]` (`metasystem system adopt --help` lists the adoptable runtimes). It exports the payload from the template's tracked HEAD, registers skills and subagent profiles for the selected runtimes, installs the shipped CI workflow and Claude Code hook, creates the gitignored `artifacts/` directory, and records the template SHA for future migrations. It refuses targets that already carry instruction assets; those follow the reconciliation manual below.
+1. From the template checkout, run `bin/metasystem system adopt <target> [--runtimes <names>] [--enable debug-java]` (`metasystem system adopt --help` lists the adoptable runtimes). It exports the payload from the template's tracked HEAD, registers skills and subagent profiles for the selected runtimes, installs the shipped CI workflow and the selected runtimes' hooks, creates the gitignored `artifacts/` directory, and records the template SHA for future migrations. It refuses targets that already carry instruction assets; those follow the reconciliation manual below.
 2. Fill `docs/project-rules.md` with verified facts: commands, invariants, reserved decisions, budgets, the refactor acceptance gate, delegation facts.
 3. Run `metasystem system check` and `metasystem test run` in the target; both must pass. Then work normally: each repo-changing task ends with the completion check, verification when runnable, and a receipt. Run the first retro after a handful of tasks instead of waiting for the cadence. Early routing errors are the cheapest to fix.
 
@@ -245,4 +246,4 @@ PROJECT-STATE, or RUNTIME with the deciding rule for each.
 
 ## Status
 
-The structure is validated end to end, and the loop has now run for real: the template repository develops itself under its own rules (its hooks, supervision, and receipts are live, not aspirational), a deterministic mission runner has completed unattended missions, and the measuring kit beside this template has graded an unattended build against a held-out battery. The receipts loop remains how each rule earns its keep or gets removed. The metasystem was distilled from production engineering repositories, agent-evaluation work, and runtime-debugging practice, and it has been reviewed against three independent external critiques. Sources and decisions are traceable in `development/source-analysis.md` (template repository only).
+The structure is validated end to end, and the loop has now run for real: the template repository develops itself under its own rules (its hooks, supervision, and receipts are live, not aspirational), a deterministic mission runner has completed unattended missions, and a measuring kit built beside this template graded an unattended build against a held-out battery. The receipts loop remains how each rule earns its keep or gets removed. The metasystem was distilled from production engineering repositories, agent-evaluation work, and runtime-debugging practice, and it has been reviewed against three independent external critiques. Sources and decisions are traceable in `development/source-analysis.md` (template repository only).

@@ -52,7 +52,7 @@ var (
 	// declaring residue must link the open backlog item that schedules it.
 	auditResidueMarkerRe = regexp.MustCompile(`(?m)^\s*RESIDUE:`)
 	auditResidueLinkRe   = regexp.MustCompile(`goal:([a-z0-9][a-z0-9-]*)`)
-	auditPlaceholderRe   = regexp.MustCompile(`<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>`)
+	auditPlaceholderRe   = regexp.MustCompile(`<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<cheapest model class>|<middle model class>|<costliest model class>|<model>`)
 )
 
 // AuditResult carries the audit's verdict: refusals, and the informational

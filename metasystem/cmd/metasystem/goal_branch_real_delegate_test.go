@@ -358,12 +358,12 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 			t.Errorf("steward runner %d outlived fixture cleanup: disarm=%s/%s", runner.Pid, outcome.Result, outcome.Reason)
 		}
 	})
-	self, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
-	if err != nil || state != identity.Alive {
-		t.Fatalf("probe this test process: %s %v", state, err)
+	started, startedState, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || startedState != identity.Alive {
+		t.Fatalf("started-at: %v %s", err, startedState)
 	}
 	armCommand := exec.Command(installed, append(arm, "--repo", worktree, "--session", "real-delegate", "--pid", strconv.Itoa(os.Getpid()),
-		"--start-time", strconv.FormatInt(self.StartedAt.Unix(), 10), "--tag", "real-delegate-fixture")...)
+		"--start-time", strconv.FormatInt(started.StartedAt.Unix(), 10), "--tag", "real-delegate-fixture")...)
 	armCommand.Env = armEnv
 	if output, err := armCommand.CombinedOutput(); err != nil {
 		t.Fatalf("arm supervision: %v: %s", err, output)

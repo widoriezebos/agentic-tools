@@ -18,7 +18,7 @@ import (
 
 // evidenceGC is one collection pass for the checkout at root, with this
 // process as the lease caller: an empty evidenceRoot means the checkout's
-// configured evidence.root. Collection lines go to out, refusals to errOut.
+// resolved evidence root. Collection lines go to out, refusals to errOut.
 func evidenceGC(root, evidenceRoot string, grace float64, out, errOut io.Writer) int {
 	checkout, err := canonicalPath(root)
 	if err != nil {
@@ -35,15 +35,9 @@ func evidenceGC(root, evidenceRoot string, grace float64, out, errOut io.Writer)
 		if _, err := lease.RequireHolder(checkout, caller, holder.ClaimEpoch); err != nil {
 			return err
 		}
-		target := evidenceRoot
-		if target == "" {
-			target, _, _ = config.Get(config.GetParams{
-				Key: "evidence.root", Default: "", DefaultSet: true,
-				ConfPath: filepath.Join(checkout, "metasystem.conf"),
-			})
-		}
-		if !filepath.IsAbs(target) {
-			return fmt.Errorf("evidence-gc refused: evidence.root is not configured")
+		target, err := evidenceGCTarget(checkout, evidenceRoot, nil)
+		if err != nil {
+			return err
 		}
 		return evidence.GC(checkout, target, grace, out)
 	}
@@ -52,6 +46,21 @@ func evidenceGC(root, evidenceRoot string, grace float64, out, errOut io.Writer)
 		return 1
 	}
 	return 0
+}
+
+// evidenceGCTarget is the root a collection pass reads: the explicit one,
+// else the checkout's evidence root as the owner resolves it under lookup
+// (nil is os.LookupEnv).
+func evidenceGCTarget(checkout, explicit string, lookup func(string) (string, bool)) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{
+		ConfPath: filepath.Join(checkout, "metasystem.conf"), LookupEnv: lookup})
+	if err != nil {
+		return "", fmt.Errorf("evidence-gc refused: %v", err)
+	}
+	return resolved.Path, nil
 }
 
 // evidenceGCDefaultGrace is METASYSTEM_CHAIN_GRACE_SECONDS, else 5400 seconds.

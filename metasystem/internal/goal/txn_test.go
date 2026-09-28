@@ -379,9 +379,7 @@ func testInstalledGoalWaits(t *testing.T, binary string) {
 		t.Fatalf("current process identity=%+v state=%s err=%v", exact, state, err)
 	}
 	const lineage = "installed-ledger-lineage"
-	if announceErr := LeaseAnnounceForTest(waiterClone, "installed-ledger-session", self, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "installed-ledger-test", "fake", lineage); announceErr != nil {
-		t.Fatalf("announce installed ledger holder: %v", announceErr)
-	}
+	announceTestHolder(t, waiterClone, "installed-ledger-session", self, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "installed-ledger-test", "fake", lineage)
 	syncCursor := func(tip string) {
 		t.Helper()
 		mustGit(t, waiterClone, "fetch", "-q", "origin")

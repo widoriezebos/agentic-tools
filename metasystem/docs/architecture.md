@@ -20,22 +20,22 @@ binary under its own go gate.
 
 ## The boundary: core versus plumbing
 
-Standing doctrine (human ruling, Wido, 2026-08-12, recorded in
-`records/kill-shell/kill-shell.md`'s header): core functionality belongs in Go;
-plumbing — process launching, polling, signaling, environment glue,
-fixture drivers — remains in scripts, because that is what scripts are
-for. A Go programmer must never read the engine and find a shell script
-wearing Go syntax; a script must never make a decision the engine
-owns. In practice: `scripts/agents/*.sh` launch, wait, and wire
-environments, and call back into engine verbs at every decision point.
-The delegate-job choreography that once lived in `dispatch.sh` is Go now
+Standing doctrine (Wido's rulings of 2026-09-27, in
+`plans/designs/verbs-object-action.md` revision 7): the metasystem's
+behaviour lives in Go, and scripts exist only where users extend the
+system, at named extension points. This supersedes the 2026-08-12
+ruling that kept plumbing (process launching, polling, signaling,
+environment glue, fixture drivers) in scripts (`memory/rulings.md`
+R-139-m1e, kept as history). A Go programmer must never read the engine
+and find a shell script wearing Go syntax; a script must never make a
+decision the engine owns. The delegate-job choreography that once lived in `dispatch.sh` is Go now
 (`internal/delegation`, verbs-object-action U6b): a composition package
 above the owners, reached through `metasystem internal delegate`.
 
 ## Runtime agnosticism
 
 The core never names an agent runtime in behavior (human ruling
-2026-08-15; agnosticism audit, D74). Runtime knowledge lives in the
+2026-08-15, `memory/rulings.md` R-140-m1e; agnosticism audit, D74). Runtime knowledge lives in the
 sanctioned seams as declarations the core consumes:
 
 - `internal/runtimes` — the ONE pure-data registry: names, priorities,
@@ -83,9 +83,32 @@ permission-residual waiver is a HUMAN edit to the role requirements
 files (the live, checkout-local security control; a runtime with an
 undeclared residual fails closed), and the delivery-contract evidence
 row is handwritten prose the audit cross-checks. The
-adoption/registration/installation contract is being generalized under
-goal runtime-integration-contracts (records/agnosticism/agnosticism-audit-rulings.md
-carries the split).
+adoption/registration/installation contract was generalized under goal
+runtime-integration-contracts (done; decision D74 records the split).
+
+Decisions behind the registry, with the alternatives refused:
+
+- Permission residuals are NOT derived from ExpectedEnvelopeEnforcement.
+  Codex declares readRoots notEnforced yet never reports it unverified;
+  deriving "notEnforced implies unverified" would change live selection
+  or falsify validation. Changing that is a security-policy decision for
+  the human, not a refactor.
+- A role file may waive only a declared residual identifier under its own
+  field. Waiving any runtime that reports notEnforced was refused: it
+  broadens privilege. Compiling waivers into the registry was refused: a
+  compiled default keeps authorizing after a role file revokes.
+- Adoption scans the FULL collision-root population regardless of the
+  selected runtimes; a selection-scoped scan weakens foreign-instruction
+  detection. Adding a collision root (for example .codex) is a
+  human-adjudicated security change.
+- Behavioral capabilities live in one typed table per owner package
+  (host delivery recollection, usage recovery, adapter probes), never one
+  shared table: the three share no contract, and a single table forces
+  type erasure or import inversion.
+- The `fake` fixture identity path is authorized by a root-bound value
+  built where a root is known (the checkout's conf selects
+  runtimes=fake); a generic IsFixture bypass was refused so future
+  fixtures inherit no security bypass by declaration.
 
 ## Layering
 
@@ -196,9 +219,9 @@ it does; this table adds where the decisions live.
 
 ## Where the sequences are documented
 
-Choreography that stays shell has ground-truth sequence maps in
-`docs/design/`: `mission-cycle-sequence.md` for the mission path and
-`dispatch-sequence.md` for the delegate-job path. Standing behavioral
+The call sequences live with their code: the delegate-job path in the
+`internal/delegation` package doc and the mission path in the
+`internal/missionrunner` package doc. Standing behavioral
 contracts (wire documents, supervision registry and lifecycle, flight
 recorder, stop-loss core) also live in `docs/design/` — `plans/` holds
 task-local designs and history, never policy.

@@ -14,7 +14,8 @@ package launch
 // to the fleet's bare remote, that the endpoint and human keys this verb
 // copies actually land on it, that a tracking fetch from that bare remote
 // creates refs/remotes/origin/main, that the local configuration is copied as
-// bytes with evidence.root rewritten through the engine's own writer, that
+// bytes with the evidence root blanked through the engine's own writer, so the
+// clone resolves its own root from its committed conf, that
 // the nickname reaches git configuration, and that the clone's own engine
 // fetches the fleet's ledger from the bare fixture and accepts its tip.
 
@@ -26,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -58,18 +60,18 @@ func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
 	source := filepath.Join(bed, "agentic-tools")
 	target := filepath.Join(bed, "agentic-tools-m1f")
 	evidence := filepath.Join(bed, "evidence", "m1u")
-	fixtureRepository(t, bare, source)
+	committed := filepath.Join(bed, "evidence", "committed")
+	fixtureRepository(t, bare, source, committed, evidence)
 	if err := os.MkdirAll(evidence, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	sourceConf := filepath.Join(source, install, "metasystem.conf")
 	runner := &mixedRunner{said: map[string]string{
 		// The launching seat's own engine is this test binary's module and
-		// not a built executable, so the two commands the SOURCE side runs
-		// are answered rather than run. Everything the clone's own engine
-		// does — the ledger fetch, the orientation — is real.
-		"metasystem config get --key evidence.root --conf " + sourceConf: evidence + "\n",
+		// not a built executable, so the command the SOURCE side runs is
+		// answered rather than run, as is the clone's validation. Everything
+		// the clone's own engine does — the ledger fetch, the orientation —
+		// is real.
 		"metasystem validate session-isolation --source-root " + source + " --destination-root " + target +
 			" --manifest " + filepath.Join(target, install, "artifacts", "agents", "ui", "local-config-paths") +
 			" --harness-root " + filepath.Join(source, install): "",
@@ -138,15 +140,25 @@ func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the local configuration did not reach the clone: %v", err)
 	}
-	sibling := filepath.Join(filepath.Dir(mustCanonical(t, evidence)), machineName)
-	if !strings.Contains(string(copied), "evidence.root="+sibling) {
-		t.Fatalf("the copied configuration is\n%s\nwant evidence.root=%s", copied, sibling)
+	if !strings.Contains(string(copied), config.EvidenceRootKey+"=\n") || strings.Contains(string(copied), evidence) {
+		t.Fatalf("the copied configuration is\n%s\nwant a blank evidence root", copied)
+	}
+	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{
+		ConfPath: filepath.Join(target, install, "metasystem.conf"),
+		LookupEnv: func(name string) (string, bool) {
+			if name != "HOME" {
+				return "", false
+			}
+			return os.LookupEnv("HOME")
+		}})
+	if err != nil || resolved.Path != committed || resolved.Origin != "conf" {
+		t.Fatalf("the clone resolves %+v, %v; want its committed root %s", resolved, err, committed)
 	}
 	// The bytes this verb never parses are carried through unread.
 	if !strings.Contains(string(copied), "fleet.channel.secret=a-fixture-secret") {
 		t.Fatalf("the copied configuration lost the bytes it was supposed to carry:\n%s", copied)
 	}
-	if _, err := os.Stat(sibling); err != nil {
+	if _, err := os.Stat(committed); err != nil {
 		t.Fatalf("the new machine's evidence root was not created: %v", err)
 	}
 	// The ledger step, run for real against the bare fixture: `goal fetch`
@@ -181,7 +193,7 @@ func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
 // with a configuration in it, the endpoint and human keys in local git
 // configuration, and an unversioned metasystem.conf.local beside the
 // versioned one.
-func fixtureRepository(t *testing.T, bare, source string) {
+func fixtureRepository(t *testing.T, bare, source, committedRoot, sourceRoot string) {
 	t.Helper()
 	run(t, "", "git", "init", "--quiet", "--bare", "-b", "main", bare)
 	run(t, "", "git", "init", "--quiet", "-b", "main", source)
@@ -194,7 +206,7 @@ func fixtureRepository(t *testing.T, bare, source string) {
 	if err := os.MkdirAll(filepath.Join(source, install), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	write(t, filepath.Join(source, install, "metasystem.conf"), "evidence.root=/not/this/one\n")
+	write(t, filepath.Join(source, install, "metasystem.conf"), config.EvidenceRootKey+"="+committedRoot+"\n")
 	// One lawful ledger, so the clone's own `goal fetch` has a canonical tree
 	// to validate and an accepted ref to create. It is the smallest tree the
 	// validator accepts: a root record and one queued goal.
@@ -223,7 +235,7 @@ func fixtureRepository(t *testing.T, bare, source string) {
 	// The seat's own local file: synthetic, in a temporary directory, and
 	// never this repository's.
 	write(t, filepath.Join(source, install, "metasystem.conf.local"),
-		"evidence.root=/the/launching/seat\nfleet.channel.secret=a-fixture-secret\n")
+		config.EvidenceRootKey+"="+sourceRoot+"\nfleet.channel.secret=a-fixture-secret\n")
 }
 
 func run(t *testing.T, dir, name string, args ...string) {
@@ -264,13 +276,4 @@ func buildEngine(t *testing.T, at string) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build the engine for the clone: %v\n%s", err, out)
 	}
-}
-
-func mustCanonical(t *testing.T, path string) string {
-	t.Helper()
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return resolved
 }

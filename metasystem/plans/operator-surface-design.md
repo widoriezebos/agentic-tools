@@ -12,8 +12,10 @@ design your way out"). ROUND 1: 20 material + 3 not — all folded
 into v2 (dispositions below). ROUND 2: 15 material (14 shape) —
 codex then DRAFTED the resolutions to its own findings under the
 four standing rulings, and the coordinator adjudicated the draft
-ACCEPTED IN FULL: the authoritative resolution text lives in
-records/misc/operator-surface-v3-resolutions.md, one section per finding,
+ACCEPTED IN FULL: the authoritative resolution text lived in
+the round-2 and round-3 resolutions (record removed 2026-09-28, tag
+records-archive-2026-09-28; the landed code is authoritative; see
+Decisions below), one section per finding,
 and SUPERSEDES this document's corresponding v2 sections (notably:
 the bootstrap epochs and retrospective seal; terminal-rooted
 human-authority proof; the rebase-before-acceptance landing
@@ -306,6 +308,19 @@ Acceptance-gate, dual-running of old and new protections,
 habituation retro test, stop-states, and reopen-observations carry
 forward from v1 unchanged.
 
+## Decisions
+
+- v3 deleted four requirements rather than build them: post-push
+  receipts, observe-only trials for invariants already authorized, the
+  one-week retirement condition, and a bootstrap gate that made S0a-S4
+  depend on acceptance machinery S4 introduces (the bootstrap and
+  ordinary eras are separate typed epochs instead). v3 also caught
+  that v2's Ring 3 would have violated D121.
+- v4 deleted the budget journal: job reservations are the only
+  spending facts.
+- Left to Wido: which iPhone transport supplies authenticated delivery
+  receipts (no provider, dependency or spending tier was chosen).
+
 ## Round 1 dispositions (r1-output.md)
 
 | Finding | Disposition | Fold |
@@ -385,8 +400,9 @@ CONTINUATION RULED (Wido: "agreed, do as proposed"):
 
 The remaining eight findings (R3-04..11) were resolved by the
 co-design pattern: codex drafted, the coordinator adjudicated
-ACCEPTED IN FULL — the v4 resolutions live in PART TWO of
-records/misc/operator-surface-v3-resolutions.md and supersede overlapping
+ACCEPTED IN FULL — the v4 resolutions lived in PART TWO of
+the round-2 and round-3 resolutions (record removed 2026-09-28; the
+landed code is authoritative) and supersede overlapping
 earlier text. Headlines: one ranked lock chain (chain →
 goal-revision → cap → lifecycle → occupancy → record); the budget
 journal DELETED (job reservations are the sole spending facts);

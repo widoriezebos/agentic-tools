@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -445,14 +446,13 @@ func (s *session) mirrorRecord(job string) error {
 	if !terminal(status) {
 		return nil
 	}
-	evidence, err := s.configGet("evidence.root", "")
+	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{
+		ConfPath: filepath.Join(s.root, "metasystem.conf"), LookupEnv: s.configLookup()})
 	if err != nil {
-		return err
-	}
-	if !strings.HasPrefix(evidence, "/") {
-		s.mirrorFail(job, "evidence.root must be absolute")
+		s.mirrorFail(job, err.Error())
 		return exitWith(1)
 	}
+	evidence := resolved.Path
 	rootID, err := s.rootJobID(job)
 	if err != nil {
 		s.eprintln(err.Error())

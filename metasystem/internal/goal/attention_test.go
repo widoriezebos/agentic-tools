@@ -209,9 +209,7 @@ func TestGitAdapterWaitGoalFetchDeadlineInstalledCommand(t *testing.T) {
 			if probeErr != nil || state != identity.Alive {
 				t.Fatalf("current process identity=%+v state=%s err=%v", exact, state, probeErr)
 			}
-			if announceErr := LeaseAnnounceForTest(repo, "wait-bounds-session", self, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "wait-bounds-test", "fake", "wait-bounds-lineage"); announceErr != nil {
-				t.Fatalf("announce installed bounds holder: %v", announceErr)
-			}
+			announceTestHolder(t, repo, "wait-bounds-session", self, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "wait-bounds-test", "fake", "wait-bounds-lineage")
 			dir := t.TempDir()
 			fixture := testutil.Fixture(t)
 			wrapper := filepath.Join(dir, "git")

@@ -2,6 +2,7 @@ package missionrunner
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	turnvocab "github.com/widoriezebos/agentic-tools/metasystem/internal/turn"
 	"os"
 	"path/filepath"
@@ -187,35 +188,13 @@ func containedPath(turnDir string, raw any, label string) (string, error) {
 	if !ok || value == "" {
 		return "", fmt.Errorf("host result %s is missing", label)
 	}
-	resolved := resolvePath(value)
-	base := resolvePath(turnDir)
+	resolved := realpath.Resolve(value)
+	base := realpath.Resolve(turnDir)
 	rel, err := filepath.Rel(base, resolved)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("host result %s escapes the turn directory", label)
 	}
 	return resolved, nil
-}
-
-// resolvePath makes a path absolute and resolves symlinks as far as the
-// filesystem allows, so containment cannot be dodged with a link or a
-// dot-dot segment through one.
-func resolvePath(path string) string {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return filepath.Clean(path)
-	}
-	return resolveExisting(abs)
-}
-
-func resolveExisting(abs string) string {
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved
-	}
-	parent := filepath.Dir(abs)
-	if parent == abs {
-		return abs
-	}
-	return filepath.Join(resolveExisting(parent), filepath.Base(abs))
 }
 
 // Verdict is an adjudication's outcome: what was accepted and rejected, the

@@ -10,7 +10,7 @@ This revision decides the two hook-bed fixtures that reached the retired shell p
 
 Member two of `metasystem/plans/stop-hook-never-forces-an-empty-turn-design.md`.
 Two reads are spent. This page decides the eight remaining findings
-from `metasystem/plans/stop-decisions-record-deadline-evidence-design-read2-findings.md`.
+from `metasystem/records/misc/stop-decisions-record-deadline-evidence-design-read2-findings.md`.
 Wido's direction ends prose review here. Codex builds these obligations;
 its fixtures and an Opus read of the build judge them. No third design read.
 

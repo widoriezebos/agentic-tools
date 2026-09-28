@@ -28,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wallclock"
 )
 
 // OwnerConfig locates the owners' state. Root is the metasystem installation
@@ -86,7 +87,7 @@ func NewOwnerPorts(config OwnerConfig) (Ports, error) {
 		Events:  ownerEvents{root: eventRoot, emitter: emitter},
 		Process: ownerProcess{root: root},
 		Git:     ownerGit{},
-		Clock:   wallClock{},
+		Clock:   wallclock.System(),
 		Host:    config.Host,
 		Guard:   ownerGuard{},
 	}, nil
@@ -432,11 +433,6 @@ func (ownerGit) Run(ctx context.Context, dir string, args ...string) ([]byte, []
 	}
 	return stdout.Bytes(), stderr.Bytes(), err
 }
-
-type wallClock struct{}
-
-func (wallClock) Now() time.Time        { return time.Now() }
-func (wallClock) Sleep(d time.Duration) { time.Sleep(d) }
 
 type ownerGuard struct{}
 

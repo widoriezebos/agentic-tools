@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3GZ2C27S201HT3Z0K94CDBG
-- Status: draft
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-27: "Finish all now." Every item below was named

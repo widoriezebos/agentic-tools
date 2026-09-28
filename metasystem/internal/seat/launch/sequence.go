@@ -32,6 +32,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 )
 
@@ -57,14 +58,19 @@ type Runner interface {
 type Host interface {
 	// Exists reports whether a path is there.
 	Exists(path string) (bool, error)
-	// Canonical resolves a path's symlinks.
+	// Canonical resolves a path's symlinks through its deepest existing
+	// ancestor, whether or not the leaf exists.
 	Canonical(path string) (string, error)
-	// MakeDir creates a directory and reports whether this call created it.
+	// MakeDir creates a directory, its parents first, and reports whether
+	// this call created the directory itself.
 	MakeDir(path string) (created bool, err error)
+	// EvidenceRoot is an installation's evidence root as the engine's one
+	// owner resolves it.
+	EvidenceRoot(installation string) (config.EvidenceRoot, error)
 	// CopyLocalConf copies one seat's metasystem.conf.local to another as
-	// bytes, rewriting evidence.root through the engine's own conf writer,
-	// and publishes it atomically.
-	CopyLocalConf(source, destination, evidenceRoot string) error
+	// bytes, blanking the evidence root through the engine's own conf
+	// writer, and publishes it atomically.
+	CopyLocalConf(source, destination string) error
 	// MakeManifest writes the adapter-declared local configuration paths
 	// where `validate session-isolation` reads them.
 	MakeManifest(path string) error
@@ -490,14 +496,14 @@ func (s *Sequencer) configuration(record *Record) (stepRun, error) {
 	sourceInstall := s.install(s.Request.From)
 	copied := ""
 	if !present {
-		root, err := s.evidenceRoot(record)
-		if err != nil {
-			return stepRun{}, err
-		}
-		if err := s.Host.CopyLocalConf(filepath.Join(sourceInstall, "metasystem.conf.local"), local, root); err != nil {
+		if err := s.Host.CopyLocalConf(filepath.Join(sourceInstall, "metasystem.conf.local"), local); err != nil {
 			return stepRun{}, err
 		}
 		copied = "the roster and the local configuration were copied from this seat; edit " + local + " if this machine should differ"
+	}
+	root, err := s.evidenceRoot(record)
+	if err != nil {
+		return stepRun{}, err
 	}
 	manifest := filepath.Join(destinationInstall, "artifacts", "agents", "ui", "local-config-paths")
 	written, err := s.Host.Exists(manifest)
@@ -526,67 +532,72 @@ func (s *Sequencer) configuration(record *Record) (stepRun, error) {
 		return stepRun{}, err
 	}
 	if copied == "" {
-		return stepRun{outcome: StepSkipped, words: local + " was already written; its isolation and its configuration were checked again"}, nil
+		return stepRun{outcome: StepSkipped, words: local + " was already written; its isolation and its configuration were checked again; " + root.Line()}, nil
 	}
-	return stepRun{outcome: StepDone, words: copied}, nil
+	return stepRun{outcome: StepDone, words: copied + "; " + root.Line()}, nil
 }
 
-// evidenceRoot is the new machine's evidence root: the sibling of this seat's
-// EFFECTIVE root, named for the nickname.
+// evidenceRoot judges the new machine's evidence root once its configuration
+// is written: the clone's root as the engine's one owner resolves it, which
+// is its committed root when that is concrete and otherwise the default.
 //
-// The effective root is read through the engine rather than from the file,
-// because the file is not the last word on it — an environment variable
-// outranks it — and a launch that wrote a sibling of the wrong root would
-// point the new machine's evidence at this seat's.
-func (s *Sequencer) evidenceRoot(record *Record) (string, error) {
-	sourceInstall := s.install(s.Request.From)
-	printed, err := s.run(Command{
-		Dir: sourceInstall, Name: s.binary(s.Request.From), Budget: s.GitBudget,
-		Args: []string{"config", "get", "--key", "evidence.root",
-			"--conf", filepath.Join(sourceInstall, "metasystem.conf")},
-	})
+// A distinct destination does not prove a distinct root, so the three
+// isolation checks stay: the clone's root must not be this seat's, compared
+// through their resolved ancestors whether or not the leaves exist; it must
+// not already be there unless this launch made it; and its leaf must not be
+// a link elsewhere. It runs on every pass, resume included.
+func (s *Sequencer) evidenceRoot(record *Record) (config.EvidenceRoot, error) {
+	mine, err := s.Host.EvidenceRoot(s.install(s.Request.From))
 	if err != nil {
-		return "", err
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "this seat's evidence root could not be resolved: %v", err)
 	}
-	mine := strings.TrimSpace(printed)
-	if mine == "" {
-		return "", refuse(CodeEvidenceRootUnsafe, "this seat's engine names no evidence root")
-	}
-	canonical, err := s.Host.Canonical(mine)
+	theirs, err := s.Host.EvidenceRoot(s.install(record.Destination))
 	if err != nil {
-		return "", refuse(CodeEvidenceRootUnsafe, "this seat's evidence root %s could not be resolved: %v", mine, err)
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "the new machine's evidence root could not be resolved: %v", err)
 	}
-	sibling := filepath.Join(filepath.Dir(canonical), s.Request.Machine)
-	if sibling == canonical {
-		return "", refuse(CodeEvidenceRootUnsafe,
-			"the evidence root for %s would be this seat's own root %s", s.Request.Machine, canonical)
-	}
-	created, err := s.Host.MakeDir(sibling)
+	mineCanonical, err := s.Host.Canonical(mine.Path)
 	if err != nil {
-		return "", refuse(CodeEvidenceRootUnsafe, "%s could not be created: %v", sibling, err)
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "this seat's evidence root %s could not be resolved: %v", mine.Path, err)
+	}
+	theirsCanonical, err := s.Host.Canonical(theirs.Path)
+	if err != nil {
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "%s could not be resolved: %v", theirs.Path, err)
+	}
+	if mineCanonical == theirsCanonical {
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe,
+			"the evidence root for %s would be this seat's own root %s", s.Request.Machine, mineCanonical)
+	}
+	created, err := s.Host.MakeDir(theirs.Path)
+	if err != nil {
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "%s could not be created: %v", theirs.Path, err)
 	}
 	if !created && !record.Created.EvidenceRoot {
-		return "", refuse(CodeEvidenceRootUnsafe,
-			"%s is already there and this launch did not create it", sibling)
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe,
+			"%s is already there and this launch did not create it", theirs.Path)
 	}
-	// A directory that resolves somewhere else is a symlink pointing out of
-	// the evidence tree, which would put this machine's evidence wherever it
-	// points — including into this seat's own root.
-	resolved, err := s.Host.Canonical(sibling)
-	if err != nil || resolved != sibling {
-		return "", refuse(CodeEvidenceRootUnsafe,
-			"%s resolves to %s; an evidence root that is a link elsewhere is refused", sibling, resolved)
+	// A leaf that resolves somewhere other than beneath its own resolved
+	// parent is a symlink pointing out of the evidence tree, which would put
+	// this machine's evidence wherever it points — including into this
+	// seat's own root. An ancestor under a link (a HOME or a temporary
+	// directory reached through one) is resolved above and compared, not
+	// refused.
+	parent, err := s.Host.Canonical(filepath.Dir(theirs.Path))
+	if err != nil {
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "%s could not be resolved: %v", filepath.Dir(theirs.Path), err)
+	}
+	resolved, err := s.Host.Canonical(theirs.Path)
+	if err != nil || resolved != filepath.Join(parent, filepath.Base(theirs.Path)) {
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe,
+			"%s resolves to %s; an evidence root that is a link elsewhere is refused", theirs.Path, resolved)
 	}
 	// The record says this launch made the directory before anything else in
-	// this step can fail. It is written here and not at the end of the step
-	// because the refusal above is what a retry would meet otherwise: a
-	// launch that created the root and then failed on the copy would come
-	// back to a directory it made and a record that does not say so.
+	// this step can fail, so a retry meets a directory its own record
+	// accounts for.
 	record.Created.EvidenceRoot = true
 	if err := s.persist(record); err != nil {
-		return "", err
+		return config.EvidenceRoot{}, err
 	}
-	return sibling, nil
+	return theirs, nil
 }
 
 /* ------------------------------------------------------------ 5 nickname -- */

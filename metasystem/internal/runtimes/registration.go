@@ -72,14 +72,14 @@ var registrationRows = map[string][]RegistrationRow{
 			Destination:  ".claude/settings.json", Policy: PolicyTransformedBytes,
 			InstructionBearing: true, Source: "scripts/enforcement/claude-code-hooks.json", Key: "_comment"},
 	},
+	// Devin discovers project skills under .agents/skills (its skills
+	// documentation; the devin selftest probe proves symlinked discovery
+	// there), and lists a skill found in two places twice, so the shared
+	// tree is its one skill registration.
 	"devin": {
 		{ID: "skill-tree", Operation: OpTree,
 			Requiredness: Requiredness{TemplateSource: "required", AdoptedDestination: "required"},
 			Destination:  ".agents/skills", Policy: PolicyNonDanglingLink,
-			InstructionBearing: true, Source: "skills", Mode: "link"},
-		{ID: "skill-tree-devin", Operation: OpTree,
-			Requiredness: Requiredness{TemplateSource: "required", AdoptedDestination: "required"},
-			Destination:  ".devin/skills", Policy: PolicyNonDanglingLink,
 			InstructionBearing: true, Source: "skills", Mode: "link"},
 		{ID: "skill-profiles", Operation: OpSkillProfiles,
 			Requiredness: Requiredness{TemplateSource: "required", AdoptedDestination: "source-conditioned"},

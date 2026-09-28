@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 func declaredOutputPaths(record Record) ([]string, error) {
@@ -67,20 +68,15 @@ func (m *Manager) prepareDeclaredOutputs(record Record, stateDir string) (func()
 	sort.Strings(lockPaths)
 	for _, path := range lockPaths {
 		digest := sha256.Sum256([]byte(path))
-		lock, openErr := os.OpenFile(filepath.Join(locksDir, fmt.Sprintf("%x.flock", digest)), os.O_CREATE|os.O_RDWR, 0o600)
-		if openErr != nil {
+		held, lockErr := lock.File(filepath.Join(locksDir, fmt.Sprintf("%x.flock", digest)), 0o600, lock.TryExclusive)
+		if lockErr != nil {
 			release()
-			return nil, openErr
-		}
-		if lockErr := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); lockErr != nil {
-			_ = lock.Close()
-			release()
-			if errors.Is(lockErr, unix.EWOULDBLOCK) || errors.Is(lockErr, unix.EAGAIN) {
+			if isLockFailure(lockErr) && lock.Busy(lockErr) {
 				return nil, fmt.Errorf("declared-output-busy: %s", path)
 			}
 			return nil, lockErr
 		}
-		locks = append(locks, lock)
+		locks = append(locks, held.File())
 	}
 	if err := m.checkEarlierOutputOwners(record, paths); err != nil {
 		release()

@@ -289,6 +289,12 @@ func setupLandingOwnerWithInputs(metasystemRoot, repo string, cadence *batchOwne
 		if err != nil {
 			return err
 		}
+		// A new owner sweeps the retained-verification worktrees a prior
+		// owner left; a failure is reported and never stops the owner.
+		if err := batchOwnerSweepSources(repo); err != nil {
+			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "sweep": "retained-sources", "error": err.Error()})
+			fmt.Fprintln(os.Stderr, string(line))
+		}
 		activePass = func() error {
 			if err := batchOwnerRequire(*held); err != nil {
 				activePass = nil

@@ -297,12 +297,25 @@ func writePatch(path, body string) error {
 // configLookup is the invocation's configuration environment: the request's
 // carried configuration over the process's own.
 func (s *session) configLookup() func(string) (string, bool) {
-	return ConfigLookup(s.request.ConfigEnv)
+	var base func(string) (string, bool)
+	if s.l != nil {
+		base = s.l.lookupEnv
+	}
+	return configLookupOver(s.request.ConfigEnv, base)
 }
 
 // ConfigLookup resolves an environment name from carried KEY=VALUE
 // configuration first and the process environment after it.
 func ConfigLookup(carried []string) func(string) (string, bool) {
+	return configLookupOver(carried, nil)
+}
+
+// configLookupOver resolves an environment name from carried KEY=VALUE
+// configuration first and base after it (nil is the process environment).
+func configLookupOver(carried []string, base func(string) (string, bool)) func(string) (string, bool) {
+	if base == nil {
+		base = os.LookupEnv
+	}
 	overlay := map[string]string{}
 	for _, entry := range carried {
 		if name, value, ok := strings.Cut(entry, "="); ok {
@@ -313,6 +326,6 @@ func ConfigLookup(carried []string) func(string) (string, bool) {
 		if value, ok := overlay[name]; ok {
 			return value, true
 		}
-		return os.LookupEnv(name)
+		return base(name)
 	}
 }

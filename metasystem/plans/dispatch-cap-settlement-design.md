@@ -13,13 +13,13 @@ are from this worktree at commit c34e77a2 (no source under internal/,
 cmd/ or scripts/ changed since revision 1's 4142106d).
 
 Changelog: revision 2 folds critique round 1 (chain cap-settle-crit,
-dispositions in plans/dispatch-cap-settlement-dispositions.md):
+dispositions in records/misc/dispatch-cap-settlement-dispositions.md):
 DCS-R1-TIMESTAMP-AUTHORITY, DCS-R1-START-PROOF (accepted in part),
 DCS-R1-REFUSAL-COVERAGE, DCS-R1-DISCHARGED-HUSK, DCS-R1-GOVERNED-COMPONENT-PROOF.
-Revision 3 folds critique round 2 (plans/dispatch-cap-settlement-dispositions-r2.md):
+Revision 3 folds critique round 2 (records/misc/dispatch-cap-settlement-dispositions-r2.md):
 DCS-R2-STALE-RESERVED-SNAPSHOT, DCS-R2-END-BEFORE-DEATH,
 DCS-R2-MIXED-START-END-CLOCKS. Revision 4 folds the failsafe round
-(plans/dispatch-cap-settlement-dispositions-r3.md):
+(records/misc/dispatch-cap-settlement-dispositions-r3.md):
 DCS-R3-RETRY-SELF-PROJECTION, DCS-R3-PROJECTION-WIRING,
 DCS-R3-LATE-START-INSTANT; it also corrects revision 3's import-graph
 claim in 1.9 (measured with `go list`, section 4.3).
@@ -797,3 +797,26 @@ wind-down ladder, and the mission fence ledgers.
   a validation bed asserts the bare `BUDGET_REFUSED: ... admission closed`
   line with nothing after it (none does). Any of these reopens the design
   before build.
+
+## Decisions: the scope cut of 2026-09-02
+
+The critique loop ran four rounds (5, 3, 3 and 3 material findings). From
+round 2 on it accepted two neighbouring, pre-existing defects, and rounds 3
+and 4 found defects only in the machinery added for them. That is the
+design-critique skill's "loop critiquing itself" stop. The seat cut the
+scope and raised the cut to Wido under R-25b-m1. The build covers sections
+1 (without 1.9), 2, 3, 4.1, 4.2 and tests T1-T12. (Distilled 2026-09-28
+from the scope-cut note and the round-4 dispositions, removed that day with
+the other dispositions files this page cites; tag
+`records-archive-2026-09-28`.)
+
+- Section 4.3 (conclusion-time re-projection) and tests T13 and T15 went to
+  goal governed-exhaustion-reprojection (done). It carried the open
+  findings DCS-R4-EXCLUSION-HIDES-DUPLICATE-OWNER and
+  DCS-R4-T13-POST-DEBT-RETRY.
+- Section 1.9 (the lease sweep's death ladder) and test T14 went to goal
+  lease-sweep-death-evidence. Until it lands, a sweep-stamped record can
+  settle a few minutes short while its group finishes dying. The old rule
+  charged the full cap.
+- Residuals: KI-45; a host clock step shifts one job's charge by the step,
+  bounded by the clamp and the floor.

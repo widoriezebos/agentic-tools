@@ -667,9 +667,10 @@ func (bed *contextCostBed) environment(wrapper bool) []string {
 
 func (bed *contextCostBed) announceHolder() {
 	bed.t.Helper()
-	announcement, err := lease.Announce(bed.installation, bed.session, int64(os.Getpid()), bed.startedAt, "context-cost-holder", bed.runtime, "")
+	announcement, err := lease.AnnounceWithPair(bed.installation, bed.session, int64(os.Getpid()), bed.startedAt,
+		0, "", "context-cost-holder", bed.runtime, "")
 	if err != nil || announcement == "" {
-		bed.t.Fatalf("%s holder announcement failed: %q %v", bed.runtime, announcement, err)
+		bed.t.Fatalf("%s holder announcement %q: %v", bed.runtime, announcement, err)
 	}
 	if _, err := os.Stat(announcement); err != nil {
 		bed.t.Fatalf("%s holder announcement path %q: %v", bed.runtime, announcement, err)

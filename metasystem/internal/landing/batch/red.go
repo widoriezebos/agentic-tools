@@ -506,6 +506,14 @@ func (d redDecision) unnamed() error {
 	if !classifiable {
 		return returned(strings.Join(clauses, "; "), tip)
 	}
+	if len(clauses) == 0 {
+		// Nobody was named, but a member whose closure is unknown was never
+		// asked: it may own the red. A known flake does not carry it; it
+		// returns, and the others re-prove without it.
+		if unknown := d.unknownClosures(tip); len(unknown) > 0 {
+			return ReassembleSurvivorsWithReturns(d.store, d.record.BatchID, d.actor, d.at, unknown)
+		}
+	}
 	run, done, err := d.runOn(d.record.TipTree, d.failing, freshExecution(d.failing, d.seams.Adapter))
 	if done {
 		return err
@@ -549,23 +557,76 @@ func (d redDecision) unnamed() error {
 	}
 	resolved, err := d.seams.Sources(composed)
 	if err != nil {
-		return err
+		return d.verifierUnavailable(err, run)
 	}
 	sources, err := ResolveSources(*composed.Proof, resolved)
 	if err != nil {
 		return returned(err.Error()+"; nothing lands on it", run)
 	}
-	if _, err := ledger.RecordPending(opid, d.sighting(tip, run, identifiedGroups, d.record.TipTree)); err != nil {
-		return err
-	}
-	return d.store.Update(d.record.BatchID, func(current *Record) error {
+	// The sighting follows the compare-and-swap: a lost swap leaves none for
+	// a landing that never happened. Its opid is on the record, and the
+	// register journals by opid, so publishing it again is idempotent.
+	if err := d.store.Update(d.record.BatchID, func(current *Record) error {
 		if current.State != StateDiagnosing || current.Proof == nil || current.Proof.AttemptID != d.record.Proof.AttemptID {
 			return fmt.Errorf("BATCH_PROOF_INPUT_MOVED: batch changed before its composed proof was recorded")
 		}
 		current.Proof.Status, current.Proof.Failure, current.Proof.Sources, current.Proof.Flakes = "green", "", sources, uses
-		current.Transition(StateLanding, d.at, "diagnose", d.actor, "composed on known flakes; classification attempt "+run.AttemptID)
+		current.Transition(StateLanding, d.at, "diagnose", d.actor, "composed on known flakes; classification attempt "+run.AttemptID+"; sighting op "+opid)
+		return nil
+	}); err != nil {
+		return err
+	}
+	if _, err := ledger.RecordPending(opid, d.sighting(tip, run, identifiedGroups, d.record.TipTree)); err != nil {
+		return fmt.Errorf("batch %s lands composed but its flake sighting (op %s) was not recorded: %w", d.record.BatchID, opid, err)
+	}
+	return nil
+}
+
+// unknownClosures returns each joined member without a recorded closure: no
+// language adapter recognised its checkout at join, or the closure failed
+// there. Such a member can be neither named nor cleared by owner unit.
+func (d redDecision) unknownClosures(tip DiagnosticResult) []ReturnDecision {
+	var decisions []ReturnDecision
+	for _, unit := range d.joined {
+		if unit.Closure == nil {
+			decisions = append(decisions, ReturnDecision{GoalID: unit.GoalID, Outcome: UnitEjected, Reason: fmt.Sprintf(
+				"BATCH_MEMBER_CLOSURE_UNKNOWN: %s has no recorded closure (no language adapter recognised its checkout at join, or its closure failed there), "+
+					"so the lane cannot rule out that it owns this red; a known flake does not carry it and nothing of it lands; %s",
+				unit.GoalID, diagnosticFailure(tip, d.failing))})
+		}
+	}
+	return decisions
+}
+
+// MaxComposedVerifierAttempts bounds how often the composed path runs the
+// retained verifier for one tip proof before every member returns: each
+// failed try is counted on the record, so an owner restart keeps the count.
+const MaxComposedVerifierAttempts = 3
+
+// verifierUnavailable counts one failed retained verification of this tip
+// proof on the record and leaves the batch diagnosing for the next tick; the
+// last allowed failure returns every member with the classification log and
+// the verifier's error instead.
+func (d redDecision) verifierUnavailable(cause error, run DiagnosticResult) error {
+	prefix := "attempt=" + d.record.Proof.AttemptID + " "
+	tries := 1
+	for _, entry := range d.record.History {
+		if entry.Verb == "verifier-unavailable" && strings.HasPrefix(entry.Detail, prefix) {
+			tries++
+		}
+	}
+	if tries >= MaxComposedVerifierAttempts {
+		return returnEveryMember(d.store, d.record, d.actor, d.at, fmt.Sprintf("BATCH_VERIFIER_UNAVAILABLE: the retained verifier failed %d times composing the known-flake landing (%v); nothing lands on it; %s",
+			tries, cause, diagnosticFailure(run, d.failing)))
+	}
+	err := d.store.Update(d.record.BatchID, func(current *Record) error {
+		if current.State != StateDiagnosing || current.Proof == nil || current.Proof.AttemptID != d.record.Proof.AttemptID {
+			return fmt.Errorf("BATCH_PROOF_INPUT_MOVED: batch changed before its verifier failure was counted")
+		}
+		current.Transition(StateDiagnosing, d.at, "verifier-unavailable", d.actor, fmt.Sprintf("%stry %d of %d: %v", prefix, tries, MaxComposedVerifierAttempts, cause))
 		return nil
 	})
+	return errors.Join(fmt.Errorf("batch %s stays diagnosing: retained verifier try %d of %d: %w", d.record.BatchID, tries, MaxComposedVerifierAttempts, cause), err)
 }
 
 // classificationRed judges the classification run in reverse: it is green

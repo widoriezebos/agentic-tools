@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // SessionIsolation prepares a second-session worktree: it copies each
@@ -20,8 +22,8 @@ import (
 const isolationStagingSuffix = ".metasystem-isolation-staging"
 
 func SessionIsolation(sourceRoot, destinationRoot, manifestPath, harnessRoot string) (string, error) {
-	source := resolvePath(sourceRoot)
-	destination := resolvePath(destinationRoot)
+	source := realpath.ResolveExisting(sourceRoot)
+	destination := realpath.ResolveExisting(destinationRoot)
 
 	manifest, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -89,15 +91,15 @@ func SessionIsolation(sourceRoot, destinationRoot, manifestPath, harnessRoot str
 			continue
 		}
 		resolved, err := filepath.EvalSymlinks(target)
-		if err != nil || !pathWithin(destination, resolved) {
+		if err != nil || !realpath.Within(resolved, destination) {
 			return "", fmt.Errorf("isolation audit failed: %s resolves outside the new worktree", relative)
 		}
-		if pathWithin(source, resolved) {
+		if realpath.Within(resolved, source) {
 			return "", fmt.Errorf("isolation audit failed: %s still resolves into the primary checkout", relative)
 		}
 	}
 
-	harness := resolvePath(harnessRoot)
+	harness := realpath.ResolveExisting(harnessRoot)
 	relativeHarness, err := filepath.Rel(source, harness)
 	if err != nil {
 		return "", err

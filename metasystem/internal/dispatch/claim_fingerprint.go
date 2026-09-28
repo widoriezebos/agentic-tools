@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 const LaunchFingerprintVersion = 2
@@ -154,7 +155,7 @@ func CanonicalizeLaunchFingerprint(gitRoot string, raw LaunchFingerprintRequest,
 }
 
 func canonicalProductRoots(gitRoot string, roots []string) ([]string, error) {
-	base := resolvePath(gitRoot)
+	base := realpath.Resolve(gitRoot)
 	resolved := make([]string, 0, len(roots))
 	for _, root := range roots {
 		if root == "" || !utf8.ValidString(root) {
@@ -164,7 +165,7 @@ func canonicalProductRoots(gitRoot string, roots []string) ([]string, error) {
 		if !filepath.IsAbs(candidate) {
 			candidate = filepath.Join(base, candidate)
 		}
-		candidate = resolvePath(candidate)
+		candidate = realpath.Resolve(candidate)
 		if excludedProductRoot(base, candidate) {
 			return nil, fmt.Errorf("claim-launch product root is operational state and cannot be attributed: %s", candidate)
 		}
@@ -181,19 +182,19 @@ func canonicalProductRoots(gitRoot string, roots []string) ([]string, error) {
 }
 
 func excludedProductRoot(gitRoot, root string) bool {
-	if pathWithin(root, resolvePath(filepath.Join(gitRoot, ".git"))) {
+	if realpath.Within(root, realpath.Resolve(filepath.Join(gitRoot, ".git"))) {
 		return true
 	}
-	agentState := resolvePath(filepath.Join(gitRoot, "artifacts", "agents"))
-	if !pathWithin(root, agentState) {
+	agentState := realpath.Resolve(filepath.Join(gitRoot, "artifacts", "agents"))
+	if !realpath.Within(root, agentState) {
 		return false
 	}
-	worktrees := resolvePath(filepath.Join(agentState, "worktrees"))
+	worktrees := realpath.Resolve(filepath.Join(agentState, "worktrees"))
 	// The agents directory holds registries and control state, but each child
 	// of worktrees is a delegate's product workspace. The shared worktrees
 	// container stays excluded, and resolving the root before this decision
 	// keeps links back into registry subtrees excluded.
-	if root != worktrees && pathWithin(root, worktrees) {
+	if root != worktrees && realpath.Within(root, worktrees) {
 		return false
 	}
 	return true

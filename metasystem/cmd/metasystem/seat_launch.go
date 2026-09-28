@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -275,11 +276,30 @@ func seatLaunchFacts(request launch.Request, record launch.Record) (launch.Facts
 	for name := range taken {
 		names = append(names, name)
 	}
-	facts := launch.Facts{This: this, Taken: names}
+	installation, err := seatLaunchInstallation(request.From)
+	if err != nil {
+		return launch.Facts{}, err
+	}
+	evidence, err := seatLaunchEvidenceRoot(filepath.Join(request.From, installation, "metasystem.conf"), nil)
+	if err != nil {
+		return launch.Facts{}, err
+	}
+	facts := launch.Facts{This: this, Taken: names, EvidenceRoot: evidence}
 	if request.Resuming() {
 		facts.Created = record.Created
 	}
 	return facts, nil
+}
+
+// seatLaunchEvidenceRoot is this seat's evidence root as the engine's one
+// owner resolves it (lookup nil is os.LookupEnv); a refusal is the launch's
+// evidence-root refusal, raised before the lock.
+func seatLaunchEvidenceRoot(conf string, lookup func(string) (string, bool)) (string, error) {
+	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{ConfPath: conf, LookupEnv: lookup})
+	if err != nil {
+		return "", &launch.Refusal{Code: launch.CodeEvidenceRootUnsafe, Message: err.Error()}
+	}
+	return resolved.Path, nil
 }
 
 // seatLaunchDestination is where a machine lands when nobody says: beside

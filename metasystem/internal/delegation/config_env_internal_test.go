@@ -48,3 +48,24 @@ func TestOwnerAdapterHandsItsConfigurationToTheAdapterProcess(t *testing.T) {
 		t.Fatalf("adapter environment = %q, %v; want codex", out, err)
 	}
 }
+
+// The lifecycle's environment lookup (Config.LookupEnv, the evidence root's
+// environment) is what a request's carried configuration lies over: one
+// lookup answers every configuration read of a request.
+func TestConfigLookupLiesOverTheLifecycleEnvironment(t *testing.T) {
+	t.Parallel()
+	base := func(name string) (string, bool) {
+		if name == "HOME" {
+			return "/from-lifecycle", true
+		}
+		return "", false
+	}
+	carried := &session{l: &Lifecycle{lookupEnv: base}, request: Request{ConfigEnv: []string{"HOME=/from-request"}}}
+	if got, _ := carried.configLookup()("HOME"); got != "/from-request" {
+		t.Fatalf("carried HOME = %q", got)
+	}
+	plain := &session{l: &Lifecycle{lookupEnv: base}}
+	if got, _ := plain.configLookup()("HOME"); got != "/from-lifecycle" {
+		t.Fatalf("lifecycle HOME = %q", got)
+	}
+}

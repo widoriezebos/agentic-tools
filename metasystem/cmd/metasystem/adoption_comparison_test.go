@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -427,6 +428,11 @@ func fillAdoptionHarnessConf(t *testing.T, path, evidence string) {
 	modelKey := regexp.MustCompile(`^(role\.[a-z0-9-]+|mode\.[a-z0-9-]+\.role\.[a-z0-9-]+)\.model\.([a-z0-9-]+)$`)
 	models := map[string]bool{}
 	var lines []string
+	// The template no longer ships the evidence root's key (it has a
+	// default under HOME); the fixture's own root is substituted where the
+	// line is present and appended where it is not, so no bed writes under
+	// the test process's HOME.
+	evidenceSet := false
 	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
 		key, value, found := strings.Cut(line, "=")
 		if !found {
@@ -434,8 +440,8 @@ func fillAdoptionHarnessConf(t *testing.T, path, evidence string) {
 			continue
 		}
 		switch {
-		case key == "evidence.root":
-			value = evidence
+		case key == config.EvidenceRootKey:
+			value, evidenceSet = evidence, true
 		case key == "dispatch.cap-min":
 			// The target's own delivery validation reserves this many
 			// minutes; its watchdog stops the suite at that deadline.
@@ -450,6 +456,9 @@ func fillAdoptionHarnessConf(t *testing.T, path, evidence string) {
 			value = ""
 		}
 		lines = append(lines, key+"="+value)
+	}
+	if !evidenceSet {
+		lines = append(lines, config.EvidenceRootKey+"="+evidence)
 	}
 	pairs := make([]string, 0, len(models))
 	for pair := range models {

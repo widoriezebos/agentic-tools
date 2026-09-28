@@ -14,7 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
-	"golang.org/x/sys/unix"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 type PollConfig struct {
@@ -59,18 +59,14 @@ func pollWithEndpoint(ctx context.Context, c PollConfig, resolveEndpoint pollEnd
 	if err := os.MkdirAll(channelRoot(c.RepoRoot), 0o755); err != nil {
 		return result, err
 	}
-	lock, err := os.OpenFile(filepath.Join(channelRoot(c.RepoRoot), "lock"), os.O_CREATE|os.O_RDWR, 0o644)
+	held, err := lock.File(filepath.Join(channelRoot(c.RepoRoot), "lock"), 0o644, lock.TryExclusive)
 	if err != nil {
-		return result, err
-	}
-	defer lock.Close()
-	if err = unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		if err == unix.EWOULDBLOCK {
+		if lock.Busy(err) {
 			return PollResult{Busy: true}, nil
 		}
 		return result, err
 	}
-	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	defer held.Release()
 	questions, err := listQuestions(c.RepoRoot)
 	if err != nil {
 		return result, err

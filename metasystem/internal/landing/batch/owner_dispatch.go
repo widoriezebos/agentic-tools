@@ -57,9 +57,13 @@ type RunnerCapacity struct {
 	Ceiling     int
 }
 
+// hostRunner reads the host from the owner's own census sample. The census
+// already sees the slots this owner's running proofs hold (OwnHost); admits
+// counts those runs itself, so they are taken out of the overlap here and
+// each own run counts once.
 func hostRunner(sample proofrun.LoadSample, admission proofrun.AdmissionCap) RunnerCapacity {
 	return RunnerCapacity{Runner: "host", Cores: sample.Cores, Load: sample.Load1m, LoadKnown: sample.Available,
-		Overlapping: sample.OverlappingHost, Ceiling: admission.Max}
+		Overlapping: max(sample.OverlappingHost-sample.OwnHost, 0), Ceiling: admission.Max}
 }
 
 // admits reports whether one more proof fits beside own runs of this owner on

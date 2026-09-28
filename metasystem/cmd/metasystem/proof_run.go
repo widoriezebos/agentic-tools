@@ -2025,6 +2025,9 @@ func runProofRunPreserve(args []string) int {
 		return 1
 	}
 	fmt.Printf("copied %d bytes; dropped %d paths; copy errors %d\n", result.CopiedBytes, len(result.Dropped), len(result.Errors))
+	if result.Truncated {
+		fmt.Println(proofrun.TruncationMarker(*maxBytes))
+	}
 	for _, dropped := range result.Dropped {
 		fmt.Printf("DROPPED %s\n", dropped)
 	}

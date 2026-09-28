@@ -9,7 +9,7 @@ Revision 7 (Wido's rulings of 2026-09-27: no metasystem scripts, scripts only at
 Supersedes `verb-cleanup.md`'s rule "Do not migrate thousands of private
 process-protocol calls" and its retention of the family dispatcher;
 `agent-help.md`'s output-preservation rules wherever the grammar below changes
-them; `records/kill-shell/kill-shell.md`'s ruling of 2026-08-12 ("core in Go,
+them; the ruling of 2026-08-12 (`memory/rulings.md` R-139-m1e, "core in Go,
 plumbing in scripts", Phases B-F held) is resumed and extended.
 
 Author: m1e root (Opus 5.5), under Wido's instruction of 26 September 2026, about

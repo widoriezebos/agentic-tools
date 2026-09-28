@@ -8,7 +8,8 @@ package launch
 // does not; the preflight asks whether this launch should begin at all, and
 // every one of its refusals is a fact about the host rather than about a
 // step: a nickname that cannot publish, a nickname somebody already carries,
-// a destination that is there, a destination inside another checkout.
+// a destination that is there, a destination inside another checkout, a seat
+// with no evidence root of its own to compare the new machine's against.
 //
 // A resume is exempted from exactly two of them, and only for what the record
 // says this launch itself created: the destination it made, and the nickname
@@ -63,6 +64,11 @@ type Facts struct {
 	// Created is what the launch a resume names created, all false for a
 	// fresh launch. It is the whole of what a resume is exempted from.
 	Created Created
+	// EvidenceRoot is this seat's effective evidence root, as the engine's
+	// one owner resolves it. The launch compares the new machine's root with
+	// it, so a seat whose root cannot be named is refused here, before the
+	// clone leaves a directory for a human to delete.
+	EvidenceRoot string
 }
 
 // Preflight judges one request against the host and refuses by name.
@@ -70,7 +76,20 @@ func Preflight(request Request, facts Facts) error {
 	if err := nickname(request, facts); err != nil {
 		return err
 	}
-	return destination(request, facts)
+	if err := destination(request, facts); err != nil {
+		return err
+	}
+	return evidenceRootSet(facts)
+}
+
+// evidenceRootSet refuses a seat whose evidence root is not a path: unset, or
+// still the template's placeholder, which is not absolute.
+func evidenceRootSet(facts Facts) error {
+	if !filepath.IsAbs(facts.EvidenceRoot) {
+		return refuse(CodeEvidenceRootUnsafe,
+			"this seat's evidence root is not set (the evidence root reads %q)", facts.EvidenceRoot)
+	}
+	return nil
 }
 
 // nickname refuses a name the presence publisher would refuse, this seat's

@@ -177,7 +177,7 @@ async function main() {
       stderr,
       "There is no way to skip this audit. Change a version in the design's tables,",
       "or pin the transitive package with an overrides entry, each a revision of",
-      "plans/user-interface/g1-s8-frontend-toolchain-design.md.",
+      "plans/designs/user-interface/g1-s8-frontend-toolchain-design.md.",
     ]);
   }
 
