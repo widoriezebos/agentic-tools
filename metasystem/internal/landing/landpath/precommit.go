@@ -1,8 +1,12 @@
 package landpath
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -68,10 +72,12 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 			fmt.Fprintf(stderr, "pre-commit guard: classifier unavailable and %v\n", appendErr)
 		}
 	} else if class != "HUMAN" {
-		// Human commits are sovereign; an agent commit must run under the
-		// live landing path that minted the wrapper token.
-		if !owners.WrapperToken(TokenPath(root), owners.CallerPID) {
+		// Human commits are sovereign; an agent commit that could damage
+		// what the wrapper protects must run under the live landing path
+		// that minted the wrapper token.
+		if reason := wrapperFenced(git, root); reason != "" && !owners.WrapperToken(TokenPath(root), owners.CallerPID) {
 			fmt.Fprintln(stderr, "pre-commit guard: an agent commit goes through metasystem work land; the live wrapper ancestry token is missing")
+			fmt.Fprintf(stderr, "  fenced because %s; land it with metasystem work land, or commit on a feature branch of a clone no seat holds\n", reason)
 			return 1
 		}
 	}
@@ -129,4 +135,64 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 	fmt.Fprintln(stderr, "by accident (0b9ca1b). If this addition is deliberate, acknowledge it:")
 	fmt.Fprintln(stderr, "  METASYSTEM_ALLOW_NEW_PLAN=1 git commit ...")
 	return 1
+}
+
+// ledgerBranch is the dedicated single-machine ledger branch
+// (internal/goal.LocalLedgerBranch), named here without importing the goal
+// package into the landing path.
+const ledgerBranch = "refs/heads/metasystem/goals"
+
+// wrapperFenced says why an agent commit here needs the wrapper token, or ""
+// when it cannot damage what the token protects. The token (D-6 of "One
+// writer, safe readers", introduced with d2d33e9fb) keeps a checkout a seat
+// holds to one writer, and keeps agent commits off the published line except
+// through the landing path. A feature branch of a clone no seat holds is
+// neither: its commits reach the line only by a later landing, which proves
+// them again. Anything the guard cannot read stays fenced.
+func wrapperFenced(git func(args ...string) GitResult, root string) string {
+	head := git("symbolic-ref", "--quiet", "HEAD")
+	branch := strings.TrimSpace(string(head.Stdout))
+	if head.Code != 0 || !strings.HasPrefix(branch, "refs/heads/") {
+		return "HEAD names no branch"
+	}
+	published := "refs/heads/main"
+	config := git("config", "--get", "goal.sync-branch")
+	switch value := strings.TrimSpace(string(config.Stdout)); {
+	case config.Code == 1 && value == "":
+	case config.Code == 0 && strings.HasPrefix(value, "refs/"):
+		published = value
+	default:
+		return "goal.sync-branch cannot be read"
+	}
+	if branch == published || branch == ledgerBranch {
+		return branch + " is the published line"
+	}
+	installations := []string{root}
+	// A linked worktree belongs to its primary checkout: a seat holding
+	// that checkout holds its worktrees too.
+	common := git("rev-parse", "--path-format=absolute", "--git-common-dir")
+	top := git("rev-parse", "--show-toplevel")
+	if common.Code != 0 || top.Code != 0 {
+		return "the repository's directories cannot be read"
+	}
+	commonDir := strings.TrimRight(string(common.Stdout), "\n")
+	if filepath.Base(commonDir) == ".git" {
+		prefix, err := filepath.Rel(strings.TrimRight(string(top.Stdout), "\n"), root)
+		if err != nil || !filepath.IsLocal(prefix) && prefix != "." {
+			return "the installation lies outside its work tree"
+		}
+		installations = append(installations, filepath.Join(filepath.Dir(commonDir), prefix))
+	}
+	for _, installation := range installations {
+		// artifacts/agents/mains is where a seat's sessions announce and
+		// its checkout lease lives.
+		_, err := os.Stat(filepath.Join(installation, "artifacts", "agents", "mains"))
+		if err == nil {
+			return "a seat holds this checkout"
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "whether a seat holds this checkout cannot be read"
+		}
+	}
+	return ""
 }

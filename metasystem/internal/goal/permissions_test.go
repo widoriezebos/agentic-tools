@@ -1,6 +1,6 @@
 package goal
 
-// Goal permissions (verbs-match-intent, Wido 2026-09-29): goal allow G NAME
+// Goal permissions (verbs-match-intent, Wido 2026-09-28): goal allow G NAME
 // records a standing allowance on the goal and goal disallow G NAME
 // withdraws it. stop-test-changes is stored as the sealed line
 // "- StopSurface: moves". Allowing is a person's act under the proof a
