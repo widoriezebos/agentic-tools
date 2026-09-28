@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -68,7 +70,7 @@ func batchRetainedSources(root string, record batch.Record) (map[string]string, 
 	if len(joined) == 0 || record.Proof == nil {
 		return nil, fmt.Errorf("batch %s has no joined units or proof to resolve", record.BatchID)
 	}
-	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(record.TipTree)
+	detached, err := openBatchSourcesWorktree(root, record.BatchID, record.TipTree)
 	if err != nil {
 		return nil, err
 	}
@@ -79,6 +81,102 @@ func batchRetainedSources(root string, record batch.Record) (map[string]string, 
 		GoalID: head.GoalID, Tree: record.TipTree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
 		BatchRequirements: slices.Clone(record.Proof.SelectedGroups), BatchPrefixReceipt: true, FreshEpisode: episode.Token, FreshExpiresAt: episode.ExpiresAt})
 	return batchSourcesFromVerification(result), err
+}
+
+// batchSourcesRoot is where one lane's retained-verification worktrees live:
+// a directory of the host's temporary root named for the lane's control
+// root, so a later owner of the same lane finds what a killed one left.
+func batchSourcesRoot(root string) (string, error) {
+	control, err := filepath.EvalSymlinks(batch.ModuleRoot(root))
+	if err != nil {
+		return "", err
+	}
+	temporary, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(control))
+	return filepath.Join(temporary, "metasystem-batch-sources-"+hex.EncodeToString(sum[:6])), nil
+}
+
+// batchSourcesTuple is the exact recorded worktree of one batch's retained
+// verification: <sources root>/<id>/sources-<id>, linked to the lane.
+func batchSourcesTuple(root, id string) (gittree.WorktreeTuple, error) {
+	if !batch.ValidID(id) {
+		return gittree.WorktreeTuple{}, fmt.Errorf("batch id %q is not a lowercase ULID", id)
+	}
+	base, err := batchSourcesRoot(root)
+	if err != nil {
+		return gittree.WorktreeTuple{}, err
+	}
+	top, err := (gittree.Workspace{Dir: root}).TopLevel()
+	if err != nil {
+		return gittree.WorktreeTuple{}, err
+	}
+	common, err := gitOutput(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err == nil {
+		common, err = filepath.EvalSymlinks(common)
+	}
+	if err != nil {
+		return gittree.WorktreeTuple{}, err
+	}
+	parent := filepath.Join(base, id)
+	return gittree.WorktreeTuple{Parent: parent, Top: filepath.Join(parent, "sources-"+id), Control: top, Common: common}, nil
+}
+
+// openBatchSourcesWorktree projects tree for one batch's retained
+// verification at its recorded path, first removing what an owner killed
+// mid-verification left there.
+func openBatchSourcesWorktree(root, id, tree string) (*gittree.DetachedWorktree, error) {
+	tuple, err := batchSourcesTuple(root, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, statErr := os.Lstat(tuple.Parent); statErr == nil {
+		if outcome, removeErr := gittree.RemoveRecordedWorktree(tuple, gittree.Workspace{Dir: root}); outcome != gittree.WorktreeRemoved {
+			return nil, fmt.Errorf("retained verification worktree of batch %s left by an earlier run is %s: %v", id, outcome, removeErr)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(tuple.Parent), 0o700); err != nil {
+		return nil, err
+	}
+	plan, err := (gittree.Workspace{Dir: root}).PlanDetachedWorktreeAt(tuple.Parent, filepath.Base(tuple.Top))
+	if err != nil {
+		return nil, err
+	}
+	return plan.Create(tree)
+}
+
+// sweepBatchSourcesWorktrees removes every retained-verification worktree an
+// earlier owner of this lane left behind; the owner runs it once at start,
+// while it holds the lane, so none of them is in use.
+func sweepBatchSourcesWorktrees(root string) error {
+	base, err := batchSourcesRoot(root)
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(base)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, entry := range entries {
+		if !entry.IsDir() || !batch.ValidID(entry.Name()) {
+			continue
+		}
+		tuple, err := batchSourcesTuple(root, entry.Name())
+		if err == nil {
+			var outcome string
+			if outcome, err = gittree.RemoveRecordedWorktree(tuple, gittree.Workspace{Dir: root}); err == nil && outcome != gittree.WorktreeRemoved {
+				err = fmt.Errorf("retained verification worktree %s is %s", tuple.Top, outcome)
+			}
+		}
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 // batchSourcesFromVerification is the verifier's per-group source: a group

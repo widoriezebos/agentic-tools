@@ -248,3 +248,31 @@ func TestCeilingOfThreeAdmitsThreeOwnProofsTheCensusAlsoSees(t *testing.T) {
 		bed.owner.settle()
 	}
 }
+
+// A batch that ended (landed or dissolved) leaves no queue directory under
+// the queue root, no lock directory, and no entry in the owner's lock map.
+func TestEndedBatchLeavesNoQueueDirectoryOrLockEntry(t *testing.T) {
+	t.Parallel()
+	for _, end := range []string{StateLanded, StateDissolved} {
+		bed, release, entered := dispatchBed(t, StateSealed, testBatchID)
+		bed.owner.launch = func(request Dispatch) error {
+			entered <- request
+			<-release[request.ID]
+			return bed.store.Update(request.ID, func(record *Record) error { record.Transition(end, bed.now, "end", "owner", ""); return nil })
+		}
+		must(t, bed.owner.Tick(testBatchID))
+		<-entered
+		queue := filepath.Join(bed.queueDir, "batch-"+testBatchID)
+		if _, err := os.Stat(queue); err != nil {
+			t.Fatalf("%s: the running batch has no queue directory: %v", end, err)
+		}
+		close(release[testBatchID])
+		bed.owner.settle()
+		bed.owner.Resume()
+		_, queueErr := os.Stat(queue)
+		_, lockErr := os.Stat(filepath.Join(bed.lockDir, "batch-"+testBatchID))
+		_, mapped := bed.owner.locks[testBatchID]
+		witness(t, os.IsNotExist(queueErr) && os.IsNotExist(lockErr) && !mapped,
+			"%s batch left queue=%v lock=%v map entry=%v", end, queueErr, lockErr, mapped)
+	}
+}

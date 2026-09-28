@@ -85,6 +85,7 @@ var batchOwnerRetire = lease.Retire
 var batchOwnerSetenv = os.Setenv
 var batchOwnerResume = func(owner *batch.Owner) { owner.Resume() }
 var batchOwnerRequire = func(held batchOwnerLease) error { return held.require() }
+var batchOwnerSweepSources = sweepBatchSourcesWorktrees
 var batchOwnerTick = func(owner *batch.Owner, id string) error { return owner.TickOnce(id) }
 var cadenceProductionClock = time.Now
 var batchOwnerCadenceTick = func(root string, held batchOwnerLease, clock func() time.Time) error {
@@ -697,6 +698,10 @@ func runBatchOwnerWithSource(args []string, source *batchOwnerSource) (code int)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	if err := batchOwnerSweepSources(settings.Root); err != nil {
+		line, _ := json.Marshal(map[string]any{"component": "landing-owner", "sweep": "retained-sources", "error": err.Error()})
+		fmt.Fprintln(os.Stderr, string(line))
 	}
 	wake, stop, cleanup := batchOwnerSignals()
 	defer cleanup()
