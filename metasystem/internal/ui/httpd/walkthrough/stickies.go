@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -32,10 +31,10 @@ func fixtureStoreHome(checkout string) string {
 // note J4's own example is made of and the one that only reaches the Partner
 // through the panel; and two already struck off, so "Done (2)" has something
 // behind its disclosure.
-func fixtureStickies(checkout string, handles []string, now time.Time) *stickies.Store {
+func fixtureStickies(checkout string, handles []string, now time.Time) (*stickies.Store, error) {
 	home := fixtureStoreHome(checkout)
 	if err := os.MkdirAll(filepath.Dir(home), 0o700); err != nil {
-		log.Fatalf("cannot make the walkthrough notepad: %v", err)
+		return nil, fmt.Errorf("cannot make the walkthrough notepad: %v", err)
 	}
 	written := 0
 	// The clock steps back a minute per sticky and then forward again, so the
@@ -55,7 +54,7 @@ func fixtureStickies(checkout string, handles []string, now time.Time) *stickies
 		for _, note := range fixtureNotes {
 			list, err := store.Add(human, note.text, note.about)
 			if err != nil {
-				log.Fatalf("cannot plant the walkthrough notepad: %v", err)
+				return nil, fmt.Errorf("cannot plant the walkthrough notepad: %v", err)
 			}
 			if !note.done {
 				continue
@@ -63,11 +62,11 @@ func fixtureStickies(checkout string, handles []string, now time.Time) *stickies
 			struck := true
 			id := list.Stickies[0].ID
 			if _, err := store.Edit(human, id, nil, nil, &struck); err != nil {
-				log.Fatalf("cannot strike off a walkthrough sticky: %v", err)
+				return nil, fmt.Errorf("cannot strike off a walkthrough sticky: %v", err)
 			}
 		}
 	}
-	return store
+	return store, nil
 }
 
 // fixtureNotes is what the six say, in the order they were written.
