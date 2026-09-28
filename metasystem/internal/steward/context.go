@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,6 +59,11 @@ var (
 // ContextBudgetLine owns holder selection, one usage read, and the role
 // verdict shared by health and the explicit status command.
 func ContextBudgetLine(stateRoot, installationRoot string, now time.Time, opts ContextOptions) (RoleVerdict, usage.Reading, error) {
+	// A named root that is not there has no holder to report on (EM-07).
+	if _, err := os.Stat(installationRoot); errors.Is(err, fs.ErrNotExist) {
+		err = fmt.Errorf("%s does not exist, so there is no installation to read; nothing was read", installationRoot)
+		return roleUnknown(RoleContext, err.Error(), ""), usage.Reading{}, err
+	}
 	return contextBudgetLineWithProber(stateRoot, installationRoot, now, opts, identity.KernelProber{})
 }
 
