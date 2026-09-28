@@ -603,7 +603,7 @@ func checkHookFreshness(repoRoot string, now time.Time) RoleVerdict {
 func checkHookFreshnessAt(repoRoot string, now time.Time, currentAttempt bool) RoleVerdict {
 	// A hook turn is recorded by the next agent turn the registered hooks
 	// see; registering them is the act a person can take.
-	remedy := fmt.Sprintf("the next agent turn in this checkout records one; if none does, register the hooks with metasystem system register --repo %q", repoRoot)
+	remedy := fmt.Sprintf("the next agent turn in this checkout records one; if none does, register the hooks with metasystem system setup --repo %q", repoRoot)
 	record, durabilityPending, err := loadComponentEvidenceForHealth(repoRoot, "supervision-hook")
 	if err != nil {
 		var busy *ComponentEvidenceBusyError

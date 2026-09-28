@@ -17,7 +17,12 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidencetable"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -123,15 +128,17 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentEnroll,
 		},
 		{
-			object: "system", action: "setup", audience: "both", summary: "connect this checkout's agent hooks and commit fence to its engine",
-			usage: []string{"metasystem system setup"},
+			object: "system", action: "setup", audience: "both", summary: "set this checkout up to work with its engine: runtimes, hooks, commit fence and testing-contract merges",
+			usage: []string{"metasystem system setup [--runtimes CSV|none] [--copy-skills]"},
 			details: []string{
-				"Checks that the engine answers the hook entry, then writes each registered runtime's lifecycle hooks to run it directly and enrolls the git pre-commit fence, upgrading a hook from before the engine guard.",
-				"Nothing is written when the engine is missing or older than the hook entry; the refusal names the build. A repeat with everything in place changes nothing.",
+				"Checks that the engine answers the hook entry, then registers the agent runtimes (instruction pointers, skills, profiles and lifecycle hooks), writes every registered runtime's hooks to run the engine directly, enrolls the git pre-commit fence and registers the testing contract's git merge driver.",
+				"The runtimes are the ones metasystem.runtimes enables unless --runtimes names them. Nothing is written when the engine is missing or older than the hook entry; the refusal names the build. A repeat with everything in place changes nothing; metasystem system check reports what setup would change.",
 			},
-			flags:    []intentFlag{intentInstallationFlag},
+			flags: []intentFlag{intentInstallationFlag,
+				{name: "runtimes", value: "CSV", usage: "the runtimes to register, or none (default: those metasystem.runtimes enables)"},
+				{name: "copy-skills", usage: "copy skill trees instead of linking them"}},
 			maxArgs:  0,
-			examples: []string{"metasystem system setup"},
+			examples: []string{"metasystem system setup", "metasystem system setup --runtimes claude,codex"},
 			run:      runIntentSystemSetup,
 		},
 		adoptIntentCommand(),
@@ -1304,6 +1311,19 @@ func runIntentDoctor(inv *intentInvocation) int {
 			code = max(code, 1)
 		} else {
 			lines = append(lines, "covenant shape valid: "+path+"; adequacy not established: shape says the rows parse, never that the proofs guard the intent")
+			evidenceLines, evidence, traceable := checkCovenantEvidence(filepath.Dir(path))
+			lines = append(lines, evidenceLines...)
+			covenantData["evidence"] = evidence
+			covenantData["traceable"] = traceable
+			if !traceable {
+				code = max(code, 1)
+			}
+		}
+	}
+	if layout, err := inv.owners.resolver.ResolveLayout(scope.Checkout); err == nil {
+		if drift := setupDrift(layout); len(drift) > 0 {
+			lines = append(lines, drift...)
+			code = max(code, 1)
 		}
 	}
 	adapters, refused := adapterReport(scope.Installation)
@@ -1376,6 +1396,93 @@ func checkCovenantShape(scope processScope) (string, error) {
 		return path, err
 	}
 	return "", nil
+}
+
+// setupDrift is what system setup would change in this checkout, each item
+// ending in the act that repairs it: runtime registrations that differ from
+// the ones metasystem.runtimes enables, hooks that do not run the engine,
+// and a testing contract that does not merge through the engine's driver.
+func setupDrift(layout stateroot.Layout) []string {
+	repair := "; metasystem system setup repairs it"
+	var drift []string
+	selected := hookswitch.ConfiguredRuntimes(layout.InstallationRoot)
+	check := func(options hostsetup.Options) error {
+		_, err := hostsetup.SetupWithResolver(options, func(string) (stateroot.Layout, error) { return layout, nil })
+		return err
+	}
+	registration := hostsetup.Options{RepositoryPath: layout.RepositoryRoot, Runtimes: selected, Check: true}
+	if err := check(registration); err != nil {
+		registration.CopySkills = true
+		if copyErr := check(registration); copyErr != nil {
+			drift = append(drift, "runtime registrations differ: "+err.Error()+repair)
+		}
+	}
+	if registered := hookswitch.RegisteredRuntimes(layout.RepositoryRoot); len(registered) > 0 {
+		if err := check(hostsetup.Options{RepositoryPath: layout.RepositoryRoot, Runtimes: registered, HooksOnly: true, Check: true}); err != nil {
+			drift = append(drift, "hooks do not run the engine: "+err.Error()+repair)
+		}
+	}
+	engine, err := hooks.DirectEngine(layout.InstallationRoot, hookswitch.Git)
+	if err != nil {
+		return append(drift, "the engine the hooks would run cannot be found: "+err.Error())
+	}
+	if _, gitErr := hookswitch.Git("-C", layout.RepositoryRoot, "rev-parse", "--git-dir"); gitErr == nil {
+		missing, err := contractgit.Registration(layout.RepositoryRoot, hookswitch.TestingContract(layout), engine, hookswitch.Git)
+		if err != nil {
+			missing = []string{err.Error()}
+		}
+		for _, item := range missing {
+			drift = append(drift, "testing-contract merges: "+item+repair)
+		}
+	}
+	return drift
+}
+
+// checkCovenantEvidence runs the covenant's traceability gate at root, the
+// directory holding covenant.json: every requirement backed by a row of
+// docs/covenant-evidence.md whose declared dependencies are present. The
+// statuses the rows record are claims on file, not re-verified here.
+func checkCovenantEvidence(root string) ([]string, *evidencetable.Report, bool) {
+	cov, err := covenant.Load(filepath.Join(root, covenant.Filename))
+	if err != nil {
+		return []string{"covenant evidence not judged: " + err.Error()}, nil, false
+	}
+	rootFD, err := evidencetable.OpenRoot(root)
+	if err != nil {
+		return []string{"covenant evidence not judged: " + err.Error()}, nil, false
+	}
+	defer unix.Close(rootFD)
+	table, err := evidencetable.LoadTable(rootFD, root)
+	if err != nil {
+		return []string{"covenant evidence not judged: " + err.Error() + "; the table is docs/covenant-evidence.md"}, nil, false
+	}
+	report := evidencetable.Judge(cov, table, rootFD)
+	var lines []string
+	for _, refusal := range report.Refusals {
+		lines = append(lines, fmt.Sprintf("covenant evidence refused %s: %s", refusal.Kind, refusal.Detail))
+	}
+	for _, pair := range report.Pairs {
+		line := fmt.Sprintf("requirement %s (proof %s): %s", pair.ID, pair.Proof, pair.Verdict)
+		if pair.Assessment != "" {
+			line += fmt.Sprintf(" [%s: %s]", pair.Status, pair.Assessment)
+		}
+		lines = append(lines, line)
+	}
+	for _, orphan := range report.Orphans {
+		line := fmt.Sprintf("orphan row %s %q (proof %s, %s)", orphan.CriterionID, orphan.Criterion, orphan.Proof, orphan.Status)
+		if len(orphan.Notes) > 0 {
+			line += " — " + strings.Join(orphan.Notes, "; ")
+		}
+		lines = append(lines, line)
+	}
+	for _, note := range report.Notes {
+		lines = append(lines, "note: "+note)
+	}
+	if report.Outcome != "traceable" {
+		return append(lines, fmt.Sprintf("covenant evidence refused: %s (%d refusal(s))", report.App, len(report.Refusals))), report, false
+	}
+	return append(lines, fmt.Sprintf("covenant evidence traceable: %s (%d requirement(s), wired %d, floating %d); recorded statuses are claims on file, not re-verified here",
+		report.App, len(report.Pairs), report.Counts.DerivedWired, report.Counts.DerivedFloating)), report, true
 }
 
 // publicHealthRemedy is the public command, or the plain instruction, for
@@ -1928,7 +2035,15 @@ func runIntentSystemSetup(inv *intentInvocation) int {
 	if inv.owners.hookSwitch != nil {
 		deps = inv.owners.hookSwitch(deps)
 	}
-	report, err := hookswitch.Switch(installation, deps)
+	var options hookswitch.Options
+	if inv.input.has("runtimes") {
+		if strings.TrimSpace(inv.input.text("runtimes")) == "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--runtimes names runtimes, or none; nothing was done"})
+		}
+		options.Runtimes = strings.Split(inv.input.text("runtimes"), ",")
+	}
+	options.CopySkills = inv.input.switched("copy-skills")
+	report, err := hookswitch.Setup(installation, options, deps)
 	targets := []intentTarget{{Kind: "checkout", ID: layout.GitRoot}}
 	if err != nil {
 		var refusal *hookswitch.RefusalError
@@ -1942,10 +2057,10 @@ func runIntentSystemSetup(inv *intentInvocation) int {
 	changed := map[string]bool{}
 	for _, path := range report.Changed {
 		changed[path] = true
-		lines = append(lines, "hooks switched to the engine: "+path)
+		lines = append(lines, "written: "+path)
 	}
 	if len(report.Runtimes) == 0 {
-		lines = append(lines, "no runtime hook settings are registered in this checkout; system adopt registers them")
+		lines = append(lines, "no agent runtime is registered in this checkout")
 	} else if len(report.Changed) == 0 {
 		lines = append(lines, "hooks already run the engine: "+strings.Join(report.Runtimes, ", "))
 	}
@@ -1959,10 +2074,16 @@ func runIntentSystemSetup(inv *intentInvocation) int {
 	default:
 		lines = append(lines, "pre-commit fence already runs the engine: "+report.FenceHook)
 	}
-	outcome, summary := intentConfirmed, "this checkout's hooks and commit fence run the engine"
+	switch report.MergeDriver {
+	case contractgit.DriverRegistered:
+		lines = append(lines, "the testing contract merges through the engine's merge driver")
+	case contractgit.DriverUnchanged:
+		lines = append(lines, "the testing contract's merge driver is already registered")
+	}
+	outcome, summary := intentConfirmed, "this checkout is set up: its runtimes, hooks, commit fence and testing-contract merges run the engine"
 	if report.Unchanged() {
-		outcome, summary = intentUnchanged, "this checkout's hooks and commit fence already run the engine; nothing was changed"
+		outcome, summary = intentUnchanged, "this checkout is already set up; nothing was changed"
 	}
 	return inv.render(intentResult{Outcome: outcome, Targets: targets, Summary: summary, text: lines,
-		Data: map[string]any{"engine": report.Engine, "runtimes": nonNilLines(report.Runtimes), "changed": nonNilLines(report.Changed), "fence": report.Fence, "fenceHook": report.FenceHook}})
+		Data: map[string]any{"engine": report.Engine, "runtimes": nonNilLines(report.Runtimes), "changed": nonNilLines(report.Changed), "fence": report.Fence, "fenceHook": report.FenceHook, "mergeDriver": report.MergeDriver}})
 }

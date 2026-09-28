@@ -2,7 +2,7 @@ package main
 
 // Public homes for the machinery verbs people and agents are told to run by
 // hand (plans/designs/verbs-object-action.md, sections 3.1, 3.4 and 3.6;
-// U9a): test add, test merge, test baseline, settings set and system register.
+// U9a): test add, test merge, test baseline and settings set (system register was folded into system setup in U9b).
 // Each routes through the public router to the owner the retired internal
 // verb reached, and each has an idempotency row with its witness here.
 
@@ -26,7 +26,6 @@ func init() {
 	registerIdempotency("test merge", idemStateful, "the same three contracts merge to the same bytes; a repeat rewrites them unchanged", witnessTestMergeRepeat)
 	registerIdempotency("test baseline", idemCreation, "--gate records that the gate passed at this moment, so the baseline's age restarts from each call; --check only reads", nil)
 	registerIdempotency("settings set", idemStateful, "a key already holding the value: success, the local configuration unchanged", witnessSettingsSetRepeat)
-	registerIdempotency("system register", idemStateful, "an installation already registered for the selection: success, nothing rewritten", witnessSystemRegisterRepeat)
 }
 
 // newHomesAddTestsFixture is a contract with one group over a package whose
@@ -235,37 +234,6 @@ func witnessSettingsSetRepeat(t *testing.T) {
 	}
 	if second, err := os.ReadFile(filepath.Join(root, "metasystem.conf.local")); err != nil || !bytes.Equal(first, second) {
 		t.Fatalf("a repeated settings set rewrote the local configuration: err=%v", err)
-	}
-}
-
-// TestSystemRegisterIsThePublicHomeOfRuntimeSetup: the adaptation and
-// reconciliation guides tell a person to set up or check the runtime
-// registrations; system register routes to that owner.
-func TestSystemRegisterIsThePublicHomeOfRuntimeSetup(t *testing.T) {
-	command, ok := findIntentAction("system", "register")
-	if !ok || command.hidden || command.passthrough == nil {
-		t.Fatalf("system register is not a public passthrough: %+v", command)
-	}
-	if code := dispatch([]string{"system", "register"}); code != 2 {
-		t.Fatalf("system register without --repo = %d, want the owner's usage refusal", code)
-	}
-}
-
-func witnessSystemRegisterRepeat(t *testing.T) {
-	repo, _ := setupCLIFixture(t)
-	recorder := newRuntimeLayoutRecorder(t, repo)
-	args := []string{"--repo", repo, "--runtimes", "claude"}
-	recorder.expect(repo)
-	if _, code := captureStdout(t, func() int { return runRuntimeSetupWithResolver(args, recorder.resolve) }); code != 0 {
-		t.Fatalf("first setup exit = %d", code)
-	}
-	before := snapshotTree(t, repo)
-	recorder.expect(repo)
-	if _, code := captureStdout(t, func() int { return runRuntimeSetupWithResolver(args, recorder.resolve) }); code != 0 {
-		t.Fatalf("repeated setup exit = %d", code)
-	}
-	if after := snapshotTree(t, repo); !reflect.DeepEqual(before, after) {
-		t.Fatalf("a repeated setup rewrote the installation:\nbefore %v\nafter  %v", before, after)
 	}
 }
 

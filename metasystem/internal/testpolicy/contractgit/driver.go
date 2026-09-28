@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 )
 
 const (
@@ -43,7 +42,7 @@ func DriverArgs(executable func() (string, error)) ([]string, error) {
 	if err != nil {
 		return nil, unresolved(err)
 	}
-	command := shellquote.Quote(path) + " testing merge-driver %O %A %B"
+	command := DriverCommand(path)
 	return []string{"-c", driverName, "-c", driverKey + command}, nil
 }
 

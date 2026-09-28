@@ -439,13 +439,14 @@ Efficiency never regresses functionality: no unit lowers a proof floor, removes 
 
 Adapters own launch, resume, model, permissions, output-format, and cancellation flags. Do not copy those flags into prose.
 
-`bin/metasystem system register --repo <path>` registers every adoptable host by
-default without selecting a globally active runtime or changing the execution
-roster. `--runtimes <csv>` selects explicit hosts, `--copy-skills` retains the
-adoption copy mode, and `--check` validates without writing. Its
-`CONFIG_READY`, provider-trust, and lifecycle-observation lines are deliberately
-separate: installed files do not approve provider trust, restart a provider,
-arm first-use supervision, or prove that a hook ran.
+`bin/metasystem system setup` registers the hosts `metasystem.runtimes` enables
+without selecting a globally active runtime or changing the execution roster,
+switches their hooks to the engine, enrolls the commit fence and registers the
+testing contract's merge driver. `--runtimes <csv>` selects explicit hosts and
+`--copy-skills` retains the adoption copy mode; `metasystem system check`
+reports what setup would change, writing nothing. Installed files do not
+approve provider trust, restart a provider, arm first-use supervision, or prove
+that a hook ran.
 
 The authoritative runtime set is the registry (`internal/runtimes`), and each
 runtime's registration column below is a REDUNDANT convenience view of that
