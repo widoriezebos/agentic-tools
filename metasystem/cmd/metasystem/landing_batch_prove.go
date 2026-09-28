@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -401,44 +402,86 @@ var batchBaseRearm = struct {
 	up          func(context.Context, string, string) (upOutcome, error)
 }{landing.FastForwardPreservingRegisters, landedRearmRebuild, landedRearmUp}
 
+// batchRearmMutex serializes re-arming the one control root across the
+// owner's concurrent proof runs; it is held for the re-arm, not the proof.
+var batchRearmMutex sync.Mutex
+
+// batchRearmEdges are the control root's Git reads and the re-arm steps.
+type batchRearmEdges struct {
+	head        func(root string) (commit, tree string, err error)
+	baseCommit  func(root, tree string) (string, error)
+	descends    func(root, descendant, ancestor string) (bool, error)
+	fastForward func(context.Context, string, string) error
+	rebuild     func(context.Context, string) error
+	up          func(context.Context, string, string) (upOutcome, error)
+}
+
 func rearmBatchBase(root, baseTree string) error {
+	return rearmBatchBaseWith(root, baseTree, batchRearmEdges{
+		head: func(root string) (string, string, error) {
+			workspace := gittree.Workspace{Dir: root}
+			head, unborn, err := workspace.HeadCommit()
+			if err != nil || unborn {
+				return "", "", fmt.Errorf("re-arm batch base: committed HEAD required")
+			}
+			tree, err := workspace.TreeOf(head)
+			return head, tree, err
+		},
+		baseCommit: func(root, tree string) (string, error) {
+			commit, err := commitForTree(root, "origin/main", tree)
+			if err != nil {
+				return "", fmt.Errorf("BATCH_BASE_MOVED: origin/main ancestry has no commit for recorded base tree %s", tree)
+			}
+			return commit, nil
+		},
+		descends: func(root, descendant, ancestor string) (bool, error) {
+			command := exec.Command("git", "-C", root, "merge-base", "--is-ancestor", ancestor, descendant)
+			command.Env = gittree.ScrubbedEnviron()
+			err := command.Run()
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 1 {
+				return false, nil
+			}
+			return err == nil, err
+		},
+		fastForward: func(ctx context.Context, root, commit string) error {
+			return batchBaseRearm.fastForward(ctx, root, commit)
+		},
+		rebuild: func(ctx context.Context, root string) error { return batchBaseRearm.rebuild(ctx, root) },
+		up: func(ctx context.Context, root, control string) (upOutcome, error) {
+			return batchBaseRearm.up(ctx, root, control)
+		},
+	})
+}
+
+// rearmBatchBaseWith arms the control root at a batch's base, one run at a
+// time, and never moves it back: a root already past the base (a later
+// landing moved it) stays, since the tip proof runs in its own detached
+// worktree at the batch tree.
+func rearmBatchBaseWith(root, baseTree string, edges batchRearmEdges) error {
+	batchRearmMutex.Lock()
+	defer batchRearmMutex.Unlock()
 	controlRoot := batch.ModuleRoot(root)
-	workspace := gittree.Workspace{Dir: root}
-	head, unborn, err := workspace.HeadCommit()
-	if err != nil || unborn {
-		return fmt.Errorf("re-arm batch base: committed HEAD required")
-	}
-	headTree, err := workspace.TreeOf(head)
+	head, headTree, err := edges.head(root)
 	if err != nil {
 		return err
 	}
-	baseCommit := head
 	if headTree != baseTree {
-		command := exec.Command("git", "-C", root, "log", "--first-parent", "--format=%H %T", "origin/main")
-		command.Env = gittree.ScrubbedEnviron()
-		output, err := command.Output()
+		baseCommit, err := edges.baseCommit(root, baseTree)
 		if err != nil {
 			return err
 		}
-		baseCommit = ""
-		for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
-			fields := strings.Fields(line)
-			if len(fields) == 2 && fields[1] == baseTree {
-				baseCommit = fields[0]
-				break
-			}
+		if past, err := edges.descends(root, head, baseCommit); err != nil || past {
+			return err
 		}
-		if baseCommit == "" {
-			return fmt.Errorf("BATCH_BASE_MOVED: origin/main ancestry has no commit for recorded base tree %s", baseTree)
-		}
-		if err := batchBaseRearm.fastForward(context.Background(), controlRoot, baseCommit); err != nil {
+		if err := edges.fastForward(context.Background(), controlRoot, baseCommit); err != nil {
 			return err
 		}
 	}
-	if err := batchBaseRearm.rebuild(context.Background(), controlRoot); err != nil {
+	if err := edges.rebuild(context.Background(), controlRoot); err != nil {
 		return err
 	}
-	_, err = batchBaseRearm.up(context.Background(), controlRoot, controlRoot)
+	_, err = edges.up(context.Background(), controlRoot, controlRoot)
 	return err
 }
 

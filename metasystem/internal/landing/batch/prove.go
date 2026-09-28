@@ -298,13 +298,13 @@ type ReturnDecision struct {
 }
 
 func ReassembleSurvivorsWithReturns(store Store, id, actor string, at time.Time, decisions []ReturnDecision) error {
-	return reassembleSurvivorsOnBase(store, id, actor, at, decisions, "", "")
+	return reassembleSurvivorsOnBase(store, id, actor, at, decisions, "", "", "")
 }
 
 // reassembleSurvivorsOnBase is the one owner for both returned-member and
 // moved-base composition. A moved base can reveal the first typed conflict;
 // subsequent conflicts are closed in original join order.
-func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, decisions []ReturnDecision, newBaseTree, detail string) error {
+func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, decisions []ReturnDecision, newBaseTree, detail, landedBy string) error {
 	record, err := store.Load(id)
 	if err != nil {
 		return err
@@ -373,7 +373,7 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 		}
 		reason := "cannot apply after returning " + knownRemoved() + ": " + err.Error()
 		if knownRemoved() == "" {
-			reason = "cannot apply on moved base: " + err.Error()
+			reason = movedBaseConflictLine(conflict, landedBy)
 		}
 		decision := ReturnDecision{GoalID: conflict.GoalID, Outcome: UnitEjected, Reason: reason}
 		if err := requestUnitReturn(&record, decision.GoalID, decision.Outcome, decision.Reason, actor, at); err != nil {

@@ -28,6 +28,7 @@ type batchRecordFields struct {
 
 type assemblyConflict struct {
 	GoalID string
+	Paths  []string
 	Cause  error
 }
 
@@ -100,7 +101,7 @@ func assembleChainUnit(root, base string, unit Unit) (next string, err error) {
 			return "", &assemblyConflict{GoalID: unit.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" does not apply: "+strings.TrimSpace(string(output)))}
 		}
 		conflicts := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
-		return "", &assemblyConflict{GoalID: unit.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" paths "+strings.Join(conflicts, ", "))}
+		return "", &assemblyConflict{GoalID: unit.GoalID, Paths: conflicts, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" paths "+strings.Join(conflicts, ", "))}
 	}
 	after, err := workspace.StagedTree()
 	if err != nil {

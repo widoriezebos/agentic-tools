@@ -34,6 +34,7 @@ type ownerSeams struct {
 	report              func(string, error)
 	glob                func(string) ([]string, error)
 	helmActive          func(string) bool
+	baseMove            func(string, string) (BaseMove, error)
 	locks               map[string]*proofLock
 	held                map[string]HeldBatch
 	inflight            map[string]*proofRun
@@ -80,6 +81,9 @@ type OwnerOptions struct {
 	Glob                func(string) ([]string, error)
 	// HelmActive reports whether a unit's seat is at the helm; nil holds nothing.
 	HelmActive func(root string) bool
+	// BaseMove reads what moved main between two base trees; nil leaves a
+	// batch on the base it was sealed on until its landing decides.
+	BaseMove func(fromTree, toTree string) (BaseMove, error)
 }
 
 type Owner struct {
@@ -108,7 +112,7 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 		returns: options.Returns, rebind: options.Rebind, mint: options.Mint, logRed: options.LogRed,
 		baseCommit: options.BaseCommit, runDiagnostic: options.RunDiagnostic, descendsFrom: options.DescendsFrom, sample: options.Sample,
 		admission: options.Admission, launch: options.Launch, probeRun: options.ProbeRun, after: options.After,
-		report: options.Report, glob: options.Glob, helmActive: options.HelmActive, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
+		report: options.Report, glob: options.Glob, helmActive: options.HelmActive, baseMove: options.BaseMove, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
 		inflight: map[string]*proofRun{}, completions: make(chan Completion, 64),
 		runners: func(sample proofrun.LoadSample, admission proofrun.AdmissionCap) []RunnerCapacity {
 			return []RunnerCapacity{hostRunner(sample, admission)}
@@ -124,7 +128,11 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 // decided run is dispatched and completes on the owner's loop.
 func (owner *Owner) Tick(id string) error {
 	if run := owner.inflight[id]; run != nil && !run.attached {
-		return nil
+		tree, err := owner.fetchTree()
+		if err == nil {
+			_, err = owner.followMovedBase(id, tree, true)
+		}
+		return err
 	}
 	if err := owner.restart(id); err != nil {
 		return err
@@ -155,6 +163,9 @@ func (owner *Owner) Tick(id string) error {
 	}
 	if err = owner.rebind(id, tree); err != nil {
 		return err
+	}
+	if moved, err := owner.followMovedBase(id, tree, false); err != nil || moved {
+		return errors.Join(err, owner.release(id))
 	}
 	record, err := owner.store.Load(id)
 	if err != nil {
@@ -264,6 +275,28 @@ func (owner *Owner) Tick(id string) error {
 	}
 	owner.dispatch(lock, Dispatch{ID: id, Window: window, Token: token, Runner: runner, Sample: sample})
 	return nil
+}
+
+// followMovedBase runs the moved-base decision (D2, R6) for a batch whose
+// base another landing moved: a proving batch, or a sealed batch or an open
+// one without a join in flight when no run of this owner is sealing it. A
+// reopen puts it on the new base; a rebase keeps it, and its landing
+// rebases the series. A landing batch decides in its landing run.
+func (owner *Owner) followMovedBase(id, tree string, inflight bool) (bool, error) {
+	record, err := owner.store.Load(id)
+	if err != nil || owner.baseMove == nil || tree == "" || record.BaseTree == "" || tree == record.BaseTree {
+		return false, err
+	}
+	joining := slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State == UnitJoining })
+	settled := !inflight && (record.State == StateSealed || record.State == StateOpen && !joining)
+	if record.State != StateProving && !settled || len(joinedUnits(record.Units)) == 0 {
+		return false, nil
+	}
+	move, err := owner.baseMove(record.BaseTree, tree)
+	if err != nil || !DecideMovedBase(record, move.Changed, move.Prefix).Reopen {
+		return false, err
+	}
+	return true, ReopenMovedBase(owner.store, id, tree, move.LandedBy, owner.actor, owner.now())
 }
 
 // TickOnce waits for the run its tick started and releases a queue

@@ -167,7 +167,7 @@ func TestGLEBatchMovedBaseClosesTwoDependentConflictsBeforeReopen(t *testing.T) 
 	record := load(t, store)
 	if record.State != StateOpen || record.BaseTree != newBase || record.TipTree != cOnly || !slices.Equal(record.PrefixTrees, []string{cOnly}) || record.Proof != nil || len(record.Receipts) != 0 ||
 		record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitReturnPending || record.Units[2].State != UnitJoined ||
-		!strings.Contains(record.Units[0].Failure, "cannot apply on moved base") ||
+		!strings.Contains(record.Units[0].Failure, "CONFLICT with what landed on main") ||
 		!strings.Contains(record.Units[1].Failure, "cannot apply after returning goal-a") {
 		t.Fatalf("moved-base dependent closure did not retain C: %+v", record)
 	}

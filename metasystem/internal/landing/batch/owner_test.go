@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 type ownerBed struct {
@@ -466,4 +467,117 @@ func TestOnlyTrunkRedHoldsALanding(t *testing.T) {
 			}
 		})
 	}
+}
+
+// movedBaseBed seals batch B on base-1 behind the production Launch shape: a
+// run seals an open batch, plans with its token, then waits for the test and
+// finishes green with the group reused by identity, as a delivery proof on an
+// unchanged group identity does. Main then moves to base-2, where the store's
+// reassembly composes the members with the given outcome.
+func movedBaseBed(t *testing.T, units []Unit, move BaseMove, assemble func(string, []Unit) ([]string, error)) (*ownerBed, chan Dispatch, chan struct{}, *[]string) {
+	t.Helper()
+	now := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	record := ownerRecord(testBatchID, StateSealed, now.Add(-time.Minute))
+	if units != nil {
+		record.Units = units
+	}
+	record.BaseTree, record.SelectedGroups, record.TipTree = "base-1", []string{"unit-standard"}, "tip-1"
+	for range joinedUnits(record.Units) {
+		record.PrefixTrees = append(record.PrefixTrees, "tip-1")
+	}
+	bed := newOwnerBed(t, record, now)
+	bed.tree, bed.sample = "base-1", hostSample(1)
+	minted := 0
+	bed.owner.mint = func() (string, error) { minted++; return "token-" + string(rune('0'+minted)), nil }
+	entered, gate, reported := make(chan Dispatch, 4), make(chan struct{}), &[]string{}
+	bed.owner.store = bed.owner.store.WithReassembly(assemble, nil, nil)
+	bed.owner.report = func(id string, err error) { *reported = append(*reported, id+": "+err.Error()) }
+	bed.owner.baseMove = func(from, to string) (BaseMove, error) {
+		if from != "base-1" || to != "base-2" {
+			return BaseMove{}, errors.New("unexpected move " + from + ".." + to)
+		}
+		return move, nil
+	}
+	plan := testpolicy.Plan{SelectedGroups: []string{"unit-standard"}}
+	bed.owner.launch = func(request Dispatch) error {
+		if err := bed.owner.store.Update(request.ID, func(record *Record) error {
+			if record.State == StateOpen {
+				record.Transition(StateSealed, bed.now, "seal", "owner", "")
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		if _, err := RequireProofPlan(bed.owner.store, request.ID, "owner", request.Window, request.Token, request.Sample, plan, bed.now); err != nil {
+			return err
+		}
+		entered <- request
+		<-gate
+		return FinishProof(bed.owner.store, request.ID, "owner", request.Token, proofrun.TestResult{AttemptID: "attempt-" + request.Token,
+			Groups:   []proofrun.GroupResult{{ID: "unit-standard", Status: "reused", ReuseAttempt: "attempt-before", InputManifest: []string{"internal/**"}}},
+			Delivery: proofrun.DeliveryJudgment{Sufficient: true}}, nil, bed.now)
+	}
+	return bed, entered, gate, reported
+}
+
+// R6 (b): a proof in flight on base-1 when a landing moved an engine path in
+// its manifest is reopened on base-2 at the tick, its completion is discarded
+// by its token, and one ordinary re-proof lands on what reuse by identity kept.
+func TestOthersReopenAndReproveWhenAnInputMoved(t *testing.T) {
+	t.Parallel()
+	move := BaseMove{Changed: []string{"records/2026-09-28.md"}, LandedBy: dispatchB}
+	bed, entered, gate, reported := movedBaseBed(t, nil, move, func(base string, units []Unit) ([]string, error) {
+		return []string{"tip-" + strings.TrimPrefix(base, "base-")}, nil
+	})
+	must(t, bed.owner.Tick(testBatchID))
+	first := <-entered
+	bed.tree = "base-2"
+	must(t, bed.owner.Tick(testBatchID))
+	kept := load(t, bed.owner.store)
+	witness(t, kept.State == StateProving && kept.BaseTree == "base-1" && kept.Proof.Token == first.Token,
+		"a records-only move reopened a proof whose inputs arrive with its result: %+v", kept)
+	bed.owner.baseMove = func(string, string) (BaseMove, error) {
+		return BaseMove{Changed: []string{"internal/landing/batch/owner.go"}, LandedBy: dispatchB}, nil
+	}
+	must(t, bed.owner.Tick(testBatchID))
+	reopened := load(t, bed.owner.store)
+	witness(t, reopened.State == StateOpen && reopened.BaseTree == "base-2" && reopened.TipTree == "tip-2" && reopened.Proof == nil &&
+		reopened.History[len(reopened.History)-1].Verb == "trunk-moved", "an engine move did not reopen the proving batch on base-2: %+v", reopened)
+	gate <- struct{}{}
+	bed.owner.Complete(<-bed.owner.completions)
+	witness(t, len(*reported) == 1 && strings.Contains((*reported)[0], "BATCH_PROOF_STALE_COMPLETION"), "old completion: reports=%q", *reported)
+	must(t, bed.owner.Tick(testBatchID))
+	second := <-entered
+	gate <- struct{}{}
+	bed.owner.settle()
+	landed := load(t, bed.owner.store)
+	witness(t, second.Token != first.Token && landed.State == StateLanding && landed.Proof.Token == second.Token && landed.Proof.Tree == "tip-2" &&
+		landed.Proof.Reuse["unit-standard"] == "attempt-before" && len(landed.Proof.Executions) == 0,
+		"re-proof: first=%+v second=%+v proof=%+v", first, second, landed.Proof)
+}
+
+// R6 (c): a member whose changes conflict with what the other batch landed is
+// ejected with the files named and the next command; the survivors reopen.
+func TestRebaseConflictEjectsTheMemberAndNamesFiles(t *testing.T) {
+	t.Parallel()
+	claim := Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 2, AccountingRevision: 1}
+	units := []Unit{{GoalID: "goal-c", Chain: "chain-c", Claim: claim, State: UnitJoined}, {GoalID: "goal-d", Chain: "chain-d", Claim: claim, State: UnitJoined}}
+	move := BaseMove{Changed: []string{"internal/landing/batch/shared.go"}, LandedBy: dispatchB}
+	bed, _, _, _ := movedBaseBed(t, units, move, func(base string, members []Unit) ([]string, error) {
+		if members[0].GoalID == "goal-c" {
+			return nil, &assemblyConflict{GoalID: "goal-c", Paths: []string{"internal/landing/batch/shared.go"},
+				Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit goal-c paths internal/landing/batch/shared.go")}
+		}
+		return []string{"tip-d"}, nil
+	})
+	launches := 0
+	bed.owner.launch = func(Dispatch) error { launches++; return nil }
+	bed.tree = "base-2"
+	must(t, bed.owner.Tick(testBatchID))
+	record := load(t, bed.owner.store)
+	want := "CONFLICT with what landed in batch " + dispatchB + " (files internal/landing/batch/shared.go). Rebase goal/goal-c on main, then metasystem work land goal-c."
+	witness(t, record.State == StateOpen && record.BaseTree == "base-2" && record.TipTree == "tip-d" && launches == 0,
+		"survivors did not reopen on base-2: %+v", record)
+	witness(t, record.Units[0].State == UnitReturnPending && record.Units[0].Outcome == UnitEjected && record.Units[0].Failure == want &&
+		record.Units[1].State == UnitJoined, "conflicting member: %+v", record.Units)
 }
