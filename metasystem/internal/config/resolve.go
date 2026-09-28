@@ -60,7 +60,7 @@ func NewBatchLanding(root string, maxWait time.Duration, now func() time.Time) (
 	if maxWait < time.Minute || maxWait > 6*time.Hour {
 		return BatchLanding{}, fmt.Errorf("%s must be a duration from 1m through 6h", BatchMaxWaitKey)
 	}
-	return BatchLanding{Root: resolvePath(root), MaxWait: maxWait, now: now}, nil
+	return BatchLanding{Root: ResolvePath(root), MaxWait: maxWait, now: now}, nil
 }
 
 // ResolveExplicitBatchLanding validates an explicitly supplied landing root
@@ -118,15 +118,15 @@ func batchLandingRootWithRunner(raw, seatRoot string, runner gitRunner) (string,
 	if !filepath.IsAbs(raw) {
 		return "", fmt.Errorf("%s must be absolute, got %q", BatchRootKey, raw)
 	}
-	root := resolvePath(raw)
-	if root == resolvePath(seatRoot) {
+	root := ResolvePath(raw)
+	if root == ResolvePath(seatRoot) {
 		return "", fmt.Errorf("%s must name a dedicated non-seat checkout", BatchRootKey)
 	}
 	if runner == nil {
 		return "", fmt.Errorf("resolve %s: a Git runner is required", BatchRootKey)
 	}
 	top, err := runner(gitRequest{Directory: root, Args: []string{"rev-parse", "--show-toplevel"}, Environment: []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}})
-	if err != nil || resolvePath(strings.TrimSpace(string(top))) != root {
+	if err != nil || ResolvePath(strings.TrimSpace(string(top))) != root {
 		return "", fmt.Errorf("%s must name an existing checkout, got %q", BatchRootKey, raw)
 	}
 	if _, err := os.Lstat(filepath.Join(root, "artifacts", "agents", "brain.json")); err == nil {

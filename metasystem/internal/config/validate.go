@@ -34,7 +34,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	if readErr != nil {
 		return false, nil, fmt.Errorf("cannot read metasystem configuration: %s: %w", confPath, readErr)
 	}
-	repo := resolvePath(repoRoot)
+	repo := ResolvePath(repoRoot)
 
 	var errs []string
 	add := func(format string, args ...any) { errs = append(errs, fmt.Sprintf(format, args...)) }
@@ -643,26 +643,14 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			add("environment source %s: %v", EnvName(LedgerAttentionStaleMinutesKey), parseErr)
 		}
 	}
-	// The evidence root is required, must be absolute, and must live outside the
-	// repository so job records never write inside the tree they observe. It
-	// is the effective root that is judged: the template ships a placeholder,
-	// and a seat sets its own in .local or the environment.
-	evidence := values["evidence.root"]
-	if local, ok := localValues["evidence.root"]; ok {
-		evidence = local
-	}
-	if env, ok := os.LookupEnv(EnvName("evidence.root")); ok {
-		evidence = env
-	}
-	switch {
-	case evidence == "":
-		add("evidence.root is required")
-	case !filepath.IsAbs(evidence):
-		add("evidence.root must be absolute")
-	default:
-		if withinRepo(resolvePath(evidence), repo) {
-			add("evidence.root must be outside the repository")
-		}
+	// The evidence root has a compiled-in default; a root a source names must
+	// be absolute and outside the checkout, judged by the one owner on the
+	// file validated here, and outside --repo, which may differ from the
+	// checkout the owner finds.
+	if evidence, evidenceErr := ResolveEvidenceRoot(EvidenceRootParams{ConfPath: confPath}); evidenceErr != nil {
+		add("%v", evidenceErr)
+	} else if withinRepo(ResolvePath(evidence.Path), repo) {
+		add("%s must be outside the repository (%s)", EvidenceRootKey, evidence.Line())
 	}
 
 	// Registration is adopted-repository state, not a template invariant (the
@@ -813,11 +801,11 @@ func isDir(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// resolvePath makes path absolute and follows symlinks. Parts that do not exist
+// ResolvePath makes path absolute and follows symlinks. Parts that do not exist
 // yet cannot be resolved, so it follows symlinks on the deepest existing
 // ancestor and re-attaches the remaining tail lexically — the same way the
 // evidence-root check must compare a not-yet-created directory against the repo.
-func resolvePath(path string) string {
+func ResolvePath(path string) string {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		abs = filepath.Clean(path)
