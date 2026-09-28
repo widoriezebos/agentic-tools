@@ -67,40 +67,78 @@ func loadPhysicalLaunchContract(root string) (string, applaunch.Contract, string
 
 // launchContractReady validates the launch contract and its declared tools
 // without starting anything, for `settings check`.
-func launchContractReady(root string) (string, applaunch.Contract, error) {
+func launchContractReady(root string) (string, applaunch.Contract, []applaunch.ToolLine, error) {
 	installation, contract, path, err := loadPhysicalLaunchContract(root)
 	if err != nil {
-		return "", applaunch.Contract{}, err
+		return "", applaunch.Contract{}, nil, err
 	}
 	projectRoot, err := (gittree.Workspace{Dir: installation}).TopLevel()
 	if err != nil {
-		return "", applaunch.Contract{}, err
+		return "", applaunch.Contract{}, nil, err
 	}
-	if err := checkLaunchTools(projectRoot, contract); err != nil {
-		return "", applaunch.Contract{}, err
+	tools, err := launchToolLines(projectRoot, contract)
+	if err != nil {
+		return "", applaunch.Contract{}, nil, err
 	}
-	return path, contract, nil
+	return path, contract, tools, nil
 }
 
-// checkLaunchTools resolves each declared executable in the environment the
-// contract's commands will actually run in, so a missing JDK, cargo or Go is
-// named before a build fails.
-func checkLaunchTools(projectRoot string, contract applaunch.Contract) error {
+// launchToolLines is the declared tools' preflight: each executable resolved
+// in the environment the contract's commands will actually run in, so a
+// missing JDK, cargo or Go is named before a build fails, and the first line
+// its version arguments print. It is an availability check; a version
+// constraint is not this contract's to state.
+func launchToolLines(projectRoot string, contract applaunch.Contract) ([]applaunch.ToolLine, error) {
+	cwd := projectRoot
+	if !contract.Start.Empty() && contract.Start.CWD != "" {
+		cwd = filepath.Join(projectRoot, filepath.FromSlash(contract.Start.CWD))
+	}
+	var lines []applaunch.ToolLine
 	var unavailable []string
 	for _, tool := range contract.Tools {
-		cwd := projectRoot
-		if !contract.Start.Empty() && contract.Start.CWD != "" {
-			cwd = filepath.Join(projectRoot, filepath.FromSlash(contract.Start.CWD))
-		}
-		if _, err := proofrun.ResolveTestingExecutable(context.Background(), cwd, os.Environ(), []string{tool.Executable}); err != nil {
+		program, err := resolveLaunchTool(cwd, tool.Executable)
+		if err != nil {
 			unavailable = append(unavailable, tool.ID)
+			continue
 		}
+		lines = append(lines, applaunch.ToolLine{ID: tool.ID, Executable: program, Version: toolVersionLine(cwd, program, tool.VersionArgs)})
 	}
 	if len(unavailable) > 0 {
 		sort.Strings(unavailable)
-		return fmt.Errorf("declared launch tools unavailable: %s", strings.Join(unavailable, ","))
+		return nil, fmt.Errorf("declared launch tools unavailable: %s", strings.Join(unavailable, ","))
 	}
-	return nil
+	return lines, nil
+}
+
+// resolveLaunchTool finds a declared tool the way the testing contract's
+// runner finds one, in the directory the contract's commands run in. What it
+// returns is the project's tool, never the engine.
+func resolveLaunchTool(cwd, name string) (string, error) {
+	program, err := proofrun.ResolveTestingExecutable(context.Background(), cwd, os.Environ(), []string{name})
+	if err != nil {
+		return "", err
+	}
+	return program, nil
+}
+
+// toolVersionLine runs a tool's version arguments, bounded, and keeps the
+// first line it printed. A tool that prints nothing, or declares no version
+// arguments, has no line; its availability is still recorded.
+func toolVersionLine(cwd, program string, args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, program, args...)
+	command.Dir = cwd
+	out, _ := command.CombinedOutput()
+	for _, line := range strings.Split(string(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
 }
 
 // appRun is one resolved run: which tree its commands run in, which data it
@@ -462,7 +500,7 @@ func runAppServe(args []string) int {
 	}
 	var ready *os.File
 	if *readyFD >= 0 {
-		ready = os.NewFile(uintptr(*readyFD), "application readiness")
+		ready = applaunch.ReadinessPipe(*readyFD)
 		defer ready.Close()
 	}
 	report := func(line string) {
@@ -499,12 +537,18 @@ func runAppServe(args []string) int {
 			run.commit = commit
 		}
 	}
+	tools, err := launchToolLines(run.tree, contract)
+	if err != nil {
+		return refuse(err.Error())
+	}
+	seed := run.seedRecord()
+	seed.Tools = tools
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	err = applaunch.Supervise(applaunch.SuperviseOptions{
 		Context:     ctx,
 		StateRoot:   roots.StateRoot,
-		Seed:        run.seedRecord(),
+		Seed:        seed,
 		Contract:    contract,
 		ProjectRoot: run.tree,
 		Environment: run.environment(),
@@ -516,4 +560,11 @@ func runAppServe(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// preflightTools is the start's check of the declared tools in the run's own
+// tree, before anything is prepared, built or started.
+func (r appRun) preflightTools() error {
+	_, err := launchToolLines(r.tree, r.contract)
+	return err
 }

@@ -33,7 +33,7 @@ func main() {
 	}
 	var pipe *os.File
 	if *readyFD >= 0 {
-		pipe = os.NewFile(uintptr(*readyFD), "readiness")
+		pipe = applaunch.ReadinessPipe(*readyFD)
 	}
 	report := func(line string) {
 		if *readyFile != "" {
@@ -59,7 +59,11 @@ func main() {
 		Failed:      func(m string) { report("failed " + m) },
 	}
 	if *dieAfterSpawn {
-		options.AfterSpawn = func() error { os.Exit(9); return nil }
+		// A person's kill lands here: no deferred act, no ended record.
+		options.AfterSpawn = func() error {
+			_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
+			select {}
+		}
 	}
 	if err := applaunch.Supervise(options); err != nil {
 		fmt.Fprintln(os.Stderr, "fixturesupervisor:", err)

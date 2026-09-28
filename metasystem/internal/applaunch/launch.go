@@ -199,3 +199,14 @@ func Rejoin(ctx context.Context, stateRoot, key string, contract Contract, o Rea
 		}
 	}
 }
+
+// ReadinessPipe opens the descriptor a launcher handed its supervisor for the
+// one readiness answer, and keeps it the supervisor's own: it is marked
+// close-on-exec before anything is spawned, so the application never
+// inherits it. An application holding it open would keep a launcher whose
+// supervisor was killed before it answered waiting out its whole wait
+// instead of hearing the pipe close.
+func ReadinessPipe(fd int) *os.File {
+	syscall.CloseOnExec(fd)
+	return os.NewFile(uintptr(fd), "application readiness")
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,6 +69,9 @@ type appBed struct {
 	installation string
 	app          string
 	reaping      map[int]bool
+	// delivery replaces the engine-verb owner, so that a test can see the
+	// argument vector a verb hands the testing runner and answer for it.
+	delivery *intentDeliveryOwners
 }
 
 func newAppBed(t *testing.T, contract map[string]any) *appBed {
@@ -141,7 +145,11 @@ func (b *appBed) run(args ...string) (int, string) {
 	}
 	rest := append(append([]string(nil), args[2:]...), "--repo", b.root)
 	var stdout, stderr bytes.Buffer
-	code := runIntentIn(command, rest, &stdout, &stderr, b.root, defaultIntentOwners())
+	owners := defaultIntentOwners()
+	if b.delivery != nil {
+		owners.delivery = b.delivery
+	}
+	code := runIntentIn(command, rest, &stdout, &stderr, b.root, owners)
 	b.reapSupervisors()
 	return code, stdout.String() + stderr.String()
 }
@@ -520,7 +528,7 @@ func TestAppLogFollowRefusesJSON(t *testing.T) {
 // declared tools resolved in the environment its commands will run in.
 func TestLaunchContractReadyValidatesWithItsTools(t *testing.T) {
 	absent := newAppBed(t, nil)
-	if _, _, err := launchContractReady(absent.installation); err == nil || !errors.Is(err, errNoLaunchContract) {
+	if _, _, _, err := launchContractReady(absent.installation); err == nil || !errors.Is(err, errNoLaunchContract) {
 		t.Fatalf("a project with no contract is not a project with a problem: %v", err)
 	}
 
@@ -528,9 +536,12 @@ func TestLaunchContractReadyValidatesWithItsTools(t *testing.T) {
 	valid := appHTTPContract(appFixtureApp(t), address)
 	valid["tools"] = []any{map[string]any{"id": "git", "executable": "git", "versionArgs": []string{"--version"}}}
 	bed := newAppBed(t, valid)
-	path, contract, err := launchContractReady(bed.installation)
+	path, contract, tools, err := launchContractReady(bed.installation)
 	if err != nil {
 		t.Fatalf("a valid contract with an available tool: %v", err)
+	}
+	if len(tools) != 1 || !strings.HasPrefix(tools[0].Line(), "git: ") || !strings.Contains(tools[0].Line(), "(git version") {
+		t.Fatalf("an available tool is named with the executable found and its version line: %+v", tools)
 	}
 	if !strings.HasSuffix(path, "launch.json") || contract.Name != "fixture" {
 		t.Fatalf("unexpected contract %s %+v", path, contract)
@@ -539,13 +550,306 @@ func TestLaunchContractReadyValidatesWithItsTools(t *testing.T) {
 	missing := appHTTPContract(appFixtureApp(t), appFreePort(t))
 	missing["tools"] = []any{map[string]any{"id": "nosuchjdk", "executable": "nosuchjdk-9999"}}
 	absentTool := newAppBed(t, missing)
-	if _, _, err := launchContractReady(absentTool.installation); err == nil || !strings.Contains(err.Error(), "nosuchjdk") {
+	if _, _, _, err := launchContractReady(absentTool.installation); err == nil || !strings.Contains(err.Error(), "nosuchjdk") {
 		t.Fatalf("a declared tool that is absent must be named: %v", err)
 	}
 
 	broken := newAppBed(t, map[string]any{"start": map[string]any{"argv": []string{"./app"}}, "data": "own"})
-	if _, _, err := launchContractReady(broken.installation); err == nil ||
+	if _, _, _, err := launchContractReady(broken.installation); err == nil ||
 		!strings.Contains(err.Error(), "data: own is declared with no prepare to make it") {
 		t.Fatalf("an invalid contract must name its fault: %v", err)
+	}
+}
+
+// Declared tools are the start's preflight: a missing one is named before
+// anything is prepared, built or started, and an available one has the
+// executable found and its version line printed into the run's record.
+func TestAppStartPreflightsDeclaredTools(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "prepared")
+	missing := appHTTPContract(appFixtureApp(t), appFreePort(t))
+	missing["prepare"] = map[string]any{"argv": []string{"sh", "-c", "echo run >> " + marker}}
+	missing["tools"] = []any{map[string]any{"id": "nosuchjdk", "executable": "nosuchjdk-9999", "versionArgs": []string{"-version"}}}
+	refused := newAppBed(t, missing)
+	code, out := refused.run("app", "start")
+	if code == 0 || !strings.Contains(out, "nosuchjdk") {
+		t.Fatalf("a missing declared tool must be named and nothing started:\n%s", out)
+	}
+	if countLines(t, marker) != 0 {
+		t.Fatal("nothing is prepared before the preflight passes")
+	}
+	if _, status := refused.run("app", "status"); !strings.Contains(status, "state: stopped") {
+		t.Fatalf("a refused preflight starts nothing:\n%s", status)
+	}
+
+	address := appFreePort(t)
+	declared := appHTTPContract(appFixtureApp(t), address)
+	declared["tools"] = []any{map[string]any{"id": "git", "executable": "git", "versionArgs": []string{"--version"}}}
+	bed := newAppBed(t, declared)
+	if code, out := bed.run("app", "start"); code != 0 {
+		t.Fatalf("app start: %d\n%s", code, out)
+	}
+	record, err := applaunch.ReadRecord(bed.installation, applaunch.StandingKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.Tools) != 1 || record.Tools[0].ID != "git" || !filepath.IsAbs(record.Tools[0].Executable) ||
+		!strings.HasPrefix(record.Tools[0].Version, "git version") {
+		t.Fatalf("the record carries the executable found and its version line: %+v", record.Tools)
+	}
+	if _, status := bed.run("app", "status"); !strings.Contains(status, "tool git: "+record.Tools[0].Executable+" (git version") {
+		t.Fatalf("status says which tool the run was started with:\n%s", status)
+	}
+}
+
+// Every optional field left out leaves a contract that validates and verbs
+// that work: a contract of start alone starts, reads, logs, restarts, resets,
+// checks and stops.
+func TestAppContractOfStartAloneWorksWithEveryVerb(t *testing.T) {
+	bed := newAppBed(t, map[string]any{"start": map[string]any{"argv": []string{appFixtureApp(t), "--no-listen", "--ready-line", "started"}}})
+	code, out := bed.run("app", "start")
+	if code != 0 || !strings.Contains(out, "with no address to listen on") {
+		t.Fatalf("app start with start alone: %d\n%s", code, out)
+	}
+	code, out = bed.run("app", "status")
+	if code != 0 || !strings.Contains(out, "state: running") || !strings.Contains(out, "readiness: ready, observed at startup") ||
+		!strings.Contains(out, "data: shared with the standing run") {
+		t.Fatalf("no ready means alive is ready, and no prepare means shared data:\n%s", out)
+	}
+	eventuallyTrue(t, "the application's first line in the engine's capture", func() bool {
+		_, out := bed.run("app", "log")
+		return strings.Contains(out, "started")
+	})
+	if code, out := bed.run("app", "restart"); code != 0 || !strings.Contains(out, "every recorded process is dead") {
+		t.Fatalf("restart: no stop command means TERM then KILL, proven: %d\n%s", code, out)
+	}
+	if code, out := bed.run("app", "reset"); code != 0 || !strings.Contains(out, "no prepare declared: reset is a restart") {
+		t.Fatalf("reset with no prepare: %d\n%s", code, out)
+	}
+	if code, out := bed.run("app", "check"); code != 0 || !strings.Contains(out, "no check is declared") {
+		t.Fatalf("check with none declared: %d\n%s", code, out)
+	}
+	if code, out := bed.run("app", "stop"); code != 0 || !strings.Contains(out, "every recorded process is dead") {
+		t.Fatalf("stop: %d\n%s", code, out)
+	}
+	if code, out := bed.run("app", "status"); code != 0 || !strings.Contains(out, "state: stopped") {
+		t.Fatalf("after stop:\n%s", out)
+	}
+}
+
+// `--at main` and `--goal G` run side by side: each builds in its own tree,
+// each gets its own address from the range and its own state root, prepare
+// runs in each with that run's state root and address in its environment,
+// and the standing run's record is never touched.
+func TestAppAtMainBesideGoal(t *testing.T) {
+	address := appFreePort(t)
+	contract := appHTTPContract(appFixtureApp(t), address)
+	contract["build"] = map[string]any{"argv": []string{"sh", "-c", "git rev-parse HEAD > built.txt"}}
+	contract["prepare"] = map[string]any{"argv": []string{"sh", "-c",
+		`mkdir -p "$METASYSTEM_APP_STATE_ROOT" && echo "$METASYSTEM_APP_ADDRESS" >> "$METASYSTEM_APP_STATE_ROOT/prepared.txt"`}}
+	contract["data"] = "own"
+	bed := newAppBed(t, contract)
+	bed.git("branch", "goal/g1")
+	if code, out := bed.run("app", "start"); code != 0 {
+		t.Fatalf("standing start: %d\n%s", code, out)
+	}
+	standingBefore, err := os.ReadFile(applaunch.RecordPath(bed.installation, applaunch.StandingKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { bed.run("app", "stop", "--at", "main", "--clean") })
+	t.Cleanup(func() { bed.run("app", "stop", "--goal", "g1", "--clean") })
+	if code, out := bed.run("app", "start", "--at", "main"); code != 0 {
+		t.Fatalf("app start --at main: %d\n%s", code, out)
+	}
+	if code, out := bed.run("app", "start", "--goal", "g1"); code != 0 {
+		t.Fatalf("app start --goal g1: %d\n%s", code, out)
+	}
+	main, err := applaunch.ReadRecord(bed.installation, applaunch.KeyFor("main"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	goal, err := applaunch.ReadRecord(bed.installation, applaunch.KeyFor("goal/g1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if main.Tree == goal.Tree || main.Tree == bed.root || goal.Tree == bed.root {
+		t.Fatalf("each run has a tree of its own: %s %s", main.Tree, goal.Tree)
+	}
+	for _, record := range []*applaunch.Record{main, goal} {
+		if built, err := os.ReadFile(filepath.Join(record.Tree, "built.txt")); err != nil || strings.TrimSpace(string(built)) != record.Commit {
+			t.Fatalf("the build ran in the run's own tree at its commit: %q %v (%s)", built, err, record.Commit)
+		}
+		prepared, err := os.ReadFile(filepath.Join(record.StateRoot, "prepared.txt"))
+		if err != nil || strings.TrimSpace(string(prepared)) != record.Address {
+			t.Fatalf("prepare ran once with the run's own state root and address: %q %v (%s)", prepared, err, record.Address)
+		}
+		if !answered(record.Address) {
+			t.Fatalf("run %s must answer at %s", record.Key, record.Address)
+		}
+	}
+	if main.Address == goal.Address || main.Address == address || goal.Address == address {
+		t.Fatalf("three runs, three addresses: standing %s, main %s, goal %s", address, main.Address, goal.Address)
+	}
+	if main.StateRoot == goal.StateRoot || main.StateRoot == bed.installation || goal.StateRoot == bed.installation {
+		t.Fatalf("each run has a state root of its own: %s %s", main.StateRoot, goal.StateRoot)
+	}
+	if goal.Goal != "g1" || goal.Ref != "goal/g1" || main.Ref != "main" {
+		t.Fatalf("the records name the ref and the goal: %+v %+v", main, goal)
+	}
+	standingAfter, err := os.ReadFile(applaunch.RecordPath(bed.installation, applaunch.StandingKey))
+	if err != nil || !bytes.Equal(standingBefore, standingAfter) {
+		t.Fatalf("the standing record was touched by another run's start:\n%s\n%s", standingBefore, standingAfter)
+	}
+	if !answered(address) {
+		t.Fatal("the standing run still answers")
+	}
+}
+
+// log --follow prints the captured tail and then what the application writes
+// after it, until it is interrupted.
+func TestAppLogFollow(t *testing.T) {
+	address := appFreePort(t)
+	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
+	if code, out := bed.run("app", "start"); code != 0 {
+		t.Fatalf("app start: %d\n%s", code, out)
+	}
+	previous := appFollowContext
+	appFollowContext = func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	}
+	t.Cleanup(func() { appFollowContext = previous })
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		log, err := os.OpenFile(applaunch.DefaultLogPath(bed.installation, applaunch.StandingKey), os.O_APPEND|os.O_WRONLY, 0o644)
+		if err == nil {
+			fmt.Fprintln(log, "written after the follow began")
+			_ = log.Close()
+		}
+	}()
+	code, out := bed.run("app", "log", "--follow")
+	if code != 0 {
+		t.Fatalf("app log --follow: %d\n%s", code, out)
+	}
+	if !strings.Contains(out, "fixtureapp: listening on") || !strings.Contains(out, "written after the follow began") {
+		t.Fatalf("follow prints the tail and then what is written after it:\n%s", out)
+	}
+}
+
+// check runs the named group through the testing runner's own form with the
+// run's address, and the verdict and its time are written on the run's
+// record; a run that is alive and not answering is refused in words.
+func TestAppCheckRecordsItsVerdict(t *testing.T) {
+	address := appFreePort(t)
+	contract := appHTTPContract(appFixtureApp(t), address)
+	contract["check"] = "app-smoke"
+	bed := newAppBed(t, contract)
+	var handed []string
+	bed.delivery = &intentDeliveryOwners{
+		executable: func() (string, error) { return "/engine", nil },
+		process: func(process intentProcess) intentProcessResult {
+			handed = process.argv
+			return intentProcessResult{stdout: []byte(`{"verdict":"pass"}`)}
+		}}
+	if code, out := bed.run("app", "start"); code != 0 {
+		t.Fatalf("app start: %d\n%s", code, out)
+	}
+	code, out := bed.run("app", "check")
+	if code != 0 {
+		t.Fatalf("app check: %d\n%s", code, out)
+	}
+	joined := strings.Join(handed, " ")
+	if !strings.Contains(joined, "internal test run") || !strings.Contains(joined, "--mode canary --groups app-smoke --no-reuse --app-address "+address) {
+		t.Fatalf("the check is the testing runner's named-group form with the run's address: %q", joined)
+	}
+	record, err := applaunch.ReadRecord(bed.installation, applaunch.StandingKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Check == nil || record.Check.Group != "app-smoke" || record.Check.Verdict != "pass" || record.Check.At == "" || record.Check.Address != address {
+		t.Fatalf("the verdict and its time are written on the run record: %+v", record.Check)
+	}
+	if _, status := bed.run("app", "status"); !strings.Contains(status, "check app-smoke: pass at "+record.Check.At) {
+		t.Fatalf("status says the last check:\n%s", status)
+	}
+
+	dark := appHTTPContract(appFixtureApp(t), appFreePort(t), "--dark-after", "1s")
+	dark["check"] = "app-smoke"
+	darkBed := newAppBed(t, dark)
+	darkBed.delivery = bed.delivery
+	handed = nil
+	if code, out := darkBed.run("app", "start"); code != 0 {
+		t.Fatalf("app start: %d\n%s", code, out)
+	}
+	eventuallyTrue(t, "the application to stop answering", func() bool {
+		_, out := darkBed.run("app", "status")
+		return strings.Contains(out, "readiness: not answering")
+	})
+	code, out = darkBed.run("app", "check")
+	if code == 0 || !strings.Contains(out, "not live and answering, so its check was not run") || handed != nil {
+		t.Fatalf("a check against a run that is not answering is refused in words and nothing is run:\n%s", out)
+	}
+}
+
+// A goal's run copies its evidence, the log tail and the last check, to the
+// evidence root under the goal: at stop, and at the next start of that ref
+// where the run had ended by itself, before the record is removed.
+func TestAppGoalRunEvidenceIsCopiedBeforeItsRecordIsRemoved(t *testing.T) {
+	bed := newAppBed(t, map[string]any{
+		"name":   "fixture",
+		"start":  map[string]any{"argv": []string{appFixtureApp(t), "--no-listen", "--exit-after", "600ms", "--exit-code", "5"}},
+		"stopMs": 4000,
+	})
+	evidence := t.TempDir()
+	conf := filepath.Join(bed.installation, "metasystem.conf")
+	body, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf, append(body, []byte("evidence.root="+evidence+"\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bed.git("branch", "goal/g1")
+	t.Cleanup(func() { bed.run("app", "stop", "--goal", "g1", "--clean") })
+	if code, out := bed.run("app", "start", "--goal", "g1"); code != 0 {
+		t.Fatalf("app start --goal g1: %d\n%s", code, out)
+	}
+	eventuallyTrue(t, "the goal's run to end by itself", func() bool {
+		_, out := bed.run("app", "status", "--goal", "g1")
+		return strings.Contains(out, "state: ended")
+	})
+	ended, err := applaunch.ReadRecord(bed.installation, applaunch.KeyFor("goal/g1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out := bed.run("app", "start", "--goal", "g1")
+	if code != 0 || !strings.Contains(out, "evidence:") || !strings.Contains(out, "copied to") {
+		t.Fatalf("the next start copies the ended run's evidence: %d\n%s", code, out)
+	}
+	copies, _ := filepath.Glob(filepath.Join(evidence, "goals", "g1", "app", applaunch.KeyFor("goal/g1"), "*", "source-*-run.txt"))
+	if len(copies) != 1 {
+		t.Fatalf("one evidence copy under the goal, got %v\n%s", copies, out)
+	}
+	summary, _ := os.ReadFile(copies[0])
+	if !strings.Contains(string(summary), "ended: "+ended.Ended.At+" (exit 5)") || !strings.Contains(string(summary), "check: none recorded") {
+		t.Fatalf("the copy is the ended record, read before it was removed:\n%s", summary)
+	}
+	tails, _ := filepath.Glob(filepath.Join(filepath.Dir(copies[0]), "source-*-log-tail.txt"))
+	if len(tails) != 1 {
+		t.Fatalf("the copy carries the log tail, got %v", tails)
+	}
+	tail, _ := os.ReadFile(tails[0])
+	if !strings.Contains(string(tail), "fixtureapp: exiting by itself") {
+		t.Fatalf("the copy carries the log tail:\n%s", tail)
+	}
+	if record, err := applaunch.ReadRecord(bed.installation, applaunch.KeyFor("goal/g1")); err != nil || record.Ended != nil && record.Ended.At == ended.Ended.At && record.Supervisor == ended.Supervisor {
+		t.Fatalf("the ended record was replaced by the new run's: %+v %v", record, err)
+	}
+	time.Sleep(time.Second) // a second copy lands in its own timestamped directory
+	if code, out := bed.run("app", "stop", "--goal", "g1"); code != 0 || !strings.Contains(out, "copied to") {
+		t.Fatalf("stop copies the goal run's evidence: %d\n%s", code, out)
+	}
+	copies, _ = filepath.Glob(filepath.Join(evidence, "goals", "g1", "app", applaunch.KeyFor("goal/g1"), "*", "source-*-run.txt"))
+	if len(copies) != 2 {
+		t.Fatalf("stop made a second evidence copy, got %v", copies)
 	}
 }

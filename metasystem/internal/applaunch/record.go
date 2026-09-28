@@ -81,6 +81,23 @@ type Check struct {
 	Address string `json:"address,omitempty"`
 }
 
+// ToolLine is one declared tool as a run found it: the executable resolved
+// in the run's own tree and the first line its version arguments printed.
+// It is an availability record, not a version policy.
+type ToolLine struct {
+	ID         string `json:"id"`
+	Executable string `json:"executable"`
+	Version    string `json:"version,omitempty"`
+}
+
+// Line is how a status says one tool.
+func (t ToolLine) Line() string {
+	if t.Version == "" {
+		return t.ID + ": " + t.Executable
+	}
+	return t.ID + ": " + t.Executable + " (" + t.Version + ")"
+}
+
 // Record is what the supervisor writes before it spawns anything, and what
 // every other verb reads. Nothing in it is authority; it is one seat's
 // observation of one run.
@@ -101,18 +118,19 @@ type Record struct {
 	// Child is the application's own native identity ref, written as the very
 	// next act after the spawn. A record with a group and no child is a
 	// supervisor killed in that one instant, and status says exactly that.
-	Child     string `json:"child,omitempty"`
-	Address   string `json:"address,omitempty"`
-	Log       string `json:"log,omitempty"`
-	StateRoot string `json:"stateRoot,omitempty"`
-	Tree      string `json:"tree,omitempty"`
-	Data      string `json:"data,omitempty"`
-	ReadyForm string `json:"readyForm,omitempty"`
-	StartedAt string `json:"startedAt,omitempty"`
-	ReadyAt   string `json:"readyAt,omitempty"`
-	Prepared  bool   `json:"prepared,omitempty"`
-	Ended     *Ended `json:"ended,omitempty"`
-	Check     *Check `json:"check,omitempty"`
+	Child     string     `json:"child,omitempty"`
+	Address   string     `json:"address,omitempty"`
+	Log       string     `json:"log,omitempty"`
+	StateRoot string     `json:"stateRoot,omitempty"`
+	Tree      string     `json:"tree,omitempty"`
+	Data      string     `json:"data,omitempty"`
+	ReadyForm string     `json:"readyForm,omitempty"`
+	StartedAt string     `json:"startedAt,omitempty"`
+	ReadyAt   string     `json:"readyAt,omitempty"`
+	Prepared  bool       `json:"prepared,omitempty"`
+	Tools     []ToolLine `json:"tools,omitempty"`
+	Ended     *Ended     `json:"ended,omitempty"`
+	Check     *Check     `json:"check,omitempty"`
 }
 
 // SupervisorRef and ChildRef parse the recorded identities. A ref that will

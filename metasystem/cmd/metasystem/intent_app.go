@@ -255,13 +255,19 @@ func (inv *intentInvocation) appLog(run appRun, targets []intentTarget) intentRe
 	for _, line := range tail {
 		fmt.Fprintln(inv.stdout, line)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	ctx, stop := appFollowContext()
 	defer stop()
 	if err := applaunch.Follow(ctx, path, inv.stdout, 0); err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the log could not be followed: " + err.Error()}
 	}
 	return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "stopped following " + path,
 		Data: map[string]any{"run": run.key, "log": path}}
+}
+
+// appFollowContext is how long `log --follow` follows: until the person
+// interrupts it. It is a variable only so that a test can end a follow.
+var appFollowContext = func() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 }
 
 // appStart starts one run: it rejoins a live one, ends a finished one into
@@ -304,8 +310,16 @@ func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset 
 		if err := run.takeWorktree(logWriter(&lines)); err != nil {
 			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: "the run's tree could not be taken: " + err.Error()}
 		}
+		if err := run.preflightTools(); err != nil {
+			return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was built or started"}
+		}
 		if err := run.runContractCommand("build", run.contract.Build, 30*time.Minute, logWriter(&lines)); err != nil {
 			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: err.Error()}
+		}
+	}
+	if run.ref == "" {
+		if err := run.preflightTools(); err != nil {
+			return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was prepared or started"}
 		}
 	}
 	switch {

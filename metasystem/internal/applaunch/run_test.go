@@ -275,9 +275,16 @@ func TestSupervisorInterruptedBetweenSpawnAndChildWrite(t *testing.T) {
 	b := newBed(t, httpContract(mustApp(t), address, "--live-file", live))
 	args := []string{"--state-root", b.stateRoot, "--key", StandingKey, "--contract", b.path,
 		"--project-root", b.root, "--address", b.address, "--ready-fd", "3", "--die-after-spawn"}
+	began := time.Now()
 	_, _, err := b.startWith(StandingKey, args)
 	if err == nil {
 		t.Fatal("a supervisor that dies in the window reports no readiness")
+	}
+	// The readiness pipe is the supervisor's alone: the application it
+	// spawned must not hold it open, or a launcher whose supervisor was
+	// killed waits out its whole wait instead of hearing the pipe close.
+	if waited := time.Since(began); waited > 10*time.Second {
+		t.Fatalf("the launcher waited %s for a supervisor that was already dead", waited)
 	}
 	eventually(t, "the application to be running", 10*time.Second, func() bool {
 		_, statErr := os.Stat(live)
@@ -325,6 +332,80 @@ func TestSupervisorInterruptedBetweenSpawnAndChildWrite(t *testing.T) {
 	}
 	if !strings.Contains(lines, "none of it was signalled") {
 		t.Errorf("stop must name the group's members and refuse to signal them:\n%s", lines)
+	}
+	if result.Proven || result.Outcome != StillRunning {
+		t.Fatalf("an application the engine did not end is never reported as stopped: %s", result.Outcome)
+	}
+	// What status found is the application itself, by its proven identity:
+	// the member named is the process that wrote its pid, and that identity,
+	// re-proven at the signal, is what stops it.
+	written, err := os.ReadFile(live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *Member
+	for index, member := range status.Members {
+		if strconv.FormatInt(member.Pid, 10) == strings.TrimSpace(string(written)) {
+			found = &status.Members[index]
+		}
+	}
+	if found == nil {
+		t.Fatalf("the application (pid %s) must be among the members found by identity: %+v", written, status.Members)
+	}
+	ref, err := identity.ParseRef(found.Ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := identity.SignalExact(identity.KernelProber{}, ref, syscall.SIGTERM); err != nil {
+		t.Fatalf("the application is stoppable by the identity status named: %v", err)
+	}
+	eventually(t, "the application to end by its identity", 10*time.Second, func() bool {
+		return identity.AliveRef(identity.KernelProber{}, ref) == identity.Dead
+	})
+	signalled = nil
+	result, err = Stop(b.stateRoot, StandingKey, b.contract, StopOptions{
+		Probe: ProbeOnce, Wait: time.Second,
+		Send: func(pid int, sig syscall.Signal) error {
+			signalled = append(signalled, strconv.Itoa(pid)+":"+sig.String())
+			return nil
+		}})
+	if err != nil || !result.Proven || result.Outcome != StoppedNow || len(signalled) != 0 {
+		t.Fatalf("with the application ended the stop is proven, and still nothing was signalled by the engine: %v %s %v\n%s",
+			err, result.Outcome, signalled, strings.Join(result.Lines, "\n"))
+	}
+}
+
+// Status says starting while a live supervisor has not yet seen readiness:
+// alive is said, and ready is not.
+func TestStatusSaysStartingBeforeReadiness(t *testing.T) {
+	t.Parallel()
+	address := freePort(t)
+	b := newBed(t, httpContract(mustApp(t), address, "--ready-after", "3s"))
+	started := make(chan error, 1)
+	go func() {
+		_, _, err := b.start(StandingKey)
+		started <- err
+	}()
+	eventually(t, "the application to be recorded", 10*time.Second, func() bool {
+		record, err := ReadRecord(b.stateRoot, StandingKey)
+		return err == nil && record.Child != ""
+	})
+	status, err := Read(b.stateRoot, StandingKey, b.contract, ReadOptions{Probe: ProbeOnce})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != Starting || status.Readiness != NotYet {
+		t.Fatalf("a supervisor alive before readiness reads as starting, got %s/%s", status.State, status.Readiness)
+	}
+	lines := strings.Join(status.Lines(), "\n")
+	if !strings.Contains(lines, "state: starting") || !strings.Contains(lines, "readiness: not yet ready") {
+		t.Fatalf("liveness and readiness are said separately while starting:\n%s", lines)
+	}
+	if err := <-started; err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if status := b.status(StandingKey); status.State != Running || status.Readiness != Answering {
+		t.Fatalf("after readiness: %s/%s", status.State, status.Readiness)
 	}
 }
 

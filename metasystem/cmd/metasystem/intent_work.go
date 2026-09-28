@@ -1464,7 +1464,7 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 	// The launch contract is validated here too, with the same kind of line:
 	// a project that has one gets its faults named before a start, and a
 	// project that has none is not a project with a problem.
-	launchPath, launchContract, launchErr := launchContractReady(root)
+	launchPath, launchContract, launchTools, launchErr := launchContractReady(root)
 	switch {
 	case errors.Is(launchErr, errNoLaunchContract):
 		settings.text = append(settings.text, "launch contract: none declared")
@@ -1475,6 +1475,9 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 		settings.Summary = "the settings of " + root + ", their testing contract and their launch contract are valid"
 		settings.text = append(settings.text, fmt.Sprintf("launch contract %s: %s, readiness %s, %s",
 			launchPath, launchContractName(launchContract), launchContract.ReadyKind(), launchContract.DataWord()))
+		for _, tool := range launchTools {
+			settings.text = append(settings.text, "launch tool "+tool.Line())
+		}
 	}
 	return inv.render(settings)
 }

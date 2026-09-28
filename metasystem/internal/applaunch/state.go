@@ -301,6 +301,9 @@ func (s Status) Lines() []string {
 	if record.Log != "" {
 		lines = append(lines, "log: "+record.Log)
 	}
+	for _, tool := range record.Tools {
+		lines = append(lines, "tool "+tool.Line())
+	}
 	if record.Ended != nil {
 		lines = append(lines, "ended: "+record.Ended.At+" ("+record.Ended.ExitStatus+")")
 	}
