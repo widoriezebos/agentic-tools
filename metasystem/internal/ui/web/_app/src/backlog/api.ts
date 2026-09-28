@@ -58,6 +58,8 @@ const ABANDON = "/abandon";
  * rides the one call site rather than opening a second one.
  */
 const EDIT = "/edit";
+// The review's verdict (g1-s69 D1): the same collection, the same call site.
+const REVIEW = "/review";
 
 /** What could be read of the accepted ledger. */
 export type LedgerState = "read" | "absent" | "no-ledger" | "broken" | "unreadable" | "refused";
@@ -152,6 +154,8 @@ export type Row = {
   waiting?: Waiting;
   abandoned?: Abandoned;
   fence?: Fence;
+  /** The newest human verdict since the goal's Landing, read from its history (g1-s69 D1, D2). */
+  verdict?: Verdict;
   sliced: boolean;
   decomposed: boolean;
   openedAt: string;
@@ -233,6 +237,39 @@ export type Backlog = {
    */
   reviews?: ReviewDoor[];
 };
+
+/**
+ * A review's verdict as the goal's history carries it (g1-s69 D1, D2): who gave
+ * it, at which tip, from which record, and for a send-back the brief and the
+ * holder's answer — the attempt it started, or the work items it could not
+ * choose between.
+ */
+export type Verdict = {
+  verdict: string;
+  by: string;
+  at: string;
+  tip: string;
+  record: string;
+  brief?: string;
+  work?: string;
+  answered: boolean;
+  attempt?: number;
+  candidates?: string[];
+};
+
+/** The history line goal review wrote, as the route answers it. */
+export type Recorded = {
+  verdict: string;
+  tip: string;
+  record: string;
+  by: string;
+  brief?: string;
+  work?: string;
+  line: string;
+};
+
+/** One verdict as the room performs it. */
+export type Reviewing = { record: string; verdict: string; brief: string; work: string };
 
 /** One review of one goal, as its card's door line reads it. */
 export type ReviewDoor = {
@@ -438,4 +475,15 @@ export async function abandonGoal(id: string, because: string, successor: string
  */
 export async function editGoal(id: string, edit: GoalEdit): Promise<Backlog> {
   return request(`${GOALS}${encodeURIComponent(id)}${EDIT}`, edit);
+}
+
+/**
+ * goal review, for one goal waiting to land (g1-s69 D1, D2): the verdict its
+ * recorded Outcome carries, bound to the record, with a send-back's brief. It
+ * answers the history line the act wrote, and the backlog as it now stands, on
+ * the same collection and the same call site as every other act.
+ */
+export async function reviewGoal(id: string, asked: Reviewing): Promise<{ recorded: Recorded; backlog: Backlog }> {
+  const answered = (await request(`${GOALS}${encodeURIComponent(id)}${REVIEW}`, asked)) as unknown;
+  return answered as { recorded: Recorded; backlog: Backlog };
 }

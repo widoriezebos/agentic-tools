@@ -455,7 +455,7 @@ func (h *handler) partnerClose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	where := strings.TrimSpace(body.Conversation)
-	if _, err := h.info.Partner.ClosingIn(r.Context(), h.partnerHuman(r), where, strings.TrimSpace(body.Verdict), body.About); err != nil {
+	if _, err := h.info.Partner.ClosingAt(r.Context(), h.partnerHuman(r), where, strings.TrimSpace(body.Verdict), h.reviewedTipOf(where), body.About); err != nil {
 		h.refuseTurn(w, err, "")
 		return
 	}

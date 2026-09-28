@@ -269,6 +269,9 @@ const WORD: Readonly<Record<string, string>> = {
   "unpark-goal": "Resume",
   "edit-goal": "Edit",
   "abandon-goal": "Abandon",
+  // The review's verdict and the goal's candidate (g1-s69 §6).
+  "review-goal": "Review",
+  "app-start": "Run",
 };
 
 export function verbWord(verb: string): string {
@@ -342,6 +345,11 @@ export function argumentsOf(line: Line): readonly Argument[] {
     case "set-goal-priority":
       add("Priority", fields.priority);
       add("Position", fields.sequence);
+      break;
+    case "review-goal":
+      add("Record", fields.record);
+      add("Verdict", fields.verdict);
+      add("Work", fields.work);
       break;
     case "block-goal":
     case "unblock-goal":
@@ -1027,7 +1035,9 @@ export type Dispatch =
   | { act: "unpark"; id: string }
   | { act: "edit"; id: string; edit: GoalEdit }
   | { act: "open"; goal: NewGoal }
-  | { act: "abandon"; id: string; because: string; successor: string };
+  | { act: "abandon"; id: string; because: string; successor: string }
+  | { act: "review"; id: string; record: string; verdict: string; work: string }
+  | { act: "run"; goal: string };
 
 /**
  * What this line sends, composed from the route body's own fields — or null
@@ -1072,6 +1082,16 @@ export function dispatchOf(line: Line): Dispatch | null {
         act: "abandon", id: line.goal,
         because: fields.because ?? "", successor: fields.successor ?? "",
       };
+    // The verdict names its record and carries no brief: a send-back's brief is
+    // composed in the room, and a repeat that names the work reuses the one the
+    // first send-back published (g1-s69 D2).
+    case "review-goal":
+      return {
+        act: "review", id: line.goal,
+        record: fields.record ?? "", verdict: fields.verdict ?? "", work: fields.work ?? "",
+      };
+    case "app-start":
+      return { act: "run", goal: line.goal };
     default:
       return null;
   }

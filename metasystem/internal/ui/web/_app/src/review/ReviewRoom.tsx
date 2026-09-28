@@ -7,8 +7,15 @@ import { DeskAnchors } from "./anchors";
 import { MovedFiles } from "./Answers";
 import { Board } from "./Board";
 import { Desk } from "./Desk";
+import { CandidatePill } from "./Pill";
 import {
+  BRIEF_SAID,
   CLEAR_REFUSED,
+  correctionBrief,
+  fixFindings,
+  NO_FIX,
+  RETIP_ASKS_END,
+  standingOutcome,
   countsLine,
   deskLabel,
   endOf,
@@ -53,7 +60,8 @@ import "./room.css";
  */
 export function Room({ record }: { record: string }) {
   const partner = usePartner();
-  const { store, sitting, table, room, setFace, putOnDesk, openDesk, busy, keepRoomNow, stop, conversation } = partner;
+  const { store, sitting, table, room, setFace, putOnDesk, openDesk, busy, keepRoomNow, stop, conversation,
+    verdictSaid, verdictRefusal, retryVerdict } = partner;
   const navigate = useNavigate();
   const location = useLocation();
   // What the sitting is for, which the mark says; before the mark has been read
@@ -65,6 +73,7 @@ export function Room({ record }: { record: string }) {
   const [stayed, setStayed] = useState("");
   const [moved, setMoved] = useState<{ current: string; changed: string[] } | null>(null);
   const [retipRefusal, setRetipRefusal] = useState("");
+  const [retipSaid, setRetipSaid] = useState("");
   const reviewed = reviewedOf(table.source);
   const findings = table.entries.filter((entry) => entry.section === "Findings");
   const unanswered = unansweredIn(table.entries);
@@ -162,10 +171,12 @@ export function Room({ record }: { record: string }) {
       stood.current = stood.current || here;
       return;
     }
-    if (stood.current && here) {
+    // A verdict that acted stays to say what it did (g1-s69 §3); the human
+    // leaves when they have read it.
+    if (stood.current && here && verdictSaid === "") {
       void navigate(away);
     }
-  }, [sitting, here, navigate, away]);
+  }, [sitting, here, navigate, away, verdictSaid]);
 
   const stepOut = async () => {
     setStayed("");
@@ -208,6 +219,11 @@ export function Room({ record }: { record: string }) {
                 })}
           </span>
         </p>
+        {reviewing && reviewed.goal !== "" && (
+          <div className="ms-room-candidate">
+            <CandidatePill goal={reviewed.goal} reviewed={reviewed.tip} />
+          </div>
+        )}
         <div className="ms-room-actions">
           <Button
             onClick={() => {
@@ -249,6 +265,30 @@ export function Room({ record }: { record: string }) {
           {stayed}
         </p>
       )}
+      {verdictSaid !== "" && (
+        <p className="ms-room-banner ms-room-banner--verdict" role="status">
+          {verdictSaid}{" "}
+          <Button
+            primary
+            onClick={() => {
+              void navigate(away);
+            }}
+          >
+            Back to the board
+          </Button>
+        </p>
+      )}
+      {verdictRefusal !== "" && (
+        <p className="ms-room-banner" role="status">
+          The Outcome is recorded, and the verdict is not yet on the goal: {verdictRefusal}{" "}
+          <Button onClick={retryVerdict}>Record the verdict again</Button>
+        </p>
+      )}
+      {retipSaid !== "" && (
+        <p className="ms-room-banner" role="status">
+          {retipSaid}
+        </p>
+      )}
       {reviewing && moved !== null && reviewed.tip !== "" && (
         <p className="ms-room-banner ms-room-banner--moved" role="status">
           {movedLine(reviewed.tip, moved.current)} Findings anchored in files that changed are marked "may have
@@ -262,10 +302,14 @@ export function Room({ record }: { record: string }) {
           </Button>
           <Button
             onClick={() => {
+              const drafted = standingOutcome(partner.deposits);
               void partner.reviewNewTip(moved.current).then((refusal) => {
                 setRetipRefusal(refusal);
                 if (refusal === "") {
                   setMoved(null);
+                  // An Outcome drafted for the old tip is not recorded against
+                  // the new one: the room asks for End again (g1-s69 D1).
+                  setRetipSaid(drafted ? RETIP_ASKS_END : "");
                 }
               });
             }}
@@ -370,13 +414,22 @@ export function deskItemOf(present: Present): DeskItem | null {
  * line shows when the piles are empty. In this build the verdict changes nothing.
  */
 function EndSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { table, closeSitting, sittingBusy, sittingRefusal } = usePartner();
+  const { table, closeSitting, sittingBusy, sittingRefusal, busy, conversation, brief, setBrief } = usePartner();
   const [chosen, setChosen] = useState<Verdict | "">("");
+  const [sendingBack, setSendingBack] = useState(false);
+  // The sheet opens on its three ways each time: a Send back step left open
+  // when the sheet was closed is not where the next End begins.
+  const opened = (next: boolean) => {
+    if (!next) {
+      setSendingBack(false);
+    }
+    onOpenChange(next);
+  };
   const choose = async (verdict: Verdict) => {
     setChosen(verdict);
     try {
       await closeSitting(verdict);
-      onOpenChange(false);
+      opened(false);
     } catch {
       // The refusal is the store's, and it is shown here.
     }
@@ -384,7 +437,7 @@ function EndSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: 
   return (
     <Sheet
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={opened}
       side="right"
       label="End this review"
       title="End this review"
@@ -397,7 +450,33 @@ function EndSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: 
           "you read it, edit it, and press Record it. It becomes the review\u2019s Outcome, and the review ends then."}
         <Help id="the-verdict" />
       </p>
-      <EndWays entries={table.entries} busy={sittingBusy} onChoose={(verdict) => void choose(verdict)} />
+      {sendingBack ? (
+        <SendBackBrief
+          entries={table.entries}
+          brief={brief ?? correctionBrief(table.entries, conversation, reviewedOf(table.source).tip)}
+          busy={sittingBusy || busy}
+          onEdit={setBrief}
+          onSend={(text) => {
+            setBrief(text);
+            void choose("send back");
+          }}
+          onBack={() => {
+            setSendingBack(false);
+          }}
+        />
+      ) : (
+        <EndWays
+          entries={table.entries}
+          busy={sittingBusy}
+          onChoose={(verdict) => {
+            if (verdict === "send back") {
+              setSendingBack(true);
+              return;
+            }
+            void choose(verdict);
+          }}
+        />
+      )}
       {chosen !== "" && sittingBusy && <p className="ms-desk-loading">Drafting the Outcome…</p>}
       {sittingRefusal !== "" && (
         <p className="ms-deposit-refusal" role="status">
@@ -405,6 +484,82 @@ function EndSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: 
         </p>
       )}
     </Sheet>
+  );
+}
+
+/**
+ * Send back's own step (g1-s69 D2): the findings answered fix, the correction
+ * brief composed from them for the human to read and edit, and Send back, which
+ * drafts the Outcome with the verdict; the brief travels with the verdict once
+ * the Outcome is recorded. It is refused in words where no finding is answered
+ * fix, and it waits while the room's closing turn is unsettled.
+ */
+export function SendBackBrief({
+  entries,
+  brief,
+  busy,
+  onEdit,
+  onSend,
+  onBack,
+}: {
+  entries: readonly Entry[];
+  brief: string;
+  busy: boolean;
+  onEdit: (text: string) => void;
+  onSend: (text: string) => void;
+  onBack: () => void;
+}) {
+  const fixes = fixFindings(entries);
+  if (fixes.length === 0) {
+    return (
+      <div className="ms-send-back">
+        <p className="ms-end-refused" role="status">
+          {NO_FIX}
+        </p>
+        <Button onClick={onBack}>Back to the three ways</Button>
+      </div>
+    );
+  }
+  return (
+    <div className="ms-send-back">
+      <p className="ms-sitting-said">
+        {BRIEF_SAID}
+        <Help id="the-brief" />
+      </p>
+      <ul className="ms-send-back-fixes" aria-label="The findings answered fix">
+        {fixes.map((entry) => (
+          <li key={entry.mark === "" ? entry.text : entry.mark}>
+            {entry.text}
+            {entry.clause.trim() !== "" && <span className="ms-mono"> {entry.clause}</span>}
+          </li>
+        ))}
+      </ul>
+      <label className="ms-send-back-label">
+        The correction brief
+        <textarea
+          className="ms-send-back-brief ms-mono"
+          value={brief}
+          rows={10}
+          onChange={(event) => {
+            onEdit(event.target.value);
+          }}
+        />
+      </label>
+      <div className="ms-sitting-foot">
+        <Button
+          primary
+          disabled={busy || brief.trim() === ""}
+          onClick={() => {
+            onSend(brief);
+          }}
+        >
+          Send back
+        </Button>
+        <Button disabled={busy} onClick={onBack}>
+          Back to the three ways
+        </Button>
+      </div>
+    </div>
   );
 }
 

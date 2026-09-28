@@ -205,6 +205,11 @@ type Deposit struct {
 	// is the card's, not the page's: a card rebuilt after a reload records
 	// under the verdict it was drafted with.
 	Verdict string `json:"verdict,omitempty"`
+	// Tip is the branch tip the review's record named when its closing turn
+	// was asked, stamped by the service beside the verdict (g1-s69 D1): the
+	// Outcome is bound to it, and Record it refuses once the record names
+	// another.
+	Tip string `json:"tip,omitempty"`
 	// Offered says whether the human was shown it as something to record.
 	//
 	// The host never sets it: it reads what the tool prepared, and whether a

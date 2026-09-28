@@ -109,6 +109,8 @@ export type HelpId =
   | "the-finding"
   | "the-walks"
   | "the-verdict"
+  | "the-candidate"
+  | "the-brief"
   | "sitting-room"
   | "shaping-desk"
   | "shaping-walks";
@@ -505,7 +507,17 @@ export const HELP: Record<HelpId, Term> = {
   "the-verdict": {
     term: "The verdict",
     text:
-      "How this review ends, recorded as the first line of its Outcome: Clear to land, Send back, or End without a verdict. Clear to land waits until every finding is answered. In this build the verdict is your recorded word only — nothing lands or returns because of it yet.",
+      "How this review ends, recorded as the first line of its Outcome, with the tip it was drafted for under it: Clear to land, Send back, or End without a verdict. Clear to land waits until every finding is answered. Once you record the Outcome, Clear to land and Send back are recorded on the goal itself, bound to this record and the tip you reviewed, and the record is committed beside that line. Clear to land is your recorded word: nothing lands because of it. Send back takes the goal out of Review, and the seat that holds it revises from your brief.",
+  },
+  "the-candidate": {
+    term: "The candidate",
+    text:
+      "The goal's branch running from its own worktree, on its own port, beside the standing run. Run starts it and Stop stops it; Open takes you to it in a new tab. The pill compares the commit that runs with the tip this review reads: the branch can move while you review, and then the pill says what runs is not the version under review.",
+  },
+  "the-brief": {
+    term: "The correction brief",
+    text:
+      "What Send back gives the seat that holds the goal: the findings you answered fix, each with its words and its anchor, in the order you recorded them. You can read and edit it before you send it back; it is published beside the review record, and the holder revises from it once.",
   },
   "the-board": {
     term: "The board",

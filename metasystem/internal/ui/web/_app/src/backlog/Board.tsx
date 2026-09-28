@@ -20,6 +20,7 @@ import { goalSubject, laneSubject } from "./subjects";
 import { GOAL_ATTRIBUTE } from "../partner/ringing";
 import { ProposedChip } from "../partner/ProposedChip";
 import { ReviewDoors, ReviewItOrDoor } from "../review/Door";
+import { CardVerdict, VerdictActed } from "../review/Verdict";
 import { usePartner } from "../partner/store";
 import { returnAddress } from "./returning";
 import { Help } from "../help/Help";
@@ -276,6 +277,7 @@ export function Board({
 
   return (
     <ReviewDoors.Provider value={backlog.reviews ?? []}>
+    <VerdictActed.Provider value={onMoved}>
     <div className="ms-board-frame">
       <div className="ms-board" role="list">
         {columns.map((column) => (
@@ -362,6 +364,7 @@ export function Board({
         />
       )}
     </div>
+    </VerdictActed.Provider>
     </ReviewDoors.Provider>
   );
 }
@@ -798,6 +801,18 @@ function Card({
           }}
         >
           <ReviewItOrDoor goal={row.ref.id} />
+        </div>
+      )}
+      {/* The verdict the goal's history carries since its Landing (g1-s69):
+          on the Review lane's card, and on the sent-back card in progress. */}
+      {row.verdict !== undefined && (
+        <div
+          className="ms-card-review"
+          onMouseDown={() => {
+            setGrabbable(false);
+          }}
+        >
+          <CardVerdict row={row} />
         </div>
       )}
       <Slices plan={plan} onGrabbable={setGrabbable} />

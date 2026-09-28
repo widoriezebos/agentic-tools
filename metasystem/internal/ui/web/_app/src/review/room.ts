@@ -1,6 +1,8 @@
 import type { Deposit, Subject } from "../partner/api";
 import type { Store } from "../partner/conversation";
-import { ACCEPTED, entriesIn, FIX, followUp, LEFT_OPEN, type Entry } from "../partner/sitting";
+import { ACCEPTED, answerOf, entriesIn, FIX, followUp, LEFT_OPEN, pressable, type Entry, type Standing } from "../partner/sitting";
+import type { Recorded, Verdict as RowVerdict } from "../backlog/api";
+import type { Candidate } from "./candidate";
 
 /**
  * The room's own rules (g1-s65 §3, D5, D9, D10), for every sitting (g1-s67): a
@@ -285,13 +287,13 @@ export const VERDICTS = [
     verdict: "clear to land",
     label: "Clear to land",
     consequence:
-      "Records that you examined this work and see nothing standing in the way of it landing. In this build it is your recorded word only: nothing lands because of it.",
+      "Records your verdict on the goal, bound to the tip you reviewed, and commits this record beside it. It is your recorded word: nothing lands because of it.",
   },
   {
     verdict: "send back",
     label: "Send back",
     consequence:
-      "Records that the findings marked fix go back to the builder as the correction brief. In this build it is recorded intent only: nothing returns to construction yet.",
+      "Sends the findings you answered fix to the seat that holds the goal as its correction brief. The goal leaves Review, and the holder revises from the brief.",
   },
   {
     verdict: "no verdict",
@@ -352,7 +354,12 @@ function examinedAs(item: DeskItem): string {
  * with nothing after its colon is missing (Sol SOL-A-07). A draft that opens with
  * another verdict line is refused in words rather than rewritten (Sol SOL-A-07).
  */
-export function outcomeWithVerdict(verdict: string, text: string, examined: string): { text: string } | { refusal: string } {
+export function outcomeWithVerdict(
+  verdict: string,
+  text: string,
+  examined: string,
+  tip = "",
+): { text: string } | { refusal: string } {
   const line = `Verdict: ${verdict}`;
   let said = text.replace(/^\s+/u, "");
   const first = said.split("\n", 1)[0].trim();
@@ -364,7 +371,13 @@ export function outcomeWithVerdict(verdict: string, text: string, examined: stri
     }
     said = said.slice(said.indexOf(first) + first.length).replace(/^\s+/u, "");
   }
-  const parts = [line];
+  // The tip this Outcome was drafted for is the recorder's to write, under the
+  // verdict (g1-s69 D1): a draft's own Reviewed at line gives way to it.
+  const at = said.split("\n", 1)[0];
+  if (/^reviewed at\s*:/iu.test(at.trim())) {
+    said = said.slice(at.length).replace(/^\s+/u, "");
+  }
+  const parts = tip === "" ? [line] : [line, `${REVIEWED_AT} ${tip}`];
   const next = said.split("\n", 1)[0];
   const named = /^examined\s*:(.*)$/iu.exec(next.trim());
   if (named !== null && named[1].trim() === "") {
@@ -386,15 +399,24 @@ export function outcomeWithVerdict(verdict: string, text: string, examined: stri
  * lines are held (Sol SOL-A-02, SOL-A-07). The End sheet's refusal is the
  * first line of defence; this one holds after a conflict's reread.
  */
-export function reviewOutcome(verdict: string, examined: string): (source: string, entry: Entry) => Entry | { refusal: string } {
+export function reviewOutcome(
+  verdict: string,
+  examined: string,
+  tip = "",
+): (source: string, entry: Entry) => Entry | { refusal: string } {
   return (source, entry) => {
+    // The Outcome is bound to the tip it was drafted for (g1-s69 D1): a record
+    // retipped since is refused, and End drafts one for the tip it names now.
+    if (tip !== "" && reviewedOf(source).tip !== tip) {
+      return { refusal: RETIPPED };
+    }
     if (verdict === "clear to land") {
       const open = unansweredIn(entriesIn(source));
       if (open.length > 0) {
         return { refusal: `${CLEAR_REFUSED} ${open.map((finding) => finding.text).join("; ")}` };
       }
     }
-    const composed = outcomeWithVerdict(verdict, entry.text, examined);
+    const composed = outcomeWithVerdict(verdict, entry.text, examined, tip);
     return "refusal" in composed ? composed : { ...entry, text: composed.text };
   };
 }
@@ -410,7 +432,7 @@ export const NO_VERDICT =
  * (Sol SOL-A-02, SOL-A-07). Every other card is recorded as it reads.
  */
 export function outcomeShape(
-  card: Pick<Deposit, "kind" | "verdict">,
+  card: Pick<Deposit, "kind" | "verdict" | "tip">,
   purpose: string | undefined,
   items: readonly DeskItem[],
 ): ((source: string, entry: Entry) => Entry | { refusal: string }) | undefined {
@@ -418,7 +440,204 @@ export function outcomeShape(
     return undefined;
   }
   const verdict = card.verdict ?? "";
-  return verdict === "" ? () => ({ refusal: NO_VERDICT }) : reviewOutcome(verdict, examinedLine(items));
+  return verdict === "" ? () => ({ refusal: NO_VERDICT }) : reviewOutcome(verdict, examinedLine(items), card.tip ?? "");
+}
+
+/* ------------------------------------------------ the verdict that acts -- */
+
+/** The line the recorder writes under the verdict: the tip the Outcome was drafted for (g1-s69 D1). */
+export const REVIEWED_AT = "Reviewed at:";
+
+/** What Record it says when the record was retipped after its Outcome was drafted. */
+export const RETIPPED = "the branch was retipped since this Outcome was drafted; press End again";
+
+/**
+ * What the room says when Review the new tip is pressed while an Outcome card
+ * drafted for the old tip is still unrecorded: the head moves, the card's words
+ * stay in its draft, and End drafts one for the new tip (g1-s69 D1).
+ */
+export const RETIP_ASKS_END =
+  "The Outcome waiting in the conversation was drafted for the tip you reviewed before. Your words stay in its draft; press End again to draft the Outcome for the new tip.";
+
+/** Whether an Outcome card still waits to be recorded, which a retip leaves drafted for the old tip. */
+export function standingOutcome(cards: readonly { kind: string; standing: Standing }[]): boolean {
+  return cards.some((card) => card.kind === "outcome" && pressable(card.standing));
+}
+
+/** The verdicts that act, as goal review spells them; No verdict performs nothing. */
+export function actingVerdict(words: string): "clear-to-land" | "send-back" | "" {
+  switch (words) {
+    case "clear to land":
+      return "clear-to-land";
+    case "send back":
+      return "send-back";
+    default:
+      return "";
+  }
+}
+
+/** The verdict a recorded Outcome performs on its goal, and the words the room says after it. */
+export type ToPerform = { goal: string; fixes: number; asked: { record: string; verdict: string; brief: string; work: string } };
+
+/**
+ * What Record it performs once the record has taken a review's Outcome (g1-s69
+ * D1, D2): goal review with the card's own verdict, on the goal the record's
+ * head names, with a send-back's brief — the one the human edited, else the one
+ * composed from the findings answered fix. No verdict, and every sitting that
+ * is not a review, performs nothing and answers null.
+ */
+export function verdictToPerform(
+  card: Pick<Deposit, "kind" | "verdict">,
+  purpose: string | undefined,
+  record: string,
+  source: string,
+  brief: string | null,
+): ToPerform | null {
+  const verdict = card.kind === "outcome" && purpose === "review" ? actingVerdict(card.verdict ?? "") : "";
+  if (verdict === "") {
+    return null;
+  }
+  const read = reviewedOf(source);
+  const entries = entriesIn(source);
+  return {
+    goal: read.goal,
+    fixes: fixFindings(entries).length,
+    asked: {
+      record, verdict, work: "",
+      brief: verdict === "send-back" ? (brief ?? correctionBrief(entries, record, read.tip)) : "",
+    },
+  };
+}
+
+/** Every recorded finding the human answered fix, in the order the record carries them. */
+export function fixFindings(entries: readonly Entry[]): Entry[] {
+  return entries.filter((entry) => entry.section === "Findings" && answerOf(entry.answer ?? "") === "fix");
+}
+
+/** What Send back is refused with where no finding was answered fix. */
+export const NO_FIX =
+  "Send back carries the findings you answered fix as the correction brief, and none is answered fix. Answer the findings the builder must fix, or end the review another way.";
+
+/** What the Send back sheet says over the brief. */
+export const BRIEF_SAID = "These become the correction brief. Read it, edit it, and press Send back.";
+
+/**
+ * The correction brief a send-back carries (g1-s69 D2): the findings answered
+ * fix, each with its words and its anchor, in the order recorded, under one
+ * heading naming the record and the tip. "" where no finding is answered fix.
+ */
+export function correctionBrief(entries: readonly Entry[], record: string, tip: string): string {
+  const fixes = fixFindings(entries);
+  if (fixes.length === 0) {
+    return "";
+  }
+  const lines = [`# Correction brief`, "", `## The findings answered fix in ${record} at ${tip.slice(0, 9)}`, ""];
+  fixes.forEach((entry, index) => {
+    const anchor = entry.clause.trim();
+    lines.push(`${String(index + 1)}. ${entry.text.trim()}${anchor === "" ? "" : ` (${anchor})`}`);
+  });
+  return `${lines.join("\n")}\n`;
+}
+
+const COUNTED = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+
+function counted(count: number, one: string, many: string): string {
+  return `${COUNTED[count] ?? String(count)} ${count === 1 ? one : many}`;
+}
+
+/** What the room says once the verdict is on the goal (g1-s69 §3). */
+export function recordedLine(recorded: Pick<Recorded, "verdict" | "tip" | "by">, fixes: number): string {
+  if (recorded.verdict === "send-back") {
+    return `Sent back with your ${counted(fixes, "finding", "findings")}; the goal has left Review and the seat that holds it revises.`;
+  }
+  return `Recorded. The goal now carries your verdict: clear to land at ${recorded.tip.slice(0, 7)}, reviewed by ${recorded.by}.`;
+}
+
+/**
+ * The Review lane card's verdict line (g1-s69 §3, D2), read from the goal's own
+ * history as every seat reads it, or "" where no verdict stands.
+ */
+export function verdictLine(verdict: RowVerdict | undefined): string {
+  if (verdict === undefined) {
+    return "";
+  }
+  if (verdict.verdict === "clear-to-land") {
+    return `reviewed by ${verdict.by} · clear to land`;
+  }
+  if ((verdict.candidates ?? []).length > 1) {
+    return `the holder needs to know which work: ${orList(verdict.candidates ?? [])}`;
+  }
+  if ((verdict.attempt ?? 0) > 0) {
+    return `attempt ${String(verdict.attempt)} started from your brief`;
+  }
+  return `sent back by ${verdict.by} · awaiting the holder`;
+}
+
+function orList(names: readonly string[]): string {
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+}
+
+/* ---------------------------------------------------------------- the pill -- */
+
+/** The candidate's pill, as the room's header shows it (g1-s69 D3). */
+export type Pill = {
+  /** Which of its states: no contract, stopped, starting, running and not answering, running the reviewed tip, or running another. */
+  state: "no-contract" | "unread" | "stopped" | "starting" | "not-answering" | "reviewed" | "moved";
+  words: string;
+  address: string;
+  run: boolean;
+  stop: boolean;
+};
+
+/**
+ * The pill from what app status answered, or the words it was refused with, and
+ * the tip the room reviews. It compares the running commit with that tip: the
+ * branch the run follows can move while the room reviews the tip its record
+ * names, and a run of another commit must say so (Astra S69-04).
+ */
+export function pillOf(read: Candidate | { refusal: string; code: string } | null, reviewed: string): Pill {
+  const none = { address: "", run: false, stop: false };
+  if (read === null) {
+    return { ...none, state: "unread", words: "the candidate has not been read" };
+  }
+  if ("refusal" in read) {
+    return read.code === "no-contract"
+      ? { ...none, state: "no-contract", words: read.refusal }
+      : { ...none, state: "unread", words: read.refusal, run: true };
+  }
+  const address = read.address ?? "";
+  const running = read.commit ?? "";
+  switch (read.state) {
+    case "running":
+      break;
+    case "starting":
+      return { state: "starting", words: `the candidate is starting${address === "" ? "" : ` on ${address}`}`, address, run: false, stop: true };
+    default:
+      return { ...none, state: "stopped", words: "the candidate is not running", run: true };
+  }
+  if (read.readiness !== "answering" && read.readiness !== "observed-at-startup") {
+    return { state: "not-answering", words: `the candidate runs ${short(running)} and is not answering`, address, run: false, stop: true };
+  }
+  if (reviewed !== "" && running === reviewed) {
+    return { state: "reviewed", words: `running the reviewed tip ${short(reviewed)}`, address, run: false, stop: true };
+  }
+  return {
+    state: "moved",
+    words: `running ${short(running)}, not the reviewed ${short(reviewed)}`,
+    address, run: false, stop: true,
+  };
+}
+
+function short(commit: string): string {
+  return commit === "" ? "an unrecorded commit" : commit.slice(0, 7);
+}
+
+/** An address as a link opens it: the candidate's own origin. */
+export function candidateHref(address: string): string {
+  if (address === "") {
+    return "";
+  }
+  return /^https?:\/\//u.test(address) ? address : `http://${address}/`;
 }
 
 /* ------------------------------------------------------------- the door -- */

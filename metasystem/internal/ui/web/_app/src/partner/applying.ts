@@ -9,11 +9,13 @@ import {
   openGoal,
   parkGoal,
   rankGoal,
+  reviewGoal,
   unblockGoal,
   unparkGoal,
   withdrawGoal,
   type Backlog,
 } from "../backlog/api";
+import { startCandidate } from "../review/candidate";
 
 /**
  * The impure half of applying what the Partner proposed: the read before a run,
@@ -105,6 +107,13 @@ async function actOf(line: Line): Promise<Backlog | null> {
       return openGoal(dispatch.goal);
     case "abandon":
       return abandonGoal(dispatch.id, dispatch.because, dispatch.successor);
+    case "review":
+      return (await reviewGoal(dispatch.id, { record: dispatch.record, verdict: dispatch.verdict, brief: "", work: dispatch.work })).backlog;
+    // Run answers where the candidate runs, not a backlog: the ledger did not
+    // move, so the board as it stands is what the page reads next.
+    case "run":
+      await startCandidate(dispatch.goal);
+      return loadBacklog();
     default:
       return null;
   }

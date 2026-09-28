@@ -54,6 +54,14 @@ const (
 	ActionResume     = "resume"
 	ActionEdit       = "edit"
 	ActionAbandon    = "abandon"
+	// ActionReview is the review's verdict, goal review (g1-s69 D1), and
+	// ActionStart is the app object's start of a goal's candidate (D3): the
+	// one act here that is not the goal object's, named `app start` where a
+	// proposal names it.
+	ActionReview = "review"
+	ActionStart  = "start"
+	// ObjectApp is the object ActionStart belongs to.
+	ObjectApp = "app"
 )
 
 // The routes those ten dispatch to: the interface's own ids, exactly as the
@@ -74,6 +82,8 @@ const (
 	ProposeUnpark   = "unpark-goal"
 	ProposeEdit     = "edit-goal"
 	ProposeAbandon  = "abandon-goal"
+	ProposeReview   = "review-goal"
+	ProposeAppStart = "app-start"
 )
 
 // The public flags, under the descriptors' own names and spellings. They are
@@ -92,6 +102,9 @@ const (
 	FlagPriority  = "priority"
 	FlagSequence  = "sequence"
 	FlagSuccessor = "successor"
+	FlagRecord    = "record"
+	FlagVerdict   = "verdict"
+	FlagWork      = "work"
 )
 
 // The route bodies' own fields, under the bodies' own spellings. They are what
@@ -125,6 +138,11 @@ const (
 	// (g1-s62 D1).
 	FieldLabel   = "label"
 	FieldUnlabel = "unlabel"
+	// FieldRecord, FieldVerdict and FieldWork are a verdict's: the review
+	// record, the verdict it records, and the work item a repeat names.
+	FieldRecord  = "record"
+	FieldVerdict = "verdict"
+	FieldWork    = "work"
 )
 
 // ProposedAct is one row of the catalogue: the goal object's public action, the
@@ -135,6 +153,9 @@ const (
 // card, the inbox row, the goal row's chip and the page's own button say the
 // same thing a human at a terminal types (g1-s62 D3).
 type ProposedAct struct {
+	// Object is the public object the action belongs to, "" for the goal
+	// object's own.
+	Object string
 	Action string
 	Route  string
 	Word   string
@@ -146,6 +167,23 @@ type ProposedAct struct {
 	OneOf []string
 	// Takes are the rest, each admitted and none required.
 	Takes []string
+}
+
+// Verb is what a proposal names the act by: the goal object's action by its
+// name alone, and another object's as object then action.
+func (a ProposedAct) Verb() string {
+	if a.Object == "" {
+		return a.Action
+	}
+	return a.Object + " " + a.Action
+}
+
+// Command is the act's public form, object then action.
+func (a ProposedAct) Command() string {
+	if a.Object == "" {
+		return "goal " + a.Action
+	}
+	return a.Object + " " + a.Action
 }
 
 // Fields is every public flag this act admits, needed and taken together.
@@ -258,12 +296,22 @@ var ProposedActs = []ProposedAct{
 		Action: ActionAbandon, Route: ProposeAbandon, Word: "Abandon",
 		Needs: []string{FlagReason}, Takes: []string{FlagSuccessor},
 	},
+	// The review's verdict (g1-s69 D1): the record and the verdict its
+	// Outcome opens with, and the work item a repeat names. The correction
+	// brief is not here: it is composed in the room from the findings answered
+	// fix, and refused by name below.
+	{
+		Action: ActionReview, Route: ProposeReview, Word: "Review",
+		Needs: []string{FlagRecord, FlagVerdict}, Takes: []string{FlagWork},
+	},
+	// Run the goal's candidate (D3): app start --goal G, the goal alone.
+	{Object: ObjectApp, Action: ActionStart, Route: ProposeAppStart, Word: "Run"},
 }
 
 // ProposedActionOf is one row of the catalogue by its public action name.
 func ProposedActionOf(action string) (ProposedAct, bool) {
 	for _, act := range ProposedActs {
-		if act.Action == action {
+		if act.Verb() == action {
 			return act, true
 		}
 	}
@@ -284,7 +332,7 @@ func ProposedActOf(route string) (ProposedAct, bool) {
 func ProposeActions() []string {
 	named := make([]string, 0, len(ProposedActs))
 	for _, act := range ProposedActs {
-		named = append(named, act.Action)
+		named = append(named, act.Verb())
 	}
 	return named
 }
@@ -346,6 +394,9 @@ const (
 	ProposalBasis        = "Basis: "
 	ProposalBlockedBy    = "Blocked by: "
 	ProposalBlocks       = "Blocks: "
+	ProposalRecord       = "Record: "
+	ProposalVerdict      = "Verdict: "
+	ProposalWork         = "Work: "
 	ProposalSeparator    = "--- the explanation follows, whole and to the end ---"
 )
 
@@ -375,6 +426,9 @@ var ProposalFrame = []struct {
 	{ProposalBasis, FieldBasis},
 	{ProposalBlockedBy, FieldBlockedBy},
 	{ProposalBlocks, FieldBlocks},
+	{ProposalRecord, FieldRecord},
+	{ProposalVerdict, FieldVerdict},
+	{ProposalWork, FieldWork},
 }
 
 // PreparedProposalLine is what a prepared proposal answers the model with.
@@ -438,6 +492,10 @@ var refusedProposalFields = []struct {
 		words: "this interface's edit changes the intent, the next step and the labels; a goal's risk is changed at a terminal"},
 	{field: FlagBasis, on: []string{ActionEdit},
 		words: "a basis is recorded with the risk answers it was judged on, and this interface's edit changes neither"},
+	// A verdict's brief is the room's: composed from the findings answered
+	// fix, read and edited on the End sheet, and never a Partner's words.
+	{field: "brief", on: []string{ActionReview},
+		words: "the correction brief is composed in the room from the findings answered fix, and read and edited there before Send back"},
 	// Every -file form, named rather than classed: the text itself travels.
 	{field: "intent-file", words: "a proposal carries the text itself; the -file forms read a file at a terminal"},
 	{field: "next-file", words: "a proposal carries the text itself; the -file forms read a file at a terminal"},
@@ -495,7 +553,7 @@ func ActsNotInTheInterface() []string {
 // every flag one that act takes, is every flag it needs given, and is every
 // value within the bounds the sheets hold.
 func (r Readers) propose(args Args) Result {
-	action := strings.ToLower(oneLine(args.Text("verb")))
+	action := strings.Join(strings.Fields(strings.ToLower(oneLine(args.Text("verb")))), " ")
 	act, known := ProposedActionOf(action)
 	if !known {
 		return refusedCall(r.unknownAction(action))
@@ -695,7 +753,20 @@ func valueOf(args Args, act ProposedAct, flag string) (map[string]string, string
 			return nil, "a sequence is a one-based position within the priority band"
 		}
 		return into(strconv.Itoa(at)), ""
-	case FlagOn, FlagSuccessor:
+	case FlagRecord:
+		said := oneLine(args.Text(flag))
+		if !strings.HasSuffix(said, ".md") || !strings.Contains(said, "/reviews/") || utf8.RuneCountInString(said) > maxProposalClause {
+			return nil, "record is the review record's path, as the room names it, in the project's review home"
+		}
+		return into(said), ""
+	case FlagVerdict:
+		said := oneLine(args.Text(flag))
+		if goal.VerdictWords(said) == "" {
+			return nil, "a verdict is " + goal.VerdictClearToLand + " or " + goal.VerdictSendBack +
+				"; a review that ends without a verdict records nothing on the goal"
+		}
+		return into(said), ""
+	case FlagOn, FlagSuccessor, FlagWork:
 		said := oneLine(args.Text(flag))
 		if refusal := boundedID(flag, said); refusal != "" {
 			return nil, refusal
@@ -993,7 +1064,7 @@ func takenBy(flag string) string {
 	owners := []string{}
 	for _, act := range ProposedActs {
 		if contained(act.Fields(), flag) {
-			owners = append(owners, act.Action)
+			owners = append(owners, act.Verb())
 		}
 	}
 	if len(owners) == 0 {
@@ -1083,9 +1154,9 @@ func proposeDescription() string {
 		WordsAloneProposeNothing +
 		" Any combination of acts may be proposed together, and a goal you propose to open may be named by a " +
 		"later action of the same answer. The act and its fields are the public command's own, as " +
-		"`metasystem goal ACTION --help` shows them. The ten acts this interface has:")
+		"`metasystem goal ACTION --help` shows them. The acts this interface has:")
 	for _, act := range ProposedActs {
-		built.WriteString("\n- goal " + act.Action)
+		built.WriteString("\n- " + act.Command())
 		if fields := act.Fields(); len(fields) > 0 {
 			built.WriteString(": " + listed(fields))
 			// Said once. Where an act's whole field list IS the set it must
@@ -1110,7 +1181,7 @@ func proposeSchema() map[string]any {
 	properties := map[string]any{
 		"verb": map[string]any{
 			"type": "string", "enum": ProposeActions(),
-			"description": "Which of the ten acts this is, by its public name under the goal object: metasystem goal ACTION.",
+			"description": "Which act this is, by its public name: the goal object's action as metasystem goal ACTION names it, or app start for the goal's candidate.",
 		},
 		"goal": map[string]any{
 			"type":        "string",
@@ -1149,6 +1220,12 @@ func proposeSchema() map[string]any {
 			"description": "On " + ActionPrioritize + ": the band the goal goes in."},
 		FlagSequence: map[string]any{"type": "integer",
 			"description": "On " + ActionPrioritize + ": the one-based position in that band. Omit it to append."},
+		FlagRecord: map[string]any{"type": "string",
+			"description": "On " + ActionReview + ": the review record whose recorded Outcome carries the verdict."},
+		FlagVerdict: map[string]any{"type": "string", "enum": []string{goal.VerdictClearToLand, goal.VerdictSendBack},
+			"description": "On " + ActionReview + ": the verdict the record's Outcome opens with."},
+		FlagWork: map[string]any{"type": "string",
+			"description": "On " + ActionReview + " with send-back: the work item the holder asked to be named."},
 	}
 	asked := schema(properties, []string{"verb", "goal", "explanation"})
 	// Closed, unlike every other tool's. This is the one tool whose arguments

@@ -192,6 +192,9 @@ func (inv *intentInvocation) appVerb(verb string) int {
 
 func appData(run appRun, status applaunch.Status) map[string]any {
 	data := map[string]any{"run": run.key, "state": string(status.State), "readiness": string(status.Readiness)}
+	if status.Since != "" {
+		data["since"] = status.Since
+	}
 	if run.ref != "" {
 		data["ref"] = run.ref
 	}

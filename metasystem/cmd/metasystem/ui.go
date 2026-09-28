@@ -657,6 +657,27 @@ func runUIServe(args []string) int {
 					advance()
 					return nil
 				},
+				// The review's verdict (g1-s69 D1, D2): goal review under the
+				// signed-in session, with the record the page names resolved
+				// beneath this checkout and read from disk as it now stands.
+				Verdict: func(signed *session.Session, id string, asked act.Reviewed) (act.Recorded, error) {
+					hand, err := acting(signed)
+					if err != nil {
+						return act.Recorded{}, err
+					}
+					asked.Record = filepath.Join(roots.Checkout, filepath.FromSlash(asked.Record))
+					recorded, err := hand.Review(id, asked)
+					if err != nil {
+						return act.Recorded{}, err
+					}
+					advance()
+					return recorded, nil
+				},
+				// The goal's candidate, from the room's pill (D3): the three
+				// app forms, run as the public verbs are run.
+				Candidate: func(goal, action string) (httpd.Candidate, error) {
+					return candidateRun(roots, goal, action)
+				},
 				BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 					return tierBudgets(roots.Installation)
 				},
