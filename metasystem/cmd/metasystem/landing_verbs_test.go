@@ -1308,6 +1308,9 @@ case "${1:-}" in
   vet) exit 0 ;;
   run)
     shift
+    # devgate launches staticcheck and govulncheck with -trimpath (A3); the
+    # contract's own go run ./cmd/devgate argv carries none.
+    [[ "${1:-}" != -trimpath ]] || shift
     case "${1:-}" in
       -p=*) [[ "$1" =~ ^-p=[1-9][0-9]*$ ]] || exit 97; shift ;;
     esac
