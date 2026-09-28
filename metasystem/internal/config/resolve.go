@@ -25,7 +25,7 @@ var (
 const (
 	BatchRootKey        = "landing.batch-root"
 	BatchMaxWaitKey     = "landing.batch-max-wait"
-	DefaultBatchMaxWait = 45 * time.Minute
+	DefaultBatchMaxWait = 10 * time.Minute
 )
 
 type BatchLanding struct {

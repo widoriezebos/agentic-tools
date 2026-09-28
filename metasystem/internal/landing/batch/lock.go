@@ -13,18 +13,33 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-const DefaultProofLockDir = "/tmp/metasystem-testrun-lock"
+// DefaultProofLockDir is the root of the per-batch proof locks: each batch's
+// mutex is its own directory <root>/batch-<id>, so batches prove side by side
+// and the host admission cap, not a lock, bounds how many prove at once.
+const DefaultProofLockDir = "/tmp/metasystem-batch-locks"
 
-const defaultTestRunLock, defaultTestRunQueue, batchOwnerSeat = DefaultProofLockDir, "/tmp/metasystem-testrun-queue", "landing-batch-owner"
+const defaultTestRunLock, defaultTestRunQueue, batchOwnerSeat = DefaultProofLockDir, "/tmp/metasystem-batch-queues", "landing-batch-owner"
 
-// ProofLockOwner reports the owner record for the configured proof lock.
-// An empty directory selects the same package default used by newProofLock.
+// ProofLockOwner reports the owner record of every batch lock held under the
+// configured lock root, or "free". An empty root selects the package default.
 func ProofLockOwner(lockDir string) string {
-	data, err := os.ReadFile(filepath.Join(cmp.Or(lockDir, defaultTestRunLock), "owner"))
-	if err != nil {
+	held, _ := filepath.Glob(filepath.Join(cmp.Or(lockDir, defaultTestRunLock), "batch-*", "owner"))
+	var owners []string
+	for _, path := range held {
+		if data, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(data)) != "" {
+			owners = append(owners, strings.TrimSpace(string(data)))
+		}
+	}
+	if len(owners) == 0 {
 		return "free"
 	}
-	return strings.TrimSpace(string(data))
+	return strings.Join(owners, "; ")
+}
+
+// newBatchProofLock builds one batch's own lock: its mutex directory is
+// <lockRoot>/batch-<id> and its queue registrations live in <queueRoot>/batch-<id>.
+func newBatchProofLock(store Store, lockRoot, queueRoot, id string, pid int64, now func() time.Time) *proofLock {
+	return newProofLock(store, filepath.Join(cmp.Or(lockRoot, defaultTestRunLock), "batch-"+id), filepath.Join(cmp.Or(queueRoot, defaultTestRunQueue), "batch-"+id), id, pid, now)
 }
 
 type lockPoll uint8
@@ -41,10 +56,11 @@ type proofLock struct {
 	held                              bool
 }
 
-// newProofLock builds the lock for one key, the batch id. The key names the
-// queue registration, so it may hold no "-": the last "-" segment is the pid.
+// newProofLock builds the lock for one key, the batch id, over the directories
+// newBatchProofLock derives from it. The key names the queue registration, so
+// it may hold no "-": the last "-" segment is the pid.
 func newProofLock(store Store, lockDir, queueDir, key string, pid int64, now func() time.Time) *proofLock {
-	lock := &proofLock{lockDir: cmp.Or(lockDir, defaultTestRunLock), queueDir: cmp.Or(queueDir, defaultTestRunQueue), purpose: "batch:" + key, key: key, pid: pid, now: now, prober: store.seams.prober}
+	lock := &proofLock{lockDir: lockDir, queueDir: queueDir, purpose: "batch:" + key, key: key, pid: pid, now: now, prober: store.seams.prober}
 	if key == "" || strings.Contains(key, "-") {
 		lock.refused = fmt.Errorf("proof lock key %q must be non-empty and hold no \"-\"", key)
 	}
@@ -111,6 +127,9 @@ func (lock *proofLock) poll() (lockPoll, error) {
 	}
 	if len(paths) == 0 || paths[0] != lock.entry {
 		return lockQueued, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(lock.lockDir), 0o755); err != nil {
+		return lockQueued, err
 	}
 	if err := os.Mkdir(lock.lockDir, 0o755); err != nil {
 		if os.IsExist(err) {

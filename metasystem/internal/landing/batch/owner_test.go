@@ -181,7 +181,7 @@ func TestBatchOwnerSkipsRecordedHoldAndReleasesLockBeforeLedger(t *testing.T) {
 		}
 		bed.owner.locks[testBatchID] = lock
 		bed.store = bed.store.WithLedgerOwner(recordOwner(func(string, TrunkRed) ([]EntryRef, error) {
-			if _, err := os.Stat(bed.lockDir); !errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Stat(filepath.Join(bed.lockDir, "batch-"+testBatchID)); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("ledger call retained the proof lock: %v", err)
 			}
 			return []EntryRef{{ID: "entry", Group: "fast"}}, nil

@@ -249,3 +249,97 @@ func TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD(t *testing
 		}
 	}
 }
+
+// sideBySideJoinBed is the pre-publication bed with a publication that records
+// the member, an owner wake that does nothing, and one fresh batch id per join.
+func sideBySideJoinBed(t *testing.T, base *string) (batchJoinRequest, batchJoinDependencies, batch.Store) {
+	t.Helper()
+	request, dependencies, _ := prepublicationJoinBed(t)
+	store, minted := batch.NewStore(request.LandingRoot, nil), 0
+	dependencies.base = func(string) (string, error) { return *base, nil }
+	dependencies.mint = func() (string, error) { minted++; return fmt.Sprintf("01j5x00000000000000000bb%02d", minted), nil }
+	dependencies.publishAdmission = func(store batch.Store, id string, unit batch.Unit, _ string, _ time.Time, _ func(string, string, string) (testpolicy.Plan, error), _ func() error, _ batch.JoinAdmissionRun) error {
+		return store.Update(id, func(record *batch.Record) error {
+			unit.State = batch.UnitJoined
+			record.Units = append(record.Units, unit)
+			return nil
+		})
+	}
+	dependencies.ensure = func(string) error { return nil }
+	return request, dependencies, store
+}
+
+func joinGoal(t *testing.T, request batchJoinRequest, dependencies batchJoinDependencies, goalID string) batch.Record {
+	t.Helper()
+	request.GoalID, request.ChainID = goalID, "chain-"+goalID
+	record, err := executeBatchJoin(request, dependencies)
+	if err != nil {
+		t.Fatalf("join %s: %v", goalID, err)
+	}
+	return record
+}
+
+func TestSecondJoinOpensASecondBatchWhileTheFirstProves(t *testing.T) {
+	t.Parallel()
+	base := "base-tree"
+	request, dependencies, store := sideBySideJoinBed(t, &base)
+	const proving, reopened = "01j5x00000000000000000aa01", "01j5x00000000000000000aa02"
+	if err := store.Create(batch.Record{Schema: 1, BatchID: proving, BaseTree: base, TipTree: base, State: batch.StateProving}); err != nil {
+		t.Fatal(err)
+	}
+	second := joinGoal(t, request, dependencies, "goal-b")
+	if second.BatchID == proving || second.State != batch.StateOpen || second.BaseTree != "base-tree" {
+		t.Fatalf("second join addressed %s (%s on %s), want a new open batch on base-tree", second.BatchID, second.State, second.BaseTree)
+	}
+	// A batch reopened on the moved main is open beside the second batch.
+	base = "moved-tree"
+	if err := store.Create(batch.Record{Schema: 1, BatchID: reopened, BaseTree: base, TipTree: base, State: batch.StateOpen}); err != nil {
+		t.Fatal(err)
+	}
+	if third := joinGoal(t, request, dependencies, "goal-c"); third.BatchID != reopened || len(third.Units) != 1 {
+		t.Fatalf("join on moved-tree addressed %s with %d units, want the open batch %s on that base", third.BatchID, len(third.Units), reopened)
+	}
+	// A ledger commit moves main again: the join keeps gathering into the newest open batch.
+	base = "ledger-tree"
+	if fourth := joinGoal(t, request, dependencies, "goal-d"); fourth.BatchID != second.BatchID || len(fourth.Units) != 2 {
+		t.Fatalf("join on ledger-tree addressed %s with %d units, want the newest open batch %s", fourth.BatchID, len(fourth.Units), second.BatchID)
+	}
+	records, err := store.Records()
+	if err != nil || len(records) != 3 || records[0].BatchID != proving || records[0].State != batch.StateProving {
+		t.Fatalf("records=%d err=%v, want the proving batch beside the two open batches", len(records), err)
+	}
+}
+
+func TestJoinOnAMovedBaseReassemblesInsteadOfRefusing(t *testing.T) {
+	t.Parallel()
+	base := "moved-tree"
+	request, dependencies, store := sideBySideJoinBed(t, &base)
+	const stale = "01j5x00000000000000000aa01"
+	if err := store.Create(batch.Record{Schema: 1, BatchID: stale, BaseTree: "base-tree", TipTree: "base-tree", State: batch.StateOpen}); err != nil {
+		t.Fatal(err)
+	}
+	var assembled, protected []string
+	dependencies.assemble = func(_ string, onto string, _ []batch.Unit) ([]string, error) {
+		assembled = append(assembled, onto)
+		// The addressed batch seals while the unit is prepared on its base.
+		return []string{"candidate-on-" + onto}, store.Update(stale, func(record *batch.Record) error {
+			record.State = batch.StateSealed
+			return nil
+		})
+	}
+	dependencies.protectedTests = func(_, onto, candidate string) error {
+		protected = append(protected, onto+">"+candidate)
+		return nil
+	}
+	joined := joinGoal(t, request, dependencies, "goal-a")
+	if strings.Join(assembled, ",") != "base-tree,moved-tree" ||
+		strings.Join(protected, ",") != "base-tree>candidate-on-base-tree,moved-tree>candidate-on-moved-tree" {
+		t.Fatalf("assembled=%v protected=%v, want the unit reassembled and rechecked on the moved base", assembled, protected)
+	}
+	if joined.BatchID == stale || joined.BaseTree != "moved-tree" || len(joined.Units) != 1 {
+		t.Fatalf("joined %s on %s with %d units, want a new batch on moved-tree", joined.BatchID, joined.BaseTree, len(joined.Units))
+	}
+	if record, err := store.Load(stale); err != nil || record.State != batch.StateSealed || len(record.Units) != 0 {
+		t.Fatalf("sealed batch=%+v err=%v, want it untouched", record, err)
+	}
+}

@@ -33,8 +33,8 @@ func (p *ownerHelmProber) Probe(pid int64) (identity.Exact, identity.Liveness, e
 }
 
 // ownerHelmBed is a landing checkout L (a directory with .git) holding batches
-// A (seat A) and C (seat C), queued by one owner pid (7) on a fixed clock
-// behind a busy foreign proof lock (pid 4242).
+// A (seat A) and C (seat C), queued by one owner pid (7) on a fixed clock,
+// each behind its own busy proof lock held by a foreign pid (4242).
 type ownerHelmBed struct {
 	landing, seatA, seatC, lockDir, queueDir string
 	prober                                   *ownerHelmProber
@@ -96,11 +96,13 @@ func newOwnerHelmBed(t *testing.T) *ownerHelmBed {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(bed.lockDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(bed.lockDir, "owner"), []byte("m1e 4242 2030-01-01T00:00:00Z hand\n"), 0o644); err != nil {
-		t.Fatal(err)
+	for _, id := range []string{ownerHelmA, ownerHelmC} {
+		if err := os.MkdirAll(filepath.Join(bed.lockDir, "batch-"+id), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(bed.lockDir, "batch-"+id, "owner"), []byte("m1e 4242 2030-01-01T00:00:00Z hand\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return bed
 }
@@ -112,20 +114,20 @@ func (bed *ownerHelmBed) pass() {
 }
 
 func (bed *ownerHelmBed) queue(t *testing.T) []string {
-	entries, err := os.ReadDir(bed.queueDir)
-	if err != nil && !os.IsNotExist(err) {
+	entries, err := filepath.Glob(filepath.Join(bed.queueDir, "batch-*", "*"))
+	if err != nil {
 		t.Fatal(err)
 	}
 	var names []string
 	for _, entry := range entries {
-		names = append(names, entry.Name())
+		names = append(names, filepath.Base(entry))
 	}
 	return names
 }
 
 func (bed *ownerHelmBed) snapshot(t *testing.T) string {
 	var parts []string
-	for _, path := range []string{filepath.Join(bed.lockDir, "owner"),
+	for _, path := range []string{filepath.Join(bed.lockDir, "batch-"+ownerHelmA, "owner"), filepath.Join(bed.lockDir, "batch-"+ownerHelmC, "owner"),
 		filepath.Join(bed.landing, "artifacts", "agents", "landing-batches", ownerHelmA+".json"),
 		filepath.Join(bed.landing, "artifacts", "agents", "landing-batches", ownerHelmC+".json")} {
 		data, err := os.ReadFile(path)

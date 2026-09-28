@@ -8,9 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -18,39 +16,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
-
-// FindOrCreateOpen selects the one open batch, or creates it while holding the
-// batch flock. Preparation is deliberately not part of this critical section.
-func FindOrCreateOpen(store Store, baseTree, id, actor string, at time.Time) (Record, error) {
-	var selected Record
-	err := store.locked(func() error {
-		paths, err := filepath.Glob(filepath.Join(store.root, "artifacts", "agents", "landing-batches", "*.json"))
-		if err != nil {
-			return err
-		}
-		sort.Strings(paths)
-		for _, path := range paths {
-			recordID := strings.TrimSuffix(filepath.Base(path), ".json")
-			record, loadErr := store.Load(recordID)
-			if loadErr != nil {
-				return loadErr
-			}
-			if record.State == StateOpen && record.ClosedReason == "" {
-				if selected.BatchID != "" {
-					return fmt.Errorf("more than one open landing batch exists")
-				}
-				selected = record
-			}
-		}
-		if selected.BatchID != "" {
-			return nil
-		}
-		selected = Record{Schema: 1, BatchID: id, BaseTree: baseTree, TipTree: baseTree}
-		selected.Transition(StateOpen, at, "open", actor, "")
-		return store.write(selected)
-	})
-	return selected, err
-}
 
 type batchSeams struct {
 	prober      identity.Prober

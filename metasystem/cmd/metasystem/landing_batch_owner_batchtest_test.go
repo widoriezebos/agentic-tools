@@ -987,9 +987,7 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 	dependencies.chain = func(string, string, string, uint64) (batch.CertifiedChain, error) {
 		return batch.CertifiedChain{ID: "chain-a", Patch: patch}, nil
 	}
-	// Trunk moved after the open batch took its base: the join still joins that batch.
-	const movedTrunkTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-	dependencies.base = func(string) (string, error) { return movedTrunkTree, nil }
+	dependencies.base = func(string) (string, error) { return base, nil }
 	dependencies.mint = func() (string, error) { return "01j5x00000000000000000ba99", nil }
 	dependencies.author = func(string, *goal.GoalFile) (string, string, string, error) {
 		return "Fixture", "Fixture", "fixture@example.com", nil

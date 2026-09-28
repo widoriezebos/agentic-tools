@@ -106,7 +106,7 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 		report: options.Report, glob: options.Glob, helmActive: options.HelmActive, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
 	}
 	owner.lock = func(id string) *proofLock {
-		return newProofLock(options.Store, options.LockDir, options.QueueDir, id, options.PID, options.Now)
+		return newBatchProofLock(options.Store, options.LockDir, options.QueueDir, id, options.PID, options.Now)
 	}
 	return owner, nil
 }

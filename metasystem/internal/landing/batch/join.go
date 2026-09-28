@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
@@ -339,4 +340,47 @@ func checkMembership(store Store, batchID, goalID, chainID string) error {
 		}
 	}
 	return nil
+}
+
+// JoinableOpen names the open batch a join addresses: the newest open batch on
+// baseTree, else the newest open batch on any base. Main moves with every
+// ledger commit, so a batch on an older base keeps gathering members; the owner
+// rebases or reopens it when it lands. Sealed and proving batches never join.
+func JoinableOpen(records []Record, baseTree string) (Record, bool) {
+	var newest Record
+	found := false
+	for index := len(records) - 1; index >= 0; index-- {
+		record := records[index]
+		if record.State != StateOpen || record.ClosedReason != "" {
+			continue
+		}
+		if record.BaseTree == baseTree {
+			return record, true
+		}
+		if !found {
+			newest, found = record, true
+		}
+	}
+	return newest, found
+}
+
+// FindOrCreateOpen selects the open batch JoinableOpen names, or creates one on
+// baseTree while holding the batch flock; any number of batches coexist.
+// Preparation is deliberately not part of this critical section.
+func FindOrCreateOpen(store Store, baseTree, id, actor string, at time.Time) (Record, error) {
+	var selected Record
+	err := store.locked(func() error {
+		records, err := store.Records()
+		if err != nil {
+			return err
+		}
+		if open, found := JoinableOpen(records, baseTree); found {
+			selected = open
+			return nil
+		}
+		selected = Record{Schema: 1, BatchID: id, BaseTree: baseTree, TipTree: baseTree}
+		selected.Transition(StateOpen, at, "open", actor, "")
+		return store.write(selected)
+	})
+	return selected, err
 }
