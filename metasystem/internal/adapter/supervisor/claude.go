@@ -231,10 +231,15 @@ func (claudeOps) Prepare(t *Turn) (Launch, error) {
 	// temporary directory itself; the settings allow only this private
 	// scratch directory. The chain's cache overrides the per-round one when
 	// the job runs in a worktree, so follow-up rounds start warm.
+	// Both caches sit in the granted scratch (disk-lifetimes A5.0, DL4A-02):
+	// a nested engine inherits absolute GOCACHE and STATICCHECK_CACHE and
+	// never resolves the machine cache the sandbox refuses. Transitional
+	// until A7's one delegate cache.
 	env := []string{
 		"TMPDIR=" + scratch,
 		"GOCACHE=" + filepath.Join(scratch, "go-cache"),
 		"GOTMPDIR=" + filepath.Join(scratch, "go-tmp"),
+		"STATICCHECK_CACHE=" + filepath.Join(scratch, "staticcheck"),
 	}
 	env = withEnv(env, jobBuildCacheEnv(d.git(), d.agents(), t.Workspace)...)
 	env = withEnv(env,
@@ -244,6 +249,9 @@ func (claudeOps) Prepare(t *Turn) (Launch, error) {
 	setup := os.MkdirAll(filepath.Join(scratch, "go-tmp"), 0o755)
 	if setup == nil {
 		setup = os.MkdirAll(envValue(env, "GOCACHE"), 0o755)
+	}
+	if setup == nil {
+		setup = os.MkdirAll(envValue(env, "STATICCHECK_CACHE"), 0o755)
 	}
 	return Launch{Argv: command, Env: env, StdinPath: t.Prompt, StdoutPath: private.streamFile,
 		SetupError: setup, Private: private}, nil
