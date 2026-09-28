@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// adoptionLinePrefix is the line scripts/adopt.sh writes into the installed
+// adoptionLinePrefix is the line system adopt writes into the installed
 // docs/project-rules.md, and the placeholder it leaves until a provenance
 // slice fills it in.
 const (

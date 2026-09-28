@@ -16,12 +16,12 @@ import (
 func (e *Engine) Status() int {
 	statePath := filepath.Join(e.missionDir(), "state.json")
 	if !pathExists(statePath) {
-		fmt.Printf("mission=%s status=unreadable reason=missing-state\n", e.Mission)
+		fmt.Fprintf(e.answerOutput(), "mission=%s status=unreadable reason=missing-state\n", e.Mission)
 		return 7
 	}
 	state, err := e.verifyState(statePath, false)
 	if err != nil {
-		fmt.Printf("mission=%s status=unreadable reason=%s\n", e.Mission, dashed(err.Error()))
+		fmt.Fprintf(e.answerOutput(), "mission=%s status=unreadable reason=%s\n", e.Mission, dashed(err.Error()))
 		return 7
 	}
 	reason := valueString(state["parkReason"])
@@ -38,7 +38,7 @@ func (e *Engine) Status() int {
 		// driving.
 		recordPath, _, _ := e.runnerPaths()
 		if !pathExists(recordPath) {
-			fmt.Printf("mission=%s status=abandoned reason=no-runner-record\n", e.Mission)
+			fmt.Fprintf(e.answerOutput(), "mission=%s status=abandoned reason=no-runner-record\n", e.Mission)
 			return 13
 		}
 		record, err := readDocLabeled(recordPath, "mission runner record", 3)
@@ -48,14 +48,14 @@ func (e *Engine) Status() int {
 		}
 		switch record["status"] {
 		case "stopped":
-			fmt.Printf("mission=%s status=stopped reason=metasystem-stop\n", e.Mission)
+			fmt.Fprintf(e.answerOutput(), "mission=%s status=stopped reason=metasystem-stop\n", e.Mission)
 			return 13
 		case "failed":
 			failure := valueString(record["error"])
 			if failure == "" {
 				failure = "unknown"
 			}
-			fmt.Printf("mission=%s status=runner-failed reason=%s\n", e.Mission, dashed(failure))
+			fmt.Fprintf(e.answerOutput(), "mission=%s status=runner-failed reason=%s\n", e.Mission, dashed(failure))
 			return 13
 		case "completed":
 			// The previous runner CONCLUDED — it parked or finished and
@@ -89,15 +89,15 @@ func (e *Engine) Status() int {
 			switch missionstate.Classify(fields, identity.KernelProber{}) {
 			case missionstate.Active:
 			case missionstate.Indeterminate:
-				fmt.Printf("mission=%s status=unreadable reason=runner-identity-unknown\n", e.Mission)
+				fmt.Fprintf(e.answerOutput(), "mission=%s status=unreadable reason=runner-identity-unknown\n", e.Mission)
 				return 7
 			default:
-				fmt.Printf("mission=%s status=abandoned reason=runner-process-gone\n", e.Mission)
+				fmt.Fprintf(e.answerOutput(), "mission=%s status=abandoned reason=runner-process-gone\n", e.Mission)
 				return 13
 			}
 		}
 	}
-	fmt.Printf("mission=%s status=%s reason=%s\n", e.Mission, status, reason)
+	fmt.Fprintf(e.answerOutput(), "mission=%s status=%s reason=%s\n", e.Mission, status, reason)
 	switch status {
 	case "running":
 		return 0

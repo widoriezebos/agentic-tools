@@ -1143,7 +1143,7 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 
 	group := testpolicy.Group{ID: "candidate-bed", Kind: "integration", Adapter: "section", CWD: "metasystem",
 		Inputs: []string{"metasystem/cmd/metasystem/engine.txt"}, Obligations: []string{"candidate-engine"},
-		Platforms: []string{"any"}, TargetMS: 1, Section: "candidate-bed"}
+		Platforms: []string{"any"}, TargetMS: 1, Section: "candidate-bed", Argv: []string{"bash", "scripts/bed.sh"}}
 	contract := testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}}
 	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard,
 		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
@@ -1986,7 +1986,7 @@ chmod +x "$3"
 		t.Fatal(err)
 	}
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "checkout-execution-guard.sh"), guardScript, 0o755)
-	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "validate-section-selector.sh"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
+	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "bed.sh"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "cmd", "metasystem", "engine.txt"), []byte("enrolled engine source\n"), 0o644)
 	testingFixtureGit(t, projectRoot, "init", "-q", "-b", "main")
 	testingFixtureGit(t, projectRoot, "add", ".")

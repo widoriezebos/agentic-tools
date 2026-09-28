@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -18,7 +17,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -634,7 +632,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 	for _, changed := range []string{
 		"metasystem/internal/usage/cursor.go",
 		"metasystem/internal/steward/context.go",
-		"metasystem/scripts/agents/health-fixtures.sh",
+		"metasystem/internal/steward/health_bed_test.go",
 		"metasystem/internal/hooks/runtime_hook_stop.go",
 	} {
 		standardPlan, err := testpolicy.Select(contract, testpolicy.SelectionRequest{
@@ -645,7 +643,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 		}
 		if !containsString(standardPlan.SelectedGroups, "context-standard") ||
 			!containsString(standardPlan.SelectedGroups, "context-foundations-standard") ||
-			!containsString(standardPlan.SelectedGroups, "section/supervision-and-census-fixtures") ||
+			!containsString(standardPlan.SelectedGroups, "supervision-bed-standard") ||
 			containsString(standardPlan.SelectedGroups, "context-stop-cost") {
 			t.Fatalf("standard context selection for %s = %+v", changed, standardPlan)
 		}
@@ -655,7 +653,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 		if err != nil {
 			t.Fatalf("deep selection for %s: %v", changed, err)
 		}
-		for _, group := range []string{"context-standard", "context-foundations-standard", "section/supervision-and-census-fixtures", "context-stop-cost"} {
+		for _, group := range []string{"context-standard", "context-foundations-standard", "supervision-bed-standard", "context-stop-cost"} {
 			if !containsString(deepPlan.SelectedGroups, group) {
 				t.Errorf("deep context selection for %s omitted %s: %+v", changed, group, deepPlan)
 			}
@@ -679,52 +677,6 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 	t.Logf("internal/usage auto selection: %d surface-specific groups plus %d always-run canaries",
 		len(usagePlan.SelectedGroups)-len(contract.Always.Canary), len(contract.Always.Canary))
 
-	validateSource, err := os.ReadFile("../../scripts/validate-metasystem.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	start := strings.Index(string(validateSource), "supervision_and_census_section() {")
-	if start < 0 {
-		t.Fatal("supervision and census section plumbing is not recognizable")
-	}
-	endMarker := "\nif section_selected supervisor-fingerprint-heal-harness"
-	endOffset := strings.Index(string(validateSource[start:]), endMarker)
-	if endOffset < 0 {
-		t.Fatal("supervision and census section plumbing is not recognizable")
-	}
-	sectionBlock := string(validateSource[start : start+endOffset])
-	fixtureRoot := t.TempDir()
-	logPath := filepath.Join(fixtureRoot, "order.log")
-	for _, name := range []string{"health-fixtures.sh", "supervision-fixtures.sh"} {
-		path := filepath.Join(fixtureRoot, "scripts", "agents", name)
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		body := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' %q >>\"${CONTEXT_SECTION_RECORD:?}\"\n", name)
-		if err := testexec.WriteFile(path, []byte(body), 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	driver := `set -euo pipefail
-section_selected() { [[ "$1" == supervision-and-census-fixtures ]]; }
-delegate_process_section() { return 0; }
-delivery_contract_skip() { return 1; }
-run_section() { shift 2; "$@"; }
-` + sectionBlock
-	command := exec.Command("bash", "-c", driver)
-	command.Dir = fixtureRoot
-	command.Env = append(os.Environ(), "CONTEXT_SECTION_RECORD="+logPath)
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("recording section driver failed: %v\n%s", err, output)
-	}
-	order, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantOrder := "supervision-fixtures.sh\nhealth-fixtures.sh\n"
-	if string(order) != wantOrder {
-		t.Fatalf("supervision and census fixture order = %q, want %q", order, wantOrder)
-	}
 }
 
 func TestContextHandoffVerb(t *testing.T) {

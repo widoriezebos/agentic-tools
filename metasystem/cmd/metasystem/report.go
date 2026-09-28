@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -122,6 +123,11 @@ func runReportRunningWork(args []string) int {
 // then the installation's metasystem.conf (watch.stale-min 20, watch.cap-min
 // 180, watch.interval-sec 60).
 func runReportWatchJobs(args []string) int {
+	return runReportWatchJobsTo(args, os.Stdout, os.Stderr)
+}
+
+// runReportWatchJobsTo is the watcher verb with its output streams supplied.
+func runReportWatchJobsTo(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("report watch-jobs", flag.ContinueOnError)
 	var dirs []string
 	flags.Func("dir", "job directory or glob pattern (repeatable)", func(value string) error {
@@ -143,7 +149,7 @@ func runReportWatchJobs(args []string) int {
 	heartbeatFile := flags.String("heartbeat", "", "watcher heartbeat file (with --census)")
 	instanceTag := flags.String("instance-tag", "", "watcher instance tag (with --census)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || len(dirs) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal report watch-jobs --dir DIR [--dir DIR]... [--scope PATH] [--state FILE] [--stale-min N] [--cap-min N] [--interval SEC] [--start-verify-min N] [--baseline] [--once] [--census]")
+		fmt.Fprintln(stderr, "usage: metasystem internal report watch-jobs --dir DIR [--dir DIR]... [--scope PATH] [--state FILE] [--stale-min N] [--cap-min N] [--interval SEC] [--start-verify-min N] [--baseline] [--once] [--census]")
 		return 2
 	}
 	set := map[string]bool{}
@@ -152,7 +158,7 @@ func runReportWatchJobs(args []string) int {
 	if installation == "" {
 		exe, err := os.Executable()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "watch-jobs:", err)
+			fmt.Fprintln(stderr, "watch-jobs:", err)
 			return 1
 		}
 		installation = filepath.Dir(filepath.Dir(exe))
@@ -171,14 +177,14 @@ func runReportWatchJobs(args []string) int {
 	capped, okCap := resolve("watch.cap-min", "cap-min", *capMin, "180")
 	intervalSec, okInterval := resolve("watch.interval-sec", "interval", *interval, "60")
 	if !okStale || !okCap || !okInterval {
-		fmt.Fprintln(os.Stderr, "watch-jobs: --stale-min, --cap-min and --interval must be integers")
+		fmt.Fprintln(stderr, "watch-jobs: --stale-min, --cap-min and --interval must be integers")
 		return 2
 	}
 	sleepEvery := time.Duration(intervalSec) * time.Second
 	if override := os.Getenv("METASYSTEM_CENSUS_INTERVAL_MS"); override != "" {
 		milliseconds, err := strconv.ParseInt(override, 10, 64)
 		if err != nil || milliseconds < 1 {
-			fmt.Fprintln(os.Stderr, "METASYSTEM_CENSUS_INTERVAL_MS must be a positive integer")
+			fmt.Fprintln(stderr, "METASYSTEM_CENSUS_INTERVAL_MS must be a positive integer")
 			return 2
 		}
 		sleepEvery = time.Duration(milliseconds) * time.Millisecond
@@ -188,20 +194,20 @@ func runReportWatchJobs(args []string) int {
 		Dirs: dirs, Scope: watchScope, ScopeField: *scopeField, StateFile: *state, TempDir: os.TempDir(),
 		StaleMin: stale, CapMin: capped, StartVerifyMin: *startVerifyMin, Interval: sleepEvery,
 		Baseline: *baseline, Once: *once, Fingerprint: watchJobsFingerprint(),
-		Now: time.Now, Out: os.Stdout, Err: os.Stderr,
+		Now: time.Now, Out: stdout, Err: stderr,
 	}
 	if *censusEnabled {
 		if watchScope == "" {
-			fmt.Fprintln(os.Stderr, "--census requires --scope")
+			fmt.Fprintln(stderr, "--census requires --scope")
 			return 2
 		}
 		top, err := stateroot.RepositoryTop(watchScope)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "--census scope is not a git repository")
+			fmt.Fprintln(stderr, "--census scope is not a git repository")
 			return 2
 		}
 		if watchScope, err = canonicalPath(top); err != nil {
-			fmt.Fprintln(os.Stderr, "--census scope is not a git repository")
+			fmt.Fprintln(stderr, "--census scope is not a git repository")
 			return 2
 		}
 		options.Scope = watchScope
@@ -214,7 +220,7 @@ func runReportWatchJobs(args []string) int {
 			heartbeat = filepath.Join(dir, "watcher.heartbeat.json")
 		}
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			fmt.Fprintln(os.Stderr, "watch-jobs:", err)
+			fmt.Fprintln(stderr, "watch-jobs:", err)
 			return 1
 		}
 		tag := *instanceTag

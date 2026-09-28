@@ -1385,11 +1385,6 @@ esac
 			t.Fatal(err)
 		}
 	}
-	selector := "#!/usr/bin/env bash\ncase \"${1:-}\" in\n  list) printf 'tiny\\ttiny receipt canary\\n' ;;\n  twice) exit 0 ;;\n  *) exit 2 ;;\nesac\n"
-	writeReceiptFixture(t, root, "scripts/agents/validate-section-selector.sh", selector)
-	if err := os.Chmod(filepath.Join(root, "scripts", "agents", "validate-section-selector.sh"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	validator := `#!/usr/bin/env bash
 set -euo pipefail
 launches=0

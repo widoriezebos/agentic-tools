@@ -261,38 +261,6 @@ func TestSupervisorDescendantAndReapedChildCPUAreCounted(t *testing.T) {
 	t.Run("reaped child", testPlatformReapedChildCPU)
 }
 
-func TestSupervisorSectionResultGrowthCountsAsOutput(t *testing.T) {
-	resultPath := filepath.Join(t.TempDir(), "stage-results.tsv")
-	helper := newSupervisorHelperFixture(t, "stage-writer", resultPath)
-	reader := availableProcessTreeReader(t)
-	options := supervisorOptionsForTest(t, 10, 80*time.Millisecond)
-	options.Limits.ZeroConsumptionWindow = 0
-	activity := newOutputActivity(options.clock.now)
-	activityBefore := activity.Last()
-	observedMembers := 0
-	observedStageGrowth := false
-	releasedNested := false
-	options.Activity, options.StageResultPath = activity, resultPath
-	helper.gate(&options, reader, func(_ int, sample processTreeSample) {
-		if len(sample.Members) > observedMembers {
-			observedMembers = len(sample.Members)
-		}
-		if !helper.readyActivity.IsZero() && activity.Last().After(helper.readyActivity) {
-			observedStageGrowth = true
-		}
-		if !releasedNested && len(sample.Members) >= 2 && observedStageGrowth {
-			releasedNested = true
-			helper.releaseNested()
-		} else if releasedNested && len(sample.Members) < 2 {
-			helper.closeInput()
-		}
-	})
-	outcome := superviseCommand(helper.command, options.supervisorOptions)
-	if outcome.Verdict != "" || outcome.WaitErr != nil || observedMembers < 2 || !observedStageGrowth || !activity.Last().After(activityBefore) {
-		t.Fatalf("real stage-result growth outcome=%+v members=%d growth=%v activityBefore=%s activityAfter=%s", outcome, observedMembers, observedStageGrowth, activityBefore, activity.Last())
-	}
-}
-
 func TestSupervisorKillsSIGQUITIgnoringBusyChildAfterCounterRises(t *testing.T) {
 	t.Run("counter rises", func(t *testing.T) {
 		helper := newSupervisorHelperFixture(t, "ignore-quit-busy")
@@ -1122,7 +1090,7 @@ func TestSupervisorHelperCustodianAccountingUsesExactIdentity(t *testing.T) {
 
 func supervisorHelperHasNestedProcess(mode string) bool {
 	switch mode {
-	case "setsid-child", "reaped-child", "retained-child", "stage-writer", "custodian-reaped-child":
+	case "setsid-child", "reaped-child", "retained-child", "custodian-reaped-child":
 		return true
 	default:
 		return false
@@ -1215,43 +1183,6 @@ func TestSupervisorProcessHelper(t *testing.T) {
 		announceSupervisorHelperReady(custodians...)
 		if child.Wait() != nil {
 			os.Exit(32)
-		}
-		select {}
-	case "stage-writer":
-		child, custodians, err := startNestedSupervisorHelper(true, "stage-child", args[0])
-		if err != nil {
-			os.Exit(33)
-		}
-		announceSupervisorHelperReady(custodians...)
-		if child.Wait() != nil {
-			os.Exit(33)
-		}
-		select {}
-	case "stage-child":
-		file, err := os.OpenFile(args[0], os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-		if err != nil {
-			os.Exit(33)
-		}
-		_, writeErr := fmt.Fprintln(file, strconv.Itoa(0))
-		closeErr := file.Close()
-		if writeErr != nil || closeErr != nil {
-			os.Exit(33)
-		}
-		announceSupervisorHelperReady()
-		sequence := 1
-		cpuDeadline := processCPU() + 500*time.Millisecond
-		for processCPU() < cpuDeadline {
-			busyForCPU(50 * time.Millisecond)
-			file, err := os.OpenFile(args[0], os.O_APPEND|os.O_WRONLY, 0o600)
-			if err != nil {
-				os.Exit(33)
-			}
-			_, writeErr := fmt.Fprintln(file, strconv.Itoa(sequence))
-			closeErr := file.Close()
-			if writeErr != nil || closeErr != nil {
-				os.Exit(33)
-			}
-			sequence++
 		}
 		select {}
 	case "custodian-reaped-child":

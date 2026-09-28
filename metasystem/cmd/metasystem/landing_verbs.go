@@ -314,16 +314,11 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 	}()
 	confPath := filepath.Join(preparation.ExecutionRoot(), "metasystem.conf")
 	executionEnvironment := []string(nil)
-	var expected []string
 	if *command == landing.CanonicalValidatorCommand {
 		if proofRunAlternateGoInputs() {
 			return recordExit(fmt.Errorf("canonical validator refuses GOFLAGS containing -modfile or -overlay"))
 		}
 		executionEnvironment = canonicalValidatorEnvironment()
-		expected, _, err = selectedSections(filepath.Join(preparation.ExecutionRoot(), "scripts", "agents", "validate-section-selector.sh"), "", false)
-		if err != nil {
-			return recordExit(err)
-		}
 	}
 	limits, err := resolveProofRunLimits(confPath)
 	if err != nil {
@@ -336,7 +331,7 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 	}
 	attempt, decision, joined, err := admit(proofLaunchAdmission{ControlRoot: controlRoot,
 		ExecutionRoot: preparation.ExecutionRoot(), ConfPath: confPath, GoalID: *goalID, CapMin: *capMin,
-		RetryDecision: *retryDecision, ScopeClass: "full", CommandClass: "landing-test-receipt", Sections: expected,
+		RetryDecision: *retryDecision, ScopeClass: "full", CommandClass: "landing-test-receipt", Sections: nil,
 		ExpectedGoalRevision: *expectedGoalRevision, ExpectedAccountingRevision: *expectedAccountingRevision,
 		Environment: executionEnvironment, Now: commandClock()})
 	if err != nil {
@@ -505,25 +500,6 @@ func runLandingPark(args []string) int {
 	return 0
 }
 
-func runLandingAdoptionRulings(args []string) int {
-	flags := flag.NewFlagSet("landing adoption-rulings", flag.ContinueOnError)
-	source := flags.String("source", "", "staged template installation")
-	target := flags.String("target", "", "application installation")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *source == "" || *target == "" {
-		return 2
-	}
-	data, err := landing.AdoptionRulings(*source, *target)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if _, err := os.Stdout.Write(data); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
 // runLandingReceiptLine answers whether a prospective landing appends the
 // RECEIPT line for its goal; land.sh runs it on the staged whole-project
 // tree right after staging. Exit 2 is a refusal with the detail in the
@@ -565,22 +541,29 @@ func runLandingReceiptLineWithRawSource(args []string, raw func(gittree.RawReque
 // remote (landing.SyncTransport): `landing sync-transport [--root R] [BRANCH]`.
 // BRANCH defaults to main when absent; an explicitly empty BRANCH refuses.
 func runLandingSyncTransport(args []string) int {
+	return runLandingSyncTransportWith(args, os.Stdout, os.Stderr, nil)
+}
+
+// runLandingSyncTransportWith is the verb with its output streams and Git
+// runner supplied; a nil git runs the real Git.
+func runLandingSyncTransportWith(args []string, stdout, stderr io.Writer, git landing.TransportGit) int {
 	flags := flag.NewFlagSet("landing sync-transport", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", ".", "checkout whose origin and transport remotes are synchronized")
 	if flags.Parse(args) != nil || flags.NArg() > 1 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing sync-transport [--root CHECKOUT] [BRANCH]")
+		fmt.Fprintln(stderr, "usage: metasystem internal landing sync-transport [--root CHECKOUT] [BRANCH]")
 		return 2
 	}
 	branch := "main"
 	if flags.NArg() == 1 {
 		branch = flags.Arg(0)
 	}
-	last, err := landing.SyncTransport(*root, branch, nil)
+	last, err := landing.SyncTransport(*root, branch, git)
 	if last != "" {
-		fmt.Println(last)
+		fmt.Fprintln(stdout, last)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		var refusal *landing.TransportError
 		if errors.As(err, &refusal) {
 			return refusal.Code

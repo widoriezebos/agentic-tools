@@ -932,7 +932,7 @@ var intentObjectSummaries = map[string]string{
 	"helm":       "human at the helm: take the whole seat out of the machinery's hands, and give it back",
 	"session":    "this agent session: start, stop, whether it may stop, and its handoff",
 	"mission":    "autonomous missions",
-	"system":     "MetaSystem for this checkout: start, stop, restart, status, check, enroll",
+	"system":     "MetaSystem for this checkout: start, stop, restart, status, check, enroll, adopt",
 	"machine":    "the fleet's machines",
 	"ui":         "the browser interface",
 	"settings":   "MetaSystem settings and coordination",
