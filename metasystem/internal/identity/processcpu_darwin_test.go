@@ -13,6 +13,7 @@ import (
 // it is running rather than in an uninterruptible wait, and a pid that is not
 // there reads as ErrNoSuchProcess rather than a reader failure.
 func TestProcessTableAndCPUReadTheKernel(t *testing.T) {
+	t.Parallel()
 	table, err := TakeProcessTable()
 	if err != nil {
 		t.Fatal(err)

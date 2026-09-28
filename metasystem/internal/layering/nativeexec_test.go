@@ -173,6 +173,7 @@ func lawfulExecFor(program, relative string) bool {
 // tool. The positive control is that git, the one tool every owner drives, is
 // actually seen, so a walk that read nothing cannot pass.
 func TestGoDecidesNativelyExecsOnlyLawfulPrograms(t *testing.T) {
+	t.Parallel()
 	module, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -227,6 +228,7 @@ func TestGoDecidesNativelyExecsOnlyLawfulPrograms(t *testing.T) {
 // literal, a constant, an aliased import and CommandContext are all seen; a
 // lawful tool in its own file and a variable program pass.
 func TestGoDecidesNativelyJudgeNamesEveryShape(t *testing.T) {
+	t.Parallel()
 	source := `package p
 
 import (

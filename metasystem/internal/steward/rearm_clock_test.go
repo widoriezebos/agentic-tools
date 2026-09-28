@@ -44,12 +44,6 @@ func (clock *manualRearmClock) advance(duration time.Duration) {
 	clock.mu.Unlock()
 }
 
-func (clock *manualRearmClock) snapshot() []chan time.Time {
-	clock.mu.Lock()
-	defer clock.mu.Unlock()
-	return append([]chan time.Time(nil), clock.timers...)
-}
-
 func waitForRearmTimer(clock *manualRearmClock, count int) chan time.Time {
 	return <-clock.created
 }
