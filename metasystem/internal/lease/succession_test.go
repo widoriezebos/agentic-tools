@@ -19,6 +19,7 @@ import (
 // claim reads without bumping the epoch; the same lineage again is accepted;
 // a different one is refused, saying what it refused.
 func TestAnnounceLineageFillKeepsTheEpochAndAConflictIsRefusedByName(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	self, start := int64(os.Getpid()), selfStart(t)
 	announce := func(lineage string) error {
@@ -68,6 +69,7 @@ func TestAnnounceLineageFillKeepsTheEpochAndAConflictIsRefusedByName(t *testing.
 // flight between them. The second turn renews at the same epoch, records no
 // takeover, and leaves the delegate pending.
 func TestConsecutiveHostTurnsRenewAndKeepTheInFlightDelegate(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	const lineage = "mission-fixture-lineage"
 

@@ -119,7 +119,7 @@ func TestCollectsClosedFullyMirroredChain(t *testing.T) {
 // evidence/agents/<chain>/manifest.json, so a closed chain whose payload
 // that legacy manifest covers is collected.
 func TestCollectsAChainCoveredOnlyByALegacyUnsegmentedManifest(t *testing.T) {
-	freezeClock(t)
+	t.Parallel()
 	root, evidenceRoot, agents, jobs := checkout(t)
 	payload := "legacy payload\n"
 	writeFile(t, filepath.Join(agents, "legacy-chain", "brief.md"), payload)

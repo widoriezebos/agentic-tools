@@ -171,6 +171,7 @@ func (bed *diskBed) requireTerminal(reason string) {
 // exactly the watcher, reaper and landing owner at generation one and stays
 // there (no churn), and every verdict-bearing cycle narrates its basis.
 func TestDiskOwnerEstablishesAndPublishesAStableGenerationOne(t *testing.T) {
+	t.Parallel()
 	bed := newDiskBed(t, "gofix-establish")
 	for range 4 {
 		bed.cycle()
@@ -226,6 +227,7 @@ func TestDiskOwnerEstablishesAndPublishesAStableGenerationOne(t *testing.T) {
 // Purpose gone: the checkout root vanishes; the owner exits purpose-gone
 // with a complete teardown and an honest terminal (KI-32 designed away).
 func TestDiskOwnerExitsPurposeGoneWhenTheCheckoutVanishes(t *testing.T) {
+	t.Parallel()
 	bed := newDiskBed(t, "gofix-purpose")
 	bed.cycle()
 	if err := os.Rename(bed.repo, bed.repo+".gone"); err != nil {
@@ -241,6 +243,7 @@ func TestDiskOwnerExitsPurposeGoneWhenTheCheckoutVanishes(t *testing.T) {
 // Superseded: another identity takes the lock while the checkout persists;
 // the owner leaves voluntarily (SLC-R3-003) with complete teardown.
 func TestDiskOwnerLeavesWhenTheLockNamesASuccessor(t *testing.T) {
+	t.Parallel()
 	bed := newDiskBed(t, "gofix-super")
 	bed.cycle()
 	bed.writeLockOwner(999999, 1, "a-successor")
@@ -255,6 +258,7 @@ func TestDiskOwnerLeavesWhenTheLockNamesASuccessor(t *testing.T) {
 // observation; at five the owner gives up with a complete teardown and an
 // honest terminal, relaunching between observations as the backoff allows.
 func TestDiskOwnerGivesUpOnACrashLoop(t *testing.T) {
+	t.Parallel()
 	bed := newDiskBed(t, "gofix-breaker")
 	bed.components.observation = Failing
 	exit := bed.owner.Run()

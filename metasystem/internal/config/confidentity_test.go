@@ -58,6 +58,7 @@ func TestConfigIdentityStableAcrossEquivalentJSON(t *testing.T) {
 // the same non-empty canonical identity on every call, the property the
 // fixture smoked through the built executable.
 func TestConfigIdentityCanonicalJSONIsDeterministicAcrossCalls(t *testing.T) {
+	t.Parallel()
 	config := writeFile(t, t.TempDir(), "config.toml", `model = "gpt-5.6-sol"
 
 [notice]

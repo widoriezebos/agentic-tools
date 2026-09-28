@@ -16,6 +16,7 @@ import (
 // TestAClaimSucceedsAndEmitsNothingWhenTheEventStreamIsUnwritable: with the
 // stream unwritable a claim still happens (epoch 1) and nothing is written.
 func TestAClaimSucceedsAndEmitsNothingWhenTheEventStreamIsUnwritable(t *testing.T) {
+	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root writes through mode 000")
 	}
@@ -47,6 +48,7 @@ func TestAClaimSucceedsAndEmitsNothingWhenTheEventStreamIsUnwritable(t *testing.
 // TestAFreshClaimWitnessesLeaseClaimed: with the stream writable, a
 // successful claim leaves its lease-claimed event.
 func TestAFreshClaimWitnessesLeaseClaimed(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := Announce(root, "fr-fixture2", int64(os.Getpid()), selfStart(t), "metasystem-main-fr2", "fake", ""); err != nil {
 		t.Fatal(err)
