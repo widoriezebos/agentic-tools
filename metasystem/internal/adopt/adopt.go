@@ -52,12 +52,12 @@ const (
 // and go.sum are the engine source: the payload ships source and the target
 // rebuilds, and the engine's data (the agent protocol, the landing and path
 // policy, the runtime hook settings and this workflow) is compiled into it.
-// The coverage floors are the template's own development test policy and
-// stay home.
+// The coverage floors and the parallel ratchet (testing-parallel-ratchet.json)
+// are the template's own development test policy and stay home.
 var PayloadAllow = []string{
 	".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md", "cmd", "docs", "go.mod", "go.sum",
 	"internal", "memory", "metasystem.conf", "optional-skills", "plans", "records",
-	"skills", "testing-parallel-ratchet.json", "testing.json", "wow.md",
+	"skills", "testing.json", "wow.md",
 }
 
 // githubActionsWorkflow is the runtime-neutral CI enforcement adoption

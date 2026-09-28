@@ -414,10 +414,15 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 		t.Fatalf("first adoption result: %+v", result)
 	}
 	for _, path := range []string{".github/workflows/metasystem.yml", ".claude/agents/verify.md", ".claude/agents/code-critique.md",
-		"metasystem.conf", "go.mod", "cmd/metasystem/main.go", "testing-parallel-ratchet.json", "bin/metasystem"} {
+		"metasystem.conf", "go.mod", "cmd/metasystem/main.go", "bin/metasystem"} {
 		if !exists(filepath.Join(target, path)) {
 			t.Fatalf("adoption did not install %s", path)
 		}
+	}
+	// The parallel ratchet is the template's own development test policy,
+	// like the coverage floors: it stays home.
+	if exists(filepath.Join(target, "testing-parallel-ratchet.json")) {
+		t.Fatal("adoption shipped the template's parallel ratchet")
 	}
 	for _, dir := range []string{"internal", "cmd", "artifacts"} {
 		if info, err := os.Stat(filepath.Join(target, dir)); err != nil || !info.IsDir() {
