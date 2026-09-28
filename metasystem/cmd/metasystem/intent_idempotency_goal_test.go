@@ -146,6 +146,12 @@ func init() {
 	stateful("goal edit", "an edit to what the goal already says is success with no record",
 		goalRepeatWitness(makeQueued, nil, "already reads exactly this way",
 			"goal", "edit", bedGoal, "--next", "Land slice 2.", "--lineage", "m1"))
+	stateful("goal allow", "a goal already allowed that permission is success with no record",
+		goalRepeatWitness(makeQueued, nil, "is already allowed stop-test changes",
+			"goal", "allow", bedGoal, "stop-test-changes", "--reason", "the hook entry moved", "--fixture-human-authority"))
+	stateful("goal disallow", "a goal not allowed that permission is already disallowed",
+		goalRepeatWitness(makeQueued, runOrFail("goal", "allow", bedGoal, "stop-test-changes", "--reason", "the hook entry moved", "--fixture-human-authority"),
+			"is already not allowed stop-test changes", "goal", "disallow", bedGoal, "stop-test-changes", "--lineage", "m1"))
 	stateful("goal claim", "a goal this session already holds is claimed",
 		goalRepeatWitness(nil, nil, "is already claimed by this session",
 			"goal", "claim", bedGoal, "--lineage", "m1"))

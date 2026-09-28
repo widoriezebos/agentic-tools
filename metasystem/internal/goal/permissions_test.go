@@ -102,7 +102,7 @@ func TestEditAllowsAndDisallowsAGoalPermission(t *testing.T) {
 	humanRepeat.Ulid = "01J5X00000000000000000SS31"
 	for _, repeat := range []VerbRequest{humanRepeat, verbReqFor(endpoint, "01J5X00000000000000000SS30", "mac-a")} {
 		again, err := Edit(repeat, "stop-moves", EditFields{Permission: stopTestChanges(true), Why: "said twice", Proof: proof})
-		if err != nil || again.Outcome != OutcomeAbandoned || !strings.Contains(again.Detail, "already reads exactly this way") {
+		if err != nil || again.Outcome != OutcomeAbandoned || !strings.Contains(again.Detail, "goal stop-moves is already allowed stop-test changes") {
 			t.Fatalf("the repeated allow = %+v %v; want an explicit no-op", again, err)
 		}
 		if after := read(again.Tip); after.Revision != revision || len(after.History) != lines {
@@ -123,7 +123,7 @@ func TestEditAllowsAndDisallowsAGoalPermission(t *testing.T) {
 	}
 	again, err := Edit(verbReqFor(endpoint, "01J5X00000000000000000SS50", "mac-a"), "stop-moves",
 		EditFields{Permission: stopTestChanges(false)})
-	if err != nil || again.Outcome != OutcomeAbandoned {
+	if err != nil || again.Outcome != OutcomeAbandoned || !strings.Contains(again.Detail, "goal stop-moves is already not allowed stop-test changes") {
 		t.Fatalf("the repeated disallow = %+v %v; want an explicit no-op", again, err)
 	}
 

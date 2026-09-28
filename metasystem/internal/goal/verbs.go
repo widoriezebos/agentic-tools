@@ -3657,6 +3657,14 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 			// second press used to land a second edit with a second History
 			// line.
 			if editChangesNothing(f, fields, permission) {
+				if fields.Permission != nil && fields.Intent == nil && fields.NextStep == nil && fields.Labels == nil {
+					// goal allow and goal disallow say what already holds in
+					// their own words.
+					if fields.Permission.Allowed {
+						return nil, AlreadyHolds{Reason: "goal " + id + " is already allowed " + permission.Words}
+					}
+					return nil, AlreadyHolds{Reason: "goal " + id + " is already not allowed " + permission.Words}
+				}
 				if fromSignedInSession(r.Authority) {
 					return nil, AlreadyHolds{Reason: "goal " + id + " already reads exactly this way: the same edit from this signed-in session"}
 				}
