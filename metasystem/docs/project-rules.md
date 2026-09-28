@@ -14,7 +14,7 @@ Replace this file when adopting the metasystem. Keep facts concrete and reposito
 
 ## Commands
 
-- Testing contract: `testing.json`, selected through `testing.contract=testing.json` in `metasystem.conf`. `bin/metasystem test list --root .` describes it, `settings check` validates it with the settings without compiling, `test plan --goal <goal> --mode auto` resolves the actual risk-selected groups, `test run` executes the selected stages, and `test status --tree <tree>` reads sufficient retained evidence without rerunning it. `metasystem internal testing merge --base <file> --ours <file> --theirs <file> --out <file>` merges concurrent contract edits by surface, group, and list identity; `testing merge-driver` prints the Git driver setup and accepts Git's `%O %A %B` order; `testing add-tests --file <file> --group <id> --tests <name,...>` verifies and adds named Go tests.
+- Testing contract: `testing.json`, selected through `testing.contract=testing.json` in `metasystem.conf`. `bin/metasystem test list --root .` describes it, `settings check` validates it with the settings without compiling, `test plan --goal <goal> --mode auto` resolves the actual risk-selected groups, `test run` executes the selected stages, and `test status --tree <tree>` reads sufficient retained evidence without rerunning it. `metasystem test merge --base <file> --ours <file> --theirs <file> --out <file>` merges concurrent contract edits by surface, group, and list identity; `testing merge-driver` prints the Git driver setup and accepts Git's `%O %A %B` order; `metasystem test add --file <file> --group <id> --tests <name,...>` verifies and adds named Go tests.
 
   Application-language-neutral schema 2 fields and a command/JUnit example are in [the testing contract guide](testing-contract.md).
 
@@ -27,7 +27,7 @@ Batch composition and landing, goal branch commit and land preparation (includin
 - Build/package: `<command>`
 - Format/lint/typecheck: `<command>`
 - Local run: `<command>`
-- Refactor acceptance gate: `<command>`. The full behavior-preservation proof (full suite, benchmark, or golden run) that accepts a refactor candidate. State its cadence backstop if it differs from the defaults owned by `metasystem internal validate refactor-baseline`.
+- Refactor acceptance gate: `<command>`. The full behavior-preservation proof (full suite, benchmark, or golden run) that accepts a refactor candidate. State its cadence backstop if it differs from the defaults owned by `metasystem test baseline`.
 - Improvement evaluation: `<command>`. The on-demand evaluation for improvement goals. State the evaluation type (deterministic, stochastic, hidden-information, or dynamic; see the improve skill), the primary metric and its direction (max or min), guard metrics with floors, the noise floor (minimum meaningful delta), any cheaper canary or subset variant, and the holdout or case-rotation policy.
 - Frontier preservation policy: `<policy>`. How a new best-known state is preserved: tag pattern, push target, and who may move it.
 

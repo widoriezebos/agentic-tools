@@ -27,6 +27,7 @@ import (
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 // The work commands prepare and advance an agent's unit of work: brief
@@ -297,6 +298,15 @@ func intentWorkCommands() []intentCommand {
 			maxArgs:  0,
 			examples: []string{"metasystem settings keys", "metasystem settings keys --matching launch."},
 			run:      runIntentSettingsKeys,
+		},
+		{
+			object: "settings", action: "set", audience: "both", summary: "set one configuration key for this checkout's seat",
+			usage: []string{"metasystem settings set KEY VALUE"},
+			details: []string{"Writes KEY=VALUE into the installation's metasystem.conf.local, the seat's own layer over the shipped metasystem.conf, which is never changed.",
+				"A key already holding the value is left as it is."},
+			maxArgs:  2,
+			examples: []string{"metasystem settings set role.default.model.claude claude-opus-5-5"},
+			run:      runIntentSettingsSet,
 		},
 		{
 			object: "settings", action: "check", audience: "both", summary: "validate every setting and the testing contract, changing nothing",
@@ -1805,4 +1815,45 @@ func launchContractName(contract applaunch.Contract) string {
 		return "one unnamed application"
 	}
 	return contract.Name
+}
+
+// runIntentSettingsSet writes one key into the installation's local
+// configuration through the configuration owner (validate.SetConfKeys, the
+// one the one adoption tailoring uses), creating the local
+// file when the seat has none; the shipped metasystem.conf is never touched.
+func runIntentSettingsSet(inv *intentInvocation) int {
+	if len(inv.input.args) != 2 || strings.TrimSpace(inv.input.args[0]) == "" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+			Summary: "settings set needs a key and its value: metasystem settings set KEY VALUE; nothing was done"})
+	}
+	key, value := strings.TrimSpace(inv.input.args[0]), inv.input.args[1]
+	if strings.ContainsAny(key, "= \t\n") || strings.ContainsAny(value, "\n\r") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+			Summary: "a setting's key has no spaces or '=' and its value is one line; nothing was done"})
+	}
+	if problem := inv.resolveLayout(); problem != nil {
+		return inv.render(*problem)
+	}
+	local := intentConfPath(inv.layout) + ".local"
+	targets := []intentTarget{{Kind: "setting", ID: key}}
+	before, err := os.ReadFile(local)
+	existed := err == nil
+	if err != nil && !os.IsNotExist(err) {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "cannot read " + local + ": " + err.Error()})
+	}
+	if !existed {
+		if err := os.WriteFile(local, nil, 0o600); err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "cannot create " + local + ": " + err.Error()})
+		}
+	}
+	if err := validate.SetConfKeys(local, []validate.ConfSetting{{Key: key, Value: value}}); err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "cannot write " + local + ": " + err.Error()})
+	}
+	data := map[string]any{"key": key, "value": value, "file": local}
+	if after, err := os.ReadFile(local); existed && err == nil && bytes.Equal(before, after) {
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data,
+			Summary: key + " already holds that value in " + local + "; nothing was changed"})
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
+		Summary: key + "=" + value + " is set in " + local})
 }

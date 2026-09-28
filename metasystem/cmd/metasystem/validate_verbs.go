@@ -344,11 +344,11 @@ func movedEffectsReport(page []byte, repositoryRoot string) ([]string, int) {
 // environment error — the contract its callers script against.
 func runValidateRefactorBaseline(args []string) int {
 	usage := func() int {
-		fmt.Fprintln(os.Stderr, `usage: metasystem internal validate refactor-baseline record --gate CMD [--file F] [--root INSTALLATION]
-       metasystem internal validate refactor-baseline check [--file F] [--max-age-minutes N] [--max-commits N] [--root INSTALLATION]
+		fmt.Fprintln(os.Stderr, `usage: metasystem test baseline --gate CMD [--file F] [--root INSTALLATION]
+       metasystem test baseline --check [--file F] [--max-age-minutes N] [--max-commits N] [--root INSTALLATION]
 
-record: store the current clean, committed HEAD as the trusted refactor
-baseline after the project's acceptance gate passed. check: allow a new
+--gate: store the current clean, committed HEAD as the trusted refactor
+baseline after the project's acceptance gate passed. --check: allow a new
 refactor edit batch only when the worktree is clean, the baseline is an
 ancestor of HEAD, and the cadence backstop is not exceeded. The cadence
 resolves from flags, then environment, then the installation's
@@ -365,7 +365,7 @@ Exit codes: 0 safe; 1 blocked; 2 usage or environment error.`)
 	}
 	var p validate.RefactorBaselineParams
 	p.Command = args[0]
-	flags := flag.NewFlagSet("validate refactor-baseline", flag.ContinueOnError)
+	flags := flag.NewFlagSet("test baseline", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&p.File, "file", "plans/refactor-baseline", "baseline file path")
 	flags.StringVar(&p.Gate, "gate", "", "record: the acceptance gate command that passed")

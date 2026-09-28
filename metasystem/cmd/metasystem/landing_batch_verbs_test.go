@@ -53,7 +53,7 @@ func TestBatchTaggedCapabilityWitnessExecutesInProof(t *testing.T) {
 		"TestBatchJoinSpawnsOneOwner", "TestBatchOwnerHoldsTheLease", "TestBatchOwnerWiringBound",
 		"TestBatchOwnerInspectionUsesInjectedProberAndKeepsReadErrorsUnknown", "TestBatchProductionReturnTargetClassifiesCustody",
 		"TestBatchProofCoversTheUnion", "TestBatchProofAcceptsReusableSuccess", "TestBatchProofRearmsBaseBeforePlanningEvenWhenTreeMatches",
-		"TestBatchSupervisorTakeoverRebindsJoinedClaims", "TestGoalHandoverTargetRootFlagFlows", "TestLandingBatchJoinVerbPublishesOutsideFlock",
+		"TestBatchSupervisorTakeoverRebindsJoinedClaims", "TestLandingBatchJoinVerbPublishesOutsideFlock",
 		"TestBatchProductionReturnAndForwardHandoverArguments", "TestBatchTrunkRedLedgerOwnerCapability",
 		"TestBatchProofUnionUsesRealMemberRiskSelection", "TestBatchProofDurableUnionRefusalSkipsSecondRearm",
 		"TestBatchProofRefusalTransitions",

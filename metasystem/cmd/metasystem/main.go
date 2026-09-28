@@ -52,8 +52,6 @@ func families() []family {
 			name:    "testing",
 			summary: "semantic maintenance of the testing contract",
 			verbs: []verb{
-				{"merge", "three-way merge a testing contract by surface, group, and list value", runTestingMerge},
-				{"add-tests", "add verified Go test names to one testing group", runTestingAddTests},
 				{"merge-driver", "run the testing contract Git merge driver, or print its setup", runTestingMergeDriver},
 			},
 		},
@@ -104,7 +102,6 @@ func families() []family {
 			verbs: []verb{
 				{"get", "resolve a config key with flag/env/local/mode/conf/default precedence", runConfigGet},
 				{"validate", "validate the whole metasystem.conf domain", runConfigValidate},
-				{"tailor", "rewrite metasystem.conf in place for a selected runtime set", runConfigTailor},
 			},
 		},
 		{
@@ -113,7 +110,6 @@ func families() []family {
 			verbs: []verb{
 				{"turn-prompt", "validate an assembled host-turn prompt against its turn record and the shipped preamble", runValidateTurnPrompt},
 				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
-				{"refactor-baseline", "record or check the trusted refactor baseline", runValidateRefactorBaseline},
 				{"skills", "validate every present skill's SKILL.md frontmatter, or the named skill directories", runValidateSkills},
 				{"design-obligations", "check the structure and declared state of design-obligation matrices", runValidateDesignObligations},
 			},
@@ -186,13 +182,6 @@ func families() []family {
 			summary: "role-return schema materialization",
 			verbs: []verb{
 				{"materialize", "write a role's return schema at a version", runSchemaMaterialize},
-			},
-		},
-		{
-			name:    "runtime",
-			summary: "the declared agent-runtime registry (list, lookups)",
-			verbs: []verb{
-				{"setup", "install or check host runtime entry points without selecting an active runtime", runRuntimeSetup},
 			},
 		},
 		{

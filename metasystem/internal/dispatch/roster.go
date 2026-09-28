@@ -67,8 +67,8 @@ func refuseTemplateModel(conf, role, runtime, model string) error {
 	if value, err := rosterGet(conf, key, ""); err != nil || value == missingSentinel {
 		key = "role.default.model." + runtime
 	}
-	return fmt.Errorf("role %s resolves to %s:%s, a template placeholder from %s; set it with: metasystem internal config tailor --conf %s.local --set %s=<the %s model this seat runs>",
-		role, runtime, model, key, conf, key, runtime)
+	return fmt.Errorf("role %s resolves to %s:%s, a template placeholder from %s; set it with: metasystem settings set %s <the %s model this seat runs>, which writes %s.local",
+		role, runtime, model, key, key, runtime, conf)
 }
 
 func rosterGet(conf, key, mode string) (string, error) {

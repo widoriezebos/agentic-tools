@@ -333,7 +333,7 @@ Trusted state is written only by the orchestrator that certifies. Mode rules do 
 | --- | --- | --- |
 | Implement | Implementation from an accepted design; exploration; a verifier run | Design decisions, adjudication, decisive verification, certification, receipts |
 | Design | Critique rounds (`design-critic`) | The design itself, dispositions, the obligation matrix |
-| Refactor | Batch execution in the job worktree against the brief's batch plan | The acceptance gate run, `metasystem internal validate refactor-baseline` record and check, test-change escalations |
+| Refactor | Batch execution in the job worktree against the brief's batch plan | The acceptance gate run, `metasystem test baseline --gate` record and `--check` check, test-change escalations |
 | Improve | Implementing one experiment per brief | Running the evaluation, `metasystem experiment` challenge and record, honest classification |
 | Take a step back | Evidence gathering; analysis-only diagnosis | The ledger, classifications, `metasystem experiment check` state |
 | Verify | Driving the surface and capturing output | Certification against the completion gate |
@@ -439,7 +439,7 @@ Efficiency never regresses functionality: no unit lowers a proof floor, removes 
 
 Adapters own launch, resume, model, permissions, output-format, and cancellation flags. Do not copy those flags into prose.
 
-`bin/metasystem internal runtime setup --repo <path>` registers every adoptable host by
+`bin/metasystem system register --repo <path>` registers every adoptable host by
 default without selecting a globally active runtime or changing the execution
 roster. `--runtimes <csv>` selects explicit hosts, `--copy-skills` retains the
 adoption copy mode, and `--check` validates without writing. Its

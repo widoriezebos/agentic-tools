@@ -9,10 +9,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
-	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 // repeatedFlag collects every occurrence of a flag that may be given
@@ -24,83 +21,6 @@ func (r *repeatedFlag) String() string { return strings.Join(*r, ",") }
 func (r *repeatedFlag) Set(value string) error {
 	*r = append(*r, value)
 	return nil
-}
-
-// runConfigTailor rewrites a metasystem.conf in place for the selected
-// runtime set: the runtime list becomes durable state, unselected
-// runtimes lose their role and mode bindings, per-runtime model keys,
-// and model-tier members, and the default runtime is set. --set
-// key=value overrides (applied after tailoring, so they win) replace or
-// append individual keys. Exit 2 marks bad flags; exit 1 a failed
-// rewrite.
-func runConfigTailor(args []string) int {
-	flags := flag.NewFlagSet("config tailor", flag.ContinueOnError)
-	conf := flags.String("conf", "", "path to the metasystem.conf to rewrite")
-	runtimes := flags.String("runtimes", "", "comma-separated selected runtimes, or none")
-	testingContract := flags.String("testing-contract", "", "write an explicit incomplete first-adoption testing contract")
-	var sets repeatedFlag
-	flags.Var(&sets, "set", "key=value to set after tailoring (repeatable)")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *conf == "" || *runtimes == "" {
-		fmt.Fprintf(os.Stderr, "usage: metasystem internal config tailor --conf F --runtimes %s|none [--set key=value ...]\n",
-			strings.Join(runtimereg.Names(), ","))
-		return 2
-	}
-	selected := strings.Split(*runtimes, ",")
-	seen := map[string]bool{}
-	for _, runtime := range selected {
-		switch {
-		case runtime == "none":
-		case runtimereg.Supported(runtime):
-		default:
-			fmt.Fprintf(os.Stderr, "unknown runtime: %s (%s, or none)\n",
-				runtime, strings.Join(runtimereg.Names(), ", "))
-			return 2
-		}
-		if seen[runtime] {
-			fmt.Fprintln(os.Stderr, "--runtimes contains a duplicate runtime")
-			return 2
-		}
-		seen[runtime] = true
-	}
-	if seen["none"] && len(selected) > 1 {
-		fmt.Fprintln(os.Stderr, "--runtimes none cannot be combined with other runtimes")
-		return 2
-	}
-	var settings []validate.ConfSetting
-	for _, assignment := range sets {
-		key, value, found := strings.Cut(assignment, "=")
-		if !found || strings.TrimSpace(key) == "" {
-			fmt.Fprintf(os.Stderr, "--set needs key=value, got: %s\n", assignment)
-			return 2
-		}
-		key = strings.TrimSpace(key)
-		settings = append(settings, validate.ConfSetting{Key: key, Value: value})
-	}
-	if err := validate.TailorConf(*conf, selected); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if len(settings) > 0 {
-		if err := validate.SetConfKeys(*conf, settings); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-	}
-	if *testingContract != "" {
-		data, err := testpolicy.IncompleteTemplate()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		if err := os.WriteFile(*testingContract, data, 0o644); err != nil {
-			fmt.Fprintf(os.Stderr, "write incomplete testing contract: %v\n", err)
-			return 1
-		}
-	}
-	return 0
 }
 
 // runConfigGet resolves one configuration key through the full precedence order

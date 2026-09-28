@@ -167,6 +167,7 @@ predecessor in the same slice.
 | **test** | run | `test` |
 | | plan, list, check, verify, report | `internal test plan/list/check/verify/report` |
 | | wait | `wait proof REF` (as `test wait proof:ID`; U1a adds no `test status`, so `proof:` is accepted by `test wait` only) |
+| | add, merge, baseline | `internal testing add-tests`, `internal testing merge`, `internal validate refactor-baseline record/check` (as `test baseline --gate`/`--check`; refactor skill) (U9a) |
 | **question** | ask, retry, withdraw | `ask`, `ask --retry`, `ask --withdraw` |
 | | answer, show, list, wait | `answer`, `show question`, (new list over the same owner), `wait question` |
 | **mission** | start, status, resume, repair | `start/status/resume/repair mission M` |
@@ -175,10 +176,10 @@ predecessor in the same slice.
 | **decision** | list, show | `show decisions`, `show record ID` |
 | **session** | start, stop, report | `start session`, `stop session`, `internal report stop-status` (the Stop hook's instruction) |
 | | handoff, context, verify | `internal context handoff/status/verify` (steward continuation role) |
-| **system** | start, stop, restart, status, check, repair, setup | `start/stop/restart/status [checkout]`, `check`, `repair waits`, `internal up --recover-only --if-down` (as `system start --if-down`, the cron line), `internal steward status` (as `system status --steward`); `setup` (U9, refinement): connect this checkout's runtime hooks and pre-commit fence to its engine, the per-checkout activation of 3.3 |
+| **system** | start, stop, restart, status, check, repair, setup, register | `start/stop/restart/status [checkout]`, `check`, `repair waits`, `internal up --recover-only --if-down` (as `system start --if-down`, the cron line), `internal steward status` (as `system status --steward`); `setup` (U9, refinement): connect this checkout's runtime hooks and pre-commit fence to its engine, the per-checkout activation of 3.3; `internal runtime setup` (as `system register`: install or check the installation's agent-runtime registrations; U9a) |
 | **machine** | list, start | `status --machines`, `start machine NAME` |
 | **ui** | start, stop, restart, status | `start/stop/restart/status ui` |
-| **settings** | show, keys, check, coordinator | `settings`, `settings --keys`, `check settings`, `settings coordinator` |
+| **settings** | show, keys, check, coordinator, set | `settings`, `settings --keys`, `check settings`, `settings coordinator`, `internal config tailor --set` on the seat's `.local` (as `settings set KEY VALUE`; the placeholder-model remedy; U9a) |
 | **terminal** | enroll | `enroll` |
 | **receipt** | add, check, stats, correct, retro | `scripts/receipt.sh` and `internal receipt ...` |
 | **experiment** | record, challenge, status, check | `internal report frontier record/challenge/status`, `internal validate stop-loss` (improve, take-a-step-back) |
