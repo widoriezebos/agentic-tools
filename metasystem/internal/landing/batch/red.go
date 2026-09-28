@@ -563,17 +563,23 @@ func (d redDecision) unnamed() error {
 	if err != nil {
 		return returned(err.Error()+"; nothing lands on it", run)
 	}
-	if _, err := ledger.RecordPending(opid, d.sighting(tip, run, identifiedGroups, d.record.TipTree)); err != nil {
-		return err
-	}
-	return d.store.Update(d.record.BatchID, func(current *Record) error {
+	// The sighting follows the compare-and-swap: a lost swap leaves none for
+	// a landing that never happened. Its opid is on the record, and the
+	// register journals by opid, so publishing it again is idempotent.
+	if err := d.store.Update(d.record.BatchID, func(current *Record) error {
 		if current.State != StateDiagnosing || current.Proof == nil || current.Proof.AttemptID != d.record.Proof.AttemptID {
 			return fmt.Errorf("BATCH_PROOF_INPUT_MOVED: batch changed before its composed proof was recorded")
 		}
 		current.Proof.Status, current.Proof.Failure, current.Proof.Sources, current.Proof.Flakes = "green", "", sources, uses
-		current.Transition(StateLanding, d.at, "diagnose", d.actor, "composed on known flakes; classification attempt "+run.AttemptID)
+		current.Transition(StateLanding, d.at, "diagnose", d.actor, "composed on known flakes; classification attempt "+run.AttemptID+"; sighting op "+opid)
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	if _, err := ledger.RecordPending(opid, d.sighting(tip, run, identifiedGroups, d.record.TipTree)); err != nil {
+		return fmt.Errorf("batch %s lands composed but its flake sighting (op %s) was not recorded: %w", d.record.BatchID, opid, err)
+	}
+	return nil
 }
 
 // unknownClosures returns each joined member without a recorded closure: no

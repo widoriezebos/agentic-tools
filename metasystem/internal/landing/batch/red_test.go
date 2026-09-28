@@ -1180,3 +1180,23 @@ func TestUnknownClosureMemberReturnsInsteadOfLandingOnAKnownFlake(t *testing.T) 
 		}
 	}
 }
+
+// A known flake's sighting is published only once the batch record moved to
+// landing: a lost compare-and-swap leaves no sighting for a landing that
+// never happened.
+func TestKnownFlakeSightingFollowsTheLandingCAS(t *testing.T) {
+	t.Parallel()
+	red := knownRed()
+	store, ledger := flakeBed(t, red)
+	ledger.entries = []OpenEntry{{ID: "F", Identity: FlakeID(red.ID, red.Failures[0]), Class: ClassKnownFlake, AllowanceUntil: flakeNow.Add(time.Hour), Owner: "Wido"}}
+	seams := flakeSeams(&flakeScript{tip: passedAt("identity-"+red.ID, red)}, ledger, nil)
+	seams.Sources = func(Record) (map[string]string, error) {
+		// Another writer moves the batch while the verifier runs.
+		must(t, store.Update(testBatchID, func(record *Record) error { record.Proof.AttemptID = "moved-attempt"; return nil }))
+		return map[string]string{red.ID: "class-attempt", "fake-other": "tip-attempt"}, nil
+	}
+	err := DiagnoseRed(store, testBatchID, "owner", []RedGroup{red}, "", flakeNow, seams)
+	if err == nil || !strings.Contains(err.Error(), "BATCH_PROOF_INPUT_MOVED") || len(ledger.pendings) != 0 {
+		t.Fatalf("lost CAS: err=%v sightings=%d, want the move refused and no sighting", err, len(ledger.pendings))
+	}
+}
