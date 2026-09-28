@@ -107,64 +107,86 @@ type leaseReclaimRecord struct {
 	By        int             `json:"by"`
 }
 
-// settle decides one dirty lease. It returns true only after the reclaim
-// record is durable and the marker is marked cleared and removed.
-func (reclaimer *leaseReclaimer) settle(directory, path string, locked *os.File, record hostLeaseRecord) (bool, error) {
-	name := filepath.Base(path)
-	if reclaimer.skip[name] > 0 {
-		reclaimer.skip[name]--
-		return false, nil
-	}
+// leaseVerdict is one judgement of a dirty lease whose flock this process
+// holds: the owner is live, something is unknown (with its remedy), or the
+// owner is dead and settled (ownerDead names the proof).
+type leaseVerdict struct {
+	live      bool
+	unknown   string
+	remedy    string
+	ownerDead string
+}
+
+func (reclaimer *leaseReclaimer) judge(record hostLeaseRecord) leaseVerdict {
 	owner := record.Owner.Ref()
 	exact, state, probeErr := reclaimer.prober.Probe(owner.Pid)
 	var ownerDead string
 	switch {
 	case probeErr != nil || state == identity.Unknown:
-		reclaimer.keep(name, record, fmt.Sprintf("owner liveness is unknown (%v)", probeErr), reclaimer.handRemedy(record))
-		return false, nil
+		return leaseVerdict{unknown: fmt.Sprintf("owner liveness is unknown (%v)", probeErr), remedy: reclaimer.handRemedy(record)}
 	case state == identity.Dead:
 		ownerDead = fmt.Sprintf("pid %d is not running", owner.Pid)
 	default:
 		comparison := identity.Compare(exact, owner)
 		switch {
 		case comparison.Mode == identity.CompareInvalid:
-			reclaimer.keep(name, record, "owner identity is not comparable", reclaimer.handRemedy(record))
-			return false, nil
+			return leaseVerdict{unknown: "owner identity is not comparable", remedy: reclaimer.handRemedy(record)}
 		case !comparison.Matches:
 			ownerDead = fmt.Sprintf("pid %d was reused by a process with another start time", owner.Pid)
 		case exact.Zombie:
 			ownerDead = fmt.Sprintf("pid %d is a zombie", owner.Pid)
 		default:
 			// A live owner keeps its lease however long it runs.
-			return false, nil
+			return leaseVerdict{live: true}
 		}
 	}
 	if record.Owner.Pgid <= 0 {
-		reclaimer.keep(name, record, "owner process group is not recorded", reclaimer.handRemedy(record))
-		return false, nil
+		return leaseVerdict{unknown: "owner process group is not recorded", remedy: reclaimer.handRemedy(record)}
 	}
 	live, groupErr := reclaimer.groupLive(record.Owner.Pgid, reclaimer.prober)
 	if groupErr != nil {
-		reclaimer.keep(name, record, fmt.Sprintf("owner process group %d membership is unknown (%v)", record.Owner.Pgid, groupErr), reclaimer.handRemedy(record))
-		return false, nil
+		return leaseVerdict{unknown: fmt.Sprintf("owner process group %d membership is unknown (%v)", record.Owner.Pgid, groupErr), remedy: reclaimer.handRemedy(record)}
 	}
 	if live {
-		reclaimer.keep(name, record, fmt.Sprintf("owner process group %d still has live members, settlement is unknown", record.Owner.Pgid), reclaimer.handRemedy(record))
-		return false, nil
+		return leaseVerdict{unknown: fmt.Sprintf("owner process group %d still has live members, settlement is unknown", record.Owner.Pgid), remedy: reclaimer.handRemedy(record)}
 	}
 	survivors, censusErr := reclaimer.survivors(reclaimer.prober, owner)
 	if censusErr != nil {
-		reclaimer.keep(name, record, fmt.Sprintf("the owner's fixture census failed (%v)", censusErr), reclaimer.fixtureRemedy(record))
-		return false, nil
+		return leaseVerdict{unknown: fmt.Sprintf("the owner's fixture census failed (%v)", censusErr), remedy: reclaimer.fixtureRemedy(record)}
 	}
 	if len(survivors) != 0 {
-		what := fmt.Sprintf("%d owner-tagged fixture(s) survive, first pid %d (%s)", len(survivors), survivors[0].Ref.Pid, survivors[0].Class)
-		reclaimer.keep(name, record, what, reclaimer.fixtureRemedy(record))
+		return leaseVerdict{unknown: fmt.Sprintf("%d owner-tagged fixture(s) survive, first pid %d (%s)", len(survivors), survivors[0].Ref.Pid, survivors[0].Class),
+			remedy: reclaimer.fixtureRemedy(record)}
+	}
+	return leaseVerdict{ownerDead: ownerDead}
+}
+
+// settle decides one dirty lease on the admission path. It returns true only
+// after the reclaim record is durable and the marker is cleared and removed.
+func (reclaimer *leaseReclaimer) settle(directory, path string, locked *os.File, record hostLeaseRecord) (bool, error) {
+	name := filepath.Base(path)
+	if reclaimer.skip[name] > 0 {
+		reclaimer.skip[name]--
 		return false, nil
 	}
+	verdict := reclaimer.judge(record)
+	if verdict.live {
+		return false, nil
+	}
+	if verdict.unknown != "" {
+		reclaimer.keep(name, record, verdict.unknown, verdict.remedy)
+		return false, nil
+	}
+	return true, reclaimer.commit(directory, path, locked, record, verdict.ownerDead)
+}
+
+// commit runs under admission.lock and the lease flock, after judge proved
+// the owner dead and settled.
+func (reclaimer *leaseReclaimer) commit(directory, path string, locked *os.File, record hostLeaseRecord, ownerDead string) error {
+	name := filepath.Base(path)
 	_, data, err := readHostLeaseRecord(locked)
 	if err != nil {
-		return false, err
+		return err
 	}
 	entry := leaseReclaimRecord{
 		At: reclaimer.now().UTC().Format(time.RFC3339Nano), Lease: name, Owner: record.Owner,
@@ -174,15 +196,15 @@ func (reclaimer *leaseReclaimer) settle(directory, path string, locked *os.File,
 		By: os.Getpid(),
 	}
 	if err := appendLeaseReclaimRecord(directory, entry); err != nil {
-		return false, fmt.Errorf("record reclaim of %s: %w", name, err)
+		return fmt.Errorf("record reclaim of %s: %w", name, err)
 	}
 	if err := setHostLeaseCleared(locked, data, true); err != nil {
-		return false, fmt.Errorf("clear reclaimed lease %s: %w", name, err)
+		return fmt.Errorf("clear reclaimed lease %s: %w", name, err)
 	}
 	if err := os.Remove(path); err != nil {
-		return false, fmt.Errorf("remove reclaimed lease %s: %w", name, err)
+		return fmt.Errorf("remove reclaimed lease %s: %w", name, err)
 	}
-	return true, nil
+	return nil
 }
 
 func (reclaimer *leaseReclaimer) keep(name string, record hostLeaseRecord, unknown, remedy string) {

@@ -325,3 +325,77 @@ func TestTwoWaitersReclaimADeadLeaseExactlyOnce(t *testing.T) {
 		t.Fatalf("dead lease was not reclaimed exactly once: records=%d censuses=%d", len(records), settled.Load())
 	}
 }
+
+// Witness for the steward's proof-admission role: a dead dirty lease is
+// reported while a proof holds admission.lock and reclaimed by the next
+// inspection that takes it; an unknown one carries its remedy; a held or
+// live-owned one is live.
+func TestInspectHostLeasesReportsThenReclaimsADeadLease(t *testing.T) {
+	t.Parallel()
+	directory := reclaimDirectory(t)
+	path := writeDirtyReclaimLease(t, directory)
+	seams := newReclaimSeams(reclaimProber{})
+	guard, acquired, err := tryHostFile(filepath.Join(directory, "admission.lock"))
+	if err != nil || !acquired {
+		t.Fatalf("hold admission.lock: acquired=%t err=%v", acquired, err)
+	}
+	reports, err := inspectHostLeasesIn(directory, seams.reclaimer())
+	if err != nil || len(reports) != 1 || reports[0].State != HostLeaseDead || reports[0].Owner.Pid != reclaimOwnerPid || reports[0].Since.IsZero() {
+		t.Fatalf("busy admission.lock did not report the dead lease: %+v err=%v", reports, err)
+	}
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("inspection reclaimed without admission.lock: %v", statErr)
+	}
+	if err := releaseHostProbe(guard); err != nil {
+		t.Fatal(err)
+	}
+	reports, err = inspectHostLeasesIn(directory, seams.reclaimer())
+	if err != nil || len(reports) != 1 || reports[0].State != HostLeaseReclaimed {
+		t.Fatalf("free admission.lock did not reclaim the dead lease: %+v err=%v", reports, err)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) || len(reclaimRecords(t, directory)) != 1 {
+		t.Fatalf("reclaimed lease remains or has no record: %v", statErr)
+	}
+	if reports, err = inspectHostLeasesIn(directory, seams.reclaimer()); err != nil || len(reports) != 0 {
+		t.Fatalf("reclaimed lease is still reported: %+v err=%v", reports, err)
+	}
+}
+
+func TestInspectHostLeasesNamesUnknownRemedyAndLiveOwners(t *testing.T) {
+	t.Parallel()
+	unknownDirectory := reclaimDirectory(t)
+	unknownPath := writeDirtyReclaimLease(t, unknownDirectory)
+	unknown := newReclaimSeams(reclaimProber{})
+	unknown.censusErr = errors.New("process table unreadable")
+	reports, err := inspectHostLeasesIn(unknownDirectory, unknown.reclaimer())
+	if err != nil || len(reports) != 1 || reports[0].State != HostLeaseUnknown ||
+		!strings.Contains(reports[0].Remedy, "fixture-survivors --owner") || !strings.Contains(reports[0].Reason, "census failed") {
+		t.Fatalf("unknown lease report lacks its remedy: %+v err=%v", reports, err)
+	}
+	if _, statErr := os.Stat(unknownPath); statErr != nil {
+		t.Fatalf("unknown lease was removed: %v", statErr)
+	}
+
+	liveDirectory := reclaimDirectory(t)
+	writeDirtyReclaimLease(t, liveDirectory)
+	live := newReclaimSeams(reclaimProber{reclaimOwnerPid: {reclaimExact(reclaimOwnerPid, reclaimOwnerMicro), identity.Alive}})
+	reports, err = inspectHostLeasesIn(liveDirectory, live.reclaimer())
+	if err != nil || len(reports) != 1 || reports[0].State != HostLeaseLive {
+		t.Fatalf("live owner's lease is not live: %+v err=%v", reports, err)
+	}
+
+	heldDirectory := reclaimDirectory(t)
+	heldPath := writeDirtyReclaimLease(t, heldDirectory)
+	holder, acquired, err := tryHostFile(heldPath)
+	if err != nil || !acquired {
+		t.Fatalf("hold the lease flock: acquired=%t err=%v", acquired, err)
+	}
+	defer func() { _ = releaseHostProbe(holder) }()
+	reports, err = inspectHostLeasesIn(heldDirectory, newReclaimSeams(reclaimProber{}).reclaimer())
+	if err != nil || len(reports) != 1 || reports[0].State != HostLeaseLive {
+		t.Fatalf("a held lease is not live: %+v err=%v", reports, err)
+	}
+	if _, statErr := os.Stat(heldPath); statErr != nil {
+		t.Fatalf("a held lease was removed: %v", statErr)
+	}
+}
