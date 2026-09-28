@@ -1864,7 +1864,7 @@ func resolveAttorneyForEndpoint(e Endpoint, id, verb string, now time.Time) (Pow
 	}
 	entry, ok := rootAttorney(p.Tree.Root, id)
 	if !ok {
-		return PowerOfAttorneyEntry{}, fmt.Errorf("no power of attorney %s is recorded; a person records one with goal grant --by <name> --tiers 1,2 --verbs approve,set-budget,unpark --expires <YYYY-MM-DD>", id)
+		return PowerOfAttorneyEntry{}, fmt.Errorf("no power of attorney %s is recorded; a person records one with metasystem grant add --tiers 1,2 --acts approve,budget,resume-parked --until YYYY-MM-DD", id)
 	}
 	if live, why := entry.LiveAt(now); !live {
 		return PowerOfAttorneyEntry{}, fmt.Errorf("power of attorney %s is not live: %s", entry.ID, why)
@@ -2859,7 +2859,7 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 // stay in the history; Goal-free clears when it was declared.
 func Unpark(r VerbRequest, id string) (PublishResult, error) {
 	if r.Attorney != nil {
-		return PublishResult{}, fmt.Errorf("an unpark under power of attorney says what the seat verified: use goal unpark --under <entry> --verified <what holds now>")
+		return PublishResult{}, fmt.Errorf("an unpark under power of attorney says what the seat verified: use metasystem goal resume %s --under GRANT --verified TEXT", id)
 	}
 	return Publish(r.Endpoint, unparkRequest(r, id, ""))
 }
@@ -2954,7 +2954,7 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 					grade = humanauthority.GradeEnrolled
 					rowName = "unpark of a human park to approved"
 				}
-				missing := fmt.Sprintf("goal %s was parked by %s; lifting a human's pause is a human act, or the seat's under a power of attorney that names unpark (goal unpark --under <entry> --verified <what holds now>)", id, f.Parked.By)
+				missing := fmt.Sprintf("goal %s was parked by %s; lifting a human's pause is a human act, or the seat's under a power of attorney that names resume-parked (metasystem goal resume %s --under GRANT --verified TEXT)", id, f.Parked.By, id)
 				if err := r.requireHuman(humanAuthorityRow{Verb: "unpark", Name: rowName, Missing: missing, Session: true}, grade); err != nil {
 					return nil, err
 				}
@@ -5515,7 +5515,7 @@ func carrySupersedePrecondition(r VerbRequest, tree *TreeGoals, codeTip string, 
 	}
 	reservation := CarryReservationAt(tree, target.Goal, target.History.Opid, r.Now)
 	if reservation.State == "open" {
-		return CarryWord{}, nil, fmt.Errorf("in flight on %s since %s: goal carrying --abandon %s on that seat, or wait for %s", targetSeat, reservation.History.At, reservation.History.Opid, target.Expires.UTC().Format(time.RFC3339))
+		return CarryWord{}, nil, fmt.Errorf("reservation %s is in flight on %s since %s: it ends when that seat's landing finishes or abandons it, or when the word expires at %s", reservation.History.Opid, targetSeat, reservation.History.At, target.Expires.UTC().Format(time.RFC3339))
 	}
 	consumption, err := carryConsumptionAtFor(r.Endpoint, tree, codeTip, target)
 	if err != nil {
@@ -5636,7 +5636,7 @@ func Carrying(r VerbRequest, args CarryingArgs) (PublishResult, string, error) {
 		}
 		reservation := CarryReservationAt(projection.Tree, args.Goal, args.ApprovedRef, r.Now)
 		if reservation.State != "open" || reservation.History.Opid != args.Carrying {
-			return PublishResult{}, "", carryAsk("carry-debt-unpaid", "reserve first with goal carrying")
+			return PublishResult{}, "", carryAsk("carry-debt-unpaid", "the carry is not reserved; metasystem work land "+args.Goal+" --using-exception "+args.ApprovedRef+" reserves it before it commits")
 		}
 		workspace := reasonField(reservation.History.Reason, "workspace")
 		if workspace != args.Workspace {

@@ -210,27 +210,6 @@ func goalRepairAcceptRemoteTo(stdout, stderr io.Writer, root, by string, facts g
 	return 0
 }
 
-// hexDigestOf helps the rehearsal scripts compute the reviewed
-// literal without a python detour.
-func runGoalSourceDigest(args []string) int {
-	flags := flag.NewFlagSet("goal source-digest", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" {
-		fmt.Fprintln(os.Stderr, "goal source-digest: --root is required")
-		return 2
-	}
-	data, err := os.ReadFile(*root + "/plans/goals.md")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal source-digest: %v\n", err)
-		return 1
-	}
-	fmt.Println(goal.SourceDigestOf(data))
-	return 0
-}
-
 // recoverGoalJournal runs the one recovery rule over the journal and returns
 // what it did to each stranded entry.
 func recoverGoalJournal(root string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) ([]goal.RecoveryReport, error) {
@@ -247,31 +226,4 @@ func recoverGoalJournal(root string, commandNow func(string) (time.Time, error),
 		return nil, err
 	}
 	return goal.RecoverWithPolicy(endpoint, goalRecoveryPolicy{GoalRecoveryPolicy: dispatchcore.GoalRecoveryPolicy{Now: now}, root: root})
-}
-
-// runGoalRecover executes the one recovery rule over the journal —
-// the verb a stranded clone runs to move again.
-func runGoalRecover(args []string) int {
-	flags := flag.NewFlagSet("goal recover", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" {
-		fmt.Fprintln(os.Stderr, "goal recover: --root is required")
-		return 2
-	}
-	reports, err := recoverGoalJournal(*root, goalCommandNow, defaultSyncRequestDependencies())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
-		return 1
-	}
-	if len(reports) == 0 {
-		fmt.Println("the journal is clean; nothing to recover")
-		return 0
-	}
-	for _, rep := range reports {
-		fmt.Printf("%s: %s — %s\n", rep.Opid, rep.Action, rep.Detail)
-	}
-	return 0
 }

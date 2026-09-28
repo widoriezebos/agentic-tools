@@ -286,14 +286,6 @@ func runGoalSetNext(args []string) int {
 	})
 }
 
-func runGoalPromote(args []string) int {
-	return goalMutation("promote", args, func(f *flag.FlagSet) []*string {
-		return []*string{f.String("id", "", "queued goal id")}
-	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-		return s.Promote(c, v[0])
-	})
-}
-
 func runGoalPark(args []string) int {
 	return runGoalParkWithSync(args, trySyncMutation)
 }
@@ -309,10 +301,6 @@ func runGoalParkWithSync(args []string, trySync func(string, []string) (int, boo
 	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
 		return s.Park(c, v[0], v[1], v[2], v[3] == "true")
 	}, trySync)
-}
-
-func runGoalUnpark(args []string) int {
-	return runGoalUnparkWithSync(args, trySyncMutation)
 }
 
 func runGoalUnparkWithSync(args []string, trySync func(string, []string) (int, bool)) int {
@@ -338,31 +326,6 @@ func runGoalDoneWithSync(args []string, trySync func(string, []string) (int, boo
 	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
 		return s.Done(c, v[0], v[1], v[2], v[3] == "true")
 	}, trySync)
-}
-
-func runGoalReopen(args []string) int {
-	return goalMutation("reopen", args, func(f *flag.FlagSet) []*string {
-		return []*string{
-			f.String("id", "", "done goal id"),
-			f.String("next", "", "the reopened next step"),
-		}
-	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-		return s.Reopen(c, v[0], v[1])
-	})
-}
-
-func runGoalDeclareFree(args []string) int {
-	return goalMutation("declare-free", args, nil,
-		func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-			return s.DeclareFree(c)
-		})
-}
-
-func runGoalPrune(args []string) int {
-	return goalMutation("prune", args, nil,
-		func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-			return s.Prune(c)
-		})
 }
 
 func runGoalReconcile(args []string) int {
@@ -819,7 +782,7 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 	case ledger.Free != nil:
 		fmt.Println("goal-free declared " + ledger.Free.Declared)
 	case len(ledger.Queued) > 0:
-		fmt.Printf("no current goal; the queue holds %s: `goal promote %s` or park it\n", ledger.Queued[0].Id, ledger.Queued[0].Id)
+		fmt.Printf("no current goal; the queue holds %s; this legacy ledger converts with `metasystem goal sync --upgrade`\n", ledger.Queued[0].Id)
 	default:
 		fmt.Println("no current goal")
 	}

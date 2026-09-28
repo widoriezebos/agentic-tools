@@ -327,12 +327,8 @@ func TestIntentPlanningReadyTiersAndNotes(t *testing.T) {
 // intentPlanningDisposition is where each goal-family verb in this group is
 // reached from the public surface.
 var intentPlanningDisposition = map[string]string{
-	"open": "goal open", "edit": "goal edit", "set-next": "goal edit", "set-obligation": "goal edit", "claim": "goal claim", "steal": "goal claim",
-	"release": "goal release", "land-ready": "work land", "accept-risk": "goal accept-risk", "set-pin": "goal pin", "set-priority": "goal prioritize",
-	"reopen": "goal reopen", "abandon": "goal abandon", "carry": "goal abandon", "block": "goal block", "unblock": "goal unblock",
-	"unapprove": "goal unapprove", "grant": "grant add", "revoke": "grant revoke", "split": "goal split", "set-arc": "goal group", "detach": "goal ungroup",
-	"discharge-review-obligation": "work review", "read-items": "goal notes", "recover": "goal sync", "trunk-red": "incident claim",
-	"next": "goal list", "tier-probe": "goal list", "set-budget": "goal budget",
+	"open": "goal open", "edit": "goal edit", "set-next": "goal edit", "claim": "goal claim", "release": "goal release", "land-ready": "work land",
+	"carry": "goal abandon", "trunk-red": "incident claim", "next": "goal list", "tier-probe": "goal list", "set-budget": "goal budget",
 }
 
 func TestIntentPlanningDescriptorCoverage(t *testing.T) {

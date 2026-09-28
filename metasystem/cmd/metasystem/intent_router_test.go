@@ -89,7 +89,10 @@ func TestIntentRouterEveryPairRoutes(t *testing.T) {
 		}
 	}
 	// goal approve and the rest of section 6.5: the colliding pairs exist.
-	if collisions < 20 {
+	// U9a deletes the family verbs a public action shadows as it finds them
+	// dead, so the floor is one: it keeps the check live until U9 deletes the
+	// family registry, and this check with it.
+	if collisions < 1 {
 		t.Errorf("only %d family pairs collide with public actions; the collision check did not run", collisions)
 	}
 	if calls := sentinel.taken(); len(calls) != 0 {
