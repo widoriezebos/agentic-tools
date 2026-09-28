@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +89,9 @@ type Update struct {
 	// ledger reading, so it reads what the call prepared and the turn's owner
 	// decides whether the goals it names are at the accepted tip.
 	Action *Action
+	// Present is one thing the Partner put on a review's desk, on the look of
+	// the call that prepared it and nowhere else (g1-s65 D5).
+	Present *Present
 }
 
 // The four update kinds.
@@ -1015,7 +1019,7 @@ func (l *live) tool(started bool, body toolCall) {
 	}
 	// The three calls whose result is more than a look.
 	prepared := operation == uitools.OpSuggest || operation == uitools.OpDeposit ||
-		operation == uitools.OpPropose
+		operation == uitools.OpPropose || operation == uitools.OpPresent
 	update := Update{Kind: UpdateLook, Look: lookAt(what, body, prepared)}
 	if prepared && body.Status == "completed" {
 		switch operation {
@@ -1025,6 +1029,8 @@ func (l *live) tool(started bool, body toolCall) {
 			update.Deposit = depositedIn(resultText(body))
 		case uitools.OpPropose:
 			update.Action = proposedIn(resultText(body))
+		case uitools.OpPresent:
+			update.Present = presentedIn(resultText(body))
 		}
 	}
 	l.emit(update)
@@ -1111,6 +1117,38 @@ func depositedIn(text string) *Deposit {
 			clause(&held, lines[after])
 		}
 		return nil
+	}
+	return nil
+}
+
+// presentedIn reads one completed present call's result into a desk item, and
+// answers nothing where the framing is not there (g1-s65 D5).
+func presentedIn(text string) *Present {
+	lines := strings.Split(text, "\n")
+	for at, line := range lines {
+		kind, framed := strings.CutPrefix(line, uitools.PresentHeader)
+		if !framed || strings.TrimSpace(kind) == "" {
+			continue
+		}
+		held := Present{Kind: strings.TrimSpace(kind)}
+		for _, rest := range lines[at+1:] {
+			label, value, found := strings.Cut(rest, ": ")
+			if !found {
+				continue
+			}
+			value = strings.TrimSpace(value)
+			switch label + ": " {
+			case uitools.PresentPath:
+				held.Path = value
+			case uitools.PresentSection:
+				held.Section = value
+			case uitools.PresentFrom:
+				held.From, _ = strconv.Atoi(value)
+			case uitools.PresentTo:
+				held.To, _ = strconv.Atoi(value)
+			}
+		}
+		return &held
 	}
 	return nil
 }

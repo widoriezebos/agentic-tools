@@ -44,17 +44,19 @@ func TestAPurposeThisBuildDoesNotOfferIsRefusedWithoutStartingAnything(t *testin
 	t.Parallel()
 	service, handed := admitting(t, fakeacp.Script{Chunks: []string{"never asked"}})
 
-	err := service.Admits(context.Background(), "review")
+	err := service.Admits(context.Background(), "learning")
 
 	if err == nil {
-		t.Fatalf("a review sitting was admitted by a build that has no moves for one")
+		t.Fatalf("a learning sitting was admitted by a build that has no moves for one")
 	}
 	testutil.Expect(t, "that it says which purposes this build has",
-		strings.Contains(err.Error(), "review and learning sittings are not in this build"), true)
+		strings.Contains(err.Error(), "learning sittings are not in this build"), true)
 	_, sent := handed.First()
 	testutil.Expect(t, "that the runtime was never prompted", sent, false)
-	testutil.Expect(t, "and the two this build does offer are admitted",
+	testutil.Expect(t, "and the three this build does offer are admitted",
 		service.Admits(context.Background(), partner.PurposeShapeDesign), nil)
+	testutil.Expect(t, "the review among them (g1-s65)",
+		service.Admits(context.Background(), partner.PurposeReview), nil)
 	testutil.Expect(t, "both of them",
 		service.Admits(context.Background(), partner.PurposeShapeIntent), nil)
 }

@@ -49,11 +49,14 @@ const (
 	DepositCase     = "case"
 	DepositOutcome  = "outcome"
 	DepositProposal = "proposal"
+	// DepositFinding is the review's own (g1-s65 D8): a finding with the
+	// anchor it sits at and the consequence of leaving it unanswered.
+	DepositFinding = "finding"
 )
 
 // DepositKinds is what this build admits, in the order the tool's own
 // description lists them.
-var DepositKinds = []string{DepositFact, DepositDecision, DepositQuestion, DepositCase, DepositOutcome}
+var DepositKinds = []string{DepositFact, DepositDecision, DepositQuestion, DepositCase, DepositOutcome, DepositFinding}
 
 // The bounds. A deposit is one entry of a record's section: a line or a
 // paragraph, with one short clause beside it. Past these the call is refused in
@@ -143,6 +146,10 @@ func deposit(kind, text, anchor, reason, consequence, clauseSaid string) Result 
 		built += labelled(DepositReason, reason)
 	case DepositQuestion:
 		built += labelled(DepositConsequence, consequence)
+	case DepositFinding:
+		// A finding carries where it sits and what follows from leaving it
+		// unanswered, which the card's four answers each speak to.
+		built += labelled(DepositAnchor, anchor) + labelled(DepositConsequence, consequence)
 	case DepositCase:
 		// A case takes both of the clauses its two presses need: the clause it
 		// would become, which the Decide sheet opens with, and the consequence

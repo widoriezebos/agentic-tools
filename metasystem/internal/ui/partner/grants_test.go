@@ -195,3 +195,27 @@ func TestTheConversationIsKeyedByWorkspaceBesideTheNotepad(t *testing.T) {
 	testutil.Expect(t, "and not the notepad's",
 		strings.Contains(one, filepath.Join("ui", "stickies")), false)
 }
+
+// A sitting's conversation is the same private material in the same store
+// (g1-s65 D16), so neither grant reaches it either: it is put through the same
+// two decisions the human's own transcript is.
+func TestNeitherGrantReachesASittingsConversation(t *testing.T) {
+	t.Parallel()
+
+	checkout := checkoutOf(t)
+	home, err := Home()
+	if err != nil {
+		t.Fatalf("resolving the account's registry home: %v", err)
+	}
+	transcript, _ := sittingFiles(Directory(home, checkout), "Wido", "metasystem/plans/reviews/review-of-g1-s64.md")
+	if strings.HasPrefix(transcript, checkout+string(filepath.Separator)) {
+		t.Fatalf("the sitting's conversation is at %q, inside the checkout %q", transcript, checkout)
+	}
+	above, err := filepath.Abs(filepath.Join(checkout, ".."))
+	testutil.Require(t, "finding the repository above the installation", err, nil)
+	for _, roots := range [][]string{{checkout}, {checkout, above}} {
+		testutil.Expect(t, "what a grant over "+strings.Join(roots, " and ")+" says",
+			acp.Decide([]acp.Effect{{Class: acp.EffectRead, Paths: []string{transcript}}}, grantOver(roots)),
+			acp.VerdictDeny)
+	}
+}

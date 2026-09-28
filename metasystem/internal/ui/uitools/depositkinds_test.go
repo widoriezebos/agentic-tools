@@ -103,12 +103,13 @@ func TestTheTwoNewKindsAreBoundedAsWhatTheyAre(t *testing.T) {
 		strings.Contains(clause.Problem, "the clause on a deposit"), true)
 }
 
-// The catalogue offers the five and names them, so a Partner reading the schema
-// is told which kinds there are rather than guessing.
-func TestTheCatalogueOffersTheFiveKinds(t *testing.T) {
+// The catalogue offers the six and names them, so a Partner reading the schema
+// is told which kinds there are rather than guessing. The sixth is the review's
+// finding (g1-s65 D8).
+func TestTheCatalogueOffersTheSixKinds(t *testing.T) {
 	t.Parallel()
-	testutil.Expect(t, "the five kinds", DepositKinds,
-		[]string{DepositFact, DepositDecision, DepositQuestion, DepositCase, DepositOutcome})
+	testutil.Expect(t, "the six kinds", DepositKinds,
+		[]string{DepositFact, DepositDecision, DepositQuestion, DepositCase, DepositOutcome, DepositFinding})
 	for _, tool := range Catalogue() {
 		if tool.Name != OpDeposit {
 			continue

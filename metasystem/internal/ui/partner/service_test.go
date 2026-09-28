@@ -306,19 +306,22 @@ func TestTheSeatsSittingMovesWithItsMessages(t *testing.T) {
 
 	testutil.Require(t, "the seat's conversation is handed over", service.Adopt("seat", "Wido"), nil)
 
-	read, err := service.Snapshot("Wido", 100)
+	// The sitting is a conversation of its own (g1-s65 D16), and it moves as
+	// the human's own does.
+	read, err := service.SnapshotIn("Wido", subjectOf().ID, 100)
 	testutil.Require(t, "Wido's conversation reads back", err, nil)
 	testutil.Require(t, "the sitting is theirs now", read.Sitting != nil, true)
 	testutil.Expect(t, "on the record it was opened on", read.Sitting.Subject.ID, subjectOf().ID)
-	left, err := service.Snapshot("seat", 100)
+	testutil.Expect(t, "with its opening turn", len(read.Messages), 2)
+	left, err := service.SnapshotIn("seat", subjectOf().ID, 100)
 	testutil.Require(t, "the seat reads back too", err, nil)
 	testutil.Expect(t, "and the seat sits on nothing", left.Sitting == nil, true)
 
 	// And on the files, because what a later run of this seat reads is the file.
-	mine, err := partner.OpenConversation(root, "Wido")
+	mine, err := partner.OpenConversation(root, "Wido", subjectOf().ID)
 	testutil.Require(t, "Wido's state file reads back", err, nil)
 	testutil.Expect(t, "the mark is in it", mine.Sitting() != nil, true)
-	seat, err := partner.OpenConversation(root, "seat")
+	seat, err := partner.OpenConversation(root, "seat", subjectOf().ID)
 	testutil.Require(t, "the seat's state file reads back", err, nil)
 	testutil.Expect(t, "and gone from the seat's", seat.Sitting() == nil, true)
 }

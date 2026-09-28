@@ -29,7 +29,11 @@ import (
 // replays notifications only.
 type Event struct {
 	Turn string `json:"turn"`
-	Seq  int    `json:"seq"`
+	// Conversation is which conversation the beat belongs to: a sitting's
+	// record, or "" for the human's own (g1-s65 D16). A page shows the beats of
+	// the conversation on its screen and no other's.
+	Conversation string `json:"conversation"`
+	Seq          int    `json:"seq"`
 	// Kind is text, activity, look, done, error or stopped.
 	Kind string `json:"kind"`
 	Text string `json:"text"`
@@ -46,6 +50,10 @@ type Event struct {
 	// suggestion's reason: the card is on the transcript and on the table while
 	// the answer is still arriving.
 	Deposit *Deposit `json:"deposit,omitempty"`
+	// Present is one thing the Partner put on the review's desk, on a present
+	// beat and nowhere else (g1-s65 D5). It is a display suggestion: the page
+	// shows it on the desk unless the human stopped the walk's presenting.
+	Present *Present `json:"present,omitempty"`
 	// Proposal is one act the Partner proposed on one goal, on a proposal beat
 	// and nowhere else. It is carried as it is admitted, for the suggestion's
 	// reason: the card fills line by line while the answer is still arriving,
@@ -75,6 +83,8 @@ const (
 	// suggestion's reason: it is an act the human decides about, not a sentence
 	// of the answer.
 	EventProposal = "proposal"
+	// EventPresent is one admitted display suggestion for the review's desk.
+	EventPresent = "present"
 )
 
 // Snapshot is what GET /api/partner answers: everything a page needs to render
@@ -124,8 +134,11 @@ type Snapshot struct {
 	// that names a goal has to be able to link it.
 	Index Index `json:"index"`
 	// ReadOnly is what makes this runtime read-only, in its own words.
-	ReadOnly string    `json:"readOnly"`
-	Messages []Message `json:"messages"`
+	ReadOnly string `json:"readOnly"`
+	// Conversation is which conversation this is: a sitting's record, or ""
+	// for the human's own.
+	Conversation string    `json:"conversation"`
+	Messages     []Message `json:"messages"`
 }
 
 // Service is the conversation owner.
@@ -156,11 +169,19 @@ type Service struct {
 	// reading it took before the winner appended anything — losing a message
 	// the human had already been told was accepted (Astra F-02). One opener per
 	// key; every other caller waits for it and takes what it installed.
-	opening   map[string]chan struct{}
-	spokeLast string
-	current   *turn
-	watchers  map[int]chan Event
-	nextID    int
+	opening map[string]chan struct{}
+	// live is which conversation the live session belongs to, by its key, or
+	// "" before any turn. The process carries one conversation, so a turn on
+	// another one ends the session and opens that conversation's, fresh, with
+	// its own history replayed (g1-s65 D16). It generalises what used to be
+	// "whoever spoke last": a human is one conversation, and a sitting another.
+	live string
+	// settle bounds the wait for a stopped turn to be written down, both for
+	// the stop route and for the handoff to another conversation (S65-06).
+	settle   time.Duration
+	current  *turn
+	watchers map[int]chan Event
+	nextID   int
 	// indexedAt is when the live session's map of the project's memory was
 	// read. A fresh session is given the map; every later prompt of that
 	// session is given this moment instead, so the Partner knows how old its
@@ -182,6 +203,9 @@ type turn struct {
 	id    string
 	human string
 	key   string
+	// where is the conversation this turn was asked in, by its key: a
+	// sitting's record, or "" for the human's own. Every beat carries it.
+	where string
 	// conversation is the transcript this turn writes its answer into, and the
 	// sitting a deposit it prepares is admitted against. It is held here rather
 	// than by the goroutine that runs the turn because the first sign-in moves
@@ -238,7 +262,19 @@ func NewService(runtime Runtime, host *Host, open func(human string) (*Conversat
 		conversations: map[string]*Conversation{},
 		opening:       map[string]chan struct{}{},
 		watchers:      map[int]chan Event{},
+		settle:        settleWait,
 	}
+}
+
+// conversationKey is the one name a conversation is held under: the file name
+// the human maps to and, for a sitting's, the record it is about. It is the
+// file's identity rather than the spelling a caller used, for the one-opener
+// rule's reason below.
+func conversationKey(human, sitting string) string {
+	if sitting == "" {
+		return fileName(human)
+	}
+	return fileName(human) + "\x00" + sitting
 }
 
 // conversation answers one human's transcript, opening it the first time.
@@ -258,7 +294,15 @@ func NewService(runtime Runtime, host *Host, open func(human string) (*Conversat
 // caller loads and the others wait for it here, and the object that is installed
 // is the one they all take.
 func (s *Service) conversation(human string) (*Conversation, error) {
-	key := fileName(human)
+	return s.conversationOf(human, "")
+}
+
+// conversationOf is one human's conversation about one sitting's record, or
+// their own where the record is "" (g1-s65 D16). A sitting's conversation is
+// opened in the store the human's own lives in, under the same one-opener rule.
+func (s *Service) conversationOf(human, sitting string) (*Conversation, error) {
+	sitting = strings.TrimSpace(sitting)
+	key := conversationKey(human, sitting)
 	for {
 		s.mu.Lock()
 		if held, known := s.conversations[key]; known {
@@ -277,7 +321,7 @@ func (s *Service) conversation(human string) (*Conversation, error) {
 		s.opening[key] = mine
 		s.mu.Unlock()
 
-		opened, err := s.open(human)
+		opened, err := s.openOf(human, sitting)
 		s.mu.Lock()
 		delete(s.opening, key)
 		if err == nil {
@@ -292,6 +336,19 @@ func (s *Service) conversation(human string) (*Conversation, error) {
 		}
 		return opened, nil
 	}
+}
+
+// openOf opens a conversation for the first time: the caller's own opener for a
+// human's, and the store that one lives in for a sitting's.
+func (s *Service) openOf(human, sitting string) (*Conversation, error) {
+	if sitting == "" {
+		return s.open(human)
+	}
+	own, err := s.conversationOf(human, "")
+	if err != nil {
+		return nil, err
+	}
+	return OpenConversation(own.directory, human, sitting)
 }
 
 // Adopt gives a human the conversation an unnamed seat was having.
@@ -328,6 +385,34 @@ func (s *Service) Adopt(seat, human string) error {
 	if err != nil {
 		return err
 	}
+	if err := s.adoptOne(was, mine, human); err != nil {
+		return err
+	}
+	// And every sitting the seat stands in, each its own conversation (g1-s65
+	// D16): a review started before signing in is the human's review after it.
+	records, err := sittingsOn(was.directory, seat)
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		fromSeat, err := s.conversationOf(seat, record)
+		if err != nil {
+			return err
+		}
+		toHuman, err := s.conversationOf(human, record)
+		if err != nil {
+			return err
+		}
+		if err := s.adoptOne(fromSeat, toHuman, human); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// adoptOne moves one conversation's messages, its mark and its running turn to
+// the human's conversation of the same key.
+func (s *Service) adoptOne(was, mine *Conversation, human string) error {
 	was.mu.Lock()
 	defer was.mu.Unlock()
 	if len(was.messages) == 0 && was.sitting == nil && !s.running(was) {
@@ -492,9 +577,15 @@ func (s *Service) Busy() bool {
 	return s.current != nil
 }
 
-// Snapshot answers the read route for one human.
+// Snapshot answers the read route for one human's own conversation.
 func (s *Service) Snapshot(human string, limit int) (Snapshot, error) {
-	conversation, err := s.conversation(human)
+	return s.SnapshotIn(human, "", limit)
+}
+
+// SnapshotIn answers the read route for one conversation: a sitting's, named by
+// its record, or the human's own where the record is "".
+func (s *Service) SnapshotIn(human, sitting string, limit int) (Snapshot, error) {
+	conversation, err := s.conversationOf(human, sitting)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -502,9 +593,9 @@ func (s *Service) Snapshot(human string, limit int) (Snapshot, error) {
 	running := s.current
 	answer := Snapshot{
 		Runtime: s.runtime.Name, Model: s.runtime.Model, Human: human,
-		ReadOnly: s.runtime.ReadOnly,
+		ReadOnly: s.runtime.ReadOnly, Conversation: conversation.key,
 	}
-	if running != nil && running.human == human {
+	if running != nil && running.conversation == conversation {
 		answer.Busy = true
 		answer.Turn = running.id
 		answer.Partial = running.text.String()
@@ -533,6 +624,12 @@ func (s *Service) See(page Page, now time.Time) Seen {
 // Busy is the refusal a second send gets while a turn runs.
 var ErrBusy = errors.New("the Partner is answering; wait for it to finish or stop it")
 
+// ErrUnsettled is the refusal a turn on another conversation gets when the
+// running turn it stopped has not been written down within the wait (S65-06).
+// Nothing of the new turn has started: its conversation is untouched and no
+// session was opened for it.
+var ErrUnsettled = errors.New("the previous room's answer has not settled; try again in a moment")
+
 // Submit admits one turn.
 //
 // The same key twice is the same turn once, so a retry after a lost answer
@@ -541,7 +638,13 @@ var ErrBusy = errors.New("the Partner is answering; wait for it to finish or sto
 // human's question stays in the composer and the route answers 503 with the
 // runtime's own words.
 func (s *Service) Submit(ctx context.Context, human, key, text string, page Page) (string, error) {
-	return s.submit(ctx, human, key, text, page, false)
+	return s.submit(ctx, human, "", key, text, page, false)
+}
+
+// SubmitIn admits one turn in one conversation: a sitting's, named by its
+// record, or the human's own where the record is "".
+func (s *Service) SubmitIn(ctx context.Context, human, sitting, key, text string, page Page) (string, error) {
+	return s.submit(ctx, human, sitting, key, text, page, false)
 }
 
 // submit is Submit with the one thing only this package may decide: whether the
@@ -550,7 +653,7 @@ func (s *Service) Submit(ctx context.Context, human, key, text string, page Page
 // Nothing outside this package can set that mark, and nothing outside it should
 // be able to: a browser that could claim a question was the interface's could
 // dress up a question the human typed as one they did not.
-func (s *Service) submit(ctx context.Context, human, key, text string, page Page, byInterface bool) (string, error) {
+func (s *Service) submit(ctx context.Context, human, sitting, key, text string, page Page, byInterface bool) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", errors.New("a turn needs a question")
@@ -559,21 +662,37 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 	// above all before it is written into the transcript: what a message keeps
 	// is what this server was prepared to keep.
 	page = page.Bound()
-	conversation, err := s.conversation(human)
+	conversation, err := s.conversationOf(human, sitting)
 	if err != nil {
 		return "", err
 	}
 	if existing, known := conversation.TurnFor(key); known {
 		return existing, nil
 	}
+	where := conversationKey(human, conversation.key)
 	s.mu.Lock()
-	if s.current != nil {
+	// One running turn, and it stays one. A turn in THIS conversation is busy,
+	// as it always was. A turn in another conversation is the handoff (Astra
+	// S65-06): it is stopped through the service's own Stop, bound to its own
+	// conversation through its terminal write, and only once it has been
+	// written down does this turn go on — or, where it does not settle within
+	// the wait, this one is refused in words and nothing of it starts.
+	for s.current != nil {
+		running := s.current
+		if running.conversation == conversation {
+			s.mu.Unlock()
+			return "", ErrBusy
+		}
+		running.stopping = true
 		s.mu.Unlock()
-		return "", ErrBusy
+		if !s.stopAndSettle(ctx, running) {
+			return "", ErrUnsettled
+		}
+		s.mu.Lock()
 	}
-	// A turn from somebody other than whoever spoke last ends the live
+	// A turn in another conversation than the live session's ends that
 	// session: the process carries one conversation, and it is not this one.
-	changed := s.spokeLast != "" && s.spokeLast != human
+	changed := s.live != "" && s.live != where
 	// The turn is bound to its conversation HERE, before the startup wait
 	// below, because a sign-in that lands inside that wait has to be able to
 	// find it. Starting a runtime is a process spawn, an initialize and a
@@ -585,7 +704,7 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 	// second confirmation read). A startup that refuses releases it again,
 	// below, so a runtime that is not installed leaves no turn behind.
 	id := mintTurn()
-	running := &turn{id: id, human: human, key: key, page: page,
+	running := &turn{id: id, human: human, key: key, page: page, where: conversation.key,
 		conversation: conversation, done: make(chan struct{})}
 	s.current = running
 	s.mu.Unlock()
@@ -623,7 +742,7 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 		fresh = true
 		s.opened = false
 	}
-	s.spokeLast = human
+	s.live = where
 	s.mu.Unlock()
 
 	// The history is what this conversation held BEFORE this question, and it
@@ -791,10 +910,10 @@ const noSitting = "no sitting is open, so there is no record to offer this to; "
 // moments: Sit, which will not open a sitting this build has no moves for, and
 // Admits, which is asked BEFORE a draft record is created for one.
 func admitsPurpose(purpose string) error {
-	if purpose != PurposeShapeIntent && purpose != PurposeShapeDesign {
+	if purpose != PurposeShapeIntent && purpose != PurposeShapeDesign && purpose != PurposeReview {
 		return fmt.Errorf(
-			"a sitting is for %q or %q; review and learning sittings are not in this build",
-			PurposeShapeIntent, PurposeShapeDesign)
+			"a sitting is for %q, %q or a %q; learning sittings are not in this build",
+			PurposeShapeIntent, PurposeShapeDesign, PurposeReview)
 	}
 	return nil
 }
@@ -803,6 +922,11 @@ func admitsPurpose(purpose string) error {
 // the words a human reads. It is a constant because two places say it: the
 // refusal itself, and the test that proves the refusal is the one given.
 const subjectKinds = "a sitting is about an intent or a design record"
+
+// reviewKind is what a review sitting on any other kind of record is refused
+// with: a review's subject is the review record the server created for it at
+// Start (g1-s65 D2), so every rule of the sitting holds unchanged.
+const reviewKind = "a review sitting is about a review record"
 
 // admitsSubject says whether a sitting may be about this record (g1-s53 D1).
 //
@@ -823,7 +947,7 @@ const subjectKinds = "a sitting is about an intent or a design record"
 // itself refuses is passed on as it is — a subject this checkout cannot read is a
 // sitting with nothing to record into, which is the route's own reason for
 // creating a draft before opening one.
-func (s *Service) admitsSubject(subject Subject) error {
+func (s *Service) admitsSubject(subject Subject, purpose string) error {
 	if s.facts.Document == nil {
 		return nil
 	}
@@ -836,6 +960,13 @@ func (s *Service) admitsSubject(subject Subject) error {
 		kind = strings.TrimSpace(document.Record.Kind)
 	}
 	switch {
+	case purpose == PurposeReview && kind != resolver.KindReview:
+		if kind == "" {
+			return fmt.Errorf("%s, and %s declares no kind", reviewKind, subject.ID)
+		}
+		return fmt.Errorf("%s, and %s is a %s record", reviewKind, subject.ID, kind)
+	case purpose == PurposeReview:
+		return nil
 	case kind == "":
 		return fmt.Errorf("%s, and %s declares neither", subjectKinds, subject.ID)
 	case kind != resolver.KindIntent && kind != resolver.KindDesign:
@@ -900,10 +1031,12 @@ func (s *Service) Sit(ctx context.Context, human string, subject Subject, purpos
 	case subject.ID == "":
 		return Sitting{}, errors.New("a sitting about a record says which one, by its path in this checkout")
 	}
-	if err := s.admitsSubject(subject); err != nil {
+	if err := s.admitsSubject(subject, purpose); err != nil {
 		return Sitting{}, err
 	}
-	conversation, err := s.conversation(human)
+	// A sitting is a conversation (g1-s65 D16): the mark goes on the sitting's
+	// own conversation, beside the human's, and the opening turn is asked there.
+	conversation, err := s.conversationOf(human, subject.ID)
 	if err != nil {
 		return Sitting{}, err
 	}
@@ -912,7 +1045,7 @@ func (s *Service) Sit(ctx context.Context, human string, subject Subject, purpos
 	if err := conversation.Sit(sitting, s.now()); err != nil {
 		return Sitting{}, err
 	}
-	if _, err := s.submit(ctx, human, "", OpeningRequest(sitting), page, true); err != nil {
+	if _, err := s.submit(ctx, human, subject.ID, "", OpeningRequest(sitting), page, true); err != nil {
 		s.unsit(conversation, previous)
 		return Sitting{}, err
 	}
@@ -933,7 +1066,13 @@ func (s *Service) unsit(conversation *Conversation, previous *Sitting) {
 // Rise ends the sitting on this human's conversation. What was recorded is in
 // the record, which is the whole of what a sitting leaves behind.
 func (s *Service) Rise(human string) error {
-	conversation, err := s.conversation(human)
+	return s.RiseIn(human, "")
+}
+
+// RiseIn ends the sitting on one conversation. The conversation stays, and so
+// does everything recorded.
+func (s *Service) RiseIn(human, sitting string) error {
+	conversation, err := s.conversationOf(human, sitting)
 	if err != nil {
 		return err
 	}
@@ -946,7 +1085,12 @@ func (s *Service) Rise(human string) error {
 // Sittings list, which has to say whether a sitting stands on a record now —
 // can ask without taking a whole snapshot of the conversation for one field.
 func (s *Service) Sitting(human string) (*Sitting, error) {
-	conversation, err := s.conversation(human)
+	return s.SittingIn(human, "")
+}
+
+// SittingIn is the sitting standing on one conversation, or nil.
+func (s *Service) SittingIn(human, sitting string) (*Sitting, error) {
+	conversation, err := s.conversationOf(human, sitting)
 	if err != nil {
 		return nil, err
 	}
@@ -970,7 +1114,14 @@ const noSittingToClose = "no sitting is open, so there is nothing to close"
 // which the page reaches after the human has recorded the outcome or has said
 // they are leaving without it.
 func (s *Service) Closing(ctx context.Context, human string, page Page) (Sitting, error) {
-	conversation, err := s.conversation(human)
+	return s.ClosingIn(ctx, human, "", "", page)
+}
+
+// ClosingIn asks for the closing deposit on one conversation's sitting. A
+// review's close carries the verdict the human chose on the End sheet (g1-s65
+// D10), which the drafted Outcome opens with.
+func (s *Service) ClosingIn(ctx context.Context, human, where, verdict string, page Page) (Sitting, error) {
+	conversation, err := s.conversationOf(human, where)
 	if err != nil {
 		return Sitting{}, err
 	}
@@ -978,7 +1129,15 @@ func (s *Service) Closing(ctx context.Context, human string, page Page) (Sitting
 	if sitting == nil {
 		return Sitting{}, errors.New(noSittingToClose)
 	}
-	if _, err := s.submit(ctx, human, "", ClosingRequest(*sitting), page, true); err != nil {
+	request := ClosingRequest(*sitting)
+	if sitting.Purpose == PurposeReview {
+		said, err := ReviewClosingRequest(*sitting, verdict)
+		if err != nil {
+			return Sitting{}, err
+		}
+		request = said
+	}
+	if _, err := s.submit(ctx, human, where, "", request, page, true); err != nil {
 		return Sitting{}, err
 	}
 	return *sitting, nil
@@ -999,15 +1158,26 @@ func (s *Service) Closing(ctx context.Context, human string, page Page) (Sitting
 // running is the resume that a second tab has just asked for, or the human's own
 // question, and either way one more would be refused as busy.
 func (s *Service) Resume(ctx context.Context, human string) (bool, error) {
-	conversation, err := s.conversation(human)
+	return s.ResumeIn(ctx, human, "")
+}
+
+// ResumeIn is Resume for one conversation. A live session that belongs to
+// another conversation does not remember this sitting, so it is resumed as a
+// session that ended would be — unless a turn is running anywhere, because a
+// resume must never be the thing that stops somebody's answer.
+func (s *Service) ResumeIn(ctx context.Context, human, where string) (bool, error) {
+	conversation, err := s.conversationOf(human, where)
 	if err != nil {
 		return false, err
 	}
-	if conversation.Sitting() == nil || s.host.Alive() || s.Busy() {
+	s.mu.Lock()
+	own := s.live == conversationKey(human, conversation.key)
+	s.mu.Unlock()
+	if conversation.Sitting() == nil || (own && s.host.Alive()) || s.Busy() {
 		return false, nil
 	}
 	sitting := conversation.Sitting()
-	if _, err := s.submit(ctx, human, "", ResumingRequest(*sitting), Page{}, true); err != nil {
+	if _, err := s.submit(ctx, human, where, "", ResumingRequest(*sitting), Page{}, true); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -1022,6 +1192,9 @@ func (s *Service) Resume(ctx context.Context, human string) (bool, error) {
 // conversational form, and the first turn of a sitting is exactly where that
 // would happen.
 func OpeningRequest(sitting Sitting) string {
+	if sitting.Purpose == PurposeReview {
+		return ReviewOpeningRequest(sitting)
+	}
 	return "Open this sitting on " + sitting.Subject.ID + ", whose purpose is to " + sitting.Purpose + ".\n\n" +
 		"Bring what the records already hold about it, and nothing else: the standing human rulings that touch it, " +
 		"the decisions this project has recorded about it, the open questions on it, the intent and design records " +
@@ -1096,6 +1269,15 @@ func (s *Service) admitDeposit(running *turn, prepared Deposit) {
 		s.record(running, Event{Kind: EventDeposit, Deposit: &prepared})
 		return
 	}
+	// A finding is the review's own pile (g1-s65 D8), and the piles are a
+	// property of the record's kind: a finding offered to a sitting that shapes
+	// a design has nowhere to go, and says so where the card would be.
+	if prepared.Kind == DepositFinding && sitting.Purpose != PurposeReview {
+		prepared.Offered = false
+		prepared.NotOffered = noFindingHere
+		s.record(running, Event{Kind: EventDeposit, Deposit: &prepared})
+		return
+	}
 	prepared.Subject = sitting.Subject
 	prepared.Offered = true
 	s.record(running, Event{Kind: EventDeposit, Deposit: &prepared})
@@ -1137,6 +1319,10 @@ func (s *Service) run(running *turn, prompt string) {
 			// refused, and the human is told so on the card.
 			if update.Action != nil {
 				s.admitProposal(running, *update.Action)
+			}
+			// And the same, against the review this conversation is.
+			if update.Present != nil {
+				s.admitPresent(running, *update.Present)
 			}
 		}
 	})
@@ -1235,6 +1421,7 @@ func (s *Service) record(running *turn, event Event) {
 	running.seq++
 	event.Turn = running.id
 	event.Seq = running.seq
+	event.Conversation = running.where
 	event.At = s.now().UTC().Format(time.RFC3339)
 	switch event.Kind {
 	case EventText:
@@ -1308,12 +1495,50 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	// The route answers with the snapshot, so the turn has to be written down
 	// before it does; otherwise the page is handed a running turn whose
 	// terminal beat it has already seen.
+	s.settled(ctx, running)
+	return nil
+}
+
+// stopAndSettle stops one running turn through the runtime's cancellation and
+// reports whether it was written down within the wait. It is the handoff's half
+// of Stop (S65-06): the turn stays bound to its own conversation, run writes it
+// down there as stopped, and only a settled turn lets another conversation's
+// session open.
+func (s *Service) stopAndSettle(ctx context.Context, running *turn) bool {
+	s.mu.Lock()
+	wait := s.settle
+	s.mu.Unlock()
+	// The whole handoff is bounded by the one wait: the cancellation reaching
+	// the runtime and the turn's terminal write both. A runtime that does not
+	// answer within it is the refusal, never a longer wait.
+	bounded, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	if err := s.host.Stop(bounded); err != nil {
+		return false
+	}
+	return s.settled(bounded, running)
+}
+
+// settled waits, bounded, for one turn's terminal write.
+func (s *Service) settled(ctx context.Context, running *turn) bool {
+	s.mu.Lock()
+	wait := s.settle
+	s.mu.Unlock()
 	select {
 	case <-running.done:
-	case <-ctx.Done():
-	case <-time.After(settleWait):
+		return true
+	default:
 	}
-	return nil
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-running.done:
+		return true
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return false
+	}
 }
 
 // settleWait bounds the wait for a stopped turn to be written down. Past it

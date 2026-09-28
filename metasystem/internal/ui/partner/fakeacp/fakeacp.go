@@ -55,10 +55,28 @@ type Script struct {
 	// Pause is how long the server waits between chunks, so a walkthrough can
 	// stop a turn and reload a page while one is still streaming.
 	Pause time.Duration
+	// PauseOnly, when set, narrows the pause to the prompts that carry this
+	// text: one turn that stays in flight until it is stopped, beside turns
+	// that answer at once.
+	PauseOnly string
+	// Hold, when set, is a gate every prompt waits at before it streams, deaf
+	// to a cancellation: the runtime that does not settle when it is asked to
+	// stop. Closing it lets every prompt through, and a prompt cancelled while
+	// it waited then settles as stopped.
+	Hold <-chan struct{}
+	// Answers, when set, are answers narrowed to the prompts that carry their
+	// text; the first that matches is streamed instead of Chunks.
+	Answers []Answer
 	// StopReason is what the prompt settles with; empty is end_turn.
 	StopReason string
 	// Words is what this server "said" on its error stream.
 	Words string
+}
+
+// Answer is one answer narrowed to the prompts that carry When.
+type Answer struct {
+	When   string
+	Chunks []string
 }
 
 // Read is one tool call this server makes: what it is called, what came back,
@@ -280,6 +298,20 @@ func (s *server) dispatch(in frame) {
 // then the answer in its chunks, then the settled response.
 func (s *server) prompt(id json.RawMessage, asked string) {
 	s.cancelled.Store(false)
+	if s.script.Hold != nil {
+		<-s.script.Hold
+	}
+	pause := s.script.Pause
+	if s.script.PauseOnly != "" && !strings.Contains(asked, s.script.PauseOnly) {
+		pause = 0
+	}
+	chunks := s.script.Chunks
+	for _, answer := range s.script.Answers {
+		if strings.Contains(asked, answer.When) {
+			chunks = answer.Chunks
+			break
+		}
+	}
 	if s.script.Activity != "" {
 		s.notify("session/update", map[string]any{
 			"sessionId": SessionID,
@@ -317,8 +349,8 @@ func (s *server) prompt(id json.RawMessage, asked string) {
 				}},
 			},
 		})
-		if s.script.Pause > 0 {
-			s.sleep(s.script.Pause)
+		if pause > 0 {
+			s.sleep(pause)
 		}
 	}
 	if s.script.AskFor != "" {
@@ -359,7 +391,7 @@ func (s *server) prompt(id json.RawMessage, asked string) {
 		case <-time.After(10 * time.Second):
 		}
 	}
-	for _, chunk := range s.script.Chunks {
+	for _, chunk := range chunks {
 		if s.cancelled.Load() || s.stopped.Load() {
 			s.answer(id, map[string]any{"stopReason": "cancelled"})
 			return
@@ -371,8 +403,8 @@ func (s *server) prompt(id json.RawMessage, asked string) {
 				"content":       map[string]any{"type": "text", "text": chunk},
 			},
 		})
-		if s.script.Pause > 0 {
-			s.sleep(s.script.Pause)
+		if pause > 0 {
+			s.sleep(pause)
 		}
 	}
 	if s.cancelled.Load() {

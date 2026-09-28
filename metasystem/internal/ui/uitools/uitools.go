@@ -81,14 +81,18 @@ const (
 	OpSuggest       = "suggest"
 	OpDeposit       = "deposit"
 	OpPropose       = "propose"
+	// OpChanges reads the candidate a review reviews, and OpPresent puts one
+	// thing on the review's desk (g1-s65 D4, D5).
+	OpChanges = "changes"
+	OpPresent = "present"
 )
 
 // Operations is every operation this server answers, in the order the
 // catalogue lists them.
 var Operations = []string{
 	OpBoard, OpGoal, OpDocument, OpRecords, OpQuestions,
-	OpOverview, OpFleet, OpNotifications, OpSearch, OpInterface, OpKit,
-	OpSuggest, OpDeposit, OpPropose,
+	OpOverview, OpFleet, OpNotifications, OpSearch, OpInterface, OpKit, OpChanges,
+	OpSuggest, OpDeposit, OpPropose, OpPresent,
 }
 
 // Names reports whether a bare operation name is one this server answers.
@@ -191,6 +195,9 @@ type Readers struct {
 	// points at, the rulings register, the routes, and the command catalogue
 	// the binary routes with.
 	Kit Kit
+	// Review is the review owner over this checkout, which the changes read
+	// answers from. A nil one is a build that cannot read a candidate.
+	Review func() (Reviewing, error)
 	// Proposals counts the proposals of the answer being composed, so that the
 	// fifty-first is refused at the call and the Partner reads the bound inside
 	// the answer rather than in its next prompt. A nil counter counts nothing,
@@ -239,6 +246,10 @@ func (r Readers) Answer(operation string, args Args) Result {
 			args.Text("anchor"), args.Text("reason"), args.Text("consequence"), args.Text("clause"))
 	case OpPropose:
 		return r.propose(args)
+	case OpChanges:
+		return r.changes(args)
+	case OpPresent:
+		return present(args)
 	default:
 		return Result{Problem: "this server answers " + strings.Join(Operations, ", ") + ", not " + operation}
 	}
