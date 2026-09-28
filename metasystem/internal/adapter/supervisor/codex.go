@@ -209,6 +209,7 @@ func selftestWith(runtime, usageExpectation, probeName string, extraEnv []string
 		p := adapter.SelftestParams{
 			Root: d.Root, Runtime: runtime, Usage: usageExpectation,
 			TurnCeilingSec: turnCeiling, DenialEndsTurn: denialEndsTurn, ExtraEnv: extraEnv, Engine: d.Self,
+			Status: d.lifecycleStatus, Reap: d.lifecycleReap,
 			RunIdentity: func() error {
 				_, err := a.configIdentity(d)
 				return err

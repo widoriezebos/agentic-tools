@@ -1,13 +1,13 @@
 package census
 
 import (
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // SignatureText is the registry's normalized declaration: strict
@@ -114,7 +114,7 @@ func TestFingerprintDeterministicAndSensitive(t *testing.T) {
 		t.Fatalf("fingerprint not a stable 64-hex digest: %q %q", one, two)
 	}
 	// A change to a hashed file moves the fingerprint.
-	os.WriteFile(filepath.Join(root, "scripts", "agents", "dispatch.sh"), []byte("changed\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("changed\n"), 0o644)
 	if changed := mustFingerprint(t, root); changed == one {
 		t.Fatal("a code edit must change the fingerprint")
 	}

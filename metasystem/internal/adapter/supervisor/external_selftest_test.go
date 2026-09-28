@@ -25,7 +25,7 @@ import (
 // runs the real delegate-supervisor for newagent in process.
 
 // recordDispatcher applies the lease-held callbacks to the job records the
-// way dispatch.sh does for these legs: the handshake's session, a
+// way the delegate lifecycle does for these legs: the handshake's session, a
 // compare-and-swap's status and patch, and cancellation.
 type recordDispatcher struct{ root string }
 
@@ -164,12 +164,6 @@ func TestExternalRuntimeSelftestRunsTheSharedLegs(t *testing.T) {
 	stubs := filepath.Join(f.root, "stub-bin")
 	for path, body := range map[string]string{
 		filepath.Join(stubs, "git"): "#!/bin/sh\nexit 0\n",
-		filepath.Join(f.root, "scripts", "agents", "dispatch.sh"): `#!/bin/sh
-[ "$1" = status ] || exit 0
-file="$EXTERNAL_ENGINE_ROOT/artifacts/agents/jobs/$3.json"
-[ -f "$file" ] || { echo unknown; exit 0; }
-sed -n 's/.*"status":"\([a-z]*\)".*/\1/p' "$file"
-`,
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)

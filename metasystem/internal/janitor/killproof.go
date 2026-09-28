@@ -8,11 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
-	"golang.org/x/sys/unix"
 )
 
 // Shape is one known invocation form whose argv carries the claim's tag in a
@@ -44,7 +45,6 @@ type Shape struct {
 // definition, the same one their launcher builds its argv from.
 func DefaultShapes() []Shape {
 	shapes := []Shape{
-		{Name: "shell-reaper", Includes: []string{"dispatch.sh", "reap"}, TagFlag: "--instance-tag"},
 		{Name: "go-owner", Includes: []string{"metasystem", "supervise"}, TagFlag: "--tag"},
 	}
 	for _, supervisor := range runtimes.SupervisorShapes() {

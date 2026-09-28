@@ -13,7 +13,7 @@ import (
 // The adapter turn's terminal-outcome state machine. PURE DECISION by
 // design: the CAS
 // stays in the shell wrappers because adapter record writes ride
-// dispatch.sh's lease-held __record-cas re-exec, and moving them here would
+// the delegate lifecycle's __record-cas callback, and moving them here would
 // change the authority path. Every error code and phase name below is
 // vocabulary internal/dispatch and internal/missionrunner adjudicate on.
 

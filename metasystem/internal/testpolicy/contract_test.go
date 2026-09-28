@@ -810,7 +810,7 @@ func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t 
 		"metasystem/metasystem.conf", "metasystem/scripts/adopt-fixture-helpers.sh",
 		"metasystem/scripts/adopt-fixtures.sh", "metasystem/scripts/adopt.sh",
 		"metasystem/scripts/agents/commit.sh", "metasystem/internal/proofrun/coveragedelta.go",
-		"metasystem/scripts/agents/dispatch-fixtures.sh", "metasystem/scripts/agents/dispatch.sh",
+		"metasystem/internal/delegation/lifecycle.go", "metasystem/internal/delegation/launch.go",
 		"metasystem/scripts/agents/fixture-budget.sh", "metasystem/scripts/agents/go-gate.sh",
 		"metasystem/scripts/agents/land.sh", "metasystem/scripts/agents/landing-classes.json",
 		"metasystem/scripts/agents/witness-gate.sh", "metasystem/scripts/validate-metasystem.sh",

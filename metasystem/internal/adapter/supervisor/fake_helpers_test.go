@@ -21,7 +21,7 @@ import (
 // t.TempDir(), a job record carrying a minted launch capability, an
 // engine stand-in script that behaves like `util hold` and records
 // `internal delegate` calls, and a recording Dispatcher standing in for
-// dispatch.sh's lease-held callbacks.
+// the delegate lifecycle's lease-held callbacks.
 
 // engineStandIn is the engine binary the fake's children run. `util hold`
 // records its argv under FAKE_HOLD_DIR/<pid>, writes its ready file, and on
@@ -81,8 +81,8 @@ func (b *syncBuffer) String() string {
 
 // fakeRecordingDispatcher appends each callback's argv, one JSON array per
 // line, to a file, and answers with a configured status. A successful
-// __handshake records the session in the job record, as dispatch.sh's
-// handshake does.
+// __handshake records the session in the job record, as the lifecycle's
+// handshake does, and status answers the record's status.
 type fakeRecordingDispatcher struct {
 	Root     string         `json:"root"`
 	Log      string         `json:"log"`
@@ -91,7 +91,7 @@ type fakeRecordingDispatcher struct {
 	KeepSession bool `json:"keepSession"`
 }
 
-func (r fakeRecordingDispatcher) Run(_, _ io.Writer, args ...string) int {
+func (r fakeRecordingDispatcher) Run(stdout, _ io.Writer, args ...string) int {
 	line, _ := json.Marshal(args)
 	file, err := os.OpenFile(r.Log, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err == nil {
@@ -99,6 +99,20 @@ func (r fakeRecordingDispatcher) Run(_, _ io.Writer, args ...string) int {
 		file.Close()
 	}
 	status := r.Statuses[args[0]]
+	if status == 0 && args[0] == "status" {
+		// The lifecycle's status: the job record's status line, "unknown"
+		// when there is no record (a self-test's poll).
+		answer := "unknown"
+		data, readErr := os.ReadFile(filepath.Join(r.Root, "artifacts", "agents", "jobs", flagValue(args, "--job")+".json"))
+		var record map[string]any
+		if readErr == nil && json.Unmarshal(data, &record) == nil {
+			if value, ok := record["status"].(string); ok {
+				answer = value
+			}
+		}
+		io.WriteString(stdout, answer+"\n")
+		return 0
+	}
 	if status == 0 && args[0] == "__handshake" && !r.KeepSession {
 		job, session := flagValue(args, "--job"), flagValue(args, "--session")
 		path := filepath.Join(r.Root, "artifacts", "agents", "jobs", job+".json")

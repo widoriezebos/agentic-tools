@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"net"
 	"os"
 	"os/exec"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestValidateSelftestModel(t *testing.T) {
@@ -132,13 +133,27 @@ stop and report a gap; never fill it silently.
 	}
 }
 
-// stageSelftestFixture builds a checkout whose dispatch.sh is a stub runtime:
+// stageSelftestFixture builds a checkout whose delegate is a stub runtime
+// (scripts/agents/stub-runtime.sh behind the engine's internal delegate):
 // dispatch records a completed job with a stable session and native usage,
 // the permissions job's return embeds the workspace's PERMITTED_READ line
 // (and the skill marker when the workspace carries one), the split attempt
 // legs fail as empty_reply denials, and cancel flips the record to
 // cancelled. The self-test's orchestration then runs end to end with no real
 // model in the loop.
+// stubStatus is the delegate lifecycle's status as the stub runtime keeps
+// it: the job record's status, "unknown" when there is none.
+func stubStatus(root string) func(string) string {
+	return func(job string) string {
+		record, err := readObject(filepath.Join(root, "artifacts", "agents", "jobs", job+".json"))
+		if err != nil {
+			return "unknown"
+		}
+		status, _ := record["status"].(string)
+		return status
+	}
+}
+
 // acceptSelftestReturns stands in for the shipped return checker: the stub
 // dispatch writes records, not schema-complete returns.
 func acceptSelftestReturns(root, job string) []string { return nil }
@@ -216,10 +231,10 @@ case "$verb" in
 esac
 `
 	for path, content := range map[string]string{
-		filepath.Join(root, "scripts", "agents", "dispatch.sh"): dispatch,
+		filepath.Join(root, "scripts", "agents", "stub-runtime.sh"): dispatch,
 		filepath.Join(root, "bin", "metasystem"): `#!/usr/bin/env bash
 set -euo pipefail
-dispatch=$(cd "$(dirname "$0")/../scripts/agents" && pwd -P)/dispatch.sh
+dispatch=$(cd "$(dirname "$0")/../scripts/agents" && pwd -P)/stub-runtime.sh
 [[ $1 == internal && $2 == delegate ]] || exit 2
 shift 2
 case "$1" in
@@ -247,8 +262,8 @@ func TestSelftestRunMergedLegs(t *testing.T) {
 	var out strings.Builder
 	p := SelftestParams{
 		Root: root, Runtime: "stub", RunIdentity: stubAdapterStep(root), RunProbe: stubAdapterStep(root),
-		returnCheck: acceptSelftestReturns,
-		Usage:       "native", TurnCeilingSec: 10,
+		Status: stubStatus(root), returnCheck: acceptSelftestReturns,
+		Usage: "native", TurnCeilingSec: 10,
 	}
 	if err := SelftestRun(p, "stub-model", &out); err != nil {
 		t.Fatalf("merged-leg selftest failed: %v", err)
@@ -277,8 +292,8 @@ func TestSelftestRunSplitLegsWithDevinChecks(t *testing.T) {
 	var out strings.Builder
 	p := SelftestParams{
 		Root: root, Runtime: "stub", RunIdentity: stubAdapterStep(root), RunProbe: stubAdapterStep(root),
-		returnCheck: acceptSelftestReturns,
-		Usage:       "native", TurnCeilingSec: 10, DenialEndsTurn: true,
+		Status: stubStatus(root), returnCheck: acceptSelftestReturns,
+		Usage: "native", TurnCeilingSec: 10, DenialEndsTurn: true,
 	}
 	devinProbe, err := SelftestProbeFor("devin", "symlinked-skill-discovery")
 	if err != nil {
@@ -312,7 +327,7 @@ func TestSelftestRunRefusesSessionDrift(t *testing.T) {
 	root := stageSelftestFixture(t, "mapped", "mapped")
 	// A follow-up that lands on a NEW session is the resume-identity defect
 	// the leg exists to catch.
-	dispatch := filepath.Join(root, "scripts", "agents", "dispatch.sh")
+	dispatch := filepath.Join(root, "scripts", "agents", "stub-runtime.sh")
 	text, err := os.ReadFile(dispatch)
 	if err != nil {
 		t.Fatal(err)
@@ -331,8 +346,8 @@ func TestSelftestRunRefusesSessionDrift(t *testing.T) {
 	}
 	p := SelftestParams{
 		Root: root, Runtime: "stub", RunIdentity: stubAdapterStep(root), RunProbe: stubAdapterStep(root),
-		returnCheck: acceptSelftestReturns,
-		Usage:       "native", TurnCeilingSec: 10,
+		Status: stubStatus(root), returnCheck: acceptSelftestReturns,
+		Usage: "native", TurnCeilingSec: 10,
 	}
 	err = SelftestRun(p, "stub-model", &strings.Builder{})
 	if err == nil || !strings.Contains(err.Error(), "resumed a different session") {
@@ -387,7 +402,7 @@ func TestSelftestTripwireRecordsTheOneRequest(t *testing.T) {
 func TestSelftestRunRefusals(t *testing.T) {
 	breakFixture := func(root, old, new string) {
 		t.Helper()
-		dispatch := filepath.Join(root, "scripts", "agents", "dispatch.sh")
+		dispatch := filepath.Join(root, "scripts", "agents", "stub-runtime.sh")
 		text, err := os.ReadFile(dispatch)
 		if err != nil {
 			t.Fatal(err)
@@ -403,8 +418,8 @@ func TestSelftestRunRefusals(t *testing.T) {
 	params := func(root string) SelftestParams {
 		return SelftestParams{
 			Root: root, Runtime: "stub", RunIdentity: stubAdapterStep(root), RunProbe: stubAdapterStep(root),
-			returnCheck: acceptSelftestReturns,
-			Usage:       "native", TurnCeilingSec: 10,
+			Status: stubStatus(root), returnCheck: acceptSelftestReturns,
+			Usage: "native", TurnCeilingSec: 10,
 		}
 	}
 
@@ -471,7 +486,7 @@ func TestSelftestRunRefusals(t *testing.T) {
 func TestSelftestRunEvidenceRefusals(t *testing.T) {
 	edit := func(root, old, new string) {
 		t.Helper()
-		dispatch := filepath.Join(root, "scripts", "agents", "dispatch.sh")
+		dispatch := filepath.Join(root, "scripts", "agents", "stub-runtime.sh")
 		text, err := os.ReadFile(dispatch)
 		if err != nil {
 			t.Fatal(err)
@@ -487,8 +502,8 @@ func TestSelftestRunEvidenceRefusals(t *testing.T) {
 	params := func(root string) SelftestParams {
 		return SelftestParams{
 			Root: root, Runtime: "stub", RunIdentity: stubAdapterStep(root), RunProbe: stubAdapterStep(root),
-			returnCheck: acceptSelftestReturns,
-			Usage:       "native", TurnCeilingSec: 10,
+			Status: stubStatus(root), returnCheck: acceptSelftestReturns,
+			Usage: "native", TurnCeilingSec: 10,
 		}
 	}
 	t.Run("return without the nonce", func(t *testing.T) {
@@ -599,11 +614,11 @@ func TestSelftestWaitForJobCeiling(t *testing.T) {
 	statusCalls, reapCalls := 0, 0
 	p := SelftestParams{
 		Runtime: "stub", TurnCeilingSec: 1,
-		statusProbe: func(string) string {
+		Status: func(string) string {
 			statusCalls++
 			return "running"
 		},
-		reapProbe: func(string) { reapCalls++ },
+		Reap: func(string) { reapCalls++ },
 	}
 	if p.waitForJob("stuck-job") {
 		t.Fatal("a stuck job read as terminal")

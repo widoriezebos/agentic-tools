@@ -620,7 +620,6 @@ printf '%s|%s|%s\n' "$METASYSTEM_GATE_WITNESS" "$METASYSTEM_GATE_WITNESS_WRITE" 
 func TestFixtureGoConsumersUseSharedWorkerBoundary(t *testing.T) {
 	t.Parallel()
 	scripts := map[string]int{
-		"dispatch-fixtures.sh":      1,
 		"land-fixtures.sh":          14,
 		"return-schema-fixtures.sh": 3,
 		"supervision-fixtures.sh":   10,
@@ -1533,7 +1532,6 @@ func TestSupervisionGoFixtureSuppliesCensusInputsAndRetainsFailures(t *testing.T
 	script := string(data)
 	for _, required := range []string{
 		`cp "$bin" "$fixture_root/bin/metasystem"`,
-		`scripts/agents/dispatch.sh`,
 		`export METASYSTEM_CENSUS_PROCESS_FILE="$process_fixture"`,
 		`--metasystem-root "$fixture_root" --scope "$repo"`,
 		`--fingerprint "$fingerprint" --watcher-cap "$watcher_cap"`,

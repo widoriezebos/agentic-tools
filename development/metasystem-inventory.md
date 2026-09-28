@@ -82,9 +82,9 @@ assertion family: `assert-critique-closed.sh` (close-by-join),
 `scripts/enforcement/` — hook configs per runtime plus the CI workflow
 adopt.sh installs.
 
-`scripts/agents/` — the orchestration machinery: `dispatch.sh` (job
-lifecycle; the runtime adapters and mission hosts are the engine's
-`delegate-supervisor` entry in `internal/adapter/supervisor` and
+`scripts/agents/` — the orchestration machinery (the job lifecycle itself
+is Go, `internal/delegation`; the runtime adapters and mission hosts are the
+engine's `delegate-supervisor` entry in `internal/adapter/supervisor` and
 `internal/missionrunner/hostturn`), the mission family (`mission-runner.sh`, `mission-state.py`,
 `mission-contract.py`, `mission-ledger.py`, `mission-fence.py`,
 `mission-prompt.py`, `mission-fixtures.sh`), supervision

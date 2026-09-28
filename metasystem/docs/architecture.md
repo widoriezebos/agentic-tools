@@ -27,9 +27,10 @@ fixture drivers — remains in scripts, because that is what scripts are
 for. A Go programmer must never read the engine and find a shell script
 wearing Go syntax; a script must never make a decision the engine
 owns. In practice: `scripts/agents/*.sh` launch, wait, and wire
-environments, and call back into engine verbs at every decision point
-(`dispatch.sh` is the largest example — the delegate-job choreography
-stays shell, every verdict inside it is a verb).
+environments, and call back into engine verbs at every decision point.
+The delegate-job choreography that once lived in `dispatch.sh` is Go now
+(`internal/delegation`, verbs-object-action U6b): a composition package
+above the owners, reached through `metasystem internal delegate`.
 
 ## Runtime agnosticism
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1617,18 +1618,38 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTestingFixtureFile(t, installedEngine, data, 0o755)
-	preflight := func(stamp string) ([]byte, error) {
-		command := exec.Command("bash", "scripts/agents/dispatch.sh", "__engine-skew-preflight", stamp)
-		command.Dir = candidateRoot
-		command.Env = append(testingEnvironment(os.Environ()), "METASYSTEM_BIN="+installedEngine)
-		return command.CombinedOutput()
+	// The preflight is the delegate lifecycle's, run in process over the
+	// materialized checkout; with no stamp it judges the stamp the installed
+	// candidate engine reports, as the dispatch that engine runs would.
+	reportedStamp := func(engine, root string) string {
+		command := (proofBinaryFixture{t: t}).command(testingEnvironment(os.Environ()), engine, "supervise", "status", "--repo", root)
+		output, err := command.Output()
+		if err != nil {
+			t.Fatalf("installed candidate engine did not report its build: %v", err)
+		}
+		var status struct {
+			EngineBuild string `json:"engineBuild"`
+		}
+		if err := json.Unmarshal(output, &status); err != nil || status.EngineBuild == "" {
+			t.Fatalf("installed candidate engine reported %q: %v", output, err)
+		}
+		return status.EngineBuild
 	}
-	oldOutput, oldErr := preflight(fixture.baseCommit)
-	if exit, ok := oldErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 || !strings.Contains(string(oldOutput), "is older than checkout commit") {
-		t.Fatalf("untouched refusal was not reproduced with the enrolled engine stamp: err=%v output=%s", oldErr, oldOutput)
+	preflightAt := func(root, engine, stamp string) ([]byte, int) {
+		if stamp == "" {
+			stamp = reportedStamp(engine, root)
+		}
+		var output bytes.Buffer
+		code := runDelegateAt(root, []string{"__engine-skew-preflight", stamp}, &output, &output)
+		return output.Bytes(), code
 	}
-	if output, err := preflight(""); err != nil {
-		t.Fatalf("installed candidate engine's reported stamp did not pass dispatch skew preflight: %v\n%s", err, output)
+	preflight := func(stamp string) ([]byte, int) { return preflightAt(candidateRoot, installedEngine, stamp) }
+	oldOutput, oldCode := preflight(fixture.baseCommit)
+	if oldCode != 1 || !strings.Contains(string(oldOutput), "is older than checkout commit") {
+		t.Fatalf("untouched refusal was not reproduced with the enrolled engine stamp: exit=%d output=%s", oldCode, oldOutput)
+	}
+	if output, code := preflight(""); code != 0 {
+		t.Fatalf("installed candidate engine's reported stamp did not pass dispatch skew preflight: exit %d\n%s", code, output)
 	}
 	ancestry := exec.Command("git", "-C", detached.Workspace().Dir, "log", "--ancestry-path", built.Commit+"..HEAD")
 	ancestry.Env = gittree.ScrubbedEnviron()
@@ -1636,19 +1657,17 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 		t.Fatalf("candidate stamp unexpectedly has an ancestry path to its materialized checkout: err=%v output=%s", err, output)
 	}
 	for _, stamp := range []string{"witness-0123456789ab", "dev-0123456789ab-dirty", "dev", "adopted-target"} {
-		if output, err := preflight(stamp); err != nil {
-			t.Fatalf("non-commit engine stamp %q was refused: %v\n%s", stamp, err, output)
+		if output, code := preflight(stamp); code != 0 {
+			t.Fatalf("non-commit engine stamp %q was refused: exit %d\n%s", stamp, code, output)
 		}
 	}
 	freshProject := t.TempDir()
 	freshCandidateRoot := filepath.Join(freshProject, "metasystem")
-	for _, relative := range []string{"dispatch.sh", "checkout-execution-guard.sh"} {
-		script, err := os.ReadFile(filepath.Join(candidateRoot, "scripts", "agents", relative))
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeTestingFixtureFile(t, filepath.Join(freshCandidateRoot, "scripts", "agents", relative), script, 0o755)
+	script, err := os.ReadFile(filepath.Join(candidateRoot, "scripts", "agents", "checkout-execution-guard.sh"))
+	if err != nil {
+		t.Fatal(err)
 	}
+	writeTestingFixtureFile(t, filepath.Join(freshCandidateRoot, "scripts", "agents", "checkout-execution-guard.sh"), script, 0o755)
 	freshEngine := filepath.Join(freshCandidateRoot, "bin", "metasystem")
 	writeTestingFixtureFile(t, freshEngine, data, 0o755)
 	testingFixtureGit(t, freshProject, "init", "-q", "-b", "main")
@@ -1659,11 +1678,8 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	if err := missingCandidate.Run(); err == nil {
 		t.Fatalf("fresh fixture repository unexpectedly contains candidate stamp %s", built.Commit)
 	}
-	freshPreflight := exec.Command("bash", "scripts/agents/dispatch.sh", "__engine-skew-preflight")
-	freshPreflight.Dir = freshCandidateRoot
-	freshPreflight.Env = append(testingEnvironment(os.Environ()), "METASYSTEM_BIN="+freshEngine)
-	if output, err := freshPreflight.CombinedOutput(); err != nil {
-		t.Fatalf("fresh repository refused its installed candidate engine's reported stamp: %v\n%s", err, output)
+	if output, code := preflightAt(freshCandidateRoot, freshEngine, ""); code != 0 {
+		t.Fatalf("fresh repository refused its installed candidate engine's reported stamp: exit %d\n%s", code, output)
 	}
 }
 
@@ -1923,13 +1939,11 @@ chmod +x "$3"
 `
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "go-build.sh"), []byte(buildScript), 0o755)
 	writeFixtureDevgate(t, installationRoot)
-	for _, relative := range []string{"dispatch.sh", "checkout-execution-guard.sh"} {
-		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", relative))
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", relative), data, 0o755)
+	guardScript, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "checkout-execution-guard.sh"))
+	if err != nil {
+		t.Fatal(err)
 	}
+	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "checkout-execution-guard.sh"), guardScript, 0o755)
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "validate-section-selector.sh"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "cmd", "metasystem", "engine.txt"), []byte("enrolled engine source\n"), 0o644)
 	testingFixtureGit(t, projectRoot, "init", "-q", "-b", "main")

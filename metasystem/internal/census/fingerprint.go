@@ -26,7 +26,6 @@ import (
 // metasystem root (order does not affect the hash — the map is sorted — but
 // it documents the contract).
 var fingerprintFiles = []string{
-	"scripts/agents/dispatch.sh",
 	"bin/metasystem",
 }
 

@@ -1034,7 +1034,6 @@ for link in \
   scripts/agents/permissions/none.json \
   scripts/agents/permissions/workspace.json \
   metasystem.conf \
-  scripts/agents/dispatch.sh \
   scripts/agents/checkout-execution-guard.sh \
   scripts/agents/commit.sh \
   scripts/agents/land.sh \
@@ -1049,7 +1048,6 @@ for link in \
   scripts/agents/supervision-fixtures.sh \
   scripts/agents/return-schema-fixtures.sh \
   scripts/agents/config-identity-fixtures.sh \
-  scripts/agents/authority-regression-fixtures.sh \
   scripts/agents/pre-commit-guard-fixtures.sh \
   scripts/agents/static-reproof-fixtures.sh \
   scripts/agents/path-class-fixtures.sh \
@@ -1058,14 +1056,10 @@ for link in \
   scripts/agents/fixture-bed-scenarios-fixtures.sh \
   scripts/agents/land-fixtures.sh \
   scripts/agents/checkout-execution-guard-fixtures.sh \
-  scripts/agents/record-protocol-fixtures.sh \
   scripts/agents/evidence-segment-fixtures.sh \
   scripts/agents/lease-succession-fixtures.sh \
   scripts/agents/flight-recorder-fixtures.sh \
   scripts/agents/mission-fixtures.sh \
-  scripts/agents/delegate-caps-fixtures.sh \
-  scripts/adopt-fixtures.sh \
-  scripts/agents/dispatch-fixtures.sh \
   scripts/agents/schemas/mission-state.schema.json \
   scripts/agents/schemas/wall-evidence.schema.json \
   scripts/agents/conformance-fixtures.sh \
@@ -1120,11 +1114,9 @@ bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/return-schema-fixtures.sh
 bash -n scripts/agents/config-identity-fixtures.sh
-bash -n scripts/agents/record-protocol-fixtures.sh
 bash -n scripts/agents/evidence-segment-fixtures.sh
 bash -n scripts/agents/lease-succession-fixtures.sh
 bash -n scripts/agents/flight-recorder-fixtures.sh
-bash -n scripts/agents/emit-event.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
 bash -n scripts/agents/static-reproof-fixtures.sh
 bash -n scripts/agents/path-class-fixtures.sh
@@ -1136,13 +1128,10 @@ bash -n scripts/agents/land-fixtures.sh
 bash -n scripts/agents/checkout-execution-guard.sh
 bash -n scripts/agents/checkout-execution-guard-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
-bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/adopt-fixtures.sh
-bash -n scripts/agents/dispatch-fixtures.sh
 bash -n scripts/agents/conformance-fixtures.sh
 bash -n scripts/agents/goal-cli-fixtures.sh
 bash -n scripts/agents/brain-fixtures.sh
-bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/oldest-bash-gate.sh
 bash scripts/agents/oldest-bash-gate.sh --self-test >/dev/null
 bash scripts/agents/oldest-bash-gate.sh >/dev/null
@@ -1186,7 +1175,8 @@ fi
 # lives in scripts/agents/lease-succession-fixtures.sh below.
 if section_selected authority-regression-fixtures; then
   delivery_contract_skip authority-regression-fixtures \
-    || run_section authority-regression-fixtures needs-engine bash scripts/agents/authority-regression-fixtures.sh
+    || run_section authority-regression-fixtures needs-engine printf '%s\\n' \
+      "authority-regression-fixtures: retired to Go tests; its scenarios run in internal/delegation and the owners' packages (verbs-object-action U6b)"
 fi
 if section_selected pre-commit-guard-fixtures; then
   delivery_contract_skip pre-commit-guard-fixtures \
@@ -1222,7 +1212,8 @@ if section_selected project-extra-suites; then
 fi
 if section_selected record-protocol-fixtures; then
   delivery_contract_skip record-protocol-fixtures \
-    || run_section record-protocol-fixtures needs-engine bash scripts/agents/record-protocol-fixtures.sh
+    || run_section record-protocol-fixtures needs-engine printf '%s\\n' \
+      "record-protocol-fixtures: retired to Go tests; its scenarios run in internal/delegation and the owners' packages (verbs-object-action U6b)"
 fi
 if section_selected evidence-segment-fixtures; then
   delivery_contract_skip evidence-segment-fixtures \
@@ -1243,7 +1234,8 @@ if section_selected acp-fixtures; then
 fi
 if section_selected delegate-caps-fixtures; then
   delivery_contract_skip delegate-caps-fixtures \
-    || run_section delegate-caps-fixtures needs-engine bash scripts/agents/delegate-caps-fixtures.sh
+    || run_section delegate-caps-fixtures needs-engine printf '%s\\n' \
+      "delegate-caps-fixtures: retired to Go tests; its scenarios run in internal/delegation and the owners' packages (verbs-object-action U6b)"
 fi
 if section_selected adapter-deadline-fixtures; then
   delivery_contract_skip adapter-deadline-fixtures \
@@ -2404,9 +2396,12 @@ if section_selected dispatcher-adapter-and-mission-runner-fixtures \
   && delegate_process_section "dispatcher, adapter selftest, and mission-runner process fixtures" \
   && ! delivery_contract_skip dispatcher-adapter-and-mission-runner-fixtures \
     "dispatcher, adapter selftest, and mission-runner process fixtures"; then
-  # Extracted to the sub-suite shape (script-validate-4/D35).
-  run_section dispatcher-adapter-and-mission-runner-fixtures needs-engine \
-    bash scripts/agents/dispatch-fixtures.sh
+  # The dispatcher bed retired with the delegate lifecycle's port to Go
+  # (verbs-object-action U6b): its scenarios are internal/delegation and
+  # owner tests the go groups select and run. The section stays registered
+  # until the base's section groups are retired (design 6.4, step B).
+  run_section dispatcher-adapter-and-mission-runner-fixtures needs-engine printf '%s\\n' \
+    "dispatcher-adapter-and-mission-runner-fixtures: retired to Go tests; its scenarios run in internal/delegation and the owners' packages"
 fi
 
 workflow_tooling_fixtures_section() {

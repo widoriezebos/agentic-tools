@@ -1204,7 +1204,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 				dead = append(dead, budgetFailure{
 					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_OPEN stop=%s pendingJobs=%d%s",
 						id, file.Claimed.Revision, batch.StopID, len(batch.Pending), stopFiringEvidenceSummary(batch)),
-					remedy: "metasystem internal steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
+					remedy: breachStopRemedy(id, "completes this stop"), automatic: true,
 					fact: RemedyFact{Cause: CauseBreachStopOpen, Goal: id, Stop: batch.StopID},
 				})
 			}
@@ -1232,7 +1232,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 			dead = append(dead, budgetFailure{
 				reason: fmt.Sprintf("%s revision=%d BREACH %s designCritiques=%d/%d codeCritiques=%d/%d", id, budget.GoalRevision, strings.Join(fields, ", "),
 					budget.DesignCritiques, budget.Limits.ReviewRoundLimit, budget.CodeCritiques, budget.Limits.ReviewRoundLimit),
-				remedy: "metasystem internal steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
+				remedy: breachStopRemedy(id, "stops this revision"), automatic: true,
 				fact: RemedyFact{Cause: CauseBudgetBreach, Goal: id},
 			})
 			continue
@@ -1287,6 +1287,14 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 		return roleAlive(RoleClaimedGoalBudget, fmt.Sprintf("riskUnanswered=%d; there are no claimed goals", riskUnanswered))
 	}
 	return roleAlive(RoleClaimedGoalBudget, fmt.Sprintf("riskUnanswered=%d; %s", riskUnanswered, strings.Join(known, "; ")))
+}
+
+// breachStopRemedy is the remedy of a breach the steward heals itself: the
+// armed runner's own tick runs the stop custodian, so the text names what a
+// person can do meanwhile with public actions, never a manual tick.
+func breachStopRemedy(goalID, act string) string {
+	return fmt.Sprintf("the armed steward %s on its next tick (metasystem system start arms it); to hold the goal now, run metasystem goal pause %s --reason TEXT",
+		act, goalID)
 }
 
 func checkStopCapabilityEpoch(repoRoot string, now time.Time) RoleVerdict {
@@ -1474,7 +1482,7 @@ func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
 			unknown = append(unknown, jobID)
 		}
 	}
-	remedy := fmt.Sprintf("%q reap", filepath.Join(repoRoot, "scripts", "agents", "dispatch.sh"))
+	remedy := fmt.Sprintf("%q internal delegate reap", filepath.Join(repoRoot, "bin", "metasystem"))
 	if len(dead) > 0 {
 		return roleDead(RoleNonterminalJobs, "non-terminal jobs with dead recorded processes: "+strings.Join(dead, ","), remedy)
 	}

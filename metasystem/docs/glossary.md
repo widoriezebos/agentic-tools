@@ -132,9 +132,8 @@ not paths.
 - **Event registry** — `scripts/agents/event-registry.json`, the closed
   catalogue of event names, allowed emitters, required ids, and typed
   payloads. An event not in the registry is a bug, not a feature.
-- **Emitter** — the never-fail append helper
-  (`scripts/agents/emit-event.sh`, a thin wrapper over `metasystem event
-  emit`; `internal/events`). An emit may silently lose its own
+- **Emitter** — the never-fail append helper (`internal/events`; scripts
+  reach it through `metasystem internal event emit`). An emit may silently lose its own
   event; it may never fail its caller.
 - **executionId** — the cohort id, exported by the benchmark driver to
   everything it spawns so one run's events can be joined across the

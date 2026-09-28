@@ -2,9 +2,9 @@ package stoptransition
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -30,6 +30,11 @@ type LocalConfig struct {
 	Installation string
 	Binary       string
 	ScaleMilli   int
+	// CancelJob cancels one local delegate job through the delegate
+	// lifecycle (the owned cancel, or the job's runtime) and returns its
+	// report. The lifecycle composes above this package (design 6.3), so
+	// the command layer supplies it.
+	CancelJob func(job string) (string, error)
 }
 
 // LocalFamilies returns every per-checkout process family in stop order.
@@ -238,16 +243,18 @@ func (f *jobFamily) Stop(item Item) (Outcome, error) {
 		survivor.Reason = fmt.Sprintf("owned by another machine; cancel it from %s with metasystem work stop j2:%s, then restore its terminal record", current.machine, id)
 		return Outcome{Line: line, Complete: false, Survivor: survivor}, nil
 	}
-	command := exec.Command(f.config.Binary, "internal", "delegate", "--cancel", id)
-	command.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+f.config.Installation)
-	output, commandErr := command.CombinedOutput()
+	var output string
+	commandErr := errors.New("the stop transition has no delegate lifecycle wired to cancel the job")
+	if f.config.CancelJob != nil {
+		output, commandErr = f.config.CancelJob(id)
+	}
 	record, readErr := dispatch.ReadRecordObject(current.path)
 	if readErr != nil {
 		return Outcome{}, readErr
 	}
 	lens := dispatch.JobRecordOf(record)
 	if !dispatch.TerminalStatus(lens.Status()) {
-		detail := strings.TrimSpace(string(output))
+		detail := strings.TrimSpace(output)
 		if commandErr != nil {
 			detail = firstNonEmpty(detail, commandErr.Error())
 		}

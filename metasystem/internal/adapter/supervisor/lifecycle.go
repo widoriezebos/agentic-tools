@@ -291,7 +291,7 @@ func (s *Supervision) logWriter() io.Writer {
 	return s.log
 }
 
-// dispatch runs one dispatch.sh internal callback with the supervisor's own
+// dispatch runs one delegate lifecycle callback with the supervisor's own
 // output streams.
 func (s *Supervision) dispatch(args ...string) int {
 	return s.d.Dispatch.Run(s.d.Stdout, s.d.Stderr, args...)
@@ -391,7 +391,7 @@ func referencePath(line string) string {
 	return ""
 }
 
-// recordHandshake publishes the correlated session through dispatch.sh's
+// recordHandshake publishes the correlated session through the lifecycle's
 // handshake callback. A session that differs from the one being resumed is
 // a resume collision.
 func (s *Supervision) recordHandshake(session, turn, model string) bool {

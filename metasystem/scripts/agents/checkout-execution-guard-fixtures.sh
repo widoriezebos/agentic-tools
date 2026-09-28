@@ -156,7 +156,7 @@ cp metasystem.conf "$tmp/bootstrap/metasystem.conf"
 ) 2>"$tmp/bootstrap.err"
 grep -Fq 'existing engine does not know gate guard-acquire; proceeding until this run rebuilds it' "$tmp/bootstrap.err"
 
-# The queueing legs drive scripts/agents/dispatch.sh as a real process, and
+# The queueing legs drive the engine's delegate lifecycle as a real process, and
 # dispatch refuses any root outside a git repository. Adoption supports such
 # targets (the hook installs when git init happens), and no dispatch can run
 # there — so there is no suite-vs-dispatch contention to certify. Skip those

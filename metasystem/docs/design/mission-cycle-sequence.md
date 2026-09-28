@@ -1,5 +1,10 @@
 # The mission runner's actual cycle sequence
 
+> PORTED (verbs-object-action U6b): `dispatch.sh` is gone; its lifecycle is
+> Go in `internal/delegation`, and the runner reaps and closes through it
+> in process. The dispatch.sh anchors below stay pinned to its commit as
+> history; read the package for current anchors.
+
 > SUPERSEDED SECTIONS (kept for history; the map is pinned to its
 > commit): the drain narrative and false-stall surfaces (j) and the S13
 > drain step predate patience satellites 1 and 2 — the drain is now

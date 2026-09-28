@@ -288,6 +288,7 @@ func (x *externalOps) Selftest(d Deps) int {
 	p := adapter.SelftestParams{
 		Root: d.Root, Runtime: x.adapter.Name, Usage: described.Capabilities.Usage,
 		TurnCeilingSec: spec.TurnCeilingSec, DenialEndsTurn: spec.DenialEndsTurn, Engine: d.Self,
+		Status: d.lifecycleStatus, Reap: d.lifecycleReap,
 		RunIdentity: func() error {
 			_, err := x.ConfigIdentity(d)
 			return err

@@ -113,8 +113,9 @@ may declare, not a turn-event exception.
   [dispatch, reaper, lease | jobId R, missionId O as above];
   verdict-refused {attempted: string R, observed: string R}
   [dispatch, reaper | jobId R, missionId O as above] (D-3a). The STANDING
-  REAPER is the `reaper` component even though its code lives in
-  dispatch.sh — attribution follows the role, not the file. `lease` emits
+  REAPER is the `reaper` component even though its code lives in the
+  delegate lifecycle (`internal/delegation`) — attribution follows the
+  role, not the file. `lease` emits
   job-verdict for its takeover sweep but NEVER verdict-refused: the sweep
   writes under the record lock and cannot lose a compare.
 - runner-started {} [runner | missionId R]; turn-launched {} /

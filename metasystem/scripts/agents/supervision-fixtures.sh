@@ -1570,7 +1570,7 @@ acceptance_start_job() {
   sed 's/^Working Mode:.*/Working Mode: design/' \
     "$repo/scripts/agents/templates/brief.md" >"$brief"
   printf '\nFAKE:custodial-critique=%s\n' "$tmp/stop-everything-job-release" >>"$brief"
-  printf '%s\n' 'metasystem/scripts/agents/dispatch.sh' >"$outputs"
+  printf '%s\n' 'metasystem/scripts/agents/supervision-hook.sh' >"$outputs"
   # A census verdict older than its window refuses the dispatch and says
   # "retry in a moment": on a busy box (cadence run 18, 2026-09-12, load 37)
   # the census cycle outran the fixture's two-second window once. The
@@ -1883,7 +1883,7 @@ if [[ "$fixture_scenario" == stop-fence ]]; then
   fence_outputs=$tmp/stop-fence-outputs.txt
   sed 's/^Working Mode:.*/Working Mode: design/' \
     "$repo/scripts/agents/templates/brief.md" >"$fence_brief"
-  printf '%s\n' 'scripts/agents/dispatch.sh' >"$fence_outputs"
+  printf '%s\n' 'scripts/agents/supervision-hook.sh' >"$fence_outputs"
   [[ "$(json_field "$repo/artifacts/agents/supervision/last-census.json" verdict)" == CENSUS-FAILED ]] \
     || { echo "stop-fence requires a failed census to prove the stopped refusal takes precedence" >&2; exit 1; }
   set +e
@@ -2632,7 +2632,7 @@ grep -Fq '"pidStartedAt"' "$source_root/internal/dispatch/ownership.go" \
 grep -Fq 'pidStartedAt' "$source_root/docs/orchestration.md" \
   || { echo "S4-1/S4-10: host-turn contract does not document pidStartedAt" >&2; exit 1; }
 for owner_asset in \
-  scripts/agents/dispatch.sh scripts/agents/supervision-hook.sh \
+  internal/delegation/lifecycle.go scripts/agents/supervision-hook.sh \
   scripts/enforcement/claude-code-hooks.json scripts/enforcement/codex-hooks.json \
   scripts/enforcement/devin-hooks.json; do
   [[ -f "$source_root/$owner_asset" ]] \
@@ -2794,9 +2794,15 @@ wait_for_census "S4-6 partial-failure recovery" pred_verdict_is SUCCESS
 # A generation change for the replacement leg below. (S4-3, that the
 # fingerprint moves with the engine that carries the signature registry, is
 # TestFingerprintMovesWithEngineAndSignatureSetNotAdapterScripts in
-# internal/census.) The adapter scripts are no longer fingerprint inputs, so
-# the change lands on a static input that still is.
-printf '\n# generation change fixture\n' >>"$repo/scripts/agents/dispatch.sh"
+# internal/census.) No script is a fingerprint input any more (the adapter
+# scripts and dispatch.sh are retired), so the change lands on a
+# fingerprinted configuration key and is restored byte for byte below.
+generation_conf_line=$(grep -m1 '^watch[.]stale-min=' "$repo/metasystem.conf") \
+  || { echo "generation change: the fixture conf has no watch.stale-min line" >&2; exit 1; }
+generation_stale_min=${generation_conf_line#watch.stale-min=}
+[[ "$generation_stale_min" =~ ^[0-9]+$ ]] \
+  || { echo "generation change: watch.stale-min is not a number: $generation_conf_line" >&2; exit 1; }
+conf_edit "$repo/metasystem.conf" replace-line-first '^watch[.]stale-min=.*$' "watch.stale-min=$((generation_stale_min + 1))"
 old_generation_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pid)
 replacement_output=$("$arm" --repo "$repo" --session generation-replacement --pid "$$" \
   --start-time "$(process_started_at "$$")" --tag fixture-main)
@@ -2804,9 +2810,7 @@ new_generation_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/own
 [[ "$new_generation_owner" != "$old_generation_owner" ]] \
   && grep -Fq 'component=supervision-owner outcome=replaced' <<<"$replacement_output" \
   || { echo "ordinary up did not replace the live older engine generation" >&2; echo "$replacement_output" >&2; exit 1; }
-git -C "$repo" show HEAD:scripts/agents/dispatch.sh >"$repo/scripts/agents/dispatch.sh.restored"
-chmod +x "$repo/scripts/agents/dispatch.sh.restored"
-mv "$repo/scripts/agents/dispatch.sh.restored" "$repo/scripts/agents/dispatch.sh"
+conf_edit "$repo/metasystem.conf" replace-line-first '^watch[.]stale-min=.*$' "$generation_conf_line"
 # Restoring the accepted bytes is another generation change; ordinary up
 # absorbs that replacement too, leaving later fixture legs on current code.
 "$arm" --repo "$repo" --session generation-restored --pid "$$" \

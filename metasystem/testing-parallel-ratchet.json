@@ -704,23 +704,8 @@
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestIntentDesignAuthorRealOwnerJourney",
-      "reason": "runs only inside the dispatcher fixture bed (dispatch-fixtures.sh cluster b), where both design journeys drive the one bed repository and supervision root that bed hands over, so they cannot run concurrently"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestIntentDesignReviewRealOwnerJourney",
-      "reason": "runs only inside the dispatcher fixture bed (dispatch-fixtures.sh cluster b), where both design journeys drive the one bed repository and supervision root that bed hands over, so they cannot run concurrently"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestLaunchManagerReadsClaudeTranscriptsWhereClaudeKeepsThem",
       "reason": "sets CLAUDE_CONFIG_DIR with t.Setenv, the process environment the launch manager's Claude adapter wiring reads"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestIntentDesignRetryRealOwnerJourney",
-      "reason": "runs only inside the dispatcher fixture bed (dispatch-fixtures.sh cluster b), where the design journeys drive the one bed repository and supervision root that bed hands over, so they cannot run concurrently"
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
@@ -751,6 +736,31 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestIntentCarriedChannelWordAdoptionStopsWhenBindingFails",
       "reason": "newCarriedDeliveryBed sets METASYSTEM_OWNER_LINEAGE, METASYSTEM_BIN to the per-bed engine and the fixture process identity and census environment with t.Setenv for the real carry and land subprocesses"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
+      "test": "TestClaimAuthorizationSpendsTheDelegateCapabilityNotTheMarker",
+      "reason": "clears METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the claim surface reads to recognize a fixture process table"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth",
+      "test": "TestGoalClockFreezesOnlyAFixtureRoot",
+      "reason": "sets the fixture-authorization and frozen goal-clock variables with t.Setenv, the process environment GoalClock reads"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/mission",
+      "test": "TestU6bPortAssemblePromptNamesTheMissingTurnRecord",
+      "reason": "uses promptSandbox, which sets the mission prompt limits with t.Setenv"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
+      "test": "TestDownwardRearmRefusesWhileARunningJobReservesAboveTheNewCeiling",
+      "reason": "swaps the package arming clock seam (armingNow, armingSleep) to write the racing reservation inside the cap-authority lock wait"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
+      "test": "TestOrdinaryEstablishmentRefusesACeilingBelowAReservationThatRacedItsLockWait",
+      "reason": "swaps the package arming clock seam (armingNow, armingSleep) to write the racing reservation inside the cap-authority lock wait"
     }
   ]
 }

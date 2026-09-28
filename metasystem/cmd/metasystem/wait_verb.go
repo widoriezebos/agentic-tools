@@ -479,17 +479,22 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 }
 
 func printWaitResult(result metarun.WaitResult, jsonOutput bool) {
+	writeWaitResult(os.Stdout, result, jsonOutput)
+}
+
+// writeWaitResult renders a wait result as the wait verb prints it.
+func writeWaitResult(w io.Writer, result metarun.WaitResult, jsonOutput bool) {
 	if jsonOutput {
 		encoded, err := json.Marshal(result)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "wait result could not be encoded:", err)
 			return
 		}
-		fmt.Println(string(encoded))
+		fmt.Fprintln(w, string(encoded))
 		return
 	}
 	incarnation, _ := json.Marshal(result.TargetIncarnation)
-	fmt.Printf("WAIT %s %s %s exit=%d outcome=%q reason=%q evidence=%q returnEventFailed=%t incarnation=%s\n",
+	fmt.Fprintf(w, "WAIT %s %s %s exit=%d outcome=%q reason=%q evidence=%q returnEventFailed=%t incarnation=%s\n",
 		result.WaitID, result.Selector.Kind, result.Selector.TargetID, result.ExitCode,
 		strings.ReplaceAll(result.SourceOutcome, "\n", " "), strings.ReplaceAll(result.Reason, "\n", " "),
 		strings.ReplaceAll(result.SourceEvidence, "\n", " "), result.ReturnEventFailed, incarnation)

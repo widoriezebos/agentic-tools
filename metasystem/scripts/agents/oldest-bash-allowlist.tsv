@@ -2,7 +2,6 @@
 # Conversion units delete rows as they repair sites.
 # Rows match rule, path, and content hash; the final column is informational.
 bare-test	scripts/adopt-fixtures.sh	e343c729d49178ae29be136dfcc211e922a7a53bf7dd9816c00d97d5f4303cc3	[[ "$fixture_scenario" == "$1" ]]
-bare-test	scripts/agents/actionable-metrics-fixtures.sh	38e4c772fc2ed99e6e5cd90fc07e997311223fd535c966274ec8dbd2c41cb08e	[[ $(grep -Fc -- '--goal "$goal"' "$root/scripts/agents/dispatch.sh") -ge 3 ]]
 bare-test	scripts/agents/channel-fixtures.sh	0dc348d76c277efdb64143b042e5987c0a27be5ed50f70d8c8b0b3be8a15aad6	[[ $("$ms" channel wait --root "$repo" --question "$qid" --timeout 1) == approve ]]
 bare-test	scripts/agents/channel-fixtures.sh	33f1570d591558a355741ca4fe16c3bfef4d6979aca153926a8ba054aa546405	[[ $("$ms" channel wait --root "$repo" --question "$telegram_qid" --timeout 1) == approve ]]
 bare-test	scripts/agents/channel-fixtures.sh	6f30ae7f2089d458ce68df0ea934aa05b062c13a2423d840ed3edd91af1acf43	[[ $("$ms" channel wait --root "$repo" --question "$telegram_qid" --timeout 1 --poll-seconds 1) == approve ]]
@@ -11,11 +10,6 @@ bare-test	scripts/agents/channel-fixtures.sh	a56cb1c0b0fba58d76a154cccbc06407c24
 bare-test	scripts/agents/checkout-execution-guard-fixtures.sh	0474e3d841235475feaa90e15e800b926ecf72b1728329d3b282123f21f047f6	[[ "$forged_rc" == 1 ]]
 bare-test	scripts/agents/checkout-execution-guard-fixtures.sh	11655b90e8dc569ca8031637a60b4fb0cabef58ad72bc77f409a23907ff8db1f	(( checkout_execution_guard_held == 0 ))
 bare-test	scripts/agents/checkout-execution-guard-fixtures.sh	a7d2b3c135ef322a7f20388be333024d69daf3ec930a2e0674a35cfcd66754e6	[[ "$result" == acquired ]]
-bare-test	scripts/agents/delegate-caps-fixtures.sh	36ee620e50bad8dd7034ac30ee37112aaa6848fe18f01877373abbfc77a4d4cd	[[ "$(printf '%s\n' "$@" | sort -u)" == "$(printf '%s\n' AUTH-R2-005 AUTH-R2-006 AUTH-R2-007 AUTH-R2-008)" ]]
-bare-test	scripts/agents/delegate-caps-fixtures.sh	6a509f8fdb799438a5ff9f0345ef0fb035850dbe0b6686049eb0b2b9ce0ed322	[[ "$verdict" == SUCCESS && "$attested" == "$digest" ]]
-bare-test	scripts/agents/dispatch-fixtures.sh	55e91a3684a1f1bb567f1acbdcf69cffffb8bb1beb374189a99552e106e5a96e	[[ "$fixture_scenario" == "dispatch-$1" ]]
-bare-test	scripts/agents/dispatch-fixtures.sh	8d15ceef01b683364ad9e677722350b98fd56c3584275da2fcb8bd48da233d83	(( owned_group_alive ))
-bare-test	scripts/agents/dispatch-fixtures.sh	b2b40ec02f452b949a8ff7279b11f39393f497e35cac925699c07db3a247e31f	[[ "$2" == 320 ]]
 bare-test	scripts/agents/land-fixtures.sh	0747c36ec33eba8291b4efe7a6d6cd7bf1c9e75eed7efa581a2fa94341c7ece9	[[ $(git -C "$leg_local" rev-parse HEAD) == "$new_plan_base" ]]
 bare-test	scripts/agents/land-fixtures.sh	0d9bcbae6cb001249f8b3ce91bb1f64147f240c612bd8ad222304b7173d46083	[[ $(git -C "$leg_local" rev-parse HEAD^{tree}) == "$cutover_tree" ]]
 bare-test	scripts/agents/land-fixtures.sh	1085bfaced5112815510c4c3e9f0144431a25cd8f4697969ccb63cf9cfe35cc9	[[ $(git -C "$leg_local" status --porcelain) == ' M records/narrator-digest.log' ]]
@@ -120,21 +114,6 @@ bare-test	scripts/agents/witness-gate-fixtures.sh	ca171606b3fdd9b83b78f3fcc8b45d
 bare-test	scripts/agents/witness-gate-fixtures.sh	dcb22c6e5f188538709761280db6ae90b7965dc597a3dfe3ca855d51721a0b02	[[ ${2:-} == ./cmd/metasystem ]]
 bare-test	scripts/agents/witness-gate-fixtures.sh	f258b6f3973a301bab9994e58c1ac5f8bda9b4316a8d3e84039d65d2d8b97d02	[[ "$("$source_engine" json get --file "$witness_path" --field controller.startedAtSec)" != "$wrong_start_started" ]]
 empty-array	scripts/adopt-fixture-helpers.sh	017a08e5fcbf3644eff3a30869b1fdd10c4cae18340c7fe0a37b714bddf71539	joined=$(printf '%s\n' "${models[@]}" | LC_ALL=C sort -u | paste -sd, -)
-empty-array	scripts/agents/delegate-caps-fixtures.sh	20d6667c677bfec7eda9de817feb50768df4a63144dbbf7d2e499e3b5f1c7cdb	|| { echo "AUTH-R2-009: executed registry is not exact:" "${passed[@]}" >&2; exit 1; }
-empty-array	scripts/agents/delegate-caps-fixtures.sh	73759035861360e5c34fb36f4a6f22c0b6a76b851d7de209844185b8b2ad126f	registry_is_complete "${passed[@]}" \
-empty-array	scripts/agents/dispatch-fixtures.sh	18fbf1891ed083970425aee571082c1e2810c333e00426afff55b3c2b1ccc327	if argv_contains -C "${codex_args_two[@]}"; then
-empty-array	scripts/agents/dispatch-fixtures.sh	25cc0a3ef95aed38e91897c57586ae4251cfdd9ffa97f3ef323e0acdfa96139f	argv_contains 'sandbox_mode="workspace-write"' "${codex_args_two[@]}" \
-empty-array	scripts/agents/dispatch-fixtures.sh	25d7e154596d4050ddcd7b281d962a8baad58f6527e2c68fe274be39ed67520b	argv_contains 'approval_policy="never"' "${codex_args_two[@]}" \
-empty-array	scripts/agents/dispatch-fixtures.sh	39e0f293c8587d8c26f5471e13b6dae1e960a21ad986e6265ace9d853bad264f	argv_contains 'model="gpt-5-fixture"' "${codex_args_two[@]}" \
-empty-array	scripts/agents/dispatch-fixtures.sh	5534ef407a52aa2b467709fe618f6edf4331514a0e167687799c138e6b35839b	argv_contains 'approval_policy="never"' "${codex_args_one[@]}" \
-empty-array	scripts/agents/dispatch-fixtures.sh	5cde5e10e350889d3f38ffef7de322574daa9152f7d176946af052c401a9d482	[[ "$(argv_value_after -m "${codex_args_one[@]}")" == gpt-5-fixture ]] \
-empty-array	scripts/agents/dispatch-fixtures.sh	84421e44e636dc404352c082a0ffd92f4a7ad0364e4002e755bf2b78743cbbb9	[[ "$(argv_value_after --sandbox "${codex_args_one[@]}")" == workspace-write ]] \
-empty-array	scripts/agents/dispatch-fixtures.sh	858d7878cd38d09b5c58054a8aff45aa097edd4cf4833a62589e87de9d308a0d	argv_contains codex-fixture-session "${codex_args_two[@]}" \
-empty-array	scripts/agents/dispatch-fixtures.sh	8a4191316db6a2b49648ca749dcb5a976ef2c9e7bc30f4c1366174aa49318b6c	argv_contains 'sandbox_workspace_write.network_access=true' "${codex_args_two[@]}" \
-empty-array	scripts/agents/dispatch-fixtures.sh	92d4ebf670f812b45c1e21b83e23daaf89be9ae694a836ed4705066472e46c40	argv_contains 'sandbox_workspace_write.network_access=true' "${codex_args_one[@]}" \
-empty-array	scripts/agents/dispatch-fixtures.sh	b81cd9e29411a016695c814082d3df35a8a825d660b4e0297fd356d6fb099b05	[[ "$(argv_value_after -C "${codex_args_one[@]}")" == "$runner_repo" ]] \
-empty-array	scripts/agents/dispatch-fixtures.sh	dd16dadd86e17a70870b19c7b4973c27d81e80d9f2b53abc0bd9affa18abccca	"$fixture_bed_script" "${fixture_parent_scenarios[@]}"
-empty-array	scripts/agents/evidence-segment-fixtures.sh	816e538664bc95d46519701c06b7109277fdbf76d3b0c148cd4b3e9f3e21e654	for destination in "${destinations[@]}"; do
 empty-array	scripts/agents/fixture-bed-scenarios.sh	b68485456c5d31c3f709e57c6545028680d0867ed4005064c6196f29040c3699	fixture_bed_parent_child_pids="${live_pids[*]}"
 empty-array	scripts/agents/land-fixtures.sh	2888abdbb6415c3f5ff34bb6ebcbea738508282c4056dda7c402035f1cb16c03	for entry in "${receipt_environment[@]}"; do
 empty-array	scripts/agents/land-fixtures.sh	9f70565e827d0c012851c57b84718891985a62a35886934531ff30608485f147	git commit "${commit_args[@]}"

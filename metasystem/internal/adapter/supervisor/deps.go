@@ -9,18 +9,21 @@
 // It is a composition package above the owners (design verbs-object-action
 // 6.3): the runtime transformations stay in internal/adapter, the job-record
 // owners in internal/dispatch, the ACP wire in internal/acp. The record
-// writes that dispatch.sh's lease-held internal callbacks own (__record-cas,
+// writes the delegate lifecycle's internal callbacks own (__record-cas,
 // __handshake, __register-custody, __protocol-error, __repair-claim,
-// __cancel-owned) stay callbacks into dispatch.sh until its port (U6b), so
-// authority is checked exactly where it was: against this supervisor
-// process, the pid the job record names.
+// __cancel-owned) are calls into the engine's delegate entry
+// (`ENGINE internal delegate CALLBACK`, internal/delegation), so authority is
+// checked exactly where it was: against this supervisor process, the pid the
+// job record names, as the callback process's parent.
 package supervisor
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -48,8 +51,8 @@ type Deps struct {
 	Pid            int
 	Stdout, Stderr io.Writer
 	Clock          Clock
-	// Dispatch runs one dispatch.sh internal callback and returns its exit
-	// status.
+	// Dispatch runs one delegate lifecycle callback or command and returns
+	// its exit status.
 	Dispatch Dispatcher
 	// GroupMembers lists the live members of a process group, except the
 	// given pids; an error is an indeterminable enumeration.
@@ -66,8 +69,8 @@ type Clock interface {
 	Sleep(time.Duration)
 }
 
-// Dispatcher runs `scripts/agents/dispatch.sh ARGS` with the given output
-// streams.
+// Dispatcher runs one delegate lifecycle command (`ENGINE internal delegate
+// ARGS`) with the given output streams.
 type Dispatcher interface {
 	Run(stdout, stderr io.Writer, args ...string) int
 }
@@ -80,15 +83,20 @@ func (systemClock) Sleep(d time.Duration) { time.Sleep(d) }
 // SystemClock is the wall clock.
 func SystemClock() Clock { return systemClock{} }
 
-// ScriptDispatcher execs the installation's dispatch.sh.
-type ScriptDispatcher struct {
+// EngineDispatcher execs the installation's delegate entry, `ENGINE internal
+// delegate ARGS`, with METASYSTEM_DELEGATE_ROOT naming the installation (the
+// retired runtime-common.sh delegate_callback). The callback process is a
+// child of this supervisor, so the lifecycle's authority checks see the
+// supervisor the job record names as its caller's parent.
+type EngineDispatcher struct {
 	Root    string
+	Engine  string
 	Environ []string
 }
 
-func (d ScriptDispatcher) Run(stdout, stderr io.Writer, args ...string) int {
-	command := exec.Command(filepath.Join(d.Root, "scripts", "agents", "dispatch.sh"), args...)
-	command.Env = d.Environ
+func (d EngineDispatcher) Run(stdout, stderr io.Writer, args ...string) int {
+	command := exec.Command(d.Engine, append([]string{"internal", "delegate"}, args...)...)
+	command.Env = append(append([]string(nil), d.Environ...), "METASYSTEM_DELEGATE_ROOT="+d.Root)
 	command.Stdout = stdout
 	command.Stderr = stderr
 	return exitStatus(command.Run())
@@ -109,7 +117,7 @@ func ProcessDeps(root string) Deps {
 		Root: root, Engine: engine, Self: self, Environ: environ, Getenv: os.Getenv,
 		Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr,
 		Clock:        SystemClock(),
-		Dispatch:     ScriptDispatcher{Root: root, Environ: environ},
+		Dispatch:     EngineDispatcher{Root: root, Engine: engine, Environ: environ},
 		GroupMembers: groupMembers,
 		LookPath:     exec.LookPath,
 		Git:          runGit,
@@ -130,6 +138,22 @@ func groupMembers(pgid int, except ...int) ([]int, error) {
 		out = append(out, int(pid))
 	}
 	return out, nil
+}
+
+// lifecycleStatus is the delegate lifecycle's status of one job (its record
+// status line), empty when the lifecycle refuses or fails.
+func (d Deps) lifecycleStatus(job string) string {
+	var out bytes.Buffer
+	if d.Dispatch.Run(&out, io.Discard, "status", "--job", job) != 0 {
+		return ""
+	}
+	return strings.TrimSpace(out.String())
+}
+
+// lifecycleReap is the delegate lifecycle's single-job reap; its outcome is
+// tolerated, as the self-test's reap between polls always was.
+func (d Deps) lifecycleReap(job string) {
+	_ = d.Dispatch.Run(io.Discard, io.Discard, "reap", "--job", job)
 }
 
 func (d Deps) agents() string { return filepath.Join(d.Root, "artifacts", "agents") }

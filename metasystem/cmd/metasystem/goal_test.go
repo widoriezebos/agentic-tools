@@ -344,5 +344,4 @@ func TestGoalCommandClockOverrideIsFixtureOnly(t *testing.T) {
 	if _, _, err := goalCommandBootClock(fixture); err == nil {
 		t.Fatal("a partial boot-clock fixture must fail loudly in a fake root")
 	}
-	t.Run("stop proof cancellation keeps the frozen instant fixture-only", testStopProofCancelCommandKeepsFrozenInstantFixtureOnly)
 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,11 +16,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation/fake"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -61,6 +66,11 @@ func newDeliveryBed(t *testing.T) *deliveryBed {
 				t.Fatalf("unexpected owner process %v", process.argv)
 			}
 			return bed.handler(process)
+		},
+		// The close owner is the delegate lifecycle's close command; the bed
+		// sees it as one owner process named close-owner.
+		closeOwner: func(root string, args []string) intentProcessResult {
+			return bed.owners.process(intentProcess{argv: append([]string{"close-owner"}, args...), dir: root})
 		},
 		executable: func() (string, error) { return "/fake/bin/metasystem", nil },
 		now:        func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC) },
@@ -315,39 +325,35 @@ func TestIntentFoldComposesTheReviewedDecision(t *testing.T) {
 
 const deliveryDispositionsHeader = "| Finding id | Disposition | Reasoning and evidence | Amendment |\n| --- | --- | --- | --- |\n"
 
-// realCloseOwner installs the actual scripts/agents/dispatch.sh and a built
-// engine into the bed. METASYSTEM_BIN is a wrapper that answers only the
-// brain fence and the lease (a human holder whose held commands run directly);
-// every other engine verb is the real one.
+// realCloseOwner makes the bed's close owner the real delegate lifecycle
+// over the real owners, with one declared fake: a lease that classifies the
+// caller HUMAN (a person's close, whose held commands run directly). The
+// brain fence, the record owner, the chain register, the mirror and the close
+// check are the real ones.
 func realCloseOwner(t *testing.T, b *deliveryBed) {
 	t.Helper()
-	source, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if output, err := exec.Command("cp", "-R", filepath.Join(source, "scripts"), b.install).CombinedOutput(); err != nil {
-		t.Fatalf("install scripts: %v: %s", err, output)
-	}
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	if output, err := exec.Command("go", "build", "-o", engine, ".").CombinedOutput(); err != nil {
-		t.Fatalf("build engine: %v: %s", err, output)
-	}
-	wrapper := filepath.Join(t.TempDir(), "metasystem-close-fixture")
-	b.writeFile(wrapper, `#!/bin/sh
-case "$1 $2" in
-"brain fence") exit 0 ;;
-"lease require-holder"|"lease classify") printf '%s\n' '{"claimEpoch":"","mainId":"","class":"HUMAN"}'; exit 0 ;;
-"lease run-held") while [ "$1" != "--" ]; do shift; done; shift; exec "$@" ;;
-esac
-exec "`+engine+`" "$@"
-`)
-	if err := os.Chmod(wrapper, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("METASYSTEM_BIN", wrapper)
-	b.owners.process = func(process intentProcess) intentProcessResult {
-		b.calls = append(b.calls, process.argv)
-		return runIntentOwnerProcess(process)
+	b.owners.closeOwner = func(root string, args []string) intentProcessResult {
+		b.calls = append(b.calls, append([]string{"close-owner"}, args...))
+		ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: root, Engine: filepath.Join(root, "bin", "metasystem"), Host: engineHost{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ports.Lease = &fake.Lease{
+			Log: &fake.Log{},
+			ClassifyFunc: func(delegation.Invocation) (lease.ClassifyResult, error) {
+				return lease.ClassifyResult{Class: lease.ClassHuman}, nil
+			},
+			RequireFunc: func(delegation.Invocation, *int64) (lease.HolderView, error) {
+				return lease.HolderView{Class: lease.ClassHuman}, nil
+			},
+		}
+		life, err := delegation.New(delegation.Config{Root: root, Engine: filepath.Join(root, "bin", "metasystem")}, ports)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var diagnostics bytes.Buffer
+		result := life.Run(context.Background(), delegateLifecycleRequest(delegation.Env{RecordOutcome: true}, os.Stdin, &diagnostics), args)
+		return intentProcessResult{stdout: result.Stdout, stderr: diagnostics.Bytes(), code: result.ExitCode}
 	}
 }
 
@@ -789,7 +795,7 @@ func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	decisions := filepath.Join(b.root(), "crit9-decisions.md")
 	b.writeFile(decisions, deliveryDispositionsHeader+"| F1 | refuted | the test at x_test.go:12 covers it | none |\n")
 	code, result = b.do("work", "review", "--commit", "abc1234", "--goal", "standing-validation", "--model", "gpt-critic", "--dispositions", decisions)
-	if len(b.calls) != 1 || filepath.Base(b.calls[0][0]) != "dispatch.sh" || b.calls[0][1] != "close" {
+	if len(b.calls) != 1 || b.calls[0][0] != "close-owner" || b.calls[0][1] != "close" {
 		t.Fatalf("the decided review did not run the whole close owner: %v %+v", b.calls, result)
 	}
 	expectOutcome(t, "collected, publication lost", code, result, intentPartial)

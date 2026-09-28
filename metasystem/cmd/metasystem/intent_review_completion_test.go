@@ -16,7 +16,7 @@ import (
 // the physical-Git connection bed: the unit runner, branch commit, push,
 // read, collection and publication owners are the real ones, and so is the
 // disposition join validator. Model launches, critic dispatch and the whole
-// close owner (dispatch.sh close, which stamps the chain's closure) are the
+// close owner (the lifecycle's close, which stamps the chain's closure) are the
 // bed's fakes; the real close owner is exercised by
 // TestIntentGoalReviewEmptyJoinRealClose.
 func TestIntentGoalReviewCompletion(t *testing.T) {
@@ -140,7 +140,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 
 // TestIntentGoalReviewEmptyJoinRealClose: an examination with no findings is
 // decided by the generated, bound empty join, and the real whole close owner
-// (dispatch.sh close with its register, mirror and close check) closes the
+// (the lifecycle's close with its register, mirror and close check) closes the
 // chain. A stale binding refuses before the owner runs.
 func TestIntentGoalReviewEmptyJoinRealClose(t *testing.T) {
 	b := newDeliveryBed(t)

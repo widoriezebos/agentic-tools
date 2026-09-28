@@ -379,7 +379,7 @@ for mf in .gitattributes .gitignore; do
   done <"$stage/$mf"
 done
 
-[[ -f "$target/metasystem.conf" && -f "$target/scripts/agents/dispatch.sh" ]] \
+[[ -f "$target/metasystem.conf" && -f "$target/scripts/agents/role-packets.json" ]] \
   || die 1 "adopted payload is missing metasystem.conf or scripts/agents/"
 
 mkdir -p "$target/bin"

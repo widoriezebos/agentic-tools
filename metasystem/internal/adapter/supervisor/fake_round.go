@@ -189,7 +189,7 @@ func (r *fakeRound) killSelf() {
 func (r *fakeRound) handshakeRecorded() { r.once.Do(func() { close(r.handshaken) }) }
 
 // observe answers the handshake once the simulated CLI reached it: the
-// session the script handed dispatch.sh's handshake, which refused an
+// session the script handed the lifecycle's handshake, which refuses an
 // empty one (missing-session-id) by name.
 func (r *fakeRound) observe(t *Turn) Events {
 	r.mu.Lock()

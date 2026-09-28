@@ -1179,7 +1179,6 @@ func installPendingWaitHookFixture(t *testing.T, root, binary string) (hook, can
 	}
 	for _, relative := range []string{
 		"scripts/agents/supervision-hook.sh",
-		"scripts/agents/dispatch.sh",
 	} {
 		copyExecutableFixture(t, filepath.Join(sourceRoot, relative), filepath.Join(root, relative))
 	}
