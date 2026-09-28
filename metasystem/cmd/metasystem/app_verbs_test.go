@@ -844,7 +844,6 @@ func TestAppGoalRunEvidenceIsCopiedBeforeItsRecordIsRemoved(t *testing.T) {
 	if record, err := applaunch.ReadRecord(bed.installation, applaunch.KeyFor("goal/g1")); err != nil || record.Ended != nil && record.Ended.At == ended.Ended.At && record.Supervisor == ended.Supervisor {
 		t.Fatalf("the ended record was replaced by the new run's: %+v %v", record, err)
 	}
-	time.Sleep(time.Second) // a second copy lands in its own timestamped directory
 	if code, out := bed.run("app", "stop", "--goal", "g1"); code != 0 || !strings.Contains(out, "copied to") {
 		t.Fatalf("stop copies the goal run's evidence: %d\n%s", code, out)
 	}

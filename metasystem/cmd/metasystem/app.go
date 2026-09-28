@@ -432,7 +432,7 @@ func (r appRun) preserveRunEvidence(record *applaunch.Record, out io.Writer) err
 		}
 		sources = append(sources, tailPath)
 	}
-	destination := filepath.Join(root, "goals", r.goal, "app", r.key, time.Now().UTC().Format("20060102T150405Z"))
+	destination := filepath.Join(root, "goals", r.goal, "app", r.key, time.Now().UTC().Format("20060102T150405.000000000Z"))
 	result, err := proofrun.PreserveEvidence(destination, sources, 32*1024*1024)
 	if err != nil {
 		return err

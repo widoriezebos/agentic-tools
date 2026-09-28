@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -236,7 +238,14 @@ func TestSuperviseStaysTheOwnerWhileItsGroupHasMembers(t *testing.T) {
 	var emptied atomic.Bool
 	var sent []string
 	var sending sync.Mutex
+	// The supervisor reads its group only once the application has ended,
+	// so each read is an observation that it is still there as the owner.
+	asked := make(chan struct{}, 64)
 	bed.options.Group = func(pgid int64) ([]Member, error) {
+		select {
+		case asked <- struct{}{}:
+		default:
+		}
 		if emptied.Load() {
 			return nil, nil
 		}
@@ -255,8 +264,15 @@ func TestSuperviseStaysTheOwnerWhileItsGroupHasMembers(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- Supervise(bed.options) }()
 	// The application ends on its own; the supervisor must not leave while
-	// the group still reports a member.
-	time.Sleep(2 * time.Second)
+	// the group still reports a member. Three reads of a group that still has
+	// one, and it has not returned.
+	for read := 0; read < 3; read++ {
+		select {
+		case <-asked:
+		case <-done:
+			t.Fatal("the supervisor left while a process of its group remained")
+		}
+	}
 	select {
 	case <-done:
 		t.Fatal("the supervisor left while a process of its group remained")
@@ -431,5 +447,42 @@ func TestRejoinRefusesARunThatIsNotStarting(t *testing.T) {
 	status, err := Rejoin(context.Background(), root, StandingKey, contract, ReadOptions{}, 200*time.Millisecond)
 	if err == nil || !strings.Contains(err.Error(), "stopped") {
 		t.Fatalf("a rejoin of nothing is a refusal: %v %v", status.State, err)
+	}
+}
+
+// A tool is said with the executable found and, where it printed one, its
+// version line.
+func TestToolLineSaysTheExecutableAndItsVersion(t *testing.T) {
+	t.Parallel()
+	if got := (ToolLine{ID: "go", Executable: "/usr/bin/go", Version: "go version go1"}).Line(); got != "go: /usr/bin/go (go version go1)" {
+		t.Errorf("a tool with a version line: %q", got)
+	}
+	if got := (ToolLine{ID: "shell", Executable: "/bin/sh"}).Line(); got != "shell: /bin/sh" {
+		t.Errorf("a tool without one: %q", got)
+	}
+}
+
+// The readiness descriptor is the supervisor's own: the application it
+// spawns never inherits it.
+func TestReadinessPipeIsNeverInherited(t *testing.T) {
+	t.Parallel()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	duplicate, err := syscall.Dup(int(writer.Fd()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = writer.Close()
+	pipe := ReadinessPipe(duplicate)
+	defer pipe.Close()
+	flags, err := unix.FcntlInt(uintptr(duplicate), unix.F_GETFD, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flags&unix.FD_CLOEXEC == 0 {
+		t.Fatal("the readiness descriptor must be close-on-exec before anything is spawned")
 	}
 }
