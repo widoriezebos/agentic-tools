@@ -175,8 +175,12 @@ func TestSuperviseKeepsWaitingWhenItsGroupCannotBeRead(t *testing.T) {
 		"start":  map[string]any{"argv": []string{app, "--no-listen", "--exit-after", "300ms"}},
 		"stopMs": 800, "readyMs": 5000})
 	var reads atomic.Int32
+	var readable atomic.Bool
 	bed.options.Group = func(int64) ([]Member, error) {
 		reads.Add(1)
+		if readable.Load() {
+			return nil, nil
+		}
 		return nil, errors.New("process table unreadable")
 	}
 	bed.options.LeadsGroup = func() (int64, bool) { return 4242, true }
@@ -205,11 +209,28 @@ func TestSuperviseKeepsWaitingWhenItsGroupCannotBeRead(t *testing.T) {
 	if !strings.Contains(string(log), "could not be inspected") {
 		t.Fatalf("the supervisor says why it keeps waiting:\n%s", log)
 	}
+	// A signal ends the group by the leader's own signal, and still the
+	// supervisor does not write an ended record over a group it cannot read.
 	cancel()
+	// Past the group signal's stopMs and both of finish's.
+	for until := time.Now().Add(4 * time.Second); time.Now().Before(until); {
+		select {
+		case <-done:
+			t.Fatal("the supervisor left after its signal while its group could not be read")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if record, err := ReadRecord(bed.stateRoot, StandingKey); err != nil || record.Ended != nil {
+		t.Fatalf("no ended record over a group that cannot be read: %+v %v", record, err)
+	}
+	readable.Store(true)
 	select {
 	case <-done:
 	case <-time.After(20 * time.Second):
-		t.Fatal("the supervisor did not finish")
+		t.Fatal("the supervisor did not finish once its group read empty")
+	}
+	if record, err = ReadRecord(bed.stateRoot, StandingKey); err != nil || record.Ended == nil {
+		t.Fatalf("once the group reads empty, the run ends into an ended record: %+v %v", record, err)
 	}
 }
 
@@ -228,5 +249,24 @@ func TestAwaitReadyRefusesAForeignAnswerWhenTheChildHasExited(t *testing.T) {
 		if !ExitedBeforeReady(err) {
 			t.Fatalf("%s: a child that exited while a foreign listener answers is reported as exited: %v", form.ReadyKind(), err)
 		}
+	}
+}
+
+// An ended marker is trusted only once the group is checked: an ended record
+// whose group still has a member reads as descendants alive, never finished.
+func TestAnEndedRecordWithALiveGroupIsNotFinished(t *testing.T) {
+	t.Parallel()
+	pid := groupDescendant(t)
+	root := t.TempDir()
+	if err := WriteRecord(root, Record{Key: StandingKey, Supervisor: deadRef(t), Child: deadRef(t), Group: pid, StateRoot: root,
+		Ended: &Ended{At: "2026-09-28T00:00:00Z", ExitStatus: "exit 0"}}); err != nil {
+		t.Fatal(err)
+	}
+	status, err := Read(root, StandingKey, Contract{}, ReadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State == Finished || !strings.Contains(status.Problem, "ended record, descendants alive") {
+		t.Fatalf("an ended record whose group has a member is not finished, got %s: %s", status.State, status.Problem)
 	}
 }
