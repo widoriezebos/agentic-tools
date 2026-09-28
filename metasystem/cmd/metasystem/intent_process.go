@@ -117,6 +117,7 @@ func processIntentCommands() []intentCommand {
 			examples: []string{"metasystem system enroll --name Wido"},
 			run:      runIntentEnroll,
 		},
+		adoptIntentCommand(),
 		{
 			object: "session", action: "start", audience: "agent", summary: "prepare the current agent session to work",
 			usage:    []string{"metasystem session start"},

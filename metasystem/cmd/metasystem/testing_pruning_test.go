@@ -39,13 +39,12 @@ func TestFixturePruningRetainsEveryDistinctFaultWitness(t *testing.T) {
 		{"human adjustment", "raise the approved review-round member", "critique budget rebind raises the frozen limit", "cap-contract", "TestRaiseByRebind", 1},
 		{"severe core cap", "severe finding at exhausted round", "cap-exhausted-human-raise at terminal round 3", "cap-contract", "TestCritiqueSevereTerminalBoundary", 1},
 		{"severe cap", "severe finding at exhausted round", "exit 10 and terminal round 3", "cap-contract", "TestDispatchCritiqueAdvanceVerbsPath", 1},
-		{"copied engine mismatch", "change non-tailored engine bytes", "ENGINE equality refusal", "adopt", "copied target changed non-tailored $projection bytes", 1},
-		{"copied payload mismatch", "change non-tailored payload bytes", "PAYLOAD equality refusal", "adopt", "for projection in ENGINE PAYLOAD", 1},
-		{"copied Claude drift", "mutate copied Claude skill", "registration path named", "adopt", "drifted claude skill copy refusal did not name its registration", 1},
-		{"copied Codex drift", "mutate copied Codex skill", "registration path named", "adopt", "drifted codex skill copy refusal did not name its registration", 1},
-		{"copied orphan", "remove copied skill source", "orphaned registration refusal", "adopt", "pruned-skill failure did not name the orphaned copy", 1},
-		{"generation replacement", "arm an older live engine generation", "component=supervision-owner outcome=replaced", "supervision", "ordinary up did not replace the live older engine generation", 1},
-		{"unlanded rearm", "install an engine not on the landing ref", "not landed on refs/remotes/origin/trunk", "supervision", "unlanded refusal did not name the remote-tracking ref", 1},
+		{"copied engine mismatch", "change non-tailored engine bytes", "ENGINE equality refusal", "adopt", "copied target changed non-tailored %s bytes", 1},
+		{"copied payload mismatch", "change non-tailored payload bytes", "PAYLOAD equality refusal", "adopt", `for _, projection := range []string{"ENGINE", "PAYLOAD"}`, 1},
+		{"copied Claude drift", "mutate copied Claude skill", "registration path named", "adopt", `range []string{".claude/skills/verify", ".agents/skills/verify"}`, 1},
+		{"copied Codex drift", "mutate copied Codex skill", "registration path named", "adopt", `registration+": existing copied skill differs from its source at SKILL.md"`, 1},
+		{"generation replacement", "arm an older live engine generation", "component=supervision-owner outcome=replaced", "supervision", "func TestLiveGenerationReplacementStopsAndReplacesTheRecordedOwner(", 1},
+		{"unlanded rearm", "install an engine not on the landing ref", "not landed on refs/remotes/origin/trunk", "supervision", "func TestNotLandedRebuildNamesFetchAndTerminalRepairs(", 1},
 	}
 	sources := map[string]string{
 		"cap-contract": fixtureSource(t, "cmd", "metasystem", "cap_contract_test.go") +
@@ -54,8 +53,8 @@ func TestFixturePruningRetainsEveryDistinctFaultWitness(t *testing.T) {
 			fixtureSource(t, "internal", "dispatch", "decisions_test.go") +
 			fixtureSource(t, "internal", "dispatch", "critique_chain_test.go") +
 			fixtureSource(t, "internal", "dispatch", "severity_tiered_rigor_test.go"),
-		"adopt":       fixtureSource(t, "scripts", "adopt-fixtures.sh") + fixtureSource(t, "scripts", "adopt-fixture-helpers.sh"),
-		"supervision": fixtureSource(t, "scripts", "agents", "supervision-fixtures.sh"),
+		"adopt":       fixtureSource(t, "cmd", "metasystem", "adoption_comparison_test.go"),
+		"supervision": fixtureSource(t, "internal", "supervise", "arming_test.go") + fixtureSource(t, "internal", "up", "up_test.go"),
 	}
 	for _, witness := range witnesses {
 		t.Run(witness.assertion, func(t *testing.T) {
@@ -130,20 +129,18 @@ func TestDispatcherSharedEngineCapabilityRejectsTamperAndForeignBed(t *testing.T
 // The dispatcher bed's optimizations retired with the bed (verbs-object-action
 // U6b: its scenarios are Go tests); the adoption pruning keeps its witnesses.
 func TestAdoptionOptimizationsKeepPrivateOwnersAndUniqueAssertions(t *testing.T) {
-	adopt := fixtureSource(t, "scripts", "adopt-fixtures.sh") + fixtureSource(t, "scripts", "adopt-fixture-helpers.sh")
-	if strings.Contains(adopt, `"$tmp/adopt-copy/scripts/validate-metasystem.sh" --delivery-contract`) {
-		t.Fatal("copied-registration duplicate full delivery validation remains")
+	adopt := fixtureSource(t, "cmd", "metasystem", "adoption_comparison_test.go")
+	if strings.Contains(adopt, "validate-metasystem.sh") || strings.Contains(adopt, "validate-section-selector.sh") {
+		t.Fatal("the adoption comparison still drives the retired validator")
 	}
 	for _, required := range []string{
-		`"$tgt/scripts/validate-metasystem.sh" --delivery-contract`,
-		`fill_harness_testing_contract "$srcrepo/testing.json" "$tgt/testing.json"`,
-		`fill_harness_testing_contract "$srcrepo/testing.json" "$tmp/adopt-copy/testing.json"`,
+		`run(filled, nil, engine, "system", "check", "--repo", filled, "--json")`,
+		`fillAdoptionHarnessTestingContract(t, filepath.Join(source, "testing.json"), filepath.Join(target, "testing.json"))`,
 		`TEST_CONTRACT_READY`,
-		`for projection in ENGINE PAYLOAD`,
-		`validate-section-selector.sh" run runtime-contract-audits`,
-		`registered skill copy has drifted from its source: .claude/skills/verify vs skills/verify`,
-		`registered skill copy has drifted from its source: .agents/skills/verify vs skills/verify`,
-		`validation missed an orphaned copy of a pruned skill`,
+		`for _, projection := range []string{"ENGINE", "PAYLOAD"}`,
+		`"internal", "runtime", "setup", "--repo", target, "--runtimes", runtimes}`,
+		`range []string{".claude/skills/verify", ".agents/skills/verify"}`,
+		`registration+": existing copied skill differs from its source at SKILL.md"`,
 	} {
 		if !strings.Contains(adopt, required) {
 			t.Fatalf("adoption pruning lost prerequisite or retained witness: %q", required)

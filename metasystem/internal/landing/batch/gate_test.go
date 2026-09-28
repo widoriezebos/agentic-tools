@@ -148,7 +148,7 @@ func TestDeletedGoPackagesSelectNearestExistingDirectory(t *testing.T) {
 
 func isSharedFixtureHarness(path string) bool {
 	switch path {
-	case "scripts/agents/fixture-bed-scenarios.sh", "scripts/agents/fixture-budget.sh", "scripts/agents/fixture-assert.sh":
+	case "scripts/agents/fixture-bed-scenarios.sh", "scripts/agents/fixture-budget.sh":
 		return true
 	}
 	return false
@@ -172,23 +172,28 @@ func scriptsInSection(source string) []string {
 	return paths
 }
 
-func fixtureRowsFromSuite(suite []byte) []string {
-	text := strings.ReplaceAll(string(suite), "\\\n", " ")
+// fixtureRowsFromContract derives the fixture-bed map from the testing
+// contract: every section group named for a fixture bed runs its scripts by
+// declared argv, and each script it names (shared harness libraries aside)
+// maps to that group.
+func fixtureRowsFromContract(t *testing.T, contract []byte) []string {
+	t.Helper()
+	var decoded struct {
+		Groups []struct {
+			ID      string   `json:"id"`
+			Adapter string   `json:"adapter"`
+			Argv    []string `json:"argv"`
+		} `json:"groups"`
+	}
+	must(t, json.Unmarshal(contract, &decoded))
 	rows := map[string]bool{}
-	offset := 0
-	for _, match := range regexp.MustCompile(`(?m)\brun_section[ \t]+(\S+-fixtures)[ \t]+\S+[ \t]+(\S+)[^\n]*`).FindAllStringSubmatch(text, -1) {
-		at := offset + strings.Index(text[offset:], match[0])
-		source := match[0]
-		if start := strings.Index(text[:at], "\n"+match[2]+"() {"); start >= 0 {
-			start += len(match[2]) + 5
-			if end := strings.LastIndex(text[start:at], "\n}\n"); end >= 0 {
-				source += text[start : start+end]
-			}
+	for _, group := range decoded.Groups {
+		if group.Adapter != "section" || !strings.HasPrefix(group.ID, "section/") || !strings.HasSuffix(group.ID, "-fixtures") {
+			continue
 		}
-		offset = at + len(match[0])
-		for _, script := range scriptsInSection(source) {
+		for _, script := range scriptsInSection(strings.Join(group.Argv, " ")) {
 			if !isSharedFixtureHarness(script) {
-				rows[script+"\tsection/"+match[1]] = true
+				rows[script+"\t"+group.ID] = true
 			}
 		}
 	}
@@ -201,7 +206,7 @@ func fixtureRowsFromSuite(suite []byte) []string {
 }
 
 func TestFixtureBedGroupMapMatchesSections(t *testing.T) {
-	want := fixtureRowsFromSuite(readRepo(t, "scripts", "validate-metasystem.sh"))
+	want := fixtureRowsFromContract(t, readRepo(t, "testing.json"))
 	mapPath := filepath.Join("..", "..", "..", "scripts", "agents", "fixture-bed-groups.tsv")
 	if os.Getenv("UPDATE_FIXTURE_BED_GROUPS") == "1" {
 		must(t, os.WriteFile(mapPath, []byte(strings.Join(want, "\n")+"\n"), 0o644))

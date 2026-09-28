@@ -82,11 +82,7 @@ func TestBedsResolveStopReportsThroughTheEngine(t *testing.T) {
 
 	// These lines assert rendered wording or construct fixture bytes. None
 	// derives a report reference from the visible text.
-	allowed := map[string]string{
-		`scripts/agents/health-fixtures.sh` + "\x00" + `hook_visible=$(printf 'Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem session status --id %s' "$hook_report_alias")`:                      "fixture report text",
-		`scripts/agents/health-fixtures.sh` + "\x00" + `hook_payload=$(printf '{"systemMessage":"Just completed: unknown for this turn.\\nNo task in flight; Stop allowed; Report: metasystem session status --id %s"}' "$hook_report_alias")`: "fixture payload text",
-		`scripts/agents/supervision-fixtures.sh` + "\x00" + `&& grep -Fq '; Stop allowed; needs supervision repair; Report: metasystem session status --id ' <<<"$degraded" \`:                                                                 "wording assertion",
-	}
+	allowed := map[string]string{}
 	paths, err := filepath.Glob(filepath.Join("..", "..", "scripts", "agents", "*.sh"))
 	if err != nil {
 		t.Fatal(err)

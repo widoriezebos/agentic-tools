@@ -16,9 +16,9 @@ Do not publish, deploy, rewrite history, or change external API contracts.
 - `documentation`: keep the operating contract replayable from shipped documentation.
 
 ```mission
-gate.command=bash -c 'scripts/validate-metasystem.sh; status=$?; printf "metric=validation=%s\n" "$status"; exit 0'
+gate.command=bash -c 'bin/metasystem test run; status=$?; printf "metric=validation=%s\n" "$status"; exit 0'
 gate.ref=instruments-v1   # a tag or other non-moving ref: sealing against a branch cannot survive its own signing commit
-gate.paths=scripts/validate-metasystem.sh
+gate.paths=testing.json
 truth.paths=docs/**/*.md
 truth.certification=certified
 gate.direction=min
@@ -38,7 +38,7 @@ fence.job-cap-min=120
 host.runtime=claude
 host.model=project-default
 host.turn-cap-min=60
-stream.validation=Make scripts/validate-metasystem.sh exit zero.
+stream.validation=Make the testing contract pass.
 stream.documentation=Keep mission operation replayable from shipped documentation.
 envelope.dependencies=jq
 exposure=EUR:25

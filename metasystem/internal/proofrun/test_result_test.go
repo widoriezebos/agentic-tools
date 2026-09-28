@@ -150,7 +150,7 @@ printf 'closed\n' > %s
 	}
 }
 
-func TestSectionEnginePreparationPreservesBytesAndNestedSelector(t *testing.T) {
+func TestSectionEnginePreparationPreservesBytesAndRelativeArgv(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	cwd := filepath.Join(root, "vendor", "engine with spaces")
@@ -179,10 +179,10 @@ func TestSectionEnginePreparationPreservesBytesAndNestedSelector(t *testing.T) {
 	if after, _ := os.ReadFile(engine); string(after) != string(data) {
 		t.Fatal("refused preparation changed candidate bytes")
 	}
-	group := testpolicy.Group{ID: "section/fixture", Adapter: "section", CWD: "vendor/engine with spaces", Section: "fixture"}
+	group := testpolicy.Group{ID: "section/fixture", Adapter: "section", CWD: "vendor/engine with spaces", Section: "fixture", Argv: []string{"bash", "scripts/bed.sh"}}
 	argv, _, _, _, err := groupArguments(context.Background(), group, root, cwd, nil, nil)
-	if err != nil || len(argv) != 4 || argv[1] != "scripts/agents/validate-section-selector.sh" || argv[3] != "fixture" {
-		t.Fatalf("prepared selector retained a temporary absolute root: %v, %v", argv, err)
+	if err != nil || len(argv) != 2 || argv[0] != "bash" || argv[1] != "scripts/bed.sh" {
+		t.Fatalf("prepared script bed argv retained a temporary absolute root: %v, %v", argv, err)
 	}
 	foreign := t.TempDir()
 	if err := os.Symlink(foreign, filepath.Join(root, "bin")); err != nil {
@@ -464,31 +464,25 @@ func TestCommandApplicationRunsWithoutGoAndSelectedGoRefuses(t *testing.T) {
 	}
 }
 
-func TestSectionMismatchKeepsNativeStatusAndLaterIndependentResult(t *testing.T) {
+func TestSectionBedFailureKeepsNativeStatusAndLaterIndependentResult(t *testing.T) {
 	root := t.TempDir()
 	script := `#!/usr/bin/env bash
 set -u
 [[ -x "$PWD/bin/metasystem" && -z "${METASYSTEM_BIN:-}" ]] || exit 26
-section=${2:-}
-case "$section" in
-  mismatch)
-    printf 'section\tmismatch\tfail\t24\treported status\n' >"$METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT"
-    exit 23
-    ;;
-  later)
-    printf 'section\tlater\tpass\t0\n' >"$METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT"
-    exit 0
-    ;;
+[[ -z "${METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT:-}" ]] || exit 27
+case "${1:-}" in
+  mismatch) exit 23 ;;
+  later) exit 0 ;;
   *) exit 2 ;;
 esac
 `
 	tree := verdictFixtureTree(t, "section")
 	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
-		"scripts/agents/validate-section-selector.sh": testSnapshotFile(script, 0o755),
+		"scripts/bed.sh": testSnapshotFile(script, 0o755),
 	}, 3)
 	groups := []testpolicy.Group{
-		{ID: "mismatch", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Outputs: []string{"reports-a"}, Obligations: []string{"mismatch"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "mismatch"},
-		{ID: "later", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Outputs: []string{"reports-b"}, Obligations: []string{"later"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "later"},
+		{ID: "mismatch", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Outputs: []string{"reports-a"}, Obligations: []string{"mismatch"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "mismatch", Argv: []string{"bash", "scripts/bed.sh", "mismatch"}},
+		{ID: "later", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Outputs: []string{"reports-b"}, Obligations: []string{"later"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "later", Argv: []string{"bash", "scripts/bed.sh", "later"}},
 	}
 	contract := testpolicy.Contract{SchemaVersion: 1, Groups: groups}
 	plan := testpolicy.Plan{Purpose: testpolicy.PurposeCadence, RequestedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard,
@@ -507,9 +501,9 @@ esac
 		t.Fatal(prepareErr)
 	}
 	result, status, err := RunTestPlan(context.Background(), request)
-	if err != nil || status != 23 || len(result.Groups) != 2 || result.Groups[0].Status != "invalid" ||
+	if err != nil || status != 23 || len(result.Groups) != 2 || result.Groups[0].Status != "failed" ||
 		result.Groups[0].NativeExitStatus == nil || *result.Groups[0].NativeExitStatus != 23 ||
-		!strings.Contains(result.Groups[0].NotRunReason, "disagrees") || result.Groups[1].Status != "passed" {
+		result.Groups[0].NotRunReason != "process exit 23 with no failed-scenarios block in the log" || result.Groups[1].Status != "passed" {
 		t.Fatalf("section mismatch result=%+v status=%d err=%v", result, status, err)
 	}
 }

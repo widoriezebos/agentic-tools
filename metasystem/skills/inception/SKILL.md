@@ -223,7 +223,7 @@ the filled `metasystem.conf` — then prove the shape mechanically:
 Its covenant line says "covenant shape valid: <path>; adequacy not established" — repeat
 that honesty to the human, because it is the truth: the parser proves
 the rows parse, never that the proofs guard the intent. Then run
-`scripts/validate-metasystem.sh`; it must pass with zero placeholders.
+`metasystem system check` and `metasystem test run`; both must pass.
 Exercise only safe, already-approved checks — anything paid or slow
 stays `referenced-not-run` with its row saying so.
 

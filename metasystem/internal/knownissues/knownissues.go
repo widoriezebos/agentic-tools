@@ -10,7 +10,7 @@
 // The columns are named by the file. The kit's own register writes `| Id |
 // Date | Symptom and evidence | Cost when it bites | Fix direction or lever |
 // Status |`, and the one adoption ships writes `| Id | Date | Issue |
-// Consequence | Reopen when | Status |` (scripts/adopt.sh). Both are six
+// Consequence | Reopen when | Status |` (internal/adopt). Both are six
 // columns in the same order of meaning, so the reader takes the header row as
 // the names of its columns, keeps them exactly as supplied — the fifth differs
 // between the two sets and no reader may pretend otherwise — and reads either

@@ -79,6 +79,11 @@ func SetupWithResolver(options Options, resolve func(string) (stateroot.Layout, 
 		if len(actions) != 0 {
 			return result, fmt.Errorf("host setup check: %d registration path(s) require setup", len(actions))
 		}
+		if dangling, err := danglingSkillLinks(layout, selected); err != nil {
+			return result, err
+		} else if len(dangling) != 0 {
+			return result, fmt.Errorf("host setup check: registered skill link is dangling: %s", strings.Join(dangling, ", "))
+		}
 		return result, nil
 	}
 	for _, item := range actions {
@@ -244,6 +249,42 @@ func instructionAction(path, block string) (action, bool, error) {
 		return action{}, false, nil
 	}
 	return action{kind: actionFile, path: path, data: []byte(desired), mode: mode}, true, nil
+}
+
+// danglingSkillLinks names every symbolic link in a selected runtime's skill
+// registration tree that no longer resolves: a link left behind for a skill
+// the installation pruned is a broken registration, never a project's own.
+func danglingSkillLinks(layout stateroot.Layout, selected []string) ([]string, error) {
+	var dangling []string
+	seen := map[string]bool{}
+	for _, runtime := range selected {
+		for _, row := range runtimes.RegistrationRows(runtime) {
+			if row.Operation != runtimes.OpTree || seen[row.Destination] {
+				continue
+			}
+			seen[row.Destination] = true
+			root := filepath.Join(layout.RepositoryRoot, filepath.FromSlash(row.Destination))
+			entries, err := os.ReadDir(root)
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				return nil, fmt.Errorf("host setup check: read %s: %w", row.Destination, err)
+			}
+			for _, entry := range entries {
+				if entry.Type()&os.ModeSymlink == 0 {
+					continue
+				}
+				if _, err := os.Stat(filepath.Join(root, entry.Name())); os.IsNotExist(err) {
+					dangling = append(dangling, row.Destination+"/"+entry.Name())
+				} else if err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	sort.Strings(dangling)
+	return dangling, nil
 }
 
 func skillNames(installation string) ([]string, error) {
