@@ -410,7 +410,7 @@ func PhaseOne(stateRoot, ledgerIdentity string, bound int) (ReadResult, string) 
 		return state, strings.Join(parts, "\n")
 	}
 	// The smallest bound whose 60 percent share holds the whole packet.
-	parts = append(parts, fmt.Sprintf("PACKET TOO LARGE FOR THIS CHANNEL (%d of %d); read it whole with `metasystem brain boot --bytes %d --read-only` before anything else", len(rolePacket), bound, (whole*100+59)/60))
+	parts = append(parts, fmt.Sprintf("PACKET TOO LARGE FOR THIS CHANNEL (%d of %d); raise the context bound to at least %d bytes to read it whole before anything else", len(rolePacket), bound, (whole*100+59)/60))
 	parts = append(parts, standingInstruction(rolePacket))
 	return state, strings.Join(parts, "\n")
 }
