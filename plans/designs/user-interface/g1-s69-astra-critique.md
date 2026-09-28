@@ -160,3 +160,30 @@ Proposed receipt, unwritten: `g1-s69 design critique round 2 — three material 
 
 Commit reviewed: `04bc1fdd56f302f961aff69cee722018d18e9c42`. Limitations: static review only; no tests, runtime actions, edits or subagents. The checkout advanced during review; comparison confirmed the reviewed files were unchanged from the dispatched commit. Neither the excluded configuration nor anything under `artifacts/` was read.
 
+
+## Confirmation read on S69-05 to S69-07
+
+---
+
+No new material findings.
+
+| Finding | Confirmation and evidence |
+|---|---|
+| **S69-05 — CONFIRMED ANSWERED** | [D2:125–135](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s69-verdicts-that-do-something.md:125) retains `Landing` and changes the lane through history. This preserves the quota exemption in [validate.go:436](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/validate.go:436), avoiding the multiple-claim rejection at [475](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/validate.go:475). The new lane rule explicitly changes [project.go:214](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/backlog/project.go:214). |
+| **S69-06 — CONFIRMED ANSWERED** | [D2:138–148](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s69-verdicts-that-do-something.md:138) turns ambiguity into a recorded request for the human’s selection, then carries `--work NAME`. This addresses the refusal at [intent_selection.go:401](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/intent_selection.go:401) and uses explicit selection at [376](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/intent_selection.go:376). Rejoining remains within the selected run, as [unit_revise.go:123–144](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/launch/unit_revise.go:123) requires. |
+| **S69-07 — CONFIRMED ANSWERED** | [D1:97–107](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s69-verdicts-that-do-something.md:97) binds the deposit and recorded Outcome to the drafted tip, requiring renewed End after retipping and checking again at publication. It explicitly repairs the verdict-only stamping at [service.go:1293](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:1293), shaping at [room.ts:337](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/review/room.ts:337), and header rewrite at [store.tsx:1861](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/store.tsx:1861). |
+
+What I verified holds, by static reading: the specified folds remove the second-claim publication failure, provide a human-resolvable path to starting the correction, and prevent retipping from relabelling an existing verdict. I found no residual first-use failure in those three paths **when implemented as specified**.
+
+One implementation obligation deserves explicit attention: [LandReady currently returns `AlreadyHolds` whenever `Landing` exists](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/verbs.go:2189). Retaining `Landing` therefore requires changing that behavior after send-back. [D2:133](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s69-verdicts-that-do-something.md:133) already requires a newer Landing, and [§8:220](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s69-verdicts-that-do-something.md:220) requires the return to Review.
+
+Under **R-124**, this adds no material finding: **Test 1**—the required behavior and assertion are already specified; **Test 2**—the first correction needs that behavior, but needs no further design decision or mechanism.
+
+Proposed receipt, unwritten: `S69 scoped confirmation — S69-05–07 answered; no new material findings`.
+
+**VERDICT: 0 material findings: none**
+
+Commit reviewed: `6fd19e052e66076bcfc5cec6565b86e7f7decb41` (`ui-development`); reviewed files clean.
+
+Limitations: scoped static design confirmation, not implementation verification; no tests, edits, subagents, forbidden-file reads, or broader review.
+

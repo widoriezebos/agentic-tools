@@ -289,4 +289,8 @@ shape check at `:305`); fold, D1: the deposit carries the tip, the
 Outcome gains `Reviewed at:`, Record it refuses after a retip, and the
 act compares the two. Every cited line re-read. Closed at the failsafe
 round on three folds, with one scoped confirmation read on S69-05 to
-S69-07 alone (recorded below when it returns).
+S69-07 alone.
+
+**Confirmation read (2026-09-28, at `6fd19e052`):** S69-05, S69-06 and
+S69-07 confirmed answered, no new material finding. The loop is
+CLOSED.
