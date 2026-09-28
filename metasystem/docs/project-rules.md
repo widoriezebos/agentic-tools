@@ -14,7 +14,7 @@ Replace this file when adopting the metasystem. Keep facts concrete and reposito
 
 ## Commands
 
-- Testing contract: `testing.json`, selected through `testing.contract=testing.json` in `metasystem.conf`. `bin/metasystem test list --root .` describes it, `settings check` validates it with the settings without compiling, `test plan --goal <goal> --mode auto` resolves the actual risk-selected groups, `test run` executes the selected stages, and `test status --tree <tree>` reads sufficient retained evidence without rerunning it. `metasystem internal testing merge --base <file> --ours <file> --theirs <file> --out <file>` merges concurrent contract edits by surface, group, and list identity; `testing merge-driver` prints the Git driver setup and accepts Git's `%O %A %B` order; `testing add-tests --file <file> --group <id> --tests <name,...>` verifies and adds named Go tests.
+- Testing contract: `testing.json`, selected through `testing.contract=testing.json` in `metasystem.conf`. `bin/metasystem test list --root .` describes it, `settings check` validates it with the settings without compiling, `test plan --goal <goal> --mode auto` resolves the actual risk-selected groups, `test run` executes the selected stages, and `test status --tree <tree>` reads sufficient retained evidence without rerunning it. `metasystem test merge --base <file> --ours <file> --theirs <file> --out <file>` merges concurrent contract edits by surface, group, and list identity; `testing merge-driver` prints the Git driver setup and accepts Git's `%O %A %B` order; `metasystem test add --file <file> --group <id> --tests <name,...>` verifies and adds named Go tests.
 
   Application-language-neutral schema 2 fields and a command/JUnit example are in [the testing contract guide](testing-contract.md).
 
@@ -27,7 +27,7 @@ Batch composition and landing, goal branch commit and land preparation (includin
 - Build/package: `<command>`
 - Format/lint/typecheck: `<command>`
 - Local run: `<command>`
-- Refactor acceptance gate: `<command>`. The full behavior-preservation proof (full suite, benchmark, or golden run) that accepts a refactor candidate. State its cadence backstop if it differs from the defaults owned by `metasystem internal validate refactor-baseline`.
+- Refactor acceptance gate: `<command>`. The full behavior-preservation proof (full suite, benchmark, or golden run) that accepts a refactor candidate. State its cadence backstop if it differs from the defaults owned by `metasystem test baseline`.
 - Improvement evaluation: `<command>`. The on-demand evaluation for improvement goals. State the evaluation type (deterministic, stochastic, hidden-information, or dynamic; see the improve skill), the primary metric and its direction (max or min), guard metrics with floors, the noise floor (minimum meaningful delta), any cheaper canary or subset variant, and the holdout or case-rotation policy.
 - Frontier preservation policy: `<policy>`. How a new best-known state is preserved: tag pattern, push target, and who may move it.
 
@@ -63,9 +63,9 @@ List only rules that cannot be inferred from code or tooling and apply broadly i
   exact receipt; commits remain local until one range-held check passes; one
   push publishes the series; recovery identifies units by their individual
   origin trailers and finalizes each once.
-- A Codex job on a seat machine starts through the metasystem, never through the plugin's slash commands or the codex-rescue agent. A unit runs through `metasystem work build G [--work NAME] --brief FILE --check COMMAND...`, which drives the existing unit-run sequence to awaiting judgement; its read is preliminary feedback, and `metasystem work review run:RUN` requests the committed review landing consumes. An independent read runs inside `build`, or through `metasystem work review j2:J`, `review run RUN` or `review commit SHA --goal G`, never as an in-process agent. Hand-written work is submitted with `metasystem work review G --changes|--patch PATCH --brief FILE`, and a read of a bare diff or of current changes is `metasystem work review --patch PATCH --brief FILE` or `review changes --brief FILE`. A launch with no public intent (a design run, a critique, or a maintainer's read of a bare diff) keeps `metasystem internal launch start` with `--kind design`, `--kind critique` or `--kind read --diff-file`, and a later critique task comes from `metasystem internal launch round-task`. Each launch process stays independent of the seat that started it.
-- `metasystem internal launch settings` explains effective limits, and `metasystem internal launch report` summarizes outcomes and refusals.
-- The shipped Claude settings carry the seat context window, and `metasystem internal launch settings` reports drift from the configured value.
+- A Codex job on a seat machine starts through the metasystem, never through the plugin's slash commands or the codex-rescue agent. A unit runs through `metasystem work build G [--work NAME] --brief FILE --check COMMAND...`, which drives the existing unit-run sequence to awaiting judgement; its read is preliminary feedback, and `metasystem work review run:RUN` requests the committed review landing consumes. An independent read runs inside `build`, or through `metasystem work review j2:J`, `review run RUN` or `review commit SHA --goal G`, never as an in-process agent. Hand-written work is submitted with `metasystem work review G --changes|--patch PATCH --brief FILE`, and a read of a bare diff or of current changes is `metasystem work review --patch PATCH --brief FILE` or `review changes --brief FILE`. A design run is `metasystem design write G --brief FILE`, a critique `metasystem design review FILE` (a later round adds `--dispositions FILE`), and a maintainer's read of a bare diff `metasystem work review --patch PATCH --brief FILE`. Each launch process stays independent of the seat that started it.
+- `metasystem settings show` explains effective limits with their sources, and `metasystem work status --history` summarizes launch outcomes and refusals.
+- The shipped Claude settings carry the seat context window, and `metasystem settings show` reports drift from the configured value.
 - A joining seat may withdraw its own queued unit with `metasystem internal landing batch
   withdraw --goal G` only before seal; the owner remains the only process that
   returns or releases the handed-over claim.
@@ -135,7 +135,7 @@ on it.
 - **The command inventory is a contract**: production scripts exec git
   (git), ps and pgrep (procps), awk (mawk/gawk), sed, grep, tar, find
   (findutils), and the coreutils set; the engine's command preflight
-  (`metasystem internal audit production-commands`) checks the inventory and names each missing command with its
+  checks the inventory and names each missing command with its
   Debian-family package — adoption runs it before any target mutation and
   supervision arming runs it at entry. perl and python3 are suite-host
   concerns only (fixture drivers), never production dependencies; hashing

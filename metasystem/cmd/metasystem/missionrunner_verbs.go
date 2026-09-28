@@ -20,8 +20,9 @@ import (
 
 // The mission-runner family: the runner process itself. start and resume
 // launch the detached run loop and hold the caller until the first host turn
-// verifiably starts; run-loop is that detached child; status and answer are
-// the human/driver surface over a mission's artifacts.
+// verifiably starts; run-loop is that detached child; status is the
+// human/driver surface over a mission's artifacts (a person answers a
+// mission's ask with question answer M/Q).
 
 // missionRunnerUsage prints the runner's public usage, which names the shell
 // entry point callers actually invoke.
@@ -31,7 +32,6 @@ func missionRunnerUsage() {
 			"  metasystem mission start --mission <id> [--foreground]\n"+
 			"  metasystem mission resume --mission <id> [--foreground]\n"+
 			"  metasystem mission status --mission <id>\n"+
-			"  metasystem internal mission answer --mission <id> --ask <ask-id> --answer <text>\n"+
 			"  metasystem internal mission resolve-taint --mission <id> --taint <n> --by <name> --reason <text>\n"+
 			"      (--restore <treeId> | --adopt --waives <claim> [--waives <claim> ...])\n")
 }
@@ -92,6 +92,10 @@ func runMissionRunnerLaunch(mode string, args []string) int {
 		missionRunnerUsage()
 		return 2
 	}
+	if !foreground {
+		// The entry supplies itself as the caller, as it always did.
+		return missionLaunchTo(processIdentity{pid: int64(os.Getpid())}, os.Stdout, os.Stderr, root, mission, mode)
+	}
 	generation, code := missionFenceBeforeArm(root, mode)
 	if code != 0 {
 		return code
@@ -112,24 +116,6 @@ func runMissionRunnerStatus(args []string) int {
 		return 2
 	}
 	return missionrunner.NewEngine(root, mission).Status()
-}
-
-func runMissionRunnerAnswer(args []string) int {
-	var root, mission, askID, answer string
-	ok := parseRunnerArgs(args, map[string]*string{
-		"--root": &root, "--mission": &mission, "--ask": &askID, "--answer": &answer,
-	}, nil)
-	if !ok || root == "" || !missionIDRe.MatchString(mission) || !missionIDRe.MatchString(askID) ||
-		answer == "" || strings.ContainsRune(answer, 0) {
-		missionRunnerUsage()
-		return 2
-	}
-	engine, err := missionRunnerCommandEngine(root, mission)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "mission answer:", err)
-		return 1
-	}
-	return engine.Answer(askID, answer)
 }
 
 func runMissionRunnerResolveTaint(args []string) int {

@@ -155,7 +155,7 @@ func stopCapabilityOutcome(options Options, lineage string, claimEpoch int64) Co
 		}
 		return ComponentOutcome{
 			Component: "stop-capability", Outcome: "deferred", Detail: err.Error(),
-			Remedy: "metasystem internal goal restamp --id " + goalID,
+			Remedy: "metasystem session start",
 		}
 	}
 	if result.GoalID == "" {
@@ -560,13 +560,13 @@ func ensureStewardRunner(options Options, enrolled *steward.EnrolledBinary, comp
 }
 
 func enrollmentDrift(components []ComponentOutcome, err error, installationRoot, repoRoot string) Result {
-	remedy := fmt.Sprintf("this engine is not eligible for automatic re-arm; from an agent-free terminal run metasystem internal steward restart --repo %s (steward arm when no runner is live), or relay the human's recorded word with --temporary-human-word and --review-by", repoRoot)
+	remedy := fmt.Sprintf("this engine is not eligible for automatic re-arm; from an agent-free terminal run metasystem system start --repo %s, or relay the human's recorded word with --temporary-human-word and --review-by", repoRoot)
 	if strings.Contains(err.Error(), "owns no resolving remote-tracking landing ref") {
-		remedy = fmt.Sprintf("fetch or pull the configured remote once so its remote-tracking landing ref resolves, or from an agent-free terminal run metasystem internal steward restart --repo %s", repoRoot)
+		remedy = fmt.Sprintf("fetch or pull the configured remote once so its remote-tracking landing ref resolves, or from an agent-free terminal run metasystem system start --repo %s", repoRoot)
 	} else if strings.Contains(err.Error(), "owns no remote-tracking landing ref") {
 		remedy = fmt.Sprintf("run git -C %s config --local metasystem.steward.landing-ref refs/remotes/<remote>/<branch> once on this machine, or re-arm at the terminal", installationRoot)
 	} else if remote, ok := notLandedRemote(err.Error()); ok {
-		remedy = fmt.Sprintf("run git -C %s fetch %s once, then rerun metasystem session start, or from an agent-free terminal run metasystem internal steward restart --repo %s", installationRoot, remote, repoRoot)
+		remedy = fmt.Sprintf("run git -C %s fetch %s once, then rerun metasystem session start, or from an agent-free terminal run metasystem system start --repo %s", installationRoot, remote, repoRoot)
 	}
 	components = append(components, ComponentOutcome{
 		Component: "accepted-engine", Outcome: "ENROLLMENT_DRIFT", Detail: err.Error(), Remedy: remedy,
@@ -802,7 +802,7 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 			components = append(components, ComponentOutcome{
 				Component: "stop-capability", Outcome: "deferred",
 				Detail: "the holder classification has no claim epoch",
-				Remedy: "metasystem internal goal restamp --id <goal>",
+				Remedy: "metasystem session start",
 			})
 		} else {
 			components = append(components, stopCapabilityOutcome(options, lineage, *view.ClaimEpoch))

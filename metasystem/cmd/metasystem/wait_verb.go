@@ -500,20 +500,6 @@ func writeWaitResult(w io.Writer, result metarun.WaitResult, jsonOutput bool) {
 		strings.ReplaceAll(result.SourceEvidence, "\n", " "), result.ReturnEventFailed, incarnation)
 }
 
-func runSessionStart(args []string) int {
-	return runSessionStartTo(args, os.Stdout, os.Stderr)
-}
-
-func runSessionStartTo(args []string, stdout, stderr io.Writer) int {
-	flags := flag.NewFlagSet("session start", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	session := flags.String("session", "", "runtime session identifier")
-	if flags.Parse(args) != nil || *session == "" || flags.NArg() != 0 {
-		return metarun.ExitInvalidWait
-	}
-	return sessionStartRecovery(*root, *session, stdout, stderr)
-}
-
 // sessionStartRecovery prints the durable wait rows the checkout holder's
 // current session recovers; a session that is not the holder's owns none.
 func sessionStartRecovery(checkout, sessionID string, stdout, stderr io.Writer) int {

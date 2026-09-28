@@ -93,7 +93,7 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 	}
 
 	output, code := captureStdout(t, func() int {
-		return runGoalTrunkRedWithRequest([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--branch", "fix/red", "--lineage", "m1"}, request, branchRead)
+		return runGoalTrunkRedWithDependencies([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--branch", "fix/red", "--lineage", "m1"}, request, branchRead, defaultSyncRequestDependencies())
 	})
 	if code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
 		t.Fatalf("own command code=%d output=%q", code, output)
@@ -117,14 +117,14 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 		t.Fatalf("json list code=%d output=%q parsed=%+v", code, output, listed)
 	}
 	stderr, code := captureStderr(t, func() int {
-		return runGoalTrunkRedWithRequest([]string{"close", "--root", root, "--id", id, "--why", "external outage", "--lineage", "m1"}, request, branchRead)
+		return runGoalTrunkRedWithDependencies([]string{"close", "--root", root, "--id", id, "--why", "external outage", "--lineage", "m1"}, request, branchRead, defaultSyncRequestDependencies())
 	})
 	if code != 1 || !strings.Contains(stderr, "TRUNK_RED_CLOSE_IS_HUMAN") {
 		t.Fatalf("close without human code=%d stderr=%q", code, stderr)
 	}
 
 	output, code = captureStdout(t, func() int {
-		return runGoalTrunkRedWithRequest([]string{"close", "--root", root, "--id", id, "--by", "Wido", "--why", "external outage", "--lineage", "human-line"}, request, branchRead)
+		return runGoalTrunkRedWithDependencies([]string{"close", "--root", root, "--id", id, "--by", "Wido", "--why", "external outage", "--lineage", "human-line"}, request, branchRead, defaultSyncRequestDependencies())
 	})
 	if code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
 		t.Fatalf("close command code=%d output=%q", code, output)
@@ -136,7 +136,7 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 		t.Fatalf("published closure lost owner history or failed to clear holds: entries=%+v problems=%v", closed, problems)
 	}
 	stderr, code = captureStderr(t, func() int {
-		return runGoalTrunkRedWithRequest([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--to", "mac-other"}, request, branchRead)
+		return runGoalTrunkRedWithDependencies([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--to", "mac-other"}, request, branchRead, defaultSyncRequestDependencies())
 	})
 	if code != 2 || stderr != "goal trunk-red own takes --to only with --by\n" {
 		t.Fatalf("--to edge code=%d stderr=%q", code, stderr)

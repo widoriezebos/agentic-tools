@@ -33,9 +33,9 @@ func TestBatchTrunkRedLedgerOwnerCapability(t *testing.T) {
 }
 
 func TestGoalHandoverRequiresCompleteInputs(t *testing.T) {
-	stderr, code := captureStderr(t, func() int { return dispatch([]string{"goal", "handover"}) })
-	if code != 2 || !strings.Contains(stderr, "goal handover needs") {
-		t.Fatalf("empty handover = code %d, stderr %q", code, stderr)
+	// The handover owner the batch owner calls in process.
+	if err := goalHandoverOwner(ownerInvocation{}, goalHandoverRequest{}); err == nil || !strings.Contains(err.Error(), "goal handover needs") {
+		t.Fatalf("empty handover = %v", err)
 	}
 }
 func TestGoalHandoverTargetAuthenticationFailsClosed(t *testing.T) {

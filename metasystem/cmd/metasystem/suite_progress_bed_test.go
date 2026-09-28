@@ -61,11 +61,11 @@ func TestSuiteProgressBedHeartbeatAndWatcherRelayTheDeepestSection(t *testing.T)
 		}
 	}
 
-	code, heartbeat, _ := captureCommandOutput(t, true, false, func() int {
-		return runProofRunHeartbeat([]string{"--root", workspace})
-	})
-	if code != 0 || !regexp.MustCompile(`^inner:child since [0-9]+min\n$`).MatchString(heartbeat) {
-		t.Fatalf("deepest live heartbeat was not selected: code=%d output=%q", code, heartbeat)
+	// The deepest live section is the heartbeat's owner (the internal
+	// proof-run heartbeat printed exactly this line).
+	heartbeat, found := deepestSuiteHeartbeat(workspace, time.Now())
+	if !found || !regexp.MustCompile(`^inner:child since [0-9]+min$`).MatchString(heartbeat) {
+		t.Fatalf("deepest live heartbeat was not selected: found=%v heartbeat=%q", found, heartbeat)
 	}
 
 	installation := t.TempDir()

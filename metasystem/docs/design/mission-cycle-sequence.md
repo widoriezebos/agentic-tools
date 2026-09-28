@@ -221,8 +221,9 @@ refusal naming the widest block, prompt.go:522-533). Assembly failure →
 `failed/prompt-refused`, then `recordFailedTurn` with `consecutiveFailures=2`
 — an **immediate host-failure park** that still burns a ledger cycle (§6(h)).
 
-**S8. Validate the prompt.** `metasystem internal validate turn-prompt` →
-`validate turn-prompt` (loop.go:728-737, validate/turnprompt.go): framing,
+**S8. Validate the prompt.** The runner holds the prompt to
+`validate.TurnPrompt` in its own process (loop.go `cycleGatePrompt`,
+validate/turnprompt.go): framing,
 header order, byte-exact preamble, section fencing, row grammar, and the
 ask reason-class whitelist `PromptAskReasons` (orchestrator-raisable classes
 plus the runner's own `fence` and `stop-loss`; missionrunner.go:42-48 records

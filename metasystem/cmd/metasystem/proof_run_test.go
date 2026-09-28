@@ -136,7 +136,7 @@ exit 97
 		t.Fatal(err)
 	}
 	reuseStatus := func() int {
-		_, found, err := coverageReuseLines(root, root, baseline, []string{"internal/proofrun"}, os.Environ())
+		_, found, err := proofrun.ReusableCoverageInEnvironment(root, root, baseline, []string{"internal/proofrun"}, os.Environ())
 		switch {
 		case err != nil:
 			return 1

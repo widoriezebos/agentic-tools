@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	turnvocab "github.com/widoriezebos/agentic-tools/metasystem/internal/turn"
 )
@@ -94,11 +95,10 @@ func (e *Engine) Answer(askID, answer string) int {
 		}
 		unpark()
 	case reason == "fence":
-		stdout, stderr, code := runCaptured(e.Root, nil,
-			filepath.Join(e.Root, "bin", "metasystem"),
-			"mission", "contract-preflight", "--file", e.contractPath())
-		if code != 0 {
-			fmt.Fprintf(e.answerErrors(), "answer refused: fence contract amendment is not preflight-ready: %s\n", firstDetail(stderr, stdout))
+		// The preflight runs in this process (design 6.2), as the engine's own
+		// `mission contract-preflight` ran it.
+		if _, _, err := contract.Preflight(e.contractPath(), ""); err != nil {
+			fmt.Fprintf(e.answerErrors(), "answer refused: fence contract amendment is not preflight-ready: %s\n", firstDetail(err.Error(), ""))
 			return 3
 		}
 		_, values, _, err := e.parseContract(false)

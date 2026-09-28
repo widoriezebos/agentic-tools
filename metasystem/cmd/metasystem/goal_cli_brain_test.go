@@ -187,8 +187,8 @@ func gcliBrainHumanWordRows(t *testing.T, draft, digest string) []gcliBrainRow {
 			return runGoalUnapproveWithInputs(with(b.root(), "--id", "fix-docs", "--by", "Wido", "--because", "fixture reversal"), gcliBrainNoProof(t), b.commandNow, d)
 		}},
 		{"accept-risk", func(b *gcliBrainBed, d syncRequestDependencies) int {
-			return runGoalAcceptRiskWithInputs(with(b.root(), "--id", "fix-docs", "--finding", "F1", "--chain", "brain-fixture-chain", "--by", "Wido", "--why", "fixture risk decision"),
-				gcliBrainNoProof(t), b.commandNow, d)
+			return runGoalAcceptRiskWithFacts(with(b.root(), "--id", "fix-docs", "--finding", "F1", "--chain", "brain-fixture-chain", "--by", "Wido", "--why", "fixture risk decision"),
+				gcliBrainNoProof(t), b.commandNow, d, nil)
 		}},
 		{"discharge-review-obligation (work review --finding)", func(b *gcliBrainBed, d syncRequestDependencies) int {
 			builder := func(verb, root, by, lineage string) (goal.VerbRequest, error) {

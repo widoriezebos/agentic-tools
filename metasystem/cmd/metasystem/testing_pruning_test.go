@@ -73,7 +73,7 @@ func TestAdoptionOptimizationsKeepPrivateOwnersAndUniqueAssertions(t *testing.T)
 		`fillAdoptionHarnessTestingContract(t, filepath.Join(source, "testing.json"), filepath.Join(target, "testing.json"))`,
 		`TEST_CONTRACT_READY`,
 		`for _, projection := range []behaviorsurface.Projection{behaviorsurface.Engine, behaviorsurface.Payload}`,
-		`"internal", "runtime", "setup", "--repo", target, "--runtimes", runtimes}`,
+		`"system", "register", "--repo", target, "--runtimes", runtimes}`,
 		`range []string{".claude/skills/verify", ".agents/skills/verify"}`,
 		`registration+": existing copied skill differs from its source at SKILL.md"`,
 	} {

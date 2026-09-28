@@ -49,8 +49,8 @@ critique, a shipped implementation `RECEIPT` at the accepted tip, or a
 sufficient successful delivery proof attempt. Elapsed time, active jobs,
 review rounds, a breach that mixes them in, and live-stop conditions never
 offer the raise.
-The claim holder's pair applies it with `goal extend-budget`; no human proof or
-power of attorney is involved.
+The claim holder's own next dispatch applies it through the delegation
+boundary; no human proof or power of attorney is involved.
 
 The goal records the act as `BudgetExtension:`, including the before and after
 attempt and minute values and the evidence identity. That marker belongs to
@@ -93,11 +93,10 @@ parked and its fence is untouched, and recovery does not replay such an
 unpark: the entry is judged live at the act and the seat reruns it.
 
 Health judges claimed goals only. A claimed goal without the tuple is
-dead under `claimed-goal-appetite` and names this remedy, the long form of
-`metasystem goal budget <id> BOX`:
-`metasystem internal goal set-budget --root . --id <id> --elapsed-limit ...
---attempt-limit ... --reserved-job-minutes-limit ...
---active-job-limit ...`. Text beginning with `Appetite:` in a queued
+dead under `claimed-goal-appetite` and names this remedy:
+`metasystem goal budget <id> BOX`, where BOX is the five limits
+(elapsed/attempts/reserved minutes/active jobs/review rounds, for example
+`1d/10/720m/1/3`). Text beginning with `Appetite:` in a queued
 goal's next step is ordinary human prose. No parser or enforcement path
 reads it.
 

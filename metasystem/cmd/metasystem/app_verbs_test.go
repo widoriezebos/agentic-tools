@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -69,9 +70,10 @@ type appBed struct {
 	installation string
 	app          string
 	reaping      map[int]bool
-	// delivery replaces the engine-verb owner, so that a test can see the
-	// argument vector a verb hands the testing runner and answer for it.
-	delivery *intentDeliveryOwners
+	// testRun replaces the testing runner the check runs in this process, so
+	// that a test can see the argument vector a verb hands it and answer for
+	// it.
+	testRun func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
 }
 
 func newAppBed(t *testing.T, contract map[string]any) *appBed {
@@ -146,8 +148,8 @@ func (b *appBed) run(args ...string) (int, string) {
 	rest := append(append([]string(nil), args[2:]...), "--repo", b.root)
 	var stdout, stderr bytes.Buffer
 	owners := defaultIntentOwners()
-	if b.delivery != nil {
-		owners.delivery = b.delivery
+	if b.testRun != nil {
+		owners.work.testRun = b.testRun
 	}
 	code := runIntentIn(command, rest, &stdout, &stderr, b.root, owners)
 	b.reapSupervisors()
@@ -748,12 +750,10 @@ func TestAppCheckRecordsItsVerdict(t *testing.T) {
 	contract["check"] = "app-smoke"
 	bed := newAppBed(t, contract)
 	var handed []string
-	bed.delivery = &intentDeliveryOwners{
-		executable: func() (string, error) { return "/engine", nil },
-		process: func(process intentProcess) intentProcessResult {
-			handed = process.argv
-			return intentProcessResult{stdout: []byte(`{"verdict":"pass"}`)}
-		}}
+	bed.testRun = func(_ string, argv []string, _ io.Writer) ([]byte, int, error) {
+		handed = argv
+		return []byte(`{"verdict":"pass"}`), 0, nil
+	}
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("app start: %d\n%s", code, out)
 	}
@@ -779,7 +779,7 @@ func TestAppCheckRecordsItsVerdict(t *testing.T) {
 	dark := appHTTPContract(appFixtureApp(t), appFreePort(t), "--dark-after", "1s")
 	dark["check"] = "app-smoke"
 	darkBed := newAppBed(t, dark)
-	darkBed.delivery = bed.delivery
+	darkBed.testRun = bed.testRun
 	handed = nil
 	if code, out := darkBed.run("app", "start"); code != 0 {
 		t.Fatalf("app start: %d\n%s", code, out)

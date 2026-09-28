@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 // The detached run loop: the process that holds the mission lease, records
@@ -2053,15 +2054,10 @@ func (e *Engine) cycleGatePrompt(c *cycleContext) (map[string]any, bool, error) 
 		final, ferr := e.failTurnBeforeLaunch(c.statePath, c.ledger, c.state, c.turnPath, detail)
 		return final, true, ferr
 	}
-	stdout, stderr, code := runCaptured(e.Root, nil,
-		filepath.Join(e.Root, "bin", "metasystem"),
-		"validate", "turn-prompt", "--root", e.Root,
-		"--file", filepath.Join(c.turnDir, "prompt.md"), "--turn", c.turnDir)
-	if code != 0 {
-		detail := firstDetail(stderr, stdout)
-		if detail == "" {
-			detail = "turn prompt checker refused launch"
-		}
+	// The checker runs in this process (plans/designs/verbs-object-action.md
+	// 6.2); no engine child is started for it.
+	if violation := validate.TurnPrompt(e.Root, filepath.Join(c.turnDir, "prompt.md"), c.turnDir); violation != nil {
+		detail := fmt.Sprintf("turn prompt violation [%s]: %s", violation.Check, violation.Message)
 		final, ferr := e.failTurnBeforeLaunch(c.statePath, c.ledger, c.state, c.turnPath, detail)
 		return final, true, ferr
 	}

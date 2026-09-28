@@ -607,12 +607,12 @@ func (e *Engine) armAndPreflight(mode string) error {
 func (e *Engine) Launch(mode string, foreground bool) int {
 	fence, err := e.readFence()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return exitFor(err)
 	}
 	if fence.State == stopfence.StateClosed {
 		err = fenceRefusal(e.Root, fence)
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return exitFor(err)
 	}
 	return e.LaunchAtGeneration(mode, foreground, fence.Generation)
@@ -625,10 +625,10 @@ func (e *Engine) LaunchAtGeneration(mode string, foreground bool, generation int
 	if err := e.launch(mode, foreground, generation); err != nil {
 		var running *alreadyRunning
 		if errors.As(err, &running) {
-			fmt.Println(running.Error())
+			fmt.Fprintln(e.answerOutput(), running.Error())
 			return 0
 		}
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return exitFor(err)
 	}
 	return 0
@@ -853,7 +853,7 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 				if foreground {
 					<-process.done
 				}
-				fmt.Printf("mission=%s started=yes turn=%s\n", e.Mission, valueString(signal["turnId"]))
+				fmt.Fprintf(e.answerOutput(), "mission=%s started=yes turn=%s\n", e.Mission, valueString(signal["turnId"]))
 				return nil
 			}
 			process.waitFor(graceWindow)

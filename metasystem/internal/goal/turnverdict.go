@@ -1834,9 +1834,9 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 				display = append(display, "NOTHING LEFT TO WORK ON; goal-free declared "+declared)
 			} else if !contains(session.BlockedFreeDigests, digest) {
 				session.BlockedFreeDigests = appendCapped(session.BlockedFreeDigests, digest, maxFreeDigests)
-				blockGoal("the goal-free declaration predates new work; declare a goal or renew with `goal declare-free`")
+				blockGoal("the goal-free declaration predates new work; open a goal for it with `metasystem goal open`")
 			} else {
-				display = append(display, "the goal-free declaration is stale (already surfaced); renew with `goal declare-free`")
+				display = append(display, "the goal-free declaration is stale (already surfaced); open a goal for the new work with `metasystem goal open`")
 			}
 		case "absent":
 			// Advisory, never degraded: the pre-adoption installation.

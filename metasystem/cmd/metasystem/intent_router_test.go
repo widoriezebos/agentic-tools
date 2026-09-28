@@ -89,7 +89,10 @@ func TestIntentRouterEveryPairRoutes(t *testing.T) {
 		}
 	}
 	// goal approve and the rest of section 6.5: the colliding pairs exist.
-	if collisions < 20 {
+	// U9a deletes the family verbs a public action shadows as it finds them
+	// dead, so the floor is one: it keeps the check live until U9 deletes the
+	// family registry, and this check with it.
+	if collisions < 1 {
 		t.Errorf("only %d family pairs collide with public actions; the collision check did not run", collisions)
 	}
 	if calls := sentinel.taken(); len(calls) != 0 {
@@ -137,11 +140,11 @@ func TestIntentRouterTransitionalFallthrough(t *testing.T) {
 	t.Parallel()
 	sentinel := &sentinelFamilies{}
 	registered := sentinel.registry()
-	if code, _, problem := routeWith(registered, "json", "object", "a=b"); code != 0 || problem != "" || !slices.Equal(sentinel.taken(), []string{"json object a=b"}) {
-		t.Errorf("json object did not fall through to its family: %d %q", code, problem)
+	if code, _, problem := routeWith(registered, "util", "hold", "--tag", "t"); code != 0 || problem != "" || !slices.Equal(sentinel.taken(), []string{"util hold --tag t"}) {
+		t.Errorf("util hold did not fall through to its family: %d %q", code, problem)
 	}
-	if code, _, problem := routeWith(registered, "goal", "set-next", "--id", "g"); code != 0 || problem != "" || !slices.Equal(sentinel.taken(), []string{"goal set-next --id g"}) {
-		t.Errorf("goal set-next did not fall through to its family: %d %q", code, problem)
+	if code, _, problem := routeWith(registered, "goal", "branch", "status", "--id", "g"); code != 0 || problem != "" || !slices.Equal(sentinel.taken(), []string{"goal branch status --id g"}) {
+		t.Errorf("goal branch did not fall through to its family: %d %q", code, problem)
 	}
 	fallthroughPairs := 0
 	for _, fam := range families() {
@@ -153,7 +156,7 @@ func TestIntentRouterTransitionalFallthrough(t *testing.T) {
 	}
 	// The ceiling ratchets down as scripts are ported and verbs deleted; it
 	// reaches zero when the family registry goes.
-	const fallthroughCeiling = 224
+	const fallthroughCeiling = 60
 	t.Logf("family pairs falling through: measured %d, ceiling %d", fallthroughPairs, fallthroughCeiling)
 	if fallthroughPairs > fallthroughCeiling {
 		t.Errorf("%d family pairs fall through without internal; the ceiling is %d", fallthroughPairs, fallthroughCeiling)

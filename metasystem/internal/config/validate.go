@@ -478,8 +478,8 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			if model, present := resolved("role.default.model."+runtime, mode); !present {
 				add("%s resolves to %s but has no model.%s value", roleLabel("default", mode, true), runtime, runtime)
 			} else if templateValue.MatchString(model) {
-				add("%s resolves to %s:%s, a template placeholder from role.default.model.%s; set it with: metasystem internal config tailor --conf %s.local --set role.default.model.%s=<the %s model this seat runs>",
-					roleLabel("default", mode, true), runtime, model, runtime, confPath, runtime, runtime)
+				add("%s resolves to %s:%s, a template placeholder from role.default.model.%s; set it with: metasystem settings set role.default.model.%s <the %s model this seat runs>, which writes %s.local",
+					roleLabel("default", mode, true), runtime, model, runtime, runtime, runtime, confPath)
 			}
 		}
 	}
@@ -503,8 +503,8 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			} else if templateValue.MatchString(model) {
 				// A placeholder left from the shipped file launches with the
 				// literal text and dies at the API; the seat's .local names it.
-				add("%s resolves to %s:%s, a template placeholder from %s; set it with: metasystem internal config tailor --conf %s.local --set %s=<the %s model this seat runs>",
-					roleLabel(role, mode, false), runtime, model, modelKey, confPath, modelKey, runtime)
+				add("%s resolves to %s:%s, a template placeholder from %s; set it with: metasystem settings set %s <the %s model this seat runs>, which writes %s.local",
+					roleLabel(role, mode, false), runtime, model, modelKey, modelKey, runtime, confPath)
 			}
 		}
 	}

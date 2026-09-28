@@ -370,17 +370,6 @@ func TestStoppingRequestCarriesEnrolledGradeWithoutFallingBack(t *testing.T) {
 	facts.expect(1, 1, 1, 2, 1, 0, "repository top", "ledger identity", "guard", "endpoint", "machine", "clock", "human proof", "lineage", "clock")
 }
 
-func TestRestampVerbRefusesTheByFlag(t *testing.T) {
-	missingRoot := filepath.Join(t.TempDir(), "no-ledger")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalRestamp([]string{"--root", missingRoot, "--id", "standing-validation", "--by", "Wido"})
-	})
-	const reason = "goal restamp acts only for the caller's own pair and does not accept --by\n"
-	if code != 2 || stdout != "" || stderr != reason {
-		t.Fatalf("restamp --by refusal: code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-}
-
 func TestParkAcceptsFixtureHumanAuthorityAtTheCommandEdge(t *testing.T) {
 	fixture := newParkArcCommandFixture(t)
 	root := fixture.root()
@@ -1083,19 +1072,16 @@ func TestRiskGateAdmissionCommandMarksThenEnforces(t *testing.T) {
 		file.Risk = nil
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "5", "--destructive-reach", "MECHANICAL"}
 	want := "RISK_UNANSWERED goal=standing-validation tier=3 next: goal edit --risk"
-	refusal, refusalCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
-	if refusalCode != 9 || strings.TrimSpace(refusal) != want {
-		t.Fatalf("unanswered-risk command did not refuse: code=%d output=%q", refusalCode, refusal)
+	if verdict, err := goalRevisionAdmissionVerdict(root, 5, "implementer", reads, commandNow); err != nil || !verdict.Refused() || verdict.PolicyRefusal != want {
+		t.Fatalf("unanswered-risk admission did not refuse: %+v err=%v", verdict, err)
 	}
 	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.Risk = &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture answers every risk question."}
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	output, admittedCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
-	if admittedCode != 0 || strings.TrimSpace(output) != "" {
-		t.Fatalf("answered-risk command was not admitted: code=%d output=%q", admittedCode, output)
+	if verdict, err := goalRevisionAdmissionVerdict(root, 5, "implementer", reads, commandNow); err != nil || verdict.Refused() {
+		t.Fatalf("answered-risk admission was not admitted: %+v err=%v", verdict, err)
 	}
 }
 
@@ -1296,7 +1282,7 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 		}
 	}
 	stderr, code := captureStderr(t, func() int {
-		return runGoalAcceptRiskWithInputs(blankWhy, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies)
+		return runGoalAcceptRiskWithFacts(blankWhy, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies, nil)
 	})
 	if code != 2 || !strings.Contains(stderr, "goal accept-risk: needs --id, --finding, --chain, and --why") ||
 		!strings.Contains(stderr, "no command completes this: add the missing decision value named in the refusal") {
@@ -1304,7 +1290,7 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 	}
 	paired := append(append([]string(nil), base...), "--temporary-human-word", "Wido accepts this severe risk")
 	stderr, code = captureStderr(t, func() int {
-		return runGoalAcceptRiskWithInputs(paired, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies)
+		return runGoalAcceptRiskWithFacts(paired, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies, nil)
 	})
 	if code != 2 || !strings.Contains(stderr, "--temporary-human-word and --review-by travel together") {
 		t.Fatalf("unpaired authority flags = exit %d stderr %q", code, stderr)
@@ -1314,7 +1300,7 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 	var stdout string
 	stderr, code = captureStderr(t, func() int {
 		stdout, code = captureStdout(t, func() int {
-			return runGoalAcceptRiskWithInputs(args, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies)
+			return runGoalAcceptRiskWithFacts(args, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies, nil)
 		})
 		return code
 	})
@@ -1364,11 +1350,8 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 	if err := json.Unmarshal(fixture.proofRecord(), &proofRecord); err != nil || proofRecord.OperationID != opid || proofRecord.Action != "goal accept-risk" {
 		t.Fatalf("accepted-risk authority proof does not match the decision: record=%+v err=%v", proofRecord, err)
 	}
-	closeOut, closeCode := captureStdout(t, func() int {
-		return runDispatchCritiqueRegisterClose([]string{"--repo", root, "--root-job", "critic"})
-	})
-	if closeCode != 0 || strings.TrimSpace(closeOut) != "closed" {
-		t.Fatalf("accepted-risk chain did not close: exit %d output %q", closeCode, closeOut)
+	if closeOut, closeErr := dispatchcore.CritiqueRegisterClose(root, "critic"); closeErr != nil || closeOut != "closed" {
+		t.Fatalf("accepted-risk chain did not close: outcome %q err %v", closeOut, closeErr)
 	}
 
 	boundedRoot := map[string]any{
@@ -1384,7 +1367,7 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 		"--temporary-human-word", "Wido accepts this bounded risk", "--review-by", "2026-09-06",
 	}
 	stderr, code = captureStderr(t, func() int {
-		return runGoalAcceptRiskWithInputs(boundedArgs, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies)
+		return runGoalAcceptRiskWithFacts(boundedArgs, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies, nil)
 	})
 	if code != 1 || !strings.Contains(stderr, "bounded findings defer at close, not by acceptance") {
 		t.Fatalf("bounded finding acceptance = exit %d stderr %q", code, stderr)
@@ -2705,18 +2688,23 @@ func (f *parkArcCommandFixture) trySync(name string, args []string) (int, bool) 
 	return trySyncMutationWithDependencies(name, args, goalCommandNow, deps, f.parkBranchCheck)
 }
 
+// park and unpark run the synced-ledger owner the public goal pause and goal
+// resume reach; the fixture's checkout is synced, so the owner always takes
+// the act.
 func (f *parkArcCommandFixture) park(args []string) int {
-	return runGoalParkWithSync(args, f.trySync)
+	code, _ := f.trySync("park", args)
+	return code
 }
 
 func (f *parkArcCommandFixture) unpark(args []string) int {
-	return runGoalUnparkWithSync(args, f.trySync)
+	code, _ := f.trySync("unpark", args)
+	return code
 }
 
 func (f *parkArcCommandFixture) release(args []string) int {
-	return runGoalReleaseWithRequest(args, func(verb, root, by, lineage string) (goal.VerbRequest, error) {
+	return runGoalReleaseWithDependencies(args, func(verb, root, by, lineage string) (goal.VerbRequest, error) {
 		return syncStoppingReqWithProofWithDependencies(verb, root, by, lineage, nil, goalCommandNow, f.terminalDependencies())
-	})
+	}, defaultSyncRequestDependencies())
 }
 
 func (f *parkArcCommandFixture) terminal(t *testing.T) {

@@ -131,7 +131,7 @@ func TestBrainBedDeclareQuiescenceRefusals(t *testing.T) {
 	}{
 		{goal.Item{Kind: "job", Id: "pending-job"}, "metasystem work stop j2:pending-job"},
 		{goal.Item{Kind: "job", Id: "pending-setup-job"}, "metasystem work stop j2:pending-setup-job"},
-		{goal.Item{Kind: "run", Id: "live-run"}, "run watch"},
+		{goal.Item{Kind: "run", Id: "live-run"}, "work wait --run live-run"},
 		{goal.Item{Kind: "mission", Id: "fixture-mission"}, "mission status"},
 	} {
 		b.busy = []goal.Item{test.item}
