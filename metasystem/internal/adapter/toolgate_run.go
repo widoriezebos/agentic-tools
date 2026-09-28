@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -89,6 +90,12 @@ func RunToolGate(opts ToolGateOptions) error {
 
 	class := Classify(payload.Call, opts.MemoryDir)
 	if trivialToolGateAllow(class) {
+		return nil
+	}
+	// Under the helm the gate is silent: one decision row, no transcript read.
+	if helm.Active(opts.Installation).Active {
+		writeToolGateRow(opts, toolGateDecisionRow{Session: payload.SessionID, Tool: payload.Tool, Mode: opts.Mode,
+			Decision: "allow", Cause: "helm", Birth: birth}, base, opts.Clock())
 		return nil
 	}
 

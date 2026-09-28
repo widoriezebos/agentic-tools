@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 )
 
 // SessionStart owns its outcome before it asks the filesystem, Git or an
@@ -421,6 +424,24 @@ func (s *startRun) main() {
 		s.finish("notice", "invocation-invalid")
 	}
 
+	scriptDir, ok := physicalDirectory(scriptParent(inv.Script))
+	if !ok {
+		s.finish("notice", "installation-directory")
+	}
+	s.harnessRoot, ok = physicalDirectory(scriptDir + "/../..")
+	if !ok {
+		s.finish("notice", "installation-directory")
+	}
+	// Under the helm the start answers before custody, the engine or the
+	// backlog: it arms nothing and composes no context.
+	if state := helm.Active(s.harnessRoot); state.Active {
+		helm.RecordYield(s.harnessRoot, helm.Yield{At: inv.Now(), Boundary: "start-hook", Gate: "session-start", Would: "not evaluated", PID: inv.Ppid})
+		form, _ := json.Marshal(map[string]string{"systemMessage": helmNotice(state) + " Nothing was armed and no role context was loaded."})
+		_ = writeLine(inv.Stdout, string(form))
+		s.published = true
+		exitHook(0)
+	}
+
 	stateHint := inv.env("METASYSTEM_HOOK_DELEGATE_STATE_ROOT")
 	installationHint := inv.env("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT")
 	jobHint := inv.env("METASYSTEM_HOOK_DELEGATE_JOB")
@@ -432,15 +453,6 @@ func (s *startRun) main() {
 			s.finish("intentional", "authenticated-delegate")
 		}
 		s.finish("notice", "custody-unreadable")
-	}
-
-	scriptDir, ok := physicalDirectory(scriptParent(inv.Script))
-	if !ok {
-		s.finish("notice", "installation-directory")
-	}
-	s.harnessRoot, ok = physicalDirectory(scriptDir + "/../..")
-	if !ok {
-		s.finish("notice", "installation-directory")
 	}
 	s.checkpoint()
 	s.world, ok = worldInstallation(ops, s.harnessRoot)
