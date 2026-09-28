@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -20,17 +21,23 @@ import (
 // recordExit maps a lifecycle error to a process exit code, printing any
 // message the refusal carries to stderr. A nil error is exit 0.
 func recordExit(err error) int {
+	return recordExitTo(os.Stderr, err)
+}
+
+// recordExitTo writes an owner error's refusal to stderr and returns its
+// exit.
+func recordExitTo(stderr io.Writer, err error) int {
 	if err == nil {
 		return 0
 	}
 	var op *dispatchcore.OpError
 	if errors.As(err, &op) {
 		if op.Message != "" || op.Reason != "" {
-			fmt.Fprintln(os.Stderr, op.Error())
+			fmt.Fprintln(stderr, op.Error())
 		}
 		return op.Code
 	}
-	fmt.Fprintln(os.Stderr, err)
+	fmt.Fprintln(stderr, err)
 	return 1
 }
 

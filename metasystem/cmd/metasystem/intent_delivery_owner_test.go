@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -111,7 +112,7 @@ func (f *wholeOwnerLanding) land(t *testing.T) (int, intentResult) {
 			"time": "2026-09-17T10:00:00Z", "proof": map[string]any{"attemptId": "whole-owner-proof"}})
 		return intentProcessResult{stdout: receipt}
 	}
-	owners.delivery = delivery
+	owners.delivery = processBackedReceipt(delivery)
 	command, ok := findIntentCommand("work land")
 	if !ok {
 		t.Fatal("land command missing")
@@ -420,5 +421,45 @@ func TestIntentLandBatchAdmissionGitAdapter(t *testing.T) {
 	if again.Outcome != intentInProgress || again.Data.(map[string]any)["joinedNow"] != false || again.Data.(map[string]any)["batchId"] != id ||
 		handovers != 1 || admissions != 1 {
 		t.Fatalf("a repeat reads the stored membership and never joins again: %+v", again)
+	}
+}
+
+// TestIntentLandProvesTheReceiptInThisProcess is the U9a witness that the
+// public land runs its landing proof through the landing test-receipt owner
+// in this process (design 6.2): no engine child runs `landing test-receipt`,
+// the owner receives the argv the child carried, and it is supplied this
+// process as the caller its proof admission classifies.
+func TestIntentLandProvesTheReceiptInThisProcess(t *testing.T) {
+	t.Parallel()
+	f := newWholeOwnerLanding(t)
+	owners := defaultIntentOwners()
+	delivery := defaultIntentDeliveryOwners()
+	delivery.process = func(process intentProcess) intentProcessResult {
+		t.Errorf("an engine child ran: %v", process.argv)
+		return intentProcessResult{code: 1}
+	}
+	var supplied []processIdentity
+	var reached [][]string
+	delivery.calls = defaultIntentOwnerCalls()
+	delivery.calls.landingTestReceipt = func(caller processIdentity, stdout, stderr io.Writer, dir string, args []string) int {
+		supplied, reached = append(supplied, caller), append(reached, args)
+		tree := flagValue(args, "--tree")
+		receipt, _ := json.Marshal(map[string]any{"schemaVersion": 3, "tree": tree, "exitStatus": 0,
+			"time": "2026-09-17T10:00:00Z", "proof": map[string]any{"attemptId": "whole-owner-proof"}})
+		stdout.Write(receipt)
+		return 0
+	}
+	owners.delivery = delivery
+	command, _ := findIntentCommand("work land")
+	var stdout, stderr bytes.Buffer
+	code := runIntentIn(command, []string{"standing-validation", "--repo", f.mainRoot, "--json"}, &stdout, &stderr, f.mainRoot, owners)
+	if code != 0 {
+		t.Fatalf("land = %d; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if len(reached) != 1 || !slices.Equal(reached[0], []string{"--root", f.mainRoot, "--tree", flagValue(reached[0], "--tree"), "--mode", "auto", "--goal", "standing-validation"}) {
+		t.Fatalf("receipt owner argv = %q", reached)
+	}
+	if len(supplied) != 1 || supplied[0].pid != int64(os.Getpid()) {
+		t.Fatalf("the receipt owner was supplied %+v, want this process %d", supplied, os.Getpid())
 	}
 }

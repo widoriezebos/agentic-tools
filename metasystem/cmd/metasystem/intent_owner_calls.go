@@ -10,14 +10,17 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -44,6 +47,9 @@ type intentOwnerCalls struct {
 	goalMigrate   func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int
 	// goalCarry records a person's carry word for one landing candidate.
 	goalCarry func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int
+	// landingTestReceipt runs the landing proof on one candidate tree and
+	// prints its receipt; caller is what its proof admission classifies.
+	landingTestReceipt func(caller processIdentity, stdout, stderr io.Writer, dir string, args []string) int
 	// channelWait waits for one channel question's answer; caller is the
 	// waiting process the durable wait registers, lineage the channel ledger
 	// identity's.
@@ -110,7 +116,8 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 			engine.Output, engine.Errors = stdout, stderr
 			return engine.Status()
 		},
-		missionLaunch: missionLaunchTo,
+		missionLaunch:      missionLaunchTo,
+		landingTestReceipt: landingTestReceiptFor,
 		channelWait: func(caller processIdentity, lineage string, stdout, stderr io.Writer, args []string) int {
 			return channelWaitWith(caller.pid, lineage, stdout, stderr, args, nil)
 		},
@@ -176,4 +183,18 @@ func ownerCall(run func(stdout, stderr io.Writer) int) intentProcessResult {
 	var stdout, stderr bytes.Buffer
 	code := run(&stdout, &stderr)
 	return intentProcessResult{stdout: stdout.Bytes(), stderr: stderr.Bytes(), code: code}
+}
+
+// landingTestReceiptFor is landing test-receipt under an explicit caller: its
+// testing run and its proof admission classify and authenticate from the
+// caller, and the receipt and refusals go to the caller's streams.
+func landingTestReceiptFor(caller processIdentity, stdout, stderr io.Writer, _ string, args []string) int {
+	invocation := testRunInvocation{callerPID: caller.pid, stdout: stdout, stderr: stderr}
+	admit := func(request proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+		request.CallerPID = caller.pid
+		return admitProofLaunch(request)
+	}
+	return landingTestReceiptTo(stdout, stderr, context.Background(), goalCommandClock, nil,
+		func(testArgs []string) int { return runTestRunWith(invocation, testArgs) }, args,
+		landing.PrepareTestReceipt, admit, landing.PublishCommittedReceiptAt, commitProofTerminal)
 }

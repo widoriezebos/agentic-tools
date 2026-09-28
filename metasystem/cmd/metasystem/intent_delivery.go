@@ -1791,13 +1791,14 @@ func handLandingSubject(targets []intentTarget, goalID, through string, state in
 // prepareReceipt runs the landing proof on the subject tree through the
 // landing test-receipt owner and retains its typed receipt.
 func (inv *intentInvocation) prepareReceipt(targets []intentTarget, data map[string]any, goalID, subject, dir, receipt string) *intentResult {
-	owners := inv.delivery()
-	binary, err := owners.executable()
-	if err != nil {
-		return &intentResult{Targets: targets, Outcome: intentFailed, Summary: err.Error(), Data: data}
-	}
-	ran := owners.process(intentProcess{dir: inv.layout.InstallationRoot, argv: []string{binary, "landing", "test-receipt",
-		"--root", inv.layout.InstallationRoot, "--tree", subject, "--mode", "auto", "--goal", goalID}})
+	// The landing proof runs in this process (design 6.2): this process is
+	// the caller its admission classifies, the parent the former child
+	// classified.
+	caller, installation := currentProcessIdentity(), inv.layout.InstallationRoot
+	args := []string{"--root", installation, "--tree", subject, "--mode", "auto", "--goal", goalID}
+	ran := ownerCall(func(stdout, stderr io.Writer) int {
+		return inv.ownerCalls().landingTestReceipt(caller, stdout, stderr, installation, args)
+	})
 	var parsed landing.TestReceipt
 	encoded := bytes.TrimSpace(ran.stdout)
 	if ran.err != nil || ran.code != 0 || json.Unmarshal(encoded, &parsed) != nil || parsed.SchemaVersion != 3 {
