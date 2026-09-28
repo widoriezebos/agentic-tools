@@ -9,6 +9,7 @@ import (
 
 // ReadProcessUse sees this process's open file, its cwd and its executable.
 func TestReadProcessUseSeesAnOpenFile(t *testing.T) {
+	t.Parallel()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

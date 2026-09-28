@@ -134,6 +134,7 @@ func TestInspectCallSessionsCreatesAndRecoversNothing(t *testing.T) {
 // the maintenance lock without waiting, retires at most limit pairs, and
 // releases the lock between calls (DL2-16, DL3B-04).
 func TestRetireCallSessionsIsLimitedNonblockingAndClocked(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	before := retirementTestCutoff()
 	old := before.Add(-4 * time.Hour)

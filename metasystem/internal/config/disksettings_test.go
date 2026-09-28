@@ -9,6 +9,7 @@ import (
 // three path keys), and Validate has a clause for it in every source: the
 // committed file, .local and the environment (the settings witness, R7).
 func TestEveryDiskSettingHasADefaultAndAValidationClause(t *testing.T) {
+	t.Parallel()
 	want := []string{
 		"evidence.root", "evidence.segment-cap-gib", "evidence.machine-cap-gib", "evidence.age-floor-days", "evidence.citation-roots",
 		"evidence.export-dir", "evidence.blob-grace-hours", "disk.proof-target-gib", "disk.proof-keep-days", "disk.suite-failure-target-gib",
@@ -57,13 +58,19 @@ func TestEveryDiskSettingHasADefaultAndAValidationClause(t *testing.T) {
 			t.Errorf("a .local %s=zero was not reported: %v", row.Key, local)
 		}
 	}
-	t.Setenv(EnvName(DiskFloorKey), "-5")
-	if problems := validateRepo(t, validConf); !hasProblem(problems, "environment "+EnvName(DiskFloorKey)) {
+	environment := func(name string) (string, bool) {
+		if name == EnvName(DiskFloorKey) {
+			return "-5", true
+		}
+		return "", false
+	}
+	if problems := validateDiskSettings("metasystem.conf", map[string]string{}, environment); !hasProblem(problems, "environment "+EnvName(DiskFloorKey)) {
 		t.Errorf("an environment %s=-5 was not reported: %v", DiskFloorKey, problems)
 	}
 }
 
 func TestDiskPathSettingsAreJudged(t *testing.T) {
+	t.Parallel()
 	if err := ValidateDiskSetting(DiskEvidenceExportDirKey, "exports"); err == nil || !strings.Contains(err.Error(), "absolute") {
 		t.Fatalf("a relative export dir = %v", err)
 	}

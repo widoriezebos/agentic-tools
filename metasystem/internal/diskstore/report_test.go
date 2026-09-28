@@ -11,6 +11,7 @@ import (
 // The report golden (R10): every section a person reads, in order, with
 // the reason and the command of every kept and pending item.
 func TestReportGolden(t *testing.T) {
+	t.Parallel()
 	report := Report{Schema: ReportSchema, Kind: "machine", Name: "machine", At: testNow, Mode: ModeApply,
 		Volumes: []Volume{{Path: "/Users/wido", FreeBytes: 277 << 20, FloorBytes: 50 << 30, BelowFloor: true}},
 		Floor: &FloorReport{Active: true, MinAge: "1h0m0s", Trim: "the Go cache trimmer is not in this engine yet (Part A); nothing was trimmed",

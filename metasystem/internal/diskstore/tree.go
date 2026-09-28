@@ -9,9 +9,6 @@ import (
 	"path/filepath"
 )
 
-// afterTreeEntryRemoved is a test seam called after each unlink.
-var afterTreeEntryRemoved = func(string) {}
-
 // RemoveTree removes path entry by entry and stops at the context: every
 // removal the engine makes under a lock is bounded per entry and
 // cancellable (3.3, DL3B-04). A cut-short removal leaves a partly removed
@@ -20,6 +17,11 @@ var afterTreeEntryRemoved = func(string) {}
 // refused. RemoveTree proves nothing about ownership; callers remove only
 // inside a store's critical section, after its identity checks.
 func RemoveTree(ctx context.Context, path string) error {
+	return removeTree(ctx, path, nil)
+}
+
+// removeTree is RemoveTree with a per-call hook after each unlink (tests).
+func removeTree(ctx context.Context, path string, after func(string)) error {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == string(filepath.Separator) {
 		return fmt.Errorf("remove tree: %q is not an absolute, clean, non-root path", path)
 	}
@@ -34,12 +36,12 @@ func RemoveTree(ctx context.Context, path string) error {
 		return fmt.Errorf("remove tree: %s is a symlink; the store root must be a directory", path)
 	}
 	if !info.IsDir() {
-		return removeEntry(ctx, path)
+		return removeEntry(ctx, path, after)
 	}
-	return removeDirectory(ctx, path)
+	return removeDirectory(ctx, path, after)
 }
 
-func removeDirectory(ctx context.Context, directory string) error {
+func removeDirectory(ctx context.Context, directory string, after func(string)) error {
 	entries, err := os.ReadDir(directory)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -47,26 +49,28 @@ func removeDirectory(ctx context.Context, directory string) error {
 	for _, entry := range entries {
 		child := filepath.Join(directory, entry.Name())
 		if entry.IsDir() && entry.Type()&os.ModeSymlink == 0 {
-			if err := removeDirectory(ctx, child); err != nil {
+			if err := removeDirectory(ctx, child, after); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := removeEntry(ctx, child); err != nil {
+		if err := removeEntry(ctx, child, after); err != nil {
 			return err
 		}
 	}
-	return removeEntry(ctx, directory)
+	return removeEntry(ctx, directory, after)
 }
 
-func removeEntry(ctx context.Context, path string) error {
+func removeEntry(ctx context.Context, path string, after func(string)) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("remove tree stopped at %s: %w", path, err)
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	afterTreeEntryRemoved(path)
+	if after != nil {
+		after(path)
+	}
 	return nil
 }
 

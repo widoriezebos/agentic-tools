@@ -103,6 +103,31 @@
   },
   "exempt": [
     {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/steward",
+      "test": "TestInspectHandoffsObservesWithoutALock",
+      "reason": "mints handoff nonces through the package's mintHandoffNonce seam (useHandoffNonces)"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/steward",
+      "test": "TestPruneHandoffsTakesArbitrationPerNonce",
+      "reason": "mints handoff nonces through the package's mintHandoffNonce seam (useHandoffNonces)"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/steward",
+      "test": "TestArbitrationDuringASweepCompletesWithinOneNonce",
+      "reason": "replaces the package's beforeArbitrationWait and beforeHandoffPruneRemove seams to order a waiter against the sweep"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/steward",
+      "test": "TestHookCaptureCompletesDuringALargeHandoffSweep",
+      "reason": "mints two hundred handoff nonces through the package's mintHandoffNonce seam (useHandoffNonces)"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/usage",
+      "test": "TestInspectCallSessionsCreatesAndRecoversNothing",
+      "reason": "interrupts a real retirement through the package's removeCallStorePath seam to leave a journal"
+    },
+    {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/helm",
       "test": "TestActiveIgnoresGitSteering",
       "reason": "sets GIT_DIR and GIT_COMMON_DIR in the process environment to prove the resolver ignores them"

@@ -40,6 +40,7 @@ func testEnv(home string) func(string) (string, bool) {
 // The compiled defaults stand with source "default"; .local overrides and
 // its source is named; conf and .local only override (3.13).
 func TestLoadSettingsReadsDefaultsAndOverrides(t *testing.T) {
+	t.Parallel()
 	home := realDir(t)
 	conf := settingsCheckout(t, "metasystem.version=1\n", "disk.floor-gib=80\n")
 	settings, err := LoadSettings(conf, testEnv(home))
@@ -76,6 +77,7 @@ func TestLoadSettingsReadsDefaultsAndOverrides(t *testing.T) {
 // other participant's value stands in; readable again, it resolves (DL4D-09,
 // DL4E-08).
 func TestHostSettingsResolveConservativelyOrNotAtAll(t *testing.T) {
+	t.Parallel()
 	home := realDir(t)
 	m1e, err := LoadSettings(settingsCheckout(t, "evidence.machine-cap-gib=50\n", "disk.sweep-budget-sec=30\n"), testEnv(home))
 	if err != nil {

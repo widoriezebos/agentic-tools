@@ -180,6 +180,10 @@ func (s RegisteredStores) Apply(ctx context.Context, pass *Pass, item Item) Verd
 // names it; a git worktree store is its owner's to remove (goal, session,
 // delegate and workspace releases run their own git).
 func RemoveStore(ctx context.Context, record Record) error {
+	return removeStore(ctx, record, nil)
+}
+
+func removeStore(ctx context.Context, record Record, after func(string)) error {
 	if !record.Identity.Marker {
 		return fmt.Errorf("store %s is a git worktree; its owner removes it", record.Path)
 	}
@@ -194,7 +198,7 @@ func RemoveStore(ctx context.Context, record Record) error {
 		if entry.Name() == MarkerName {
 			continue
 		}
-		if err := RemoveTree(ctx, filepath.Join(record.Path, entry.Name())); err != nil {
+		if err := removeTree(ctx, filepath.Join(record.Path, entry.Name()), after); err != nil {
 			return err
 		}
 	}

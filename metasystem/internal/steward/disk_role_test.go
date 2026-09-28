@@ -173,6 +173,7 @@ func TestHookCaptureCompletesDuringALargeHandoffSweep(t *testing.T) {
 // The disk role reads the last reports: none is alive, a floor breach raises
 // it with the report's remedy, and an unreadable report is unknown.
 func TestDiskRoleFollowsTheLastReport(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if role := checkDisk(root); role.Status != HealthAlive || !strings.Contains(role.Reason, "no disk pass") {
 		t.Fatalf("no report = %+v", role)
@@ -209,13 +210,14 @@ func TestDiskRoleFollowsTheLastReport(t *testing.T) {
 // and a waiter queued, the nonblocking acquisition answers held, so the
 // waiter is the next holder (Part B 3.3).
 func TestSweeperYieldsArbitrationToAQueuedWaiter(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	lock, err := TryAcquireArbitration(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	lock.Release()
-	want, err := os.OpenFile(arbitrationWantPath(root), os.O_RDWR, 0)
+	want, err := os.OpenFile(arbitrationWantPath(root), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}

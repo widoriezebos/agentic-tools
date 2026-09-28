@@ -80,6 +80,7 @@ func planRequest(transport PushTransport) SweepRequest {
 }
 
 func TestSweepPlanObservesWithoutMutating(t *testing.T) {
+	t.Parallel()
 	t.Run("clean and landed", func(t *testing.T) {
 		rig := &planRig{t: t, remoteTips: map[string]string{"origin": sweepPolicyOrigin}, localTip: sweepPolicyLocal,
 			present: map[string]bool{sweepPolicyOrigin: true}}
@@ -134,6 +135,7 @@ func TestSweepPlanObservesWithoutMutating(t *testing.T) {
 // Sweep under a context runs its git through it: a stalled git call ends at
 // the deadline and the sweep returns, never waiting on the stub (DL2-17).
 func TestSweepReturnsAtTheContextWithAStalledGit(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	rig := &planRig{t: t, remoteTips: map[string]string{}, localTip: sweepPolicyLocal}

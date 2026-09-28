@@ -47,6 +47,7 @@ func snapshotRoot(t *testing.T, root string) string {
 // after every observation, and RemoveSettledHome then removes what the old
 // sweep removed.
 func TestHomeSettledObservesAndRemoveSettledHomeApplies(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 
 	live, err := createRegistryHomeUnder(os.MkdirTemp, root)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"golang.org/x/sys/unix"
 )
 
 // fakeProof decides by the record's owner reference: "dead" releases,
@@ -36,9 +37,7 @@ func (p *fakeProof) Observe(_ context.Context, record Record) Verdict {
 func (p *fakeProof) Apply(ctx context.Context, critical *Critical) error {
 	p.applied = append(p.applied, critical.Record().ID)
 	if p.blockRemoval {
-		previous := afterTreeEntryRemoved
-		afterTreeEntryRemoved = func(string) { <-ctx.Done() }
-		defer func() { afterTreeEntryRemoved = previous }()
+		return removeStore(ctx, critical.Record(), func(string) { <-ctx.Done() })
 	}
 	return RemoveStore(ctx, critical.Record())
 }
@@ -80,6 +79,7 @@ func passOptions(registry Registry, root string, classes ...Class) PassOptions {
 // its command, Unknown and a kind with no proof are pending; an
 // unregistered directory beside them survives every pass and is reported.
 func TestPassReleasesOnlyByTheOwnersProof(t *testing.T) {
+	t.Parallel()
 	root := realDir(t)
 	registry := Registry{Dir: filepath.Join(root, "stores")}
 	dead := plainStore(t, registry, root, "dead", "dead")
@@ -151,6 +151,7 @@ func lineMap(lines []Line) map[string]Line {
 // A held record lock is pending and a held pass lock is "a pass is
 // running"; neither is waited on.
 func TestHeldLocksArePendingNeverWaited(t *testing.T) {
+	t.Parallel()
 	root := realDir(t)
 	registry := Registry{Dir: filepath.Join(root, "stores")}
 	dead := plainStore(t, registry, root, "dead", "dead")
@@ -177,7 +178,7 @@ func TestHeldLocksArePendingNeverWaited(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lock.Close()
-	if err := flockRetry(lock, 2|4); err != nil { // LOCK_EX|LOCK_NB
+	if err := flockRetry(lock, unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		t.Fatal(err)
 	}
 	report, err = RunPass(context.Background(), options)
@@ -220,6 +221,7 @@ func (c countingClass) Apply(ctx context.Context, _ *Pass, item Item) Verdict {
 // A large inventory under a small budget progresses across passes from its
 // cursors, round-robin, and no class starves (3.3).
 func TestSmallBudgetProgressesAcrossPassesAndNoClassStarves(t *testing.T) {
+	t.Parallel()
 	root := realDir(t)
 	registry := Registry{Dir: filepath.Join(root, "stores")}
 	applied := map[string]int{}
@@ -274,6 +276,7 @@ func (stallingClass) Apply(ctx context.Context, _ *Pass, _ Item) Verdict {
 // A stalled owner call leaves the pass within its budget, the item pending
 // and the rest backlog (DL2-17, R16).
 func TestStalledOwnerLeavesThePassWithinBudget(t *testing.T) {
+	t.Parallel()
 	root := realDir(t)
 	registry := Registry{Dir: filepath.Join(root, "stores")}
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -296,6 +299,7 @@ func TestStalledOwnerLeavesThePassWithinBudget(t *testing.T) {
 // A stalled traversal leaves the store releasing within the budget, and the
 // next pass finishes it (DL3B-04).
 func TestStalledRemovalIsFinishedByTheNextPass(t *testing.T) {
+	t.Parallel()
 	root := realDir(t)
 	registry := Registry{Dir: filepath.Join(root, "stores")}
 	dead := plainStore(t, registry, root, "dead", "dead")
@@ -392,6 +396,7 @@ func (p *gitProof) Apply(_ context.Context, critical *Critical) error {
 // pid keeps every worktree store and names it with the --release route; a
 // process started after the census is read inside the critical section.
 func TestUseCensusKeepsWorktreesInUse(t *testing.T) {
+	t.Parallel()
 	root := realDir(t)
 	registry := Registry{Dir: filepath.Join(root, "stores")}
 	held := worktreeStore(t, registry, root, "held")
@@ -470,6 +475,7 @@ func (l lateStarter) Apply(ctx context.Context, pass *Pass, item Item) Verdict {
 // unregistered consumers with the command that reclaims each, deleting
 // nothing.
 func TestFloorModeNamesConsumersAndDeletesNothing(t *testing.T) {
+	t.Parallel()
 	root := realDir(t)
 	registry := Registry{Dir: filepath.Join(root, "stores")}
 	evidence := filepath.Join(root, "evidence")
@@ -537,6 +543,7 @@ func TestFloorModeNamesConsumersAndDeletesNothing(t *testing.T) {
 // A preview writes exactly its plan: no report, no cursor, no record, no
 // lock file in the checkout registry, and it releases nothing.
 func TestPreviewWritesOnlyThePlan(t *testing.T) {
+	t.Parallel()
 	root := realDir(t)
 	registry := Registry{Dir: filepath.Join(root, "stores")}
 	dead := plainStore(t, registry, root, "dead", "dead")

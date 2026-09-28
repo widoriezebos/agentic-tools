@@ -33,7 +33,9 @@ var beforeArbitrationWait = func() {}
 // section (Part B 3.3).
 func arbitrationWantPath(repoRoot string) string { return ArbitrationLockPath(repoRoot) + ".want" }
 
-// AcquireArbitration blocks until the critical section is ours.
+// AcquireArbitration blocks until the critical section is ours. An
+// uncontended acquisition takes the lock at once and writes nothing more; a
+// contended one queues on the want file first, so the disk sweeper yields.
 func AcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	path := ArbitrationLockPath(repoRoot)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -41,6 +43,12 @@ func AcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
+		return nil, err
+	}
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
+		return &ArbitrationLock{f: f}, nil
+	} else if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
+		f.Close()
 		return nil, err
 	}
 	want, err := os.OpenFile(arbitrationWantPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
@@ -82,17 +90,19 @@ func TryAcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	want, err := os.OpenFile(arbitrationWantPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	queued := unix.Flock(int(want.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-	want.Close()
-	if queued != nil {
-		if errors.Is(queued, unix.EWOULDBLOCK) || errors.Is(queued, unix.EAGAIN) {
-			return nil, ErrArbitrationHeld
+	// A queued waiter holds the want file shared; the sweeper yields to it.
+	// No want file means no waiter has ever queued, and none is created here.
+	if want, err := os.OpenFile(arbitrationWantPath(repoRoot), os.O_RDONLY, 0); err == nil {
+		queued := unix.Flock(int(want.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		want.Close()
+		if queued != nil {
+			if errors.Is(queued, unix.EWOULDBLOCK) || errors.Is(queued, unix.EAGAIN) {
+				return nil, ErrArbitrationHeld
+			}
+			return nil, queued
 		}
-		return nil, queued
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {

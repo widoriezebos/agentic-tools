@@ -71,6 +71,7 @@ func snapshotTree(t *testing.T, root string) string {
 }
 
 func TestRegisterIsIdempotentAndRefusesAnotherOwner(t *testing.T) {
+	t.Parallel()
 	registry := testRegistry(t)
 	store := filepath.Join(realDir(t), "scratch")
 	first, err := registry.Register(plainRegistration(store), testNow, rand.Reader)
@@ -99,6 +100,7 @@ func TestRegisterIsIdempotentAndRefusesAnotherOwner(t *testing.T) {
 }
 
 func TestRegisterRefusesAnIncompleteRegistration(t *testing.T) {
+	t.Parallel()
 	registry := testRegistry(t)
 	for name, mutate := range map[string]func(*Registration){
 		"relative path":         func(r *Registration) { r.Path = "scratch" },
@@ -118,6 +120,7 @@ func TestRegisterRefusesAnIncompleteRegistration(t *testing.T) {
 // A git worktree store carries no file inside the tree (DL2-10): registering
 // one leaves its tree byte-identical, which is what keeps git status empty.
 func TestGitWorktreeRegistrationWritesNothingInTheTree(t *testing.T) {
+	t.Parallel()
 	registry := testRegistry(t)
 	worktree := filepath.Join(realDir(t), "checkout-g1")
 	gitdir := filepath.Join(realDir(t), "common", ".git", "worktrees", "checkout-g1")
@@ -161,6 +164,7 @@ func TestGitWorktreeRegistrationWritesNothingInTheTree(t *testing.T) {
 }
 
 func TestMarkerNamesItsRecordAndIsNeverReplaced(t *testing.T) {
+	t.Parallel()
 	registry := testRegistry(t)
 	store := filepath.Join(realDir(t), "plain")
 	record, err := registry.Register(plainRegistration(store), testNow, rand.Reader)
@@ -190,6 +194,7 @@ func TestMarkerNamesItsRecordAndIsNeverReplaced(t *testing.T) {
 }
 
 func TestTransitionsAreOwnedAndRepeatAsSuccess(t *testing.T) {
+	t.Parallel()
 	registry := testRegistry(t)
 	record, err := registry.Register(plainRegistration(filepath.Join(realDir(t), "s")), testNow, rand.Reader)
 	if err != nil {
@@ -216,6 +221,7 @@ func TestTransitionsAreOwnedAndRepeatAsSuccess(t *testing.T) {
 // record from disk after acquiring, so a change made between a caller's
 // lookup and its acquisition is what it sees (DL3B-01).
 func TestCriticalSectionRefusesAHeldLockAndReloads(t *testing.T) {
+	t.Parallel()
 	registry := testRegistry(t)
 	record, err := registry.Register(plainRegistration(filepath.Join(realDir(t), "s")), testNow, rand.Reader)
 	if err != nil {
@@ -263,6 +269,7 @@ func TestCriticalSectionRefusesAHeldLockAndReloads(t *testing.T) {
 // attempt fails and the store is pending; an entrant arriving after the
 // sweeper wrote releasing reads it and refuses. Never both proceed.
 func TestEntrantAndSweeperNeverBothProceed(t *testing.T) {
+	t.Parallel()
 	registry := testRegistry(t)
 	record, err := registry.Register(plainRegistration(filepath.Join(realDir(t), "s")), testNow, rand.Reader)
 	if err != nil {
@@ -300,6 +307,7 @@ func TestEntrantAndSweeperNeverBothProceed(t *testing.T) {
 }
 
 func TestProbeRecordLockCreatesNothing(t *testing.T) {
+	t.Parallel()
 	registry := testRegistry(t)
 	if err := os.MkdirAll(registry.Dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -321,6 +329,7 @@ func TestProbeRecordLockCreatesNothing(t *testing.T) {
 }
 
 func TestReservationKeySeparatesOwnersAndNames(t *testing.T) {
+	t.Parallel()
 	keys := map[string]string{}
 	for label, input := range map[string]struct {
 		owner Owner
@@ -370,19 +379,17 @@ func buildTree(t *testing.T, root string, files int) {
 // RemoveTree under a cancelled context stops, leaves a partly removed tree,
 // and the next call finishes it; it never follows a symlink.
 func TestRemoveTreeStopsAtTheContextAndResumes(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join(realDir(t), "store")
 	buildTree(t, root, 12)
 	ctx, cancel := context.WithCancel(context.Background())
 	removed := 0
-	previous := afterTreeEntryRemoved
-	afterTreeEntryRemoved = func(string) {
+	err := removeTree(ctx, root, func(string) {
 		removed++
 		if removed == 5 {
 			cancel()
 		}
-	}
-	t.Cleanup(func() { afterTreeEntryRemoved = previous })
-	err := RemoveTree(ctx, root)
+	})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("remove under a cancelled context = %v", err)
 	}
@@ -392,7 +399,6 @@ func TestRemoveTreeStopsAtTheContextAndResumes(t *testing.T) {
 	if _, err := os.Stat(root); err != nil {
 		t.Fatalf("the cut-short tree is gone: %v", err)
 	}
-	afterTreeEntryRemoved = previous
 	if err := RemoveTree(context.Background(), root); err != nil {
 		t.Fatal(err)
 	}
@@ -408,6 +414,7 @@ func TestRemoveTreeStopsAtTheContextAndResumes(t *testing.T) {
 }
 
 func TestRemoveTreeRefusesARelativeOrSymlinkedRoot(t *testing.T) {
+	t.Parallel()
 	dir := realDir(t)
 	target := filepath.Join(dir, "target")
 	if err := os.Mkdir(target, 0o755); err != nil {
@@ -431,6 +438,7 @@ func TestRemoveTreeRefusesARelativeOrSymlinkedRoot(t *testing.T) {
 }
 
 func TestCopyTreeCopiesAndStopsAtTheContext(t *testing.T) {
+	t.Parallel()
 	dir := realDir(t)
 	source := filepath.Join(dir, "source")
 	buildTree(t, source, 6)
@@ -454,6 +462,7 @@ func TestCopyTreeCopiesAndStopsAtTheContext(t *testing.T) {
 // Two processes with different TMPDIRs resolve the same shared host path
 // (DL2-15): the path follows the host's temporary root, never TMPDIR.
 func TestHostSharedIgnoresTheProcessTMPDIR(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("DISKSTORE_HOST_SHARED_HELPER") == "1" {
 		shared, err := HostShared("metasystem-seat-launch.lock")
 		if err != nil {
@@ -498,6 +507,7 @@ func TestHostSharedIgnoresTheProcessTMPDIR(t *testing.T) {
 }
 
 func TestNewIDSortsByTime(t *testing.T) {
+	t.Parallel()
 	first, err := NewID(testNow, rand.Reader)
 	if err != nil {
 		t.Fatal(err)

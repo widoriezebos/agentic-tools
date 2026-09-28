@@ -133,6 +133,7 @@ func TestPruneHandoffsTakesArbitrationPerNonce(t *testing.T) {
 // ProbeArbitration never creates the lock file or its directory; an absent
 // lock reads free and a held one busy.
 func TestProbeArbitrationCreatesNothing(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	before := snapshotStewardRoot(t, root)
 	if free, err := ProbeArbitration(root); err != nil || !free {

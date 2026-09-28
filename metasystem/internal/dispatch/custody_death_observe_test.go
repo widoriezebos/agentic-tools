@@ -12,6 +12,7 @@ import (
 // marker, answers DEFERRED, and leaves the marker in place, so a preview
 // changes nothing; the apply form then expires it as before.
 func TestCustodyDeathObservationLeavesTheMarker(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	tag := "metasystem-job-observed-marker-nonce"
 	supervisor := stage4Exact(57, 360_000_001)
