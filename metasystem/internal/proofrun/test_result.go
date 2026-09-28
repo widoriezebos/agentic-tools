@@ -14,9 +14,13 @@ import (
 )
 
 const (
-	LegacyTestResultSchemaVersion         = 1
-	PreviousTestResultSchemaVersion       = 2
-	TestResultSchemaVersion               = 3
+	LegacyTestResultSchemaVersion   = 1
+	PreviousTestResultSchemaVersion = 2
+	// WorkerPolicyTestResultSchemaVersion is the worker-policy schema without
+	// the Go execution record; TestResultSchemaVersion adds it (A13). Both
+	// carry worker policy and the same group identity version.
+	WorkerPolicyTestResultSchemaVersion   = 3
+	TestResultSchemaVersion               = 4
 	candidateEngineDigestIdentityVersion  = 1
 	CandidateEngineIdentitySchemaVersion  = 2
 	PreviousGroupExecutionIdentityVersion = 2
@@ -31,6 +35,27 @@ type NativeTestIdentity struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
+// PackageExecution says how one package's Go outcome in one shard of a group
+// was obtained: "executed" (the test binary ran in this launch),
+// "go-test-cache" (go test replayed a cached pass; nothing ran) or
+// "engine-retained" (the group was reused from an earlier attempt). A
+// go-test-cache package's ElapsedMS is nil: Go replaces the time with
+// "(cached)" and the original execution time is unknown. Reason is the
+// shard's reusePolicy reason.
+type PackageExecution struct {
+	Shard     int    `json:"shard"`
+	Package   string `json:"package"`
+	Mode      string `json:"mode"`
+	ElapsedMS *int64 `json:"elapsedMs"`
+	Reason    string `json:"reason"`
+}
+
+const (
+	PackageExecuted       = "executed"
+	PackageGoTestCache    = "go-test-cache"
+	PackageEngineRetained = "engine-retained"
+)
+
 type RerunFinding struct {
 	Package    string     `json:"package"`
 	Test       string     `json:"test"`
@@ -40,8 +65,13 @@ type RerunFinding struct {
 	RerunLoad  LoadSample `json:"rerunLoad"`
 	LogPath    string     `json:"logPath"`
 	At         string     `json:"at"`
+	// Reason is the rerun's reusePolicy reason: a rerun always executes.
+	Reason string `json:"reason,omitempty"`
 }
 
+// GroupResult is one group's outcome. NativeLaunched says this attempt
+// launched the native command; for a go group it does not say the tests
+// executed: Execution does, per package and shard.
 type GroupResult struct {
 	ID                    string               `json:"id"`
 	Kind                  string               `json:"kind"`
@@ -89,6 +119,64 @@ type GroupResult struct {
 	NativeContext   string               `json:"nativeContext,omitempty"`
 	CoveredByGroups []string             `json:"coveredByGroups,omitempty"`
 	CoveredTests    []NativeTestIdentity `json:"coveredTests,omitempty"`
+	// Execution records every go package outcome per shard; a result
+	// without it predates the record and executed everything (-count=1).
+	Execution []PackageExecution `json:"execution,omitempty"`
+	// ExternalInputsDigest digests the declared external inputs this launch
+	// saw, the equivalence reusePolicy reads for them.
+	ExternalInputsDigest string `json:"externalInputsDigest,omitempty"`
+}
+
+// GoTestCacheReplayed reports whether any package outcome came from Go's
+// test cache rather than an execution.
+func (group GroupResult) GoTestCacheReplayed() bool {
+	for _, pkg := range group.Execution {
+		if pkg.Mode == PackageGoTestCache {
+			return true
+		}
+	}
+	return false
+}
+
+// PassedByGoTestCache is a pass by cache: valid evidence under Go's
+// equivalence, but no package of the group executed in this launch.
+func (group GroupResult) PassedByGoTestCache() bool {
+	if group.Status != "passed" || len(group.Execution) == 0 {
+		return false
+	}
+	for _, pkg := range group.Execution {
+		if pkg.Mode != PackageGoTestCache {
+			return false
+		}
+	}
+	return true
+}
+
+// allExecuted reports a group whose every recorded package executed.
+func (group GroupResult) allExecuted() bool {
+	if len(group.Execution) == 0 {
+		return true
+	}
+	for _, pkg := range group.Execution {
+		if pkg.Mode != PackageExecuted {
+			return false
+		}
+	}
+	return true
+}
+
+// markEngineRetained records a reused group's packages as retained by the
+// engine; the original measurements travel unchanged.
+func (group *GroupResult) markEngineRetained() {
+	if len(group.Execution) == 0 {
+		return
+	}
+	retained := make([]PackageExecution, len(group.Execution))
+	for index, pkg := range group.Execution {
+		pkg.Mode = PackageEngineRetained
+		retained[index] = pkg
+	}
+	group.Execution = retained
 }
 
 type LaunchCounts struct {
@@ -101,8 +189,30 @@ type LaunchCounts struct {
 	ReusedOther    int  `json:"reusedOther"`
 }
 
+// TestResultSchemaVersions are the result schemas this engine writes on
+// request; a worker lists them so a frontend can ask for the newest it reads.
+var TestResultSchemaVersions = []int{WorkerPolicyTestResultSchemaVersion, TestResultSchemaVersion}
+
 func identityBoundTestResultSchema(version int) bool {
-	return version == PreviousTestResultSchemaVersion || version == TestResultSchemaVersion
+	return version == PreviousTestResultSchemaVersion || workerPolicyTestResultSchema(version)
+}
+
+// workerPolicyTestResultSchema reports a schema that carries worker policy.
+func workerPolicyTestResultSchema(version int) bool {
+	return version == WorkerPolicyTestResultSchemaVersion || version == TestResultSchemaVersion
+}
+
+// stripExecutionRecord removes what only schema 4 carries, for a frontend
+// that asked for schema 3; such a request also pins every launch to
+// -count=1 (reusePolicy), so every package it ran executed.
+func stripExecutionRecord(result *TestResult) {
+	for index := range result.Groups {
+		group := &result.Groups[index]
+		group.Execution, group.ExternalInputsDigest = nil, ""
+		for rerun := range group.Reruns {
+			group.Reruns[rerun].Reason = ""
+		}
+	}
 }
 
 func ValidateTestResult(result TestResult) error {
@@ -116,7 +226,7 @@ func ValidateTestResult(result TestResult) error {
 		result.CandidateEngineIdentityVersion == candidateEngineDigestIdentityVersion && candidateEngineMissing ||
 		result.CandidateEngineIdentityVersion == CandidateEngineIdentitySchemaVersion &&
 			(candidateEngineMissing || !validTreeDigest(result.CandidateEngineBuildIdentity))
-	if (result.SchemaVersion != LegacyTestResultSchemaVersion && result.SchemaVersion != PreviousTestResultSchemaVersion && result.SchemaVersion != TestResultSchemaVersion) || result.Purpose == "" || result.RequestedMode == "" ||
+	if (result.SchemaVersion != LegacyTestResultSchemaVersion && result.SchemaVersion != PreviousTestResultSchemaVersion && !workerPolicyTestResultSchema(result.SchemaVersion)) || result.Purpose == "" || result.RequestedMode == "" ||
 		result.RequiredMode == "" || result.ExecutedMode == "" || result.ProjectRoot == "" || result.BaseCommit == "" ||
 		!validTreeDigest(result.CandidateTree) || !validResultDigest(result.ContractDigest) ||
 		!validResultDigest(result.BaseContractDigest) || !validResultDigest(result.PolicyEngineDigest) ||
@@ -125,11 +235,11 @@ func ValidateTestResult(result TestResult) error {
 		!result.LaunchCounts.CountsComplete || result.Cost.DeclaredTargetMS <= 0 {
 		return fmt.Errorf("test result has incomplete identity or launch accounting")
 	}
-	if result.SchemaVersion == TestResultSchemaVersion &&
+	if workerPolicyTestResultSchema(result.SchemaVersion) &&
 		(result.WorkerPolicyVersion != TestWorkerPolicyVersion || result.Workers < 1 || result.AdmissionMaximum == nil || *result.AdmissionMaximum < 0) {
 		return fmt.Errorf("test result has incomplete worker policy")
 	}
-	if result.SchemaVersion != TestResultSchemaVersion &&
+	if !workerPolicyTestResultSchema(result.SchemaVersion) &&
 		(result.WorkerPolicyVersion != 0 || result.Workers != 0 || result.AdmissionMaximum != nil) {
 		return fmt.Errorf("legacy test result claims unsupported worker policy")
 	}
@@ -169,8 +279,11 @@ func ValidateTestResult(result TestResult) error {
 			return fmt.Errorf("test result group %s has unsupported execution identity version", group.ID)
 		}
 		if result.SchemaVersion == PreviousTestResultSchemaVersion && group.IdentityVersion > PreviousGroupExecutionIdentityVersion ||
-			result.SchemaVersion == TestResultSchemaVersion && group.IdentityVersion != GroupExecutionIdentityVersion {
+			workerPolicyTestResultSchema(result.SchemaVersion) && group.IdentityVersion != GroupExecutionIdentityVersion {
 			return fmt.Errorf("test result schema %d conflicts with group %s identity version %d", result.SchemaVersion, group.ID, group.IdentityVersion)
+		}
+		if result.SchemaVersion < TestResultSchemaVersion && (len(group.Execution) != 0 || group.ExternalInputsDigest != "") {
+			return fmt.Errorf("test result schema %d group %s carries the schema %d execution record", result.SchemaVersion, group.ID, TestResultSchemaVersion)
 		}
 		seen[group.ID] = true
 		switch group.Status {
@@ -511,7 +624,7 @@ func newestReuseObservation(template TestResult, attempts []Attempt, id, identit
 }
 
 func groupExecutionIdentityVersionForResult(schemaVersion int) int {
-	if schemaVersion == TestResultSchemaVersion {
+	if workerPolicyTestResultSchema(schemaVersion) {
 		return GroupExecutionIdentityVersion
 	}
 	if schemaVersion == PreviousTestResultSchemaVersion {
@@ -624,6 +737,7 @@ func reusedTestResult(template TestResult, attempts []Attempt, identities map[st
 		reused := observation.group
 		reused.Status = "reused"
 		reused.NativeLaunched = false
+		reused.markEngineRetained()
 		reused.ReuseAttempt = observation.attemptID
 		reused.CoveredByGroups, reused.CoveredTests = nil, nil
 		// Obligations describe the current decision, not the original command.
@@ -639,6 +753,9 @@ func reusedTestResult(template TestResult, attempts []Attempt, identities map[st
 	blockUnsatisfiedPrerequisites(&result, contract)
 	result.Cost.ReusedLaunches = result.LaunchCounts.ReusedTest + result.LaunchCounts.ReusedBuild + result.LaunchCounts.ReusedOther
 	result.RecomputeDelivery()
+	if result.SchemaVersion < TestResultSchemaVersion {
+		stripExecutionRecord(&result)
+	}
 	return result
 }
 

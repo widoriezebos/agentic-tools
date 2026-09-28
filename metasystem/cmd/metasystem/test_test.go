@@ -2222,7 +2222,7 @@ func TestFrozenNegativeProbeResponseIsLegacyOnlyForActualInvalidResult(t *testin
 	legacy, err := frozenNegativeProbeResponse(request, result)
 	if err != nil || legacy.SchemaVersion != proofrun.LegacyTestResultSchemaVersion || legacy.Delivery.Sufficient ||
 		legacy.Groups[0].Status != "invalid" || legacy.Groups[0].CollectionComplete || legacy.Groups[0].IdentityVersion != 0 ||
-		len(legacy.Groups[0].ExecutableDigests) != 0 || result.SchemaVersion != proofrun.TestResultSchemaVersion {
+		len(legacy.Groups[0].ExecutableDigests) != 0 || result.SchemaVersion != proofrun.WorkerPolicyTestResultSchemaVersion {
 		t.Fatalf("legacy projection changed negative verdict or normal result: legacy=%+v source=%+v err=%v", legacy, result, err)
 	}
 	data, err := json.Marshal(legacy)

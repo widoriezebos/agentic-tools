@@ -882,7 +882,7 @@ func TestCaller(t *testing.T) {
 				t.Errorf("%s go env GOFLAGS = %q, want the GOENV file's -tags=fixture", group.ID, got)
 			}
 			var output strings.Builder
-			command, err := explicitEnvironmentCommand(t.Context(), module, environment, append(goNativeTestArguments(group, false), "./..."))
+			command, err := explicitEnvironmentCommand(t.Context(), module, environment, append(goNativeTestArguments(group, false, true), "./..."))
 			if err != nil {
 				t.Fatal(err)
 			}

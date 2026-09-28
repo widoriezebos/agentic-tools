@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"math"
@@ -17,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -109,6 +111,13 @@ type TestRunRequest struct {
 	AllGroups   bool `json:",omitempty"`
 	loadOptions []loadSampleOption
 	now         func() time.Time
+	// ResultSchemaVersion is the result schema the frontend reads, sent only
+	// when the worker lists TestResultSchemaVersion; zero means the worker
+	// policy schema without the Go execution record.
+	ResultSchemaVersion int `json:",omitempty"`
+	// recordedExternalDigest reads the retained external inputs digest
+	// reusePolicy compares against; nil reads the control root's attempts.
+	recordedExternalDigest func(controlRoot, group string) string
 }
 
 // CandidateWorkspace is the detached candidate bed used by a test request.
@@ -207,6 +216,18 @@ func EffectiveTestWorkers(request TestRunRequest) int {
 // direct-caller allowance, but it does not claim the negotiated protocol.
 func TestWorkerPolicyActive(request TestRunRequest) bool {
 	return request.Workers > 0
+}
+
+// ResultSchema is the schema this request's result is written in: the
+// execution-record schema only when the frontend asked for it.
+func (request TestRunRequest) ResultSchema() int {
+	switch {
+	case !TestWorkerPolicyActive(request):
+		return PreviousTestResultSchemaVersion
+	case request.ResultSchemaVersion == TestResultSchemaVersion:
+		return TestResultSchemaVersion
+	}
+	return WorkerPolicyTestResultSchemaVersion
 }
 
 func groupExecutionIdentityVersion(request TestRunRequest) int {
@@ -404,6 +425,7 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 						return finalizeOperationalError(fmt.Errorf("admitted source for %s is incomplete: %v", id, sourceErr))
 					}
 					original.Status, original.NativeLaunched, original.ReuseAttempt = "reused", false, source
+					original.markEngineRetained()
 					original.CoveredByGroups, original.CoveredTests = nil, nil
 					result.Groups = append(result.Groups, original)
 					if groups[id].Kind == "build" {
@@ -429,6 +451,7 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 					continue
 				}
 				reused.Status = "reused"
+				reused.markEngineRetained()
 				result.Groups = append(result.Groups, reused)
 				switch groups[id].Kind {
 				case "build":
@@ -538,6 +561,7 @@ func runExecutionContractPlan(ctx context.Context, request TestRunRequest, resul
 					return GroupResult{}, false, fmt.Errorf("admitted source for %s is incomplete: %v", id, err)
 				}
 				original.Status, original.NativeLaunched, original.ReuseAttempt = "reused", false, source
+				original.markEngineRetained()
 				original.CoveredByGroups, original.CoveredTests = nil, nil
 				return original, true, nil
 			}
@@ -552,6 +576,7 @@ func runExecutionContractPlan(ctx context.Context, request TestRunRequest, resul
 				reused.NotRunReason, reused.ReuseAttempt = "forged or stale component reuse: "+err.Error(), ""
 			} else {
 				reused.Status = "reused"
+				reused.markEngineRetained()
 			}
 			return reused, true, nil
 		}
@@ -602,6 +627,9 @@ func finalizeTestPlanResult(request TestRunRequest, result TestResult, groups ma
 	result.Cost.ExecutionDurationMS = time.Since(workerStarted).Milliseconds()
 	result.Cost.ReusedLaunches = result.LaunchCounts.ReusedTest + result.LaunchCounts.ReusedBuild + result.LaunchCounts.ReusedOther
 	result.StoppedAtFirstFailure = stoppedAtFirstFailure(result.Groups)
+	if result.SchemaVersion < TestResultSchemaVersion {
+		stripExecutionRecord(&result)
+	}
 	result.RecomputeDelivery()
 	return result
 }
@@ -1292,7 +1320,7 @@ func (writer *cancelOnWriteError) Err() error {
 
 func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group, cwd string, environment []string, expected []NativeTestIdentity,
 	inventory []string, modulePrefix string, limits supervisorLimits, sampleInterval time.Duration, logPath string,
-	output *synchronizedBuffer) (supervisorOutcome, error, string, error) {
+	output *synchronizedBuffer, facts goCacheFacts) (supervisorOutcome, error, string, []PackageExecution, error) {
 	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
 	ceiling := EffectiveTestWorkers(request)
 	if group.Shards > 0 && group.Shards < ceiling {
@@ -1302,10 +1330,11 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 	coverageRoot := strings.TrimSuffix(logPath, ".log") + ".coverage"
 	if group.Coverage {
 		if err := os.RemoveAll(coverageRoot); err != nil {
-			return supervisorOutcome{}, nil, "", fmt.Errorf("reset shard coverage directory: %w", err)
+			return supervisorOutcome{}, nil, "", nil, fmt.Errorf("reset shard coverage directory: %w", err)
 		}
 	}
 	type shardRun struct {
+		reason    string
 		outcome   supervisorOutcome
 		output    synchronizedBuffer
 		logPath   string
@@ -1326,7 +1355,9 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		TestWorkersEnvironment: "1",
 	})
 	for index := range partitions {
-		args := goNativeTestArguments(group, group.Coverage)
+		countOne, reason := reusePolicy(request, group, index+1, facts)
+		runs[index].reason = reason
+		args := goNativeTestArguments(group, group.Coverage, countOne)
 		patterns := make([]string, len(partitions[index].Names))
 		for at, name := range partitions[index].Names {
 			patterns[at] = regexp.QuoteMeta(name)
@@ -1357,7 +1388,16 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 				return
 			}
 			defer release()
-			command, err := explicitEnvironmentCommand(context.WithoutCancel(shardCtx), cwd, nativeEnvironment, args)
+			shardEnvironment := nativeEnvironment
+			if !slices.Contains(args, "-count=1") {
+				// testing.T.TempDir reads GOTMPDIR, and go test keys a cached
+				// pass on the go command's value of every variable a test
+				// read. Unset, go test puts its work directory in TMPDIR, the
+				// same managed directory, and testenv still gives each test
+				// binary its own namespace.
+				shardEnvironment = dropTestEnvironmentName(nativeEnvironment, "GOTMPDIR")
+			}
+			command, err := explicitEnvironmentCommand(context.WithoutCancel(shardCtx), cwd, shardEnvironment, args)
 			if err != nil {
 				runs[index].launchErr = err
 				cancelShards()
@@ -1404,6 +1444,7 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 	}
 	wg.Wait()
 	merged := supervisorOutcome{}
+	var executions []PackageExecution
 	var closeErr error
 	launchErr := setupErr
 	for index := range runs {
@@ -1432,6 +1473,7 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 			launchErr = run.launchErr
 		}
 		output.Write(run.output.Bytes())
+		executions = append(executions, goPackageExecutions(index+1, run.reason, run.output.Bytes())...)
 	}
 	// The merged percentages are appended to the group's diagnostic output,
 	// while the separate return remains the only coverage-authority channel.
@@ -1450,7 +1492,7 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		percent, err := explicitEnvironmentCommand(ctx, cwd, environment, []string{"go", "tool", "covdata", "percent", "-i=" + strings.Join(dirs, ",")})
 		if err != nil {
 			_ = writeLog()
-			return merged, closeErr, "", err
+			return merged, closeErr, "", executions, err
 		}
 		var percentOutput bytes.Buffer
 		percent.Stdout, percent.Stderr = &percentOutput, &percentOutput
@@ -1458,7 +1500,7 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		data := percentOutput.Bytes()
 		if err != nil {
 			_ = writeLog()
-			return merged, closeErr, "", fmt.Errorf("merge shard coverage: %v: %s", err, strings.TrimSpace(string(data)))
+			return merged, closeErr, "", executions, fmt.Errorf("merge shard coverage: %v: %s", err, strings.TrimSpace(string(data)))
 		}
 		// The merged percentages join the group's go test -json stream as
 		// output events in go test's own summary shape, so the coverage
@@ -1485,7 +1527,7 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 					Output: fmt.Sprintf("ok  \t%s\t0.000s\tcoverage: %s of statements\n", pkg, fields[index+1])})
 				if err != nil {
 					_ = writeLog()
-					return merged, closeErr, "", err
+					return merged, closeErr, "", executions, err
 				}
 				lines.Write(event)
 				lines.WriteString("\n")
@@ -1496,9 +1538,9 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		output.Write([]byte(coverageMerge))
 	}
 	if err := writeLog(); err != nil {
-		return merged, closeErr, "", err
+		return merged, closeErr, "", executions, err
 	}
-	return merged, closeErr, coverageMerge, launchErr
+	return merged, closeErr, coverageMerge, executions, launchErr
 }
 
 func testGroupProgress(path, group, event, status, reason string) error {
@@ -1619,11 +1661,10 @@ func newTestResult(request TestRunRequest, semanticNow time.Time) TestResult {
 	if request.CandidateEngineBuildIdentity == "" {
 		candidateEngineIdentityVersion = candidateEngineDigestIdentityVersion
 	}
-	schemaVersion := PreviousTestResultSchemaVersion
+	schemaVersion := request.ResultSchema()
 	workerPolicyVersion, workers := 0, 0
 	var admissionMaximum *int
 	if TestWorkerPolicyActive(request) {
-		schemaVersion = TestResultSchemaVersion
 		workerPolicyVersion, workers = TestWorkerPolicyVersion, EffectiveTestWorkers(request)
 		resolvedAdmissionMaximum := request.AdmissionMaximum
 		admissionMaximum = &resolvedAdmissionMaximum
@@ -1839,8 +1880,22 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		result.EndedAt, result.DurationMS = resultDuration(request, started)
 		return result
 	}
+	var cacheFacts goCacheFacts
+	if group.Adapter == "go" {
+		var factsErr error
+		if cacheFacts, factsErr = gatherGoCacheFacts(request, group, cwd, environment, coverageInventory); factsErr != nil {
+			result.Status, result.NotRunReason = "invalid", factsErr.Error()
+			result.EndedAt, result.DurationMS = resultDuration(request, started)
+			return result
+		}
+		result.ExternalInputsDigest = cacheFacts.ExternalInputsDigest
+	}
 	var credit testCoverageCredit
 	if sources, participant := coverageSourcesFromContext(ctx); participant && group.Adapter == "go" {
+		if request.FreshGroups[group.ID] {
+			// A fresh group executes; a Go test-cache replay cannot stand in.
+			sources = slices.DeleteFunc(slices.Clone(sources), GroupResult.GoTestCacheReplayed)
+		}
 		result.NativeContext = goNativeContext(request, group)
 		if result.NativeContext != "" && len(sources) != 0 {
 			credit = creditCoveredTests(result, sources)
@@ -1926,8 +1981,8 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		// The group's discovered tests run as concurrent go test launches
 		// inside this one group; their outputs join in shard order, and
 		// whole-package coverage is merged from the shards' coverage data.
-		supervised, closeErr, coverageMerge, launchErr = runShardedGoGroup(ctx, request, group, cwd, environment, nativeExpected,
-			credit.residualInventory(coverageInventory, coverageModule), coverageModule, limits, sampleInterval, result.LogPath, &output)
+		supervised, closeErr, coverageMerge, result.Execution, launchErr = runShardedGoGroup(ctx, request, group, cwd, environment, nativeExpected,
+			credit.residualInventory(coverageInventory, coverageModule), coverageModule, limits, sampleInterval, result.LogPath, &output, cacheFacts)
 	} else {
 		// The supervisor owns cancellation so it can census and terminate the
 		// complete process tree. exec.CommandContext would kill the root first,
@@ -2119,9 +2174,12 @@ func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request Tes
 	for _, group := range request.Contract.Groups {
 		groups[group.ID] = group
 	}
-	expectedResultSchema := PreviousTestResultSchemaVersion
-	if TestWorkerPolicyActive(request) {
-		expectedResultSchema = TestResultSchemaVersion
+	// Metadata reuse reads any schema of the same worker-policy generation.
+	sameResultGeneration := func(version int) bool {
+		if TestWorkerPolicyActive(request) {
+			return workerPolicyTestResultSchema(version)
+		}
+		return version == PreviousTestResultSchemaVersion
 	}
 	detached, err := request.candidateWorkspace()
 	if err != nil {
@@ -2147,7 +2205,7 @@ func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request Tes
 				continue
 			}
 			result := attempt.TestResult
-			if result.SchemaVersion != expectedResultSchema || result.JudgeKey != judgeKeyOf(request) || result.BehaviorPolicyDigest != request.BehaviorPolicyDigest {
+			if !sameResultGeneration(result.SchemaVersion) || result.JudgeKey != judgeKeyOf(request) || result.BehaviorPolicyDigest != request.BehaviorPolicyDigest {
 				continue
 			}
 			for groupIndex := range result.Groups {
@@ -2643,10 +2701,19 @@ func digestGroupInputsWithImplicit(root string, group testpolicy.Group, environm
 			hash.Write([]byte("absent\x00"))
 		}
 	}
+	if err := hashExternalInputs(hash, group, environment); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// hashExternalInputs writes every declared external input (content of each
+// file, the sorted listing of a directory) into hash, in declaration order.
+func hashExternalInputs(hash hash.Hash, group testpolicy.Group, environment []string) error {
 	for _, external := range group.ExternalInputs {
 		path, err := resolveExternalInput(external.Path, environment)
 		if err != nil {
-			return "", fmt.Errorf("external input %s: %w", external.ID, err)
+			return fmt.Errorf("external input %s: %w", external.ID, err)
 		}
 		hash.Write([]byte("external\x00" + external.ID + "\x00" + external.Path + "\x00"))
 		var entries []entry
@@ -2675,7 +2742,7 @@ func digestGroupInputsWithImplicit(root string, group testpolicy.Group, environm
 			return nil
 		})
 		if walkErr != nil {
-			return "", fmt.Errorf("read external input %s: %w", external.ID, walkErr)
+			return fmt.Errorf("read external input %s: %w", external.ID, walkErr)
 		}
 		sort.Slice(entries, func(i, j int) bool { return entries[i].path < entries[j].path })
 		for _, item := range entries {
@@ -2689,7 +2756,20 @@ func digestGroupInputsWithImplicit(root string, group testpolicy.Group, environm
 			hash.Write([]byte("absent\x00"))
 		}
 	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	return nil
+}
+
+// digestExternalInputs is the external part of a group's inputs alone: the
+// files go test never rechecks, which Go's test cache cannot see change.
+func digestExternalInputs(group testpolicy.Group, environment []string) (string, error) {
+	if len(group.ExternalInputs) == 0 {
+		return "", nil
+	}
+	digest := sha256.New()
+	if err := hashExternalInputs(digest, group, environment); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
 }
 
 func resolveExternalInput(locator string, environment []string) (string, error) {

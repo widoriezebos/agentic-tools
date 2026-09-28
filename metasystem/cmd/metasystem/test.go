@@ -58,6 +58,7 @@ type testingPreparation struct {
 	Workers, AdmissionMaximum                                int
 	WorkerCapabilitiesChecked                                bool
 	WorkerScratchPolicies                                    []string
+	WorkerResultSchemas                                      []int
 	UnmatchedInputs                                          []testingUnmatchedInput
 }
 
@@ -94,11 +95,17 @@ type testingWorkerCapabilities struct {
 	// ScratchEnvironmentPolicies are the descriptor policies the worker reads;
 	// absent means v1 only.
 	ScratchEnvironmentPolicies []string `json:"scratchEnvironmentPolicies,omitempty"`
+	// TestResultSchemaVersions are the result schemas the worker writes on
+	// request; absent means testResultSchemaVersion only. The compared
+	// testResultSchemaVersion stays the worker-policy schema, so a frontend
+	// that predates the list still talks to this worker (and gets that schema).
+	TestResultSchemaVersions []int `json:"testResultSchemaVersions,omitempty"`
 }
 
 func currentTestingWorkerCapabilities() testingWorkerCapabilities {
 	return testingWorkerCapabilities{SchemaVersion: 1, Protocol: testWorkerProtocol,
-		ProtocolVersion: proofrun.TestWorkerProtocolVersion, TestResultSchemaVersion: proofrun.TestResultSchemaVersion,
+		ProtocolVersion: proofrun.TestWorkerProtocolVersion, TestResultSchemaVersion: proofrun.WorkerPolicyTestResultSchemaVersion,
+		TestResultSchemaVersions:      proofrun.TestResultSchemaVersions,
 		GroupExecutionIdentityVersion: proofrun.GroupExecutionIdentityVersion, WorkerPolicyVersion: proofrun.TestWorkerPolicyVersion,
 		ScratchEnvironmentPolicies: proofrun.ScratchEnvironmentPolicies}
 }
@@ -759,6 +766,7 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		EngineRearm:               engineRearm,
 		WorkerCapabilitiesChecked: workerCapabilitiesChecked,
 		WorkerScratchPolicies:     workerCapabilities.ScratchEnvironmentPolicies,
+		WorkerResultSchemas:       workerCapabilities.TestResultSchemaVersions,
 		UnmatchedInputs:           unmatchedInputs,
 		FirstTestingTransition:    !basePresent,
 		BehaviorPolicyDigest:      bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: selectionEnvironment,
@@ -1096,6 +1104,7 @@ func testingRunRequest(prepared testingPreparation, attemptID, logRoot, candidat
 		CandidateEngine: candidateEngine, CandidateEngineDigest: candidateEngineDigest,
 		CandidateEngineBuildIdentity: candidateEngineBuildIdentity, AllGroups: prepared.AllGroups}
 	request.Workers, request.AdmissionMaximum = prepared.Workers, prepared.AdmissionMaximum
+	request.ResultSchemaVersion = chooseTestResultSchema(prepared)
 	return request
 }
 
@@ -1826,6 +1835,7 @@ func runTestRun(args []string) (exit int) {
 			return proofrun.ExitAdmissionRefused
 		}
 		prepared.WorkerCapabilitiesChecked, prepared.WorkerScratchPolicies = true, workerCapabilities.ScratchEnvironmentPolicies
+		prepared.WorkerResultSchemas = workerCapabilities.TestResultSchemaVersions
 	}
 	unmark, markErr := proofrun.MarkManagedProofProcess()
 	if markErr != nil {

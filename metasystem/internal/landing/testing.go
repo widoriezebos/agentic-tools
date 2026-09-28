@@ -149,6 +149,9 @@ func validateTestingAttemptOwnersAt(installationRoot string, result proofrun.Tes
 		if freshGroup && group.Status == "reused" && group.NativeLaunched {
 			return nil, fmt.Errorf("fresh testing group %s copies native launch evidence", group.ID)
 		}
+		if freshGroup && group.GoTestCacheReplayed() {
+			return nil, fmt.Errorf("fresh testing group %s carries Go test-cache replays, not executions", group.ID)
+		}
 		// A cadence attempt executes every group afresh; a cadence result that
 		// carries a reused group did not come from the composer.
 		if group.Status == "reused" && result.Purpose == testpolicy.PurposeCadence {

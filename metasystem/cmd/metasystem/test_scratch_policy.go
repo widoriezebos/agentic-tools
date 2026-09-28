@@ -29,6 +29,21 @@ func chooseScratchEnvironmentPolicy(workerPolicies []string) string {
 	return proofrun.ScratchEnvironmentPolicyV1
 }
 
+// chooseTestResultSchema asks for the execution-record schema only from a
+// worker whose recorded capabilities list it; zero leaves the request field
+// out, which every worker reads as the worker-policy schema. An unchecked
+// preparation asks only when this engine is its own worker.
+func chooseTestResultSchema(prepared testingPreparation) int {
+	schemas := prepared.WorkerResultSchemas
+	if !prepared.WorkerCapabilitiesChecked && prepared.FirstTestingTransition {
+		schemas = currentTestingWorkerCapabilities().TestResultSchemaVersions
+	}
+	if slices.Contains(schemas, proofrun.TestResultSchemaVersion) {
+		return proofrun.TestResultSchemaVersion
+	}
+	return 0
+}
+
 // testingWorkerScratchPolicies are the policies prepared's worker reads: the
 // ones its capability check recorded, this engine's own when it is its own
 // worker, else a fresh capability read; an unreadable answer is v1 only.

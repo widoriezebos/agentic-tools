@@ -61,7 +61,8 @@ func runFailedTestAgain(ctx context.Context, request TestRunRequest, group testp
 ) RerunFinding {
 	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
 	logPath := filepath.Join(request.LogRoot, fmt.Sprintf("%s.rerun-%d.log", group.ID, number))
-	argv := goNativeTestArguments(group, false)
+	countOne, reason := reusePolicy(request, group, diagnosticRerunShard, goCacheFacts{})
+	argv := goNativeTestArguments(group, false, countOne)
 	argv = append(argv, "-run", "^"+regexp.QuoteMeta(identity.Name)+"$", identity.Classname)
 
 	var output synchronizedBuffer
@@ -106,5 +107,5 @@ func runFailedTestAgain(ctx context.Context, request TestRunRequest, group testp
 	ended := time.Now().UTC()
 	return RerunFinding{Package: identity.Classname, Test: identity.Name, First: "failed", Second: second,
 		FailedLoad: failedLoad, RerunLoad: sampleLoad(request.ControlRoot, request.AttemptID, int64(os.Getpid()), ended, request.loadOptions...),
-		LogPath: logPath, At: ended.Format(time.RFC3339Nano)}
+		LogPath: logPath, At: ended.Format(time.RFC3339Nano), Reason: reason}
 }

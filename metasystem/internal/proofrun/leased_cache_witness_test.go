@@ -71,7 +71,7 @@ func TestLeasedLayoutGoTestCacheWitness(t *testing.T) {
 	// The proof locators vary per run, as a real worker inherits them.
 	base = append(base, "METASYSTEM_PROOF_CONTROL_ROOT="+control, "METASYSTEM_PROOF_ATTEMPT=attempt-"+run.ID(),
 		identity.FixtureAttemptEnv+"=fixture-"+run.ID())
-	request := TestRunRequest{ProjectRoot: project, CandidateTree: tree, Workers: workers, Environment: base,
+	request := TestRunRequest{ProjectRoot: project, CandidateTree: tree, Workers: workers, Environment: base, ResultSchemaVersion: TestResultSchemaVersion,
 		LogRoot: filepath.Join(filepath.Dir(out), "logs-"+run.ID()), Contract: contract}
 	request.Contract.SchemaVersion = contract.SchemaVersion
 	for _, id := range groupIDs {
@@ -86,12 +86,13 @@ func TestLeasedLayoutGoTestCacheWitness(t *testing.T) {
 	}
 	ctx := WithScratchRun(context.Background(), run)
 	type groupSummary struct {
-		ID         string            `json:"id"`
-		Status     string            `json:"status"`
-		Reason     string            `json:"reason,omitempty"`
-		DurationMS int64             `json:"durationMs"`
-		Lease      string            `json:"lease"`
-		Packages   map[string]string `json:"packages"`
+		ID         string             `json:"id"`
+		Status     string             `json:"status"`
+		Reason     string             `json:"reason,omitempty"`
+		DurationMS int64              `json:"durationMs"`
+		Lease      string             `json:"lease"`
+		Packages   map[string]string  `json:"packages"`
+		Execution  []PackageExecution `json:"execution,omitempty"`
 	}
 	summary := struct {
 		Run    string         `json:"run"`
@@ -102,7 +103,8 @@ func TestLeasedLayoutGoTestCacheWitness(t *testing.T) {
 	for _, id := range groupIDs {
 		result := runTestGroup(ctx, request, groups[id])
 		summary.Groups = append(summary.Groups, groupSummary{ID: id, Status: result.Status, Reason: result.NotRunReason,
-			DurationMS: result.DurationMS, Lease: request.ScratchEnvironment.leaseOf(id), Packages: goLogPackageOutcomes(result.LogPath)})
+			DurationMS: result.DurationMS, Lease: request.ScratchEnvironment.leaseOf(id), Packages: goLogPackageOutcomes(result.LogPath),
+			Execution: result.Execution})
 	}
 	summary.WallMS = time.Since(started).Milliseconds()
 	if err := run.Cleanup(nil); err != nil {
