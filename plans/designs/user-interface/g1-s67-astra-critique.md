@@ -110,3 +110,29 @@ Limitations: static review only; no tests or application execution, edits, subag
 
 Codex session ID: 01a0e916-3a00-7c71-8f72-46c41339b5a9
 Resume in Codex: codex resume 01a0e916-3a00-7c71-8f72-46c41339b5a9
+
+## Confirmation read on S67-04
+
+---
+
+**S67-04 — CONFIRMED ANSWERED at design level.** [D6:139](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s67-the-room-for-every-sitting.md:139) and [§6:184](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s67-the-room-for-every-sitting.md:184) specify which conversation owns the sitting, replacing the unconditional record-file choice at [service.go:354](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:354). [§8:221](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s67-the-room-for-every-sitting.md:221) requires the old words, card recording, End, and a subsequent record-keyed Start.
+
+**S67-05 — Nonmaterial implementation caution: returning the ordinary object alone is insufficient.** `SnapshotIn` reports that object’s empty conversation key ([service.go:599](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:599)); the room rejects a snapshot whose key differs from its record address ([store.tsx:866](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/store.tsx:866)). Response identity must accommodate the resolved conversation. Also, caching the fallback under the record key would survive End through the existing cache return ([service.go:311](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:311)).
+
+- **Test 1 — DIFFERENT/WRONG:** No additional design contract or assertion is needed: the existing fixture already excludes both implementations.
+- **Test 2 — WORKS/SAFE:** A conforming implementation passes; a resolver-only shortcut fails the prescribed fixture. Carry this into implementation verification, without reopening the design.
+
+**What I verified holds — by reading:**
+
+- **No storage bypass in the named operational paths.** Turns, Resume, Closing and Rise resolve through `conversationOf`; deposit admission uses the resolved turn’s conversation ([service.go:674](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:674), [1178](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:1178), [1133](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:1133), [1084](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:1084), [1274](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:1274)). `KeepRoom` follows the same boundary ([partner/review.go:122](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/review.go:122)).
+- **Standing and Unopened remain sound for the specified fixture.** Standing includes the ordinary mark; its record-file enumeration requires a mark, so the absent/unmarked record conversation adds no duplicate. Unopened deliberately checks record-file existence, then requires no sitting and no messages; fallback to a marked ordinary conversation cannot return true ([partner/review.go:134](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/review.go:134)). The door reads `Room.At` from Standing’s sitting, without reopening record files ([httpd/review.go:293](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/httpd/review.go:293)).
+- **Start and session identity need no new mechanism.** End clears the mark ([conversation.go:1299](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/conversation.go:1299)), disabling fallback for the next Start. Start *before* End would select and overwrite the existing ordinary mark under current `Sit`; that repeat-Start edge is outside the fixture’s sequence. Live-session comparison already uses the resolved object’s key, so two addresses resolving to that object do not imply two sessions ([service.go:681](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:681)).
+
+Under **R-124**, no additional material first-use finding remains. The reported absence of legacy marks here limits local exposure; it does not waive the explicit upgrade fixture.
+
+**VERDICT: 0 material findings: none**
+
+Commit reviewed: `07fc0534d05fd406a78edd3ebbc1c8c40b4f3eb9`. Limitations: static, scoped confirmation only; no execution, edits, subagents or prohibited-path reads. Store absence is the disposition’s evidence, not independently verified. Proposed receipt, unwritten: “S67-04 confirmed; existing fixture governs implementation; zero new material findings.”
+
+Codex session ID: 01a0e91d-da75-7e33-ac78-3a06f6834fb5
+Resume in Codex: codex resume 01a0e91d-da75-7e33-ac78-3a06f6834fb5

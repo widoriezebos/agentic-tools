@@ -286,5 +286,19 @@ verified that D2's root-based open matters, since `Owner.Source`'s
 path check is lexical (`review.go:627`) and containment comes from
 the checkout root (`document.go:130`); §6 already says the read opens
 under that root. Closed at the failsafe round on one fold with its
-fixture obligation, with one scoped confirmation read on S67-04 alone
-(recorded below when it returns).
+fixture obligation, with one scoped confirmation read on S67-04 alone.
+
+**Confirmation read on S67-04 (2026-09-28, at `07fc0534d`):** confirmed
+answered; zero material findings; the loop is CLOSED. One
+non-material caution for the build, S67-05, carried into the build
+brief and §8's fixture rather than the design: a room's snapshot
+names its conversation by key and the page refuses one whose key is
+not its record address (`service.go:599`, `store.tsx:866`), so the
+fallback's answers must carry the room's record as their key; and the
+fallback must not be cached under the record key, or End would not
+release it (`service.go:311`). The prescribed fixture already fails a
+resolver-only shortcut. Astra also verified that turns, Resume,
+Closing, deposits and KeepRoom all pass through the one resolution
+point, that Standing and the unopened check stay sound, and that End
+clearing the mark is what lets the next Start open a record-keyed
+sitting (`conversation.go:1299`).
