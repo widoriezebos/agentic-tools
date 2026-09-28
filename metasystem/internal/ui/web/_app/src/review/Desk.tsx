@@ -144,6 +144,7 @@ export function SourceShown({ source, put }: { source: Source; put: (item: DeskI
         <span className="ms-mono">{source.path}</span>
         <span>
           lines {source.from}–{source.to} of {source.total} · at {source.commit.slice(0, 9)}
+          {source.unmarked !== undefined && source.unmarked !== "" && ` · ${source.unmarked}`}
         </span>
         <button
           type="button"

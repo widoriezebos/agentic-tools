@@ -170,6 +170,13 @@ describe("the desk's views", () => {
     expect(shown).toContain('data-ask-surface="desk"');
     expect(shown).toContain(`data-ask-revision="${TIP}"`);
     expect(shown).toContain("lines 13–15 of 33");
+    expect(shown).not.toContain("touched lines not marked");
+    // Where the touched lines could not be established, the read says so (Sol SOL-A-04).
+    const unmarked = around(<SourceShown put={put} source={{
+      path: "a.go", commit: TIP, from: 1, to: 1, total: 1, lines: [{ number: 1, text: "package a" }],
+      unmarked: "touched lines not marked",
+    }} />);
+    expect(unmarked).toContain("touched lines not marked");
   });
 
   it("shows the change index with each file's counts, and a done goal's commits' own changes", () => {
