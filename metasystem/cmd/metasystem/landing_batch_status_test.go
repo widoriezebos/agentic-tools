@@ -728,7 +728,7 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 		return nil
 	}
 	recoveries := 0
-	batchLandRecoverPush = func(_ string, _ string, _ batch.Record, _ string, _ string, origin, _ string, _ string) (batch.PushRecovery, error) {
+	batchLandRecoverPush = func(_ string, _ string, _ batch.Record, _ string, _ string, origin, _ string, _ string, _ func() error) (batch.PushRecovery, error) {
 		recoveries++
 		return batch.PushRecovery{Origin: origin}, errors.New("recovery transport unavailable")
 	}
