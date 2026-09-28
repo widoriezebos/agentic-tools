@@ -158,13 +158,13 @@ func TestUnitGatePackageStepsChangedThenSortedDependentsAndBatchTests(t *testing
 	selection := gateConsumerPackages()
 	steps := JoinGatePackageSteps(selection)
 	want := [][]string{
-		{"go", "test", "-count=1", "-timeout", "900s", "./base"},
-		{"go", "test", "-count=1", "-timeout", "40m", "./cmd/metasystem"},
-		{"go", "test", "-count=1", "-timeout", "40m", "./direct"},
-		{"go", "test", "-count=1", "-timeout", "40m", "./tagged"},
-		{"go", "test", "-count=1", "-timeout", "40m", "./testonly"},
-		{"go", "test", "-count=1", "-timeout", "40m", "./transitive"},
-		{"go", "test", "-count=1", "-timeout", "40m", "-tags", "batchtest", "./cmd/metasystem"},
+		{"go", "test", "-trimpath", "-count=1", "-timeout", "900s", "./base"},
+		{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "./cmd/metasystem"},
+		{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "./direct"},
+		{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "./tagged"},
+		{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "./testonly"},
+		{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "./transitive"},
+		{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "-tags", "batchtest", "./cmd/metasystem"},
 	}
 	if len(steps) != len(want) {
 		t.Fatalf("unit gate steps=%v want %d", steps, len(want))

@@ -1129,7 +1129,7 @@ type candidateEngineIO struct {
 // bootstrap build (cmd/devgate), so the build rules that compile a candidate
 // are the candidate's, not this engine's.
 func candidateEngineBuildArgv(output string) []string {
-	return []string{"go", "run", "./cmd/devgate", "build", "--trimpath", "--out", output}
+	return []string{"go", "run", "-trimpath", "./cmd/devgate", "build", "--trimpath", "--out", output}
 }
 
 func nativeCandidateEngineIO() candidateEngineIO {

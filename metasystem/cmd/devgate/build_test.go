@@ -165,7 +165,7 @@ func TestBuildCleanTreeInstallsEngineStampedWithHead(t *testing.T) {
 	}
 	call := f.onlyGoCall()
 	staging := filepath.Join("bin", ".metasystem.build."+itoa(f.selfPid))
-	want := []string{"build", "-p=3", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(fixtureCommit), "-o", staging, "./cmd/metasystem"}
+	want := []string{"build", "-p=3", "-buildvcs=false", "-trimpath", "-ldflags", enginebuild.StampLinkerFlags(fixtureCommit), "-o", staging, "./cmd/metasystem"}
 	if !slices.Equal(call.args, want) {
 		t.Fatalf("go args = %q, want %q", call.args, want)
 	}
@@ -249,11 +249,8 @@ func TestBuildOutLeavesTheInstalledEngineAndSkipsTheFence(t *testing.T) {
 		if code := f.run(args...); code != 0 {
 			t.Fatalf("trimpath=%v exit %d; stderr:\n%s", trimpath, code, f.stderr.String())
 		}
-		want := []string{"build", "-p=1", "-buildvcs=false"}
-		if trimpath {
-			want = append(want, "-trimpath")
-		}
-		want = append(want, "-ldflags", enginebuild.StampLinkerFlags(fixtureCommit), "-o", out, "./cmd/metasystem")
+		// --trimpath is a no-op: the build is trimmed with or without it.
+		want := []string{"build", "-p=1", "-buildvcs=false", "-trimpath", "-ldflags", enginebuild.StampLinkerFlags(fixtureCommit), "-o", out, "./cmd/metasystem"}
 		if got := f.onlyGoCall().args; !slices.Equal(got, want) {
 			t.Fatalf("trimpath=%v go args = %q, want %q", trimpath, got, want)
 		}

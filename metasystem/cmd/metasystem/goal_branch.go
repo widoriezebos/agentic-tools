@@ -142,7 +142,8 @@ func readGate(worktree string) (string, error) {
 	proofPath := proof.Name()
 	proof.Close()
 	defer os.Remove(proofPath)
-	command := exec.Command("go", "run", "./cmd/devgate", "static", "--proof-out", proofPath)
+	argv := goalBranchStaticArgv(proofPath)
+	command := exec.Command(argv[0], argv[1:]...)
 	command.Dir = worktree
 	command.Env = os.Environ()
 	output, err := command.CombinedOutput()
@@ -1222,4 +1223,9 @@ func criticDelegateEnvironment(selected, root, brief string) ([]string, error) {
 		config.EnvName("role.code-critic.model."+resolution.RosterRuntime) + "=" + resolution.RosterModel,
 		config.EnvName(maximalKey) + "=" + maximal,
 	}, nil
+}
+
+// goalBranchStaticArgv runs the worktree's own static gate, trimmed.
+func goalBranchStaticArgv(proofPath string) []string {
+	return []string{"go", "run", "-trimpath", "./cmd/devgate", "static", "--proof-out", proofPath}
 }

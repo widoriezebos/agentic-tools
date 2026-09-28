@@ -17,8 +17,7 @@ import (
 var positiveInteger = regexp.MustCompile(`^[1-9][0-9]*$`)
 
 type buildOptions struct {
-	out      string
-	trimpath bool
+	out string
 }
 
 func parseBuildArgs(args []string) (buildOptions, string) {
@@ -32,7 +31,8 @@ func parseBuildArgs(args []string) (buildOptions, string) {
 			options.out = args[1]
 			args = args[2:]
 		case "--trimpath":
-			options.trimpath = true
+			// Accepted as a no-op: both branches build trimmed. An installed
+			// engine still passes it when it builds a candidate tree's devgate.
 			args = args[1:]
 		default:
 			return options, "go-build: unknown argument: " + args[0]
@@ -47,7 +47,8 @@ func parseBuildArgs(args []string) (buildOptions, string) {
 // swap under an armed watch is exactly what the fingerprint refuses.
 // Without it, it stages beside bin/metasystem and renames over it, under the
 // gate fence. CGO is pinned off so link portability is deliberate, and the
-// commit stamp makes operational artifacts self-attest.
+// commit stamp makes operational artifacts self-attest. Both branches build
+// with -trimpath, so no checkout path enters the binary or its cache keys.
 func runBuild(ctx context.Context, args []string, root string, d deps) int {
 	options, usage := parseBuildArgs(args)
 	if usage != "" {
@@ -93,14 +94,12 @@ func runBuild(ctx context.Context, args []string, root string, d deps) int {
 
 	env := append(d.environ(), "GOMAXPROCS="+workers, "CGO_ENABLED=0")
 	// The stamp is linked twice: as a record in the file's data, which
-	// survives -trimpath, and as the legacy variable older readers find in
-	// the -ldflags build setting of this untrimmed build.
+	// survives -trimpath, and as the legacy variable. Since A3 both branches
+	// build trimmed, so Go omits -ldflags from the build info and only the
+	// record is file-readable; A3 lands after every reader is on A1.
 	ldflags := enginebuild.StampLinkerFlags(stamp)
 	if options.out != "" {
-		goArgs := []string{"build", "-p=" + workers, "-buildvcs=false"}
-		if options.trimpath {
-			goArgs = append(goArgs, "-trimpath")
-		}
+		goArgs := []string{"build", "-p=" + workers, "-buildvcs=false", "-trimpath"}
 		goArgs = append(goArgs, "-ldflags", ldflags, "-o", options.out, "./cmd/metasystem")
 		if d.goTool(ctx, root, env, goArgs, d.stdout, d.stderr) != nil {
 			fmt.Fprintln(d.stderr, "go-build: build failed")
@@ -120,7 +119,7 @@ func runBuild(ctx context.Context, args []string, root string, d deps) int {
 	}
 	staging := filepath.Join("bin", ".metasystem.build."+strconv.FormatInt(d.selfPid, 10))
 	defer func() { _ = os.Remove(filepath.Join(root, staging)) }()
-	goArgs := []string{"build", "-p=" + workers, "-buildvcs=false", "-ldflags", ldflags, "-o", staging, "./cmd/metasystem"}
+	goArgs := []string{"build", "-p=" + workers, "-buildvcs=false", "-trimpath", "-ldflags", ldflags, "-o", staging, "./cmd/metasystem"}
 	if d.goTool(ctx, root, env, goArgs, d.stdout, d.stderr) != nil {
 		fmt.Fprintln(d.stderr, "go-build: build failed")
 		return 1

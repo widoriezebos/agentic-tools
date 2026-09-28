@@ -37,6 +37,16 @@ func TestGoNativeArgumentsPinEveryNestedParallelismLayer(t *testing.T) {
 	if slices.Contains(goNativeTestArguments(group, false), "-cover") {
 		t.Fatalf("diagnostic rerun unexpectedly contributes coverage: %v", goNativeTestArguments(group, false))
 	}
+	// -trimpath rides argv, never GOFLAGS, so a group's effective flags
+	// (declared, process, or its GOENV file) are never masked.
+	want := []string{"go", "test", "-trimpath", "-json", "-count=1", "-timeout", "0", "-p=1", "-parallel=1", "-tags", "one,two", "-race", "-cover"}
+	if !slices.Equal(arguments, want) {
+		t.Fatalf("native Go arguments = %q, want %q", arguments, want)
+	}
+	plain := []string{"go", "test", "-trimpath", "-json", "-count=1", "-timeout", "0", "-p=1", "-parallel=1"}
+	if got := goNativeTestArguments(testpolicy.Group{}, false); !slices.Equal(got, plain) {
+		t.Fatalf("plain native Go arguments = %q, want %q", got, plain)
+	}
 }
 
 func TestCoverageConsumersUseOnlyAuthoritativeMerge(t *testing.T) {

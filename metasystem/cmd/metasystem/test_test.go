@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1453,12 +1454,12 @@ func TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories(t
 	}
 	cacheRoot := t.TempDir()
 	stamp := strings.Repeat("a", 40)
-	build := func(name string) string {
+	build := func(name string, args ...string) string {
 		root := filepath.Join(t.TempDir(), name)
 		writeTestingFixtureFile(t, filepath.Join(root, "go.mod"), []byte("module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.26\n"), 0o644)
 		writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644)
 		output := filepath.Join(t.TempDir(), "metasystem")
-		command := exec.Command(devgate, "build", "--trimpath", "--out", output)
+		command := exec.Command(devgate, append(append([]string{"build"}, args...), "--out", output)...)
 		command.Dir = root
 		command.Env = append(candidateEngineBuildEnvironment(testingEnvironment(os.Environ()), stamp),
 			"GOCACHE="+filepath.Join(cacheRoot, "build"), "GOMODCACHE="+filepath.Join(cacheRoot, "modules"))
@@ -1471,9 +1472,28 @@ func TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories(t
 		}
 		return digest
 	}
-	first, second := build("first-materialization"), build("second-materialization")
+	// The candidate argv still passes --trimpath (a no-op now); devgate trims
+	// by default, so a build without it lands on the same bytes.
+	first, second := build("first-materialization", "--trimpath"), build("second-materialization")
 	if first != second {
 		t.Fatalf("one source tree built in two directories had different candidate engine digests: first=%s second=%s", first, second)
+	}
+}
+
+func TestEngineGoArgvCarriesTrimpath(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for name, pair := range map[string][2][]string{
+		"candidate engine build": {candidateEngineBuildArgv("/out/metasystem"),
+			{"go", "run", "-trimpath", "./cmd/devgate", "build", "--trimpath", "--out", "/out/metasystem"}},
+		"bootstrap and landed rebuild": {devgateBootstrapBuildArgv(), {"go", "run", "-trimpath", "./cmd/devgate", "build"}},
+		"coverage delta":               {coverageDeltaGoTestArgv("./internal/x"), {"go", "test", "-trimpath", "-cover", "-timeout", "30m", "./internal/x"}},
+		"goal branch static":           {goalBranchStaticArgv("/proof"), {"go", "run", "-trimpath", "./cmd/devgate", "static", "--proof-out", "/proof"}},
+		"witness probe":                {proofRunWitnessProbe(root).Args, {"go", "run", "-trimpath", "./cmd/devgate", "gate", "--witness-check-only"}},
+	} {
+		if !slices.Equal(pair[0], pair[1]) {
+			t.Errorf("%s argv = %q, want %q", name, pair[0], pair[1])
+		}
 	}
 }
 

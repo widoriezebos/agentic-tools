@@ -51,7 +51,7 @@ func TestSupervisorProductionLimitsAndGoTimeoutDisabled(t *testing.T) {
 	writeTestResultFile(t, filepath.Join(root, "sample_test.go"), []byte("package timeoutless\nimport \"testing\"\nfunc TestSample(t *testing.T) {}\n"), 0o644)
 	group := testpolicy.Group{Adapter: "go", Packages: []string{"."}, Tests: []byte(`"all"`)}
 	args, _, _, _, err := goArguments(context.Background(), group, root, os.Environ())
-	if err != nil || len(args) < 6 || args[3] != "-count=1" || args[4] != "-"+"timeout" || args[5] != "0" {
+	if err != nil || len(args) < 7 || args[2] != "-trimpath" || args[4] != "-count=1" || args[5] != "-"+"timeout" || args[6] != "0" {
 		t.Fatalf("Go argv = %v, err=%v", args, err)
 	}
 }

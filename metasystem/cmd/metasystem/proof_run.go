@@ -2232,7 +2232,7 @@ func proofRunWitnessUsable(root string) bool {
 
 // proofRunWitnessProbe asks the root's Go gate.
 func proofRunWitnessProbe(root string) *exec.Cmd {
-	command := exec.Command("go", "run", "./cmd/devgate", "gate", "--witness-check-only")
+	command := exec.Command("go", "run", "-trimpath", "./cmd/devgate", "gate", "--witness-check-only")
 	command.Dir = root
 	command.Env = proofRunEnvironment("METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE", "ENGINE")
 	command.Stdout = io.Discard

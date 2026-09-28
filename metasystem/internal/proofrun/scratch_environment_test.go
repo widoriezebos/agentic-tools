@@ -808,3 +808,98 @@ func TestScratchEnvironmentDeclaredEmptyGoPathKeepsDefaultStore(t *testing.T) {
 		}
 	}
 }
+
+// -trimpath rides the group's go test argv, never GOFLAGS: a declared or
+// default GOENV file's -tags still reaches the group in both environment
+// modes with process GOFLAGS absent, and the group's test is built trimmed,
+// so its runtime.Caller file is module-relative.
+func TestScratchEnvironmentTrimpathArgvKeepsGoEnvFileFlags(t *testing.T) {
+	t.Parallel()
+	fixture := newScratchEnvFixture(t)
+	declared := filepath.Join(fixture.host, "declared-goenv")
+	writeScratchConfig(t, declared, "GOFLAGS=-tags=fixture\n")
+	defaultFile, _, _ := goEnvFileFor([]string{"HOME=" + fixture.host}, runtime.GOOS)
+	writeScratchConfig(t, defaultFile, "GOFLAGS=-tags=fixture\n")
+	module := scratchGoModule(t, map[string]string{"caller_test.go": `//go:build fixture
+
+package workload
+
+import (
+	"os"
+	"runtime"
+	"testing"
+)
+
+func TestCaller(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	if err := os.WriteFile(os.Getenv("WORKLOAD_REPORT"), []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+`})
+	path := scratchGoPath(t)
+	for _, source := range []string{"declared", "default"} {
+		base := []string{"HOME=" + fixture.host, "PATH=/usr/bin:/bin"}
+		var groups []testpolicy.Group
+		for _, mode := range []string{"explicit", "inherit"} {
+			env := map[string]string{"PATH": path, "GOTOOLCHAIN": "local", "WORKLOAD_REPORT": filepath.Join(fixture.host, source+"-"+mode)}
+			if source == "declared" {
+				env["GOENV"] = declared
+			}
+			groups = append(groups, testpolicy.Group{ID: source + "-" + mode, Adapter: "go", EnvironmentMode: mode, Env: env})
+		}
+		request, _ := prepareScratchEnv(t, fixture.control, scratchEnvRequest(base, groups))
+		for _, group := range groups {
+			environment := groupTestEnvironment(request, group)
+			if value, set := lookupEnvironmentSet(environment, "GOFLAGS"); set {
+				t.Fatalf("%s process GOFLAGS = %q, want absent", group.ID, value)
+			}
+			if got := scratchGoEnvOutput(t, request, group, "GOFLAGS"); got != "-tags=fixture\n" {
+				t.Errorf("%s go env GOFLAGS = %q, want the GOENV file's -tags=fixture", group.ID, got)
+			}
+			var output strings.Builder
+			command, err := explicitEnvironmentCommand(t.Context(), module, environment, append(goNativeTestArguments(group, false), "./..."))
+			if err != nil {
+				t.Fatal(err)
+			}
+			command.Stdout, command.Stderr = &output, &output
+			if err := RunResourceCommand(t.Context(), command, nil); err != nil {
+				t.Fatalf("%s go test: %v\n%s", group.ID, err, output.String())
+			}
+			file, err := os.ReadFile(group.Env["WORKLOAD_REPORT"])
+			if err != nil {
+				t.Fatalf("%s tagged test did not run (tags lost?): %v\n%s", group.ID, err, output.String())
+			}
+			if string(file) != "example.test/workload/caller_test.go" {
+				t.Errorf("%s runtime.Caller file = %q, want module-relative (built trimmed)", group.ID, file)
+			}
+		}
+	}
+}
+
+// The v1 identity is unchanged by -trimpath in argv: carried scenarios (both
+// modes, every adapter) and an explicit declaration digest to the recorded
+// scratch-environment/v1 values. A changed managed value or policy (A5)
+// updates these literals on purpose.
+func TestScratchEnvironmentV1DigestUnchangedByTrimpathArgv(t *testing.T) {
+	t.Parallel()
+	fixture := newScratchEnvFixture(t)
+	base := []string{"HOME=" + fixture.host, "PATH=/usr/bin:/bin", "HOST_ONLY=1", "GOENV=" + fixture.goEnv,
+		"GOPATH=/fixture/gopath", "GOMODCACHE=/fixture/modcache", "TMPDIR=" + filepath.Join(fixture.host, "tmp")}
+	groups := append(scratchEnvGroups(), testpolicy.Group{ID: "declared", Adapter: "go", EnvironmentMode: "explicit",
+		Env: map[string]string{"PATH": "/usr/bin:/bin", "GOFLAGS": "-tags=fixture", "GOTOOLCHAIN": "local"}})
+	request, _ := prepareScratchEnv(t, fixture.control, scratchEnvRequest(base, groups))
+	inherit, explicit := "c1e5bef2a5c83e6d4b9577fe0d288cef3f8e49441caeac777c3a16d034ce917e", "d69bbd1f0f3ce1cda983897f58178222dafb5829ef96706b1bc89ac0da76640f"
+	want := map[string]string{"go-inherit": inherit, "command-inherit": inherit, "section-inherit": inherit,
+		"go-explicit": explicit, "command-explicit": explicit, "section-explicit": explicit,
+		"declared": "41b6f8b4cfd0f9e886743334d72b9ab29dbaab49357e11a3693fcb49ec44a50a"}
+	digests := scratchEnvDigests(request)
+	if len(digests) != len(want) {
+		t.Fatalf("digests = %v, want %d groups", digests, len(want))
+	}
+	for id, digest := range digests {
+		if want[id] != digest {
+			t.Errorf("%s digest = %q, want recorded v1 %q", id, digest, want[id])
+		}
+	}
+}

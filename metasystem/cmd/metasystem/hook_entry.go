@@ -663,7 +663,8 @@ func (o hookOwners) StartEngineRebuild(installation string) error {
 	defer logFile.Close()
 	var command *exec.Cmd
 	if info, err := os.Stat(filepath.Join(installation, "cmd", "devgate")); err == nil && info.IsDir() {
-		command = exec.Command("go", "run", "./cmd/devgate", "build")
+		argv := devgateBootstrapBuildArgv()
+		command = exec.Command(argv[0], argv[1:]...)
 	} else {
 		command = exec.Command("bash", "scripts/agents/go-build.sh")
 	}

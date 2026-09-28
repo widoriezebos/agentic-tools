@@ -29,6 +29,7 @@ var engineBindingStandardTests = []string{
 	"TestCandidateEngineNativeGitSerializationPinsHeadSourceAndCleanup",
 	"TestCandidateEngineNativePhysicalCommandOriginIncludesEventHeldColdBuild",
 	"TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories",
+	"TestEngineGoArgvCarriesTrimpath",
 	"TestCauseOutcomesRenderDeclaredCommandCount",
 	"TestDecisionMismatchNamesTheField",
 	"TestEngineBindingWitnessInventory",

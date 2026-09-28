@@ -249,7 +249,7 @@ func goArgumentsCachedForSchema(ctx context.Context, group testpolicy.Group, cwd
 }
 
 func goNativeTestArguments(group testpolicy.Group, coverage bool) []string {
-	args := []string{"go", "test", "-json", "-count=1", "-timeout", "0", "-p=1", "-parallel=1"}
+	args := []string{"go", "test", "-trimpath", "-json", "-count=1", "-timeout", "0", "-p=1", "-parallel=1"}
 	if len(group.BuildTags) != 0 {
 		args = append(args, "-tags", strings.Join(group.BuildTags, ","))
 	}
