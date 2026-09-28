@@ -15,9 +15,9 @@ import (
 )
 
 // verbRatchetMetasystemScriptCeiling is the number of shell files under
-// metasystem/ outside the extension-point allowlist. U9 takes it to zero by
-// deleting the supervision-hook.sh stub.
-const verbRatchetMetasystemScriptCeiling = 3
+// metasystem/ outside the extension points. It is zero since U9 deleted the
+// supervision-hook.sh stub; it never rises.
+const verbRatchetMetasystemScriptCeiling = 0
 
 // scriptRuleSkipNames are the directories under metasystem/ that a checkout
 // holds but never commits.
@@ -39,6 +39,49 @@ func scriptRuleAllowed(rel string) bool {
 	parts := strings.Split(rel, "/")
 	return len(parts) >= 5 && parts[0] == "metasystem" && parts[1] == "optional-skills" &&
 		parts[2] != "" && parts[3] == "scripts"
+}
+
+// scriptRuleContractInstruments returns the repository-relative scripts a
+// mission contract runs as its gate or a guard: the shell-file words of every
+// gate.command= and guard.<name>.command= line inside its ```mission block,
+// relative to metasystem/ where the mission runner runs them. Those are the
+// mission's authored instruments, an extension point like a skill's helper
+// tools (the birth-token mission runs plans/first-headless-run/gate.sh and
+// guard.sh), so S1 does not count them while a contract names them.
+func scriptRuleContractInstruments(text string) []string {
+	var out []string
+	inMission := false
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inMission = !inMission && strings.TrimSpace(strings.TrimPrefix(trimmed, "```")) == "mission"
+			continue
+		}
+		if !inMission {
+			continue
+		}
+		key, value, ok := strings.Cut(trimmed, "=")
+		if !ok {
+			continue
+		}
+		parts := strings.Split(key, ".")
+		isGate := key == "gate.command"
+		isGuard := len(parts) == 3 && parts[0] == "guard" && parts[1] != "" && parts[2] == "command"
+		if !isGate && !isGuard {
+			continue
+		}
+		for _, word := range strings.Fields(value) {
+			if !scriptRuleIsScript(word) || path.IsAbs(word) {
+				continue
+			}
+			clean := path.Clean(word)
+			if clean == ".." || strings.HasPrefix(clean, "../") {
+				continue
+			}
+			out = append(out, "metasystem/"+clean)
+		}
+	}
+	return out
 }
 
 // scriptRuleExecutableOrConfig reports whether a repository-relative path is
@@ -101,17 +144,57 @@ func TestScriptRuleClassifiers(t *testing.T) {
 			t.Errorf("scriptRuleExecutableOrConfig(%q) = %v, want %v", row.rel, got, row.judged)
 		}
 	}
+	contract := strings.Join([]string{
+		"gate.command=bash plans/outside-the-block.sh",
+		"```mission",
+		"gate.command=bash plans/first-headless-run/gate.sh",
+		"gate.paths=plans/first-headless-run/*.sh",
+		"guard.build.command=bash plans/first-headless-run/guard.sh",
+		"guard.build.floor=1",
+		"guard.x.y.command=bash plans/three-part-name.sh",
+		"guard.lint.command=bash /abs/lint.sh ../escape.sh ./plans/lint.bash",
+		"truth.command=bash plans/truth.sh",
+		"```",
+		"guard.late.command=bash plans/after-the-block.sh",
+	}, "\n")
+	got := strings.Join(scriptRuleContractInstruments(contract), " ")
+	want := "metasystem/plans/first-headless-run/gate.sh metasystem/plans/first-headless-run/guard.sh metasystem/plans/lint.bash"
+	if got != want {
+		t.Errorf("scriptRuleContractInstruments = %q, want %q", got, want)
+	}
+}
+
+// scriptRuleMissionInstruments collects the instruments every mission
+// contract under metasystem/ names (files ending .contract.md).
+func scriptRuleMissionInstruments(t *testing.T, module string) map[string]bool {
+	t.Helper()
+	named := map[string]bool{}
+	walkRatchetFiles(t, module, scriptRuleSkipNames, nil, func(file, rel string) {
+		if !strings.HasSuffix(rel, ".contract.md") {
+			return
+		}
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, script := range scriptRuleContractInstruments(string(data)) {
+			named[script] = true
+		}
+	})
+	return named
 }
 
 // TestVerbRatchetMetasystemScripts counts the shell files under metasystem/
-// outside the extension-point allowlist (R11, rule S1).
+// outside the extension points (R11, rule S1): the skill helper tools, and
+// the gate and guard instruments a mission contract names.
 func TestVerbRatchetMetasystemScripts(t *testing.T) {
 	t.Parallel()
 	_, module := verbRatchetRoots(t)
+	instruments := scriptRuleMissionInstruments(t, module)
 	var sites []ratchetSite
 	walkRatchetFiles(t, module, scriptRuleSkipNames, nil, func(_, rel string) {
 		rel = "metasystem/" + rel
-		if scriptRuleIsScript(rel) && !scriptRuleAllowed(rel) {
+		if scriptRuleIsScript(rel) && !scriptRuleAllowed(rel) && !instruments[rel] {
 			sites = append(sites, ratchetSite{path: rel, line: 1, text: "a script outside the extension points"})
 		}
 	})
