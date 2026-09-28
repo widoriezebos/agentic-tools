@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// The 2026-09-29 U9 hook rename (030a185c0, declared by hand in 5de1a3eab):
+// The 2026-09-28 U9 hook rename (030a185c0, declared by hand in 5de1a3eab):
 // only the command text inside strings.Count changed; the decision literal,
 // the comparison and every other token stayed.
 const (
