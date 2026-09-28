@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -52,13 +51,13 @@ func TestProofRunWatchdogReleasesAnInheritedLockDescriptor(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture := testutil.Fixture(t)
-	watchdog := exec.Command(executable, "proof-run", "watchdog",
+	proof := pinProofBinaryFixture(t, root)
+	watchdog := proof.command(fixture.Env(os.Environ()), executable, "proof-run", "watchdog",
 		"--suite", "fixture", "--root", root, "--conf", conf, "--progress", progress, "--done", done,
 		"--suite-pid", strconv.FormatInt(ref.Pid, 10), "--suite-started-at", strconv.FormatInt(ref.StartedAtSec, 10),
 		"--suite-start-ticks", strconv.FormatInt(ref.StartTicks, 10), "--suite-boot-id", ref.BootID,
 		"--silence-ms", "60000", "--section-cap-ms", "60000", "--evidence-timeout-ms", "1000", "--evidence-max-bytes", "1024",
 		"--poll-ms", "1", "--term-grace-ms", "1", "--kill-grace-ms", "1", "--log", filepath.Join(root, "suite.log"))
-	watchdog.Env = fixture.Env(os.Environ())
 	watchdog.ExtraFiles = []*os.File{inherited}
 	var output bytes.Buffer
 	watchdog.Stdout, watchdog.Stderr = &output, &output
