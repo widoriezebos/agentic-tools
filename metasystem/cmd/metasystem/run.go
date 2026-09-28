@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"syscall"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -20,31 +17,6 @@ import (
 // Mutations classify the caller and run the holder-only matrix exactly
 // like the goal family; conclude is record-writer so supervision's
 // watcher may conclude; watch and the reads are open.
-
-// runCaller distills the classified invoker.
-func runCaller(root string, callerPid int64, mode string) (run.Caller, error) {
-	if callerPid == 0 {
-		callerPid = int64(os.Getppid())
-	}
-	view, err := classifyVerbCaller(root, callerPid)
-	if err != nil {
-		return run.Caller{}, fmt.Errorf("caller classification failed: %v", err)
-	}
-	if mode != "" {
-		classification := map[string]any{"class": view.Class, "holder": view.Holder}
-		if err := authority.Authorize(mode, classification, ""); err != nil {
-			return run.Caller{}, err
-		}
-	}
-	lineage := view.MainId
-	if view.Announcement != nil && view.Announcement.MainId != "" {
-		lineage = view.Announcement.MainId
-	}
-	return run.Caller{
-		Class: view.Class, MainId: view.MainId,
-		OwnerLineage: lineage, ClaimEpoch: view.ClaimEpoch,
-	}, nil
-}
 
 // runStore binds a Store with the in-lock epoch reader: the CLI
 // ALWAYS wires CurrentEpoch so a stale-epoch child cannot mutate
@@ -57,120 +29,6 @@ func runStore(root string) *run.Store {
 		}
 		return view.ClaimEpoch, true
 	})
-}
-
-func holdGovernedGoalRevision(root, goalID string, obligationRevision uint64, standing bool, tag string) (func(), error) {
-	if goalID == "" && obligationRevision == 0 && !standing {
-		return func() {}, nil
-	}
-	if goalID == "" || obligationRevision == 0 {
-		return nil, fmt.Errorf("a governed run requires both goal id and obligation revision")
-	}
-	binding, err := dispatchcore.ResolveGoalBinding(root, goalID, time.Now().UTC())
-	if err != nil {
-		return nil, err
-	}
-	held, err := goalrevision.Acquire(root, goalID, binding.Revision, tag)
-	if err != nil {
-		return nil, err
-	}
-	return func() { _ = held.Release() }, nil
-}
-
-// watchLine is THE printed waiter command — one grammar, everywhere.
-func watchLine(root, id string) string {
-	return fmt.Sprintf("bin/metasystem work wait --run %s --exit-code --repo %s", id, root)
-}
-
-func runRunLaunch(args []string) int {
-	flags := flag.NewFlagSet("run launch", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	id := flags.String("id", "", "run id")
-	kind := flags.String("kind", "custom", "suite|cohort|custom")
-	display := flags.String("display", "", "one display line (never derived from argv)")
-	log := flags.String("log", "", "log path")
-	stale := flags.Int("stale-after-min", 0, "hung threshold minutes")
-	windDown := flags.Int("wind-down-min", 0, "drain window minutes")
-	expectGreen := flags.String("expect-green", "", "continuation on green")
-	expectRed := flags.String("expect-red", "", "continuation on red")
-	expectHung := flags.String("expect-hung", "", "continuation on hang")
-	expectUnknown := flags.String("expect-unknown", "", "continuation on unknown")
-	callerPid := flags.Int64("caller-pid", 0, "caller pid")
-	goalID := flags.String("goal", "", "claimed goal owning a governed run")
-	obligationRevision := flags.Uint64("obligation-revision", 0, "immutable governed-obligation revision")
-	standingShared := flags.Bool("standing-shared-process", false, "this is a recurring shared process, not a private experiment")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	command := flags.Args()
-	if len(command) == 0 {
-		fmt.Fprintln(os.Stderr, "run launch requires -- <command...>")
-		return 2
-	}
-	store := runStore(*root)
-	creation, err := store.BeginCreation("run-launch")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer func() { _ = creation.Close() }()
-	caller, err := runCaller(*root, *callerPid, "holder-only")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	release, err := holdGovernedGoalRevision(*root, *goalID, *obligationRevision, *standingShared, "governed-run-launch")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer release()
-	fenceGeneration := creation.Generation
-	nonce, err := store.Launch(caller, run.LaunchParams{
-		Id: *id, Kind: *kind, Display: *display, Log: *log,
-		StaleAfterMin: *stale, WindDownMin: *windDown,
-		Expect: run.Expect{Green: *expectGreen, Red: *expectRed, Hung: *expectHung, Unknown: *expectUnknown},
-		GoalId: *goalID, ObligationRevision: *obligationRevision, StandingShared: *standingShared,
-		FenceGeneration: &fenceGeneration,
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	record, err := store.Read(*id)
-	if err != nil || record == nil {
-		fmt.Fprintln(os.Stderr, "pending record unreadable after launch")
-		_ = store.FailLaunch(*id, "pending record unreadable after launch")
-		return 1
-	}
-	self, err := os.Executable()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		_ = store.FailLaunch(*id, "cannot resolve the wrapper executable")
-		return 1
-	}
-	wrapArgs := append([]string{"run", "wrap",
-		"--root", *root, "--id", *id, "--nonce", nonce, "--log", record.Log, "--"}, command...)
-	wrapper := exec.Command(self, wrapArgs...)
-	wrapper.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	wrapper.Stdout = nil
-	wrapper.Stderr = nil
-	wrapper.Stdin = nil
-	if err := wrapper.Start(); err != nil {
-		fmt.Fprintln(os.Stderr, "wrapper spawn failed:", err)
-		_ = store.FailLaunch(*id, "wrapper spawn failed: "+err.Error())
-		return 1
-	}
-	if err := store.CompleteLaunch(*id, fenceGeneration); err != nil {
-		_ = wrapper.Process.Release()
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	// The wrapper is detached on purpose; the record, not the process
-	// tree, is the contract from here.
-	_ = wrapper.Process.Release()
-	fmt.Printf("run %s launched; watch it with:\n  %s\n", *id, watchLine(*root, *id))
-	return 0
 }
 
 func runRunWrap(args []string) int {

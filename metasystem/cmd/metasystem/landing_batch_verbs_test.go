@@ -31,7 +31,7 @@ func TestBatchVerbsUnavailableWithoutFilesystemWrites(t *testing.T) {
 	}
 	for _, command := range commands {
 		t.Run(command.name, func(t *testing.T) {
-			stderr, code := captureStderr(t, func() int { return dispatch(command.args) })
+			stderr, code := captureStderr(t, func() int { return runLandingBatch(command.args[2:]) })
 			if code != 2 || !strings.Contains(stderr, command.want) || strings.Contains(stderr, "BATCH_UNAVAILABLE") {
 				t.Errorf("default command = code %d, stderr %q", code, stderr)
 			}

@@ -338,23 +338,6 @@ func TestArmRefusalSecondLines(t *testing.T) {
 	}
 }
 
-func TestRunLaunchReadsClosedFenceBeforeCallerGate(t *testing.T) {
-	root := t.TempDir()
-	if err := stopfence.Write(root, stopfence.Record{
-		State: stopfence.StateClosed, Phase: stopfence.PhaseStopped, Generation: 3,
-		ChangedAt: "2026-09-07T12:00:00Z", Checkout: root,
-		By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 71, PidStartedAt: 70}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	stderr, code := captureStderr(t, func() int {
-		return runRunLaunch([]string{"--root", root, "--id", "fence-first", "--caller-pid", "-1", "--", "/bin/true"})
-	})
-	if code != 1 || !strings.Contains(stderr, "the metasystem is stopped for "+root+" since 2026-09-07T12:00:00Z, by stop pid 71") || strings.Contains(stderr, "caller classification failed") {
-		t.Fatalf("run launch fence precedence: code=%d stderr=%q", code, stderr)
-	}
-}
-
 func TestUnreadableFenceMakesStopPointAtArm(t *testing.T) {
 	scope := processScope{Checkout: "/fixture/checkout"}
 	err := &stopfence.RecordUnreadableError{Reason: "stop fence schema version 2 is unsupported", HighestGeneration: 7}

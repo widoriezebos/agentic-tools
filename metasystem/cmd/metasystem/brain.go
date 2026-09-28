@@ -230,7 +230,3 @@ func brainWithdrawWith(caller processIdentity, stdout, stderr io.Writer, root, b
 	writeJSONLine(stdout, stderr, map[string]any{"state": brain.Undeclared})
 	return 0
 }
-
-func runBrainBoot(args []string) int {
-	return runBrainBootCommand(args)
-}

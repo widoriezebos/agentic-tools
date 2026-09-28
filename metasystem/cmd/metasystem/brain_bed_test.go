@@ -11,6 +11,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -361,11 +362,8 @@ func TestBrainBedBootBound(t *testing.T) {
 	if !strings.Contains(minimum.Payload, "PACKET TOO LARGE FOR THIS CHANNEL") || !strings.Contains(minimum.Payload, "## The standing instruction") {
 		t.Fatalf("minimum boot omitted the packet-size notice or the standing instruction: %q", minimum.Payload)
 	}
-	if err := brainBootRequestError(2047, 5000); err == nil || !strings.Contains(err.Error(), "below the minimum 2048") {
-		t.Fatalf("a 2047-byte bound was not refused: %v", err)
-	}
-	if err := brainBootRequestError(2048, 5000); err != nil {
-		t.Fatalf("the minimum bound was refused: %v", err)
+	if _, stderr, status := (hookOwners{}).BrainBoot(context.Background(), b.root, b.root, 2047, 5000); status != 2 || !strings.Contains(stderr, "below the minimum 2048") {
+		t.Fatalf("a 2047-byte bound was not refused: %d %q", status, stderr)
 	}
 }
 

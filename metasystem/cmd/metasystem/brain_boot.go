@@ -68,44 +68,6 @@ var newBrainBootTimer = func(duration time.Duration) brainBootTimer {
 	return brainBootTimer{C: timer.C, Stop: timer.Stop}
 }
 
-func runBrainBootCommand(args []string) int {
-	flags := flag.NewFlagSet("brain boot", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout state root")
-	repo := pathFlag(flags, "repo", ".", "checkout containing the role packet")
-	bound := flags.Int("bytes", 10000, "maximum payload bytes")
-	deadlineMS := flags.Int("deadline-ms", 5000, "hard deadline in milliseconds")
-	readOnly := flags.Bool("read-only", false, "compose context without recording delivery")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if err := brainBootRequestError(*bound, *deadlineMS); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
-	}
-	output, err := composeBrainBootMode(*root, *repo, *bound, *deadlineMS, *readOnly)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "brain boot:", err)
-		return 1
-	}
-	if !output.Declared {
-		printJSON(map[string]any{"declared": false})
-	} else {
-		printJSON(output)
-	}
-	return 0
-}
-
-// brainBootRequestError is the boot command's argument refusal.
-func brainBootRequestError(bound, deadlineMS int) error {
-	if bound < minimumBrainContextBytes {
-		return fmt.Errorf("refused: the context bound %d is below the minimum %d", bound, minimumBrainContextBytes)
-	}
-	if deadlineMS < 1 {
-		return errors.New("brain boot: --deadline-ms must be positive")
-	}
-	return nil
-}
-
 // brainBootDependencies are the boot composer's seams: the ledger identity,
 // the optional-input child, and the deadline clock and timer.
 type brainBootDependencies struct {
@@ -195,7 +157,7 @@ func composeBrainBootWith(root, repo string, bound, deadlineMS int, readOnly boo
 
 	deadlineLine := ""
 	if len(missing) > 0 {
-		deadlineLine = fmt.Sprintf("BOOT DEADLINE: %s not read within %d ms; run metasystem internal brain boot --root %s --repo %s by hand", strings.Join(missing, ", "), deadlineMS, root, repo)
+		deadlineLine = fmt.Sprintf("BOOT DEADLINE: %s not read within %d ms; they are read again at the next session start", strings.Join(missing, ", "), deadlineMS)
 	}
 	payload := phaseOne
 	available := bound - len(payload)

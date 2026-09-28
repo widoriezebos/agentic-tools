@@ -126,6 +126,9 @@ var retiredWithDeletedVerb = map[string]string{
 	"goal-decision-standard/TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag":                     "goal list",
 	"goal-decision-standard/TestGoalBranchCommitRefusesToMoveAnArmedCheckout":                        "goal branch",
 	"goal-decision-standard/TestCommitReadRefusesUnrecordedFastGateRun":                              "goal branch",
+	"supervision-bed-standard/TestRunLaunchReadsClosedFenceBeforeCallerGate":                         "run launch",
+	"supervision-bed-standard/TestSupervisionBedAWaitMeasureJoinsLiveWaits":                          "wait measure",
+	"supervision-bed-standard/TestWaitMeasureVerb":                                                   "wait measure",
 }
 
 // retiredWithDeletedBed names legacy mandatory tests whose only subject was a

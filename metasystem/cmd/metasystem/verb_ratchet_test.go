@@ -41,7 +41,7 @@ const (
 	// (the measurement rose by one with no new verb), and then deleted the
 	// verbs no caller, only tests, or only text ran (design 6.1), giving the
 	// ones a person runs by hand a public home first.
-	verbRatchetInternalVerbCeiling = 46
+	verbRatchetInternalVerbCeiling = 39
 	// R4: shell lines that reference the engine.
 	verbRatchetShellEngineCeiling = 27
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.

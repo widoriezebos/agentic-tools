@@ -89,7 +89,7 @@ func TestWaitRegisterLocalRecordsTheTrackedProcess(t *testing.T) {
 		state: identity.Alive,
 	}
 	code, output, problem := captureCommandOutput(t, true, true, func() int {
-		return runWait([]string{"register", "--root", root, "--pid", fmt.Sprint(tracked), "--label", "compile release", "--job", "job-a", "--json"})
+		return runSessionWait([]string{"--root", root, "--pid", fmt.Sprint(tracked), "--label", "compile release", "--job", "job-a", "--json"})
 	})
 	var row metarun.Waiter
 	if err := json.Unmarshal([]byte(output), &row); err != nil || code != 0 || problem != "" {
@@ -118,9 +118,9 @@ func TestWaitRegisterLocalRecordsTheTrackedProcess(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			waitRegisterProber = test.prober
-			args := []string{"register", "--root", root, "--pid", fmt.Sprint(tracked), "--label", "refused"}
+			args := []string{"--root", root, "--pid", fmt.Sprint(tracked), "--label", "refused"}
 			args = append(args, test.args...)
-			code, _, problem := captureCommandOutput(t, true, true, func() int { return runWait(args) })
+			code, _, problem := captureCommandOutput(t, true, true, func() int { return runSessionWait(args) })
 			if code == 0 || !strings.Contains(problem, test.want) || len(registeredRows(t, root)) != before {
 				t.Fatalf("code=%d stderr=%q rows=%d want rows=%d", code, problem, len(registeredRows(t, root)), before)
 			}
@@ -134,12 +134,12 @@ func TestWaitRegisterHumanNeedsAQuestionAndADeadline(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "question", args: []string{"register", "--human", "--timeout", "1h"}, want: "requires --question"},
-		{name: "deadline", args: []string{"register", "--human", "--question", "Proceed?"}, want: "requires --timeout"},
-		{name: "maximum", args: []string{"register", "--human", "--question", "Proceed?", "--timeout", "25h"}, want: "no longer than 24 hours"},
+		{name: "question", args: []string{"--human", "--timeout", "1h"}, want: "requires --question"},
+		{name: "deadline", args: []string{"--human", "--question", "Proceed?"}, want: "requires --timeout"},
+		{name: "maximum", args: []string{"--human", "--question", "Proceed?", "--timeout", "25h"}, want: "no longer than 24 hours"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			code, _, problem := captureCommandOutput(t, true, true, func() int { return runWait(test.args) })
+			code, _, problem := captureCommandOutput(t, true, true, func() int { return runSessionWait(test.args) })
 			if code != metarun.ExitInvalidWait || !strings.Contains(problem, test.want) {
 				t.Fatalf("code=%d stderr=%q", code, problem)
 			}
@@ -147,7 +147,7 @@ func TestWaitRegisterHumanNeedsAQuestionAndADeadline(t *testing.T) {
 	}
 	root, _, mainID, now := waitRegisterCommandFixture(t)
 	code, output, problem := captureCommandOutput(t, true, true, func() int {
-		return runWait([]string{"register", "--root", root, "--human", "--question", "Proceed with release?", "--timeout", "2h", "--json"})
+		return runSessionWait([]string{"--root", root, "--human", "--question", "Proceed with release?", "--timeout", "2h", "--json"})
 	})
 	var row metarun.Waiter
 	if err := json.Unmarshal([]byte(output), &row); err != nil || code != 0 || problem != "" ||

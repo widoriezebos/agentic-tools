@@ -70,7 +70,6 @@ func families() []family {
 			name:    "brain",
 			summary: "the fleet brain seat: designation, boot context, and checkout-local fences",
 			verbs: []verb{
-				{"boot", "compose the declared brain's bounded standing context", runBrainBoot},
 				{"boot-inputs", "read optional brain boot inputs in the bounded child (internal)", runBrainBootInputs},
 			},
 		},
@@ -105,10 +104,8 @@ func families() []family {
 			name:    "landing",
 			summary: "classify and record the two bars for a prospective landing",
 			verbs: []verb{
-				{"batch", "join, status, withdraw, owner, tick, or wait for a guarded landing batch", runLandingBatch},
 				{"observe", "emit a provenance verdict for the prospective project tree", runLandingObserve},
 				{"workspace", "print the delivery workspace projection of a whole-project tree", runLandingWorkspace},
-				{"test-receipt", "run tests against one exact candidate tree and record their result", runLandingTestReceipt},
 			},
 		},
 		{
@@ -167,7 +164,6 @@ func families() []family {
 			name:    "steward",
 			summary: "the idle watchdog: open delegated work is never silently idle (D121)",
 			verbs: []verb{
-				{"tick", "one scheduled observation: decide, age the evidence, report the action", runStewardTick},
 				{"run", "the runner's body: tick until disarmed (spawned by arm; callable by any external ticker)", runStewardRun},
 				{"arm", "explicit human enrollment and runner start (long form of metasystem system start)", runStewardArm},
 			},
@@ -176,7 +172,6 @@ func families() []family {
 			name:    "run",
 			summary: "tracked long-running work: launch, watch, conclude (the monitor facility)",
 			verbs: []verb{
-				{"launch", "reserve, spawn the wrapped command detached, print the watch line", runRunLaunch},
 				{"wrap", "the setsid leader: bind, run the workload, write the exit sidecar (internal)", runRunWrap},
 			},
 		},
@@ -193,7 +188,6 @@ func families() []family {
 			verbs: []verb{
 				{"owner", "run the owner loop for a checkout (internal; launched by up)", runSuperviseOwnerLoop},
 				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},
-				{"launch-detached", "start a command in its own session with logged output", runSuperviseLaunchDetached},
 			},
 		},
 	}
@@ -342,9 +336,6 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 	if args[0] == runtimes.SupervisorEntry {
 		return runDelegateSupervisor(args[1:])
 	}
-	if args[0] == "wait" {
-		return runWait(args[1:])
-	}
 	if args[0] == "delegate" {
 		return runDelegate(args[1:])
 	}
@@ -418,10 +409,6 @@ func writeUsage(w io.Writer, registered []family) {
 	fmt.Fprintln(w, "       metasystem internal hook <runtime> <start|stop|end|receipt|tool>  (run by the runtime settings system setup writes)")
 	fmt.Fprintln(w, "       metasystem internal pre-commit --root <installation>  (run by the enrolled git pre-commit hook)")
 	fmt.Fprintln(w, "       metasystem internal delegate-supervisor <runtime> <verb> --root <installation> [flags]  (launched by internal/delegation and internal/missionrunner/host.go)")
-	fmt.Fprintln(w, "       metasystem internal wait (--job <id>|--run <id>|--attempt <id>|--goal <id>|--path <absolute-path> --until <present|absent>|--resume <wait-id>) [--timeout <duration>] [--json]")
-	fmt.Fprintln(w, "       metasystem internal wait register --pid <pid> --label <text> [--job <id>] [--timeout <duration>] [--json]")
-	fmt.Fprintln(w, "       metasystem internal wait register --human --question <text> --timeout <duration> [--json]")
-	fmt.Fprintln(w, "       metasystem internal wait end --wait-id <id> [--json]")
 	fmt.Fprintln(w, "       metasystem internal delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <class> [--op <id>]")
 	fmt.Fprintln(w, "       metasystem internal delegate --follow-up <job> --brief <file>")
 	fmt.Fprintln(w, "       metasystem internal delegate --cancel <job>")

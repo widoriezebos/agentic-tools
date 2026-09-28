@@ -66,9 +66,8 @@ List only rules that cannot be inferred from code or tooling and apply broadly i
 - A Codex job on a seat machine starts through the metasystem, never through the plugin's slash commands or the codex-rescue agent. A unit runs through `metasystem work build G [--work NAME] --brief FILE --check COMMAND...`, which drives the existing unit-run sequence to awaiting judgement; its read is preliminary feedback, and `metasystem work review run:RUN` requests the committed review landing consumes. An independent read runs inside `build`, or through `metasystem work review j2:J`, `review run RUN` or `review commit SHA --goal G`, never as an in-process agent. Hand-written work is submitted with `metasystem work review G --changes|--patch PATCH --brief FILE`, and a read of a bare diff or of current changes is `metasystem work review --patch PATCH --brief FILE` or `review changes --brief FILE`. A design run is `metasystem design write G --brief FILE`, a critique `metasystem design review FILE` (a later round adds `--dispositions FILE`), and a maintainer's read of a bare diff `metasystem work review --patch PATCH --brief FILE`. Each launch process stays independent of the seat that started it.
 - `metasystem settings show` explains effective limits with their sources, and `metasystem work status --history` summarizes launch outcomes and refusals.
 - The shipped Claude settings carry the seat context window, and `metasystem settings show` reports drift from the configured value.
-- A joining seat may withdraw its own queued unit with `metasystem internal landing batch
-  withdraw --goal G` only before seal; the owner remains the only process that
-  returns or releases the handed-over claim.
+- The landing owner remains the only process that returns or releases a
+  claim handed over to a landing batch.
 
 ## Paper prose
 

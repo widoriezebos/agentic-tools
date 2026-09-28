@@ -63,7 +63,7 @@ func TestTrunkRedRoleVerdicts(t *testing.T) {
 		}
 		writeHealthBatch(t, landing, now.Add(-2*time.Minute), "held-opid")
 		role := bed.trunkRed(resolve)
-		if role.Status != HealthDead || !strings.Contains(role.Reason, "batch batch-held opid") || !strings.Contains(role.Remedy, "landing batch tick") {
+		if role.Status != HealthDead || !strings.Contains(role.Reason, "batch batch-held opid") || !strings.Contains(role.Remedy, "metasystem system start") || strings.Contains(role.Remedy, "internal") {
 			t.Fatalf("stale hold: %+v", role)
 		}
 		writeHealthBatch(t, landing, now.Add(-2*time.Minute), "second-opid")
