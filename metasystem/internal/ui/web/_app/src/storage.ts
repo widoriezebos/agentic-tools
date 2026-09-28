@@ -36,6 +36,12 @@ import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 export const RAIL_KEY = "ms.ui.rail";
 export const DOCK_KEY = "ms.ui.dock";
 /**
+ * The sitting whose conversation the drawer shows, by its record (g1-s65 D16):
+ * a sitting is a conversation of its own, and the drawer shows the one a human
+ * started or reopened until they end it or leave it. Empty is their own.
+ */
+export const DRAWER_SITTING_KEY = "ms.ui.drawer.sitting";
+/**
  * How tall the open drawer stands, as a percentage of the work area rather
  * than a count of pixels: the window is resized more often than the drawer is,
  * and a share of the height survives that where a pixel count does not. It is
@@ -397,4 +403,12 @@ export function writePartnerTypeface(typeface: Typeface, store: Store | null = b
   write(PARTNER_FONT_KEY, typeface.face, store);
   write(PARTNER_FONT_SIZE_KEY, String(typeface.size), store);
   write(PARTNER_LINE_HEIGHT_KEY, String(typeface.leading), store);
+}
+
+export function readDrawerSitting(store: Store | null = browserStore()): string {
+  return (read(DRAWER_SITTING_KEY, store) ?? "").trim();
+}
+
+export function writeDrawerSitting(record: string, store: Store | null = browserStore()): void {
+  write(DRAWER_SITTING_KEY, record.trim(), store);
 }

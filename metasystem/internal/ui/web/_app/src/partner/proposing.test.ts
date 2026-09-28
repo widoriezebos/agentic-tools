@@ -2573,6 +2573,6 @@ describe("the attempt on the outcome write", () => {
     expect(at).toBeGreaterThan(0);
     const body = IMPURE.slice(at, IMPURE.indexOf("function reasonOf", at));
     expect(body).toContain("attempt");
-    expect(body).toContain("state, words, attempt)");
+    expect(body).toContain("state, words, attempt, conversation)");
   });
 });

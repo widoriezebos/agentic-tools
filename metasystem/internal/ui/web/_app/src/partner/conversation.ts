@@ -1,4 +1,5 @@
 import type {
+  Present,
   Deposit,
   Index,
   Look,
@@ -60,16 +61,27 @@ export type Live = {
    * message for an outcome to be recorded on.
    */
   proposals: Proposal[];
+  /**
+   * What the running turn put on a review's desk, in the order it arrived
+   * (g1-s65 D5). The room shows each unless the human stopped the walk; it is
+   * kept nowhere else, because the desk's strip is what remembers.
+   */
+  presents: Present[];
 };
 
 export const nothingRunning: Live = {
   turn: "", seq: 0, text: "", activity: [], doing: "", looked: [], suggestions: [], deposits: [],
-  proposals: [],
+  proposals: [], presents: [],
 };
 
 export type State = "loading" | "ready" | "unavailable";
 
 export type Store = {
+  /**
+   * Which conversation this is: a sitting's record, or "" for the human's own
+   * (g1-s65 D16). A beat of another conversation is not this page's.
+   */
+  conversation: string;
   state: State;
   runtime: string;
   model: string;
@@ -96,6 +108,7 @@ export type Store = {
 };
 
 export const emptyStore: Store = {
+  conversation: "",
   state: "loading",
   runtime: "",
   model: "",
@@ -177,6 +190,7 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
           suggestions: snapshot.suggestions ?? [],
           deposits: snapshot.deposits ?? [],
           proposals: snapshot.proposals ?? [],
+          presents: [],
         }
       : nothingRunning,
   };
@@ -232,6 +246,11 @@ export function unavailable(store: Store, reason: string): Store {
  * reconnect, and dropping it is what makes the reconnect safe.
  */
 export function received(store: Store, event: PartnerEvent): Store {
+  // A beat of another conversation is that conversation's page's to show, and
+  // this page's to ignore: the room and the drawer are two conversations.
+  if ((event.conversation ?? "") !== store.conversation) {
+    return store;
+  }
   // A proposal beat for an answer the transcript already holds is not a beat of
   // a running turn at all: it is what a human's press did to one line, published
   // by the outcome route so that every open page folds it into the card it
@@ -268,6 +287,10 @@ export function received(store: Store, event: PartnerEvent): Store {
       return event.proposal === undefined
         ? { ...store, live }
         : { ...store, live: { ...live, proposals: [...live.proposals, event.proposal] } };
+    case "present":
+      return event.present === undefined
+        ? { ...store, live }
+        : { ...store, live: { ...live, presents: [...live.presents, event.present] } };
     case "done":
       return settled(store, live, "complete", event);
     case "stopped":

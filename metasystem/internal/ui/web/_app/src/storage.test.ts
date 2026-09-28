@@ -14,6 +14,9 @@ import {
   DEFAULT_DOCK_HEIGHT,
   DOCK_HEIGHT_KEY,
   DOCK_KEY,
+  DRAWER_SITTING_KEY,
+  readDrawerSitting,
+  writeDrawerSitting,
   GOAL_TAB_KEY,
   PARTNER_FONT_KEY,
   PARTNER_FONT_SIZE_KEY,
@@ -427,5 +430,20 @@ describe("the stored view state", () => {
       writeDecisionsOpen("queue", throwing);
       writeDecisionsOpen("queue", null);
     }).not.toThrow();
+  });
+});
+
+// A sitting is a conversation of its own (g1-s65 D16), and the drawer shows the
+// one a human is sitting in until they leave it. Which one is this browser's
+// preference, and a browser that remembers none shows the human's own.
+describe("the sitting the drawer shows", () => {
+  it("remembers the record and forgets it again", () => {
+    const written = store({});
+    expect(readDrawerSitting(written)).toBe("");
+    writeDrawerSitting("plans/designs/sessions.md", written);
+    expect(written.getItem(DRAWER_SITTING_KEY)).toBe("plans/designs/sessions.md");
+    expect(readDrawerSitting(written)).toBe("plans/designs/sessions.md");
+    writeDrawerSitting("", written);
+    expect(readDrawerSitting(written)).toBe("");
   });
 });

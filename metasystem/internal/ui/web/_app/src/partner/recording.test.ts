@@ -146,7 +146,7 @@ describe("two presses", () => {
       held.press(entry("a fact"), "fact", SUBJECT),
       held.press(entry("a decision", "Decisions"), "decision", SUBJECT),
     ]);
-    expect(countsIn(record.source)).toEqual({ Facts: 1, Proposals: 0, Decisions: 1, "Open questions": 0 });
+    expect(countsIn(record.source)).toEqual({ Facts: 1, Proposals: 0, Decisions: 1, "Open questions": 0, Findings: 0 });
   });
 });
 

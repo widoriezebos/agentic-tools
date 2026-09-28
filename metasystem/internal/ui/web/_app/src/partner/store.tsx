@@ -2,15 +2,19 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation } from "react-router";
 
 import {
+  askWalk,
   closeSitting,
   endSitting,
   isBusy,
+  keepRoom,
   loadPartner,
   PartnerError,
   sendTurn,
   startSitting,
   stopTurn,
   type CapturedSticky,
+  type Deposit,
+  type Snapshot,
   type Message,
   type Page,
   type ProposalState,
@@ -59,6 +63,7 @@ import { movesTheTable, recorder, type Reading, type Recorder } from "./recordin
 import {
   cardIn as depositIn,
   cardsIn as depositsIn,
+  clauseFrom,
   countsIn,
   editable,
   ENDED_WITHOUT,
@@ -69,6 +74,7 @@ import {
   NOT_READ_YET,
   OUTCOME,
   recordedIn,
+  standingOf,
   type Card as DepositCard,
   type Counts,
   type Entry,
@@ -123,6 +129,23 @@ import { useSession } from "../shell/identity";
 import { editDocument, isStale, loadDocument } from "../project/api";
 import { captured } from "../stickies/stickies";
 import { useStickies } from "../stickies/store";
+import { reviewIdFromPath } from "../routes";
+import { readDrawerSitting, writeDrawerSitting } from "../storage";
+import {
+  answerLine,
+  EMPTY_DESK,
+  keepDue,
+  onDesk,
+  roomOf,
+  withDraft,
+  withoutDraft,
+  type AnswerKind,
+  type DeskItem,
+  type Draft,
+  type Drafts,
+  type Face,
+  type RoomState,
+} from "../review/room";
 
 /**
  * The conversation, held once for the whole page.
@@ -342,6 +365,53 @@ type Partner = {
   returnFocus: () => void;
 
   /**
+   * Which conversation is on screen (g1-s65 D16): a review room's record, a
+   * sitting the drawer is showing, or "" for the human's own. Every request and
+   * every beat is about this one.
+   */
+  conversation: string;
+  /** Show one sitting's conversation in the drawer: a door to a sitting that shapes a record. */
+  showSitting: (record: string) => void;
+  /** Leave the sitting's conversation the drawer shows, and go back to your own. */
+  leaveSitting: () => void;
+  /**
+   * The review room's working state (g1-s65 D9): the desk's strip and the item
+   * up, the face of the desk pane, and every unfinished card's words. It is kept
+   * on the sitting's mark, at most once a second while a human types and always
+   * when they leave the field, step out or leave the page.
+   */
+  room: RoomState;
+  /** Put one thing on the desk, which is what an anchor, the strip and a walk do. */
+  putOnDesk: (item: DeskItem) => void;
+  /** Bring one item of the strip back up. */
+  showOnDesk: (at: number) => void;
+  /** Flip the desk pane to the board or back. */
+  setFace: (face: Face) => void;
+  /** Keep the room now, whatever the second says: leaving a field, stepping out, leaving the page. */
+  keepRoomNow: (leaving?: boolean) => Promise<void>;
+  /** One of the five walks, asked by the interface in the human's name (D6). */
+  walk: (part: string) => Promise<void>;
+  /** The turn whose presenting the human stopped, or "". */
+  stoppedPresenting: string;
+  /** Stop the running walk putting things on the desk, for this turn. */
+  stopPresenting: () => void;
+  /** A finding card the human makes from a selection on the desk, with its anchor filled (D7). */
+  startFinding: (anchor: string) => void;
+  /**
+   * Answer one recorded finding: its Answer line rewritten by its mark through
+   * the recorder (D8). It answers "" when the record took it, and the refusal
+   * in words when it did not — a follow-up with no goal, an acceptance with no
+   * reason, a record that moved.
+   */
+  answerFinding: (mark: string, answer: AnswerKind, detail: string) => Promise<string>;
+  /** The reason an open Accept sheet holds, by card, or none where it is closed. */
+  accepting: Readonly<Record<string, string>>;
+  /** Open, fill or close (null) one finding's Accept sheet. */
+  noteAccepting: (id: string, reason: string | null) => void;
+  /** The unfinished words the room keeps, by card. */
+  drafts: Drafts;
+
+  /**
    * The sitting this conversation is, or null. It is the server's answer, read
    * from the snapshot, so a reload and a second tab agree about which record is
    * under discussion.
@@ -352,13 +422,13 @@ type Partner = {
    * the title given. The opening turn is the server's, and it is in the
    * transcript the answer carries.
    */
-  startSitting: (asked: { purpose: string; subject?: Subject; title?: string }) => Promise<void>;
+  startSitting: (asked: { purpose: string; subject?: Subject; title?: string }) => Promise<string>;
   /**
    * Ask the Partner to draft what this sitting came to (g1-s55 D2). The sitting
    * stands: the card it offers is admitted against this record, and the record
    * takes it when the human presses Record it.
    */
-  closeSitting: () => Promise<void>;
+  closeSitting: (verdict?: string) => Promise<void>;
   /** End the sitting. What was recorded stays in the record. */
   endSitting: () => void;
   /**
@@ -542,8 +612,24 @@ const nothing: Partner = {
   offerInsert: () => {},
   wanted: 0,
   returnFocus: () => {},
+  conversation: "",
+  showSitting: () => {},
+  leaveSitting: () => {},
+  room: { desk: EMPTY_DESK, face: "desk", drafts: {} },
+  putOnDesk: () => {},
+  showOnDesk: () => {},
+  setFace: () => {},
+  keepRoomNow: async () => {},
+  walk: async () => {},
+  stoppedPresenting: "",
+  stopPresenting: () => {},
+  startFinding: () => {},
+  answerFinding: async () => "",
+  accepting: {},
+  noteAccepting: () => {},
+  drafts: {},
   sitting: null,
-  startSitting: async () => {},
+  startSitting: async () => "",
   closeSitting: async () => {},
   endSitting: () => {},
   endWithoutRecording: async () => {},
@@ -575,7 +661,7 @@ const nothing: Partner = {
   offerReread: () => {},
   noteCovered: () => {},
   table: {
-    counts: { Facts: 0, Proposals: 0, Decisions: 0, "Open questions": 0 },
+    counts: { Facts: 0, Proposals: 0, Decisions: 0, "Open questions": 0, Findings: 0 },
     entries: [],
     revision: "",
     source: "",
@@ -676,6 +762,17 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // server admitted the deposit, and what happens to it afterwards is the
   // human's until they press Record it.
   const [depositMarks, setDepositMarks] = useState<DepositMarks>({});
+  // The room's working state (g1-s65 D9): the desk and its strip, the face of
+  // the desk pane, the findings the human made themselves, and the reasons of
+  // open Accept sheets. Taken from the mark once per visit, kept on it after.
+  const [desk, setDesk] = useState(EMPTY_DESK);
+  const [face, setFaceState] = useState<Face>("desk");
+  const [locals, setLocals] = useState<Readonly<Record<string, Draft>>>({});
+  const [accepting, setAccepting] = useState<Readonly<Record<string, string>>>({});
+  const [stoppedPresenting, setStoppedPresenting] = useState("");
+  const roomTaken = useRef("");
+  const lastKept = useRef("");
+  const keptAt = useRef(0);
   // The sitting's one current reading of its record: source and revision, taken
   // when the sitting starts and replaced by the answer of every successful
   // write. The table reads it, and every Record press composes from it.
@@ -737,15 +834,30 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // the reading above, which the recorder hands back after every write.
   const recording = useRef<Recorder | null>(null);
   const location = useLocation();
+  // Which conversation is on screen (g1-s65 D16): the room's own where the
+  // address is a room, else the sitting the drawer was left showing, else the
+  // human's own. It is read here, once, and every request below names it.
+  const roomRecord = reviewIdFromPath(location.pathname);
+  const [drawerSitting, setDrawerSitting] = useState(() => readDrawerSitting());
+  const where = roomRecord !== "" ? roomRecord : drawerSitting;
+  const whereNow = useRef(where);
+  whereNow.current = where;
   const { askToSignIn } = useSession();
   const subject = useSubject();
   const stickies = useStickies();
   const label = useAboutLine("");
 
   const read = useCallback((signal?: AbortSignal) => {
-    loadPartner(signal)
+    const asked = whereNow.current;
+    loadPartner(signal, asked)
       .then((snapshot) => {
-        setStore((held) => loaded(held, snapshot));
+        // An answer about a conversation this page has since left is that
+        // conversation's, and not what is on screen now.
+        if ((snapshot.conversation ?? "") !== whereNow.current) {
+          return;
+        }
+        setStore((held) => loaded({ ...held, conversation: asked }, snapshot));
+        takeRoom(asked, snapshot);
       })
       .catch((error: unknown) => {
         if (signal?.aborted === true) {
@@ -755,14 +867,21 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       });
   }, []);
 
-  // The conversation, once, when the page loads.
+  // The conversation, once when the page loads and again whenever the page
+  // moves to another one: the room's, a sitting's in the drawer, or the human's
+  // own. What was on screen goes first, so nothing of one conversation is shown
+  // under another's name.
   useEffect(() => {
+    setStore({ ...emptyStore, conversation: where });
+    setDepositMarks({});
+    setLocals({});
+    setAccepting({});
     const aborter = new AbortController();
     read(aborter.signal);
     return () => {
       aborter.abort();
     };
-  }, [read]);
+  }, [read, where]);
 
   // The turn's beats, and the re-read that joins them to the transcript. A
   // reconnect means beats may have been missed while the connection was down,
@@ -842,7 +961,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     const minted = key.current;
     setSending(true);
     setStore(retrying);
-    sendTurn(minted, text, taken)
+    sendTurn(minted, text, taken, where)
       .then((accepted) => {
         // Accepted: the draft goes, the key goes with it, and the question is
         // on screen before the first beat arrives.
@@ -867,21 +986,21 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       .finally(() => {
         setSending(false);
       });
-  }, [draft, running, sending, capture, attachments, compose, refreshed]);
+  }, [draft, running, sending, capture, attachments, compose, refreshed, where]);
 
   const turn = store.live.turn;
   const stop = useCallback(() => {
     if (turn === "") {
       return;
     }
-    stopTurn(turn)
+    stopTurn(turn, where)
       .then((snapshot) => {
         setStore((held) => loaded(held, snapshot));
       })
       .catch((error: unknown) => {
         setStore((held) => refused(held, reasonOf(error), ""));
       });
-  }, [turn]);
+  }, [turn, where]);
 
   /**
    * What every Ask does besides attaching: the drawer opens and the caret goes
@@ -1260,7 +1379,18 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       setSittingEnded("");
       try {
         const answered = await startSitting({ ...asked, about: capture });
-        setStore((held) => loaded(held, answered));
+        const opened = answered.conversation ?? "";
+        // A sitting is a conversation of its own (g1-s65 D16). A review opens
+        // in its room, which its caller goes to; a sitting that shapes a record
+        // is shown in the drawer from here until it ends or is left.
+        if (asked.purpose !== "review") {
+          writeDrawerSitting(opened);
+          setDrawerSitting(opened);
+        }
+        if (opened === whereNow.current) {
+          setStore((held) => loaded(held, answered));
+        }
+        return opened;
       } catch (error: unknown) {
         setSittingRefusal(reasonOf(error));
         throw error;
@@ -1280,12 +1410,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    * when the outcome is recorded — or when the human says they are leaving
    * without it.
    */
-  const close = useCallback(async () => {
+  const close = useCallback(async (verdict = "") => {
     setSittingBusy(true);
     setSittingRefusal("");
     setSittingEnded("");
     try {
-      const answered = await closeSitting(capture);
+      const answered = await closeSitting(capture, where, verdict);
       setStore((held) => loaded(held, answered));
     } catch (error: unknown) {
       setSittingRefusal(reasonOf(error));
@@ -1293,21 +1423,27 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     } finally {
       setSittingBusy(false);
     }
-  }, [capture]);
+  }, [capture, where]);
 
   const end = useCallback(async (): Promise<void> => {
     setSittingBusy(true);
     setSittingRefusal("");
     try {
-      const answered = await endSitting();
+      const answered = await endSitting(where);
       setStore((held) => loaded(held, answered));
+      // The drawer goes back to the human's own conversation once the sitting it
+      // was showing has ended: what was recorded is in the record.
+      if (roomRecord === "" && where !== "") {
+        writeDrawerSitting("");
+        setDrawerSitting("");
+      }
     } catch (error: unknown) {
       setSittingRefusal(reasonOf(error));
       throw error;
     } finally {
       setSittingBusy(false);
     }
-  }, []);
+  }, [where, roomRecord]);
 
   const endWithout = useCallback(async () => {
     await end();
@@ -1320,21 +1456,36 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    * here, from the transcript and the marks, so the card on the transcript and
    * the table cannot disagree about one deposit.
    */
-  const deposits = useMemo(
-    () =>
-      depositsIn(
-        [
-          ...store.messages
-            .filter((message) => (message.deposits ?? []).length > 0)
-            .map((message) => ({ turn: message.turn, deposits: message.deposits ?? [] })),
-          { turn: store.live.turn, deposits: store.live.deposits },
-        ],
-        depositMarks,
-        subjectID,
-        recordedIn(reading?.source ?? ""),
-      ),
-    [store.messages, store.live.turn, store.live.deposits, depositMarks, subjectID, reading],
-  );
+  const deposits = useMemo(() => {
+    const recorded = recordedIn(reading?.source ?? "");
+    const offered = depositsIn(
+      [
+        ...store.messages
+          .filter((message) => (message.deposits ?? []).length > 0)
+          .map((message) => ({ turn: message.turn, deposits: message.deposits ?? [] })),
+        { turn: store.live.turn, deposits: store.live.deposits },
+      ],
+      depositMarks,
+      subjectID,
+      recorded,
+    );
+    // The findings the human made from a selection on the desk (g1-s65 D7).
+    // They are cards like any other — Record it, Dismiss, the four answers —
+    // and until one is recorded it lives in the room's drafts and nowhere else.
+    const mine = Object.entries(locals).map(([id, local]) => {
+      const deposit: Deposit = {
+        kind: "finding", text: local.text, anchor: local.clause, consequence: local.consequence ?? "",
+        offered: true, subject: sitting?.subject,
+      };
+      const entry = recorded.get(id);
+      const held = depositMarks[id] ?? { ...marked(deposit), text: local.text, clause: local.clause };
+      const mark = entry === undefined
+        ? held
+        : { ...held, text: entry.text, clause: entry.clause, recording: false, recorded: entry.section, refusal: "" };
+      return { ...deposit, id, mark, standing: standingOf(deposit, mark, subjectID) };
+    });
+    return [...offered, ...mine];
+  }, [store.messages, store.live.turn, store.live.deposits, depositMarks, subjectID, reading, locals, sitting]);
 
   const changeMark = useCallback(
     (id: string, change: (mark: DepositMarks[string]) => DepositMarks[string]) => {
@@ -1386,6 +1537,16 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
 
   const dismissDeposit = useCallback(
     (id: string) => {
+      // A finding the human made and dismissed was never anybody's but theirs,
+      // so it goes whole; an offered card folds to its line as it always did.
+      if (id.startsWith(LOCAL)) {
+        setLocals((held) => {
+          const next = { ...held };
+          delete next[id];
+          return next;
+        });
+        return;
+      }
       changeMark(id, (mark) => ({ ...mark, dismissed: true }));
     },
     [changeMark],
@@ -1481,6 +1642,206 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     }),
     [reading],
   );
+
+  /* --------------------------------------------------------------- the room -- */
+
+  /** Show one sitting's conversation in the drawer: a door to a sitting that shapes a record. */
+  const showSitting = useCallback((record: string) => {
+    writeDrawerSitting(record);
+    setDrawerSitting(record);
+  }, []);
+
+  const leaveSitting = useCallback(() => {
+    writeDrawerSitting("");
+    setDrawerSitting("");
+  }, []);
+
+  /**
+   * The room as the mark carried it back, taken once per visit to a
+   * conversation: a reread on reconnect answers what this page last kept, and
+   * taking it again would put back words typed since.
+   */
+  const takeRoom = useCallback((asked: string, snapshot: Snapshot) => {
+    if (roomTaken.current === asked) {
+      return;
+    }
+    roomTaken.current = asked;
+    const kept = roomOf(snapshot.sitting?.room);
+    setDesk(kept.desk);
+    setFaceState(kept.face);
+    const mine: Record<string, Draft> = {};
+    const marks: Record<string, DepositMarks[string]> = {};
+    const reasons: Record<string, string> = {};
+    for (const [id, draft] of Object.entries(kept.drafts)) {
+      if (id.startsWith(LOCAL)) {
+        mine[id] = draft;
+      } else {
+        marks[id] = { text: draft.text, clause: draft.clause, recording: false, recorded: "", refusal: "", dismissed: false };
+      }
+      if (draft.sheet === "accept") {
+        reasons[id] = draft.reason ?? "";
+      }
+    }
+    setLocals(mine);
+    setDepositMarks((held) => ({ ...marks, ...held }));
+    setAccepting(reasons);
+    lastKept.current = JSON.stringify(kept);
+  }, []);
+
+  const putOnDesk = useCallback((item: DeskItem) => {
+    setDesk((held) => onDesk(held, item));
+  }, []);
+
+  const showOnDesk = useCallback((at: number) => {
+    setDesk((held) => (at >= 0 && at < held.items.length ? onDesk(held, held.items[at]) : held));
+  }, []);
+
+  const setFace = useCallback((face: Face) => {
+    setFaceState(face);
+  }, []);
+
+  const noteAccepting = useCallback((id: string, reason: string | null) => {
+    setAccepting((held) => {
+      if (reason === null) {
+        const next = { ...held };
+        delete next[id];
+        return next;
+      }
+      return { ...held, [id]: reason };
+    });
+  }, []);
+
+  /**
+   * Every unfinished card's words (Astra S65-03): each card the human has not
+   * recorded or dismissed whose words are not the Partner's any more, every
+   * finding they made themselves, and an open Accept sheet's reason. A recorded
+   * or dismissed card is not here, which is what clears its draft.
+   */
+  const drafts = useMemo(() => {
+    let held: Drafts = {};
+    for (const card of deposits) {
+      if (!editable(card.standing)) {
+        continue;
+      }
+      const mine = card.id.startsWith(LOCAL);
+      const changed = card.mark.text !== card.text || card.mark.clause !== clauseFrom(card);
+      const reason = accepting[card.id];
+      if (!mine && !changed && reason === undefined) {
+        continue;
+      }
+      const draft: Draft = { text: card.mark.text, clause: card.mark.clause };
+      if (mine) {
+        draft.kind = card.kind;
+        draft.consequence = card.consequence ?? "";
+      }
+      if (reason !== undefined) {
+        draft.sheet = "accept";
+        draft.reason = reason;
+      }
+      held = withDraft(held, card.id, draft);
+    }
+    // A finding whose card has been recorded keeps an open Accept sheet's words.
+    for (const [id, reason] of Object.entries(accepting)) {
+      if (!(id in held)) {
+        held = withDraft(held, id, { text: "", clause: "", sheet: "accept", reason });
+      }
+    }
+    return held;
+  }, [deposits, accepting]);
+
+  const room = useMemo<RoomState>(() => ({ desk, face, drafts }), [desk, face, drafts]);
+
+  /**
+   * Keep the room on its mark (g1-s65 D9). While a human types it is kept at
+   * most once a second; the last words before they leave are kept by the
+   * leaving itself — the field's blur, Step out, and the page going away — so
+   * the keystroke before leaving is never the one that is lost. This build sets
+   * no timer, so the second is measured between changes rather than waited out.
+   */
+  const keepRoomNow = useCallback(async (leaving = false) => {
+    const record = whereNow.current;
+    const kept = JSON.stringify(roomNow.current);
+    if (record === "" || roomRecord === "" || kept === lastKept.current || sittingNow.current === null) {
+      return;
+    }
+    lastKept.current = kept;
+    keptAt.current = Date.now();
+    try {
+      await keepRoom(record, JSON.parse(kept) as RoomState, leaving);
+    } catch {
+      // The next change keeps it again: a keep that could not be made is words
+      // still on the screen, and nothing about them is lost here.
+      lastKept.current = "";
+    }
+  }, [roomRecord]);
+
+  const roomNow = useRef<RoomState>(room);
+  roomNow.current = room;
+  const sittingNow = useRef<Sitting | null>(null);
+  sittingNow.current = store.sitting;
+  useEffect(() => {
+    if (roomRecord === "" || roomTaken.current !== roomRecord) {
+      return;
+    }
+    if (keepDue(keptAt.current, Date.now())) {
+      void keepRoomNow();
+    }
+  }, [room, roomRecord, keepRoomNow]);
+
+  // The page going away keeps the room, asked of the browser to finish after
+  // the page has gone.
+  useEffect(() => {
+    if (roomRecord === "") {
+      return;
+    }
+    const leaving = () => {
+      void keepRoomNow(true);
+    };
+    globalThis.addEventListener("pagehide", leaving);
+    return () => {
+      globalThis.removeEventListener("pagehide", leaving);
+    };
+  }, [roomRecord, keepRoomNow]);
+
+  const walk = useCallback(async (part: string) => {
+    setSittingRefusal("");
+    try {
+      const answered = await askWalk(whereNow.current, part, capture);
+      setStore((held) => loaded(held, answered));
+    } catch (error: unknown) {
+      setStore((held) => refused(held, reasonOf(error), ""));
+    }
+  }, [capture]);
+
+  const stopPresenting = useCallback(() => {
+    setStoppedPresenting(store.live.turn);
+  }, [store.live.turn]);
+
+  const startFinding = useCallback((anchor: string) => {
+    const id = `${LOCAL}${mintLocal()}`;
+    setLocals((held) => ({ ...held, [id]: { text: "", clause: anchor, kind: "finding" } }));
+  }, []);
+
+  const answerFinding = useCallback(async (mark: string, answer: AnswerKind, detail: string): Promise<string> => {
+    const said = answerLine(answer, detail);
+    if ("refusal" in said) {
+      return said.refusal;
+    }
+    const held = recording.current;
+    const into = sittingNow.current?.subject.id ?? "";
+    if (held === null || held.reading().id !== into) {
+      return NOT_READ_YET;
+    }
+    const outcome = await held.answer(mark, said.line, into);
+    if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
+      setReading(outcome.reading);
+    }
+    if (outcome.kind === "recorded") {
+      noteAccepting(mark, null);
+      return "";
+    }
+    return outcome.reason;
+  }, [noteAccepting]);
 
   /* ---------------------------------------------------------- the proposals -- */
 
@@ -1647,7 +2008,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    */
   const writeState = useCallback(
     async (line: ProposalLine, turn: string, state: ProposalState, words: string): Promise<Written> => {
-      const answered = await writeOutcome(turn, line, state, words);
+      const answered = await writeOutcome(turn, line, state, words, "", whereNow.current);
       if (answered.kind !== "failed") {
         setStore((held) => proposalMoved(held, turn, answered.proposal));
       }
@@ -1691,7 +2052,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
           // (g1-s60 D4).
           look: lookOnce,
           record: async (line, state, words, attempt) => {
-            const answered = await writeOutcome(card, line, state, words, attempt);
+            const answered = await writeOutcome(card, line, state, words, attempt, whereNow.current);
             if (answered.kind === "written") {
               setStore((held) => proposalMoved(held, card, answered.proposal));
             }
@@ -1842,6 +2203,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert,
       wanted, returnFocus,
+      conversation: where, showSitting, leaveSitting, room, putOnDesk, showOnDesk, setFace, keepRoomNow, walk,
+      stoppedPresenting, stopPresenting, startFinding, answerFinding, accepting, noteAccepting, drafts,
       sitting, startSitting: begin, closeSitting: close, endSitting: end,
       endWithoutRecording: endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
@@ -1857,6 +2220,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       offered, use, useAndSave, undo, dismiss, reopen, show, showing, clearShowing, noteField, revealed,
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus,
+      where, showSitting, leaveSitting, room, putOnDesk, showOnDesk, setFace, keepRoomNow, walk,
+      stoppedPresenting, stopPresenting, startFinding, answerFinding, accepting, noteAccepting, drafts,
       sitting, begin, close, end, endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
       proposals, tickProposal, selectProposals, applyProposals, continueProposals, tryProposal,
@@ -1890,6 +2255,16 @@ function proposalsIn(messages: readonly Message[]): ProposalLine[] {
 
 function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** What a finding the human made themselves is named by: never a deposit's own id. */
+const LOCAL = "local-";
+
+/** A new finding's id, unique enough for one room. */
+function mintLocal(): string {
+  const bytes = new Uint8Array(8);
+  globalThis.crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 /**

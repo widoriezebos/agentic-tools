@@ -223,6 +223,42 @@ export function routeFor(reference: Reference): string | null {
   return null;
 }
 
+/**
+ * Everything beneath this prefix is one review room, named by its review
+ * record's path (g1-s65 D2). A room is not a section: the rail is hidden in it
+ * and nothing on the rail lights, because the room is where a human goes to
+ * examine one goal's work and nothing else on screen should pull at them.
+ */
+export const REVIEW_PREFIX = "/review/";
+
+/** Where one review's room is. */
+export function reviewPath(record: string): string {
+  return (
+    REVIEW_PREFIX +
+    record
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/")
+  );
+}
+
+/** The review record an address names, or "" for an address that is not a room. */
+export function reviewIdFromPath(pathname: string): string {
+  if (!pathname.startsWith(REVIEW_PREFIX)) {
+    return "";
+  }
+  return pathname
+    .slice(REVIEW_PREFIX.length)
+    .split("/")
+    .map((segment) => decodeSegment(segment))
+    .join("/");
+}
+
+/** Whether an address is a review room. */
+export function inTheRoom(pathname: string): boolean {
+  return reviewIdFromPath(pathname) !== "";
+}
+
 /** Everything beneath this prefix is a document, named by the rest of it. */
 export const DOCUMENT_PREFIX = "/project/doc/";
 

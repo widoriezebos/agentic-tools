@@ -116,8 +116,8 @@ describe("the record's four sections", () => {
   });
 
   it("are counted per section, and a section nobody has written is nothing", () => {
-    expect(countsIn(source)).toEqual({ Facts: 1, Proposals: 0, Decisions: 1, "Open questions": 1 });
-    expect(countsIn("")).toEqual({ Facts: 0, Proposals: 0, Decisions: 0, "Open questions": 0 });
+    expect(countsIn(source)).toEqual({ Facts: 1, Proposals: 0, Decisions: 1, "Open questions": 1, Findings: 0 });
+    expect(countsIn("")).toEqual({ Facts: 0, Proposals: 0, Decisions: 0, "Open questions": 0, Findings: 0 });
   });
 
   // A list item anywhere else in the record is not an entry of the sitting: the
@@ -198,12 +198,12 @@ describe("appending one entry", () => {
   it("opens the section at the foot where the record has none", () => {
     const written = appended("# A design\n\nProse.\n", ENTRY, "fact");
     expect(written).toContain("# A design\n\nProse.\n\n## Facts\n\n- 2026-09-26 · Wido");
-    expect(countsIn(written)).toEqual({ Facts: 1, Proposals: 0, Decisions: 0, "Open questions": 0 });
+    expect(countsIn(written)).toEqual({ Facts: 1, Proposals: 0, Decisions: 0, "Open questions": 0, Findings: 0 });
   });
 
   it("writes into an empty record and into an empty section", () => {
     expect(countsIn(appended("", ENTRY, "fact"))).toEqual({
-      Facts: 1, Proposals: 0, Decisions: 0, "Open questions": 0,
+      Facts: 1, Proposals: 0, Decisions: 0, "Open questions": 0, Findings: 0,
     });
     const empty = appended("# A design\n\n## Facts\n\n## Decisions\n", ENTRY, "fact");
     expect(entriesIn(empty)).toHaveLength(1);

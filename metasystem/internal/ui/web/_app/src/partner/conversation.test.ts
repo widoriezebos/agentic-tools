@@ -83,6 +83,7 @@ describe("the conversation", () => {
       suggestions: [],
       deposits: [],
       proposals: [],
+      presents: [],
       doing: "",
       looked: [],
     });
@@ -207,6 +208,7 @@ describe("the conversation", () => {
       suggestions: [],
       deposits: [],
       proposals: [],
+      presents: [],
       doing: "",
       looked: [],
     });
@@ -398,5 +400,35 @@ describe("what a press did to one proposed action, on the stream", () => {
 
     expect(store.live.proposals).toEqual([waiting]);
     expect(store.messages.some((message) => message.role === "partner")).toBe(false);
+  });
+});
+
+/**
+ * A sitting is a conversation of its own (g1-s65 D16): the stream carries the
+ * conversation on each beat, and a page shows only its own. A review's desk
+ * item arrives as a present beat and waits on the running turn for the room.
+ */
+describe("the conversation a page is showing", () => {
+  const room = "metasystem/plans/reviews/review-of-g1-s64.md";
+  const beat = (conversation: string, kind: PartnerEvent["kind"], seq: number): PartnerEvent => ({
+    turn: "t1", seq, kind, text: "words ", at: "2026-09-28T10:00:00Z", conversation,
+  });
+
+  it("takes the beats of its own conversation and none of another's", () => {
+    const inRoom = loaded({ ...emptyStore, conversation: room }, { ...snapshot, conversation: room });
+    expect(received(inRoom, beat(room, "text", 1)).live.text).toBe("words ");
+    expect(received(inRoom, beat("", "text", 1))).toBe(inRoom);
+    const drawer = loaded(emptyStore, snapshot);
+    expect(received(drawer, beat(room, "text", 1))).toBe(drawer);
+    expect(received(drawer, beat("", "text", 1)).live.text).toBe("words ");
+  });
+
+  it("carries a desk item on the running turn", () => {
+    const inRoom = loaded({ ...emptyStore, conversation: room }, { ...snapshot, conversation: room });
+    const shown = received(inRoom, {
+      ...beat(room, "present", 1),
+      present: { kind: "source", path: "internal/owner.go", from: 41, to: 88 },
+    });
+    expect(shown.live.presents).toEqual([{ kind: "source", path: "internal/owner.go", from: 41, to: 88 }]);
   });
 });

@@ -1,4 +1,4 @@
-import { appended, type Entry } from "./sitting";
+import { answered, appended, type Entry } from "./sitting";
 
 /**
  * Record it, serialized, against one current reading of the record.
@@ -75,7 +75,17 @@ export type Recorder = {
    * this recorder holds.
    */
   press: (entry: Entry, kind: string, into: string) => Promise<Outcome>;
+  /**
+   * Answer one recorded finding: its Answer line rewritten by the entry's mark,
+   * the second composition beside the press (g1-s65 §6). It queues with the
+   * presses, composes from the reading as it stands when it runs, and writes
+   * nothing for another record.
+   */
+  answer: (mark: string, answer: string, into: string) => Promise<Outcome>;
 };
+
+/** What an answer to a finding the record does not carry is told. */
+export const NOT_A_FINDING = "This finding is not in the record, so there is nothing to answer.";
 
 /**
  * What a human is told when the record moved under their press.
@@ -117,7 +127,18 @@ export function recorder(
 
   const reread = async (): Promise<Reading> => take(await read(held.id));
 
-  const press = (entry: Entry, kind: string, into: string): Promise<Outcome> => {
+  const press = (entry: Entry, kind: string, into: string): Promise<Outcome> =>
+    queued(into, entry.section, (source) => appended(source, entry, kind));
+
+  const answer = (mark: string, said: string, into: string): Promise<Outcome> =>
+    queued(into, "Findings", (source) => answered(source, mark, said));
+
+  /**
+   * One write through the queue: the composition runs on the reading as it
+   * stands when the write runs, and a composition that finds nothing to write
+   * writes nothing.
+   */
+  const queued = (into: string, section: string, compose: (source: string) => string | null): Promise<Outcome> => {
     // The entry is composed from the reading as it stands WHEN THIS RUNS, which
     // is the whole of why the composition is inside the queued task and not
     // outside it: the press before this one has already moved the reading.
@@ -125,9 +146,13 @@ export function recorder(
       if (into !== held.id) {
         return { kind: "elsewhere", reason: ELSEWHERE };
       }
+      const composed = compose(held.source);
+      if (composed === null) {
+        return { kind: "failed", reason: NOT_A_FINDING };
+      }
       try {
-        const answered = await save(held.id, appended(held.source, entry, kind), held.revision);
-        return { kind: "recorded", section: entry.section, reading: take(answered) };
+        const answered = await save(held.id, composed, held.revision);
+        return { kind: "recorded", section, reading: take(answered) };
       } catch (error: unknown) {
         if (!stale(error)) {
           return { kind: "failed", reason: reasonOf(error) };
@@ -147,7 +172,7 @@ export function recorder(
     return next;
   };
 
-  return { reading: () => held, reread, press };
+  return { reading: () => held, reread, press, answer };
 }
 
 /**
