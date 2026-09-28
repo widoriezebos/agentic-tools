@@ -47,11 +47,11 @@ func TestGateRelaunchesAStandaloneRunUnderItsRetainedProofOwner(t *testing.T) {
 	if code := w.gate("--goal", "fx", "--cap-min", "30"); code != 23 {
 		t.Fatalf("exit %d, want the launcher's 23:\n%s", code, w.output())
 	}
-	builds := w.called("go build -p=3 -o ")
+	builds := w.called("go build -trimpath -p=3 -o ")
 	if len(builds) != 1 || !strings.HasSuffix(builds[0].String(), "/metasystem ./cmd/metasystem") {
 		t.Fatalf("standalone engine build = %v", builds)
 	}
-	engine := builds[0].args[3]
+	engine := builds[0].args[4]
 	if !strings.HasPrefix(engine, filepath.Join(w.tmp, "metasystem-go-gate.")) {
 		t.Fatalf("private engine %s is not under the gate's temporary root", engine)
 	}
@@ -65,7 +65,7 @@ func TestGateRelaunchesAStandaloneRunUnderItsRetainedProofOwner(t *testing.T) {
 		t.Fatalf("launch has no command: %q", args)
 	}
 	wantCommand := []string{"env", "METASYSTEM_GO_GATE_RELAUNCHED=1", "METASYSTEM_PROOF_AUTH_BIN=" + engine, "METASYSTEM_TEST_WORKERS=3",
-		"go", "-C", w.root, "run", "./cmd/devgate", "gate"}
+		"go", "-C", w.root, "run", "-trimpath", "./cmd/devgate", "gate"}
 	if !slices.Equal(args[separator+1:], wantCommand) {
 		t.Fatalf("relaunched command = %q, want %q", args[separator+1:], wantCommand)
 	}
@@ -77,12 +77,13 @@ func TestGateRelaunchesAStandaloneRunUnderItsRetainedProofOwner(t *testing.T) {
 			t.Fatalf("launch lacks %q: %q", flag, args[:separator])
 		}
 	}
-	if envValue(launches[0].env, "GOFLAGS") != "-mod=readonly" {
+	if envValue(launches[0].env, "GOFLAGS") != "-mod=readonly -trimpath" {
 		t.Fatalf("the full proof did not pin readonly module resolution before its reservation: %q", launches[0].env)
 	}
 	if len(w.called("gofmt")) != 0 {
 		t.Fatalf("the unauthorized parent ran gate stages itself")
 	}
+	assertGoCompilesTrimmed(t, w)
 }
 
 func TestGateRefusesAnUnauthorizedRelaunchedChild(t *testing.T) {
@@ -107,7 +108,7 @@ func TestGateCandidateSourceAuthenticatesUnderAnOlderEngine(t *testing.T) {
 	if code := w.gate(); code != 0 {
 		t.Fatalf("exit %d:\n%s", code, w.output())
 	}
-	candidate := w.called("env GOFLAGS=-mod=readonly GOWORK=off CGO_ENABLED=0 go run -p=3 ./cmd/metasystem proof-run worker-authorized --root " + w.root)
+	candidate := w.called("env GOFLAGS=-mod=readonly -trimpath GOWORK=off CGO_ENABLED=0 go run -trimpath -p=3 ./cmd/metasystem proof-run worker-authorized --root " + w.root)
 	if len(candidate) != 1 {
 		t.Fatalf("the candidate verifier did not authenticate the worker exactly once: %v", w.calls)
 	}
@@ -371,16 +372,17 @@ func TestGateEveryGoPhaseCarriesTheInheritedAllowance(t *testing.T) {
 		if code := w.gate(); code != 0 {
 			t.Fatalf("%s: exit %d\n%s", test.name, code, w.output())
 		}
-		for _, fragment := range []string{"go vet -p=" + test.workers + " ./...", "go run -p=" + test.workers + " " + staticcheckModule,
-			"go run -p=" + test.workers + " " + govulncheckModule, "go list -p=" + test.workers + " ./internal/...",
+		for _, fragment := range []string{"go vet -trimpath -p=" + test.workers + " ./...", "go run -trimpath -p=" + test.workers + " " + staticcheckModule,
+			"go run -trimpath -p=" + test.workers + " " + govulncheckModule, "go list -p=" + test.workers + " ./internal/...",
 			"go build -p=" + test.workers + " -buildvcs=false"} {
 			if len(w.called(fragment)) == 0 {
 				t.Fatalf("%s: no %q in %v", test.name, fragment, w.calls)
 			}
 		}
-		if cross := w.called("go build -p=" + test.workers + " ./..."); len(cross) != 2 {
+		if cross := w.called("go build -trimpath -p=" + test.workers + " ./..."); len(cross) != 2 {
 			t.Fatalf("%s: cross-builds = %v", test.name, cross)
 		}
+		assertGoCompilesTrimmed(t, w)
 		for _, call := range w.calls {
 			if call.name == "go" && envValue(call.env, "GOMAXPROCS") != test.workers {
 				t.Fatalf("%s: %s ran with GOMAXPROCS=%q", test.name, call, envValue(call.env, "GOMAXPROCS"))
@@ -531,5 +533,57 @@ func TestGateRetainsCoverageEvidenceOutsideTheFrozenWitness(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// assertGoCompilesTrimmed holds every compiling go call the gate made through
+// its goTool and tool seams to -trimpath right after the verb word
+// (disk-lifetimes A2/A4). The engine builds of cmd/devgate/build.go (the
+// -buildvcs=false builds) are unit A3's and are exempt here until it lands.
+func assertGoCompilesTrimmed(t *testing.T, w *gateWorld) {
+	t.Helper()
+	compiled := 0
+	for _, call := range w.calls {
+		argv := call.args
+		if call.name != "go" {
+			// A launched command line (env ... go run ...) carries go in argv.
+			index := slices.Index(call.args, "go")
+			if index < 0 {
+				continue
+			}
+			argv = call.args[index+1:]
+		}
+		if len(argv) > 1 && argv[0] == "-C" {
+			argv = argv[2:]
+		}
+		if len(argv) == 0 || !slices.Contains([]string{"build", "run", "test", "vet"}, argv[0]) || slices.Contains(argv, "-buildvcs=false") {
+			continue
+		}
+		compiled++
+		if len(argv) < 2 || argv[1] != "-trimpath" {
+			t.Fatalf("untrimmed go %s: %q", argv[0], argv)
+		}
+	}
+	if compiled == 0 {
+		t.Fatalf("no compiling go call recorded: %v", w.calls)
+	}
+}
+
+func TestGateFrozenTreeAcceptsExactlyTheOwnedGoFlags(t *testing.T) {
+	t.Parallel()
+	if ownedGoFlags != "-mod=readonly -trimpath" {
+		t.Fatalf("ownedGoFlags = %q; the validator (landing_verbs.go) and validate-metasystem.sh carry the literal", ownedGoFlags)
+	}
+	for _, test := range []struct {
+		goflags string
+		refused bool
+	}{{"-mod=readonly -trimpath", false}, {"-mod=readonly", true}, {"-trimpath -mod=readonly", true}, {"", true}} {
+		w := newGateWorld(t)
+		w.setenv("METASYSTEM_GATE_FROZEN_TOOLCHAIN=1", "GOFLAGS="+test.goflags)
+		code := w.gate("--witness-check-only")
+		refused := strings.Contains(w.stderr.String(), "go gate: frozen proof tree requires GOFLAGS=-mod=readonly -trimpath")
+		if refused != test.refused || (refused && code != 1) || (!refused && code != 3) {
+			t.Fatalf("GOFLAGS=%q: exit %d refused=%v, want refused=%v\n%s", test.goflags, code, refused, test.refused, w.output())
+		}
 	}
 }

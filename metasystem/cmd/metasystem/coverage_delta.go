@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
@@ -86,9 +87,10 @@ func runProofRunCoverageDelta(args []string) int {
 		GoTest: func(pkg string) (string, int) {
 			// A hang bound for one package without the race detector, with a
 			// wide margin above the slowest package.
-			command := exec.Command("go", "test", "-cover", "-timeout", "30m", pkg)
+			argv := coverageDeltaGoTestArgv(pkg)
+			command := exec.Command(argv[0], argv[1:]...)
 			command.Dir = installation
-			command.Env = withoutEnvironment(os.Environ(), coverageDeltaRelaunchedVariable)
+			command.Env = gocache.Carry(withoutEnvironment(os.Environ(), coverageDeltaRelaunchedVariable))
 			output, err := command.CombinedOutput()
 			var exit *exec.ExitError
 			switch {
@@ -184,4 +186,9 @@ func withoutEnvironment(environment []string, name string) []string {
 		}
 	}
 	return kept
+}
+
+// coverageDeltaGoTestArgv is one package's trimmed coverage run.
+func coverageDeltaGoTestArgv(pkg string) []string {
+	return []string{"go", "test", "-trimpath", "-cover", "-timeout", "30m", pkg}
 }

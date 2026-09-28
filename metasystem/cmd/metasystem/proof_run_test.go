@@ -743,7 +743,7 @@ func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 		return os.Getenv("METASYSTEM_GATE_WITNESS") == "usable"
 	}
 	probe := proofRunWitnessProbe(root)
-	if !slices.Equal(probe.Args, []string{"go", "run", "./cmd/devgate", "gate", "--witness-check-only"}) || probe.Dir != root ||
+	if !slices.Equal(probe.Args, []string{"go", "run", "-trimpath", "./cmd/devgate", "gate", "--witness-check-only"}) || probe.Dir != root ||
 		!slices.Contains(probe.Env, "METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=ENGINE") {
 		t.Fatalf("witness probe = %q in %q", probe.Args, probe.Dir)
 	}

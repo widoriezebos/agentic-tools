@@ -101,6 +101,8 @@ type deps struct {
 	now func() time.Time
 	// owners are the in-process owners the static and full gates consult.
 	owners owners
+	// userCacheDir is os.UserCacheDir, the engine cache's fallback base.
+	userCacheDir func() (string, error)
 }
 
 // toolCall is one child program run from dir with an explicit environment.
@@ -146,8 +148,9 @@ func nativeDeps() deps {
 			command.Stdout, command.Stderr = call.stdout, call.stderr
 			return command.Run()
 		},
-		now:    time.Now,
-		owners: nativeOwners(),
+		now:          time.Now,
+		owners:       nativeOwners(),
+		userCacheDir: os.UserCacheDir,
 	}
 }
 

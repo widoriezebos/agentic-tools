@@ -13,10 +13,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -1501,12 +1503,12 @@ func TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories(t
 	}
 	cacheRoot := t.TempDir()
 	stamp := strings.Repeat("a", 40)
-	build := func(name string) string {
+	build := func(name string, args ...string) string {
 		root := filepath.Join(t.TempDir(), name)
 		writeTestingFixtureFile(t, filepath.Join(root, "go.mod"), []byte("module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.26\n"), 0o644)
 		writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644)
 		output := filepath.Join(t.TempDir(), "metasystem")
-		command := exec.Command(devgate, "build", "--trimpath", "--out", output)
+		command := exec.Command(devgate, append(append([]string{"build"}, args...), "--out", output)...)
 		command.Dir = root
 		command.Env = append(candidateEngineBuildEnvironment(testingEnvironment(os.Environ()), stamp),
 			"GOCACHE="+filepath.Join(cacheRoot, "build"), "GOMODCACHE="+filepath.Join(cacheRoot, "modules"))
@@ -1519,9 +1521,28 @@ func TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories(t
 		}
 		return digest
 	}
-	first, second := build("first-materialization"), build("second-materialization")
+	// The candidate argv still passes --trimpath (a no-op now); devgate trims
+	// by default, so a build without it lands on the same bytes.
+	first, second := build("first-materialization", "--trimpath"), build("second-materialization")
 	if first != second {
 		t.Fatalf("one source tree built in two directories had different candidate engine digests: first=%s second=%s", first, second)
+	}
+}
+
+func TestEngineGoArgvCarriesTrimpath(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for name, pair := range map[string][2][]string{
+		"candidate engine build": {candidateEngineBuildArgv("/out/metasystem"),
+			{"go", "run", "-trimpath", "./cmd/devgate", "build", "--trimpath", "--out", "/out/metasystem"}},
+		"bootstrap and landed rebuild": {devgateBootstrapBuildArgv(), {"go", "run", "-trimpath", "./cmd/devgate", "build"}},
+		"coverage delta":               {coverageDeltaGoTestArgv("./internal/x"), {"go", "test", "-trimpath", "-cover", "-timeout", "30m", "./internal/x"}},
+		"goal branch static":           {goalBranchStaticArgv("/proof"), {"go", "run", "-trimpath", "./cmd/devgate", "static", "--proof-out", "/proof"}},
+		"witness probe":                {proofRunWitnessProbe(root).Args, {"go", "run", "-trimpath", "./cmd/devgate", "gate", "--witness-check-only"}},
+	} {
+		if !slices.Equal(pair[0], pair[1]) {
+			t.Errorf("%s argv = %q, want %q", name, pair[0], pair[1])
+		}
 	}
 }
 
@@ -2253,7 +2274,7 @@ func TestFrozenNegativeProbeResponseIsLegacyOnlyForActualInvalidResult(t *testin
 	legacy, err := frozenNegativeProbeResponse(request, result)
 	if err != nil || legacy.SchemaVersion != proofrun.LegacyTestResultSchemaVersion || legacy.Delivery.Sufficient ||
 		legacy.Groups[0].Status != "invalid" || legacy.Groups[0].CollectionComplete || legacy.Groups[0].IdentityVersion != 0 ||
-		len(legacy.Groups[0].ExecutableDigests) != 0 || result.SchemaVersion != proofrun.TestResultSchemaVersion {
+		len(legacy.Groups[0].ExecutableDigests) != 0 || result.SchemaVersion != proofrun.WorkerPolicyTestResultSchemaVersion {
 		t.Fatalf("legacy projection changed negative verdict or normal result: legacy=%+v source=%+v err=%v", legacy, result, err)
 	}
 	data, err := json.Marshal(legacy)
@@ -2343,7 +2364,7 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 	}
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	build := exec.Command(goPath, "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+head, "-o", engine, ".")
+		enginebuild.StampLinkerFlags(head), "-o", engine, ".")
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
 		t.Fatalf("build public-v1 probe candidate: %v\n%s", buildErr, output)
 	}
@@ -2859,7 +2880,7 @@ func buildFrozenPublicVersionOneCorpusEngine(t *testing.T, phases *frozenCorpusP
 		args        []string
 	}{
 		{input.root, gittree.ScrubbedEnviron(), []string{"build", "-buildvcs=false", "-ldflags",
-			"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=" + input.candidateCommit, "-o", engine, "./cmd/metasystem"}},
+			enginebuild.StampLinkerFlags(input.candidateCommit), "-o", engine, "./cmd/metasystem"}},
 		{moduleRoot, gittree.ScrubbedEnviron(), []string{"build", "-buildvcs=false", "-o", devgate, "./cmd/devgate"}},
 	} {
 		command := exec.CommandContext(ctx, "go", build.args...)
@@ -3152,7 +3173,7 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	}
 	currentEngine := filepath.Join(t.TempDir(), "metasystem")
 	build := exec.Command(goPath, "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+head, "-o", currentEngine, ".")
+		enginebuild.StampLinkerFlags(head), "-o", currentEngine, ".")
 	build.Env = append(os.Environ(), "PATH="+os.Getenv("PATH"))
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
 		t.Fatalf("build source-bound policy engine: %v\n%s", buildErr, output)
@@ -3241,4 +3262,141 @@ func testingFixtureGit(t *testing.T, root string, args ...string) string {
 		t.Fatalf("git %v: %v\n%s", args, err, output)
 	}
 	return string(output)
+}
+
+// The worker capability compare tolerates what it does not know and the
+// scratch environment policy is negotiated (DL4A-01): a worker listing no
+// policies, as every worker before A5.2, gets v1; one listing this
+// frontend's policy gets it; a differing known capability still refuses.
+func TestScratchEnvironmentPolicyFollowsTheWorkerCapabilities(t *testing.T) {
+	t.Parallel()
+	reporting := func(edit func(map[string]any)) string {
+		capabilities := currentTestingWorkerCapabilities()
+		data, err := json.Marshal(capabilities)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fields := map[string]any{}
+		if err := json.Unmarshal(data, &fields); err != nil {
+			t.Fatal(err)
+		}
+		edit(fields)
+		if data, err = json.Marshal(fields); err != nil {
+			t.Fatal(err)
+		}
+		engine := filepath.Join(t.TempDir(), "engine")
+		if err := testexec.WriteFile(engine, []byte("#!/bin/sh\nprintf '%s\\n' "+shellQuote(string(data))+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return engine
+	}
+	environment := []string{"PATH=/usr/bin:/bin"}
+	for _, test := range []struct {
+		name string
+		edit func(map[string]any)
+		want string
+	}{
+		{"worker listing no policies", func(fields map[string]any) { delete(fields, "scratchEnvironmentPolicies") }, proofrun.ScratchEnvironmentPolicyV1},
+		{"worker reading only v1", func(fields map[string]any) {
+			fields["scratchEnvironmentPolicies"] = []string{proofrun.ScratchEnvironmentPolicyV1}
+		}, proofrun.ScratchEnvironmentPolicyV1},
+		{"upgraded worker", func(fields map[string]any) {
+			fields["scratchEnvironmentPolicies"] = []string{proofrun.ScratchEnvironmentPolicyV1, proofrun.ScratchEnvironmentPolicyV2}
+		}, proofrun.ScratchEnvironmentPolicy},
+		{"a capability this frontend does not know", func(fields map[string]any) { fields["laterCapability"] = 7 }, chooseScratchEnvironmentPolicy(currentTestingWorkerCapabilities().ScratchEnvironmentPolicies)},
+	} {
+		capabilities, err := requireTestingWorkerCapabilities(t.Context(), reporting(test.edit), environment)
+		if err != nil {
+			t.Fatalf("%s: refused: %v", test.name, err)
+		}
+		if got := chooseScratchEnvironmentPolicy(capabilities.ScratchEnvironmentPolicies); got != test.want {
+			t.Errorf("%s: policy = %q, want %q", test.name, got, test.want)
+		}
+	}
+	_, err := requireTestingWorkerCapabilities(t.Context(), reporting(func(fields map[string]any) { fields["workerPolicyVersion"] = 99 }), environment)
+	if !errors.Is(err, errTestingWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "install the matching backend compatibility release") {
+		t.Fatalf("differing known capability: %v", err)
+	}
+	// This engine as its own worker writes its own policy without a probe.
+	prepared := testingPreparation{FirstTestingTransition: true, PolicyEngine: "/nonexistent/engine"}
+	if got := chooseScratchEnvironmentPolicy(testingWorkerScratchPolicies(t.Context(), prepared)); got != proofrun.ScratchEnvironmentPolicy {
+		t.Fatalf("own worker policy = %q", got)
+	}
+	// An unreadable destination worker during revalidation is v1, never a refusal.
+	prepared.FirstTestingTransition = false
+	if got := chooseScratchEnvironmentPolicy(testingWorkerScratchPolicies(t.Context(), prepared)); got != proofrun.ScratchEnvironmentPolicyV1 {
+		t.Fatalf("unreadable worker policy = %q", got)
+	}
+}
+
+// A v1 descriptor from this launcher keeps the old wire (an old worker's
+// strict decoder sees no new field) and the run-private caches; a v1
+// descriptor from an old launcher is read by this worker.
+func TestScratchEnvironmentV1WireAndReaderSupport(t *testing.T) {
+	t.Parallel()
+	control := t.TempDir()
+	scratch, err := proofrun.CreateScratchRun(control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = scratch.Cleanup(nil) })
+	group := testpolicy.Group{ID: "g", Adapter: "command", EnvironmentMode: "explicit", Env: map[string]string{"PATH": "/usr/bin:/bin"}}
+	request := proofrun.TestRunRequest{Environment: []string{"HOME=" + t.TempDir(), "GOENV=off", "GOCACHE=/outer/go-build"}}
+	request.Contract.Groups = []testpolicy.Group{group}
+	request.Plan.SelectedGroups = []string{group.ID}
+	request.BindScratch(scratch, nil)
+	if err := proofrun.PrepareScratchEnvironmentFor(&request, scratch, proofrun.ScratchEnvironmentPolicyV1); err != nil {
+		t.Fatal(err)
+	}
+	wire, err := json.Marshal(request.ScratchEnvironment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(wire, &keys); err != nil {
+		t.Fatal(err)
+	}
+	for key := range keys {
+		if !map[string]bool{"policy": true, "run": true, "root": true, "goEnv": true, "goEnvDigest": true, "groups": true}[key] {
+			t.Fatalf("v1 descriptor wire carries %q, which an old worker's strict decoder refuses: %s", key, wire)
+		}
+	}
+	packet := filepath.Join(t.TempDir(), "request.json")
+	encoded, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(packet, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var worker proofrun.TestRunRequest
+	if err := readStrictJSON(packet, &worker); err != nil {
+		t.Fatal(err)
+	}
+	if err := proofrun.ValidateScratchEnvironment(worker, scratch); err != nil {
+		t.Fatalf("upgraded worker refused a v1 descriptor: %v", err)
+	}
+	gocacheDir := filepath.Join(scratch.Root(), "gocache")
+	if info, err := os.Stat(gocacheDir); err != nil || !info.IsDir() {
+		t.Fatalf("v1 run-private cache %s: %v", gocacheDir, err)
+	}
+}
+
+// The mixed-generation witness against a real built worker engine (3.1):
+// set METASYSTEM_A5_WORKER_ENGINE to an engine built at another commit and
+// METASYSTEM_A5_WORKER_POLICY to the policy this frontend must write for it.
+func TestScratchEnvironmentPolicyAgainstABuiltWorker(t *testing.T) {
+	t.Parallel()
+	engine, want := os.Getenv("METASYSTEM_A5_WORKER_ENGINE"), os.Getenv("METASYSTEM_A5_WORKER_POLICY")
+	if engine == "" || want == "" {
+		t.Skip("set METASYSTEM_A5_WORKER_ENGINE and METASYSTEM_A5_WORKER_POLICY to a built worker and its expected policy")
+	}
+	capabilities, err := requireTestingWorkerCapabilities(t.Context(), engine, []string{"PATH=/usr/bin:/bin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := chooseScratchEnvironmentPolicy(capabilities.ScratchEnvironmentPolicies); got != want {
+		t.Fatalf("worker %s reports %+v: this frontend writes %q, want %q", engine, capabilities, got, want)
+	}
+	t.Logf("worker %s reports %+v: this frontend writes %s", engine, capabilities, want)
 }

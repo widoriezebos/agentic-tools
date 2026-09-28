@@ -32,7 +32,7 @@ func TestEveryStepRunsItsOwnersCommandInOrder(t *testing.T) {
 		"git -C " + destRoot + " config goal.human.wido Wido <wido@example.invalid>",
 		"git -C " + destRoot + " rev-parse HEAD",
 		"git -C " + destRoot + " fetch --no-tags origin",
-		"go run ./cmd/devgate build",
+		"go run -trimpath ./cmd/devgate build",
 		"metasystem config get --key evidence.root --conf " + filepath.Join(fromRoot, install, "metasystem.conf"),
 		"metasystem validate session-isolation --source-root " + fromRoot + " --destination-root " + destRoot +
 			" --manifest " + filepath.Join(destInstall(), "artifacts", "agents", "ui", "local-config-paths") +
@@ -66,7 +66,7 @@ func TestEveryStepRunsItsOwnersCommandInOrder(t *testing.T) {
 
 // devgateBuild is the designated build owner's command: the clone's own
 // fenced, stamped bootstrap build.
-const devgateBuild = "go run ./cmd/devgate build"
+const devgateBuild = "go run -trimpath ./cmd/devgate build"
 
 func TestTheBuildRunsTheKitsOwnBuildScriptUnderItsOwnBudget(t *testing.T) {
 	t.Parallel()

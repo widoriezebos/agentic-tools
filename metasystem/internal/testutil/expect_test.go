@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 )
@@ -292,6 +293,56 @@ func TestExpectRepositoryRelative(t *testing.T) {
 	})
 }
 
+// TestSourceLocationUnderTrimpath is the A2 witness: runtime.Caller names a
+// module-relative file exactly when the binary was built with -trimpath,
+// and SourceRoot and repositoryRelative answer the same in both builds.
+func TestSourceLocationUnderTrimpath(t *testing.T) {
+	t.Parallel()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller(0) failed")
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		t.Fatal("test binary carries no build info")
+	}
+	trimmed := false
+	for _, setting := range info.Settings {
+		if setting.Key == "-trimpath" && setting.Value == "true" {
+			trimmed = true
+		}
+	}
+	t.Logf("trimmed build: %v, caller file: %s", trimmed, file)
+	working, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := resolveSourceRoot("", working)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative := "internal/testutil/expect_test.go"
+	if trimmed {
+		Expect(t, "trimmed caller file", file, ModulePath+"/"+relative)
+		if strings.HasPrefix(file, "/") {
+			t.Fatalf("trimmed caller file is absolute: %s", file)
+		}
+	} else {
+		Expect(t, "untrimmed caller file", file, filepath.Join(root, filepath.FromSlash(relative)))
+	}
+	Expect(t, "source root", root, filepath.Dir(filepath.Dir(working)))
+	if !declaresModule(filepath.Join(root, "go.mod")) {
+		t.Fatalf("source root %s does not declare %s", root, ModulePath)
+	}
+	if os.Getenv("FIXTURE_SOURCE_ROOT") == "" {
+		Expect(t, "repository-relative caller", repositoryRelative(file), repositoryRelative(filepath.Join(root, filepath.FromSlash(relative))))
+	}
+	override := t.TempDir()
+	overridden, err := resolveSourceRoot(override, working)
+	Expect(t, "overridden source root", overridden, override)
+	Expect(t, "override error", err, error(nil))
+}
+
 func expectPrintsBlockFixture(t testing.TB) {
 	Expect(t, "status text", "waiting", "ready")
 }
@@ -518,6 +569,9 @@ func fixtureSite(t *testing.T, fixture any, callLineOffset int) callSite {
 
 func expectedFixtureFile(t *testing.T, file string) string {
 	t.Helper()
+	if rest, trimmed := strings.CutPrefix(filepath.ToSlash(file), ModulePath+"/"); trimmed {
+		file = filepath.Join(MustSourceRoot(t), filepath.FromSlash(rest))
+	}
 	for dir := filepath.Dir(file); ; dir = filepath.Dir(dir) {
 		if entryExists(filepath.Join(dir, "go.mod")) {
 			if gitRoot := ancestorWithEntry(dir, ".git"); gitRoot != "" {

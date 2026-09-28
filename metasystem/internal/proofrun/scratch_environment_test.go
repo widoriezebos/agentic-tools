@@ -6,10 +6,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -31,10 +33,12 @@ func newScratchEnvFixture(t *testing.T) scratchEnvFixture {
 	if err := os.WriteFile(goEnv, []byte(scratchEnvSecret), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return scratchEnvFixture{host: host, goEnv: goEnv, control: t.TempDir(), base: []string{
+	// The outer engine cache is carried in, as the launcher's environment
+	// carries it, so real Go workloads here compile warm.
+	return scratchEnvFixture{host: host, goEnv: goEnv, control: t.TempDir(), base: append([]string{
 		"HOME=" + host, "PATH=/usr/bin:/bin", "HOST_ONLY=1", "GOENV=" + goEnv,
 		"GOMODCACHE=" + filepath.Join(host, "modcache"), "TMPDIR=" + filepath.Join(host, "tmp"),
-	}}
+	}, gocache.Carry(nil)...)}
 }
 
 func scratchEnvGroups() []testpolicy.Group {
@@ -70,6 +74,21 @@ func prepareScratchEnv(t *testing.T, control string, request TestRunRequest) (Te
 	return request, run
 }
 
+// prepareScratchEnvV2 prepares under v2 whatever policy this engine writes
+// by default, so the v2 reader is proved before any launcher writes v2.
+func prepareScratchEnvV2(t *testing.T, control string, request TestRunRequest) (TestRunRequest, *ScratchRun) {
+	t.Helper()
+	run, err := CreateScratchRun(control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = run.Cleanup(nil) })
+	if err := PrepareScratchEnvironmentFor(&request, run, ScratchEnvironmentPolicyV2); err != nil {
+		t.Fatal(err)
+	}
+	return request, run
+}
+
 func scratchEnvDigests(request TestRunRequest) map[string]string {
 	digests := map[string]string{}
 	for _, group := range request.Contract.Groups {
@@ -82,14 +101,19 @@ func TestScratchEnvironmentManagesEveryAdapterInBothModes(t *testing.T) {
 	t.Parallel()
 	fixture := newScratchEnvFixture(t)
 	request, run := prepareScratchEnv(t, fixture.control, scratchEnvRequest(fixture.base, scratchEnvGroups()))
+	caches, err := gocache.Resolve(fixture.base)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, group := range request.Contract.Groups {
 		environment := groupTestEnvironment(request, group)
-		dir := filepath.Join(run.Root(), "groups", group.ID, scratchEnvironmentDir)
+		// Under v2 the managed tree lies in the group's lease (A5.2s).
+		dir := request.ScratchEnvironment.groupDir(group.ID)
 		want := map[string]string{
 			"HOME": filepath.Join(dir, "home"), "XDG_CONFIG_HOME": filepath.Join(dir, "home", ".config"),
 			"XDG_CACHE_HOME": filepath.Join(dir, "home", ".cache"), "XDG_DATA_HOME": filepath.Join(dir, "home", ".local", "share"),
 			"TMPDIR": filepath.Join(dir, "tmp"), "TMP": filepath.Join(dir, "tmp"), "TEMP": filepath.Join(dir, "tmp"),
-			"GOTMPDIR": filepath.Join(dir, "tmp"), "GOCACHE": run.Dir("gocache"), "STATICCHECK_CACHE": run.Dir("staticcheck"),
+			"GOTMPDIR": filepath.Join(dir, "tmp"), "GOCACHE": caches.GoCache, "STATICCHECK_CACHE": caches.StaticcheckCache,
 			"GOENV": filepath.Join(run.Dir("goenv"), "env"),
 			// Dependency stores stay where the caller's Go keeps them.
 			"GOPATH": filepath.Join(fixture.host, "go"), "GOMODCACHE": filepath.Join(fixture.host, "modcache"),
@@ -265,7 +289,7 @@ func TestScratchEnvironmentIdentity(t *testing.T) {
 		}
 		// A variable claiming a generated-looking value is not normalized unless
 		// it equals this descriptor's path for this group.
-		forged := append(groupTestEnvironment(first, groups[1]), "HOME="+filepath.Join(secondRun.Root(), "groups", groups[1].ID, scratchEnvironmentDir, "home"))
+		forged := append(groupTestEnvironment(first, groups[1]), "HOME="+filepath.Join(second.ScratchEnvironment.groupDir(groups[1].ID), "home"))
 		if digestScratchGroupEnvironment(first, groups[1], forged) == firstDigests[groups[1].ID] {
 			t.Fatal("foreign root path normalized")
 		}
@@ -353,7 +377,7 @@ func TestScratchEnvironmentValidationRejectsTampering(t *testing.T) {
 	// A group tree replaced by a symlink to user bytes is refused before the
 	// worker reads or removes anything through it.
 	outside := t.TempDir()
-	home := filepath.Join(run.Root(), "groups", groups[0].ID, scratchEnvironmentDir, "home")
+	home := filepath.Join(request.ScratchEnvironment.groupDir(groups[0].ID), "home")
 	if err := os.RemoveAll(home); err != nil {
 		t.Fatal(err)
 	}
@@ -604,7 +628,7 @@ func TestWrite(t *testing.T) {
 		t.Fatalf("written = %q", written)
 	}
 	for _, path := range written {
-		if !strings.HasPrefix(path, filepath.Join(run.Root(), "groups", "workload", scratchEnvironmentDir)+string(filepath.Separator)) {
+		if !strings.HasPrefix(path, request.ScratchEnvironment.groupDir("workload")+string(filepath.Separator)) {
 			t.Errorf("workload wrote outside its managed tree: %s", path)
 		}
 	}
@@ -807,4 +831,284 @@ func TestScratchEnvironmentDeclaredEmptyGoPathKeepsDefaultStore(t *testing.T) {
 			t.Errorf("%s module store is disposable: %s", group.ID, modcache)
 		}
 	}
+}
+
+// -trimpath rides the group's go test argv, never GOFLAGS: a declared or
+// default GOENV file's -tags still reaches the group in both environment
+// modes with process GOFLAGS absent, and the group's test is built trimmed,
+// so its runtime.Caller file is module-relative.
+func TestScratchEnvironmentTrimpathArgvKeepsGoEnvFileFlags(t *testing.T) {
+	t.Parallel()
+	fixture := newScratchEnvFixture(t)
+	declared := filepath.Join(fixture.host, "declared-goenv")
+	writeScratchConfig(t, declared, "GOFLAGS=-tags=fixture\n")
+	defaultFile, _, _ := goEnvFileFor([]string{"HOME=" + fixture.host}, runtime.GOOS)
+	writeScratchConfig(t, defaultFile, "GOFLAGS=-tags=fixture\n")
+	module := scratchGoModule(t, map[string]string{"caller_test.go": `//go:build fixture
+
+package workload
+
+import (
+	"os"
+	"runtime"
+	"testing"
+)
+
+func TestCaller(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	if err := os.WriteFile(os.Getenv("WORKLOAD_REPORT"), []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+`})
+	path := scratchGoPath(t)
+	for _, source := range []string{"declared", "default"} {
+		base := []string{"HOME=" + fixture.host, "PATH=/usr/bin:/bin"}
+		var groups []testpolicy.Group
+		for _, mode := range []string{"explicit", "inherit"} {
+			env := map[string]string{"PATH": path, "GOTOOLCHAIN": "local", "WORKLOAD_REPORT": filepath.Join(fixture.host, source+"-"+mode)}
+			if source == "declared" {
+				env["GOENV"] = declared
+			}
+			groups = append(groups, testpolicy.Group{ID: source + "-" + mode, Adapter: "go", EnvironmentMode: mode, Env: env})
+		}
+		request, _ := prepareScratchEnv(t, fixture.control, scratchEnvRequest(base, groups))
+		for _, group := range groups {
+			environment := groupTestEnvironment(request, group)
+			if value, set := lookupEnvironmentSet(environment, "GOFLAGS"); set {
+				t.Fatalf("%s process GOFLAGS = %q, want absent", group.ID, value)
+			}
+			if got := scratchGoEnvOutput(t, request, group, "GOFLAGS"); got != "-tags=fixture\n" {
+				t.Errorf("%s go env GOFLAGS = %q, want the GOENV file's -tags=fixture", group.ID, got)
+			}
+			var output strings.Builder
+			command, err := explicitEnvironmentCommand(t.Context(), module, environment, append(goNativeTestArguments(group, false, true), "./..."))
+			if err != nil {
+				t.Fatal(err)
+			}
+			command.Stdout, command.Stderr = &output, &output
+			if err := RunResourceCommand(t.Context(), command, nil); err != nil {
+				t.Fatalf("%s go test: %v\n%s", group.ID, err, output.String())
+			}
+			file, err := os.ReadFile(group.Env["WORKLOAD_REPORT"])
+			if err != nil {
+				t.Fatalf("%s tagged test did not run (tags lost?): %v\n%s", group.ID, err, output.String())
+			}
+			if string(file) != "example.test/workload/caller_test.go" {
+				t.Errorf("%s runtime.Caller file = %q, want module-relative (built trimmed)", group.ID, file)
+			}
+		}
+	}
+}
+
+// The v1 identity is unchanged by -trimpath in argv: carried scenarios (both
+// modes, every adapter) and an explicit declaration digest to the recorded
+// scratch-environment/v1 values. A changed managed value or policy (A5)
+// updates these literals on purpose.
+func TestScratchEnvironmentV1DigestUnchangedByTrimpathArgv(t *testing.T) {
+	t.Parallel()
+	fixture := newScratchEnvFixture(t)
+	base := []string{"HOME=" + fixture.host, "PATH=/usr/bin:/bin", "HOST_ONLY=1", "GOENV=" + fixture.goEnv,
+		"GOPATH=/fixture/gopath", "GOMODCACHE=/fixture/modcache", "TMPDIR=" + filepath.Join(fixture.host, "tmp")}
+	groups := append(scratchEnvGroups(), testpolicy.Group{ID: "declared", Adapter: "go", EnvironmentMode: "explicit",
+		Env: map[string]string{"PATH": "/usr/bin:/bin", "GOFLAGS": "-tags=fixture", "GOTOOLCHAIN": "local"}})
+	// Pinned to v1: the recorded digests are v1's; v2's one change is A5.2's.
+	run, err := CreateScratchRun(fixture.control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = run.Cleanup(nil) })
+	request := scratchEnvRequest(base, groups)
+	if err := PrepareScratchEnvironmentFor(&request, run, ScratchEnvironmentPolicyV1); err != nil {
+		t.Fatal(err)
+	}
+	inherit, explicit := "c1e5bef2a5c83e6d4b9577fe0d288cef3f8e49441caeac777c3a16d034ce917e", "d69bbd1f0f3ce1cda983897f58178222dafb5829ef96706b1bc89ac0da76640f"
+	want := map[string]string{"go-inherit": inherit, "command-inherit": inherit, "section-inherit": inherit,
+		"go-explicit": explicit, "command-explicit": explicit, "section-explicit": explicit,
+		"declared": "41b6f8b4cfd0f9e886743334d72b9ab29dbaab49357e11a3693fcb49ec44a50a"}
+	digests := scratchEnvDigests(request)
+	if len(digests) != len(want) {
+		t.Fatalf("digests = %v, want %d groups", digests, len(want))
+	}
+	for id, digest := range digests {
+		if want[id] != digest {
+			t.Errorf("%s digest = %q, want recorded v1 %q", id, digest, want[id])
+		}
+	}
+}
+
+// The engine cache (disk-lifetimes A5): the launcher resolves it once, the
+// descriptor carries it, and identity digests it as the stable managed token
+// so neither the run root nor the machine's cache path moves a group's key.
+func TestScratchEnvironmentCarriesTheResolvedEngineCache(t *testing.T) {
+	t.Parallel()
+	fixture := newScratchEnvFixture(t)
+	path := scratchGoPath(t)
+	groups := []testpolicy.Group{
+		{ID: "explicit", Adapter: "go", EnvironmentMode: "explicit", Env: map[string]string{"PATH": path, "GOTOOLCHAIN": "local"}},
+		{ID: "inherit", Adapter: "go", EnvironmentMode: "inherit", Env: map[string]string{"PATH": path, "GOTOOLCHAIN": "local"}},
+	}
+	// GOCACHE and STATICCHECK_CACHE unset under a replaced HOME: the group
+	// gets the outer machine value, never one under the replaced HOME.
+	unset := withoutScratchCaches(fixture.base)
+	outer, err := gocache.Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, run := prepareScratchEnvV2(t, fixture.control, scratchEnvRequest(unset, groups))
+	descriptor := request.ScratchEnvironment
+	for _, name := range []string{"gocache", "staticcheck"} {
+		if _, err := os.Lstat(filepath.Join(run.Root(), name)); !os.IsNotExist(err) {
+			t.Fatalf("a v2 run has a run-private %s: %v", name, err)
+		}
+	}
+	if descriptor.GoCache != outer.GoCache || descriptor.StaticcheckCache != outer.StaticcheckCache {
+		t.Fatalf("descriptor caches = %q %q, want the outer machine values %q %q", descriptor.GoCache, descriptor.StaticcheckCache, outer.GoCache, outer.StaticcheckCache)
+	}
+	for _, cache := range []string{descriptor.GoCache, descriptor.StaticcheckCache} {
+		if strings.HasPrefix(cache, fixture.host) || strings.HasPrefix(cache, run.Root()) {
+			t.Fatalf("engine cache %s lies under the replaced HOME or the run root", cache)
+		}
+	}
+	for _, group := range groups {
+		environment := groupTestEnvironment(request, group)
+		if lookupEnvironment(environment, "GOCACHE") != outer.GoCache || lookupEnvironment(environment, "STATICCHECK_CACHE") != outer.StaticcheckCache {
+			t.Fatalf("%s managed caches = %q %q", group.ID, lookupEnvironment(environment, "GOCACHE"), lookupEnvironment(environment, "STATICCHECK_CACHE"))
+		}
+		if home := lookupEnvironment(environment, "HOME"); home == fixture.host || !strings.HasPrefix(home, request.ScratchEnvironment.groupDir(group.ID)) {
+			t.Fatalf("%s HOME = %q, want the managed home", group.ID, home)
+		}
+		if got := strings.TrimSpace(scratchGoEnvOutput(t, request, group, "GOCACHE")); got != outer.GoCache {
+			t.Fatalf("%s go env GOCACHE = %q, want %q", group.ID, got, outer.GoCache)
+		}
+	}
+	// The descriptor round-trips through the persisted request: a worker whose
+	// own environment has no cache and another HOME uses the carried values.
+	encoded, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var worker TestRunRequest
+	if err := json.Unmarshal(encoded, &worker); err != nil {
+		t.Fatal(err)
+	}
+	if worker.ScratchEnvironment.GoCache != outer.GoCache || worker.ScratchEnvironment.StaticcheckCache != outer.StaticcheckCache {
+		t.Fatalf("round-tripped descriptor caches = %+v", worker.ScratchEnvironment)
+	}
+	if err := ValidateScratchEnvironment(worker, run); err != nil {
+		t.Fatal(err)
+	}
+	worker.Environment = append(withoutScratchCaches(worker.Environment), "HOME="+t.TempDir())
+	for _, group := range groups {
+		if got := lookupEnvironment(groupTestEnvironment(worker, group), "GOCACHE"); got != outer.GoCache {
+			t.Fatalf("%s proof child GOCACHE = %q, want the carried %q", group.ID, got, outer.GoCache)
+		}
+	}
+	tampered := worker
+	copied := *worker.ScratchEnvironment
+	copied.GoCache = "relative/go-build"
+	tampered.ScratchEnvironment = &copied
+	if err := ValidateScratchEnvironment(tampered, run); err == nil {
+		t.Fatal("relative engine cache accepted")
+	}
+}
+
+// Two preparations with different run roots and different machine cache
+// paths digest identically in both modes and in the discovery view: the
+// managed value digests as managed:NAME:v1, never as a path.
+func TestScratchEnvironmentEngineCacheIsNotInIdentity(t *testing.T) {
+	t.Parallel()
+	fixture := newScratchEnvFixture(t)
+	groups := scratchEnvGroups()
+	base := withoutScratchCaches(fixture.base)
+	firstBase := append(append([]string(nil), base...), "GOCACHE=/machine-a/go-build", "STATICCHECK_CACHE=/machine-a/staticcheck")
+	secondBase := append(append([]string(nil), base...), "GOCACHE=/machine-b/Library/Caches/go-build", "STATICCHECK_CACHE=/machine-b/Library/Caches/staticcheck")
+	lockedScratch(t, func() {
+		first, firstRun := prepareScratchEnvV2(t, fixture.control, scratchEnvRequest(firstBase, groups))
+		second, secondRun := prepareScratchEnvV2(t, fixture.control, scratchEnvRequest(secondBase, groups))
+		if firstRun.Root() == secondRun.Root() || first.ScratchEnvironment.GoCache == second.ScratchEnvironment.GoCache {
+			t.Fatal("fixture runs share a root or a cache")
+		}
+		firstDigests, secondDigests := scratchEnvDigests(first), scratchEnvDigests(second)
+		for _, group := range groups {
+			if firstDigests[group.ID] != secondDigests[group.ID] {
+				t.Errorf("%s identity moved with the run root or the cache path", group.ID)
+			}
+			environment := groupTestEnvironment(first, group)
+			if lookupEnvironment(environment, "GOCACHE") != "/machine-a/go-build" {
+				t.Fatalf("%s GOCACHE = %q", group.ID, lookupEnvironment(environment, "GOCACHE"))
+			}
+			firstView := digestEnvironment(scratchDiscoveryEnvironment(first.ScratchEnvironment, environment))
+			secondView := digestEnvironment(scratchDiscoveryEnvironment(second.ScratchEnvironment, groupTestEnvironment(second, group)))
+			if firstView != secondView {
+				t.Errorf("%s discovery view moved with the cache path", group.ID)
+			}
+		}
+		// Only the descriptor's own value is a token: a group environment naming
+		// another cache digests literally.
+		foreign := append(groupTestEnvironment(first, groups[1]), "GOCACHE=/machine-b/Library/Caches/go-build")
+		if digestScratchGroupEnvironment(first, groups[1], foreign) == firstDigests[groups[1].ID] {
+			t.Fatal("a cache that is not the descriptor's digested as the managed token")
+		}
+	})
+}
+
+// Recorded at 540195277 under scratch-environment/v1 (fixture below):
+// explicit group, inherit group and discovery view digests.
+const (
+	scratchIdentityV1Explicit  = "0259f30de5434e3f649ca6bfab5f5b423d61023a7869bdc3efdf52ca10c42d58"
+	scratchIdentityV1Inherit   = "b16633207d6126d63fe7e606a5b0e5262415eb32dd4331db6543896ae2eaa7db"
+	scratchIdentityV1Discovery = "b16633207d6126d63fe7e606a5b0e5262415eb32dd4331db6543896ae2eaa7db"
+)
+
+func scratchIdentityFixture(policy string) map[string]string {
+	descriptor := &ScratchEnvironment{Policy: policy, Run: "fixture-run", Root: "/fixture/run-a", GoEnv: goEnvOff,
+		GoCache: "/fixture/machine/go-build", StaticcheckCache: "/fixture/machine/staticcheck",
+		Groups: []ScratchEnvironmentGroup{{ID: "explicit"}, {ID: "inherit"}}}
+	digests := map[string]string{}
+	for _, mode := range []string{"explicit", "inherit"} {
+		group := testpolicy.Group{ID: mode, Adapter: "go", EnvironmentMode: mode}
+		environment := []string{"PATH=/usr/bin:/bin", "GOFLAGS=-mod=readonly", "GOENV=off"}
+		values := descriptor.managedValues(group.ID)
+		names := make([]string, 0, len(values))
+		for name := range values {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			environment = append(environment, name+"="+values[name])
+		}
+		digests[mode] = digestScratchGroupEnvironment(TestRunRequest{ScratchEnvironment: descriptor}, group, environment)
+		digests[mode+"-discovery"] = digestEnvironment(scratchDiscoveryEnvironment(descriptor, environment))
+	}
+	return digests
+}
+
+// Identity changes exactly once (rule A4): a v1 descriptor still digests to
+// the v1 digests recorded before A5, v2 differs from them, and only through
+// the policy token: the carried cache path digests as the managed token.
+func TestScratchEnvironmentIdentityChangedExactlyOnce(t *testing.T) {
+	t.Parallel()
+	v1 := map[string]string{"explicit": scratchIdentityV1Explicit, "inherit": scratchIdentityV1Inherit,
+		"explicit-discovery": scratchIdentityV1Discovery, "inherit-discovery": scratchIdentityV1Discovery}
+	current := scratchIdentityFixture(ScratchEnvironmentPolicyV2)
+	underV1 := scratchIdentityFixture(ScratchEnvironmentPolicyV1)
+	for key, recorded := range v1 {
+		if current[key] == recorded {
+			t.Errorf("%s identity did not change under v2", key)
+		}
+		if underV1[key] != recorded {
+			t.Errorf("%s identity under the v1 token = %s, want the recorded %s: something besides the policy moved", key, underV1[key], recorded)
+		}
+	}
+}
+
+func withoutScratchCaches(environment []string) []string {
+	var result []string
+	for _, entry := range environment {
+		if name, _, _ := strings.Cut(entry, "="); name != "GOCACHE" && name != "STATICCHECK_CACHE" {
+			result = append(result, entry)
+		}
+	}
+	return result
 }

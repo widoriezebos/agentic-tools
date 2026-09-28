@@ -332,6 +332,7 @@ func families() []family {
 			verbs: []verb{
 				{"token-hex", "print a random hex token of --bytes length", runUtilTokenHex},
 				{"sha256", "print the hex sha-256 of --file or stdin", runUtilSHA256},
+				{"engine-stamp", "print the build stamp read from an engine file's bytes; exit 1 when it has none", runUtilEngineStamp},
 				{"json-validate", "exit 0 if --file/--value is valid JSON, else 1", runUtilJSONValidate},
 				{"now-ns", "print the current wall-clock time in nanoseconds", runUtilNowNs},
 				{"bootclock", "print the operating-system boot identity and monotonic nanoseconds", runUtilBootClock},

@@ -221,6 +221,21 @@ func TestCurrentPolicyComposesOnlyRequiredCompatibleObservations(t *testing.T) {
 	if !composed.Delivery.Sufficient {
 		t.Fatalf("compatible A execution was not reusable: %+v", composed)
 	}
+	// Schemas 3 and 4 are one generation: a schema-3 template (a frontend
+	// that did not negotiate the execution record, e.g. test verify) reuses
+	// a schema-4 source, and receives it without the record.
+	withRecord := source
+	withRecord.SchemaVersion = TestResultSchemaVersion
+	withRecord.Groups = append([]GroupResult(nil), source.Groups...)
+	withRecord.Groups[0].Execution = []PackageExecution{{Shard: 1, Package: "p", Mode: PackageExecuted}}
+	recordAttempt := old
+	recordAttempt.TestResult = &withRecord
+	older := template
+	older.SchemaVersion = WorkerPolicyTestResultSchemaVersion
+	composed = ReusedTestResult(older, []Attempt{recordAttempt}, map[string]string{"a": identity}, contract)
+	if !composed.Delivery.Sufficient || composed.Groups[0].Execution != nil || ValidateTestResult(composed) != nil {
+		t.Fatalf("schema-3 template did not reuse the schema-4 source without its record: %+v err=%v", composed, ValidateTestResult(composed))
+	}
 	legacy := source
 	legacy.SchemaVersion = LegacyTestResultSchemaVersion
 	legacy.Groups = append([]GroupResult(nil), source.Groups...)

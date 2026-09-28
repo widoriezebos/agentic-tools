@@ -421,10 +421,7 @@ func readFrozenWorkerProbeResult(path string) (proofrun.TestResult, error) {
 // legacy proof evidence: only the one invalid, incomplete synthetic probe is
 // projected, and the normal worker still writes the current result schema.
 func frozenNegativeProbeResponse(request proofrun.TestRunRequest, result proofrun.TestResult) (proofrun.TestResult, error) {
-	expectedSchema := proofrun.PreviousTestResultSchemaVersion
-	if proofrun.TestWorkerPolicyActive(request) {
-		expectedSchema = proofrun.TestResultSchemaVersion
-	}
+	expectedSchema := request.ResultSchema()
 	if !request.SyntheticProbe || result.SchemaVersion != expectedSchema ||
 		len(request.Plan.SelectedGroups) != 1 || request.Plan.SelectedGroups[0] != "literal" ||
 		len(result.SelectedGroups) != 1 || result.SelectedGroups[0] != "literal" ||

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
@@ -98,7 +99,7 @@ func newPortableProofFixtureWithSetup(t *testing.T, baselineSource string, setup
 		if got := fixture.gitSource("rev-parse", "HEAD"); got != "9498700a9e246f09395213f8539d22e0ea196731" {
 			t.Fatalf("baseline source is %s, want frozen 9498700a9 source", got)
 		}
-		linker := "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=" + base
+		linker := enginebuild.StampLinkerFlags(base)
 		command := exec.Command("go", "build", "-buildvcs=false", "-ldflags", linker, "-o", fixture.engine, "./cmd/metasystem")
 		command.Dir = baselineSource
 		if output, err := command.CombinedOutput(); err != nil {

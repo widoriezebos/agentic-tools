@@ -60,6 +60,14 @@ type gateOptions struct {
 
 var positiveMinutes = regexp.MustCompile(`^[1-9][0-9]*$`)
 
+// ownedGoFlags is the one GOFLAGS value the gate owns (disk-lifetimes rule
+// A2): the full gate pins it, a frozen tree accepts exactly it, and the
+// arming snapshot, the witness consumer and the candidate verifier set it.
+// The validator's canonical environment (cmd/metasystem/landing_verbs.go)
+// and scripts/validate-metasystem.sh carry the same literal, because a
+// validator landing runs this gate against a frozen tree.
+const ownedGoFlags = "-mod=readonly -trimpath"
+
 // runGateAction parses the gate action's arguments: the full gate, its
 // witness probe, or (with --arm) the witness-producing controller that the
 // sourced witness-gate.sh once was.
@@ -189,7 +197,7 @@ func (g *gateRun) full(options gateOptions) int {
 	// coverage producers and retained consumers identify one real Go
 	// environment.
 	if !options.witnessCheckOnly {
-		g.env.set("GOFLAGS", "-mod=readonly")
+		g.env.set("GOFLAGS", ownedGoFlags)
 	}
 	g.authenticateWorker()
 	if g.env.get("METASYSTEM_GO_GATE_RELAUNCHED") == "1" {
@@ -219,8 +227,8 @@ func (g *gateRun) full(options gateOptions) int {
 	if g.env.get("METASYSTEM_GATE_WITNESS") != "" && g.env.get("METASYSTEM_GATE_WITNESS_CONSUMER_EXPORT") != g.root {
 		return g.consumeFrozen(options)
 	}
-	if g.env.get("METASYSTEM_GATE_FROZEN_TOOLCHAIN") == "1" && g.env.get("GOFLAGS") != "-mod=readonly" {
-		fmt.Fprintln(d.stderr, "go gate: frozen proof tree requires GOFLAGS=-mod=readonly")
+	if g.env.get("METASYSTEM_GATE_FROZEN_TOOLCHAIN") == "1" && g.env.get("GOFLAGS") != ownedGoFlags {
+		fmt.Fprintln(d.stderr, "go gate: frozen proof tree requires GOFLAGS="+ownedGoFlags)
 		return 1
 	}
 	if options.witnessCheckOnly {
@@ -279,7 +287,7 @@ func (g *gateRun) full(options gateOptions) int {
 	// Linux architectures cross-compile in every gate run.
 	for _, arch := range []string{"amd64", "arm64"} {
 		env := g.env.with("CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch).list()
-		if d.goTool(g.ctx, g.root, env, []string{"build", "-p=" + g.workers, "./..."}, d.stdout, d.stderr) != nil {
+		if d.goTool(g.ctx, g.root, env, []string{"build", "-trimpath", "-p=" + g.workers, "./..."}, d.stdout, d.stderr) != nil {
 			fmt.Fprintf(d.stderr, "go gate: linux/%s cross-build failed\n", arch)
 			return 1
 		}
@@ -287,7 +295,7 @@ func (g *gateRun) full(options gateOptions) int {
 	// govulncheck is last of the static stages: its cost belongs to the
 	// vulnerability-database fetch, which the network owns, so every
 	// deterministic check gets to fail first.
-	if d.goTool(g.ctx, g.root, g.env.list(), []string{"run", "-p=" + g.workers, govulncheckModule, "./..."}, d.stdout, d.stderr) != nil {
+	if d.goTool(g.ctx, g.root, g.env.list(), []string{"run", "-trimpath", "-p=" + g.workers, govulncheckModule, "./..."}, d.stdout, d.stderr) != nil {
 		fmt.Fprintln(d.stderr, "go gate: govulncheck v1.2.0 refused (or could not run)")
 		return 1
 	}
@@ -467,7 +475,7 @@ func (g *gateRun) authenticateWorker() {
 		verifiers = append(verifiers, []string{auth})
 	}
 	if g.env.get("METASYSTEM_PROOF_ATTEMPT") != "" && g.env.get("METASYSTEM_PROOF_CONTROL_ROOT") != "" && g.d.lookGo() == nil {
-		verifiers = append(verifiers, []string{"env", "GOFLAGS=-mod=readonly", "GOWORK=off", "CGO_ENABLED=0", "go", "run", "-p=" + g.workers, "./cmd/metasystem"})
+		verifiers = append(verifiers, []string{"env", "GOFLAGS=" + ownedGoFlags, "GOWORK=off", "CGO_ENABLED=0", "go", "run", "-trimpath", "-p=" + g.workers, "./cmd/metasystem"})
 	}
 	for _, verifier := range verifiers {
 		// `proof-run worker-authorized` is an entry and keeps its argv
@@ -494,7 +502,7 @@ func (g *gateRun) relaunch(options gateOptions) int {
 		return 1
 	}
 	engine := filepath.Join(tmp, "metasystem")
-	if d.goTool(g.ctx, g.root, g.env.list(), []string{"build", "-p=" + g.workers, "-o", engine, "./cmd/metasystem"}, d.stdout, d.stderr) != nil {
+	if d.goTool(g.ctx, g.root, g.env.list(), []string{"build", "-trimpath", "-p=" + g.workers, "-o", engine, "./cmd/metasystem"}, d.stdout, d.stderr) != nil {
 		return 1
 	}
 	var banner bytes.Buffer
@@ -513,7 +521,7 @@ func (g *gateRun) relaunch(options gateOptions) int {
 		argv = append(argv, "--cap-min", options.capMin)
 	}
 	argv = append(argv, "--tmp", tmp, "--", "env", "METASYSTEM_GO_GATE_RELAUNCHED=1", "METASYSTEM_PROOF_AUTH_BIN="+engine,
-		"METASYSTEM_TEST_WORKERS="+g.workers, "go", "-C", g.root, "run", "./cmd/devgate", "gate")
+		"METASYSTEM_TEST_WORKERS="+g.workers, "go", "-C", g.root, "run", "-trimpath", "./cmd/devgate", "gate")
 	// The launcher runs as this process's child rather than replacing it,
 	// so a gate nested in the arming controller or a frozen consumer
 	// returns to its caller; the launcher, not this process, is the proof's

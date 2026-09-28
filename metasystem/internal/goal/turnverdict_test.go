@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 type SessionStopAnnouncementForTest sessionStopAnnouncement
@@ -995,11 +995,7 @@ func TestTurnVerdictAllowsTheStopUnderARecordedHandoff(t *testing.T) {
 
 	t.Run("command supplies steward lookup", func(t *testing.T) {
 		t.Parallel()
-		_, testFile, _, ok := runtime.Caller(0)
-		if !ok {
-			t.Fatal("turn-verdict test source path is unavailable")
-		}
-		commandSource, err := os.ReadFile(filepath.Join(filepath.Dir(testFile), "..", "..", "cmd", "metasystem", "goal.go"))
+		commandSource, err := os.ReadFile(filepath.Join(testutil.MustSourceRoot(t), "cmd", "metasystem", "goal.go"))
 		if err != nil {
 			t.Fatal(err)
 		}

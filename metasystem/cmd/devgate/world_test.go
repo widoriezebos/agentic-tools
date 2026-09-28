@@ -304,7 +304,7 @@ func (w *gateWorld) deps() deps {
 					_, _ = io.WriteString(stdout, "auto\n")
 					return nil
 				}
-				_, _ = io.WriteString(stdout, "darwin\narm64\n-mod=readonly\noff\n\n0\nauto\n")
+				_, _ = io.WriteString(stdout, "darwin\narm64\n-mod=readonly -trimpath\noff\n\n0\nauto\n")
 				return nil
 			case "vet":
 				return w.respond("vet", stdout)

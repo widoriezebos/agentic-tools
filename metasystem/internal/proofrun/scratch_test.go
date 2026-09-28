@@ -150,7 +150,7 @@ func TestScratchNormalCleanupRemovesRootAndRecord(t *testing.T) {
 				t.Fatalf("%s: %v", name, err)
 			}
 		}
-		if err := os.WriteFile(filepath.Join(run.Dir("gocache"), "entry"), []byte("x"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(run.Dir("engine"), "entry"), []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		if err := run.Cleanup(nil); err != nil {

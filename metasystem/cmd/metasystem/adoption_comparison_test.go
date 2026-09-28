@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -120,7 +121,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	}
 	commit := runReceiptGit(t, source, "rev-parse", "HEAD")
 	sourceEngine := filepath.Join(source, "bin", "metasystem")
-	mustRun(source, "go", "build", "-buildvcs=false", "-ldflags", "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+commit, "-o", sourceEngine, "./cmd/metasystem")
+	mustRun(source, "go", "build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(commit), "-o", sourceEngine, "./cmd/metasystem")
 
 	prepare := func(name, runtimes string, copySkills bool) string {
 		t.Helper()
@@ -183,7 +184,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		// The actual reviewed source is committed before resolving the policy
 		// base, and these compiled bytes carry that source's exact commit stamp.
 		engine := filepath.Join(target, "bin", "metasystem")
-		mustRun(target, "go", "build", "-buildvcs=false", "-ldflags", "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+commit, "-o", engine, "./cmd/metasystem")
+		mustRun(target, "go", "build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(commit), "-o", engine, "./cmd/metasystem")
 		digest, err := fileSHA256(engine)
 		if err != nil {
 			t.Fatal(err)

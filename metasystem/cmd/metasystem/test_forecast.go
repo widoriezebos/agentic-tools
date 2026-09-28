@@ -105,8 +105,7 @@ func forecastTestingSelectionPrepared(selection costSelection, proofCapMinutes u
 	if dependencies.scratch != nil {
 		// A managed run's retained environment digest names its scratch
 		// paths as stable tokens; only a prepared descriptor reproduces it.
-		run.BindScratch(dependencies.scratch, nil)
-		if err := proofrun.PrepareScratchEnvironment(&run, dependencies.scratch); err != nil {
+		if err := prepareTestingScratch(ctx, &run, dependencies.scratch, prepared); err != nil {
 			return costSelectionEvidence{}, err
 		}
 	}

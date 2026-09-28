@@ -24,6 +24,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -112,33 +114,18 @@ func (OSHost) MakeManifest(path string) error {
 }
 
 // Stamp is the source commit an installed engine was built from, read out of
-// the executable's own build information the way the steward reads it.
+// the executable's bytes by the reader the steward uses.
 func (OSHost) Stamp(binary string) (string, error) {
 	file, err := os.Open(binary)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
-	info, err := buildinfo.Read(file)
-	if err != nil {
-		return "", err
+	// Only a Go executable is an engine; its stamp may still be empty.
+	if _, err := buildinfo.Read(file); err != nil {
+		return "", fmt.Errorf("%s is not an engine: %w", binary, err)
 	}
-	const assignment = "supervise.BuildStamp="
-	for _, setting := range info.Settings {
-		if setting.Key != "-ldflags" {
-			continue
-		}
-		at := strings.Index(setting.Value, assignment)
-		if at < 0 {
-			continue
-		}
-		value := setting.Value[at+len(assignment):]
-		if end := strings.IndexAny(value, " \t\r\n\"'"); end >= 0 {
-			value = value[:end]
-		}
-		return strings.TrimSpace(value), nil
-	}
-	return "", nil
+	return enginebuild.ReadStamp(file)
 }
 
 // Enrolled is the identity the installation carries for the engine now
@@ -229,7 +216,8 @@ type OSRunner struct{}
 func (OSRunner) Run(command Command) (string, error) {
 	process := exec.Command(command.Name, command.Args...)
 	process.Dir = command.Dir
-	process.Env = Scrubbed(os.Environ())
+	// The engine cache is set explicitly for the bootstrap build (A5).
+	process.Env = gocache.Carry(Scrubbed(os.Environ()))
 	var out, problem strings.Builder
 	process.Stdout = &out
 	process.Stderr = &problem

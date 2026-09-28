@@ -1,6 +1,7 @@
 package main
 
 import (
+	"debug/buildinfo"
 	"fmt"
 	"os"
 	"os/exec"
@@ -56,7 +57,7 @@ func TestMain(m *testing.M) {
 			os.Exit(2)
 		}
 		waitCandidate = filepath.Join(waitCandidateDir, "metasystem")
-		build := exec.Command("go", "build", "-o", waitCandidate, ".")
+		build := exec.Command("go", "build", "-trimpath", "-o", waitCandidate, ".")
 		build.Stdout, build.Stderr = os.Stderr, os.Stderr
 		if err := build.Run(); err != nil {
 			_ = os.RemoveAll(waitCandidateDir)
@@ -229,4 +230,24 @@ func TestInheritedEngineAndInstallationSelectorsAreAbsent(t *testing.T) {
 	if got, hostile := os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME"), os.Getenv("HOSTILE_REGISTRY_HOME"); got == "" || got == hostile || !filepath.IsAbs(got) {
 		t.Errorf("METASYSTEM_SUPERVISION_REGISTRY_HOME = %q, want an isolated absolute directory other than %q", got, hostile)
 	}
+}
+
+// The wait candidate TestMain builds is trimmed like every engine build; the
+// wait tests that exec it prove it still answers.
+func TestWaitCandidateIsBuiltTrimmed(t *testing.T) {
+	t.Parallel()
+	binary := os.Getenv("METASYSTEM_WAIT_BINARY")
+	if binary == "" {
+		t.Fatal("TestMain published no wait candidate")
+	}
+	info, err := buildinfo.ReadFile(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "-trimpath" && setting.Value == "true" {
+			return
+		}
+	}
+	t.Fatalf("wait candidate build settings %v lack -trimpath=true", info.Settings)
 }

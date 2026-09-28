@@ -66,7 +66,7 @@ hook_bootstrap() {
   fi
   set -m
   nohup bash -c 'builtin printf "hook bootstrap: builder %s starts the engine build\n" "$$"; builtin cd -- "$1" || exit 1
-    exec go run ./cmd/devgate build' \
+    exec go run -trimpath ./cmd/devgate build' \
     hook-bootstrap "$hook_world" >>"$hook_world/artifacts/agents/hook-bootstrap.log" 2>&1 </dev/null &
   set +m
   hook_point_fence "$!"

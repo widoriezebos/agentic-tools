@@ -107,6 +107,8 @@ func TestProcessNamespaceOwnsHomeAndRuntimeButKeepsGoCaches(t *testing.T) {
 				"TESTENV_EXPECT_GOCACHE="+expected["GOCACHE"],
 				"TESTENV_EXPECT_GOMODCACHE="+expected["GOMODCACHE"],
 				"TESTENV_EXPECT_GOPATH="+expected["GOPATH"],
+				// staticcheck's cache sits beside Go's in the same user cache dir.
+				"TESTENV_EXPECT_STATICCHECK_CACHE="+expectedStaticcheckCache(environment, expected["GOCACHE"]),
 				"TESTENV_PREPARE_HOME="+base,
 			)
 			if output, err := command.CombinedOutput(); err != nil {
@@ -121,7 +123,7 @@ func processNamespaceCacheCaseEnvironment(environment []string, mode, base strin
 	for _, entry := range environment {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
-		case "GOCACHE", "GOMODCACHE", "GOPATH", "GOTOOLCHAIN", "GOPROXY", "HOME", "XDG_CACHE_HOME", "TESTENV_PROCESS_NAMESPACE_HELPER_MODE", "TEST_TELEMETRY_DIR":
+		case "GOCACHE", "STATICCHECK_CACHE", "GOMODCACHE", "GOPATH", "GOTOOLCHAIN", "GOPROXY", "HOME", "XDG_CACHE_HOME", "TESTENV_PROCESS_NAMESPACE_HELPER_MODE", "TEST_TELEMETRY_DIR":
 			continue
 		}
 		filtered = append(filtered, entry)
@@ -134,15 +136,27 @@ func processNamespaceCacheCaseEnvironment(environment []string, mode, base strin
 	)
 	switch mode {
 	case "empty":
-		filtered = append(filtered, "GOCACHE=", "GOMODCACHE=", "GOPATH=")
+		filtered = append(filtered, "GOCACHE=", "STATICCHECK_CACHE=", "GOMODCACHE=", "GOPATH=")
 	case "nonempty":
 		filtered = append(filtered,
 			"GOCACHE="+filepath.Join(base, "shared-go-build"),
+			"STATICCHECK_CACHE="+filepath.Join(base, "shared-staticcheck"),
 			"GOMODCACHE="+filepath.Join(base, "shared-go-modules"),
 			"GOPATH="+filepath.Join(base, "shared-go-path"),
 		)
 	}
 	return filtered
+}
+
+// expectedStaticcheckCache is the pre-isolation STATICCHECK_CACHE: an
+// inherited value, else beside the unset-GOCACHE default go-build.
+func expectedStaticcheckCache(environment []string, goCache string) string {
+	for _, entry := range environment {
+		if value, ok := strings.CutPrefix(entry, "STATICCHECK_CACHE="); ok && value != "" {
+			return value
+		}
+	}
+	return filepath.Join(filepath.Dir(goCache), "staticcheck")
 }
 
 func disableGoTelemetryForFixture(t *testing.T, environment []string) {
@@ -176,6 +190,9 @@ func verifyProcessNamespaceGoConsumer(t *testing.T, mode string) {
 		t.Fatalf("helper HOME %q was not isolated from %q", os.Getenv("HOME"), os.Getenv("TESTENV_PREPARE_HOME"))
 	}
 	actual := readGoCacheEnvironment(t, os.Environ())
+	if want := os.Getenv("TESTENV_EXPECT_STATICCHECK_CACHE"); want == "" || os.Getenv("STATICCHECK_CACHE") != want {
+		t.Errorf("STATICCHECK_CACHE after namespace = %q, want pre-isolation value %q", os.Getenv("STATICCHECK_CACHE"), want)
+	}
 	for _, name := range []string{"GOCACHE", "GOMODCACHE", "GOPATH"} {
 		want := os.Getenv("TESTENV_EXPECT_" + name)
 		if os.Getenv(name) != want || actual[name] != want {

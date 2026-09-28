@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -163,7 +164,17 @@ func DeclareInheritedControls() []Declaration {
 
 // Main prepares the package environment, runs the tests, releases its registry
 // ownership, and returns the package exit code.
-func Main(m *testing.M, declarations ...Declaration) (code int) {
+func Main(m *testing.M, declarations ...Declaration) int {
+	return MainWithSetup(m, nil, declarations...)
+}
+
+// MainWithSetup is Main with a package setup step. setup runs after the
+// fixture custodian exists and before the tests, inside the process namespace:
+// a directory it makes lands in the owned TMPDIR, and a child it starts with a
+// registered fixture key is ended by the custodian and the exit scan. A setup
+// error is printed and the package exits 2 after the namespace cleanup. A
+// TestMain allocates nothing before this call (cmd/metasystem audit_disk_test).
+func MainWithSetup(m *testing.M, setup func() error, declarations ...Declaration) (code int) {
 	if os.Getenv(identity.FixtureCustodianEnv) == "1" {
 		owner, err := identity.ParseRef(os.Getenv(identity.FixtureCustodianOwnerEnv))
 		if err != nil {
@@ -222,7 +233,16 @@ func Main(m *testing.M, declarations ...Declaration) (code int) {
 		fmt.Fprintf(os.Stderr, "start fixture custodian: %v\n", err)
 		return 2
 	}
-	code = exitScan(m.Run(), registeredFixtureKeys(), identity.FixtureSurvivors, identity.KernelProber{}, syscall.Kill, os.Stderr)
+	if setup != nil {
+		err = setup()
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "set up test package: %v\n", err)
+		code = 2
+	} else {
+		code = m.Run()
+	}
+	code = exitScan(code, registeredFixtureKeys(), identity.FixtureSurvivors, identity.KernelProber{}, syscall.Kill, os.Stderr)
 	return code
 }
 
@@ -545,9 +565,12 @@ func createProcessNamespace(mkdirTemp func(string, string) (string, error), root
 
 func sharedGoCacheEnvironment() map[string]string {
 	shared := make(map[string]string)
-	if os.Getenv("GOCACHE") == "" {
-		if cache, err := os.UserCacheDir(); err == nil && filepath.IsAbs(cache) {
-			shared["GOCACHE"] = filepath.Join(cache, "go-build")
+	// The engine cache pair, resolved before the namespace replaces HOME.
+	caches, _ := gocache.Resolve(os.Environ())
+	for _, entry := range gocache.Environment(caches) {
+		name, value, _ := strings.Cut(entry, "=")
+		if os.Getenv(name) == "" {
+			shared[name] = value
 		}
 	}
 	gopath := os.Getenv("GOPATH")

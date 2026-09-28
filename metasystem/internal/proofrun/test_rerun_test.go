@@ -59,7 +59,8 @@ func TestFlipsOnSecondRun(t *testing.T) {
 		t.Fatalf("group with rerun finding was rejected: %v", err)
 	}
 	wantPackage := "github.com/widoriezebos/agentic-tools/metasystem/internal/rerunflip"
-	if finding.Package != wantPackage || finding.Test != "TestFlipsOnSecondRun" || finding.First != "failed" || finding.Second != "passed" {
+	if finding.Package != wantPackage || finding.Test != "TestFlipsOnSecondRun" || finding.First != "failed" || finding.Second != "passed" ||
+		finding.Reason != GoTestCountOneRerun {
 		t.Fatalf("rerun finding=%+v", finding)
 	}
 	wantLoad := LoadSample{Sample: hostload.Sample{At: finding.FailedLoad.At, Load1m: 7.5, Load5m: 6.5, Load15m: 5.5, Cores: 8, Available: true},

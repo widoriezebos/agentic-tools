@@ -232,11 +232,11 @@ func (g *gateRun) collectStatic() int {
 	reds = append(reds, g.shellParse(env)...)
 
 	var vetOut bytes.Buffer
-	if d.goTool(g.ctx, g.root, env, []string{"vet", "-p=" + g.workers, "./..."}, &vetOut, &vetOut) != nil {
+	if d.goTool(g.ctx, g.root, env, []string{"vet", "-trimpath", "-p=" + g.workers, "./..."}, &vetOut, &vetOut) != nil {
 		reds = append(reds, "go vet failed:\n"+strings.TrimRight(vetOut.String(), "\n"))
 	}
 	var staticcheckOut bytes.Buffer
-	if d.goTool(g.ctx, g.root, env, []string{"run", "-p=" + g.workers, staticcheckModule, "./..."}, &staticcheckOut, &staticcheckOut) != nil {
+	if d.goTool(g.ctx, g.root, env, []string{"run", "-trimpath", "-p=" + g.workers, staticcheckModule, "./..."}, &staticcheckOut, &staticcheckOut) != nil {
 		reds = append(reds, "staticcheck 2026.2 (module v0.8.0) refused (or could not run):\n"+strings.TrimRight(staticcheckOut.String(), "\n"))
 	}
 
@@ -261,7 +261,7 @@ func (g *gateRun) collectStatic() int {
 	}
 	if g.fast {
 		var refusalOut bytes.Buffer
-		if d.goTool(g.ctx, g.root, env, []string{"test", "-p=" + g.workers, "-count=1", "./internal/refusal"}, &refusalOut, &refusalOut) != nil {
+		if d.goTool(g.ctx, g.root, env, []string{"test", "-trimpath", "-p=" + g.workers, "-count=1", "./internal/refusal"}, &refusalOut, &refusalOut) != nil {
 			reds = append(reds, "refusal register failed:\n"+strings.TrimRight(refusalOut.String(), "\n"))
 		}
 	}

@@ -3,20 +3,12 @@ package testutil
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestFakeHostDelegatesItsLifetimeToUtilHold(t *testing.T) {
-	_, source, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate prologue source test")
-	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
-	if override := os.Getenv("FIXTURE_SOURCE_ROOT"); override != "" {
-		root = override
-	}
+	root := MustSourceRoot(t)
 	// The fake host's hold (formerly hosts/fake.sh's `exec "$ms" util hold`)
 	// replaces the host process with the engine's leash-bound hold.
 	fake := readFixtureSource(t, filepath.Join(root, "internal", "adapter", "supervisor", "fake_host.go"))
