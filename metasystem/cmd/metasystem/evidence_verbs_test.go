@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 )
 
 func homeOnly(home string) func(string) (string, bool) {
@@ -42,5 +44,31 @@ func TestEvidenceGCTargetResolvesThroughTheOwner(t *testing.T) {
 	if _, err := evidenceGCTarget(checkout, "", homeOnly(home)); err == nil ||
 		!strings.HasPrefix(err.Error(), "evidence-gc refused: ") || !strings.Contains(err.Error(), `must be absolute (metasystem.conf reads "relative")`) {
 		t.Fatalf("relative: got %v", err)
+	}
+}
+
+// A machine launch's preflight fact is this seat's resolved root; a resolver
+// refusal is the launch's evidence-root refusal before the lock.
+func TestSeatLaunchEvidenceRootResolvesThroughTheOwner(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	installation := filepath.Join(t.TempDir(), "seat")
+	if err := os.MkdirAll(installation, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(installation, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("x=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if root, err := seatLaunchEvidenceRoot(conf, homeOnly(home)); err != nil || root != filepath.Join(home, "metasystem-evidence", "seat") {
+		t.Fatalf("default: %q, %v", root, err)
+	}
+	if err := os.WriteFile(conf, []byte("evidence.root=relative\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := seatLaunchEvidenceRoot(conf, homeOnly(home))
+	refusal, named := err.(*launch.Refusal)
+	if !named || refusal.Code != launch.CodeEvidenceRootUnsafe || !strings.Contains(refusal.Message, `metasystem.conf reads "relative"`) {
+		t.Fatalf("relative: %v", err)
 	}
 }

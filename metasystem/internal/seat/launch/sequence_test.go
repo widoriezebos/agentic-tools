@@ -3,10 +3,13 @@ package launch
 // What the sequencer does, step by step, with nothing real behind it.
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
 func TestEveryStepRunsItsOwnersCommandInOrder(t *testing.T) {
@@ -33,7 +36,6 @@ func TestEveryStepRunsItsOwnersCommandInOrder(t *testing.T) {
 		"git -C " + destRoot + " rev-parse HEAD",
 		"git -C " + destRoot + " fetch --no-tags origin",
 		"go run -trimpath ./cmd/devgate build",
-		"metasystem config get --key evidence.root --conf " + filepath.Join(fromRoot, install, "metasystem.conf"),
 		"metasystem validate session-isolation --source-root " + fromRoot + " --destination-root " + destRoot +
 			" --manifest " + filepath.Join(destInstall(), "artifacts", "agents", "ui", "local-config-paths") +
 			" --harness-root " + filepath.Join(fromRoot, install),
@@ -256,10 +258,14 @@ func TestAResumeThatHasToArmAgainAsksForTheWord(t *testing.T) {
 	}
 }
 
-func TestTheEvidenceRootIsTheSiblingOfThisSeatsEffectiveRoot(t *testing.T) {
+// The copied .local travels with its evidence root blanked, and the clone
+// resolves its own: here a blanked .local over a placeholder committed conf,
+// which is the default, made by this launch and accepted.
+func TestTheCloneResolvesItsOwnEvidenceRootAfterTheCopy(t *testing.T) {
 	t.Parallel()
 	built := newWorld(request())
-	if _, err := built.sequencer.Run(fresh()); err != nil {
+	record, err := built.sequencer.Run(fresh())
+	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if len(built.host.copied) != 1 {
@@ -272,42 +278,61 @@ func TestTheEvidenceRootIsTheSiblingOfThisSeatsEffectiveRoot(t *testing.T) {
 	if copied.destRoot != filepath.Join(destInstall(), "metasystem.conf.local") {
 		t.Fatalf("copied to %q", copied.destRoot)
 	}
-	if copied.evidenceRoot != "/w/evidence/m1f" {
-		t.Fatalf("evidence root = %q, want the sibling of this seat's own", copied.evidenceRoot)
+	if len(built.host.madeDirs) != 1 || built.host.madeDirs[0] != cloneEvidence || !record.Created.EvidenceRoot {
+		t.Fatalf("made %v, created %+v; want the clone's resolved root made by this launch", built.host.madeDirs, record.Created)
+	}
+	step, _ := record.StepOf(StepConfiguration)
+	line := config.EvidenceRoot{Path: cloneEvidence, Origin: "default"}.Line()
+	if !strings.Contains(step.Words, line) {
+		t.Fatalf("configuration words = %q, want %q", step.Words, line)
 	}
 }
 
 func TestTheEvidenceRootRefusesThisSeatsOwnRoot(t *testing.T) {
 	t.Parallel()
 	built := newWorld(request())
-	// A seat whose effective root is already named for this machineName would
-	// have the new machine write its evidence into this seat's.
-	built.runner.said["metasystem config get --key evidence.root --conf "+filepath.Join(fromRoot, install, "metasystem.conf")] = "/w/evidence/m1f\n"
+	// A clone whose committed conf carries a concrete root this seat also
+	// uses would write its evidence into this seat's.
+	built.host.evidenceRoots[destInstall()] = config.EvidenceRoot{Path: sourceEvidence, Origin: "conf"}
 	_, err := built.sequencer.Run(fresh())
 	refusal, named := err.(*Refusal)
 	if !named || refusal.Code != CodeEvidenceRootUnsafe {
+		t.Fatalf("error = %v, want %s", err, CodeEvidenceRootUnsafe)
+	}
+	if len(built.host.madeDirs) != 0 {
+		t.Fatalf("made %v for a root that is this seat's", built.host.madeDirs)
+	}
+}
+
+// The two roots are compared canonically: a clone root that is the source's
+// through a link is the source's.
+func TestTheEvidenceRootRefusesThisSeatsOwnRootThroughALink(t *testing.T) {
+	t.Parallel()
+	built := newWorld(request())
+	built.host.canonical[cloneEvidence] = sourceEvidence
+	_, err := built.sequencer.Run(fresh())
+	if refusal, named := err.(*Refusal); !named || refusal.Code != CodeEvidenceRootUnsafe {
 		t.Fatalf("error = %v, want %s", err, CodeEvidenceRootUnsafe)
 	}
 }
 
-func TestTheEvidenceRootRefusesTheTemplatesPlaceholder(t *testing.T) {
+func TestTheEvidenceRootRefusesAResolverErrorOnEitherSide(t *testing.T) {
 	t.Parallel()
-	built := newWorld(request())
-	built.runner.said["metasystem config get --key evidence.root --conf "+filepath.Join(fromRoot, install, "metasystem.conf")] = "<durable evidence root, outside the repository>\n"
-	_, err := built.sequencer.Run(fresh())
-	refusal, named := err.(*Refusal)
-	if !named || refusal.Code != CodeEvidenceRootUnsafe {
-		t.Fatalf("error = %v, want %s", err, CodeEvidenceRootUnsafe)
-	}
-	if !strings.Contains(refusal.Message, "not set") {
-		t.Fatalf("refusal = %q, want it to say the root is not set", refusal.Message)
+	for _, side := range []string{filepath.Join(fromRoot, install), destInstall()} {
+		built := newWorld(request())
+		built.host.evidenceErrs[side] = errors.New(`evidence.root must be absolute (metasystem.conf.local reads "rel")`)
+		_, err := built.sequencer.Run(fresh())
+		refusal, named := err.(*Refusal)
+		if !named || refusal.Code != CodeEvidenceRootUnsafe || !strings.Contains(refusal.Message, `metasystem.conf.local reads "rel"`) {
+			t.Fatalf("%s: error = %v, want %s in the resolver's sentence", side, err, CodeEvidenceRootUnsafe)
+		}
 	}
 }
 
 func TestTheEvidenceRootRefusesADirectoryThatResolvesElsewhere(t *testing.T) {
 	t.Parallel()
 	built := newWorld(request())
-	built.host.canonical["/w/evidence/m1f"] = "/somewhere/else"
+	built.host.canonical[cloneEvidence] = "/somewhere/else"
 	_, err := built.sequencer.Run(fresh())
 	refusal, named := err.(*Refusal)
 	if !named || refusal.Code != CodeEvidenceRootUnsafe {
@@ -321,7 +346,7 @@ func TestTheEvidenceRootRefusesADirectoryThatResolvesElsewhere(t *testing.T) {
 func TestTheEvidenceRootRefusesADirectoryThisLaunchDidNotCreate(t *testing.T) {
 	t.Parallel()
 	built := newWorld(request())
-	built.host.present["/w/evidence/m1f"] = true
+	built.host.present[cloneEvidence] = true
 	_, err := built.sequencer.Run(fresh())
 	refusal, named := err.(*Refusal)
 	if !named || refusal.Code != CodeEvidenceRootUnsafe {

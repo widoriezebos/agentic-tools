@@ -377,15 +377,15 @@ var Rows = []Row{
 	{Code: "SEAT_LAUNCH_DESTINATION_EXISTS", Owner: "internal/seat/launch", Site: "preflight.go:125", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_LAUNCH_DESTINATION_INSIDE_A_CHECKOUT", Owner: "internal/seat/launch", Site: "preflight.go:142", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_LAUNCH_RUNNING", Owner: "internal/seat/launch", Site: "lock.go:51", Shape: Question, H1: StandingInput},
-	{Code: "SEAT_LAUNCH_DISK_SHORT", Owner: "internal/seat/launch", Site: "sequence.go:354", Shape: Question, H1: StandingInput},
-	{Code: "SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE", Owner: "internal/seat/launch", Site: "sequence.go:553", Shape: Question, H1: StandingGuide, Forward: "machine start", ForwardSite: "internal/seat/launch/refusal.go:75"},
-	{Code: "SEAT_LAUNCH_WORD_REQUIRED", Owner: "internal/seat/launch", Site: "sequence.go:664", Shape: Question, H1: StandingIdentity},
+	{Code: "SEAT_LAUNCH_DISK_SHORT", Owner: "internal/seat/launch", Site: "sequence.go:360", Shape: Question, H1: StandingInput},
+	{Code: "SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE", Owner: "internal/seat/launch", Site: "sequence.go:552", Shape: Question, H1: StandingGuide, Forward: "machine start", ForwardSite: "internal/seat/launch/refusal.go:77"},
+	{Code: "SEAT_LAUNCH_WORD_REQUIRED", Owner: "internal/seat/launch", Site: "sequence.go:677", Shape: Question, H1: StandingIdentity},
 	{Code: "SEAT_LAUNCH_WORD_INVALID", Owner: "cmd/metasystem", Site: "ui_launch.go:57", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_LAUNCH_REVIEW_DATE_PAST", Owner: "cmd/metasystem", Site: "ui_launch.go:67", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_LAUNCH_ID_INVALID", Owner: "internal/seat/launch", Site: "record.go:153", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_LAUNCH_FLEET_UNREADABLE", Owner: "internal/seat/launch", Site: "presence.go:58", Shape: Question, H1: StandingInput},
-	{Code: "SEAT_LAUNCH_SUPERVISION_DOWN", Owner: "internal/seat/launch", Site: "sequence.go:703", Shape: Question, H1: StandingInput},
-	{Code: "SEAT_LAUNCH_IDENTITY_UNREADABLE", Owner: "internal/seat/launch", Site: "sequence.go:731", Shape: Question, H1: StandingIdentity},
+	{Code: "SEAT_LAUNCH_SUPERVISION_DOWN", Owner: "internal/seat/launch", Site: "sequence.go:716", Shape: Question, H1: StandingInput},
+	{Code: "SEAT_LAUNCH_IDENTITY_UNREADABLE", Owner: "internal/seat/launch", Site: "sequence.go:744", Shape: Question, H1: StandingIdentity},
 }
 
 var Exclusions = []Exclusion{
