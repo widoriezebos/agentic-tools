@@ -107,7 +107,6 @@ func families() []family {
 			name:    "validate",
 			summary: "whole-artifact validators the assert scripts exec into",
 			verbs: []verb{
-				{"turn-prompt", "validate an assembled host-turn prompt against its turn record and the shipped preamble", runValidateTurnPrompt},
 				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
 				{"skills", "validate every present skill's SKILL.md frontmatter, or the named skill directories", runValidateSkills},
 				{"design-obligations", "check the structure and declared state of design-obligation matrices", runValidateDesignObligations},

@@ -15,29 +15,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
-// runValidateTurnPrompt validates an assembled unattended host-turn
-// prompt against its canonical turn record and the shipped orchestrator
-// preamble. Exit 0 pass; 1 the first violation (printed with its check
-// family); 2 usage.
-func runValidateTurnPrompt(args []string) int {
-	flags := flag.NewFlagSet("validate turn-prompt", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "metasystem root holding the shipped preamble")
-	file := flags.String("file", "", "assembled prompt file")
-	turn := flags.String("turn", "", "turn directory holding turn.json")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *file == "" || *turn == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate turn-prompt --root R --file F --turn D")
-		return 2
-	}
-	if violation := validate.TurnPrompt(*root, *file, *turn); violation != nil {
-		fmt.Fprintf(os.Stderr, "turn prompt violation [%s]: %s\n", violation.Check, violation.Message)
-		return 1
-	}
-	return 0
-}
-
 // runValidateCritiqueClosed joins a critic return's findings array
 // against the Markdown dispositions table on finding id. Exit 0 closed;
 // 1 open or unjoinable; 2 usage.

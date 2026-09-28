@@ -2055,7 +2055,7 @@ func (e *Engine) cycleGatePrompt(c *cycleContext) (map[string]any, bool, error) 
 		return final, true, ferr
 	}
 	// The checker runs in this process (plans/designs/verbs-object-action.md
-	// 6.2), as the engine's own `validate turn-prompt` ran it.
+	// 6.2); no engine child is started for it.
 	if violation := validate.TurnPrompt(e.Root, filepath.Join(c.turnDir, "prompt.md"), c.turnDir); violation != nil {
 		detail := fmt.Sprintf("turn prompt violation [%s]: %s", violation.Check, violation.Message)
 		final, ferr := e.failTurnBeforeLaunch(c.statePath, c.ledger, c.state, c.turnPath, detail)
