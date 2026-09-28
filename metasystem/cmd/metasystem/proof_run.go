@@ -1944,6 +1944,21 @@ func runProofRunWatchdog(args []string) int {
 	if flags.Parse(args) != nil || flags.NArg() != 0 || (!*resourceCustody && *conf == "") {
 		return 2
 	}
+	// The sibling watchdog is started with stdio and no ExtraFiles, so every
+	// other descriptor it holds without close-on-exec was inherited from the
+	// launcher's ancestors by accident. On 2026-09-28 that was the Lima suite
+	// runner's flock descriptor (flock(1) runs its command with the lock
+	// descriptor open and inheritable, go test and the test binary pass it on
+	// because Go never sets close-on-exec on descriptors it inherited): an
+	// orphaned watchdog then held the lock and wedged every later suite run.
+	// The resource custodian receives its descriptors by number and keeps
+	// them.
+	if !*resourceCustody {
+		if err := closeInheritedDescriptorsAbove(2); err != nil {
+			fmt.Fprintln(os.Stderr, "proof-run watchdog:", err)
+			return 1
+		}
+	}
 	// Re-read the layered configuration in the sibling process immediately
 	// before watchdog startup. A conf.local or environment change between
 	// launcher resolution and spawn can therefore only refuse, never install
