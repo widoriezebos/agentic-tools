@@ -92,7 +92,7 @@ func enrollGoalSyncTerminal(t *testing.T, root, terminalID string) (humanauthori
 func TestSyncReqLineage(t *testing.T) {
 	const (
 		agentRefusal        = "mutations carry their coordinator's identity: export METASYSTEM_OWNER_LINEAGE or pass --lineage"
-		noEnrollmentRefusal = "a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem internal goal enroll-terminal here once, or pass --lineage"
+		noEnrollmentRefusal = "a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem system enroll --name <your name> here once, or pass --lineage"
 		wrongShellRefusal   = "a human act derives its lineage only at the enrolled terminal: this shell does not descend from it (TERMINAL_NOT_REACHED); run the act at the terminal, or pass --lineage"
 	)
 
