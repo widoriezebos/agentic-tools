@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -331,10 +332,32 @@ func (f *scratchPublicFixture) observed() map[string]string {
 	return paths
 }
 
+// scratchRunOf names the scratch owner of path: a run root's name, or under
+// policy v2 a lease slot "leases/<policy>/<key>/<slot>", the run-invariant
+// directory a run holds for one group (proofrun scratch_lease.go).
 func (f *scratchPublicFixture) scratchRunOf(path string) string {
 	for _, store := range []string{proofrun.ScratchStore(f.root), proofrun.ScratchStore(f.control)} {
 		if rest, ok := strings.CutPrefix(path, store+string(os.PathSeparator)); ok {
-			run, _, _ := strings.Cut(rest, string(os.PathSeparator))
+			parts := strings.Split(rest, string(os.PathSeparator))
+			if parts[0] == "leases" && len(parts) >= 4 {
+				return strings.Join(parts[:4], string(os.PathSeparator))
+			}
+			return parts[0]
+		}
+	}
+	return ""
+}
+
+// liveRunOf names the live run that owns path: its run root, or the run
+// whose durable record holds path's lease slot.
+func (f *scratchPublicFixture) liveRunOf(path string) string {
+	owner := f.scratchRunOf(path)
+	if !strings.HasPrefix(owner, "leases"+string(os.PathSeparator)) {
+		return owner
+	}
+	slot := filepath.Join(proofrun.ScratchStore(f.control), owner)
+	for run, record := range f.records() {
+		if slices.Contains(record.Leases, slot) {
 			return run
 		}
 	}
@@ -353,6 +376,7 @@ type scratchRecordView struct {
 	} `json:"custodians"`
 	LegacyGroup int64             `json:"custodianGroup"`
 	Worktrees   []json.RawMessage `json:"worktrees"`
+	Leases      []string          `json:"leases"`
 }
 
 func (record scratchRecordView) groups() []int64 {
@@ -414,10 +438,13 @@ func (f *scratchPublicFixture) workloadPID() int {
 // entry except the kept ones, Git worktree registrations and the workload.
 func (f *scratchPublicFixture) requireClean(paths map[string]string, keep ...string) {
 	f.t.Helper()
-	run := f.scratchRunOf(paths["HOME"])
-	for _, owned := range []string{run + ".json", run + ".record-lock", run} {
-		if _, err := os.Lstat(filepath.Join(proofrun.ScratchStore(f.control), owned)); !os.IsNotExist(err) {
-			f.t.Errorf("completed run's %s remains: %v", owned, err)
+	// Every run record and root is gone (the entry loop below); a v2 group's
+	// locations lay in a lease slot, checked by requireLeasesReleased.
+	if run := f.scratchRunOf(paths["HOME"]); !strings.HasPrefix(run, "leases"+string(os.PathSeparator)) {
+		for _, owned := range []string{run + ".json", run + ".record-lock", run} {
+			if _, err := os.Lstat(filepath.Join(proofrun.ScratchStore(f.control), owned)); !os.IsNotExist(err) {
+				f.t.Errorf("completed run's %s remains: %v", owned, err)
+			}
 		}
 	}
 	for name, path := range paths {
@@ -430,6 +457,10 @@ func (f *scratchPublicFixture) requireClean(paths map[string]string, keep ...str
 		f.t.Fatal(err)
 	}
 	for _, entry := range entries {
+		if entry.Name() == "leases" && entry.IsDir() {
+			f.requireLeasesReleased(filepath.Join(proofrun.ScratchStore(f.control), "leases"))
+			continue
+		}
 		if !scratchKept(entry.Name(), keep) {
 			f.t.Errorf("scratch store retains %s", entry.Name())
 		}
@@ -442,6 +473,38 @@ func (f *scratchPublicFixture) requireClean(paths map[string]string, keep ...str
 	}
 	if err := unix.Kill(f.workloadPID(), 0); !errors.Is(err, unix.ESRCH) {
 		f.t.Errorf("workload %d still alive: %v", f.workloadPID(), err)
+	}
+}
+
+// requireLeasesReleased: after every run ended, the lease tree holds only
+// <policy>/<key>/ directories of zero-byte, ownerless <slot>.lease lock
+// files: no slot tree and no run content survives, and what remains is
+// bounded by the slots ever used concurrently per group identity.
+func (f *scratchPublicFixture) requireLeasesReleased(root string) {
+	f.t.Helper()
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, _ := filepath.Rel(root, path)
+		depth := len(strings.Split(relative, string(os.PathSeparator)))
+		switch {
+		case relative == ".":
+		case entry.IsDir() && depth <= 2:
+		case entry.Type().IsRegular() && depth == 3 && strings.HasSuffix(entry.Name(), ".lease"):
+			if info, err := entry.Info(); err != nil || info.Size() != 0 {
+				f.t.Errorf("released lease lock %s still names an owner: %v %v", relative, info, err)
+			}
+		default:
+			f.t.Errorf("released lease tree retains %s", relative)
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		f.t.Fatal(err)
 	}
 }
 
@@ -642,7 +705,7 @@ func (f *scratchPublicFixture) liveScratchWorld(peerRoot string, paths map[strin
 			f.t.Fatalf("live token %s under %s: %v %q", name, path, err, data)
 		}
 	}
-	run := f.scratchRunOf(paths["HOME"])
+	run := f.liveRunOf(paths["HOME"])
 	record, ok := f.records()[run]
 	if !ok || record.Attempt == "" || len(record.groups()) == 0 {
 		f.t.Fatalf("live run %s record incomplete: %+v", run, record)

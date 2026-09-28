@@ -579,8 +579,10 @@ func newestReuseObservation(template TestResult, attempts []Attempt, id, identit
 		}
 		observed := false
 		if source := attempt.TestResult; source != nil && source.JudgeKey == template.JudgeKey && source.BehaviorPolicyDigest == template.BehaviorPolicyDigest {
+			// Schemas 3 and 4 are one generation: 4 only adds the Go execution
+			// record, so a verify or reuse template of either reads the other.
 			if identityBoundTestResultSchema(source.SchemaVersion) && identityBoundTestResultSchema(template.SchemaVersion) &&
-				source.SchemaVersion != template.SchemaVersion {
+				workerPolicyTestResultSchema(source.SchemaVersion) != workerPolicyTestResultSchema(template.SchemaVersion) {
 				continue
 			}
 			for _, group := range source.Groups {

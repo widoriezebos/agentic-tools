@@ -26,7 +26,8 @@ func newLeaseRun(t *testing.T, control string) *ScratchRun {
 
 // Sequential runs of one key see the same slot path; a run overlapping a
 // live owner takes the next slot; a run re-claiming its own key gets its own
-// slot back; normal cleanup empties the slot and frees it, keeping the path.
+// slot back; normal cleanup removes the slot's tree and frees it, keeping
+// only its empty lock file, and the next claim gets the same path.
 func TestScratchLeaseSlotsAreRunInvariantAndExclusive(t *testing.T) {
 	t.Parallel()
 	lockedScratch(t, func() {
@@ -48,8 +49,11 @@ func TestScratchLeaseSlotsAreRunInvariantAndExclusive(t *testing.T) {
 			t.Fatalf("overlapping claim = %q %v, want slot 1 beside %q", slot1, err, slot0)
 		}
 		cleanupLeaseRuns(t, first)
-		if entries, err := os.ReadDir(slot0); err != nil || len(entries) != 0 {
-			t.Fatalf("released slot 0 = %v %v, want an empty kept directory", entries, err)
+		if _, err := os.Lstat(slot0); !os.IsNotExist(err) {
+			t.Fatalf("released slot 0 tree remains: %v", err)
+		}
+		if info, err := os.Lstat(slot0 + ".lease"); err != nil || info.Size() != 0 {
+			t.Fatalf("released slot 0 lock = %v %v, want a kept empty lock file", info, err)
 		}
 		next := newLeaseRun(t, control)
 		if slot, err := next.ClaimLease(testLeasePolicy, "key"); err != nil || slot != slot0 {

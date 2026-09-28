@@ -29,6 +29,14 @@ import (
 // dead, removes the recorded worktrees and releases the lease. Liveness is
 // never probed by taking another run's writer lock, which would make that
 // run's own nonblocking cleanup fail.
+//
+// What stays on disk per (control root, policy, group environment identity)
+// after every run has ended: the directory <key>/ holding one zero-byte
+// <slot>.lease lock file per slot ever used concurrently (slot 0 for
+// sequential runs); release removes the slot's tree. The lock files are kept
+// because unlinking a file others may flock would let two claimants lock
+// different inodes of one name. A crashed run's slot tree stays until
+// ReconcileScratch proves it dead, like its run root.
 const (
 	scratchLeaseDir      = "leases"
 	scratchLeaseMaxSlots = 64
@@ -155,7 +163,7 @@ func leaseOfWorktree(record ScratchRecord, tuple ScratchWorktree) (string, bool)
 	return "", false
 }
 
-// releaseScratchLeases empties and frees every slot the record's run still
+// releaseScratchLeases removes the tree of and frees every slot the run still
 // owns. The caller holds the run's writer lock through a fresh description
 // and has removed the run's recorded worktrees, so no writer uses the tree.
 func releaseScratchLeases(record ScratchRecord) (string, error) {
@@ -165,10 +173,9 @@ func releaseScratchLeases(record ScratchRecord) (string, error) {
 			return "lease " + dir, errors.Join(errScratchPending, err)
 		}
 		if owner == record.Root {
+			// The slot's tree goes; only the path's name must be stable
+			// (Go hashes strings), and the next claim recreates it.
 			err = os.RemoveAll(dir)
-			if err == nil {
-				err = os.Mkdir(dir, 0o700)
-			}
 			if err == nil {
 				err = writeLeaseOwner(file, "")
 			}
