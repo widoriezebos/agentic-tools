@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -204,5 +205,281 @@ func TestAuditNoGoSourceSpellsTheLowercaseStampSentinel(t *testing.T) {
 	}
 	if len(sites) != 0 {
 		t.Fatalf("Go sources spell the lowercase stamp sentinel (use enginebuild's uppercase constant): %v", sites)
+	}
+}
+
+/* ------------------------------------------ Part B U0: R1, R11, R13 -- */
+
+// auditDiskEmptyTempCeiling is the number of os.MkdirTemp/os.CreateTemp calls
+// in non-test Go whose directory argument is the empty string: each writes
+// into the process's TMPDIR with no owner (Part B R1). The design counted 29
+// at d4d124fb8; the tree at bd7e7d388 has 35. It is lowered at U1b-1 and is
+// zero at U1b-2; it never rises.
+const auditDiskEmptyTempCeiling = 35
+
+// auditDiskTempDirCeiling is the number of os.TempDir() calls in non-test Go
+// outside internal/diskstore and internal/testenv (Part B R1): 9 in the
+// design at d4d124fb8, 11 at bd7e7d388; zero at U1b-2.
+const auditDiskTempDirCeiling = 11
+
+// auditDiskScriptMktempCeiling and auditDiskScriptVariableRmCeiling hold the
+// committed shell files at zero mktemp lines without an engine-prefixed
+// template (R1) and zero rm lines over a variable path (R11). Both were zero
+// before Part B: the scripts U2b named were retired into Go.
+const (
+	auditDiskScriptMktempCeiling     = 0
+	auditDiskScriptVariableRmCeiling = 0
+)
+
+// auditDiskOSNames returns the local names the file imports "os" under.
+func auditDiskImportNames(file *ast.File, want string) map[string]bool {
+	names := map[string]bool{}
+	for _, spec := range file.Imports {
+		path, _ := strconv.Unquote(spec.Path.Value)
+		if path != want {
+			continue
+		}
+		local := filepath.Base(path)
+		if spec.Name != nil {
+			local = spec.Name.Name
+		}
+		names[local] = true
+	}
+	return names
+}
+
+// auditDiskEmptyTempLines returns the lines of os.MkdirTemp/os.CreateTemp
+// calls whose first argument is the literal "" (or “).
+func auditDiskEmptyTempLines(fileSet *token.FileSet, file *ast.File) []int {
+	osNames := auditDiskImportNames(file, "os")
+	var lines []int
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := selector.X.(*ast.Ident)
+		if !ok || !osNames[ident.Name] || selector.Sel.Name != "MkdirTemp" && selector.Sel.Name != "CreateTemp" {
+			return true
+		}
+		if literal, ok := call.Args[0].(*ast.BasicLit); ok && literal.Kind == token.STRING {
+			if value, err := strconv.Unquote(literal.Value); err == nil && value == "" {
+				lines = append(lines, fileSet.Position(call.Pos()).Line)
+			}
+		}
+		return true
+	})
+	return lines
+}
+
+// auditDiskSelectorLines returns the lines where the file names pkg.name,
+// called or taken as a value (a seam `now = time.Now` counts too).
+func auditDiskSelectorLines(fileSet *token.FileSet, file *ast.File, pkg string, names ...string) []int {
+	local := auditDiskImportNames(file, pkg)
+	want := map[string]bool{}
+	for _, name := range names {
+		want[name] = true
+	}
+	var lines []int
+	ast.Inspect(file, func(node ast.Node) bool {
+		selector, ok := node.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if ident, ok := selector.X.(*ast.Ident); ok && local[ident.Name] && want[selector.Sel.Name] {
+			lines = append(lines, fileSet.Position(selector.Pos()).Line)
+		}
+		return true
+	})
+	return lines
+}
+
+// auditDiskGoSites parses every non-test Go file of the module and returns
+// the sites classify reports.
+func auditDiskGoSites(t *testing.T, include func(rel string) bool, classify func(*token.FileSet, *ast.File) []int) []ratchetSite {
+	t.Helper()
+	_, module := verbRatchetRoots(t)
+	var sites []ratchetSite
+	walkRatchetFiles(t, module, []string{".git", "node_modules", "artifacts", "testdata", "bin"}, nil, func(path, rel string) {
+		if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") || !include(rel) {
+			return
+		}
+		fileSet := token.NewFileSet()
+		parsed, err := parser.ParseFile(fileSet, path, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", rel, err)
+		}
+		for _, line := range classify(fileSet, parsed) {
+			sites = append(sites, ratchetSite{path: rel, line: line})
+		}
+	})
+	return sites
+}
+
+func TestAuditDiskEmptyArgumentTempCalls(t *testing.T) {
+	t.Parallel()
+	sites := auditDiskGoSites(t, func(string) bool { return true }, auditDiskEmptyTempLines)
+	checkVerbRatchet(t, "empty-argument os.MkdirTemp/os.CreateTemp calls in non-test Go", "auditDiskEmptyTempCeiling",
+		len(sites), auditDiskEmptyTempCeiling, sites)
+}
+
+func TestAuditDiskTempDirReaders(t *testing.T) {
+	t.Parallel()
+	outside := func(rel string) bool {
+		return !strings.HasPrefix(rel, "internal/diskstore/") && !strings.HasPrefix(rel, "internal/testenv/")
+	}
+	sites := auditDiskGoSites(t, outside, func(fileSet *token.FileSet, file *ast.File) []int {
+		return auditDiskSelectorLines(fileSet, file, "os", "TempDir")
+	})
+	checkVerbRatchet(t, "os.TempDir() readers outside internal/diskstore and internal/testenv", "auditDiskTempDirCeiling",
+		len(sites), auditDiskTempDirCeiling, sites)
+}
+
+// TestAuditDiskStoreReadsNoWallClock is R13's witness for the registry and
+// sweeper package: every instant is a parameter, so no file of
+// internal/diskstore names time.Now or time.Sleep, not even as a seam.
+func TestAuditDiskStoreReadsNoWallClock(t *testing.T) {
+	t.Parallel()
+	inStore := func(rel string) bool { return strings.HasPrefix(rel, "internal/diskstore/") }
+	scanned := 0
+	sites := auditDiskGoSites(t, inStore, func(fileSet *token.FileSet, file *ast.File) []int {
+		scanned++
+		return auditDiskSelectorLines(fileSet, file, "time", "Now", "Sleep")
+	})
+	if scanned == 0 {
+		t.Fatal("scanned no file of internal/diskstore")
+	}
+	if len(sites) != 0 {
+		t.Fatalf("internal/diskstore reads the wall clock; take now as a parameter:\n%s", ratchetSiteList(sites))
+	}
+}
+
+var (
+	auditDiskMktempRE   = regexp.MustCompile(`(^|[\s;&|(` + "`" + `])mktemp(\s|$|\))`)
+	auditDiskTemplateRE = regexp.MustCompile(`/metasystem-[A-Za-z0-9._-]*X{3,}`)
+	auditDiskRmRE       = regexp.MustCompile(`(^\s*|[;&|(]\s*|\b(?:then|do|else)\s+)rm\s+([^#;&|)]*)`)
+)
+
+// auditDiskMktempUnprefixed reports a shell line that runs mktemp without an
+// engine-prefixed template (a path whose last element starts metasystem- and
+// ends in XXX…).
+func auditDiskMktempUnprefixed(line string) bool {
+	code, _, _ := strings.Cut(line, "#")
+	return auditDiskMktempRE.MatchString(code) && !auditDiskTemplateRE.MatchString(code)
+}
+
+// auditDiskVariableRm reports a shell line whose rm names a path through a
+// variable or a command substitution.
+func auditDiskVariableRm(line string) bool {
+	code, _, _ := strings.Cut(line, "#")
+	for _, match := range auditDiskRmRE.FindAllStringSubmatch(code, -1) {
+		if strings.ContainsAny(match[2], "$`") {
+			return true
+		}
+	}
+	return false
+}
+
+// auditDiskShellFiles lists the committed shell files under metasystem/: by
+// extension, or by a shell shebang.
+func auditDiskShellFiles(t *testing.T) map[string]string {
+	t.Helper()
+	_, module := verbRatchetRoots(t)
+	files := map[string]string{}
+	walkRatchetFiles(t, module, scriptRuleSkipNames, nil, func(path, rel string) {
+		if strings.HasSuffix(rel, ".sh") || strings.HasSuffix(rel, ".bash") {
+			files[rel] = path
+			return
+		}
+		head := make([]byte, 64)
+		file, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		read, _ := file.Read(head)
+		_ = file.Close()
+		first, _, _ := strings.Cut(string(head[:read]), "\n")
+		if strings.HasPrefix(first, "#!") && (strings.Contains(first, "sh") || strings.Contains(first, "bash")) {
+			files[rel] = path
+		}
+	})
+	return files
+}
+
+func TestAuditDiskScriptTemplatesAndRemovals(t *testing.T) {
+	t.Parallel()
+	var mktempSites, rmSites []ratchetSite
+	files := auditDiskShellFiles(t)
+	if len(files) == 0 {
+		t.Fatal("found no committed shell file; the walk no longer reaches the tree")
+	}
+	for rel, path := range files {
+		for index, line := range readRatchetLines(t, path) {
+			if auditDiskMktempUnprefixed(line) {
+				mktempSites = append(mktempSites, ratchetSite{path: rel, line: index + 1, text: strings.TrimSpace(line)})
+			}
+			if auditDiskVariableRm(line) {
+				rmSites = append(rmSites, ratchetSite{path: rel, line: index + 1, text: strings.TrimSpace(line)})
+			}
+		}
+	}
+	checkVerbRatchet(t, "mktemp lines without an engine-prefixed template in committed shell files", "auditDiskScriptMktempCeiling",
+		len(mktempSites), auditDiskScriptMktempCeiling, mktempSites)
+	checkVerbRatchet(t, "rm lines over a variable path in committed shell files", "auditDiskScriptVariableRmCeiling",
+		len(rmSites), auditDiskScriptVariableRmCeiling, rmSites)
+}
+
+// TestAuditDiskWitnessesSeeTheirSites is each witness's mutation: a site of
+// each kind is found, and its compliant spelling is not.
+func TestAuditDiskWitnessesSeeTheirSites(t *testing.T) {
+	t.Parallel()
+	source := `package p
+import (sys "os"; clock "time")
+func a() { _, _ = sys.MkdirTemp("", "x"); _, _ = sys.CreateTemp(` + "``" + `, "y") }
+func b(dir string) { _, _ = sys.MkdirTemp(dir, "x"); _ = sys.TempDir() }
+var now = clock.Now
+func c() { clock.Sleep(1) }
+`
+	fileSet := token.NewFileSet()
+	parsed, err := parser.ParseFile(fileSet, "p.go", source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := auditDiskEmptyTempLines(fileSet, parsed); !reflect.DeepEqual(got, []int{3, 3}) {
+		t.Errorf("empty-argument temp lines = %v, want [3 3]", got)
+	}
+	if got := auditDiskSelectorLines(fileSet, parsed, "os", "TempDir"); !reflect.DeepEqual(got, []int{4}) {
+		t.Errorf("TempDir lines = %v, want [4]", got)
+	}
+	if got := auditDiskSelectorLines(fileSet, parsed, "time", "Now", "Sleep"); !reflect.DeepEqual(got, []int{5, 6}) {
+		t.Errorf("wall-clock lines = %v, want [5 6]", got)
+	}
+	for line, want := range map[string]bool{
+		`tmp=$(mktemp -d)`:                     true,
+		`tmp=$(mktemp)`:                        true,
+		`f=$(mktemp "${TMPDIR:-/tmp}/x.XXXX")`: true,
+		`d=$(mktemp -d "${METASYSTEM_SUITE_PROGRESS_TMP:-${TMPDIR:-/tmp}}/metasystem-bed.XXXXXX")`: false,
+		`# mktemp -d is documented here`: false,
+	} {
+		if got := auditDiskMktempUnprefixed(line); got != want {
+			t.Errorf("mktemp %q = %v, want %v", line, got, want)
+		}
+	}
+	for line, want := range map[string]bool{
+		`rm -rf "$dir"`:              true,
+		`rm -f -- ${stage}/x`:        true,
+		"rm -rf `pwd`/x":             true,
+		`[ -f x ] && rm "$tmp"`:      true,
+		`rm -f /tmp/literal.lock`:    false,
+		`echo "remove with rm $x" #`: false,
+		`firm "$x"`:                  false,
+	} {
+		if got := auditDiskVariableRm(line); got != want {
+			t.Errorf("rm %q = %v, want %v", line, got, want)
+		}
 	}
 }
