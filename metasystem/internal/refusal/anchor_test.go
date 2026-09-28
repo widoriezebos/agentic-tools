@@ -12,6 +12,7 @@ import (
 // above every refusal site (an edit that broke the file:line register a
 // dozen times on 2026-09-28) leaves every row resolving to its emission.
 func TestRegisterSurvivesLinesInsertedAboveARefusal(t *testing.T) {
+	t.Parallel()
 	root := moduleRoot(t)
 	identifiers := refusalCodeIdentifiers(t, root)
 	const inserted = "// an unrelated edit above the refusal\n// adds lines\n// and moves every line below it\n"
@@ -33,6 +34,7 @@ func TestRegisterSurvivesLinesInsertedAboveARefusal(t *testing.T) {
 // site, an unknown symbol and a symbol that is not declared at the top level
 // are refused.
 func TestSiteAnchorsNameSymbolsNotLines(t *testing.T) {
+	t.Parallel()
 	source := []byte("package fixture\n\nconst code = \"FIXTURE_REFUSED\"\n\nvar table = map[string]string{\"k\": \"TABLE_REFUSED\"}\n\ntype engine struct{}\n\nfunc (e *engine) admit() error {\n\treturn fmt.Errorf(\"ADMIT_REFUSED\")\n}\n\nfunc plain() error {\n\tinner := func() error { return errors.New(code) }\n\treturn inner()\n}\n")
 	for site, want := range map[string][2]int{
 		"fixture.go#engine.admit": {9, 11},
