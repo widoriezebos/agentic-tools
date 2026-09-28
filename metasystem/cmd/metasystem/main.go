@@ -237,8 +237,6 @@ func families() []family {
 				{"unit", "gate changed Go packages and every transitive reverse dependent", runGateUnit},
 				{"register", "record that this process is a running gate", runGateRegister},
 				{"fence", "exit 1 naming every live gate run foreign to --self-pid's chain", runGateFence},
-				{"guard-acquire", "wait for exclusive checkout execution or join the caller's owning chain", runGateGuardAcquire},
-				{"guard-release", "release the invoking process's checkout execution membership", runGateGuardRelease},
 				{"weight-discharge", "reset validation weight at the exact authorized green-run boundary", runGateWeightDischarge},
 				{"cadence-tick", "run one landing-owner deep validation cadence decision", runGateCadenceTick},
 			},

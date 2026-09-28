@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
@@ -644,7 +643,9 @@ func (s *session) internalHandshakeTimeout(job string) error {
 
 // guardFixtureWait is checkout_execution_guard_fixture_wait: the process
 // fixture's control record drives guard participation only (a ready file, a
-// release file, an optional detached member, an optional nested dispatch).
+// release file, an optional nested dispatch). The detached-member leg went
+// with checkout-execution-guard-fixtures.sh, the only writer of its controls
+// (verbs-object-action U7c).
 func (s *session) guardFixtureWait() error {
 	control := s.env.GuardFixture
 	if !isFile(control) {
@@ -663,25 +664,6 @@ func (s *session) guardFixtureWait() error {
 	}
 	if err := touch(ready); err != nil {
 		return exitWith(2)
-	}
-	detachReady := fieldOr(control, "detachReady")
-	detachRelease := fieldOr(control, "detachRelease")
-	if detachReady+detachRelease != "" {
-		if !filepath.IsAbs(detachReady) || !filepath.IsAbs(detachRelease) {
-			s.eprintln("checkout execution guard fixture: detached controls are incomplete")
-			return exitWith(2)
-		}
-		scripts := filepath.Join(s.root, "scripts", "agents")
-		_, err := gaterun.LaunchDetached(gaterun.DetachedLaunch{
-			Argv: []string{filepath.Join(scripts, "checkout-execution-guard.sh"), "run-member", "--root", s.guardRoot, "--engine", s.ms, "--",
-				filepath.Join(scripts, "checkout-execution-guard-fixtures.sh"), "__wait-only", detachReady, detachRelease, capText},
-			Dir: s.root, GuardRoot: s.guardRoot, GuardOwner: "dispatch fixture detached member",
-		})
-		if err != nil {
-			s.eprintln(err.Error())
-			return exitWith(1)
-		}
-		return nil
 	}
 	childControl := fieldOr(control, "childControl")
 	childBrief := fieldOr(control, "childBrief")
