@@ -457,15 +457,11 @@ func digestArchivedTree(ctx context.Context, toplevel, tree string, policy behav
 	if err := os.Mkdir(extract, 0o700); err != nil {
 		return "", err
 	}
-	var extractOutput bytes.Buffer
 	extractErr := RunRearmStep(ctx, clock, time.Duration(seconds)*time.Second, "extract-witness-tree", func(stepContext context.Context, progress func()) error {
-		cmd := exec.CommandContext(stepContext, "tar", "-xvf", archivePath, "-C", extract)
-		cmd.Stdout = RearmProgressWriter(&extractOutput, progress)
-		cmd.Stderr = RearmProgressWriter(&extractOutput, progress)
-		return cmd.Run()
+		return extractArchivedTree(stepContext, archivePath, extract, progress)
 	})
 	if extractErr != nil {
-		return "", fmt.Errorf("extract archived tree: %w (%s)", extractErr, strings.TrimSpace(extractOutput.String()))
+		return "", fmt.Errorf("extract archived tree: %w", extractErr)
 	}
 	return policy.Digest(extract, behaviorsurface.Engine)
 }
@@ -508,7 +504,7 @@ func resolveLandedBuildWithDeps(deps rearmResolverDeps, clock RearmClock, repoRo
 	return commit, nil
 }
 
-var enrollmentSkewPathspecs = [...]string{"internal", "cmd", "scripts/agents"}
+var enrollmentSkewPathspecs = [...]string{"internal", "cmd"}
 
 // EngineSkewPathspecs are the installation-relative trees whose change since
 // an engine's build makes that engine stale: the steward's enrollment skew

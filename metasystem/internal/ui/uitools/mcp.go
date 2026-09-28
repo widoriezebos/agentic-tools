@@ -340,8 +340,10 @@ func Catalogue() []Tool {
 		},
 		{
 			Name: OpPresent,
-			Description: "In a review sitting, put one thing on the human's desk while you explain it: a file of the " +
-				"reviewed tree at a range of lines, the change index, one file's diff, or a record's section. Call it " +
+			Description: "In a sitting, put one thing on the human's desk while you explain it. In a review: a file " +
+				"of the reviewed tree at a range of lines, the change index, one file's diff, or a record's section. In " +
+				"a sitting that shapes an intent or a design: a file of the checkout as it stands at a range of lines, " +
+				"the same file your own reads see, or a record's section; it has no change to index or diff. Call it " +
 				"as you come to each thing, in the order you explain them. It moves nothing else on their screen, " +
 				"and the human can stop a walk's presenting with one press.",
 			InputSchema: schema(map[string]any{
@@ -351,7 +353,7 @@ func Catalogue() []Tool {
 				},
 				"path": map[string]any{
 					"type":        "string",
-					"description": "The file of the reviewed tree, or the record's checkout-relative path for a section.",
+					"description": "The file of the reviewed tree in a review or of the checkout in a shaping sitting, or the record's checkout-relative path for a section.",
 				},
 				"from":    map[string]any{"type": "string", "description": "On a source: the first line, counted from one."},
 				"to":      map[string]any{"type": "string", "description": "On a source: the last line."},
@@ -380,7 +382,7 @@ const Instructions = "These tools read this MetaSystem workspace exactly as its 
 	"when a result carries a cursor, call the same tool again with it to read the rest. " +
 	"Nothing here writes. The three tools that read nothing offer the human something to decide about: " +
 	"suggest offers words for a field of an editor they handed over, deposit offers one entry for the " +
-	"record of a sitting they are in, and propose offers one act on one goal for them to apply; in a review, " +
+	"record of a sitting they are in, and propose offers one act on one goal for them to apply; in a sitting, " +
 	"present puts one thing on the human's desk. " +
 	"None of them applies anything, and the human decides."
 

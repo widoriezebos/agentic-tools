@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -164,6 +165,27 @@ func (lock *proofLock) release() error {
 	}
 	return errors.Join(entryErr, lockErr)
 }
+
+// retire releases the lock and removes the batch's own queue directory once
+// it is empty. The directory is <queueRoot>/batch-<id> for a key the
+// constructor validated; only an empty directory is removed, never a tree, so
+// a registration another process wrote in the meantime survives.
+func (lock *proofLock) retire() error {
+	err := lock.release()
+	if lock.refused != nil || filepath.Base(lock.queueDir) != "batch-"+lock.key {
+		return err
+	}
+	if removeErr := os.Remove(lock.queueDir); removeErr != nil && !os.IsNotExist(removeErr) && !isDirectoryNotEmpty(removeErr) {
+		err = errors.Join(err, removeErr)
+	}
+	return err
+}
+
+func isDirectoryNotEmpty(err error) bool {
+	var pathErr *os.PathError
+	return errors.As(err, &pathErr) && (errors.Is(pathErr.Err, syscall.ENOTEMPTY) || errors.Is(pathErr.Err, syscall.EEXIST))
+}
+
 func (lock *proofLock) whileHeld(run func() error) (err error) {
 	defer func() { err = errors.Join(err, lock.release()) }()
 	return run()

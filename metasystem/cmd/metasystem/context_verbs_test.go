@@ -241,7 +241,7 @@ func TestContextStatusNamesTheWindowAndItsSource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	writeShippedSeatWindow(t, root, 210000, true)
+	writeShippedSeatWindow(t, 210000, true)
 	code, output, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root}) })
 	if code != 0 || problem != "" || !strings.Contains(output, "\nwindow: 210000 tokens (launch.seat.window.tokens, conf); ceiling: 250000 tokens (context.ceiling.tokens, conf); ceiling-above-window; shipped: 210000 (claude-code-hooks.json)\n") {
 		t.Fatalf("code=%d output=%q problem=%q", code, output, problem)
@@ -251,10 +251,10 @@ func TestContextStatusNamesTheWindowAndItsSource(t *testing.T) {
 	if err := json.Unmarshal([]byte(structured), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if code != 0 || problem != "" || decoded.Window.Tokens != 210000 || decoded.Window.Source != "conf" || !decoded.Window.CeilingAboveWindow || decoded.Window.Shipped != 210000 || decoded.Window.ShippedSource != "scripts/enforcement/claude-code-hooks.json" || decoded.Window.ShippedDiffersFromConf {
+	if code != 0 || problem != "" || decoded.Window.Tokens != 210000 || decoded.Window.Source != "conf" || !decoded.Window.CeilingAboveWindow || decoded.Window.Shipped != 210000 || decoded.Window.ShippedSource != "internal/runtimes/enforcement/claude-code-hooks.json" || decoded.Window.ShippedDiffersFromConf {
 		t.Fatalf("decoded=%+v code=%d problem=%q", decoded.Window, code, problem)
 	}
-	writeShippedSeatWindow(t, root, 200000, true)
+	writeShippedSeatWindow(t, 200000, true)
 	code, output, problem = captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root}) })
 	if code != 0 || problem != "" || !strings.Contains(output, "; shipped: 200000 (claude-code-hooks.json) shipped-differs-from-conf\n") {
 		t.Fatalf("code=%d output=%q problem=%q", code, output, problem)
@@ -264,7 +264,7 @@ func TestContextStatusNamesTheWindowAndItsSource(t *testing.T) {
 	if err := json.Unmarshal([]byte(structured), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if code != 0 || problem != "" || decoded.Window.Shipped != 200000 || decoded.Window.ShippedSource != "scripts/enforcement/claude-code-hooks.json" || !decoded.Window.ShippedDiffersFromConf {
+	if code != 0 || problem != "" || decoded.Window.Shipped != 200000 || decoded.Window.ShippedSource != "internal/runtimes/enforcement/claude-code-hooks.json" || !decoded.Window.ShippedDiffersFromConf {
 		t.Fatalf("decoded=%+v code=%d problem=%q", decoded.Window, code, problem)
 	}
 }
@@ -278,7 +278,7 @@ func TestContextStatusSaysNoWindowIsImposed(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	writeShippedSeatWindow(t, root, 0, false)
+	writeShippedSeatWindow(t, 0, false)
 	code, output, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root}) })
 	want := "\nwindow: none imposed, the runtime's own (launch.seat.window.tokens, conf); ceiling: 250000 tokens (context.ceiling.tokens, conf); shipped: none (claude-code-hooks.json)\n"
 	if code != 0 || problem != "" || !strings.Contains(output, want) {
@@ -1220,12 +1220,12 @@ func contextHandoffCommandRoot(t *testing.T) (string, string) {
 	noteDirectory := filepath.Join(root, ".handoff-memory")
 	files := map[string]string{
 		"metasystem.conf": "metasystem.runtimes=fake,claude,codex\ncontext.handoff.note-directory.fake=" + noteDirectory + "\nrole.steward-continuation.runtime=fake\nrole.steward-continuation.model.fake=fixture\n",
-		"scripts/agents/roles/steward-continuation.md":                "# Role\n",
-		"scripts/agents/roles/steward-continuation.requirements.json": "{\"required\":[]}\n",
-		"scripts/agents/schemas/steward-continuation.schema.json":     "{\"type\":\"object\"}\n",
-		"scripts/agents/permissions/workspace.json":                   "{\"write\":[\"workspace\"]}\n",
-		"memory/receipts.log":                                         "",
-		".handoff-memory/lessons.md":                                  "# Lessons\n\nContinue from the recorded state.\n",
+		"internal/protocol/roles/steward-continuation.md":                "# Role\n",
+		"internal/protocol/roles/steward-continuation.requirements.json": "{\"required\":[]}\n",
+		"internal/protocol/schemas/steward-continuation.schema.json":     "{\"type\":\"object\"}\n",
+		"internal/protocol/permissions/workspace.json":                   "{\"write\":[\"workspace\"]}\n",
+		"memory/receipts.log":        "",
+		".handoff-memory/lessons.md": "# Lessons\n\nContinue from the recorded state.\n",
 	}
 	for relative, body := range files {
 		writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(relative)), []byte(body), 0o644)

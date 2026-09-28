@@ -190,8 +190,15 @@ func (store Store) write(record Record) error {
 	}
 	return nil
 }
+
+// ValidID reports whether id is a batch id: a lowercase ULID, so it is safe
+// as one path segment.
+func ValidID(id string) bool {
+	return len(id) == 26 && strings.Trim(id, "0123456789abcdefghjkmnpqrstvwxyz") == ""
+}
+
 func (store Store) recordPath(id string) (string, error) {
-	if len(id) != 26 || strings.Trim(id, "0123456789abcdefghjkmnpqrstvwxyz") != "" {
+	if !ValidID(id) {
 		return "", fmt.Errorf("batch id %q is not a lowercase ULID", id)
 	}
 	return filepath.Join(store.root, "artifacts", "agents", "landing-batches", id+".json"), nil

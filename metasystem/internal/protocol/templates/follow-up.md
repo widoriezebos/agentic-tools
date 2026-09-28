@@ -15,4 +15,4 @@ The original role and return schema remain binding without additions, removals, 
 
 Every path in your return (diffBoundary, files) is relative to the repository root, so it starts with `metasystem/`.
 
-Schema: <the same scripts/agents/schemas/<role>.schema.json used for the original dispatch>
+Schema: <the same internal/protocol/schemas/<role>.schema.json used for the original dispatch>

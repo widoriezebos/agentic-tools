@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -468,4 +470,26 @@ func waitFor(t *testing.T, events <-chan partner.Event, kind string) {
 		}
 	}
 	t.Fatalf("no %s beat arrived", kind)
+}
+
+// A sign-in that cannot read one of the seat's sittings says so, rather than
+// reporting a move that left the sitting behind (SOL-S67-05).
+func TestASignInRefusesASittingItCannotRead(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	host := partner.NewHostOn(
+		partner.Runtime{Name: "fake", ReadOnly: "a fake server reads nothing"},
+		root, fakeacp.Open(fakeacp.Script{Chunks: []string{"here is what the record holds"}}))
+	t.Cleanup(host.Close)
+	service := partner.NewService(host.Runtime(), host,
+		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
+		partner.Facts{}, func() time.Time { return time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC) })
+	under := filepath.Join(root, "sittings", "seat")
+	testutil.Require(t, "the seat's sittings", os.MkdirAll(under, 0o700), nil)
+	broken := filepath.Join(under, "review-deadbeef.json")
+	testutil.Require(t, "a state that does not parse", os.WriteFile(broken, []byte(`{"sitting":`), 0o600), nil)
+
+	err := service.Adopt("seat", "Wido")
+	testutil.Require(t, "the sign-in is refused", err != nil, true)
+	testutil.Expect(t, "naming the file", strings.Contains(err.Error(), broken), true)
 }

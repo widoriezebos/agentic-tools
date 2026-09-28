@@ -30,7 +30,7 @@ func shippedFile(t *testing.T, parts ...string) string {
 // its disposition and the unchanged return contract.
 func TestShippedDispatchTemplatesKeepTheirHeaders(t *testing.T) {
 	t.Parallel()
-	brief := shippedFile(t, "scripts", "agents", "templates", "brief.md")
+	brief := shippedFile(t, "internal", "protocol", "templates", "brief.md")
 	for _, header := range []string{"Working Mode:", "Mission Stream:", "Orchestrator Identity:", "Date:"} {
 		if !regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(header)).MatchString(brief) {
 			t.Errorf("brief template is missing authored header: %s", header)
@@ -39,7 +39,7 @@ func TestShippedDispatchTemplatesKeepTheirHeaders(t *testing.T) {
 	if regexp.MustCompile(`(?m)^(Job-Id|Role|Runtime|Model|Round):`).MatchString(brief) {
 		t.Error("brief template contains a dispatch-assigned header")
 	}
-	followUp := shippedFile(t, "scripts", "agents", "templates", "follow-up.md")
+	followUp := shippedFile(t, "internal", "protocol", "templates", "follow-up.md")
 	for pattern, message := range map[string]string{
 		`(?m)^Finding Id:`:                  "follow-up template does not restate one finding",
 		`(?m)^Disposition:`:                 "follow-up template does not restate the disposition",
@@ -56,7 +56,7 @@ func TestShippedDispatchTemplatesKeepTheirHeaders(t *testing.T) {
 // The scan crosses line boundaries the way the placeholder grammar does.
 func TestShippedHostTurnInstructionParameters(t *testing.T) {
 	t.Parallel()
-	body := shippedFile(t, "scripts", "agents", "templates", "host-turn-instruction.md")
+	body := shippedFile(t, "internal", "protocol", "templates", "host-turn-instruction.md")
 	var parameters []string
 	start := -1
 	for index, char := range body {
@@ -104,7 +104,7 @@ func countQuoteBlocks(preamble, source, marker string, endsLine bool) int {
 
 func copyShippedRoles(t *testing.T) string {
 	t.Helper()
-	source := filepath.Join("..", "..", "scripts", "agents", "roles")
+	source := filepath.Join("..", "..", "internal", "protocol", "roles")
 	destination := filepath.Join(t.TempDir(), "roles")
 	err := filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -136,11 +136,11 @@ func copyShippedRoles(t *testing.T) string {
 func TestShippedPreambleQuotesHoldAndNameEachDrift(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join("..", "..")
-	roles := filepath.Join(root, "scripts", "agents", "roles")
+	roles := filepath.Join(root, "internal", "protocol", "roles")
 	if violations := PreambleQuotes(root, roles); len(violations) != 0 {
 		t.Fatalf("shipped preamble quotes drifted: %v", violations)
 	}
-	orchestrator := shippedFile(t, "scripts", "agents", "roles", "orchestrator.md")
+	orchestrator := shippedFile(t, "internal", "protocol", "roles", "orchestrator.md")
 	for _, mandated := range []struct {
 		source, marker string
 		endsLine       bool
@@ -164,7 +164,7 @@ func TestShippedPreambleQuotesHoldAndNameEachDrift(t *testing.T) {
 	// lawful rewording of source and quote together cannot empty the fixture.
 	designRoles := copyShippedRoles(t)
 	designPath := filepath.Join(designRoles, "design-critic.md")
-	lines := strings.Split(shippedFile(t, "scripts", "agents", "roles", "design-critic.md"), "\n")
+	lines := strings.Split(shippedFile(t, "internal", "protocol", "roles", "design-critic.md"), "\n")
 	inBlock, drifted := false, false
 	for index, line := range lines {
 		switch {
@@ -223,7 +223,7 @@ func TestShippedPreambleTurnPromptAcceptsAndNamesEachDrift(t *testing.T) {
 	good := strings.Join([]string{
 		"Mission-Id: fixture-mission", "Turn-Id: turn-3", "Cycle: 3", "Host-Session: none",
 		"Runtime: fake", "Model: fake-model", "Reconciliation: no", "",
-	}, "\n") + "\n" + shippedFile(t, "scripts", "agents", "roles", "orchestrator.md") + "\n" + `## Mission Contract
+	}, "\n") + "\n" + shippedFile(t, "internal", "protocol", "roles", "orchestrator.md") + "\n" + `## Mission Contract
 Signed fixture mission contract.
 
 ## Ledger Tail

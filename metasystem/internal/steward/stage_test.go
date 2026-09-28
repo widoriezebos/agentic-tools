@@ -7,23 +7,11 @@ import (
 	"testing"
 )
 
-// stagedRepo carries the role and permissions files staging digests.
+// stagedRepo carries the goal ledger and the install identity staging binds;
+// the role, requirements, schema and preset bytes are the engine's own.
 func stagedRepo(t *testing.T) string {
 	root := t.TempDir()
 	writeLedger(t, root, "# Goals\n\n## Current goal: fix-it — Repair the thing\n- Origin: main\n- Next step: Repair it.\n")
-	write := func(rel, body string) {
-		path := filepath.Join(root, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write("scripts/agents/roles/steward-continuation.md", "# Role: steward-continuation\ncontract\n")
-	write("scripts/agents/roles/steward-continuation.requirements.json", `{"required":[]}`)
-	write("scripts/agents/schemas/steward-continuation.schema.json", `{"type":"object"}`)
-	write("scripts/agents/permissions/workspace.json", `{"write":["workspace"]}`)
 	top, err := filepath.Abs(root)
 	if err != nil {
 		t.Fatal(err)
@@ -62,10 +50,9 @@ func TestDriftBetweenMintAndLaunchRefusesByField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rolePath := filepath.Join(root, "scripts", "agents", "roles", "steward-continuation.md")
-	if err := os.WriteFile(rolePath, []byte("# tampered\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	// The engine's role bytes differ from the ones the intent was minted
+	// over (an engine rebuilt between mint and launch).
+	it.RoleDigest = strings.Repeat("0", 64)
 	if err := VerifyStagedDigests(root, it); err == nil || !strings.Contains(err.Error(), "role contract drifted") {
 		t.Fatalf("role drift must refuse by field: %v", err)
 	}

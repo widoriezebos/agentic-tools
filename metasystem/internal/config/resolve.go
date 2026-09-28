@@ -183,6 +183,15 @@ func Get(p GetParams) (value string, code int, err error) {
 	if p.Mode != "" && !modePattern.MatchString(p.Mode) {
 		return "", 2, fmt.Errorf("invalid mode: %s", p.Mode)
 	}
+	// The evidence root has one owner and a compiled-in default; a general
+	// reader answers what the owner resolves, never "no value".
+	if p.Key == EvidenceRootKey && !p.FlagSet {
+		root, err := ResolveEvidenceRoot(EvidenceRootParams{ConfPath: p.ConfPath, LookupEnv: lookupEnv})
+		if err != nil {
+			return "", 1, err
+		}
+		return root.Path, 0, nil
+	}
 
 	if p.FlagSet {
 		return p.Flag, 0, nil
@@ -313,6 +322,11 @@ func Keys(confPath, prefix string, environ []string) []string {
 			add(prefix + suffix)
 		}
 	}
+	// The evidence root always has a value (its compiled-in default), so it
+	// is always a configured key.
+	if strings.HasPrefix(EvidenceRootKey, prefix) {
+		add(EvidenceRootKey)
+	}
 	return keys
 }
 
@@ -346,6 +360,13 @@ func KeyOrigin(p GetParams) (string, error) {
 	}
 	if p.Mode != "" && !modePattern.MatchString(p.Mode) {
 		return "", fmt.Errorf("invalid mode: %s", p.Mode)
+	}
+	if p.Key == EvidenceRootKey {
+		root, err := ResolveEvidenceRoot(EvidenceRootParams{ConfPath: p.ConfPath, LookupEnv: lookupEnv})
+		if err != nil {
+			return "", err
+		}
+		return root.Origin, nil
 	}
 	if _, ok := lookupEnv(EnvName(p.Key)); ok {
 		return "env", nil

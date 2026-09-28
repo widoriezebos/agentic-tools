@@ -120,21 +120,14 @@ func TestVersionFiveRequiresGrain(t *testing.T) {
 
 func TestMaterializeV1V2AndCriticV3(t *testing.T) {
 	root := t.TempDir()
-	schemaDir := filepath.Join(root, "scripts/agents/schemas")
-	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	body, _ := json.Marshal(v1Schema())
-	if err := os.WriteFile(filepath.Join(schemaDir, "implementer.schema.json"), body, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(schemaDir, "code-critic.schema.json"), body, 0o644); err != nil {
-		t.Fatal(err)
+	Materialize := func(role string, version int, output string) error {
+		return materialize(role, "fixture", body, version, output)
 	}
 
 	// v1 is materialized unchanged (no version marker).
 	v1Out := filepath.Join(root, "v1.json")
-	if err := Materialize(root, "implementer", 1, v1Out); err != nil {
+	if err := Materialize("implementer", 1, v1Out); err != nil {
 		t.Fatal(err)
 	}
 	var v1 map[string]any
@@ -146,7 +139,7 @@ func TestMaterializeV1V2AndCriticV3(t *testing.T) {
 
 	// v2 is transformed.
 	v2Out := filepath.Join(root, "v2.json")
-	if err := Materialize(root, "implementer", 2, v2Out); err != nil {
+	if err := Materialize("implementer", 2, v2Out); err != nil {
 		t.Fatal(err)
 	}
 	var v2 map[string]any
@@ -157,7 +150,7 @@ func TestMaterializeV1V2AndCriticV3(t *testing.T) {
 	}
 
 	v3Out := filepath.Join(root, "v3.json")
-	if err := Materialize(root, "code-critic", 3, v3Out); err != nil {
+	if err := Materialize("code-critic", 3, v3Out); err != nil {
 		t.Fatal(err)
 	}
 	var v3 map[string]any
@@ -166,11 +159,11 @@ func TestMaterializeV1V2AndCriticV3(t *testing.T) {
 	if v3["$comment"] != "metasystem.version=3" {
 		t.Fatalf("v3 output missing the marker: %v", v3["$comment"])
 	}
-	if err := Materialize(root, "implementer", 3, filepath.Join(root, "forbidden.json")); err == nil {
+	if err := Materialize("implementer", 3, filepath.Join(root, "forbidden.json")); err == nil {
 		t.Fatal("version 3 materialized for a non-critic role")
 	}
 	v4Out := filepath.Join(root, "v4.json")
-	if err := Materialize(root, "code-critic", 4, v4Out); err != nil {
+	if err := Materialize("code-critic", 4, v4Out); err != nil {
 		t.Fatal(err)
 	}
 	var v4 map[string]any
@@ -191,12 +184,6 @@ func TestMaterializeV1V2AndCriticV3(t *testing.T) {
 // and a bare const without a type — each fail every codex
 // dispatch before the model produces a token.
 func TestMaterializedSchemasObeyStructuredOutputRules(t *testing.T) {
-	// go test runs with the package directory as cwd; the shipped role
-	// schemas this linter guards live two levels up.
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
 	roles := []string{"behavior-judge", "code-critic", "design-critic", "implementer", "investigator", "verifier", "warden"}
 	var problems []string
 	declaresAType := func(node map[string]any) bool {
@@ -265,7 +252,7 @@ func TestMaterializedSchemasObeyStructuredOutputRules(t *testing.T) {
 		if VersionFourRoles[role] {
 			version = 4
 		}
-		if err := Materialize(root, role, version, output); err != nil {
+		if err := Materialize(role, version, output); err != nil {
 			t.Fatalf("materialize %s: %v", role, err)
 		}
 		data, err := os.ReadFile(output)

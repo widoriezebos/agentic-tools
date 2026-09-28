@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 // continuationRole is the one role this machinery ever launches.
@@ -26,6 +28,16 @@ func BriefPath(repoRoot, nonce string) string {
 
 func digestFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// digestProtocol digests compiled-in protocol bytes: the staged contract is
+// the engine's own, so an engine rebuilt between mint and launch drifts.
+func digestProtocol(data []byte, err error) (string, error) {
 	if err != nil {
 		return "", err
 	}
@@ -51,24 +63,22 @@ func writeExclusiveBrief(path, body string) error {
 }
 
 func stagedDigests(repoRoot string) (role, req, schema, perms string, id InstallIdentity, err error) {
-	rolePath := filepath.Join(repoRoot, "scripts", "agents", "roles", continuationRole+".md")
-	role, err = digestFile(rolePath)
+	role, err = digestProtocol(protocol.RoleInstructions(continuationRole))
 	if err != nil {
 		err = fmt.Errorf("the continuation role contract is unreadable: %w", err)
 		return
 	}
-	req, err = digestFile(filepath.Join(repoRoot, "scripts", "agents", "roles", continuationRole+".requirements.json"))
+	req, err = digestProtocol(protocol.RoleRequirements(continuationRole))
 	if err != nil {
 		err = fmt.Errorf("the continuation requirements are unreadable: %w", err)
 		return
 	}
-	schema, err = digestFile(filepath.Join(repoRoot, "scripts", "agents", "schemas", continuationRole+".schema.json"))
+	schema, err = digestProtocol(protocol.RoleSchema(continuationRole))
 	if err != nil {
 		err = fmt.Errorf("the continuation return schema is unreadable: %w", err)
 		return
 	}
-	permsPath := filepath.Join(repoRoot, "scripts", "agents", "permissions", continuationPermissions+".json")
-	perms, err = digestFile(permsPath)
+	perms, err = digestProtocol(protocol.Permissions(continuationPermissions))
 	if err != nil {
 		err = fmt.Errorf("the continuation permissions preset is unreadable: %w", err)
 		return
@@ -182,23 +192,19 @@ the authority wherever the state snapshot disagrees.
 // VerifyStagedDigests re-checks the staged bytes immediately before
 // launch: any drift between mint and dispatch refuses by field.
 func VerifyStagedDigests(repoRoot string, it Intent) error {
-	rolePath := filepath.Join(repoRoot, "scripts", "agents", "roles", it.Role+".md")
-	if got, err := digestFile(rolePath); err != nil || got != it.RoleDigest {
+	if got, err := digestProtocol(protocol.RoleInstructions(it.Role)); err != nil || got != it.RoleDigest {
 		return fmt.Errorf("role contract drifted since the authorization was minted (%s)", it.Role)
 	}
 	if got, err := digestFile(BriefPath(repoRoot, it.Nonce)); err != nil || got != it.BriefDigest {
 		return fmt.Errorf("staged brief drifted since the authorization was minted")
 	}
-	permsPath := filepath.Join(repoRoot, "scripts", "agents", "permissions", it.Permissions+".json")
-	if got, err := digestFile(permsPath); err != nil || got != it.PermsDigest {
+	if got, err := digestProtocol(protocol.Permissions(it.Permissions)); err != nil || got != it.PermsDigest {
 		return fmt.Errorf("permissions preset drifted since the authorization was minted (%s)", it.Permissions)
 	}
-	reqPath := filepath.Join(repoRoot, "scripts", "agents", "roles", it.Role+".requirements.json")
-	if got, err := digestFile(reqPath); err != nil || got != it.ReqDigest {
+	if got, err := digestProtocol(protocol.RoleRequirements(it.Role)); err != nil || got != it.ReqDigest {
 		return fmt.Errorf("role requirements drifted since the authorization was minted (%s)", it.Role)
 	}
-	schemaPath := filepath.Join(repoRoot, "scripts", "agents", "schemas", it.Role+".schema.json")
-	if got, err := digestFile(schemaPath); err != nil || got != it.SchemaDigest {
+	if got, err := digestProtocol(protocol.RoleSchema(it.Role)); err != nil || got != it.SchemaDigest {
 		return fmt.Errorf("return schema drifted since the authorization was minted (%s)", it.Role)
 	}
 	if it.Reason == seatHandoffReason && it.Handoff == nil {

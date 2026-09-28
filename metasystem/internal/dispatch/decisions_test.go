@@ -304,7 +304,7 @@ func TestExpandPermissions(t *testing.T) {
 		"network": "allow", "approvals": "deny", "tools": "read-only",
 	})
 	output := filepath.Join(dir, "expanded.json")
-	if err := expandPermissions(envelope, repo, workspace, true, "builder", "deny", output, metadata); err != nil {
+	if err := expandPermissions(mustReadFile(t, envelope), repo, workspace, true, "builder", "deny", output, metadata); err != nil {
 		t.Fatalf("ExpandPermissions: %v", err)
 	}
 	expanded := readJSONFile(t, output)
@@ -325,7 +325,7 @@ func TestExpandPermissions(t *testing.T) {
 		t.Fatalf("derived writeRoots = %v", writes)
 	}
 
-	if err := expandPermissions(envelope, repo, workspace, false, "builder", "", output, declaredGitFacts(t)); err == nil ||
+	if err := expandPermissions(mustReadFile(t, envelope), repo, workspace, false, "builder", "", output, declaredGitFacts(t)); err == nil ||
 		!strings.Contains(err.Error(), "require --worktree") {
 		t.Fatalf("writable without worktree = %v", err)
 	}
@@ -333,7 +333,7 @@ func TestExpandPermissions(t *testing.T) {
 		"readRoots": []any{}, "writeRoots": []any{"/"},
 		"network": "deny", "approvals": "deny", "tools": "read-only",
 	})
-	if err := expandPermissions(escape, repo, workspace, true, "custom", "", output, declaredGitFacts(t)); err == nil ||
+	if err := expandPermissions(mustReadFile(t, escape), repo, workspace, true, "custom", "", output, declaredGitFacts(t)); err == nil ||
 		!strings.Contains(err.Error(), "escapes the job worktree") {
 		t.Fatalf("escaping write root = %v", err)
 	}
@@ -460,10 +460,10 @@ func TestBuildRecordDesignCriticCarriesDeclaredOutputs(t *testing.T) {
 	root := t.TempDir()
 	tmp := t.TempDir()
 	workspace := filepath.Join(tmp, "workspace")
-	if err := os.MkdirAll(filepath.Join(workspace, "metasystem", "scripts", "agents", "roles"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(workspace, "metasystem", "internal", "protocol", "roles"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	design := "metasystem/scripts/agents/roles/design-critic.md"
+	design := "metasystem/internal/protocol/roles/design-critic.md"
 	if err := os.WriteFile(filepath.Join(workspace, filepath.FromSlash(design)), []byte("closed design\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1121,4 +1121,13 @@ func TestCritiqueExhaustionCodeCriticChain(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "review-round limit is exhausted") {
 		t.Fatalf("code-critic terminal boundary = %v", err)
 	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

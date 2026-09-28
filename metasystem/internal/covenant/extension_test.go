@@ -101,7 +101,7 @@ func TestBatteryContractGrammars(t *testing.T) {
 // contract's declaration: a wall-custodied path can never be an
 // app-declared guardrail.
 func TestGuardrailsRefuseProtectedPaths(t *testing.T) {
-	for _, entry := range []string{"scripts/agents/gate.sh", "plans/goals/", "memory/known-issues.md"} {
+	for _, entry := range []string{"internal/protocol/gate.sh", "plans/goals/", "memory/known-issues.md"} {
 		doc := loadableDoc(t)
 		doc["guardrails"] = []any{entry}
 		if _, err := Load(writeDoc(t, doc)); err == nil ||

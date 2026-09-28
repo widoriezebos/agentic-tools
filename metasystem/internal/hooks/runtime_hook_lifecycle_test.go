@@ -349,10 +349,13 @@ func TestStopFromALinkedWorktreeCompletesInThePrimary(t *testing.T) {
 	primary := newHookInstallation(t)
 	worktreeTop, _ := filepath.EvalSymlinks(t.TempDir())
 	harness := filepath.Join(worktreeTop, "metasystem")
-	if err := os.MkdirAll(filepath.Join(harness, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(harness, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(primary.root, "metasystem", "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(primary.root, "metasystem"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.WriteFile(filepath.Join(primary.root, "metasystem", "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(primary.root, "metasystem", "bin"), 0o755); err != nil {

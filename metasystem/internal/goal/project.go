@@ -38,7 +38,7 @@ type Projection struct {
 const StaleThreshold = 30 * time.Minute
 
 // The Stop hook budget is sixty seconds, shipped in the registration templates
-// under metasystem/scripts/enforcement and owned by the hook's deadline parent.
+// under metasystem/internal/runtimes/enforcement and owned by the hook's deadline parent.
 // A fresh projection keeps its existing tighter bound within that budget.
 const (
 	defaultFreshFetchProcessTimeout = 3 * time.Second
@@ -199,7 +199,7 @@ func fetchProjectionWithinDeadline(e Endpoint, dependencies projectionDependenci
 // boundedFetchAdvance is FetchAdvance's read-side acceptance sequence with a
 // process-group bound around the one network operation. Keeping the outer
 // projection deadline as well keeps both the child and its caller within the
-// sixty-second Stop budget shipped under metasystem/scripts/enforcement and
+// sixty-second Stop budget shipped under metasystem/internal/runtimes/enforcement and
 // owned by the hook's deadline parent.
 func boundedFetchAdvance(e Endpoint, processTimeout time.Duration) (AdvanceResult, error) {
 	if e.Repository != nil {

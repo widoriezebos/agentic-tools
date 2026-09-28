@@ -219,9 +219,10 @@ export type Sitting = { subject: Subject; purpose: string; startedAt: string; ro
 /**
  * The review room's working state as the sitting's mark keeps it (g1-s65 D9):
  * the desk and its strip, which face is up, and the unfinished words of every
- * card, in the page's own shapes, with when it was last kept.
+ * card, in the page's own shapes, with when it was last kept and the sequence
+ * of that keep, which the mark takes only rising.
  */
-export type KeptRoom = { desk?: unknown; face?: string; drafts?: unknown; at?: string };
+export type KeptRoom = { desk?: unknown; face?: string; drafts?: unknown; at?: string; seq?: number };
 
 /**
  * One thing the Partner put on a review's desk while it explained it (g1-s65

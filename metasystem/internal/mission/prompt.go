@@ -3,8 +3,6 @@ package mission
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +10,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 // A mission host-turn prompt is assembled deterministically from the frozen
@@ -511,11 +513,11 @@ func AssemblePromptWithGoalSource(repo, mission, turnID, output string, goalSour
 	if err != nil {
 		return fmt.Errorf("prompt authority artifact is unreadable: %v", err)
 	}
-	preambleData, err := os.ReadFile(filepath.Join(repo, "scripts", "agents", "roles", "orchestrator.md"))
+	preambleData, err := protocol.RoleInstructions("orchestrator")
 	if err != nil {
 		return fmt.Errorf("prompt authority artifact is unreadable: %v", err)
 	}
-	instructionData, err := os.ReadFile(filepath.Join(repo, "scripts", "agents", "templates", "host-turn-instruction.md"))
+	instructionData, err := protocol.Template("host-turn-instruction.md")
 	if err != nil {
 		return fmt.Errorf("prompt authority artifact is unreadable: %v", err)
 	}

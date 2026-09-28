@@ -22,8 +22,13 @@ func supAOperatorLayout(t *testing.T) (scope, installation string) {
 	t.Helper()
 	scope = t.TempDir()
 	installation = filepath.Join(scope, "metasystem")
-	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(installation, 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if marker, err := os.OpenFile(filepath.Join(installation, "metasystem.conf"), os.O_CREATE|os.O_WRONLY, 0o644); err != nil {
+		t.Fatal(err)
+	} else {
+		marker.Close()
 	}
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n"), 0o644); err != nil {
 		t.Fatal(err)

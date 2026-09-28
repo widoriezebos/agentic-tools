@@ -1,21 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 
 import { loadChanges } from "./api";
 import { DeskAnchors } from "./anchors";
 import { MovedFiles } from "./Answers";
+import { Board } from "./Board";
 import { Desk } from "./Desk";
 import {
   CLEAR_REFUSED,
   countsLine,
   deskLabel,
+  endOf,
   movedLine,
   NOD_LINE,
   nodded,
+  openingDesk,
+  ownSnapshot,
+  roomWord,
   unansweredIn,
   VERDICTS,
-  WALKS,
+  walksOf,
   type DeskItem,
   reviewedOf,
   steppingOut,
@@ -23,13 +28,13 @@ import {
 } from "./room";
 import { NotificationsBell } from "../notifications/Bell";
 import type { Present } from "../partner/api";
-import type { Entry } from "../partner/sitting";
+import { DRAFTING, END, END_SAID, END_WITHOUT, START, type Entry } from "../partner/sitting";
 import { DepositCard } from "../partner/Deposit";
 import { usePartner } from "../partner/store";
-import { SittingTable } from "../partner/Table";
 import { Transcript } from "../partner/Transcript";
 import { Help } from "../help/Help";
-import { backlogPath, reviewPath } from "../routes";
+import { pilesLine } from "../project/pane";
+import { backlogPath, documentPath, roomPath, SITTING_PREFIX } from "../routes";
 import { useAbout } from "../shell/about";
 import { Composer } from "../shell/Composer";
 import { Button } from "../shell/controls";
@@ -37,16 +42,24 @@ import { Sheet } from "../shell/Sheet";
 import "./room.css";
 
 /**
- * The review room (g1-s65 §3): one screen, two panes. The desk is the laptop and
- * the conversation stays beside it; the desk flips to the board and back. The
- * rail is not here and neither is the drawer, because the room's own pane is the
- * sitting's conversation (D2, D16), and nothing else on screen pulls at the
- * human examining one goal's work.
+ * The room (g1-s65 §3), for every sitting (g1-s67 D1): one screen, two panes.
+ * The desk is the laptop and the conversation stays beside it; the desk flips
+ * to the board and back. The rail is not here and neither is the drawer,
+ * because the room's own pane is the sitting's conversation (D2, D16), and
+ * nothing else on screen pulls at the human sitting on one record. What differs
+ * by purpose is the header's word, the walks, what the desk reads, and End: a
+ * review examines one goal's built work, a shaping sitting shapes an intent or
+ * a design with the code beside it as the checkout has it today.
  */
 export function Room({ record }: { record: string }) {
   const partner = usePartner();
-  const { store, sitting, table, room, setFace, putOnDesk, busy, keepRoomNow, stop, conversation } = partner;
+  const { store, sitting, table, room, setFace, putOnDesk, openDesk, busy, keepRoomNow, stop, conversation } = partner;
   const navigate = useNavigate();
+  const location = useLocation();
+  // What the sitting is for, which the mark says; before the mark has been read
+  // the address says which kind of room this is.
+  const purpose = sitting?.purpose ?? (location.pathname.startsWith(SITTING_PREFIX) ? "shape a design" : "review");
+  const reviewing = purpose === "review";
   const [ending, setEnding] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [stayed, setStayed] = useState("");
@@ -55,18 +68,42 @@ export function Room({ record }: { record: string }) {
   const reviewed = reviewedOf(table.source);
   const findings = table.entries.filter((entry) => entry.section === "Findings");
   const unanswered = unansweredIn(table.entries);
-  const here = conversation === record;
+  // The snapshot read for this room, and not the one the page held before it.
+  const here = conversation === record && ownSnapshot(store, record);
+  const named = reviewing
+    ? reviewed.goal === "" ? record : reviewed.goal
+    : (sitting?.subject.title ?? "") === "" ? record : (sitting?.subject.title ?? record);
+  // Where the human goes when the room closes or they step out: a review's goal
+  // on the board, a shaping sitting's record, whose page is its door.
+  const away = reviewing ? backlogPath(reviewed.goal) : documentPath(record);
   // What the room is about, which every question asked from it carries: the
-  // review record, at the revision the room is reading, and the desk's item.
+  // record, at the revision the room is reading, and the desk's item.
   const up = room.desk.current >= 0 ? room.desk.items[room.desk.current] : undefined;
-  useAbout(`Review of ${reviewed.goal === "" ? record : reviewed.goal}`, {
+  useAbout(reviewing ? `Review of ${named}` : `${roomWord(purpose)} ${named}`, {
     kind: "document",
     subject: record,
-    title: `Review of ${reviewed.goal}`,
+    title: reviewing ? `Review of ${reviewed.goal}` : named,
     revision: table.revision,
     tab: up === undefined ? room.face : `${room.face}: ${deskLabel(up)}`,
-    returnTo: reviewPath(record),
+    returnTo: roomPath(purpose, record),
   });
+
+  // A shaping room opens on its record's sections where its mark kept no desk
+  // (g1-s67 D2): a first visit, or a sitting that stood before rooms were kept.
+  // Laid once per visit, when the record has been read.
+  const laid = useRef("");
+  useEffect(() => {
+    if (!here || sitting === null || table.source === "" || laid.current === record) {
+      return;
+    }
+    laid.current = record;
+    if (room.desk.items.length === 0) {
+      const desk = openingDesk(undefined, sitting.purpose, record, table.source);
+      if (desk.items.length > 0) {
+        openDesk(desk);
+      }
+    }
+  }, [here, sitting, table.source, record, room.desk.items.length, openDesk]);
 
   // The tip is compared once on arriving (D9): a moved branch is said, and the
   // findings anchored in files that changed are marked until the new tip is
@@ -117,18 +154,18 @@ export function Room({ record }: { record: string }) {
     }
   }, [store.live, partner.stoppedPresenting, putOnDesk]);
 
-  // The sitting ended — the Outcome was recorded, or the human left without a
-  // verdict — so the room closes and the board is where they are.
+  // The sitting ended — the Outcome was recorded, or the human left without
+  // one — so the room closes: a review's board, a shaping sitting's record.
   const stood = useRef(false);
   useEffect(() => {
     if (sitting !== null) {
-      stood.current = true;
+      stood.current = stood.current || here;
       return;
     }
     if (stood.current && here) {
-      void navigate(backlogPath(reviewed.goal));
+      void navigate(away);
     }
-  }, [sitting, here, navigate, reviewed.goal]);
+  }, [sitting, here, navigate, away]);
 
   const stepOut = async () => {
     setStayed("");
@@ -141,7 +178,7 @@ export function Room({ record }: { record: string }) {
       setStayed(step.said);
       return;
     }
-    void navigate(backlogPath(reviewed.goal));
+    void navigate(away);
   };
 
   const mine = Object.keys(room.drafts).filter((id) => id.startsWith("local-"));
@@ -152,17 +189,24 @@ export function Room({ record }: { record: string }) {
     <div className="ms-room" data-face={room.face}>
       <header className="ms-room-head">
         <h1 className="ms-room-title">
-          Reviewing <span className="ms-mono">{reviewed.goal === "" ? record : reviewed.goal}</span>
-          <Help id="review-room" />
+          {roomWord(purpose)} <span className={reviewing ? "ms-mono" : undefined}>{named}</span>
+          <Help id={reviewing ? "review-room" : "sitting-room"} />
         </h1>
         <p className="ms-room-facts">
-          {reviewed.tip !== "" && <span>at tip {reviewed.tip.slice(0, 9)}</span>}
-          {reviewed.landed.length > 0 && (
+          {reviewing && reviewed.tip !== "" && <span>at tip {reviewed.tip.slice(0, 9)}</span>}
+          {reviewing && reviewed.landed.length > 0 && (
             <span>
               {reviewed.landed.length} landed {reviewed.landed.length === 1 ? "commit" : "commits"}
             </span>
           )}
-          <span>{countsLine(findings.length, unanswered.length)}</span>
+          <span>
+            {reviewing
+              ? countsLine(findings.length, unanswered.length)
+              : pilesLine({
+                  facts: table.counts.Facts, proposals: table.counts.Proposals, decisions: table.counts.Decisions,
+                  questions: table.counts["Open questions"],
+                })}
+          </span>
         </p>
         <div className="ms-room-actions">
           <Button
@@ -205,7 +249,7 @@ export function Room({ record }: { record: string }) {
           {stayed}
         </p>
       )}
-      {moved !== null && reviewed.tip !== "" && (
+      {reviewing && moved !== null && reviewed.tip !== "" && (
         <p className="ms-room-banner ms-room-banner--moved" role="status">
           {movedLine(reviewed.tip, moved.current)} Findings anchored in files that changed are marked "may have
           moved".{" "}
@@ -233,8 +277,9 @@ export function Room({ record }: { record: string }) {
       )}
       {store.state === "ready" && sitting === null && !stood.current && (
         <p className="ms-room-banner" role="status">
-          No review stands on {record}. What it recorded is in the record; press Review it on the goal to begin
-          another.
+          {reviewing
+            ? `No review stands on ${record}. What it recorded is in the record; press Review it on the goal to begin another.`
+            : `No sitting stands on ${record}. What it recorded is in the record; press ${START} on its page to begin another.`}
         </p>
       )}
       <Group id="ms-room" className="ms-room-panes" orientation="horizontal">
@@ -248,7 +293,7 @@ export function Room({ record }: { record: string }) {
             <Desk record={record} />
           ) : (
             <div className="ms-room-board">
-              <SittingTable changed={moved?.changed ?? []} />
+              <Board changed={moved?.changed ?? []} />
             </div>
           )}
         </Panel>
@@ -257,7 +302,7 @@ export function Room({ record }: { record: string }) {
           <MovedFiles.Provider value={moved?.changed ?? []}>
           <DeskAnchors.Provider value={putOnDesk}>
             <div className="ms-room-walks" role="group" aria-label="The walks">
-              {WALKS.map((one) => (
+              {walksOf(purpose).map((one) => (
                 <Button
                   key={one.part}
                   disabled={busy || sitting === null}
@@ -266,7 +311,7 @@ export function Room({ record }: { record: string }) {
                   {one.label}
                 </Button>
               ))}
-              <Help id="the-walks" />
+              <Help id={reviewing ? "the-walks" : "shaping-walks"} />
               {busy && store.live.turn !== partner.stoppedPresenting && (
                 <Button onClick={partner.stopPresenting}>Stop presenting</Button>
               )}
@@ -275,7 +320,7 @@ export function Room({ record }: { record: string }) {
               <div className="ms-room-transcript ms-dock-statement">
                 <Transcript />
                 {shownLocal.length > 0 && (
-                  <section className="ms-room-mine" aria-label="Findings you made">
+                  <section className="ms-room-mine" aria-label={reviewing ? "Findings you made" : "Facts you made"}>
                     {shownLocal.map((card) => (
                       <DepositCard key={card.id} id={card.id} />
                     ))}
@@ -288,7 +333,11 @@ export function Room({ record }: { record: string }) {
           </MovedFiles.Provider>
         </Panel>
       </Group>
-      <EndSheet open={ending} onOpenChange={setEnding} />
+      {endOf(purpose) === "verdict" ? (
+        <EndSheet open={ending} onOpenChange={setEnding} />
+      ) : (
+        <ShapingEndSheet open={ending} onOpenChange={setEnding} />
+      )}
     </div>
   );
 }
@@ -410,5 +459,80 @@ export function EndWays({
         })}
       </ul>
     </>
+  );
+}
+
+/**
+ * End in a shaping room (g1-s55 D2, g1-s67 D7): the sheet the drawer's control
+ * used to open, moved into the room with its two ways out and no verdict.
+ *
+ * It is a sheet and not a button, because ending a sitting is two acts that read
+ * as one. The first asks the Partner to draft what the sitting came to; the
+ * sitting is still standing when it answers, the card arrives in the
+ * conversation beside the desk, and it ends when the human presses Record it on
+ * the card. The second ends it now, with nothing written — allowed, and the
+ * easiest mistake this design allows, so it is said before it is done and said
+ * again on the record's page afterwards.
+ */
+function ShapingEndSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { closeSitting, endWithoutRecording, sittingBusy, sittingRefusal } = usePartner();
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      side="right"
+      label={END}
+      title={END}
+      closeLabel="Close without ending the sitting"
+      bodyClassName="ms-sitting-sheet"
+      sheetName={END}
+    >
+      <p className="ms-sitting-said">
+        {END_SAID}
+        <Help id="the-outcome" />
+      </p>
+      {sittingRefusal !== "" && (
+        <p className="ms-sitting-refusal" role="status">
+          {sittingRefusal}
+        </p>
+      )}
+      <EndShapingWays
+        busy={sittingBusy}
+        onDraft={() => {
+          void closeSitting().then(
+            () => {
+              onOpenChange(false);
+            },
+            () => {
+              // The refusal is on the sheet, in the server's own words.
+            },
+          );
+        }}
+        onWithout={() => {
+          void endWithoutRecording().then(
+            () => {
+              onOpenChange(false);
+            },
+            () => {
+              // Said on the sheet, which stays open.
+            },
+          );
+        }}
+      />
+    </Sheet>
+  );
+}
+
+/** A shaping End sheet's two ways out, and no verdict (g1-s67 D7). */
+export function EndShapingWays({ busy, onDraft, onWithout }: { busy: boolean; onDraft: () => void; onWithout: () => void }) {
+  return (
+    <div className="ms-sitting-foot">
+      <Button primary disabled={busy} onClick={onDraft}>
+        {busy ? DRAFTING : END}
+      </Button>
+      <Button disabled={busy} onClick={onWithout}>
+        {END_WITHOUT}
+      </Button>
+    </div>
   );
 }

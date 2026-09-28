@@ -71,7 +71,11 @@ func TestShippedSeatWindowMatchesTrackedConf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shipped, err := LoadShippedSeatWindow(root, settings.SeatWindow)
+	claude, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(ShippedClaudeSettingsSource)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	shipped, err := LoadShippedSeatWindow(claude, settings.SeatWindow)
 	if err != nil {
 		t.Fatal(err)
 	}

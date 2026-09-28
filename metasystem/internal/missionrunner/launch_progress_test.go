@@ -1,27 +1,15 @@
 package missionrunner
 
 import (
+	"bufio"
 	"os"
-	"path/filepath"
+	"os/exec"
+	"syscall"
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
-
-func TestParsePSCPUTime(t *testing.T) {
-	for value, want := range map[string]float64{"0:00.12": 0.12, "1:02.50": 62.5, "1:01:01": 3661, "2-01:00:00": 176400} {
-		got, err := parsePSCPUTime(value)
-		if err != nil || got != want {
-			t.Fatalf("%s: got %v err=%v want %v", value, got, err, want)
-		}
-	}
-	for _, value := range []string{"", "12", "a:b", "1:-2"} {
-		if _, err := parsePSCPUTime(value); err == nil {
-			t.Fatalf("%q parsed", value)
-		}
-	}
-}
 
 // TestTreeCPUProgressOnAScriptedSampler drives the progress tracker with a
 // scripted CPU reader and an artificial clock: the first-sample rule, the
@@ -84,38 +72,59 @@ func TestTreeCPUProgressOnAScriptedSampler(t *testing.T) {
 	}
 }
 
-// TestProcessTreeCPUSecondsCountsDescendants is the reader's wiring proof:
-// the real ps command path, parser, and tree traversal see a child whose CPU
-// grows while the root stays unchanged, so descendant time must be summed.
-func TestProcessTreeCPUSecondsCountsDescendants(t *testing.T) {
-	bin := t.TempDir()
-	calls := filepath.Join(bin, "ps-calls")
-	ps := `#!/usr/bin/env bash
-set -euo pipefail
-[[ "$*" == "-axo pid=,ppid=,cputime=" ]] || exit 97
-count=0
-if [[ -f "${PS_FIXTURE_CALLS:?}" ]]; then
-  read -r count <"$PS_FIXTURE_CALLS"
-fi
-count=$((count + 1))
-printf '%d\n' "$count" >"$PS_FIXTURE_CALLS"
-child_cpu=0:00
-[[ "$count" -eq 1 ]] || child_cpu=0:01
-printf '4242 1 0:02\n4243 4242 %s\n9000 1 9:59\n' "$child_cpu"
-`
-	if err := testexec.WriteFile(filepath.Join(bin, "ps"), []byte(ps), 0o700); err != nil {
+// TestProcessTreeCPUSecondsReadsTheKernelNotAProgram is the reader's wiring
+// proof (R-138-m1e, Go decides natively): with no program reachable on PATH,
+// a tree whose root shell only waits while its grandchild has computed still
+// reports the grandchild's CPU on top of the root's, so the reading comes
+// from the kernel and descendant time is summed. The grandchild computes a
+// fixed amount, says so, then blocks on its input, so the test waits on a
+// read and never on the clock. An absent root reports no sample.
+func TestProcessTreeCPUSecondsReadsTheKernelNotAProgram(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	command := exec.Command("/bin/sh", "-c", `/usr/bin/awk 'BEGIN { for (i = 0; i < 2000000; i++) s += i; print "computed"; fflush(); getline line < "-" }'; :`)
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	input, err := command.StdinPipe()
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PS_FIXTURE_CALLS", calls)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	first, ok := processTreeCPUSeconds(4242)
-	if !ok || first != 2 {
-		t.Fatalf("first scripted process-tree sample = %v, %v; want 2, true", first, ok)
+	output, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
 	}
-	second, ok := processTreeCPUSeconds(4242)
-	if !ok || second != 3 {
-		t.Fatalf("second scripted process-tree sample = %v, %v; want 3, true", second, ok)
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = input.Close()
+		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		_ = command.Wait()
+	})
+	line, err := bufio.NewReader(output).ReadString('\n')
+	if err != nil || line != "computed\n" {
+		t.Fatalf("grandchild said %q, %v", line, err)
+	}
+	census, err := identity.TakeProcessCensus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := int64(command.Process.Pid)
+	var grandchild int64
+	for _, pid := range census.Pids() {
+		if parent, known := census.Parent(pid); known && parent == root {
+			grandchild = pid
+		}
+	}
+	if grandchild == 0 {
+		t.Fatal("the root shell has no computing child")
+	}
+	rootCPU, rootErr := identity.ProcessCPUSeconds(root)
+	childCPU, childErr := identity.ProcessCPUSeconds(grandchild)
+	if rootErr != nil || childErr != nil || childCPU <= 0 {
+		t.Fatalf("per-process CPU root=%v (%v) child=%v (%v)", rootCPU, rootErr, childCPU, childErr)
+	}
+	total, ok := processTreeCPUSeconds(command.Process.Pid)
+	if !ok || total < rootCPU+childCPU {
+		t.Fatalf("tree CPU = %v, %v; want at least root %v plus grandchild %v", total, ok, rootCPU, childCPU)
 	}
 	if _, ok := processTreeCPUSeconds(os.Getpid() + 1_000_000); ok {
 		t.Fatal("an absent process must report no sample")

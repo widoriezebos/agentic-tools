@@ -511,3 +511,10 @@ these."
 | ERD-03 the resolver cannot judge the file explicitly requested | accepted | Decision 1; U1: `EvidenceRootParams.ConfPath`, `.local` derived as `ConfPath + ".local"`, validate passes its own `confPath`; two-neighbouring-files test |
 | ERD-04 legacy placeholders stay mandatory under the audit | accepted | Decision 7; U1: the alternative removed from `auditPlaceholderRe`, adopted fixture keeping the old line in `internal/audit/coverage_test.go`; Migration |
 | ERD-05 the guard protects spelling, not ownership | deferred | Later |
+
+## Dispositions of Sol's code critique (2026-09-28)
+
+| id | disposition | where |
+|---|---|---|
+| SOL-ER-01 | Folded. The compiled-in default is judged like a named root: a default that lies inside the checkout (HOME being the checkout) is refused, naming HOME and the .local remedy. | `internal/config/evidenceroot.go:ResolveEvidenceRoot`; `TestResolveEvidenceRootRefusesADefaultInsideTheCheckout` |
+| SOL-ER-02 | Deferred (R-124). `WriteRetired` has no engine command because the internal-verb ratchet is at its ceiling of 85 after batch 9. The migration runs once, on this host, driven by an uncommitted program that calls `WriteRetired`. Later retirements belong to m1e-c4's `machine remove`, which should be `WriteRetired`'s production caller. | build report; Later |

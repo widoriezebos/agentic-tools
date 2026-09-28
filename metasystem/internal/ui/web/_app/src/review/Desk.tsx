@@ -14,14 +14,17 @@ import { Markdown } from "../project/Markdown";
  * changed lines marked, the change index, one file's diff, or a record's
  * section — and a strip above it lists what has been on it, newest first.
  *
- * Everything here reads the candidate through the review owner, over the
- * record's Reviewed line, and never this checkout: the colleague and the human
- * read one tree.
+ * In a review, everything here reads the candidate through the review owner,
+ * over the record's Reviewed line, and never this checkout: the colleague and
+ * the human read one tree. In a sitting that shapes a record, the desk reads
+ * the checkout as it stands, which is what the colleague's own reads see, and
+ * there is no change to put on it (g1-s67 D2).
  */
 export function Desk({ record }: { record: string }) {
-  const { room, putOnDesk, showOnDesk, table } = usePartner();
+  const { room, putOnDesk, showOnDesk, table, sitting } = usePartner();
   const item = room.desk.current >= 0 ? room.desk.items[room.desk.current] : undefined;
   const reviewed = reviewedOf(table.source);
+  const reviewing = sitting?.purpose === "review";
   return (
     <div className="ms-desk">
       <nav className="ms-desk-strip" aria-label="What has been on the desk">
@@ -42,22 +45,27 @@ export function Desk({ record }: { record: string }) {
             </button>
           ))
         )}
-        <button
-          type="button"
-          className="ms-desk-tab ms-desk-tab--changes"
-          onClick={() => {
-            putOnDesk({ kind: "changes" });
-          }}
-        >
-          The change
-        </button>
-        <Help id="the-desk" />
+        {reviewing && (
+          <button
+            type="button"
+            className="ms-desk-tab ms-desk-tab--changes"
+            onClick={() => {
+              putOnDesk({ kind: "changes" });
+            }}
+          >
+            The change
+          </button>
+        )}
+        <Help id={reviewing ? "the-desk" : "shaping-desk"} />
       </nav>
       <div className="ms-desk-item">
         {item === undefined ? (
           <p className="ms-desk-empty">
-            The desk is empty. Press The change to see every file this work touched, a file in the conversation to
-            open it here, or a walk to have your Partner put things here as it explains them.
+            {reviewing
+              ? "The desk is empty. Press The change to see every file this work touched, a file in the conversation to " +
+                "open it here, or a walk to have your Partner put things here as it explains them."
+              : "The desk is empty. Press a file in the conversation to open it here as the checkout has it now, or a " +
+                "walk to have your Partner put things here as it explains them."}
           </p>
         ) : (
           <DeskView key={deskReadKey(item, reviewed)} record={record} item={item} at={deskReadKey(item, reviewed)} />
@@ -124,7 +132,7 @@ function SourceView({ record, path, from, to, at }: { record: string; path: stri
   const { putOnDesk } = usePartner();
   const read = useRead<Source>((signal) => loadSource(record, path, from, to, signal), at);
   if (read.state === "loading") {
-    return <p className="ms-desk-loading">Reading {path} from the reviewed tree…</p>;
+    return <p className="ms-desk-loading">Reading {path}…</p>;
   }
   if (read.state === "refused") {
     return <Refused reason={read.reason} />;
@@ -138,23 +146,29 @@ export function SourceShown({ source, put }: { source: Source; put: (item: DeskI
   const putOnDesk = put;
   const before = source.from > 1;
   const after = source.to < source.total;
+  // A shaping desk reads the checkout as it stands (g1-s67 D2): no commit to
+  // name, and no change to diff against.
+  const standing = source.checkout === true;
   return (
-    <section className="ms-desk-source" aria-label={`${path} at the reviewed tip`}>
+    <section className="ms-desk-source" aria-label={standing ? `${path} as the checkout has it now` : `${path} at the reviewed tip`}>
       <p className="ms-desk-caption">
         <span className="ms-mono">{source.path}</span>
         <span>
-          lines {source.from}–{source.to} of {source.total} · at {source.commit.slice(0, 9)}
+          lines {source.from}–{source.to} of {source.total} ·{" "}
+          {standing ? "as the checkout has it now" : `at ${source.commit.slice(0, 9)}`}
           {source.unmarked !== undefined && source.unmarked !== "" && ` · ${source.unmarked}`}
         </span>
-        <button
-          type="button"
-          className="ms-desk-link"
-          onClick={() => {
-            putOnDesk({ kind: "diff", path });
-          }}
-        >
-          Its diff
-        </button>
+        {!standing && (
+          <button
+            type="button"
+            className="ms-desk-link"
+            onClick={() => {
+              putOnDesk({ kind: "diff", path });
+            }}
+          >
+            Its diff
+          </button>
+        )}
       </p>
       {before && (
         <button

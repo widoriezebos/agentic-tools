@@ -432,3 +432,38 @@ describe("the conversation a page is showing", () => {
     expect(shown.live.presents).toEqual([{ kind: "source", path: "internal/owner.go", from: 41, to: 88 }]);
   });
 });
+
+/**
+ * An act's answer is a snapshot taken when the turn was admitted, and the turn's
+ * first beats can reach the page on the stream before that answer does. The
+ * older snapshot must not undo them: a beat the page has already joined is
+ * never sent again, so an Outcome card that arrived first would be lost until a
+ * reload (found in the g1-s67 walkthrough: End in a shaping room).
+ */
+describe("an act's answer that is older than the beats already joined", () => {
+  const room = "metasystem/plans/designs/sessions.md";
+  const deposit = { kind: "outcome", text: "What it came to.", offered: true };
+
+  it("keeps the running turn as the beats left it", () => {
+    const opened = loaded({ ...emptyStore, conversation: room }, { ...snapshot, conversation: room });
+    const joined = received(opened, {
+      turn: "t2", seq: 2, kind: "deposit", text: "", at: "2026-09-28T10:00:00Z", conversation: room, deposit,
+    });
+    const answer = loaded(joined, { ...snapshot, conversation: room, busy: true, turn: "t2", partialSeq: 0 });
+    expect(answer.live.turn).toBe("t2");
+    expect(answer.live.deposits).toEqual([deposit]);
+    expect(answer.live.seq).toBe(2);
+  });
+
+  it("still takes a snapshot that is newer than the beats, and one of another turn", () => {
+    const opened = loaded({ ...emptyStore, conversation: room }, { ...snapshot, conversation: room });
+    const joined = received(opened, {
+      turn: "t2", seq: 1, kind: "text", text: "a", at: "2026-09-28T10:00:00Z", conversation: room,
+    });
+    const newer = loaded(joined, { ...snapshot, conversation: room, busy: true, turn: "t2", partialSeq: 3, partial: "abc" });
+    expect(newer.live.text).toBe("abc");
+    expect(newer.live.seq).toBe(3);
+    const other = loaded(joined, { ...snapshot, conversation: room, busy: true, turn: "t3", partialSeq: 0 });
+    expect(other.live.turn).toBe("t3");
+  });
+});

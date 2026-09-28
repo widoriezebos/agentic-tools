@@ -274,7 +274,7 @@ func worldInstallation(ops Ops, harnessRoot string) (string, bool) {
 		if relative != "" {
 			world += "/" + relative
 		}
-		if info, err := os.Stat(filepath.Join(world, "scripts", "agents")); err != nil || !info.IsDir() {
+		if info, err := os.Stat(filepath.Join(world, "metasystem.conf")); err != nil || !info.Mode().IsRegular() {
 			return "", false
 		}
 	}

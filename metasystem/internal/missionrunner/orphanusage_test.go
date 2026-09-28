@@ -33,11 +33,11 @@ func seedLandedChain(t *testing.T, root, missionID, jobID string) {
 	if err := os.WriteFile(returnPath, []byte(lawful), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	schema, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "schemas", "implementer.schema.json"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "internal", "protocol", "schemas", "implementer.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	schemaPath := filepath.Join(root, "scripts", "agents", "schemas", "implementer.schema.json")
+	schemaPath := filepath.Join(root, "internal", "protocol", "schemas", "implementer.schema.json")
 	if err := os.MkdirAll(filepath.Dir(schemaPath), 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -76,12 +76,12 @@ func EffectiveObligations(class HazardClass, tier uint8) (ConfigurationObligatio
 // ResolveHazardConfiguration reads the role-packet table and refuses any
 // missing, extra, or weakened class or tier rule. The table remains the
 // recorded schema, while this admission boundary fixes the lawful obligations.
-func ResolveHazardConfiguration(root string, class HazardClass, tier uint8) (ConfigurationObligations, error) {
+func ResolveHazardConfiguration(class HazardClass, tier uint8) (ConfigurationObligations, error) {
 	expected, err := EffectiveObligations(class, tier)
 	if err != nil {
 		return ConfigurationObligations{}, err
 	}
-	_, table, err := readRolePacketTable(root)
+	_, table, err := readRolePacketTable()
 	if err != nil {
 		return ConfigurationObligations{}, err
 	}

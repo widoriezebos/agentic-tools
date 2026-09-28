@@ -30,7 +30,7 @@ func newEnv(t *testing.T) env {
 		outputPath:   filepath.Join(root, "selected.json"),
 	}
 	mustMkdir(t, filepath.Join(root, "artifacts/agents/capabilities"))
-	mustMkdir(t, filepath.Join(root, "scripts/agents/roles"))
+	mustMkdir(t, filepath.Join(root, "roles"))
 	return e
 }
 
@@ -53,7 +53,7 @@ func (e env) writeSnapshot(t *testing.T, name string, snap map[string]any) {
 func (e env) writeRequirements(t *testing.T, req map[string]any) {
 	t.Helper()
 	body, _ := json.Marshal(req)
-	if err := os.WriteFile(filepath.Join(e.root, "scripts/agents/roles", e.role+".requirements.json"), body, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(e.root, "roles", e.role+".requirements.json"), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -90,7 +90,7 @@ func TestSelectMatchesFreshSnapshot(t *testing.T) {
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{}})
 	e.writeEnvelope(t, map[string]any{"readRoots": []any{}, "writeRoots": []any{}, "network": "deny"})
 
-	if err := Select(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err != nil {
+	if err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err != nil {
 		t.Fatalf("a fresh matching snapshot should select: %v", err)
 	}
 	out, _ := os.ReadFile(e.outputPath)
@@ -113,7 +113,7 @@ func TestSelectNoMatchNamesChangedKeys(t *testing.T) {
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{}})
 	e.writeEnvelope(t, map[string]any{"network": "allow"})
 
-	err := Select(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath)
+	err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath)
 	if err == nil || !strings.Contains(err.Error(), "changed configuration keys: model") {
 		t.Fatalf("no match should name the changed key, got %v", err)
 	}
@@ -124,7 +124,7 @@ func TestSelectStaleSnapshot(t *testing.T) {
 	e.writeSnapshot(t, "codex-0.146.0-abc123-20260101-001.json", baseSnapshot("abc123", "2026-01-01T00:00:00Z"))
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{}})
 	e.writeEnvelope(t, map[string]any{"network": "allow"})
-	if err := Select(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil || !strings.Contains(err.Error(), "stale") {
+	if err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil || !strings.Contains(err.Error(), "stale") {
 		t.Fatalf("an old snapshot should be stale, got %v", err)
 	}
 }
@@ -134,7 +134,7 @@ func TestSelectMissingRequiredCapability(t *testing.T) {
 	e.writeSnapshot(t, "codex-0.146.0-abc123-20260810-001.json", baseSnapshot("abc123", "2026-08-10T00:00:00Z"))
 	e.writeRequirements(t, map[string]any{"required": []any{"resume"}, "optional": map[string]any{}, "waivers": map[string]any{}})
 	e.writeEnvelope(t, map[string]any{"network": "allow"})
-	if err := Select(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil || !strings.Contains(err.Error(), "required runtime capabilities are absent") {
+	if err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil || !strings.Contains(err.Error(), "required runtime capabilities are absent") {
 		t.Fatalf("a missing required capability should refuse, got %v", err)
 	}
 }
@@ -149,12 +149,12 @@ func TestSelectRestrictiveFieldRefusedThenWaived(t *testing.T) {
 	// Codex declares NO network residual: fail closed, and no waiver
 	// can change that.
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{}})
-	if err := Select(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil ||
+	if err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil ||
 		!strings.Contains(err.Error(), "declares no residual") {
 		t.Fatalf("an undeclared residual should fail closed, got %v", err)
 	}
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{"network": []any{"codex"}}})
-	if err := Select(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil ||
+	if err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil ||
 		!strings.Contains(err.Error(), "declares no residual") {
 		t.Fatalf("a name waiver bypassed the residual rule, got %v", err)
 	}
@@ -166,12 +166,22 @@ func TestSelectRestrictiveFieldRefusedThenWaived(t *testing.T) {
 	e.writeSnapshot(t, "fake-0.146.0-abc123-20260810-001.json", fakeSnap)
 	fakeIdentity := `{"runtime":"fake","cliVersion":"0.146.0","configHash":"abc123","configKeyHashes":{"model":"` + hash64 + `"}}`
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{}})
-	if err := Select(e.root, "fake", e.role, fakeIdentity, 30, e.envelopePath, e.outputPath); err == nil ||
+	if err := selectFixture(e.root, "fake", e.role, fakeIdentity, 30, e.envelopePath, e.outputPath); err == nil ||
 		!strings.Contains(err.Error(), "fake-network-unverified") {
 		t.Fatalf("the refusal should name the residual identifier, got %v", err)
 	}
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{"network": []any{"fake-network-unverified"}}})
-	if err := Select(e.root, "fake", e.role, fakeIdentity, 30, e.envelopePath, e.outputPath); err != nil {
+	if err := selectFixture(e.root, "fake", e.role, fakeIdentity, 30, e.envelopePath, e.outputPath); err != nil {
 		t.Fatalf("a residual waiver should be allowed: %v", err)
 	}
+}
+
+// selectFixture selects with the requirements a test wrote under
+// root/roles/<role>.requirements.json in place of the compiled-in ones.
+func selectFixture(root, runtime, role, identityJSON string, maxAge int, envelopePath, outputPath string) error {
+	requirements, err := os.ReadFile(filepath.Join(root, "roles", role+".requirements.json"))
+	if err != nil {
+		return err
+	}
+	return selectWith(root, runtime, role, requirements, identityJSON, maxAge, envelopePath, outputPath)
 }

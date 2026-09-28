@@ -52,9 +52,10 @@ Author Fable. Every cite re-read at `12611b98c`. Depends on slice C
 
 ## 3. The moment
 
-A tier-1 goal reaches Review at 14:02. Its card says "lands by itself
-in 4h" beside Review it. Nobody opens a room. At 18:02 the seat holding
-the claim lands it; the history line reads "landed under
+A tier-1 goal reaches Review at 14:02. Its card says "eligible to land
+in 4h" beside Review it. Nobody opens a room. At 18:02 the card says
+"eligible to land, waiting for the holder", and on the holding seat's
+next turn it lands; the history line reads "landed under
 landing.review.auto-after=4h, tier 1 below human-from-tier=2". A tier-2
 goal reaches Review; its card says "waits for your review", with Review
 it and Land without a sitting, and your inbox gains "backlog-ordered-by-
@@ -71,38 +72,101 @@ sitting") until you end it.
 
 - D1. **Two settings.** `landing.review.human-from-tier` (default 2:
   tiers 2 and 3 wait for a person) and `landing.review.auto-after`
-  (default 4h), read by `ConfValue`, shown on the Settings page with
-  their source (committed, local or default).
-- D2. **The gate is inside `work land`.** Landing a goal in the Review
-  lane at or above the tier is refused, naming the missing fact, unless
-  the goal's history carries, against the current branch tip, either a
-  `reviewed verdict=clear-to-land` line or a `landed-without-sitting`
-  decision line; a standing review sitting on the goal (a review record
-  whose sitting has not ended, read from the record) refuses landing at
-  every tier, naming the sitting. Below the tier with no standing
-  sitting, `work land` proceeds as today. The refusal is a register
-  row with the human verb that carries past it (Land without a
+  (default 4h), read through the layered resolution every other
+  setting uses (`internal/config/resolve.go:172`, `Get`: environment,
+  then `.local`, then the committed file, then the default; not
+  `ConfValue`, which reads one file and never the overlay,
+  `conf.go:39`), so a threshold of 1 set in `.local` over a committed
+  2 binds the gate, the clock and the page alike; the Settings page
+  shows each with the source the resolution reports.
+- D2. **The gate is at the landing's admission, for every form, and the
+  hold is a ledger fact.** Landing a goal in the Review lane at or
+  above the tier is refused, naming the missing fact, unless the goal's
+  history carries, against the current branch tip, either a `reviewed
+  verdict=clear-to-land` line or a `landed-without-sitting` decision
+  line. A standing review sitting refuses landing at every tier, and
+  it is a fact every seat reads: opening a review sitting performs
+  `goal review G --hold --record PATH` (a history line, `review-sitting
+  opened record=… by=…`) before the room reports the sitting open, Step
+  out keeps it, and every way the sitting ends, Clear to land, Send
+  back, No verdict and End without recording, performs the release
+  (`--release`, or the verdict act of slice C, which releases in the
+  same line); a hold that is not released stands until its human
+  releases it, and the card says whose it is. The sitting's private
+  mark (`partner/review.go:155`, cleared by `conversation.go:1299`) and
+  the reviewing checkout's record are not what the gate reads, since
+  the landing seat has neither. The gate is enforced where a landing
+  admits a governed goal's commits to a batch, so every form that
+  publishes a goal's work meets it: `work land G`, `work land j2:J`
+  (`intent_delivery.go:1523` resolves the job's goal), the staged
+  `--message` form when it names a goal, and the exceptional forms;
+  an exception recorded earlier is not a current-tip decision to skip
+  the sitting, and `--queue-only` still enters Review. Below the tier
+  with no hold, landing proceeds as today. The gate is a rule about
+  publishing a governed goal's work, not about the Review lane: a
+  claimed goal at or above the tier needs the human's current-tip word
+  whether or not it ever carried a Landing record, so a certified
+  chain landed directly with `work land j2:J` (the batch binds a
+  claimed goal without one, `dispatch/stop.go:77`) meets it the same
+  way; `--queue-only` stays the way into Review. And admission is not
+  the last word: a batch publishes later and on retries
+  (`internal/landing/batch/land.go:306`), and its final authority check
+  reads a fresh ledger for the claim, the fences and the budget
+  (`landing_batch_prefix.go:47`, at the series boundary,
+  `landing_batch_land.go:215`, `:409`), so the gate is evaluated there
+  too, against the fresh ledger, at every publication and every retry
+  including moved-base recovery: a hold published while the batch was
+  proving stops the publication, and a release is judged under the
+  grace and permission rules as they stand then. The refusal is a
+  register row with the human verb that carries past it (Land without a
   sitting), so the room's own "Ask what happened" can explain it.
-- D3. **The clock is the holding seat's.** The seat that holds the claim
-  lands a below-tier goal by itself once `auto-after` has passed since
-  the Landing record's `At` with no human act on the goal in between,
-  through the ordinary `work land`, and the history line names the
-  setting and the tier. The clock is evaluated where the seat already
-  passes over its claims (the steward's loop), never by a timer of its
-  own. The clock never runs at or above the tier.
+- D3. **The clock is the holding seat's, and a human act restarts it.**
+  The seat that holds the claim lands a below-tier goal by itself once
+  `auto-after` has passed since the clock's start, through the ordinary
+  landing, and the history line names the setting and the tier. The
+  clock starts at the Landing record's `At` and restarts at every human
+  act on the goal's history after it: a hold's release (a sitting that
+  ended without a verdict gives the human a fresh grace period, which
+  is what "releases the clock" means), a priority change, an edit. It
+  does not run while a hold stands. The clock is evaluated where the
+  seat already passes over its claims (the resident steward's loop,
+  `internal/steward/runner.go:214`, over this machine's claims,
+  `goal/project.go:744`), never by a timer of its own; expiry is
+  eligibility, and the card says so. The steward's loop never lands a
+  goal in its own name: the runner is detached and classified as the
+  steward (`runner.go:892`, `lease/classify.go:427`), the holder check
+  every landing makes before preparing (`goal_branch.go:614`) admits no
+  steward (`lease/verbs.go:440`), and the steward's revival hands work
+  to a fresh delegate process, not to a live session (`verdict.go:120`,
+  `revive.go:320`, `steward_verbs.go:545`), so there is no route from
+  the loop to the holder for this. The execution is the holder's own:
+  the session that holds the claim checks its claims' eligibility on
+  its next governed turn and on its Stop path, the places it already
+  passes over what it holds, and lands an eligible goal with `work land
+  G` under its own identity, with the gate of D2 evaluated then against
+  the fresh ledger. What the design promises is therefore eligibility
+  after the grace time and the landing on the holder's next activity;
+  a holder that is idle for hours lands hours late, and the card's
+  "lands by itself in 3h 12m" reads "eligible to land in 3h 12m" when
+  the wording would otherwise promise a moment. The history says
+  "landed" only after the publication is confirmed. The clock never
+  runs at or above the tier.
 - D4. **Land without a sitting is a human-only act.** `goal land-without
   -sitting G --reason TEXT`, recorded on the history bound to the
   current tip, performed from the card's Decide sheet under the sign-in
   as the other goal acts are; the reason is required.
-- D5. **The card and the inbox say it.** Below the tier: "lands by
-  itself in 3h 12m" beside Review it, or "held by your sitting"; at or
+- D5. **The card and the inbox say it.** Below the tier: "eligible to
+  land in 3h 12m" beside Review it, then "eligible to land, waiting for
+  the holder", or "held by your sitting"; at or
   above: "waits for your review" with Review it and Land without a
   sitting, and a Decisions inbox need of a new kind, landing, "waits for
   your review", answered by either act. The words are computed from the
   goal file and the settings the project resource already carries; the
   interface never runs the clock.
 - D6. **Nothing else changes.** The verdict line (C), the room, the
-  Review lane's shape, `work land`'s other forms.
+  Review lane's shape, and the spelling of every `work land` form: the
+  forms keep their syntax and gain the one gate of D2 at admission,
+  never a bypass.
 
 ## 5. Step 1, the smallest thing that works
 
@@ -115,14 +179,18 @@ check first; notifying the human when the clock lands something.
 ## 6. Payload and routes
 
 `GET /api/project` carries, per Review-lane goal, the gate's reading:
-`{waitsForHuman, autoLandsAt?, heldBySitting?, reviewed?}`, computed
-server-side from the goal file, the settings and the standing sittings.
-`POST /api/goals/<id>/land-without-sitting` `{reason}` performs the
-act under the sign-in. The inbox's needs gain kind `landing`. The
-Settings page reads the two keys from the workspace resource. The
-proposal grammar gains `goal land-without-sitting`; the Partner may
-propose it with the reason the human wrote. The cut guard's call sites
-gain the one act.
+`{waitsForHuman, autoLandsAt?, heldBy?, reviewed?}`, computed
+server-side from the goal file's history and the layered settings,
+never from the private store. `POST /api/backlog/goals/<id>/land-
+without-sitting` `{reason}` performs the act under the sign-in, beside
+the other goal acts; the review room's Start performs `goal review
+--hold` and its ends perform the release through slice C's act route.
+The inbox's needs gain kind `landing`. The Settings page reads the two
+keys with their sources from the workspace resource. The proposal
+grammar gains `goal land-without-sitting`; the Partner may propose it
+with the reason the human wrote. The landing's admission gains the
+gate as one function every form calls with the resolved goal and
+candidate. The cut guard's call sites gain the one act.
 
 ## 7. Not here, later
 
@@ -132,13 +200,27 @@ design's review.
 
 ## 8. Verification and box
 
-Go: the two settings with defaults and sources; `work land` refusing at
-and above the tier without the line and proceeding with it, refusing
-under a standing sitting at every tier, and refusing a line whose tip
-is not the current tip; the clock landing below the tier after the
-grace time from `At` and never above it, evaluated on the loop with an
-injected clock; the act's history line and its required reason; the
-register row for the refusal; idempotency rows and public forms.
+Go: the two settings with defaults and sources, a `.local` threshold of
+1 over a committed 2 binding the gate; the gate refusing at and above
+the tier without the line and proceeding with it, refusing under a
+hold at every tier from the history alone, and refusing a line whose
+tip is not the current tip; the same gate met by `work land G`, `j2:J`,
+the staged form with a goal and an exceptional form, and `--queue-only`
+still entering Review; the hold written before the sitting reports
+open and released by each of the four ends; the clock landing below
+the tier after the grace time from `At`, restarting at a release and
+at a human act, never running under a hold and never above the tier,
+evaluated on the loop with an injected clock, "landed" written only
+after confirmed publication; the act's history line and its required
+reason; the register row for the refusal; idempotency rows and public
+forms; the gate met at publication: a goal joins a batch, a hold is
+published while it proves, the publication and its retry refuse; a
+tier-2 claimed goal with a certified chain and no Landing record
+landed with `work land j2:J` refuses without the human's word; an
+eligible tier-1 goal is landed by its holder on its next governed
+turn and on its Stop path with the gate evaluated then, a landing
+attempted in the steward's name is refused, and a claim that changed
+hands before the holder's next activity lands nothing.
 Frontend: the card's four wordings from the project payload; the Decide
 sheet's required reason and the act; the inbox row and its two answers;
 the Settings page's two facts with sources; the cut guard. Walkthrough:
@@ -150,11 +232,75 @@ job-minutes.
 
 ## 9. Self-grade
 
-High on D1, D4 and D5: settings, an act, words. Medium on D2: the gate
-reads the ledger and the record, and the standing-sitting check reads
-a file only the reviewing checkout has, so "held by your sitting" is
-honest only where the record is visible; Astra should say whether the
-hold must also be a ledger line. Medium on D3: a clock on the
-steward's loop is right by the cut guard's spirit, and its cadence
-bounds how late an auto-landing can be. Weakest: the first auto-landing
-of a goal nobody looked at is the moment the ruling is tested.
+High on D1, D4 and D5: settings, an act, words. High on D2 since
+revision 2: the hold is a ledger line like the verdict, so the gate
+reads one source every seat has, and one function at admission covers
+every form. Medium on D3: a clock on the steward's loop is right by
+the cut guard's spirit, its cadence bounds how late an auto-landing can
+be, and restarting at a human act is one rule with no second
+timestamp. Weakest: the first auto-landing of a goal nobody looked at
+is the moment the ruling is tested.
+
+## Dispositions (Astra round 1, 2026-09-28, under R-121 and R-124)
+
+Read of revision 1 at `81acda402`, verbatim in
+`g1-s70-astra-critique.md`. Four material findings, all folded; every
+cited line re-read at whole-function depth before folding.
+
+| id | finding | fold |
+|---|---|---|
+| S70-01 | the hold was read from the review record and the sitting's private mark (`partner/review.go:155`, cleared at `conversation.go:1299`; `standingOf` names the lane, `httpd/review.go:197`), which the landing seat never has: a below-tier goal lands while its human sits | D2: the hold is a ledger line, written before the sitting reports open and released by every end; the gate, the clock and the card read the history alone |
+| S70-02 | D6 left the other `work land` forms unchanged while the gate sat on the ordinary goal path (`intent_delivery.go:1448`, `j2:J` at `:1523`); `advance.go:31` is checkout rebasing, not a goal's landing | D2 and D6: one gate at the landing's admission of a governed goal's commits, met by every form; syntax unchanged, no bypass; an earlier exception is not a current-tip decision; `--queue-only` still enters Review |
+| S70-03 | `ConfValue` reads one file with no `.local` overlay (`conf.go:39`); the layered resolution is `Get` (`resolve.go:172`, the overlay at `:193`): a local threshold of 1 was silently ignored | D1: both keys through `Get`; the page shows the source the resolution reports; a fixture with local 1 over committed 2 |
+| S70-04 | "no human act since `At`" never becomes true again after a sitting that ends without a verdict, and `LandingRecord` holds only `At` and `Opid` (`file.go:363`): the clock either stalls for ever or picks an undefined deadline | D3: the clock restarts at every human act on the history after `At`, the release included, and does not run under a hold; one rule, no second timestamp; the card's deadline derives from it |
+
+Astra also verified, and the design leans on, that R-132-ui's boundary
+is below versus at or above the threshold and a default of 2 fits it;
+that the resident steward's loop passes over this machine's claims
+(`runner.go:214`, `goal/project.go:744`) so no timer is needed and
+expiry is eligibility on a pass; that `act.SignedIn` validates the
+human and the session against the proof (`act.go:190`); and that the
+register and the inbox's `Need` are the right extension points, with a
+batch join being in-progress until publication is confirmed.
+
+**Round 2, the declared failsafe (2026-09-28, at `04bc1fdd5`):**
+S70-01, S70-03 and S70-04 confirmed answered; S70-02 held open
+through three new material findings, all folded. S70-05: a gate at
+admission does not protect the interval before publication, since a
+batch publishes later and on retries with a final authority check that
+reads a fresh ledger for the claim, fences and budget but not a hold
+(`batch/land.go:306`, `landing_batch_prefix.go:47`,
+`landing_batch_land.go:215`, `:409`); fold, D2: the gate is evaluated
+again at every publication and retry against the fresh ledger. S70-06:
+"in the Review lane" exempted a claimed goal landed directly with
+`work land j2:J`, which binds without a Landing record
+(`intent_delivery.go:1523`, `dispatch/stop.go:77`); fold, D2: the
+threshold applies whenever a governed goal's work is published,
+whatever its lane; `--queue-only` stays the entry to Review. S70-07:
+the resident steward is detached and classified as the steward
+(`runner.go:892`, `classify.go:427`) and the holder check before every
+landing admits no steward (`goal_branch.go:614`, `lease/verbs.go:440`),
+so the loop could find a goal due but never land it; fold, D3: the loop
+only finds the goal due and hands the landing to the claim-holding
+session through the steward's continuation, which lands under its own
+identity, a changed claim voiding the handoff. Non-material: `Get`
+returns no source, so the Settings page's source line is
+implementation work. Closed at the failsafe round on three folds,
+with one scoped confirmation read on S70-05 to S70-07 alone.
+
+**Confirmation read (2026-09-28, at `a4541e20d`):** S70-05 and S70-06
+confirmed answered. S70-07 held open through S70-08: the steward's
+"existing continuation" cannot deliver a due landing to a live holder,
+since revival is suppressed while a worker is live (`verdict.go:120`),
+the one exception needs the seat's own handoff (`revive.go:320`), and
+dispatch launches a fresh delegate process rather than reaching a
+session (`steward_verbs.go:545`). Folded as Astra's own smallest
+honest alternative, D3: the holder checks eligibility on its next
+governed turn and on its Stop path and lands under its own identity;
+the promise is eligibility after the grace time and the landing on the
+holder's next activity, and the card's words say so (D5, §3). Every
+cited line re-read. No further read: the fold is the reader's own
+alternative and changes no other decision. The loop is CLOSED. One
+residual for Wido: unattended landing while the holder is idle for
+hours would need a delivery route the steward does not have; "later,
+when it hurts".

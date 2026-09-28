@@ -702,6 +702,11 @@ func flakeBedWith(t *testing.T, prepare func(*Record), groups ...RedGroup) (Stor
 	bed := policyFixture(t)
 	bed.record.State, bed.record.TipTree = StateDiagnosing, "tip-tree"
 	bed.record.Units[0].Approver, bed.record.Units[1].Approver = "Ann", "Bob"
+	// Each member's closure is known and reaches none of the red's owner
+	// units, so nobody is named.
+	for index := range bed.record.Units {
+		bed.record.Units[index].Closure = &adapter.Closure{Tree: "tip-tree", Changed: []string{"unrelated-" + bed.record.Units[index].GoalID}}
+	}
 	proof := &Proof{Status: "failed", Tree: "tip-tree", AttemptID: "tip-attempt", SelectedGroups: []string{"fake-other"},
 		Executions: []string{"fake-other"}, GroupIdentities: map[string]string{}, RedGroups: groups}
 	for _, group := range groups {
@@ -1100,5 +1105,98 @@ func TestGreenBatchLandsWhenAnotherBatchsBaseRunBlocksReuse(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A retained verifier that keeps failing on the composed path is retried a
+// bounded number of times, each counted on the record, and then every member
+// returns naming why; the batch never sits diagnosing forever.
+func TestComposedPathVerifierErrorIsBoundedThenReturnsEveryMember(t *testing.T) {
+	t.Parallel()
+	red := knownRed()
+	store, ledger := flakeBed(t, red)
+	ledger.entries = []OpenEntry{{ID: "F", Identity: FlakeID(red.ID, red.Failures[0]), Class: ClassKnownFlake, AllowanceUntil: flakeNow.Add(time.Hour), Owner: "Wido"}}
+	script := &flakeScript{tip: passedAt("identity-"+red.ID, red)}
+	seams := flakeSeams(script, ledger, nil)
+	verifications := 0
+	seams.Sources = func(Record) (map[string]string, error) {
+		verifications++
+		return nil, fmt.Errorf("retained worktree unavailable")
+	}
+	for attempt := 1; attempt < MaxComposedVerifierAttempts; attempt++ {
+		err := DiagnoseRed(store, testBatchID, "owner", []RedGroup{red}, "", flakeNow, seams)
+		record := load(t, store)
+		last := record.History[len(record.History)-1]
+		if err == nil || !strings.Contains(err.Error(), "retained worktree unavailable") || record.State != StateDiagnosing ||
+			last.Verb != "verifier-unavailable" || !strings.Contains(last.Detail, fmt.Sprintf("%d of %d", attempt, MaxComposedVerifierAttempts)) {
+			t.Fatalf("attempt %d: err=%v state=%s last=%+v", attempt, err, record.State, last)
+		}
+	}
+	must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{red}, "", flakeNow, seams))
+	everyMemberReturned(t, store, "BATCH_VERIFIER_UNAVAILABLE")
+	everyMemberReturned(t, store, "retained worktree unavailable")
+	if verifications != MaxComposedVerifierAttempts || len(ledger.pendings) != 0 {
+		t.Fatalf("verifications=%d pendings=%d, want %d and no sighting for a landing that never happened", verifications, len(ledger.pendings), MaxComposedVerifierAttempts)
+	}
+}
+
+// A member whose closure is unknown (no adapter recognised its checkout, or
+// the closure failed at join) cannot be ruled out as the red's owner, so a
+// known flake does not carry it: that member returns naming why, before any
+// classification run, and nothing lands composed.
+func TestUnknownClosureMemberReturnsInsteadOfLandingOnAKnownFlake(t *testing.T) {
+	t.Parallel()
+	red := knownRed()
+	store, ledger := flakeBedWith(t, func(record *Record) {}, red)
+	must(t, store.Update(testBatchID, func(record *Record) error {
+		record.Units[0].Closure = nil
+		return nil
+	}))
+	strictReassembly(t, &store, expectedReassembly{kind: "assemble", base: "base-tree", goals: []string{"goal-b"}, chains: []string{"chain-b"},
+		prefixes: []string{testCommit(201)}})
+	ledger.entries = []OpenEntry{{ID: "F", Identity: FlakeID(red.ID, red.Failures[0]), Class: ClassKnownFlake, AllowanceUntil: flakeNow.Add(time.Hour), Owner: "Wido"}}
+	script := &flakeScript{tip: passedAt("identity-"+red.ID, red)}
+	composed := false
+	seams := flakeSeams(script, ledger, map[string]string{red.ID: "class-attempt", "fake-other": "tip-attempt"})
+	seams.Sources = func(Record) (map[string]string, error) { composed = true; return nil, nil }
+	must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{red}, "", flakeNow, seams))
+	record := load(t, store)
+	var returned, kept *Unit
+	for index := range record.Units {
+		switch record.Units[index].GoalID {
+		case "goal-a":
+			returned = &record.Units[index]
+		case "goal-b":
+			kept = &record.Units[index]
+		}
+	}
+	if record.State == StateLanding || composed || len(ledger.pendings) != 0 || returned == nil || returned.State != UnitReturnPending ||
+		!strings.Contains(returned.Failure, "BATCH_MEMBER_CLOSURE_UNKNOWN") || kept == nil || kept.State != UnitJoined {
+		t.Fatalf("an unknown-closure member was carried by a known flake: state=%s composed=%t returned=%+v kept=%+v", record.State, composed, returned, kept)
+	}
+	for _, request := range script.requests {
+		if request.Tree == "tip-tree" {
+			t.Fatalf("a classification run was spent on a batch that cannot land composed: %+v", script.requests)
+		}
+	}
+}
+
+// A known flake's sighting is published only once the batch record moved to
+// landing: a lost compare-and-swap leaves no sighting for a landing that
+// never happened.
+func TestKnownFlakeSightingFollowsTheLandingCAS(t *testing.T) {
+	t.Parallel()
+	red := knownRed()
+	store, ledger := flakeBed(t, red)
+	ledger.entries = []OpenEntry{{ID: "F", Identity: FlakeID(red.ID, red.Failures[0]), Class: ClassKnownFlake, AllowanceUntil: flakeNow.Add(time.Hour), Owner: "Wido"}}
+	seams := flakeSeams(&flakeScript{tip: passedAt("identity-"+red.ID, red)}, ledger, nil)
+	seams.Sources = func(Record) (map[string]string, error) {
+		// Another writer moves the batch while the verifier runs.
+		must(t, store.Update(testBatchID, func(record *Record) error { record.Proof.AttemptID = "moved-attempt"; return nil }))
+		return map[string]string{red.ID: "class-attempt", "fake-other": "tip-attempt"}, nil
+	}
+	err := DiagnoseRed(store, testBatchID, "owner", []RedGroup{red}, "", flakeNow, seams)
+	if err == nil || !strings.Contains(err.Error(), "BATCH_PROOF_INPUT_MOVED") || len(ledger.pendings) != 0 {
+		t.Fatalf("lost CAS: err=%v sightings=%d, want the move refused and no sighting", err, len(ledger.pendings))
 	}
 }

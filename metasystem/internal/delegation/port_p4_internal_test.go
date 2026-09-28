@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 // L2813-2936: the final inline-input guard after a successful composition.
@@ -27,8 +30,7 @@ func TestP4FinalInlineCapGuardFollowsASuccessfulComposition(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, relative := range []string{"scripts/agents/role-packets.json", "scripts/agents/roles/verifier.md",
-			"skills/verify/SKILL.md", "scripts/agents/schemas/verifier.schema.json"} {
+		for _, relative := range []string{"skills/verify/SKILL.md"} {
 			content, err := os.ReadFile(filepath.Join(module, relative))
 			if err != nil {
 				t.Fatal(err)
@@ -102,27 +104,16 @@ func TestP4PermissionEnvelopePresetsFloorAndRefusals(t *testing.T) {
 	t.Parallel()
 	s, stderr := internalSession(t, Ports{Clock: &stubClock{now: time.Unix(1790000000, 0)}})
 	s.env.RecordOutcome = true
-	module, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	presets := filepath.Join(s.root, "scripts", "agents", "permissions")
-	if err := os.MkdirAll(presets, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	for _, preset := range []string{"workspace", "none", "critic"} {
-		content, err := os.ReadFile(filepath.Join(module, "scripts", "agents", "permissions", preset+".json"))
+		content, err := protocol.Permissions(preset)
 		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(presets, preset+".json"), content, 0o644); err != nil {
 			t.Fatal(err)
 		}
 		want := "allow"
 		if preset == "critic" {
 			want = "deny"
 		}
-		if got := fieldOr(filepath.Join(presets, preset+".json"), "network"); got != want {
+		if got, _ := jsonedit.Get(content, "network", nil); got != want {
 			t.Fatalf("the shipped %s preset network is %q, want %q", preset, got, want)
 		}
 	}
@@ -138,6 +129,21 @@ func TestP4PermissionEnvelopePresetsFloorAndRefusals(t *testing.T) {
 		return s.expandPermissions(requested, s.root, false, output)
 	}
 	writeConf("")
+	// A file that shadows a preset name is the configured envelope file, but
+	// the warden's compiled-in reference always resolves to the preset.
+	shadow := filepath.Join(t.TempDir(), "critic")
+	if err := os.WriteFile(shadow, []byte(`{"readRoots":["."],"writeRoots":["<worktree>"],"network":"allow","approvals":"deny","tools":"runtime-default"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !s.permissionEnvelopeRequestsWrites(shadow) || s.permissionEnvelopeRequestsWrites(wardenPermissions) {
+		t.Fatal("the warden reference resolved to something other than the zero-write preset")
+	}
+	if err := expand(wardenPermissions); err != nil || fieldOr(output, "network") != "deny" || fieldOr(output, "preset") != "critic" {
+		t.Fatalf("the warden reference expanded to %q preset %q (%v, %s)", fieldOr(output, "network"), fieldOr(output, "preset"), err, stderr.String())
+	}
+	if err := expand("no-such-preset"); ExitCode(err) != 1 || !strings.Contains(stderr.String(), "unknown permissions preset or envelope file: no-such-preset") {
+		t.Fatalf("an unknown preset: exit %d stderr %q", ExitCode(err), stderr.String())
+	}
 	for preset, want := range map[string]string{"critic": "deny", "none": "allow"} {
 		if err := expand(preset); err != nil || fieldOr(output, "network") != want {
 			t.Fatalf("%s expanded to network %q (%v, %s), want %s", preset, fieldOr(output, "network"), err, stderr.String(), want)

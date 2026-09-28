@@ -22,11 +22,11 @@ type collectFixture struct {
 func newCollectFixture(t *testing.T) *collectFixture {
 	t.Helper()
 	f := &collectFixture{root: t.TempDir()}
-	schemaDir := filepath.Join(f.root, "scripts", "agents", "schemas")
+	schemaDir := filepath.Join(f.root, "internal", "protocol", "schemas")
 	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	shipped, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "schemas", "implementer.schema.json"))
+	shipped, err := os.ReadFile(filepath.Join("..", "..", "internal", "protocol", "schemas", "implementer.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

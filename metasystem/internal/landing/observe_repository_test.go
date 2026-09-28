@@ -65,9 +65,9 @@ func newRepositoryObservationFixtureAt(t *testing.T, adopted bool) *repositoryOb
 	}
 	f.base(".gitignore", "artifacts/\n")
 	f.base("product.txt", "before\n")
-	for _, policy := range []string{"path-classes.txt", "landing-classes.json"} {
-		path := "scripts/agents/" + policy
-		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", policy))
+	for _, policy := range []string{"internal/pathclass/path-classes.txt", "internal/landing/landing-classes.json"} {
+		path := policy
+		data, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(policy)))
 		if err != nil {
 			t.Fatalf("read fixture policy %s: %v", path, err)
 		}
@@ -164,9 +164,9 @@ func (c *observationCase) exactRevert(targetPaths ...string) {
 	c.expectExact("tree:"+c.exact.parentCommit, 1)
 	c.expectExact("tree:"+c.exact.revertCommit, 1)
 	c.expectExact("paths:"+c.exact.preimageTree+":"+c.exact.postimageTree, 1)
-	c.expectExact("file:"+observeBaseTree+":scripts/agents/landing-classes.json", 1)
+	c.expectExact("file:"+observeBaseTree+":internal/landing/landing-classes.json", 1)
 	c.expectExact("file:"+observeBaseTree+":memory/rulings.md", 1)
-	c.expectExact("file:"+observeBaseTree+":"+"scripts/agents/path-classes.txt", 1)
+	c.expectExact("file:"+observeBaseTree+":"+"internal/pathclass/path-classes.txt", 1)
 	c.expectExact("prefix", 1)
 	for _, path := range exactRevertPaths(c.changed, targetPaths) {
 		c.expectExact("owner:"+path, 1)

@@ -360,16 +360,16 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 	goalSyncMutationGit(t, f.mainRoot, "update-ref", goal.AcceptedRef, accepted)
 	// The landing path reads the installation's path classes and landing
 	// classes; the transaction itself is the engine's Go landing path.
-	for _, name := range []string{"path-classes.txt", "landing-classes.json"} {
-		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", name))
+	for _, name := range []string{"internal/pathclass/path-classes.txt", "internal/landing/landing-classes.json"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(name)))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if name == "path-classes.txt" {
+		if name == "internal/pathclass/path-classes.txt" {
 			// The goal's product file is classed as a behavior payload.
 			data = append(data, []byte("install:owned.go behavior\n")...)
 		}
-		writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", name), data, 0o644)
+		writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), filepath.FromSlash(name)), data, 0o644)
 	}
 	// The commit owner's proof engine is the bed's built engine, copied by
 	// the bed's go-build.sh: this bed proves the carried transport, not the

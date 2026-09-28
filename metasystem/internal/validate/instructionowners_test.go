@@ -35,10 +35,7 @@ func TestInstructionOwnersAreBehavior(t *testing.T) {
 		}
 		return string(data)
 	}
-	classes, err := pathclass.Load(root)
-	if os.IsNotExist(err) {
-		t.Skip("repository content absent here; frozen exports carry only the engine closure")
-	}
+	classes, err := pathclass.Load()
 	if err != nil {
 		t.Fatalf("load path class manifest: %v", err)
 	}
@@ -54,7 +51,7 @@ func TestInstructionOwnersAreBehavior(t *testing.T) {
 			}
 		}
 	}
-	roles, err := filepath.Glob(filepath.Join(root, "scripts/agents/roles/*.md"))
+	roles, err := filepath.Glob(filepath.Join(root, "internal/protocol/roles/*.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +64,7 @@ func TestInstructionOwnersAreBehavior(t *testing.T) {
 			owners[match[1]] = true
 		}
 	}
-	for _, match := range ownerPattern.FindAllStringSubmatch(read("scripts/agents/templates/host-turn-instruction.md"), -1) {
+	for _, match := range ownerPattern.FindAllStringSubmatch(read("internal/protocol/templates/host-turn-instruction.md"), -1) {
 		owners[match[1]] = true
 	}
 	var missing []string

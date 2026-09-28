@@ -525,6 +525,9 @@ type Conversation struct {
 	messages []Message
 	session  string
 	sitting  *Sitting
+	// publish writes the state file; nil is publishState. A test sets it to
+	// hold one write back while another runs.
+	publish func(path string, held stateFile) error
 }
 
 // Subject is what a sitting is about: one record of this project, by the kind
@@ -576,6 +579,10 @@ type Room struct {
 	// At is when the room was last kept, which is when the human last touched
 	// it: the door line's "you stepped out 2h ago".
 	At string `json:"at,omitempty"`
+	// Seq is the page's number for this keep, rising with every keep it sends.
+	// The mark takes only a keep numbered above the one it holds, so a request
+	// that set out earlier and arrives later cannot put older words back.
+	Seq int64 `json:"seq,omitempty"`
 }
 
 // maxRoomBytes bounds what one room keeps. A desk strip and a handful of
@@ -1312,8 +1319,9 @@ func (c *Conversation) Rise(now time.Time) error {
 
 // sittingsOn is every record one human has a standing sitting's conversation
 // about in this store, read from the marks on the state files beside the
-// transcripts. A file that cannot be read names nothing: it is a conversation
-// this process will open and report on its own when it is asked for.
+// transcripts. A state file that is there but cannot be read or parsed is
+// refused by name rather than skipped: a sign-in that skipped it would report
+// the seat's sittings moved and leave that one behind.
 func sittingsOn(directory, human string) ([]string, error) {
 	under := filepath.Join(directory, sittingsDirectory, fileName(human))
 	held, err := os.ReadDir(under)
@@ -1328,12 +1336,19 @@ func sittingsOn(directory, human string) ([]string, error) {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join(under, entry.Name()))
+		path := filepath.Join(under, entry.Name())
+		body, err := os.ReadFile(path)
 		if err != nil {
-			continue
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("the Partner's sitting state at %s could not be read: %w", path, err)
 		}
 		var state stateFile
-		if json.Unmarshal(body, &state) != nil || state.Sitting == nil {
+		if err := json.Unmarshal(body, &state); err != nil {
+			return nil, fmt.Errorf("the Partner's sitting state at %s could not be read: %w", path, err)
+		}
+		if state.Sitting == nil {
 			continue
 		}
 		if record := strings.TrimSpace(state.Sitting.Subject.ID); record != "" {
@@ -1345,7 +1360,9 @@ func sittingsOn(directory, human string) ([]string, error) {
 }
 
 // Keep writes the room's working state onto the sitting mark (g1-s65 D9). It is
-// the mark's own write, whole, so the room and the session id are one file.
+// the mark's own write, whole, so the room and the session id are one file. A
+// keep whose sequence is not above the mark's is a late or repeated request, and
+// is ignored.
 func (c *Conversation) Keep(room Room, now time.Time) error {
 	if len(room.Desk)+len(room.Drafts)+len(room.Face) > maxRoomBytes {
 		return fmt.Errorf("the room carries more than %d bytes, and a room is a desk and some unfinished words",
@@ -1356,16 +1373,27 @@ func (c *Conversation) Keep(room Room, now time.Time) error {
 		c.mu.Unlock()
 		return errors.New("no sitting is open on this conversation, so there is no room to keep")
 	}
+	// A keep numbered at or below the one the mark holds set out before it, or
+	// is the same keep again: the newer words stand, and there is nothing to say.
+	held := int64(0)
+	if c.sitting.Room != nil {
+		held = c.sitting.Room.Seq
+	}
+	if room.Seq <= held {
+		c.mu.Unlock()
+		return nil
+	}
+	// The lock is held through the write, so the file is published in the order
+	// the keeps were admitted: a keep admitted earlier cannot write its older
+	// room over a later one's.
 	previous := c.sitting
 	kept := *c.sitting
 	room.At = now.UTC().Format(time.RFC3339)
 	kept.Room = &room
 	c.sitting = &kept
-	c.mu.Unlock()
-	if err := c.writeState(now); err != nil {
-		c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.writeStateHeld(now); err != nil {
 		c.sitting = previous
-		c.mu.Unlock()
 		return err
 	}
 	return nil
@@ -1379,29 +1407,54 @@ func (c *Conversation) Key() string { return c.key }
 // state as it stands. It is whole rather than a field at a time because the two
 // things it holds are written by different acts, and a write that carried only
 // its own field would drop the other's.
+//
+// The state is captured and published under the lock, so a state captured
+// earlier is never the one left on disk after a later one.
 func (c *Conversation) writeState(now time.Time) error {
 	c.mu.Lock()
-	held := stateFile{Session: c.session, Sitting: c.sitting, UpdatedAt: now.UTC().Format(time.RFC3339)}
-	c.mu.Unlock()
-	return publishState(c.state, held)
+	defer c.mu.Unlock()
+	return c.writeStateHeld(now)
 }
 
 // writeStateHeld is writeState with this conversation's own lock already held,
 // for the sitting's move to a name at the first sign-in (Service.Adopt), which
 // holds both conversations while it moves them.
 func (c *Conversation) writeStateHeld(now time.Time) error {
-	return publishState(c.state, stateFile{
+	publish := publishState
+	if c.publish != nil {
+		publish = c.publish
+	}
+	return publish(c.state, stateFile{
 		Session: c.session, Sitting: c.sitting, UpdatedAt: now.UTC().Format(time.RFC3339)})
 }
 
-// publishState writes one state file, whole.
+// publishState writes one state file, whole. The state is written beside the
+// file and put over it, so a reader not holding the conversation's lock — a
+// sign-in looking for the seat's sittings — finds the old state or the new one
+// and never a file cut short. The temporary ends in .tmp, which no reader of the
+// store counts, so one left by a crash is never taken for a state.
 func publishState(path string, held stateFile) error {
 	body, err := json.Marshal(held)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, append(body, '\n'), 0o600); err != nil {
+	failed := func(err error) error {
 		return fmt.Errorf("the Partner's conversation state could not be written: %w", err)
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return failed(err)
+	}
+	_, err = temporary.Write(append(body, '\n'))
+	if closed := temporary.Close(); err == nil {
+		err = closed
+	}
+	if err == nil {
+		err = os.Rename(temporary.Name(), path)
+	}
+	if err != nil {
+		_ = os.Remove(temporary.Name())
+		return failed(err)
 	}
 	return nil
 }

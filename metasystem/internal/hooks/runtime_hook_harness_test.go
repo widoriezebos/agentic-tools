@@ -72,8 +72,8 @@ func runHookTestWorker() int {
 	return status
 }
 
-// hookInstallation is one fixture installation: the stub's directory, an
-// executable engine placeholder and the runtime adapters' directory.
+// hookInstallation is one fixture installation: an executable engine
+// placeholder and the runtime state directory.
 type hookInstallation struct {
 	root string
 }
@@ -84,7 +84,7 @@ func newHookInstallation(t *testing.T) hookInstallation {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, directory := range []string{"scripts/agents", "bin", "artifacts/agents"} {
+	for _, directory := range []string{"bin", "artifacts/agents"} {
 		if err := os.MkdirAll(filepath.Join(root, directory), 0o755); err != nil {
 			t.Fatal(err)
 		}

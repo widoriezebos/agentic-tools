@@ -3,14 +3,15 @@ package launch
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-)
 
-const defaultTemplateDirectory = "scripts/agents/templates"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
+)
 
 var (
 	placeholderPattern = regexp.MustCompile(`<[^<>]+>`)
@@ -32,11 +33,11 @@ func (m *Manager) CheckPack(spec StartSpec) (int, error) {
 	if templateName == "" {
 		return 0, nil
 	}
-	templateDirectory := m.TemplateDirectory
-	if templateDirectory == "" {
-		templateDirectory = defaultTemplateDirectory
+	templates := m.Templates
+	if templates == nil {
+		templates = protocol.Templates()
 	}
-	template, err := os.ReadFile(filepath.Join(templateDirectory, templateName))
+	template, err := fs.ReadFile(templates, templateName)
 	if err != nil {
 		return 0, err
 	}

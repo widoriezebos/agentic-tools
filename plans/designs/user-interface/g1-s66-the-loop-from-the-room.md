@@ -149,7 +149,7 @@ tick and apply.
   only material findings and merges a recurring id across rounds
   (`internal/dispatch/finding_register.go:1329`, `:1119`), and the
   structured return carries id, severity, material, claim and evidence
-  (`scripts/agents/schemas/design-critic.schema.json:38`). A card shows
+  (the design-critic return schema, `scripts/agents/schemas/design-critic.schema.json:38` at the cited commit; after the engine's batch 11 it is compiled in and read by role through `protocol.RoleSchema("design-critic")`, so the page names the role, never a path). A card shows
   those five, and the change asked for and the two tests only where the
   return's prose carries them under the finding's id; the register is
   read for the chain's state alone. A card's identity is chain, round
@@ -194,17 +194,35 @@ tick and apply.
   chain (`intent_design_review.go:178`, `closeDesignCritique`), and a
   design a fold changed gets its follow-up examination in the same
   chain, which the chain's accounting refuses past the round limit.
-  The page shows the engine's outcome and its wording, "closed", "round
-  2 requested", or the refusal, and never computes an exit line. Two
-  obligations on the engine lane: the close appends the design's
-  Dispositions section from the decisions file (one row per finding,
-  id, finding, fold, as every design here carries) as its last act, so
-  the trail reaches the record only when the digest no longer matters;
-  and a decisions file whose material findings are all decided on a
-  design that changed after the final round closes as "human residue"
-  with the same appended section and the refusal's words, instead of
-  requesting a round the accounting will refuse. Both are the verb's,
-  reached from the terminal and the page alike.
+  The page shows the engine's outcome and its wording, "closed", "closed
+  on N fixture obligations", "round 2 requested", or the refusal that
+  leaves the chain open for a human, and never computes an exit line.
+  Three obligations on the engine lane, all the verb's and reached from
+  the terminal and the page alike. First, the author's validated
+  decisions reach the register: today the join persists only
+  `out-of-scope` (`internal/validate/critiqueclosed.go:55`), and the
+  close then reads the canonical register (`delegation/phases.go:369`),
+  where a still-open bounded finding refuses closure
+  (`dispatch/finding_register.go:662`), so a refuted finding on an
+  unchanged design would refuse where it should close; the verb
+  applies a validated `refuted` (and `accepted` with its amendment) to
+  the register's finding before the close, keeping the difference
+  between refuting a finding and accepting its risk, held by a fixture
+  through the real register close. Second, the final round exits by
+  the engine's own classification and nothing else
+  (`finding_register.go:651-690`, the skill at `design-critique/SKILL
+  .md:67`): clean closure, closure on fixture obligations with the
+  obligations published and their wording, or the human-required
+  refusal with the chain left unclosed; "all decided" is never a
+  closure condition of its own. Third, the close appends the design's
+  Dispositions section (one row per finding: id, finding, fold, as
+  every design here carries) composed from every answered round of the
+  chain, each round's own decisions file (`intent_design_review.go:
+  369`, `intent_review_binding.go:78`), keeping the round, the
+  reasoning and the amendment, so a recurring id shows both
+  adjudications and a quiet final round does not erase the first
+  round's trail; it is the close's last act, when the digest no longer
+  matters.
 - D5 (step 1). **From the outcome to a goal.** The End sheet and the
   design page gain Open a goal from this design: the New goal sheet
   prefilled with the intent from the Outcome's first paragraph and the
@@ -231,8 +249,9 @@ and becomes a goal in the inbox with one press. Not in step 1: D6.
 verb under the signed-in session and answers the chain reference and
 the engine's outcome words; `GET /api/design/<path>/review` answers the
 rounds, each with its findings read from that round's retained return
-(`outputs.md` under the review's directory, `intent_delivery.go:894`)
-and its decisions file as it stands, and the chain's state. `PUT
+(`artifacts/agents/<root>/rounds/<N>/return.json`,
+`intent_delivery.go:512`; `outputs.md` names the design, not the
+return) and its decisions file as it stands, and the chain's state. `PUT
 /api/design/<path>/review/<round>/decisions` `{finding, disposition,
 reasoning, amendment}` writes one row into the engine's decisions file
 under its `Review binding` header, refusing a finding the round does
@@ -259,10 +278,14 @@ refusal for a missing budget verbatim; the rejoin no-op; the findings
 read from the round's return, a non-material finding and a recurring
 id both shown as their own cards; the decisions row write under the
 binding header, refusing an unknown finding, a fifth value and a
-material `noted`; Answer the round closing an unchanged design and
-requesting the follow-up for a changed one; the close appending the
-Dispositions section from the file; the human-residue close after the
-final round; the exit words come from the engine. Frontend: the Send
+material `noted`; Answer the round closing an unchanged design whose
+one material finding was refuted, through the real register close, and
+requesting the follow-up for a changed one; the final round exiting
+each of the three ways by the engine's classification (clean, on
+fixture obligations with them published, human-required with the chain
+left open); the close appending the Dispositions section from every
+answered round with a recurring id shown twice; the exit words come
+from the engine. Frontend: the Send
 to critique sheet with the goal and the budget; the round's cards with
 three presses; Fold opening the section card with old and new and Use
 writing exactly that section, refusing an absent or duplicate heading
@@ -312,3 +335,30 @@ continuation retains its operation identity and rejoins its child
 revision conflict (`recording.ts:159`), and that goal ids are appended
 space-separated (`write.go:402`). Two build lanes were judged not a
 violation of the smallest thing.
+
+**Round 2, the declared failsafe (2026-09-28, at `0324a0cc4`):**
+S66-01, S66-02, S66-03 and S66-05 confirmed answered; S66-04 held
+open through three new material findings on the close, all folded
+into D4. S66-06: the join persists only `out-of-scope`
+(`critiqueclosed.go:55`) and the close reads the canonical register
+(`phases.go:369`, `finding_register.go:662`), so a refuted finding on
+an unchanged design would refuse where it should close; fold: the verb
+applies validated refutations and acceptances to the register before
+the close, with a fixture through the real close. S66-07: my "human
+residue" rule replaced the engine's exit classification
+(`finding_register.go:651-690`, the skill at `:67`); fold: the final
+round exits only by that classification, clean, on fixture
+obligations, or human-required with the chain left open. S66-08: the
+appendix from the closing round's file alone omitted earlier
+adjudications, since each round has its own decisions file
+(`intent_design_review.go:369`, `intent_review_binding.go:78`); fold:
+the appendix composes from every answered round. Non-material: §6's
+`outputs.md` corrected to `return.json`. Closed at the failsafe round
+on three folds, with one scoped confirmation read on S66-06 to S66-08
+alone.
+
+**Confirmation read (2026-09-28, at `c93f0483d`):** S66-06, S66-07 and
+S66-08 confirmed answered as design obligations, no new finding, zero
+material; the read says, rightly, that it certifies the design and not
+the implementation, which Sol's read of the build will. The loop is
+CLOSED.

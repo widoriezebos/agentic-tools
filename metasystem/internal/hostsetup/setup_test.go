@@ -89,9 +89,9 @@ func populateHostInstallation(t *testing.T, installation string) {
 	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeHostFile(t, filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json"), hostHookFixture(t, "claude-code"), 0o644)
-	writeHostFile(t, filepath.Join(installation, "scripts", "enforcement", "codex-hooks.json"), hostHookFixture(t, "codex"), 0o644)
-	writeHostFile(t, filepath.Join(installation, "scripts", "enforcement", "devin-hooks.json"), hostHookFixture(t, "devin"), 0o644)
+	writeHostFile(t, filepath.Join(installation, "internal", "runtimes", "enforcement", "claude-code-hooks.json"), hostHookFixture(t, "claude-code"), 0o644)
+	writeHostFile(t, filepath.Join(installation, "internal", "runtimes", "enforcement", "codex-hooks.json"), hostHookFixture(t, "codex"), 0o644)
+	writeHostFile(t, filepath.Join(installation, "internal", "runtimes", "enforcement", "devin-hooks.json"), hostHookFixture(t, "devin"), 0o644)
 	writeHostFile(t, filepath.Join(installation, "skills", "demo", "SKILL.md"), "demo skill\n", 0o640)
 	writeHostFile(t, filepath.Join(installation, "skills", "demo", "agents", "claude-profile.md"), "claude profile\n", 0o644)
 	writeHostFile(t, filepath.Join(installation, "skills", "demo", "agents", "devin", "AGENT.md"), "devin profile\n", 0o644)
@@ -113,7 +113,7 @@ func writeHostFile(t *testing.T, path, content string, mode os.FileMode) {
 
 func hostHookFixture(t *testing.T, name string) string {
 	t.Helper()
-	contents, err := os.ReadFile(filepath.Join(hostSetupModuleRoot(t), "scripts", "enforcement", name+"-hooks.json"))
+	contents, err := os.ReadFile(filepath.Join(hostSetupModuleRoot(t), "internal", "runtimes", "enforcement", name+"-hooks.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

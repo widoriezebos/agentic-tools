@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	degradedTemplate   = "scripts/enforcement/claude-code-hooks.json"
+	degradedTemplate   = "internal/runtimes/enforcement/claude-code-hooks.json"
 	degradedGolden     = "internal/hooks/testdata/stop-degraded-forms.golden"
 	degradedStatusText = "Status un" + "available"
 )

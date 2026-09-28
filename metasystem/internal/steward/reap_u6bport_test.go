@@ -30,11 +30,11 @@ func writeU6bPortFile(t *testing.T, path, content string) {
 func TestU6bPortReapCertifiesTheFakeContinuationsValidReturnAndClosesTheChain(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	schema, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "schemas", "steward-continuation.schema.json"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "internal", "protocol", "schemas", "steward-continuation.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeU6bPortFile(t, filepath.Join(root, "scripts", "agents", "schemas", "steward-continuation.schema.json"), string(schema))
+	writeU6bPortFile(t, filepath.Join(root, "internal", "protocol", "schemas", "steward-continuation.schema.json"), string(schema))
 
 	intent := steward.Intent{
 		Nonce: "n-valid", RepoIdentity: "repo", InstallGen: 1, Goal: "fix-it",

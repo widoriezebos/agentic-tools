@@ -6,7 +6,7 @@ func TestDelegateReceiptRefusalRegistration(t *testing.T) {
 	want := Row{
 		Code:     "DELEGATE_RECEIPT_REFUSED",
 		Owner:    "internal/validate",
-		Site:     "conformance.go:771",
+		Site:     "conformance.go#conformanceRun.boundaryViolations",
 		Shape:    Agent,
 		Override: "remove the delegate change to memory/receipts.log, then work review j2:<that round> --check-only --stage review",
 		Commands: 2,

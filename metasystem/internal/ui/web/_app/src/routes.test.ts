@@ -9,6 +9,9 @@ import {
   chromeOf,
   reviewIdFromPath,
   reviewPath,
+  roomIdFromPath,
+  roomPath,
+  sittingPath,
   documentPath,
   HOME_PATH,
   isReserved,
@@ -261,5 +264,29 @@ describe("the review room's address (g1-s65 D2)", () => {
     expect(chromeOf("/brain")).toBe("focused");
     expect(inTheRoom("/review/plans/reviews/r.md")).toBe(true);
     expect(inTheRoom("/backlog")).toBe(false);
+  });
+});
+
+describe("every sitting's room (g1-s67 D1)", () => {
+  const design = "metasystem/plans/designs/g1-s66-the-thing.md";
+
+  it("is /sitting/<record> for a sitting that shapes a record, and /review/<record> for a review", () => {
+    expect(sittingPath(design)).toBe("/sitting/metasystem/plans/designs/g1-s66-the-thing.md");
+    expect(roomPath("shape a design", design)).toBe(sittingPath(design));
+    expect(roomPath("shape intent", "plans/intent/x.md")).toBe("/sitting/plans/intent/x.md");
+    expect(roomPath("review", "plans/reviews/r.md")).toBe(reviewPath("plans/reviews/r.md"));
+  });
+
+  it("reads either address back as the room's record, segment by segment", () => {
+    expect(roomIdFromPath(sittingPath(design))).toBe(design);
+    expect(roomIdFromPath(sittingPath("plans/designs/a b%.md"))).toBe("plans/designs/a b%.md");
+    expect(roomIdFromPath(reviewPath("plans/reviews/r.md"))).toBe("plans/reviews/r.md");
+    expect(roomIdFromPath("/project/doc/plans/designs/a.md")).toBe("");
+  });
+
+  it("is a room like a review's: no section lights, and the shell shows none of itself", () => {
+    expect(activeSection(sittingPath(design))).toBeNull();
+    expect(chromeOf(sittingPath(design))).toBe("room");
+    expect(inTheRoom(sittingPath(design))).toBe(true);
   });
 });

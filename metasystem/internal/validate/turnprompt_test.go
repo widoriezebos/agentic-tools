@@ -5,9 +5,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
-const testPreamble = "# Orchestrator\n\nFollow the contract.\n"
+// testPreamble is the engine's orchestrator preamble, the bytes a prompt
+// must carry.
+var testPreamble = func() string {
+	data, err := protocol.RoleInstructions("orchestrator")
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}()
 
 // promptFixture builds a metasystem root with the shipped preamble, a
 // turn directory with its record, and a valid assembled prompt, then
@@ -15,7 +25,6 @@ const testPreamble = "# Orchestrator\n\nFollow the contract.\n"
 func promptFixture(t *testing.T) (root, promptPath, turnDir string) {
 	t.Helper()
 	root = t.TempDir()
-	writeFile(t, filepath.Join(root, "scripts", "agents", "roles", "orchestrator.md"), testPreamble)
 	turnDir = filepath.Join(root, "turn")
 	writeFile(t, filepath.Join(turnDir, "turn.json"), `{"missionId":"m-1","turnId":"t-1"}`)
 	promptPath = filepath.Join(root, "prompt.txt")
@@ -95,7 +104,9 @@ func TestTurnPromptRejects(t *testing.T) {
 			return strings.Replace(p, "Mission-Id: m-1\nTurn-Id: t-1", "Turn-Id: t-1\nMission-Id: m-1", 1)
 		}, "headers"},
 		{"identity mismatch", func(p string) string { return strings.Replace(p, "Turn-Id: t-1", "Turn-Id: t-2", 1) }, "identity"},
-		{"preamble drift", func(p string) string { return strings.Replace(p, "Follow the contract.", "Follow the vibes.", 1) }, "preamble"},
+		{"preamble drift", func(p string) string {
+			return strings.Replace(p, testPreamble, "# Drifted\n"+testPreamble[strings.Index(testPreamble, "\n")+1:], 1)
+		}, "preamble"},
 		{"missing heading", func(p string) string { return strings.Replace(p, "## Streams", "## Streamz", 1) }, "headings"},
 		{"unfenced records", func(p string) string { return strings.Replace(p, "## Open Asks\n<<<DATA>>>\n", "## Open Asks\n", 1) }, "fencing"},
 		{"mixed none", func(p string) string {

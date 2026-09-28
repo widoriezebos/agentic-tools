@@ -86,12 +86,21 @@ type LandSeams struct {
 	Abandon            func(tip, detachAt string) error
 	SeriesOnOrigin     func(origin, tip string) (bool, error)
 	LeaseBase          string
-	RecoverPush        func(refusedOrigin, base, tip string) (PushRecovery, error)
+	// RecoverPush rebases, re-verifies and pushes a refused series. It calls
+	// recheck immediately before its own endpoint push, so a known flake's
+	// allowance that expired while it rebased publishes nothing (BL3S-01).
+	RecoverPush func(refusedOrigin, base, tip string, recheck func() error) (PushRecovery, error)
 	// FlakeRegister and Now recheck, immediately before any publication, the
 	// known flakes a composed proof landed on (BL3S-01).
 	FlakeRegister func() ([]OpenEntry, error)
 	Now           func() (time.Time, error)
 }
+
+// FlakeAllowanceRefusal is the recheck's refusal to publish a composed proof
+// whose known flake is no longer carried: every member was already returned.
+type FlakeAllowanceRefusal struct{ Reason string }
+
+func (refusal *FlakeAllowanceRefusal) Error() string { return refusal.Reason }
 
 // PushRecovery is the one bounded decision after an endpoint lease refusal.
 // A changed proof input reopens the batch; otherwise the rebased, identity-
@@ -219,7 +228,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			}
 			reason := "BATCH_FLAKE_ALLOWANCE_REFUSED: " + carried.Error() + "; nothing was published; " +
 				diagnosticFailure(DiagnosticResult{AttemptID: record.Proof.AttemptID}, record.Proof.RedGroups)
-			return errors.Join(errors.New(reason), returnEveryMember(store, record, actor, at, reason))
+			return errors.Join(&FlakeAllowanceRefusal{Reason: reason}, returnEveryMember(store, record, actor, at, reason))
 		}
 		return nil
 	}
@@ -230,12 +239,13 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		if seams.RecoverPush == nil {
 			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s refused the complete series: %w", recoveryOrigin, pushErr)
 		}
-		recovery, recoveryErr := seams.RecoverPush(recoveryOrigin, record.BaseTree, candidateTip)
+		recovery, recoveryErr := seams.RecoverPush(recoveryOrigin, record.BaseTree, candidateTip, recheckFlakes)
 		if recoveryErr != nil {
 			var fenced *PrefixFencedRefusal
 			var revision *PrefixRevisionRefusal
 			var budget *PrefixBudgetRefusal
-			if errors.As(recoveryErr, &fenced) || errors.As(recoveryErr, &revision) || errors.As(recoveryErr, &budget) {
+			var allowance *FlakeAllowanceRefusal
+			if errors.As(recoveryErr, &fenced) || errors.As(recoveryErr, &revision) || errors.As(recoveryErr, &budget) || errors.As(recoveryErr, &allowance) {
 				// The recovery owner has already requested return and
 				// reassembled survivors. Its old landing progress must not
 				// overwrite the new open or dissolved batch.

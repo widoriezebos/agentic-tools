@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 // ReturnComplete validates a canonical agent return against the shipped
@@ -39,6 +40,8 @@ var returnVersionedRoles = map[string]bool{
 type returnChecker struct {
 	root       string
 	violations []string
+	// roleSchema reads a role's v1 return schema; nil is the engine's own.
+	roleSchema func(role string) ([]byte, error)
 }
 
 func (c *returnChecker) violation(format string, args ...any) {
@@ -169,8 +172,16 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 	}
 	var schema map[string]any
 	if returnAllowedRoles[role] {
-		raw := c.loadJSON(filepath.Join(c.root, "scripts", "agents", "schemas", role+".schema.json"), "role schema")
-		schema, _ = raw.(map[string]any)
+		read := c.roleSchema
+		if read == nil {
+			read = protocol.RoleSchema
+		}
+		data, err := read(role)
+		if err != nil {
+			c.violation("role schema could not be read: %v", err)
+		} else if err := json.Unmarshal(data, &schema); err != nil {
+			c.violation("role schema is not valid JSON: %v", err)
+		}
 	}
 
 	resultVersion := int64(1)

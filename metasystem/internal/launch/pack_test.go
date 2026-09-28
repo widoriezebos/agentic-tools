@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
@@ -24,10 +25,7 @@ func packTemplates(t *testing.T, m *Manager, design, review string) {
 	if err := os.WriteFile(filepath.Join(directory, "review-brief.md"), []byte(review), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	field := reflect.ValueOf(m).Elem().FieldByName("TemplateDirectory")
-	if field.IsValid() {
-		field.SetString(directory)
-	}
+	m.Templates = os.DirFS(directory)
 }
 
 func TestPackCheckRefusesAnUnfilledBrief(t *testing.T) {
@@ -132,7 +130,6 @@ func TestPackCheckAdmitsAFilledBrief(t *testing.T) {
 func TestPackCheckChecksEveryShippedTemplatePlaceholder(t *testing.T) {
 	t.Parallel()
 	pattern := regexp.MustCompile(`<[^<>]+>`)
-	directory := filepath.Join("..", "..", "scripts", "agents", "templates")
 	for _, row := range []struct {
 		kind string
 		name string
@@ -141,7 +138,7 @@ func TestPackCheckChecksEveryShippedTemplatePlaceholder(t *testing.T) {
 		{kind: "read", name: "review-brief.md"},
 	} {
 		t.Run(row.kind, func(t *testing.T) {
-			template, err := os.ReadFile(filepath.Join(directory, row.name))
+			template, err := protocol.Template(row.name)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -151,7 +148,7 @@ func TestPackCheckChecksEveryShippedTemplatePlaceholder(t *testing.T) {
 			}
 
 			m, _, _, _ := manager(t)
-			m.TemplateDirectory = directory
+			m.Templates = nil
 			brief := writeLaunchFile(t, row.kind+"-unfilled.md", string(template))
 			_, err = m.CheckPack(StartSpec{Kind: row.kind, Brief: brief, WorkingDirectory: t.TempDir()})
 			want := []string{"LAUNCH_BRIEF_PACK_UNFILLED kind=" + row.kind}
@@ -227,9 +224,8 @@ func TestDesignAndReadLaunchesRunThePackCheck(t *testing.T) {
 
 func TestTemplatesTellTheDelegateToBatchReads(t *testing.T) {
 	const sentence = "Batch independent reads: when several files or ranges are needed and none depends on another's content, request them all in one turn, never one per turn."
-	directory := filepath.Join("..", "..", "scripts", "agents", "templates")
 	for _, name := range []string{"design-brief.md", "review-brief.md"} {
-		data, err := os.ReadFile(filepath.Join(directory, name))
+		data, err := protocol.Template(name)
 		if err != nil || !strings.Contains(string(data), sentence) {
 			t.Errorf("%s does not carry the batching instruction: %v", name, err)
 		}
@@ -237,8 +233,7 @@ func TestTemplatesTellTheDelegateToBatchReads(t *testing.T) {
 }
 
 func TestDesignTemplateCarriesRecurringFindings(t *testing.T) {
-	directory := filepath.Join("..", "..", "scripts", "agents", "templates")
-	data, err := os.ReadFile(filepath.Join(directory, "design-brief.md"))
+	data, err := protocol.Template("design-brief.md")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,10 +242,7 @@ func TestDesignTemplateCarriesRecurringFindings(t *testing.T) {
 		t.Fatalf("design template does not carry the recurring-findings section")
 	}
 	m, _, _, _ := manager(t)
-	field := reflect.ValueOf(m).Elem().FieldByName("TemplateDirectory")
-	if field.IsValid() {
-		field.SetString(directory)
-	}
+	m.Templates = nil
 	brief := writeLaunchFile(t, "brief.md", placeholder+"\n")
 	if err := m.Admit(StartSpec{Kind: "design", Brief: brief, WorkingDirectory: t.TempDir()}); err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BRIEF_PACK_UNFILLED") {
 		t.Fatalf("error=%v", err)
@@ -263,7 +255,7 @@ func TestPackRefusalCodesAreRegistered(t *testing.T) {
 		"LAUNCH_BRIEF_PACK_DRIFTED":  false,
 	}
 	for _, row := range refusal.Rows {
-		file, _, _ := strings.Cut(row.Site, ":")
+		file := refusal.SiteFile(row.Site)
 		if _, ok := want[row.Code]; ok && row.Owner == "internal/launch" && file == "pack.go" && row.Shape == refusal.Question {
 			want[row.Code] = true
 		}
