@@ -196,7 +196,8 @@ not paths.
   named in one breath; a bare id is never a benchmark.
 - **Cohort / repetition / target** — N **repetitions** of one pair, each in
   its own freshly provisioned **target** repository, graded by a held-out
-  grader the mission must not read. Driven by `benchmark/run-cohort.sh`.
+  grader the mission must not read. Its driver was retired in 2026-09;
+  `benchmark/README.md` says what a rebuilt one owes.
 - **Alias (benchmark)** — a retired spec id (`bm-1` … `bm-2d-og`) that
   resolves, read-only, to a pair (`benchmark/aliases.json`); alias mode
   keeps the legacy naming so pre-migration cohorts stay uniform.
@@ -258,8 +259,8 @@ not paths.
 ## Verification
 
 - **Gates** — the checks that must pass, chained with the push in one
-  command: the metasystem **suite** (the testing contract, run by `metasystem test run`) and
-  the benchmark **kit gate** (`benchmark/validate-kit.sh`). A verdict is
+  command: the metasystem **suite** (the testing contract, run by
+  `metasystem test run`). A verdict is
   read from the verifying command's own exit code, captured — never
   from a log tail, and never from the exit of a composite or
   background invocation that wraps the command and reports its own

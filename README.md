@@ -56,7 +56,9 @@ each with the deciding rule.
   your actions (goals, approval, budgets, start and stop) and
   `metasystem help agent` for build, review and land; the manual is
   [`metasystem/docs/working-with-agents.md`](metasystem/docs/working-with-agents.md).
-- **Run a benchmark** → [`benchmark/README.md`](benchmark/README.md).
+- **Benchmark the metasystem** → [`benchmark/README.md`](benchmark/README.md)
+  holds the cases and configurations; its drivers were retired and running a
+  benchmark again is a new goal.
 - **Change the metasystem itself** → work in this repository under its own
-  rules; the gates of record are the testing contract (`metasystem test run`)
-  and `benchmark/validate-kit.sh`, and nothing is pushed on red.
+  rules; the gate of record is the testing contract (`metasystem test run`),
+  and nothing is pushed on red.
