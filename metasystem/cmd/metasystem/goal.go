@@ -180,19 +180,6 @@ func goalCallerWithRepositoryTop(root string, callerPid int64, verb string, repo
 	return goal.Caller{Class: view.Class, Holder: view.Holder, Genesis: mode == "genesis"}, nil
 }
 
-// goalMutation is the shared verb spine: flags, classification, the
-// mutation, and the result on stdout.
-func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*string,
-	run func(*goal.Store, goal.Caller, []string) (goal.Result, error)) int {
-	return goalMutationWithSync(name, args, extra, run, trySyncMutation)
-}
-
-func goalMutationWithSync(name string, args []string, extra func(*flag.FlagSet) []*string,
-	run func(*goal.Store, goal.Caller, []string) (goal.Result, error),
-	trySync func(string, []string) (int, bool)) int {
-	return goalMutationWithInputs(name, args, extra, run, trySync, legacyMutationInputs{})
-}
-
 type legacyMutationInputs struct {
 	repositoryTop func(string) (string, error)
 	ensureGuard   func(string) error
@@ -281,39 +268,6 @@ func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet
 	return 0
 }
 
-func runGoalOpen(args []string) int {
-	return goalMutation("open", args, func(f *flag.FlagSet) []*string {
-		return []*string{
-			f.String("id", "", "kebab-case goal id"),
-			f.String("intent", "", "one-line intent"),
-			f.String("next", "", "the first next step"),
-		}
-	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-		return s.Open(c, v[0], v[1], v[2])
-	})
-}
-
-func runGoalDone(args []string) int {
-	return runGoalDoneWithSync(args, trySyncMutation)
-}
-
-func runGoalDoneWithSync(args []string, trySync func(string, []string) (int, bool)) int {
-	return goalMutationWithSync("done", args, func(f *flag.FlagSet) []*string {
-		return []*string{
-			f.String("id", "", "the Current goal's id"),
-			f.String("concluded", "", "one concluding sentence"),
-			f.String("then", "", "queued id to promote in the same write"),
-			boolAsString(f, "and-none"),
-		}
-	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-		return s.Done(c, v[0], v[1], v[2], v[3] == "true")
-	}, trySync)
-}
-
-func runGoalReconcile(args []string) int {
-	return goalMutation("reconcile", args, nil, goalReconcileLegacy)
-}
-
 func goalReconcileLegacy(s *goal.Store, c goal.Caller, _ []string) (goal.Result, error) {
 	return s.Reconcile(c)
 }
@@ -331,89 +285,6 @@ func goalReconcileWith(dependencies syncRequestDependencies, stdout, stderr io.W
 		legacyMutationInputs{stdout: stdout, stderr: stderr, caller: dependencies.authorityFacts.caller})
 }
 
-// boolAsString adapts a boolean flag into the shared string plumbing.
-func boolAsString(f *flag.FlagSet, name string) *string {
-	value := "false"
-	f.BoolFunc(name, name, func(string) error {
-		value = "true"
-		return nil
-	})
-	return &value
-}
-
-// The summary keeps backlog reads bounded; explicit JSON preserves the
-// records needed by scripts and detailed inspection.
-func runGoalList(args []string) int {
-	return runGoalListWithResolver(args, goal.ResolveEndpoint)
-}
-
-func runGoalListWithResolver(args []string, resolve func(string) (goal.Endpoint, error)) int {
-	flags := flag.NewFlagSet("goal list", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	var output goalListOutput
-	flags.BoolVar(&output.JSON, "json", false, "print goal records as JSON")
-	flags.BoolVar(&output.History, "history", false, "include ledger history in JSON records")
-	flags.BoolVar(&output.Done, "done", false, "include archived goals in the summary")
-	flags.BoolVar(&output.Pretty, "pretty", false, "indent --json output")
-	fetch := flags.Bool("fetch", false, "fetch and validate the canonical backlog before listing")
-	var labels repeatedStrings
-	flags.Var(&labels, "label", "label token required on every listed goal (repeatable)")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	// A flag that shapes the JSON records is refused on the summary rather
-	// than ignored: a silent no-op reads as "the ledger has no history".
-	if !output.JSON && (output.History || output.Pretty) {
-		fmt.Fprintln(os.Stderr, "goal list: --history and --pretty shape the JSON records; add --json")
-		return 2
-	}
-	if err := goal.ValidateLabels(labels); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if converted(*root) {
-		return listSyncedWithResolver(*root, output, *fetch, resolve, labels...)
-	}
-	if len(labels) > 0 || *fetch {
-		fmt.Fprintln(os.Stderr, "goal list --label and --fetch read the synced backlog; this checkout still carries the legacy ledger and must migrate first")
-		return 1
-	}
-	store := &goal.Store{Root: *root}
-	ledger, problems, err := store.ReadLedger()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if !output.JSON {
-		grouped := legacyGoalGroups(ledger)
-		notices := make([]string, len(problems))
-		for i, problem := range problems {
-			notices[i] = string(problem)
-		}
-		fmt.Print(goalListSummary(grouped, legacyListStates, "legacy", notices, output.Done, goal.ApprovalHorizon{}))
-		return 0
-	}
-	out := map[string]any{
-		"root":            *root,
-		"world":           "legacy",
-		"problems":        problems,
-		"baselinePresent": store.BaselinePresent(),
-		// The read-only pair fact (bytes AND digest match the accepted
-		// baseline) — what a second reconcile's "already reconciled"
-		// proves, exposed without a mutating verb so consistency checks
-		// need no write authority (and no python, kill-python doctrine).
-		"baselineMatches": store.BaselineMatches(),
-	}
-	if ledger != nil {
-		out["current"] = ledger.Current
-		out["queued"] = ledger.Queued
-		out["parked"] = ledger.Parked
-		out["done"] = ledger.Done
-		out["goalFree"] = ledger.Free
-	}
-	return printGoalListJSON(out, output.Pretty)
-}
-
 // converted reports the post-migration world by POSITIVE evidence:
 // the legacy ledger is gone AND the synced tree is present. Absence
 // of goals.md alone is not conversion — fixture sandboxes and plain
@@ -426,113 +297,6 @@ func converted(root string) bool {
 	}
 	_, err := os.Stat(filepath.Join(root, "plans", "goals", "backlog.md"))
 	return err == nil
-}
-
-func listSyncedWithResolver(root string, output goalListOutput, fetchFirst bool, resolve func(string) (goal.Endpoint, error), requiredLabels ...string) int {
-	e, err := resolve(root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	p, err := goal.Project(e, fetchFirst, time.Now())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	grouped := map[string][]*goal.GoalFile{}
-	open := make([]*goal.GoalFile, 0, len(p.Tree.Live))
-	for _, id := range goal.OrderedOpenGoalIDs(p.Tree.Live) {
-		f := p.Tree.Live[id]
-		if !goal.MatchesLabels(f.Labels, requiredLabels) {
-			continue
-		}
-		f = goalDisplayRecord(f, output.History)
-		open = append(open, f)
-		grouped[f.State] = append(grouped[f.State], f)
-	}
-	var done []*goal.GoalFile
-	for _, id := range goal.SortedGoalIds(p.Tree.Done) {
-		if f := p.Tree.Done[id]; goal.MatchesLabels(f.Labels, requiredLabels) {
-			done = append(done, goalDisplayRecord(f, output.History))
-		}
-	}
-	var abandoned []*goal.GoalFile
-	for _, id := range goal.SortedGoalIds(p.Tree.Abandoned) {
-		if f := p.Tree.Abandoned[id]; goal.MatchesLabels(f.Labels, requiredLabels) {
-			abandoned = append(abandoned, goalDisplayRecord(f, output.History))
-		}
-	}
-	grouped[goal.StateAbandoned] = abandoned
-	if !output.JSON {
-		grouped[goal.StateDone] = done
-		fmt.Print(goalListSummary(grouped, syncedListStates, p.Tip, p.Banners, output.Done, p.Horizon, p.Tree.TrunkRed...))
-		return 0
-	}
-	trunkRed := p.Tree.TrunkRed
-	if trunkRed == nil {
-		trunkRed = []goal.TrunkRedEntry{}
-	}
-	return printGoalListJSON(map[string]any{
-		"root": root, "world": "synced", "tip": p.Tip, "banners": p.Banners,
-		"open":   open,
-		"queued": grouped[goal.StateQueued], "approved": grouped[goal.StateApproved], "claimed": grouped[goal.StateClaimed],
-		"parked": grouped[goal.StateParked], "done": done, "abandoned": abandoned, "trunkRed": trunkRed,
-	}, output.Pretty)
-}
-
-// History stays opt-in so inspecting one goal does not replay its ledger.
-func runGoalShow(args []string) int {
-	return runGoalShowWithResolver(args, goal.ResolveEndpoint)
-}
-
-func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint, error)) int {
-	flags := flag.NewFlagSet("goal show", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	id := flags.String("id", "", "goal id")
-	history := flags.Bool("history", false, "include ledger history")
-	if flags.Parse(args) != nil || *id == "" {
-		fmt.Fprintln(os.Stderr, "goal show needs --id")
-		return 2
-	}
-	if !converted(*root) {
-		fmt.Fprintln(os.Stderr, "goal show reads the synced backlog; this checkout still carries the legacy ledger (goal list --json shows it whole)")
-		return 1
-	}
-	e, err := resolve(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	now, err := goalCommandNow(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	p, err := goal.Project(e, false, now)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	f, live := p.Tree.Live[*id]
-	state := "live"
-	if !live {
-		if f = p.Tree.Done[*id]; f == nil {
-			f = p.Tree.Abandoned[*id]
-		}
-		if f == nil {
-			fmt.Fprintf(os.Stderr, "no goal %q on the accepted tree (tip %s)\n", *id, p.Tip)
-			return 1
-		}
-		state = "archived"
-	}
-	page := map[string]any{
-		"root": *root, "world": "synced", "tip": p.Tip, "where": state, "goal": goalDisplayRecord(f, *history),
-	}
-	if blocks := goal.OpenReadItemBlocks(f); len(blocks) > 0 {
-		page["openReadItems"] = blocks
-	}
-	printJSON(page)
-	return 0
 }
 
 func nextSyncedWithInputs(root, machine string, fetchFirst bool, resolve func(string) (goal.Endpoint, error), commandNow func(string) (time.Time, error), project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), presence func(string, goal.Endpoint) (seat.Copy, error), requiredLabels ...string) int {

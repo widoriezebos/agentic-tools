@@ -40,15 +40,6 @@ func recordExitTo(stderr io.Writer, err error) int {
 	return 1
 }
 
-type repeatedStringFlag []string
-
-func (values *repeatedStringFlag) String() string { return strings.Join(*values, ",") }
-
-func (values *repeatedStringFlag) Set(value string) error {
-	*values = append(*values, value)
-	return nil
-}
-
 func breachStopOrderingHumanWith(root string, caller lease.ClassifyResult, by string, now time.Time,
 	enrolledName func(string, time.Time) (string, error)) (string, error) {
 	typed := strings.TrimPrefix(by, "human:")

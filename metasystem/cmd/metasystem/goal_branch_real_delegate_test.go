@@ -280,14 +280,14 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 	writeTestingFixtureFile(t, filepath.Join(worktree, "metasystem", "code.go"), []byte("package fixture\n"), 0o644)
 	goalSyncMutationGit(t, worktree, "add", "metasystem/code.go")
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", worktree})
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", worktree})
 	})
 	unit := strings.TrimSpace(stdout)
 	if code != 0 || len(unit) != 40 {
 		t.Fatalf("unit commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "real-delegate-push"})
+		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "real-delegate-push"})
 	})
 	if code != 0 {
 		t.Fatalf("goal push: code=%d stderr=%q", code, stderr)

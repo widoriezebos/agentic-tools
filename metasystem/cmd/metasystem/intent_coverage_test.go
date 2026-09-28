@@ -138,18 +138,8 @@ func TestIntentPublicCoverage(t *testing.T) {
 		// internal. kind is a word the target's usage must carry.
 		type disposition struct{ action, flag, kind, internal string }
 		acts := map[string]disposition{
-			"branch":    {action: "work build", internal: "diagnostics stay internal; build, review and land own the branch"},
-			"open":      {action: "goal open"},
-			"carry":     {action: "goal abandon", flag: "successor"},
-			"done":      {action: "goal done"},
-			"claim":     {action: "goal claim"},
-			"approve":   {action: "goal approve"},
-			"list":      {action: "goal list"},
-			"show":      {action: "goal show"},
-			"next":      {action: "goal list", flag: "ready", internal: "seat launch entry"},
-			"reconcile": {action: "goal sync", flag: "publish", internal: "reviewed recovery"},
-			"migrate":   {internal: "installation cutover"},
-			"fetch":     {action: "goal list", flag: "fetch", internal: "seat launch entry"},
+			"next":  {action: "goal list", flag: "ready", internal: "seat launch entry"},
+			"fetch": {action: "goal list", flag: "fetch", internal: "seat launch entry"},
 		}
 		var goalFamily *family
 		for index := range registered {

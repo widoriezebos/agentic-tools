@@ -280,16 +280,9 @@ an omitted-goal count and the command for saving the records.
 `metasystem goal list --json` and `metasystem goal show <id> --json` answer in the
 intent result envelope (`schemaVersion`, `verb`, `targets`, `outcome`,
 `summary`, with the goal projection under `data`); do not read that as the
-legacy shape. The legacy readers keep their existing JSON for scripts:
-`metasystem internal goal list --json > file` supplies the detail with the existing JSON keys;
-every goal's `History` is an empty list. `--json --history > file` includes
-all ledger history, and `--json --pretty` indents the JSON. The JSON `open`
-array continues to contain all live goals, also listed in their state arrays;
-the text summary prints each goal once. `--label` remains repeatable with
-AND matching, and `--fetch` validates and advances the accepted backlog.
-
-`metasystem internal goal show --id <id>` keeps the JSON page envelope and goal fields, with an
-empty `History` list by default. Add `--history` for the complete record.
+legacy shape. Every goal's `History` is left out unless `--history` asks
+for it. The text summary prints each goal once. `--label` remains repeatable
+with AND matching, and `--fetch` validates and advances the accepted backlog.
 
 ## Ordering the backlog
 

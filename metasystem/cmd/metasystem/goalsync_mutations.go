@@ -189,19 +189,6 @@ func printCarryMutationTo(stdout, stderr io.Writer, res goal.PublishResult, deta
 	return 0
 }
 
-func runGoalCarry(args []string) int {
-	for _, arg := range args {
-		if arg == "--to" || strings.HasPrefix(arg, "--to=") {
-			return runGoalCarryAbandoned(args)
-		}
-	}
-	return runGoalCarryLanding(args)
-}
-
-func runGoalCarryLanding(args []string) int {
-	return goalCarryLandingWith(defaultSyncRequestDependencies(), os.Stdout, os.Stderr, args)
-}
-
 // goalCarryLandingWith records a person's carry word under explicit request
 // dependencies: the classification, the enrolled-human proof and the request
 // start from their supplied caller and carry their lineage and machine, and
@@ -224,7 +211,7 @@ func goalCarryLandingWith(dependencies syncRequestDependencies, stdout, stderr i
 	temporary := flags.String("temporary-human-word", "", "not accepted by carry")
 	reviewBy := flags.String("review-by", "", "not accepted by carry")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *by == "" || *tree == "" || *past == "" || strings.TrimSpace(*why) == "" {
-		fmt.Fprintln(stderr, "usage: metasystem internal goal carry --root ROOT --id GOAL --by NAME --tree SHA40 --past NAME --why TEXT [--expires 2h] [--supersede OPID] [--transfer] [--raise-format]")
+		fmt.Fprintln(stderr, "usage: goal carry --root ROOT --id GOAL --by NAME --tree SHA40 --past NAME --why TEXT [--expires 2h] [--supersede OPID] [--transfer] [--raise-format] (the carry owner of metasystem work land G --exception CODE)")
 		return 2
 	}
 	if *temporary != "" || *reviewBy != "" {
@@ -1765,14 +1752,6 @@ func budgetRemedyAfterRefusal(values *humanVerbValues, endpoint goal.Endpoint, n
 	return humanVerbRemedy{command: values.budgetCommand(box)}
 }
 
-// trySyncMutation intercepts a legacy mutation command on a
-// CONVERTED checkout and routes it to the engine verb. Returns
-// handled=false on a legacy checkout so the caller proceeds
-// unchanged.
-func trySyncMutation(name string, args []string) (int, bool) {
-	return trySyncMutationWithDependencies(name, args, goalCommandNow, defaultSyncRequestDependencies(), goalParkBranchCheck)
-}
-
 func trySyncMutationWithDependencies(name string, args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, parkBranchCheck func(string, goal.Endpoint) func(string, string) (string, error)) (int, bool) {
 	return trySyncMutationWithCompletion(name, args, commandNow, dependencies, parkBranchCheck, completionInputs{})
 }
@@ -2363,10 +2342,6 @@ func runGoalAbandonWithInputs(args []string, prove goalAuthorityProver, commandN
 	return dependencies.publish(result, err)
 }
 
-func runGoalCarryAbandoned(args []string) int {
-	return runGoalCarryAbandonedWithInputs(args, proveEnrolledGoalHumanAuthority, goalCommandNow, defaultSyncRequestDependencies())
-}
-
 func runGoalCarryAbandonedWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	flags := flag.NewFlagSet("goal carry", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
@@ -2508,10 +2483,6 @@ func recordGoalApprovalProof(root, operationID, action string, proof humanauthor
 	return nil
 }
 
-func runGoalApprove(args []string) int {
-	return runGoalApproveWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
-}
-
 func runGoalClassifySweepWithAuthority(args []string, prove goalAuthorityProver) int {
 	return runGoalClassifySweepWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies())
 }
@@ -2624,10 +2595,6 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 	}
 	writeJSONLine(stdout, stderr, map[string]any{"outcome": goal.OutcomeConfirmed, "classified": len(listing.Proposals), "listingDigest": listing.Digest})
 	return 0
-}
-
-func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
-	return runGoalApproveWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies(), dispatchcore.ResolveGoalBinding)
 }
 
 func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {

@@ -739,13 +739,11 @@ chmod +x "${out:-bin/metasystem}"
 		t.Fatal("B unexpectedly entered land-ready; elapsed stop is suspended for landing claims")
 	}
 	revision := projection.Tree.Live["goal-b"].Claimed.Revision
-	routes := commandAt(t1, "job", "breach-stop-routes", "--root", controlRoot)
-	routes.Dir = controlRoot
-	routesOutput, routesErr := routes.CombinedOutput()
+	routes, routesErr := dispatchcore.FindBreachStops(controlRoot, t1)
+	routesOutput := fmt.Sprintf("%+v", routes)
 	breachRoute := false
-	for _, line := range strings.Split(strings.TrimSuffix(string(routesOutput), "\n"), "\n") {
-		fields := strings.Split(line, "\t")
-		if len(fields) == 4 && fields[0] == "goal-b" && fields[1] == strconv.FormatUint(revision, 10) && fields[3] == "" {
+	for _, route := range routes {
+		if route.GoalID == "goal-b" && route.Revision == revision && route.Failure == "" {
 			breachRoute = true
 		}
 	}

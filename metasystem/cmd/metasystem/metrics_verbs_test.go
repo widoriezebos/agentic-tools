@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -43,65 +42,6 @@ func TestO12GoalReportFailureWarnsWithoutChangingDoneOutcome(t *testing.T) {
 }
 
 func TestO12BothGoalDoneRoutesRequestTheGoalReport(t *testing.T) {
-	t.Run("legacy mutation", func(t *testing.T) {
-		root := t.TempDir()
-		writeMetricsFixtureGuard(t, root)
-		store := &goal.Store{Root: root}
-		caller := goal.Caller{Class: "HUMAN"}
-		if _, err := store.Open(caller, "legacy-goal", "Conclude through the legacy command.", "Finish."); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := store.Open(caller, "legacy-next", "Succeed the concluded goal.", "Continue."); err != nil {
-			t.Fatal(err)
-		}
-		stageHumanTerminal(t, root, int64(os.Getppid()))
-		calls := 0
-		code := goalMutationWithInputs(
-			"done",
-			[]string{"--root", root, "--id", "legacy-goal", "--conclude", "Legacy route done."},
-			func(flags *flag.FlagSet) []*string {
-				return []*string{
-					flags.String("id", "", "goal id"),
-					flags.String("conclude", "", "conclusion"),
-				}
-			},
-			func(store *goal.Store, caller goal.Caller, values []string) (goal.Result, error) {
-				return store.Done(caller, values[0], values[1], "legacy-next", false)
-			},
-			trySyncMutation,
-			legacyMutationInputs{
-				repositoryTop: func(got string) (string, error) {
-					if got != root {
-						t.Fatalf("repository root = %q", got)
-					}
-					return root, nil
-				},
-				ensureGuard: func(got string) error { return checkMetricsFixtureGuard(root, got) },
-				reporter: func(opts metrics.Options) (metrics.Result, error) {
-					calls++
-					if opts.Root != root || opts.GoalID != "legacy-goal" {
-						t.Fatalf("report options = %+v", opts)
-					}
-					ledger, problems, err := store.ReadLedger()
-					if err != nil || len(problems) != 0 || !legacyGoalIsDone(ledger, "legacy-goal") {
-						t.Fatalf("report ran before Store.Done: %v %v", problems, err)
-					}
-					return metrics.Result{Target: metrics.GoalReportTarget(opts.Root, opts.GoalID)}, nil
-				},
-			},
-		)
-		if code != 0 {
-			t.Fatalf("legacy done returned %d", code)
-		}
-		ledger, problems, err := store.ReadLedger()
-		if err != nil || len(problems) != 0 || !legacyGoalIsDone(ledger, "legacy-goal") {
-			t.Fatalf("legacy goal did not conclude: ledger=%+v problems=%v err=%v", ledger, problems, err)
-		}
-		if calls != 1 {
-			t.Fatalf("legacy done requested %d reports, want 1", calls)
-		}
-	})
-
 	t.Run("synced mutation", func(t *testing.T) {
 		fixture := syncedDoneFixture(t)
 		calls := 0

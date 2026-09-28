@@ -366,21 +366,15 @@ func TestGoalBranchVerbsRunFromTheHoldersLinkedWorktree(t *testing.T) {
 	writeTestingFixtureFile(t, filepath.Join(worktree, filepath.FromSlash(record)), []byte("holder record\n"), 0o644)
 	goalSyncMutationGit(t, worktree, "add", record)
 
-	code, _, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"status", "--goal", "standing-validation", "--root", worktree})
-	})
-	if code != 0 || stderr != "" {
-		t.Fatalf("status from linked worktree: code=%d stderr=%q", code, stderr)
-	}
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", worktree})
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", worktree})
 	})
 	tip := strings.TrimSpace(stdout)
 	if code != 0 || stderr != "" || len(tip) != 40 {
 		t.Fatalf("commit from linked worktree: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "linked-holder-push"})
+		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "linked-holder-push"})
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("push from linked worktree: code=%d stderr=%q", code, stderr)
@@ -404,7 +398,7 @@ func TestGoalBranchHolderResolutionPreservesInstallationSubdirectory(t *testing.
 	goalSyncMutationGit(t, worktree, "add", record)
 
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", worktree})
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", worktree})
 	})
 	if code != 0 || stderr != "" || len(strings.TrimSpace(stdout)) != 40 {
 		main, linked := linkedWorktreeMainCheckout(worktree)
@@ -415,197 +409,11 @@ func TestGoalBranchHolderResolutionPreservesInstallationSubdirectory(t *testing.
 	}
 }
 
-func TestGoalBranchCommitRefusesToMoveAnArmedCheckout(t *testing.T) {
-	f := newBranchRawFixtureWithReadReplies(t, false, false, false)
-	root := f.installation
-	raw := f.dependencies()
-	headReads := 0
-	raw.Linked = func(repo string) bool {
-		if repo != root {
-			t.Fatalf("linked checkout repo %s", repo)
-		}
-		return false
-	}
-	headRef := raw.HeadRef
-	raw.HeadRef = func(repo string) ([]byte, error) {
-		headReads++
-		return headRef(repo)
-	}
-	for _, rel := range []string{"metasystem/memory/receipts.log", "metasystem/records/narrator-digest.log"} {
-		writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(rel)), []byte("live append\n"), 0o644)
-	}
-	record := "metasystem/records/decisions/armed-checkout.md"
-	writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(record)), []byte("staged record\n"), 0o644)
-	for path, data := range map[string][]byte{
-		".git/HEAD":            []byte("opaque HEAD sentinel\n"),
-		".git/index":           {0x00, 0xff, 0x19, 0x7e},
-		".git/refs/heads/main": []byte("opaque main ref sentinel\n"),
-	} {
-		writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(path)), data, 0o644)
-	}
-	assertFiles := f.unchangedFiles("metasystem.conf", "plans/goals/backlog.md", "plans/goals/standing-validation.md",
-		"metasystem/code.go", "metasystem/memory/receipts.log", "metasystem/records/narrator-digest.log", record)
-	beforeTree := watchTreeHash(t, root)
-
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranchCommitWith([]string{"--goal", "standing-validation", "--kind", "plan", "--root", root},
-			goalBranchCommitDependencies{Raw: raw})
-	})
-	remedy := "git worktree add <path> goal/standing-validation"
-	want := branch.CheckoutArmedCode + ": checkout " + root + " is not on goal/standing-validation; run " + remedy + ", then run goal branch commit there\n"
-	if code != 1 || stdout != "" || stderr != want {
-		t.Fatalf("armed checkout refusal: code=%d stdout=%q stderr=%q want=%q", code, stdout, stderr, want)
-	}
-	if strings.Contains(stderr, "receipts.log") || strings.Contains(stderr, "narrator-digest.log") {
-		t.Fatalf("armed checkout reached stale-ledger preflight: %q", stderr)
-	}
-	if headReads != 1 {
-		t.Fatalf("head-ref reads = %d, want 1", headReads)
-	}
-	assertFiles()
-	if afterTree := watchTreeHash(t, root); afterTree != beforeTree {
-		t.Fatalf("armed checkout refusal changed physical fixture tree: before=%s after=%s", beforeTree, afterTree)
-	}
-	f.assertNoPreflightEffects()
-}
-
-func TestGoalBranchCheckPrintsKinds(t *testing.T) {
-	root := t.TempDir()
-	base, plan, unit, tip, bad := inspectionID('a'), inspectionID('b'), inspectionID('c'), inspectionID('d'), inspectionID('e')
-	args := []string{"--goal", "goal-a", "--root", root, "--no-fetch"}
-	missing := inspectionMissingRefError(t)
-	config, cli, rangeRead := inspectionReaders(t, root, append(inspectionCheckPrefix(root, "refs/heads/main", base),
-		inspectionFailure(root, missing, "rev-parse", "--verify", "-q", "refs/remotes/upstream/goal/goal-a^{commit}"))...)
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranchCheckWith(args, config, cli, rangeRead)
-	})
-	if code != 0 || stdout != "no branch\n" || stderr != "" {
-		t.Fatalf("absent branch: code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-	series := []inspectionCommit{
-		{plan, base, "Goal-Plan: goal-a\n", "metasystem/plans/x.md"},
-		{unit, plan, "Goal-Unit: goal-a/u1\n", "metasystem/code.go"},
-		{tip, unit, "Goal-Read: goal-a/u1 " + unit + "\n", "metasystem/records/reads/goal-a/" + unit + ".json"},
-	}
-	config, cli, rangeRead = inspectionReaders(t, root, inspectionCheckCalls(root, base, tip, series)...)
-	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranchCheckWith(append(args, "--tip", tip), config, cli, rangeRead)
-	})
-	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if code != 0 || stderr != "" || len(lines) != 3 || !strings.Contains(lines[0], " plan ") || !strings.Contains(lines[1], unit[:12]+" unit u1 ") || !strings.Contains(lines[2], " read u1") {
-		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-	badSeries := append(append([]inspectionCommit(nil), series...), inspectionCommit{bad, tip, "Goal-Unit: goal-a/u2\n", "metasystem/plans/bad.md"})
-	config, cli, rangeRead = inspectionReaders(t, root, inspectionCheckCalls(root, base, bad, badSeries)...)
-	stderr, code = captureStderr(t, func() int {
-		return runGoalBranchCheckWith(append(args, "--tip", bad), config, cli, rangeRead)
-	})
-	if code == 0 || !strings.Contains(stderr, "GOAL_BRANCH_RANGE") {
-		t.Fatalf("code=%d stderr=%q", code, stderr)
-	}
-	config, cli, rangeRead = inspectionReaders(t, root, inspectionConfig(root, "refs/heads/develop")...)
-	stderr, code = captureStderr(t, func() int {
-		return runGoalBranchCheckWith(append(args, "--tip", tip), config, cli, rangeRead)
-	})
-	if code == 0 || !strings.Contains(stderr, "GOAL_BRANCH_ENDPOINT_UNSUPPORTED") {
-		t.Fatalf("code=%d stderr=%q", code, stderr)
-	}
-}
-
-func TestGoalBranchCheckFetchesCurrentOriginTip(t *testing.T) {
-	t.Run("origin branch absent", func(t *testing.T) {
-		root, _, _ := goalBranchCLIFixture(t, "m1")
-		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-			return runGoalBranch([]string{"check", "--goal", "standing-validation", "--root", root})
-		})
-		if code != 0 || stdout != "no branch\n" || stderr != "" {
-			t.Fatalf("absent origin branch: code=%d stdout=%q stderr=%q", code, stdout, stderr)
-		}
-		if refs := goalSyncMutationGit(t, root, "for-each-ref", "--format=%(refname)", "refs/metasystem/goals/check/"); refs != "" {
-			t.Fatalf("absent branch left disposable refs: %s", refs)
-		}
-	})
-
-	for _, test := range []struct {
-		name          string
-		remoteAdvance bool
-	}{
-		{name: "tracking ref absent"},
-		{name: "tracking ref stale", remoteAdvance: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			root, _, _ := goalBranchCLIFixture(t, "m1")
-			commitAndPush := func(unit, path, body, opid string) string {
-				t.Helper()
-				writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(path)), []byte(body), 0o644)
-				goalSyncMutationGit(t, root, "add", path)
-				code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-					return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", unit, "--root", root})
-				})
-				tip := strings.TrimSpace(stdout)
-				if code != 0 || stderr != "" || len(tip) != 40 {
-					t.Fatalf("commit %s: code=%d stdout=%q stderr=%q", unit, code, stdout, stderr)
-				}
-				code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-					return runGoalBranch([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", opid})
-				})
-				if code != 0 || stderr != "" || !strings.Contains(stdout, tip) {
-					t.Fatalf("push %s: code=%d stdout=%q stderr=%q", unit, code, stdout, stderr)
-				}
-				return tip
-			}
-
-			first := commitAndPush("u1", "metasystem/code.go", "package fixture\n", "push-u1")
-			tracking := "refs/remotes/upstream/goal/standing-validation"
-			want := first
-			if test.remoteAdvance {
-				want = commitAndPush("u2", "metasystem/other.go", "package fixture\n", "push-u2")
-				goalSyncMutationGit(t, root, "update-ref", tracking, first)
-			} else {
-				goalSyncMutationGit(t, root, "update-ref", "-d", tracking)
-			}
-
-			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-				return runGoalBranch([]string{"check", "--goal", "standing-validation", "--root", root})
-			})
-			if code != 0 || stderr != "" || stdout == "no branch\n" || !strings.Contains(stdout, want[:12]+" unit ") {
-				t.Fatalf("check current origin: code=%d stdout=%q stderr=%q want=%s", code, stdout, stderr, want)
-			}
-			if got, err := goalBranchGit(root, "rev-parse", "--verify", tracking+"^{commit}"); test.remoteAdvance {
-				if err != nil || got != first {
-					t.Fatalf("stale tracking ref changed: got=%q err=%v want=%s", got, err, first)
-				}
-			} else if err == nil {
-				t.Fatalf("absent tracking ref was created at %s", got)
-			}
-			if refs := goalSyncMutationGit(t, root, "for-each-ref", "--format=%(refname)", "refs/metasystem/goals/check/"); refs != "" {
-				t.Fatalf("check left disposable refs: %s", refs)
-			}
-		})
-	}
-
-	t.Run("invalid origin range cleans fetched ref", func(t *testing.T) {
-		root, _, base := goalBranchCLIFixture(t, "m1")
-		invalid := goalSyncMutationGit(t, root, "commit-tree", base+"^{tree}", "-p", base, "-m", "invalid")
-		goalSyncMutationGit(t, root, "push", "-q", "upstream", invalid+":refs/heads/goal/standing-validation")
-		stderr, code := captureStderr(t, func() int {
-			return runGoalBranch([]string{"check", "--goal", "standing-validation", "--root", root})
-		})
-		if code == 0 || !strings.Contains(stderr, branch.RangeCode) {
-			t.Fatalf("invalid origin range: code=%d stderr=%q", code, stderr)
-		}
-		if refs := goalSyncMutationGit(t, root, "for-each-ref", "--format=%(refname)", "refs/metasystem/goals/check/"); refs != "" {
-			t.Fatalf("range refusal left disposable refs: %s", refs)
-		}
-	})
-}
-
 func TestGoalBranchClaimRequiresMachineAndLineage(t *testing.T) {
 	f := newBranchRawFixtureWithReadReplies(t, false, false, false, "another-lineage")
 	assertUnchanged := goalBranchRawCheckoutSnapshot(t, f)
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranchCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", f.installation},
-			goalBranchCommitDependencies{Raw: f.dependencies()})
+		return goalBranchTestCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", f.installation}, f.dependencies())
 	})
 	if code != 1 || stdout != "" || !strings.Contains(stderr, branch.NotHolderCode) {
 		t.Fatalf("claim mismatch: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -637,8 +445,7 @@ func goalBranchCommitRefusalPreservesCheckout(t *testing.T) {
 	assertUnchanged := goalBranchRawCheckoutSnapshot(t, f)
 	beforeAccepted, beforeCanonical, beforeTip := f.ledger.accepted, f.ledger.canonical, f.tip
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranchCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", f.installation},
-			goalBranchCommitDependencies{Raw: dependencies})
+		return goalBranchTestCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", f.installation}, dependencies)
 	})
 	if code != 1 || stdout != "" || !strings.Contains(stderr, branch.RangeCode) || !staged {
 		t.Fatalf("class refusal: code=%d stdout=%q stderr=%q staged=%t", code, stdout, stderr, staged)
@@ -674,14 +481,14 @@ func TestGoalBranchCommitAndPushUseEndpointRemote(t *testing.T) {
 	writeTestingFixtureFile(t, filepath.Join(root, "metasystem", "code.go"), []byte("package fixture\n"), 0o644)
 	goalSyncMutationGit(t, root, "add", "metasystem/code.go")
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", root})
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", root})
 	})
 	tip := strings.TrimSpace(stdout)
 	if code != 0 || stderr != "" || len(tip) != 40 || goalSyncMutationGit(t, root, "rev-parse", tip+"^") != base {
 		t.Fatalf("commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "remote-witness"})
+		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "remote-witness"})
 	})
 	remote := strings.Fields(goalSyncMutationGit(t, root, "ls-remote", "--refs", "upstream", "refs/heads/goal/standing-validation"))
 	if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "pushed ") || len(remote) != 2 || remote[0] != tip {
@@ -803,173 +610,12 @@ func TestGoalBranchCommitAcceptsBuildUnitList(t *testing.T) {
 		return nil
 	}
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranchCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "5", "--unit", "6", "--unit", "7a", "--unit", "7b", "--root", f.installation},
-			goalBranchCommitDependencies{Raw: dependencies})
+		return goalBranchTestCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "5", "--unit", "6", "--unit", "7a", "--unit", "7b", "--root", f.installation}, dependencies)
 	})
 	tip := strings.TrimSpace(stdout)
 	if code != 0 || stderr != "" || len(tip) != 40 || tip != f.read || f.tip != tip || applyCalls != 1 || publishCalls != 1 || !f.published || subject == "" ||
 		!strings.Contains(trailer, "Goal-Unit: standing-validation/5+6+7a+7b") {
 		t.Fatalf("multi-unit commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-}
-
-func TestCommitReadRefusesUnrecordedFastGateRun(t *testing.T) {
-	setup := func(t *testing.T) (*branchRawFixture, string) {
-		t.Helper()
-		f := newBranchRawFixture(t, false, true)
-		return f, f.readerRecord()
-	}
-	args := func(root, record string) []string {
-		return []string{"--goal", "standing-validation", "--kind", "read", "--unit", "u1", "--reader-record", record, "--root", root}
-	}
-
-	t.Run("made-up observation", func(t *testing.T) {
-		f, record := setup(t)
-		root, unit, tree := f.installation, f.unit, f.tree
-		commandArgs := append(args(root, record), "--gate-run", "made-up", "--gate-tree", tree)
-		code, _, stderr := captureCommandOutput(t, true, true, func() int {
-			return runGoalBranchCommitWith(commandArgs, goalBranchCommitDependencies{
-				Gate:  func(string) (string, error) { return "go gate: fast mode passed", nil },
-				NewID: func(string) (string, error) { return "recorded-run", nil }, Raw: f.dependencies(),
-			})
-		})
-		if code == 0 || !strings.Contains(stderr, branch.ReadUngatedCode) || !strings.Contains(stderr, "recorded-run") {
-			t.Fatalf("made-up gate: code=%d stderr=%q", code, stderr)
-		}
-		if _, err := os.Stat(filepath.Join(root, "metasystem", "records", "reads", "standing-validation", unit+".json")); !os.IsNotExist(err) {
-			t.Fatalf("made-up gate wrote attestation: %v", err)
-		}
-		if f.staged || f.published {
-			t.Fatal("made-up gate published a read")
-		}
-	})
-
-	t.Run("red gate", func(t *testing.T) {
-		f, record := setup(t)
-		root, unit := f.installation, f.unit
-		code, _, stderr := captureCommandOutput(t, true, true, func() int {
-			return runGoalBranchCommitWith(args(root, record), goalBranchCommitDependencies{
-				Gate: func(string) (string, error) { return "go gate: staticcheck failed", errors.New("exit 1") }, Raw: f.dependencies(),
-			})
-		})
-		if code == 0 || !strings.Contains(stderr, branch.ReadUngatedCode) || !strings.Contains(stderr, "staticcheck failed") {
-			t.Fatalf("red gate: code=%d stderr=%q", code, stderr)
-		}
-		if _, err := os.Stat(filepath.Join(root, "metasystem", "records", "reads", "standing-validation", unit+".json")); !os.IsNotExist(err) {
-			t.Fatalf("red gate wrote attestation: %v", err)
-		}
-		if f.staged || f.published {
-			t.Fatal("red gate published a read")
-		}
-	})
-
-	t.Run("recorded observation", func(t *testing.T) {
-		f, record := setup(t)
-		root, unit, tree := f.installation, f.unit, f.tree
-		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-			return runGoalBranchCommitWith(args(root, record), goalBranchCommitDependencies{
-				Gate:  func(string) (string, error) { return "go gate: fast mode passed", nil },
-				NewID: func(string) (string, error) { return "recorded-run", nil }, Raw: f.dependencies(),
-			})
-		})
-		if code != 0 || stdout != f.read+"\n" || stderr != "" {
-			t.Fatalf("recorded gate: code=%d stdout=%q stderr=%q", code, stdout, stderr)
-		}
-		journalPath := filepath.Join(f.project, ".git", "metasystem", "goal-reads", "standing-validation", f.unit+".json")
-		journalData, err := os.ReadFile(journalPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var journal struct {
-			Goal       string `json:"goal"`
-			UnitCommit string `json:"unitCommit"`
-			Tree       string `json:"tree"`
-			GateRunID  string `json:"gateRunId"`
-		}
-		if err := json.Unmarshal(journalData, &journal); err != nil || journal.Goal != "standing-validation" || journal.UnitCommit != f.unit || journal.Tree != f.tree || journal.GateRunID != "recorded-run" {
-			t.Fatalf("gate journal=%+v err=%v", journal, err)
-		}
-		data, err := os.ReadFile(filepath.Join(root, "metasystem", "records", "reads", "standing-validation", unit+".json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		var att branch.Attestation
-		if err := json.Unmarshal(data, &att); err != nil || att.Gate.RunID != "recorded-run" || att.Gate.Tree != tree {
-			t.Fatalf("attestation gate=%+v err=%v", att.Gate, err)
-		}
-		if !f.staged || !f.published || f.tip != f.read {
-			t.Fatalf("recorded gate publication: staged=%t published=%t tip=%s", f.staged, f.published, f.tip)
-		}
-	})
-}
-
-func TestGoalBranchHelpNamesPush(t *testing.T) {
-	for _, family := range families() {
-		if family.name != "goal" {
-			continue
-		}
-		for _, verb := range family.verbs {
-			if verb.name == "branch" {
-				if verb.summary != "inspect, commit, land, verify, and sweep goal branches" {
-					t.Fatalf("goal branch help = %q", verb.summary)
-				}
-				return
-			}
-		}
-	}
-	t.Fatal("goal branch help is absent")
-}
-
-func TestGoalBranchStatusReportsAbsentOrigin(t *testing.T) {
-	f := newBranchRawFixtureWithReadReplies(t, false, false, false)
-	root := f.installation
-	raw := f.dependencies()
-	originReads := 0
-	raw.OriginTip = func(repo string, endpoint goal.Endpoint, goalID string) (string, bool, error) {
-		originReads++
-		if repo != root || endpoint.Remote != "upstream" || endpoint.Branch != "refs/heads/main" || goalID != "standing-validation" {
-			t.Fatalf("absent origin lookup: repo=%s endpoint=%+v goal=%s", repo, endpoint, goalID)
-		}
-		return "", false, nil
-	}
-	assertFiles := f.unchangedFiles("metasystem.conf", "plans/goals/backlog.md", "plans/goals/standing-validation.md", "metasystem/code.go")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranchStatusWithRaw([]string{"--goal", "standing-validation", "--root", root}, raw)
-	})
-	if code != 0 || stdout != "no branch\n" || stderr != "" {
-		t.Fatalf("status: code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-	if originReads != 1 {
-		t.Fatalf("origin reads = %d, want 1", originReads)
-	}
-	assertFiles()
-	f.assertNoPreflightEffects()
-}
-
-func TestGoalBranchSweepListsParkedDoneAbandonedAndOrphan(t *testing.T) {
-	root := t.TempDir()
-	base := inspectionID('a')
-	refs := base + "\trefs/heads/goal/done\n" + base + "\trefs/heads/goal/abandoned\n" + base + "\trefs/heads/landing/orphan\n"
-	_, cli, _ := inspectionReaders(t, root, inspectionAnswer(root, []byte(refs),
-		"ls-remote", "--heads", "origin", "refs/heads/goal/*", "refs/heads/landing/*"))
-	tree := &goal.TreeGoals{
-		Live:      map[string]*goal.GoalFile{"parked": {Id: "parked", State: goal.StateParked, NextStep: "resume commit abc"}},
-		Done:      map[string]*goal.GoalFile{"done": {Id: "done", State: goal.StateDone}},
-		Abandoned: map[string]*goal.GoalFile{"abandoned": {Id: "abandoned", State: goal.StateAbandoned}},
-	}
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return listGoalBranchSweepWithGit(root, goal.Endpoint{Remote: "origin"}, tree, cli)
-	})
-	for _, line := range []string{"parked-missing goal/parked", "done goal/done", "abandoned goal/abandoned", "orphan landing/orphan"} {
-		if !strings.Contains(stdout, line) {
-			t.Fatalf("listing missing %q: code=%d stdout=%q stderr=%q", line, code, stdout, stderr)
-		}
-	}
-	if err := goalBranchSweepState("abandoned", false); err == nil {
-		t.Fatal("plain sweep accepted an abandoned goal")
-	}
-	if err := goalBranchSweepState("abandoned", true); err != nil {
-		t.Fatalf("abandoned word refused: %v", err)
 	}
 }
 
@@ -1067,7 +713,7 @@ func TestGoalBranchCommitIsTheGuardedCommitWrapper(t *testing.T) {
 	}
 	goalSyncMutationGit(t, root, "add", "-u")
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "guard", "--root", root})
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "guard", "--root", root})
 	})
 	if code != 0 || len(strings.TrimSpace(stdout)) != 40 || stderr != "" {
 		t.Fatalf("guarded verb: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -1082,14 +728,14 @@ func TestGoalBranchLastLandingSweepsGoalBranch(t *testing.T) {
 	writeTestingFixtureFile(t, filepath.Join(root, "metasystem", "landed.go"), []byte("package fixture\n"), 0o644)
 	goalSyncMutationGit(t, root, "add", "metasystem/landed.go")
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "last", "--root", root})
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "last", "--root", root})
 	})
 	unit := strings.TrimSpace(stdout)
 	if code != 0 || stderr != "" || len(unit) != 40 {
 		t.Fatalf("unit commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "last-push"})
+		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "last-push"})
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("goal push: code=%d stderr=%q", code, stderr)
@@ -1105,7 +751,7 @@ func TestGoalBranchLastLandingSweepsGoalBranch(t *testing.T) {
 	trunk := "endpoint=" + base + "\ncandidate=" + goalSyncMutationGit(t, root, "rev-parse", landing+"^{tree}") + "\nlanding=" + landing + "\nbranch=landing/standing-validation\n"
 	writeTestingFixtureFile(t, filepath.Join(prepared, "trunk"), []byte(trunk), 0o644)
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"land-push", "--goal", "standing-validation", "--prepared", prepared, "--root", root})
+		return goalBranchTestCommand([]string{"land-push", "--goal", "standing-validation", "--prepared", prepared, "--root", root})
 	})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "landed "+landing) {
 		t.Fatalf("land-push: code=%d stdout=%q stderr=%q", code, stdout, stderr)

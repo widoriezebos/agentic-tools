@@ -117,6 +117,15 @@ var retiredWithDeletedVerb = map[string]string{
 	"command-interface-smoke/TestChannelFakeServePublicCommandListensUnderSyntheticFixtureAuthority": "channel fake",
 	"command-interface-smoke/TestChannelFakeServeRequiresBoundedLifetime":                            "channel fake",
 	"command-interface-smoke/TestChannelFakeServeStopsAtInjectedExpiry":                              "channel fake",
+	"goal-decision-standard/TestGoalBranchCheckPrintsKinds":                                          "goal branch",
+	"goal-decision-standard/TestGoalBranchCheckFetchesCurrentOriginTip":                              "goal branch",
+	"goal-decision-standard/TestGoalBranchHelpNamesPush":                                             "goal branch",
+	"goal-decision-standard/TestGoalBranchStatusReportsAbsentOrigin":                                 "goal branch",
+	"goal-decision-standard/TestTransportMirrorAndLeasedDelete":                                      "goal branch",
+	"goal-decision-standard/TestGoalBranchSweepListsParkedDoneAbandonedAndOrphan":                    "goal branch",
+	"goal-decision-standard/TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag":                     "goal list",
+	"goal-decision-standard/TestGoalBranchCommitRefusesToMoveAnArmedCheckout":                        "goal branch",
+	"goal-decision-standard/TestCommitReadRefusesUnrecordedFastGateRun":                              "goal branch",
 }
 
 // retiredWithDeletedBed names legacy mandatory tests whose only subject was a

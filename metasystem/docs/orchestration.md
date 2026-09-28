@@ -191,7 +191,7 @@ candidate tree.
 A carried landing is the separate, human-only landing form: a verified human
 records one exception for one workspace tree and exactly one named refusal code
 or `group:<id>` with `metasystem work land G --exception CODE --reason R --by NAME`
-(its carry owner is `metasystem internal goal carry`), and that landing, or a later
+(`--upgrade-goals` raises a format-1 ledger to the carry format in the same act), and that landing, or a later
 `metasystem work land G --using-exception X`, may carry only that fact; an agent's
 landing never grants a carry. The landing writes the reservation and immutable commit trailers, then records one
 `human-carried` review obligation on the goal. Every use increments the goal's

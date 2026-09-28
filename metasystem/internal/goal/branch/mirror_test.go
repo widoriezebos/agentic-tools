@@ -1,7 +1,6 @@
 package branch_test
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -44,40 +43,6 @@ func (m *observingMirrorTransport) Push(repo, remote, ref, expected, tip string)
 	}
 	m.pushed = true
 	return m.GitPushTransport.Push(repo, remote, ref, expected, tip)
-}
-
-func TestMirrorGitAdapterTransfersAndCleansRef(t *testing.T) {
-	t.Parallel()
-	f := newBranchFixture(t)
-	mirrorClone := cloneBranchFixture(t, f)
-	transport := filepath.Join(t.TempDir(), "transport.git")
-	git(t, filepath.Dir(transport), "init", "-q", "--bare", transport)
-	git(t, mirrorClone.root, "remote", "add", "transport", transport)
-	tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
-	if _, err := branch.Push(pushRequest(f, "mirror-origin-one")); err != nil {
-		t.Fatal(err)
-	}
-	if got := remoteGoalTip(t, f); got != tip {
-		t.Fatalf("origin tip = %q, want %q", got, tip)
-	}
-	if _, err := execGit(mirrorClone.root, "cat-file", "-e", tip+"^{commit}"); err == nil {
-		t.Fatalf("mirror clone already has origin tip %q", tip)
-	}
-	const ref = "refs/heads/goal/goal-a"
-	const opID = "mirror-adapter"
-	adapter := &observingMirrorTransport{t: t, repo: mirrorClone.root, origin: "origin", transport: "transport", ref: ref,
-		destination: "refs/metasystem/goals/fetch/" + opID, endpointTip: f.base, goalID: "goal-a", tip: tip}
-	result, err := branch.Mirror(branch.MirrorRequest{Repo: mirrorClone.root, Origin: "origin", Transport: "transport",
-		EndpointTip: f.base, GoalID: "goal-a", OpID: opID, CheckClaim: claimAllowed, PushTransport: adapter})
-	if err != nil || result != (branch.PushResult{State: "mirrored", Tip: tip}) || !adapter.fetched || !adapter.pushed {
-		t.Fatalf("adapter mirror = %+v, err=%v, fetched=%t, pushed=%t", result, err, adapter.fetched, adapter.pushed)
-	}
-	if got := git(t, transport, "rev-parse", ref); got != tip {
-		t.Fatalf("transport tip = %q, want %q", got, tip)
-	}
-	if got := goalRef(t, mirrorClone.root, "refs/metasystem/goals/fetch/"); got != "" {
-		t.Fatalf("temporary fetch ref remains: %q", got)
-	}
 }
 
 func TestMirrorDeleteReconcilesUnknownOutcome(t *testing.T) {

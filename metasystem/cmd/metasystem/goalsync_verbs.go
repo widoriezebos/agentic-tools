@@ -52,12 +52,6 @@ func goalUlid() (string, error) {
 	return goal.NewOperationULID()
 }
 
-// runGoalMigrate is the cutover: one commit, one opid, the reviewed
-// source digest gating everything.
-func runGoalMigrate(args []string) int {
-	return goalMigrateWith(defaultSyncRequestDependencies(), os.Stdout, os.Stderr, args)
-}
-
 // goalMigrateWith is the cutover under explicit request dependencies: the
 // human word classifies from their supplied caller, the actor carries their
 // lineage and machine, and the report goes to the caller's streams.

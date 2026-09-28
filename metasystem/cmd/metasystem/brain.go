@@ -101,7 +101,7 @@ func brainDeclareWith(caller processIdentity, stdout, stderr io.Writer, root, by
 		return 2
 	}
 	if ledgerIdentity == "" {
-		fmt.Fprintln(stderr, "brain declare needs a migrated ledger identity; run metasystem internal goal migrate first")
+		fmt.Fprintln(stderr, "brain declare needs a migrated ledger identity; a person migrates it first: metasystem goal sync --upgrade --by NAME")
 		return 2
 	}
 	machine, err := deps.machine(root)

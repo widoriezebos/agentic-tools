@@ -656,35 +656,14 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	gcliForgivingLongForm(t, bed, "fixture-pair-twin", "1d", "10", "1200", "1", "3", "--by", "Wido")()
 	gcliForgivingSameAct(t, bed, "fixture and temporary authority", "fixture-pair", "fixture-pair-twin")
 
-	// The approval sweep is a family form (the public goal approve takes no
-	// --sweep). Its extras are dropped by the remedy, which previews.
+	// The approval sweep is not a public act (the public goal approve takes
+	// no --sweep).
 	if code, _, stderr := gcliForgivingPublic(bed, "goal", "approve", "--sweep", "--budget", "box", "--by", "Wido", gcliForgivingFixture); code == 0 ||
 		!strings.HasPrefix(stderr, "metasystem goal approve: does not take --sweep;") {
 		t.Fatalf("the public approve took --sweep: code=%d stderr=%q", code, stderr)
 	}
-	code, report := gcliForgivingFamily(bed, func(dependencies syncRequestDependencies) int {
-		return runGoalApproveWithInputs([]string{"--root", bed.root, "--sweep", "--budget", "box", "--by", "Wido", gcliForgivingFixture},
-			bed.prove, bed.commandNow, dependencies, gcliForgivingBinding(bed))
-	})
-	if code == 0 || report.refusal == nil || !strings.HasPrefix(report.refusal.remedy.command, "metasystem internal goal approve ") ||
-		strings.Contains(report.refusal.remedy.command, "--budget") || !strings.Contains(report.refusal.remedy.command, "--sweep") {
-		t.Fatalf("approval sweep extras did not print a runnable sweep: code=%d refusal=%+v", code, report.refusal)
-	}
-	sweep := shellWords(report.refusal.remedy.command)
-	tip = bed.tip()
-	// The preview prints its listing on the process's standard output; the
-	// listing is the owner's goal.PreviewApprovalSweep, read here directly.
-	if code, report := gcliForgivingFamily(bed, func(dependencies syncRequestDependencies) int {
-		return runGoalApproveWithInputs(sweep[4:], bed.prove, bed.commandNow, dependencies, gcliForgivingBinding(bed))
-	}); code != 0 || report.refusal != nil || report.failure != nil || bed.tip() != tip {
-		t.Fatalf("approval sweep extras printed a command that did not preview: code=%d refusal=%+v", code, report.refusal)
-	}
-	if listing, err := goal.PreviewApprovalSweep(endpoint, bed.clock()); err != nil || listing.Digest == "" {
-		t.Fatalf("the approval sweep has no listing digest: %+v %v", listing, err)
-	}
-
 	gcliForgivingOpen(t, bed, "sweep-with-id", "sweep-with-id-twin")
-	code, report = gcliForgivingFamily(bed, func(dependencies syncRequestDependencies) int {
+	code, report := gcliForgivingFamily(bed, func(dependencies syncRequestDependencies) int {
 		return runGoalApproveWithInputs([]string{"--root", bed.root, "--sweep", "--id", "sweep-with-id", "--confirm", "stale", "--by", "Wido", gcliForgivingFixture},
 			bed.prove, bed.commandNow, dependencies, gcliForgivingBinding(bed))
 	})

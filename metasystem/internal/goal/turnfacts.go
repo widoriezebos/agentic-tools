@@ -271,8 +271,8 @@ func workActions(root string, work TurnWorkFacts, options TurnVerdictOptions) []
 			Owner:       "seat"}}
 	}
 	return []TurnAction{{Kind: "claim-goal", TargetId: selected.Id,
-		Instruction: "Fetch and claim the ready goal, then follow its next step: " + selected.NextStep,
-		Command:     "metasystem internal goal next --machine " + machine + " --fetch", Owner: machine}}
+		Instruction: "Claim the ready goal, then follow its next step: " + selected.NextStep,
+		Command:     "metasystem goal claim " + selected.Id, Owner: machine}}
 }
 
 func scanActions(root string, scan ScanResult, watches authenticatedWatches) []TurnAction {

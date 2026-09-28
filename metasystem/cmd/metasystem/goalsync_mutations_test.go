@@ -544,7 +544,7 @@ func TestGoalApproveSweepWithIDsDropsSweepAndConfirmFromItsRemedy(t *testing.T) 
 		}, fixedFixtureGoalAuthority)
 	})
 	lines := strings.Split(strings.TrimSpace(stderr), "\n")
-	if code != 2 || len(lines) != 2 || !strings.Contains(lines[1], "run: metasystem internal goal approve") || !strings.Contains(lines[1], "--id standing-validation") ||
+	if code != 2 || len(lines) != 2 || !strings.Contains(lines[1], "run: metasystem goal approve") || !strings.Contains(lines[1], "--id standing-validation") ||
 		strings.Contains(lines[1], "--sweep") || strings.Contains(lines[1], "--confirm") {
 		t.Fatalf("the direct-ID approval remedy retained sweep-only flags: code=%d stderr=%q", code, stderr)
 	}
