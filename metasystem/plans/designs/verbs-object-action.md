@@ -158,7 +158,7 @@ predecessor in the same slice.
 | | revise | `revise G`, `revise job R`, `revise run RUN` |
 | | land | `land G ...`, `land job J`, and `land [G] --message FILE (--staged \| --path P...)` for a hand-made change (`scripts/agents/land.sh`, U5) |
 | | wait | `wait G`, `wait goal G`, `wait job/run/proof/resume/review ID`, `wait G --for`, and `wait file PATH --until present\|absent` as `work wait --path PATH --until present\|absent` (caller-relative path, same observation and durable resumption, `intent_work.go:193,1219`) |
-| | stop | `stop job J`, `stop review REF` |
+| | stop | `stop job J`, `stop review REF`, `internal job stop-batch-reconcile` (as `work stop G`: finish a breach-stopped goal's recorded stop; U9a) |
 | | status | `status job J`, `status run RUN`, `status work`, `show review REF` |
 | | close | `done job J` (as `work close j2:J`), `repair review G` (as `work close G`) |
 | | watch | `internal job watch`, `internal run watch` (turn facts; `work watch --job J` or `--run RUN`) |

@@ -254,12 +254,13 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentWorkStatus,
 		},
 		{
-			object: "work", action: "stop", audience: "both", summary: "stop exactly one running job or diagnostic read",
-			usage:    []string{"metasystem work stop REF"},
-			details:  []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read); nothing else stops."},
+			object: "work", action: "stop", audience: "both", summary: "stop exactly one running job or diagnostic read, or finish a goal's recorded stop",
+			usage: []string{"metasystem work stop REF", "metasystem work stop G"},
+			details: []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read); nothing else stops.",
+				"G is a goal whose budget stopped it: its recorded stop is advanced from the job records, and completes once none of its jobs still runs; a stop that already completed is left as it is."},
 			maxArgs:  1,
-			accepts:  []string{refJ1, refJ2, refRead},
-			examples: []string{"metasystem work stop j2:design-r2-4f1c"},
+			accepts:  []string{refGoal, refJ1, refJ2, refRead},
+			examples: []string{"metasystem work stop j2:design-r2-4f1c", "metasystem work stop verbs-match-intent"},
 			run:      runIntentWorkStop,
 		},
 		{
@@ -934,7 +935,63 @@ func runIntentWorkStop(inv *intentInvocation) int {
 	if ref.kind == refRead {
 		return runIntentReviewRef(inv, "stop", ref.id)
 	}
+	if ref.kind == refGoal {
+		return runIntentWorkStopGoal(inv, ref.id)
+	}
 	return inv.stopJob(ref.qualified())
+}
+
+// runIntentWorkStopGoal finishes a breach-stopped goal's recorded stop: it
+// advances the goal's stop batch from the authoritative job records (the
+// dispatch owner's ReconcileStopBatch, formerly the internal job
+// stop-batch-reconcile). It cancels nothing itself; a job still running is
+// named with the command that stops it.
+func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	projection, now, problem := inv.projection()
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	targets := []intentTarget{{Kind: "goal", ID: id}}
+	file, _ := goalRecord(projection, id)
+	if file == nil {
+		return unknownGoal(inv, id)
+	}
+	if file.StopFence == nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+			Summary: fmt.Sprintf("goal %s has no stop in progress; nothing was done", id),
+			next:    inv.publicArgv("work", "status", id), nextReason: "lists the goal's running work, each with the reference work stop takes"})
+	}
+	stopID := file.StopFence.StopID
+	before, readErr := goal.ReadStopBatch(inv.stateRoot, stopID)
+	if readErr == nil && before.State == goal.StopBatchComplete {
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: map[string]any{"stop": stopID, "state": string(before.State)},
+			Summary: fmt.Sprintf("goal %s: stop %s is already complete; nothing was changed", id, stopID)})
+	}
+	batch, err := dispatchcore.ReconcileStopBatch(inv.stateRoot, stopID, now)
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: map[string]any{"stop": stopID},
+			Summary: fmt.Sprintf("goal %s: stop %s could not be advanced: %v", id, stopID, err)})
+	}
+	data := map[string]any{"stop": stopID, "state": string(batch.State), "pending": nonNilLines(batch.Pending)}
+	switch batch.State {
+	case goal.StopBatchComplete:
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
+			Summary: fmt.Sprintf("goal %s: stop %s is complete; the goal can be resumed", id, stopID),
+			next:    inv.publicArgv("goal", "resume", id), nextReason: "lifts the stop under the goal's standing box"})
+	case goal.StopBatchIndeterminate:
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data,
+			Summary: fmt.Sprintf("goal %s: stop %s is indeterminate: a job record could not be judged; nothing was lifted", id, stopID),
+			next:    inv.publicArgv("work", "status", id), nextReason: "shows each of the goal's jobs and its state"})
+	}
+	result := intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: data, text: nonNilLines(batch.Pending),
+		Summary: fmt.Sprintf("goal %s: stop %s still waits for %d job(s) to end", id, stopID, len(batch.Pending))}
+	if len(batch.Pending) > 0 {
+		result.next, result.nextReason = inv.publicArgv("work", "stop", refJ2+":"+batch.Pending[0]), "stops the first job the stop waits for; then run work stop "+id+" again"
+	}
+	return inv.render(result)
 }
 
 // runIntentSystemRestart stops this checkout's machinery and, only once

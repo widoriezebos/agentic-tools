@@ -410,16 +410,13 @@ roster_independence=$(printf '%s\n' "$manifest_facts" | sed -n '6p')
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch" "$pair_scratch"' EXIT
 
-# PI-R1-004 (plans/provisioning-identity.md D-P1.1): a target that already
-# exists and carries a lease record is residue of a dead provisioning; the
-# next attempt IS the recovery. A live or unproven holder refuses loudly.
+# PI-R1-004 (plans/provisioning-identity.md D-P1.1) reclaimed a dead
+# provisioning's residue through the engine's `lease reclaim`, whose owner
+# was deleted on 2026-08-12 (c72f6620c); since then every non-empty target
+# was refused. The refusal is now said directly: nothing here deletes a
+# directory.
 if [[ -e "$target" ]] && [[ -n "$(ls -A "$target" 2>/dev/null)" ]]; then
-  # Proof and deletion are ONE operation in the engine: the verb refuses a
-  # path not shaped like a checkout, a target without a lease record, and a
-  # live or unprovable holder — so no edit here can reorder the guards away
-  # from the delete.
-  "$ms" lease reclaim --target "$target" \
-    || die 1 "provision refused: target exists and could not be reclaimed: $target"
+  die 1 "provision refused: target exists and is not empty: $target; choose a fresh target, or remove this one by hand once no process holds it"
 fi
 mkdir -p "$target"
 git -C "$target" init -q -b main

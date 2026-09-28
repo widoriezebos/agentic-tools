@@ -276,6 +276,18 @@ func gcliForgivingClaimRevision(t *testing.T, record string) uint64 {
 // ReconcileStopBatch completes it (the bed has no jobs of the goal).
 func gcliForgivingBreachStop(t *testing.T, bed *goalCLIBed, id, ulid string) {
 	t.Helper()
+	stopID := gcliForgivingOpenStop(t, bed, id, ulid)
+	batch, err := dispatchcore.ReconcileStopBatch(bed.root, stopID, bed.clock())
+	if err != nil || batch.State != goal.StopBatchComplete {
+		t.Fatalf("stop batch %s did not complete: %+v %v", stopID, batch, err)
+	}
+}
+
+// gcliForgivingOpenStop is the stop custodian's job breach-stop alone: the
+// fence is closed and the stop batch recorded OPEN, not yet reconciled. It
+// returns the stop id.
+func gcliForgivingOpenStop(t *testing.T, bed *goalCLIBed, id, ulid string) string {
+	t.Helper()
 	file := gcliForgivingParse(t, bed.goalRecord(id))
 	if file.State != goal.StateClaimed || file.Claimed == nil || file.StopCapability == nil {
 		t.Fatalf("goal %s has no claimed revision for its breach-stop: %+v", id, file)
@@ -313,10 +325,7 @@ func gcliForgivingBreachStop(t *testing.T, bed *goalCLIBed, id, ulid string) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	batch, err := dispatchcore.ReconcileStopBatch(bed.root, stopID, now)
-	if err != nil || batch.State != goal.StopBatchComplete {
-		t.Fatalf("stop batch %s did not complete: %+v %v", stopID, batch, err)
-	}
+	return stopID
 }
 
 func gcliForgivingReleaseIfClaimed(t *testing.T, bed *goalCLIBed, id string) {

@@ -410,8 +410,8 @@ func checkFenceLiftForRebudget(root string, t *TreeGoals, f *GoalFile, verb stri
 	}
 	fence := *f.StopFence
 	if err := VerifyStopBatchComplete(root, f.Id, *f.StopCapability, fence); err != nil {
-		return "", fmt.Errorf("goal %s %s cannot lift fence %s: %v; advance stop batch %s with metasystem job stop-batch",
-			verb, f.Id, fence.StopID, err, fence.StopID)
+		return "", fmt.Errorf("goal %s %s cannot lift fence %s: %v; finish stop %s with metasystem work stop %s",
+			verb, f.Id, fence.StopID, err, fence.StopID, f.Id)
 	}
 	machine := f.Claimed.Machine
 	for _, otherID := range OrderedOpenGoalIDs(t.Live) {

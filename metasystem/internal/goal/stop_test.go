@@ -321,7 +321,7 @@ func TestSetBudgetFencedIncompleteBatchNamesRemedy(t *testing.T) {
 	before := RenderFile(stopped)
 	result, err := setBudgetApprovedForTest(t, set, stopped.Id, next)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, stopped.StopFence.StopID) ||
-		!strings.Contains(result.Detail, "metasystem job stop-batch") {
+		!strings.Contains(result.Detail, "metasystem work stop "+stopped.Id) {
 		t.Fatalf("incomplete stop batch refusal omitted its exact remedy: %+v %v", result, err)
 	}
 	afterTree, loadErr := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))

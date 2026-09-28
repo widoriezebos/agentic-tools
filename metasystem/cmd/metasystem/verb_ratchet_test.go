@@ -63,13 +63,11 @@ const (
 	// contract's own runner instead of running a test itself (intent_app.go).
 	// U5 added one: the Go landing path runs the engine's landing workspace
 	// (landing_path.go), a hop commit.sh made from shell.
-	// U9's hook part raised it by three, each a process boundary of its
-	// design (3.3, VOA-18, VOA-19): the Stop deadline parent launches its
-	// worker as the engine's own `internal hook` entry where it ran the stub
-	// script (runtime_hook_worker.go: the executable and its launch), and
-	// `system setup` asks the selected engine `internal hook --accepts`
-	// before switching a checkout (hookswitch).
-	verbRatchetSelfSubprocessCeiling = 131
+	// U9a +1, a false positive held until its cause goes: work stop G's
+	// next command, publicArgv("goal", "resume", id), reads as the family
+	// pair goal resume followed by a non-literal; it drops when U9a deletes
+	// that family verb.
+	verbRatchetSelfSubprocessCeiling = 129
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
 	verbRatchetInstructionCeiling = 46

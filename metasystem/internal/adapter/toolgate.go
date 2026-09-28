@@ -64,7 +64,6 @@ var toolGateRows = []toolGateRow{
 	{pattern: "metasystem work land", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "work", "land"}, trigger: true, ceiling: true},
 	{pattern: "metasystem session handoff", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "session", "handoff"}, trigger: true, ceiling: true},
 	{pattern: "metasystem internal context handoff", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "internal", "context", "handoff"}, trigger: true, ceiling: true},
-	{pattern: "metasystem internal context resume", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "internal", "context", "resume"}, trigger: true, ceiling: true},
 	{pattern: "metasystem internal context status", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "internal", "context", "status"}, trigger: true, ceiling: true},
 	{pattern: "metasystem internal context verify", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "internal", "context", "verify"}, trigger: true, ceiling: true},
 	{pattern: "metasystem internal delegate", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "internal", "delegate"}, trigger: true, ceiling: true},

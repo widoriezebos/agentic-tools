@@ -33,7 +33,7 @@ func TestToolGateAllowlist(t *testing.T) {
 	cases = append(cases,
 		allowCase{name: "basename", call: bashToolGateCall("metasystem work wait --restore job"), wantPattern: "metasystem work wait", wantKind: NeverDenied, allow: true},
 		allowCase{name: "absolute-path-prefix", call: bashToolGateCall("/usr/local/bin/metasystem session handoff --root /repo"), wantPattern: "metasystem session handoff", wantKind: AllowedAtTrigger, allow: true},
-		allowCase{name: "relative-path-prefix", call: bashToolGateCall("bin/metasystem internal context resume"), wantPattern: "metasystem internal context resume", wantKind: AllowedAtTrigger, allow: true},
+		allowCase{name: "relative-path-prefix", call: bashToolGateCall("bin/metasystem session handoff --status --root /repo"), wantPattern: "metasystem session handoff", wantKind: AllowedAtTrigger, allow: true},
 		allowCase{name: "dot-path-prefix", call: bashToolGateCall("./bin/metasystem session handoff --verify n"), wantPattern: "metasystem session handoff", wantKind: AllowedAtTrigger, allow: true},
 		allowCase{name: "cd-prefix", call: bashToolGateCall("cd /tmp && metasystem session handoff --status --root /repo"), wantPattern: "metasystem session handoff", wantKind: AllowedAtTrigger, allow: true},
 		allowCase{name: "assignment-prefix", call: bashToolGateCall("A=one B='two words' metasystem internal delegate --root /repo"), wantPattern: "metasystem internal delegate", wantKind: AllowedAtTrigger, allow: true},

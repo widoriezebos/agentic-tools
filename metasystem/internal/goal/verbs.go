@@ -3255,7 +3255,7 @@ func reopenAbandonedRequest(r VerbRequest, id string) PublishRequest {
 			}
 			if f.StopFence != nil {
 				if err := VerifyStopBatchComplete(r.Endpoint.Root, id, *f.StopCapability, *f.StopFence); err != nil {
-					return nil, fmt.Errorf("goal %s stays abandoned: %v; advance stop batch %s on the checkout that holds it (metasystem job stop-batch ...), or open a successor goal and carry the work there", id, err, f.StopFence.StopID)
+					return nil, fmt.Errorf("goal %s stays abandoned: %v; finish stop %s on the checkout that holds it (metasystem work stop %s), or open a successor goal and carry the work there", id, err, f.StopFence.StopID, id)
 				}
 			}
 
