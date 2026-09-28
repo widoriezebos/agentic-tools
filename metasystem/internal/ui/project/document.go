@@ -45,6 +45,10 @@ const (
 // so .GIT/x.md reaches .git/x.md, while os.Root folds nothing of its own.
 var refusedSegments = []string{".git", "node_modules", "artifacts", "bin"}
 
+// localConfiguration is the uncommitted file beside metasystem.conf that holds
+// what must not leave this machine; no read of this interface serves it.
+const localConfiguration = "metasystem.conf.local"
+
 // Head is what a record declares about itself, carried as data rather than as
 // the bullet list at the top of its text. Every list is a list the browser can
 // read as one, so an absent key is an empty array and not a null.
@@ -343,13 +347,23 @@ func admissibleID(id string) bool {
 		if segment == ".." {
 			return false
 		}
-		for _, refused := range refusedSegments {
-			if strings.EqualFold(segment, refused) {
-				return false
-			}
+	}
+	return Served(id)
+}
+
+// Served reports whether a clean checkout-relative path is one this
+// interface's reads may answer: no segment on the way to it is one the
+// document reader never serves through, and it is not the local configuration.
+// It judges text only; a reader that follows links judges the path it resolved
+// to as well, so an alias is held to the same rule (Sol SOL-S67-01).
+func Served(id string) bool {
+	segments := strings.Split(id, "/")
+	for _, segment := range segments {
+		if refusedSegment(segment) {
+			return false
 		}
 	}
-	return true
+	return !strings.EqualFold(segments[len(segments)-1], localConfiguration)
 }
 
 // revisionOf is the Git blob object id of the bytes read: the repository's own

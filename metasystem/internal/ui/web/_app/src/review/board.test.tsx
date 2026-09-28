@@ -68,10 +68,21 @@ describe("an entry of the table", () => {
     expect(markup.split("ms-table-entry-link").length - 1).toBe(2);
     expect(markup).not.toContain("#proposals");
     expect(markup).not.toContain("#decisions");
-    // The words, the clause and the attribution are inside the press, so the
-    // whole entry is what a human aims at.
+    // The words and the attribution are inside the press, so the whole entry
+    // is what a human aims at.
     expect(markup).toContain("the limit is twelve hours");
     expect(markup).toContain("internal/session/session.go:212");
+  });
+
+  it("puts a fact's anchor on the desk with its own press, beside the link and not inside it (g1-s67 D5)", () => {
+    const markup = table(SOURCE);
+
+    expect(markup).toContain(
+      '<button type="button" class="ms-anchor-chip" title="Put internal/session/session.go:212 on the desk">' +
+        "internal/session/session.go:212</button>",
+    );
+    const link = markup.slice(markup.indexOf('href="/project/doc/plans/designs/sessions.md#facts"'));
+    expect(link.slice(0, link.indexOf("</a>"))).not.toContain("internal/session/session.go:212");
   });
 
   it("names the anchors the document reader itself mints for the four piles", () => {

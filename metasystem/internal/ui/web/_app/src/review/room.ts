@@ -518,11 +518,26 @@ function isDesk(value: unknown): value is Desk {
 /**
  * Whether the room is due to be kept, a second after the last keep: at most once
  * a second while a human types, and always when they leave the field, step out
- * or leave the page. This build sets no timer (src/cuts.test.ts), so the second
- * is measured between keystrokes and the last one is kept by the leaving.
+ * or leave the page. The words typed last are kept by keepAfterSilence below.
  */
 export function keepDue(lastKeptAt: number, now: number): boolean {
   return lastKeptAt === 0 || now - lastKeptAt >= 1000;
+}
+
+/** How long the room waits after the last keystroke before it keeps the drafts. */
+export const KEEP_AFTER_SILENCE = 1000;
+
+/**
+ * Keep the room once a second has passed with no further change, answering the
+ * cancel the next change calls. It is the one timer this build sets, granted by
+ * the human on 2026-09-28 (Sol SOL-A-01, a row of src/cuts.test.ts): it fires
+ * once, reads nothing, and calls the room's own keep.
+ */
+export function keepAfterSilence(keep: () => void): () => void {
+  const settled = setTimeout(keep, KEEP_AFTER_SILENCE);
+  return () => {
+    clearTimeout(settled);
+  };
 }
 
 /** What Step out says when the room's working state could not be kept (Sol SOL-A-01). */

@@ -136,6 +136,7 @@ import {
   localDeposit,
   outcomeShape,
   retipped,
+  keepAfterSilence,
   keepDue,
   onDesk,
   roomOf,
@@ -1754,10 +1755,10 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
 
   /**
    * Keep the room on its mark (g1-s65 D9). While a human types it is kept at
-   * most once a second; the last words before they leave are kept by the
-   * leaving itself — the field's blur, Step out, and the page going away — so
-   * the keystroke before leaving is never the one that is lost. This build sets
-   * no timer, so the second is measured between changes rather than waited out.
+   * most once a second, and a second after the last keystroke the words typed
+   * last are kept (the human's grant of 2026-09-28); the leaving keeps them as
+   * well — the field's blur, Step out, and the page going away — so the
+   * keystroke before leaving is never the one that is lost.
    */
   const keepRoomNow = useCallback(async (leaving = false): Promise<boolean> => {
     const record = whereNow.current;
@@ -1798,6 +1799,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     if (keepDue(keptAt.current, Date.now())) {
       void keepRoomNow();
     }
+    return keepAfterSilence(() => {
+      void keepRoomNow();
+    });
   }, [room, roomRecord, keepRoomNow]);
 
   // The page going away keeps the room, asked of the browser to finish after

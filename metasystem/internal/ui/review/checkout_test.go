@@ -3,27 +3,17 @@ package review
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 // The shaping desk's source read (g1-s67 D2, §6): the checkout's own files as
 // they stand, uncommitted edits included, under the checkout root the document
-// reader opens, with Source's path check, binary refusal and bounds.
-
-func runGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	command.Env = gittree.ScrubbedEnviron()
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, output)
-	}
-}
+// reader opens, with Source's path check, binary refusal and bounds. The read
+// is of files and needs no Git: the owner is given the checkout root only.
 
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
@@ -38,15 +28,10 @@ func writeFile(t *testing.T, path, body string) {
 func TestAShapingDeskReadsTheCheckoutAsItStands(t *testing.T) {
 	t.Parallel()
 	checkout := t.TempDir()
-	runGit(t, checkout, "init", "-q", "-b", "main")
-	runGit(t, checkout, "config", "user.name", "fixture")
-	runGit(t, checkout, "config", "user.email", "fixture@example.invalid")
-	writeFile(t, filepath.Join(checkout, "internal", "owner.go"), "package owner\n\nfunc lock() {}\n")
-	runGit(t, checkout, "add", ".")
-	runGit(t, checkout, "commit", "-qm", "base")
-	// Edited and not committed: the desk shows what the checkout has now.
+	// The bytes on disk, whatever any commit holds: the desk shows what the
+	// checkout has now.
 	writeFile(t, filepath.Join(checkout, "internal", "owner.go"), "package owner\n\nfunc lock() { held = true }\n\nvar held bool\n")
-	owner := Owner{Git: gittree.Workspace{Dir: checkout}, Checkout: checkout}
+	owner := Owner{Checkout: checkout}
 
 	read, err := owner.AsItStands("internal/owner.go", 3, 5)
 
@@ -70,6 +55,13 @@ func TestAShapingDeskReadsTheCheckoutAsItStands(t *testing.T) {
 	testutil.Expect(t, "four hundred lines at most", []int{long.From, long.To, len(long.Lines)}, []int{10, 409, 400})
 
 	writeFile(t, filepath.Join(checkout, "docs", "shot.png"), "\x89PNG\x00\x00binary")
+	writeFile(t, filepath.Join(checkout, ".git", "config"), "[core]\n")
+	writeFile(t, filepath.Join(checkout, "artifacts", "run.log"), "ran\n")
+	writeFile(t, filepath.Join(checkout, "metasystem", "metasystem.conf.local"), "secret = 1\n")
+	if err := os.Symlink(filepath.Join(".git", "config"), filepath.Join(checkout, "alias.txt")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(checkout, "latin.txt"), "caf\xe9\n")
 	outside := t.TempDir()
 	writeFile(t, filepath.Join(outside, "secret.go"), "package secret\n")
 	if err := os.Symlink(filepath.Join(outside, "secret.go"), filepath.Join(checkout, "escape.go")); err != nil {
@@ -88,14 +80,21 @@ func TestAShapingDeskReadsTheCheckoutAsItStands(t *testing.T) {
 		{"a range past the file", "internal/owner.go", 9, 12, "internal/owner.go has 5 lines; line 9 is past its end"},
 		{"a range backwards", "internal/owner.go", 4, 2, "a range runs forwards: line 4 to line 2 is not one"},
 		{"a binary file", "docs/shot.png", 1, 2, "docs/shot.png is a binary file, and the desk shows text"},
+		{"Git's own directory", ".git/config", 1, 2, ".git/config is a file this interface never serves"},
+		{"Git's directory in another case", ".GIT/config", 1, 2, ".GIT/config is a file this interface never serves"},
+		{"a run's artifacts", "artifacts/run.log", 1, 2, "artifacts/run.log is a file this interface never serves"},
+		{"the local configuration", "metasystem/metasystem.conf.local", 1, 2,
+			"metasystem/metasystem.conf.local is a file this interface never serves"},
+		{"a link inside the checkout to a protected file", "alias.txt", 1, 2, "alias.txt is a file this interface never serves"},
+		{"a file that is not UTF-8", "latin.txt", 1, 2, "latin.txt is not UTF-8 text, and the desk shows text as it is"},
 	} {
 		_, err := owner.AsItStands(refused.path, refused.from, refused.to)
 		var refusal *Refusal
 		if !errors.As(err, &refusal) || err.Error() != refused.reason {
-			t.Fatalf("%s: %v, want the refusal %q", refused.what, err, refused.reason)
+			t.Errorf("%s: %v, want the refusal %q", refused.what, err, refused.reason)
 		}
 	}
 
-	_, err = Owner{Git: gittree.Workspace{Dir: checkout}}.AsItStands("internal/owner.go", 1, 1)
+	_, err = Owner{}.AsItStands("internal/owner.go", 1, 1)
 	testutil.Expect(t, "an owner with no checkout says so", err != nil, true)
 }

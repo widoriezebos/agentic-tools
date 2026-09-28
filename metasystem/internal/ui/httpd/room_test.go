@@ -25,7 +25,11 @@ const shapeSessions = `{"purpose":"shape a design","subject":{"kind":"record","i
 
 func TestAShapingDeskReadsTheCheckoutAndHasNoChange(t *testing.T) {
 	t.Parallel()
-	served := serveReview(t, fakeacp.Script{})
+	served := serveReview(t, fakeacp.Script{Chunks: []string{"The records hold ..."}})
+	events, stop := served.service.Subscribe()
+	defer stop()
+	testutil.Require(t, "the sitting opened", post(t, served.handler, partnerSittingPath, shapeSessions, nil).Code, http.StatusOK)
+	drain(t, events)
 	file := filepath.Join(served.checkout, "internal", "owner.go")
 	testutil.Require(t, "the directory", os.MkdirAll(filepath.Dir(file), 0o755), nil)
 	testutil.Require(t, "the file as it stands", os.WriteFile(file, []byte("package owner\n\nfunc lock() {}\n"), 0o644), nil)
@@ -38,7 +42,9 @@ func TestAShapingDeskReadsTheCheckoutAndHasNoChange(t *testing.T) {
 	testutil.Expect(t, "at no commit", read.Commit, "")
 	testutil.Expect(t, "its line", read.Lines, []review.SourceLine{{Number: 3, Text: "func lock() {}"}})
 	intent := get(t, served.handler, reviewPrefix+"plans/intent/sessions.md/source?path=internal/owner.go", nil)
-	testutil.Expect(t, "an intent's desk reads the checkout too", intent.Code, http.StatusOK)
+	testutil.Expect(t, "no sitting stands on the intent", intent.Code, http.StatusBadRequest)
+	testutil.Expect(t, "so its desk is not read", errorOf(t, intent),
+		"no sitting of yours stands on plans/intent/sessions.md; its desk is read in its room")
 
 	escaped := get(t, served.handler, reviewPrefix+shapedDesign+"/source?path=../secrets", nil)
 	testutil.Expect(t, "a path out of the checkout", escaped.Code, http.StatusBadRequest)
@@ -63,6 +69,48 @@ func TestAShapingDeskReadsTheCheckoutAndHasNoChange(t *testing.T) {
 	testutil.Require(t, "the review read decodes", json.Unmarshal(reviewedSource.Body.Bytes(), &tip), nil)
 	testutil.Expect(t, "a review still reads its tip, not the checkout", []any{tip.Commit, tip.Checkout, tip.Total},
 		[]any{reviewTip, false, 3})
+}
+
+// The shaping desk reads only what the interface serves (Sol SOL-S67-01): the
+// document reader's refused segments and the local configuration are refused,
+// by name and through a link inside the checkout, and bytes that are not UTF-8
+// are refused rather than shown as other characters.
+func TestAShapingDeskRefusesWhatTheInterfaceNeverServes(t *testing.T) {
+	t.Parallel()
+	served := serveReview(t, fakeacp.Script{Chunks: []string{"The records hold ..."}})
+	events, stop := served.service.Subscribe()
+	defer stop()
+	testutil.Require(t, "the sitting opened", post(t, served.handler, partnerSittingPath, shapeSessions, nil).Code, http.StatusOK)
+	drain(t, events)
+	for name, body := range map[string]string{
+		"internal/owner.go":                "package owner\n",
+		".git/config":                      "[core]\n",
+		"artifacts/run.log":                "ran\n",
+		"metasystem/metasystem.conf.local": "secret = 1\n",
+		"latin.txt":                        "caf\xe9\n",
+	} {
+		file := filepath.Join(served.checkout, filepath.FromSlash(name))
+		testutil.Require(t, "the directory of "+name, os.MkdirAll(filepath.Dir(file), 0o755), nil)
+		testutil.Require(t, "the file "+name, os.WriteFile(file, []byte(body), 0o644), nil)
+	}
+	testutil.Require(t, "the alias",
+		os.Symlink(filepath.Join("metasystem", "metasystem.conf.local"), filepath.Join(served.checkout, "alias.txt")), nil)
+
+	plain := get(t, served.handler, reviewPrefix+shapedDesign+"/source?path=internal/owner.go", nil)
+	testutil.Expect(t, "a plain source file is still read", plain.Code, http.StatusOK)
+	for _, refused := range []struct{ what, path, reason string }{
+		{"Git's directory", ".git/config", ".git/config is a file this interface never serves"},
+		{"a run's artifacts", "artifacts/run.log", "artifacts/run.log is a file this interface never serves"},
+		{"the local configuration", "metasystem/metasystem.conf.local",
+			"metasystem/metasystem.conf.local is a file this interface never serves"},
+		{"a link to the local configuration", "alias.txt", "alias.txt is a file this interface never serves"},
+		{"a file that is not UTF-8", "latin.txt", "latin.txt is not UTF-8 text, and the desk shows text as it is"},
+	} {
+		read := get(t, served.handler, reviewPrefix+shapedDesign+"/source?path="+refused.path, nil)
+		if read.Code != http.StatusBadRequest || errorOf(t, read) != refused.reason {
+			t.Errorf("%s: %d %s, want 400 %q", refused.what, read.Code, read.Body.String(), refused.reason)
+		}
+	}
 }
 
 // The door on the record's page (g1-s67 D6): the document route says a sitting

@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   ANSWERS,
@@ -17,7 +20,9 @@ import {
   anchorsIn,
   doorLine,
   examinedLine,
+  keepAfterSilence,
   keepDue,
+  KEEP_AFTER_SILENCE,
   mayHaveMoved,
   NOD_LINE,
   nodded,
@@ -267,6 +272,47 @@ describe("the room's working state", () => {
     expect(keepDue(0, 500)).toBe(true);
     expect(keepDue(1000, 1500)).toBe(false);
     expect(keepDue(1000, 2000)).toBe(true);
+  });
+
+  it("keeps the words a second after the last keystroke, with no blur and no Step out", () => {
+    // The human's grant of 2026-09-28 (Sol SOL-A-01): one timer, reset by every
+    // keystroke, so the words typed last are kept once the typing stops.
+    vi.useFakeTimers();
+    try {
+      const kept: string[] = [];
+      let typed = "hal";
+      const keep = () => {
+        kept.push(typed);
+      };
+      let cancel = keepAfterSilence(keep);
+      vi.advanceTimersByTime(KEEP_AFTER_SILENCE - 1);
+      cancel();
+      typed = "half a finding";
+      cancel = keepAfterSilence(keep);
+      vi.advanceTimersByTime(KEEP_AFTER_SILENCE - 1);
+      expect(kept).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(kept).toEqual(["half a finding"]);
+      vi.advanceTimersByTime(10 * KEEP_AFTER_SILENCE);
+      expect(kept).toEqual(["half a finding"]);
+      cancel();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(KEEP_AFTER_SILENCE).toBe(1000);
+  });
+
+  it("is kept by the store a second after each change of the room, through its own keep", () => {
+    // This suite mounts nothing, so the wiring is read from the store's source:
+    // the effect that runs on every change of the room hands its cancel back to
+    // React, and the keep it schedules is keepRoomNow, the path blur, Step out
+    // and pagehide take, which reads the room as it is when the second is up.
+    const store = readFileSync(path.resolve(fileURLToPath(import.meta.url), "..", "..", "partner", "store.tsx"), "utf8");
+    const effect = store.slice(store.indexOf("if (keepDue(keptAt.current, Date.now()))"));
+    expect(effect.slice(0, effect.indexOf("}, [room, roomRecord, keepRoomNow]);"))).toContain(
+      "return keepAfterSilence(() => {\n      void keepRoomNow();\n    });",
+    );
+    expect(store).toContain('globalThis.addEventListener("pagehide", leaving);');
   });
 });
 

@@ -67,9 +67,14 @@ func (h *handler) reviewRead(w http.ResponseWriter, r *http.Request, rest string
 	case source:
 		from, fromErr := lineOf(query.Get("from"), "from")
 		to, toErr := lineOf(query.Get("to"), "to")
-		if err = errors.Join(fromErr, toErr); err == nil && kind != "review" {
+		switch err = errors.Join(fromErr, toErr); {
+		case err == nil && kind != "review" && h.sittingOn(r, record) == nil:
+			// The checkout is read for a desk, and a desk stands only in a
+			// sitting of this human's on the record (Sol SOL-S67-01).
+			err = &review.Refusal{Reason: "no sitting of yours stands on " + record + "; its desk is read in its room"}
+		case err == nil && kind != "review":
 			answer, err = h.info.Review.AsItStands(query.Get("path"), from, to)
-		} else if err == nil {
+		case err == nil:
 			answer, err = h.info.Review.Source(reviewed, query.Get("path"), from, to)
 		}
 	case query.Get("path") != "":

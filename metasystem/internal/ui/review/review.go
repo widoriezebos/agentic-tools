@@ -21,11 +21,14 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 )
 
 // Git is the reads this owner makes. gittree.Workspace over the checkout is the
@@ -574,8 +577,11 @@ func (o Owner) Source(reviewed Reviewed, file string, from, to int) (Source, err
 // shapes a record reads the same bytes the Partner's own reads see. The file is
 // opened beneath the checkout root, so a name that leaves it — a step out or a
 // link — is refused on the open and never followed; the path check, the binary
-// refusal and the bounds are Source's own. Nothing is marked, because nothing
-// is compared.
+// refusal and the bounds are Source's own. What the interface never serves is
+// refused by the document reader's own rule, on the name asked and on the path
+// it resolves to, and bytes that are not UTF-8 are refused rather than shown as
+// other characters (Sol SOL-S67-01). Nothing is marked, because nothing is
+// compared.
 func (o Owner) AsItStands(file string, from, to int) (Source, error) {
 	clean, err := insideOf(file, "the checkout")
 	if err != nil {
@@ -584,12 +590,24 @@ func (o Owner) AsItStands(file string, from, to int) (Source, error) {
 	if strings.TrimSpace(o.Checkout) == "" {
 		return Source{}, errors.New("this reader was given no checkout to read")
 	}
+	if !project.Served(clean) {
+		return Source{}, refused("%s is a file this interface never serves", clean)
+	}
+	resolved, ok := resolvedIn(o.Checkout, clean)
+	if !ok {
+		return Source{}, refused("%s is not a file of the checkout", clean)
+	}
+	if !project.Served(resolved) {
+		return Source{}, refused("%s is a file this interface never serves", clean)
+	}
 	root, err := os.OpenRoot(o.Checkout)
 	if err != nil {
 		return Source{}, fmt.Errorf("cannot open the checkout at %s: %w", o.Checkout, err)
 	}
 	defer func() { _ = root.Close() }()
-	opened, err := root.Open(clean)
+	// The resolved path is the one opened, and the descriptor must be the file
+	// that path names, so a link put in its place after the judgment is refused.
+	opened, err := root.Open(resolved)
 	if err != nil {
 		return Source{}, refused("%s is not a file of the checkout", clean)
 	}
@@ -598,12 +616,18 @@ func (o Owner) AsItStands(file string, from, to int) (Source, error) {
 	if err != nil || !info.Mode().IsRegular() {
 		return Source{}, refused("%s is not a file of the checkout", clean)
 	}
+	if named, err := root.Lstat(resolved); err != nil || !os.SameFile(info, named) {
+		return Source{}, refused("%s is not a file of the checkout", clean)
+	}
 	body, err := io.ReadAll(io.LimitReader(opened, maxCheckoutBytes+1))
 	if err != nil {
 		return Source{}, fmt.Errorf("cannot read %s: %w", clean, err)
 	}
 	if len(body) > maxCheckoutBytes {
 		return Source{}, refused("%s is larger than the desk reads", clean)
+	}
+	if !binary(body) && !utf8.Valid(body) {
+		return Source{}, refused("%s is not UTF-8 text, and the desk shows text as it is", clean)
 	}
 	read, err := ranged(clean, body, from, to, nil)
 	if err != nil {
@@ -706,6 +730,29 @@ func insideOf(file, tree string) (string, error) {
 		return "", refused("%q is not a path inside %s", file, tree)
 	}
 	return clean, nil
+}
+
+// resolvedIn is the checkout-relative path a clean name reaches once every
+// link on the way is followed, and false where it reaches nothing or leaves the
+// checkout.
+func resolvedIn(checkout, clean string) (string, bool) {
+	base, err := filepath.EvalSymlinks(checkout)
+	if err != nil {
+		return "", false
+	}
+	target, err := filepath.EvalSymlinks(filepath.Join(base, filepath.FromSlash(clean)))
+	if err != nil {
+		return "", false
+	}
+	relative, err := filepath.Rel(base, target)
+	if err != nil {
+		return "", false
+	}
+	relative = filepath.ToSlash(relative)
+	if relative == "." || relative == ".." || strings.HasPrefix(relative, "../") {
+		return "", false
+	}
+	return relative, true
 }
 
 func binary(body []byte) bool {

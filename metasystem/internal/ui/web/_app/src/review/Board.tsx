@@ -81,11 +81,17 @@ export function Board({ changed = [] }: { changed?: readonly string[] }) {
                     title={`Open ${sitting.subject.id} at ${section}`}
                   >
                     <p className="ms-table-entry-text">{entry.text}</p>
-                    {entry.clause !== "" && <p className="ms-table-entry-clause">{entry.clause}</p>}
+                    {entry.clause !== "" && section !== "Facts" && (
+                      <p className="ms-table-entry-clause">{entry.clause}</p>
+                    )}
                     <p className="ms-table-entry-who">
                       {entry.who === "" ? entry.when : `${entry.who} · ${entry.when}`}
                     </p>
                   </NavLink>
+                  {/* A fact's anchor puts what it is about on the desk, as a
+                      finding's does (g1-s67 D5): beside the link, because a
+                      press inside a link is a press that navigates. */}
+                  {section === "Facts" && entry.clause !== "" && <AnchorPress anchor={entry.clause} />}
                   {/* An open question of this record goes to the register with
                       one press (g1-s55 D2). It is beside the entry and not
                       inside its link, because a press inside a link is a press
