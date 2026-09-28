@@ -145,8 +145,24 @@ to report it: the sentence and the time.
   path that takes no draft and clears none, the way a suggestion
   respects a half-written sentence, `store.tsx:1282`). If a turn is
   running, the trouble waits as a pending chip above the composer,
-  beside the draft, and the next Send sends it first with the draft
-  untouched; a press must never be refused as busy. The control is
+  beside the draft, owned by the conversation the press was made in
+  (the chip carries it, and the trouble shows it: "waiting for the
+  room on backlog-ordered-by-priority"); it is offered and sent only
+  there, first, with the draft untouched, and a Send in another
+  conversation neither sends it nor loses it, since the selection a
+  send names is the address on screen (`store.tsx:850`, `:974`) and
+  navigation replaces the shown conversation (`:884`). A press must
+  never be refused as busy. A press must also reach a conversation the
+  human can read: the bell's panel closes on the press and the drawer
+  opens on the answer; the sign-in sheet, which is window-modal by
+  design (`SignInSheet.tsx:78`, `Sheet.tsx:68`), hands off on the press
+  by closing with its typed handle and its pending retry kept, and
+  reopens from the sign-in control as today; and where the pane that
+  threw was the room itself, whose boundary replaces the conversation's
+  renderer until a reload (`Shell.tsx:416`, `ErrorBoundary.tsx:26`),
+  the trouble line says "this room cannot show its conversation; ask
+  from the drawer after a reload" and offers the reload, never a
+  control whose answer nobody can read. The control is
   rendered only where a press can reach a colleague: the bell's panel
   and the sign-in sheet are drawn by providers that stand above the
   Partner's (`App.tsx:30`, `shell/Shell.tsx:73`, `notifications/
@@ -241,7 +257,15 @@ change); the press opens the drawer, or the room's conversation in a
 room, and sends the request with the chip; a half-written question and
 its attachments survive the press unchanged, idle and busy alike; a
 running turn leaves the trouble as a pending chip and the next Send
-sends it first; the sign-in refusal opens the sheet, keeps the
+in that conversation sends it first (`pending_trouble_stays_in_origin_
+room`: Ask while room A is busy, switch to room B, B cannot send A's
+pending trouble, back in A it sends with the draft and attachments
+intact); the press reveals a usable conversation
+(`trouble_ask_reaches_usable_partner`: from a real bell row the panel
+closes and the drawer shows the answer with the composer focusable;
+from the sign-in sheet the sheet closes keeping its handle and retry
+and the answer is readable; from a room whose renderer the boundary
+replaced the line offers the reload and no control); the sign-in refusal opens the sheet, keeps the
 control, and its trouble carries no code (asserted on the transcript
 and on what the fake runtime received); a sentence holding the secret
 the page has is scrubbed; the boundary's trouble carries the error's
@@ -291,3 +315,27 @@ recovery, that turns already carry server-owned attribution in the
 human's name (`service.go:653`), that the conversation on screen is
 what a send names (`store.tsx:846`), and that the register can be
 matched by `Row.Code` directly (`register_test.go:300`).
+
+**Round 2, the declared failsafe (2026-09-28, at `0324a0cc4`):**
+S68-01 to S68-04 confirmed answered. Two new material findings, both
+in D2, both folded. S68-07: a pending trouble had no owner, and a Send
+names the conversation on screen (`store.tsx:850`, `:974`; navigation
+replaces it, `:884`), so a trouble asked in room A while busy could be
+sent into room B; fold: the pending chip is owned by the conversation
+of the press and is offered and sent only there, with the named
+fixture. S68-08: registration proves a live store, not a readable
+conversation: the bell's panel and the sign-in sheet are window-modal
+(`workmodal.tsx:48`, `Sheet.tsx:68`, `SignInSheet.tsx:78`), and a room
+whose renderer the boundary replaced keeps the store above it
+(`Shell.tsx:416`, `ErrorBoundary.tsx:26`); fold: the press reveals a
+usable conversation (the panel closes, the sheet hands off keeping its
+form and retry, the broken room offers the reload and no control),
+with the named fixture. S68-09 non-material: the class guard cannot
+prove future sites; the converted sites are named. Closed at the
+failsafe round on two folds, with one scoped confirmation read on
+S68-07 and S68-08 alone.
+
+**Confirmation read (2026-09-28, at `b5c870ebe`):** S68-07 and S68-08
+confirmed answered, zero material, no first-use case left where words
+are lost, a trouble reaches another conversation, or an answer cannot
+be read. The loop is CLOSED.

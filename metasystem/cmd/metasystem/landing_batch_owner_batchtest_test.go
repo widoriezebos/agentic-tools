@@ -1052,7 +1052,7 @@ func TestBatchOwnerProbesAPlannedProofFromTheProofStore(t *testing.T) {
 	}
 	var attempts []proofrun.Attempt
 	attempt := func(id string, pid int64, started time.Time, terminal bool) {
-		value := proofrun.Attempt{AttemptID: id, GoalID: "goal-b", StartedAt: started.Format(time.RFC3339Nano), Launcher: proofrun.ProcessIdentity{Pid: pid, PidStartedAt: pid}}
+		value := proofrun.Attempt{AttemptID: id, GoalID: "goal-b", CandidateTree: "tip", StartedAt: started.Format(time.RFC3339Nano), Launcher: proofrun.ProcessIdentity{Pid: pid, PidStartedAt: pid}}
 		if terminal {
 			value.Terminal = &proofrun.AttemptTerminal{Result: "passed", At: started.Format(time.RFC3339Nano)}
 		}

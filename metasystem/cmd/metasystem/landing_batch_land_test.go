@@ -309,7 +309,7 @@ func TestFirstGreenLandsOthersRebaseWhenNoInputMoved(t *testing.T) {
 		Origin: func() (string, error) { return "commit-2", nil }, OriginTree: func(string) (string, error) { return "base-2", nil },
 		Abandon: func(string, string) error { return nil }, SeriesOnOrigin: func(string, string) (bool, error) { return false, nil },
 		LeaseBase: "commit-1",
-		RecoverPush: func(origin, baseTree, tip string) (batch.PushRecovery, error) {
+		RecoverPush: func(origin, baseTree, tip string, _ func() error) (batch.PushRecovery, error) {
 			return recoverMovedBatchPushWith(root, id, record, "owner", "commit-1", origin, baseTree, tip, edges)
 		},
 	}
@@ -446,5 +446,93 @@ func TestLandingsAndRearmsTakeTurnsOnTheLaneCheckout(t *testing.T) {
 	}
 	if checkout.held() {
 		t.Fatal("the lane checkout stayed held after every step finished")
+	}
+}
+
+// BL3S-01 at the recovered push: a composed proof's known flake is carried
+// when the first push is refused and when recovery begins, but its allowance
+// expires while the series is rebased and re-verified. The recovery rechecks
+// immediately before its endpoint push, so nothing publishes to main and
+// every member returns.
+func TestBatchRecoveredPushRechecksTheFlakeAllowanceImmediatelyBeforeItsPush(t *testing.T) {
+	t.Parallel()
+	root, id := t.TempDir(), "01j5x00000000000000000ba23"
+	allowance := time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)
+	claim := batch.Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
+	record := batch.Record{Schema: 1, BatchID: id, State: batch.StateLanding, BaseTree: "base-1", PrefixTrees: []string{"tip-1"}, TipTree: "tip-1",
+		Units: []batch.Unit{{GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: batch.UnitJoined}},
+		Proof: &batch.Proof{Status: "green", AttemptID: "tip-proof", BaseCommit: "commit-1", SelectedGroups: []string{"unit-standard"},
+			InputManifests: map[string][]string{"unit-standard": {"internal/**"}},
+			Flakes:         []batch.FlakeUse{{Identity: "tr-flaky", EntryID: "F", AllowanceUntil: allowance}}},
+		History: []batch.HistoryEntry{{At: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), To: batch.StateLanding, Actor: "owner"}}}
+	store := batch.NewStore(root, nil).WithReassembly(func(string, []batch.Unit) ([]string, error) { return []string{"tip-2"}, nil },
+		func(string, string) error { return nil }, nil)
+	if err := store.Create(record); err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	rebased := false
+	edges := movedBaseEdges{
+		readGit: func(_ string, args ...string) (string, error) {
+			switch strings.Join(args, " ") {
+			case "rev-parse commit-2^{tree}":
+				return "base-2", nil
+			case "rev-parse HEAD":
+				return "rebased-tip", nil
+			case "log --first-parent --reverse --format=%T commit-2..rebased-tip":
+				return "rebased-tree", nil
+			}
+			return "", errors.New("unstubbed git " + strings.Join(args, " "))
+		},
+		onEndpoint: func(string, string, string) (bool, error) { return false, nil },
+		paths:      func(_, _, _ string) ([]string, string, error) { return []string{"records/2026-09-28.md"}, "", nil },
+		advance:    func(string) error { return nil },
+		held:       func(string, string, string, string, string) error { return nil },
+		verify:     func(string, batch.Record, []string) error { return nil },
+		authorize:  func(string, batch.Store, batch.Record, string, time.Time) error { return nil },
+		now:        func(string) (time.Time, error) { return allowance.Add(-time.Hour), nil },
+		// The rebase and re-verification take the clock past the allowance.
+		publish: func(_, _, expected, tip string) error {
+			rebased = true
+			calls = append(calls, "publish "+expected+" "+tip)
+			return nil
+		},
+		push:  func(_, _, base, tip string) error { calls = append(calls, "push "+base+" "+tip); return nil },
+		fetch: func(string) (string, string, error) { return "", "", errors.New("no fetch") },
+	}
+	seams := batch.LandSeams{Prepare: func(string) error { return nil }, Apply: func(batch.Unit) error { return nil },
+		AppendReceipt: func(batch.Unit, batch.PrefixReceipt) error { return nil },
+		Commit:        func(batch.Unit, batch.PrefixReceipt) (string, error) { return "old-tip", nil },
+		Held:          func(string, string) error { return nil }, PublishBranch: func(string, string) error { return nil },
+		Push: func(string, string) error {
+			return &batch.EndpointPushError{StaleLease: true, Cause: errors.New("stale info")}
+		},
+		Origin: func() (string, error) { return "commit-2", nil }, OriginTree: func(string) (string, error) { return "base-2", nil },
+		Abandon: func(string, string) error { return nil }, SeriesOnOrigin: func(string, string) (bool, error) { return false, nil },
+		LeaseBase: "commit-1",
+		FlakeRegister: func() ([]batch.OpenEntry, error) {
+			return []batch.OpenEntry{{ID: "F", Identity: "tr-flaky", Class: batch.ClassKnownFlake, AllowanceUntil: allowance}}, nil
+		},
+		Now: func() (time.Time, error) {
+			if rebased {
+				return allowance.Add(time.Minute), nil
+			}
+			return allowance.Add(-time.Hour), nil
+		},
+		RecoverPush: func(origin, baseTree, tip string, recheck func() error) (batch.PushRecovery, error) {
+			recovery := edges
+			recovery.recheck = recheck
+			return recoverMovedBatchPushWith(root, id, record, "owner", "commit-1", origin, baseTree, tip, recovery)
+		},
+	}
+	err := batch.LandSeries(store, id, "owner", time.Unix(2, 0), seams)
+	returned, loadErr := store.Load(id)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if err == nil || !strings.Contains(err.Error(), "BATCH_FLAKE_ALLOWANCE_REFUSED") || slices.Contains(calls, "push commit-2 rebased-tip") ||
+		returned.State != batch.StateDissolved || returned.Units[0].State != batch.UnitReturnPending || returned.Landing != nil {
+		t.Fatalf("an allowance that expired during recovery still published, or its landing progress overwrote the returned batch: err=%v calls=%q state=%s units=%+v landing=%+v",
+			err, calls, returned.State, returned.Units, returned.Landing)
 	}
 }

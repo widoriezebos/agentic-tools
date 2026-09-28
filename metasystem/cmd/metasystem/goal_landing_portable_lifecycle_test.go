@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 // This fixture exercises the real generic owner, goal handover, native
@@ -405,6 +406,16 @@ chmod +x "${out:-bin/metasystem}"
 func TestGLEBatchPortableNativeCapacityWaitEjectsElapsedFencedMember(t *testing.T) {
 	batchE2EProcessEnvironment.Lock()
 	t.Cleanup(batchE2EProcessEnvironment.Unlock)
+	// Every child this test starts carries the fixture's owner tag, so a
+	// descendant that left the owner's process group or session (a governed
+	// run, a proof launcher's own group) is reaped when this test ends, not
+	// when the package's custodian drains at the end of the whole suite.
+	fixture := testutil.Fixture(t)
+	t.Cleanup(func() {
+		if err := fixture.HoldOwnedChildren(); err != nil {
+			t.Errorf("hold the fixture's surviving children for teardown: %v", err)
+		}
+	})
 	// Civil and boot clocks advance only when the fixture advances them. Native
 	// process deadlines remain governed by the test context and kernel clock.
 	t0 := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -536,17 +547,27 @@ chmod +x "${out:-bin/metasystem}"
 			}
 		}
 		elapsed := fixtureBootAtT0 + at.Sub(t0)
-		return append(env,
+		return fixture.Env(append(env,
 			"METASYSTEM_GOAL_NOW="+at.Format(time.RFC3339),
 			"METASYSTEM_GOAL_BOOT_ID="+fixtureBootID,
 			"METASYSTEM_GOAL_BOOT_NANOS="+strconv.FormatInt(elapsed.Nanoseconds(), 10),
-		)
+		))
+	}
+	// The owner and the successor each lead a process group of their own;
+	// killing one kills its whole group before the leader is reaped, so no
+	// child of it outlives the kill.
+	killGroup := func(command *exec.Cmd) error {
+		if err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+			return err
+		}
+		return nil
 	}
 	commandAt := func(at time.Time, args ...string) *exec.Cmd {
 		return portable.proofCommand.command(clockEnvironment(at), portable.engine, args...)
 	}
 	owner := commandAt(t0, "landing", "batch", "owner", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--interval", "1h")
 	owner.Dir = landing
+	owner.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := owner.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -556,7 +577,7 @@ chmod +x "${out:-bin/metasystem}"
 	ownerStopped := false
 	t.Cleanup(func() {
 		if !ownerStopped {
-			_ = owner.Process.Kill()
+			_ = killGroup(owner)
 			<-ownerExited
 		}
 	})
@@ -583,7 +604,7 @@ chmod +x "${out:-bin/metasystem}"
 	if got := join("goal-b"); got != batchID {
 		t.Fatalf("B joined %s, want %s", got, batchID)
 	}
-	if err := owner.Process.Kill(); err != nil {
+	if err := killGroup(owner); err != nil {
 		t.Fatal(err)
 	}
 	<-ownerExited
@@ -606,6 +627,7 @@ chmod +x "${out:-bin/metasystem}"
 	// elapsed membership window, then holds proof while we saturate capacity.
 	successor := commandAt(t0.Add(time.Minute+time.Second), "landing", "batch", "tick", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--batch", batchID)
 	successor.Dir = landing
+	successor.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var ownerOutput bytes.Buffer
 	successor.Stdout, successor.Stderr = &ownerOutput, &ownerOutput
 	if err := successor.Start(); err != nil {
@@ -616,7 +638,7 @@ chmod +x "${out:-bin/metasystem}"
 	successorFinished := false
 	t.Cleanup(func() {
 		if !successorFinished {
-			_ = successor.Process.Kill()
+			_ = killGroup(successor)
 			<-ownerDone
 		}
 	})
@@ -739,18 +761,17 @@ chmod +x "${out:-bin/metasystem}"
 		t.Fatal("B unexpectedly entered land-ready; elapsed stop is suspended for landing claims")
 	}
 	revision := projection.Tree.Live["goal-b"].Claimed.Revision
-	routes := commandAt(t1, "job", "breach-stop-routes", "--root", controlRoot)
-	routes.Dir = controlRoot
-	routesOutput, routesErr := routes.CombinedOutput()
+	// The breach-stop route scan is the dispatch owner's (its internal verb
+	// went in U9a); the steward runner below consumes the same routes.
+	routes, routesErr := dispatchcore.FindBreachStops(controlRoot, t1)
 	breachRoute := false
-	for _, line := range strings.Split(strings.TrimSuffix(string(routesOutput), "\n"), "\n") {
-		fields := strings.Split(line, "\t")
-		if len(fields) == 4 && fields[0] == "goal-b" && fields[1] == strconv.FormatUint(revision, 10) && fields[3] == "" {
+	for _, route := range routes {
+		if route.GoalID == "goal-b" && route.Revision == revision && route.Failure == "" {
 			breachRoute = true
 		}
 	}
 	if routesErr != nil || !breachRoute {
-		t.Fatalf("public elapsed breach route absent for active B: revision=%d routes=%s error=%v budget=%+v", revision, routesOutput, routesErr, dispatchcore.ProjectBudget(controlRoot, projection.Tree.Live["goal-b"], t1))
+		t.Fatalf("elapsed breach route absent for active B: revision=%d routes=%+v error=%v budget=%+v", revision, routes, routesErr, dispatchcore.ProjectBudget(controlRoot, projection.Tree.Live["goal-b"], t1))
 	}
 	// The enrolled steward is the authorized stop custodian while the owner
 	// holds the checkout: its resident runner (`steward run`, its own session
