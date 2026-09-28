@@ -155,7 +155,7 @@ func stopCapabilityOutcome(options Options, lineage string, claimEpoch int64) Co
 		}
 		return ComponentOutcome{
 			Component: "stop-capability", Outcome: "deferred", Detail: err.Error(),
-			Remedy: "metasystem internal goal restamp --id " + goalID,
+			Remedy: "metasystem session start",
 		}
 	}
 	if result.GoalID == "" {
@@ -802,7 +802,7 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 			components = append(components, ComponentOutcome{
 				Component: "stop-capability", Outcome: "deferred",
 				Detail: "the holder classification has no claim epoch",
-				Remedy: "metasystem internal goal restamp --id <goal>",
+				Remedy: "metasystem session start",
 			})
 		} else {
 			components = append(components, stopCapabilityOutcome(options, lineage, *view.ClaimEpoch))

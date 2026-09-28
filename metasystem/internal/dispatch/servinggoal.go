@@ -40,7 +40,7 @@ func resolveGoalRevisionWithReads(root, id string, reads goalAdmissionReads) (ui
 		return 0, 0, fmt.Errorf("goal %s is not claimed; a goal-bound reservation requires a claim revision", id)
 	}
 	if record.Claimed.Revision == 0 {
-		return 0, 0, fmt.Errorf("goal %s has a revisionless claim; run goal set-budget before dispatch", id)
+		return 0, 0, fmt.Errorf("goal %s has a revisionless claim; run metasystem goal budget %s BOX before dispatch", id, id)
 	}
 	tier, err := effectiveGoalTier(projection.Tree, record)
 	if err != nil {

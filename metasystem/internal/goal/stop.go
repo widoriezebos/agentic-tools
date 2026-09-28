@@ -472,7 +472,7 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 				return nil, approvalErr
 			}
 			if approvedBudget != r.Budget {
-				return nil, fmt.Errorf("APPROVAL_REQUIRED: resume cannot change the human-approved budget; re-approve or use the proof-bearing goal set-budget before resuming")
+				return nil, fmt.Errorf("APPROVAL_REQUIRED: resume cannot change the human-approved budget; re-approve with the proof-bearing metasystem goal budget before resuming")
 			}
 			if err := refuseRelayedAfterFleetEnrollment(t, temporaryAuthority); err != nil {
 				return nil, err

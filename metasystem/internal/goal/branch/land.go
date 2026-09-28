@@ -618,7 +618,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 		return LandResult{}, operationRefusal(LandUnprovenCode, "goal %s has no land-ready unit", req.GoalID)
 	}
 	if req.Last && !req.LandingReady {
-		return LandResult{}, operationRefusal(LandPartialCode, "--last requires goal land-ready on %s", req.GoalID)
+		return LandResult{}, operationRefusal(LandPartialCode, "--last requires the goal queued to land (metasystem work land %s --queue-only)", req.GoalID)
 	}
 	if req.Last && status.Prefix != len(status.Units) {
 		return LandResult{}, operationRefusal(LandPartialCode, "--last found a unit beyond the land-ready prefix on %s", req.GoalID)

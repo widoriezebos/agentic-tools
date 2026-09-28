@@ -203,7 +203,7 @@ func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.
 	extendArgs := []string{"--root", root, "--id", "standing-validation", "--revision", "2", "--proposed-cap", "1",
 		"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
 	extended, extendCode := captureStdout(t, func() int {
-		return runGoalExtendBudgetWithInputs(extendArgs, repository.commandNow(now), inputs, reads)
+		return goalExtendBudgetTo(extendArgs, repository.commandNow(now), inputs, reads, inputs.outStream(), inputs.errStream())
 	})
 	if extendCode != 0 || !strings.Contains(extended, `"outcome":"confirmed"`) {
 		t.Fatalf("extend-budget command did not replay and apply the offer: code=%d output=%s", extendCode, extended)
@@ -225,7 +225,7 @@ func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.
 		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:30:00Z", "endedAt": "2026-08-30T08:31:00Z",
 	})
 	second, secondCode := captureStderr(t, func() int {
-		return runGoalExtendBudgetWithInputs(extendArgs, repository.commandNow(now), inputs, reads)
+		return goalExtendBudgetTo(extendArgs, repository.commandNow(now), inputs, reads, inputs.outStream(), inputs.errStream())
 	})
 	if secondCode != 1 || !strings.Contains(second, "extended once at 2026-08-30T09:00:00Z") {
 		t.Fatalf("second extend-budget command did not name its marker: code=%d output=%s", secondCode, second)
@@ -253,7 +253,10 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 			}
 		}
 		output, code := captureStderr(t, func() int {
-			return runGoalExtendBudgetWithInputs(args, repository.commandNow(now), repository.extendBudgetInputs(t), repository.reads())
+			return func() int {
+				dependencies := repository.extendBudgetInputs(t)
+				return goalExtendBudgetTo(args, repository.commandNow(now), dependencies, repository.reads(), dependencies.outStream(), dependencies.errStream())
+			}()
 		})
 		if code != 2 || !strings.Contains(output, "positive --proposed-cap") {
 			t.Fatalf("zero-cap extension refusal: code=%d output=%s", code, output)
@@ -267,7 +270,7 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 		})
 		inputs := repository.extendBudgetInputs(t)
 		output, code := captureStderr(t, func() int {
-			return runGoalExtendBudgetWithInputs(baseArgs(root), repository.commandNow(now), inputs, repository.reads())
+			return goalExtendBudgetTo(baseArgs(root), repository.commandNow(now), inputs, repository.reads(), inputs.outStream(), inputs.errStream())
 		})
 		if code != 1 || !strings.Contains(output, "is admitted; there is no budget refusal to extend") {
 			t.Fatalf("admitted seam refusal: code=%d output=%s", code, output)
@@ -293,7 +296,7 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 		})
 		inputs := repository.extendBudgetInputs(t)
 		output, code := captureStderr(t, func() int {
-			return runGoalExtendBudgetWithInputs(baseArgs(root), repository.commandNow(now), inputs, repository.reads())
+			return goalExtendBudgetTo(baseArgs(root), repository.commandNow(now), inputs, repository.reads(), inputs.outStream(), inputs.errStream())
 		})
 		if code != 1 || !strings.Contains(output, "activeJobLimit") || !strings.Contains(output, "no consumption-earned budget extension offer") {
 			t.Fatalf("active-job seam refusal: code=%d output=%s", code, output)
@@ -309,7 +312,7 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 		})
 		inputs := repository.extendBudgetInputs(t)
 		output, code := captureStderr(t, func() int {
-			return runGoalExtendBudgetWithInputs(baseArgs(root), repository.commandNow(now.Add(time.Hour)), inputs, repository.reads())
+			return goalExtendBudgetTo(baseArgs(root), repository.commandNow(now.Add(time.Hour)), inputs, repository.reads(), inputs.outStream(), inputs.errStream())
 		})
 		if code != 1 || !strings.Contains(output, "names a live stop, not an extendable exhaustion") {
 			t.Fatalf("live-stop seam refusal: code=%d output=%s", code, output)

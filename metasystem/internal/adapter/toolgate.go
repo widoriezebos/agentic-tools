@@ -54,8 +54,6 @@ var toolGateRows = []toolGateRow{
 	{pattern: "Task*", kind: NeverDenied, match: matchToolPrefix, words: []string{"Task"}, trigger: true, ceiling: true},
 	{pattern: "metasystem landing <verb>", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "landing", "<verb>"}, trigger: true, ceiling: true},
 	{pattern: "metasystem internal landing <verb>", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "internal", "landing", "<verb>"}, trigger: true, ceiling: true},
-	{pattern: "metasystem goal land-ready", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "goal", "land-ready"}, trigger: true, ceiling: true},
-	{pattern: "metasystem internal goal land-ready", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "internal", "goal", "land-ready"}, trigger: true, ceiling: true},
 	{pattern: "metasystem work wait", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "work", "wait"}, trigger: true, ceiling: true},
 	{pattern: "metasystem question wait", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "question", "wait"}, trigger: true, ceiling: true},
 	{pattern: "metasystem test wait", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "test", "wait"}, trigger: true, ceiling: true},

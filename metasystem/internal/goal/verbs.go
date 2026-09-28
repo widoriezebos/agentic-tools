@@ -1508,7 +1508,7 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 // it advances the claim and spending boundary while preserving the ownership
 // episode used by the elapsed clock.
 func SetBudget(r VerbRequest, id string, budget Budget) (PublishResult, error) {
-	return PublishResult{}, fmt.Errorf("the budget was bound by the human's approval; goal set-budget requires the human authority proof")
+	return PublishResult{}, fmt.Errorf("the budget was bound by the human's approval; goal budget requires the human authority proof")
 }
 
 // BudgetExtensionOffer is the exact read-only admission offer journaled by
@@ -1529,7 +1529,7 @@ type BudgetExtensionOffer struct {
 // integrity under the publishing transaction.
 func ExtendBudget(r VerbRequest, id string, offer BudgetExtensionOffer) (PublishResult, error) {
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("goal extend-budget is the claim holder pair's own act; a person uses goal set-budget")
+		return PublishResult{}, fmt.Errorf("goal extend-budget is the claim holder pair's own act; a person uses metasystem goal budget")
 	}
 	if r.Attorney != nil {
 		return PublishResult{}, fmt.Errorf("goal extend-budget takes no power of attorney; it is the claim holder pair's own act")
@@ -1633,7 +1633,7 @@ func SetBudgetApproved(r VerbRequest, id string, budget Budget, proof *humanauth
 		return PublishResult{}, fmt.Errorf("invalid budget: %v", err)
 	}
 	if r.Actor.Human == "" {
-		return PublishResult{}, fmt.Errorf("goal set-budget is the human's approval act and requires --by")
+		return PublishResult{}, fmt.Errorf("goal budget is the human's approval act and requires --by")
 	}
 	authority, reviewBy, temporary, err := approvalProofClass(r.Endpoint.Root, proof)
 	if err != nil {

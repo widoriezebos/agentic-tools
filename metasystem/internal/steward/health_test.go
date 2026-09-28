@@ -194,7 +194,7 @@ func TestClaimedGoalWithoutStructuredBudgetIsDead(t *testing.T) {
 	})
 	role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 	if role.Status != HealthDead || !strings.Contains(role.Reason, "BUDGET_MISSING record=plans/goals/hungry-goal.md") ||
-		!strings.Contains(role.Remedy, "goal set-budget --root . --id hungry-goal") {
+		!strings.Contains(role.Remedy, "metasystem goal budget hungry-goal BOX") {
 		t.Fatalf("the budgetless claimed goal and its current remedy must be named: %+v", role)
 	}
 	if len(role.RemedyFacts) != 1 || role.RemedyFacts[0] != (RemedyFact{Cause: CauseBudgetMissing, Goal: "hungry-goal", Record: "plans/goals/hungry-goal.md"}) {
@@ -267,7 +267,6 @@ func TestStopCapabilityEpochHealth(t *testing.T) {
 		role := bed.stopCapability("bed-m1")
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "bounded-goal") ||
 			!strings.Contains(role.Reason, "claim epoch 1") || !strings.Contains(role.Reason, "claim epoch 5") ||
-			!strings.Contains(role.Remedy, "metasystem internal goal restamp --id bounded-goal") ||
 			!strings.Contains(role.Remedy, "metasystem session start") {
 			t.Fatalf("same-lineage divergence = %+v", role)
 		}
@@ -282,7 +281,7 @@ func TestStopCapabilityEpochHealth(t *testing.T) {
 		role := bed.stopCapability("bed-m1")
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "coordinator") ||
 			!strings.Contains(role.Reason, "replacement-lineage") ||
-			role.Remedy != "release the goal under the lineage that claimed it and claim it again, or hand it over with metasystem internal goal handover" {
+			role.Remedy != "release the goal under the lineage that claimed it and claim it again (metasystem goal release, then metasystem goal claim)" {
 			t.Fatalf("foreign-lineage divergence = %+v", role)
 		}
 		if len(role.RemedyFacts) != 1 || role.RemedyFacts[0] != (RemedyFact{Cause: CauseForeignLineage, Goal: "bounded-goal"}) {
@@ -636,7 +635,7 @@ func TestClaimedGoalMissingOrMalformedBudgetNamesSetBudget(t *testing.T) {
 			root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": file})
 			role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 			if role.Status != HealthDead || !strings.Contains(role.Reason, "bounded-goal") ||
-				!strings.Contains(role.Remedy, "goal set-budget") {
+				!strings.Contains(role.Remedy, "metasystem goal budget bounded-goal BOX") {
 				t.Fatalf("%s tuple did not produce the typed remedy: %+v", test.name, role)
 			}
 		})

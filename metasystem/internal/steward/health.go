@@ -1365,14 +1365,14 @@ func checkStopCapabilityEpochFromProjection(repoRoot string, now time.Time, proj
 			role := roleDead(RoleStopCapabilityEpoch,
 				fmt.Sprintf("goal %s stop capability claim epoch %d differs from live lease claim epoch %d under owner lineage %s",
 					file.Id, capabilityEpoch, holder.ClaimEpoch, holder.OwnerLineage),
-				fmt.Sprintf("metasystem internal goal restamp --id %s, or re-arm with metasystem session start", file.Id))
+				"metasystem session start (it restamps the claim to the live epoch)")
 			role.RemedyFacts = []RemedyFact{{Cause: CauseEpochMismatch, Goal: file.Id}}
 			return role
 		}
 		role := roleDead(RoleStopCapabilityEpoch,
 			fmt.Sprintf("goal %s was claimed under owner lineage %s but the live lease belongs to owner lineage %s",
 				file.Id, file.Claimed.Lineage, holder.OwnerLineage),
-			"release the goal under the lineage that claimed it and claim it again, or hand it over with metasystem internal goal handover")
+			"release the goal under the lineage that claimed it and claim it again (metasystem goal release, then metasystem goal claim)")
 		role.NoAutomaticRemedy = true
 		role.RemedyFacts = []RemedyFact{{Cause: CauseForeignLineage, Goal: file.Id}}
 		return role
@@ -1446,7 +1446,7 @@ func malformedBudgetGoal(err error) (string, bool) {
 }
 
 func goalBudgetRemedy(id string) string {
-	return fmt.Sprintf("metasystem internal goal set-budget --root . --id %s --elapsed-limit DURATION --attempt-limit POSITIVE_INTEGER --reserved-job-minutes-limit POSITIVE_INTEGER --active-job-limit POSITIVE_INTEGER --review-round-limit NON_NEGATIVE_INTEGER", id)
+	return fmt.Sprintf("metasystem goal budget %s BOX (BOX is elapsed/attempts/reserved-minutes/active-jobs/review-rounds, for example 1d/10/720m/1/3)", id)
 }
 
 func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {

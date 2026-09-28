@@ -576,7 +576,7 @@ func TestUpStaysArmedWhenTheRestampCannotRun(t *testing.T) {
 	result := Result{Components: []ComponentOutcome{stopCapabilityOutcome(options, "lineage-a", 5)}, Outcome: "armed", Authority: "writer"}
 	component := result.Components[0]
 	if result.ExitCode() != 0 || result.Outcome != "armed" || component.Outcome != "deferred" ||
-		component.Detail != "goal store is unavailable" || component.Remedy != "metasystem internal goal restamp --id claimed-work" {
+		component.Detail != "goal store is unavailable" || component.Remedy != "metasystem session start" {
 		t.Fatalf("restamp failure changed arming: %+v", result)
 	}
 }

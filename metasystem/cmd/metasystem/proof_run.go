@@ -1151,7 +1151,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 				holder, holderErr := lease.CurrentHolder(request.ControlRoot)
 				if holderErr == nil && holder.OwnerLineage == binding.File.Claimed.Lineage {
 					return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf(
-						"active coordinator does not own the claimed goal reservation: lease claim epoch %d differs from stop capability claim epoch %d; run metasystem internal goal restamp --id %s",
+						"active coordinator does not own the claimed goal reservation: lease claim epoch %d differs from stop capability claim epoch %d; run metasystem session start (it restamps goal %s)",
 						*classifiedCaller.ClaimEpoch, binding.Capability.ClaimEpoch, authorityGoalID)
 				}
 			}

@@ -139,7 +139,7 @@ func TestApproveRefusalsAndProvenReratification(t *testing.T) {
 	}
 	human.Ulid = "01J5X00000000000000000RR60"
 	result, err = Approve(human, []string{"ratify-once"}, ptrBudget(testBudget()), proof)
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "tuple changes through goal set-budget") {
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "tuple changes through metasystem goal budget") {
 		t.Fatalf("approve changed a claimed tuple instead of naming set-budget: %+v %v", result, err)
 	}
 }

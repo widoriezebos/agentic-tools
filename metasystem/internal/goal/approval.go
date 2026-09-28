@@ -582,7 +582,7 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 					return nil, fmt.Errorf("goal %s is %s; approve admits queued, parked, or already-approved work and may re-ratify a claim", id, f.State)
 				}
 				if f.State == StateClaimed && budget != nil {
-					return nil, fmt.Errorf("goal %s is claimed; its tuple changes through goal set-budget", id)
+					return nil, fmt.Errorf("goal %s is claimed; its tuple changes through metasystem goal budget", id)
 				}
 				nextBudget := budget
 				if nextBudget == nil {

@@ -32,7 +32,7 @@ func TestTrunkRedRoleVerdicts(t *testing.T) {
 	t.Run("empty owner is dead", func(t *testing.T) {
 		bed := newRoleTrunkRedBed(t, now, []goal.TrunkRedEntry{healthTrunkRedEntry("unowned", "", now.Add(-time.Hour))}, healthCadence(now, "passed"))
 		role := bed.trunkRedWithoutBatch()
-		if role.Status != HealthDead || !strings.Contains(role.Reason, "unowned") || !strings.Contains(role.Remedy, "goal trunk-red own --id unowned") {
+		if role.Status != HealthDead || !strings.Contains(role.Reason, "unowned") || !strings.Contains(role.Remedy, "metasystem incident claim unowned --goal") {
 			t.Fatalf("unowned entry: %+v", role)
 		}
 	})

@@ -74,9 +74,9 @@ nothing else, its JSON verdict may offer the goal's one consumption-earned
 extension:
 the accepted tree or proof records must show a closed independent code
 critique, a shipped implementation receipt, or a sufficient successful
-delivery attempt from the preceding two hours. The dispatcher applies
-`goal extend-budget` with the same revision, cap, role, mode and destructive
-reach, then judges again, and only then runs the seat-wide admission walk
+delivery attempt from the preceding two hours. The dispatcher applies the
+budget extension (the goal owner's ExtendBudget) with the same revision, cap,
+role, mode and destructive reach, then judges again, and only then runs the seat-wide admission walk
 for goal-bound work (a goal-free operation keeps the early walk). The walk
 never offers; a refusal there after an extension, another claim on the
 machine over its box, leaves the marker spent. Stops, breaches that include

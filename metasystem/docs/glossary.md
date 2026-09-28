@@ -38,7 +38,7 @@ not paths.
 
   A claimed goal's stop capability carries the lease epoch that authorized
   its claim. Re-arming (an agent's `metasystem session start`) restamps that capability when the
-  same holder's live epoch has advanced; the internal owner `metasystem internal goal restamp --id <goal>`
+  same holder's live epoch has advanced; `metasystem session start`
   performs the same repair directly.
 
 - **Lineage** (`ownerLineage`) — the identity of the *logical* writer,
@@ -312,7 +312,7 @@ the engine's `metasystem goal` family (`internal/goal`).
   with an ordinary pull.
 - **Claim** — one machine's exclusive hold on one goal (one working claim
   per machine at a time; a breach-stopped claim and one claim waiting to
-  land after `goal land-ready` sit beside it). An **arc** groups related goals; every member remains
+  land after `metasystem work land G --queue-only` sit beside it). An **arc** groups related goals; every member remains
   independently claimable, and dependency edges — not arc membership — own
   ordering. Cascade verbs are explicit conveniences, never an invariant.
 - **Budget** — the complete four-field limit tuple supplied by a human

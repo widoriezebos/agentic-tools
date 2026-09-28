@@ -68,20 +68,6 @@ func TestUnderBelongsToTheAttorneyVerbs(t *testing.T) {
 	}
 }
 
-func TestGoalLandReadyIsRegisteredAsASyncOnlyVerb(t *testing.T) {
-	if runGoalLandReady == nil {
-		t.Fatal("goal land-ready is not wired")
-	}
-	f, ok := parseSyncFlags("land-ready", []string{"--root", t.TempDir(), "--id", "built"})
-	if !ok || f.id != "built" {
-		t.Fatalf("goal land-ready carries --id: ok=%v id=%q", ok, f.id)
-	}
-	if _, ok := parseSyncFlags("land-ready", []string{"--root", t.TempDir(), "--id", "built", "--by", "Wido"}); !ok {
-		// --by parses on every sync verb; the verb itself refuses a human actor.
-		t.Fatal("parse of --by failed at the flag edge")
-	}
-}
-
 // job cap-continuation refuses without its flags, refuses positional
 // arguments, and refuses a parent that is not a capped implementer round.
 func TestJobCapContinuationFlagsAndRefusals(t *testing.T) {

@@ -327,7 +327,7 @@ func TestIntentPlanningReadyTiersAndNotes(t *testing.T) {
 // intentPlanningDisposition is where each goal-family verb in this group is
 // reached from the public surface.
 var intentPlanningDisposition = map[string]string{
-	"open": "goal open", "claim": "goal claim", "land-ready": "work land", "carry": "goal abandon", "trunk-red": "incident claim", "next": "goal list", "set-budget": "goal budget",
+	"open": "goal open", "claim": "goal claim", "carry": "goal abandon", "next": "goal list",
 }
 
 func TestIntentPlanningDescriptorCoverage(t *testing.T) {
