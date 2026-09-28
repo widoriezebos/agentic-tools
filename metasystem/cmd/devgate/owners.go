@@ -137,6 +137,9 @@ func stopSurface(root string) (string, bool) {
 	for _, line := range result.Moved {
 		fmt.Fprintf(&out, "moved: %s: %s (goal %s)\n", line.File, line.Line, line.Goal)
 	}
+	for _, line := range result.Reworded {
+		fmt.Fprintf(&out, "reworded: %s: %s -> %s\n", line.File, line.From, line.To)
+	}
 	for _, line := range result.Removed {
 		fmt.Fprintf(&out, "removed: %s: %s\n", line.File, line.Line)
 	}

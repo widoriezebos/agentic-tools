@@ -149,6 +149,9 @@ func runAuditStopDecisionSurfaceWith(args []string, dependencies stopDecisionSur
 	for _, line := range result.Moved {
 		fmt.Printf("moved: %s: %s (goal %s)\n", line.File, line.Line, line.Goal)
 	}
+	for _, line := range result.Reworded {
+		fmt.Printf("reworded: %s: %s -> %s\n", line.File, line.From, line.To)
+	}
 	for _, line := range result.Removed {
 		fmt.Fprintf(os.Stderr, "removed: %s: %s\n", line.File, line.Line)
 	}

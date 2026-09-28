@@ -59,6 +59,7 @@ func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 			File: "a_test.go", Line: "base := Verdict{ShouldBlock: true}",
 		}},
 	}
+	added.Reworded = []audit.StopSurfaceReword{{File: "a_test.go", From: "old := Verdict{BlockSource: \"a\"}", To: "old := Verdict{BlockSource: \"b\"}"}}
 	auditResponses := []struct {
 		result audit.StopSurfaceResult
 		err    error
@@ -91,7 +92,8 @@ func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 
 	code, stdout, stderr := invoke(args...)
 	if code != 0 || stderr != "" || auditCalls != 1 || declareCalls != 0 || !strings.Contains(stdout, "added: a_test.go: added := Verdict{BlockSource: source}") ||
-		!strings.Contains(stdout, "stop decision surface: base selected-base; added 1, moved 0, removed 0") {
+		!strings.Contains(stdout, `reworded: a_test.go: old := Verdict{BlockSource: "a"} -> old := Verdict{BlockSource: "b"}`) ||
+		!strings.Contains(stdout, "stop decision surface: base selected-base; added 1, moved 0, removed 0; reworded 1") {
 		t.Fatalf("additive verb = code %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 
@@ -103,7 +105,7 @@ func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
 		t.Fatalf("decode JSON output %q: %v", stdout, err)
 	}
-	for _, field := range []string{"base", "added", "moved", "removed", "problems"} {
+	for _, field := range []string{"base", "added", "moved", "removed", "reworded", "problems"} {
 		if _, ok := document[field]; !ok {
 			t.Errorf("JSON output lacks %q: %s", field, stdout)
 		}
