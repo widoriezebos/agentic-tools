@@ -327,59 +327,6 @@ func dispatchInternalTopLevelForms(t *testing.T) []string {
 	return forms
 }
 
-// ratchetImportedStringConst reads a string constant from the non-test
-// sources of the module package main.go imports under the name pkg.
-func ratchetImportedStringConst(t *testing.T, file *ast.File, pkg, name string) (string, bool) {
-	t.Helper()
-	const module = "github.com/widoriezebos/agentic-tools/metasystem/"
-	for _, spec := range file.Imports {
-		path, err := strconv.Unquote(spec.Path.Value)
-		if err != nil || !strings.HasPrefix(path, module) {
-			continue
-		}
-		if spec.Name != nil && spec.Name.Name != pkg || spec.Name == nil && filepath.Base(path) != pkg {
-			continue
-		}
-		_, moduleRoot := verbRatchetRoots(t)
-		dir := filepath.Join(moduleRoot, filepath.FromSlash(strings.TrimPrefix(path, module)))
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, entry := range entries {
-			if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-				continue
-			}
-			source, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, entry.Name()), nil, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, decl := range source.Decls {
-				gen, ok := decl.(*ast.GenDecl)
-				if !ok || gen.Tok != token.CONST {
-					continue
-				}
-				for _, spec := range gen.Specs {
-					value := spec.(*ast.ValueSpec)
-					for i, ident := range value.Names {
-						if ident.Name != name || i >= len(value.Values) {
-							continue
-						}
-						if lit, ok := value.Values[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-							unquoted, err := strconv.Unquote(lit.Value)
-							if err != nil {
-								t.Fatal(err)
-							}
-							return unquoted, true
-						}
-					}
-				}
-			}
-		}
-	}
-	return "", false
-}
-
 /* ------------------------------------------ 2, 3 shell and the engine -- */
 
 // Directory names and repository-relative prefixes the shell scans skip.

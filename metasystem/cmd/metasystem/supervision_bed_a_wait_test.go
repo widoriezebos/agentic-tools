@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -10,9 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
-	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
@@ -122,80 +119,3 @@ func TestSupervisionBedAWaitRestartKilledWaiterResumesFromItsRow(t *testing.T) {
 		t.Fatalf("the recovered wait stayed pending: row=%+v err=%v", final, err)
 	}
 }
-
-// supAMeasuredWait drives one wait through the production wait owner in this
-// process, on one virtual clock, with the production source observers and
-// event emitter. publish runs once, after the wait is registered and has read
-// its source pending; onSleep runs once, at the wait's first poll pause.
-type supAMeasuredWait struct {
-	selector metarun.WaitSelector
-	hinted   bool
-	publish  func()
-	onSleep  func()
-}
-
-func supAForbidSleep(t *testing.T) func() {
-	return func() { t.Error("the hinted wait fell back to its poll pause") }
-}
-
-func supARunMeasuredWait(t *testing.T, root string, clock *virtualWaitClock, wait supAMeasuredWait) metarun.WaitResult {
-	t.Helper()
-	registered, published, slept := false, false, false
-	options := metarun.WaitOptions{
-		Runtime: "fake",
-		Observe: func(ctx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, lastTip string) (metarun.SourceObservation, error) {
-			var observation metarun.SourceObservation
-			var err error
-			switch selected.Kind {
-			case "job":
-				observation, err = dispatchcore.ObserveJob(ctx, root, selected.TargetID, pinned, lastTip)
-			case "run":
-				observation, err = (&metarun.Store{Root: root}).ObserveRun(ctx, selected, pinned, lastTip)
-			default:
-				t.Fatalf("unexpected wait source %q", selected.Kind)
-			}
-			if err == nil && observation.Pending && registered && !published && wait.publish != nil {
-				published = true
-				wait.publish()
-			}
-			return observation, err
-		},
-		Deliver: func(context.Context, string, string, time.Time, string) (string, bool, error) {
-			return "blocking", false, nil
-		},
-		EmitEvent: func(root, event, summary string, fields map[string]string) error {
-			if event == "wait-registered" {
-				registered = true
-			}
-			return emitWaitCommandEvent(root, event, summary, fields)
-		},
-	}
-	if wait.hinted {
-		options.OpenHintReceiver = metarun.OpenFIFOHintReceiver
-	}
-	clock.apply(&options)
-	virtualSleep := options.Sleep
-	options.Sleep = func(ctx context.Context, duration time.Duration) error {
-		if !slept && wait.onSleep != nil {
-			slept = true
-			wait.onSleep()
-		}
-		return virtualSleep(ctx, duration)
-	}
-	owner := metarun.Caller{Class: lease.ClassMain, MainId: "main-wait-measure", OwnerLineage: "lineage-wait-measure", SessionId: "session-wait-measure"}
-	result := (&metarun.Store{Root: root}).Wait(context.Background(), metarun.WaitRequest{
-		Selector: wait.selector, Owner: owner, RuntimeSession: owner.SessionId, Timeout: 45 * time.Second,
-	}, options)
-	if result.ExitCode != metarun.ExitGreen || result.State != "ready" {
-		t.Fatalf("%s wait did not return green: %+v", wait.selector.TargetID, result)
-	}
-	if wait.publish != nil && !published {
-		t.Fatalf("%s wait never read its source pending after registration", wait.selector.TargetID)
-	}
-	if wait.onSleep != nil && !wait.hinted && !slept {
-		t.Fatalf("%s wait returned without a poll pause", wait.selector.TargetID)
-	}
-	return result
-}
-
-const supARunRecord = `{"schemaVersion":1,"runId":"run-unpublished","kind":"suite","display":"unpublished run","custody":"wrapped","generation":1,"fenceGeneration":1,"pid":null,"pidStartedAt":null,"pgid":null,"launchNonce":"0123456789abcdef0123456789abcdef","log":"run.log","startedAt":"2026-09-16T10:00:00Z","mainId":null,"ownerLineage":null,"claimEpoch":null,"sessionId":"","goalId":"","staleAfterMin":30,"hungSince":null,"windDownMin":2,"evidence":{"mode":"exit-sidecar"},"expect":{},%s}`

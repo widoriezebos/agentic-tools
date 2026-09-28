@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"errors"
-	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -134,23 +132,6 @@ func TestGoalDoneWithLocalBranchStillSweepsUnreadableRemote(t *testing.T) {
 	fixture.checkArchived(t)
 }
 
-func legacyGoalIsDone(ledger *goal.Ledger, id string) bool {
-	if ledger == nil {
-		return false
-	}
-	for _, item := range ledger.Done {
-		if item.Id == id {
-			return true
-		}
-	}
-	return false
-}
-
-func writeMetricsFixtureGuard(t *testing.T, root string) {
-	t.Helper()
-	plantFenceEngine(t, root)
-}
-
 type syncedDoneCommandFixture struct {
 	repository   *proofAdmissionRepository
 	dependencies syncRequestDependencies
@@ -207,21 +188,6 @@ func (f *syncedDoneCommandFixture) checkReport(t *testing.T, opts metrics.Option
 		t.Fatalf("report options = %+v", opts)
 	}
 	f.checkArchived(t)
-}
-
-func checkMetricsFixtureGuard(root, got string) error {
-	if got != root {
-		return fmt.Errorf("guard root = %q, want %q", got, root)
-	}
-	path := filepath.Join(root, "bin", "metasystem")
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
-		return fmt.Errorf("the guard's engine is not executable: %s", path)
-	}
-	return nil
 }
 
 func TestGoalBranchEndpointTipUnreadableRemoteCleansTemporaryRef(t *testing.T) {

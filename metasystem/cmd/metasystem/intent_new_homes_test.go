@@ -86,29 +86,6 @@ func witnessTestAddRepeat(t *testing.T) {
 	}
 }
 
-// newHomesMergeFixture writes a base contract and two edits of it that each
-// add one test to the first group, and returns the four paths the merge
-// takes.
-func newHomesMergeFixture(t *testing.T) []string {
-	t.Helper()
-	root := t.TempDir()
-	base := testingMergeFixture()
-	ours, theirs := testingMergeClone(t, base), testingMergeClone(t, base)
-	ours.Groups[0].Tests = json.RawMessage(`["TestBase","TestOurs"]`)
-	theirs.Groups[0].Tests = json.RawMessage(`["TestBase","TestTheirs"]`)
-	paths := []string{filepath.Join(root, "base.json"), filepath.Join(root, "ours.json"), filepath.Join(root, "theirs.json"), filepath.Join(root, "out.json")}
-	for i, contract := range []testpolicy.Contract{base, ours, theirs} {
-		data, err := contractmerge.Render(contract)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(paths[i], data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return paths
-}
-
 // TestTestBaselineRoutesRecordAndCheck: the refactor skill's record and
 // check of the trusted baseline route to the baseline owner; a record
 // without a gate and a check with a gate are the owner's usage refusals.

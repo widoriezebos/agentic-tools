@@ -13,9 +13,8 @@ import (
 )
 
 const (
-	UnavailableCode   = "GOAL_BRANCH_UNAVAILABLE"
-	NotHolderCode     = "GOAL_BRANCH_NOT_HOLDER"
-	CheckoutArmedCode = "GOAL_BRANCH_CHECKOUT_ARMED"
+	UnavailableCode = "GOAL_BRANCH_UNAVAILABLE"
+	NotHolderCode   = "GOAL_BRANCH_NOT_HOLDER"
 )
 
 type OpError struct {

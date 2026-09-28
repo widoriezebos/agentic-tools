@@ -71,6 +71,7 @@ func TestArmAndPreflightRefusals(t *testing.T) {
 // is armed, and a resume names a mission that never started, with the
 // public command that starts it.
 func TestLaunchNamesAMissingMission(t *testing.T) {
+	t.Parallel()
 	engine := &Engine{Root: t.TempDir(), Mission: "mr-none"}
 	armed := 0
 	engine.ArmSupervision = func([]string) (string, string, int) { armed++; return "up outcome=armed", "", 0 }

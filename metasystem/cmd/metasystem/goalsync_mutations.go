@@ -2037,11 +2037,6 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 	return 1, true
 }
 
-// runSyncOnly wraps the verbs that exist ONLY in the synced world.
-func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error), required ...string) func([]string) int {
-	return runSyncOnlyWithRequest(name, run, nil, required...)
-}
-
 func runSyncOnlyWithRequest(name string, run func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error), requestBuilder func(string, string, string, string) (goal.VerbRequest, error), required ...string) func([]string) int {
 	return runSyncOnlyWithDependencies(name, run, requestBuilder, defaultSyncRequestDependencies(), required...)
 }
@@ -3541,10 +3536,6 @@ func claimGoalOwner(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, err
 	}
 	return goal.Claim(req, f.id)
 }
-
-var (
-	runGoalClaim = runSyncOnly("claim", claimGoalOwner, "id")
-)
 
 // goalDoneWithoutMetrics says the goal is done in the accepted ledger and its
 // metrics report is absent.

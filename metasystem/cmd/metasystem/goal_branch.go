@@ -490,14 +490,6 @@ func goalBranchHolderRoot(root string) string {
 	return root
 }
 
-type goalBranchTestChanges []branch.TestChange
-
-type goalBranchCommitDependencies struct {
-	Gate  func(string) (string, error)
-	NewID func(string) (string, error)
-	Raw   *goalBranchRawDependencies
-}
-
 func withGoalBranchCommitTokenAt(root, holderRoot string, commit func() error) error {
 	return goalBranchCheckoutSection(root, holderRoot, func(withToken func(func() error) error) error {
 		return withToken(commit)

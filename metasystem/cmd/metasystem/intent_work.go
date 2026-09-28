@@ -21,7 +21,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	goalpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -1894,7 +1893,7 @@ func runIntentDeclareStopMoves(inv *intentInvocation) int {
 	}
 	root := inv.layout.InstallationRoot
 	before := stopMovesSnapshot(root)
-	path, err := declare(root, audit.StopSurfaceOptions{Base: inv.input.text("base"), GoalRecord: goalpkg.StopSurfaceGoalReader}, id, reason)
+	path, err := declare(root, audit.StopSurfaceOptions{Base: inv.input.text("base"), GoalRecord: goal.StopSurfaceGoalReader}, id, reason)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: err.Error() + "; nothing was declared",
 			next: inv.publicArgv("goal", "allow", id, "stop-test-changes", "--reason", "TEXT"), nextReason: "a person allows goal " + id + " to move Stop assertions, then this declares the moves"})

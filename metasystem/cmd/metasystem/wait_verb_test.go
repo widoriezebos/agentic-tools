@@ -417,7 +417,7 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
-		binary = testutil.InstalledWaitBinary(t, binary)
+		testutil.InstalledWaitBinary(t, binary)
 		cmd := exec.Command(commandTestExecutable(t), waitHelperCommand, "--root", root, "--job", "job-command", "--timeout", "1m", "--json")
 		cmd.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1")
 		data, commandErr := cmd.CombinedOutput()
@@ -519,7 +519,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		t.Fatalf("turn verdict code=%d output=%q stderr=%q display=%q", code, verdictOutput, problem, verdict.Display)
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
-		binary = testutil.InstalledWaitBinary(t, binary)
+		testutil.InstalledWaitBinary(t, binary)
 		if output, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
 			t.Fatalf("initialize hook fixture repository: %v %s", err, output)
 		}

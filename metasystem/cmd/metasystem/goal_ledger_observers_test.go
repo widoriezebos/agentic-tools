@@ -136,17 +136,9 @@ func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint,
 	return 0
 }
 
-func runGoalList(args []string) int { return runGoalListWithResolver(args, goal.ResolveEndpoint) }
-
-func runGoalShow(args []string) int { return runGoalShowWithResolver(args, goal.ResolveEndpoint) }
-
 // The goal beds change the ledger through the goal owners the public goal
 // actions call (the synced mutation dispatch, the approval, migration and
 // carry owners), under the argument grammar the beds were written in.
-
-func trySyncMutation(name string, args []string) (int, bool) {
-	return trySyncMutationWithDependencies(name, args, goalCommandNow, defaultSyncRequestDependencies(), goalParkBranchCheck)
-}
 
 func runGoalDoneWithSync(args []string, trySync func(string, []string) (int, bool)) int {
 	code, _ := trySync("done", args)

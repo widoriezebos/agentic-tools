@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -50,98 +48,6 @@ func (f *goalListRepositoryFixture) resolve(root string) (goal.Endpoint, error) 
 	}
 	f.resolutions++
 	return goal.Endpoint{Root: root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: f.repo}, nil
-}
-
-func goalListHistoryFixture(t *testing.T) *goalListRepositoryFixture {
-	t.Helper()
-	base := newObligationCommandFixture(t)
-	root := base.root()
-	standingPath := filepath.Join(root, "plans", "goals", "standing-validation.md")
-	data, err := os.ReadFile(standingPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	standing, problems := goal.ParseFile(data)
-	if len(problems) != 0 {
-		t.Fatal(problems)
-	}
-	approved := commandApprovedPriorityGoal("approved-one", 0, 0, "seat-a")
-	approved.NextStep = "Check approval. Then continue."
-	parked := commandPriorityGoal("parked-one", goal.StateParked)
-	parked.NextStep = "Wait for input. Then resume."
-	parked.Parked = &goal.ParkRecord{By: "human:Wido", At: "2026-08-30T09:00:00Z", Because: "Waiting for input."}
-	done := commandPriorityGoal("done-one", goal.StateDone)
-	done.Conclude = "Finished."
-	files := []*goal.GoalFile{standing, approved, parked, done}
-	for i, id := range []string{"z-first", "a-second", "b-third", "c-unranked", "d-unranked"} {
-		file := commandPriorityGoal(id, goal.StateQueued)
-		file.NextStep = []string{"First step. Second step.", strings.Repeat("界", 130), "Continue? Then inspect.", "", "Last step! Then inspect."}[i]
-		if i < 2 {
-			file.Priority, file.Sequence = 1, uint64(i+1)
-		} else if i == 2 {
-			file.Priority, file.Sequence = 2, 1
-		}
-		if i == 0 {
-			file.Labels = []string{"selected", "shared"}
-		} else if i == 1 {
-			file.Labels = []string{"shared"}
-		}
-		files = append(files, file)
-	}
-	changes := make([]goal.Change, 0, len(files))
-	for _, file := range files {
-		for i := 0; i < 64; i++ {
-			file.History = append(file.History, goal.HistoryLine{
-				At: "2026-09-01T10:00:00Z", Opid: goal.Opid(fmt.Sprintf("%026d", i), "mac-cli", file.Id),
-				Verb: "edit", Actor: "mac-cli+m1", Targets: []string{file.Id}, Keep: -1,
-				Reason: strings.Repeat("history payload ", 128),
-			})
-		}
-		file.Revision = uint64(len(file.History))
-		path := filepath.Join(root, "plans", "goals", file.Id+".md")
-		if file.State == goal.StateDone {
-			path = filepath.Join(root, "records", "goals", file.Id+".md")
-		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		changes = append(changes, goal.Change{Path: filepath.ToSlash(relative), Content: goal.RenderFile(file)})
-	}
-	parent := base.repo.accepted
-	opid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAC", "mac-cli", "m1")
-	tip, err := base.repo.Build(opid, parent, changes, "large history fixture")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome, err := base.repo.Publish(parent, tip); err != nil || outcome != goal.CASLanded {
-		t.Fatalf("publish history fixture: outcome=%v error=%v", outcome, err)
-	}
-	if err := base.repo.AcceptedCAS(parent, tip); err != nil {
-		t.Fatal(err)
-	}
-	return &goalListRepositoryFixture{obligationCommandFixture: base}
-}
-
-// A file keeps full-record assertions independent of the pipe buffer size.
-func captureGoalOutput(t *testing.T, run func() int) (string, int) {
-	t.Helper()
-	file, err := os.CreateTemp(t.TempDir(), "goal-output")
-	if err != nil {
-		t.Fatal(err)
-	}
-	original := os.Stdout
-	os.Stdout = file
-	defer func() {
-		os.Stdout = original
-		file.Close()
-	}()
-	code := run()
-	data, err := os.ReadFile(file.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(data), code
 }
 
 // TestGoalListSummaryCarriesMarkersDropsControlsAndMarksCuts: the summary

@@ -23,11 +23,9 @@ import (
 )
 
 const (
-	cadenceOwnerUnconfigured = "CADENCE_OWNER_UNCONFIGURED"
-	cadenceNotLandingOwner   = "CADENCE_NOT_LANDING_OWNER"
-	cadenceFetchRefused      = "CADENCE_FETCH_REFUSED"
-	cadenceLedgerUnreadable  = "CADENCE_LEDGER_UNREADABLE"
-	cadenceAuthorityGoal     = "standing-validation"
+	cadenceFetchRefused     = "CADENCE_FETCH_REFUSED"
+	cadenceLedgerUnreadable = "CADENCE_LEDGER_UNREADABLE"
+	cadenceAuthorityGoal    = "standing-validation"
 )
 
 type cadenceRefusal struct{ code, detail string }
