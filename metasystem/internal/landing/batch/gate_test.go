@@ -87,34 +87,15 @@ func TestBatchProtectedTestsAcceptTheBaseTree(t *testing.T) {
 	}
 }
 
-func TestDeletedGoPackagesSelectNearestExistingDirectory(t *testing.T) {
+func TestBranchMemberPatchKeepsTheDeletion(t *testing.T) {
 	root := t.TempDir()
-	baseFiles := map[string]string{
-		"metasystem/outer/keep.txt":               "keep\n",
-		"metasystem/outer/missing/inner/value.go": "package inner\n",
-	}
-	for path, content := range baseFiles {
-		absolute := filepath.Join(root, filepath.FromSlash(path))
-		must(t, os.MkdirAll(filepath.Dir(absolute), 0o755))
-		must(t, os.WriteFile(absolute, []byte(content), 0o644))
-	}
-	candidate := clonePackageFiles(baseFiles)
-	delete(candidate, "metasystem/outer/missing/inner/value.go")
-	fixture := newPackageTreeFixture(t, root, baseFiles, candidate, "")
-	base, tip := fixture.baseTree, fixture.candidateTree
-	must(t, os.Remove(filepath.Join(root, "metasystem", "outer", "missing", "inner", "value.go")))
 	deletionPatch := []byte("diff --git a/metasystem/outer/missing/inner/value.go b/metasystem/outer/missing/inner/value.go\ndeleted file mode 100644\n--- a/metasystem/outer/missing/inner/value.go\n+++ /dev/null\n@@ -1 +0,0 @@\n-package inner\n")
-	packages, err := changedGoPackagesWithWorkspace(root, tip, patchGateChanges(deletionPatch), fixture.workspace())
-	must(t, err)
-	if !slices.Equal(packages, []string{"./outer/..."}) {
-		t.Fatalf("nested deletion packages=%v, want nearest existing parent", packages)
+	if change, ok := patchGateChanges(deletionPatch)["metasystem/outer/missing/inner/value.go"]; !ok || !change.Deleted || change.BaseAbsent {
+		t.Fatalf("deletion patch change=%+v ok=%v", change, ok)
 	}
-
 	createDelete := []byte("diff --git a/metasystem/fresh/inner/value.go b/metasystem/fresh/inner/value.go\nnew file mode 100644\n--- /dev/null\n+++ b/metasystem/fresh/inner/value.go\n@@ -0,0 +1 @@\n+package inner\ndiff --git a/metasystem/fresh/inner/value.go b/metasystem/fresh/inner/value.go\ndeleted file mode 100644\n--- a/metasystem/fresh/inner/value.go\n+++ /dev/null\n@@ -1 +0,0 @@\n-package inner\n")
-	packages, err = changedGoPackagesWithWorkspace(root, base, patchGateChanges(createDelete), fixture.workspace())
-	must(t, err)
-	if len(packages) != 0 {
-		t.Fatalf("create-delete path selected packages=%v", packages)
+	if change := patchGateChanges(createDelete)["metasystem/fresh/inner/value.go"]; !change.Deleted || !change.BaseAbsent {
+		t.Fatalf("create-delete change=%+v", change)
 	}
 	t.Run("branch-member-patch-deletion", func(t *testing.T) {
 		foldPatch := []byte("diff --git a/metasystem/outer/missing/inner/value.go b/metasystem/outer/missing/inner/value.go\n--- a/metasystem/outer/missing/inner/value.go\n+++ b/metasystem/outer/missing/inner/value.go\n@@ -1 +1 @@\n-package inner\n+package inner // folded\n")

@@ -375,10 +375,6 @@ func TestBatchSealBranchDeletionUsesParentPackage(t *testing.T) {
 	if change, ok := changes["metasystem/gone/value.go"]; len(changes) != 1 || !ok || !change.Deleted || change.BaseAbsent {
 		t.Fatalf("deletion patch changes=%v", changes)
 	}
-	packages, err := changedGoPackages("", testCommit(1001), changes)
-	if err != nil || !slices.Contains(packages, "./...") || slices.Contains(packages, "./gone") {
-		t.Fatalf("deletion package selection=%v packages=%v", err, packages)
-	}
 }
 
 func TestBatchBranchAllowsOnlyOneMemberPerGoal(t *testing.T) {

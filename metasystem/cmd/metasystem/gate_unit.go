@@ -9,25 +9,28 @@ import (
 	"os/exec"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	_ "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch/goadapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
+// gateUnitDependencies binds the unit gate to a language adapter: the adapter
+// selects the closure, plans the steps and reads the reds; the gate only runs.
 type gateUnitDependencies struct {
-	selectPackages func(root, base, tree string) (batch.UnitPackages, error)
-	runStep        func(root, tree string, step batch.GateStep) batch.GateStepResult
+	adapter func(root string) (adapter.Adapter, error)
+	runStep func(root, tree string, step adapter.GateStep) adapter.GateStepResult
 }
 
 func runGateUnit(args []string) int {
 	return runGateUnitWith(args, gateUnitDependencies{
-		selectPackages: selectUnitPackagesFromWorktree,
-		runStep:        runUnitGateStep,
+		adapter: adapter.Detect,
+		runStep: runUnitGateStep,
 	}, os.Stdout, os.Stderr)
 }
 
 func runGateUnitWith(args []string, dependencies gateUnitDependencies, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("gate unit", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	root := pathFlag(flags, "root", "", "Go module root")
+	root := pathFlag(flags, "root", "", "project root")
 	base := flags.String("base", "", "base commit or tree")
 	tree := flags.String("tree", "HEAD", "candidate commit or tree")
 	if flags.Parse(args) != nil {
@@ -38,7 +41,18 @@ func runGateUnitWith(args []string, dependencies gateUnitDependencies, stdout, s
 		return 2
 	}
 
-	selection, err := dependencies.selectPackages(*root, *base, *tree)
+	language, err := dependencies.adapter(*root)
+	var gate adapter.UnitGate
+	if err == nil {
+		var ok bool
+		if gate, ok = language.(adapter.UnitGate); !ok {
+			err = errors.New("the project's language adapter has no unit gate")
+		}
+	}
+	var selection adapter.Closure
+	if err == nil {
+		selection, err = language.Closure(*root, *base, *tree)
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, "gate unit:", err)
 		return 1
@@ -52,13 +66,13 @@ func runGateUnitWith(args []string, dependencies gateUnitDependencies, stdout, s
 		fmt.Fprintln(stdout, "DEPENDENT", pkg)
 	}
 
-	reds := []batch.GateRed{}
-	for _, step := range batch.AggregateUnitGateSteps(selection) {
+	reds := []adapter.GateRed{}
+	for _, step := range gate.UnitGateSteps(selection) {
 		result := dependencies.runStep(*root, selection.Tree, step)
 		if result.ExitCode == 0 {
 			continue
 		}
-		stepReds := batch.GateReds(step, selection.ModulePath, result.Detail)
+		stepReds := gate.GateReds(step, selection, result.Detail)
 		reds = append(reds, stepReds...)
 		for _, red := range stepReds {
 			fmt.Fprintf(stdout, "RED %s %s\n", red.Package, red.Test)
@@ -68,24 +82,17 @@ func runGateUnitWith(args []string, dependencies gateUnitDependencies, stdout, s
 		fmt.Fprintf(stdout, "GATE-UNIT RED %d reds\n", len(reds))
 		return 1
 	}
-	fmt.Fprintf(stdout, "GATE-UNIT GREEN %d packages\n", selectedPackageCount(selection))
+	fmt.Fprintf(stdout, "GATE-UNIT GREEN %d packages\n", len(selection.Units()))
 	return 0
 }
 
-func selectUnitPackagesFromWorktree(root, base, tree string) (batch.UnitPackages, error) {
-	if tree == "HEAD" {
-		return batch.SelectWorkingUnitPackages(root, base)
-	}
-	return batch.SelectUnitPackages(root, base, tree)
-}
-
-func runUnitGateStep(root, tree string, step batch.GateStep) (result batch.GateStepResult) {
+func runUnitGateStep(root, tree string, step adapter.GateStep) (result adapter.GateStepResult) {
 	if tree == "" {
 		return executeUnitGateCommand(root, step)
 	}
 	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(tree)
 	if err != nil {
-		return batch.GateStepResult{ExitCode: 1, Detail: err.Error()}
+		return adapter.GateStepResult{ExitCode: 1, Detail: err.Error()}
 	}
 	defer func() {
 		if closeErr := detached.Close(); closeErr != nil {
@@ -96,9 +103,9 @@ func runUnitGateStep(root, tree string, step batch.GateStep) (result batch.GateS
 	return executeUnitGateCommand(detached.Workspace().Dir, step)
 }
 
-func executeUnitGateCommand(root string, step batch.GateStep) (result batch.GateStepResult) {
+func executeUnitGateCommand(root string, step adapter.GateStep) (result adapter.GateStepResult) {
 	if len(step.Args) == 0 {
-		return batch.GateStepResult{ExitCode: 1, Detail: "unit gate step has no command"}
+		return adapter.GateStepResult{ExitCode: 1, Detail: "unit gate step has no command"}
 	}
 	command := exec.Command(step.Args[0], step.Args[1:]...)
 	command.Dir = root
@@ -112,12 +119,4 @@ func executeUnitGateCommand(root string, step batch.GateStep) (result batch.Gate
 		}
 	}
 	return result
-}
-
-func selectedPackageCount(selection batch.UnitPackages) int {
-	set := map[string]bool{}
-	for _, pkg := range append(append([]string{}, selection.Changed...), selection.Dependents...) {
-		set[pkg] = true
-	}
-	return len(set)
 }

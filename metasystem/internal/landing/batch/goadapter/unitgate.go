@@ -1,4 +1,4 @@
-package batch
+package goadapter
 
 import (
 	"bytes"
@@ -84,7 +84,7 @@ func selectWorkingUnitPackagesWithWorkspace(workspace gittree.Workspace, base st
 			return UnitPackages{}, readErr
 		}
 		_, statErr := os.Stat(filepath.Join(moduleRoot, filepath.FromSlash(path)))
-		changes[path] = gateChange{Deleted: os.IsNotExist(statErr), BaseAbsent: !basePresent, baseKnown: true}
+		changes[path] = gateChange{Deleted: os.IsNotExist(statErr), BaseAbsent: !basePresent}
 		if statErr != nil && !os.IsNotExist(statErr) {
 			return UnitPackages{}, statErr
 		}
@@ -174,6 +174,10 @@ func workingChangedPathsWithWorkspace(workspace gittree.Workspace, baseTree stri
 	sort.Strings(paths)
 	return paths, nil
 }
+
+// gateChange is one changed path of a unit.
+type gateChange struct{ Deleted, BaseAbsent bool }
+type gateChanges map[string]gateChange
 
 func changedWorkingGoPackages(moduleRoot string, changes gateChanges) ([]string, error) {
 	set := map[string]bool{}
@@ -494,12 +498,6 @@ func GateFailureDetail(output string) string {
 		detail = detail[:maximum] + "..."
 	}
 	return detail
-}
-
-// GateRed is one package/test line emitted by the standalone unit gate.
-type GateRed struct {
-	Package string
-	Test    string
 }
 
 // GateReds maps one failed go test invocation back to package/test lines.

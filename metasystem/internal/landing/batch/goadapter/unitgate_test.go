@@ -1,4 +1,4 @@
-package batch
+package goadapter
 
 import (
 	"crypto/sha1"
@@ -47,6 +47,7 @@ func TestReverseDependentsIncludeDirectTransitiveTestAndTaggedImports(t *testing
 }
 
 func TestReverseDependentsDefaultUsesDetachedTree(t *testing.T) {
+	t.Parallel()
 	root, _ := dependencyModuleTree(t)
 	bedGit(t, root, "init", "-q", "-b", "main")
 	bedGit(t, root, "config", "user.name", "Fixture")

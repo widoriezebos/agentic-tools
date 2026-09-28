@@ -2,118 +2,16 @@ package batch
 
 import (
 	"bytes"
-	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
-type gateStep struct {
-	Name string
-	Args []string
-}
-type gateStepResult struct {
-	RunID    string
-	ExitCode int
-	Detail   string
-}
-type batchGateExec func(unitTree string, step gateStep) gateStepResult
-
-type GateStep = gateStep
-type GateStepResult = gateStepResult
-type GateExecutor = batchGateExec
 type patchChange map[string]bool // path -> deleted
 type gateChange struct {
 	Deleted, BaseAbsent bool
 	baseKnown           bool
 }
 type gateChanges map[string]gateChange
-
-func changedGoPackages(root, tree string, changes gateChanges) ([]string, error) {
-	workspaceRoot := unitGateModuleRoot(root)
-	if workspaceRoot == "" {
-		workspaceRoot = root
-	}
-	return changedGoPackagesWithWorkspace(root, tree, changes, gittree.Workspace{Dir: workspaceRoot})
-}
-
-func changedGoPackagesWithWorkspace(root, tree string, changes gateChanges, workspace gittree.Workspace) ([]string, error) {
-	set := map[string]bool{}
-	moduleRoot := unitGateModuleRoot(root)
-	modulePrefix := ""
-	if moduleRoot != "" {
-		prefix, err := workspace.Prefix()
-		if err != nil {
-			return nil, err
-		}
-		modulePrefix = prefix
-		resolved, err := moduleTree(workspace, tree)
-		if err != nil {
-			return nil, err
-		}
-		tree = resolved
-	} else {
-		for changed := range changes {
-			if strings.HasPrefix(filepath.ToSlash(changed), "metasystem/") {
-				modulePrefix = "metasystem/"
-				break
-			}
-		}
-	}
-	directoryExists := func(dir string) (bool, error) {
-		if root == "" {
-			return true, nil
-		}
-		path := strings.TrimPrefix(filepath.ToSlash(dir), "./")
-		if moduleRoot == "" {
-			path = filepath.ToSlash(filepath.Join(strings.TrimSuffix(modulePrefix, "/"), path))
-		}
-		if path == "" || path == "." {
-			path = strings.TrimSuffix(modulePrefix, "/")
-		}
-		entries, err := workspace.Entries(tree, []string{path})
-		return len(entries) != 0, err
-	}
-	for changed, change := range changes {
-		changed = strings.TrimPrefix(filepath.ToSlash(changed), modulePrefix)
-		if strings.HasSuffix(changed, ".go") {
-			dir := filepath.ToSlash(filepath.Dir(changed))
-			pkg := "."
-			if dir != "." {
-				pkg = "./" + dir
-			}
-			if change.Deleted {
-				if change.BaseAbsent {
-					continue
-				}
-				parent := filepath.ToSlash(filepath.Dir(dir))
-				for parent != "." {
-					exists, err := directoryExists(parent)
-					if err != nil {
-						return nil, err
-					}
-					if exists {
-						break
-					}
-					parent = filepath.ToSlash(filepath.Dir(parent))
-				}
-				pkg = "./..."
-				if parent != "." {
-					pkg = "./" + parent + "/..."
-				}
-			}
-			set[pkg] = true
-		}
-	}
-	packages := make([]string, 0, len(set))
-	for pkg := range set {
-		packages = append(packages, pkg)
-	}
-	sort.Strings(packages)
-	return packages, nil
-}
 
 func patchChangedPaths(patch []byte) patchChange {
 	return patchGateChanges(patch).paths()
