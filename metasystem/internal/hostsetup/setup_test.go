@@ -149,6 +149,39 @@ func TestSetupImposesNoSeatWindowThroughClaudeTransform(t *testing.T) {
 	}
 }
 
+// The pointer block names the repository's local development rules only where
+// that file exists: a checkout without it (every adopted application, and a
+// template checkout that has none) is never pointed at a path it lacks.
+func TestSetupPointsAtLocalDevelopmentRulesOnlyWhereTheyExist(t *testing.T) {
+	t.Parallel()
+	repo, resolver := hostGitFreeNestedFixture(t)
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
+		data, err := os.ReadFile(filepath.Join(repo, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "`metasystem/AGENTS.md`") || strings.Contains(string(data), "project-rules-local.md") {
+			t.Fatalf("%s without local rules: %s", name, data)
+		}
+	}
+	writeHostFile(t, filepath.Join(repo, "development", "project-rules-local.md"), "local rules\n", 0o644)
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
+		data, err := os.ReadFile(filepath.Join(repo, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "`development/project-rules-local.md`") || strings.Count(string(data), pointerBegin) != 1 {
+			t.Fatalf("%s with local rules: %s", name, data)
+		}
+	}
+}
+
 func TestSetupNestedDefaultsAllPreservesUnrelatedStateModesAndIsIdempotent(t *testing.T) {
 	repo, resolver := hostGitFreeNestedFixture(t, "sub/directory")
 	writeHostFile(t, filepath.Join(repo, "AGENTS.md"), "application instructions\n", 0o600)
