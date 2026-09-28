@@ -304,13 +304,13 @@ func (s *Service) conversation(human string) (*Conversation, error) {
 // own (g1-s65 D16), or the human's ordinary conversation where the record's
 // carries no mark and the ordinary one's mark names that record — a sitting
 // begun before D16, which is the one set of sittings not keyed by their record
-// (g1-s67 D6, Astra S67-04). "" is the human's own conversation. This is the one
+// (g1-s67 D6). "" is the human's own conversation. This is the one
 // place that rule is applied, and every request naming a room goes through it.
 //
 // The resolution is made on every call and kept nowhere: the fallback is never
 // held under the record's key, so once End takes the ordinary conversation's
 // mark off, the same address names the record's own conversation again and a
-// Start there opens a sitting keyed by its record (Astra S67-05).
+// Start there opens a sitting keyed by its record.
 func (s *Service) conversationOf(human, record string) (*Conversation, error) {
 	record = strings.TrimSpace(record)
 	own, err := s.openedOf(human, record)
@@ -623,7 +623,8 @@ func (s *Service) SnapshotIn(human, sitting string, limit int) (Snapshot, error)
 	s.mu.Lock()
 	running := s.current
 	// The answer names the address it was asked for, which is the room's record
-	// even where the room's conversation is the ordinary one (Astra S67-05).
+	// even where the room's conversation is the ordinary one, so the page files
+	// it under the room it asked from.
 	answer := Snapshot{
 		Runtime: s.runtime.Name, Model: s.runtime.Model, Human: human,
 		ReadOnly: s.runtime.ReadOnly, Conversation: strings.TrimSpace(sitting),
@@ -744,7 +745,8 @@ func (s *Service) submitClosing(ctx context.Context, human, sitting, key, text s
 	// below, so a runtime that is not installed leaves no turn behind.
 	id := mintTurn()
 	// The turn's beats name the address it was asked from, the room's record
-	// even where that room's conversation is the ordinary one (Astra S67-05).
+	// even where that room's conversation is the ordinary one, so the page files
+	// them under the room they were asked from.
 	running := &turn{id: id, human: human, key: key, page: page, verdict: verdict, where: strings.TrimSpace(sitting),
 		conversation: conversation, done: make(chan struct{})}
 	s.current = running

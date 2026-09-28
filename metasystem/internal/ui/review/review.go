@@ -580,7 +580,7 @@ func (o Owner) Source(reviewed Reviewed, file string, from, to int) (Source, err
 // refusal and the bounds are Source's own. What the interface never serves is
 // refused by the document reader's own rule, on the name asked and on the path
 // it resolves to, and bytes that are not UTF-8 are refused rather than shown as
-// other characters (Sol SOL-S67-01). Nothing is marked, because nothing is
+// other characters. Nothing is marked, because nothing is
 // compared.
 func (o Owner) AsItStands(file string, from, to int) (Source, error) {
 	clean, err := insideOf(file, "the checkout")

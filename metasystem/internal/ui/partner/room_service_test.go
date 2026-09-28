@@ -70,7 +70,7 @@ func TestADeskItemReachesEverySittingsRoom(t *testing.T) {
 		"The Partner offered something for a desk, and only a sitting's room has one.")
 }
 
-// D6 and Astra S67-04, with S67-05's two cautions: a shaping sitting marked on
+// D6, with its two cautions: a shaping sitting marked on
 // the human's ordinary conversation before D16, with its words there and no
 // record-keyed files, is its room's conversation. Its answers carry the room's
 // record as their key, a card records against it, End ends it, and afterwards the
@@ -124,7 +124,7 @@ func TestASittingMarkedOnTheOrdinaryConversationIsItsRoomsConversation(t *testin
 	testutil.Require(t, "the fact arrived", fact != nil, true)
 	testutil.Expect(t, "offered", fact.Offered, true)
 	testutil.Expect(t, "against that sitting's record", fact.Subject.ID, design)
-	testutil.Require(t, "the room kept", service.KeepRoom("Wido", design, partner.Room{Face: "board"}), nil)
+	testutil.Require(t, "the room kept", service.KeepRoom("Wido", design, partner.Room{Face: "board", Seq: 1}), nil)
 	ordinary, err := service.SnapshotIn("Wido", "", 100)
 	testutil.Require(t, "the ordinary conversation read", err, nil)
 	testutil.Expect(t, "nothing moved or copied: the words are the ordinary one's", len(ordinary.Messages), 4)

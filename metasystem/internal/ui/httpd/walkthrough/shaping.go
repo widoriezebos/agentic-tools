@@ -15,7 +15,7 @@ import (
 // stands, a Partner that opens the sitting with anchored words and walks
 // through Today by putting that file on the desk, and — behind a flag — a
 // sitting marked on the human's ordinary conversation before every sitting had
-// a conversation of its own (D6, Astra S67-04).
+// a conversation of its own (D6).
 
 const (
 	// shapingRecord is the design a sitting is started on in the walkthrough.

@@ -15,6 +15,7 @@ import {
   outcomeShape,
   answerLine,
   retipped,
+  RoomKeeper,
   reviewedOf,
   anchorOf,
   anchorsIn,
@@ -275,8 +276,8 @@ describe("the room's working state", () => {
   });
 
   it("keeps the words a second after the last keystroke, with no blur and no Step out", () => {
-    // The human's grant of 2026-09-28 (Sol SOL-A-01): one timer, reset by every
-    // keystroke, so the words typed last are kept once the typing stops.
+    // One timer, reset by every keystroke, so the words typed last are kept
+    // once the typing stops.
     vi.useFakeTimers();
     try {
       const kept: string[] = [];
@@ -313,6 +314,82 @@ describe("the room's working state", () => {
       "return keepAfterSilence(() => {\n      void keepRoomNow();\n    });",
     );
     expect(store).toContain('globalThis.addEventListener("pagehide", leaving);');
+  });
+});
+
+describe("keeping the room in order", () => {
+  // A mark as the server holds it: it takes a keep only when its sequence is
+  // above the one it holds. Each request arrives when the test says so.
+  function markServer() {
+    const mark = { text: "", seq: 0 };
+    const out: { text: string; seq: number; leaving: boolean; arrive: () => void }[] = [];
+    const send = (_record: string, room: { drafts?: unknown; seq?: number }, leaving: boolean) =>
+      new Promise<void>((landed) => {
+        const text = (room.drafts as Record<string, { text: string }>)["local-1"].text;
+        const seq = room.seq ?? 0;
+        out.push({ text, seq, leaving, arrive: () => {
+          if (seq > mark.seq) {
+            mark.text = text;
+            mark.seq = seq;
+          }
+          landed();
+        } });
+      });
+    return { mark, out, send };
+  }
+  const words = (text: string) => ({ desk: { items: [], current: -1 }, face: "desk" as const, drafts: { "local-1": { text, clause: "" } } });
+
+  it("sends a keep asked while one is out only once that one lands, with the words as they stand then", async () => {
+    const server = markServer();
+    const keeper = new RoomKeeper(server.send);
+    keeper.open("review.md", words(""), 0);
+    let typed = words("hal");
+    const first = keeper.keep(() => typed);
+    typed = words("half a finding");
+    const second = keeper.keep(() => typed);
+    const third = keeper.keep(() => typed);
+    await Promise.resolve();
+    expect(server.out.map((sent) => sent.text)).toEqual(["hal"]);
+    server.out[0].arrive();
+    expect(await first).toBe(true);
+    await vi.waitFor(() => {
+      expect(server.out).toHaveLength(2);
+    });
+    server.out[1].arrive();
+    expect(await second).toBe(true);
+    expect(await third).toBe(true);
+    expect(server.out.map((sent) => sent.text)).toEqual(["hal", "half a finding"]);
+    expect(server.mark).toEqual({ text: "half a finding", seq: server.out[1].seq });
+  });
+
+  it("leaves the newer words on the mark when an older keep arrives after them", async () => {
+    // The page going away cannot wait for the keep that is out, so it goes at
+    // once; the older request, arriving last, changes nothing.
+    const server = markServer();
+    const keeper = new RoomKeeper(server.send);
+    keeper.open("review.md", words(""), 7);
+    let typed = words("hal");
+    const first = keeper.keep(() => typed);
+    typed = words("half a finding");
+    const leaving = keeper.keep(() => typed, true);
+    expect(server.out.map((sent) => [sent.text, sent.leaving])).toEqual([["hal", false], ["half a finding", true]]);
+    expect(server.out[0].seq).toBeGreaterThan(7);
+    expect(server.out[1].seq).toBeGreaterThan(server.out[0].seq);
+    server.out[1].arrive();
+    server.out[0].arrive();
+    expect(await leaving).toBe(true);
+    expect(await first).toBe(true);
+    expect(server.mark.text).toBe("half a finding");
+  });
+
+  it("numbers a room's keeps above what its mark held when it opened", async () => {
+    const server = markServer();
+    const keeper = new RoomKeeper(server.send);
+    keeper.open("review.md", words(""), Date.now() + 1_000_000);
+    const kept = keeper.keep(() => words("above"));
+    server.out[0].arrive();
+    await kept;
+    expect(server.mark.text).toBe("above");
   });
 });
 

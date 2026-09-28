@@ -363,7 +363,7 @@ func TestTheRoomIsKeptAndEveryStandingSittingIsListed(t *testing.T) {
 	}
 
 	room := partner.Room{Desk: []byte(`{"items":[],"current":-1}`), Face: "board",
-		Drafts: []byte(`{"deposit:t#0":{"text":"half a finding"}}`)}
+		Drafts: []byte(`{"deposit:t#0":{"text":"half a finding"}}`), Seq: 1}
 	testutil.Require(t, "keep A's room", held.service.KeepRoom("Wido", reviewA, room), nil)
 	read, err := held.service.SnapshotIn("Wido", reviewA, 1)
 	testutil.Require(t, "read A", err, nil)

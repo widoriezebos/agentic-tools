@@ -83,7 +83,7 @@ func TestTheRoomsStateIsKeptOnTheSittingsMark(t *testing.T) {
 		Purpose: PurposeReview, StartedAt: at.Format(time.RFC3339)}, at), nil)
 
 	room := Room{Desk: []byte(`{"items":[{"kind":"source","path":"owner.go"}],"current":0}`),
-		Face: "desk", Drafts: []byte(`{"deposit:t1#0":{"text":"the press dies","clause":"owner.go:60"}}`)}
+		Face: "desk", Drafts: []byte(`{"deposit:t1#0":{"text":"the press dies","clause":"owner.go:60"}}`), Seq: 1}
 	testutil.Require(t, "keep the room", conversation.Keep(room, at.Add(time.Hour)), nil)
 
 	again, err := OpenConversation(directory, "Wido", record)
@@ -96,9 +96,41 @@ func TestTheRoomsStateIsKeptOnTheSittingsMark(t *testing.T) {
 	testutil.Expect(t, "the drafts", string(sitting.Room.Drafts), string(room.Drafts))
 	testutil.Expect(t, "when it was kept", sitting.Room.At, "2026-09-28T11:00:00Z")
 
-	oversized := Room{Face: "desk", Drafts: []byte(`"` + strings.Repeat("x", maxRoomBytes) + `"`)}
+	oversized := Room{Face: "desk", Drafts: []byte(`"` + strings.Repeat("x", maxRoomBytes) + `"`), Seq: 9}
 	testutil.Expect(t, "a room past its bound is refused", conversation.Keep(oversized, at) != nil, true)
 	testutil.Require(t, "rise", conversation.Rise(at), nil)
 	testutil.Expect(t, "no room without a sitting", conversation.Keep(room, at).Error(),
 		"no sitting is open on this conversation, so there is no room to keep")
+}
+
+// Each keep carries the page's sequence, and the mark takes only a keep numbered
+// above the one it holds: a request that set out earlier and arrives later
+// changes nothing, so older words never overwrite newer ones.
+func TestAnOlderKeepArrivingLateLeavesTheMarkAsItWas(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	at := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)
+	record := "metasystem/plans/reviews/review-of-g1-s64.md"
+	conversation, err := OpenConversation(directory, "Wido", record)
+	testutil.Require(t, "open", err, nil)
+	testutil.Require(t, "sit", conversation.Sit(Sitting{Subject: Subject{Kind: SubjectRecord, ID: record},
+		Purpose: PurposeReview, StartedAt: at.Format(time.RFC3339)}, at), nil)
+
+	words := func(text string, seq int64) Room {
+		return Room{Face: "desk", Drafts: []byte(`{"local-1":{"text":"` + text + `"}}`), Seq: seq}
+	}
+	testutil.Require(t, "the newer keep", conversation.Keep(words("half a finding", 2), at.Add(time.Minute)), nil)
+	testutil.Require(t, "the older keep, late", conversation.Keep(words("hal", 1), at.Add(2*time.Minute)), nil)
+	testutil.Require(t, "a replay of the newer", conversation.Keep(words("hal", 2), at.Add(3*time.Minute)), nil)
+
+	again, err := OpenConversation(directory, "Wido", record)
+	testutil.Require(t, "open again", err, nil)
+	held := again.Sitting().Room
+	testutil.Expect(t, "the newer words stand", string(held.Drafts), `{"local-1":{"text":"half a finding"}}`)
+	testutil.Expect(t, "under the newer sequence", held.Seq, int64(2))
+	testutil.Expect(t, "kept when the newer words were", held.At, "2026-09-28T10:01:00Z")
+
+	testutil.Require(t, "a later keep", again.Keep(words("half a finding, and why", 3), at.Add(4*time.Minute)), nil)
+	testutil.Expect(t, "replaces it", string(again.Sitting().Room.Drafts), `{"local-1":{"text":"half a finding, and why"}}`)
+	testutil.Expect(t, "with its sequence", again.Sitting().Room.Seq, int64(3))
 }

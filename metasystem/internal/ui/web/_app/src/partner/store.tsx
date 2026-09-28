@@ -138,6 +138,7 @@ import {
   retipped,
   keepAfterSilence,
   keepDue,
+  RoomKeeper,
   onDesk,
   roomOf,
   withDraft,
@@ -784,7 +785,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const [accepting, setAccepting] = useState<Readonly<Record<string, string>>>({});
   const [stoppedPresenting, setStoppedPresenting] = useState("");
   const roomTaken = useRef("");
-  const lastKept = useRef("");
+  const [keeper] = useState(() => new RoomKeeper(keepRoom));
   const keptAt = useRef(0);
   // The sitting's one current reading of its record: source and revision, taken
   // when the sitting starts and replaced by the answer of every successful
@@ -1683,8 +1684,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     setLocals(mine);
     setDepositMarks((held) => ({ ...marks, ...held }));
     setAccepting(reasons);
-    lastKept.current = JSON.stringify(kept);
-  }, []);
+    keeper.open(asked, kept, snapshot.sitting?.room?.seq ?? 0);
+  }, [keeper]);
 
   const putOnDesk = useCallback((item: DeskItem) => {
     setDesk((held) => onDesk(held, item));
@@ -1756,38 +1757,20 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   /**
    * Keep the room on its mark (g1-s65 D9). While a human types it is kept at
    * most once a second, and a second after the last keystroke the words typed
-   * last are kept (the human's grant of 2026-09-28); the leaving keeps them as
-   * well — the field's blur, Step out, and the page going away — so the
-   * keystroke before leaving is never the one that is lost.
+   * last are kept, so words typed just before the typing stops are kept without
+   * a blur; the leaving keeps them as well — the field's blur, Step out, and the
+   * page going away — so the keystroke before leaving is never the one that is
+   * lost. The keeper sends them in order, so older words never land last.
    */
   const keepRoomNow = useCallback(async (leaving = false): Promise<boolean> => {
     const record = whereNow.current;
-    const kept = JSON.stringify(roomNow.current);
-    if (record === "" || roomRecord === "" || sittingNow.current === null) {
+    if (record === "" || roomRecord === "" || roomTaken.current !== record || sittingNow.current === null) {
       return true;
     }
-    // These very words are being kept, or were: the answer is that keep's.
-    if (kept === lastKept.current) {
-      return keeping.current;
-    }
-    lastKept.current = kept;
     keptAt.current = Date.now();
-    const landed = keepRoom(record, JSON.parse(kept) as RoomState, leaving).then(
-      () => true,
-      () => {
-        // The next change keeps it again, and Step out stays in the room and
-        // says so: a keep that could not be made is words still on the screen.
-        if (lastKept.current === kept) {
-          lastKept.current = "";
-        }
-        return false;
-      },
-    );
-    keeping.current = landed;
-    return landed;
-  }, [roomRecord]);
+    return keeper.keep(() => roomNow.current, leaving);
+  }, [roomRecord, keeper]);
 
-  const keeping = useRef<Promise<boolean>>(Promise.resolve(true));
   const roomNow = useRef<RoomState>(room);
   roomNow.current = room;
   const sittingNow = useRef<Sitting | null>(null);

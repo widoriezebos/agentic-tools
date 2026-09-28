@@ -71,8 +71,8 @@ func TestAShapingDeskReadsTheCheckoutAndHasNoChange(t *testing.T) {
 		[]any{reviewTip, false, 3})
 }
 
-// The shaping desk reads only what the interface serves (Sol SOL-S67-01): the
-// document reader's refused segments and the local configuration are refused,
+// The shaping desk reads only what the interface serves: the document reader's
+// refused segments and the local configuration are refused,
 // by name and through a link inside the checkout, and bytes that are not UTF-8
 // are refused rather than shown as other characters.
 func TestAShapingDeskRefusesWhatTheInterfaceNeverServes(t *testing.T) {
@@ -135,7 +135,7 @@ func TestADocumentSaysWhetherASittingStandsOnIt(t *testing.T) {
 	testutil.Require(t, "the sitting opened", opened.Code, http.StatusOK)
 	testutil.Expect(t, "answered as the room's conversation", partnerSnapshot(t, opened).Conversation, shapedDesign)
 	drain(t, events)
-	kept := post(t, served.handler, partnerSittingPath, `{"conversation":"`+shapedDesign+`","room":{"face":"board"}}`, nil)
+	kept := post(t, served.handler, partnerSittingPath, `{"conversation":"`+shapedDesign+`","room":{"face":"board","seq":1}}`, nil)
 	testutil.Require(t, "the room kept", kept.Code, http.StatusOK)
 
 	after := get(t, served.handler, documentPrefix+shapedDesign, nil)

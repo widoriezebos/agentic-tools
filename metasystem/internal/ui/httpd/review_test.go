@@ -289,7 +289,7 @@ func TestTheRoomIsKeptThroughTheSittingRoute(t *testing.T) {
 	drain(t, events)
 
 	kept := post(t, served.handler, partnerSittingPath, `{"conversation":"`+reviewed+`",`+
-		`"room":{"desk":{"items":[{"kind":"changes"}],"current":0},"face":"desk","drafts":{"local-3":{"text":"half"}}}}`, nil)
+		`"room":{"desk":{"items":[{"kind":"changes"}],"current":0},"face":"desk","drafts":{"local-3":{"text":"half"}},"seq":1}}`, nil)
 	testutil.Require(t, "kept", kept.Code, http.StatusOK)
 	room := partnerSnapshot(t, get(t, served.handler, partnerPath+"?conversation="+reviewed, nil))
 	testutil.Require(t, "the room came back", room.Sitting != nil && room.Sitting.Room != nil, true)
@@ -310,7 +310,7 @@ func TestTheBoardCarriesEachReviewsDoor(t *testing.T) {
 	testutil.Require(t, "the review opened", post(t, served.handler, partnerSittingPath, reviewLanding, nil).Code, http.StatusOK)
 	drain(t, events)
 	testutil.Require(t, "kept", post(t, served.handler, partnerSittingPath,
-		`{"conversation":"`+reviewed+`","room":{"face":"desk"}}`, nil).Code, http.StatusOK)
+		`{"conversation":"`+reviewed+`","room":{"face":"desk","seq":1}}`, nil).Code, http.StatusOK)
 
 	var board struct {
 		Reviews []reviewDoor `json:"reviews"`

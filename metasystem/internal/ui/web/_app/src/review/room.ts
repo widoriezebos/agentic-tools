@@ -52,9 +52,8 @@ export function firstDesk(record: string, source: string): Desk {
 
 /**
  * The desk a room opens on: the one its mark kept, and where the mark kept none
- * — a first visit, or a sitting that stood before rooms were kept (Astra
- * S67-02) — a shaping sitting's record sections. A review opens on an empty
- * desk, as it always has.
+ * — a first visit, or a sitting that stood before rooms were kept — a shaping
+ * sitting's record sections. A review opens on an empty desk, as it always has.
  */
 export function openingDesk(kept: Desk | undefined, purpose: string, record: string, source: string): Desk {
   if (kept !== undefined && kept.items.length > 0) {
@@ -529,15 +528,86 @@ export const KEEP_AFTER_SILENCE = 1000;
 
 /**
  * Keep the room once a second has passed with no further change, answering the
- * cancel the next change calls. It is the one timer this build sets, granted by
- * the human on 2026-09-28 (Sol SOL-A-01, a row of src/cuts.test.ts): it fires
- * once, reads nothing, and calls the room's own keep.
+ * cancel the next change calls. It is the one timer this build sets, a named
+ * row of src/cuts.test.ts: it fires once, reads nothing, and calls the room's
+ * own keep, so words typed just before the typing stops are kept without a blur.
  */
 export function keepAfterSilence(keep: () => void): () => void {
   const settled = setTimeout(keep, KEEP_AFTER_SILENCE);
   return () => {
     clearTimeout(settled);
   };
+}
+
+/**
+ * Keeps one room on its sitting's mark, in order. One keep is out at a time: a
+ * keep asked while one is out waits for it and then sends the words as they
+ * stand by then, so an older snapshot is never sent after a newer one, and the
+ * keeps asked while waiting become one. Every keep carries the next number of
+ * the room's sequence, which starts above what the mark held when the room was
+ * opened, and above the clock, so a page opened later numbers above one opened
+ * earlier; the server ignores a keep not numbered above the one it holds, so a
+ * request that arrives late changes nothing. The keep made as the page goes
+ * away does not wait, since nothing runs after the page has gone to send it;
+ * its number is what keeps an older keep still out from overwriting it.
+ */
+export class RoomKeeper {
+  private record = "";
+  private seq = 0;
+  private last = "";
+  private out: Promise<boolean> | null = null;
+  private answer: Promise<boolean> = Promise.resolve(true);
+
+  constructor(
+    private readonly send: (record: string, room: RoomState & { seq: number }, leaving: boolean) => Promise<unknown>,
+  ) {}
+
+  /** Take a room as its mark carried it back, with the sequence the mark holds. */
+  open(record: string, kept: RoomState, held: number, now = Date.now()): void {
+    this.record = record;
+    this.seq = Math.max(held, now);
+    this.last = JSON.stringify(kept);
+  }
+
+  /**
+   * Keep the room as `room` reads when the keep is sent, answering whether it
+   * landed. The same words as the last keep answer that keep's answer.
+   */
+  async keep(room: () => RoomState, leaving = false): Promise<boolean> {
+    while (!leaving && this.out !== null) {
+      await this.out;
+    }
+    if (this.record === "") {
+      return true;
+    }
+    const kept = JSON.stringify(room());
+    if (kept === this.last) {
+      return this.answer;
+    }
+    this.last = kept;
+    this.seq += 1;
+    const landed = this.send(this.record, { ...(JSON.parse(kept) as RoomState), seq: this.seq }, leaving).then(
+      () => true,
+      () => {
+        // The next change keeps it again: a keep that could not be made is
+        // words still on the screen.
+        if (this.last === kept) {
+          this.last = "";
+        }
+        return false;
+      },
+    );
+    this.answer = landed;
+    if (!leaving) {
+      this.out = landed;
+      void landed.then(() => {
+        if (this.out === landed) {
+          this.out = null;
+        }
+      });
+    }
+    return landed;
+  }
 }
 
 /** What Step out says when the room's working state could not be kept (Sol SOL-A-01). */

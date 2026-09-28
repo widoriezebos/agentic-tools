@@ -64,8 +64,7 @@ const TIMER_EXCEPTIONS: readonly (readonly [string, number, string])[] = [
   // The room keeps its drafts a second after the last keystroke, so words
   // typed and left are kept without a blur, Step out or the page going away.
   // One setTimeout, reset by every change of the room and cleared with it; it
-  // calls the room's own keep and reads nothing (g1-s67, the drafts timer;
-  // Wido's grant of 2026-09-28 on Sol's SOL-A-01).
+  // calls the room's own keep and reads nothing (g1-s67, the drafts timer).
   ["review/room.ts", 1, "g1-s67: the drafts are kept a second after the last keystroke — Wido, 2026-09-28"],
 ];
 

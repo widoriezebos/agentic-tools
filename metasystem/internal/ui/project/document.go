@@ -355,7 +355,7 @@ func admissibleID(id string) bool {
 // interface's reads may answer: no segment on the way to it is one the
 // document reader never serves through, and it is not the local configuration.
 // It judges text only; a reader that follows links judges the path it resolved
-// to as well, so an alias is held to the same rule (Sol SOL-S67-01).
+// to as well, so an alias is held to the same rule.
 func Served(id string) bool {
 	segments := strings.Split(id, "/")
 	for _, segment := range segments {

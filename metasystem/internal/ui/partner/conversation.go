@@ -576,6 +576,10 @@ type Room struct {
 	// At is when the room was last kept, which is when the human last touched
 	// it: the door line's "you stepped out 2h ago".
 	At string `json:"at,omitempty"`
+	// Seq is the page's number for this keep, rising with every keep it sends.
+	// The mark takes only a keep numbered above the one it holds, so a request
+	// that set out earlier and arrives later cannot put older words back.
+	Seq int64 `json:"seq,omitempty"`
 }
 
 // maxRoomBytes bounds what one room keeps. A desk strip and a handful of
@@ -1345,7 +1349,9 @@ func sittingsOn(directory, human string) ([]string, error) {
 }
 
 // Keep writes the room's working state onto the sitting mark (g1-s65 D9). It is
-// the mark's own write, whole, so the room and the session id are one file.
+// the mark's own write, whole, so the room and the session id are one file. A
+// keep whose sequence is not above the mark's is a late or repeated request, and
+// is ignored.
 func (c *Conversation) Keep(room Room, now time.Time) error {
 	if len(room.Desk)+len(room.Drafts)+len(room.Face) > maxRoomBytes {
 		return fmt.Errorf("the room carries more than %d bytes, and a room is a desk and some unfinished words",
@@ -1355,6 +1361,16 @@ func (c *Conversation) Keep(room Room, now time.Time) error {
 	if c.sitting == nil {
 		c.mu.Unlock()
 		return errors.New("no sitting is open on this conversation, so there is no room to keep")
+	}
+	// A keep numbered at or below the one the mark holds set out before it, or
+	// is the same keep again: the newer words stand, and there is nothing to say.
+	held := int64(0)
+	if c.sitting.Room != nil {
+		held = c.sitting.Room.Seq
+	}
+	if room.Seq <= held {
+		c.mu.Unlock()
+		return nil
 	}
 	previous := c.sitting
 	kept := *c.sitting
