@@ -300,10 +300,38 @@ func (s *Service) conversation(human string) (*Conversation, error) {
 	return s.conversationOf(human, "")
 }
 
-// conversationOf is one human's conversation about one sitting's record, or
-// their own where the record is "" (g1-s65 D16). A sitting's conversation is
-// opened in the store the human's own lives in, under the same one-opener rule.
-func (s *Service) conversationOf(human, sitting string) (*Conversation, error) {
+// conversationOf is the conversation one room's address names: the record's
+// own (g1-s65 D16), or the human's ordinary conversation where the record's
+// carries no mark and the ordinary one's mark names that record — a sitting
+// begun before D16, which is the one set of sittings not keyed by their record
+// (g1-s67 D6, Astra S67-04). "" is the human's own conversation. This is the one
+// place that rule is applied, and every request naming a room goes through it.
+//
+// The resolution is made on every call and kept nowhere: the fallback is never
+// held under the record's key, so once End takes the ordinary conversation's
+// mark off, the same address names the record's own conversation again and a
+// Start there opens a sitting keyed by its record (Astra S67-05).
+func (s *Service) conversationOf(human, record string) (*Conversation, error) {
+	record = strings.TrimSpace(record)
+	own, err := s.openedOf(human, record)
+	if err != nil || record == "" || own.Sitting() != nil {
+		return own, err
+	}
+	ordinary, err := s.openedOf(human, "")
+	if err != nil {
+		return nil, err
+	}
+	if sitting := ordinary.Sitting(); sitting != nil && sitting.Subject.ID == record {
+		return ordinary, nil
+	}
+	return own, nil
+}
+
+// openedOf is one human's conversation about one sitting's record, or their own
+// where the record is "", exactly as its files hold it (g1-s65 D16). A sitting's
+// conversation is opened in the store the human's own lives in, under the same
+// one-opener rule.
+func (s *Service) openedOf(human, sitting string) (*Conversation, error) {
 	sitting = strings.TrimSpace(sitting)
 	key := conversationKey(human, sitting)
 	for {
@@ -347,7 +375,7 @@ func (s *Service) openOf(human, sitting string) (*Conversation, error) {
 	if sitting == "" {
 		return s.open(human)
 	}
-	own, err := s.conversationOf(human, "")
+	own, err := s.openedOf(human, "")
 	if err != nil {
 		return nil, err
 	}
@@ -398,11 +426,11 @@ func (s *Service) Adopt(seat, human string) error {
 		return err
 	}
 	for _, record := range records {
-		fromSeat, err := s.conversationOf(seat, record)
+		fromSeat, err := s.openedOf(seat, record)
 		if err != nil {
 			return err
 		}
-		toHuman, err := s.conversationOf(human, record)
+		toHuman, err := s.openedOf(human, record)
 		if err != nil {
 			return err
 		}
@@ -594,9 +622,11 @@ func (s *Service) SnapshotIn(human, sitting string, limit int) (Snapshot, error)
 	}
 	s.mu.Lock()
 	running := s.current
+	// The answer names the address it was asked for, which is the room's record
+	// even where the room's conversation is the ordinary one (Astra S67-05).
 	answer := Snapshot{
 		Runtime: s.runtime.Name, Model: s.runtime.Model, Human: human,
-		ReadOnly: s.runtime.ReadOnly, Conversation: conversation.key,
+		ReadOnly: s.runtime.ReadOnly, Conversation: strings.TrimSpace(sitting),
 	}
 	if running != nil && running.conversation == conversation {
 		answer.Busy = true
@@ -713,7 +743,9 @@ func (s *Service) submitClosing(ctx context.Context, human, sitting, key, text s
 	// second confirmation read). A startup that refuses releases it again,
 	// below, so a runtime that is not installed leaves no turn behind.
 	id := mintTurn()
-	running := &turn{id: id, human: human, key: key, page: page, verdict: verdict, where: conversation.key,
+	// The turn's beats name the address it was asked from, the room's record
+	// even where that room's conversation is the ordinary one (Astra S67-05).
+	running := &turn{id: id, human: human, key: key, page: page, verdict: verdict, where: strings.TrimSpace(sitting),
 		conversation: conversation, done: make(chan struct{})}
 	s.current = running
 	s.mu.Unlock()

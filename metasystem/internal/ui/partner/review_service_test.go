@@ -330,7 +330,7 @@ func TestTheWalksAreFixedRequestsWithTheInterfacesProvenance(t *testing.T) {
 	testutil.Require(t, "the review opened", err, nil)
 	drain(t, events)
 
-	testutil.Expect(t, "the five", partner.Walks, []string{"asked", "built", "examined", "proven", "behaves"})
+	testutil.Expect(t, "the five", partner.Walks[partner.PurposeReview], []string{"asked", "built", "examined", "proven", "behaves"})
 	_, err = held.service.Walk(ctx, "Wido", reviewA, "built", inTheRoom(reviewA))
 	testutil.Require(t, "the Built walk", err, nil)
 	drain(t, events)
@@ -343,9 +343,9 @@ func TestTheWalksAreFixedRequestsWithTheInterfacesProvenance(t *testing.T) {
 
 	_, err = held.service.Walk(ctx, "Wido", reviewA, "gossip", inTheRoom(reviewA))
 	testutil.Expect(t, "a walk the room has not", err.Error(),
-		"a walk is one of asked, built, examined, proven, behaves; gossip is none of them")
+		"a walk of this sitting is one of asked, built, examined, proven, behaves; gossip is none of them")
 	_, err = held.service.Walk(ctx, "Wido", reviewB, "built", inTheRoom(reviewB))
-	testutil.Expect(t, "a walk where no review stands", err.Error(), "no review is open on "+reviewB+", so there is nothing to walk through")
+	testutil.Expect(t, "a walk where no sitting stands", err.Error(), "no sitting is open on "+reviewB+", so there is nothing to walk through")
 }
 
 // D9: the room's working state is written through the sitting and read back
@@ -384,9 +384,9 @@ func TestTheRoomIsKeptAndEveryStandingSittingIsListed(t *testing.T) {
 	testutil.Expect(t, "both reviews, by record", strings.Join(named, " "), reviewB+" "+reviewA)
 }
 
-// D8 and D5 at the service: a finding is offered only to a review, and a desk
-// item only reaches a review's page; elsewhere each says why in words.
-func TestAFindingAndADeskItemAreAReviewsOwn(t *testing.T) {
+// D8 and D5 at the service: a finding is offered only to a review, and says why
+// in words elsewhere; a desk item reaches every sitting's room (g1-s67 D4).
+func TestAFindingIsAReviewsOwnAndADeskItemEverySittings(t *testing.T) {
 	t.Parallel()
 	script := fakeacp.Script{
 		Reads: []fakeacp.Read{
@@ -445,7 +445,7 @@ func TestAFindingAndADeskItemAreAReviewsOwn(t *testing.T) {
 	testutil.Expect(t, "not offered", refused.Offered, false)
 	testutil.Expect(t, "saying why", refused.NotOffered,
 		"a finding is offered in a review sitting, and this sitting shapes a record; say it as a fact or an open question instead")
-	testutil.Expect(t, "no desk item outside a review", presented, false)
-	testutil.Expect(t, "said in the activity instead", activity,
-		"The Partner offered something for a desk, and only a review room has one.")
+	// g1-s67 D4: every sitting has a room with a desk, a shaping one included.
+	testutil.Expect(t, "a desk item in a shaping room too", presented, true)
+	testutil.Expect(t, "and no activity saying otherwise", activity, "")
 }
