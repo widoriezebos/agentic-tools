@@ -8,8 +8,8 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	_ "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch/goadapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
@@ -110,7 +110,11 @@ func executeUnitGateCommand(root string, step adapter.GateStep) (result adapter.
 	}
 	command := exec.Command(step.Args[0], step.Args[1:]...)
 	command.Dir = root
-	command.Env = gocache.Carry(gittree.ScrubbedEnviron())
+	environment, err := cachedomain.Carry(gittree.ScrubbedEnviron(), "")
+	if err != nil {
+		return adapter.GateStepResult{ExitCode: 1, Detail: err.Error()}
+	}
+	command.Env = environment
 	output, commandErr := command.CombinedOutput()
 	result.Detail = string(output)
 	if commandErr != nil {

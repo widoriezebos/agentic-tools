@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adopt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
@@ -129,7 +129,11 @@ func adoptionSource(inv *intentInvocation) (string, error) {
 func buildAdoptionEngine(source string, progress io.Writer) error {
 	command := exec.Command("go", "run", "-trimpath", "./cmd/devgate", "build")
 	command.Dir = source
-	command.Env = gocache.Carry(os.Environ())
+	environment, err := cachedomain.Carry(os.Environ(), "")
+	if err != nil {
+		return err
+	}
+	command.Env = environment
 	command.Stdout, command.Stderr = progress, progress
 	return command.Run()
 }

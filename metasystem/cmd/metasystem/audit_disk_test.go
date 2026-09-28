@@ -375,3 +375,22 @@ func TestAuditDiskGocacheClockAndHandleRelativeRemoval(t *testing.T) {
 		t.Fatal("the witness does not see an aliased or plain call")
 	}
 }
+
+// Every engine site that starts a compile takes its cache paths from the
+// authenticated domain (disk-lifetimes A8): no non-test source outside the
+// cache packages resolves the cache from the inherited environment alone.
+// testenv inherits by design (a test process is not an engine; it issues
+// the context its children authenticate).
+func TestAuditDiskEveryCompileSiteResolvesTheDomain(t *testing.T) {
+	t.Parallel()
+	allowed := map[string]bool{"internal/gocache": true, "internal/cachedomain": true, "internal/testenv": true}
+	for relative, file := range auditDiskGoFiles(t, "cmd", "internal") {
+		if allowed[filepath.ToSlash(filepath.Dir(relative))] {
+			continue
+		}
+		found := auditDiskSelectorCalls(token.NewFileSet(), file, "github.com/widoriezebos/agentic-tools/metasystem/internal/gocache", "Carry", "Resolve", "ResolveUsing")
+		if len(found) != 0 {
+			t.Errorf("%s resolves the cache from the inherited environment: %v; use cachedomain.Carry or cachedomain.Resolve", relative, found)
+		}
+	}
+}
