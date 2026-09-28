@@ -71,6 +71,8 @@ type ScratchRecord struct {
 	Attempt    string             `json:"attempt,omitempty"`
 	Custodians []ScratchCustodian `json:"custodians,omitempty"`
 	Worktrees  []ScratchWorktree  `json:"worktrees,omitempty"`
+	// Leases are the run-invariant slots this run claimed (scratch_lease.go).
+	Leases []string `json:"leases,omitempty"`
 }
 
 // ScratchCustodian is one resource custodian that inherited the writer lock.
@@ -247,6 +249,10 @@ func (r *ScratchRun) PlanWorktree(workspace gittree.Workspace, sub string) (*git
 	if err != nil {
 		return nil, err
 	}
+	return r.recordPlan(plan, sub)
+}
+
+func (r *ScratchRun) recordPlan(plan *gittree.WorktreePlan, sub string) (*gittree.WorktreePlan, error) {
 	tuple := ScratchWorktree{Group: sub, Parent: plan.Parent, Top: plan.Top, Control: plan.Control, Common: plan.Common, State: ScratchWorktreeReserved}
 	if err := r.mutate(func(record *ScratchRecord) error {
 		record.Worktrees = append(record.Worktrees, tuple)
@@ -540,7 +546,10 @@ func (r *ScratchRun) Cleanup(remove func(gittree.WorktreeTuple, gittree.Workspac
 			return "record reload", errors.Join(errScratchPending, err)
 		}
 		r.record = current
-		return removeRecordedWorktrees(current, ScratchOptions{RemoveWorktree: remove})
+		if reason, err := removeRecordedWorktrees(current, ScratchOptions{RemoveWorktree: remove}); err != nil {
+			return reason, err
+		}
+		return releaseScratchLeases(current)
 	})
 	if err != nil {
 		return fmt.Errorf("%s: scratch %s retained: %s: %w", ScratchIncomplete, r.record.Root, reason, err)
@@ -739,7 +748,12 @@ func reconcileScratchOne(control, store, run string, options ScratchOptions) (st
 // gone), then the root. An unresolved Git registration keeps both root and
 // record.
 func removeScratchRootWithWorktrees(record ScratchRecord, options ScratchOptions) (string, error) {
-	return removeScratchRoot(record, func() (string, error) { return removeRecordedWorktrees(record, options) })
+	return removeScratchRoot(record, func() (string, error) {
+		if reason, err := removeRecordedWorktrees(record, options); err != nil {
+			return reason, err
+		}
+		return releaseScratchLeases(record)
+	})
 }
 
 func removeRecordedWorktrees(record ScratchRecord, options ScratchOptions) (string, error) {
@@ -748,6 +762,10 @@ func removeRecordedWorktrees(record ScratchRecord, options ScratchOptions) (stri
 	}
 	for _, tuple := range record.Worktrees {
 		if tuple.State == ScratchWorktreeClosed {
+			continue
+		}
+		// A leased path another run now owns is that run's checkout.
+		if lease, leased := leaseOfWorktree(record, tuple); leased && !leaseOwnedBy(lease, record) {
 			continue
 		}
 		action, err := options.RemoveWorktree(tuple.tuple(), gittree.Workspace{Dir: tuple.Control})
