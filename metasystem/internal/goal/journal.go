@@ -22,7 +22,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"golang.org/x/sys/unix"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // Phase is a journal entry's lifecycle position. These three names
@@ -115,28 +115,23 @@ func entryPath(repoRoot, opid string) string {
 
 // JournalLock serializes every journal transition on this clone.
 // Callers hold it across read-decide-write.
-type JournalLock struct{ f *os.File }
+type JournalLock struct{ held *lock.FileLock }
 
 func AcquireJournalLock(repoRoot string) (*JournalLock, error) {
 	if err := os.MkdirAll(journalDir(repoRoot), 0o755); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(journalLockPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
+	held, err := lock.File(journalLockPath(repoRoot), 0o644, lock.Exclusive)
 	if err != nil {
 		return nil, err
 	}
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
-		f.Close()
-		return nil, err
-	}
-	return &JournalLock{f: f}, nil
+	return &JournalLock{held: held}, nil
 }
 
 func (l *JournalLock) Release() {
-	if l.f != nil {
-		_ = unix.Flock(int(l.f.Fd()), unix.LOCK_UN)
-		l.f.Close()
-		l.f = nil
+	if l.held != nil {
+		_ = l.held.Release()
+		l.held = nil
 	}
 }
 

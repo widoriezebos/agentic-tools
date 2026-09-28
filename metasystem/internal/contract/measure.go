@@ -11,11 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
@@ -310,15 +309,11 @@ func recordMeasureWorktree(projectRoot, path, sha, gateRef string) error {
 	// path registered fail-closed BEFORE its worktree exists — must
 	// never be pruned by a peer in that window, so absence prunes only
 	// past a grace no measurement setup can outlive.
-	lock, err := os.OpenFile(registry+".lock", os.O_CREATE|os.O_RDWR, 0o644)
+	held, err := lock.File(registry+".lock", 0o644, lock.Exclusive)
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
-		return err
-	}
-	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	defer held.Release()
 	kept := []string{}
 	if data, err := os.ReadFile(registry); err == nil {
 		for _, line := range strings.Split(string(data), "\n") {

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"golang.org/x/sys/unix"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // CallEvidence is one complete copy of the evidence used by a context report.
@@ -99,31 +99,33 @@ func callMaintenancePath(stateRoot string) string {
 	return filepath.Join(stateRoot, "artifacts", "agents", "context", "maintenance.lock")
 }
 
-func lockCallMaintenance(stateRoot string, exclusive, nonBlocking bool) (*os.File, error) {
+func lockCallMaintenance(stateRoot string, exclusive, nonBlocking bool) (*lock.FileLock, error) {
 	path := callMaintenancePath(stateRoot)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("cannot create call store lock directory: %w", err)
 	}
 	observeCallOpen(path)
-	lock, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
+	mode := lock.Shared
+	switch {
+	case exclusive && nonBlocking:
+		mode = lock.TryExclusive
+	case exclusive:
+		mode = lock.Exclusive
+	case nonBlocking:
+		mode = lock.TryShared
+	}
+	held, err := lock.File(path, 0o644, mode)
+	var lockErr *lock.LockError
+	switch {
+	case err == nil:
+		return held, nil
+	case !errors.As(err, &lockErr):
 		return nil, fmt.Errorf("cannot open call store maintenance lock %s: %w", path, err)
-	}
-	operation := unix.LOCK_SH
-	if exclusive {
-		operation = unix.LOCK_EX
-	}
-	if nonBlocking {
-		operation |= unix.LOCK_NB
-	}
-	if err := unix.Flock(int(lock.Fd()), operation); err != nil {
-		_ = lock.Close()
-		if nonBlocking && (errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN)) {
-			return nil, &CallStoreBusyError{Path: path}
-		}
+	case nonBlocking && lock.Busy(err):
+		return nil, &CallStoreBusyError{Path: path}
+	default:
 		return nil, fmt.Errorf("cannot lock call store maintenance lock %s: %w", path, err)
 	}
-	return lock, nil
 }
 
 func observeCallEvidenceSnapshotStep(step string) {

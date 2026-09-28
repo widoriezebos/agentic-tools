@@ -28,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
@@ -163,14 +164,15 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	if err := os.MkdirAll(runnerDir(top), 0o755); err != nil {
 		return err
 	}
-	lockFile, err := os.OpenFile(runnerLockPath(top), os.O_CREATE|os.O_RDWR, 0o644)
+	held, err := lock.File(runnerLockPath(top), 0o644, lock.TryExclusive)
+	var lockErr *lock.LockError
+	if errors.As(err, &lockErr) {
+		return fmt.Errorf("a runner already guards this repository")
+	}
 	if err != nil {
 		return err
 	}
-	defer lockFile.Close()
-	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		return fmt.Errorf("a runner already guards this repository")
-	}
+	defer held.Release()
 	_ = os.Remove(runnerStopPath(top))
 
 	self, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
@@ -630,14 +632,11 @@ func repairPinnedRunnerWithClock(top string, pinned *EnrolledBinary, beforeLock 
 	if err := os.MkdirAll(runnerDir(top), 0o755); err != nil {
 		return RunnerRepairOutcome{}, err
 	}
-	armLock, err := os.OpenFile(filepath.Join(runnerDir(top), "arm.flock"), os.O_CREATE|os.O_RDWR, 0o644)
+	armLock, err := lock.File(filepath.Join(runnerDir(top), "arm.flock"), 0o644, lock.Exclusive)
 	if err != nil {
 		return RunnerRepairOutcome{}, err
 	}
-	defer armLock.Close()
-	if err := unix.Flock(int(armLock.Fd()), unix.LOCK_EX); err != nil {
-		return RunnerRepairOutcome{}, err
-	}
+	defer armLock.Release()
 	if fence, err := readOpenFence(top, "the steward runner"); err != nil {
 		var stopped *StoppedError
 		if errors.As(err, &stopped) {

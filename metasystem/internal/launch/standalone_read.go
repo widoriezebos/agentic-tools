@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"golang.org/x/sys/unix"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // A standalone read is independent diagnostic feedback on current changes or
@@ -759,22 +759,21 @@ func (runner *UnitRunner) readLock(ref string, start bool) (*os.File, error) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return nil, err
 	}
-	name, mode := ".lock", unix.LOCK_EX|unix.LOCK_NB
+	name, mode := ".lock", lock.TryExclusive
 	if start {
-		name, mode = ".start.lock", unix.LOCK_EX
+		name, mode = ".start.lock", lock.Exclusive
 	}
-	file, err := os.OpenFile(filepath.Join(directory, name), os.O_CREATE|os.O_RDWR, 0o600)
+	held, err := lock.File(filepath.Join(directory, name), 0o600, mode)
 	if err != nil {
-		return nil, err
-	}
-	if err := unix.Flock(int(file.Fd()), mode); err != nil {
-		file.Close()
-		if !lockWouldBlock(err) {
+		if !isLockFailure(err) {
+			return nil, err
+		}
+		if !lock.Busy(err) {
 			return nil, fmt.Errorf("READ_LOCK_FAILED ref=%s: %w", ref, err)
 		}
 		return nil, fmt.Errorf("READ_BUSY ref=%s: another caller is advancing this read; repeat to follow it", ref)
 	}
-	return file, nil
+	return held.File(), nil
 }
 
 func (runner *UnitRunner) frozenRead(ref string) (ReadRequestRecord, error) {

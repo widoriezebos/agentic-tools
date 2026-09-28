@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
@@ -456,14 +457,11 @@ func (e *Engine) pinVerifiedContract(mode string, snapshot []byte, approvedSHA s
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(filepath.Join(dir, "mission-fence.lock"), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+	held, err := lock.File(filepath.Join(dir, "mission-fence.lock"), 0o644, lock.Exclusive)
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
-		return err
-	}
+	defer held.Release()
 	fencesPath := e.fencesPath()
 	var fences map[string]any
 	if pathExists(fencesPath) {
