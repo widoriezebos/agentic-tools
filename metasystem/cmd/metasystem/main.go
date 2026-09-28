@@ -135,6 +135,7 @@ func families() []family {
 			name:    "job",
 			summary: "the delegate-job domain: records, chains, locks, caps, snapshots, authority",
 			verbs: []verb{
+				{"goal-revision-admission", "judge one exact revision and proposed cap under its lock", runDispatchGoalRevisionAdmission},
 				{"resolve-roster", "resolve a role's roster pair and classify escalation", runDispatchResolveRoster},
 				{"goal-admission", "judge the structured goal budget before reservation", runDispatchGoalAdmission},
 				{"cap-continuation", "write the prior-worktree paragraph a continuation round is told after its predecessor was cut off at its cap", runDispatchCapContinuation},
@@ -166,8 +167,7 @@ func families() []family {
 		{
 			name:    "behavior-surface",
 			summary: "versioned byte projections shared by witness, landing, adoption, and weight laws",
-			verbs: []verb{
-			},
+			verbs:   []verb{},
 		},
 		{
 			name:    "gate",
@@ -253,8 +253,7 @@ func families() []family {
 		{
 			name:    "json",
 			summary: "JSON field access for shell callers",
-			verbs: []verb{
-			},
+			verbs:   []verb{},
 		},
 		{
 			name:    "covenant",
