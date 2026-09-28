@@ -1425,6 +1425,12 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "read the current goal and critique finding before retrying"})
 	}
+	if res.Unchanged {
+		// The same person's acceptance of the same finding already holds
+		// (R-129-ui, U-idem): success with no record, at the owner too.
+		dependencies.outcomeBeforeRefusal(res)
+		return 0
+	}
 	if res.Outcome != goal.OutcomeConfirmed {
 		dependencies.outcomeBeforeRefusal(res)
 		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "read the current goal and critique finding before retrying"})

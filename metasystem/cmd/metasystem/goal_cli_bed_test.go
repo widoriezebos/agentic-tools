@@ -141,6 +141,12 @@ func newGoalCLIBed(t *testing.T, seed goalCLISeed) *goalCLIBed {
 			t.Fatal(err)
 		}
 	}
+	// scripts/agents marks the installation for the state root; the bed
+	// once planted the retired pre-commit-guard.sh there (U5 moved the guard
+	// into the engine).
+	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if !seed.noEnrollment {
 		writeFixtureEnrollment(t, root, "Wido")
 	}

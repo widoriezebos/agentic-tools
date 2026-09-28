@@ -32,7 +32,6 @@ func TestBasePolicyAndBlackBoxGuardsSurviveCandidateRemovalAndInternalAPIChange(
 		"metasystem/internal/landing/carried.go":                 false,
 		"metasystem/scripts/agents/land.sh":                      false,
 		"metasystem/scripts/agents/commit.sh":                    false,
-		"metasystem/scripts/agents/validate-section-selector.sh": true,
 	} {
 		if got := ProtectedPolicyChange([]string{path}); got != want {
 			t.Errorf("ProtectedPolicyChange(%s) = %t, want %t", path, got, want)

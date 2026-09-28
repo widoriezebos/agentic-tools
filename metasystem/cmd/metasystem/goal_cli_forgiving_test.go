@@ -496,10 +496,12 @@ func TestGoalCLIForgivingBudgetMembers(t *testing.T) {
 	gcliForgivingWords(t, "an over-limit review-round member", "goal budget", code, stderr,
 		"reviewRoundLimit 4 exceeds configured maximum 3", "reviewRoundLimit 4 exceeds configured maximum 3")
 
-	// Idempotency follow-up (R-129): the standing box repeated is refused.
-	code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "approved-completion", "3h/5/300m/1", gcliForgivingFixture)
-	gcliForgivingWords(t, "an approved standing-box completion", "goal budget", code, stderr,
-		"", "the goal already carries that box")
+	// R-129 (U-idem): the standing box repeated is a repeat whose effect
+	// holds: success, nothing recorded.
+	standingTip := bed.tip()
+	if code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "approved-completion", "3h/5/300m/1", gcliForgivingFixture); code != 0 || stderr != "" || bed.tip() != standingTip {
+		t.Fatalf("an approved standing-box completion was not unchanged: code=%d stderr=%q", code, stderr)
+	}
 
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "rejected-reference", "norm", "--approved-ref", "missing-reference", gcliForgivingFixture)
 	gcliForgivingWords(t, "a rejected approval reference", "goal budget", code, stderr,
@@ -621,15 +623,16 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	}
 
 	// Fixture authority with a temporary human word: the remedy drops the
-	// pair. It is printed in the family form (internal goal budget), so it
-	// runs through the family owner; the twin is the public long form.
+	// pair. It is printed in the public form (U-idem: public remedies, with
+	// --id), which the family owner also accepts; the twin is the public
+	// long form.
 	gcliForgivingOpen(t, bed, "fixture-pair", "fixture-pair-twin")
 	tip = bed.tip()
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "fixture-pair", "norm", "--by", "Wido", gcliForgivingFixture,
 		"--temporary-human-word", "Wido authorizes this relay", "--review-by", "2026-09-06")
 	lines = gcliForgivingLines(stderr)
 	if code == 0 || len(lines) != 3 || lines[0] != "metasystem goal budget: goal budget fixture authority does not combine with a temporary human word or review date." ||
-		!strings.HasPrefix(lines[1], "run: metasystem internal goal budget ") || bed.tip() != tip {
+		!strings.HasPrefix(lines[1], "run: metasystem goal budget ") || bed.tip() != tip {
 		t.Fatalf("fixture and temporary authority did not print the dropped-pair command: code=%d stderr=%q", code, stderr)
 	}
 	pair := shellWords(strings.TrimPrefix(lines[1], "run: "))
@@ -637,7 +640,7 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 		t.Fatalf("the remedy kept the temporary pair: %q", pair)
 	}
 	if code, report := gcliForgivingFamily(bed, func(dependencies syncRequestDependencies) int {
-		return runGoalBudgetWithInputs(pair[4:], bed.prove, bed.commandNow, dependencies, gcliForgivingBinding(bed))
+		return runGoalBudgetWithInputs(pair[3:], bed.prove, bed.commandNow, dependencies, gcliForgivingBinding(bed))
 	}); code != 0 || report.refusal != nil {
 		t.Fatalf("the printed family remedy did not complete: code=%d refusal=%+v failure=%v", code, report.refusal, report.failure)
 	}
@@ -676,13 +679,14 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 		return runGoalApproveWithInputs([]string{"--root", bed.root, "--sweep", "--id", "sweep-with-id", "--confirm", "stale", "--by", "Wido", gcliForgivingFixture},
 			bed.prove, bed.commandNow, dependencies, gcliForgivingBinding(bed))
 	})
-	if code == 0 || report.refusal == nil || !strings.HasPrefix(report.refusal.remedy.command, "metasystem internal goal approve ") ||
+	// U-idem: a direct approval is the public goal approve.
+	if code == 0 || report.refusal == nil || !strings.HasPrefix(report.refusal.remedy.command, "metasystem goal approve ") ||
 		strings.Contains(report.refusal.remedy.command, "--sweep") || strings.Contains(report.refusal.remedy.command, "--confirm") {
 		t.Fatalf("approval sweep with a named goal did not print the direct approval: code=%d refusal=%+v", code, report.refusal)
 	}
 	direct := shellWords(report.refusal.remedy.command)
 	if code, report := gcliForgivingFamily(bed, func(dependencies syncRequestDependencies) int {
-		return runGoalApproveWithInputs(direct[4:], bed.prove, bed.commandNow, dependencies, gcliForgivingBinding(bed))
+		return runGoalApproveWithInputs(direct[3:], bed.prove, bed.commandNow, dependencies, gcliForgivingBinding(bed))
 	}); code != 0 || report.refusal != nil {
 		t.Fatalf("the direct approval remedy did not complete: code=%d refusal=%+v failure=%v", code, report.refusal, report.failure)
 	}
@@ -733,11 +737,13 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 		gcliForgivingLongForm(t, bed, "claimed-completion-twin", "4h", "6", "360", "1", "2", "--by", "Wido")()
 	}, "goal", "budget", "claimed-completion", "4h/6/360m/1", "--by", "Wido", gcliForgivingFixture)
 
-	// Idempotency follow-up (R-129): the completed box repeated is refused.
+	// R-129 (U-idem): the completed box repeated is a repeat whose effect
+	// holds: success, nothing recorded.
 	tip = bed.tip()
 	for _, id := range []string{"parked-completion", "claimed-completion-twin"} {
-		code, _, stderr := gcliForgivingPublic(bed, "goal", "budget", id, "4h/6/360m/1", "--by", "Wido", gcliForgivingFixture)
-		gcliForgivingWords(t, id, "goal budget", code, stderr, "", "the goal already carries that box")
+		if code, _, stderr := gcliForgivingPublic(bed, "goal", "budget", id, "4h/6/360m/1", "--by", "Wido", gcliForgivingFixture); code != 0 || stderr != "" {
+			t.Fatalf("%s: the completed box repeated was not unchanged: code=%d stderr=%q", id, code, stderr)
+		}
 	}
 	if bed.tip() != tip {
 		t.Fatal("a completed box published")
@@ -788,19 +794,19 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	if bed.tip() != tip {
 		t.Fatal("a refused accept-risk published")
 	}
-	// The family accept-risk prints the family command without the word;
+	// The family accept-risk prints the public command (U-idem) without the word;
 	// running it accepts the real fixture finding.
 	code, report = gcliForgivingFamily(bed, func(dependencies syncRequestDependencies) int {
 		return runGoalAcceptRiskWithInputs([]string{"--root", bed.root, "--id", "ship-widget", "--finding", "RISK-1", "--chain", "fixture-risk", "--why", "fixture pair",
 			"--by", "Wido", gcliForgivingFixture, "--temporary-human-word", "Wido authorizes this relay"}, bed.prove, bed.commandNow, dependencies)
 	})
-	if code == 0 || report.refusal == nil || !strings.HasPrefix(report.refusal.remedy.command, "metasystem internal goal accept-risk ") ||
+	if code == 0 || report.refusal == nil || !strings.HasPrefix(report.refusal.remedy.command, "metasystem goal accept-risk ") ||
 		strings.Contains(report.refusal.remedy.command, "--temporary-human-word") {
 		t.Fatalf("accept-risk's temporary pair did not produce a command refusal: code=%d refusal=%+v", code, report.refusal)
 	}
 	accept := shellWords(report.refusal.remedy.command)
 	if code, report := gcliForgivingFamily(bed, func(dependencies syncRequestDependencies) int {
-		return runGoalAcceptRiskWithInputs(accept[4:], bed.prove, bed.commandNow, dependencies)
+		return runGoalAcceptRiskWithInputs(accept[3:], bed.prove, bed.commandNow, dependencies)
 	}); code != 0 || report.refusal != nil {
 		t.Fatalf("accept-risk's printed remedy did not complete: code=%d refusal=%+v failure=%v", code, report.refusal, report.failure)
 	}

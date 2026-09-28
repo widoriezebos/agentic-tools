@@ -167,7 +167,7 @@ func (values *humanVerbValues) sameCommandWithout(drop ...string) string {
 	// A public command's remedy is the public form of the same act; the
 	// goal family's own form is reached through the explicit internal entry.
 	args := []string{"metasystem", "internal", "goal", values.verb}
-	if action, public := publicGoalActions[values.verb]; public && values.report != nil {
+	if action, public := publicGoalActions[values.verb]; public && values.report != nil && publicGoalTakesKept(action, values.rawArgs, dropped) {
 		args = []string{"metasystem", "goal", action}
 	}
 	for index := 0; index < len(values.rawArgs); index++ {
@@ -230,4 +230,32 @@ func goalBooleanFlag(name string) bool {
 	default:
 		return false
 	}
+}
+
+// publicGoalTakesKept reports whether the public goal action accepts every
+// option the remedy keeps. A kept option only the family form takes (the
+// approval --sweep) makes the remedy the family form, so the printed command
+// runs instead of being refused.
+func publicGoalTakesKept(action string, raw []string, dropped map[string]bool) bool {
+	command, found := findIntentAction("goal", action)
+	if !found {
+		return false
+	}
+	accepted := map[string]bool{"repo": true, "root": true, "json": true}
+	for _, flag := range command.flags {
+		accepted[flag.name] = true
+		for _, alias := range flag.aliases {
+			accepted[alias] = true
+		}
+	}
+	for _, token := range raw {
+		if !strings.HasPrefix(token, "--") {
+			continue
+		}
+		name, _, _ := strings.Cut(strings.TrimPrefix(token, "--"), "=")
+		if !dropped[name] && !accepted[name] {
+			return false
+		}
+	}
+	return true
 }
