@@ -1,9 +1,10 @@
 # The evidence root has one owner and a default
 
-Design, 2026-09-28, revision 2. Author: Fable (design lane). Approved shape: Wido, 2026-09-28.
-Revision 2 folds Astra's round 1 (`plans/evidence-root-default-astra-critique-r1.md`; dispositions at
-the foot). Status: for Astra's round 2, then a build on Opus after `embed` and `u9b` land (see
-Sequencing).
+Design, 2026-09-28, revision 3. Author: Fable (design lane). Approved shape: Wido, 2026-09-28.
+Revision 2 folded Astra's round 1 (`plans/evidence-root-default-astra-critique-r1.md`); revision 3
+folds round 2 (`plans/evidence-root-default-astra-critique-r2.md`, the failsafe round) as two fixture
+obligations in U4. Critique closed. Dispositions at the foot. Status: build on Opus after `embed` and
+`u9b` land (see Sequencing).
 
 ## Problem
 
@@ -130,7 +131,11 @@ removed; comment at 149-151 reworded to name the default), `docs/project-rules.m
 adopters have nothing to fill), `internal/audit/metasystem.go:auditPlaceholderRe` (the `<durable
 evidence root, outside the repository>` alternative removed; every other placeholder check stays),
 `internal/audit/coverage_test.go` (the adopted-repository placeholder case at ~line 239 gains a
-fixture).
+fixture). `internal/config/validate.go:resolvePath` (~line 820: absolute, symlinks followed on the
+deepest EXISTING ancestor, the missing tail re-attached lexically) is exported as
+`config.ResolvePath`, an in-package rename of its seven call sites, because U4 compares roots with
+that exact algorithm; exporting one identifier is smaller than the ninth private copy of it (eight
+packages carry one today).
 
 ```go
 const EvidenceRootKey = "evidence.root"          // the only file that spells it
@@ -230,7 +235,16 @@ root refuses before the fence with the resolver's sentence.
   committed conf and then the default. New `OSHost.EvidenceRoot(installation string)
   (config.EvidenceRoot, error)` resolves `<installation>/metasystem.conf` with a lookup that
   answers only `HOME` from this process, which is the scrubbed view the machine's own steps run
-  under. `Host` gains `EvidenceRoot` and keeps `MakeDir` and `Canonical`. The launch package
+  under (`OSHost` gains an `Env func(string) (string, bool)` field, nil meaning that lookup, so a
+  filesystem fixture can point `HOME` at a bed without `t.Setenv`). `Host` gains `EvidenceRoot` and
+  keeps `MakeDir` and `Canonical`. `OSHost.Canonical` becomes `config.ResolvePath`: a path whose
+  leaf is absent is still resolved through its existing ancestors, so `<bed>/alias/new` and
+  `<bed>/real/new` compare equal when `alias` links to `real` (ERD-02); once the leaf exists the
+  answer is the full canonical path, so the redirect refusal below is unchanged. `OSHost.MakeDir`
+  first creates the missing parents with `os.MkdirAll(filepath.Dir(path), 0o755)`, then keeps the
+  exclusive leaf `os.Mkdir` and its created-versus-existing answer, so the first launch on a host
+  whose `$HOME/metasystem-evidence` does not exist yet can make the clone's default root (ERD-06);
+  this is the one place in step 1 that creates a parent, and it is a writer. The launch package
   imports `internal/config` (no cycle: config imports nothing above it).
 - `internal/seat/launch/sequence.go:Sequencer.configuration`: the order becomes copy (when `.local`
   is absent), then judge, then the manifest and the two validations. `Sequencer.evidenceRoot` is
@@ -238,11 +252,12 @@ root refuses before the fence with the resolver's sentence.
   SOURCE seat's root (`Host.EvidenceRoot(sourceInstall)`) and the CLONE's root
   (`Host.EvidenceRoot(destinationInstall)`) after the configuration is written, and refuses
   `CodeEvidenceRootUnsafe` when: either resolution errors (an explicitly invalid root, in the
-  resolver's sentence); the clone's root is the source's, compared canonically where a path exists
-  and cleaned where it does not (a root nobody has written to cannot be a link, and today's
-  unconditional `Canonical` would refuse every seat whose default directory is not there yet);
-  `MakeDir(clone root)` did not create it and `record.Created.EvidenceRoot` is false; or
-  `Canonical(clone root)` differs from it. `record.Created.EvidenceRoot` is set and persisted the
+  resolver's sentence); the clone's root is the source's, compared as
+  `Host.Canonical(source) == Host.Canonical(clone)` with `Canonical` resolving existing ancestors
+  whether or not the leaf exists (ERD-02: a missing leaf under a symlinked parent is the same
+  directory as its target's; a plain clean would call them different); `MakeDir(clone root)` did
+  not create it and `record.Created.EvidenceRoot` is false; or `Canonical(clone root)` differs
+  from it after creation. `record.Created.EvidenceRoot` is set and persisted the
   moment the directory is made, exactly as today, and the resume exemption is unchanged. The
   judgement runs on every pass of the step, resume included; `MakeDir` is a no-op on a directory the
   record says this launch made. The step's words carry the clone's `EvidenceRoot.Line()`. A clone
@@ -269,7 +284,16 @@ resolves to the default and is accepted". The two "record says this launch made 
 cases (~463-482) stay. New: the copied conf's key is blanked; the step's words carry the line.
 `preflight_test.go`: unchanged. `host_test` (new, no Git): `CopyLocalConf` keeps every other line
 and blanks the key; `EvidenceRoot` on a fixture installation names
-`<HOME>/metasystem-evidence/<basename>`. `integration_test.go` (the one narrowly named real-Git
+`<HOME>/metasystem-evidence/<basename>`. Two fixture obligations from the failsafe round, both
+filesystem tests over `OSHost` driving `Sequencer.evidenceRoot` directly on two temp installations
+(no Runner, no Git): `TestLaunchRefusesMissingSourceRootAlias` (ERD-02) makes `<bed>/real`, links
+`<bed>/alias` to it, gives the source `.local` `evidence.root=<bed>/alias/new` and the clone's
+committed conf `evidence.root=<bed>/real/new`, both leaves absent, and asserts
+`CodeEvidenceRootUnsafe` and that `<bed>/real/new` was not created;
+`TestLaunchCreatesDefaultRootWithoutEvidenceParent` (ERD-06) points `Env("HOME")` at a bed with no
+`metasystem-evidence` directory, leaves the clone's conf without the key, and asserts the default
+root is created with `record.Created.EvidenceRoot` true, then, on a fresh record with the leaf
+pre-created, asserts the "already there and this launch did not create it" refusal still holds. `integration_test.go` (the one narrowly named real-Git
 test): the source `.local` names the bed's created `evidence/m1u` directory (today
 `/the/launching/seat`, which the source-side comparison would now read as absent); the committed
 conf keeps a concrete root but as a bed path, `<bed>/evidence/committed` (the literal `/not/this/one`
@@ -356,7 +380,8 @@ therefore written against the coordinator's description of them, not their code.
   the rewrite above them shifts; `SEAT_LAUNCH_DISK_SHORT` (`:354`) sits above it and holds. The
   `preflight.go` rows (375-378) do not move: the file is unchanged. No row names `validate.go`,
   `app.go`, `evidence_verbs.go`, `reap.go`, `data.go`, `process_verbs.go`, `intent_adopt.go`,
-  `adopt.go` or `audit/metasystem.go`.
+  `adopt.go`, `audit/metasystem.go` or `seat/launch/host.go`, so revision 3's `OSHost.MakeDir` and
+  `Canonical` changes and the `ResolvePath` rename in `config/validate.go` move no pinned site.
 - `testing-parallel-ratchet.json`: no new serial tests; deletions lower counts, which the ratchet
   allows.
 - Coverage ratchet (full gate only, `scripts/agents/coverage-ratchet.json` and
@@ -421,10 +446,12 @@ therefore written against the coordinator's description of them, not their code.
 4. Should `system start` refuse an explicitly invalid root (this design: yes, by the resolver's
    sentence, before the fence moves), or only print it and let the mirrors fail as today?
 
-## Dispositions of Astra's round 1
+## Dispositions of Astra's rounds 1 and 2
 
 | Finding | Disposition | Folded where |
 |---|---|---|
+| ERD-02 (round 2, reopened) missing roots can alias through a symlinked parent | accepted, fixture obligation | U4: roots compared through `Host.Canonical` = `config.ResolvePath` (exported in U1), which resolves existing ancestors when the leaf is absent; the "cleaned where it does not exist" exception withdrawn; fixture `TestLaunchRefusesMissingSourceRootAlias` |
+| ERD-06 (round 2) `OSHost.MakeDir` fails on a fresh default evidence tree | accepted, fixture obligation | U4: `MkdirAll` of the parent, then the exclusive leaf `Mkdir` with its created-versus-existing answer; fixture `TestLaunchCreatesDefaultRootWithoutEvidenceParent`, which also asserts an occupied leaf is still refused |
 | ERD-01 blanking `.local` does not make a launch use the default | accepted | Decision 6; U4: the clone's RESOLVED root is judged after its configuration is written, so an inherited committed concrete root is covered by the same three checks; integration fixture asserts the resolved destination root |
 | ERD-02 an unused destination does not prove an unused root | accepted | Decision 6; U4: the three isolation checks stay (source's root, existing and not created by this launch, link elsewhere) on the resolver's result, resume exemptions as today; `SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE` stays, row re-stated; the Later "launch postcondition" bullet withdrawn |
 | ERD-03 the resolver cannot judge the file explicitly requested | accepted | Decision 1; U1: `EvidenceRootParams.ConfPath`, `.local` derived as `ConfPath + ".local"`, validate passes its own `confPath`; two-neighbouring-files test |
