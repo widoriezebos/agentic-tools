@@ -75,24 +75,32 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 	// Independent test binaries have independent proof roots. Give their host
-	// admission guard the same isolation; tests exercising real contention
-	// explicitly replace this directory with their shared fixture directory.
-	admissionRoot := ""
-	if !helperProcess && os.Getenv(identity.FixtureCustodianEnv) != "1" {
-		var err error
-		admissionRoot, err = os.MkdirTemp("", "metasystem-proofrun-admission.")
-		if err != nil {
-			panic(err)
-		}
-		hostAdmissionDirectoryForTest = filepath.Join(admissionRoot, "host-admission")
+	// admission guard the same isolation, inside this binary's namespace TMPDIR;
+	// tests exercising real contention explicitly replace this directory with
+	// their shared fixture directory.
+	var setup func() error
+	if !helperProcess {
+		setup = isolateHostAdmissionDirectory
 	}
-	code := testenv.Main(m, declarations...)
-	if admissionRoot != "" {
-		if err := os.RemoveAll(admissionRoot); err != nil {
-			fmt.Fprintln(os.Stderr, "remove test host admission directory:", err)
-		}
+	os.Exit(testenv.MainWithSetup(m, setup, declarations...))
+}
+
+func isolateHostAdmissionDirectory() error {
+	root, err := os.MkdirTemp("", "metasystem-proofrun-admission.")
+	if err != nil {
+		return fmt.Errorf("create test host admission directory: %w", err)
 	}
-	os.Exit(code)
+	hostAdmissionDirectoryForTest = filepath.Join(root, "host-admission")
+	return nil
+}
+
+func TestHostAdmissionDirectoryIsInsideTheTestNamespace(t *testing.T) {
+	if hostAdmissionDirectoryForTest == "" || filepath.Base(hostAdmissionDirectoryForTest) != "host-admission" ||
+		filepath.Dir(filepath.Dir(hostAdmissionDirectoryForTest)) != os.TempDir() ||
+		!strings.HasPrefix(filepath.Base(filepath.Dir(hostAdmissionDirectoryForTest)), "metasystem-proofrun-admission.") {
+		t.Fatalf("host admission directory = %q, want metasystem-proofrun-admission.*/host-admission in the namespace TMPDIR %q",
+			hostAdmissionDirectoryForTest, os.TempDir())
+	}
 }
 
 func shardFixtureTermination() <-chan os.Signal {

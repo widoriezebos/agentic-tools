@@ -870,9 +870,9 @@ func sharedMainCall(expression ast.Expr, parameter string, testenvAliases map[st
 	}
 	if localTestenv {
 		identifier, ok := call.Fun.(*ast.Ident)
-		return ok && identifier.Name == "Main"
+		return ok && (identifier.Name == "Main" || identifier.Name == "MainWithSetup")
 	}
-	return qualifiedCall(call.Fun, testenvAliases, "Main")
+	return qualifiedCall(call.Fun, testenvAliases, "Main") || qualifiedCall(call.Fun, testenvAliases, "MainWithSetup")
 }
 
 func qualifiedCall(expression ast.Expr, aliases map[string]bool, function string) bool {
