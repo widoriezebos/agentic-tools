@@ -57,7 +57,11 @@ func runIntentSystemAdopt(inv *intentInvocation) int {
 	if inv.input.has("runtimes") && runtimeSelection == "" {
 		runtimeSelection = " "
 	}
-	result, err := adopt.Adopt(adopt.Options{
+	adoptOwner := inv.owners.adopt
+	if adoptOwner == nil {
+		adoptOwner = adopt.Adopt
+	}
+	result, err := adoptOwner(adopt.Options{
 		Source: source, Target: target, Runtimes: runtimeSelection,
 		Enable: inv.input.values["enable"], CopySkills: inv.input.switched("copy-skills"),
 		Stdout: inv.stdout, Stderr: inv.stderr,

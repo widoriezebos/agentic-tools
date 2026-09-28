@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/adopt"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -501,6 +502,9 @@ type intentOwners struct {
 	work            intentWorkOwners
 	delivery        *intentDeliveryOwners
 	connection      intentConnectionOwners
+	// adopt is the adoption owner system adopt calls; nil selects
+	// internal/adopt.
+	adopt func(adopt.Options) (adopt.Result, error)
 }
 
 func defaultIntentOwners() intentOwners {
