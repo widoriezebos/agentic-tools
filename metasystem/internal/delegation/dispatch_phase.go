@@ -242,7 +242,7 @@ func (s *session) dispatchJob(args []string) error {
 	// keeps only the approval ladder below.
 	roster, rosterErr := dispatch.ResolveRoster(dispatch.RosterParams{
 		ConfPath: filepath.Join(s.root, "metasystem.conf"), Role: a.role, Mode: mode,
-		RuntimeOverride: a.runtimeOverride, ModelOverride: a.modelOverride,
+		RuntimeOverride: a.runtimeOverride, ModelOverride: a.modelOverride, LookupEnv: s.configLookup(),
 	})
 	if rosterErr != nil {
 		s.eprintln(rosterErr.Error())
@@ -650,7 +650,7 @@ func (s *session) dispatchJob(args []string) error {
 		return exitWith(1)
 	}
 	params := dispatch.BuildRecordParams{
-		Output: recordJSON, Job: job, Role: a.role, Mission: missionID, MissionTurn: missionTurn, Stream: a.stream,
+		LookupEnv: s.configLookup(), Output: recordJSON, Job: job, Role: a.role, Mission: missionID, MissionTurn: missionTurn, Stream: a.stream,
 		Root: s.root, Runtime: runtime, Workspace: workspace, CapResolution: capResolution, Model: model,
 		AliasedFrom: aliasedFrom, RosterAliasedFrom: rosterAliasedFrom, Overridden: roster.Overridden,
 		Snapshot: snapshot.path, InputBytes: inputBytes, InputHash: inputHash, Permissions: permissionJSON,

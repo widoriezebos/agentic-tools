@@ -80,7 +80,10 @@ const (
 	// channel wait, land's test receipt, test run and app check's testing
 	// runner, the mission runner's prompt check and fence preflight, and the
 	// launch supervisor's proc setsid hop.
-	verbRatchetSelfSubprocessCeiling = 104
+	// U9b: a delegate request carrying configuration runs in this process
+	// (VOA-14, runDelegateChild gone), and the deleted verbs' self-launches
+	// went with them; measured 94.
+	verbRatchetSelfSubprocessCeiling = 94
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
 	verbRatchetInstructionCeiling = 40

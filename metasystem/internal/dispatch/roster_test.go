@@ -259,3 +259,27 @@ func TestResolveRosterDecisions(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveRosterReadsItsConfigurationLookupNotTheProcess: a request's
+// configuration (a selected installation's roster) reaches the roster
+// through the params' lookup, never through process environment.
+func TestResolveRosterReadsItsConfigurationLookupNotTheProcess(t *testing.T) {
+	t.Parallel()
+	conf := writeConf(t, rosterBase, "role.code-critic.runtime=claude", "role.code-critic.model.claude=sonnet")
+	overlay := map[string]string{
+		"METASYSTEM_ROLE_CODE_CRITIC_RUNTIME":     "codex",
+		"METASYSTEM_ROLE_CODE_CRITIC_MODEL_CODEX": "gpt-5.6-sol",
+	}
+	lookup := func(key string) (string, bool) { value, ok := overlay[key]; return value, ok }
+	got, err := ResolveRoster(RosterParams{ConfPath: conf, Role: "code-critic", LookupEnv: lookup})
+	if err != nil || got.Runtime != "codex" || got.Model != "gpt-5.6-sol" {
+		t.Fatalf("roster with a configuration lookup = %+v, %v; want codex:gpt-5.6-sol", got, err)
+	}
+	if err := ValidateRuntimeHazardConfigurationWith(lookup, t.TempDir(), "claude", "opus", HazardDestructiveReach); err == nil {
+		t.Fatal("a claude builder without maximal models passed the destructive-reach check")
+	}
+	overlay["METASYSTEM_RUNTIME_CLAUDE_MAXIMAL_MODELS"] = "opus"
+	if err := ValidateRuntimeHazardConfigurationWith(lookup, t.TempDir(), "claude", "opus", HazardDestructiveReach); err != nil {
+		t.Fatalf("the lookup's maximal models were not read: %v", err)
+	}
+}

@@ -45,6 +45,9 @@ type ClaimResult struct {
 }
 
 type ClaimLaunchParams struct {
+	// LookupEnv is the invocation's configuration environment; nil is the
+	// process environment.
+	LookupEnv            func(string) (string, bool)
 	Root                 string
 	OpID                 string
 	OperationID          string
@@ -83,7 +86,7 @@ func ClaimLaunchPreflight(params ClaimLaunchParams) (ClaimResult, error) {
 	if err := validateClaimReviews(params.Request.Role, params.Reviews); err != nil {
 		return ClaimResult{}, err
 	}
-	if err := ValidateRuntimeHazardConfiguration(params.Root, params.Request.Runtime, params.Request.Model, params.Request.DestructiveReach); err != nil {
+	if err := ValidateRuntimeHazardConfigurationWith(params.LookupEnv, params.Root, params.Request.Runtime, params.Request.Model, params.Request.DestructiveReach); err != nil {
 		return ClaimResult{}, err
 	}
 	fingerprint, err := CanonicalizeLaunchFingerprint(params.Root, params.Request, params.DefaultCapMinutes)
@@ -249,7 +252,7 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	if err != nil {
 		return ClaimResult{}, err
 	}
-	if err := ValidateRuntimeHazardConfiguration(params.Root, params.Request.Runtime, params.Request.Model, params.Request.DestructiveReach); err != nil {
+	if err := ValidateRuntimeHazardConfigurationWith(params.LookupEnv, params.Root, params.Request.Runtime, params.Request.Model, params.Request.DestructiveReach); err != nil {
 		return ClaimResult{}, err
 	}
 	fingerprint, err := CanonicalizeLaunchFingerprint(params.Root, params.Request, params.DefaultCapMinutes)

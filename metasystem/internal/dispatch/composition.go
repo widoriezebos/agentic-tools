@@ -124,6 +124,9 @@ type MachineSlotAdmission struct {
 // ComposeRolePacketParams names every value that may enter the closed packet.
 // ExtraSources are assertions from an outer caller; they never add bytes.
 type ComposeRolePacketParams struct {
+	// LookupEnv is the invocation's configuration environment; nil is the
+	// process environment.
+	LookupEnv         func(string) (string, bool)
 	Root              string
 	Role              string
 	Brief             string
@@ -249,7 +252,7 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 	if err != nil {
 		return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-HAZARD-CONFIGURATION", Source: string(p.DestructiveReach), Detail: err.Error()}
 	}
-	if err := ValidateRuntimeHazardConfiguration(p.Root, p.Runtime, p.Model, p.DestructiveReach); err != nil {
+	if err := ValidateRuntimeHazardConfigurationWith(p.LookupEnv, p.Root, p.Runtime, p.Model, p.DestructiveReach); err != nil {
 		return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-HAZARD-CONFIGURATION", Source: p.Runtime, Detail: err.Error()}
 	}
 	inlineLimit, err := InlineInputLimitBytes(filepath.Join(p.Root, "metasystem.conf"))
