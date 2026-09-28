@@ -216,14 +216,3 @@ func TestAuditStopDecisionSurfaceRefusesRecordTheGoalParserRejects(t *testing.T)
 		t.Fatalf("audit error = code %d, stdout %q, stderr %q, audit calls %d, declaration calls %d", code, stdout, stderr, auditCalls, declareCalls)
 	}
 }
-
-func writeAuditStopFixture(t *testing.T, root, path, content string) {
-	t.Helper()
-	absolute := filepath.Join(root, filepath.FromSlash(path))
-	if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(absolute, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}

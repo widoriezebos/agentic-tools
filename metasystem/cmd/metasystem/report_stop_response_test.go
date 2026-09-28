@@ -60,6 +60,7 @@ func TestStopResponseRefusesAnUnreadableResponse(t *testing.T) {
 		}
 	})
 }
+
 // TestBedsResolveStopReportsThroughTheEngine: no script derives a report
 // reference from console text. The fixture resolver it also pinned retired
 // to the stopreport owner (verbs-object-action U7c).
