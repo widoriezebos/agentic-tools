@@ -290,6 +290,20 @@ func TestTheEvidenceRootRefusesThisSeatsOwnRoot(t *testing.T) {
 	}
 }
 
+func TestTheEvidenceRootRefusesTheTemplatesPlaceholder(t *testing.T) {
+	t.Parallel()
+	built := newWorld(request())
+	built.runner.said["metasystem config get --key evidence.root --conf "+filepath.Join(fromRoot, install, "metasystem.conf")] = "<durable evidence root, outside the repository>\n"
+	_, err := built.sequencer.Run(fresh())
+	refusal, named := err.(*Refusal)
+	if !named || refusal.Code != CodeEvidenceRootUnsafe {
+		t.Fatalf("error = %v, want %s", err, CodeEvidenceRootUnsafe)
+	}
+	if !strings.Contains(refusal.Message, "not set") {
+		t.Fatalf("refusal = %q, want it to say the root is not set", refusal.Message)
+	}
+}
+
 func TestTheEvidenceRootRefusesADirectoryThatResolvesElsewhere(t *testing.T) {
 	t.Parallel()
 	built := newWorld(request())

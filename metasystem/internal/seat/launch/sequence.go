@@ -549,8 +549,8 @@ func (s *Sequencer) evidenceRoot(record *Record) (string, error) {
 		return "", err
 	}
 	mine := strings.TrimSpace(printed)
-	if mine == "" {
-		return "", refuse(CodeEvidenceRootUnsafe, "this seat's engine names no evidence root")
+	if !filepath.IsAbs(mine) {
+		return "", refuse(CodeEvidenceRootUnsafe, "this seat's evidence root is not set (evidence.root reads %q)", mine)
 	}
 	canonical, err := s.Host.Canonical(mine)
 	if err != nil {

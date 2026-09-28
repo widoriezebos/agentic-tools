@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3GZ2C32STTMZB001PEVRYRN
-- Status: draft
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-27, on the question left open since 2026-09-26 whether

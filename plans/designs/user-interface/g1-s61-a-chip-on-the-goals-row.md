@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3FSBWHJHX2NR2H7B1N3SQFN
-- Status: draft
+- Status: done
 - Goals: browser-interface
 
 Step 3 of g1-s58 (its section 4), on Wido's UX ruling of 2026-09-26

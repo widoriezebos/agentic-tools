@@ -33,8 +33,9 @@ const (
 	// CodeDiskShort is free disk at the destination's parent against twice
 	// the size of this checkout.
 	CodeDiskShort = "SEAT_LAUNCH_DISK_SHORT"
-	// CodeEvidenceRootUnsafe is a sibling evidence root that is this seat's
-	// own, or that resolves through a symlink to somewhere else.
+	// CodeEvidenceRootUnsafe is a seat with no evidence root set, or a
+	// sibling evidence root that is this seat's own, or that resolves through
+	// a symlink to somewhere else.
 	CodeEvidenceRootUnsafe = "SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE"
 	// CodeWordRequired is a resume that reaches enrollment without the word
 	// and the date, which the record never held.
@@ -71,7 +72,7 @@ func (r *Refusal) Error() string {
 		// Rule H1: the one damage refusal of the launch guides. The new
 		// machine's evidence would land in this seat's root or outside
 		// the evidence tree; the person fixes the root and resumes.
-		return r.Code + ": " + r.Message + "; the new machine's evidence would mix with another root's, so set evidence.root in this seat's metasystem.conf to a directory of its own under the fleet's evidence tree, then resume with metasystem machine start NAME --resume ID"
+		return r.Code + ": " + r.Message + "; the new machine's evidence would mix with another root's, so set evidence.root in this seat's metasystem.conf.local to a directory of its own under the fleet's evidence tree, then retry the launch (Retry on the fleet page, or metasystem machine start NAME --resume ID)"
 	}
 	return r.Code + ": " + r.Message
 }

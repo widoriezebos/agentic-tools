@@ -55,7 +55,7 @@ func TestAResumeKeepsTheNicknameItsOwnLaunchSet(t *testing.T) {
 	}
 	asked := askFor("m1f", where)
 	asked.Resume = launchID
-	facts := Facts{This: "m1u", Taken: []string{"m1f"}, Created: Created{Destination: true, Nickname: true}}
+	facts := Facts{This: "m1u", Taken: []string{"m1f"}, Created: Created{Destination: true, Nickname: true}, EvidenceRoot: "/w/evidence/m1u"}
 	if err := Preflight(asked, facts); err != nil {
 		t.Fatalf("a resume was refused its own nickname: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestAResumesOwnDestinationIsNotRefusedForBeingACheckout(t *testing.T) {
 	}
 	asked := askFor("m1f", where)
 	asked.Resume = launchID
-	if err := Preflight(asked, Facts{Created: Created{Destination: true}}); err != nil {
+	if err := Preflight(asked, Facts{Created: Created{Destination: true}, EvidenceRoot: "/w/evidence/m1u"}); err != nil {
 		t.Fatalf("a resume was refused the clone it made: %v", err)
 	}
 }
@@ -162,5 +162,17 @@ func TestSiblingsAreTheClonesBesideThisCheckout(t *testing.T) {
 	got := Siblings(parent, "agentic-tools")
 	if len(got) != 2 || got[0] != "m1b" || got[1] != "m1c" {
 		t.Fatalf("siblings = %v, want m1b and m1c", got)
+	}
+}
+
+func TestASeatWithNoEvidenceRootIsRefusedBeforeAnythingIsCloned(t *testing.T) {
+	t.Parallel()
+	// The template ships a placeholder, not a path: a seat that never set its
+	// own has no root to put the new machine's beside.
+	for _, root := range []string{"", "<durable evidence root, outside the repository>"} {
+		err := Preflight(askFor("m1f", filepath.Join(t.TempDir(), "clone")), Facts{This: "m1u", EvidenceRoot: root})
+		if got := refusalOf(t, err); got.Code != CodeEvidenceRootUnsafe {
+			t.Fatalf("%q = %s, want %s", root, got.Code, CodeEvidenceRootUnsafe)
+		}
 	}
 }

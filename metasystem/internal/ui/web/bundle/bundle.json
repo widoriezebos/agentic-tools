@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:27fa011271af20e85c859c4b8f159a3647caee03eb5992c1d9997e0dafba3f0e",
+  "sourceDigest": "sha256:6a238b36d73752bf5b76c4515a599935871adf89916cf83c11a5685a9b071186",
   "source": [
     {
       "path": ".npmrc",
@@ -36,7 +36,7 @@
     },
     {
       "path": "scripts/bundle.mjs",
-      "sha256": "53d098abac5ddedf6d07417ca23079c8b50584f1b936fb4bf5da0329c08ff6ce"
+      "sha256": "6439a3e39a2b525aeadf1ff8001d887a6ebae132de5c430574b3e38f86c74671"
     },
     {
       "path": "scripts/digest.mjs",

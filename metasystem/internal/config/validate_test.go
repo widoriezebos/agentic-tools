@@ -327,6 +327,23 @@ func TestValidateRejections(t *testing.T) {
 	}
 }
 
+// TestValidateJudgesTheEffectiveEvidenceRoot: the template ships a
+// placeholder and a seat names its own root in .local, so the .local value
+// is the one judged, and a relative one there is still refused.
+func TestValidateJudgesTheEffectiveEvidenceRoot(t *testing.T) {
+	t.Parallel()
+	conf := "metasystem.runtimes=fake\nevidence.root=<durable evidence root, outside the repository>\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\n"
+	if problems := validateRepo(t, conf, "evidence.root="+t.TempDir()+"\n"); hasProblem(problems, "evidence.root") {
+		t.Fatalf("an absolute .local root was refused: %v", problems)
+	}
+	if problems := validateRepo(t, conf); !hasProblem(problems, "evidence.root must be absolute") {
+		t.Fatalf("the placeholder alone was not refused: %v", problems)
+	}
+	if problems := validateRepo(t, conf, "evidence.root=relative/dir\n"); !hasProblem(problems, "evidence.root must be absolute") {
+		t.Fatalf("a relative .local root was not refused: %v", problems)
+	}
+}
+
 // TestValidateRegistrationMissing exercises the adopted-repository check: with
 // the template marker absent, a rostered runtime whose registration directory
 // is missing is reported.
