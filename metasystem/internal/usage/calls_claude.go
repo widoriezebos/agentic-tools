@@ -24,7 +24,7 @@ func claudeTranscript(opts ReadOptions, session string) (path string, reason str
 		if cwd == "" {
 			continue
 		}
-		directory := filepath.Join(home, ".claude", "projects", claudeSlug(cwd))
+		directory := filepath.Join(home, ".claude", "projects", ClaudeProjectFolder(cwd))
 		candidate := filepath.Join(directory, session+".jsonl")
 		candidates = append(candidates, candidate)
 		if !pathWithin(directory, candidate) {
@@ -57,7 +57,7 @@ func MemoryDirectory(opts ReadOptions) (path string, reason string) {
 		if cwd == "" {
 			continue
 		}
-		candidate := filepath.Join(projects, claudeSlug(cwd), "memory")
+		candidate := filepath.Join(projects, ClaudeProjectFolder(cwd), "memory")
 		candidates = append(candidates, candidate)
 		if !pathWithin(projects, candidate) {
 			continue
@@ -70,7 +70,10 @@ func MemoryDirectory(opts ReadOptions) (path string, reason string) {
 	return "", fmt.Sprintf("unknown (no memory directory at %s)", strings.Join(candidates, " or "))
 }
 
-func claudeSlug(cwd string) string {
+// ClaudeProjectFolder names the folder under ~/.claude/projects where Claude
+// Code keeps a working directory's transcripts and memory: every byte outside
+// [A-Za-z0-9] becomes '-'. It is the one owner of that encoding.
+func ClaudeProjectFolder(cwd string) string {
 	bytes := []byte(cwd)
 	for index, value := range bytes {
 		if (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z') || (value >= '0' && value <= '9') {

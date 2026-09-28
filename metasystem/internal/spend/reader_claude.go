@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 type transcriptRequest struct {
@@ -253,7 +254,7 @@ func discoverClaudeTranscripts(repoRoot string) discoveryResult {
 		result.fatal = true
 		return result
 	}
-	slug := strings.ReplaceAll(result.toplevel, string(filepath.Separator), "-")
+	slug := usage.ClaudeProjectFolder(result.toplevel)
 	projects := filepath.Join(home, ".claude", "projects")
 	_ = filepath.WalkDir(projects, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
