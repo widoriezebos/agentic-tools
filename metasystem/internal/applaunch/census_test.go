@@ -3,6 +3,8 @@ package applaunch
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
@@ -208,5 +210,23 @@ func TestSuperviseKeepsWaitingWhenItsGroupCannotBeRead(t *testing.T) {
 	case <-done:
 	case <-time.After(20 * time.Second):
 		t.Fatal("the supervisor did not finish")
+	}
+}
+
+// A foreign service answering the probe is never the application: readiness
+// is accepted only while the owned child is alive.
+func TestAwaitReadyRefusesAForeignAnswerWhenTheChildHasExited(t *testing.T) {
+	t.Parallel()
+	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	defer foreign.Close()
+	address := strings.TrimPrefix(foreign.URL, "http://")
+	for _, form := range []Contract{
+		{Address: address, Ready: &Ready{Kind: ReadyHTTP, URL: "http://${address}/-/health"}},
+		{Address: address, Ready: &Ready{Kind: ReadyTCP, Address: "${address}"}},
+	} {
+		err := AwaitReady(context.Background(), form, address, "", 0, func() bool { return false }, time.Second)
+		if !ExitedBeforeReady(err) {
+			t.Fatalf("%s: a child that exited while a foreign listener answers is reported as exited: %v", form.ReadyKind(), err)
+		}
 	}
 }

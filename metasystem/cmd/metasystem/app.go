@@ -348,14 +348,20 @@ func (r appRun) prepareData(out io.Writer, force bool) error {
 }
 
 // allocateAddress gives the standing run the contract's address and every
-// other run one of its own from the range. A port a contract cannot give is
-// named, not guessed.
+// other run one of its own from the range. A port a contract cannot give, or
+// one another process holds, is named, not guessed.
 func (r *appRun) allocateAddress() error {
 	if r.contract.Address == "" {
 		r.address = ""
 		return nil
 	}
 	if r.ref == "" {
+		// The standing address is the contract's own and is not chosen, so it
+		// is checked: another service answering there would be taken for
+		// this application.
+		if !available(r.contract.Address) {
+			return fmt.Errorf("the standing address %s is taken by another process; free it or change address in the launch contract", r.contract.Address)
+		}
 		r.address = r.contract.Address
 		return nil
 	}

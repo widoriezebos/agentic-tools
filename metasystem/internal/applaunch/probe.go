@@ -119,11 +119,14 @@ func AwaitReady(ctx context.Context, contract Contract, address, logPath string,
 		default:
 			ready = ProbeOnce(contract, address) == nil
 		}
-		if ready {
-			return nil
-		}
+		// Alive is asked after the probe and before its answer is accepted:
+		// an answer at the address while the owned child is gone is another
+		// service's, never this application's readiness.
 		if alive != nil && !alive() {
 			return errExitedBeforeReady
+		}
+		if ready {
+			return nil
 		}
 		if !time.Now().Before(deadline) {
 			return errReadyTimeout
