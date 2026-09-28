@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   ANSWERS,
+  deskKey,
+  deskReadKey,
   KEEP_REFUSED,
   steppingOut,
   CLEAR_REFUSED,
@@ -258,6 +260,24 @@ describe("the record's head", () => {
     // Everything below the head is untouched.
     expect(again.slice(again.indexOf("## Findings"))).toBe("## Findings\n");
     expect(retipped("# no head\n", now)).toBeNull();
+  });
+
+  it("keys every desk read by the reviewed commit as well as the item, so a retip reads it again (Sol SOL-A-03)", () => {
+    const now = "f".repeat(40);
+    const item: DeskItem = { kind: "source", path: "owner.go", from: 1, to: 40 };
+    const before = deskReadKey(item, reviewedOf(head));
+    const after = deskReadKey(item, reviewedOf(retipped(head, now) ?? ""));
+    expect(before).toContain(tip);
+    expect(after).toContain(now);
+    expect(after).not.toBe(before);
+    for (const other of [{ kind: "changes" }, { kind: "diff", path: "a.go" }, { kind: "section", record: "r.md", section: "D1" }] as DeskItem[]) {
+      expect(deskReadKey(other, reviewedOf(retipped(head, now) ?? ""))).not.toBe(deskReadKey(other, reviewedOf(head)));
+    }
+    // The strip's items keep their identity across the retip.
+    expect(deskKey(item)).toBe(deskKey({ ...item }));
+    // A done goal's reads are keyed by its landed commits.
+    const landed = reviewedOf("- Goals: g1-s50\n- Reviewed: " + "1".repeat(40) + " (landed with Goal-Item: g1-s50)\n");
+    expect(deskReadKey(item, landed)).toContain("1".repeat(40));
   });
 });
 

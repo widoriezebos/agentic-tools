@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { loadChanges, loadDiff, loadSource, type Changes, type FileDiff, type Source } from "./api";
-import { deskKey, deskLabel, type DeskItem } from "./room";
+import { deskKey, deskLabel, deskReadKey, reviewedOf, type DeskItem } from "./room";
 import { ASK_REVISION, ASK_SOURCE, ASK_SURFACE } from "../partner/AskSelection";
 import { usePartner } from "../partner/store";
 import { Help } from "../help/Help";
@@ -19,8 +19,9 @@ import { Markdown } from "../project/Markdown";
  * read one tree.
  */
 export function Desk({ record }: { record: string }) {
-  const { room, putOnDesk, showOnDesk } = usePartner();
+  const { room, putOnDesk, showOnDesk, table } = usePartner();
   const item = room.desk.current >= 0 ? room.desk.items[room.desk.current] : undefined;
+  const reviewed = reviewedOf(table.source);
   return (
     <div className="ms-desk">
       <nav className="ms-desk-strip" aria-label="What has been on the desk">
@@ -59,23 +60,24 @@ export function Desk({ record }: { record: string }) {
             open it here, or a walk to have your Partner put things here as it explains them.
           </p>
         ) : (
-          <DeskView key={deskKey(item)} record={record} item={item} />
+          <DeskView key={deskReadKey(item, reviewed)} record={record} item={item} at={deskReadKey(item, reviewed)} />
         )}
       </div>
     </div>
   );
 }
 
-function DeskView({ record, item }: { record: string; item: DeskItem }) {
+/** `at` is the read's key, the item at the reviewed commit, which every read below is made under. */
+function DeskView({ record, item, at }: { record: string; item: DeskItem; at: string }) {
   switch (item.kind) {
     case "source":
-      return <SourceView record={record} path={item.path} from={item.from} to={item.to} />;
+      return <SourceView record={record} path={item.path} from={item.from} to={item.to} at={at} />;
     case "changes":
-      return <ChangesView record={record} since={item.since === true} />;
+      return <ChangesView record={record} since={item.since === true} at={at} />;
     case "diff":
-      return <DiffView record={record} path={item.path} since={item.since === true} />;
+      return <DiffView record={record} path={item.path} since={item.since === true} at={at} />;
     case "section":
-      return <SectionView record={item.record} section={item.section} />;
+      return <SectionView record={item.record} section={item.section} at={at} />;
   }
 }
 
@@ -118,9 +120,9 @@ function Refused({ reason }: { reason: string }) {
  * marked. The lines are a selection surface: selecting some offers Ask and
  * Finding, anchored at exactly those lines of exactly this tip (D7).
  */
-function SourceView({ record, path, from, to }: { record: string; path: string; from: number; to: number }) {
+function SourceView({ record, path, from, to, at }: { record: string; path: string; from: number; to: number; at: string }) {
   const { putOnDesk } = usePartner();
-  const read = useRead<Source>((signal) => loadSource(record, path, from, to, signal), `${path}:${String(from)}:${String(to)}`);
+  const read = useRead<Source>((signal) => loadSource(record, path, from, to, signal), at);
   if (read.state === "loading") {
     return <p className="ms-desk-loading">Reading {path} from the reviewed tree…</p>;
   }
@@ -201,9 +203,9 @@ export function SourceShown({ source, put }: { source: Source; put: (item: DeskI
  * its diff. A done goal's index is its landed commits' own changes, each against
  * its first parent, so it is never empty for changed work (Astra S65-02).
  */
-function ChangesView({ record, since }: { record: string; since: boolean }) {
+function ChangesView({ record, since, at }: { record: string; since: boolean; at: string }) {
   const { putOnDesk } = usePartner();
-  const read = useRead<Changes>((signal) => loadChanges(record, since, signal), `changes:${String(since)}`);
+  const read = useRead<Changes>((signal) => loadChanges(record, since, signal), at);
   if (read.state === "loading") {
     return <p className="ms-desk-loading">Reading the change…</p>;
   }
@@ -264,9 +266,9 @@ export function ChangesShown({ changes, since, put }: { changes: Changes; since:
 }
 
 /** One file's change as hunks, each line numbered on its sides and marked. */
-function DiffView({ record, path, since }: { record: string; path: string; since: boolean }) {
+function DiffView({ record, path, since, at }: { record: string; path: string; since: boolean; at: string }) {
   const { putOnDesk } = usePartner();
-  const read = useRead<FileDiff>((signal) => loadDiff(record, path, since, signal), `diff:${path}:${String(since)}`);
+  const read = useRead<FileDiff>((signal) => loadDiff(record, path, since, signal), at);
   if (read.state === "loading") {
     return <p className="ms-desk-loading">Reading {path}'s change…</p>;
   }
@@ -348,8 +350,8 @@ export function DiffShown({ diff, since, put }: { diff: FileDiff; since: boolean
  * Partner or an anchor named, and everything under it to the next heading of
  * its level.
  */
-function SectionView({ record, section }: { record: string; section: string }) {
-  const read = useRead<DocumentPayload>((signal) => loadDocument(record, signal), `section:${record}`);
+function SectionView({ record, section, at }: { record: string; section: string; at: string }) {
+  const read = useRead<DocumentPayload>((signal) => loadDocument(record, signal), at);
   if (read.state === "loading") {
     return <p className="ms-desk-loading">Reading {record}…</p>;
   }

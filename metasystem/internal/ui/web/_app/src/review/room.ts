@@ -511,6 +511,17 @@ function headLines(source: string): { lines: string[]; end: number } {
   return { lines, end: end < 0 ? lines.length : end };
 }
 
+/**
+ * What one desk read is of: the item, at the commit the record says was
+ * reviewed. After Review the new tip the same item is another read, so the desk
+ * reads it again rather than showing the old tip under the new one's header
+ * (Sol SOL-A-03). The strip's items keep `deskKey`, their identity.
+ */
+export function deskReadKey(item: DeskItem, reviewed: Reviewed): string {
+  const at = reviewed.tip !== "" ? reviewed.tip : reviewed.landed.join(" ");
+  return `${at}|${deskKey(item)}`;
+}
+
 export function reviewedOf(source: string): Reviewed {
   const { lines, end } = headLines(source);
   const read: Reviewed = { goal: "", tip: "", landed: [], previously: [] };
