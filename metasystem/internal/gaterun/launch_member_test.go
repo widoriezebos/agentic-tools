@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // makeFifo creates one named pipe under dir; the launched shells below use
@@ -115,7 +117,7 @@ read -r _ < "$2"
 	if err != nil || int64(pgid) != pid {
 		t.Fatalf("pgid = %d err=%v, want the pid %d", pgid, err, pid)
 	}
-	sid, err := syscall.Getsid(int(pid))
+	sid, err := unix.Getsid(int(pid))
 	if err != nil || int64(sid) != pid {
 		t.Fatalf("sid = %d err=%v, want the pid %d", sid, err, pid)
 	}
