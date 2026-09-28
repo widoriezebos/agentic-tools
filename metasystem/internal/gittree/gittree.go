@@ -106,10 +106,17 @@ var configPins = []string{
 // subprocesses) would let the wall inspect a repository the mission does
 // not live in, a foreign GIT_INDEX_FILE would swap the staged projection,
 // and GIT_REPLACE_REF_BASE relocates the replacement namespace the config
-// pin disables. Every runner git surface strips the whole set.
+// pin disables. Discovery (GIT_DISCOVERY_ACROSS_FILESYSTEM,
+// GIT_IMPLICIT_WORK_TREE) and an inherited GIT_PREFIX change which
+// repository and which paths a child resolves, so they go too. Every runner
+// git surface strips the whole set; it is the union of the copies goal,
+// channel and the hook launcher once kept. GIT_NO_REPLACE_OBJECTS stays: it
+// only turns replacement OFF, and stripping it would re-enable a planted
+// replace ref for a caller that does not pin core.useReplaceRefs.
 var steeringEnv = map[string]bool{
 	"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_COMMON_DIR": true,
 	"GIT_INDEX_FILE": true, "GIT_CEILING_DIRECTORIES": true,
+	"GIT_DISCOVERY_ACROSS_FILESYSTEM": true, "GIT_IMPLICIT_WORK_TREE": true, "GIT_PREFIX": true,
 	"GIT_OBJECT_DIRECTORY": true, "GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
 	"GIT_NAMESPACE": true, "GIT_REPLACE_REF_BASE": true,
 	"GIT_GRAFT_FILE": true, "GIT_SHALLOW_FILE": true,
@@ -123,7 +130,12 @@ var steeringEnv = map[string]bool{
 // here, so the repository judged is always the one containing the
 // invocation directory.
 func ScrubbedEnviron(extra ...string) []string {
-	base := os.Environ()
+	return ScrubbedEnvironFrom(os.Environ(), extra...)
+}
+
+// ScrubbedEnvironFrom is ScrubbedEnviron over a caller-supplied base
+// environment instead of the process's own.
+func ScrubbedEnvironFrom(base []string, extra ...string) []string {
 	out := make([]string, 0, len(base)+len(extra))
 	for _, entry := range base {
 		name, _, _ := strings.Cut(entry, "=")
