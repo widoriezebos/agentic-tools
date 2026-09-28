@@ -480,7 +480,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		return PublishRequest{}, fmt.Errorf("set-priority is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal")
 	case "engine-floor":
 		return PublishRequest{}, fmt.Errorf("engine-floor is retired and cannot be replayed from journal text")
-	case "abandon", "carry":
+	case "abandon", "carry", reviewVerb:
 		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal", in.Verb)
 	case "split":
 		members, err := ParseMemberDraft([]byte(in.Args["members"]), target)
@@ -503,6 +503,12 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		return releaseRequestWithReason(r, target, in.Args["reason"]), nil
 	case "land-ready":
 		return landReadyRequest(r, target), nil
+	case sendBackVerb:
+		answer, err := parseSendBackReason(in.Args["reason"])
+		if err != nil {
+			return PublishRequest{}, fmt.Errorf("the stored send-back answer does not parse; close it by hand: %w", err)
+		}
+		return answerSendBackRequest(r, target, answer), nil
 	case "done":
 		return doneRequest(r, target, in.Args["conclusion"]), nil
 	case "park":

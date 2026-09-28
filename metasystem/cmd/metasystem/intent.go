@@ -105,7 +105,7 @@ var (
 func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
-		goalIntentCommands(), intentPlanningCommands(), designIntentCommands(), intentWorkCommands(),
+		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), designIntentCommands(), intentWorkCommands(),
 		intentDeliveryCommands(), helmIntentCommands(), processIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
 	} {
 		commands = append(commands, part...)
@@ -512,6 +512,9 @@ type intentOwners struct {
 	helm  helmOwners
 	// hookSwitch adjusts system setup's seams; nil keeps production.
 	hookSwitch func(hookswitch.Deps) hookswitch.Deps
+	// sentBackRevise runs the one work revise a sent-back goal's holder
+	// performs on the published brief; nil runs the public verb in-process.
+	sentBackRevise func(inv *intentInvocation, raw []string) intentResult
 }
 
 func defaultIntentOwners() intentOwners {
