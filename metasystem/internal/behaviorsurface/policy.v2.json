@@ -92,7 +92,6 @@
     "supervisor fingerprint heal harness",
     "mission-fixtures",
     "conformance-fixtures",
-    "goal-cli-fixtures",
     "telemetry-census-fixtures",
     "return-schema-fixtures",
     "authority-regression-fixtures",

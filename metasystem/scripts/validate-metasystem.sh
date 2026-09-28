@@ -1130,7 +1130,6 @@ bash -n scripts/agents/checkout-execution-guard-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/adopt-fixtures.sh
 bash -n scripts/agents/conformance-fixtures.sh
-bash -n scripts/agents/goal-cli-fixtures.sh
 bash -n scripts/agents/brain-fixtures.sh
 bash -n scripts/agents/oldest-bash-gate.sh
 bash scripts/agents/oldest-bash-gate.sh --self-test >/dev/null
@@ -1142,10 +1141,6 @@ fi
 if section_selected conformance-fixtures; then
   delivery_contract_skip conformance-fixtures \
     || run_section conformance-fixtures needs-engine bash scripts/agents/conformance-fixtures.sh
-fi
-if section_selected goal-cli-fixtures; then
-  delivery_contract_skip goal-cli-fixtures \
-    || run_section goal-cli-fixtures needs-engine bash scripts/agents/goal-cli-fixtures.sh
 fi
 if section_selected brain-fixtures; then
   delivery_contract_skip brain-fixtures \
