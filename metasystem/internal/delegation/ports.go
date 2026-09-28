@@ -167,7 +167,7 @@ type ProcessOps interface {
 	SignalGroup(pgid int64, sig Signal) error
 	// CustodyGroups lists a record's custody process-group kill targets.
 	CustodyGroups(record map[string]any) ([]int64, error)
-	// StartedAt is a live pid's kernel start second (proc started-at).
+	// StartedAt is a live pid's kernel start second (identity.KernelProber).
 	StartedAt(pid int64) (int64, error)
 	// ClaimProcesses is the process-table reading the claim state machine
 	// and the reservation reconciliation judge by.

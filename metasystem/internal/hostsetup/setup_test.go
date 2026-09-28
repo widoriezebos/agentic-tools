@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
@@ -656,13 +657,12 @@ func TestHostSetupIdentityEngineHelper(t *testing.T) {
 			}
 		}
 		pidNumber, parseErr := strconv.Atoi(pid)
-		startedOutput, startedErr := exec.Command(realEngine, "proc", "started-at", "--pid", pid).Output()
-		started, startedParseErr := strconv.ParseInt(strings.TrimSpace(string(startedOutput)), 10, 64)
-		if parseErr != nil || startedErr != nil || startedParseErr != nil {
-			fmt.Fprintf(os.Stderr, "fixture identity unavailable: pid=%q parse=%v started=%v start-parse=%v\n", pid, parseErr, startedErr, startedParseErr)
+		exact, startedState, startedErr := (identity.KernelProber{}).Probe(int64(pidNumber))
+		if parseErr != nil || startedErr != nil || startedState != identity.Alive {
+			fmt.Fprintf(os.Stderr, "fixture identity unavailable: pid=%q parse=%v started=%v state=%s\n", pid, parseErr, startedErr, startedState)
 			os.Exit(1)
 		}
-		if err := json.NewEncoder(os.Stdout).Encode(map[string]any{"runtime": "claude", "pid": pidNumber, "pidStartedAt": started}); err != nil {
+		if err := json.NewEncoder(os.Stdout).Encode(map[string]any{"runtime": "claude", "pid": pidNumber, "pidStartedAt": exact.StartedAt.Unix()}); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

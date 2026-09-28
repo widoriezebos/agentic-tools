@@ -131,10 +131,10 @@ and the confusion this rule prevents lives in prose, not paths.
 - **Event registry** — `internal/events/event-registry.json` (compiled into the engine), the closed
   catalogue of event names, allowed emitters, required ids, and typed
   payloads. An event not in the registry is a bug, not a feature.
-- **Emitter** — the never-fail append helper (`internal/events`; scripts
-  reach it through `metasystem internal event emit`). An emit may silently lose its own
+- **Emitter** — the never-fail append helper (`internal/events`, called
+  in process; no script emits). An emit may silently lose its own
   event; it may never fail its caller.
-- **executionId** — the cohort id, exported by the benchmark driver to
+- **executionId** — the cohort id, exported by the (retired) benchmark driver to
   everything it spawns so one run's events can be joined across the
   harness and its targets. Supervision components never carry it.
 
@@ -195,7 +195,8 @@ and the confusion this rule prevents lives in prose, not paths.
   named in one breath; a bare id is never a benchmark.
 - **Cohort / repetition / target** — N **repetitions** of one pair, each in
   its own freshly provisioned **target** repository, graded by a held-out
-  grader the mission must not read. Driven by `benchmark/run-cohort.sh`.
+  grader the mission must not read. Its driver was retired in 2026-09;
+  `benchmark/README.md` says what a rebuilt one owes.
 - **Alias (benchmark)** — a retired spec id (`bm-1` … `bm-2d-og`) that
   resolves, read-only, to a pair (`benchmark/aliases.json`); alias mode
   keeps the legacy naming so pre-migration cohorts stay uniform.
@@ -257,8 +258,8 @@ and the confusion this rule prevents lives in prose, not paths.
 ## Verification
 
 - **Gates** — the checks that must pass, chained with the push in one
-  command: the metasystem **suite** (the testing contract, run by `metasystem test run`) and
-  the benchmark **kit gate** (`benchmark/validate-kit.sh`). A verdict is
+  command: the metasystem **suite** (the testing contract, run by
+  `metasystem test run`). A verdict is
   read from the verifying command's own exit code, captured — never
   from a log tail, and never from the exit of a composite or
   background invocation that wraps the command and reports its own

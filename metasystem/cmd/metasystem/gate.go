@@ -8,32 +8,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 )
 
-// The gate family tracks gate runs: a running gate registers a marker so the
-// turn-end report knows work is in flight, and check answers whether one still
-// runs in this checkout.
-
-func runGateRegister(args []string) int {
-	flags := flag.NewFlagSet("gate register", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	gate := flags.String("gate", "", "gate name")
-	pid := flags.Int64("pid", 0, "gate process pid")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" || *gate == "" || *pid == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate register --root R --gate G --pid P")
-		return 2
-	}
-	path, err := gaterun.Register(*root, *pid, *gate)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if path != "" {
-		fmt.Println(path)
-	}
-	return 0
-}
+// The gate family tracks gate runs: a running gate's marker tells the turn-end
+// report work is in flight, and fence answers whether a foreign one still runs
+// in this checkout.
 
 // runGateFence refuses when a foreign gate run is live in the checkout. The
 // asking process passes its own pid so its own run's marker — registered by

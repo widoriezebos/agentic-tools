@@ -638,7 +638,7 @@ func checkHookFreshnessAt(repoRoot string, now time.Time, currentAttempt bool) R
 }
 
 // stopHookBudgetSeconds matches the Stop budget shipped by the registration
-// templates under metasystem/scripts/enforcement.
+// templates under metasystem/internal/runtimes/enforcement.
 const stopHookBudgetSeconds = 60
 
 const defaultStopHookSlowSeconds = 15

@@ -111,7 +111,6 @@ func families() []family {
 			summary: "process identity and census: who is running, provably",
 			verbs: []verb{
 				{"fixture-survivors", "name or reap fixture children that outlived their owner", runFixtureSurvivors},
-				{"started-at", "print a pid's start time in epoch seconds", runIdentityStartedAt},
 				{"exists", "exit 0 if the pid exists (permission denial proves existence)", runIdentityExists},
 				{"group-exists", "exit 0 if the process group exists", runIdentityGroupExists},
 				{"group-owned", "exit 0 only when a group member carries a tag in a shipped argv position", runIdentityGroupOwned},
@@ -231,7 +230,6 @@ func families() []family {
 			summary: "unit validation and gate-run state",
 			verbs: []verb{
 				{"unit", "gate changed Go packages and every transitive reverse dependent", runGateUnit},
-				{"register", "record that this process is a running gate", runGateRegister},
 				{"fence", "exit 1 naming every live gate run foreign to --self-pid's chain", runGateFence},
 				{"weight-discharge", "reset validation weight at the exact authorized green-run boundary", runGateWeightDischarge},
 				{"cadence-tick", "run one landing-owner deep validation cadence decision", runGateCadenceTick},
@@ -265,13 +263,6 @@ func families() []family {
 			summary: "actionable process, proof, lifecycle, delegation, collision, and cost measures",
 			verbs: []verb{
 				{"report", "compute and atomically publish a period or per-goal report", runMetricsReport},
-			},
-		},
-		{
-			name:    "schema",
-			summary: "role-return schema materialization",
-			verbs: []verb{
-				{"materialize", "write a role's return schema at a version", runSchemaMaterialize},
 			},
 		},
 		{
@@ -337,13 +328,6 @@ func families() []family {
 				{"now-ns", "print the current wall-clock time in nanoseconds", runUtilNowNs},
 				{"bootclock", "print the operating-system boot identity and monotonic nanoseconds", runUtilBootClock},
 				{"hold", "stay alive carrying --tag until SIGTERM, then write the stopped file", runUtilHold},
-			},
-		},
-		{
-			name:    "event",
-			summary: "append a flight-recorder event",
-			verbs: []verb{
-				{"emit", "append one event (key=value args); best-effort, never fails", runEventEmit},
 			},
 		},
 		{
@@ -489,12 +473,9 @@ func families() []family {
 		},
 		{
 			name:    "lease",
-			summary: "checkout write-authority: announce/classify/hold/renew",
+			summary: "checkout write-authority (internal/lease)",
 			verbs: []verb{
-				{"announce", "record this process as a main and claim the checkout lease", runLeaseAnnounce},
-				{"retire", "remove this process's announcement", runLeaseRetire},
 				{"classify", "classify a caller and report holdership as JSON", runLeaseClassify},
-				{"require-holder", "gate a write on the caller being the authenticated holder", runLeaseRequireHolder},
 				{"run-held", "run a command while holding the lease lock (gated on holdership)", runLeaseRunHeld},
 				{"commit-token", "atomically write the live commit wrapper token", runLeaseCommitToken},
 			},
@@ -503,9 +484,7 @@ func families() []family {
 			name:    "mission",
 			summary: "the mission domain: state, fences, contract, prompt, runner, turns, ledger",
 			verbs: []verb{
-				{"state-init", "create a mission's initial state from its sealed contract", runMissionStateInit},
 				{"state-write", "advance the state via a compare-and-write on its hash", runMissionStateWrite},
-				{"state-verify", "validate the state's shape, aggregation, hash chain, and anchor", runMissionStateVerify},
 				{"state-anchor", "write the local anchor commit binding the state hash and ledger", runMissionStateAnchor},
 				{"state-reconcile", "reconcile the state against its ledger and anchor, parking on disagreement", runMissionStateReconcile},
 				{"fence-reserve-job", "check the job fences and reserve the job", runMissionFenceReserve("fence-reserve-job", true)},
@@ -525,7 +504,6 @@ func families() []family {
 				{"answer", "record a human answer to an open ask", runMissionRunnerAnswer},
 				{"resolve-taint", "apply a typed human resolution (--restore <treeId> | --adopt --waives <claim>) to a workspace taint", runMissionRunnerResolveTaint},
 				{"run-loop", "the detached mission loop (internal; spawned by start/resume)", runMissionRunnerRunLoop},
-				{"ledger-init", "create a ledger with cycle and no-gain budgets", runMissionLedgerInit},
 			},
 		},
 		{

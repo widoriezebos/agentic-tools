@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,10 +19,14 @@ type EvidenceResult struct {
 	CopiedBytes int64
 	Dropped     []string
 	Errors      []string
+	// Truncated is true when the byte cap cut the bundle short.
+	Truncated bool
 }
 
 // PreserveEvidence copies only regular files and symlinks from the header's
-// declared evidence inventory. The caller supplies the hard byte ceiling; a
+// declared evidence inventory, never an engine artifact store or git object
+// store nested inside a copied tree (nestedStoreReason); a bundle cut short
+// by the byte cap carries TruncationMarker in its copy note. The caller supplies the hard byte ceiling; a
 // separate bounded process supplies the hard wall-clock ceiling.
 func PreserveEvidence(destination string, sources []string, maxBytes int64) (EvidenceResult, error) {
 	return preserveEvidence(context.Background(), destination, sources, maxBytes, evidenceCopyRules{})
@@ -83,9 +88,11 @@ func preserveEvidence(ctx context.Context, destination string, sources []string,
 				if rel == "." {
 					return os.MkdirAll(target, 0o700)
 				}
-				if rules.skipGitDirs && entry.IsDir() && entry.Name() == ".git" {
-					result.Dropped = append(result.Dropped, path+" (git directory skipped)")
-					return filepath.SkipDir
+				if entry.IsDir() {
+					if reason := nestedStoreReason(rel, rules); reason != "" {
+						result.Dropped = append(result.Dropped, path+" ("+reason+")")
+						return filepath.SkipDir
+					}
 				}
 				return copyEvidenceEntry(ctx, path, filepath.Join(target, rel), entry, maxBytes, rules, &result)
 			})
@@ -96,7 +103,7 @@ func preserveEvidence(ctx context.Context, destination string, sources []string,
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", source, err))
 		}
 	}
-	if err := writeEvidenceNote(destination, result); err != nil {
+	if err := writeEvidenceNote(destination, result, maxBytes); err != nil {
 		return result, err
 	}
 	return result, nil
@@ -177,6 +184,28 @@ func PreserveDetachedSuiteFailures(controlRoot, candidateRoot, owner string, tim
 	return result, destination, nil
 }
 
+// nestedStoreReason names why a directory nested below a copied source is
+// not copied, or returns "" to copy it. Every capture skips the engine's own
+// artifact store (artifacts/agents: suite-failures, proof-runs, candidate
+// engines, steward pins) and git object stores wherever they occur inside
+// the copied tree: an agent fixture repository carries the prior captures in
+// its store, and copying them made each capture nest every earlier one
+// (2.1 GB to 16.8 GB in 15 minutes, 2026-09-28). The source root itself is
+// never skipped; rel is the slash path below it.
+func nestedStoreReason(rel string, rules evidenceCopyRules) string {
+	rel = filepath.ToSlash(rel)
+	base := path.Base(rel)
+	switch {
+	case rules.skipGitDirs && base == ".git":
+		return "git directory skipped"
+	case base == "objects" && path.Base(path.Dir(rel)) == ".git":
+		return "git object store skipped"
+	case base == "agents" && path.Base(path.Dir(rel)) == "artifacts":
+		return "metasystem artifact store skipped"
+	}
+	return ""
+}
+
 type dirEntryFromInfo struct{ os.FileInfo }
 
 func (d dirEntryFromInfo) Type() fs.FileMode          { return d.Mode().Type() }
@@ -204,6 +233,7 @@ func copyEvidenceEntry(ctx context.Context, source, target string, entry fs.DirE
 		}
 		if result.CopiedBytes+int64(len(link)) > maxBytes {
 			result.Dropped = append(result.Dropped, source+" (size cap)")
+			result.Truncated = true
 			return nil
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
@@ -226,6 +256,7 @@ func copyEvidenceEntry(ctx context.Context, source, target string, entry fs.DirE
 	remaining := maxBytes - result.CopiedBytes
 	if remaining <= 0 {
 		result.Dropped = append(result.Dropped, source+" (size cap)")
+		result.Truncated = true
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
@@ -251,6 +282,7 @@ func copyEvidenceEntry(ctx context.Context, source, target string, entry fs.DirE
 	}
 	if info.Size() > written {
 		result.Dropped = append(result.Dropped, fmt.Sprintf("%s (%d bytes beyond size cap)", source, info.Size()-written))
+		result.Truncated = true
 	}
 	return nil
 }
@@ -290,13 +322,22 @@ func copyEvidenceBytes(ctx context.Context, out *os.File, in *os.File, limit int
 	return written, nil
 }
 
-func writeEvidenceNote(destination string, result EvidenceResult) error {
+// TruncationMarker is the one line a capture's copy note carries when the
+// bundle reached its byte cap.
+func TruncationMarker(maxBytes int64) string {
+	return fmt.Sprintf("TRUNCATED bundle reached its %d-byte cap; the DROPPED lines name what was not copied", maxBytes)
+}
+
+func writeEvidenceNote(destination string, result EvidenceResult, maxBytes int64) error {
 	file, err := os.OpenFile(filepath.Join(destination, "copy-note.txt"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("write watchdog evidence note: %w", err)
 	}
 	writer := bufio.NewWriter(file)
 	fmt.Fprintf(writer, "copied-bytes=%d\n", result.CopiedBytes)
+	if result.Truncated {
+		fmt.Fprintln(writer, TruncationMarker(maxBytes))
+	}
 	for _, dropped := range result.Dropped {
 		fmt.Fprintf(writer, "DROPPED %s\n", dropped)
 	}

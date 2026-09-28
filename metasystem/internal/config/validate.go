@@ -644,8 +644,16 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		}
 	}
 	// The evidence root is required, must be absolute, and must live outside the
-	// repository so job records never write inside the tree they observe.
+	// repository so job records never write inside the tree they observe. It
+	// is the effective root that is judged: the template ships a placeholder,
+	// and a seat sets its own in .local or the environment.
 	evidence := values["evidence.root"]
+	if local, ok := localValues["evidence.root"]; ok {
+		evidence = local
+	}
+	if env, ok := os.LookupEnv(EnvName("evidence.root")); ok {
+		evidence = env
+	}
 	switch {
 	case evidence == "":
 		add("evidence.root is required")

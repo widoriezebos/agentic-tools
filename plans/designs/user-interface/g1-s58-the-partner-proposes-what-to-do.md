@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3FF3700CGRZSPJ8MMXYCFPG
-- Status: draft
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-26: "I want the project partner to be able to propose an
