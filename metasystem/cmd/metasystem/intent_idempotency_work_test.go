@@ -159,6 +159,12 @@ func newWorkIdemDeliveryBed(t *testing.T) *deliveryBed {
 			}
 			return bed.handler(process)
 		},
+		// The close owner is the delegate lifecycle's close command (batch
+		// 2 runs it in process); the bed sees it as one owner process named
+		// close-owner, as the delivery bed does.
+		closeOwner: func(root string, args []string) intentProcessResult {
+			return bed.owners.process(intentProcess{argv: append([]string{"close-owner"}, args...), dir: root})
+		},
 		executable: func() (string, error) { return "/fake/bin/metasystem", nil },
 		now:        func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC) },
 		batchRoot:  func(string, time.Time) (string, bool, error) { return "", false, nil },
