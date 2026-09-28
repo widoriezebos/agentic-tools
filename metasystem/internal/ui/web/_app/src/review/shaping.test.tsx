@@ -11,6 +11,7 @@ import {
   firstDesk,
   localDeposit,
   openingDesk,
+  ownSnapshot,
   roomWord,
   selectionPress,
   sittingDoorLine,
@@ -21,7 +22,7 @@ import type { DocumentPayload } from "../project/api";
 import { FileActions } from "../project/DocumentPane";
 import { sittingRowPress } from "../project/pane";
 import { Focused } from "../panes/Focused";
-import { emptyStore } from "../partner/conversation";
+import { emptyStore, type Store } from "../partner/conversation";
 import { DepositCard } from "../partner/Deposit";
 import { cardsIn, countsIn, END, END_WITHOUT, entriesIn, interfaceLine, recordedIn, START } from "../partner/sitting";
 import { PartnerAs } from "../partner/store";
@@ -178,6 +179,20 @@ function page(sitting?: DocumentPayload["sitting"]): DocumentPayload {
     sitting,
   };
 }
+
+describe("the room's own snapshot", () => {
+  it("is the one read for its record, and never the snapshot the page held before it", () => {
+    const sitting = shaping().sitting;
+    // The ordinary conversation, with a sitting marked on it before D16, is what
+    // the page held when the room was entered: the room must not take its mark
+    // for its own and close when the store moves to the room (walkthrough, g1-s67 D6).
+    const held = (over: Partial<Store>): Store => ({ ...emptyStore, ...over });
+    expect(ownSnapshot(held({ state: "ready", conversation: "", sitting }), DESIGN)).toBe(false);
+    expect(ownSnapshot(held({ state: "loading", conversation: DESIGN }), DESIGN)).toBe(false);
+    expect(ownSnapshot(held({ state: "ready", conversation: DESIGN, sitting }), DESIGN)).toBe(true);
+    expect(ownSnapshot(held({ state: "ready", conversation: DESIGN, sitting: null }), DESIGN)).toBe(true);
+  });
+});
 
 describe("the door", () => {
   it("stands on the record's page while a sitting stands on it, in place of Start", () => {

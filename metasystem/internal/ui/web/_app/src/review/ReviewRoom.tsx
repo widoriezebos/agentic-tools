@@ -16,6 +16,7 @@ import {
   NOD_LINE,
   nodded,
   openingDesk,
+  ownSnapshot,
   roomWord,
   unansweredIn,
   VERDICTS,
@@ -67,7 +68,8 @@ export function Room({ record }: { record: string }) {
   const reviewed = reviewedOf(table.source);
   const findings = table.entries.filter((entry) => entry.section === "Findings");
   const unanswered = unansweredIn(table.entries);
-  const here = conversation === record;
+  // The snapshot read for this room, and not the one the page held before it.
+  const here = conversation === record && ownSnapshot(store, record);
   const named = reviewing
     ? reviewed.goal === "" ? record : reviewed.goal
     : (sitting?.subject.title ?? "") === "" ? record : (sitting?.subject.title ?? record);
@@ -157,7 +159,7 @@ export function Room({ record }: { record: string }) {
   const stood = useRef(false);
   useEffect(() => {
     if (sitting !== null) {
-      stood.current = true;
+      stood.current = stood.current || here;
       return;
     }
     if (stood.current && here) {

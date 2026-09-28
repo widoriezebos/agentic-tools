@@ -1,4 +1,5 @@
 import type { Deposit, Subject } from "../partner/api";
+import type { Store } from "../partner/conversation";
 import { ACCEPTED, entriesIn, FIX, followUp, LEFT_OPEN, type Entry } from "../partner/sitting";
 
 /**
@@ -136,6 +137,17 @@ export function localDeposit(local: Draft, subject: Subject | undefined): Deposi
     kind: local.kind ?? "finding", text: local.text, anchor: local.clause, consequence: local.consequence ?? "",
     offered: true, subject,
   };
+}
+
+/**
+ * Whether the page's conversation snapshot is this room's own: read for this
+ * record and answered. The page holds the snapshot of wherever it was before
+ * the room until the room's own is read, and that one may carry a sitting — the
+ * ordinary conversation's, marked before D16 (g1-s67 D6) — which the room must
+ * not take for its own and then close on when the store moves to the room.
+ */
+export function ownSnapshot(store: Pick<Store, "conversation" | "state">, record: string): boolean {
+  return store.conversation === record && store.state !== "loading";
 }
 
 /** Which End sheet a room mounts (g1-s67 D7): a review's verdicts, or a shaping sitting's Outcome. */

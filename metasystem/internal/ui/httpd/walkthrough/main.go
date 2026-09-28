@@ -113,6 +113,12 @@ func main() {
 	// Application page's reader does.
 	register := flag.String("register", registerKit,
 		"which known-issues column set this fixture plants: kit or adopted")
+	// A shaping sitting as a human who sat before every sitting had a
+	// conversation of its own left it: marked on their ordinary conversation,
+	// with its words there (g1-s67 D6). Off by default, because it is a
+	// migration's case and not the room's ordinary look.
+	satBeforeRooms := flag.String("sat-before-rooms", "",
+		"plant a shaping sitting on this human's ordinary conversation, as before D16; empty plants none")
 	flag.Parse()
 	if *smoke != "" {
 		runSmoke(*smoke, *smokeModel, *smokeEngine, *smokeKit, *smokeOut)
@@ -299,7 +305,9 @@ func main() {
 		CreateReview: func(asked project.NewReview) (project.Written, error) {
 			return project.CreateReview(roots, asked, time.Now().UTC())
 		},
-		Review: &review.Owner{Git: fixtureGit{branches: branchesFile(checkout)}},
+		// And a sitting that shapes a record reads the fixture checkout as it
+		// stands, under the root the document reader opens (g1-s67 D2).
+		Review: &review.Owner{Git: fixtureGit{branches: branchesFile(checkout)}, Checkout: checkout},
 		// The two writes a design's own page makes, over the fixture checkout
 		// and through the same package the engine wires: marking a design done
 		// rewrites its Status line, and naming a goal on it rewrites its Goals
@@ -362,6 +370,9 @@ func main() {
 	if *partnerRuntime != "" {
 		if *partnerRuntime != "fake" {
 			log.Fatalf("-partner takes fake, not %q", *partnerRuntime)
+		}
+		if *satBeforeRooms != "" {
+			plantBeforeRooms(fixtureConversations(checkout), *satBeforeRooms)
 		}
 		// The Partner reads what the pages read, so the "Seeing:" sheet shows
 		// this fixture's own board rather than an empty block.
@@ -570,6 +581,11 @@ func fixtureCheckout(calm bool, register string) string {
 		{"README.md", walkthroughReadme},
 		{"docs/concepts.md", walkthroughConcepts},
 		{"docs/glossary.md", walkthroughGlossary},
+		// The shaping room's design, the pre-D16 one and the code the Today
+		// walk reads (g1-s67).
+		{shapingRecord, shapingText},
+		{beforeRoomsRecord, beforeRoomsText},
+		{shapingFile, shapingCode},
 	} {
 		full := filepath.Join(directory, filepath.FromSlash(planted.relative))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {

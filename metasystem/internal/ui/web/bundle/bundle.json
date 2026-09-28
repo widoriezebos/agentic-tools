@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:3e9c539c9542e5478639d8714b7a453a717f7b049768360e2c71ee7c71e2892e",
+  "sourceDigest": "sha256:58d7bd3f03fd4408e5b0c3ebc1b66e0fdc9f55fadca5fb1985fe149951ce9f69",
   "source": [
     {
       "path": ".npmrc",
@@ -664,11 +664,11 @@
     },
     {
       "path": "src/partner/conversation.test.ts",
-      "sha256": "d61a5fd63ba709aa2826c51a13fa3d036e9fec3ca53b7fb46f0ed2755518383c"
+      "sha256": "fc43afe23311bc60de65eb21375647b9a86aa332ef085b410e9427614f359206"
     },
     {
       "path": "src/partner/conversation.ts",
-      "sha256": "bf8d0b2bf083fcf850939cda8cea73c98f3bf01abe31c3aa700f349278278c63"
+      "sha256": "c050fea000fc12f557d6743a5b34e7a5a4cc80c2f648769e9461748985d13a32"
     },
     {
       "path": "src/partner/drafting.test.ts",
@@ -900,7 +900,7 @@
     },
     {
       "path": "src/review/ReviewRoom.tsx",
-      "sha256": "96f4ed0ea473ea711830af04f54fed7ac6e03ca1ba08e101de88803ab35fe443"
+      "sha256": "0e15d427a23faf1fd5805198d2343939970167fc9c0c697e849c508234413e9c"
     },
     {
       "path": "src/review/anchors.tsx",
@@ -928,7 +928,7 @@
     },
     {
       "path": "src/review/room.ts",
-      "sha256": "266a4659974714819511f4ba5ba5830b3af44c9d1545481035d7f563f002b7ba"
+      "sha256": "ff9e4a36f936b6fdbb99aa08ae6381979ee78c54f3acb2e366c3d7344a26481e"
     },
     {
       "path": "src/review/screens.test.tsx",
@@ -936,7 +936,7 @@
     },
     {
       "path": "src/review/shaping.test.tsx",
-      "sha256": "0617e7178335005d7fc9d719751badfe4a43002ab838fbe37e8ea4129c46351f"
+      "sha256": "77b529f07b0888a95eb5380933aa5f031bc31d7c6237b892b262cfd3d5b6666a"
     },
     {
       "path": "src/routes.test.ts",
@@ -1154,7 +1154,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "0df760662e968739f14060680bee4f9580b5d667039f577d636dacb6b979d8a3"
+      "sha256": "b34ab94aebe39cf658ea18d015c0446d3e029b6ab4a885dc2b54e5606184883d"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
