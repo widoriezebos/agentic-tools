@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -16,7 +17,7 @@ var (
 	syncHandoffDir            = syncDirectoryForHandoff
 	beforeHandoffPruneInspect = func() {}
 	beforeHandoffPruneRemove  = func(string) {}
-	pruneCallSessions         = usage.PruneCallSessions
+	pruneCallSessions         = usage.PruneCallSessionsAt
 )
 
 func syncDirectoryForHandoff(path string) error {
@@ -198,8 +199,12 @@ func liveAndConsumedHandoffNonces(root string) (map[string]bool, error) {
 	return protected, nil
 }
 
-// PruneContext delegates usage-pair retirement to its owner, then removes
-// complete inactive handoff directories under steward arbitration.
+// PruneContext delegates usage-pair retirement to its owner, outside
+// arbitration, then removes complete inactive handoff directories: the
+// inspection takes no lock, and each removal takes arbitration for that one
+// nonce, re-reads the live and consumed intents under it and re-checks the
+// handoff before removing it (Part B 3.5, DL3B-04). The verb waits for
+// arbitration; the disk sweeper passes a nonblocking acquisition.
 func PruneContext(stateRoot string, olderThan time.Duration, now time.Time) (ContextPruneResult, error) {
 	result := ContextPruneResult{}
 	if olderThan <= 0 {
@@ -214,72 +219,155 @@ func PruneContext(stateRoot string, olderThan time.Duration, now time.Time) (Con
 	}
 	cutoff := now.Add(-olderThan)
 	usageCutoff := cutoff
-	usageFloor := time.Now().UTC().Add(-usage.CallRetentionWindow - time.Nanosecond)
+	usageFloor := now.UTC().Add(-usage.CallRetentionWindow - time.Nanosecond)
 	if usageCutoff.After(usageFloor) {
 		usageCutoff = usageFloor
 	}
-	result.CallSessions, err = pruneCallSessions(root, usageCutoff)
+	result.CallSessions, err = pruneCallSessions(root, usageCutoff, now)
 	if err != nil {
 		return result, err
 	}
-	arbitration, err := AcquireArbitration(root)
-	if err != nil {
-		return result, err
+	// The verb judges protection under the lock, as it always has: a nonce
+	// protected at the unlocked inspection is still visited, so a consumption
+	// racing the prune is serialized by arbitration and seen by its re-read.
+	nonces, problems := inspectHandoffs(root, cutoff, now, true)
+	removed, err := PruneHandoffs(context.Background(), root, nonces, cutoff, now, AcquireArbitration)
+	result.Handoffs = removed
+	return result, errors.Join(err, errors.Join(problems...))
+}
+
+// InspectHandoffs lists the complete, unprotected handoff nonces whose state
+// is older than cutoff. It is the plan half: it takes no lock, creates
+// nothing and removes nothing; each listed nonce is re-checked under
+// arbitration by PruneHandoffs. Problems name the handoffs it keeps.
+func InspectHandoffs(root string, cutoff, now time.Time) ([]string, []error) {
+	return inspectHandoffs(root, cutoff, now, false)
+}
+
+// inspectHandoffs lists the candidates; visitProtected also lists the
+// nonces protected at this unlocked read, to be judged under the lock.
+func inspectHandoffs(root string, cutoff, now time.Time, visitProtected bool) ([]string, []error) {
+	if !cutoff.Before(now) {
+		return nil, []error{fmt.Errorf("handoff cutoff %s is not before now %s", cutoff.Format(time.RFC3339), now.Format(time.RFC3339))}
 	}
-	defer arbitration.Release()
-	beforeHandoffPruneInspect()
 	protected, err := liveAndConsumedHandoffNonces(root)
 	if err != nil {
-		return result, err
+		return nil, []error{err}
 	}
 	parent := filepath.Join(root, "artifacts", "agents", "context", "handoffs")
 	entries, err := os.ReadDir(parent)
 	if os.IsNotExist(err) {
-		return result, nil
+		return nil, nil
 	}
 	if err != nil {
-		return result, err
+		return nil, []error{err}
 	}
-	var inspectionErrors []error
+	var nonces []string
+	var problems []error
 	for _, entry := range entries {
 		nonce := entry.Name()
 		if !handoffNoncePattern.MatchString(nonce) {
-			inspectionErrors = append(inspectionErrors, fmt.Errorf("handoff directory has malformed nonce %q", nonce))
+			problems = append(problems, fmt.Errorf("handoff directory has malformed nonce %q", nonce))
 			continue
 		}
 		path := filepath.Join(parent, nonce)
 		info, err := os.Lstat(path)
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			inspectionErrors = append(inspectionErrors, fmt.Errorf("handoff path is not a regular nonsymlink directory: %s", path))
+			problems = append(problems, fmt.Errorf("handoff path is not a regular nonsymlink directory: %s", path))
 			continue
 		}
 		if protected[nonce] {
+			if visitProtected {
+				nonces = append(nonces, nonce)
+			}
 			continue
 		}
 		modTime, err := completeHandoffState(root, nonce)
 		if err != nil {
-			inspectionErrors = append(inspectionErrors, fmt.Errorf("keep incomplete handoff %s: %w", nonce, err))
+			problems = append(problems, fmt.Errorf("keep incomplete handoff %s: %w", nonce, err))
 			continue
 		}
-		if !modTime.Before(cutoff) {
-			continue
-		}
-		beforeHandoffPruneRemove(path)
-		checkedModTime, err := completeHandoffState(root, nonce)
-		if err != nil || !checkedModTime.Equal(modTime) {
-			if err == nil {
-				err = fmt.Errorf("handoff state timestamp changed before removal")
-			}
-			return result, errors.Join(fmt.Errorf("handoff %s changed before removal: %w", nonce, err), errors.Join(inspectionErrors...))
-		}
-		if err := os.RemoveAll(path); err != nil {
-			return result, errors.Join(err, errors.Join(inspectionErrors...))
-		}
-		result.Handoffs = append(result.Handoffs, path)
-		sort.Strings(result.Handoffs)
-		if err := syncHandoffDir(parent); err != nil {
-			return result, errors.Join(err, errors.Join(inspectionErrors...))
+		if modTime.Before(cutoff) {
+			nonces = append(nonces, nonce)
 		}
 	}
-	return result, errors.Join(inspectionErrors...)
+	return nonces, problems
+}
+
+// PruneHandoffs removes the listed nonces, one arbitration acquisition per
+// nonce through acquire, released before the next: under the lock it
+// re-reads the live and consumed intents, re-checks the handoff is complete
+// and older than cutoff, removes it and syncs its parent. It stops at the
+// context and at a held lock (acquire's error, ErrArbitrationHeld for the
+// sweeper), returning what it removed; the rest is pending.
+func PruneHandoffs(ctx context.Context, root string, nonces []string, cutoff, now time.Time,
+	acquire func(repoRoot string) (*ArbitrationLock, error)) ([]string, error) {
+	if !cutoff.Before(now) {
+		return nil, fmt.Errorf("handoff cutoff %s is not before now %s", cutoff.Format(time.RFC3339), now.Format(time.RFC3339))
+	}
+	parent := filepath.Join(root, "artifacts", "agents", "context", "handoffs")
+	var removed []string
+	var kept []error
+	for _, nonce := range nonces {
+		if err := ctx.Err(); err != nil {
+			return removed, errors.Join(err, errors.Join(kept...))
+		}
+		if !handoffNoncePattern.MatchString(nonce) {
+			return removed, errors.Join(fmt.Errorf("handoff nonce %q is malformed", nonce), errors.Join(kept...))
+		}
+		gone, keep, err := pruneOneHandoff(root, parent, nonce, cutoff, acquire)
+		if gone {
+			removed = append(removed, filepath.Join(parent, nonce))
+			sort.Strings(removed)
+		}
+		if keep != nil {
+			kept = append(kept, keep)
+		}
+		if err != nil {
+			return removed, errors.Join(err, errors.Join(kept...))
+		}
+	}
+	return removed, errors.Join(kept...)
+}
+
+// pruneOneHandoff judges and removes one nonce under its own arbitration
+// hold. keep names a handoff kept because it is incomplete; err stops the
+// prune (a held lock, a handoff that changed between the two checks).
+func pruneOneHandoff(root, parent, nonce string, cutoff time.Time, acquire func(string) (*ArbitrationLock, error)) (gone bool, keep, err error) {
+	arbitration, err := acquire(root)
+	if err != nil {
+		return false, nil, err
+	}
+	defer arbitration.Release()
+	beforeHandoffPruneInspect()
+	protected, err := liveAndConsumedHandoffNonces(root)
+	if err != nil {
+		return false, nil, err
+	}
+	path := filepath.Join(parent, nonce)
+	if protected[nonce] {
+		return false, nil, nil
+	}
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		return false, nil, nil
+	}
+	modTime, err := completeHandoffState(root, nonce)
+	if err != nil {
+		return false, fmt.Errorf("keep incomplete handoff %s: %w", nonce, err), nil
+	}
+	if !modTime.Before(cutoff) {
+		return false, nil, nil
+	}
+	beforeHandoffPruneRemove(path)
+	checkedModTime, err := completeHandoffState(root, nonce)
+	if err != nil || !checkedModTime.Equal(modTime) {
+		if err == nil {
+			err = fmt.Errorf("handoff state timestamp changed before removal")
+		}
+		return false, nil, fmt.Errorf("handoff %s changed before removal: %w", nonce, err)
+	}
+	if err := os.RemoveAll(path); err != nil {
+		return false, nil, err
+	}
+	return true, nil, syncHandoffDir(parent)
 }

@@ -1728,7 +1728,7 @@ func TestContextPruneStopsOnUsageError(t *testing.T) {
 	}
 	ageHandoffState(t, root, handoff.Nonce, handoffCaptureNow.AddDate(0, 0, -30))
 	previous := pruneCallSessions
-	pruneCallSessions = func(string, time.Time) (int, error) { return 3, errors.New("usage store damaged") }
+	pruneCallSessions = func(string, time.Time, time.Time) (int, error) { return 3, errors.New("usage store damaged") }
 	t.Cleanup(func() { pruneCallSessions = previous })
 	result, err := PruneContext(root, 14*24*time.Hour, handoffCaptureNow)
 	if err == nil || !strings.Contains(err.Error(), "usage store damaged") || result.CallSessions != 3 || len(result.Handoffs) != 0 {

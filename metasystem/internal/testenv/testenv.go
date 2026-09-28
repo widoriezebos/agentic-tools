@@ -833,19 +833,92 @@ func removeDeadRegistryHomes(root string, output io.Writer) {
 		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !strings.HasPrefix(entry.Name(), registryHomePrefix) {
 			continue
 		}
-		owner, err := openRegistryOwner(path)
-		if err != nil {
-			continue
-		}
-		if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-			_ = owner.Close()
-			continue
-		}
-		if err := removeSettledRegistryHome(path, output); err != nil {
+		if err := RemoveSettledHome(path, output); err != nil {
 			fmt.Fprintf(output, "remove dead registry home %s: %v\n", path, err)
 		}
-		_ = owner.Close()
 	}
+}
+
+// HomeSettled is the observation half of the dead-home predicate (Part B
+// 3.2, DL2-13): the home's owner lock is free, and every custodian sidecar
+// beside it is settled (its log lock free and its records gone, or no log
+// and no records). It removes nothing, reports nothing and creates nothing;
+// the locks are probed and released at once. Anything it cannot read is
+// "not settled".
+func HomeSettled(home string) bool {
+	info, err := os.Lstat(home)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !strings.HasPrefix(filepath.Base(home), registryHomePrefix) {
+		return false
+	}
+	owner, err := openRegistryOwner(home)
+	if err != nil {
+		return false
+	}
+	defer owner.Close()
+	if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		return false
+	}
+	entries, err := os.ReadDir(filepath.Dir(home))
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		stem, pid, ok := fixtureCustodianSidecar(entry.Name())
+		if !ok || stem != filepath.Base(home) {
+			continue
+		}
+		if !custodianSidecarsSettled(home, pid) {
+			return false
+		}
+	}
+	return true
+}
+
+// custodianSidecarsSettled observes one custodian's sidecars without the
+// removal and the report removeFixtureCustodianSidecars adds.
+func custodianSidecarsSettled(home, pid string) bool {
+	logPath := home + ".custodian-" + pid + ".log"
+	recordsPath := home + ".fixture-refs-" + pid
+	fd, err := unix.Open(logPath, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	if err == unix.ENOENT {
+		absent, err := fixtureCustodianRecordsAbsent(recordsPath)
+		return absent && err == nil
+	}
+	if err != nil {
+		return false
+	}
+	log := os.NewFile(uintptr(fd), logPath)
+	defer log.Close()
+	if opened, err := log.Stat(); err != nil || !opened.Mode().IsRegular() {
+		return false
+	}
+	if err := unix.Flock(int(log.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		return false
+	}
+	absent, err := fixtureCustodianRecordsAbsent(recordsPath)
+	return absent && err == nil
+}
+
+// RemoveSettledHome is the apply half: it takes the home's owner lock
+// exclusively without waiting and, holding it, removes the settled sidecars
+// and the home once none is pending. A live owner is not an error: the home
+// is simply kept.
+func RemoveSettledHome(home string, output io.Writer) error {
+	owner, err := openRegistryOwner(home)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer owner.Close()
+	if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if lockWouldBlock(err) {
+			return nil
+		}
+		return fmt.Errorf("lock registry home %s: %w", home, err)
+	}
+	return removeSettledRegistryHome(home, output)
 }
 
 const fixtureCustodianLogReportLimit = 64 << 10

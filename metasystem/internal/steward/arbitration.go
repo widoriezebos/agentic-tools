@@ -7,6 +7,7 @@ package steward
 // dispatch return — one critical section, one contender wins.
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,6 +42,51 @@ func AcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 		return nil, err
 	}
 	return &ArbitrationLock{f: f}, nil
+}
+
+// ErrArbitrationHeld is a nonblocking acquisition finding the lock held.
+var ErrArbitrationHeld = errors.New("steward arbitration is held")
+
+// TryAcquireArbitration takes the lock LOCK_EX|LOCK_NB: the disk sweeper's
+// acquisition, which never waits inside a pass (Part B R14).
+func TryAcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
+	path := ArbitrationLockPath(repoRoot)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		f.Close()
+		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
+			return nil, ErrArbitrationHeld
+		}
+		return nil, err
+	}
+	return &ArbitrationLock{f: f}, nil
+}
+
+// ProbeArbitration reports whether the lock is free without creating the
+// lock file or its directory and without holding anything afterwards: the
+// plan phase's probe (Part B R15). An absent lock file reads as free.
+func ProbeArbitration(repoRoot string) (free bool, err error) {
+	f, err := os.OpenFile(ArbitrationLockPath(repoRoot), os.O_RDONLY, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_SH|unix.LOCK_NB); err != nil {
+		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // Release ends the critical section.

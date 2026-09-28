@@ -2,6 +2,7 @@ package branch
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -16,11 +17,17 @@ type Entry struct {
 }
 
 func gitOutput(repo string, args ...string) ([]byte, error) {
+	return gitOutputContext(context.Background(), repo, args...)
+}
+
+// gitOutputContext is gitOutput bound to ctx: the command is killed when ctx
+// ends, so a stalled git never outlives its caller's budget.
+func gitOutputContext(ctx context.Context, repo string, args ...string) ([]byte, error) {
 	full, err := branchGitCommand(repo, args...)
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command("git", full...)
+	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Env = gittree.ScrubbedEnviron("LC_ALL=C")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
