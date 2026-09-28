@@ -8,7 +8,9 @@
 Wido, 2026-09-28, after his first look at the review room: "but I also
 want to be able to discuss goal designs this way; does that not make
 sense?" and, on the answer, "ok, continue". Author Fable. Every cite
-re-read at `7ccd22250`.
+re-read at `7ccd22250`. Revision 2 folds Astra's round 1 (Dispositions
+at the foot): the shaping desk reads the checkout as it stands rather
+than a pinned commit, and End is by purpose.
 
 ## 1. What exists and binds
 
@@ -48,7 +50,7 @@ re-read at `7ccd22250`.
    sections (`internal/ui/project/document.go`); the review owner reads
    source at a commit through a `Git` interface `gittree.Workspace`
    satisfies, and `ChangesSince` compares two commits (`review.go:298`);
-   the checkout's head is one `ResolveCommit("HEAD")` away. The cut
+   the document reader opens the checkout root for a record's bytes as they stand. The cut
    guard and the CSP as before.
 
 ## 2. What you want when you shape a design
@@ -59,7 +61,8 @@ re-read at `7ccd22250`.
 - **S2. The record on the desk.** The design you are shaping, section by
   section, large, beside what the code does today.
 - **S3. Arguing from the code.** "What does the application do today?"
-  answered with the lines on the desk, anchored at the checkout's head.
+  answered with the lines on the desk, as the checkout has them today,
+  the same file the colleague read before answering.
 - **S4. The cases at the edge as cards**, decided or left open then and
   there, as g1-s55 built them, in the room.
 - **S5. Two sittings side by side**, a design and a review, each in its
@@ -78,7 +81,8 @@ the lines on the desk; **Cases**, the cases at the edge, each a card
 with Decide and Leave open; **Open**, what the room has not settled and
 what would settle it. You ask "where is the lock taken today?" and the
 Partner answers with `internal/ui/act/owner.go:41-88` as a chip; the
-desk shows the lines at head. You select four of them and press Fact:
+desk shows those lines as the checkout has them, the file the Partner
+just read. You select four of them and press Fact:
 a fact card with the anchor filled, your words to write, Record it. A
 case arrives; you Decide it with your reason. You step out; the design
 page shows the door; you come back to the same desk and board. You
@@ -95,19 +99,23 @@ ends, as it does today. For an intent record the room is the same with
   the bell), one word in the header per purpose: Reviewing, Shaping the
   design, Shaping the intent. The drawer keeps the ordinary conversation
   and never shows a sitting's; "Your conversation" goes.
-- D2. **The desk of a shaping sitting reads the checkout's head.** The
-  sitting's mark records the head commit at Start (`tree`); the desk's
-  reads take that commit as the tree, so an anchor `path:lines` shows
-  the lines as they were when the sitting began, and the review owner
-  serves both kinds through one `Tree` (a review's tip or trailer
-  commits, a shaping sitting's head). The change index is not offered in
-  a shaping sitting, since there is no change; the strip starts with
-  the record's own sections, the current one on the desk. On return, a
-  head that moved since Start shows the banner "the code moved while you
-  were out" with Show what changed (`ChangesSince` from the recorded
-  head to the head now) and "Read at the head now", which rewrites the
-  mark's `tree`; the record's head lines are untouched, since nothing
-  was reviewed.
+- D2. **The desk of a shaping sitting reads the checkout as it stands.**
+  Records and source alike come from the checkout's own files, through
+  the root the document reader already opens, so an anchor `path:lines`
+  shows the lines as the checkout has them now: the same bytes the
+  Partner's own reads see (its permission owner grants native reads
+  anywhere inside the checkout, `internal/ui/partner/conversation.go:
+  40`), uncommitted edits included. Nothing is pinned: no commit on the
+  mark, no compare, no banner; a sitting that stood before this build
+  opens like any other. The change index and the diff are not offered
+  in a shaping sitting, since there is no change; the strip starts with
+  the record's own sections, the current one on the desk. On return the
+  desk reads its item again, so what it shows is what the code does
+  today; a recorded fact's anchor names lines that may drift afterwards,
+  as every cite in every record here does, and the record's date says
+  when it was true. (Revision 1 pinned the desk to the head commit at
+  Start; Astra S67-01 showed the Partner cannot be pinned, so the two
+  would argue from different files.)
 - D3. **Walks by purpose.** `Walks` is keyed by purpose: review keeps its
   five; shape a design and shape intent get Records, Today, Cases,
   Open, as fixed requests with the interface's provenance. The opening
@@ -126,9 +134,15 @@ ends, as it does today. For an intent record the room is the same with
   the focused ordinary conversation. The Start sheet keeps its two
   fields (purpose and subject) and opens the room. The Sittings tab
   lists every standing sitting and opens its room.
-- D7. **Nothing else changes.** The record model, the recorder, the
-  conversation store, the door line, Step out and End are the landed
-  ones; a review sitting behaves exactly as it does today.
+- D7. **Nothing else changes, and End is by purpose.** The record model,
+  the recorder, the conversation store, the door line and Step out are
+  the landed ones; a review sitting behaves exactly as it does today.
+  The room's End sheet is the sitting's own: a review room keeps the
+  landed sheet with its three verdicts and the nod line; a shaping room
+  mounts the landed shaping sheet, End (the Partner drafts the Outcome)
+  and End without recording, with no verdict control, exactly the two
+  actions the drawer's sheet offers today (`partner/StartSitting.tsx:
+  283-350`). The sheet moves; its behaviour does not.
 
 ## 5. Step 1, the smallest thing that works
 
@@ -141,39 +155,59 @@ than a record.
 ## 6. Payload and routes
 
 `POST /api/partner/sitting` answers the room's address for every
-purpose and records `tree` on the mark for a shaping sitting (the
-checkout's head at Start, through the existing `ResolveCommit`). The
-desk reads (`/api/review/<record>/source`, `/changes?since=1`) accept a
-record of any sittable kind and take the tree from the review head or
-the mark's `tree`; `/changes` without `since` is refused for a shaping
-sitting in words. `Walks` keyed by purpose; the walk route unchanged.
-`present` admitted for every sitting. Routes: `/sitting/<record>` beside
-`/review/<record>`, both `inTheRoom`. The Start sheet, the record page's
-Start control and the Sittings tab navigate to the room; the drawer's
-`SittingControl`, `SittingCounts`, `SittingTable` and `EndSittingSheet`
-are removed with their tests, and their help terms retired or moved.
+purpose; the mark is unchanged. The desk's source read
+(`/api/review/<record>/source`) accepts a record of any sittable kind:
+a review reads the reviewed tree as today; an intent or a design reads
+the checkout as it stands, one function beside `Owner.Source` that
+opens the file under the checkout root and shares `Source`'s path
+check, binary refusal, bounds and marks (`internal/ui/review/review.go:
+527-560`). `/changes` is refused for a shaping sitting in words ("a
+sitting on a design has no change to index; its desk reads the checkout
+as it stands"). `Walks` keyed by purpose; the walk route unchanged; the
+Today request says the Partner reads the checkout with its own reads
+and answers with `path:lines` chips, the files the desk reads. `present`
+admitted for every sitting: the landed test's "no desk item outside a
+review" expectation and its activity line invert
+(`internal/ui/partner/review_service_test.go:444-451`), the finding
+refusal beside them stays. Routes: `/sitting/<record>` beside
+`/review/<record>`, both `inTheRoom`; the room's End sheet is chosen by
+the sitting's purpose (D7). The Start sheet, the record page's Start
+control and the Sittings tab navigate to the room; the drawer's
+`SittingControl`, `SittingCounts` and `SittingTable` are removed with
+their tests, `EndSittingSheet` moves into the room with its test, and
+their help terms are retired or moved.
 
 ## 7. Not here, later
 
 Structured intent items on the desk; drawings and remarks (slice B);
 two records on one desk; a learning sitting; the room at phone width
-beyond the stack.
+beyond the stack. The head commit as provenance on a fact card's
+anchor, when a drifted anchor has misled someone. "Read again" on a
+desk item while the sitting stands, when the code has moved under
+someone who did not step out. A review Partner's native reads of the
+checkout beside the candidate's tree, which is g1-s65's state and not
+this design's.
 
 ## 8. Verification and box
 
 Go: `Walks` per purpose and a refused unknown part; `present` admitted
-in every sitting; the mark's `tree` written at Start from head; source
-reads at the mark's tree for a shaping sitting and at the review head
-for a review; `/changes` refused without `since` for a shaping sitting
-and `since` comparing the mark's tree with head; the moved-head banner's
-compare. Frontend: Start on a design and on an intent opens the room
-with the purpose's word; the desk opens on the record's first section
-with the sections in the strip; anchors put lines on the desk at the
-mark's tree; the four walks; selection offers Ask and Fact and the fact
-card carries the anchor; a case card's two presses; the board shows the
-piles; the door on the record page and the Sittings tab; the moved-head
-banner and Read at the head now; the drawer shows no sitting and
-`/brain` no table; the cut guard's rows; the guards green. Walkthrough:
+in every sitting and `finding` still refused outside a review; the
+source read of a shaping sitting returns the checkout's bytes as they
+stand (a test edits a file in the checkout without committing and reads
+the edit), with `Source`'s bounds, the binary refusal and a path that
+escapes the root refused; a review's source read unchanged; `/changes`
+refused for a shaping sitting in words; a shaping Outcome recorded
+without a verdict and a review Outcome refused without one, as landed.
+Frontend: Start on a design and on an intent opens the room with the
+purpose's word; the desk opens on the record's first section with the
+sections in the strip; anchors put lines on the desk as they stand;
+the four walks; selection offers Ask and Fact and the fact card carries
+the anchor; a case card's two presses; the board shows the piles; the
+door on the record page and the Sittings tab, including a sitting whose
+mark carries no room state; End in a shaping room offers End and End
+without recording and no verdict, End in a review room unchanged; the
+drawer shows no sitting and `/brain` no table; the cut guard's rows;
+the guards green. Walkthrough:
 a canned opening turn on a design record, a Today walk that presents a
 file, a case decided; screenshots at 1280 and 400, light and dark.
 Landing checks: the structural tests the fast gate does not run (the
@@ -186,9 +220,28 @@ attempts, 180 to 300 job-minutes.
 ## 9. Self-grade
 
 High on D1, D3, D4, D5 and D7: an address, a key on a table, a lifted
-gate and the piles the table already shows. High on D6: retiring code.
-Medium on D2: the one new idea is the mark's `tree`, which makes a
-shaping sitting's desk as stable as a review's; it is one field and one
-compare. Weakest: the intent record on the desk is prose sections,
-where a structured view of users and outcomes would serve better; that
-waits until a sitting on intent has shown what it wants.
+gate, the piles the table already shows and a sheet that moves. High on
+D6: retiring code. High on D2 since revision 2: one read of the
+checkout's own files, the rule the document reader already follows, and
+nothing to keep in step. Weakest: a fact's anchor can drift after the
+sitting, and the intent record on the desk is prose sections, where a
+structured view of users and outcomes would serve better; both wait
+until a sitting has shown what it wants.
+
+## Dispositions (Astra round 1, 2026-09-28, under R-121 and R-124)
+
+Read of revision 1 at `bea2168e1`, verbatim in
+`g1-s67-astra-critique.md`. Three material findings; every cited line
+was re-read at whole-function depth before folding. Two are answered by
+one smaller decision, the third by moving a sheet.
+
+| id | finding | fold |
+|---|---|---|
+| S67-01 | the desk pinned to the head commit at Start while the Partner reads the checkout as it stands (`uitools.go:353`, `document.go:139`, native reads granted anywhere in the checkout, `conversation.go:40`): the answer and the lines beside it can be different code, silently when the head has not moved | D2 rewritten: the pin goes; a shaping sitting's desk reads the checkout as it stands, the same files the Partner reads, records and source alike. Astra's own change, a pinned Partner-facing read, was not taken: the Partner's native reads cannot be pinned, so one source is the only way both argue from the same lines, and it is the smaller design |
+| S67-02 | a sitting that stood before this build has no `tree` on its mark (`conversation.go:552`), and opening it resumes rather than restarts (`service.go:1177`, `ProjectPane.tsx:1590`): its desk is either refused or shows an invented baseline | dissolved by the D2 fold: nothing is pinned, no mark carries a commit, and a sitting from before this build opens like any other; §8 keeps a test for a mark without room state |
+| S67-03 | §6 deleted `EndSittingSheet` while D7 promised End unchanged; the room mounts the review sheet unconditionally (`ReviewRoom.tsx:291`), so a shaping sitting would inherit verdicts and lose End without recording (`StartSitting.tsx:293`, `:333`) | D7: End by purpose; the shaping sheet moves into the room with its two actions and its test; §6 and §8 say so |
+
+Astra also verified, and the design leans on, that the Outcome
+recorder refuses a missing verdict only for a review (`room.ts:328`)
+and the service writes a verdict only on a review's Outcome
+(`service.go:1293`), so a shaping Outcome records as it does today.
