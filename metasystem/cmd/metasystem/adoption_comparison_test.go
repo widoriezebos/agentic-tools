@@ -51,7 +51,10 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", filepath.Join(bed, "registry"))
-	baseEnvironment := append(receiptCanaryEnvironment(), "GOFLAGS=-mod=readonly", "METASYSTEM_OWNER_LINEAGE=adoption-comparison", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+filepath.Join(bed, "registry"))
+	baseEnvironment := append(receiptCanaryEnvironment(), "GOFLAGS=-mod=readonly", "METASYSTEM_OWNER_LINEAGE=adoption-comparison", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+filepath.Join(bed, "registry"),
+		// A fixed worker count: an automatic one follows host load and would
+		// change the proof's environment identity between run and verify.
+		"METASYSTEM_TESTING_WORKERS=3")
 	environment := append([]string(nil), baseEnvironment...)
 	run := func(cwd string, extra []string, argv ...string) (string, int) {
 		t.Helper()
@@ -266,9 +269,18 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	// testing contract (its delivery proof above reran and verified) and the
 	// system check, which judges the covenant's shape; the covenant evidence
 	// gate passes on the green table.
+	// Its exit reflects the checkout's live supervision, which a fixture
+	// target does not run; the covenant verdict is the adoption claim.
 	check, checkCode := run(filled, nil, engine, "system", "check", "--repo", filled, "--json")
-	if !strings.Contains(check, `"valid":true`) {
-		t.Fatalf("the filled target's system check did not find its covenant valid (%d):\n%s", checkCode, check)
+	var checked struct {
+		Data struct {
+			Covenant struct {
+				Present, Valid bool
+			} `json:"covenant"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(check), &checked); err != nil || !checked.Data.Covenant.Present || !checked.Data.Covenant.Valid {
+		t.Fatalf("the filled target's system check did not find its covenant valid (%d, %v):\n%s", checkCode, err, check)
 	}
 	if evidence := mustRun(filled, engine, "internal", "covenant", "evidence", "--root", filled); !strings.Contains(evidence, "(proof greets): ") {
 		t.Fatalf("the filled target's covenant evidence gate did not judge its requirement:\n%s", evidence)
@@ -337,8 +349,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	if err := os.WriteFile(profile, profileBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// A source-delivery target whose go.mod vanished fails, naming the
-	// delivery, and never reads as "no engine expected".
+	// A source-delivery target whose go.mod vanished fails its proof.
 	gomod := filepath.Join(filled, "go.mod")
 	if err := os.Rename(gomod, gomod+".hidden"); err != nil {
 		t.Fatal(err)
@@ -347,8 +358,11 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	if err := os.Rename(gomod+".hidden", gomod); err != nil {
 		t.Fatal(err)
 	}
-	if code == 0 || !strings.Contains(output, "go.mod") {
-		t.Fatalf("a source-delivery target without go.mod proved green or did not name the missing module (%d):\n%s", code, output)
+	// The engine source is a relevant input of the target's proof: with it
+	// gone the working tree is not the tree any proof covers, and the run
+	// refuses instead of reading as "no engine expected".
+	if code == 0 || !strings.Contains(output, "delivery candidate differs from relevant working-tree inputs") {
+		t.Fatalf("a source-delivery target without go.mod proved green or misnamed its refusal (%d):\n%s", code, output)
 	}
 	// A registered link to a pruned skill is named as dangling.
 	if err := os.RemoveAll(filepath.Join(filled, "skills", "take-a-step-back")); err != nil {

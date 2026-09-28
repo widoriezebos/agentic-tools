@@ -971,3 +971,23 @@ func TestSectionArgvDeclarationsValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestGoGroupRefusesCommandAndSectionFields(t *testing.T) {
+	t.Parallel()
+	base := Group{ID: "unit", Kind: "unit", Phase: "acceptance", EnvironmentMode: "inherit", Adapter: "go", CWD: ".",
+		Inputs: []string{"go.mod"}, Outputs: []string{}, Obligations: []string{}, Platforms: []string{"any"}, TargetMS: 1000,
+		Packages: []string{"internal/x"}, Tests: json.RawMessage(`["TestX"]`)}
+	if err := validateGroup(base); err != nil {
+		t.Fatalf("valid go group refused: %v", err)
+	}
+	for name, edit := range map[string]func(*Group){
+		"argv":    func(g *Group) { g.Argv = []string{"bash", "scripts/bed.sh"} },
+		"section": func(g *Group) { g.Section = "bed" },
+	} {
+		group := base
+		edit(&group)
+		if err := validateGroup(group); err == nil || !strings.Contains(err.Error(), "go adapter discovers its tests") {
+			t.Errorf("go group with %s: %v", name, err)
+		}
+	}
+}
