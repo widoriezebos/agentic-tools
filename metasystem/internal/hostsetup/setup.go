@@ -27,6 +27,10 @@ type Options struct {
 	Runtimes       []string
 	CopySkills     bool
 	Check          bool
+	// HooksOnly plans only the runtimes' lifecycle hook settings: no
+	// instruction pointers, skill trees or profiles. A checkout switching
+	// its hooks to the engine (`system setup`) changes nothing else.
+	HooksOnly bool
 }
 
 type Result struct {
@@ -66,7 +70,7 @@ func SetupWithResolver(options Options, resolve func(string) (stateroot.Layout, 
 	if err != nil {
 		return Result{}, err
 	}
-	actions, err := plan(layout, selected, options.CopySkills)
+	actions, err := plan(layout, selected, options.CopySkills, options.HooksOnly)
 	if err != nil {
 		return Result{}, err
 	}
@@ -78,6 +82,9 @@ func SetupWithResolver(options Options, resolve func(string) (stateroot.Layout, 
 	if options.Check {
 		if len(actions) != 0 {
 			return result, fmt.Errorf("host setup check: %d registration path(s) require setup", len(actions))
+		}
+		if options.HooksOnly {
+			return result, nil
 		}
 		if dangling, err := danglingSkillLinks(layout, selected); err != nil {
 			return result, err
@@ -118,9 +125,9 @@ func selectedRuntimes(requested []string) ([]string, error) {
 	return append([]string(nil), requested...), nil
 }
 
-func plan(layout stateroot.Layout, selected []string, copySkills bool) ([]action, error) {
+func plan(layout stateroot.Layout, selected []string, copySkills, hooksOnly bool) ([]action, error) {
 	var actions []action
-	if layout.Template && len(selected) > 0 {
+	if layout.Template && len(selected) > 0 && !hooksOnly {
 		for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
 			item, needed, err := instructionAction(filepath.Join(layout.RepositoryRoot, name), managedPointers())
 			if err != nil {
@@ -131,9 +138,12 @@ func plan(layout stateroot.Layout, selected []string, copySkills bool) ([]action
 			}
 		}
 	}
-	skills, err := skillNames(layout.InstallationRoot)
-	if err != nil {
-		return nil, err
+	var skills []string
+	if !hooksOnly {
+		var err error
+		if skills, err = skillNames(layout.InstallationRoot); err != nil {
+			return nil, err
+		}
 	}
 	plannedTrees := map[string]bool{}
 	for _, runtime := range selected {
@@ -142,6 +152,9 @@ func plan(layout stateroot.Layout, selected []string, copySkills bool) ([]action
 			return nil, fmt.Errorf("runtime %s has no registration declaration", runtime)
 		}
 		for _, row := range rows {
+			if hooksOnly && row.Operation != runtimes.OpCopyFile && row.Operation != runtimes.OpJSONStripKey {
+				continue
+			}
 			switch row.Operation {
 			case runtimes.OpTree:
 				if plannedTrees[row.Destination] {

@@ -7,9 +7,9 @@
 # response, exit 0; Claude's tool gate runs on the existing engine meanwhile.
 
 # BEGIN GENERATED degraded forms (internal/hooks renders them; do not edit)
-hook_stop_engine_missing='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}'
+hook_stop_engine_missing='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild it with go run ./cmd/devgate build. Status unavailable."}'
 hook_stop_bootstrap_failed='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable."}'
-hook_start_engine_missing='{"systemMessage":"Metasystem engine missing: this session received no role context; if this checkout is a declared brain it is uninstructed until the engine is rebuilt: run go run ./cmd/devgate build, then start a new session"}'
+hook_start_engine_missing='{"systemMessage":"Metasystem engine missing: this session received no role context; if this checkout is a declared brain it is uninstructed until the engine is rebuilt: run go run ./cmd/devgate build in the metasystem installation, then start a new session"}'
 # END GENERATED degraded forms
 
 hook_source=${BASH_SOURCE[0]}

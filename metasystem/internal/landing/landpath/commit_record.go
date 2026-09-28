@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
 )
 
 // refuseAgent writes an agent refusal for the deciding verdict: its cause,
@@ -216,6 +218,12 @@ func (b *boundary) commit(decided decision, carried carriedTrailers, actor strin
 	b.stdout.Write(committed.Stdout)
 	b.stderr.Write(committed.Stderr)
 	if committed.Code != 0 {
+		// A composer enrolled before the engine guard runs the deleted
+		// pre-commit-guard.sh and refuses every commit without naming a fix;
+		// the refusal a person meets names it (rule H1).
+		if strings.Contains(string(committed.Stderr), ledgerfence.RetiredComposerRefusal) {
+			fmt.Fprintln(b.stderr, "commit refused: "+ledgerfence.RetiredComposerRemedy)
+		}
 		if committed.Code < 0 {
 			return 1
 		}

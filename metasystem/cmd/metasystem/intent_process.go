@@ -21,6 +21,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
@@ -116,6 +117,18 @@ func processIntentCommands() []intentCommand {
 			maxArgs:  0,
 			examples: []string{"metasystem system enroll --name Wido"},
 			run:      runIntentEnroll,
+		},
+		{
+			object: "system", action: "setup", audience: "both", summary: "connect this checkout's agent hooks and commit fence to its engine",
+			usage: []string{"metasystem system setup"},
+			details: []string{
+				"Checks that the engine answers the hook entry, then writes each registered runtime's lifecycle hooks to run it directly and enrolls the git pre-commit fence, upgrading a hook from before the engine guard.",
+				"Nothing is written when the engine is missing or older than the hook entry; the refusal names the build. A repeat with everything in place changes nothing.",
+			},
+			flags:    []intentFlag{intentInstallationFlag},
+			maxArgs:  0,
+			examples: []string{"metasystem system setup"},
+			run:      runIntentSystemSetup,
 		},
 		adoptIntentCommand(),
 		{
@@ -1746,4 +1759,56 @@ func additiveData(view any, extra map[string]any) any {
 		}
 	}
 	return object
+}
+
+// runIntentSystemSetup switches this checkout's runtime hooks to the engine's
+// direct `internal hook` command and enrolls its pre-commit fence
+// (plans/designs/verbs-object-action.md 3.3, U9 activation).
+func runIntentSystemSetup(inv *intentInvocation) int {
+	layout, installation, _, problem := inv.selectInstallation()
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	deps := hookswitch.Production()
+	deps.Resolve = inv.owners.resolver.ResolveLayout
+	if inv.owners.hookSwitch != nil {
+		deps = inv.owners.hookSwitch(deps)
+	}
+	report, err := hookswitch.Switch(installation, deps)
+	targets := []intentTarget{{Kind: "checkout", ID: layout.GitRoot}}
+	if err != nil {
+		var refusal *hookswitch.RefusalError
+		if errors.As(err, &refusal) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: refusal.Reason, Decision: refusal.Remedy})
+		}
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets,
+			Summary: "the hooks were not switched to the engine: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnose the checkout"})
+	}
+	lines := []string{"engine " + report.Engine + " serves the hook entry"}
+	changed := map[string]bool{}
+	for _, path := range report.Changed {
+		changed[path] = true
+		lines = append(lines, "hooks switched to the engine: "+path)
+	}
+	if len(report.Runtimes) == 0 {
+		lines = append(lines, "no runtime hook settings are registered in this checkout; system adopt registers them")
+	} else if len(report.Changed) == 0 {
+		lines = append(lines, "hooks already run the engine: "+strings.Join(report.Runtimes, ", "))
+	}
+	switch report.Fence {
+	case hookswitch.FenceReenrolled:
+		lines = append(lines, "pre-commit fence re-enrolled: the hook from before the engine guard now runs the engine ("+report.FenceHook+")")
+	case hookswitch.FenceEnrolled:
+		lines = append(lines, "pre-commit fence enrolled: "+report.FenceHook)
+	case hookswitch.FenceNoGit:
+		lines = append(lines, "no git repository: no pre-commit fence to enroll")
+	default:
+		lines = append(lines, "pre-commit fence already runs the engine: "+report.FenceHook)
+	}
+	outcome, summary := intentConfirmed, "this checkout's hooks and commit fence run the engine"
+	if report.Unchanged() {
+		outcome, summary = intentUnchanged, "this checkout's hooks and commit fence already run the engine; nothing was changed"
+	}
+	return inv.render(intentResult{Outcome: outcome, Targets: targets, Summary: summary, text: lines,
+		Data: map[string]any{"engine": report.Engine, "runtimes": nonNilLines(report.Runtimes), "changed": nonNilLines(report.Changed), "fence": report.Fence, "fenceHook": report.FenceHook}})
 }

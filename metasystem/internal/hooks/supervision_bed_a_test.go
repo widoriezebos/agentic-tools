@@ -29,7 +29,7 @@ func TestSupervisionBedAShippedHooksNeverResolveFromTheGitToplevel(t *testing.T)
 		if strings.Contains(string(data), toplevel) {
 			t.Errorf("%s still resolves metasystem scripts from the Git toplevel", filepath.Base(path))
 		}
-		if !strings.Contains(string(data), "scripts/agents/supervision-hook.sh") {
+		if !strings.Contains(string(data), "metasystem internal hook ") {
 			t.Errorf("%s carries no supervision hook command, so the check above proves nothing", filepath.Base(path))
 		}
 	}

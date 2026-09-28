@@ -36,10 +36,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
-// runHookEntry is the `hook RUNTIME EVENT` entry the plumbing stub
-// scripts/agents/supervision-hook.sh execs: the runtime lifecycle hook body.
-// `hook --accepts` answers the stub's question whether this engine serves
-// the entry at all.
+// runHookEntry is the `hook RUNTIME EVENT` entry the runtime settings run
+// directly from the installation directory (plans/designs/verbs-object-action.md
+// 3.3): the runtime lifecycle hook body. During the cutover the plumbing stub
+// scripts/agents/supervision-hook.sh may still exec it, naming itself in
+// METASYSTEM_HOOK_SCRIPT. `hook --accepts` answers whether this engine serves
+// the entry at all; `system setup` asks it before switching a checkout over.
 func runHookEntry(args []string) int {
 	if len(args) == 1 && args[0] == "--accepts" {
 		return 0
@@ -52,10 +54,10 @@ func runHookEntry(args []string) int {
 		event = args[1]
 	}
 	script := os.Getenv(hooks.RuntimeHookScriptEnv)
+	installation := ""
 	if script == "" {
-		if executable, err := os.Executable(); err == nil {
-			script = filepath.Join(filepath.Dir(filepath.Dir(executable)), hooks.RuntimeHookScript)
-		}
+		// The direct settings command entered the installation first.
+		installation, _ = os.Getwd()
 	}
 	var signals chan os.Signal
 	if event == "start" {
@@ -71,11 +73,11 @@ func runHookEntry(args []string) int {
 	return hooks.RunRuntimeHook(hooks.Invocation{
 		Runtime: runtime, Event: event,
 		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
-		Lookup: os.LookupEnv, Pid: os.Getpid(), Ppid: os.Getppid(), Script: script,
+		Lookup: os.LookupEnv, Pid: os.Getpid(), Ppid: os.Getppid(), Script: script, Installation: installation,
 		Now:       time.Now,
 		Monotonic: func() time.Duration { return time.Since(origin) },
 		After:     time.After, Sleep: time.Sleep, Signals: signals,
-		Exec: syscall.Exec, Environ: os.Environ, StartWorker: startStopWorker,
+		Exec: syscall.Exec, Environ: os.Environ, StartWorker: hooks.LaunchEngineWorker,
 		IsExecutable: func(path string) bool {
 			info, err := os.Stat(path)
 			return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
@@ -86,46 +88,6 @@ func runHookEntry(args []string) int {
 			EventInterval: 20 * time.Millisecond, FixtureDeadline: stopDeadlineFixtureEvent,
 		},
 	}, owners)
-}
-
-// stopWorker is the launched Stop worker, reaped as soon as it exits.
-type stopWorker struct {
-	pid    int
-	done   chan struct{}
-	status int
-}
-
-func (w *stopWorker) Pid() int              { return w.pid }
-func (w *stopWorker) Done() <-chan struct{} { return w.done }
-func (w *stopWorker) Status() int           { return w.status }
-
-// startStopWorker runs the stub again for the same runtime's Stop, as the
-// deadline parent's child, with the payload as its input.
-func startStopWorker(script, runtime string, env []string, stdin, stdout, stderr *os.File) (hooks.Worker, error) {
-	command := exec.Command("bash", script, runtime, "stop")
-	command.Env = env
-	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
-	if err := command.Start(); err != nil {
-		return nil, err
-	}
-	worker := &stopWorker{pid: command.Process.Pid, done: make(chan struct{})}
-	go func() {
-		err := command.Wait()
-		worker.status = 0
-		if err != nil {
-			var exitError *exec.ExitError
-			if errors.As(err, &exitError) {
-				worker.status = exitError.ExitCode()
-				if worker.status < 0 {
-					worker.status = 128 + int(exitError.Sys().(syscall.WaitStatus).Signal())
-				}
-			} else {
-				worker.status = 127
-			}
-		}
-		close(worker.done)
-	}()
-	return worker, nil
 }
 
 // stopDeadlineFixtureEventEnvironment names a file whose appearance a

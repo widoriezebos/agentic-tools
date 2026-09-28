@@ -24,7 +24,7 @@ import (
 // fixed notice or one validated intentional response, so an ordinary runtime
 // failure can always explain itself.
 
-const startLastResort = `{"systemMessage":"Metasystem SessionStart could not produce its response: role context delivery is unconfirmed; a declared brain may be uninstructed. Rebuild bin/metasystem with go run ./cmd/devgate build, then start a new session."}`
+const startLastResort = `{"systemMessage":"Metasystem SessionStart could not produce its response: role context delivery is unconfirmed; a declared brain may be uninstructed. Rebuild the engine with go run ./cmd/devgate build, then start a new session."}`
 
 const startBookkeepingNotice = "Metasystem SessionStart published its response but could not finish delivery bookkeeping. Repair supervision from the owning installation, then start a new session; context may repeat."
 
@@ -42,25 +42,25 @@ type startNotice struct {
 // the start boundary can publish. "interrupted" exits with the signal's
 // status. The hook-start audit joins this catalog to its executed cases.
 var StartOutcomeNotices = map[string]startNotice{
-	"engine-missing":          {`{"systemMessage":"Metasystem engine missing: this session received no role context; if this checkout is a declared brain it is uninstructed until the engine is rebuilt: run go run ./cmd/devgate build, then start a new session"}`, 0},
+	"engine-missing":          {`{"systemMessage":"Metasystem engine missing: this session received no role context; if this checkout is a declared brain it is uninstructed until the engine is rebuilt: run go run ./cmd/devgate build in the metasystem installation, then start a new session"}`, 0},
 	"engine-rebuilding":       {`{"systemMessage":"Metasystem engine is behind this checkout's landed sources: a rebuild runs in the background (log: artifacts/agents/hook-bootstrap.log), so this session received no role context and supervision was not armed; if this checkout is a declared brain it is uninstructed. Start a new session once the rebuild finishes."}`, 0},
-	"engine-skew":             {`{"systemMessage":"Metasystem engine does not answer path state-root: this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild bin/metasystem with go run ./cmd/devgate build, then start a new session."}`, 0},
+	"engine-skew":             {`{"systemMessage":"Metasystem engine does not answer path state-root: this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild the engine with go run ./cmd/devgate build, then start a new session."}`, 0},
 	"installation-directory":  {startNoticeTemplate("locate its installation directory", "Restore access to the installed hook and its parent directories."), 0},
 	"checkout-identification": {startNoticeTemplate("identify the checkout and its primary installation", "Restore Git and access to the checkout and its primary metasystem installation."), 0},
 	"resolved-directory":      {startNoticeTemplate("open the resolved installation directory", "Restore access to the installation directory returned by the engine."), 0},
-	"installation-validation": {startNoticeTemplate("validate the metasystem installation", "Restore a complete, readable metasystem installation and rebuild bin/metasystem with go run ./cmd/devgate build."), 0},
+	"installation-validation": {startNoticeTemplate("validate the metasystem installation", "Restore a complete, readable metasystem installation and rebuild the engine with go run ./cmd/devgate build."), 0},
 	"payload-storage":         {startNoticeTemplate("stage its input", "Restore writable temporary storage and free space."), 0},
 	"boot-storage":            {startNoticeTemplate("stage brain context", "Restore writable temporary storage and free space."), 0},
-	"start-preparation":       {startNoticeTemplate("prepare the session identity and context", "Restore the installed shell tools and rebuild bin/metasystem with go run ./cmd/devgate build."), 0},
+	"start-preparation":       {startNoticeTemplate("prepare the session identity and context", "Restore the installed shell tools and rebuild the engine with go run ./cmd/devgate build."), 0},
 	"response-rendering":      {startLastResort, 0},
 	"unexpected-termination":  {startLastResort, 0},
-	"payload-read":            {startNoticeTemplate("read its session input", "Repair the SessionStart hook input and rebuild bin/metasystem with go run ./cmd/devgate build."), 0},
+	"payload-read":            {startNoticeTemplate("read its session input", "Repair the SessionStart hook input and rebuild the engine with go run ./cmd/devgate build."), 0},
 	"pending-read":            {startNoticeTemplate("read pending steward incidents", "Restore access to the steward incident records and repair unreadable records."), 0},
 	"holder-read":             {startNoticeTemplate("read checkout holder identity", "Restore readable checkout custody records and restart the owning runtime."), 0},
 	"invocation-invalid":      {startNoticeTemplate("accept the runtime invocation", "Repair the installed hook registration."), 2},
 	"runtime-unregistered":    {startNoticeTemplate("find the runtime in its registry", "Repair the installed hook registration."), 2},
-	"runtime-registry":        {startNoticeTemplate("read the runtime registry", "Rebuild bin/metasystem with go run ./cmd/devgate build and restore the installed runtime declarations."), 0},
-	"context-contract":        {startNoticeTemplate("read the runtime context contract", "Rebuild bin/metasystem with go run ./cmd/devgate build and restore the installed runtime declarations."), 0},
+	"runtime-registry":        {startNoticeTemplate("read the runtime registry", "Rebuild the engine with go run ./cmd/devgate build and restore the installed runtime declarations."), 0},
+	"context-contract":        {startNoticeTemplate("read the runtime context contract", "Rebuild the engine with go run ./cmd/devgate build and restore the installed runtime declarations."), 0},
 	"custody-unreadable":      {startNoticeTemplate("authenticate delegate custody", "Restore the recorded delegate custody and restart through its launcher."), 1},
 	"process-identity":        {startNoticeTemplate("identify the owning runtime process", "Restart through the installed runtime launcher."), 0},
 	"brain-boot":              {`{"systemMessage":"Metasystem brain boot failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem internal brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}`, 0},
@@ -431,11 +431,8 @@ func (s *startRun) main() {
 		s.finish("notice", "invocation-invalid")
 	}
 
-	scriptDir, ok := physicalDirectory(scriptParent(inv.Script))
-	if !ok {
-		s.finish("notice", "installation-directory")
-	}
-	s.harnessRoot, ok = physicalDirectory(scriptDir + "/../..")
+	var ok bool
+	s.harnessRoot, ok = inv.installationRoot()
 	if !ok {
 		s.finish("notice", "installation-directory")
 	}

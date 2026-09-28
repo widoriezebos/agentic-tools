@@ -20,8 +20,8 @@ type degradedCause struct {
 
 var degradedCauses = []degradedCause{
 	{"unreadable-output", "stop-hook-output-was-unreadable", "The steward must restore supervision.", []string{"condition-log-failed", "no-resolved-checkout"}},
-	{"engine-missing", "engine missing", "Rebuild bin/metasystem.", nil},
-	{"engine-skew", "engine does not answer path state-root", "Rebuild bin/metasystem.", nil},
+	{"engine-missing", "engine missing", "Rebuild it with go run ./cmd/devgate build.", nil},
+	{"engine-skew", "engine does not answer path state-root", "Rebuild it with go run ./cmd/devgate build.", nil},
 	{"staging-failed", "payload staging failed", "The steward must restore supervision.", nil},
 	{"deadline-expired", "stop deadline expired", "The steward must restore supervision.", []string{"record-update-failed", "condition-log-failed", "no-resolved-checkout"}},
 	{"bootstrap-failed", "hook-bootstrap-failed", "The steward must restore supervision.", nil},
