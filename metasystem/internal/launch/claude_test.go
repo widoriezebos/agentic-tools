@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -449,70 +448,5 @@ func TestDesignCommonTemplateContract(t *testing.T) {
 		if err != nil || !strings.Contains(text, phrase) {
 			t.Fatalf("design template missing %q: %v", phrase, err)
 		}
-	}
-}
-
-func TestLandingLaneFixtureScenariosHaveGoWitness(t *testing.T) {
-	root := moduleRoot(t)
-	temp := t.TempDir()
-	steps := filepath.Join(temp, "steps")
-	os.MkdirAll(steps, 0o700)
-	logPath := filepath.Join(temp, "lock.log")
-	lockPath := filepath.Join(temp, "lock.sh")
-	lock := `
-cat >"$STEP_DIR/step-1.sh" <<'STEP'
-#!/bin/bash
-cat >/dev/null
-echo 1 >>"$LOCK_LOG"
-touch "$STEP_DIR/quit"
-STEP
-cat >"$STEP_DIR/step-2.sh" <<'STEP'
-#!/bin/bash
-echo 2 >>"$LOCK_LOG"
-STEP
-cat >"$STEP_DIR/step-10.sh" <<'STEP'
-#!/bin/bash
-echo 10 >>"$LOCK_LOG"
-STEP
-cat >"$STEP_DIR/step-3-backup.sh" <<'STEP'
-#!/bin/bash
-echo bad >>"$LOCK_LOG"
-STEP
-testrun_lock_acquire() {
-  printf 'lock seat=%s\n' "$1" >>"$LOCK_LOG"
-  [ "${LOCK_FAIL:-0}" != 1 ]
-}
-testrun_lock_release() {
-  echo release >>"$LOCK_LOG"
-}
-`
-	if err := os.WriteFile(lockPath, []byte(lock), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	worker := filepath.Join(root, "scripts", "agents", "landing-lane-worker.sh")
-	run := func(fail bool) error {
-		command := exec.Command("bash", worker, "lane", "--dir", steps, "--lock-lib", lockPath, "--seat", "builder", "--idle", "3600", "--poll", "0", "--repo", root)
-		command.Dir = temp
-		command.Env = append(os.Environ(), "STEP_DIR="+steps, "LOCK_LOG="+logPath)
-		if fail {
-			command.Env = append(command.Env, "LOCK_FAIL=1")
-		}
-		return command.Run()
-	}
-	os.WriteFile(logPath, nil, 0o600)
-	if err := run(false); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(logPath)
-	if string(data) != "lock seat=builder\n1\n2\n10\nrelease\n" {
-		t.Fatalf("ordered execution log=%q", data)
-	}
-	os.WriteFile(logPath, nil, 0o600)
-	if err := run(true); err == nil {
-		t.Fatal("lock failure was accepted")
-	}
-	data, _ = os.ReadFile(logPath)
-	if string(data) != "lock seat=builder\nrelease\n" {
-		t.Fatalf("lock failure log=%q", data)
 	}
 }

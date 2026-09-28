@@ -9,9 +9,24 @@ reported and allowed. Removed or changed assertions are refused because a
 change is one removed line plus one added line. Reordering assertions inside a
 file does not change the surface.
 
-A landing may move an assertion only when the goal ledger permits it and the
-landing adds an exact declaration. Generate that declaration instead of
-writing it by hand:
+A landing may move an assertion only when its goal is allowed stop-test
+changes and the landing adds an exact declaration. Allowing it is a person's
+act, run at the enrolled terminal:
+
+```sh
+metasystem goal allow <goal-id> stop-test-changes \
+  --reason '<why this goal moves a Stop decision>'
+```
+
+The goal record then carries the sealed line `- StopSurface: moves`, and
+`metasystem goal show <goal-id>` says `Allowed: stop-test changes`. Anyone
+withdraws it with `metasystem goal disallow <goal-id> stop-test-changes`. A
+person who edits that line by hand publishes it with
+`metasystem goal sync --publish --goal <goal-id> --by <name>`, which records
+the edit as the allow or disallow it is and asks for the person's proof for
+an allow.
+
+Generate the declaration instead of writing it by hand:
 
 ```sh
 metasystem internal audit stop-decision-surface --declare \

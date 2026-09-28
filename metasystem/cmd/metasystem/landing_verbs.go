@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -360,15 +361,26 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 }
 
 func canonicalValidatorEnvironment() []string {
-	owned := map[string]bool{"GOFLAGS": true, "METASYSTEM_GATE_FROZEN_TOOLCHAIN": true}
-	environment := make([]string, 0, len(os.Environ())+2)
-	for _, entry := range os.Environ() {
+	return canonicalValidatorEnvironmentFrom(os.Environ())
+}
+
+// canonicalValidatorEnvironmentFrom derives the validator's environment from
+// an inherited one, so its owned values are provable without mutating the
+// test process's environment.
+func canonicalValidatorEnvironmentFrom(inherited []string) []string {
+	owned := map[string]bool{"GOFLAGS": true, "METASYSTEM_GATE_FROZEN_TOOLCHAIN": true, "GOCACHE": true, "STATICCHECK_CACHE": true}
+	caches, _ := gocache.Resolve(inherited)
+	environment := make([]string, 0, len(inherited)+2)
+	for _, entry := range inherited {
 		name, _, _ := strings.Cut(entry, "=")
 		if !owned[name] {
 			environment = append(environment, entry)
 		}
 	}
-	return append(environment, "GOFLAGS=-mod=readonly", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1")
+	environment = append(environment, gocache.Environment(caches)...)
+	// GOFLAGS must equal cmd/devgate's ownedGoFlags: the gate's frozen-tree
+	// check accepts exactly that value (disk-lifetimes A4).
+	return append(environment, "GOFLAGS=-mod=readonly -trimpath", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1")
 }
 
 func runLandingAdoptionRulings(args []string) int {

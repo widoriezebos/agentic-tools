@@ -373,6 +373,8 @@ func TestIntentPlanningDescriptorCoverage(t *testing.T) {
 		"incident close":  {"reason"},
 		"work wait":       {"list", "session", "exit-code", "run", "caller-pid"},
 		"goal sync":       {"recover", "refresh", "publish", "goal"},
+		"goal allow":      {"reason", "reason-file", "by", "fixture-human-authority"},
+		"goal disallow":   {"reason", "lineage"},
 	}
 	for name, flags := range expect {
 		command, _ := findIntentCommand(name)

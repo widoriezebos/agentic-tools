@@ -19,7 +19,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
@@ -814,16 +816,20 @@ func (bed *contextCostBed) finishStop(label string, process *contextCostProcess)
 	return contextCostStop{label: label, output: output, report: report, elapsed: elapsed, role: role, reportRole: reportRole, evidence: evidence}
 }
 
+// stopReport resolves the Stop response to its immutable, identity-bound
+// report through the owner the retired fixture-stop-report.sh reached by
+// subprocess (verbs-object-action U7c).
 func (bed *contextCostBed) stopReport(output string) string {
 	bed.t.Helper()
-	helper := filepath.Join(bed.installation, "scripts", "agents", "fixture-stop-report.sh")
-	command := `source "$1"; fixture_stop_status_report "$2" "$3" "$4" "$5"`
-	report, code, err := runContextCostCommand(bed.outer, bed.environment(false), nil, "bash", "-c", command,
-		"context-cost-stop-report", helper, output, bed.installation, bed.runtime, bed.session)
-	if err != nil || code != 0 {
-		bed.t.Fatalf("%s Stop response did not name a readable identity-bound report: code=%d err=%v response=%s\n%s", bed.runtime, code, err, output, report)
+	root, err := report.StopStatusRoot(bed.installation)
+	if err != nil {
+		bed.t.Fatalf("%s Stop report root: %v", bed.runtime, err)
 	}
-	return report
+	resolved, err := stopreport.ResolveResponse(root, []byte(output), bed.runtime, bed.session)
+	if err != nil {
+		bed.t.Fatalf("%s Stop response did not name a readable identity-bound report: %v\nresponse=%s", bed.runtime, err, output)
+	}
+	return string(resolved.Report)
 }
 
 func (bed *contextCostBed) requireLiveRole(stop contextCostStop) {

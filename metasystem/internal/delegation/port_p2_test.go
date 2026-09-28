@@ -37,7 +37,7 @@ func TestPortP2EngineSkewPreflight(t *testing.T) {
 		requireExit(t, result, 1, b.stderr.String())
 		stderr := b.stderr.String()
 		if !strings.Contains(stderr, "dispatch refused: engine commit "+stamp+" is older than checkout commit "+head) ||
-			!strings.Contains(stderr, "run scripts/agents/go-build.sh, then steward arm") {
+			!strings.Contains(stderr, "run go run ./cmd/devgate build, then steward arm") {
 			t.Fatalf("the skew refusal did not name both commits and the rebuild remedy: %q", stderr)
 		}
 		if outcome := outcomeOf(t, result); outcome["outcome"] != "REFUSED-INTERNAL" {

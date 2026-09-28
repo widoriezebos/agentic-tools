@@ -9,7 +9,7 @@
 # BEGIN GENERATED degraded forms (internal/hooks renders them; do not edit)
 hook_stop_engine_missing='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}'
 hook_stop_bootstrap_failed='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable."}'
-hook_start_engine_missing='{"systemMessage":"Metasystem engine missing: this session received no role context; if this checkout is a declared brain it is uninstructed until the engine is rebuilt: run scripts/agents/go-build.sh, then start a new session"}'
+hook_start_engine_missing='{"systemMessage":"Metasystem engine missing: this session received no role context; if this checkout is a declared brain it is uninstructed until the engine is rebuilt: run go run ./cmd/devgate build, then start a new session"}'
 # END GENERATED degraded forms
 
 hook_source=${BASH_SOURCE[0]}
@@ -57,7 +57,7 @@ hook_fence=$hook_world/artifacts/agents/hook-bootstrap.fence
 hook_point_fence() { ln -s "$1" "$hook_fence.$$" 2>/dev/null && mv -f "$hook_fence.$$" "$hook_fence"; }
 hook_bootstrap() {
   local holder
-  [[ -n "$hook_world" && ( -d "$hook_world/cmd/devgate" || -f "$hook_world/scripts/agents/go-build.sh" ) ]] || return 1
+  [[ -n "$hook_world" && -d "$hook_world/cmd/devgate" ]] || return 1
   mkdir -p "$hook_world/artifacts/agents" 2>/dev/null && [[ ! -d "$hook_fence" || -L "$hook_fence" ]] || return 1
   if ! ln -s "$$" "$hook_fence" 2>/dev/null; then
     holder=$(readlink "$hook_fence" 2>/dev/null) || holder=
@@ -66,7 +66,7 @@ hook_bootstrap() {
   fi
   set -m
   nohup bash -c 'builtin printf "hook bootstrap: builder %s starts the engine build\n" "$$"; builtin cd -- "$1" || exit 1
-    [[ -d cmd/devgate ]] && exec go run ./cmd/devgate build; exec bash scripts/agents/go-build.sh' \
+    exec go run -trimpath ./cmd/devgate build' \
     hook-bootstrap "$hook_world" >>"$hook_world/artifacts/agents/hook-bootstrap.log" 2>&1 </dev/null &
   set +m
   hook_point_fence "$!"

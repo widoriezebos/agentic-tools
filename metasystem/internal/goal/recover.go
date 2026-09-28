@@ -555,6 +555,15 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 			case "labels":
 				labels := commaValues(value)
 				fields.Labels = &labels
+			case "permission":
+				change, err := parsePermissionDelta(value)
+				if err != nil {
+					return PublishRequest{}, fmt.Errorf("%v; close this entry by hand", err)
+				}
+				if change.Allowed {
+					return PublishRequest{}, fmt.Errorf("allowing a goal permission is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal: %s", AllowCommand(target, change.Name))
+				}
+				fields.Permission = &change
 			}
 		}
 		if riskScores != "" {

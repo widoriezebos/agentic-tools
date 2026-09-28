@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
@@ -16,32 +15,5 @@ func runConfigCanonicalModel(args []string) int {
 		return 2
 	}
 	fmt.Println(config.CanonicalModel(args[0]))
-	return 0
-}
-
-// runConfigIdentity prints one adapter's canonical configuration identity as
-// JSON.
-func runConfigIdentity(args []string) int {
-	flags := flag.NewFlagSet("config identity", flag.ContinueOnError)
-	runtime := flags.String("runtime", "", "runtime name")
-	version := flags.String("version", "", "CLI version")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *runtime == "" || *version == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal config identity --runtime R --version V [sources...]")
-		return 2
-	}
-	identity, err := config.BuildConfigIdentity(*runtime, *version, flags.Args())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	encoded, err := config.CanonicalConfigJSON(identity)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Println(encoded)
 	return 0
 }

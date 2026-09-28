@@ -18,7 +18,7 @@ import (
 var publicPairs = []string{
 	"goal list", "goal show", "goal approve", "goal budget", "goal pause", "goal resume", "goal done", "goal open", "goal edit",
 	"goal claim", "goal release", "goal accept-risk", "goal pin", "goal prioritize", "goal reopen", "goal abandon", "goal block",
-	"goal unblock", "goal unapprove", "goal split", "goal group", "goal ungroup", "goal notes", "goal sync",
+	"goal unblock", "goal unapprove", "goal split", "goal group", "goal ungroup", "goal notes", "goal sync", "goal allow", "goal disallow",
 	"grant add", "grant revoke", "grant list",
 	"decision list", "decision show",
 	"design write", "design show", "design list", "design review", "design stop",
@@ -32,6 +32,7 @@ var publicPairs = []string{
 	"mission start", "mission status", "mission resume", "mission repair",
 	"system start", "system stop", "system restart", "system status", "system check", "system enroll", "system adopt",
 	"machine list", "machine start",
+	"app start", "app stop", "app restart", "app status", "app log", "app reset", "app check",
 	"ui start", "ui stop", "ui restart", "ui status",
 	"settings show", "settings keys", "settings check", "settings coordinator",
 	"receipt add", "receipt status", "receipt retro",
@@ -41,10 +42,10 @@ var publicPairs = []string{
 // revisionSevenObjects are the objects section 3.4 leaves, in help order,
 // with helm (human-control design, section 3.1) in the Run group.
 var revisionSevenObjects = []string{"goal", "design", "decision", "grant", "work", "test", "question", "incident",
-	"helm", "session", "mission", "system", "machine", "ui", "settings", "receipt", "experiment"}
+	"helm", "session", "mission", "system", "machine", "app", "ui", "settings", "receipt", "experiment"}
 
 // hiddenPairs are the process entrypoints whose first word is an object.
-var hiddenPairs = []string{"goal fetch", "goal next", "test worker", "test worker-capabilities", "mission run-loop", "ui serve", "ui tools"}
+var hiddenPairs = []string{"goal fetch", "goal next", "test worker", "test worker-capabilities", "mission run-loop", "app serve", "ui serve", "ui tools"}
 
 // TestIntentPublicCoverage is structural: it checks the object-action table,
 // its grammar, its help and its catalogue against the engine families, and

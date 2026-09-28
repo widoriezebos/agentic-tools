@@ -46,9 +46,15 @@ type Process struct {
 	// enumeration backfills seconds*1e6.
 	StartedExactMicro int64 `json:"pidStartedAtExactMicro,omitempty"`
 	// The clock-step-immune pair; zero/empty on fixture rows.
-	StartTicks int64    `json:"pidStartTicks,omitempty"`
-	BootID     string   `json:"bootId,omitempty"`
-	Argv       string   `json:"argv"`
+	StartTicks int64  `json:"pidStartTicks,omitempty"`
+	BootID     string `json:"bootId,omitempty"`
+	Argv       string `json:"argv"`
+	// ArgvVector is the kernel's argv, one element per argument, on rows
+	// the live table produced. Scope reads paths from it directly: Argv is
+	// those arguments joined by spaces, and an argument's own quote or
+	// space would make a shell re-reading of that string wrong. Fixture
+	// rows carry only Argv, which scope tokenizes as a shell line.
+	ArgvVector []string `json:"-"`
 	Environ    []string `json:"environ,omitempty"`
 	Exe        string   `json:"exe,omitempty"`
 	Cwd        string   `json:"cwd"`
@@ -244,7 +250,7 @@ func classifyProcess(process Process, runtime, repoReal string, custody, announc
 		resolvedCwd = realpath(process.Cwd)
 	}
 	cwdInScope := resolvedCwd != "" && PathBelow(resolvedCwd, repoReal)
-	namedPaths, err := ArgvPaths(process.Argv, resolvedCwd)
+	namedPaths, err := processArgvPaths(process, resolvedCwd)
 	if err != nil {
 		*errors = append(*errors, fmt.Sprintf("argv-unreadable:%d:%s", process.Pid, err))
 		return InventoryItem{}, false

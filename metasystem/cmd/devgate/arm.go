@@ -173,7 +173,7 @@ func armWitness(ctx context.Context, root string, env *environment, d deps, opti
 		executionRoot = root
 	}
 	witnessPath := filepath.Join(state.witnessState, "witness.json")
-	snapshot := env.with("GOFLAGS=-mod=readonly", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1",
+	snapshot := env.with("GOFLAGS="+ownedGoFlags, "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1",
 		"METASYSTEM_PROOF_EXECUTION_ROOT="+executionRoot,
 		"METASYSTEM_GATE_WITNESS_WRITE="+witnessPath,
 		"METASYSTEM_GATE_WITNESS_RUN="+run,

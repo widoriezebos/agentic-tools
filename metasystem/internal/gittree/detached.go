@@ -190,6 +190,43 @@ func (w Workspace) PlanDetachedWorktreeIn(dir string) (*WorktreePlan, error) {
 	}, nil
 }
 
+// PlanDetachedWorktreeAt derives the tuple of a worktree at the fixed path
+// parent/name. Unlike PlanDetachedWorktreeIn the path is the caller's, so
+// that runs at different times see the same strings; parent must not exist
+// and is created private here. name must be unique among the repository's
+// worktrees, since Git names the admin entry after it.
+func (w Workspace) PlanDetachedWorktreeAt(parent, name string) (*WorktreePlan, error) {
+	if !filepath.IsAbs(parent) || filepath.Clean(parent) != parent || name == "" || filepath.Base(name) != name {
+		return nil, fmt.Errorf("gittree detached worktree: %q/%q is not an exact path", parent, name)
+	}
+	top, err := w.topLevel()
+	if err != nil {
+		return nil, err
+	}
+	prefix, err := w.treePrefix()
+	if err != nil {
+		return nil, err
+	}
+	common, err := w.gitPathLine(nil, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return nil, fmt.Errorf("gittree detached worktree: common dir: %w", err)
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(w.Dir, common)
+	}
+	if common, err = filepath.EvalSymlinks(common); err != nil {
+		return nil, fmt.Errorf("gittree detached worktree: common dir: %w", err)
+	}
+	if err := os.Mkdir(parent, 0o700); err != nil {
+		return nil, fmt.Errorf("gittree detached worktree: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(parent); err != nil || resolved != parent {
+		return nil, errors.Join(fmt.Errorf("gittree detached worktree: %s is not its own resolved path", parent), os.Remove(parent))
+	}
+	return &WorktreePlan{WorktreeTuple: WorktreeTuple{Parent: parent, Top: filepath.Join(parent, name), Control: top, Common: common},
+		workspace: w, prefix: prefix}, nil
+}
+
 // Create materializes tree in the planned worktree, as NewDetachedWorktree.
 func (p *WorktreePlan) Create(tree string) (*DetachedWorktree, error) {
 	if !treeID.MatchString(tree) {

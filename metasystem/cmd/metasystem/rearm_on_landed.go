@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -72,6 +73,12 @@ type landedRearmDecision struct {
 
 func landedRearmCommand(checkout string) string {
 	return "go run ./cmd/devgate build && bin/metasystem session start --repo " + shellQuote(checkout)
+}
+
+// devgateBootstrapBuildArgv is the engine's own bootstrap build of an
+// installation: the devgate compile is trimmed like the build it runs.
+func devgateBootstrapBuildArgv() []string {
+	return []string{"go", "run", "-trimpath", "./cmd/devgate", "build"}
 }
 
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
@@ -396,14 +403,15 @@ var (
 		}
 		defer lease.Close()
 		fmt.Fprintf(os.Stderr, "metasystem test run: landed engine rebuild host queue=%dms\n", lease.Waited().Milliseconds())
-		command := exec.CommandContext(ctx, "go", "run", "./cmd/devgate", "build")
+		argv := devgateBootstrapBuildArgv()
+		command := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		command.Dir = installation
-		command.Env = os.Environ()
+		command.Env = gocache.Carry(os.Environ())
 		var output bytes.Buffer
 		command.Stdout, command.Stderr = &output, &output
 		err = proofrun.RunResourceCommand(ctx, command, lease)
 		if err != nil {
-			return fmt.Errorf("go run ./cmd/devgate build: %w: %s", err, strings.TrimSpace(output.String()))
+			return fmt.Errorf("go run -trimpath ./cmd/devgate build: %w: %s", err, strings.TrimSpace(output.String()))
 		}
 		return nil
 	}

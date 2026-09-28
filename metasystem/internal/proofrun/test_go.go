@@ -113,8 +113,8 @@ func RunGoGateTests(ctx context.Context, request GoGateTestRequest) (GoGateTestR
 	ctx = withTestWorkerPool(ctx, request.Workers)
 	limits, sampleInterval := groupSupervisorSettings(nil)
 	var output synchronizedBuffer
-	outcome, closeErr, coverageMerge, launchErr := runShardedGoGroup(ctx, nativeRequest, group, request.Root, environment, expected,
-		discovery.Inventory, discovery.ModulePrefix, limits, sampleInterval, result.LogPath, &output)
+	outcome, closeErr, coverageMerge, _, launchErr := runShardedGoGroup(ctx, nativeRequest, group, request.Root, environment, expected,
+		discovery.Inventory, discovery.ModulePrefix, limits, sampleInterval, result.LogPath, &output, goCacheFacts{})
 	result.Output = goNativePlainOutput(output.Bytes())
 	if launchErr != nil {
 		return result, 1, launchErr
@@ -196,7 +196,10 @@ func goArgumentsCachedForSchema(ctx context.Context, group testpolicy.Group, cwd
 	if err != nil {
 		return nil, nil, discovery, started, err
 	}
-	args := goNativeTestArguments(group, group.Coverage)
+	// The planned argv records the contract's policy; each launch decides
+	// -count=1 again with the request (reusePolicy) and records its reason.
+	countOne, _ := reusePolicy(TestRunRequest{Workers: 1, ResultSchemaVersion: TestResultSchemaVersion}, group, 1, goCacheFacts{ExternalInputsDigest: "unrecorded"})
+	args := goNativeTestArguments(group, group.Coverage, countOne)
 	var expected []NativeTestIdentity
 	if all {
 		packagesWithTests := map[string]bool{}
@@ -247,8 +250,14 @@ func goArgumentsCachedForSchema(ctx context.Context, group testpolicy.Group, cwd
 	return args, expected, discovery, started, nil
 }
 
-func goNativeTestArguments(group testpolicy.Group, coverage bool) []string {
-	args := []string{"go", "test", "-json", "-count=1", "-timeout", "0", "-p=1", "-parallel=1"}
+// goNativeTestArguments is the native go test argv; -count=1 is present
+// exactly when reusePolicy decided the launch must execute.
+func goNativeTestArguments(group testpolicy.Group, coverage, countOne bool) []string {
+	args := []string{"go", "test", "-trimpath", "-json"}
+	if countOne {
+		args = append(args, "-count=1")
+	}
+	args = append(args, "-timeout", "0", "-p=1", "-parallel=1")
 	if len(group.BuildTags) != 0 {
 		args = append(args, "-tags", strings.Join(group.BuildTags, ","))
 	}
@@ -259,6 +268,151 @@ func goNativeTestArguments(group testpolicy.Group, coverage bool) []string {
 		args = append(args, "-cover")
 	}
 	return args
+}
+
+// goPackageExecutions classifies every package terminal of one shard's go
+// test -json stream. Go writes a replayed pass as the package output
+// "ok  \t<pkg>\t(cached)"; its elapsed time is not the original run's, so
+// it is recorded as unknown. Any other terminal executed in this launch.
+func goPackageExecutions(shard int, reason string, output []byte) []PackageExecution {
+	cached := map[string]bool{}
+	elapsed := map[string]*int64{}
+	var order []string
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	for scanner.Scan() {
+		var event struct {
+			goEvent
+			Elapsed *float64 `json:"Elapsed"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Test != "" || event.Package == "" {
+			continue
+		}
+		switch event.Action {
+		case "output":
+			fields := strings.Split(strings.TrimSuffix(event.Output, "\n"), "\t")
+			if len(fields) >= 3 && strings.TrimSpace(fields[0]) == "ok" && fields[1] == event.Package && strings.HasPrefix(fields[2], "(cached)") {
+				cached[event.Package] = true
+			}
+		case "pass", "fail", "skip":
+			if _, seen := elapsed[event.Package]; !seen {
+				order = append(order, event.Package)
+			}
+			var ms *int64
+			if event.Elapsed != nil {
+				value := int64(*event.Elapsed * 1000)
+				ms = &value
+			}
+			elapsed[event.Package] = ms
+		}
+	}
+	sort.Strings(order)
+	executions := make([]PackageExecution, 0, len(order))
+	for _, pkg := range order {
+		execution := PackageExecution{Shard: shard, Package: pkg, Mode: PackageExecuted, ElapsedMS: elapsed[pkg], Reason: reason}
+		if cached[pkg] {
+			execution.Mode, execution.ElapsedMS = PackageGoTestCache, nil
+		}
+		executions = append(executions, execution)
+	}
+	return executions
+}
+
+// goTestChildLaunches names the test files of the given module-relative
+// package directories that start child processes: they import os/exec,
+// call os.StartProcess or syscall.Exec/ForkExec/StartProcess, or use a
+// module helper that builds or places a binary. go test records neither a
+// child's file reads nor its environment reads.
+func goTestChildLaunches(moduleRoot string, packages []string) ([]string, error) {
+	launchers := map[string]map[string]bool{
+		"os":       {"StartProcess": true},
+		"syscall":  {"Exec": true, "ForkExec": true, "StartProcess": true},
+		"testutil": {"InstalledWaitBinary": true, "WriteFixtureDevgate": true},
+	}
+	var found []string
+	for _, relative := range packages {
+		files, err := filepath.Glob(filepath.Join(moduleRoot, filepath.FromSlash(relative), "*_test.go"))
+		if err != nil {
+			return nil, err
+		}
+		for _, path := range files {
+			file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+			if err != nil {
+				return nil, fmt.Errorf("scan Go test file %s for child launches: %w", path, err)
+			}
+			name := filepath.ToSlash(filepath.Join(relative, filepath.Base(path)))
+			launches := false
+			for _, imported := range file.Imports {
+				launches = launches || imported.Path.Value == `"os/exec"`
+			}
+			ast.Inspect(file, func(node ast.Node) bool {
+				if selector, ok := node.(*ast.SelectorExpr); ok {
+					if receiver, ok := selector.X.(*ast.Ident); ok && launchers[receiver.Name][selector.Sel.Name] {
+						launches = true
+					}
+				}
+				return !launches
+			})
+			if launches {
+				found = append(found, name)
+			}
+		}
+	}
+	sort.Strings(found)
+	return found, nil
+}
+
+// gatherGoCacheFacts reads what reusePolicy needs beyond the request: the
+// external inputs digest now and the one recorded with the newest retained
+// all-executed pass of this group, and the test files that start children.
+func gatherGoCacheFacts(request TestRunRequest, group testpolicy.Group, cwd string, environment, inventory []string) (goCacheFacts, error) {
+	var facts goCacheFacts
+	if len(group.ExternalInputs) != 0 {
+		digest, err := digestExternalInputs(group, environment)
+		if err != nil {
+			return facts, err
+		}
+		facts.ExternalInputsDigest = digest
+		recorded := request.recordedExternalDigest
+		if recorded == nil {
+			recorded = newestExecutedExternalDigest
+		}
+		facts.RecordedExternalDigest = recorded(request.ControlRoot, group.ID)
+		return facts, nil
+	}
+	moduleRoot, _, err := nearestGoModule(cwd)
+	if err != nil {
+		return facts, err
+	}
+	facts.ChildLaunches, err = goTestChildLaunches(moduleRoot, inventory)
+	return facts, err
+}
+
+// newestExecutedExternalDigest is the external inputs digest recorded with
+// the newest retained pass of group whose every package executed: a pass
+// that go test's cache could have stored under those external inputs. Go
+// never stores a failure, so a later failed run cannot leave a stale pass
+// behind this record.
+func newestExecutedExternalDigest(controlRoot, group string) string {
+	if controlRoot == "" {
+		return ""
+	}
+	attempts, err := ReadAttempts(controlRoot)
+	if err != nil {
+		return ""
+	}
+	newest, digest := "", ""
+	for _, attempt := range attempts {
+		if attempt.TestResult == nil || attempt.StartedAt <= newest {
+			continue
+		}
+		for _, recorded := range attempt.TestResult.Groups {
+			if recorded.ID == group && recorded.Status == "passed" && recorded.ReuseAttempt == "" && recorded.ExternalInputsDigest != "" && recorded.allExecuted() {
+				newest, digest = attempt.StartedAt, recorded.ExternalInputsDigest
+			}
+		}
+	}
+	return digest
 }
 
 func discoverGoTestsCached(ctx context.Context, cwd string, environment []string, packages, buildTags []string, race bool, cache *goDiscoveryCache) (goDiscovery, bool, error) {

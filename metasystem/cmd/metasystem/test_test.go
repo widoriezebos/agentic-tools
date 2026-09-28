@@ -13,10 +13,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -135,6 +137,13 @@ func TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback(t *te
 }
 
 func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
+	// The worker allowances below are this test's own: the fixture
+	// configuration's two workers for the retained run and the injected
+	// memory readings for the automatic policy. An inherited ceiling (the
+	// full gate exports METASYSTEM_TEST_WORKERS=1) would pin every
+	// resolution to one worker and leave the verifier no other allowance to
+	// read, so the ambient value is cleared; empty is no ceiling.
+	t.Setenv(proofrun.TestWorkersEnvironment, "")
 	fixture := newOrdinaryCandidateFixture(t)
 	writeTestingFixtureFile(t, filepath.Join(fixture.root, "metasystem.conf"), []byte("metasystem.runtimes=fake\ntesting.workers=2\n"), 0o644)
 	pinProofBinaryFixture(t, fixture.root)
@@ -358,8 +367,7 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 			return result
 		}
 		if resolved := verify(request); resolved.Workers == prepared.Workers {
-			// An inherited ceiling of one worker pins every resolution.
-			t.Logf("inherited %s=%q leaves no other allowance to resolve", proofrun.TestWorkersEnvironment, os.Getenv(proofrun.TestWorkersEnvironment))
+			t.Fatalf("the moved configuration resolves the executed allowance %d, want another", prepared.Workers)
 		} else if resolved.Delivery.Sufficient {
 			t.Fatalf("resolved allowance %d reused proof executed with %d workers: groups=%+v", resolved.Workers, prepared.Workers, resolved.Groups)
 		}
@@ -1495,12 +1503,12 @@ func TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories(t
 	}
 	cacheRoot := t.TempDir()
 	stamp := strings.Repeat("a", 40)
-	build := func(name string) string {
+	build := func(name string, args ...string) string {
 		root := filepath.Join(t.TempDir(), name)
 		writeTestingFixtureFile(t, filepath.Join(root, "go.mod"), []byte("module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.26\n"), 0o644)
 		writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644)
 		output := filepath.Join(t.TempDir(), "metasystem")
-		command := exec.Command(devgate, "build", "--trimpath", "--out", output)
+		command := exec.Command(devgate, append(append([]string{"build"}, args...), "--out", output)...)
 		command.Dir = root
 		command.Env = append(candidateEngineBuildEnvironment(testingEnvironment(os.Environ()), stamp),
 			"GOCACHE="+filepath.Join(cacheRoot, "build"), "GOMODCACHE="+filepath.Join(cacheRoot, "modules"))
@@ -1513,9 +1521,28 @@ func TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories(t
 		}
 		return digest
 	}
-	first, second := build("first-materialization"), build("second-materialization")
+	// The candidate argv still passes --trimpath (a no-op now); devgate trims
+	// by default, so a build without it lands on the same bytes.
+	first, second := build("first-materialization", "--trimpath"), build("second-materialization")
 	if first != second {
 		t.Fatalf("one source tree built in two directories had different candidate engine digests: first=%s second=%s", first, second)
+	}
+}
+
+func TestEngineGoArgvCarriesTrimpath(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for name, pair := range map[string][2][]string{
+		"candidate engine build": {candidateEngineBuildArgv("/out/metasystem"),
+			{"go", "run", "-trimpath", "./cmd/devgate", "build", "--trimpath", "--out", "/out/metasystem"}},
+		"bootstrap and landed rebuild": {devgateBootstrapBuildArgv(), {"go", "run", "-trimpath", "./cmd/devgate", "build"}},
+		"coverage delta":               {coverageDeltaGoTestArgv("./internal/x"), {"go", "test", "-trimpath", "-cover", "-timeout", "30m", "./internal/x"}},
+		"goal branch static":           {goalBranchStaticArgv("/proof"), {"go", "run", "-trimpath", "./cmd/devgate", "static", "--proof-out", "/proof"}},
+		"witness probe":                {proofRunWitnessProbe(root).Args, {"go", "run", "-trimpath", "./cmd/devgate", "gate", "--witness-check-only"}},
+	} {
+		if !slices.Equal(pair[0], pair[1]) {
+			t.Errorf("%s argv = %q, want %q", name, pair[0], pair[1])
+		}
 	}
 }
 
@@ -1705,11 +1732,6 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	}
 	freshProject := t.TempDir()
 	freshCandidateRoot := filepath.Join(freshProject, "metasystem")
-	script, err := os.ReadFile(filepath.Join(candidateRoot, "scripts", "agents", "checkout-execution-guard.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeTestingFixtureFile(t, filepath.Join(freshCandidateRoot, "scripts", "agents", "checkout-execution-guard.sh"), script, 0o755)
 	freshEngine := filepath.Join(freshCandidateRoot, "bin", "metasystem")
 	writeTestingFixtureFile(t, freshEngine, data, 0o755)
 	testingFixtureGit(t, freshProject, "init", "-q", "-b", "main")
@@ -1981,11 +2003,6 @@ chmod +x "$3"
 `
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "go-build.sh"), []byte(buildScript), 0o755)
 	writeFixtureDevgate(t, installationRoot)
-	guardScript, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "checkout-execution-guard.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "checkout-execution-guard.sh"), guardScript, 0o755)
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "bed.sh"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "cmd", "metasystem", "engine.txt"), []byte("enrolled engine source\n"), 0o644)
 	testingFixtureGit(t, projectRoot, "init", "-q", "-b", "main")
@@ -2257,7 +2274,7 @@ func TestFrozenNegativeProbeResponseIsLegacyOnlyForActualInvalidResult(t *testin
 	legacy, err := frozenNegativeProbeResponse(request, result)
 	if err != nil || legacy.SchemaVersion != proofrun.LegacyTestResultSchemaVersion || legacy.Delivery.Sufficient ||
 		legacy.Groups[0].Status != "invalid" || legacy.Groups[0].CollectionComplete || legacy.Groups[0].IdentityVersion != 0 ||
-		len(legacy.Groups[0].ExecutableDigests) != 0 || result.SchemaVersion != proofrun.TestResultSchemaVersion {
+		len(legacy.Groups[0].ExecutableDigests) != 0 || result.SchemaVersion != proofrun.WorkerPolicyTestResultSchemaVersion {
 		t.Fatalf("legacy projection changed negative verdict or normal result: legacy=%+v source=%+v err=%v", legacy, result, err)
 	}
 	data, err := json.Marshal(legacy)
@@ -2347,7 +2364,7 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 	}
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	build := exec.Command(goPath, "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+head, "-o", engine, ".")
+		enginebuild.StampLinkerFlags(head), "-o", engine, ".")
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
 		t.Fatalf("build public-v1 probe candidate: %v\n%s", buildErr, output)
 	}
@@ -2410,18 +2427,28 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 }
 
 func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker(t *testing.T) {
-	// The module root is the metasystem directory wherever the package sits:
-	// under the repository (<repo>/metasystem) or at the root of the gate's
-	// extracted snapshot, which has no parent repository around it.
+	// Registered before the first TempDir, so it runs after the TempDir
+	// removal and times it; the phase log names where a slow run spent it.
+	phases := newFrozenCorpusPhases(t)
+	// The corpus source is the engine's compile closure, not a copy of the
+	// whole metasystem module: the six probes run the candidate engine and
+	// authenticate its stamp against the candidate commit, so the candidate
+	// must carry real engine source, but its tests, plans and records (about
+	// three quarters of the module) are never read. The candidate's devgate
+	// runs the real devgate against this test's Go cache instead of the
+	// worker's private one, so the candidate build keeps the real devgate's
+	// stamp but recompiles only what changed since the last run.
+	source := t.TempDir()
+	phases.startTempDirRemoval(t)
 	moduleRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := proofrun.Freeze(moduleRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = source.Close() })
+	tools := t.TempDir()
+	engine, devgate := filepath.Join(tools, "metasystem"), filepath.Join(tools, "devgate")
+	phase := phases.begin("source")
+	writeFrozenCorpusEngineClosure(t, moduleRoot, source, devgate, frozenCorpusGoCache(t))
+	phase.end()
 	t.Setenv("GIT_AUTHOR_DATE", "2026-09-21T00:00:00Z")
 	t.Setenv("GIT_COMMITTER_DATE", "2026-09-21T00:00:00Z")
 	now := time.Now().UTC()
@@ -2430,17 +2457,17 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	// worker runs its six cases once for that shared input.
 	var inputs []frozenCorpusWorkerInput
 	for _, layout := range frozenCorpusSourceLayouts() {
-		t.Logf("preparing frozen corpus source layout %s", layout.name)
-		input := prepareFrozenPublicVersionOneCorpus(t, materializeFrozenCorpusLayout(t, source.Root, layout), layout, now)
+		phase := phases.begin("layout " + layout.name)
+		input := prepareFrozenPublicVersionOneCorpus(t, materializeFrozenCorpusLayout(t, source, layout), layout, now)
+		phase.end()
 		if len(inputs) > 0 && input.candidateCommit != inputs[0].candidateCommit {
 			t.Fatalf("normalized source layout %s candidate commit=%s, shared worker commit=%s", layout.name, input.candidateCommit, inputs[0].candidateCommit)
 		}
 		inputs = append(inputs, input)
 	}
-	engine := filepath.Join(t.TempDir(), "metasystem")
 	var executions frozenCorpusExecutions
-	buildFrozenPublicVersionOneCorpusEngine(t, inputs[0], engine, &executions)
-	runFrozenPublicVersionOneCorpusWorker(t, inputs[0], engine, &executions)
+	buildFrozenPublicVersionOneCorpusEngine(t, phases, moduleRoot, inputs[0], engine, devgate, &executions)
+	runFrozenPublicVersionOneCorpusWorker(t, phases, inputs[0], engine, &executions)
 	workerAttempts := 0
 	for _, input := range inputs {
 		attempts, err := proofrun.ReadAttempts(input.root)
@@ -2453,6 +2480,229 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 		t.Fatalf("frozen corpus across %d layouts: engine builds=%d worker runs=%d recorded attempts=%d, want one each",
 			len(inputs), executions.engineBuilds, executions.workerRuns, workerAttempts)
 	}
+	// The whole run's temporary state stays small enough to remove quickly.
+	if entries := countFrozenCorpusEntries(t, filepath.Dir(source)); entries >= frozenCorpusEntryCeiling {
+		logFrozenCorpusEntryBreakdown(t, filepath.Dir(source))
+		t.Fatalf("frozen corpus run left %d temporary entries, want fewer than %d", entries, frozenCorpusEntryCeiling)
+	} else {
+		t.Logf("frozen corpus temporary entries after the worker: %d", entries)
+	}
+}
+
+// frozenCorpusEntryCeiling bounds what cleanup must remove. The engine
+// closure (about 1.1k files) is copied into six trees, four with Git
+// histories, for about 14.5k entries; whole-module copies left about 65.7k.
+const frozenCorpusEntryCeiling = 20000
+
+// frozenCorpusCleanupReserve is the part of the package deadline kept for
+// cleanup, so an overrunning phase fails by name instead of the package
+// timeout panicking inside TempDir removal.
+const frozenCorpusCleanupReserve = 90 * time.Second
+
+type frozenCorpusPhases struct {
+	t              *testing.T
+	removalStarted time.Time
+}
+
+type frozenCorpusPhase struct {
+	phases  *frozenCorpusPhases
+	name    string
+	started time.Time
+}
+
+func newFrozenCorpusPhases(t *testing.T) *frozenCorpusPhases {
+	t.Helper()
+	phases := &frozenCorpusPhases{t: t}
+	t.Cleanup(func() {
+		if !phases.removalStarted.IsZero() {
+			t.Logf("frozen corpus phase TempDir removal took %s", time.Since(phases.removalStarted).Round(time.Millisecond))
+		}
+	})
+	return phases
+}
+
+// startTempDirRemoval must be registered straight after the first TempDir:
+// cleanups run last-in first-out, so it runs just before the removal.
+func (phases *frozenCorpusPhases) startTempDirRemoval(t *testing.T) {
+	t.Cleanup(func() { phases.removalStarted = time.Now() })
+}
+
+func (phases *frozenCorpusPhases) begin(name string) frozenCorpusPhase {
+	return frozenCorpusPhase{phases: phases, name: name, started: time.Now()}
+}
+
+func (phase frozenCorpusPhase) end() {
+	phase.phases.t.Logf("frozen corpus phase %s took %s", phase.name, time.Since(phase.started).Round(time.Millisecond))
+}
+
+// context bounds a child process by the package deadline less the cleanup
+// reserve. Without a package deadline the phase is unbounded.
+func (phase frozenCorpusPhase) context() (context.Context, context.CancelFunc) {
+	deadline, ok := phase.phases.t.Deadline()
+	if !ok {
+		return context.WithCancel(context.Background())
+	}
+	return context.WithDeadline(context.Background(), deadline.Add(-frozenCorpusCleanupReserve))
+}
+
+// fail names the phase and whether its deadline, not the child, ended it.
+func (phase frozenCorpusPhase) fail(ctx context.Context, err error, output []byte) {
+	phase.phases.t.Helper()
+	elapsed := time.Since(phase.started).Round(time.Millisecond)
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		phase.phases.t.Fatalf("frozen corpus phase %s overran its deadline (package timeout less %s cleanup reserve) after %s: %v\n%s",
+			phase.name, frozenCorpusCleanupReserve, elapsed, err, output)
+	}
+	phase.phases.t.Fatalf("frozen corpus phase %s failed after %s: %v\n%s", phase.name, elapsed, err, output)
+}
+
+func countFrozenCorpusEntries(t *testing.T, root string) int {
+	t.Helper()
+	entries := 0
+	err := filepath.WalkDir(root, func(_ string, _ os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		entries++
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("count frozen corpus temporary entries: %v", err)
+	}
+	return entries
+}
+
+// logFrozenCorpusEntryBreakdown names which temporary directory grew.
+func logFrozenCorpusEntryBreakdown(t *testing.T, root string) {
+	t.Helper()
+	if children, err := os.ReadDir(root); err == nil {
+		for _, child := range children {
+			inner, gitEntries := 0, 0
+			_ = filepath.WalkDir(filepath.Join(root, child.Name()), func(path string, _ os.DirEntry, walkErr error) error {
+				if walkErr == nil {
+					inner++
+					if strings.Contains(path, string(filepath.Separator)+".git"+string(filepath.Separator)) {
+						gitEntries++
+					}
+				}
+				return nil
+			})
+			t.Logf("frozen corpus temporary entries under %s: %d (%d in .git)", child.Name(), inner, gitEntries)
+		}
+	}
+}
+
+// frozenCorpusGoCache is the Go build cache this test process compiles into.
+func frozenCorpusGoCache(t *testing.T) string {
+	t.Helper()
+	command := exec.Command("go", "env", "GOCACHE")
+	command.Env = gittree.ScrubbedEnviron()
+	output, err := command.Output()
+	cache := strings.TrimSpace(string(output))
+	if err != nil || cache == "" || cache == "off" {
+		t.Fatalf("resolve the test's Go build cache: %q %v", cache, err)
+	}
+	return cache
+}
+
+// writeFrozenCorpusEngineClosure writes the files the engine build reads
+// (go.mod, go.sum and every compiled or embedded file of cmd/metasystem's
+// module packages), the module's ignore file, a candidate cmd/devgate that
+// runs the named real devgate against the named Go cache, and one goal ledger
+// so the nested layout moves goal inputs as an adopted installation does.
+func writeFrozenCorpusEngineClosure(t *testing.T, moduleRoot, root, devgate, goCache string) {
+	t.Helper()
+	list := exec.Command("go", "list", "-deps", "-f",
+		// Only the main module's packages are copied; a dependency outside it
+		// comes from the module cache. The package directory is made relative
+		// to the module directory go list itself reports, never to this
+		// test's own spelling of the root: the two differ when the root is
+		// reached through a symlink (the Linux VM's home is one), and a
+		// mismatch used to drop every engine package without a word.
+		"{{if and (not .Standard) .Module .Module.Main}}{{.Module.Dir}}|{{.Dir}}{{range .GoFiles}}|{{.}}{{end}}{{range .SFiles}}|{{.}}{{end}}{{range .EmbedFiles}}|{{.}}{{end}}{{end}}",
+		"./cmd/metasystem")
+	list.Dir = moduleRoot
+	list.Env = candidateEngineBuildEnvironment(gittree.ScrubbedEnviron(), "")
+	listed, err := list.Output()
+	if err != nil {
+		t.Fatalf("list the engine's compile closure: %v", err)
+	}
+	// The coverage ratchets are read by the lower-coverage-floor probe.
+	relatives := []string{"go.mod", "go.sum", ".gitignore", "scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"}
+	engineFiles := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(listed)), "\n") {
+		fields := strings.Split(line, "|")
+		if len(fields) < 2 {
+			continue // a package outside the main module printed nothing
+		}
+		directory, err := filepath.Rel(fields[0], fields[1])
+		if err != nil || directory == ".." || strings.HasPrefix(directory, ".."+string(filepath.Separator)) {
+			t.Fatalf("main-module package %s is not under its module directory %s", fields[1], fields[0])
+		}
+		if directory == filepath.Join("cmd", "metasystem") {
+			engineFiles += len(fields) - 2
+		}
+		for _, name := range fields[2:] {
+			relatives = append(relatives, filepath.Join(directory, name))
+		}
+	}
+	if engineFiles == 0 {
+		t.Fatalf("the engine's compile closure names no cmd/metasystem file; go list printed:\n%s", listed)
+	}
+	for _, relative := range relatives {
+		data, err := os.ReadFile(filepath.Join(moduleRoot, relative))
+		if err != nil {
+			t.Fatalf("read engine closure file %s: %v", relative, err)
+		}
+		writeTestingFixtureFile(t, filepath.Join(root, relative), data, 0o644)
+	}
+	files := map[string]string{
+		"metasystem.conf":          "metasystem.version=1\n",
+		"cmd/devgate/real-devgate": devgate + "\n",
+		"cmd/devgate/gocache":      goCache + "\n",
+		"cmd/devgate/main.go": `package main
+
+import (
+	"os"
+	"os/exec"
+	"strings"
+)
+
+// The candidate's bootstrap build runs the real devgate, built by the test
+// from this module, here and with its arguments, compiling into the Go cache
+// the test's public engine build already filled.
+func main() {
+	devgate, cache := read("cmd/devgate/real-devgate"), read("cmd/devgate/gocache")
+	command := exec.Command(devgate, os.Args[1:]...)
+	command.Env = append(os.Environ(), "GOCACHE="+cache)
+	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := command.Run(); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			os.Exit(exit.ExitCode())
+		}
+		os.Stderr.WriteString("devgate: " + err.Error() + "\n")
+		os.Exit(1)
+	}
+}
+
+func read(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		os.Stderr.WriteString("devgate: " + err.Error() + "\n")
+		os.Exit(1)
+	}
+	return strings.TrimSpace(string(data))
+}
+`,
+		"plans/goals/backlog.md": string(goal.RenderRoot(frozenCorpusRootRecord())),
+	}
+	for relative, content := range files {
+		writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(relative)), []byte(content), 0o644)
+	}
+}
+
+func frozenCorpusRootRecord() *goal.RootRecord {
+	return &goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FB0", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}
 }
 
 type frozenCorpusSourceLayout struct {
@@ -2582,7 +2832,7 @@ func prepareFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout
 	// this a wall-clock test that failed only inside the race gate.
 	budget := &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 2, ReservedJobMinutesLimit: 6, ActiveJobLimit: 1, ReviewRoundLimit: 2}
 	intent := "Run the frozen policy corpus through the first testing transition."
-	rootRecord := &goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FB0", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}
+	rootRecord := frozenCorpusRootRecord()
 	goalFile := &goal.GoalFile{Id: "policy-corpus", State: goal.StateClaimed, Tier: 1, Risk: risk, Intent: intent, Origin: goal.OriginMain,
 		NextStep: "Run the authenticated worker.", OpenedAt: now.Add(-2 * time.Minute).Format(time.RFC3339), Revision: 3, Budget: budget,
 		Claimed: &goal.ClaimRecord{Machine: "fixture-machine", Lineage: "policy-corpus", At: now.Add(-time.Minute).Format(time.RFC3339), Revision: 2, AccountingRevision: 2},
@@ -2615,19 +2865,35 @@ func prepareFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout
 	return frozenCorpusWorkerInput{projectRoot: projectRoot, root: root, candidate: candidate, candidateCommit: candidateCommit, proofFixture: proofFixture}
 }
 
-func buildFrozenPublicVersionOneCorpusEngine(t *testing.T, input frozenCorpusWorkerInput, engine string, executions *frozenCorpusExecutions) {
+func buildFrozenPublicVersionOneCorpusEngine(t *testing.T, phases *frozenCorpusPhases, moduleRoot string, input frozenCorpusWorkerInput, engine, devgate string, executions *frozenCorpusExecutions) {
 	t.Helper()
-	build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+input.candidateCommit, "-o", engine, ".")
-	build.Dir = filepath.Join(input.root, "cmd", "metasystem")
-	build.Env = gittree.ScrubbedEnviron()
-	if output, buildErr := build.CombinedOutput(); buildErr != nil {
-		t.Fatalf("build first-transition worker: %v\n%s", buildErr, output)
+	// The public engine is built from the frozen candidate as a developer
+	// builds it (a -trimpath, CGO-off build here fails the probes' engine
+	// ownership check). The real devgate the candidate's shim runs is built
+	// from this module; its proof builds reuse this test's Go cache.
+	phase := phases.begin("engine build")
+	ctx, cancel := phase.context()
+	defer cancel()
+	for _, build := range []struct {
+		dir         string
+		environment []string
+		args        []string
+	}{
+		{input.root, gittree.ScrubbedEnviron(), []string{"build", "-buildvcs=false", "-ldflags",
+			enginebuild.StampLinkerFlags(input.candidateCommit), "-o", engine, "./cmd/metasystem"}},
+		{moduleRoot, gittree.ScrubbedEnviron(), []string{"build", "-buildvcs=false", "-o", devgate, "./cmd/devgate"}},
+	} {
+		command := exec.CommandContext(ctx, "go", build.args...)
+		command.Dir, command.Env, command.WaitDelay = build.dir, build.environment, 10*time.Second
+		if output, buildErr := command.CombinedOutput(); buildErr != nil {
+			phase.fail(ctx, buildErr, output)
+		}
 	}
+	phase.end()
 	executions.engineBuilds++
 }
 
-func runFrozenPublicVersionOneCorpusWorker(t *testing.T, input frozenCorpusWorkerInput, engine string, executions *frozenCorpusExecutions) {
+func runFrozenPublicVersionOneCorpusWorker(t *testing.T, phases *frozenCorpusPhases, input frozenCorpusWorkerInput, engine string, executions *frozenCorpusExecutions) {
 	t.Helper()
 	projectRoot, root, candidate, proofFixture := input.projectRoot, input.root, input.candidate, input.proofFixture
 	identityTable := filepath.Join(t.TempDir(), "process-identities.json")
@@ -2669,12 +2935,19 @@ func runFrozenPublicVersionOneCorpusWorker(t *testing.T, input frozenCorpusWorke
 	// different source/configuration context from the actual testing command.
 	public := proofFixture.command(fixtureEnvironment, engine, "internal", "test", "run", "--root", root, "--tree", candidate,
 		"--mode", "auto", "--purpose", "delivery", "--goal", "policy-corpus", "--cap-min", "5")
-	public.Dir = projectRoot
+	phase := phases.begin("worker")
+	ctx, cancel := phase.context()
+	defer cancel()
+	worker := exec.CommandContext(ctx, public.Path)
+	worker.Args, worker.Env, worker.Dir = public.Args, public.Env, projectRoot
+	// A cancelled worker's descendants may hold its output pipe open.
+	worker.WaitDelay = 10 * time.Second
 	executions.workerRuns++
-	output, runErr := public.CombinedOutput()
+	output, runErr := worker.CombinedOutput()
 	if runErr != nil {
-		t.Fatalf("authenticated first-transition worker did not complete all six frozen cases: %v\n%s", runErr, output)
+		phase.fail(ctx, fmt.Errorf("authenticated first-transition worker did not complete all six frozen cases: %w", runErr), output)
 	}
+	phase.end()
 	if _, err := os.Stat(filepath.Join(admissionDir, "admission.lock")); err != nil {
 		t.Fatalf("public worker did not use its authenticated temporary admission directory: %v", err)
 	}
@@ -2900,7 +3173,7 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	}
 	currentEngine := filepath.Join(t.TempDir(), "metasystem")
 	build := exec.Command(goPath, "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+head, "-o", currentEngine, ".")
+		enginebuild.StampLinkerFlags(head), "-o", currentEngine, ".")
 	build.Env = append(os.Environ(), "PATH="+os.Getenv("PATH"))
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
 		t.Fatalf("build source-bound policy engine: %v\n%s", buildErr, output)
@@ -2989,4 +3262,141 @@ func testingFixtureGit(t *testing.T, root string, args ...string) string {
 		t.Fatalf("git %v: %v\n%s", args, err, output)
 	}
 	return string(output)
+}
+
+// The worker capability compare tolerates what it does not know and the
+// scratch environment policy is negotiated (DL4A-01): a worker listing no
+// policies, as every worker before A5.2, gets v1; one listing this
+// frontend's policy gets it; a differing known capability still refuses.
+func TestScratchEnvironmentPolicyFollowsTheWorkerCapabilities(t *testing.T) {
+	t.Parallel()
+	reporting := func(edit func(map[string]any)) string {
+		capabilities := currentTestingWorkerCapabilities()
+		data, err := json.Marshal(capabilities)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fields := map[string]any{}
+		if err := json.Unmarshal(data, &fields); err != nil {
+			t.Fatal(err)
+		}
+		edit(fields)
+		if data, err = json.Marshal(fields); err != nil {
+			t.Fatal(err)
+		}
+		engine := filepath.Join(t.TempDir(), "engine")
+		if err := testexec.WriteFile(engine, []byte("#!/bin/sh\nprintf '%s\\n' "+shellQuote(string(data))+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return engine
+	}
+	environment := []string{"PATH=/usr/bin:/bin"}
+	for _, test := range []struct {
+		name string
+		edit func(map[string]any)
+		want string
+	}{
+		{"worker listing no policies", func(fields map[string]any) { delete(fields, "scratchEnvironmentPolicies") }, proofrun.ScratchEnvironmentPolicyV1},
+		{"worker reading only v1", func(fields map[string]any) {
+			fields["scratchEnvironmentPolicies"] = []string{proofrun.ScratchEnvironmentPolicyV1}
+		}, proofrun.ScratchEnvironmentPolicyV1},
+		{"upgraded worker", func(fields map[string]any) {
+			fields["scratchEnvironmentPolicies"] = []string{proofrun.ScratchEnvironmentPolicyV1, proofrun.ScratchEnvironmentPolicyV2}
+		}, proofrun.ScratchEnvironmentPolicy},
+		{"a capability this frontend does not know", func(fields map[string]any) { fields["laterCapability"] = 7 }, chooseScratchEnvironmentPolicy(currentTestingWorkerCapabilities().ScratchEnvironmentPolicies)},
+	} {
+		capabilities, err := requireTestingWorkerCapabilities(t.Context(), reporting(test.edit), environment)
+		if err != nil {
+			t.Fatalf("%s: refused: %v", test.name, err)
+		}
+		if got := chooseScratchEnvironmentPolicy(capabilities.ScratchEnvironmentPolicies); got != test.want {
+			t.Errorf("%s: policy = %q, want %q", test.name, got, test.want)
+		}
+	}
+	_, err := requireTestingWorkerCapabilities(t.Context(), reporting(func(fields map[string]any) { fields["workerPolicyVersion"] = 99 }), environment)
+	if !errors.Is(err, errTestingWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "install the matching backend compatibility release") {
+		t.Fatalf("differing known capability: %v", err)
+	}
+	// This engine as its own worker writes its own policy without a probe.
+	prepared := testingPreparation{FirstTestingTransition: true, PolicyEngine: "/nonexistent/engine"}
+	if got := chooseScratchEnvironmentPolicy(testingWorkerScratchPolicies(t.Context(), prepared)); got != proofrun.ScratchEnvironmentPolicy {
+		t.Fatalf("own worker policy = %q", got)
+	}
+	// An unreadable destination worker during revalidation is v1, never a refusal.
+	prepared.FirstTestingTransition = false
+	if got := chooseScratchEnvironmentPolicy(testingWorkerScratchPolicies(t.Context(), prepared)); got != proofrun.ScratchEnvironmentPolicyV1 {
+		t.Fatalf("unreadable worker policy = %q", got)
+	}
+}
+
+// A v1 descriptor from this launcher keeps the old wire (an old worker's
+// strict decoder sees no new field) and the run-private caches; a v1
+// descriptor from an old launcher is read by this worker.
+func TestScratchEnvironmentV1WireAndReaderSupport(t *testing.T) {
+	t.Parallel()
+	control := t.TempDir()
+	scratch, err := proofrun.CreateScratchRun(control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = scratch.Cleanup(nil) })
+	group := testpolicy.Group{ID: "g", Adapter: "command", EnvironmentMode: "explicit", Env: map[string]string{"PATH": "/usr/bin:/bin"}}
+	request := proofrun.TestRunRequest{Environment: []string{"HOME=" + t.TempDir(), "GOENV=off", "GOCACHE=/outer/go-build"}}
+	request.Contract.Groups = []testpolicy.Group{group}
+	request.Plan.SelectedGroups = []string{group.ID}
+	request.BindScratch(scratch, nil)
+	if err := proofrun.PrepareScratchEnvironmentFor(&request, scratch, proofrun.ScratchEnvironmentPolicyV1); err != nil {
+		t.Fatal(err)
+	}
+	wire, err := json.Marshal(request.ScratchEnvironment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(wire, &keys); err != nil {
+		t.Fatal(err)
+	}
+	for key := range keys {
+		if !map[string]bool{"policy": true, "run": true, "root": true, "goEnv": true, "goEnvDigest": true, "groups": true}[key] {
+			t.Fatalf("v1 descriptor wire carries %q, which an old worker's strict decoder refuses: %s", key, wire)
+		}
+	}
+	packet := filepath.Join(t.TempDir(), "request.json")
+	encoded, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(packet, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var worker proofrun.TestRunRequest
+	if err := readStrictJSON(packet, &worker); err != nil {
+		t.Fatal(err)
+	}
+	if err := proofrun.ValidateScratchEnvironment(worker, scratch); err != nil {
+		t.Fatalf("upgraded worker refused a v1 descriptor: %v", err)
+	}
+	gocacheDir := filepath.Join(scratch.Root(), "gocache")
+	if info, err := os.Stat(gocacheDir); err != nil || !info.IsDir() {
+		t.Fatalf("v1 run-private cache %s: %v", gocacheDir, err)
+	}
+}
+
+// The mixed-generation witness against a real built worker engine (3.1):
+// set METASYSTEM_A5_WORKER_ENGINE to an engine built at another commit and
+// METASYSTEM_A5_WORKER_POLICY to the policy this frontend must write for it.
+func TestScratchEnvironmentPolicyAgainstABuiltWorker(t *testing.T) {
+	t.Parallel()
+	engine, want := os.Getenv("METASYSTEM_A5_WORKER_ENGINE"), os.Getenv("METASYSTEM_A5_WORKER_POLICY")
+	if engine == "" || want == "" {
+		t.Skip("set METASYSTEM_A5_WORKER_ENGINE and METASYSTEM_A5_WORKER_POLICY to a built worker and its expected policy")
+	}
+	capabilities, err := requireTestingWorkerCapabilities(t.Context(), engine, []string{"PATH=/usr/bin:/bin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := chooseScratchEnvironmentPolicy(capabilities.ScratchEnvironmentPolicies); got != want {
+		t.Fatalf("worker %s reports %+v: this frontend writes %q, want %q", engine, capabilities, got, want)
+	}
+	t.Logf("worker %s reports %+v: this frontend writes %s", engine, capabilities, want)
 }

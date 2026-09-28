@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -640,7 +641,7 @@ func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitT
 	// not by the candidate source loaded into this test process. Rebuild the
 	// fixture executable with T's source stamp and enroll those exact bytes.
 	build = exec.Command("go", "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+target, "-o", filepath.Join(root, "bin", "metasystem"), ".")
+		enginebuild.StampLinkerFlags(target), "-o", filepath.Join(root, "bin", "metasystem"), ".")
 	build.Env = gittree.ScrubbedEnviron()
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build source-bound recertification engine: %v\n%s", err, out)
@@ -1307,6 +1308,9 @@ case "${1:-}" in
   vet) exit 0 ;;
   run)
     shift
+    # devgate launches staticcheck and govulncheck with -trimpath (A3); the
+    # contract's own go run ./cmd/devgate argv carries none.
+    [[ "${1:-}" != -trimpath ]] || shift
     case "${1:-}" in
       -p=*) [[ "$1" =~ ^-p=[1-9][0-9]*$ ]] || exit 97; shift ;;
     esac
@@ -1711,7 +1715,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	runReceiptGit(t, root, "update-ref", goal.AcceptedRef, head)
 	tree := runReceiptGit(t, root, "write-tree")
 	build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+head, "-o", engine, ".")
+		enginebuild.StampLinkerFlags(head), "-o", engine, ".")
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
 		t.Fatalf("build shared testing receipt engine: %v\n%s", buildErr, output)
 	}
@@ -2206,5 +2210,24 @@ func TestLandingReceiptLineRefusesCodeWithoutItsLineAndPassesWithIt(t *testing.T
 	}
 	if consumed != len(operations) || len(stub.Calls()) != len(expected) {
 		t.Fatalf("raw Git transcript consumed %d of %d requests", consumed, len(expected))
+	}
+}
+
+// The validator owns GOFLAGS: whatever the caller carries, the canonical
+// environment holds exactly one GOFLAGS, the value cmd/devgate's frozen-tree
+// check accepts (ownedGoFlags), beside the frozen-toolchain marker.
+func TestCanonicalValidatorEnvironmentOwnsTheGateGoFlags(t *testing.T) {
+	t.Parallel()
+	inherited := []string{"PATH=/usr/bin:/bin", "GOCACHE=/fixture/cache/go-build", "STATICCHECK_CACHE=/fixture/cache/staticcheck",
+		"GOFLAGS=-mod=mod -tags=ambient", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=0"}
+	var owned []string
+	for _, entry := range canonicalValidatorEnvironmentFrom(inherited) {
+		if strings.HasPrefix(entry, "GOFLAGS=") || strings.HasPrefix(entry, "METASYSTEM_GATE_FROZEN_TOOLCHAIN=") {
+			owned = append(owned, entry)
+		}
+	}
+	want := []string{"GOFLAGS=-mod=readonly -trimpath", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1"}
+	if strings.Join(owned, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("validator owned environment = %q, want %q", owned, want)
 	}
 }

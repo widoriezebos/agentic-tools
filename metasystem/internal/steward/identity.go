@@ -9,7 +9,6 @@ package steward
 
 import (
 	"crypto/sha256"
-	"debug/buildinfo"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 )
 
 // ErrEnrollmentDrift marks a recovery refusal caused by changed, incomplete,
@@ -184,27 +184,15 @@ func digestOpenFile(file *os.File) (string, error) {
 	return fmt.Sprintf("sha256:%x", hash.Sum(nil)), nil
 }
 
+// buildStampFromOpenFile reads the stamp from the file's bytes (the linked
+// record, which survives -trimpath, else the legacy -ldflags setting); a file
+// whose records disagree has no stamp.
 func buildStampFromOpenFile(file *os.File) string {
-	info, err := buildinfo.Read(file)
+	stamp, err := enginebuild.ReadStamp(file)
 	if err != nil {
 		return ""
 	}
-	const assignment = "supervise.BuildStamp="
-	for _, setting := range info.Settings {
-		if setting.Key != "-ldflags" {
-			continue
-		}
-		at := strings.Index(setting.Value, assignment)
-		if at < 0 {
-			continue
-		}
-		value := setting.Value[at+len(assignment):]
-		if end := strings.IndexAny(value, " \t\r\n\"'"); end >= 0 {
-			value = value[:end]
-		}
-		return strings.TrimSpace(value)
-	}
-	return ""
+	return stamp
 }
 
 // enrolledBytes is one locked observation of an installation path. The same

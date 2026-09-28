@@ -46,7 +46,7 @@ type Prose struct {
 type Defect struct{ Code, Why string }
 
 var Rows = []Row{
-	{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Owner: "cmd/metasystem", Site: "test.go:82", Shape: Question, H1: StandingInput},
+	{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Owner: "cmd/metasystem", Site: "test.go:87", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go:251", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_SETTING_INVALID", Owner: "internal/launch", Site: "settings.go:120", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_BRIEF_OVERSIZE", Owner: "internal/launch", Site: "admit.go:105", Shape: Question, H1: StandingInput},
@@ -125,7 +125,7 @@ var Rows = []Row{
 	{Code: "BATCH_PROOF_NOT_ADMITTED", Owner: "internal/landing/batch", Site: "prove.go:96", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_PROOF_STATE_REFUSED", Owner: "internal/landing/batch", Site: "prove.go:48", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_PROOF_UNION_UNCOVERED", Owner: "internal/landing/batch", Site: "prove.go:55", Shape: Question, H1: StandingAgent},
-	{Code: "BATCH_REASSEMBLE_MOVED", Owner: "internal/landing/batch", Site: "prove.go:235", Shape: Question, H1: StandingAgent},
+	{Code: "BATCH_REASSEMBLE_MOVED", Owner: "internal/landing/batch", Site: "prove.go:239", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_REOPEN_SAME_TREE", Owner: "internal/landing/batch", Site: "reopen.go:32", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_LANDING_BRANCH_MOVED", Owner: "internal/landing/batch", Site: "transport.go:64", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_LANDING_BRANCH_PREP_REFUSED", Owner: "internal/landing/batch", Site: "transport.go:53", Shape: Question, H1: StandingAgent},
@@ -137,7 +137,7 @@ var Rows = []Row{
 	{Code: "BATCH_LAND_PUSH_REFUSED", Owner: "internal/landing/batch", Site: "transport.go:166", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_LAND_RECEIPT_REFUSED", Owner: "internal/landing/batch", Site: "land.go:398", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_LAND_STATE_REFUSED", Owner: "internal/landing/batch", Site: "land.go:104", Shape: Question, H1: StandingAgent},
-	{Code: "BATCH_LAND_TRUNK_MOVED", Owner: "cmd/metasystem", Site: "landing_batch_land.go:685", Shape: Question, H1: StandingInput},
+	{Code: "BATCH_LAND_TRUNK_MOVED", Owner: "cmd/metasystem", Site: "landing_batch_land.go:702", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_LAND_UNPROVENANCED", Owner: "internal/landing/batch", Site: "transport.go:323", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_LAND_UNWIRED", Owner: "internal/landing/batch", Site: "land.go:180", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_P6_REFUSED", Owner: "internal/landing/batch", Site: "recovery.go:43", Shape: Question, H1: StandingAgent},
@@ -267,14 +267,14 @@ var Rows = []Row{
 	{Code: "REDUNDANT_READ", Owner: "internal/dispatch", Site: "read_admission.go:259", Shape: Agent, Override: "metasystem work finish j2:<prior critic root>", Commands: 1, H1: StandingGuide, Forward: "work finish"},
 	{Code: "DELEGATE_RECEIPT_REFUSED", Owner: "internal/validate", Site: "conformance.go:771", Shape: Agent, Override: "remove the delegate change to memory/receipts.log, then work review j2:<that round> --check-only --stage review", Commands: 2},
 	{Code: "TEST_POLICY_ENGINE_REQUIRED", Owner: "internal/enginecause", Site: "cause.go:252", Shape: Agent, Override: "the run: command of the line's cause (internal/enginecause.Table)", Commands: 9},
-	{Code: "PARALLEL_RATCHET_REFUSED", Owner: "cmd/metasystem", Site: "audit.go:120", Shape: Question, H1: StandingInput},
+	{Code: "PARALLEL_RATCHET_REFUSED", Owner: "cmd/devgate", Site: "owners.go:92", Shape: Question, H1: StandingInput},
 	{Code: "TEST_CONTRACT_REQUIRED", Owner: "internal/testpolicy", Site: "contract.go:254", Shape: Question, H1: StandingInput},
 	{Code: "TEST_CONTRACT_INVALID", Owner: "cmd/metasystem", Site: "runtime_setup.go:68", Shape: Question, H1: StandingInput},
 	{Code: "TEST_GROUP_SELECTION_REFUSED", Owner: "internal/testpolicy", Site: "select.go:125", Shape: Question, H1: StandingInput},
 	{Code: "RETRY_PRIOR_OUTSIDE_TREE", Owner: "internal/proofrun", Site: "attempt.go:1236", Shape: Question, H1: StandingInput},
 	{Code: "ADMISSION_OVERLAP_UNKNOWN", Owner: "internal/proofrun", Site: "admission.go:74", Shape: Question, H1: StandingInput},
 	{Code: "ADMISSION_NESTING_UNKNOWN", Owner: "internal/proofrun", Site: "admission.go:78", Shape: Question, H1: StandingInput},
-	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "cmd/metasystem", Site: "test.go:879", Shape: Question, H1: StandingGuide, Forward: "test run"},
+	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "cmd/metasystem", Site: "test.go:898", Shape: Question, H1: StandingGuide, Forward: "test run"},
 	{Code: "TESTING_MERGE_CONFLICT", Owner: "internal/testpolicy/contractmerge", Site: "merge.go:36", Shape: Question, H1: StandingInput},
 	{Code: "TESTING_CONTRACT_INVALID", Owner: "internal/testpolicy/contractmerge", Site: "merge.go:40", Shape: Question, H1: StandingInput},
 	{Code: "TESTING_ADD_TESTS_REFUSED", Owner: "internal/testpolicy/contractmerge", Site: "addtests.go:72", Shape: Question, H1: StandingInput},
@@ -337,7 +337,7 @@ var Rows = []Row{
 	{Code: "unknown-direct-fix-class", Owner: "internal/landing", Site: "observe.go:1520", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "chain-full-gate-refused", Owner: "internal/landing", Site: "observe.go:455", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "chain-test-receipt-refused", Owner: "internal/landing", Site: "observe.go:445", Shape: Agent, Override: CarriedLanding, Commands: 1},
-	{Code: "proof-input-moved-after-receipt", Owner: "cmd/metasystem", Site: "test.go:2649", Shape: Agent, Override: "reset to the pushed tip, re-stage, landing test-receipt --mode auto, land again", Commands: 4},
+	{Code: "proof-input-moved-after-receipt", Owner: "cmd/metasystem", Site: "test.go:2673", Shape: Agent, Override: "reset to the pushed tip, re-stage, landing test-receipt --mode auto, land again", Commands: 4},
 	{Code: "tier1-declaration-refused", Owner: "internal/landing", Site: "tierone.go:35", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "tier1-policy-unreadable", Owner: "internal/landing", Site: "tierone.go:62", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "tier1-root-refused", Owner: "internal/landing", Site: "tierone.go:39", Shape: Agent, Override: CarriedLanding, Commands: 1},
@@ -349,7 +349,7 @@ var Rows = []Row{
 	{Code: "tier1-full-gate-refused", Owner: "internal/landing", Site: "tierone.go:131", Shape: Agent, Override: CarriedLanding, Commands: 1},
 
 	{Code: "carry-ledger-moved", Owner: "internal/landing", Site: "carried.go:44", Shape: Question, H1: StandingInput},
-	{Code: "carry-remote-required", Owner: "internal/goal", Site: "verbs.go:5313", Shape: Question, H1: StandingInput},
+	{Code: "carry-remote-required", Owner: "internal/goal", Site: "verbs.go:5360", Shape: Question, H1: StandingInput},
 	{Code: "carry-goal-not-live", Owner: "internal/landing", Site: "carried.go:167", Shape: Question, H1: StandingInput},
 	{Code: "carry-word-missing", Owner: "internal/landing", Site: "carried.go:179", Shape: Question, H1: StandingInput},
 	{Code: "carry-word-unproven", Owner: "internal/landing", Site: "carried.go:277", Shape: Question, H1: StandingInput},
@@ -364,7 +364,7 @@ var Rows = []Row{
 	{Code: "carry-battery-unverified", Owner: "internal/landing", Site: "carried.go:236", Shape: Question, H1: StandingInput},
 	{Code: "carry-unneeded", Owner: "internal/landing", Site: "carried.go:257", Shape: Question, H1: StandingInput},
 	{Code: "carry-refusal-mismatch", Owner: "internal/landing", Site: "carried.go:182", Shape: Question, H1: StandingInput},
-	{Code: "STOP_SURFACE_GOAL_REFUSED", Owner: "internal/audit", Site: "stopsurface.go:728", Shape: Question, H1: StandingGuide},
+	{Code: "STOP_SURFACE_GOAL_REFUSED", Owner: "internal/audit", Site: "stopsurface.go:728", Shape: Question, H1: StandingGuide, Forward: "goal allow"},
 	{Code: "SEAT_MACHINE_NICKNAME_INVALID", Owner: "internal/seat", Site: "record.go:43", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_PRESENCE_MALFORMED", Owner: "internal/seat", Site: "record.go:125", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_PRESENCE_CONFLICT", Owner: "internal/seat", Site: "publish.go:314", Shape: Question, H1: StandingInput},
@@ -487,7 +487,6 @@ var ProseRows = []Prose{
 
 var Defects = []Defect{
 	{Code: "GOAL_SPLIT_REFUSED", Why: "no human verb clears the sliced mark; the only path is park plus new goals"},
-	{Code: "STOP_SURFACE_GOAL_REFUSED", Why: "rule H1: no public action records a goal's StopSurface: moves permission, so the refusal cannot name the command that grants it"},
 }
 
 var Slow = []string{

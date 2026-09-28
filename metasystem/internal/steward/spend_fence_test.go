@@ -3,6 +3,7 @@ package steward
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,21 +28,18 @@ func TestMain(m *testing.M) {
 	if err := os.Unsetenv("METASYSTEM_STEWARD_TEST_CANDIDATE_ENGINE"); err != nil {
 		panic(err)
 	}
-	home, err := os.MkdirTemp("", "steward-test-home-")
-	if err != nil {
-		panic(err)
-	}
-	if err := os.Setenv("HOME", home); err != nil {
-		panic(err)
-	}
 	// The proof admission directory is host-wide; no package test reads or
 	// reclaims the real one.
 	inspectHostLeases = func(string) ([]proofrun.HostLeaseReport, error) { return nil, nil }
-	code := testenv.Main(m, declarations...)
-	if err := os.RemoveAll(home); err != nil && code == 0 {
-		panic(err)
+	os.Exit(testenv.Main(m, declarations...))
+}
+
+func TestStewardTestHomeIsTheNamespaceHome(t *testing.T) {
+	t.Parallel()
+	home := os.Getenv("HOME")
+	if home != filepath.Join(filepath.Dir(os.TempDir()), "home") {
+		t.Fatalf("HOME = %q, want the test namespace home beside TMPDIR %q", home, os.TempDir())
 	}
-	os.Exit(code)
 }
 
 func fixtureSpendLedger() spend.Ledger {

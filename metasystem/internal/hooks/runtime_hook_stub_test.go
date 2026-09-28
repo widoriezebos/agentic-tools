@@ -205,7 +205,16 @@ func TestStubDegradedRefusesInvalidInvocations(t *testing.T) {
 func TestStubRebuildsDetachedForAnEngineOlderThanTheEntry(t *testing.T) {
 	t.Parallel()
 	old := strings.Replace(stubFakeEngine, `exit "${STUB_ACCEPTS_STATUS:-0}"`, `echo 'metasystem: unknown command "hook"' >&2; exit 2`, 1)
+	// The rebuild is `go run -trimpath ./cmd/devgate build`; the bed's go
+	// stands in for the toolchain and answers only that invocation. Any other
+	// argv still signals done, so a changed rebuild fails here, never hangs.
 	build := `#!/usr/bin/env bash
+[[ "$*" == "run -trimpath ./cmd/devgate build" ]] || {
+  echo "unexpected go $*" >&2
+  printf 'unexpected go %s\n' "$*" >>"${STUB_BUILD_RECORD:?}"
+  [[ -z "${STUB_BUILD_DONE:-}" ]] || printf 'done\n' >"$STUB_BUILD_DONE"
+  exit 64
+}
 printf 'build %s pid=%s\n' "$PWD" "$$" >>"${STUB_BUILD_RECORD:?}"
 [[ -z "${STUB_BUILD_RELEASE:-}" ]] || { read -r _ <"$STUB_BUILD_RELEASE" || true; }
 status=0
@@ -220,7 +229,10 @@ exit "$status"
 	}
 	setup := func(t *testing.T) (stubBed, string) {
 		bed := newStubBed(t, old)
-		if err := testexec.WriteFile(filepath.Join(bed.root, "scripts", "agents", "go-build.sh"), []byte(build), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(bed.root, "cmd", "devgate"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := testexec.WriteFile(filepath.Join(bed.toolDir, "go"), []byte(build), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		return bed, filepath.Join(t.TempDir(), "builds")

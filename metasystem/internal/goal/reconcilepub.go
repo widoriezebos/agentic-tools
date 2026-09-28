@@ -537,6 +537,47 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		}
 		return []Change{{Path: path, Content: RenderFile(f)}}, nil
 
+	case "allow", "disallow":
+		// A hand edit of a permission line is goal allow or goal disallow:
+		// allowing takes a person under a proof the approval gate admits,
+		// and the refusal names the command that grants it.
+		f, exists := t.Live[row.Id]
+		if !exists {
+			return nil, conflict("state", "not live on the fetched tip")
+		}
+		change := row.Fields.Permission
+		if change == nil {
+			return nil, fmt.Errorf("reconcile %s row for %s carries no permission", row.Verb, row.Id)
+		}
+		permission, err := LookupPermission(change.Name)
+		if err != nil {
+			return nil, err
+		}
+		if !session.moved[row.Id] && row.BaseState != "" && f.State != row.BaseState {
+			return nil, conflict("state", "is %s on the fetched tip, the hand edit was made against %s", f.State, row.BaseState)
+		}
+		if permission.Holds(f) == change.Allowed {
+			return nil, conflict(change.Name, "the fetched tip already moved it past the hand edit's base")
+		}
+		if change.Allowed {
+			hand, _, handErr := humanHand(r, r.Authority)
+			if handErr != nil {
+				return nil, handErr
+			}
+			if hand == nil {
+				return nil, fmt.Errorf("allowing %s is a person's act, and a name without a proof is not one; a person runs %s at the enrolled terminal", permission.Words, AllowCommand(row.Id, change.Name))
+			}
+		}
+		permission.Set(f, change.Allowed)
+		permissionDisplaced := ""
+		if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
+			permissionDisplaced = pairMarker(f.Claimed)
+		}
+		touchDisplaced(f, r, "edit", []string{row.Id}, permissionDisplaced)
+		recordSessionAuthority(&f.History[len(f.History)-1], r.Authority)
+		f.History[len(f.History)-1].Reason = permissionReason(*change, "")
+		return []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}, nil
+
 	case "detach":
 		f, exists := t.Live[row.Id]
 		if !exists {
@@ -701,6 +742,9 @@ func reconcileIntent(human string, targets []string, rows []MappedVerb) Intent {
 		}
 		if row.Fields.Labels != nil {
 			in.Deltas = append(in.Deltas, FieldDelta{Target: row.Id, Field: "labels", New: strings.Join(*row.Fields.Labels, ",")})
+		}
+		if row.Fields.Permission != nil {
+			in.Deltas = append(in.Deltas, FieldDelta{Target: row.Id, Field: "permission", New: permissionDelta(*row.Fields.Permission)})
 		}
 	}
 	return in

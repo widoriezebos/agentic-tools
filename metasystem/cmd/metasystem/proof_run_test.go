@@ -743,7 +743,7 @@ func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 		return os.Getenv("METASYSTEM_GATE_WITNESS") == "usable"
 	}
 	probe := proofRunWitnessProbe(root)
-	if !slices.Equal(probe.Args, []string{"go", "run", "./cmd/devgate", "gate", "--witness-check-only"}) || probe.Dir != root ||
+	if !slices.Equal(probe.Args, []string{"go", "run", "-trimpath", "./cmd/devgate", "gate", "--witness-check-only"}) || probe.Dir != root ||
 		!slices.Contains(probe.Env, "METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=ENGINE") {
 		t.Fatalf("witness probe = %q in %q", probe.Args, probe.Dir)
 	}
@@ -1561,7 +1561,7 @@ env METASYSTEM_SUITE_PROGRESS_ACTIVE=1 \
   METASYSTEM_SUITE_PROGRESS_TMP="$work" \
   METASYSTEM_SUITE_PROGRESS_TMP_OWNER= \
   METASYSTEM_BIN="$engine" \
-  bash "$root/scripts/agents/checkout-execution-guard-fixtures.sh"
+  bash -c 'printf "%s\n" "authenticated nested workload passed"'
 at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 printf '{"suite":"validate-metasystem","section":"gate-fence-fixtures","event":"end","at":"%s","depth":0}\n' "$at" >>"$progress"
 `
@@ -1598,7 +1598,7 @@ printf '{"suite":"validate-metasystem","section":"gate-fence-fixtures","event":"
 
 func (run *authenticatedGuardInvocation) assertCompleted(t *testing.T) {
 	t.Helper()
-	if !bytes.Contains(run.output.Bytes(), []byte("checkout execution guard fixtures passed")) {
+	if !bytes.Contains(run.output.Bytes(), []byte("authenticated nested workload passed")) {
 		t.Fatalf("authenticated public fixture omitted its terminal marker:\n%s", run.output.Bytes())
 	}
 	resultBytes, err := os.ReadFile(run.result)
@@ -1622,7 +1622,7 @@ func (run *authenticatedGuardInvocation) assertCompleted(t *testing.T) {
 	assertHostAdmissionClean(t, run.admission, 1)
 }
 
-func TestAuthenticatedOuterProofKeepsGuardFixtureControlOutOfOuterProgress(t *testing.T) {
+func TestAuthenticatedOuterProofKeepsItsNestedWorkloadOutOfOuterProgress(t *testing.T) {
 	t.Parallel()
 	sourceRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {

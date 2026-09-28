@@ -28,14 +28,31 @@ import (
 func TestGoNativeArgumentsPinEveryNestedParallelismLayer(t *testing.T) {
 	t.Parallel()
 	group := testpolicy.Group{Race: true, Coverage: true, BuildTags: []string{"one", "two"}}
-	arguments := goNativeTestArguments(group, true)
-	for _, required := range []string{"-p=1", "-parallel=1", "-race", "-cover", "one,two"} {
+	arguments := goNativeTestArguments(group, true, true)
+	for _, required := range []string{"-p=1", "-parallel=1", "-race", "-cover", "one,two", "-count=1"} {
 		if !slices.Contains(arguments, required) {
 			t.Fatalf("native Go arguments omit %s: %v", required, arguments)
 		}
 	}
-	if slices.Contains(goNativeTestArguments(group, false), "-cover") {
-		t.Fatalf("diagnostic rerun unexpectedly contributes coverage: %v", goNativeTestArguments(group, false))
+	if slices.Contains(goNativeTestArguments(group, false, true), "-cover") {
+		t.Fatalf("diagnostic rerun unexpectedly contributes coverage: %v", goNativeTestArguments(group, false, true))
+	}
+	if slices.Contains(goNativeTestArguments(group, true, false), "-count=1") {
+		t.Fatalf("a launch the policy lets Go's cache decide still carries -count=1")
+	}
+	// -trimpath rides argv, never GOFLAGS, so a group's effective flags
+	// (declared, process, or its GOENV file) are never masked.
+	want := []string{"go", "test", "-trimpath", "-json", "-count=1", "-timeout", "0", "-p=1", "-parallel=1", "-tags", "one,two", "-race", "-cover"}
+	if !slices.Equal(arguments, want) {
+		t.Fatalf("native Go arguments = %q, want %q", arguments, want)
+	}
+	plain := []string{"go", "test", "-trimpath", "-json", "-count=1", "-timeout", "0", "-p=1", "-parallel=1"}
+	if got := goNativeTestArguments(testpolicy.Group{}, false, true); !slices.Equal(got, plain) {
+		t.Fatalf("plain native Go arguments = %q, want %q", got, plain)
+	}
+	cacheable := []string{"go", "test", "-trimpath", "-json", "-timeout", "0", "-p=1", "-parallel=1"}
+	if got := goNativeTestArguments(testpolicy.Group{}, false, false); !slices.Equal(got, cacheable) {
+		t.Fatalf("cacheable native Go arguments = %q, want %q", got, cacheable)
 	}
 }
 
@@ -605,10 +622,10 @@ func TestQueuedCancellationOccursAfterConfirmedWaitAndDrainsCounter(t *testing.T
 	done := make(chan nativeResult, 1)
 	go func() {
 		var output synchronizedBuffer
-		outcome, _, _, launchErr := runShardedGoGroup(waiting, TestRunRequest{Workers: 1},
+		outcome, _, _, _, launchErr := runShardedGoGroup(waiting, TestRunRequest{Workers: 1},
 			testpolicy.Group{ID: "queued-native", Adapter: "go"}, root, []string{"PATH=/does/not/run"},
 			[]NativeTestIdentity{{Classname: "example.invalid/queued/pkg", Name: "TestQueued"}}, []string{"pkg"},
-			"example.invalid/queued/", supervisorLimits{}, time.Millisecond, filepath.Join(root, "queued.log"), &output)
+			"example.invalid/queued/", supervisorLimits{}, time.Millisecond, filepath.Join(root, "queued.log"), &output, goCacheFacts{})
 		done <- nativeResult{outcome: outcome, err: launchErr}
 	}()
 	pool := ctx.Value(testWorkerPoolContextKey{}).(*testWorkerPool)
@@ -659,9 +676,9 @@ func TestSupervisedGoStartFailureReleasesWorker(t *testing.T) {
 	logPath := filepath.Join(root, "failure.log")
 	ctx := withTestWorkerPool(context.Background(), 1)
 	var output synchronizedBuffer
-	outcome, _, _, launchErr := runShardedGoGroup(ctx, TestRunRequest{Workers: 1}, testpolicy.Group{ID: "start-failure", Adapter: "go"},
+	outcome, _, _, _, launchErr := runShardedGoGroup(ctx, TestRunRequest{Workers: 1}, testpolicy.Group{ID: "start-failure", Adapter: "go"},
 		missingWorkingDirectory, []string{"PATH=" + bin}, []NativeTestIdentity{{Classname: "example.invalid/failure/pkg", Name: "TestOne"}},
-		[]string{"pkg"}, "example.invalid/failure/", supervisorLimits{}, time.Second, logPath, &output)
+		[]string{"pkg"}, "example.invalid/failure/", supervisorLimits{}, time.Second, logPath, &output, goCacheFacts{})
 	if launchErr == nil || !strings.Contains(launchErr.Error(), "start Go test shard") ||
 		!errors.Is(launchErr, os.ErrNotExist) || outcome.Started || outcome.WaitErr == nil {
 		t.Fatalf("supervised native command.Start failure outcome=%+v error=%v", outcome, launchErr)
@@ -684,9 +701,9 @@ func TestSupervisedGoExecFailureIsTerminalAndReleasesWorker(t *testing.T) {
 	ctx := withTestWorkerPool(WithResourceCustodyExecutable(t.Context(), buildResourceCustodyEngine(t)), 1)
 	logPath := filepath.Join(root, "failure.log")
 	var output synchronizedBuffer
-	outcome, closeErr, _, launchErr := runShardedGoGroup(ctx, TestRunRequest{Workers: 1}, testpolicy.Group{ID: "exec-failure", Adapter: "go"},
+	outcome, closeErr, _, _, launchErr := runShardedGoGroup(ctx, TestRunRequest{Workers: 1}, testpolicy.Group{ID: "exec-failure", Adapter: "go"},
 		root, []string{"PATH=" + badBin}, []NativeTestIdentity{{Classname: "example.invalid/failure/pkg", Name: "TestOne"}},
-		[]string{"pkg"}, "example.invalid/failure/", supervisorLimits{}, time.Second, logPath, &output)
+		[]string{"pkg"}, "example.invalid/failure/", supervisorLimits{}, time.Second, logPath, &output, goCacheFacts{})
 	var exitErr *exec.ExitError
 	if launchErr != nil || closeErr != nil || !outcome.Started || outcome.WaitErr == nil ||
 		!errors.As(outcome.WaitErr, &exitErr) || exitErr.ExitCode() == 0 {
@@ -953,12 +970,12 @@ func testActiveShardFailureDrain(t *testing.T, failure string, coverage bool) {
 	ctx = context.WithValue(ctx, goShardLifecycleHooksKey{}, hooks)
 	group := testpolicy.Group{ID: "active-failure", Adapter: "go", Coverage: coverage}
 	var output synchronizedBuffer
-	outcome, _, _, launchErr := runShardedGoGroup(ctx, TestRunRequest{Workers: 2}, group, root,
+	outcome, _, _, _, launchErr := runShardedGoGroup(ctx, TestRunRequest{Workers: 2}, group, root,
 		[]string{"PATH=" + bin, "ACTIVE_SHARD_STATE_DIR=" + stateRoot,
 			"ACTIVE_SHARD_DIAGNOSTIC=" + diagnostic, "GO_WANT_GO_SHARD_HELPER=1"},
 		[]NativeTestIdentity{{Classname: "example.invalid/active/a", Name: "TestA"}, {Classname: "example.invalid/active/b", Name: "TestB"}},
 		[]string{"a", "b"}, "example.invalid/active/", supervisorLimits{}, 10*time.Millisecond,
-		filepath.Join(root, "active-failure.log"), &output)
+		filepath.Join(root, "active-failure.log"), &output, goCacheFacts{})
 	if launchErr == nil || !strings.Contains(launchErr.Error(), "injected") || !outcome.Started {
 		t.Fatalf("%s outcome=%+v error=%v", failure, outcome, launchErr)
 	}

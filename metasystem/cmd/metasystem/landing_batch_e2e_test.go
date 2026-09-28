@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -31,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 var batchE2EProcessEnvironment sync.Mutex
@@ -587,12 +588,8 @@ func (fixture *batchE2EFixture) enrollPolicyEngine(commit string, shared *batchE
 }
 
 func (fixture *batchE2EFixture) buildPolicyEngine(commit, engine string) {
-	_, source, _, ok := runtime.Caller(0)
-	if !ok {
-		fixture.t.Fatal("locate metasystem source")
-	}
-	sourceRoot := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
-	linker := "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=" + commit
+	sourceRoot := testutil.MustSourceRoot(fixture.t)
+	linker := enginebuild.StampLinkerFlags(commit)
 	// The beds plant their own commit script; a plantedcommit engine commits
 	// through it, as the shell commit boundary did.
 	command := exec.Command("go", "build", "-buildvcs=false", "-tags", "plantedcommit", "-ldflags", linker, "-o", engine, "./cmd/metasystem")

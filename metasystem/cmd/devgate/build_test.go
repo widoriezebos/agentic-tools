@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -36,6 +37,8 @@ type buildFixture struct {
 	goFails   bool
 	noGo      bool
 	fenceHits int
+	environ   []string
+	cacheDir  func() (string, error)
 	fence     func(string, int64) []gaterun.Holder
 	selfPid   int64
 	stdout    bytes.Buffer
@@ -56,6 +59,8 @@ func newBuildFixture(t *testing.T) *buildFixture {
 	return &buildFixture{
 		t: t, root: root, env: map[string]string{}, head: fixtureCommit + "\n", prefix: "metasystem/\n",
 		fence: gaterun.Fence, selfPid: int64(os.Getpid()),
+		environ:  []string{"PATH=/fixture/bin", "GOMAXPROCS=99"},
+		cacheDir: func() (string, error) { return "/fixture/user-cache", nil },
 	}
 }
 
@@ -113,11 +118,12 @@ func (f *buildFixture) deps() deps {
 			f.fenceHits++
 			return f.fence(root, selfPid)
 		},
-		selfPid: f.selfPid,
-		getenv:  func(key string) string { return f.env[key] },
-		environ: func() []string { return []string{"PATH=/fixture/bin", "GOMAXPROCS=99"} },
-		stdout:  &f.stdout,
-		stderr:  &f.stderr,
+		selfPid:      f.selfPid,
+		getenv:       func(key string) string { return f.env[key] },
+		environ:      func() []string { return append([]string(nil), f.environ...) },
+		userCacheDir: func() (string, error) { return f.cacheDir() },
+		stdout:       &f.stdout,
+		stderr:       &f.stderr,
 	}
 }
 
@@ -150,7 +156,9 @@ func stampOf(args []string) string {
 	if index < 0 || index+1 >= len(args) {
 		return ""
 	}
-	return strings.TrimPrefix(args[index+1], buildStampFlag)
+	_, record, _ := strings.Cut(args[index+1], enginebuild.StampRecordVariable+"=")
+	stamp, _ := enginebuild.ParseStampRecord(record)
+	return stamp
 }
 
 func TestBuildCleanTreeInstallsEngineStampedWithHead(t *testing.T) {
@@ -162,7 +170,7 @@ func TestBuildCleanTreeInstallsEngineStampedWithHead(t *testing.T) {
 	}
 	call := f.onlyGoCall()
 	staging := filepath.Join("bin", ".metasystem.build."+itoa(f.selfPid))
-	want := []string{"build", "-p=3", "-buildvcs=false", "-ldflags", buildStampFlag + fixtureCommit, "-o", staging, "./cmd/metasystem"}
+	want := []string{"build", "-p=3", "-buildvcs=false", "-trimpath", "-ldflags", enginebuild.StampLinkerFlags(fixtureCommit), "-o", staging, "./cmd/metasystem"}
 	if !slices.Equal(call.args, want) {
 		t.Fatalf("go args = %q, want %q", call.args, want)
 	}
@@ -181,6 +189,32 @@ func TestBuildCleanTreeInstallsEngineStampedWithHead(t *testing.T) {
 	}
 	if f.fenceHits != 0 {
 		t.Fatalf("fence ran with no bin/metasystem present: %d", f.fenceHits)
+	}
+}
+
+// Both branches set the engine cache explicitly: an inherited absolute value
+// is kept, else it is computed from the user cache directory seam.
+func TestBuildCarriesTheEngineCacheOnBothBranches(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		environ []string
+		want    []string
+	}{
+		{"computed", []string{"PATH=/fixture/bin", "GOCACHE=relative"}, []string{"GOCACHE=/fixture/user-cache/go-build", "STATICCHECK_CACHE=/fixture/user-cache/staticcheck"}},
+		{"inherited", []string{"PATH=/fixture/bin", "GOCACHE=/outer/go-build", "STATICCHECK_CACHE=/outer/staticcheck"}, []string{"GOCACHE=/outer/go-build", "STATICCHECK_CACHE=/outer/staticcheck"}},
+	} {
+		for _, args := range [][]string{nil, {"--out", filepath.Join(t.TempDir(), "proof-engine")}} {
+			f := newBuildFixture(t)
+			f.environ = test.environ
+			if code := f.run(args...); code != 0 {
+				t.Fatalf("%s %q: exit %d; stderr:\n%s", test.name, args, code, f.stderr.String())
+			}
+			env := f.onlyGoCall().env
+			if got := env[len(env)-4 : len(env)-2]; !slices.Equal(got, test.want) {
+				t.Fatalf("%s %q: go env = %q, want the engine cache %q before GOMAXPROCS and CGO_ENABLED", test.name, args, env, test.want)
+			}
+		}
 	}
 }
 
@@ -246,11 +280,8 @@ func TestBuildOutLeavesTheInstalledEngineAndSkipsTheFence(t *testing.T) {
 		if code := f.run(args...); code != 0 {
 			t.Fatalf("trimpath=%v exit %d; stderr:\n%s", trimpath, code, f.stderr.String())
 		}
-		want := []string{"build", "-p=1", "-buildvcs=false"}
-		if trimpath {
-			want = append(want, "-trimpath")
-		}
-		want = append(want, "-ldflags", buildStampFlag+fixtureCommit, "-o", out, "./cmd/metasystem")
+		// --trimpath is a no-op: the build is trimmed with or without it.
+		want := []string{"build", "-p=1", "-buildvcs=false", "-trimpath", "-ldflags", enginebuild.StampLinkerFlags(fixtureCommit), "-o", out, "./cmd/metasystem"}
 		if got := f.onlyGoCall().args; !slices.Equal(got, want) {
 			t.Fatalf("trimpath=%v go args = %q, want %q", trimpath, got, want)
 		}
@@ -354,6 +385,9 @@ func TestBuildRefusalsBeforeAnyEffect(t *testing.T) {
 		{name: "invalid workers", setup: func(f *buildFixture) { f.env["METASYSTEM_TEST_WORKERS"] = "nope" }, code: 1, stderr: "METASYSTEM_TEST_WORKERS must be a positive integer"},
 		{name: "zero workers", setup: func(f *buildFixture) { f.env["METASYSTEM_TEST_WORKERS"] = "0" }, code: 1, stderr: "METASYSTEM_TEST_WORKERS must be a positive integer"},
 		{name: "no toolchain", setup: func(f *buildFixture) { f.noGo = true }, code: 1, stderr: "no go toolchain on PATH"},
+		{name: "no engine cache", setup: func(f *buildFixture) {
+			f.cacheDir = func() (string, error) { return "", errors.New("$HOME is not defined") }
+		}, code: 1, stderr: "engine cache: cannot resolve the user cache directory"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -393,3 +427,15 @@ func TestUnknownActionIsAUsageError(t *testing.T) {
 }
 
 func itoa(value int64) string { return strconv.FormatInt(value, 10) }
+
+func TestBuildRefusesAStampNoReaderCouldReadBack(t *testing.T) {
+	t.Parallel()
+	f := newBuildFixture(t)
+	f.env["METASYSTEM_BUILD_STAMP"] = "not a stamp;"
+	if code := f.run("--out", "proof"); code != 1 || len(f.goCalls) != 0 {
+		t.Fatalf("exit %d after go calls %+v, want 1 and no build", code, f.goCalls)
+	}
+	if !strings.Contains(f.stderr.String(), "is not [A-Za-z0-9-]{1,64}") {
+		t.Fatalf("stderr = %q", f.stderr.String())
+	}
+}

@@ -76,7 +76,11 @@ func TestTestingEnvironmentCarriesGoConfigIntoScratchPreparation(t *testing.T) {
 			if test.name == "default" {
 				// An unset GOENV is resolved per group: the caller's default file
 				// is snapshotted at the group's managed default config location.
+				// Under v2 the group's managed tree lies in its lease slot.
 				home := filepath.Join(run.Dir("groups"), group.ID, ".environment", "home")
+				if lease := request.ScratchEnvironment.Groups[0].Lease; lease != "" {
+					home = filepath.Join(lease, ".environment", "home")
+				}
 				location = filepath.Join(home, ".config", "go", "env")
 				if runtime.GOOS == "darwin" {
 					location = filepath.Join(home, "Library", "Application Support", "go", "env")

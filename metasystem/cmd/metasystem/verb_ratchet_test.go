@@ -30,11 +30,14 @@ const (
 	// The launch contract raised it by one: `app serve` is the supervisor that
 	// owns one run of the project's application for its life, in the shape of
 	// `ui serve`, and like it it is a process entrypoint a person never types.
-	verbRatchetInternalVerbCeiling = 294
+	// +1: disk-lifetimes A1 adds `util engine-stamp`, the one shell-callable
+	// stamp reader (rule A3). Its first caller, fixture-budget.sh's
+	// `go version -m` parser, was deleted on main (U7c) before this merge.
+	verbRatchetInternalVerbCeiling = 279
 	// R4: shell lines that reference the engine.
-	verbRatchetShellEngineCeiling = 165
+	verbRatchetShellEngineCeiling = 32
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
-	verbRatchetScriptLinesCeiling = 2834
+	verbRatchetScriptLinesCeiling = 99
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
 	// U6a raised it by the process boundaries that were shell before: the

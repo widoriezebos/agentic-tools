@@ -43,8 +43,8 @@ func TestGateUnitGreenOutputAndAggregatedSteps(t *testing.T) {
 		t.Fatalf("gate unit output = %q, want %q", stdout.String(), wantOutput)
 	}
 	if len(calls) != 2 ||
-		!slices.Equal(calls[0].Args, []string{"go", "test", "-count=1", "-timeout", "40m", "./base", "./cmd/metasystem"}) ||
-		!slices.Equal(calls[1].Args, []string{"go", "test", "-count=1", "-timeout", "40m", "-tags", "batchtest", "./cmd/metasystem"}) {
+		!slices.Equal(calls[0].Args, []string{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "./base", "./cmd/metasystem"}) ||
+		!slices.Equal(calls[1].Args, []string{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "-tags", "batchtest", "./cmd/metasystem"}) {
 		t.Fatalf("gate unit steps = %v", calls)
 	}
 }

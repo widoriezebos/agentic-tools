@@ -317,7 +317,8 @@ func (g *gateRun) reuseEngineWitness() (int, bool) {
 }
 
 // consumeFrozen freezes the live tree and runs this same gate from the
-// export. GOFLAGS is pinned to read-only module selection; GOMODCACHE stays
+// export. GOFLAGS is pinned to ownedGoFlags (read-only module selection,
+// trimmed paths); GOMODCACHE stays
 // inherited and shared, because the frozen go.sum pins module content while
 // -mod=readonly forbids a dependency-set rewrite. Modfile and overlay flags
 // would replace frozen inputs and are refused before the export is used.
@@ -347,7 +348,7 @@ func (g *gateRun) consumeFrozen(options gateOptions) int {
 	if err != nil {
 		export = frozen.Root
 	}
-	inner := g.env.with("GOFLAGS=-mod=readonly", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1",
+	inner := g.env.with("GOFLAGS="+ownedGoFlags, "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1",
 		"METASYSTEM_GATE_WITNESS_CONSUMER_EXPORT="+export)
 	var status int
 	reused := false

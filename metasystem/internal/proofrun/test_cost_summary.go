@@ -38,6 +38,10 @@ type TestGroupCostSummary struct {
 	ReuseAttempt       string `json:"reuseAttempt,omitempty"`
 	ObservedDurationMS *int64 `json:"observedDurationMs"`
 	Expensive          *bool  `json:"expensive"`
+	// Package outcomes by Execution mode (A13): the measured hit rate.
+	ExecutedPackages       int `json:"executedPackages,omitempty"`
+	GoTestCachePackages    int `json:"goTestCachePackages,omitempty"`
+	EngineRetainedPackages int `json:"engineRetainedPackages,omitempty"`
 }
 
 // SummarizeTestResultCost reports only observed work. Group durations may
@@ -63,6 +67,16 @@ func SummarizeTestResultCost(result TestResult, expensiveMS int64) (TestCostSumm
 		row := TestGroupCostSummary{ID: group.ID, Kind: group.Kind, ExecutionIdentity: group.ExecutionIdentity,
 			Status: group.Status, NativeLaunched: group.NativeLaunched, ReuseAttempt: group.ReuseAttempt,
 			ObservedDurationMS: positiveDuration(group.DurationMS)}
+		for _, execution := range group.Execution {
+			switch execution.Mode {
+			case PackageExecuted:
+				row.ExecutedPackages++
+			case PackageGoTestCache:
+				row.GoTestCachePackages++
+			case PackageEngineRetained:
+				row.EngineRetainedPackages++
+			}
+		}
 		if group.NativeLaunched || group.Status == "reused" {
 			if row.ObservedDurationMS == nil {
 				report.UnknownExpenseGroups++

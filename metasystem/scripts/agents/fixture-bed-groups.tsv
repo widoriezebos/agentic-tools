@@ -1,6 +1,0 @@
-scripts/agents/checkout-execution-guard-fixtures.sh	section/gate-fence-fixtures
-scripts/agents/config-identity-fixtures.sh	section/config-identity-fixtures
-scripts/agents/evidence-segment-fixtures.sh	section/evidence-segment-fixtures
-scripts/agents/flight-recorder-fixtures.sh	section/flight-recorder-fixtures
-scripts/agents/lease-succession-fixtures.sh	section/lease-succession-fixtures
-scripts/agents/supervision-go-fixtures.sh	section/supervision-go-fixtures

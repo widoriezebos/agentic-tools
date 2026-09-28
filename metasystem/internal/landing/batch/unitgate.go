@@ -420,10 +420,10 @@ func packageImportPath(module, pkg string) string {
 func JoinGatePackageSteps(selection UnitPackages) []GateStep {
 	steps := make([]GateStep, 0, len(selection.Changed)+len(selection.Dependents)+1)
 	for _, pkg := range selection.Changed {
-		steps = append(steps, GateStep{Name: "package " + pkg, Args: []string{"go", "test", "-count=1", "-timeout", "900s", pkg}})
+		steps = append(steps, GateStep{Name: "package " + pkg, Args: []string{"go", "test", "-trimpath", "-count=1", "-timeout", "900s", pkg}})
 	}
 	for _, pkg := range selection.Dependents {
-		steps = append(steps, GateStep{Name: "dependent package " + pkg, Args: []string{"go", "test", "-count=1", "-timeout", "40m", pkg}})
+		steps = append(steps, GateStep{Name: "dependent package " + pkg, Args: []string{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", pkg}})
 	}
 	if selectionContainsPackage(selection, "./cmd/metasystem") {
 		steps = append(steps, batchTestStep())
@@ -440,7 +440,7 @@ func AggregateUnitGateSteps(selection UnitPackages) []GateStep {
 	}
 	plain := GateStep{
 		Name: "unit packages",
-		Args: append([]string{"go", "test", "-count=1", "-timeout", "40m"}, packages...),
+		Args: append([]string{"go", "test", "-trimpath", "-count=1", "-timeout", "40m"}, packages...),
 	}
 	steps := []GateStep{plain}
 	if selectionContainsPackage(selection, "./cmd/metasystem") {
@@ -452,7 +452,7 @@ func AggregateUnitGateSteps(selection UnitPackages) []GateStep {
 func batchTestStep() GateStep {
 	return GateStep{
 		Name: "package ./cmd/metasystem batchtest",
-		Args: []string{"go", "test", "-count=1", "-timeout", "40m", "-tags", "batchtest", "./cmd/metasystem"},
+		Args: []string{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "-tags", "batchtest", "./cmd/metasystem"},
 	}
 }
 

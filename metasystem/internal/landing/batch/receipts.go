@@ -22,12 +22,15 @@ type PrefixReceipt struct {
 	LastUnit                            string   `json:"LastUnit,omitempty"`
 	Reused                              map[string]string
 	Executed                            []string
+	// CachedPass are groups go test served wholly from its test cache.
+	CachedPass []string `json:"CachedPass,omitempty"`
 }
 
 type PrefixRunResult struct {
 	AttemptID, ResultPath string
 	Reused                map[string]string
 	Executed              []string
+	CachedPass            []string
 	Red                   []RedGroup
 }
 
@@ -198,6 +201,7 @@ func ComposePrefixReceipts(store Store, id, actor string, at time.Time, seams Pr
 			}
 		}
 		receipt.AttemptID, receipt.ResultPath, receipt.Executed, receipt.Reused = result.AttemptID, result.ResultPath, slices.Clone(result.Executed), result.Reused
+		receipt.CachedPass = slices.Clone(result.CachedPass)
 		if receipt.Reused == nil {
 			receipt.Reused = map[string]string{}
 		}

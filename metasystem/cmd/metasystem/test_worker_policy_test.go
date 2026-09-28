@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -185,9 +186,21 @@ func TestTestingRunRequestCarriesResolvedWorkerPolicy(t *testing.T) {
 		t.Fatalf("testing request workers=%d admission=%d", request.Workers, request.AdmissionMaximum)
 	}
 	result := proofrun.NewTestResult(request)
-	if result.SchemaVersion != proofrun.TestResultSchemaVersion || result.WorkerPolicyVersion != proofrun.TestWorkerPolicyVersion ||
+	// No worker capabilities were recorded, so the worker-policy schema.
+	if result.SchemaVersion != proofrun.WorkerPolicyTestResultSchemaVersion || result.WorkerPolicyVersion != proofrun.TestWorkerPolicyVersion ||
 		result.Workers != 8 || result.AdmissionMaximum == nil || *result.AdmissionMaximum != 3 {
 		t.Fatalf("testing result did not bind resolved worker policy: %+v", result)
+	}
+	// A worker listing the execution-record schema is asked for it; one that
+	// predates the list is not, and the field stays off its wire.
+	listing := testingRunRequest(testingPreparation{Workers: 8, WorkerCapabilitiesChecked: true,
+		WorkerResultSchemas: proofrun.TestResultSchemaVersions}, "", "", "", "", "")
+	if listing.ResultSchemaVersion != proofrun.TestResultSchemaVersion || proofrun.NewTestResult(listing).SchemaVersion != proofrun.TestResultSchemaVersion {
+		t.Fatalf("listing worker request = %d", listing.ResultSchemaVersion)
+	}
+	older := testingRunRequest(testingPreparation{Workers: 8, WorkerCapabilitiesChecked: true}, "", "", "", "", "")
+	if encoded, err := json.Marshal(older); err != nil || older.ResultSchemaVersion != 0 || strings.Contains(string(encoded), "ResultSchemaVersion") {
+		t.Fatalf("older worker request carries the schema field: %v %s", err, encoded)
 	}
 }
 
@@ -196,7 +209,7 @@ func TestWorkerCapabilitiesCommandReportsExactProtocol(t *testing.T) {
 	var stdout strings.Builder
 	err := writeTestingWorkerCapabilities(&stdout)
 	var got testingWorkerCapabilities
-	if decodeErr := json.Unmarshal([]byte(stdout.String()), &got); err != nil || decodeErr != nil || got != currentTestingWorkerCapabilities() {
+	if decodeErr := json.Unmarshal([]byte(stdout.String()), &got); err != nil || decodeErr != nil || !reflect.DeepEqual(got, currentTestingWorkerCapabilities()) {
 		t.Fatalf("worker capabilities stdout=%q got=%+v write=%v decode=%v", stdout.String(), got, err, decodeErr)
 	}
 }
@@ -289,7 +302,7 @@ func TestRunPreflightsStrictRetainedBaselineBeforePreparationOrReservation(t *te
 		t.Fatal(err)
 	}
 
-	err := requireTestingWorkerCapabilities(t.Context(), engine, []string{"PATH=/usr/bin:/bin"})
+	_, err := requireTestingWorkerCapabilities(t.Context(), engine, []string{"PATH=/usr/bin:/bin"})
 	if !errors.Is(err, errTestingWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "stage, prove, and install the backend compatibility release") {
 		t.Fatalf("unsupported trusted worker refusal=%v", err)
 	}
@@ -314,12 +327,12 @@ func TestWorkerCapabilitiesRefusePreviousProtocolBeforeLaunch(t *testing.T) {
 		}
 		return engine
 	}
-	if err := requireTestingWorkerCapabilities(t.Context(), capabilitiesEngine(proofrun.TestWorkerProtocolVersion), []string{"PATH=/usr/bin:/bin"}); err != nil {
+	if _, err := requireTestingWorkerCapabilities(t.Context(), capabilitiesEngine(proofrun.TestWorkerProtocolVersion), []string{"PATH=/usr/bin:/bin"}); err != nil {
 		t.Fatalf("current worker capabilities refused: %v", err)
 	}
 	// The landed worker speaks protocol 1 and strict-decodes the
 	// Scratch request fields as unknown, so it must be refused before preparation.
-	err := requireTestingWorkerCapabilities(t.Context(), capabilitiesEngine(1), []string{"PATH=/usr/bin:/bin"})
+	_, err := requireTestingWorkerCapabilities(t.Context(), capabilitiesEngine(1), []string{"PATH=/usr/bin:/bin"})
 	if !errors.Is(err, errTestingWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "install the matching backend compatibility release") {
 		t.Fatalf("previous worker protocol refusal=%v", err)
 	}
