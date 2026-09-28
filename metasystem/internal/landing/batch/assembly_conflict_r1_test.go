@@ -207,10 +207,10 @@ func TestGLEBatchPortableOwnerMovedBaseReturnsTwoConflictsAndLandsSurvivor(t *te
 		record.Transition(StateSealed, time.Unix(6, 0), "seal", "owner", "")
 		return nil
 	}))
-	if _, err := RequireProofPlan(store, testBatchID, "owner", "expired", proofrun.LoadSample{}, testpolicy.Plan{SelectedGroups: []string{"group"}}, time.Unix(7, 0)); err != nil {
+	if _, err := RequireProofPlan(store, testBatchID, "owner", "expired", "token", proofrun.LoadSample{}, testpolicy.Plan{SelectedGroups: []string{"group"}}, time.Unix(7, 0)); err != nil {
 		t.Fatal(err)
 	}
-	must(t, FinishProof(store, testBatchID, "owner", proofrun.TestResult{AttemptID: "survivor-green", CandidateTree: cOnly,
+	must(t, FinishProof(store, testBatchID, "owner", "token", proofrun.TestResult{AttemptID: "survivor-green", CandidateTree: cOnly,
 		Delivery: proofrun.DeliveryJudgment{Sufficient: true}, Groups: []proofrun.GroupResult{{ID: "group", Status: "passed", NativeLaunched: true}}}, nil, time.Unix(8, 0)))
 	if proved := load(t, store); proved.State != StateLanding || proved.Proof == nil || proved.Proof.Status != "green" || proved.Proof.Tree != cOnly ||
 		proved.Proof.AttemptID != "survivor-green" || proved.Proof.Window != "expired" {

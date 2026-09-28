@@ -363,7 +363,7 @@ func TestGreenTipProofClearsHeldlessEntryOnlyWhenExecuted(t *testing.T) {
 	result := proofrun.TestResult{AttemptID: "tip-green", BaseCommit: "next-commit", CandidateTree: "next-tree",
 		Delivery: proofrun.DeliveryJudgment{Sufficient: true}, Groups: []proofrun.GroupResult{passed("fast"), passed("held"), passed("same"), passed("wrong-tree"),
 			{ID: "failed", Status: "failed", NativeLaunched: true}, {ID: "reused", Status: "reused"}}}
-	must(t, FinishProof(store, testBatchID, "owner", result, nil, time.Unix(11, 0)))
+	must(t, FinishProof(store, testBatchID, "owner", "", result, nil, time.Unix(11, 0)))
 	proof := load(t, store).Proof
 	record := ownerRecord(testBatchID, StateLanding, time.Unix(1, 0))
 	record.Proof = proof

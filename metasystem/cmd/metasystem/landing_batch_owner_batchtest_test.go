@@ -229,7 +229,7 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 		launch: func(request batchProofLaunch) (proofrun.TestResult, error) {
 			events = append(events, "launch:"+string(request.Mode))
 			admitted, err := store.Load(batchID)
-			if err != nil || admitted.State != batch.StateProving || admitted.Proof == nil || admitted.Proof.Status != "planned" {
+			if err != nil || admitted.State != batch.StateProving || admitted.Proof == nil || admitted.Proof.Status != "planned" || admitted.Proof.Token != request.Token || request.Token != "token" {
 				t.Fatalf("runner charged without durable admission: record=%+v err=%v", admitted, err)
 			}
 			return proofrun.TestResult{AttemptID: "attempt-tip", LaunchCounts: proofrun.LaunchCounts{Test: 1, Build: 1}, Delivery: proofrun.DeliveryJudgment{Sufficient: true}, Groups: []proofrun.GroupResult{
@@ -239,7 +239,7 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 		},
 	}
 	sample := proofrun.LoadSample{OverlappingHost: 7, OverlapKnown: true}
-	if err := executeBatchProof(root, batchID, "landing-owner", "full", sample, time.Unix(8, 0), deps); err != nil {
+	if err := executeBatchProof(root, batchID, "landing-owner", "full", "token", sample, time.Unix(8, 0), deps); err != nil {
 		t.Fatal(err)
 	}
 	finished, err := store.Load(batchID)
@@ -282,7 +282,7 @@ func TestBatchTwoTipPublicationRetainsCandidateAndReceiptTips(t *testing.T) {
 			return proofrun.TestResult{AttemptID: "two-tip", CandidateTree: request.Tree, Delivery: proofrun.DeliveryJudgment{Sufficient: true}}, nil
 		},
 	}
-	if err := executeBatchProof(root, id, "owner", "full", proofrun.LoadSample{}, time.Unix(10, 0), deps); err != nil {
+	if err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), deps); err != nil {
 		t.Fatal(err)
 	}
 	receiptTip := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "commit-tree", launched.Tree, "-p", "HEAD", "-m", "receipt"))))
@@ -345,11 +345,11 @@ func TestBatchProofDurableUnionRefusalSkipsSecondRearm(t *testing.T) {
 		},
 		launch: func(batchProofLaunch) (proofrun.TestResult, error) { launches++; return proofrun.TestResult{}, nil },
 	}
-	if err := executeBatchProof(root, batchID, "owner", "full", proofrun.LoadSample{}, time.Unix(1, 0), deps); err == nil || !strings.Contains(err.Error(), "BATCH_PROOF_UNION_UNCOVERED") {
+	if err := executeBatchProof(root, batchID, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(1, 0), deps); err == nil || !strings.Contains(err.Error(), "BATCH_PROOF_UNION_UNCOVERED") {
 		t.Fatalf("first union refusal=%v", err)
 	}
 	firstRearms, firstPlans := rearms, plans
-	if err := executeBatchProof(root, batchID, "owner", "full", proofrun.LoadSample{}, time.Unix(2, 0), deps); err != nil {
+	if err := executeBatchProof(root, batchID, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(2, 0), deps); err != nil {
 		t.Fatal(err)
 	}
 	if rearms != firstRearms || plans != firstPlans || launches != 0 {
@@ -431,7 +431,7 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 	t.Run("union uncovered is durable and never launches", func(t *testing.T) {
 		root, id, store, _ := batchProofRefusalBed(t)
 		launches := 0
-		err := executeBatchProof(root, id, "owner", "full", proofrun.LoadSample{}, time.Unix(10, 0), batchProofDependencies{
+		err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), batchProofDependencies{
 			rearm: func(string, string) error { return nil }, plan: plan("other"), launch: func(batchProofLaunch) (proofrun.TestResult, error) {
 				launches++
 				return proofrun.TestResult{}, nil
@@ -451,7 +451,7 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 	})
 	t.Run("capacity refusal returns to sealed without diagnosis", func(t *testing.T) {
 		root, id, store, _ := batchProofRefusalBed(t)
-		err := executeBatchProof(root, id, "owner", "full", proofrun.LoadSample{}, time.Unix(10, 0), batchProofDependencies{
+		err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), batchProofDependencies{
 			rearm: func(string, string) error { return nil }, plan: plan("required"), launch: func(batchProofLaunch) (proofrun.TestResult, error) {
 				return proofrun.TestResult{}, &batchProofAdmissionRefusal{kind: "capacity", reason: "ADMISSION_REFUSED capacity"}
 			},
@@ -463,7 +463,7 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 	})
 	t.Run("revision refusal returns head and excludes its patch", func(t *testing.T) {
 		root, id, store, original := batchProofRefusalBed(t)
-		err := executeBatchProof(root, id, "owner", "full", proofrun.LoadSample{}, time.Unix(10, 0), batchProofDependencies{
+		err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), batchProofDependencies{
 			rearm: func(string, string) error { return nil }, plan: plan("required"), launch: func(batchProofLaunch) (proofrun.TestResult, error) {
 				return proofrun.TestResult{}, &batchProofAdmissionRefusal{kind: "revision", reason: "GOAL_REVISION_MOVED"}
 			},
@@ -485,7 +485,7 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 			}
 			return proofrun.TestResult{AttemptID: "survivor", Delivery: proofrun.DeliveryJudgment{Sufficient: true}}, nil
 		}}
-		if err := executeBatchProof(root, id, "owner", "full", proofrun.LoadSample{}, time.Unix(10, 0), deps); err != nil {
+		if err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), deps); err != nil {
 			t.Fatal(err)
 		}
 		withdrawn, err := store.Load(id)
@@ -494,7 +494,7 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 			t.Fatalf("withdrawn=%+v launches=%+v err=%v", withdrawn, launches, err)
 		}
 		deps.seal = reseal(store, map[string]batch.Claim{"goal-a": withdrawn.Units[0].Claim})
-		if err := executeBatchProof(root, id, "owner", "full", proofrun.LoadSample{}, time.Unix(11, 0), deps); err != nil {
+		if err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(11, 0), deps); err != nil {
 			t.Fatal(err)
 		}
 		if len(launches) != 2 || launches[1].GoalID != "goal-a" || launches[1].Tree != withdrawn.TipTree || launches[1].Tree == original.TipTree {
@@ -1067,4 +1067,58 @@ func mustOutput(t *testing.T, command *exec.Cmd) []byte {
 		t.Fatal(err)
 	}
 	return output
+}
+
+type restartProber map[int64]identity.Liveness
+
+func (prober restartProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	return identity.Exact{Pid: pid, StartedAt: time.Unix(pid, 0)}, prober[pid], nil
+}
+
+// TestBatchOwnerProbesAPlannedProofFromTheProofStore: after a restart the
+// head goal's live launcher is live; the batch's result for the planned tree
+// from an attempt started after the plan is terminal; anything else is dead.
+func TestBatchOwnerProbesAPlannedProofFromTheProofStore(t *testing.T) {
+	t.Parallel()
+	root, planned := t.TempDir(), time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", State: batch.UnitJoined}, {GoalID: "goal-b", State: batch.UnitJoined}},
+		Proof: &batch.Proof{Status: "planned", Tree: "tip"}, History: []batch.HistoryEntry{{At: planned.Format(time.RFC3339Nano), Verb: "prove", Detail: "planned"}}}
+	write := func(path string, value any) {
+		data, err := json.Marshal(value)
+		if err != nil || os.MkdirAll(filepath.Dir(path), 0o755) != nil || os.WriteFile(path, data, 0o644) != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	var attempts []proofrun.Attempt
+	attempt := func(id string, pid int64, started time.Time, terminal bool) {
+		value := proofrun.Attempt{AttemptID: id, GoalID: "goal-b", StartedAt: started.Format(time.RFC3339Nano), Launcher: proofrun.ProcessIdentity{Pid: pid, PidStartedAt: pid}}
+		if terminal {
+			value.Terminal = &proofrun.AttemptTerminal{Result: "passed", At: started.Format(time.RFC3339Nano)}
+		}
+		attempts = append(attempts, value)
+	}
+	probe := func(prober restartProber) batch.RunProbe {
+		got, err := probeBatchProofRun(root, "batch-1", record, prober, func(string) ([]proofrun.Attempt, error) { return attempts, nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	attempt("running", 41, planned.Add(time.Second), false)
+	if got := probe(restartProber{41: identity.Alive}); got.State != batch.RunLive {
+		t.Fatalf("live launcher probed %+v", got)
+	}
+	if got := probe(restartProber{41: identity.Dead}); got.State != batch.RunDead {
+		t.Fatalf("dead launcher without a result probed %+v", got)
+	}
+	attempt("before-plan", 42, planned.Add(-time.Second), true)
+	write(filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", "batch-1.json"), proofrun.TestResult{AttemptID: "before-plan", CandidateTree: "tip"})
+	if got := probe(restartProber{41: identity.Dead}); got.State != batch.RunDead {
+		t.Fatalf("a result from before the plan probed %+v", got)
+	}
+	attempt("finished", 43, planned.Add(2*time.Second), true)
+	write(filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", "batch-1.json"), proofrun.TestResult{AttemptID: "finished", CandidateTree: "tip"})
+	if got := probe(restartProber{41: identity.Dead}); got.State != batch.RunTerminal || got.Result.AttemptID != "finished" {
+		t.Fatalf("terminal attempt with its result probed %+v", got)
+	}
 }

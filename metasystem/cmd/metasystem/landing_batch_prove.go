@@ -21,6 +21,7 @@ import (
 
 type batchProofLaunch struct {
 	Root, BatchID, GoalID, Tree, CandidateTip, ResultPath string
+	Token                                                 string // the plan this run's completion binds to
 	FreshEpisode, FreshExpiresAt                          string
 	Mode                                                  testpolicy.Mode
 	Groups                                                []string
@@ -67,7 +68,7 @@ func proofPlanCovers(plan testpolicy.Plan, union []string) bool {
 	return true
 }
 
-func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSample, at time.Time, dependencies batchProofDependencies) error {
+func executeBatchProof(root, id, actor, window, token string, sample proofrun.LoadSample, at time.Time, dependencies batchProofDependencies) error {
 	controlRoot := batch.ModuleRoot(root)
 	store := batch.NewStore(root, nil)
 	record, err := store.Load(id)
@@ -183,13 +184,13 @@ func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSampl
 		}
 		return errors.New(reason)
 	}
-	admitted, err := batch.RequireProofPlan(store, id, actor, window, sample, plan, at)
+	admitted, err := batch.RequireProofPlan(store, id, actor, window, token, sample, plan, at)
 	if err != nil {
 		return err
 	}
 	resultPath := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", id+".json")
 	sealed := admitted.Seal[head.GoalID]
-	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: head.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath,
+	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: head.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath, Token: token,
 		Mode: plan.ExecutedMode, Groups: slices.Clone(plan.SelectedGroups), GoalRevision: sealed.Revision, AccountingRevision: sealed.AccountingRevision}
 	if dependencies.freshDecision != nil {
 		joined := make([]batch.Unit, 0, len(admitted.Units))
@@ -227,10 +228,10 @@ func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSampl
 			return batch.ReassembleSurvivorsWithReturns(store, id, actor, at,
 				[]batch.ReturnDecision{{GoalID: head.GoalID, Outcome: batch.UnitEjected, Reason: refused.Error()}})
 		default:
-			return batch.RefuseProofAdmission(store, id, actor, "admission-refused", refused.Error(), at)
+			return batch.RefuseProofAdmission(store, id, actor, token, "admission-refused", refused.Error(), at)
 		}
 	}
-	if finishErr := batch.FinishProof(store, id, actor, result, launchErr, at); finishErr != nil {
+	if finishErr := batch.FinishProof(store, id, actor, token, result, launchErr, at); finishErr != nil {
 		return finishErr
 	}
 	return launchErr

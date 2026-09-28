@@ -16,6 +16,7 @@ import (
 // tip proof. Planned is written before the charged runner can start.
 type Proof struct {
 	Status          string              `json:"status"`
+	Token           string              `json:"token,omitempty"`
 	Tree            string              `json:"tree"`
 	Window          string              `json:"window"`
 	RequiredMode    testpolicy.Mode     `json:"requiredMode"`
@@ -38,8 +39,12 @@ type Proof struct {
 }
 
 // RequireProofPlan closes membership and proves that the selected tip plan
-// covers every group accumulated from member plans.
-func RequireProofPlan(store Store, id, actor, window string, sample proofrun.LoadSample, plan testpolicy.Plan, at time.Time) (Record, error) {
+// covers every group accumulated from member plans. The owner's minted token
+// binds the plan: only a completion carrying it may finish or refuse it.
+func RequireProofPlan(store Store, id, actor, window, token string, sample proofrun.LoadSample, plan testpolicy.Plan, at time.Time) (Record, error) {
+	if token == "" {
+		return Record{}, fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s proof plan has no token", id)
+	}
 	record, err := store.Load(id)
 	if err != nil {
 		return Record{}, err
@@ -64,7 +69,7 @@ func RequireProofPlan(store Store, id, actor, window string, sample proofrun.Loa
 		if current.Landing != nil {
 			candidateTip = current.Landing.candidateTip()
 		}
-		current.Proof = &Proof{Status: "planned", Tree: current.TipTree, CandidateTip: candidateTip, Window: window, RequiredMode: plan.RequiredMode,
+		current.Proof = &Proof{Status: "planned", Token: token, Tree: current.TipTree, CandidateTip: candidateTip, Window: window, RequiredMode: plan.RequiredMode,
 			ExecutedMode: plan.ExecutedMode, SelectedGroups: selected, Sample: sample, Launchers: sample.OverlappingHost}
 		current.Transition(StateProving, at, "prove", actor, "planned")
 		return nil
@@ -90,8 +95,11 @@ func RecordUnionRefusal(store Store, id, actor, reason string, at time.Time) err
 
 // RefuseProofAdmission records a pre-run refusal without scheduling red
 // diagnosis. Retryable capacity refusals return to the sealed admission edge.
-func RefuseProofAdmission(store Store, id, actor, status, reason string, at time.Time) error {
+func RefuseProofAdmission(store Store, id, actor, token, status, reason string, at time.Time) error {
 	return store.Update(id, func(record *Record) error {
+		if err := staleCompletion(*record, token); err != nil {
+			return err
+		}
 		if record.State != StateProving || record.Proof == nil || record.Proof.Status != "planned" {
 			return fmt.Errorf("BATCH_PROOF_NOT_ADMITTED: batch %s has no planned proof", id)
 		}
@@ -103,8 +111,11 @@ func RefuseProofAdmission(store Store, id, actor, status, reason string, at time
 
 // FinishProof attaches the exact execution and reuse evidence to the planned
 // attempt. A failed launch remains durable and is not silently retried.
-func FinishProof(store Store, id, actor string, result proofrun.TestResult, launchErr error, at time.Time) error {
+func FinishProof(store Store, id, actor, token string, result proofrun.TestResult, launchErr error, at time.Time) error {
 	return store.Update(id, func(record *Record) error {
+		if err := staleCompletion(*record, token); err != nil {
+			return err
+		}
 		if record.State != StateProving || record.Proof == nil || record.Proof.Status != "planned" {
 			return fmt.Errorf("BATCH_PROOF_NOT_ADMITTED: batch %s has no planned proof", id)
 		}
@@ -164,6 +175,15 @@ func FinishProof(store Store, id, actor string, result proofrun.TestResult, laun
 		}
 		return nil
 	})
+}
+
+// staleCompletion refuses a completion whose plan was cleared or replaced,
+// as a reopen or a survivor reassembly does, while its run was in flight.
+func staleCompletion(record Record, token string) error {
+	if record.Proof == nil || record.Proof.Token != token {
+		return fmt.Errorf("BATCH_PROOF_STALE_COMPLETION: batch %s proof plan %q is not the one this completion ran", record.BatchID, token)
+	}
+	return nil
 }
 
 // WithdrawBudgetMember returns the authority member when P2 cannot preserve

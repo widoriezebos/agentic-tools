@@ -113,7 +113,8 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 				},
 				DescendsFrom: func(string, string) (bool, error) { return false, nil }, Sample: func() proofrun.LoadSample { return proofrun.LoadSample{} },
 				Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{} },
-				Launch:    func(string, proofrun.LoadSample, string) error { return nil },
+				Launch:    func(batch.Dispatch) error { return nil },
+				ProbeRun:  func(string, batch.Record) (batch.RunProbe, error) { return batch.RunProbe{}, nil },
 				After:     func(time.Duration) <-chan time.Time { return make(chan time.Time) },
 				Report:    func(string, error) {}, Glob: func(string) ([]string, error) {
 					calls++

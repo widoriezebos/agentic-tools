@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -559,7 +560,8 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 			}
 			return cap
 		},
-		Launch: func(id string, sample proofrun.LoadSample, window string) error {
+		Launch: func(request batch.Dispatch) error {
+			id := request.ID
 			record, err := store.Load(id)
 			if err != nil {
 				return err
@@ -570,8 +572,11 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 			case batch.StateLanding:
 				return executeBatchLanding(settings.Root, id, landingOwnerLineage, now())
 			default:
-				return executeBatchProof(settings.Root, id, landingOwnerLineage, window, sample, now(), productionBatchProofDependencies)
+				return executeBatchProof(settings.Root, id, landingOwnerLineage, request.Window, request.Token, request.Sample, now(), productionBatchProofDependencies)
 			}
+		},
+		ProbeRun: func(id string, record batch.Record) (batch.RunProbe, error) {
+			return probeBatchProofRun(controlRoot, id, record, identity.KernelProber{}, proofrun.ReadAttempts)
 		},
 		After:      time.After,
 		HelmActive: func(root string) bool { return helm.Active(root).Active },
@@ -580,6 +585,44 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 			fmt.Fprintln(os.Stderr, string(line))
 		},
 	})
+}
+
+// probeBatchProofRun reads a planned proof's launcher from the proof store
+// after an owner restart: a non-terminal attempt of the head goal with a live
+// launcher is live; the batch's result file for the planned tree, written by
+// a terminal attempt that started after the plan, is terminal; else dead.
+func probeBatchProofRun(controlRoot, id string, record batch.Record, prober identity.Prober, readAttempts func(string) ([]proofrun.Attempt, error)) (batch.RunProbe, error) {
+	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
+	if len(joined) == 0 || record.Proof == nil {
+		return batch.RunProbe{State: batch.RunDead, Detail: "no joined head goal"}, nil
+	}
+	head := joined[len(joined)-1].GoalID
+	attempts, err := readAttempts(controlRoot)
+	if err != nil {
+		return batch.RunProbe{}, err
+	}
+	planned := ""
+	for _, entry := range record.History {
+		if entry.Verb == "prove" && entry.Detail == "planned" {
+			planned = entry.At
+		}
+	}
+	plannedAt, _ := time.Parse(time.RFC3339Nano, planned)
+	for _, attempt := range attempts {
+		if attempt.GoalID == head && attempt.Terminal == nil && identity.AliveRef(prober, attempt.Launcher.Ref()) == identity.Alive {
+			return batch.RunProbe{State: batch.RunLive}, nil
+		}
+	}
+	var result proofrun.TestResult
+	if readStrictJSON(filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", id+".json"), &result) == nil && result.CandidateTree == record.Proof.Tree {
+		for _, attempt := range attempts {
+			started, parseErr := time.Parse(time.RFC3339Nano, attempt.StartedAt)
+			if attempt.AttemptID == result.AttemptID && attempt.Terminal != nil && parseErr == nil && !started.Before(plannedAt) {
+				return batch.RunProbe{State: batch.RunTerminal, Result: result}, nil
+			}
+		}
+	}
+	return batch.RunProbe{State: batch.RunDead, Detail: "no live launcher for goal " + head}, nil
 }
 
 func batchOwnerSignals() (<-chan struct{}, <-chan struct{}, func()) {
@@ -681,6 +724,11 @@ func loopBatchOwnerWithCadence(owner *batch.Owner, held batchOwnerLease, root st
 				<-timer.C
 			}
 		case <-timer.C:
+		case done := <-owner.Completions():
+			owner.Complete(done)
+			if !timer.Stop() {
+				<-timer.C
+			}
 		case <-stop:
 			if !timer.Stop() {
 				<-timer.C

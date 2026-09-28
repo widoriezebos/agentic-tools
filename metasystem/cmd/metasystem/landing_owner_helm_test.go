@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -40,6 +41,7 @@ type ownerHelmBed struct {
 	prober                                   *ownerHelmProber
 	owner                                    *batch.Owner
 	launched                                 []string
+	launchMu                                 sync.Mutex
 	resumes, cadences                        int
 	out                                      bytes.Buffer
 	now                                      time.Time
@@ -88,10 +90,13 @@ func newOwnerHelmBed(t *testing.T) *ownerHelmBed {
 		DescendsFrom: func(string, string) (bool, error) { return true, nil },
 		Sample:       func() proofrun.LoadSample { return proofrun.LoadSample{OverlapKnown: true} },
 		Admission:    func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{Max: 8} },
-		Launch: func(id string, _ proofrun.LoadSample, _ string) error {
-			bed.launched = append(bed.launched, id)
+		Launch: func(request batch.Dispatch) error {
+			bed.launchMu.Lock()
+			defer bed.launchMu.Unlock()
+			bed.launched = append(bed.launched, request.ID)
 			return nil
-		}, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {},
+		}, ProbeRun: func(string, batch.Record) (batch.RunProbe, error) { return batch.RunProbe{State: batch.RunLive}, nil },
+		After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {},
 		HelmActive: func(root string) bool { return helm.Active(root).Active }})
 	if err != nil {
 		t.Fatal(err)
@@ -192,6 +197,9 @@ func TestLandingSeatHelmWithdrawsEveryRegistration(t *testing.T) {
 		bed.prober.dead[4242] = true
 		bed.prober.mu.Unlock()
 		bed.pass()
+		bed.owner.Complete(<-bed.owner.Completions())
+		bed.owner.Complete(<-bed.owner.Completions())
+		slices.Sort(bed.launched)
 		if strings.Join(bed.launched, ",") != ownerHelmA+","+ownerHelmC {
 			t.Fatalf("launched=%v, want A then C once the lock is free", bed.launched)
 		}

@@ -84,11 +84,11 @@ func newOwnerBed(t *testing.T, record Record, now time.Time) *ownerBed {
 			sample := bed.samples[0]
 			bed.samples = bed.samples[1:]
 			return sample
-		}, Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{Max: 8} }, Launch: func(id string, sample proofrun.LoadSample, window string) error {
+		}, Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{Max: 8} }, Launch: func(request Dispatch) error {
 			bed.launches++
-			bed.launched, bed.window = sample, window
+			bed.launched, bed.window = request.Sample, request.Window
 			return nil
-		}, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {}})
+		}, ProbeRun: func(string, Record) (RunProbe, error) { return RunProbe{State: RunLive}, nil }, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {}})
 	must(t, err)
 	return bed
 }
@@ -221,17 +221,19 @@ func TestBatchOwnerRetriesGreenTipClearAfterLandingFinishes(t *testing.T) {
 	ledger := &clearingLedger{open: []OpenEntry{{ID: "entry", Group: "fast", LastBaseCommit: "old-commit"}}, openErrors: []error{os.ErrPermission, nil}}
 	bed.store = bed.store.WithLedgerOwner(ledger)
 	bed.owner.store = bed.store
-	bed.owner.launch = func(string, proofrun.LoadSample, string) error {
+	bed.owner.launch = func(Dispatch) error {
 		bed.launches++
 		return bed.store.Update(testBatchID, func(record *Record) error { record.State = StateLanded; return nil })
 	}
 	var reports []error
 	bed.owner.report = func(_ string, errorValue error) { reports = append(reports, errorValue) }
 	must(t, bed.owner.Tick(testBatchID))
+	bed.owner.settle()
 	if record := load(t, bed.store); record.State != StateLanded || len(ledger.cleared) != 0 || len(reports) != 1 {
 		t.Fatalf("first pass record=%+v clears=%+v reports=%v", record, ledger.cleared, reports)
 	}
 	bed.owner.Resume()
+	bed.owner.settle()
 	final := load(t, bed.store)
 	_, complete := greenTipClearStatus(final)
 	if len(ledger.cleared) != 1 || ledger.cleared[0].green.AttemptID != "tip-green" || !complete || bed.launches != 1 {
@@ -254,6 +256,7 @@ func TestBatchOwnerResumesLandingAfterTrunkRedClearError(t *testing.T) {
 		reported = err
 	}
 	must(t, bed.owner.Tick(testBatchID))
+	bed.owner.settle()
 	if bed.launches != 1 || reported == nil || !strings.Contains(reported.Error(), os.ErrPermission.Error()) {
 		t.Fatalf("launches=%d reported=%v", bed.launches, reported)
 	}
@@ -278,11 +281,12 @@ func TestBatchOwnerHoldsLandingOnRegisteredTrunkRedButNotStatusAlone(t *testing.
 			ledger := &clearingLedger{open: slices.Clone(test.open)}
 			bed.store = bed.store.WithLedgerOwner(ledger)
 			bed.owner.store = bed.store
-			bed.owner.launch = func(string, proofrun.LoadSample, string) error {
+			bed.owner.launch = func(Dispatch) error {
 				bed.launches++
 				return bed.store.Update(testBatchID, func(record *Record) error { record.State = StateLanded; return nil })
 			}
 			must(t, bed.owner.Tick(testBatchID))
+			bed.owner.settle()
 			got := load(t, bed.store)
 			if got.State != test.state || bed.launches != test.launches {
 				t.Fatalf("record=%+v launches=%d", got, bed.launches)
@@ -305,6 +309,7 @@ func TestBatchOwnerLaunchesAtMaximumWait(t *testing.T) {
 	bed.now = joined.Add(time.Minute)
 	bed.samples = []proofrun.LoadSample{{OverlapKnown: true}, {OverlapKnown: true, OverlappingLocal: 2}}
 	must(t, bed.owner.Tick(testBatchID))
+	bed.owner.settle()
 	witness(t, bed.launches == 1 && bed.window == "expired" && bed.launched.OverlappingLocal == 2, "deadline launch=%d/%s sample=%+v", bed.launches, bed.window, bed.launched)
 }
 
@@ -446,11 +451,12 @@ func TestOnlyTrunkRedHoldsALanding(t *testing.T) {
 			ledger := &clearingLedger{open: slices.Clone(test.open)}
 			bed.store = bed.store.WithLedgerOwner(ledger)
 			bed.owner.store = bed.store
-			bed.owner.launch = func(string, proofrun.LoadSample, string) error {
+			bed.owner.launch = func(Dispatch) error {
 				bed.launches++
 				return bed.store.Update(testBatchID, func(record *Record) error { record.State = StateLanded; return nil })
 			}
 			must(t, bed.owner.Tick(testBatchID))
+			bed.owner.settle()
 			got := load(t, bed.store)
 			if got.State != test.state || len(ledger.cleared) != 0 {
 				t.Fatalf("state=%s launches=%d cleared=%+v, want %s and no flake closed by a green tip", got.State, bed.launches, ledger.cleared, test.state)

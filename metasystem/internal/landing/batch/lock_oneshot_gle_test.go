@@ -82,6 +82,7 @@ func TestBatchLocksAreIndependent(t *testing.T) {
 		t.Fatalf("batch A lock = %v, %v; want acquired", polled, err)
 	}
 	must(t, bed.owner.Tick(other))
+	bed.owner.settle()
 	if bed.launches != 1 {
 		t.Fatalf("batch B launched %d times while A held its own lock, want once", bed.launches)
 	}
