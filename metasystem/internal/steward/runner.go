@@ -24,6 +24,7 @@ import (
 
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -131,7 +132,7 @@ func runnerContext(repoRoot, lineage string) *seat.RunnerContext {
 // reported and the next tick tries again.
 func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig) error {
 	return runLoopWithDependencies(repoRoot, census, revive, interval, cfg, runnerLoopDependencies{
-		Tick: RunTick, DeliverPending: DeliverPending,
+		Tick: RunTick, DeliverPending: DeliverPending, Resumable: ResumableIntent, Channel: channelphase.Run,
 		Now: runnerNow, Sleep: runnerSleep, AfterRecordPublished: runnerAfterRecordPublished,
 	})
 }
@@ -139,6 +140,8 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 type runnerLoopDependencies struct {
 	Tick                 func(string, TickConfig, WorkerCensus) (TickResult, error)
 	DeliverPending       func(string) (int, error)
+	Resumable            func(string) (string, bool, error)
+	Channel              func(context.Context, string) (int, error)
 	Now                  func() time.Time
 	Sleep                func(time.Duration)
 	AfterRecordPublished func()
@@ -146,6 +149,12 @@ type runnerLoopDependencies struct {
 
 func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig, deps runnerLoopDependencies) error {
 	top := canonicalPath(repoRoot)
+	if deps.Resumable == nil {
+		deps.Resumable = ResumableIntent
+	}
+	if deps.Channel == nil {
+		deps.Channel = channelphase.Run
+	}
 	fence, err := readOpenFence(top, "the steward runner")
 	if err != nil {
 		return err
@@ -210,13 +219,23 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
 		}
+		// The helm is resolved here, after the tick returned and before any
+		// post-tick act, whatever the tick's outcome: a take that lands during
+		// the tick holds this pass, and the tick's decision stays on disk for
+		// the first tick after return (HM-7, HM-13).
+		if helm.Active(top).Active {
+			if stopped := runnerWait(top, interval, deps); stopped {
+				return nil
+			}
+			continue
+		}
 		resume := err == nil && result.Decision.Action == ActRevive
 		if !resume {
 			// A prepared intent whose launch never happened holds the
 			// active-continuation guard and would otherwise never complete.
 			// Resume it so CompleteRevival can re-arbitrate and either launch
 			// or cancel on the current world.
-			if _, ok, resumeErr := ResumableIntent(top); resumeErr == nil && ok {
+			if _, ok, resumeErr := deps.Resumable(top); resumeErr == nil && ok {
 				resume = true
 			}
 		}
@@ -242,18 +261,27 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			fmt.Fprintf(os.Stderr, "notifications pending: %v\n", deliverErr)
 		}
 		channelContext, cancelChannel := context.WithTimeout(context.Background(), 15*time.Second)
-		if undelivered, channelErr := channelphase.Run(channelContext, top); channelErr != nil {
+		if undelivered, channelErr := deps.Channel(channelContext, top); channelErr != nil {
 			fmt.Fprintf(os.Stderr, "channel pending: %d undelivered: %v\n", undelivered, channelErr)
 		}
 		cancelChannel()
-		deadline := deps.Now().Add(interval)
-		for deps.Now().Before(deadline) {
-			if _, err := os.Stat(runnerStopPath(top)); err == nil {
-				return nil
-			}
-			deps.Sleep(200 * time.Millisecond)
+		if stopped := runnerWait(top, interval, deps); stopped {
+			return nil
 		}
 	}
+}
+
+// runnerWait sleeps one interval in 200 ms steps, watching the stop marker;
+// it reports whether the marker appeared.
+func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies) bool {
+	deadline := deps.Now().Add(interval)
+	for deps.Now().Before(deadline) {
+		if _, err := os.Stat(runnerStopPath(top)); err == nil {
+			return true
+		}
+		deps.Sleep(200 * time.Millisecond)
+	}
+	return false
 }
 
 // Arm makes the repository guarded: mint the identity record for the

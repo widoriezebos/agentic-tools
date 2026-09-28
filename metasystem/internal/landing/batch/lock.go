@@ -33,14 +33,22 @@ const lockAcquired, lockQueued lockPoll = 0, 1
 
 type proofLock struct {
 	lockDir, queueDir, purpose, entry string
+	key                               string // the batch id: each batch has its own queue registration
+	refused                           error
 	pid                               int64
 	now                               func() time.Time
 	prober                            identity.Prober
 	held                              bool
 }
 
-func newProofLock(store Store, lockDir, queueDir, purpose string, pid int64, now func() time.Time) *proofLock {
-	return &proofLock{lockDir: cmp.Or(lockDir, defaultTestRunLock), queueDir: cmp.Or(queueDir, defaultTestRunQueue), purpose: purpose, pid: pid, now: now, prober: store.seams.prober}
+// newProofLock builds the lock for one key, the batch id. The key names the
+// queue registration, so it may hold no "-": the last "-" segment is the pid.
+func newProofLock(store Store, lockDir, queueDir, key string, pid int64, now func() time.Time) *proofLock {
+	lock := &proofLock{lockDir: cmp.Or(lockDir, defaultTestRunLock), queueDir: cmp.Or(queueDir, defaultTestRunQueue), purpose: "batch:" + key, key: key, pid: pid, now: now, prober: store.seams.prober}
+	if key == "" || strings.Contains(key, "-") {
+		lock.refused = fmt.Errorf("proof lock key %q must be non-empty and hold no \"-\"", key)
+	}
+	return lock
 }
 func (lock *proofLock) pidDead(pid int64) bool {
 	_, state, _ := lock.prober.Probe(pid)
@@ -79,12 +87,15 @@ func (lock *proofLock) cleanStale(now time.Time) (bool, error) {
 	return removed, nil
 }
 func (lock *proofLock) poll() (lockPoll, error) {
+	if lock.refused != nil {
+		return lockQueued, lock.refused
+	}
 	now := lock.now().UTC()
 	if lock.entry == "" {
 		if err := os.MkdirAll(lock.queueDir, 0o755); err != nil {
 			return lockQueued, err
 		}
-		lock.entry = filepath.Join(lock.queueDir, fmt.Sprintf("%d-%s-%d", now.Unix(), batchOwnerSeat, lock.pid))
+		lock.entry = filepath.Join(lock.queueDir, fmt.Sprintf("%d-%s-%s-%d", now.Unix(), batchOwnerSeat, lock.key, lock.pid))
 		line := fmt.Sprintf("%s %d %s %s\n", batchOwnerSeat, lock.pid, now.Format(time.RFC3339), lock.purpose)
 		if err := os.WriteFile(lock.entry, []byte(line), 0o644); err != nil {
 			lock.entry = ""

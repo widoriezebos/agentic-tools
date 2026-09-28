@@ -103,6 +103,11 @@
   },
   "exempt": [
     {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/helm",
+      "test": "TestActiveIgnoresGitSteering",
+      "reason": "sets GIT_DIR and GIT_COMMON_DIR in the process environment to prove the resolver ignores them"
+    },
+    {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
       "test": "TestReserveCensusReadsOnlyItsOwnAdmissionNamespace",
       "reason": "changes the process-wide host admission directory seam"

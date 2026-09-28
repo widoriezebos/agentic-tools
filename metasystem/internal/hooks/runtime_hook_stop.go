@@ -1,6 +1,8 @@
 package hooks
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -8,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 )
 
 // lifecycle is one receipt, Stop worker or SessionEnd invocation: the
@@ -76,6 +80,9 @@ func runLifecycle(inv Invocation, ops Ops) int {
 	if inv.Event == "stop" && inv.env(stopDeadlineParentEnv) != strconv.Itoa(inv.Ppid) {
 		return runStopDeadlineParent(inv, ops, l.harnessRoot)
 	}
+	if l.helmAnswers() {
+		return 0
+	}
 	l.stopStarted = inv.Now().Unix()
 	if started := inv.env(stopDeadlineStartedEnv); digits.MatchString(started) {
 		if parsed, err := strconv.ParseInt(started, 10, 64); err == nil {
@@ -95,6 +102,35 @@ func runLifecycle(inv Invocation, ops Ops) int {
 		l.end()
 	}
 	return 0
+}
+
+// helmAnswers answers a lifecycle event first while the seat is at the helm:
+// before prepare, delegate custody, the engine, the registry or the state
+// root. Stop prints a valid allow form; end and receipt only record their
+// yield. Nothing is armed, checked or decided.
+func (l *lifecycle) helmAnswers() bool {
+	state := helm.Active(l.harnessRoot)
+	if !state.Active {
+		return false
+	}
+	gate := map[string]string{"stop": "turn-verdict", "end": "session-end", "receipt": "receipt"}[l.inv.Event]
+	helm.RecordYield(l.harnessRoot, helm.Yield{At: l.inv.Now(), Boundary: l.inv.Event + "-hook", Gate: gate, Would: "not evaluated", PID: l.inv.Ppid})
+	if l.inv.Event != "stop" {
+		_ = writeLine(l.inv.Stderr, helmNotice(state))
+		return true
+	}
+	form, _ := json.Marshal(map[string]string{"systemMessage": helmNotice(state) + " Stop allowed."})
+	_ = writeLine(l.inv.Stdout, string(form))
+	return true
+}
+
+// helmNotice is the one-line reminder every hook gives under the helm.
+func helmNotice(state helm.State) string {
+	who := fmt.Sprintf("%s since %s (%s)", state.By, state.Since.Local().Format("15:04 MST"), state.Reason)
+	if state.Malformed != "" {
+		who = "the signature is unreadable, so the helm is taken; metasystem helm return ends it"
+	}
+	return "helm: HUMAN AT THE HELM: " + who + ". MetaSystem decides nothing on this seat; follow the person's direction."
 }
 
 // prepare resolves the installation, session, runtime identity and holder

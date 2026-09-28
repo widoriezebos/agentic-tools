@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 )
 
 // SessionStart owns its outcome before it asks the filesystem, Git or an
@@ -69,9 +72,9 @@ var StartOutcomeNotices = map[string]startNotice{
 }
 
 // StartIntentionalOutcomes are the validated non-notice SessionStart
-// outcomes: two skips and four published responses.
+// outcomes: two skips and five published responses (the helm notice among them).
 var StartIntentionalOutcomes = []string{
-	"authenticated-delegate", "foreign-runtime", "context-ready", "screen-context-ready", "notices-ready", "healthy-no-context",
+	"authenticated-delegate", "foreign-runtime", "context-ready", "screen-context-ready", "notices-ready", "healthy-no-context", "helm",
 }
 
 // StartEngineMissingNotice is the SessionStart notice the plumbing stub
@@ -97,6 +100,8 @@ type startRun struct {
 	signal    atomic.Int32
 	finishing bool
 	published bool
+	// helmResponse is the one-line notice a seat at the helm publishes.
+	helmResponse string
 
 	armingStarted        bool
 	armingRearmed        bool
@@ -325,6 +330,11 @@ func (s *startRun) finish(family, key string) {
 				s.emergency()
 			}
 			response = built
+		case "helm":
+			if s.helmResponse == "" {
+				s.emergency()
+			}
+			response = s.helmResponse
 		default:
 			s.emergency()
 		}
@@ -421,6 +431,23 @@ func (s *startRun) main() {
 		s.finish("notice", "invocation-invalid")
 	}
 
+	scriptDir, ok := physicalDirectory(scriptParent(inv.Script))
+	if !ok {
+		s.finish("notice", "installation-directory")
+	}
+	s.harnessRoot, ok = physicalDirectory(scriptDir + "/../..")
+	if !ok {
+		s.finish("notice", "installation-directory")
+	}
+	// Under the helm the start answers before custody, the engine or the
+	// backlog: it arms nothing and composes no context.
+	if state := helm.Active(s.harnessRoot); state.Active {
+		helm.RecordYield(s.harnessRoot, helm.Yield{At: inv.Now(), Boundary: "start-hook", Gate: "session-start", Would: "not evaluated", PID: inv.Ppid})
+		form, _ := json.Marshal(map[string]string{"systemMessage": helmNotice(state) + " Nothing was armed and no role context was loaded."})
+		s.helmResponse = string(form)
+		s.finish("intentional", "helm")
+	}
+
 	stateHint := inv.env("METASYSTEM_HOOK_DELEGATE_STATE_ROOT")
 	installationHint := inv.env("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT")
 	jobHint := inv.env("METASYSTEM_HOOK_DELEGATE_JOB")
@@ -432,15 +459,6 @@ func (s *startRun) main() {
 			s.finish("intentional", "authenticated-delegate")
 		}
 		s.finish("notice", "custody-unreadable")
-	}
-
-	scriptDir, ok := physicalDirectory(scriptParent(inv.Script))
-	if !ok {
-		s.finish("notice", "installation-directory")
-	}
-	s.harnessRoot, ok = physicalDirectory(scriptDir + "/../..")
-	if !ok {
-		s.finish("notice", "installation-directory")
 	}
 	s.checkpoint()
 	s.world, ok = worldInstallation(ops, s.harnessRoot)
