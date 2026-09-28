@@ -96,7 +96,7 @@ harness_fixture_go_test() { # module directory, go test arguments...
     || { echo "fixture Go test: METASYSTEM_TEST_WORKERS must be a positive integer" >&2; return 2; }
   (
     cd "$module_dir"
-    GOMAXPROCS=$workers go test -p="$workers" -parallel="$workers" "$@"
+    GOMAXPROCS=$workers go test -trimpath -p="$workers" -parallel="$workers" "$@"
   )
 }
 

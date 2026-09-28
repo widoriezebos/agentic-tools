@@ -2423,7 +2423,7 @@ intent_design_real_owner_journeys() {
   (cd "$root" && METASYSTEM_INTENT_DESIGN_BED="$agent_repo" METASYSTEM_INTENT_DESIGN_BED_ENV="$bed_env" \
     METASYSTEM_INTENT_DESIGN_BED_LINEAGE="$lineage" METASYSTEM_INTENT_DESIGN_BED_SUPERVISION="${agent_supervision_repo:-}" \
     METASYSTEM_INTENT_DESIGN_BED_FOLLOW="$follow_message" \
-    go test -count=1 -v -run '^TestIntentDesign(Review|Author|Retry)RealOwnerJourney$' ./cmd/metasystem) >"$out" 2>&1 \
+    go test -trimpath -count=1 -v -run '^TestIntentDesign(Review|Author|Retry)RealOwnerJourney$' ./cmd/metasystem) >"$out" 2>&1 \
     && grep -Fq -- '--- PASS: TestIntentDesignReviewRealOwnerJourney' "$out" && grep -Fq -- '--- PASS: TestIntentDesignAuthorRealOwnerJourney' "$out" \
     && grep -Fq -- '--- PASS: TestIntentDesignRetryRealOwnerJourney' "$out" \
     || { echo "intent design real-owner journeys failed" >&2; cat "$out" >&2; exit 1; }

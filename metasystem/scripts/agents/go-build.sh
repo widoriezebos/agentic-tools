@@ -5,4 +5,4 @@
 # installation directory so a caller in any directory still builds this tree.
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
-exec go -C "$root" run ./cmd/devgate build "$@"
+exec go -C "$root" run -trimpath ./cmd/devgate build "$@"

@@ -2255,3 +2255,21 @@ func TestLandingReceiptLineRefusesCodeWithoutItsLineAndPassesWithIt(t *testing.T
 		t.Fatalf("raw Git transcript consumed %d of %d requests", consumed, len(expected))
 	}
 }
+
+// The validator owns GOFLAGS: whatever the caller carries, the canonical
+// environment holds exactly one GOFLAGS, the value cmd/devgate's frozen-tree
+// check accepts (ownedGoFlags), beside the frozen-toolchain marker.
+func TestCanonicalValidatorEnvironmentOwnsTheGateGoFlags(t *testing.T) {
+	t.Setenv("GOFLAGS", "-mod=mod -tags=ambient")
+	t.Setenv("METASYSTEM_GATE_FROZEN_TOOLCHAIN", "0")
+	var owned []string
+	for _, entry := range canonicalValidatorEnvironment() {
+		if strings.HasPrefix(entry, "GOFLAGS=") || strings.HasPrefix(entry, "METASYSTEM_GATE_FROZEN_TOOLCHAIN=") {
+			owned = append(owned, entry)
+		}
+	}
+	want := []string{"GOFLAGS=-mod=readonly -trimpath", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1"}
+	if strings.Join(owned, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("validator owned environment = %q, want %q", owned, want)
+	}
+}

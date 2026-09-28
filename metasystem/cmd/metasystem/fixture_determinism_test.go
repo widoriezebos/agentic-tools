@@ -639,7 +639,7 @@ func TestFixtureGoConsumersUseSharedWorkerBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		`GOMAXPROCS=$workers go test -p="$workers" -parallel="$workers"`,
+		`GOMAXPROCS=$workers go test -trimpath -p="$workers" -parallel="$workers"`,
 		`METASYSTEM_TEST_WORKERS must be a positive integer`,
 	} {
 		if !strings.Contains(string(budgetData), required) {

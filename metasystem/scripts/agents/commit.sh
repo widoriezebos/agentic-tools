@@ -374,7 +374,7 @@ build_base_carry_judge() { # output path
   [[ -z "$prefix" ]] || build_root=$worktree/${prefix%/}
   (
     cd "$build_root" || exit $?
-    go build -o "$output" ./cmd/metasystem
+    go build -trimpath -o "$output" ./cmd/metasystem
   ) 1>&2
   build_rc=$?
   git -C "$toplevel" worktree remove --force "$worktree" 1>&2
@@ -452,7 +452,7 @@ fi
 proof_engine=$(mktemp "${TMPDIR:-/tmp}/metasystem-proof-engine.XXXXXX")
 trap 'rm -f -- "$proof_engine" "$token"' EXIT
 if (( static_reproof )) && grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root/go.mod"; then
-  go -C "$root" run ./cmd/devgate static --proof-out "$proof_engine" 1>&2 || {
+  go -C "$root" run -trimpath ./cmd/devgate static --proof-out "$proof_engine" 1>&2 || {
     echo "agent commit refused: the static re-proof failed (devgate static)" >&2
     exit 1
   }

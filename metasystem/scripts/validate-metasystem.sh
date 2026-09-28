@@ -153,7 +153,7 @@ static_placeholder_scan_section
 
 # Admission and the full Go coverage producer must identify the same module
 # resolution policy before either process captures the execution context.
-export GOFLAGS=-mod=readonly
+export GOFLAGS="-mod=readonly -trimpath"
 
 # The entry process launches the suite into a separate process group beside
 # its watchdog. A stopped suite therefore cannot stop its own custodian.
@@ -184,7 +184,7 @@ if (( ! suite_progress_worker )); then
   suite_progress_tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-validate.XXXXXX")
   suite_progress_log="$root/artifacts/agents/supervision/suite-logs/validate-$suite_progress_run.log"
   suite_progress_engine="$suite_progress_tmp/metasystem"
-  go build -o "$suite_progress_engine" ./cmd/metasystem
+  go build -trimpath -o "$suite_progress_engine" ./cmd/metasystem
   suite_banner=$("$suite_progress_engine" proof-run banner \
     --suite validate-metasystem --root "$root" \
     --progress "$suite_progress_path" --log "$suite_progress_log")
@@ -660,7 +660,7 @@ go_engine_gate_section() {
   # removal).
   local witness_arm_args=(--arm plain --controller-pid $$ --state-out "$stage_work/witness-arm.sh")
   (( ! delivery_contract )) || witness_arm_args+=(--delivery)
-  go run ./cmd/devgate gate "${witness_arm_args[@]}"
+  go run -trimpath ./cmd/devgate gate "${witness_arm_args[@]}"
   source "$stage_work/witness-arm.sh"
   if (( delivery_contract )); then
     # The delivery smoke (D33): the freshly stamped binary answers a
@@ -671,7 +671,7 @@ go_engine_gate_section() {
       || { echo "delivery contract: the rebuilt binary did not answer" >&2; exit 1; }
     if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]] \
       && METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=DELIVERY \
-        go run ./cmd/devgate gate --witness-check-only >/dev/null 2>&1; then
+        go run -trimpath ./cmd/devgate gate --witness-check-only >/dev/null 2>&1; then
       delivery_reuse=1
       delivery_stamp=$(bin/metasystem util engine-stamp --file bin/metasystem) || delivery_stamp=
       delivery_recorded=$(sed -n 's/.*"engineDigest":"\([a-f0-9]*\)".*/\1/p' "$METASYSTEM_GATE_WITNESS")
@@ -727,7 +727,7 @@ if (( run_gate_fence_fixture )); then
   fi
   gate_fence_err=$(mktemp)
   if env -u METASYSTEM_GATE_WITNESS -u METASYSTEM_GATE_WITNESS_WRITE \
-      go run ./cmd/devgate static 2>"$gate_fence_err"; then
+      go run -trimpath ./cmd/devgate static 2>"$gate_fence_err"; then
     echo "go-gate rebuilt over a foreign live gate run" >&2; exit 1
   fi
   grep -q "swap its binary mid-run" "$gate_fence_err" \
@@ -965,7 +965,7 @@ gate_fail_open_tripwire_section() {
   chmod +x "$gofmt_shim_dir/gofmt"
   if METASYSTEM_ALLOW_CONCURRENT_GATE=1 PATH="$gofmt_shim_dir:$PATH" \
       env -u METASYSTEM_GATE_WITNESS -u METASYSTEM_GATE_WITNESS_WRITE \
-      go run ./cmd/devgate static >"$gofmt_shim_dir/out" 2>&1; then
+      go run -trimpath ./cmd/devgate static >"$gofmt_shim_dir/out" 2>&1; then
     echo "go gate passed with a broken gofmt; the fail-open hole is back" >&2
     exit 1
   fi

@@ -18,7 +18,7 @@ checkout_execution_guard_prepare_engine() {
       && grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root/go.mod" \
       && command -v go >/dev/null 2>&1; then
     checkout_execution_guard_engine_temp=$(mktemp "${TMPDIR:-/tmp}/metasystem-checkout-guard.XXXXXX") || return 1
-    (cd "$root" && CGO_ENABLED=0 go build -o "$checkout_execution_guard_engine_temp" ./cmd/metasystem) \
+    (cd "$root" && CGO_ENABLED=0 go build -trimpath -o "$checkout_execution_guard_engine_temp" ./cmd/metasystem) \
       || { rm -f "$checkout_execution_guard_engine_temp"; checkout_execution_guard_engine_temp=; return 1; }
     checkout_execution_guard_engine=$checkout_execution_guard_engine_temp
     return 0

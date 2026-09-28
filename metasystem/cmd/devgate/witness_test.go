@@ -183,7 +183,7 @@ func TestWitnessEngineAcceptanceRebuildsFromThePrivateFrozenExport(t *testing.T)
 	if !regexp.MustCompile(`^witness-[0-9a-f]{12}$`).MatchString(stampOf(build.args)) {
 		t.Fatalf("rebuild stamp %q does not carry the witness digest", stampOf(build.args))
 	}
-	if envValue(build.env, "GOFLAGS") != "-mod=readonly" || envValue(build.env, "METASYSTEM_GATE_FROZEN_TOOLCHAIN") != "1" {
+	if envValue(build.env, "GOFLAGS") != "-mod=readonly -trimpath" || envValue(build.env, "METASYSTEM_GATE_FROZEN_TOOLCHAIN") != "1" {
 		t.Fatalf("frozen build environment: %q", build.env)
 	}
 	installed, err := os.ReadFile(filepath.Join(consumer, "bin", "metasystem"))

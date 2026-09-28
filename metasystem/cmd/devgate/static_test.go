@@ -44,14 +44,21 @@ func TestStaticPublishesTheCollectedBuildWithoutRecompiling(t *testing.T) {
 	}
 	// Every Go phase inherits the worker allowance, and the refusal register
 	// names this gate as its run owner.
-	for _, fragment := range []string{"go vet -p=3 ./...", "go run -p=3 " + staticcheckModule + " ./...", "go test -p=3 -count=1 ./internal/refusal", "go build -p=3 -buildvcs=false"} {
+	for _, fragment := range []string{"go vet -trimpath -p=3 ./...", "go run -trimpath -p=3 " + staticcheckModule + " ./...", "go test -trimpath -p=3 -count=1 ./internal/refusal", "go build -p=3 -buildvcs=false"} {
 		if len(w.called(fragment)) != 1 {
 			t.Fatalf("missing %q in %v", fragment, w.calls)
 		}
 	}
+	// Fast mode trims by argv and never exports GOFLAGS (disk-lifetimes A2).
+	assertGoCompilesTrimmed(t, w)
+	for _, call := range w.calls {
+		if _, set := newEnvironment(call.env).lookup("GOFLAGS"); call.name == "go" && set {
+			t.Fatalf("static mode exported GOFLAGS to %s: %q", call, call.env)
+		}
+	}
 	defaulted := newGateWorld(t)
 	defaulted.env = slices.DeleteFunc(defaulted.env, func(entry string) bool { return strings.HasPrefix(entry, "METASYSTEM_TEST_WORKERS=") })
-	if code := defaulted.static(); code != 0 || len(defaulted.called("go vet -p=1 ./...")) != 1 || len(defaulted.called("go test -p=1 -count=1 ./internal/refusal")) != 1 {
+	if code := defaulted.static(); code != 0 || len(defaulted.called("go vet -trimpath -p=1 ./...")) != 1 || len(defaulted.called("go test -trimpath -p=1 -count=1 ./internal/refusal")) != 1 {
 		t.Fatalf("a direct caller without an allowance did not get one worker: exit %d %v", code, defaulted.calls)
 	}
 	refusal := w.called("go test")[0]

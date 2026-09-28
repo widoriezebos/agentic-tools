@@ -22,7 +22,7 @@ TestRealCommitWrapperStampsParseableObservation() {
   mkdir -p "$fixture/scripts/agents" "$fixture/scripts" "$fixture/bin" \
     "$fixture/artifacts/agents/mains" "$fixture/artifacts/agents/jobs" "$fixture/memory" "$fixture/plans/goals"
 
-  (cd "$root" && go build -o "$real_engine" ./cmd/metasystem)
+  (cd "$root" && go build -trimpath -o "$real_engine" ./cmd/metasystem)
   cp "$wrapper" "$fixture/scripts/agents/commit.sh"
   cp "$root/scripts/agents/landing-classes.json" "$fixture/scripts/agents/landing-classes.json"
   cp "$root/scripts/agents/path-classes.txt" "$fixture/scripts/agents/path-classes.txt"

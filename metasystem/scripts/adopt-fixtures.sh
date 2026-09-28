@@ -77,7 +77,7 @@ if (( ! adopt_progress_parent )); then
   adopt_progress_tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-adopt.XXXXXX")
   adopt_progress_log="$root/artifacts/agents/supervision/suite-logs/adopt-$adopt_progress_run.log"
   adopt_progress_engine="$adopt_progress_tmp/metasystem"
-  go build -o "$adopt_progress_engine" ./cmd/metasystem
+  go build -trimpath -o "$adopt_progress_engine" ./cmd/metasystem
   adopt_banner=$("$adopt_progress_engine" proof-run banner \
     --suite adopt-fixtures --root "$root" \
     --progress "$adopt_progress_path" --log "$adopt_progress_log")
@@ -143,7 +143,7 @@ if (( ! fixture_bed_child )) && [[ "$adopt_fixture_selection" == all && -z "${ME
   && -z "${METASYSTEM_PROOF_ATTEMPT:-}" ]] \
   && grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod; then
   adopt_witness_state=$(mktemp "${TMPDIR:-/tmp}/metasystem-adopt-witness.XXXXXX")
-  go run ./cmd/devgate gate --arm none --controller-pid $$ --state-out "$adopt_witness_state"
+  go run -trimpath ./cmd/devgate gate --arm none --controller-pid $$ --state-out "$adopt_witness_state"
   source "$adopt_witness_state"
   rm -f "$adopt_witness_state"
 fi
@@ -153,7 +153,7 @@ source "$root/scripts/adopt-fixture-helpers.sh"
 run_adoption_comparison() {
   # The actual fixture owns source-specific prerequisites and real main
   # custody in Go. The public shell remains the serial process parent.
-  METASYSTEM_ADOPTION_COMPARISON=1 go test -json -count=1 -timeout=30m -run '^TestAdoptionComparisonSelectedScenarios$' ./cmd/metasystem
+  METASYSTEM_ADOPTION_COMPARISON=1 go test -trimpath -json -count=1 -timeout=30m -run '^TestAdoptionComparisonSelectedScenarios$' ./cmd/metasystem
 }
 
 if [[ "$adopt_fixture_selection" == comparison ]]; then

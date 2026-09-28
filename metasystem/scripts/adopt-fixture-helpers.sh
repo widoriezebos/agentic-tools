@@ -134,7 +134,7 @@ assert_filled_target_delivery() {
   # armed, the check-only probe IS that comparison.
   if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]]; then
     ( cd "$tgt" && METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=DELIVERY \
-        go run ./cmd/devgate gate --witness-check-only >/dev/null ) \
+        go run -trimpath ./cmd/devgate gate --witness-check-only >/dev/null ) \
       || { echo "adopt: staged payload digest does not match the witness-gated tree" >&2; exit 1; }
   fi
   bash "$tgt/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/adopt-filled.out" 2>&1 || {

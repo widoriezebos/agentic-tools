@@ -190,8 +190,8 @@ func TestFullScriptWrappersPreserveOwnerStatusAndIgnoreAmbientProgress(t *testin
 			}
 			if !test.fixtureBudget {
 				flags, readErr := os.ReadFile(admittedFlags)
-				if readErr != nil || string(flags) != "-mod=readonly" {
-					t.Fatalf("proof admitted Go flags %q, want the full gate's -mod=readonly; err=%v", flags, readErr)
+				if readErr != nil || string(flags) != "-mod=readonly -trimpath" {
+					t.Fatalf("proof admitted Go flags %q, want the full gate's -mod=readonly -trimpath; err=%v", flags, readErr)
 				}
 			}
 		})
@@ -210,6 +210,7 @@ func writeDependencyGateFile(t *testing.T, path, content string, mode os.FileMod
 
 type recordedGoInvocation struct {
 	gomaxprocs string
+	goflags    string
 	argv       []string
 }
 
@@ -243,8 +244,8 @@ func TestGoBuildStubRunsTheBootstrapBuildOfItsOwnInstallation(t *testing.T) {
 	}
 	records := readRecordedGoInvocations(t, fixture.goLog)
 	want := [][]string{
-		{"-C", root, "run", "./cmd/devgate", "build", "--trimpath", "--out", filepath.Join(root, "proof-engine")},
-		{"-C", root, "run", "./cmd/devgate", "build"},
+		{"-C", root, "run", "-trimpath", "./cmd/devgate", "build", "--trimpath", "--out", filepath.Join(root, "proof-engine")},
+		{"-C", root, "run", "-trimpath", "./cmd/devgate", "build"},
 	}
 	if len(records) != len(want) {
 		t.Fatalf("go invocations = %+v, want %q", records, want)
@@ -252,6 +253,10 @@ func TestGoBuildStubRunsTheBootstrapBuildOfItsOwnInstallation(t *testing.T) {
 	for index, record := range records {
 		if !reflect.DeepEqual(record.argv, want[index]) {
 			t.Fatalf("go invocation %d = %q, want %q", index, record.argv, want[index])
+		}
+		// -trimpath rides argv with process GOFLAGS absent: go-build.sh sets none.
+		if record.goflags != "<unset>" {
+			t.Fatalf("go invocation %d saw GOFLAGS %q, want it absent", index, record.goflags)
 		}
 	}
 	for _, produced := range []string{filepath.Join(root, "proof-engine"), filepath.Join(root, "bin", "metasystem")} {
@@ -335,14 +340,14 @@ exec /bin/cat "$@"
 `, 0o700)
 	writeDependencyGateFile(t, filepath.Join(root, "helpers", "go"), `#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\0%s\0' "${GOMAXPROCS:-}" "$#" >>"$RECORDING_GO_LOG"
+printf '%s\0%s\0%s\0' "${GOMAXPROCS:-}" "${GOFLAGS-<unset>}" "$#" >>"$RECORDING_GO_LOG"
 printf '%s\0' "$@" >>"$RECORDING_GO_LOG"
 if [[ "${1:-}" == -C ]]; then
   # The go-build.sh stub's bootstrap build (cmd/devgate, unit-tested in its
   # own package): produce the engine where it would.
-  [[ "${3:-} ${4:-} ${5:-}" == "run ./cmd/devgate build" ]] || exit 97
+  [[ "${3:-} ${4:-} ${5:-} ${6:-}" == "run -trimpath ./cmd/devgate build" ]] || exit 97
   cd "$2"
-  shift 5
+  shift 6
   out=
   while (($#)); do
     [[ "$1" != --out ]] || { out=$2; break; }
@@ -415,7 +420,7 @@ func recordingGoEnvironment() []string {
 	var environment []string
 	for _, entry := range filteredCoverageScriptEnvironment() {
 		key, _, _ := strings.Cut(entry, "=")
-		if key == "GOMAXPROCS" || key == "METASYSTEM_TEST_WORKERS" || key == "METASYSTEM_COVERAGE_RATCHET_SEED" || key == "METASYSTEM_BUILD_STAMP" || strings.HasPrefix(key, "RECORDING_") {
+		if key == "GOMAXPROCS" || key == "GOFLAGS" || key == "METASYSTEM_TEST_WORKERS" || key == "METASYSTEM_COVERAGE_RATCHET_SEED" || key == "METASYSTEM_BUILD_STAMP" || strings.HasPrefix(key, "RECORDING_") {
 			continue
 		}
 		environment = append(environment, entry)
@@ -428,15 +433,15 @@ func readRecordedGoInvocations(t *testing.T, path string) []recordedGoInvocation
 	fields := readNULFields(t, path)
 	var records []recordedGoInvocation
 	for len(fields) > 0 {
-		if len(fields) < 2 {
+		if len(fields) < 3 {
 			t.Fatalf("truncated Go record: %q", fields)
 		}
-		argumentCount, err := strconv.Atoi(fields[1])
-		if err != nil || argumentCount < 1 || len(fields) < argumentCount+2 {
+		argumentCount, err := strconv.Atoi(fields[2])
+		if err != nil || argumentCount < 1 || len(fields) < argumentCount+3 {
 			t.Fatalf("invalid Go record: %q", fields)
 		}
-		records = append(records, recordedGoInvocation{gomaxprocs: fields[0], argv: append([]string(nil), fields[2:argumentCount+2]...)})
-		fields = fields[argumentCount+2:]
+		records = append(records, recordedGoInvocation{gomaxprocs: fields[0], goflags: fields[1], argv: append([]string(nil), fields[3:argumentCount+3]...)})
+		fields = fields[argumentCount+3:]
 	}
 	return records
 }

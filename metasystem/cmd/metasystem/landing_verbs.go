@@ -427,7 +427,9 @@ func canonicalValidatorEnvironment() []string {
 			environment = append(environment, entry)
 		}
 	}
-	return append(environment, "GOFLAGS=-mod=readonly", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1")
+	// GOFLAGS must equal cmd/devgate's ownedGoFlags: the gate's frozen-tree
+	// check accepts exactly that value (disk-lifetimes A4).
+	return append(environment, "GOFLAGS=-mod=readonly -trimpath", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1")
 }
 
 func runLandingDrift(args []string) int {

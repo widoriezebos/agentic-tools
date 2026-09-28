@@ -15,7 +15,7 @@ build_fixture_engine() { # installation root
   local installation=$1
   mkdir -p "$installation/bin" "$installation/scripts/agents"
   cp "$root/scripts/agents/path-classes.txt" "$installation/scripts/agents/path-classes.txt"
-  (cd "$root" && GOCACHE="$tmp/go-cache" go build -o "$installation/bin/metasystem" ./cmd/metasystem)
+  (cd "$root" && GOCACHE="$tmp/go-cache" go build -trimpath -o "$installation/bin/metasystem" ./cmd/metasystem)
 }
 
 expect_answer() { # engine, expected word, expected exit, path
@@ -415,7 +415,7 @@ TestLandForwardsGoalToEvaluator() {
 TestPathClassVerbAnswersFromManifest
 TestDeletedListsHaveNoReader
 landing_fixture_engine=$tmp/landing-metasystem
-(cd "$root" && GOCACHE="$tmp/go-cache" go build -o "$landing_fixture_engine" ./cmd/metasystem)
+(cd "$root" && GOCACHE="$tmp/go-cache" go build -trimpath -o "$landing_fixture_engine" ./cmd/metasystem)
 landing_fixture_env=("PATH=$PATH" "HOME=${HOME:-/tmp}" "TMPDIR=${TMPDIR:-/tmp}")
 TestCommitWrapperStampsGoalItemTrailer
 TestLandForwardsGoalToEvaluator
