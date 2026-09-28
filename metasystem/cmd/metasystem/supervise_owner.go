@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -31,7 +30,7 @@ var procfsMounts = "/proc/self/mounts"
 // (the extreme-observability ruling), and the terminal exit is both
 // logged and appended to the registry.
 func runSuperviseOwnerLoop(args []string) int {
-	flags := flag.NewFlagSet("supervise owner", flag.ContinueOnError)
+	flags := newFlagSet("supervise owner")
 	registryDefault, registryDefaultErr := registry.DefaultPath()
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	metasystemRoot := flags.String("metasystem-root", "", "installation root containing config and runtime adapters")
@@ -43,7 +42,7 @@ func runSuperviseOwnerLoop(args []string) int {
 	registryPath := flags.String("registry", registryDefault, "machine-wide registry file")
 	gate := flags.String("gate", "", "start-gate file: wait for it to appear, then delete it, before supervising (the armer publishes the lock, then signals the gate — avoids the lock/pid chicken-and-egg)")
 	ignoreTerm := flags.Bool("ignore-term", false, "ignore TERM (fixture-only)")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "repo", "tag") {
 		return 2
 	}
 	if *repo == "" || *tag == "" {

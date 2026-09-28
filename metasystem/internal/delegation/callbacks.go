@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cliflags"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
@@ -34,7 +35,7 @@ func (s *session) callback(command string, args []string) error {
 		if err := s.internalAuthority(AuthorityHolderOnly, job); err != nil {
 			return err
 		}
-		return s.verbRecordFile("job record-create", args, func(job, source string) error {
+		return s.verbRecordFile("__record-create", args, func(job, source string) error {
 			return s.l.ports.Records.Create(job, source)
 		})
 	case "__record-setup":
@@ -42,7 +43,7 @@ func (s *session) callback(command string, args []string) error {
 		if err := s.internalAuthority(AuthorityHolderOnly, job); err != nil {
 			return err
 		}
-		return s.verbRecordFile("job record-setup", args, func(job, source string) error {
+		return s.verbRecordFile("__record-setup", args, func(job, source string) error {
 			return s.l.ports.Records.Setup(job, source)
 		})
 	case "__record-cas":
@@ -127,11 +128,10 @@ func (s *session) callback(command string, args []string) error {
 	return s.usageExit()
 }
 
-// flags is a verb's strict flag set over the session's stderr.
+// flags is a callback's strict flag set over the session's stderr, its
+// errors in the public style (package cliflags).
 func (s *session) flags(name string) *flag.FlagSet {
-	set := flag.NewFlagSet(name, flag.ContinueOnError)
-	set.SetOutput(s.stderr)
-	return set
+	return cliflags.New(name, "metasystem internal delegate "+name, s.stderr)
 }
 
 // verbRecordFile is job record-create / record-setup.
@@ -151,7 +151,7 @@ func (s *session) verbRecordFile(name string, args []string, write func(job, sou
 
 // verbRecordCAS is job record-cas: the lost compare's observation on stdout.
 func (s *session) verbRecordCAS(args []string) error {
-	set := s.flags("job record-cas")
+	set := s.flags("__record-cas")
 	job := set.String("job", "", "job id")
 	expect := set.String("expect", "", "expected status")
 	status := set.String("status", "", "target status")
@@ -175,7 +175,7 @@ func (s *session) verbCritiqueClose(args []string) error {
 		s.eprintf("job critique-close: flag --%s repeated; authority-bearing flags parse strictly\n", repeated)
 		return exitWith(2)
 	}
-	set := s.flags("job critique-close")
+	set := s.flags("__critique-close")
 	rootJob := set.String("root-job", "", "critic root")
 	runnerClosed := set.Bool("runner-closed", false, "mark the runner closed")
 	if set.Parse(args) != nil || set.NArg() != 0 || *rootJob == "" {
@@ -186,7 +186,7 @@ func (s *session) verbCritiqueClose(args []string) error {
 }
 
 func (s *session) verbProtocolError(args []string) error {
-	set := s.flags("job record-protocol-error")
+	set := s.flags("__protocol-error")
 	job := set.String("job", "", "job id")
 	expect := set.String("expect", "", "expected status")
 	violation := set.String("violation", "", "violation text")
@@ -204,7 +204,7 @@ func (s *session) verbProtocolError(args []string) error {
 // verbRepairClaim claims the round's one paid repair: 0 won, 3 lost (the
 // observation on stdout), 1 mechanical.
 func (s *session) verbRepairClaim(args []string) error {
-	set := s.flags("job repair-claim")
+	set := s.flags("__repair-claim")
 	job := set.String("job", "", "job id")
 	if set.Parse(args) != nil {
 		return exitWith(2)
@@ -263,9 +263,9 @@ func (s *session) callbackCritiqueMutation(verb string, args []string) error {
 
 // critiqueVerb runs one critique register owner with its verb's flags.
 func (s *session) critiqueVerb(verb string, args []string) error {
-	name := "job " + verb
+	name := "__" + verb
 	if repeated := repeatedFlag(args); repeated != "" {
-		s.eprintf("%s: flag --%s repeated; authority-bearing flags parse strictly\n", name, repeated)
+		s.eprintf("metasystem internal delegate %s: --%s is given twice; an authority-bearing option is given once; nothing was done\n", name, repeated)
 		return exitWith(2)
 	}
 	set := s.flags(name)

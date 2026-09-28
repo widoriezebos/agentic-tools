@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -279,12 +278,12 @@ func stewardRevive(repo string, stdout, stderr io.Writer) int {
 // runStewardRun is the runner's body — normally spawned by arm,
 // callable directly by any external ticker the operator provides.
 func runStewardRun(args []string) int {
-	flags := flag.NewFlagSet("steward run", flag.ContinueOnError)
+	flags := newFlagSet("steward run")
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	// The arming caller's handoff. The runner keeps the value in memory and
 	// reports it on this machine's presence record; nothing persists it.
 	lineage := flags.String("lineage", "", "the session lineage this runner was armed under (\"no-lease\" when there was none)")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "repo") {
 		return 2
 	}
 	if *repo == "" {
@@ -327,11 +326,11 @@ func runStewardRun(args []string) int {
 }
 
 func runStewardArm(args []string) int {
-	flags := flag.NewFlagSet("steward arm", flag.ContinueOnError)
+	flags := newFlagSet("steward arm")
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	temporaryWord := flags.String("temporary-human-word", "", "verbatim remote human authorization; enrolls TEMPORARILY with the word recorded on the identity until a terminal re-arm")
 	reviewBy := flags.String("review-by", "", "the human's own re-approval date (required with --temporary-human-word)")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "repo") {
 		return 2
 	}
 	if *repo == "" {
@@ -480,7 +479,7 @@ func printStewardStopped(checkout string, record stopfence.Record) {
 // live intents, and pending notifications — the second visibility
 // channel the design pins.
 func runStewardStatus(args []string) int {
-	flags := flag.NewFlagSet("steward status", flag.ContinueOnError)
+	flags := newFlagSet("steward status")
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2

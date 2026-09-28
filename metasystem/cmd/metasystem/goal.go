@@ -222,7 +222,7 @@ func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet
 	if code, handled := trySync(name, args); handled {
 		return code
 	}
-	flags := flag.NewFlagSet("goal "+name, flag.ContinueOnError)
+	flags := newFlagSet("goal " + name)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid (defaults to the parent process)")
 	var extras []*string
@@ -433,7 +433,7 @@ func runGoalNext(args []string) int {
 }
 
 func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, commandNow func(string) (time.Time, error)) int {
-	flags := flag.NewFlagSet("goal next", flag.ContinueOnError)
+	flags := newFlagSet("goal next")
 	root := pathFlag(flags, "root", ".", "checkout root")
 	machineFlag := flags.String("machine", "", "machine nickname whose ordered frontier to inspect")
 	fetch := flags.Bool("fetch", false, "fetch and validate the canonical backlog before selecting")

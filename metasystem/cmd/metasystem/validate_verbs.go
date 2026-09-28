@@ -19,7 +19,7 @@ import (
 // against the Markdown dispositions table on finding id. Exit 0 closed;
 // 1 open or unjoinable; 2 usage.
 func runValidateCritiqueClosed(args []string) int {
-	flags := flag.NewFlagSet("validate critique-closed", flag.ContinueOnError)
+	flags := newFlagSet("validate critique-closed")
 	findings := flags.String("findings", "", "critic return JSON")
 	dispositions := flags.String("dispositions", "", "Markdown file holding the dispositions table")
 	repo := pathFlag(flags, "repo", "", "checkout root whose register is updated")
@@ -55,12 +55,12 @@ func runValidateCritiqueClosed(args []string) int {
 // and prints the new checkout's harness root. Exit 0 isolated; 1 an
 // unsafe manifest path or a failed audit; 2 usage.
 func runValidateSessionIsolation(args []string) int {
-	flags := flag.NewFlagSet("validate session-isolation", flag.ContinueOnError)
+	flags := newFlagSet("validate session-isolation")
 	sourceRoot := flags.String("source-root", "", "primary checkout the configuration copies from")
 	destinationRoot := flags.String("destination-root", "", "new second-session worktree")
 	manifest := flags.String("manifest", "", "file listing the adapter-declared relative paths")
 	harnessRoot := flags.String("harness-root", "", "harness root inside the primary checkout")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "source-root", "destination-root", "manifest", "harness-root") {
 		return 2
 	}
 	if *sourceRoot == "" || *destinationRoot == "" || *manifest == "" || *harnessRoot == "" {
@@ -100,7 +100,7 @@ the exact proof produced for the same implementer job.
 Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 `)
 	}
-	flags := flag.NewFlagSet("validate conformance", flag.ContinueOnError)
+	flags := newFlagSet("validate conformance")
 	flags.Usage = usage
 	root := pathFlag(flags, "root", ".", "merge-target checkout root")
 	stage, job := "", ""
@@ -184,7 +184,7 @@ Run it before contracting a new cycle.
 Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 `)
 	}
-	flags := flag.NewFlagSet("validate stop-loss", flag.ContinueOnError)
+	flags := newFlagSet("validate stop-loss")
 	flags.Usage = usage
 	file := flags.String("file", "", "investigation ledger")
 	if err := flags.Parse(args); err != nil {
@@ -276,7 +276,7 @@ Exit codes: 0 safe; 1 blocked; 2 usage or environment error.`)
 	}
 	var p validate.RefactorBaselineParams
 	p.Command = args[0]
-	flags := flag.NewFlagSet("test baseline", flag.ContinueOnError)
+	flags := newFlagSet("test baseline")
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&p.File, "file", "plans/refactor-baseline", "baseline file path")
 	flags.StringVar(&p.Gate, "gate", "", "record: the acceptance gate command that passed")

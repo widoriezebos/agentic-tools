@@ -228,7 +228,7 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 	}
 	// The alias routes to the family handler unchanged.
 	called := []string{}
-	fake := []family{{name: "safe", summary: "fixture", verbs: []verb{{"run", "records its arguments", func(args []string) int { called = args; return 7 }}}}}
+	fake := []family{{name: "safe", summary: "fixture", verbs: []verb{{name: "run", summary: "records its arguments", run: func(args []string) int { called = args; return 7 }}}}}
 	if code, _, _ := runCLIHelp([]string{"internal", "safe", "run", "--x", "y"}, fake); code != 7 || !slices.Equal(called, []string{"--x", "y"}) {
 		t.Errorf("internal alias = code %d args %v", code, called)
 	}

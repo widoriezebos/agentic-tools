@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -32,7 +31,7 @@ func runStore(root string) *run.Store {
 }
 
 func runRunWrap(args []string) int {
-	flags := flag.NewFlagSet("run wrap", flag.ContinueOnError)
+	flags := newFlagSet("run wrap")
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "run id")
 	nonce := flags.String("nonce", "", "launch nonce (in argv by design: the third identity factor)")
@@ -96,7 +95,7 @@ func runRunWrap(args []string) int {
 }
 
 func runRunWatch(args []string) int {
-	flags := flag.NewFlagSet("run watch", flag.ContinueOnError)
+	flags := newFlagSet("run watch")
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "run id")
 	pollMs := flags.Int("poll-ms", 2000, "poll interval")
@@ -141,7 +140,7 @@ func runRunWatch(args []string) int {
 }
 
 func runJobWatchVerb(args []string) int {
-	flags := flag.NewFlagSet("job watch", flag.ContinueOnError)
+	flags := newFlagSet("job watch")
 	root := pathFlag(flags, "root", ".", "checkout root")
 	job := flags.String("job", "", "job id")
 	pollMs := flags.Int("poll-ms", 2000, "poll interval")

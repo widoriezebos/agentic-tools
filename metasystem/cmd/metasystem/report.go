@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -11,7 +10,7 @@ import (
 )
 
 func runReportStopStatus(args []string) int {
-	flags := flag.NewFlagSet("report stop-status", flag.ContinueOnError)
+	flags := newFlagSet("report stop-status")
 	id := flags.String("id", "", "exact short Stop report alias or legacy full id")
 	root := pathFlag(flags, "root", "", "explicit metasystem installation")
 	if flags.Parse(args) != nil {

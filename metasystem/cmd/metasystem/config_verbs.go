@@ -28,14 +28,14 @@ func (r *repeatedFlag) Set(value string) error {
 // default) and prints the value. Exit 2 marks an invalid key or mode; exit 1 a
 // missing value or a malformed source.
 func runConfigGet(args []string) int {
-	flags := flag.NewFlagSet("config get", flag.ContinueOnError)
+	flags := newFlagSet("config get")
 	key := flags.String("key", "", "configuration key to resolve")
 	mode := flags.String("mode", "", "mode scope for role runtime/model keys")
 	role := flags.String("role", "", "reserved role scope (overrides are scoped by mode only)")
 	flagVal := flags.String("flag", "", "explicit override value; wins over every source")
 	def := flags.String("default", "", "value to use when no source holds the key")
 	conf := flags.String("conf", "metasystem.conf", "path to metasystem.conf")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "key") {
 		return 2
 	}
 	params := config.GetParams{
@@ -66,7 +66,7 @@ func runConfigGet(args []string) int {
 // runConfigValidate validates the whole metasystem.conf domain against the
 // repository, printing each problem and exiting non-zero when any is found.
 func runConfigValidate(args []string) int {
-	flags := flag.NewFlagSet("config validate", flag.ContinueOnError)
+	flags := newFlagSet("config validate")
 	conf := flags.String("conf", "metasystem.conf", "path to metasystem.conf")
 	repo := pathFlag(flags, "repo", "", "repository root the configuration is validated against (default: the Git toplevel holding --conf, else its directory)")
 	if flags.Parse(args) != nil {

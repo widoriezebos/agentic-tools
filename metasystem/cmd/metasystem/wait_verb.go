@@ -100,7 +100,7 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 // WithTimeout together, so every deadline the wait derives is measured and
 // enforced on that one clock; production passes nil and keeps the kernel's.
 func runWaitCommandOnClock(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool), clock func(*metarun.WaitOptions)) int {
-	flags := flag.NewFlagSet("wait", flag.ContinueOnError)
+	flags := newFlagSet("wait")
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	job := flags.String("job", "", "delegate job identifier")
 	runID := flags.String("run", "", "tracked run identifier")

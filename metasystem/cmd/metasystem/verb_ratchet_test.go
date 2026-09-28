@@ -19,29 +19,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 const (
-	// R1/R3 residue: (family, verb) pairs plus dispatchInternal's top-level forms.
-	// The launch contract raised it by one: `app serve` is the supervisor that
-	// owns one run of the project's application for its life, in the shape of
-	// `ui serve`, and like it it is a process entrypoint a person never types.
-	// +1: disk-lifetimes A1 adds `util engine-stamp`, the one shell-callable
-	// stamp reader (rule A3). Its first caller, fixture-budget.sh's
-	// `go version -m` parser, was deleted on main (U7c) before this merge.
-	// U9a made the scan count delegate-supervisor, routed through the
-	// runtimes.SupervisorEntry constant, which the literal-only scan missed
-	// (the measurement rose by one with no new verb), and then deleted the
-	// verbs no caller, only tests, or only text ran (design 6.1), giving the
-	// ones a person runs by hand a public home first.
-	verbRatchetInternalVerbCeiling = 39
 	// R4: shell lines that reference the engine.
 	verbRatchetShellEngineCeiling = 27
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
@@ -227,29 +211,97 @@ func readRatchetLines(t *testing.T, path string) []string {
 
 /* ---------------------------------------------------- 1 internal verbs -- */
 
-// TestVerbRatchetInternalVerbCount counts every (family, verb) pair the
-// registered families route, plus the top-level forms dispatchInternal routes
-// before its family loop, read from main.go's `args[0] == "WORD"` tests.
-func TestVerbRatchetInternalVerbCount(t *testing.T) {
-	t.Parallel()
-	var sites []ratchetSite
+// launcherClaim is one internal verb's declared launcher: the file that
+// starts it and the text in that file that names it.
+type launcherClaim struct {
+	name, launcher, evidence string
+}
+
+// internalLaunchers are the claims of every internal verb: each family verb
+// and each one-word entrypoint.
+func internalLaunchers() []launcherClaim {
+	var claims []launcherClaim
+	for _, entry := range topLevelEntries() {
+		claims = append(claims, launcherClaim{name: entry.name, launcher: entry.launcher, evidence: entry.evidence})
+	}
 	for _, fam := range families() {
 		for _, v := range fam.verbs {
-			sites = append(sites, ratchetSite{path: "family " + fam.name, text: fam.name + " " + v.name})
+			claims = append(claims, launcherClaim{name: fam.name + " " + v.name, launcher: v.launcher, evidence: v.evidence})
 		}
 	}
-	forms := dispatchInternalTopLevelForms(t)
-	if len(forms) == 0 {
-		t.Fatal("found no top-level forms in dispatchInternal; the scan no longer reads main.go")
+	return claims
+}
+
+// launcherProblems judges the claims against the module's files: every
+// internal verb names a launcher that is a production file of the module and
+// names the verb, so a verb nothing starts has no place in the engine.
+func launcherProblems(claims []launcherClaim, read func(path string) ([]byte, error)) []string {
+	var problems []string
+	for _, claim := range claims {
+		switch {
+		case claim.launcher == "":
+			problems = append(problems, claim.name+" declares no launcher: an internal verb exists only because a program other than a person or agent starts it")
+			continue
+		case strings.HasSuffix(claim.launcher, "_test.go"):
+			problems = append(problems, claim.name+" names a test as its launcher ("+claim.launcher+"); tests call the Go owner")
+			continue
+		case claim.evidence == "":
+			problems = append(problems, claim.name+" declares no evidence that "+claim.launcher+" starts it")
+			continue
+		}
+		data, err := read(claim.launcher)
+		if err != nil {
+			problems = append(problems, claim.name+": its launcher "+claim.launcher+" is unreadable: "+err.Error())
+			continue
+		}
+		if !strings.Contains(string(data), claim.evidence) {
+			problems = append(problems, fmt.Sprintf("%s: its launcher %s does not name it (%q not found)", claim.name, claim.launcher, claim.evidence))
+		}
 	}
-	for _, form := range forms {
-		sites = append(sites, ratchetSite{path: "main.go dispatchInternal", text: form})
+	return problems
+}
+
+// TestEveryInternalVerbHasALauncherThatStartsIt is the rule that replaced the
+// internal verb count (design 3.2, U9b): every internal verb declares the
+// file that starts it, and that file names it.
+func TestEveryInternalVerbHasALauncherThatStartsIt(t *testing.T) {
+	t.Parallel()
+	_, module := verbRatchetRoots(t)
+	read := func(path string) ([]byte, error) { return os.ReadFile(filepath.Join(module, filepath.FromSlash(path))) }
+	for _, problem := range launcherProblems(internalLaunchers(), read) {
+		t.Error(problem)
 	}
-	checkVerbRatchet(t, "internal verb count", "verbRatchetInternalVerbCeiling", len(sites), verbRatchetInternalVerbCeiling, sites)
+}
+
+// TestLauncherRuleRefusesAVerbNothingStarts pins the rule's refusals: a verb
+// without a launcher, a test named as a launcher, and a launcher that does
+// not name the verb all fail.
+func TestLauncherRuleRefusesAVerbNothingStarts(t *testing.T) {
+	t.Parallel()
+	files := map[string]string{"internal/x/start.go": `exec.Command(engine, "x", "run")`}
+	read := func(path string) ([]byte, error) {
+		if body, ok := files[path]; ok {
+			return []byte(body), nil
+		}
+		return nil, os.ErrNotExist
+	}
+	if problems := launcherProblems([]launcherClaim{{name: "x run", launcher: "internal/x/start.go", evidence: `"x", "run"`}}, read); len(problems) != 0 {
+		t.Fatalf("a started verb was refused: %v", problems)
+	}
+	for _, claim := range []launcherClaim{
+		{name: "x orphan"},
+		{name: "x tested", launcher: "cmd/metasystem/x_test.go", evidence: "x tested"},
+		{name: "x unnamed", launcher: "internal/x/start.go", evidence: `"x", "unnamed"`},
+		{name: "x missing", launcher: "internal/x/gone.go", evidence: "x missing"},
+	} {
+		if problems := launcherProblems([]launcherClaim{claim}, read); len(problems) != 1 {
+			t.Errorf("%s was not refused: %v", claim.name, problems)
+		}
+	}
 }
 
 // ratchetRoutedWords are the first words the engine's internal router
-// answers today: the family names and dispatchInternal's top-level forms.
+// answers today: the family names and the one-word entrypoints.
 func ratchetRoutedWords(t *testing.T) map[string]bool {
 	t.Helper()
 	routed := map[string]bool{}
@@ -262,79 +314,15 @@ func ratchetRoutedWords(t *testing.T) map[string]bool {
 	return routed
 }
 
-// TestVerbRatchetCountsConstantRoutedForms holds the scan to every top-level
-// form dispatchInternal routes, including one compared against a named
-// constant of another package: delegate-supervisor is routed through
-// runtimes.SupervisorEntry, and a scan that read only string literals missed
-// it.
-func TestVerbRatchetCountsConstantRoutedForms(t *testing.T) {
-	t.Parallel()
-	if !slices.Contains(dispatchInternalTopLevelForms(t), runtimes.SupervisorEntry) {
-		t.Fatalf("the top-level form scan misses %q, which dispatchInternal routes through runtimes.SupervisorEntry", runtimes.SupervisorEntry)
-	}
-}
-
+// dispatchInternalTopLevelForms are the one-word entrypoints the internal
+// router answers.
 func dispatchInternalTopLevelForms(t *testing.T) []string {
 	t.Helper()
-	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var forms []string
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != "dispatchInternal" {
-			continue
-		}
-		for _, stmt := range fn.Body.List {
-			ifStmt, ok := stmt.(*ast.IfStmt)
-			if !ok {
-				continue
-			}
-			cond, ok := ifStmt.Cond.(*ast.BinaryExpr)
-			if !ok || cond.Op != token.EQL {
-				continue
-			}
-			index, ok := cond.X.(*ast.IndexExpr)
-			if !ok {
-				continue
-			}
-			if name, ok := index.X.(*ast.Ident); !ok || name.Name != "args" {
-				continue
-			}
-			if lit, ok := index.Index.(*ast.BasicLit); !ok || lit.Value != "0" {
-				continue
-			}
-			forms = append(forms, ratchetRoutedFormWord(t, file, cond.Y))
-		}
+	for _, entry := range topLevelEntries() {
+		forms = append(forms, entry.name)
 	}
 	return forms
-}
-
-// ratchetRoutedFormWord resolves the word an `args[0] == X` test compares
-// against: a string literal, or a string constant of an imported package of
-// this module (runtimes.SupervisorEntry). Anything else fails the scan, so a
-// routed form can never be missed silently again.
-func ratchetRoutedFormWord(t *testing.T, file *ast.File, expr ast.Expr) string {
-	t.Helper()
-	switch word := expr.(type) {
-	case *ast.BasicLit:
-		if word.Kind == token.STRING {
-			value, err := strconv.Unquote(word.Value)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return value
-		}
-	case *ast.SelectorExpr:
-		if pkg, ok := word.X.(*ast.Ident); ok {
-			if value, ok := ratchetImportedStringConst(t, file, pkg.Name, word.Sel.Name); ok {
-				return value
-			}
-		}
-	}
-	t.Fatalf("dispatchInternal routes a top-level form through %T that the ratchet scan cannot resolve; teach ratchetRoutedFormWord to read it", expr)
-	return ""
 }
 
 // ratchetImportedStringConst reads a string constant from the non-test

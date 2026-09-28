@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 )
@@ -68,6 +69,17 @@ func runMissionRunnerRunLoop(args []string) int {
 		"--instance-tag": &tag, "--start-signal": &signal,
 		"--fence-generation": &generationText,
 	}, map[string]*bool{"--ignore-term": &ignoreTerm})
+	if !ok {
+		for _, arg := range args {
+			switch arg {
+			case "--root", "--mission", "--mode", "--instance-tag", "--start-signal", "--fence-generation", "--ignore-term":
+			default:
+				if strings.HasPrefix(arg, "--") {
+					return refuseUnknownOption(nil, "mission run-loop", arg, "it takes --root, --mission, --mode, --instance-tag, --start-signal, --fence-generation, --ignore-term")
+				}
+			}
+		}
+	}
 	generation, generationErr := strconv.ParseInt(generationText, 10, 64)
 	if !ok || root == "" || tag == "" || signal == "" ||
 		generationErr != nil || generation < 0 || !missionIDRe.MatchString(mission) ||

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
@@ -16,7 +15,7 @@ func runReportFrontier(args []string) int {
 		return 2
 	}
 	action := args[0]
-	flags := flag.NewFlagSet("report frontier "+action, flag.ContinueOnError)
+	flags := newFlagSet("report frontier " + action)
 	opts := report.FrontierOptions{Repo: "."}
 	flags.StringVar(&opts.File, "file", "plans/frontier", "frontier file")
 	flags.StringVar(&opts.Score, "score", "", "candidate score")

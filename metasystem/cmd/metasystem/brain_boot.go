@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -324,11 +323,11 @@ func firstGroup(lines []brainBootLine, group string) int {
 }
 
 func runBrainBootInputs(args []string) int {
-	flags := flag.NewFlagSet("brain boot-inputs", flag.ContinueOnError)
+	flags := newFlagSet("brain boot-inputs")
 	root := pathFlag(flags, "root", "", "checkout state root")
 	repo := pathFlag(flags, "repo", "", "checkout containing records")
 	dir := flags.String("dir", "", "parent-owned section directory")
-	if flags.Parse(args) != nil || *root == "" || *repo == "" || *dir == "" {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "root", "repo", "dir") || *root == "" || *repo == "" || *dir == "" {
 		fmt.Fprintln(os.Stderr, "brain boot-inputs needs --root, --repo, and --dir")
 		return 2
 	}

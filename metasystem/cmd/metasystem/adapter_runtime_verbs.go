@@ -1,9 +1,9 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
@@ -27,10 +27,10 @@ var (
 // runAdapterClaudeToolGate decides one Claude PreToolUse call. Once flags are
 // valid the hook fails open: every diagnostic path exits successfully.
 func runAdapterClaudeToolGate(args []string) int {
-	flags := flag.NewFlagSet("adapter claude-tool-gate", flag.ContinueOnError)
+	flags := newFlagSet("adapter claude-tool-gate")
 	var root string
 	pathFlagVar(flags, &root, "root", "", "installation or containing template root")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "root") {
 		return 2
 	}
 	if root == "" || flags.NArg() != 0 {
@@ -64,6 +64,9 @@ func runAdapterClaudeToolGate(args []string) int {
 // hook payload from stdin, writes the session signal and a session-init event
 // from the env-named paths, and echoes the session id as runtime context.
 func runAdapterClaudeSessionSignal(args []string) int {
+	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		return refuseUnknownOption(nil, "adapter claude-session-signal", args[0], "it reads the session-start payload on standard input and takes no options")
+	}
 	if len(args) != 0 {
 		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter claude-session-signal < session-start-payload")
 		return 2

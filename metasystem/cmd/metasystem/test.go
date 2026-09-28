@@ -112,6 +112,9 @@ func currentTestingWorkerCapabilities() testingWorkerCapabilities {
 }
 
 func runTestWorkerCapabilities(args []string) int {
+	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		return refuseUnknownOption(nil, "test worker-capabilities", args[0], "it takes no options")
+	}
 	if len(args) != 0 {
 		fmt.Fprintln(os.Stderr, "usage: metasystem internal test worker-capabilities")
 		return 2
@@ -163,7 +166,7 @@ func (prepared testingPreparation) proofControlRoot() string {
 }
 
 func runTestList(args []string) int {
-	flags := flag.NewFlagSet("test list", flag.ContinueOnError)
+	flags := newFlagSet("test list")
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" {
@@ -321,7 +324,7 @@ func (admission testingCommandAdmission) forced(launch proofLaunchAdmission) (pr
 }
 
 func parseTestingSelection(name string, args []string, execution bool) (testingSelectionRequest, bool, int) {
-	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags := newFlagSet(name)
 	// One command is one invocation: its preparations share one state.
 	request := testingSelectionRequest{Preparation: &testingPreparationState{}}
 	pathFlagVar(flags, &request.Root, "root", "", "MetaSystem installation root")
@@ -353,7 +356,7 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		flags.BoolVar(&request.AllGroups, "all-groups", false, "run every selected delivery group after a failure")
 		flags.StringVar(&request.AppAddress, "app-address", "", "the address of the application run a named group is run against")
 	}
-	if flags.Parse(args) != nil || flags.NArg() != 0 || request.Root == "" {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "root") || flags.NArg() != 0 || request.Root == "" {
 		fmt.Fprintf(os.Stderr, "usage: metasystem %s --root INSTALLATION [--goal ID] [--authority ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
 		return request, false, 2
 	}
@@ -2302,11 +2305,11 @@ func runTestWorker(args []string) int {
 }
 
 func runTestWorkerWithCandidateOpener(args []string, opener func(string, string) (proofrun.CandidateWorkspace, error)) int {
-	flags := flag.NewFlagSet("test worker", flag.ContinueOnError)
+	flags := newFlagSet("test worker")
 	packet := flags.String("packet", "", "private testing request")
 	packetDigest := flags.String("packet-sha256", "", "SHA-256 identity of the immutable testing request")
 	resultPath := flags.String("result", "", "private testing result")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *packet == "" || *packetDigest == "" || *resultPath == "" {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "packet", "packet-sha256", "result") || flags.NArg() != 0 || *packet == "" || *packetDigest == "" || *resultPath == "" {
 		return 2
 	}
 	actualPacketDigest, err := fileSHA256(*packet)

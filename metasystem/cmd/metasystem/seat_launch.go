@@ -10,7 +10,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -38,7 +37,7 @@ func runSeatLaunch(args []string) int {
 }
 
 func runSeatLaunchTo(args []string, stdout io.Writer) int {
-	flags := flag.NewFlagSet("seat launch", flag.ContinueOnError)
+	flags := newFlagSet("seat launch")
 	machine := flags.String("machine", "", "nickname the new machine carries and publishes presence under")
 	from := pathFlag(flags, "from", ".", "the checkout this machine is cloned from (default: the current directory)")
 	destination := pathFlag(flags, "destination", "", "where the clone lands (default: beside this checkout, named for the remote's repository and the nickname)")

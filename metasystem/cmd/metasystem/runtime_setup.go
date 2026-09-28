@@ -18,7 +18,7 @@ func runRuntimeSetup(args []string) int {
 }
 
 func runRuntimeSetupWithResolver(args []string, resolve func(string) (stateroot.Layout, error)) int {
-	flags := flag.NewFlagSet("system register", flag.ContinueOnError)
+	flags := newFlagSet("system register")
 	repo := pathFlag(flags, "repo", "", "repository root or a path inside the target installation")
 	runtimeCSV := flags.String("runtimes", "", "comma-separated adoptable hosts (default: all)")
 	copySkills := flags.Bool("copy-skills", false, "copy skill trees instead of creating relative links")

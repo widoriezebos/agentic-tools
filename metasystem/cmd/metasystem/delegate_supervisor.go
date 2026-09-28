@@ -25,6 +25,9 @@ import (
 // so a survivor scan finds the process by its argv; they must equal the
 // environment the process inherited.
 func runDelegateSupervisor(args []string) int {
+	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		return refuseUnknownOption(nil, runtimes.SupervisorEntry, args[0], "it takes RUNTIME VERB --root ROOT [flags]")
+	}
 	for len(args) > 0 {
 		name, value, found := strings.Cut(args[0], "=")
 		if !found || (name != identity.FixtureOwnerEnv && name != identity.FixtureAttemptEnv) {

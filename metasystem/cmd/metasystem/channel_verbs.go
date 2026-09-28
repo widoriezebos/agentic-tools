@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -225,8 +224,7 @@ var channelWaitCommand = func(args []string, poll func(context.Context) error, c
 // that replaced a child), lineage is the channel ledger identity's, and the
 // report goes to the caller's streams.
 func channelWaitWith(callerPID int64, lineage string, stdout, stderr io.Writer, args []string, resolveMachine func(string) (string, error)) int {
-	f := flag.NewFlagSet("channel wait", flag.ContinueOnError)
-	f.SetOutput(stderr)
+	f := newFlagSet("channel wait", stderr)
 	root := pathFlag(f, "root", ".", "repository root")
 	id := f.String("question", "", "question id")
 	resume := f.String("resume", "", "durable channel wait identifier")

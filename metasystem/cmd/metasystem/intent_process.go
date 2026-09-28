@@ -1588,6 +1588,10 @@ func (inv *intentInvocation) askAfterFailure(q channel.Question, failure error, 
 // its authenticated reply location and records nothing.
 func runIntentAnswerQuestion(inv *intentInvocation) int {
 	args := inv.input.args
+	if len(args) == 0 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "needs the question: metasystem question answer Q [TEXT]; nothing was answered",
+			next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"})
+	}
 	if len(args) > 2 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "answer takes Q and at most one quoted TEXT; nothing was answered"})
 	}

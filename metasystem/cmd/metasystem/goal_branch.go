@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -205,7 +204,7 @@ func readFollowUp(delegate delegateCaller, root, rootJob, brief string, environm
 // goalBranchReadRun is the branch read owner with its typed result; the
 // exit code accompanies any error.
 func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (branch.BranchReadResult, int, error) {
-	flags := flag.NewFlagSet("goal branch read", flag.ContinueOnError)
+	flags := newFlagSet("goal branch read")
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	unit := flags.String("unit", "", "Goal-Unit commit")
@@ -292,7 +291,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 // goalBranchLandPushRun pushes one prepared landing and sweeps a goal's last
 // landing, returning the pushed landing and the endpoint branch it moved.
 func goalBranchLandPushRun(args []string) (branch.PreparedLanding, string, int, error) {
-	flags := flag.NewFlagSet("goal branch land-push", flag.ContinueOnError)
+	flags := newFlagSet("goal branch land-push")
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	prepared := flags.String("prepared", "", "land-prep artifact directory")
@@ -338,7 +337,7 @@ type goalBranchLandPrepOutcome struct {
 // goalBranchLandPrepRun prepares one hand landing through its owner and
 // returns the typed outcome; the exit code accompanies any error.
 func goalBranchLandPrepRun(args []string, dependencies goalBranchLandPrepDependencies) (goalBranchLandPrepOutcome, int, error) {
-	flags := flag.NewFlagSet("goal branch land-prep", flag.ContinueOnError)
+	flags := newFlagSet("goal branch land-prep")
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	out := flags.String("out", "", "new artifact directory")

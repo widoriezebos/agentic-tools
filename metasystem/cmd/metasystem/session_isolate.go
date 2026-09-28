@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -21,7 +20,7 @@ import (
 // (launch.SecondSession): `session isolate [--root INSTALLATION] [NAME]`. It
 // prints the command that enters the new checkout.
 func runSessionIsolate(args []string) int {
-	flags := flag.NewFlagSet("session isolate", flag.ContinueOnError)
+	flags := newFlagSet("session isolate")
 	root := pathFlag(flags, "root", "", "installation whose checkout the session isolates from (default: this engine's)")
 	if flags.Parse(args) != nil || flags.NArg() > 1 {
 		fmt.Fprintln(os.Stderr, "usage: metasystem session isolate [--root INSTALLATION] [NAME]")

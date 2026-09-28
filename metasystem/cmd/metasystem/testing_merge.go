@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -17,7 +16,7 @@ metasystem/testing.json merge=metasystem-testing
 git config merge.metasystem-testing.driver 'metasystem testing merge-driver %O %A %B'`
 
 func runTestingMerge(args []string) int {
-	flags := flag.NewFlagSet("test merge", flag.ContinueOnError)
+	flags := newFlagSet("test merge")
 	base := flags.String("base", "", "merge-base testing contract")
 	ours := flags.String("ours", "", "current-side testing contract")
 	theirs := flags.String("theirs", "", "incoming-side testing contract")
@@ -34,6 +33,11 @@ func runTestingMerge(args []string) int {
 }
 
 func runTestingMergeDriver(args []string) int {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--") {
+			return refuseUnknownOption(nil, "testing merge-driver", arg, "it takes BASE OURS THEIRS, the three paths git passes")
+		}
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, testingMergeDriverUsage)
 		return 2
@@ -85,7 +89,7 @@ func runTestingRemoveTests(args []string) int {
 // editTestingContract is test add and test remove: decode the contract, apply
 // one group edit, render and write it back.
 func editTestingContract(action string, args []string, edit func(testpolicy.Contract, string, string, []string) (testpolicy.Contract, error)) int {
-	flags := flag.NewFlagSet("test "+action, flag.ContinueOnError)
+	flags := newFlagSet("test " + action)
 	path := flags.String("file", "", "testing contract to edit")
 	group := flags.String("group", "", "group id")
 	tests := flags.String("tests", "", "comma-separated Go test names")

@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -45,7 +44,7 @@ func runProofRunLaunch(args []string) int {
 func runProofRunLaunchWithInputs(args []string,
 	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
 	terminal func(proofrun.CompletionContext, json.RawMessage, *proofrun.TestResult) error) int {
-	flags := flag.NewFlagSet("proof-run launch", flag.ContinueOnError)
+	flags := newFlagSet("proof-run launch")
 	suite := flags.String("suite", "", "suite name")
 	root := pathFlag(flags, "root", "", "metasystem root")
 	controlRootFlag := flags.String("control-root", "", "canonical proof control root")
@@ -72,7 +71,7 @@ func runProofRunLaunchWithInputs(args []string,
 	pollMS := flags.Int64("poll-ms", 1000, "watchdog poll milliseconds")
 	termGraceMS := flags.Int64("term-grace-ms", 5000, "TERM grace milliseconds")
 	killGraceMS := flags.Int64("kill-grace-ms", 1000, "KILL observation milliseconds")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "root", "conf") {
 		return 2
 	}
 	command := flags.Args()
@@ -316,9 +315,9 @@ func acquireManagedProofLaunchWithWaitCheck(ctx context.Context, controlRoot, co
 const proofCapacityWaitLine = "proof-run launch: waiting for host proof capacity"
 
 func runProofRunWorkerAuthorized(args []string) int {
-	flags := flag.NewFlagSet("proof-run worker-authorized", flag.ContinueOnError)
+	flags := newFlagSet("proof-run worker-authorized")
 	executionRoot := pathFlag(flags, "root", "", "suite execution root")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *executionRoot == "" {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "root") || flags.NArg() != 0 || *executionRoot == "" {
 		return 2
 	}
 	code, err := authorizeProofWorker(*executionRoot)
@@ -1880,7 +1879,7 @@ func selectedSections(selected string) ([]string, map[string]bool, error) {
 }
 
 func runProofRunWatchdog(args []string) int {
-	flags := flag.NewFlagSet("proof-run watchdog", flag.ContinueOnError)
+	flags := newFlagSet("proof-run watchdog")
 	suite := flags.String("suite", "", "suite name")
 	root := pathFlag(flags, "root", "", "metasystem root")
 	conf := flags.String("conf", "", "metasystem configuration")
@@ -1986,7 +1985,7 @@ func runProofRunWatchdog(args []string) int {
 }
 
 func runProofRunCustodyExec(args []string) int {
-	flags := flag.NewFlagSet("proof-run custody-exec", flag.ContinueOnError)
+	flags := newFlagSet("proof-run custody-exec")
 	readyFD := flags.Int("ready-fd", 0, "readiness descriptor")
 	releaseFD := flags.Int("release-fd", 0, "start barrier descriptor")
 	path := flags.String("path", "", "selected executable path")
@@ -2012,7 +2011,7 @@ func runProofRunCustodyExec(args []string) int {
 }
 
 func runProofRunPreserve(args []string) int {
-	flags := flag.NewFlagSet("proof-run preserve", flag.ContinueOnError)
+	flags := newFlagSet("proof-run preserve")
 	destination := flags.String("destination", "", "evidence destination")
 	maxBytes := flags.Int64("max-bytes", 0, "evidence byte cap")
 	var sources repeatedFlag
@@ -2036,12 +2035,12 @@ func runProofRunPreserve(args []string) int {
 }
 
 func runProofRunBanner(args []string) int {
-	flags := flag.NewFlagSet("proof-run banner", flag.ContinueOnError)
+	flags := newFlagSet("proof-run banner")
 	suite := flags.String("suite", "", "suite name")
 	root := pathFlag(flags, "root", "", "metasystem root")
 	progress := flags.String("progress", "", "progress JSONL path")
 	logPath := flags.String("log", "", "suite log path")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "suite", "root", "progress", "log") {
 		return 2
 	}
 	if *suite == "" || *root == "" || *progress == "" || *logPath == "" || flags.NArg() != 0 {

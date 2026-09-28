@@ -8,7 +8,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -56,8 +55,7 @@ func goalUlid() (string, error) {
 // human word classifies from their supplied caller, the actor carries their
 // lineage and machine, and the report goes to the caller's streams.
 func goalMigrateWith(dependencies syncRequestDependencies, stdout, stderr io.Writer, args []string) int {
-	flags := flag.NewFlagSet("goal migrate", flag.ContinueOnError)
-	flags.SetOutput(stderr)
+	flags := newFlagSet("goal migrate", stderr)
 	root := pathFlag(flags, "root", "", "checkout root")
 	sourceDigest := flags.String("source-digest", "", "the reviewed goals.md sha256 literal")
 	manifest := flags.String("manifest", "", "amendment manifest path (omit for a bare migration)")
@@ -138,7 +136,7 @@ func runGoalFetch(args []string) int {
 }
 
 func runGoalFetchWithResolver(args []string, resolve func(string) (goal.Endpoint, error)) int {
-	flags := flag.NewFlagSet("goal fetch", flag.ContinueOnError)
+	flags := newFlagSet("goal fetch")
 	root := pathFlag(flags, "root", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2

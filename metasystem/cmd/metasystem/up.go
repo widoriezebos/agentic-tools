@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,7 +135,7 @@ func restampStopCapabilityForUp(root, lineage string, claimEpoch int64) (up.Stop
 }
 
 func runUpWith(args []string, repositoryTop func(string) (string, error)) int {
-	flags := flag.NewFlagSet("up", flag.ContinueOnError)
+	flags := newFlagSet("up")
 	repo := pathFlag(flags, "repo", ".", "repository or path inside it")
 	metasystemRoot := flags.String("metasystem-root", "", "metasystem checkout root (internal compatibility option)")
 	session := flags.String("session", "", "session id (defaults to METASYSTEM_SESSION_ID or session-<pid>)")

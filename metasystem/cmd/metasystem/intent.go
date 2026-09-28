@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -374,7 +373,7 @@ func parseIntentArgs(command intentCommand, raw []string) (intentInput, *intentI
 		return input, nil
 	}
 	// Go's own flag parsing checks each value against its option's kind.
-	set := flag.NewFlagSet(command.name, flag.ContinueOnError)
+	set := newFlagSet(command.name)
 	set.SetOutput(io.Discard)
 	for _, definition := range command.allFlags() {
 		if definition.value == "" {
@@ -1224,6 +1223,16 @@ func suggestIntent(word string, rest []string) []string {
 	if len(near) > 4 {
 		near = near[:4]
 	}
+	if len(near) == 0 {
+		// Nothing is close: the nearest object, however far, so the caller
+		// always has a real command to go on.
+		closest = -1
+		for _, object := range intentObjects() {
+			if distance := editDistance(object, word); closest < 0 || distance < closest {
+				closest, near = distance, []string{suggestedCommand([]string{object}, nil)}
+			}
+		}
+	}
 	return near
 }
 
@@ -1249,6 +1258,15 @@ func suggestIntentAction(object, word string, rest []string) []string {
 	for _, command := range publicIntentCommands() {
 		if command.action == word {
 			near = append(near, suggestedCommand(command.words(), rest))
+		}
+	}
+	if len(near) == 0 {
+		// Nothing is close: the object's nearest action, however far.
+		closest = -1
+		for _, command := range objectActions(object) {
+			if distance := editDistance(command.action, word); closest < 0 || distance < closest {
+				closest, near = distance, []string{suggestedCommand(command.words(), rest)}
+			}
 		}
 	}
 	return near

@@ -41,7 +41,7 @@ func runReceipt(args []string) int {
 		opts.Summary = args[0]
 		args = args[1:]
 	}
-	flags := flag.NewFlagSet("receipt "+action, flag.ContinueOnError)
+	flags := newFlagSet("receipt " + action)
 	flags.SetOutput(io.Discard)
 	pathFlagVar(flags, &opts.Root, "root", opts.Root, "checkout root")
 	flags.StringVar(&opts.File, "file", opts.File, "receipt ledger file")

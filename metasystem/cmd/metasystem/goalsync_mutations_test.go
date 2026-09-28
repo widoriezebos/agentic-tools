@@ -1779,7 +1779,7 @@ func TestGoalMigrateStillRefusesTemporaryHumanWord(t *testing.T) {
 	stderr, code := captureStderr(t, func() int {
 		return runGoalMigrate([]string{"--temporary-human-word", "Wido authorizes this migration"})
 	})
-	if code != 2 || !strings.Contains(stderr, "flag provided but not defined: -temporary-human-word") {
+	if code != 2 || !strings.Contains(stderr, "does not take --temporary-human-word") {
 		t.Fatalf("goal migrate unexpectedly accepted the relay flag: code=%d stderr=%q", code, stderr)
 	}
 }

@@ -9,8 +9,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cliflags"
 )
 
 type pathValue struct {
@@ -85,4 +87,103 @@ func writeIdentityJSON(path string, value any) error {
 	// contract.
 	_, writeErr := atomicfile.WriteText(path, string(encoded), "")
 	return writeErr
+}
+
+// newFlagSet is the one constructor of the engine's flag sets (package
+// cliflags): a parse error is answered in the public style and a help
+// request prints the options. errs is where an error is written (default:
+// this process's standard error at the time of the error).
+func newFlagSet(name string, errs ...io.Writer) *flag.FlagSet {
+	var out io.Writer
+	if len(errs) > 0 {
+		out = errs[0]
+	}
+	return cliflags.New(name, commandLabel(name), out)
+}
+
+// helpAware makes a lone --help or -h a successful request: a handler whose
+// parser answered it with its usage exits 0 rather than as a refusal.
+func helpAware(run func([]string) int) func([]string) int {
+	return func(args []string) int {
+		if len(args) != 1 || !isHelpWord(args[0]) {
+			return run(args)
+		}
+		before := cliflags.HelpAnswered()
+		code := run(args)
+		if code == 2 && cliflags.HelpAnswered() > before {
+			return 0
+		}
+		return code
+	}
+}
+
+// commandLabel is how a person reads a flag set's command: an internal
+// entrypoint is "metasystem internal FAMILY VERB", anything else
+// "metasystem NAME".
+func commandLabel(name string) string {
+	words := strings.Fields(name)
+	if internalEntrypoint != nil && len(words) > 0 && internalEntrypoint(words) {
+		return "metasystem internal " + name
+	}
+	return "metasystem " + name
+}
+
+// internalEntrypoint reports whether a flag set's words name an internal
+// entrypoint. It is bound in init: the registry refers to every handler, and
+// the handlers build flag sets.
+var internalEntrypoint func(words []string) bool
+
+func init() {
+	internalEntrypoint = func(words []string) bool {
+		for _, entry := range topLevelEntries() {
+			if entry.name == words[0] {
+				return true
+			}
+		}
+		if len(words) < 2 {
+			return false
+		}
+		for _, fam := range families() {
+			if fam.name != words[0] {
+				continue
+			}
+			for _, v := range fam.verbs {
+				if v.name == words[1] {
+					return true
+				}
+			}
+		}
+		return false
+	}
+}
+
+// requireFlags answers a missing required option by name before anything
+// is done; it reports whether every named option was given.
+func requireFlags(flags *flag.FlagSet, errs io.Writer, names ...string) bool {
+	given := map[string]bool{}
+	flags.Visit(func(f *flag.Flag) { given[f.Name] = true })
+	for _, name := range names {
+		if !given[name] {
+			if errs == nil {
+				errs = os.Stderr
+			}
+			fmt.Fprintf(errs, "%s: --%s is required; nothing was done\n", commandLabel(flags.Name()), name)
+			return false
+		}
+	}
+	return true
+}
+
+// refuseUnknownOption answers an option an entrypoint with its own parser
+// does not take, in the same public style as newFlagSet.
+func refuseUnknownOption(errs io.Writer, name, option, takes string) int {
+	if isHelpWord(option) {
+		fmt.Fprintf(os.Stdout, "usage: %s: %s\n", commandLabel(name), takes)
+		return 0
+	}
+	if errs == nil {
+		errs = os.Stderr
+	}
+	fmt.Fprintf(errs, "%s: does not take %s; %s; nothing was done\n", commandLabel(name), option, takes)
+	return 2
 }

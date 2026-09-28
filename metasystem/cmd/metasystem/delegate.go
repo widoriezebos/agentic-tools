@@ -33,7 +33,22 @@ type delegateOutcome struct {
 // runDelegate is the operator boundary and the delegate lifecycle's process
 // entry: operator forms answer typed JSON; the runtime adapters' "__"
 // callbacks and the guard member wrapper keep their process shape.
-func runDelegate(args []string) int { return runDelegateIn(args, "", os.Stdout, os.Stderr) }
+func runDelegate(args []string) int {
+	// An operator form begins with one of its options; a lifecycle
+	// callback begins with its __ word and parses its own options.
+	if len(args) > 0 && strings.HasPrefix(args[0], "--") && !delegateFormOptions[strings.SplitN(args[0], "=", 2)[0]] {
+		return refuseUnknownOption(nil, "delegate", args[0], "it takes --revive, --cancel, --follow-up, --adapter-selftest, a dispatch's --role/--brief/--goal/--destructive-reach, or a lifecycle callback")
+	}
+	return runDelegateIn(args, "", os.Stdout, os.Stderr)
+}
+
+// delegateFormOptions are the options an operator form of the delegate entry
+// may begin with.
+var delegateFormOptions = map[string]bool{
+	"--revive": true, "--cancel": true, "--follow-up": true, "--adapter-selftest": true, "--role": true, "--brief": true,
+	"--goal": true, "--destructive-reach": true, "--op": true, "--reviews": true, "--runtime": true, "--model": true,
+	"--outputs": true, "--design": true, "--approved-ref": true, "--source": true, "--wait": true,
+}
 
 // runDelegateIn is runDelegate with its typed outcome written to stdout. dir
 // is the working directory relative file arguments resolve against (empty is
