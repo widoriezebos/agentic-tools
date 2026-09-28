@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,19 +10,17 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
-func writeShippedSeatWindow(t *testing.T, root string, tokens int64, present bool) {
+// writeShippedSeatWindow stands in for the Claude settings the engine ships:
+// tokens as their autoCompactWindow, or none when present is false.
+func writeShippedSeatWindow(t *testing.T, tokens int64, present bool) {
 	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(launch.ShippedClaudeSettingsSource))
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	content := "{\"hooks\":{}}\n"
 	if present {
 		content = fmt.Sprintf("{\"autoCompactWindow\":%d,\"hooks\":{}}\n", tokens)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	original := shippedClaudeSettings
+	t.Cleanup(func() { shippedClaudeSettings = original })
+	shippedClaudeSettings = func() ([]byte, error) { return []byte(content), nil }
 }
 
 func TestReportForOneLaunch(t *testing.T) {

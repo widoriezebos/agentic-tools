@@ -37,8 +37,8 @@ func TestProofReservationBeforeChildPublicationIsStoppable(t *testing.T) {
 	}
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(root, "proof-admission"))
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}

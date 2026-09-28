@@ -535,9 +535,6 @@ func fixtureCheckout(calm bool, register string) string {
 	if err != nil {
 		log.Fatalf("cannot make the walkthrough checkout: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(directory, "scripts", "agents"), 0o755); err != nil {
-		log.Fatalf("cannot make the walkthrough checkout: %v", err)
-	}
 	for _, planted := range []struct{ relative, text string }{
 		{"metasystem.conf", ""},
 		{"plans/goals/backlog.md", "# backlog\n\n- SyncMode: local\n"},

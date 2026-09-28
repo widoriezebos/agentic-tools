@@ -202,8 +202,6 @@ func newGoalBed(t *testing.T) *bed {
 	b := newBed(t)
 	conf := "evidence.root=" + filepath.Join(b.root, "evidence") + "\nmetasystem.runtimes=fake\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\ndispatch.permissions.implementer=none\n"
 	b.writeFile("metasystem.conf", conf)
-	b.writeFile("scripts/agents/roles/implementer.md", "implementer\n")
-	b.writeFile("scripts/agents/roles/implementer.requirements.json", "{}\n")
 	for _, input := range []string{"bin/metasystem"} {
 		b.writeFile(input, "fixture\n")
 	}

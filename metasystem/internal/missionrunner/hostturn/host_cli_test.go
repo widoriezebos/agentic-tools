@@ -3,12 +3,13 @@ package hostturn
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 )
@@ -25,23 +26,7 @@ type hostBed struct {
 
 func newHostBed(t *testing.T, cli, script string) *hostBed {
 	t.Helper()
-	source, err := filepath.Abs(filepath.Join("..", "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
 	root := t.TempDir()
-	for _, rel := range []string{"scripts/agents/schemas/orchestrator.schema.json", "scripts/agents/permissions/workspace.json"} {
-		data, err := os.ReadFile(filepath.Join(source, rel))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(root, rel), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
 	b := &hostBed{t: t, root: root, turn: filepath.Join(root, "turns", "t1"), bin: filepath.Join(root, "bin-stub"), cli: cli, env: map[string]string{}}
 	for _, dir := range []string{b.turn, b.bin} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {

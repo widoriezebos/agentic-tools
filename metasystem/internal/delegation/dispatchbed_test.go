@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation/fake"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 // moduleRoot is the metasystem module whose shipped assets a dispatch bed
@@ -85,22 +86,6 @@ func newDispatchBed(t *testing.T) *bed {
 	if err := os.WriteFile(filepath.Join(b.root, "metasystem.conf"), []byte(dispatchBedConfig+"evidence.root="+filepath.Join(b.root, "evidence")+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, asset := range []string{
-		"scripts/agents/role-packets.json",
-	} {
-		b.installAsset(asset)
-	}
-	for _, dir := range []string{"scripts/agents/roles", "scripts/agents/permissions", "scripts/agents/schemas", "scripts/agents/templates"} {
-		entries, err := os.ReadDir(filepath.Join(moduleRoot(t), dir))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				b.installAsset(filepath.Join(dir, entry.Name()))
-			}
-		}
-	}
 	var packets struct {
 		Roles map[string]struct {
 			Sources []struct {
@@ -108,13 +93,12 @@ func newDispatchBed(t *testing.T) *bed {
 			} `json:"sources"`
 		} `json:"roles"`
 	}
-	content, err := os.ReadFile(filepath.Join(b.root, "scripts/agents/role-packets.json"))
-	if err != nil || json.Unmarshal(content, &packets) != nil {
+	if err := json.Unmarshal(protocol.RolePackets(), &packets); err != nil {
 		t.Fatalf("role packets: %v", err)
 	}
 	for _, role := range packets.Roles {
 		for _, source := range role.Sources {
-			if !exists(filepath.Join(b.root, source.Path)) {
+			if !protocol.IsReference(source.Path) && !exists(filepath.Join(b.root, source.Path)) {
 				b.installAsset(source.Path)
 			}
 		}

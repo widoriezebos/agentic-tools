@@ -157,7 +157,7 @@ func registryPointerDocs(t *testing.T, root string) {
 func TestAuditMetasystemRefusals(t *testing.T) {
 	build := func(t *testing.T) string {
 		root := t.TempDir()
-		for _, dir := range []string{"docs/design", "memory", "skills", "scripts/enforcement"} {
+		for _, dir := range []string{"docs/design", "memory", "skills", "internal/runtimes/enforcement"} {
 			if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -180,7 +180,7 @@ func TestAuditMetasystemRefusals(t *testing.T) {
 		os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
 			[]byte("| claude |\n| codex |\n| devin |\n"), 0o644)
 		for _, config := range []string{"claude-code-hooks.json", "codex-hooks.json", "devin-hooks.json"} {
-			os.WriteFile(filepath.Join(root, "scripts", "enforcement", config), []byte("{}\n"), 0o644)
+			os.WriteFile(filepath.Join(root, "internal", "runtimes", "enforcement", config), []byte("{}\n"), 0o644)
 		}
 		return root
 	}
@@ -316,8 +316,8 @@ func TestAuditMetasystemReport(t *testing.T) {
 	registryPointerDocs(t, root)
 	os.WriteFile(filepath.Join(root, "docs/design/turn-verdict-delivery-contract.md"), []byte("| claude |\n| codex |\n| devin |\n"), 0o644)
 	for _, config := range []string{"claude-code-hooks.json", "codex-hooks.json", "devin-hooks.json"} {
-		os.MkdirAll(filepath.Join(root, "scripts", "enforcement"), 0o755)
-		os.WriteFile(filepath.Join(root, "scripts", "enforcement", config), []byte("{}\n"), 0o644)
+		os.MkdirAll(filepath.Join(root, "internal", "runtimes", "enforcement"), 0o755)
+		os.WriteFile(filepath.Join(root, "internal", "runtimes", "enforcement", config), []byte("{}\n"), 0o644)
 	}
 	os.WriteFile(filepath.Join(root, "artifacts/agents/AGENTS.md"), []byte("runtime state, pruned\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "meta/binary.bin"), append([]byte("bin"), 0), 0o644)
@@ -439,14 +439,14 @@ func TestDoctrineProgramStartRule(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			os.MkdirAll(filepath.Join(root, "docs", "design"), 0o755)
-			os.MkdirAll(filepath.Join(root, "scripts", "enforcement"), 0o755)
+			os.MkdirAll(filepath.Join(root, "internal", "runtimes", "enforcement"), 0o755)
 			os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(tc.agents), 0o644)
 			os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"), []byte(tc.adaptation), 0o644)
 			registryPointerDocs(t, root)
 			os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
 				[]byte("| claude |\n| codex |\n| devin |\n"), 0o644)
 			for _, config := range []string{"claude-code-hooks.json", "codex-hooks.json", "devin-hooks.json"} {
-				os.WriteFile(filepath.Join(root, "scripts", "enforcement", config), []byte("{}\n"), 0o644)
+				os.WriteFile(filepath.Join(root, "internal", "runtimes", "enforcement", config), []byte("{}\n"), 0o644)
 			}
 			violations := auditGoalSystem(root)
 			if tc.refusal == "" {
@@ -466,12 +466,12 @@ func TestDoctrineProgramStartRule(t *testing.T) {
 	}
 }
 
-// GOAL-18: a conformance row claiming a shipped config that is absent
-// refuses; the full shipped set passes.
+// GOAL-18: every conformance row names a runtime whose Stop config the
+// engine ships (compiled in; internal/runtimes TestShippedEnforcementIsCompiledIn
+// pins the set), so the full table passes with no installation file.
 func TestConformanceTableAudit(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "docs", "design"), 0o755)
-	os.MkdirAll(filepath.Join(root, "scripts", "enforcement"), 0o755)
 	os.WriteFile(filepath.Join(root, "AGENTS.md"),
 		[]byte("programs start with `metasystem goal open`; read `metasystem goal list --ready`\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"),
@@ -479,14 +479,6 @@ func TestConformanceTableAudit(t *testing.T) {
 	registryPointerDocs(t, root)
 	os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
 		[]byte("| claude |\n| codex |\n| devin |\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "scripts", "enforcement", "claude-code-hooks.json"), []byte("{}\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "scripts", "enforcement", "codex-hooks.json"), []byte("{}\n"), 0o644)
-	// devin's config deliberately absent: the row overclaims.
-	violations := auditGoalSystem(root)
-	if len(violations) != 1 || !strings.Contains(violations[0], "devin") {
-		t.Fatalf("overclaiming row not caught: %v", violations)
-	}
-	os.WriteFile(filepath.Join(root, "scripts", "enforcement", "devin-hooks.json"), []byte("{}\n"), 0o644)
 	if violations := auditGoalSystem(root); len(violations) != 0 {
 		t.Fatalf("full shipped set refused: %v", violations)
 	}
@@ -497,7 +489,7 @@ func TestConformanceTableAudit(t *testing.T) {
 func TestConformanceTableMissingRow(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "docs", "design"), 0o755)
-	os.MkdirAll(filepath.Join(root, "scripts", "enforcement"), 0o755)
+	os.MkdirAll(filepath.Join(root, "internal", "runtimes", "enforcement"), 0o755)
 	os.WriteFile(filepath.Join(root, "AGENTS.md"),
 		[]byte("programs start with `metasystem goal open`; read `metasystem goal list --ready`\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"),
@@ -506,7 +498,7 @@ func TestConformanceTableMissingRow(t *testing.T) {
 	// The contract exists but names only claude.
 	os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
 		[]byte("| claude |\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "scripts", "enforcement", "claude-code-hooks.json"), []byte("{}\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "internal", "runtimes", "enforcement", "claude-code-hooks.json"), []byte("{}\n"), 0o644)
 	violations := auditGoalSystem(root)
 	if len(violations) != 2 {
 		t.Fatalf("missing rows not caught pairwise: %v", violations)

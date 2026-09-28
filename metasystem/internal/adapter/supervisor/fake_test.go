@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 func assertCAS(t *testing.T, call []string, job, expect, status string) string {
@@ -961,8 +963,6 @@ func TestFakeSelftest(t *testing.T) {
 	t.Parallel()
 	setup := func(t *testing.T) *fakeInstall {
 		f := newFakeInstall(t, installOptions{})
-		mustWrite(t, filepath.Join(f.root, "scripts", "agents", "templates", "brief.md"), "Working Mode: <working mode>\nGoal: fake\nWorking Mode: again\n")
-		mustWrite(t, filepath.Join(f.root, "scripts", "agents", "templates", "follow-up.md"), "follow up\n")
 		f.env["TMPDIR"] = t.TempDir()
 		f.clock = &stepClock{now: time.Date(2026, 9, 27, 10, 11, 12, 0, time.UTC)}
 		return f
@@ -992,13 +992,22 @@ func TestFakeSelftest(t *testing.T) {
 		if !reflect.DeepEqual(lines, want) {
 			t.Fatalf("delegate calls =\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
 		}
-		if got := readText(t, filepath.Join(dir, "brief.md")); got != "Working Mode: design\nGoal: fake\nWorking Mode: design\n" {
+		template, err := protocol.Template("brief.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		designed := strings.Replace(string(template), "Working Mode: <working mode>", "Working Mode: design", 1)
+		if !strings.HasPrefix(string(template), "Working Mode: <working mode>\n") || strings.Count(designed, "Working Mode:") != 1 {
+			t.Fatalf("the engine's brief template changed its working-mode header: %q", template[:min(len(template), 80)])
+		}
+		if got := readText(t, filepath.Join(dir, "brief.md")); got != designed {
 			t.Fatalf("brief = %q", got)
 		}
-		if got := readText(t, filepath.Join(dir, "cancel.md")); got != "Working Mode: design\nGoal: fake\nWorking Mode: design\n\nFAKE:timeout\n" {
+		if got := readText(t, filepath.Join(dir, "cancel.md")); got != designed+"\nFAKE:timeout\n" {
 			t.Fatalf("cancel brief = %q", got)
 		}
-		if got := readText(t, filepath.Join(dir, "follow.md")); got != "follow up\n" {
+		if followUp, err := protocol.Template("follow-up.md"); err != nil || readText(t, filepath.Join(dir, "follow.md")) != string(followUp) {
+			got := readText(t, filepath.Join(dir, "follow.md"))
 			t.Fatalf("follow brief = %q", got)
 		}
 		record := readJSON(t, filepath.Join(f.agents(), "selftests", id+".json"))

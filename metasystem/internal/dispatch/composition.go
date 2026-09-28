@@ -14,10 +14,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
-
-const rolePacketTablePath = "scripts/agents/role-packets.json"
 
 const MaxDirectiveBytes = 32 * 1024
 
@@ -246,7 +245,7 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 	if err != nil {
 		return CompositionRecord{}, err
 	}
-	configuration, err := ResolveHazardConfiguration(p.Root, p.DestructiveReach, p.GoalTier)
+	configuration, err := ResolveHazardConfiguration(p.DestructiveReach, p.GoalTier)
 	if err != nil {
 		return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-HAZARD-CONFIGURATION", Source: string(p.DestructiveReach), Detail: err.Error()}
 	}
@@ -270,7 +269,7 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 		SchemaVersion: 1, JobID: p.JobID, Role: p.Role, Runtime: p.Runtime,
 		Model: p.Model, Round: p.Round, Mission: emptyAsNone(p.Mission),
 		DestructiveReach: p.DestructiveReach, ConfigurationObligations: configuration,
-		Recipe: rolePacketTablePath + "#" + p.Role, RecipeDigest: digestBytes(tableBytes),
+		Recipe: protocol.RolePacketRecipe(p.Role), RecipeDigest: digestBytes(tableBytes),
 		ContextProof: ContextProof{
 			Classification: "advisory", ProofState: "no-leak-not-proven", ReasonCode: "BROAD-READ-RUNTIME",
 		},
@@ -304,7 +303,7 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 		appendSource(source.Slot, source.Path, content)
 	}
 	if recipe.ArtifactMember != "" {
-		appendSource("artifact-member", rolePacketTablePath+"#"+p.Role+".artifactMember", []byte(recipe.ArtifactMember+"\n"))
+		appendSource("artifact-member", protocol.RolePacketRecipe(p.Role)+".artifactMember", []byte(recipe.ArtifactMember+"\n"))
 	}
 	toolNotice := fmt.Sprintf("Permission tool policy: %s\n", p.ToolPolicy)
 	if p.Runtime == "fake" {
@@ -501,7 +500,7 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 // check without reading a brief or writing packet state. Delegate runs this
 // before a runtime probe or workspace mutation.
 func ValidateRolePacketSources(root, role string, extraSources []string) ([]byte, rolePacketRecipe, error) {
-	tableBytes, _, recipe, err := readRolePacketRecipe(root, role)
+	tableBytes, _, recipe, err := readRolePacketRecipe(role)
 	if err != nil {
 		return nil, rolePacketRecipe{}, err
 	}
@@ -521,8 +520,8 @@ func ValidateRolePacketSources(root, role string, extraSources []string) ([]byte
 	return tableBytes, recipe, nil
 }
 
-func readRolePacketRecipe(root, role string) ([]byte, rolePacketTable, rolePacketRecipe, error) {
-	data, table, err := readRolePacketTable(root)
+func readRolePacketRecipe(role string) ([]byte, rolePacketTable, rolePacketRecipe, error) {
+	data, table, err := readRolePacketTable()
 	if err != nil {
 		return nil, rolePacketTable{}, rolePacketRecipe{}, err
 	}
@@ -532,6 +531,13 @@ func readRolePacketRecipe(root, role string) ([]byte, rolePacketTable, rolePacke
 	}
 	seen := map[string]bool{}
 	for _, source := range recipe.Sources {
+		if protocol.IsReference(source.Path) {
+			if source.Slot == "" || seen[source.Path] {
+				return nil, table, rolePacketRecipe{}, fmt.Errorf("role packet recipe %s has an invalid or duplicate source %q", role, source.Path)
+			}
+			seen[source.Path] = true
+			continue
+		}
 		if source.Slot == "" || source.Path == "" || filepath.IsAbs(source.Path) || filepath.Clean(source.Path) != filepath.FromSlash(source.Path) || strings.HasPrefix(source.Path, ".."+string(filepath.Separator)) || seen[source.Path] {
 			return nil, table, rolePacketRecipe{}, fmt.Errorf("role packet recipe %s has an invalid or duplicate source %q", role, source.Path)
 		}
@@ -540,12 +546,10 @@ func readRolePacketRecipe(root, role string) ([]byte, rolePacketTable, rolePacke
 	return data, table, recipe, nil
 }
 
-func readRolePacketTable(root string) ([]byte, rolePacketTable, error) {
-	path := filepath.Join(root, filepath.FromSlash(rolePacketTablePath))
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, rolePacketTable{}, fmt.Errorf("read role packet table: %w", err)
-	}
+// readRolePacketTable decodes the role-packet table compiled into this
+// engine; rolePacketTableBytes is its test seam.
+func readRolePacketTable() ([]byte, rolePacketTable, error) {
+	data := rolePacketTableBytes()
 	var table rolePacketTable
 	if err := json.Unmarshal(data, &table); err != nil {
 		return nil, table, fmt.Errorf("decode role packet table: %w", err)
@@ -556,7 +560,18 @@ func readRolePacketTable(root string) ([]byte, rolePacketTable, error) {
 	return data, table, nil
 }
 
+var (
+	rolePacketTableBytes = protocol.RolePackets
+	protocolSource       = protocol.Source
+)
+
 func readRecipeSource(root string, source rolePacketSource) ([]byte, error) {
+	if data, ok, err := protocolSource(source.Path); ok {
+		if err != nil {
+			return nil, &CompositionRefusal{Code: "REFUSED-CONTEXT-SOURCE", Source: source.Path, Detail: err.Error()}
+		}
+		return data, nil
+	}
 	path := filepath.Join(root, filepath.FromSlash(source.Path))
 	canonicalRoot := realpath.Resolve(root)
 	canonicalPath := realpath.Resolve(path)

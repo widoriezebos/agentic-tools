@@ -508,7 +508,7 @@ func resolveLandedBuildWithDeps(deps rearmResolverDeps, clock RearmClock, repoRo
 	return commit, nil
 }
 
-var enrollmentSkewPathspecs = [...]string{"internal", "cmd", "scripts/agents"}
+var enrollmentSkewPathspecs = [...]string{"internal", "cmd"}
 
 // EngineSkewPathspecs are the installation-relative trees whose change since
 // an engine's build makes that engine stale: the steward's enrollment skew

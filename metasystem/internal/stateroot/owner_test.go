@@ -12,7 +12,7 @@ func vendoredShape(t *testing.T, template bool) (repo, install string, resolver 
 	t.Helper()
 	repo = t.TempDir()
 	install = filepath.Join(repo, "metasystem")
-	for _, d := range []string{"bin", "scripts/agents", "memory", "artifacts/agents"} {
+	for _, d := range []string{"bin", "memory", "artifacts/agents"} {
 		if err := os.MkdirAll(filepath.Join(install, d), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -40,7 +40,7 @@ func TestOwnerFourAnswersInVendoredAdoptedShape(t *testing.T) {
 		path string
 		want Ownership
 	}{
-		{"metasystem/scripts/agents/arm-supervision.sh", OwnerMetasystem},
+		{"metasystem/internal/protocol/roles/warden.md", OwnerMetasystem},
 		{"metasystem", OwnerMetasystem},
 		{"memory/rulings.md", OwnerApp},
 		{"plans/goals/x.md", OwnerApp},
@@ -101,7 +101,7 @@ func TestOwnerSymlinkJudgedByEntryPath(t *testing.T) {
 func TestOwnerUsesShippedInventoryInUnvendoredAdoptedShape(t *testing.T) {
 	t.Parallel()
 	repo := t.TempDir()
-	for _, directory := range []string{"bin", "scripts/agents"} {
+	for _, directory := range []string{"bin"} {
 		if err := os.MkdirAll(filepath.Join(repo, directory), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -123,6 +123,7 @@ func TestOwnerUsesShippedInventoryInUnvendoredAdoptedShape(t *testing.T) {
 		{path: "records/goals/x.md", want: OwnerMetasystem},
 		{path: "docs/application.md", want: OwnerApp},
 		{path: "README.md", want: OwnerApp},
+		{path: "scripts/deploy.sh", want: OwnerApp},
 		{path: "artifacts/agents/state.json", want: OwnerRuntime},
 	} {
 		top.expectCanonical(repo, repo, nil)

@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 // The coverage delta checks coverage only for the Go packages a landing names
@@ -81,7 +83,7 @@ func CoverageDelta(o CoverageDeltaOptions) int {
 		fmt.Fprintln(o.Err, CoverageDeltaUsage)
 		return 2
 	}
-	registry := filepath.Join(o.Root, "scripts", "agents", "coverage-ratchet.json")
+	registry := filepath.Join(o.Root, testpolicy.CoverageFloorsFile("darwin"))
 	// Staged coverage is a law of roots that carry the canonical registry.
 	// Fixture and adopted roots without that registry have no local floor.
 	if o.Staged {
@@ -123,7 +125,7 @@ func CoverageDelta(o CoverageDeltaOptions) int {
 	case ratchet == "":
 		ratchet = registry
 		if o.GOOS == "linux" {
-			ratchet = filepath.Join(o.Root, "scripts", "agents", "coverage-ratchet-linux.json")
+			ratchet = filepath.Join(o.Root, testpolicy.CoverageFloorsFile("linux"))
 		}
 	case !filepath.IsAbs(ratchet):
 		ratchet = filepath.Join(o.InvocationDir, ratchet)

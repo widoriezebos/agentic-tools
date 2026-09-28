@@ -70,7 +70,7 @@ func newRawRecertificationClosure(t *testing.T) (*recertificationClosureFixture,
 	f := newFileRecertificationClosureFixture(t)
 	r := &rawClosureFacts{t: t, f: f, indices: map[string]string{}}
 	r.worktreeBytes = map[string][]byte{}
-	for _, name := range []string{".gitignore", "source.txt", "docs/note.md", "metasystem.conf", "scripts/agents/path-classes.txt"} {
+	for _, name := range []string{".gitignore", "source.txt", "docs/note.md", "metasystem.conf", "internal/pathclass/path-classes.txt"} {
 		data, err := os.ReadFile(filepath.Join(f.fixture.worktree, name))
 		if err != nil {
 			t.Fatal(err)

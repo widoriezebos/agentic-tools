@@ -266,10 +266,10 @@ func TestGateSeedAndMissingBaseline(t *testing.T) {
 	}
 
 	missing := newGateWorld(t)
-	if err := os.Remove(filepath.Join(missing.root, "scripts", "agents", "coverage-ratchet.json")); err != nil {
+	if err := os.Remove(filepath.Join(missing.root, "testing-coverage-floors.json")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(filepath.Join(missing.root, "scripts", "agents", "coverage-ratchet-linux.json")); err != nil {
+	if err := os.Remove(filepath.Join(missing.root, "testing-coverage-floors-linux.json")); err != nil {
 		t.Fatal(err)
 	}
 	if code := missing.gate(); code != 1 || !strings.Contains(missing.stderr.String(), "run the two-pass seed bootstrap first (evidence kept: ") {
@@ -288,7 +288,7 @@ func TestGateCoverageHandoffClaimsAndPublishesAsTheProducer(t *testing.T) {
 		t.Fatalf("exit %d:\n%s", code, w.output())
 	}
 	pid := strconv.Itoa(os.Getpid())
-	suffix := " producer=" + pid + " caller=" + pid + " attempt=attempt-7 baseline=coverage-ratchet.json root=" + w.root
+	suffix := " producer=" + pid + " caller=" + pid + " attempt=attempt-7 baseline=testing-coverage-floors.json root=" + w.root
 	if want := []string{"coverage-eligible" + suffix, "coverage-begin" + suffix, "coverage-complete" + suffix}; !slices.Equal(w.coverage, want) {
 		t.Fatalf("coverage custody = %q, want %q", w.coverage, want)
 	}
@@ -465,8 +465,8 @@ func TestGateRetainsCoverageEvidenceOutsideTheFrozenWitness(t *testing.T) {
 		{name: "post-native implicit exit", setup: func(w *gateWorld) { w.nativeNoLog = true }, wantFailure: "go gate: post-native exit before coverage consumers completed (evidence kept: ", wantBundle: true},
 		{name: "inventory failure", setup: func(w *gateWorld) { w.statuses["list"] = 1 }, wantFailure: "go gate: go list failed; cannot join the coverage inventory (evidence kept: ", wantBundle: true, wantInventory: true},
 		{name: "missing baseline", setup: func(w *gateWorld) {
-			_ = os.Remove(filepath.Join(w.root, "scripts", "agents", "coverage-ratchet.json"))
-			_ = os.Remove(filepath.Join(w.root, "scripts", "agents", "coverage-ratchet-linux.json"))
+			_ = os.Remove(filepath.Join(w.root, "testing-coverage-floors.json"))
+			_ = os.Remove(filepath.Join(w.root, "testing-coverage-floors-linux.json"))
 		}, wantFailure: "run the two-pass seed bootstrap first (evidence kept: ", wantBundle: true, wantInventory: true},
 		{name: "ratchet failure with stderr-only diagnostics", setup: func(w *gateWorld) {
 			w.nativeOutput = ""

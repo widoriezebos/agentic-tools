@@ -8,7 +8,6 @@ package capability
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"math"
 	"os"
 	"path/filepath"
@@ -16,6 +15,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 // now is the time source, overridable in tests.
@@ -42,7 +44,16 @@ type snapshotEntry struct {
 }
 
 // Select performs the whole selection and writes the result JSON to outputPath.
+// The role's capability requirements are the ones compiled into this engine.
 func Select(root, runtime, role, identityJSON string, maxAge int, envelopePath, outputPath string) error {
+	requirements, err := protocol.RoleRequirements(role)
+	if err != nil {
+		return fmt.Errorf("cannot evaluate capabilities: %w", err)
+	}
+	return selectWith(root, runtime, role, requirements, identityJSON, maxAge, envelopePath, outputPath)
+}
+
+func selectWith(root, runtime, role string, requirementBytes []byte, identityJSON string, maxAge int, envelopePath, outputPath string) error {
 	if maxAge < 0 {
 		return fmt.Errorf("capability snapshot maximum age must be non-negative")
 	}
@@ -79,9 +90,8 @@ func Select(root, runtime, role, identityJSON string, maxAge int, envelopePath, 
 		return fmt.Errorf("capability snapshot is stale (%.1f days); re-run %s adapter probe", ageDays, runtime)
 	}
 
-	requirementsPath := filepath.Join(root, "scripts", "agents", "roles", role+".requirements.json")
-	requirements, err := readObject(requirementsPath)
-	if err != nil {
+	var requirements map[string]any
+	if err := json.Unmarshal(requirementBytes, &requirements); err != nil {
 		return fmt.Errorf("cannot evaluate capabilities: %w", err)
 	}
 	envelope, err := readObject(envelopePath)
@@ -149,7 +159,7 @@ func Select(root, runtime, role, identityJSON string, maxAge int, envelopePath, 
 		if !waived(waivers, field, residual) {
 			return fmt.Errorf("runtime %s cannot enforce restrictive permission field %s (requested %v); "+
 				"record a role waiver for %s in %s or choose another runtime",
-				runtime, field, envelope[field], residual, filepath.Base(requirementsPath))
+				runtime, field, envelope[field], residual, "internal/protocol/roles/"+role+".requirements.json")
 		}
 	}
 

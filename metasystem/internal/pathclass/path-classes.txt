@@ -13,10 +13,11 @@ install:.gitignore behavior
 install:testing.json behavior
 install:launch.json behavior
 install:testing-parallel-ratchet.json behavior
+install:testing-coverage-floors.json behavior
+install:testing-coverage-floors-linux.json behavior
 install:cmd/ behavior
 install:internal/ behavior
 install:docs/ behavior
-install:scripts/ behavior
 install:skills/ behavior
 install:optional-skills/ behavior
 install:.claude/ behavior
@@ -81,7 +82,7 @@ floor:internal/critique/ tier-1-refused
 floor:internal/returnschema/ tier-1-refused
 floor:internal/config/ tier-1-refused
 floor:internal/delegation/ tier-1-refused
-floor:scripts/agents/schemas/ tier-1-refused
-floor:scripts/agents/path-classes.txt tier-1-refused
-floor:scripts/agents/landing-classes.json tier-1-refused
+floor:internal/protocol/schemas/ tier-1-refused
+floor:internal/pathclass/path-classes.txt tier-1-refused
+floor:internal/landing/landing-classes.json tier-1-refused
 floor:metasystem.conf tier-1-refused

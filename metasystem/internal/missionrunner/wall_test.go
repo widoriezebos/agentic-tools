@@ -266,7 +266,7 @@ func TestHostArtifactDeclarationGrammar(t *testing.T) {
 		{"/etc/passwd", "not a canonical repository-relative file"},
 		{"docs/../secret", "not a canonical repository-relative file"},
 		{"docs/*.md", "glob"},
-		{"scripts/agents/roles/orchestrator.md", "protected path"},
+		{"internal/protocol/roles/orchestrator.md", "protected path"},
 		{"plans/goals.md", "protected path"},
 		{"plans/goals/some-goal.md", "protected path"},
 		{"plans/goals/done/old-goal.md", "protected path"},

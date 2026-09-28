@@ -211,11 +211,11 @@ func TestReaperRecollectsDeliveredReturn(t *testing.T) {
 				record["startedAt"] = now.Add(-2 * time.Hour).Format(isoSecond)
 			}
 			path := writeJobRecord(t, jobs, "delivered", record)
-			schema, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "schemas", "design-critic.schema.json"))
+			schema, err := os.ReadFile(filepath.Join("..", "..", "internal", "protocol", "schemas", "design-critic.schema.json"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			schemaDir := filepath.Join(root, "scripts", "agents", "schemas")
+			schemaDir := filepath.Join(root, "internal", "protocol", "schemas")
 			if err := os.MkdirAll(schemaDir, 0o755); err != nil {
 				t.Fatal(err)
 			}

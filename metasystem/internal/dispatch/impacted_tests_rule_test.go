@@ -1,10 +1,10 @@
 package dispatch
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 func TestBuildBriefsCarryTheImpactedTestsRule(t *testing.T) {
@@ -23,8 +23,8 @@ func TestBuildBriefsCarryTheImpactedTestsRule(t *testing.T) {
 		}
 	}
 
-	path := filepath.Join("..", "..", "scripts", "agents", "templates", "brief.md")
-	data, err := os.ReadFile(path)
+	path := "protocol:templates/brief.md"
+	data, err := protocol.Template("brief.md")
 	if err != nil {
 		t.Fatalf("%s cannot be read: %v", path, err)
 	}

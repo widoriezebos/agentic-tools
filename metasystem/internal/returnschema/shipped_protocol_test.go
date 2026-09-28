@@ -32,7 +32,7 @@ var protocolOwnedFields = map[string][]string{
 
 func shippedAgents(t *testing.T, parts ...string) string {
 	t.Helper()
-	return filepath.Join(append([]string{"..", "..", "scripts", "agents"}, parts...)...)
+	return filepath.Join(append([]string{"..", "protocol"}, parts...)...)
 }
 
 func readShippedJSON(t *testing.T, parts ...string) map[string]any {
@@ -290,20 +290,11 @@ func behaviorDimensions(firstAnchors, firstFindings []any) []any {
 	return dimensions
 }
 
+// shippedSchemaRoot is an installation root; the role schemas the checker
+// reads are the engine's own.
 func shippedSchemaRoot(t *testing.T) string {
 	t.Helper()
-	root := t.TempDir()
-	schemas, err := filepath.Abs(shippedAgents(t, "schemas"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(schemas, filepath.Join(root, "scripts", "agents", "schemas")); err != nil {
-		t.Fatal(err)
-	}
-	return root
+	return t.TempDir()
 }
 
 func writeReturn(t *testing.T, dir, name string, value map[string]any) string {

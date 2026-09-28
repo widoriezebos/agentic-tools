@@ -419,8 +419,8 @@ func baseJudgeBlindPathsWithSources(root, projectTree string, rawDiffTree func(r
 }
 
 func baseJudgeOwns(path string) bool {
-	owners := []string{"internal/landing/", "internal/goal/", "internal/proofrun/", "internal/testpolicy/", "internal/behaviorsurface/", "internal/config/", "internal/refusal/", "internal/governance/", "internal/humanauthority/", "internal/fixtureauth/"}
-	exact := map[string]bool{"metasystem.conf": true, "testing.json": true, "scripts/agents/landing-classes.json": true, "scripts/agents/path-classes.txt": true}
+	owners := []string{"internal/landing/", "internal/pathclass/", "internal/goal/", "internal/proofrun/", "internal/testpolicy/", "internal/behaviorsurface/", "internal/config/", "internal/refusal/", "internal/governance/", "internal/humanauthority/", "internal/fixtureauth/"}
+	exact := map[string]bool{"metasystem.conf": true, "testing.json": true}
 	if exact[path] {
 		return true
 	}

@@ -3,7 +3,7 @@
 The durable rules (D-1..D-8) of the per-checkout append-only event
 stream, promoted from `records/misc/flight-recorder.md` (which keeps the
 requirement history and landing order). `internal/events` implements
-the emitter; `scripts/agents/event-registry.json` is the closed event
+the emitter; `internal/events/event-registry.json` is the closed event
 catalogue. A change to any D rule is a contract change, not a cleanup.
 
 ## D-1. One append-only event stream per checkout
@@ -72,7 +72,7 @@ events join the ordinary way, by checkout, ids, and time. Re-arming
 neither mints nor changes the value.
 
 The EVENT REGISTRY is a MACHINE-READABLE deliverable —
-`scripts/agents/event-registry.json` — and the emitter validates against it:
+`internal/events/event-registry.json` — and the emitter validates against it:
 for every event name, the component that may emit it, the required ids, and
 EVERY payload field with its type, requiredness, and closed value set where
 one exists. Prose in this plan illustrates; the registry file is the

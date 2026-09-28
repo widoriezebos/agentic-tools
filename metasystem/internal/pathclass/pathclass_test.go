@@ -1,6 +1,7 @@
 package pathclass
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"os/exec"
@@ -232,17 +233,17 @@ func TestAbsentNamedPathsClassify(t *testing.T) {
 func TestCompatibilityRows(t *testing.T) {
 	manifest := loadRepositoryManifest(t)
 	for path, want := range map[string]Class{
-		"docs/journey.md":                 Behavior,
-		"docs/reviews/old.md":             Behavior,
-		"memory/README.md":                Behavior,
-		"memory/rulings.md":               Record,
-		"plans/README.md":                 Behavior,
-		"plans/handoff-fixture-1.md":      Record,
-		"plans/goals/x.md":                Ledger,
-		"records/README.md":               Behavior,
-		"records/goals/x.md":              Ledger,
-		"records/narrator-digest.log":     Record,
-		"scripts/agents/path-classes.txt": Behavior,
+		"docs/journey.md":                     Behavior,
+		"docs/reviews/old.md":                 Behavior,
+		"memory/README.md":                    Behavior,
+		"memory/rulings.md":                   Record,
+		"plans/README.md":                     Behavior,
+		"plans/handoff-fixture-1.md":          Record,
+		"plans/goals/x.md":                    Ledger,
+		"records/README.md":                   Behavior,
+		"records/goals/x.md":                  Ledger,
+		"records/narrator-digest.log":         Record,
+		"internal/pathclass/path-classes.txt": Behavior,
 	} {
 		if got := manifest.Class(path); got != want {
 			t.Errorf("Class(%q) = %s; want %s", path, got, want)
@@ -415,7 +416,7 @@ func TestResolvePathReportsMisinstalledEngine(t *testing.T) {
 }
 
 func TestRefusalTextUsesUnclassifiedSentinel(t *testing.T) {
-	const want = "path product.txt has no class in scripts/agents/path-classes.txt; no classified ancestor; add a row for product.txt or its directory to scripts/agents/path-classes.txt"
+	const want = "path product.txt has no class in the engine's path-class policy (internal/pathclass/path-classes.txt); no classified ancestor"
 	if got := RefusalText("product.txt"); got != want {
 		t.Fatalf("RefusalText(product.txt) = %q; want %q", got, want)
 	}
@@ -432,13 +433,47 @@ func parseTestManifest(t *testing.T, content string) *Manifest {
 
 func loadRepositoryManifest(t *testing.T) *Manifest {
 	t.Helper()
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest, err := Load(root)
+	manifest, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
 	return manifest
+}
+
+// The manifest is engine source compiled into the engine: Load returns the
+// embedded bytes, which are the file at SourcePath, and no installation file
+// is read.
+func TestLoadIsTheCompiledInManifest(t *testing.T) {
+	t.Parallel()
+	source, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(SourcePath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(source, Source()) {
+		t.Fatalf("the embedded manifest differs from %s", SourcePath)
+	}
+	manifest, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]Class{
+		SourcePath:                           Behavior,
+		"testing-coverage-floors.json":       Behavior,
+		"testing-coverage-floors-linux.json": Behavior,
+		"scripts/anything.sh":                Unclassified,
+	} {
+		if got := manifest.Class(path); got != want {
+			t.Errorf("Class(%q) = %s; want %s", path, got, want)
+		}
+	}
+	for _, floor := range []string{"internal/protocol/schemas/", SourcePath, "internal/landing/landing-classes.json"} {
+		if !manifest.Floors[floor] {
+			t.Errorf("%s is not a tier-1 floor", floor)
+		}
+	}
+	for floor := range manifest.Floors {
+		if strings.HasPrefix(floor, "scripts/") {
+			t.Errorf("floor %s names the retired scripts tree", floor)
+		}
+	}
 }

@@ -87,8 +87,8 @@ exit 97
 	writeTestingFixtureFile(t, filepath.Join(project, ".gitattributes"), []byte("testing.json merge=metasystem-testing\n"), 0o644)
 	writeTestingFixtureFile(t, filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\ndispatch.cap-max=120\n"), 0o600)
 	writeTestingFixtureFile(t, filepath.Join(root, "internal", "proofrun", "stub.go"), []byte("package proofrun\n"), 0o600)
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600)
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+		writeTestingFixtureFile(t, filepath.Join(root, name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600)
 	}
 	if root, err = canonicalPath(root); err != nil {
 		t.Fatal(err)
@@ -112,11 +112,11 @@ exit 97
 		t.Fatal(err)
 	}
 	requireProofReservationNotAdmissionRefused(t, decision)
-	baselineName := "coverage-ratchet.json"
+	baselineName := "testing-coverage-floors.json"
 	if runtime.GOOS == "linux" {
-		baselineName = "coverage-ratchet-linux.json"
+		baselineName = "testing-coverage-floors-linux.json"
 	}
-	baseline := filepath.Join(root, "scripts", "agents", baselineName)
+	baseline := filepath.Join(root, baselineName)
 	begin := proofrun.CoverageBeginOptions{ControlRoot: root, ExecutionRoot: root, AttemptID: attempt.AttemptID,
 		BaselinePath: baseline, ProducerClass: "full", ProducerPID: int64(os.Getpid()), CallerPID: int64(os.Getpid())}
 	if err := proofrun.BeginCoverage(begin); err != nil {
@@ -2273,8 +2273,13 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 		if _, err := os.Lstat(filepath.Join(root, ".git")); !os.IsNotExist(err) {
 			t.Fatalf("execution root contains .git: %v", err)
 		}
-		if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
+		if err := os.MkdirAll(root, 0o755); err != nil {
 			t.Fatal(err)
+		}
+		if marker, err := os.OpenFile(filepath.Join(root, "metasystem.conf"), os.O_CREATE|os.O_WRONLY, 0o644); err != nil {
+			t.Fatal(err)
+		} else {
+			marker.Close()
 		}
 		conf, err := os.ReadFile(filepath.Join(controlRoot, "metasystem.conf"))
 		if err != nil {
@@ -2283,8 +2288,8 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), conf, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-			if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
+		for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+			if err := os.WriteFile(filepath.Join(root, name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -2931,11 +2936,16 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 	})
 	snapshot := writeProofCommandFixtureSnapshot(t, repository)
 	root := repository.root
-	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		path := filepath.Join(root, "scripts", "agents", name)
+	if marker, err := os.OpenFile(filepath.Join(root, "metasystem.conf"), os.O_CREATE|os.O_WRONLY, 0o644); err != nil {
+		t.Fatal(err)
+	} else {
+		marker.Close()
+	}
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+		path := filepath.Join(root, name)
 		if err := os.WriteFile(path, []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
 			t.Fatal(err)
 		}

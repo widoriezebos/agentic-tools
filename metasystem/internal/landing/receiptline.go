@@ -295,13 +295,12 @@ func receiptLineCodePaths(workspace receiptLineWorkspace, location receiptLedger
 	if err != nil {
 		return nil, err
 	}
-	manifestPath := path.Join(prefix, pathclass.ManifestPath)
-	manifestBytes, present, err := workspace.FileAt(baseTree, manifestPath)
+	manifestBytes, present, err := basePolicy(workspace.FileAt, baseTree, prefix, pathclass.SourcePath, pathclass.LegacySourcePath)
 	if err != nil {
 		return nil, err
 	}
 	if !present {
-		return nil, fmt.Errorf("path class manifest %s is not in the landing base", manifestPath)
+		return nil, fmt.Errorf("path class manifest %s is not in the landing base", path.Join(prefix, pathclass.SourcePath))
 	}
 	manifest, err := pathclass.Parse(manifestBytes)
 	if err != nil {

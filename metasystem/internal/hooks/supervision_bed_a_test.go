@@ -13,12 +13,12 @@ import (
 // supervision hook from the Git toplevel. The hook files are the subject.
 func TestSupervisionBedAShippedHooksNeverResolveFromTheGitToplevel(t *testing.T) {
 	t.Parallel()
-	shipped, err := filepath.Glob(filepath.Join("..", "..", "scripts", "enforcement", "*hooks.json"))
+	shipped, err := filepath.Glob(filepath.Join("..", "..", "internal", "runtimes", "enforcement", "*hooks.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(shipped) == 0 {
-		t.Fatal("no shipped hook configuration under scripts/enforcement")
+		t.Fatal("no shipped hook configuration under internal/runtimes/enforcement")
 	}
 	const toplevel = "$(git rev-parse --show-toplevel)/scripts/agents/supervision-hook.sh"
 	for _, path := range shipped {

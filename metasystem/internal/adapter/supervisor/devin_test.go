@@ -206,11 +206,11 @@ func newDevinFixture(t *testing.T, transport, verb string) *devinFixture {
 			t.Fatal(err)
 		}
 	}
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "agents", "schemas", "implementer.schema.json"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "internal", "protocol", "schemas", "implementer.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(f.root, "scripts", "agents", "schemas", "implementer.schema.json"), string(schema))
+	writeFile(t, filepath.Join(f.root, "internal", "protocol", "schemas", "implementer.schema.json"), string(schema))
 	// An absent key resolves legacy; an absent file is unreadable.
 	conf := "# no transport key\n"
 	if transport != "" {

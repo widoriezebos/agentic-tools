@@ -13,7 +13,7 @@ var claudeShipped = readShippedHooksFixture("claude-code")
 var devinShipped = readShippedHooksFixture("devin")
 
 func readShippedHooksFixture(name string) string {
-	contents, err := os.ReadFile(filepath.Join("..", "..", "scripts", "enforcement", name+"-hooks.json"))
+	contents, err := os.ReadFile(filepath.Join("..", "..", "internal", "runtimes", "enforcement", name+"-hooks.json"))
 	if err != nil && os.Getenv(directTestEngineEnv) != "" {
 		// This binary runs as a fixture engine outside the package directory.
 		return ""

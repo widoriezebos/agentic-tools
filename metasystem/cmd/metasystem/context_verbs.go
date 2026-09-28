@@ -157,7 +157,11 @@ func contextWindow(root string) (contextWindowView, error) {
 	if err != nil {
 		return contextWindowView{}, err
 	}
-	shipped, err := launch.LoadShippedSeatWindow(root, settings.SeatWindow)
+	shippedSettings, err := shippedClaudeSettings()
+	if err != nil {
+		return contextWindowView{}, err
+	}
+	shipped, err := launch.LoadShippedSeatWindow(shippedSettings, settings.SeatWindow)
 	if err != nil {
 		return contextWindowView{}, err
 	}

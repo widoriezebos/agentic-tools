@@ -21,14 +21,14 @@ func writeTravel(t *testing.T, root, rel, content string) {
 func TestQualifiedNamesGuardTheTravelingSurfaces(t *testing.T) {
 	root := t.TempDir()
 	// A bare collision word on a traveling surface is a violation.
-	writeTravel(t, root, "scripts/agents/templates/brief.md",
+	writeTravel(t, root, "internal/protocol/templates/brief.md",
 		"Resume the job when the critic returns.\n")
 	// A file that QUALIFIES the word first owns its later bare uses.
 	writeTravel(t, root, "skills/sample/SKILL.md",
 		"Name the acceptance gate before editing.\nOnly the gate accepts a candidate.\n")
 	// A qualified heading owns the body's later bare uses — headings
 	// are read prose, not comments.
-	writeTravel(t, root, "scripts/agents/roles/sample.md",
+	writeTravel(t, root, "internal/protocol/roles/sample.md",
 		"# The mission runner\nOnly the runner restarts a dead host turn.\n")
 	violations, err := auditQualifiedNames(root)
 	if err != nil {

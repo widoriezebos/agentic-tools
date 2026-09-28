@@ -21,12 +21,17 @@ func setupCLIFixture(t *testing.T) (repo, installation string) {
 	}
 	setupCLIWrite(t, filepath.Join(repo, "development", "metasystem-design.md"), "design\n", 0o644)
 	setupCLIWrite(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=claude\n", 0o644)
-	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(installation, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	setupCLIWrite(t, filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json"), runtimeHookFixture(t, "claude-code"), 0o644)
-	setupCLIWrite(t, filepath.Join(installation, "scripts", "enforcement", "codex-hooks.json"), runtimeHookFixture(t, "codex"), 0o644)
-	setupCLIWrite(t, filepath.Join(installation, "scripts", "enforcement", "devin-hooks.json"), runtimeHookFixture(t, "devin"), 0o644)
+	if marker, err := os.OpenFile(filepath.Join(installation, "metasystem.conf"), os.O_CREATE|os.O_WRONLY, 0o644); err != nil {
+		t.Fatal(err)
+	} else {
+		marker.Close()
+	}
+	setupCLIWrite(t, filepath.Join(installation, "internal", "runtimes", "enforcement", "claude-code-hooks.json"), runtimeHookFixture(t, "claude-code"), 0o644)
+	setupCLIWrite(t, filepath.Join(installation, "internal", "runtimes", "enforcement", "codex-hooks.json"), runtimeHookFixture(t, "codex"), 0o644)
+	setupCLIWrite(t, filepath.Join(installation, "internal", "runtimes", "enforcement", "devin-hooks.json"), runtimeHookFixture(t, "devin"), 0o644)
 	setupCLIWrite(t, filepath.Join(installation, "skills", "demo", "SKILL.md"), "demo\n", 0o644)
 	setupCLIWrite(t, filepath.Join(installation, "skills", "demo", "agents", "claude-profile.md"), "claude\n", 0o644)
 	setupCLIWrite(t, filepath.Join(installation, "skills", "demo", "agents", "devin", "AGENT.md"), "devin\n", 0o644)
@@ -99,7 +104,7 @@ func runtimeHookFixture(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	contents, err := os.ReadFile(filepath.Join(root, "scripts", "enforcement", name+"-hooks.json"))
+	contents, err := os.ReadFile(filepath.Join(root, "internal", "runtimes", "enforcement", name+"-hooks.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

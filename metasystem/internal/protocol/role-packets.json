@@ -30,61 +30,61 @@
   "roles": {
     "behavior-judge": {
       "sources": [
-        {"slot": "role-instructions", "path": "scripts/agents/roles/behavior-judge.md"},
+        {"slot": "role-instructions", "path": "protocol:roles/behavior-judge.md"},
         {"slot": "required-skill", "path": "docs/orchestration.md"},
-        {"slot": "response-contract", "path": "scripts/agents/schemas/behavior-judge.schema.json"}
+        {"slot": "response-contract", "path": "protocol:schemas/behavior-judge.schema.json"}
       ]
     },
     "code-critic": {
       "artifactMember": "Return schema version 4 supersedes the role file version. Every rigor row requires artifact as <path>, NEW <path>, or <old>=><new>, with paths beginning metasystem/.",
       "sources": [
-        {"slot": "role-instructions", "path": "scripts/agents/roles/code-critic.md"},
+        {"slot": "role-instructions", "path": "protocol:roles/code-critic.md"},
         {"slot": "required-skill", "path": "skills/code-critique/SKILL.md"},
-        {"slot": "response-contract", "path": "scripts/agents/schemas/code-critic.schema.json"}
+        {"slot": "response-contract", "path": "protocol:schemas/code-critic.schema.json"}
       ]
     },
     "design-critic": {
       "artifactMember": "Return schema version 4 supersedes the role file version. Every rigor row requires artifact as <path>, NEW <path>, or <old>=><new>, with paths beginning metasystem/. The brief carries the declared-output SHA-256 digest.",
       "sources": [
-        {"slot": "role-instructions", "path": "scripts/agents/roles/design-critic.md"},
+        {"slot": "role-instructions", "path": "protocol:roles/design-critic.md"},
         {"slot": "required-skill", "path": "skills/design-critique/SKILL.md"},
-        {"slot": "response-contract", "path": "scripts/agents/schemas/design-critic.schema.json"}
+        {"slot": "response-contract", "path": "protocol:schemas/design-critic.schema.json"}
       ]
     },
     "implementer": {
       "sources": [
-        {"slot": "role-instructions", "path": "scripts/agents/roles/implementer.md"},
+        {"slot": "role-instructions", "path": "protocol:roles/implementer.md"},
         {"slot": "required-skill", "path": "docs/orchestration.md"},
-        {"slot": "response-contract", "path": "scripts/agents/schemas/implementer.schema.json"}
+        {"slot": "response-contract", "path": "protocol:schemas/implementer.schema.json"}
       ]
     },
     "investigator": {
       "sources": [
-        {"slot": "role-instructions", "path": "scripts/agents/roles/investigator.md"},
+        {"slot": "role-instructions", "path": "protocol:roles/investigator.md"},
         {"slot": "required-skill", "path": "skills/take-a-step-back/SKILL.md"},
-        {"slot": "response-contract", "path": "scripts/agents/schemas/investigator.schema.json"}
+        {"slot": "response-contract", "path": "protocol:schemas/investigator.schema.json"}
       ]
     },
     "steward-continuation": {
       "sources": [
-        {"slot": "role-instructions", "path": "scripts/agents/roles/steward-continuation.md"},
+        {"slot": "role-instructions", "path": "protocol:roles/steward-continuation.md"},
         {"slot": "required-skill", "path": "docs/orchestration.md"},
-        {"slot": "response-contract", "path": "scripts/agents/schemas/steward-continuation.schema.json"}
+        {"slot": "response-contract", "path": "protocol:schemas/steward-continuation.schema.json"}
       ]
     },
     "verifier": {
       "sources": [
-        {"slot": "role-instructions", "path": "scripts/agents/roles/verifier.md"},
+        {"slot": "role-instructions", "path": "protocol:roles/verifier.md"},
         {"slot": "required-skill", "path": "skills/verify/SKILL.md"},
-        {"slot": "response-contract", "path": "scripts/agents/schemas/verifier.schema.json"}
+        {"slot": "response-contract", "path": "protocol:schemas/verifier.schema.json"}
       ]
     },
     "warden": {
       "artifactMember": "Return schema version 4 supersedes the role file version. Every rigor row requires artifact as <path>, NEW <path>, or <old>=><new>, with paths beginning metasystem/.",
       "sources": [
-        {"slot": "role-instructions", "path": "scripts/agents/roles/warden.md"},
+        {"slot": "role-instructions", "path": "protocol:roles/warden.md"},
         {"slot": "required-skill", "path": "skills/code-critique/SKILL.md"},
-        {"slot": "response-contract", "path": "scripts/agents/schemas/warden.schema.json"}
+        {"slot": "response-contract", "path": "protocol:schemas/warden.schema.json"}
       ]
     }
   }

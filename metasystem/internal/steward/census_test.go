@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	"encoding/json"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
 	"path/filepath"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 func TestOwnedLiveProcessesCountAsLive(t *testing.T) {

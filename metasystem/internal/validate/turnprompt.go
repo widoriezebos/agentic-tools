@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/turn"
 )
 
@@ -63,16 +64,15 @@ var turnStreamStates = map[string]bool{
 // Landed Returns records. It returns the first violation found, or nil
 // on a pass.
 func TurnPrompt(root, promptPath, turnDir string) *Violation {
-	preamblePath := filepath.Join(root, "scripts", "agents", "roles", "orchestrator.md")
 	turnRecordPath := filepath.Join(turnDir, "turn.json")
 
 	prompt, err := os.ReadFile(promptPath)
 	if err != nil {
 		return &Violation{"framing", fmt.Sprintf("prompt could not be read: %s: %v", promptPath, err)}
 	}
-	preamble, err := os.ReadFile(preamblePath)
+	preamble, err := protocol.RoleInstructions("orchestrator")
 	if err != nil {
-		return &Violation{"preamble", fmt.Sprintf("shipped preamble could not be read: %s: %v", preamblePath, err)}
+		return &Violation{"preamble", fmt.Sprintf("shipped preamble could not be read: %v", err)}
 	}
 	if bytes.Contains(prompt, []byte("\r")) {
 		return &Violation{"framing", "prompt must use LF line endings"}
@@ -143,7 +143,7 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 	preambleStart := headerEnd + 2
 	preambleEnd := preambleStart + len(preamble)
 	if preambleEnd > len(prompt) || !bytes.Equal(prompt[preambleStart:preambleEnd], preamble) {
-		return &Violation{"preamble", "assembled preamble bytes differ from scripts/agents/roles/orchestrator.md"}
+		return &Violation{"preamble", "assembled preamble bytes differ from the engine's orchestrator preamble (internal/protocol/roles/orchestrator.md)"}
 	}
 	if preambleEnd >= len(prompt) || prompt[preambleEnd] != '\n' {
 		return &Violation{"preamble", "shipped preamble is not followed by exactly one blank line"}

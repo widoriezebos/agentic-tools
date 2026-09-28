@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 func delegationStartReader(root string) (identity.StartReader, error) {
@@ -219,7 +220,7 @@ func TestDispatchIntegrationRecordsAFreshCriticRound(t *testing.T) {
 		t.Fatal("the recorded input hash is not the published prompt's")
 	}
 	prompt, _ := os.ReadFile(promptPath)
-	preamble, _ := os.ReadFile(filepath.Join(b.root, "scripts", "agents", "roles", "design-critic.md"))
+	preamble, _ := protocol.RoleInstructions("design-critic")
 	payloadBrief, _ := os.ReadFile(filepath.Join(b.root, "artifacts", "agents", "happy", "brief.md"))
 	text := string(prompt)
 	if !strings.HasPrefix(text, "# Task Direction\n\n") || !strings.Contains(text, "Job-Id: happy") {
@@ -405,7 +406,7 @@ func (b *bed) followCritic(job, design string) delegation.Result {
 	b.writeFile("plans/designs/"+design, "# "+design+"\n\nFollow-up revision.\n")
 	b.git("add", "-A")
 	b.git("commit", "-qm", "revise "+design)
-	template, err := os.ReadFile(filepath.Join(b.root, "scripts", "agents", "templates", "follow-up.md"))
+	template, err := protocol.Template("follow-up.md")
 	if err != nil {
 		b.t.Fatal(err)
 	}
