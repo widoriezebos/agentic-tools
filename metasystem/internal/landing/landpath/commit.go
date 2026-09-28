@@ -411,7 +411,7 @@ func (b *boundary) decideAndCommit(settledTree string) int {
 	request := b.request
 	machine := strings.TrimSpace(string(b.git(request.Root, "config", "--get", "metasystem.goal.machine").Stdout))
 	if machine == "" {
-		return b.refuse(2, "commit refused: no machine nickname is enrolled and hostnames are never published — run  git config metasystem.goal.machine <nickname>  once on this machine")
+		return b.refuse(2, "commit refused: no machine nickname is enrolled on this machine; name it once with: git config metasystem.goal.machine NAME")
 	}
 	lineage := request.OwnerLineage
 	if lineage == "" {
