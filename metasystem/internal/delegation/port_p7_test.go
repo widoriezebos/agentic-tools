@@ -21,8 +21,6 @@ func p7RosterBed(t *testing.T) *bed {
 	t.Helper()
 	b := newBed(t)
 	b.writeFile("metasystem.conf", dispatchBedConfig+"evidence.root="+filepath.Join(b.root, "evidence")+"\n")
-	b.installAsset("scripts/agents/roles/implementer.md")
-	b.installAsset("scripts/agents/roles/implementer.requirements.json")
 	return b
 }
 

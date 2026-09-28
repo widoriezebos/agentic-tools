@@ -12,7 +12,6 @@ import (
 // to an output file.
 func runSchemaMaterialize(args []string) int {
 	flags := flag.NewFlagSet("schema materialize", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
 	role := flags.String("role", "", "role name")
 	version := flags.Int("version", 0, "schema version (1, 2, or critic-only 3, 4, or 5)")
 	output := flags.String("output", "", "output path")
@@ -39,11 +38,11 @@ func runSchemaMaterialize(args []string) int {
 		fmt.Fprintln(os.Stderr, "version 5 is only available for design-critic, code-critic, and warden")
 		return 2
 	}
-	if *root == "" || *output == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal schema materialize --root R --role ROLE --version V --output O")
+	if *output == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal schema materialize --role ROLE --version V --output O")
 		return 2
 	}
-	if err := returnschema.Materialize(*root, *role, *version, *output); err != nil {
+	if err := returnschema.Materialize(*role, *version, *output); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

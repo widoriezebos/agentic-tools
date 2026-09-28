@@ -768,8 +768,8 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		path := filepath.Join(root, "scripts", "agents", name)
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+		path := filepath.Join(root, name)
 		if err := os.WriteFile(path, []byte(`{"floors":{"cmd/metasystem":1},"exempt":{}}`), 0o600); err != nil {
 			t.Fatal(err)
 		}

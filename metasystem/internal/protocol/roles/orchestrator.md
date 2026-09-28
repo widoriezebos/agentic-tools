@@ -82,7 +82,7 @@ Report in `dispatched` only jobs you created THIS turn: re-listing one of this m
 
 ## Return contract
 
-Return JSON conforming to `scripts/agents/schemas/orchestrator.schema.json`, with exactly `turnId`, `missionId`, `cycle`, `dispatched`, `certified`, `streamUpdatesRequested`, `askCandidates`, `factsForLedger`, `gaps`, and `identity`. State only work actually dispatched or certified and only changes you want the mission runner to apply. For `identity.sessionId`, echo the prompt's `Host-Session` header exactly (null when it says `none`), or report the session id your own runtime shows you — both are accepted; never invent one.
+Return JSON conforming to `internal/protocol/schemas/orchestrator.schema.json`, with exactly `turnId`, `missionId`, `cycle`, `dispatched`, `certified`, `streamUpdatesRequested`, `askCandidates`, `factsForLedger`, `gaps`, and `identity`. State only work actually dispatched or certified and only changes you want the mission runner to apply. For `identity.sessionId`, echo the prompt's `Host-Session` header exactly (null when it says `none`), or report the session id your own runtime shows you — both are accepted; never invent one.
 
 ## Prohibitions
 
@@ -103,6 +103,6 @@ Inside a mission created by the mission runner, the host never authors product b
 
 Your runtime's built-in subagents are your own hands: use them freely for reading and thinking, never for product bytes or recorded protocol roles — their work carries no identity of its own.
 
-- Every critique chain starts from `scripts/agents/templates/review-brief.md` with its round budget, threat model, and scope agreed BEFORE round one. A true finding outside the declared threat model closes as out-of-scope citing the brief; a chain without a declared round budget does not start.
+- Every critique chain starts from `internal/protocol/templates/review-brief.md` with its round budget, threat model, and scope agreed BEFORE round one. A true finding outside the declared threat model closes as out-of-scope citing the brief; a chain without a declared round budget does not start.
 
 - The delivery law binds your dispatches: large work is never built in one go. Slice it into iterative, independently deployable pieces — each delegate job lands whole, works on its own, and leaves the system better — and record the remainder where the next round finds it. A brief asking for a big bang is a brief you rewrite before dispatching it.

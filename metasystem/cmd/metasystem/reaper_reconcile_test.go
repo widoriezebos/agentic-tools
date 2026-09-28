@@ -30,8 +30,8 @@ func TestReaperTickReconcilesAnAttemptWhoseLauncherIsGone(t *testing.T) {
 	// (candidateProofAdmission); any other root reserves in the account's real
 	// host admission, which live proof runs on the host hold ("busy").
 	pinProofBinaryFixture(t, root)
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}

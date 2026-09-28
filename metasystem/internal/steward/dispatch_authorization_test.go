@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 // authorizationBed is a checkout with an enrolled installation and one
@@ -37,10 +39,17 @@ func authorizationBed(t *testing.T) (string, Intent) {
 	}
 	it := testIntent("auth-1")
 	it.Role, it.Permissions, it.JobId = "steward-continuation", "workspace", "steward-auth-1"
-	it.RoleDigest = digest(write("scripts/agents/roles/steward-continuation.md", "# Role\n"))
-	it.ReqDigest = digest(write("scripts/agents/roles/steward-continuation.requirements.json", `{"required":[]}`))
-	it.SchemaDigest = digest(write("scripts/agents/schemas/steward-continuation.schema.json", `{"type":"object"}`))
-	it.PermsDigest = digest(write("scripts/agents/permissions/workspace.json", `{"write":["workspace"]}`))
+	engine := func(data []byte, err error) string {
+		sum, digestErr := digestProtocol(data, err)
+		if digestErr != nil {
+			t.Fatal(digestErr)
+		}
+		return sum
+	}
+	it.RoleDigest = engine(protocol.RoleInstructions("steward-continuation"))
+	it.ReqDigest = engine(protocol.RoleRequirements("steward-continuation"))
+	it.SchemaDigest = engine(protocol.RoleSchema("steward-continuation"))
+	it.PermsDigest = engine(protocol.Permissions("workspace"))
 	it.BriefDigest = digest(write(strings.TrimPrefix(BriefPath(root, it.Nonce), root+"/"), "# Continue\n"))
 	it.RepoIdentity, it.InstallGen = root, 1
 	if err := os.MkdirAll(filepath.Dir(RepoIdentityPath(root)), 0o755); err != nil {

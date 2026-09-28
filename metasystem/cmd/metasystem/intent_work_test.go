@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -187,27 +188,10 @@ func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	bed.starter = &workStarter{m: bed.manager, fail: map[string]bool{}}
 	bed.manager.Supervisor = bed.starter
 	bed.unitRoot = filepath.Join(parent, "unit")
-	layout, err := bed.owners().resolver.ResolveLayout(bed.root())
-	if err != nil {
+	if _, err := bed.owners().resolver.ResolveLayout(bed.root()); err != nil {
 		t.Fatal(err)
 	}
-	template, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "templates", "review-brief.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	templates := filepath.Join(layout.InstallationRoot, "scripts", "agents", "templates")
-	os.MkdirAll(templates, 0o700)
-	if err := os.WriteFile(filepath.Join(templates, "review-brief.md"), template, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	designTemplate, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "templates", "design-brief.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(templates, "design-brief.md"), designTemplate, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	bed.manager.TemplateDirectory = templates
+	bed.manager.Templates = protocol.Templates()
 	return bed
 }
 
@@ -457,7 +441,7 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 	if len(plan.Proof) != 1 || !slices.Equal(plan.Proof[0].Argv, workArgv) || plan.Proof[0].Dir != bed.worktree {
 		t.Fatalf("proof=%+v, want the exact argv %v", plan.Proof, workArgv)
 	}
-	pack := &launch.Manager{TemplateDirectory: bed.manager.TemplateDirectory}
+	pack := &launch.Manager{Templates: bed.manager.Templates}
 	if _, err := pack.CheckPack(launch.StartSpec{Kind: "read", Brief: plan.Read.Brief, WorkingDirectory: bed.worktree}); err != nil {
 		t.Fatalf("read brief: %v", err)
 	}

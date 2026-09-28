@@ -385,8 +385,8 @@ func newCanonicalReceiptFixture(t *testing.T) *canonicalReceiptFixture {
 	f := newObserveFixture(t)
 	f.write("metasystem.conf", "metasystem.runtimes=fake\ndispatch.cap-min=5\ndispatch.cap-max=120\n")
 	f.write("internal/proofrun/stub.go", "package proofrun\n")
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		f.write(filepath.Join("scripts", "agents", name), `{"floors":{"internal/proofrun":1},"exempt":{}}`)
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+		f.write(filepath.Join(filepath.FromSlash(name)), `{"floors":{"internal/proofrun":1},"exempt":{}}`)
 	}
 	f.git("add", ".")
 	tree, err := (gittree.Workspace{Dir: f.root}).StagedTree()
@@ -422,12 +422,12 @@ func newCanonicalReceiptFixture(t *testing.T) *canonicalReceiptFixture {
 		t.Fatal(err)
 	}
 	requireProofReservationNotAdmissionRefused(t, decision)
-	baselineName := "coverage-ratchet.json"
+	baselineName := "testing-coverage-floors.json"
 	if runtime.GOOS == "linux" {
-		baselineName = "coverage-ratchet-linux.json"
+		baselineName = "testing-coverage-floors-linux.json"
 	}
 	begin := proofrun.CoverageBeginOptions{ControlRoot: f.root, ExecutionRoot: executionRoot,
-		AttemptID: attempt.AttemptID, BaselinePath: filepath.Join(executionRoot, "scripts", "agents", baselineName),
+		AttemptID: attempt.AttemptID, BaselinePath: filepath.Join(executionRoot, baselineName),
 		ProducerClass: "full", ProducerPID: int64(os.Getpid()), CallerPID: int64(os.Getpid())}
 	if err := proofrun.BeginCoverage(begin); err != nil {
 		t.Fatal(err)
@@ -502,15 +502,15 @@ func newFileOnlyCanonicalReceiptFixtureWithBeforeComplete(t *testing.T, beforeCo
 	f.write("metasystem.conf", "metasystem.runtimes=fake\ndispatch.cap-min=5\ndispatch.cap-max=120\n")
 	f.write("development/metasystem-design.md", "fixture\n")
 	f.write("internal/proofrun/stub.go", "package proofrun\n")
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		f.write(filepath.Join("scripts", "agents", name), `{"floors":{"internal/proofrun":1},"exempt":{}}`)
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+		f.write(filepath.Join(filepath.FromSlash(name)), `{"floors":{"internal/proofrun":1},"exempt":{}}`)
 	}
-	for _, name := range []string{"path-classes.txt", "landing-classes.json"} {
-		content, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", name))
+	for _, name := range []string{"internal/pathclass/path-classes.txt", "internal/landing/landing-classes.json"} {
+		content, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(name)))
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.write(filepath.Join("scripts", "agents", name), string(content))
+		f.write(filepath.Join(filepath.FromSlash(name)), string(content))
 	}
 	f.tree = receiptFactID(f.files)
 	f.acceptedTree = f.tree
@@ -554,12 +554,12 @@ func newFileOnlyCanonicalReceiptFixtureWithBeforeComplete(t *testing.T, beforeCo
 		t.Fatal(err)
 	}
 	requireProofReservationNotAdmissionRefused(t, decision)
-	baselineName := "coverage-ratchet.json"
+	baselineName := "testing-coverage-floors.json"
 	if runtime.GOOS == "linux" {
-		baselineName = "coverage-ratchet-linux.json"
+		baselineName = "testing-coverage-floors-linux.json"
 	}
 	begin := proofrun.CoverageBeginOptions{ControlRoot: f.root, ExecutionRoot: frozen.Root,
-		AttemptID: attempt.AttemptID, BaselinePath: filepath.Join(frozen.Root, "scripts", "agents", baselineName),
+		AttemptID: attempt.AttemptID, BaselinePath: filepath.Join(frozen.Root, baselineName),
 		ProducerClass: "full", ProducerPID: int64(os.Getpid()), CallerPID: int64(os.Getpid())}
 	if err := proofrun.BeginCoverage(begin); err != nil {
 		t.Fatal(err)

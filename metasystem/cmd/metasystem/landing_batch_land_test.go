@@ -73,8 +73,13 @@ func TestBatchLandCommitWrapperRunsFromNestedModuleRoot(t *testing.T) {
 	t.Parallel()
 	repository := t.TempDir()
 	module := filepath.Join(repository, "metasystem")
-	if err := os.MkdirAll(filepath.Join(module, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(module, 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if marker, err := os.OpenFile(filepath.Join(module, "metasystem.conf"), os.O_CREATE|os.O_WRONLY, 0o644); err != nil {
+		t.Fatal(err)
+	} else {
+		marker.Close()
 	}
 	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -91,6 +96,9 @@ func TestBatchLandCommitWrapperRunsFromNestedModuleRoot(t *testing.T) {
   printf 'landed-by=%s\n' "$METASYSTEM_LANDED_BY"
 } > wrapper-marker.txt
 `
+	if err := os.MkdirAll(filepath.Dir(wrapper), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

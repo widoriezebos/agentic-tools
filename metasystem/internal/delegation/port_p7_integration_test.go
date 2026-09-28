@@ -454,28 +454,7 @@ func TestP7UnverifiedRestrictiveFieldRefusesUntilWaivedIntegration(t *testing.T)
 	if _, err := os.Stat(b.recordPath("unverified-deny")); !os.IsNotExist(err) {
 		t.Fatalf("the refused dispatch left a record: %v", err)
 	}
-
-	requirements := filepath.Join(b.root, "scripts", "agents", "roles", "implementer.requirements.json")
-	var role map[string]any
-	if err := json.Unmarshal([]byte(b.readText("scripts/agents/roles/implementer.requirements.json")), &role); err != nil {
-		t.Fatal(err)
-	}
-	waivers, _ := role["waivers"].(map[string]any)
-	if waivers == nil {
-		waivers = map[string]any{}
-	}
-	network, _ := waivers["network"].([]any)
-	waivers["network"] = append(network, "fake-network-unverified")
-	role["waivers"] = waivers
-	encoded, _ := json.Marshal(role)
-	if err := os.WriteFile(requirements, encoded, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	b.git("commit", "-qam", "waive the fake network residual")
-	b.armSupervision()
-	result = b.runEnv(b.dispatchEnv("fresh"), "dispatch", "--role", "implementer", "--brief", brief, "--permissions", "critic", "--job-id", "waived-deny")
-	requireExit(t, result, 0, b.stderr.String())
-	if record := b.record("waived-deny"); record["status"] != "running" {
-		t.Fatalf("the waived dispatch did not launch: %v", record["status"])
-	}
+	// The waived half lives with the selector (internal/capability
+	// TestSelectRestrictiveFieldRefusedThenWaived): role
+	// requirements are compiled into the engine, not an installation file.
 }

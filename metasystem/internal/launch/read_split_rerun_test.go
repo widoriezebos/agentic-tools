@@ -219,7 +219,7 @@ func TestIndependentReadStartsThroughLaunchVerbs(t *testing.T) {
 	root := moduleRoot(t)
 	for _, path := range []string{
 		filepath.Join(root, "docs", "project-rules.md"),
-		filepath.Join(root, "scripts", "agents", "templates", "review-brief.md"),
+		filepath.Join(root, "internal", "protocol", "templates", "review-brief.md"),
 	} {
 		data, err := os.ReadFile(path)
 		for _, phrase := range phrases {

@@ -203,7 +203,7 @@ Keep the original session identity and role return contract.
 
 The original design-critic schema remains binding without additions, removals, or relaxations.
 
-Schema: scripts/agents/schemas/design-critic.schema.json
+Schema: internal/protocol/schemas/design-critic.schema.json
 `
 
 // SelftestRun executes the full-contract self-test. It returns the error a

@@ -10,7 +10,7 @@ func quoteFixture(t *testing.T, quoted string) (root, rolesDir string) {
 	t.Helper()
 	root = t.TempDir()
 	writeFile(t, filepath.Join(root, "docs", "source.md"), "# Rules\n\nThe exact rule holds.\n")
-	rolesDir = filepath.Join(root, "scripts", "agents", "roles")
+	rolesDir = filepath.Join(root, "internal", "protocol", "roles")
 	writeFile(t, filepath.Join(rolesDir, "role.md"),
 		"# Role\n\n<!-- quote source=\"docs/source.md\" -->\n"+quoted+"<!-- /quote -->\n")
 	return root, rolesDir

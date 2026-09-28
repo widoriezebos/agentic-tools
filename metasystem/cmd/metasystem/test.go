@@ -887,9 +887,17 @@ type protectedCoverageBaseline struct {
 }
 
 func protectCoverageRatchets(workspace gittree.Workspace, baseTree, candidateTree, prefix string) error {
-	for _, relative := range []string{"scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"} {
-		path := strings.TrimPrefix(filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), relative)), "./")
+	inTree := func(relative string) string {
+		return strings.TrimPrefix(filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), relative)), "./")
+	}
+	for _, relative := range testpolicy.CoverageFloorsFiles() {
+		path := inTree(relative)
+		// A base from before the floors moved beside testing.json keeps them
+		// at the legacy path; the landing that moves them is judged by those.
 		baseBytes, basePresent, err := workspace.FileAt(baseTree, path)
+		if err == nil && !basePresent {
+			baseBytes, basePresent, err = workspace.FileAt(baseTree, inTree(testpolicy.LegacyCoverageFloorsFile(relative)))
+		}
 		if err != nil || !basePresent {
 			continue
 		}

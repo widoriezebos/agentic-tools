@@ -26,7 +26,7 @@ func TestLaunchSettingsPrintsEachValueAndSource(t *testing.T) {
 	}
 	// The tracked conf imposes no seat window, so the shipped Claude settings
 	// match it by carrying no autoCompactWindow at all, and no drift is reported.
-	writeShippedSeatWindow(t, root, 0, false)
+	writeShippedSeatWindow(t, 0, false)
 	oldExecutable, oldLookup := launchExecutable, launchLookupEnv
 	launchExecutable = func() (string, error) { return filepath.Join(root, "bin", "metasystem"), nil }
 	launchLookupEnv = func(string) (string, bool) { return "", false }
@@ -71,9 +71,9 @@ func TestLaunchSettingsPrintsEachValueAndSource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("launch.seat.window.tokens=210000\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	writeShippedSeatWindow(t, root, 200000, true)
+	writeShippedSeatWindow(t, 200000, true)
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int { return runLaunchSettings(nil) })
-	if code != 0 || stderr != "" || !strings.Contains(stdout, "launch.seat.window.shipped=200000 source=scripts/enforcement/claude-code-hooks.json shipped-differs-from-conf\n") {
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "launch.seat.window.shipped=200000 source=internal/runtimes/enforcement/claude-code-hooks.json shipped-differs-from-conf\n") {
 		t.Fatalf("differing shipped setting: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int { return runLaunchSettings([]string{"--json"}) })
@@ -100,7 +100,7 @@ func TestLaunchSettingsPrintsEachValueAndSource(t *testing.T) {
 		t.Fatalf("shipped setting=%+v", shipped)
 	}
 
-	writeShippedSeatWindow(t, root, 0, false)
+	writeShippedSeatWindow(t, 0, false)
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int { return runLaunchSettings(nil) })
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "launch.seat.window.shipped=0 source=absent shipped-differs-from-conf\n") {
 		t.Fatalf("absent shipped setting: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -140,19 +140,17 @@ func trackedConfValues(conf string) map[string]string {
 	return values
 }
 
-func writeShippedSeatWindow(t *testing.T, root string, tokens int64, present bool) {
+// writeShippedSeatWindow stands in for the Claude settings the engine ships:
+// tokens as their autoCompactWindow, or none when present is false.
+func writeShippedSeatWindow(t *testing.T, tokens int64, present bool) {
 	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(launch.ShippedClaudeSettingsSource))
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	content := "{\"hooks\":{}}\n"
 	if present {
 		content = fmt.Sprintf("{\"autoCompactWindow\":%d,\"hooks\":{}}\n", tokens)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	original := shippedClaudeSettings
+	t.Cleanup(func() { shippedClaudeSettings = original })
+	shippedClaudeSettings = func() ([]byte, error) { return []byte(content), nil }
 }
 
 func TestReportForOneLaunch(t *testing.T) {

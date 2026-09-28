@@ -13,10 +13,15 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 var launchExecutable = os.Executable
 var launchLookupEnv = os.LookupEnv
+
+// shippedClaudeSettings is the Claude hook settings this engine ships; the
+// seat window it imposes is reported beside the configured one.
+var shippedClaudeSettings = func() ([]byte, error) { return runtimes.ShippedEnforcement("claude") }
 
 func newLaunchManager() *launch.Manager {
 	prober := identity.KernelProber{}
@@ -29,7 +34,7 @@ func newLaunchManager() *launch.Manager {
 		settingsErr = executableErr
 	}
 	scanner := launch.KernelProcessScanner{Prober: prober}
-	codex := launch.CodexExec{Binary: "codex", SessionsRoot: filepath.Join(home, ".codex", "sessions"), CommonTemplate: filepath.Join(filepath.Dir(executable), "..", "scripts", "agents", "templates", "design-common.md"), Now: time.Now, Scanner: scanner}
+	codex := launch.CodexExec{Binary: "codex", SessionsRoot: filepath.Join(home, ".codex", "sessions"), Now: time.Now, Scanner: scanner}
 	// Claude Code keeps its session transcripts under CLAUDE_CONFIG_DIR when
 	// that is set, else under ~/.claude; the measurement reads the same place.
 	claudeConfig := filepath.Join(home, ".claude")
@@ -250,7 +255,12 @@ func runLaunchSettings(args []string) int {
 		return 1
 	}
 	values := append([]launch.Setting{}, settings.Values...)
-	shipped, err := launch.LoadShippedSeatWindow(filepath.Dir(confPath), settings.SeatWindow)
+	shippedSettings, err := shippedClaudeSettings()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "launch settings:", err)
+		return 1
+	}
+	shipped, err := launch.LoadShippedSeatWindow(shippedSettings, settings.SeatWindow)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "launch settings:", err)
 		return 1

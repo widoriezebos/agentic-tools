@@ -212,13 +212,13 @@ func realDelegateRosterFields(fields map[string]any) map[string]any {
 }
 
 // realDelegateGoalWorktree builds the claimed, approved goal fixture with a
-// breach-stop capability, the repository's real scripts and a placeholder
+// breach-stop capability, the repository's real docs and skills and a placeholder
 // worktree roster, then creates goal/standing-validation with one pushed unit
 // commit and the built engine installed and enrolled in the worktree.
 func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, string) {
 	t.Helper()
 	main, _, _ := goalBranchMainCLIFixtureBelow(t, "m1", ".")
-	for _, dir := range []string{"scripts", "docs", "skills"} {
+	for _, dir := range []string{"docs", "skills"} {
 		if output, err := exec.Command("cp", "-R", filepath.Join(moduleRoot, dir), main).CombinedOutput(); err != nil {
 			t.Fatalf("install %s: %v: %s", dir, err, output)
 		}

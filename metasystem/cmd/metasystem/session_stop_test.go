@@ -326,10 +326,6 @@ func TestReportTurnVerdictHeldClaimWritesRealSeatIdleIntent(t *testing.T) {
 		}
 	}
 	write("metasystem.conf", "metasystem.runtimes=claude\nrole.steward-continuation.runtime=claude\nrole.steward-continuation.model.claude=fixture\n")
-	write("scripts/agents/roles/steward-continuation.md", "# Role: steward-continuation\nContinue the named claim.\n")
-	write("scripts/agents/roles/steward-continuation.requirements.json", "{\"required\":[]}")
-	write("scripts/agents/schemas/steward-continuation.schema.json", "{\"type\":\"object\"}")
-	write("scripts/agents/permissions/workspace.json", "{\"write\":[\"workspace\"]}")
 	repository := &proofAdmissionRepository{top: root, root: root, commits: map[string]proofAdmissionCommit{}, operations: map[string]string{}}
 	repository.seed(map[string][]byte{
 		"metasystem/plans/goals/backlog.md": files["plans/goals/backlog.md"],

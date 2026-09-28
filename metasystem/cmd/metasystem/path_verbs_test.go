@@ -13,8 +13,13 @@ import (
 func TestPathStateRootVerbPrintsTheValidatedInstallation(t *testing.T) {
 	outer := t.TempDir()
 	installation := filepath.Join(outer, "metasystem")
-	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(installation, 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if marker, err := os.OpenFile(filepath.Join(installation, "metasystem.conf"), os.O_CREATE|os.O_WRONLY, 0o644); err != nil {
+		t.Fatal(err)
+	} else {
+		marker.Close()
 	}
 	if err := os.MkdirAll(filepath.Join(outer, "development"), 0o755); err != nil {
 		t.Fatal(err)
@@ -73,7 +78,7 @@ func TestPathClassVerbOneWordAndRefusalText(t *testing.T) {
 		stdout, innerCode = captureStdout(t, func() int { return runPathClass([]string{"product.txt"}) })
 		return innerCode
 	})
-	wantRefusal := "path product.txt has no class in scripts/agents/path-classes.txt; no classified ancestor; add a row for product.txt or its directory to scripts/agents/path-classes.txt\n"
+	wantRefusal := "path product.txt has no class in the engine's path-class policy (internal/pathclass/path-classes.txt); no classified ancestor\n"
 	if code != 1 || stdout != "unclassified\n" || stderr != wantRefusal {
 		t.Fatalf("unclassified answer: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}

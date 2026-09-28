@@ -13,7 +13,7 @@ import (
 
 func TestAuditDependencyRatchetRelayReportsPathLineAndExit(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "scripts", "fixture.sh")
+	path := filepath.Join(root, "skills", "fixture.sh")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func TestAuditDependencyRatchetRelayReportsPathLineAndExit(t *testing.T) {
 	stdout, stderr, code := captureRelay(t, func() int {
 		return runAuditDependencyRatchet([]string{"--root", root})
 	})
-	if code != 1 || stdout != "" || !strings.Contains(stderr, "scripts/fixture.sh:1") {
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "skills/fixture.sh:1") {
 		t.Fatalf("dependency audit relay = code %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 	if _, _, code = captureRelay(t, func() int {

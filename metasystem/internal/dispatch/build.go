@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
@@ -1055,7 +1056,7 @@ func readCompositionForJob(path, job, role, runtimeName, model, mission string, 
 	if expectedErr != nil || !configurationOK || !configurationObligationsMatchObject(expectedConfiguration, configuration) {
 		return nil, fmt.Errorf("composition record does not carry the hazard configuration obligations")
 	}
-	if asString(record["recipe"]) != rolePacketTablePath+"#"+role || !incarnationRe.MatchString(asString(record["recipeDigest"])) ||
+	if asString(record["recipe"]) != protocol.RolePacketRecipe(role) || !incarnationRe.MatchString(asString(record["recipeDigest"])) ||
 		!incarnationRe.MatchString(packetDigest) || packetBytes <= 0 {
 		return nil, fmt.Errorf("composition record has invalid recipe or packet provenance")
 	}

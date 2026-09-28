@@ -43,8 +43,13 @@ func projectAdoptedFixture(t *testing.T) string {
 		}
 	}
 	write("vendor/metasystem/metasystem.conf", "metasystem.runtimes=claude\n")
-	if err := os.MkdirAll(filepath.Join(canonical, "vendor", "metasystem", "scripts", "agents"), 0o755); err != nil {
-		t.Fatalf("create the installation's scripts: %v", err)
+	if err := os.MkdirAll(filepath.Join(canonical, "vendor", "metasystem"), 0o755); err != nil {
+		t.Fatalf("create the installation: %v", err)
+	}
+	if marker, err := os.OpenFile(filepath.Join(canonical, "vendor", "metasystem", "metasystem.conf"), os.O_CREATE|os.O_WRONLY, 0o644); err != nil {
+		t.Fatalf("create the installation: %v", err)
+	} else {
+		marker.Close()
 	}
 	write("plans/goals/backlog.md", "# backlog\n\n- SyncMode: local\n")
 	write("plans/goals/refund-worker.md",

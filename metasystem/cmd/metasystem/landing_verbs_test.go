@@ -73,21 +73,31 @@ func TestChainLandingRecertifiesAfterBaseMove(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(project, "internal", "app"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(project, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(project, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	pathClasses, err := os.ReadFile("../../scripts/agents/path-classes.txt")
+	if marker, err := os.OpenFile(filepath.Join(project, "metasystem.conf"), os.O_CREATE|os.O_WRONLY, 0o644); err != nil {
+		t.Fatal(err)
+	} else {
+		marker.Close()
+	}
+	pathClasses, err := os.ReadFile("../../internal/pathclass/path-classes.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(project, "scripts", "agents", "path-classes.txt"), pathClasses, 0o644); err != nil {
+	for _, policy := range []string{"pathclass", "landing"} {
+		if err := os.MkdirAll(filepath.Join(project, "internal", policy), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(project, "internal", "pathclass", "path-classes.txt"), pathClasses, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	landingClasses, err := os.ReadFile("../../scripts/agents/landing-classes.json")
+	landingClasses, err := os.ReadFile("../../internal/landing/landing-classes.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(project, "scripts", "agents", "landing-classes.json"), landingClasses, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(project, "internal", "landing", "landing-classes.json"), landingClasses, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	rulings, err := os.ReadFile("../../memory/rulings.md")
@@ -259,24 +269,9 @@ func TestChainLandingRecertifiesAfterBaseMove(t *testing.T) {
 		t.Fatalf("idempotent retry changed merged anchor: %s %v", mergedAnchorAfter, anchorErr)
 	}
 
-	// Recertified merge runs the same runtime-instruction manifest gate as
-	// ordinary merge. Misclassify one declared instruction without changing
-	// the proof or candidate, then restore the manifest for the passing path.
-	manifestPath := filepath.Join(project, "scripts", "agents", "path-classes.txt")
-	misclassified := bytes.Replace(pathClasses, []byte("install:AGENTS.md behavior"), []byte("install:AGENTS.md record"), 1)
-	if bytes.Equal(misclassified, pathClasses) {
-		t.Fatal("fixture manifest does not contain the declared AGENTS.md behavior row")
-	}
-	if err := os.WriteFile(manifestPath, misclassified, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, errs, code := validate.ConformanceWithOptions(project, "merge", "impl", validate.ConformanceOptions{Recertification: recertification}); code == 0 ||
-		!strings.Contains(strings.Join(errs, "\n"), "runtime instruction file AGENTS.md has manifest class record, not behavior") {
-		t.Fatalf("recertified runtime-instruction manifest mismatch was not refused: code=%d errors=%v", code, errs)
-	}
-	if err := os.WriteFile(manifestPath, pathClasses, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	// The runtime-instruction manifest gate reads the path classes compiled
+	// into the engine; no installation file can misclassify a declared
+	// instruction (internal/validate TestInstructionOwnersAreBehavior pins the rows).
 
 	// A non-mission waiver takes the same branch on both merge paths. This
 	// source change is not Markdown, so the common prose-only waiver refuses.
@@ -502,8 +497,8 @@ func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitT
 	remote := filepath.Join(bed, "origin.git")
 	for _, directory := range []string{
 		filepath.Join(root, "bin"), filepath.Join(root, "internal", "app"),
-		filepath.Join(root, "scripts", "agents"), filepath.Join(root, "memory"),
-		filepath.Join(root, "plans", "goals"),
+		filepath.Join(root, "internal", "pathclass"), filepath.Join(root, "internal", "landing"),
+		filepath.Join(root, "memory"), filepath.Join(root, "plans", "goals"),
 	} {
 		if err := os.MkdirAll(directory, 0o755); err != nil {
 			t.Fatal(err)
@@ -519,8 +514,8 @@ func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitT
 			t.Fatal(err)
 		}
 	}
-	copyFixture("../../scripts/agents/path-classes.txt", "scripts/agents/path-classes.txt", 0o644)
-	copyFixture("../../scripts/agents/landing-classes.json", "scripts/agents/landing-classes.json", 0o644)
+	copyFixture("../../internal/pathclass/path-classes.txt", "internal/pathclass/path-classes.txt", 0o644)
+	copyFixture("../../internal/landing/landing-classes.json", "internal/landing/landing-classes.json", 0o644)
 	copyFixture("../../memory/rulings.md", "memory/rulings.md", 0o644)
 
 	build := exec.Command("go", "build", "-o", filepath.Join(root, "bin", "metasystem"), ".")
@@ -1279,8 +1274,8 @@ func runCanonicalReceiptFixture(t *testing.T, frozen bool) {
 	}
 	writeReceiptFixture(t, root, ".gitignore", "artifacts/\nbin/\n")
 	writeReceiptFixture(t, root, "go.mod", "module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.27.0\n")
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		writeReceiptFixture(t, root, filepath.Join("scripts", "agents", name), `{"floors":{"internal/proofrun":1},"exempt":{"cmd/tool":"fixture command"}}`)
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+		writeReceiptFixture(t, root, name, `{"floors":{"internal/proofrun":1},"exempt":{"cmd/tool":"fixture command"}}`)
 	}
 	// The tiny module the real Go gate proves: its native selection runs
 	// these tests for real and measures their coverage.
@@ -1646,11 +1641,11 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	writeCandidateEngineBuildFixture(t, root, engine)
 	launchCount := filepath.Join(root, "artifacts", "shared-testing-launches")
-	engineDeclaredInput := filepath.ToSlash(filepath.Join(prefix, "scripts/agents/coverage-ratchet.json"))
+	engineDeclaredInput := filepath.ToSlash(filepath.Join(prefix, "testing-coverage-floors.json"))
 	contract := testpolicy.Contract{SchemaVersion: 1,
 		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
 		Surfaces: []testpolicy.Surface{
-			{ID: "application", Paths: []string{"testing.json", "plans/**", "records/**", "scripts/agents/go-build.sh", "scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"}, Standard: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"application-proof"}},
+			{ID: "application", Paths: []string{"testing.json", "plans/**", "records/**", "scripts/agents/go-build.sh", "testing-coverage-floors.json", "testing-coverage-floors-linux.json"}, Standard: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"application-proof"}},
 			{ID: "proof-and-landing", Paths: []string{"payload.txt"}, DependsOn: []string{"application"}, Standard: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"application-proof"}},
 		},
 		Groups: []testpolicy.Group{{ID: "policy-protection", Kind: "unit", Adapter: "command", CWD: ".", Inputs: []string{"payload.txt", engineDeclaredInput},
@@ -1679,8 +1674,8 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 		t.Fatal(err)
 	}
 	writeReceiptFixture(t, root, "testing.json", string(contractBytes))
-	writeReceiptFixture(t, root, "scripts/agents/coverage-ratchet.json", `{"floors":{"fixture/application":80.0}}`)
-	writeReceiptFixture(t, root, "scripts/agents/coverage-ratchet-linux.json", `{"floors":{"fixture/application":80.0}}`)
+	writeReceiptFixture(t, root, "testing-coverage-floors.json", `{"floors":{"fixture/application":80.0}}`)
+	writeReceiptFixture(t, root, "testing-coverage-floors-linux.json", `{"floors":{"fixture/application":80.0}}`)
 	now := fixtureNow
 	rootRecord := &goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FBV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}
 	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1, ReviewRoundLimit: 2}
@@ -1879,7 +1874,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 		retainedAfterEnvironment[0].Terminal == nil || retainedAfterEnvironment[0].Terminal.Result != proofrun.TerminalSuccess {
 		t.Fatalf("changed build environment replaced the outer proof owner: attempts=%+v err=%v", retainedAfterEnvironment, err)
 	}
-	writeReceiptFixture(t, root, "scripts/agents/coverage-ratchet.json", `{"floors":{"fixture/application":81.0}}`)
+	writeReceiptFixture(t, root, "testing-coverage-floors.json", `{"floors":{"fixture/application":81.0}}`)
 	runReceiptGit(t, projectRoot, "add", engineDeclaredInput)
 	engineInputTree := runReceiptGit(t, projectRoot, "write-tree")
 	engineInputVerify := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "test", "verify", "--root", root, "--tree", engineInputTree, "--goal", "receipt-goal")
@@ -1890,7 +1885,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 		!strings.Contains(string(engineInputOutput), "moved declared paths: "+engineDeclaredInput) {
 		t.Fatalf("engine-build input move lacked the refusal code, group, or path: err=%v\n%s", engineInputErr, engineInputOutput)
 	}
-	writeReceiptFixture(t, root, "scripts/agents/coverage-ratchet.json", `{"floors":{"fixture/application":80.0}}`)
+	writeReceiptFixture(t, root, "testing-coverage-floors.json", `{"floors":{"fixture/application":80.0}}`)
 	runReceiptGit(t, projectRoot, "add", engineDeclaredInput)
 	tree = runReceiptGit(t, projectRoot, "write-tree")
 
@@ -2119,14 +2114,14 @@ func TestLandingReceiptLineRefusesCodeWithoutItsLineAndPassesWithIt(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "path-classes.txt"))
+	manifest, err := os.ReadFile(filepath.Join("..", "..", "internal", "pathclass", "path-classes.txt"))
 	if err != nil {
 		t.Fatalf("read path class manifest: %v", err)
 	}
 	manifest = append(manifest, []byte("install:payload.txt behavior\n")...)
 	baseLedger := "1|2026-01-01T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=seed|note=seed\n"
 	appendedLedger := baseLedger + "2|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=fx|note=candidate\n"
-	writeReceiptFixture(t, root, "scripts/agents/path-classes.txt", string(manifest))
+	writeReceiptFixture(t, root, "internal/pathclass/path-classes.txt", string(manifest))
 	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.version=1\n")
 	writeReceiptFixture(t, root, "memory/receipts.log", baseLedger)
 	writeReceiptFixture(t, root, "payload.txt", "base\n")
@@ -2138,7 +2133,7 @@ func TestLandingReceiptLineRefusesCodeWithoutItsLineAndPassesWithIt(t *testing.T
 	appendedLedgerBlob := strings.Repeat("e", 40)
 	manifestBlob := strings.Repeat("f", 40)
 	const ledgerPath = "memory/receipts.log"
-	const manifestPath = "scripts/agents/path-classes.txt"
+	const manifestPath = "internal/pathclass/path-classes.txt"
 	pins := []string{
 		"-c", "core.fileMode=true", "-c", "diff.noprefix=false",
 		"-c", "diff.mnemonicPrefix=false", "-c", "apply.ignoreWhitespace=no",

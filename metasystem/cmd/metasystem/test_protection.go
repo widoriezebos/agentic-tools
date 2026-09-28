@@ -175,7 +175,7 @@ func runFrozenSelectionProbe(ctx context.Context, request proofrun.TestRunReques
 	}
 	changedPaths := []string{contractPath}
 	if probe.ID == "lower-coverage-floor" {
-		ratchetPath := filepath.Join(installation, "scripts", "agents", "coverage-ratchet.json")
+		ratchetPath := filepath.Join(installation, testpolicy.CoverageFloorsFile("darwin"))
 		data, readErr := os.ReadFile(ratchetPath)
 		var baseline protectedCoverageBaseline
 		if readErr != nil || json.Unmarshal(data, &baseline) != nil || len(baseline.Floors) == 0 {

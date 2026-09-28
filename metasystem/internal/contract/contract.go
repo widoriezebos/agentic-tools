@@ -1622,7 +1622,7 @@ func contractProjectRoot(contractPath, repo string) string {
 }
 
 // contractMetasystemRoot locates the metasystem checkout containing this binary,
-// confirmed by its shipped supervision assets.
+// confirmed by its metasystem.conf.
 func contractMetasystemRoot() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -1634,7 +1634,7 @@ func contractMetasystemRoot() string {
 	// land on the checkout's PARENT and
 	// make the confirmation below fail everywhere.
 	root := resolvePath(filepath.Dir(filepath.Dir(exe)))
-	if fileExists(filepath.Join(root, "metasystem.conf")) || contractDirExists(filepath.Join(root, "scripts", "agents")) {
+	if fileExists(filepath.Join(root, "metasystem.conf")) {
 		return root
 	}
 	return ""
@@ -1653,11 +1653,6 @@ func contractPathWithin(inner, outer string) bool {
 		return false
 	}
 	return true
-}
-
-func contractDirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
 }
 
 // --- typed JSON reads ---

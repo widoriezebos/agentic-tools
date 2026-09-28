@@ -3,12 +3,13 @@ package launch
 import (
 	"errors"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 func designFixture(t *testing.T) (*Manager, *completingStarter, DesignRequest) {

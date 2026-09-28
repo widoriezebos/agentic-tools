@@ -10,7 +10,7 @@ import (
 )
 
 // Bash, Git, Go, and core utilities are the supported script platform; these
-// executable interpreters must not regrow in the scripts tree. Python joined
+// executable interpreters must not regrow in shipped shell. Python joined
 // the list when its last declared site, channel-fixtures.sh, was deleted
 // (verbs-object-action U7c).
 var forbiddenInterpreters = map[string]bool{
@@ -29,44 +29,53 @@ func (finding DependencyFinding) String() string {
 	return fmt.Sprintf("banned interpreter %s: %s:%d", finding.Interpreter, finding.Path, finding.Line)
 }
 
-// AuditDependencies scans shell sources for command-position interpreter use.
-// Quoted data and ordinary arguments are inert, while nested command
-// substitutions are scanned as their own command lists.
+// dependencyShellRoots are the installation trees that ship shell: the skill
+// extension points. The engine's own data is compiled in and ships no shell.
+var dependencyShellRoots = []string{"skills", "optional-skills"}
+
+// AuditDependencies scans shipped shell sources for command-position
+// interpreter use. Quoted data and ordinary arguments are inert, while nested
+// command substitutions are scanned as their own command lists. An absent
+// root ships no shell; a root that is not a directory is refused.
 func AuditDependencies(root string) ([]DependencyFinding, error) {
-	scripts := filepath.Join(root, "scripts")
-	info, err := os.Stat(scripts)
-	if err != nil {
-		return nil, fmt.Errorf("dependency audit scripts root unreadable: %w", err)
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("dependency audit scripts root is not a directory: %s", scripts)
-	}
 	var findings []DependencyFinding
-	err = filepath.WalkDir(scripts, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	for _, name := range dependencyShellRoots {
+		shellRoot := filepath.Join(root, name)
+		info, err := os.Stat(shellRoot)
+		if os.IsNotExist(err) {
+			continue
 		}
-		if entry.IsDir() || filepath.Ext(path) != ".sh" {
-			return nil
+		if err != nil {
+			return nil, fmt.Errorf("dependency audit shell root unreadable: %w", err)
 		}
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
+		if !info.IsDir() {
+			return nil, fmt.Errorf("dependency audit shell root is not a directory: %s", shellRoot)
 		}
-		relative, relativeErr := filepath.Rel(root, path)
-		if relativeErr != nil {
-			return relativeErr
-		}
-		for _, command := range shellCommands(string(data)) {
-			interpreter := filepath.Base(command.Word)
-			if forbiddenInterpreters[interpreter] {
-				findings = append(findings, DependencyFinding{Interpreter: interpreter, Path: filepath.ToSlash(relative), Line: command.Line})
+		if err := filepath.WalkDir(shellRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
 			}
+			if entry.IsDir() || filepath.Ext(path) != ".sh" {
+				return nil
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			relative, relativeErr := filepath.Rel(root, path)
+			if relativeErr != nil {
+				return relativeErr
+			}
+			for _, command := range shellCommands(string(data)) {
+				interpreter := filepath.Base(command.Word)
+				if forbiddenInterpreters[interpreter] {
+					findings = append(findings, DependencyFinding{Interpreter: interpreter, Path: filepath.ToSlash(relative), Line: command.Line})
+				}
+			}
+			return nil
+		}); err != nil {
+			return nil, fmt.Errorf("dependency audit scan failed: %w", err)
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("dependency audit scan failed: %w", err)
 	}
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].Path != findings[j].Path {

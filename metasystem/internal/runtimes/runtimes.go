@@ -85,7 +85,7 @@ type Declaration struct {
 	// Registration rows own installation behavior and tests pin this view to
 	// their deduplicated directory projection.
 	RegistrationDirs []string
-	// ShippedEnforcementConfig is the scripts/enforcement filename this
+	// ShippedEnforcementConfig is the internal/runtimes/enforcement filename this
 	// runtime ships ("" when none). Independent of LiveSelfCheck.
 	ShippedEnforcementConfig string
 	// SelfCheck declares an optional provider-specific vendored marker. The

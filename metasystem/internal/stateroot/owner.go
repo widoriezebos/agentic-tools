@@ -146,7 +146,7 @@ func canonicalEntryPath(entry string) string {
 // adoption creates, which are generic material in an unvendored layout.
 // The full adoption install set is the completeness boundary.
 func shippedInventoryPath(slashed string) bool {
-	for _, root := range []string{"cmd/", "internal/", "scripts/", "skills/", "optional-skills/", "docs/design/", "docs/examples/", "memory/", "plans/", "records/", ".github/"} {
+	for _, root := range []string{"cmd/", "internal/", "skills/", "optional-skills/", "docs/design/", "docs/examples/", "memory/", "plans/", "records/", ".github/"} {
 		if strings.HasPrefix(slashed, root) {
 			return true
 		}

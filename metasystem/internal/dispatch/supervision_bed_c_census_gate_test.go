@@ -169,8 +169,8 @@ func TestSupCJobRecordCarriesTheCensusJoinKey(t *testing.T) {
 	}
 	for _, asset := range []string{
 		"internal/delegation/lifecycle.go", "internal/hooks/runtime_hook.go",
-		"scripts/enforcement/claude-code-hooks.json", "scripts/enforcement/codex-hooks.json",
-		"scripts/enforcement/devin-hooks.json",
+		"internal/runtimes/enforcement/claude-code-hooks.json", "internal/runtimes/enforcement/codex-hooks.json",
+		"internal/runtimes/enforcement/devin-hooks.json",
 	} {
 		if _, err := os.Stat(filepath.Join("..", "..", filepath.FromSlash(asset))); err != nil {
 			t.Fatalf("S4-10: cross-component owner asset is missing: %s (%v)", asset, err)

@@ -42,8 +42,13 @@ func projectFixture(t *testing.T) string {
 		}
 	}
 	write("metasystem/metasystem.conf", "metasystem.runtimes=claude\n")
-	if err := os.MkdirAll(filepath.Join(canonical, "metasystem", "scripts", "agents"), 0o755); err != nil {
-		t.Fatalf("create the installation's scripts: %v", err)
+	if err := os.MkdirAll(filepath.Join(canonical, "metasystem"), 0o755); err != nil {
+		t.Fatalf("create the installation: %v", err)
+	}
+	if marker, err := os.OpenFile(filepath.Join(canonical, "metasystem", "metasystem.conf"), os.O_CREATE|os.O_WRONLY, 0o644); err != nil {
+		t.Fatalf("create the installation: %v", err)
+	} else {
+		marker.Close()
 	}
 	write("development/metasystem-design.md", "# The metasystem's design\n")
 

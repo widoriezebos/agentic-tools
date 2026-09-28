@@ -12,6 +12,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -47,12 +48,21 @@ const (
 // ship. The measuring kit (benchmark/), the development ledgers and the
 // roster stay home because nothing ships by default. cmd/, internal/, go.mod
 // and go.sum are the engine source: the payload ships source and the target
-// rebuilds, so scripts and engine prove their coherence by building.
+// rebuilds, and the engine's data (the agent protocol, the landing and path
+// policy, the runtime hook settings and this workflow) is compiled into it.
+// The coverage floors are the template's own development test policy and
+// stay home.
 var PayloadAllow = []string{
 	".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md", "cmd", "docs", "go.mod", "go.sum",
-	"internal", "memory", "metasystem.conf", "optional-skills", "plans", "records", "scripts",
+	"internal", "memory", "metasystem.conf", "optional-skills", "plans", "records",
 	"skills", "testing-parallel-ratchet.json", "testing.json", "wow.md",
 }
+
+// githubActionsWorkflow is the runtime-neutral CI enforcement adoption
+// installs at workflowPath.
+//
+//go:embed github-actions-metasystem.yml
+var githubActionsWorkflow []byte
 
 // ForeignAssets are the file-shaped instruction assets adoption can detect.
 // Any of them in a target means the repository is not fresh.
@@ -396,7 +406,7 @@ func Adopt(options Options) (Result, error) {
 	}
 
 	// Runtime-neutral enforcement.
-	if err := copyFile(filepath.Join(target, "scripts", "enforcement", "github-actions-metasystem.yml"), filepath.Join(target, filepath.FromSlash(workflowPath)), 0o644); err != nil {
+	if err := installFile(filepath.Join(target, filepath.FromSlash(workflowPath)), githubActionsWorkflow, 0o644); err != nil {
 		return Result{}, err
 	}
 
@@ -888,6 +898,12 @@ func copyFile(from, to string, mode fs.FileMode) error {
 	if err != nil {
 		return err
 	}
+	return installFile(to, data, mode)
+}
+
+// installFile publishes data at to with mode, leaving an identical file as
+// it is.
+func installFile(to string, data []byte, mode fs.FileMode) error {
 	if present, err := os.ReadFile(to); err == nil && bytes.Equal(present, data) {
 		if info, statErr := os.Stat(to); statErr == nil && info.Mode().Perm() == mode {
 			return nil

@@ -6,10 +6,12 @@ package landing
 import (
 	"bytes"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -1299,12 +1301,38 @@ func longestGoalOwner(workspace observationReader, baseTree, changedPath string)
 	return longest, nil
 }
 
+// LandingClassesSourcePath is the installation-relative source of the
+// landing classes compiled into the engine (landingClassesSource).
+const LandingClassesSourcePath = "internal/landing/landing-classes.json"
+
+// legacyLandingClassesSourcePath is where a base tree from before the
+// landing classes were compiled in keeps them.
+const legacyLandingClassesSourcePath = "scripts/agents/landing-classes.json"
+
+//go:embed landing-classes.json
+var landingClassesSource []byte
+
+// basePolicy reads a landing policy from the landing's base tree, never from
+// the candidate and never from the engine judging it: the running engine
+// need not be built at the base (a live judge, a carried landing's base
+// judge, an adopter's own build), and a candidate that edits the policy is
+// judged by the policy it replaces. prefix is the installation's path inside
+// the repository tree read. A base from before the policy was compiled in
+// keeps it at its legacy path; that is true of the landing that moves it.
+func basePolicy(fileAt func(tree, path string) ([]byte, bool, error), baseTree, prefix, source, legacy string) ([]byte, bool, error) {
+	data, present, err := fileAt(baseTree, path.Join(prefix, source))
+	if err != nil || present {
+		return data, present, err
+	}
+	return fileAt(baseTree, path.Join(prefix, legacy))
+}
+
 func loadPathClasses(workspace observationReader, baseTree string, requireTierOne ...bool) (*pathclass.Manifest, error) {
 	tierOneRequired := len(requireTierOne) > 0 && requireTierOne[0]
 	if err := loadLandingClasses(workspace, baseTree, tierOneRequired); err != nil {
 		return nil, err
 	}
-	manifestBytes, present, err := workspace.FileAt(baseTree, pathclass.ManifestPath)
+	manifestBytes, present, err := basePolicy(workspace.FileAt, baseTree, "", pathclass.SourcePath, pathclass.LegacySourcePath)
 	if err != nil || !present {
 		return nil, &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("path class manifest is unreadable")}
 	}
@@ -1316,7 +1344,7 @@ func loadPathClasses(workspace observationReader, baseTree string, requireTierOn
 }
 
 func loadLandingClasses(workspace observationReader, baseTree string, requireTierOne bool) error {
-	manifestBytes, present, err := workspace.FileAt(baseTree, "scripts/agents/landing-classes.json")
+	manifestBytes, present, err := basePolicy(workspace.FileAt, baseTree, "", LandingClassesSourcePath, legacyLandingClassesSourcePath)
 	if err != nil || !present {
 		return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest is unreadable")}
 	}
@@ -1769,7 +1797,7 @@ func knownRefusalCode(code string) bool {
 }
 
 // AdoptionRulings prepares the landing authority register while preserving the
-// application's existing rulings. Only rows referenced by the shipped landing
+// application's existing rulings. Only rows referenced by the engine's landing
 // classes enter a fresh register.
 func AdoptionRulings(sourceRoot, targetRoot string) ([]byte, error) {
 	readRegular := func(path string) ([]byte, error) {
@@ -1782,12 +1810,8 @@ func AdoptionRulings(sourceRoot, targetRoot string) ([]byte, error) {
 		}
 		return os.ReadFile(path)
 	}
-	manifestBytes, err := readRegular(filepath.Join(sourceRoot, "scripts", "agents", "landing-classes.json"))
-	if err != nil {
-		return nil, err
-	}
 	var manifest landingClassManifest
-	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+	if err := json.Unmarshal(landingClassesSource, &manifest); err != nil {
 		return nil, err
 	}
 	if manifest.SchemaVersion != 1 || manifest.EnginePolicyVersion != 1 || len(manifest.Classes) == 0 {

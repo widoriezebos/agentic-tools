@@ -118,10 +118,10 @@ func TestShippedInstallationRoutedAssetsExist(t *testing.T) {
 		"docs/examples/step-back-ledger.md",
 		".gitattributes",
 		"memory/instruction-ledger.md",
-		"scripts/enforcement/github-actions-metasystem.yml",
-		"scripts/enforcement/claude-code-hooks.json",
-		"scripts/enforcement/codex-hooks.json",
-		"scripts/enforcement/devin-hooks.json",
+		"internal/adopt/github-actions-metasystem.yml",
+		"internal/runtimes/enforcement/claude-code-hooks.json",
+		"internal/runtimes/enforcement/codex-hooks.json",
+		"internal/runtimes/enforcement/devin-hooks.json",
 		"docs/examples/mission-contract.md",
 		"docs/examples/mission-cron.example",
 		"docs/project-adaptation.md",
@@ -131,16 +131,18 @@ func TestShippedInstallationRoutedAssetsExist(t *testing.T) {
 		"plans/README.md",
 	}
 	protocol := []string{
-		"scripts/agents/templates/brief.md",
-		"scripts/agents/templates/follow-up.md",
-		"scripts/agents/templates/host-turn-instruction.md",
-		"scripts/agents/roles/orchestrator.md",
-		"scripts/agents/schemas/orchestrator.schema.json",
-		"scripts/agents/permissions/none.json",
-		"scripts/agents/permissions/workspace.json",
+		"internal/protocol/templates/brief.md",
+		"internal/protocol/templates/follow-up.md",
+		"internal/protocol/templates/host-turn-instruction.md",
+		"internal/protocol/roles/orchestrator.md",
+		"internal/protocol/schemas/orchestrator.schema.json",
+		"internal/protocol/permissions/none.json",
+		"internal/protocol/permissions/workspace.json",
 		"metasystem.conf",
-		"scripts/agents/templates/design-common.md",
-		"scripts/agents/path-classes.txt",
+		"internal/protocol/templates/design-common.md",
+		"internal/pathclass/path-classes.txt",
+		"internal/landing/landing-classes.json",
+		"internal/events/event-registry.json",
 	}
 	for _, list := range []struct {
 		kind  string
@@ -151,5 +153,15 @@ func TestShippedInstallationRoutedAssetsExist(t *testing.T) {
 				t.Errorf("missing %s: %s", list.kind, rel)
 			}
 		}
+	}
+}
+
+// The engine's data is compiled into the engine from the packages that own
+// it; the installation carries no scripts tree for it to drift back into.
+func TestShippedInstallationHasNoScriptsTree(t *testing.T) {
+	t.Parallel()
+	root := shippedInstallationRoot(t)
+	if _, err := os.Lstat(filepath.Join(root, "scripts")); !os.IsNotExist(err) {
+		t.Fatalf("metasystem/scripts exists (%v): engine data belongs in the Go package that reads it, compiled in with go:embed", err)
 	}
 }

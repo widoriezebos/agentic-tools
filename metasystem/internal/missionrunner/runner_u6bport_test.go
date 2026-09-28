@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -25,7 +26,12 @@ import (
 // (the fence leg) never assembles a prompt.
 func u6bportHostCycle(t *testing.T, behavior string) *Engine {
 	t.Helper()
-	e, f := newGitFreePreflightBed(t, behavior)
+	return u6bportHostCycleWithContract(t, behavior, nil)
+}
+
+func u6bportHostCycleWithContract(t *testing.T, behavior string, edit func(string) string) *Engine {
+	t.Helper()
+	e, f := newGitFreePreflightBedWithContract(t, behavior, nil, edit)
 	equipFullCycleFiles(t, e)
 	e.goalSource = &mission.GoalSource{Endpoint: goal.Endpoint{
 		Root: e.Root, Remote: "origin", Branch: "refs/heads/main", Repository: &hostCycleGoals{t: t},
@@ -138,7 +144,7 @@ func TestU6bPortReturnOkCycleCompletesWithACheckedPrompt(t *testing.T) {
 	if !reflect.DeepEqual(keys, wantKeys) {
 		t.Fatalf("host-turn prompt header keys %v, want %v", keys, wantKeys)
 	}
-	preamble, err := os.ReadFile(filepath.Join(engine.Root, "scripts", "agents", "roles", "orchestrator.md"))
+	preamble, err := protocol.RoleInstructions("orchestrator")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,20 +170,12 @@ func TestU6bPortReturnOkCycleCompletesWithACheckedPrompt(t *testing.T) {
 }
 
 // runner-bad-prompt: a prompt the turn-prompt checker refuses (here a
-// duplicated "## Streams" heading, the shape a stray contract heading made)
-// fails the turn as prompt-refused before any host launch — no raw.out —
-// and parks the mission (status exit 11) without a verified start.
+// duplicated "## Streams" heading from a stray contract heading) fails the
+// turn as prompt-refused before any host launch — no raw.out — and parks the
+// mission (status exit 11) without a verified start.
 func TestU6bPortPromptCheckerRefusalParksWithoutLaunchingTheHost(t *testing.T) {
 	t.Parallel()
-	engine := u6bportHostCycle(t, "FAKEHOST:return-ok")
-	instruction := filepath.Join(engine.Root, "scripts", "agents", "templates", "host-turn-instruction.md")
-	data, err := os.ReadFile(instruction)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(instruction, append(data, []byte("\n## Streams\n")...), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	engine := u6bportHostCycleWithContract(t, "FAKEHOST:return-ok", func(contract string) string { return contract + "\n## Streams\n" })
 	signal := filepath.Join(t.TempDir(), "start.json")
 	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	u6bportRequireUnverifiedStart(t, signal)

@@ -55,8 +55,8 @@ func newConformanceFixture(t *testing.T) *conformanceFixture {
 		worktree:   filepath.Join(root, "worktree")}
 	os.MkdirAll(filepath.Join(f.controller, "scripts", "agents"), 0o755)
 	os.MkdirAll(filepath.Join(f.controller, "docs"), 0o755)
-	source, _ := os.ReadFile("../../scripts/agents/path-classes.txt")
-	os.WriteFile(filepath.Join(f.controller, "scripts", "agents", "path-classes.txt"), source, 0o644)
+	source, _ := os.ReadFile("../../internal/pathclass/path-classes.txt")
+	os.WriteFile(filepath.Join(f.controller, "internal", "pathclass", "path-classes.txt"), source, 0o644)
 	os.WriteFile(filepath.Join(f.controller, ".gitignore"), []byte("artifacts/\nlocal.conf\n"), 0o644)
 	os.WriteFile(filepath.Join(f.controller, "source.txt"), []byte("base\n"), 0o644)
 	os.WriteFile(filepath.Join(f.controller, "docs", "note.md"), []byte("base\n"), 0o644)
@@ -247,11 +247,11 @@ func expectConformance(t *testing.T, f *conformanceFixture, stage string, wantCo
 
 func TestConformanceTopLevelBoundarySurvivesReturnValidation(t *testing.T) {
 	f := newConformanceFixture(t)
-	schemaDir := filepath.Join(f.controller, "scripts", "agents", "schemas")
+	schemaDir := filepath.Join(f.controller, "internal", "protocol", "schemas")
 	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	schema, err := os.ReadFile("../../scripts/agents/schemas/implementer.schema.json")
+	schema, err := os.ReadFile("../../internal/protocol/schemas/implementer.schema.json")
 	if err != nil {
 		t.Fatal(err)
 	}

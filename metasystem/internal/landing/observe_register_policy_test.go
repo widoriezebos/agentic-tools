@@ -116,8 +116,8 @@ func TestObserveRecordSemantics(t *testing.T) {
 		if got.Code != "record-not-owned" {
 			t.Fatalf("frozen legacy plan classified as %+v", got)
 		}
-		manifest := string(f.baseFiles["scripts/agents/path-classes.txt"])
-		f.base("scripts/agents/path-classes.txt", manifest+"own:plans/legacy.md fx\n")
+		manifest := string(f.baseFiles["internal/pathclass/path-classes.txt"])
+		f.base("internal/pathclass/path-classes.txt", manifest+"own:plans/legacy.md fx\n")
 		c = registerComparison(f, observeTreeC, registerChange{"plans/legacy.md", observationText("legacy\n"), observationText("owned modification\n")})
 		got = c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "register-carriage", Goal: "fx", Actor: "m9+L1"})
 		if got.Code != "register-carriage" {
@@ -286,8 +286,8 @@ func TestObserveRegisterCarriagePerClassRules(t *testing.T) {
 
 	t.Run("carriage policy files are on the floor", func(t *testing.T) {
 		policy := newRepositoryObservationFixture(t)
-		before := string(policy.baseFiles["scripts/agents/path-classes.txt"])
-		c := registerComparison(policy, observeTreeB, registerChange{"scripts/agents/path-classes.txt", &before, observationText("install:memory/ record\n")})
+		before := string(policy.baseFiles["internal/pathclass/path-classes.txt"])
+		c := registerComparison(policy, observeTreeB, registerChange{"internal/pathclass/path-classes.txt", &before, observationText("install:memory/ record\n")})
 		got := c.observe(ObserveParams{
 			RepoRoot: policy.root, CandidateTree: c.candidate, DirectFix: "register-carriage",
 		})
@@ -296,8 +296,8 @@ func TestObserveRegisterCarriagePerClassRules(t *testing.T) {
 		}
 
 		manifest := newRepositoryObservationFixture(t)
-		before = string(manifest.baseFiles["scripts/agents/landing-classes.json"])
-		c = registerComparison(manifest, observeTreeB, registerChange{"scripts/agents/landing-classes.json", &before, observationText("{}\n")})
+		before = string(manifest.baseFiles["internal/landing/landing-classes.json"])
+		c = registerComparison(manifest, observeTreeB, registerChange{"internal/landing/landing-classes.json", &before, observationText("{}\n")})
 		got = c.observe(ObserveParams{
 			RepoRoot: manifest.root, CandidateTree: c.candidate, DirectFix: "register-carriage",
 		})

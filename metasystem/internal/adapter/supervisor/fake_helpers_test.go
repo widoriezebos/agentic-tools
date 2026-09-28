@@ -296,8 +296,8 @@ func newFakeInstall(t *testing.T, opts installOptions) *fakeInstall {
 			t.Fatal(err)
 		}
 	}
-	schema := filepath.Join(metasystemRoot(t), "scripts", "agents", "schemas", opts.role+".schema.json")
-	mustWrite(t, filepath.Join(root, "scripts", "agents", "schemas", opts.role+".schema.json"), readText(t, schema))
+	schema := filepath.Join(metasystemRoot(t), "internal", "protocol", "schemas", opts.role+".schema.json")
+	mustWrite(t, filepath.Join(root, "internal", "protocol", "schemas", opts.role+".schema.json"), readText(t, schema))
 	f.engine = filepath.Join(root, "bin", "engine-standin")
 	mustWrite(t, f.engine, engineStandIn)
 	if err := os.Chmod(f.engine, 0o755); err != nil {

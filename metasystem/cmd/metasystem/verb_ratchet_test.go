@@ -438,14 +438,22 @@ func TestVerbRatchetShellEngineInvocations(t *testing.T) {
 }
 
 // TestVerbRatchetShellScriptLines counts every line of the shell files under
-// metasystem/scripts (R4 second ceiling).
+// metasystem/scripts (R4 second ceiling), an absent tree counting none.
 func TestVerbRatchetShellScriptLines(t *testing.T) {
 	t.Parallel()
 	_, module := verbRatchetRoots(t)
 	scripts := filepath.Join(module, "scripts")
 	var sites []ratchetSite
 	total := 0
-	for _, path := range ratchetShellFiles(t, scripts, nil) {
+	var shellFiles []string
+	// The end state is the tree's absence: the engine's data is compiled in
+	// (internal/audit TestShippedInstallationHasNoScriptsTree witnesses it).
+	if _, err := os.Lstat(scripts); err == nil {
+		shellFiles = ratchetShellFiles(t, scripts, nil)
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	for _, path := range shellFiles {
 		rel, _ := filepath.Rel(module, path)
 		count := len(readRatchetLines(t, path))
 		total += count
@@ -1307,7 +1315,7 @@ func ratchetInstructionSource(rel string) bool {
 	switch {
 	case strings.HasSuffix(rel, ".md"):
 		return true
-	case strings.HasPrefix(rel, "skills/"), strings.HasPrefix(rel, "optional-skills/"), strings.HasPrefix(rel, "scripts/agents/roles/"):
+	case strings.HasPrefix(rel, "skills/"), strings.HasPrefix(rel, "optional-skills/"), strings.HasPrefix(rel, "internal/protocol/roles/"):
 		return strings.HasSuffix(rel, ".json") || strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml")
 	case strings.HasPrefix(rel, "internal/ui/web/_app/src/"):
 		return strings.HasSuffix(rel, ".ts") || strings.HasSuffix(rel, ".tsx")

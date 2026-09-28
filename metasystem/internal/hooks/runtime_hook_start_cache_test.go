@@ -93,7 +93,10 @@ func TestHookWorldInstallationMapsLinkedWorktrees(t *testing.T) {
 	worktree := t.TempDir()
 	worktree, _ = filepath.EvalSymlinks(worktree)
 	harness := filepath.Join(worktree, "metasystem")
-	if err := os.MkdirAll(filepath.Join(primary.root, "metasystem", "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(primary.root, "metasystem"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.WriteFile(filepath.Join(primary.root, "metasystem", "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(harness, 0o755); err != nil {

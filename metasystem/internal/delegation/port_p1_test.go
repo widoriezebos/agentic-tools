@@ -212,7 +212,7 @@ func TestPortP1RosterPlaceholderRefusesBeforeAnyJobState(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
 	b.writeFile("metasystem.conf", "metasystem.runtimes=fake\nrole.default.runtime=fake\nrole.default.model.fake=<model>\nrole.steward-continuation.runtime=fake\nevidence.root="+filepath.Join(b.root, "evidence")+"\n")
-	for _, asset := range []string{"scripts/agents/roles/steward-continuation.md", "scripts/agents/roles/steward-continuation.requirements.json"} {
+	for _, asset := range []string{"internal/protocol/roles/steward-continuation.md", "internal/protocol/roles/steward-continuation.requirements.json"} {
 		b.installAsset(asset)
 	}
 	brief := b.writeFile("brief.md", "Working Mode: implement\n\nRepair it.\n")

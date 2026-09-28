@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 func rawString(value string) json.RawMessage {
@@ -390,7 +391,7 @@ func TestNoTrackedFileNamesTheDeletedLaunchers(t *testing.T) {
 		"codex:codex-rescue",
 		"/codex:",
 	}
-	paths := []string{"scripts", "docs", "skills", "AGENTS.md"}
+	paths := []string{"internal/protocol", "docs", "skills", "AGENTS.md"}
 	for _, relative := range paths {
 		path := filepath.Join(root, relative)
 		info, err := os.Stat(path)
@@ -442,7 +443,7 @@ func TestProjectRulesNameTheLaunchVerbs(t *testing.T) {
 }
 
 func TestDesignCommonTemplateContract(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join(moduleRoot(t), "scripts", "agents", "templates", "design-common.md"))
+	data, err := protocol.Template("design-common.md")
 	text := string(data)
 	for _, phrase := range []string{"defaults: 60 tool calls, 4000 words", "A launching brief may override these defaults", "read the page that supersedes", "say which unit is first", "the last message is exactly one line"} {
 		if err != nil || !strings.Contains(text, phrase) {

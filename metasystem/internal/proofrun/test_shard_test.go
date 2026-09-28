@@ -36,12 +36,12 @@ func TestTwo(t *testing.T)   { if Two() != 2 { t.Fatal("two") } }
 func TestThree(t *testing.T) { if Three() != 3 { t.Fatal("three") } }
 func TestFour(t *testing.T)  { if Four() != 4 { t.Fatal("four") } }
 `, 0o644),
-		"metasystem/scripts/agents/coverage-ratchet.json":       testSnapshotFile(`{"note":"fixture","exempt":{},"floors":{"internal/sharded":90}}`+"\n", 0o644),
-		"metasystem/scripts/agents/coverage-ratchet-linux.json": testSnapshotFile(`{"note":"fixture","exempt":{},"floors":{"internal/sharded":90}}`+"\n", 0o644),
+		"metasystem/testing-coverage-floors.json":       testSnapshotFile(`{"note":"fixture","exempt":{},"floors":{"internal/sharded":90}}`+"\n", 0o644),
+		"metasystem/testing-coverage-floors-linux.json": testSnapshotFile(`{"note":"fixture","exempt":{},"floors":{"internal/sharded":90}}`+"\n", 0o644),
 	}, 2)
 	tree := snapshot.tree
 	group := testpolicy.Group{ID: "sharded-coverage", Kind: "unit", Adapter: "go", CWD: "metasystem",
-		Inputs:      []string{"metasystem/go.mod", "metasystem/internal/sharded/**", "metasystem/scripts/agents/coverage-ratchet.json", "metasystem/scripts/agents/coverage-ratchet-linux.json"},
+		Inputs:      []string{"metasystem/go.mod", "metasystem/internal/sharded/**", "metasystem/testing-coverage-floors.json", "metasystem/testing-coverage-floors-linux.json"},
 		Tools:       []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
 		Obligations: []string{"sharded-package-coverage"}, Platforms: []string{"any"}, TargetMS: 60000,
 		Packages: []string{"internal/sharded"}, Tests: []byte(`"all"`), Coverage: true, Shards: 2}
@@ -109,12 +109,12 @@ import "testing"
 func TestCovered(t *testing.T) { if Covered() != 1 { t.Fatal("covered") } }
 func TestAlsoCovered(t *testing.T) { if Covered() != 1 { t.Fatal("covered") } }
 `, 0o644),
-		"metasystem/scripts/agents/coverage-ratchet.json":       testSnapshotFile(`{"note":"fixture","exempt":{},"floors":{"internal/half":90}}`+"\n", 0o644),
-		"metasystem/scripts/agents/coverage-ratchet-linux.json": testSnapshotFile(`{"note":"fixture","exempt":{},"floors":{"internal/half":90}}`+"\n", 0o644),
+		"metasystem/testing-coverage-floors.json":       testSnapshotFile(`{"note":"fixture","exempt":{},"floors":{"internal/half":90}}`+"\n", 0o644),
+		"metasystem/testing-coverage-floors-linux.json": testSnapshotFile(`{"note":"fixture","exempt":{},"floors":{"internal/half":90}}`+"\n", 0o644),
 	}, 1)
 	tree := snapshot.tree
 	group := testpolicy.Group{ID: "sharded-half", Kind: "unit", Adapter: "go", CWD: "metasystem",
-		Inputs:      []string{"metasystem/go.mod", "metasystem/internal/half/**", "metasystem/scripts/agents/coverage-ratchet.json", "metasystem/scripts/agents/coverage-ratchet-linux.json"},
+		Inputs:      []string{"metasystem/go.mod", "metasystem/internal/half/**", "metasystem/testing-coverage-floors.json", "metasystem/testing-coverage-floors-linux.json"},
 		Tools:       []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
 		Obligations: []string{"half-package-coverage"}, Platforms: []string{"any"}, TargetMS: 60000,
 		Packages: []string{"internal/half"}, Tests: []byte(`"all"`), Coverage: true, Shards: 2}

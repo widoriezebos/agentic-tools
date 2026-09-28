@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 func compositionRepoRoot(t *testing.T) string {
@@ -75,16 +78,12 @@ func packetFitRoot(t *testing.T) string {
 		}
 	}
 	for _, path := range []string{
-		rolePacketTablePath,
-		"scripts/agents/roles/implementer.md",
 		"docs/orchestration.md",
-		"scripts/agents/schemas/implementer.schema.json",
-		"scripts/agents/roles/verifier.md",
 		"skills/verify/SKILL.md",
-		"scripts/agents/schemas/verifier.schema.json",
 	} {
 		copyFile(path)
 	}
+	useProtocolSourceFixtures(t, root)
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +113,7 @@ func assertPacketFitProvenance(t *testing.T, p ComposeRolePacketParams, record C
 		source string
 		raw    []byte
 	}
-	_, _, recipe, err := readRolePacketRecipe(p.Root, p.Role)
+	_, _, recipe, err := readRolePacketRecipe(p.Role)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +126,7 @@ func assertPacketFitProvenance(t *testing.T, p ComposeRolePacketParams, record C
 		expected = append(expected, expectedSource{slot: recipeSource.Slot, source: recipeSource.Path, raw: raw})
 	}
 	if recipe.ArtifactMember != "" {
-		expected = append(expected, expectedSource{slot: "artifact-member", source: rolePacketTablePath + "#" + p.Role + ".artifactMember", raw: []byte(recipe.ArtifactMember + "\n")})
+		expected = append(expected, expectedSource{slot: "artifact-member", source: protocol.RolePacketRecipe(p.Role) + ".artifactMember", raw: []byte(recipe.ArtifactMember + "\n")})
 	}
 	toolNotice := fmt.Sprintf("Permission tool policy: %s\n", p.ToolPolicy)
 	if p.Runtime == "fake" {
@@ -136,7 +135,7 @@ func assertPacketFitProvenance(t *testing.T, p ComposeRolePacketParams, record C
 		toolNotice += "Tool-name observation: unobserved\nTool names: UNOBSERVED; this broad-read launcher cannot prove the provider tool catalog, so this job is advisory.\n"
 	}
 	expected = append(expected, expectedSource{slot: "tool-names", source: "generated:tool-names", raw: []byte(toolNotice)})
-	configuration, err := ResolveHazardConfiguration(p.Root, p.DestructiveReach, p.GoalTier)
+	configuration, err := ResolveHazardConfiguration(p.DestructiveReach, p.GoalTier)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,12 +333,12 @@ func TestComposeRolePacketFitsCombinedContinuations(t *testing.T) {
 				t.Fatal(err)
 			}
 			fixedPaths := []string{
-				"scripts/agents/roles/implementer.md",
+				"protocol:roles/implementer.md",
 				"docs/orchestration.md",
-				"scripts/agents/schemas/implementer.schema.json",
+				"protocol:schemas/implementer.schema.json",
 			}
 			for index, path := range fixedPaths {
-				if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), bytes.Repeat([]byte{byte('a' + index)}, testCase.fixedSizes[index]), 0o644); err != nil {
+				if err := writeSourceFixture(root, path, bytes.Repeat([]byte{byte('a' + index)}, testCase.fixedSizes[index]), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -376,7 +375,7 @@ func TestComposeRolePacketFitsCombinedContinuations(t *testing.T) {
 			}
 			toolNotice := []byte("Permission tool policy: read-write\nTool-name observation: exact\nTool names: (none; the fake runtime opens no model tool channel)\n")
 			fixtureSections = append(fixtureSections, renderedFixtureSection{slot: "tool-names", raw: toolNotice})
-			configuration, err := ResolveHazardConfiguration(root, HazardMechanical, 0)
+			configuration, err := ResolveHazardConfiguration(HazardMechanical, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -623,8 +622,8 @@ func TestComposeRolePacketHonorsConfiguredPacketCap(t *testing.T) {
 			t.Fatal(err)
 		}
 		root := packetFitRoot(t)
-		for _, path := range []string{"scripts/agents/roles/verifier.md", "skills/verify/SKILL.md", "scripts/agents/schemas/verifier.schema.json"} {
-			if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), []byte("x"), 0o644); err != nil {
+		for _, path := range []string{"protocol:roles/verifier.md", "skills/verify/SKILL.md", "protocol:schemas/verifier.schema.json"} {
+			if err := writeSourceFixture(root, path, []byte("x"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -723,11 +722,11 @@ func TestComposeRolePacketRefusesWhenFixedPartsCannotFit(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.max-inline-input-kb=1\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		fixedPaths := []string{"scripts/agents/roles/verifier.md", "skills/verify/SKILL.md", "scripts/agents/schemas/verifier.schema.json"}
+		fixedPaths := []string{"protocol:roles/verifier.md", "skills/verify/SKILL.md", "protocol:schemas/verifier.schema.json"}
 		fixedBodies := make([][]byte, len(fixedPaths))
 		for index, path := range fixedPaths {
 			fixedBodies[index] = bytes.Repeat([]byte{byte('a' + index)}, 2*1024)
-			if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), fixedBodies[index], 0o644); err != nil {
+			if err := writeSourceFixture(root, path, fixedBodies[index], 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -750,7 +749,7 @@ func TestComposeRolePacketRefusesWhenFixedPartsCannotFit(t *testing.T) {
 			Continuations: []CompositionContinuation{{Slot: "prior-return", Path: continuation}},
 		}
 		canonicalReferenceDir := resolvePath(referenceDir)
-		configuration, err := ResolveHazardConfiguration(root, HazardMechanical, 0)
+		configuration, err := ResolveHazardConfiguration(HazardMechanical, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -854,8 +853,8 @@ func TestComposeRolePacketRefusesWhenFixedPartsCannotFit(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.max-inline-input-kb=8\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		for index, path := range []string{"scripts/agents/roles/verifier.md", "skills/verify/SKILL.md", "scripts/agents/schemas/verifier.schema.json"} {
-			if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), bytes.Repeat([]byte{byte('a' + index)}, 2*1024), 0o644); err != nil {
+		for index, path := range []string{"protocol:roles/verifier.md", "skills/verify/SKILL.md", "protocol:schemas/verifier.schema.json"} {
+			if err := writeSourceFixture(root, path, bytes.Repeat([]byte{byte('a' + index)}, 2*1024), 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -1262,16 +1261,11 @@ func TestTierThreeMechanicalCompositionCarriesEffectiveFollowUpObligations(t *te
 }
 
 func TestRolePacketTableCoversEveryDispatchableRole(t *testing.T) {
-	root := compositionRepoRoot(t)
-	tableBytes, err := os.ReadFile(filepath.Join(root, rolePacketTablePath))
-	if err != nil {
-		t.Fatal(err)
-	}
 	var table rolePacketTable
-	if err := json.Unmarshal(tableBytes, &table); err != nil {
+	if err := json.Unmarshal(protocol.RolePackets(), &table); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := filepath.Glob(filepath.Join(root, "scripts", "agents", "roles", "*.requirements.json"))
+	entries, err := fs.Glob(protocol.Files(), "roles/*.requirements.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1294,8 +1288,7 @@ func TestRolePacketTableCoversEveryDispatchableRole(t *testing.T) {
 }
 
 func TestHazardConfigurationRefusesAWeakenedMinimum(t *testing.T) {
-	root := compositionRepoRoot(t)
-	destructive, err := ResolveHazardConfiguration(root, HazardDestructiveReach, 0)
+	destructive, err := ResolveHazardConfiguration(HazardDestructiveReach, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1305,10 +1298,7 @@ func TestHazardConfigurationRefusesAWeakenedMinimum(t *testing.T) {
 		t.Fatalf("destructive-reach minimum is incomplete: %+v", destructive)
 	}
 
-	tableBytes, err := os.ReadFile(filepath.Join(root, rolePacketTablePath))
-	if err != nil {
-		t.Fatal(err)
-	}
+	tableBytes := protocol.RolePackets()
 	var table map[string]any
 	if err := json.Unmarshal(tableBytes, &table); err != nil {
 		t.Fatal(err)
@@ -1320,15 +1310,8 @@ func TestHazardConfigurationRefusesAWeakenedMinimum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tamperedRoot := t.TempDir()
-	path := filepath.Join(tamperedRoot, rolePacketTablePath)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, encoded, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ResolveHazardConfiguration(tamperedRoot, HazardDestructiveReach, 0); err == nil || !strings.Contains(err.Error(), "does not match its required configuration") {
+	useRolePacketTable(t, encoded)
+	if _, err := ResolveHazardConfiguration(HazardDestructiveReach, 0); err == nil || !strings.Contains(err.Error(), "does not match its required configuration") {
 		t.Fatalf("weakened destructive-reach configuration result = %v", err)
 	}
 
@@ -1342,15 +1325,8 @@ func TestHazardConfigurationRefusesAWeakenedMinimum(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tamperedRoot := t.TempDir()
-		path := filepath.Join(tamperedRoot, rolePacketTablePath)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, encoded, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		_, err = ResolveHazardConfiguration(tamperedRoot, HazardMechanical, 3)
+		useRolePacketTable(t, encoded)
+		_, err = ResolveHazardConfiguration(HazardMechanical, 3)
 		if err == nil || !strings.Contains(err.Error(), "role packet table independentCritiqueByTier does not match its required rule") {
 			t.Fatalf("tampered independentCritiqueByTier result = %v", err)
 		}
@@ -1366,15 +1342,8 @@ func TestHazardConfigurationRefusesAWeakenedMinimum(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		missingRoot := t.TempDir()
-		path := filepath.Join(missingRoot, rolePacketTablePath)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, encoded, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := ResolveHazardConfiguration(missingRoot, HazardMechanical, 3); err == nil ||
+		useRolePacketTable(t, encoded)
+		if _, err := ResolveHazardConfiguration(HazardMechanical, 3); err == nil ||
 			!strings.Contains(err.Error(), "independentCritiqueByTier, and at least one role") {
 			t.Fatalf("role packet table without independentCritiqueByTier was not refused by the reader: %v", err)
 		}
@@ -1453,10 +1422,7 @@ func TestFMA_R2_ClaudeGateFixtureOmitted(t *testing.T) {
 	sourceRoot := compositionRepoRoot(t)
 	root := t.TempDir()
 	for _, relative := range []string{
-		"scripts/agents/role-packets.json",
-		"scripts/agents/roles/verifier.md",
 		"skills/verify/SKILL.md",
-		"scripts/agents/schemas/verifier.schema.json",
 	} {
 		content, err := os.ReadFile(filepath.Join(sourceRoot, relative))
 		if err != nil {
@@ -2248,4 +2214,40 @@ func TestReturnMarginMinutesReadsTheConfiguredMargin(t *testing.T) {
 	if _, err := ReturnMarginMinutes(conf); err == nil {
 		t.Fatal("a malformed margin was accepted")
 	}
+}
+
+// useProtocolSourceFixtures lets a test replace the compiled-in bytes of a
+// protocol role-packet source: writeSourceFixture stores a protocol:<name>
+// source under root/protocol-fixture/<name>, which the seam prefers.
+func useProtocolSourceFixtures(t *testing.T, root string) {
+	t.Helper()
+	original := protocolSource
+	t.Cleanup(func() { protocolSource = original })
+	protocolSource = func(source string) ([]byte, bool, error) {
+		if protocol.IsReference(source) {
+			fixture := filepath.Join(root, "protocol-fixture", filepath.FromSlash(strings.TrimPrefix(source, protocol.ReferencePrefix)))
+			if data, err := os.ReadFile(fixture); err == nil {
+				return data, true, nil
+			}
+		}
+		return original(source)
+	}
+}
+
+func writeSourceFixture(root, source string, data []byte, mode os.FileMode) error {
+	path := filepath.Join(root, filepath.FromSlash(source))
+	if protocol.IsReference(source) {
+		path = filepath.Join(root, "protocol-fixture", filepath.FromSlash(strings.TrimPrefix(source, protocol.ReferencePrefix)))
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, mode)
+}
+
+func useRolePacketTable(t *testing.T, table []byte) {
+	t.Helper()
+	original := rolePacketTableBytes
+	t.Cleanup(func() { rolePacketTableBytes = original })
+	rolePacketTableBytes = func() []byte { return table }
 }

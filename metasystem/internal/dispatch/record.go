@@ -671,6 +671,10 @@ func readJSON(path string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	return decodeJSON(data)
+}
+
+func decodeJSON(data []byte) (any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	var value any

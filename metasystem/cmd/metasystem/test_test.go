@@ -2123,8 +2123,10 @@ func TestProtectedCoverageFloorCannotFallOrDisappear(t *testing.T) {
 	const linuxOID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	const loweredOID = "cccccccccccccccccccccccccccccccccccccccc"
 	const raisedOID = "dddddddddddddddddddddddddddddddddddddddd"
-	const baselinePath = "scripts/agents/coverage-ratchet.json"
-	const linuxPath = "scripts/agents/coverage-ratchet-linux.json"
+	const baselinePath = "testing-coverage-floors.json"
+	const linuxPath = "testing-coverage-floors-linux.json"
+	const legacyPath = "scripts/agents/coverage-ratchet.json"
+	const legacyLinuxPath = "scripts/agents/coverage-ratchet-linux.json"
 	baseJSON := []byte(`{"floors":{"internal/app":80.0}}`)
 	linuxJSON := []byte(`{"floors":{"internal/app":79.0}}`)
 	loweredJSON := []byte(`{"floors":{"internal/app":79.9}}`)
@@ -2140,6 +2142,9 @@ func TestProtectedCoverageFloorCannotFallOrDisappear(t *testing.T) {
 				output: []byte(fmt.Sprintf("100644 blob %s\t%s\x00", oid, path))},
 			rawFact{args: []string{"cat-file", "blob", oid}, output: content},
 		)
+	}
+	addAbsent := func(tree, path string) {
+		facts = append(facts, rawFact{args: []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", path}})
 	}
 	pins := []string{"-C", root, "-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
 		"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
@@ -2177,6 +2182,31 @@ func TestProtectedCoverageFloorCannotFallOrDisappear(t *testing.T) {
 	}
 	if next != len(facts) {
 		t.Fatalf("raised floor consumed %d of %d raw Git requests", next, len(facts))
+	}
+
+	// The landing that moves the floors beside testing.json: its base keeps
+	// them at the legacy path, and the moved floors are judged against them.
+	facts = nil
+	next = 0
+	addAbsent(baseTree, baselinePath)
+	addFile(baseTree, legacyPath, baseOID, baseJSON)
+	addFile(loweredTree, baselinePath, loweredOID, loweredJSON)
+	if err := protectCoverageRatchets(workspace, baseTree, loweredTree, ""); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
+		t.Fatalf("a floor lowered while moving was accepted: %v", err)
+	}
+	facts = nil
+	next = 0
+	addAbsent(baseTree, baselinePath)
+	addFile(baseTree, legacyPath, baseOID, baseJSON)
+	addFile(raisedTree, baselinePath, baseOID, baseJSON)
+	addAbsent(baseTree, linuxPath)
+	addFile(baseTree, legacyLinuxPath, linuxOID, linuxJSON)
+	addFile(raisedTree, linuxPath, linuxOID, linuxJSON)
+	if err := protectCoverageRatchets(workspace, baseTree, raisedTree, ""); err != nil {
+		t.Fatalf("the move refused itself: %v", err)
+	}
+	if next != len(facts) {
+		t.Fatalf("the move consumed %d of %d raw Git requests", next, len(facts))
 	}
 }
 
@@ -2333,7 +2363,7 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 	contract := testpolicy.Contract{SchemaVersion: 1,
 		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
 		Surfaces: []testpolicy.Surface{
-			{ID: "testing-policy", Paths: []string{"testing.json", "scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"}, Standard: []string{"policy-protection", "candidate-smoke"}, Deep: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"testing-policy-protected"}},
+			{ID: "testing-policy", Paths: []string{"testing.json", "testing-coverage-floors.json", "testing-coverage-floors-linux.json"}, Standard: []string{"policy-protection", "candidate-smoke"}, Deep: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"testing-policy-protected"}},
 			{ID: "proof-and-landing", Paths: []string{"source.go"}, DependsOn: []string{"testing-policy"}, Standard: []string{"policy-protection", "candidate-smoke"}, Deep: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"testing-policy-protected"}},
 		}, Groups: []testpolicy.Group{group, smoke}, Always: testpolicy.Always{Canary: []string{"policy-protection", "candidate-smoke"}, Standard: []string{"policy-protection", "candidate-smoke"}},
 		Unknown: []string{"policy-protection", "candidate-smoke"}, Cadence: []string{"policy-protection", "candidate-smoke"}}
@@ -2344,8 +2374,8 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 	writeTestingFixtureFile(t, filepath.Join(root, "metasystem.conf"), []byte("testing.contract=testing.json\nmetasystem.runtimes=fake\n"), 0o644)
 	writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), data, 0o644)
 	writeTestingFixtureFile(t, filepath.Join(root, "source.go"), []byte("package fixture\n"), 0o644)
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/app":80.0}}`), 0o644)
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+		writeTestingFixtureFile(t, filepath.Join(root, name), []byte(`{"floors":{"internal/app":80.0}}`), 0o644)
 	}
 	writeTestingFixtureFile(t, filepath.Join(root, ".gitignore"), []byte("artifacts/\nbin/\n"), 0o644)
 	testingFixtureGit(t, root, "init")
@@ -2628,7 +2658,7 @@ func writeFrozenCorpusEngineClosure(t *testing.T, moduleRoot, root, devgate, goC
 		t.Fatalf("list the engine's compile closure: %v", err)
 	}
 	// The coverage ratchets are read by the lower-coverage-floor probe.
-	relatives := []string{"go.mod", "go.sum", ".gitignore", "scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"}
+	relatives := []string{"go.mod", "go.sum", ".gitignore", "testing-coverage-floors.json", "testing-coverage-floors-linux.json"}
 	engineFiles := 0
 	for _, line := range strings.Split(strings.TrimSpace(string(listed)), "\n") {
 		fields := strings.Split(line, "|")
@@ -2808,7 +2838,7 @@ func prepareFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout
 	contract := testpolicy.Contract{SchemaVersion: 1,
 		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
 		Surfaces: []testpolicy.Surface{
-			{ID: "testing-policy", Paths: []string{"metasystem/testing.json", "metasystem/metasystem.conf", "metasystem/.gitignore", "metasystem/plans/goals/**", "metasystem/internal/testpolicy/**", "metasystem/scripts/agents/coverage-ratchet.json", "metasystem/scripts/agents/coverage-ratchet-linux.json"}, Standard: []string{"policy-protection", "candidate-smoke"}, Deep: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"testing-policy-protected"}},
+			{ID: "testing-policy", Paths: []string{"metasystem/testing.json", "metasystem/metasystem.conf", "metasystem/.gitignore", "metasystem/plans/goals/**", "metasystem/internal/testpolicy/**", "metasystem/testing-coverage-floors.json", "metasystem/testing-coverage-floors-linux.json"}, Standard: []string{"policy-protection", "candidate-smoke"}, Deep: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"testing-policy-protected"}},
 			{ID: "proof-and-landing", Paths: []string{"metasystem/cmd/metasystem/test.go"}, DependsOn: []string{"testing-policy"}, Standard: []string{"policy-protection", "candidate-smoke"}, Deep: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"testing-policy-protected"}},
 		}, Groups: groups, Always: testpolicy.Always{Canary: []string{"policy-protection", "candidate-smoke"}, Standard: []string{"policy-protection", "candidate-smoke"}},
 		Unknown: []string{"policy-protection", "candidate-smoke"}, Cadence: []string{"policy-protection", "candidate-smoke"}}

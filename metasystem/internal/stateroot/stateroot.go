@@ -246,10 +246,12 @@ func adoptedAncestor(path string) string {
 	}
 }
 
+// installationShape reports an installation root: the directory holding its
+// metasystem.conf. The engine's data is compiled in, so the configuration is
+// the whole marker.
 func installationShape(root string) bool {
-	conf, confErr := os.Stat(filepath.Join(root, "metasystem.conf"))
-	scripts, scriptsErr := os.Stat(filepath.Join(root, "scripts", "agents"))
-	return confErr == nil && !conf.IsDir() && scriptsErr == nil && scripts.IsDir()
+	conf, err := os.Stat(filepath.Join(root, "metasystem.conf"))
+	return err == nil && !conf.IsDir()
 }
 
 // RootForCandidate validates and canonicalizes an installation named by a caller.
@@ -322,10 +324,8 @@ func (r Resolver) installationRoot() (string, error) {
 }
 
 func validateInstallationShape(root string) error {
-	if _, confErr := os.Stat(filepath.Join(root, "metasystem.conf")); confErr != nil {
-		if info, scriptsErr := os.Stat(filepath.Join(root, "scripts", "agents")); scriptsErr != nil || !info.IsDir() {
-			return fmt.Errorf("state root: %q is not a metasystem installation", root)
-		}
+	if !installationShape(root) {
+		return fmt.Errorf("state root: %q is not a metasystem installation", root)
 	}
 	return nil
 }

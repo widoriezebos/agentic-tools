@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 type UnitSize struct {
@@ -64,30 +66,24 @@ func (m *Manager) admit(spec StartSpec, settings Settings) error {
 	if spec.UnitsPage != "" && spec.UnitsPage != spec.Page {
 		paths = append(paths, spec.UnitsPage)
 	}
-	if spec.Kind == "critique" {
-		var common string
-		codexAdapter := false
-		switch adapter := m.Adapters["codex-exec"].(type) {
-		case CodexExec:
-			common = adapter.CommonTemplate
-			codexAdapter = true
-		case *CodexExec:
-			common = adapter.CommonTemplate
-			codexAdapter = true
-		}
-		if codexAdapter {
-			if common == "" {
-				common = filepath.Join("scripts", "agents", "templates", "design-common.md")
-			}
-			paths = append(paths, common)
-		}
-	}
 	type measured struct {
 		path   string
 		tokens int64
 	}
 	var total int64
 	var values []measured
+	if spec.Kind == "critique" {
+		switch m.Adapters["codex-exec"].(type) {
+		case CodexExec, *CodexExec:
+			common, err := protocol.Template(designCommonTemplate)
+			if err != nil {
+				return err
+			}
+			tokens := EstimateTokens(int64(len(common)))
+			total += tokens
+			values = append(values, measured{protocol.ReferencePrefix + "templates/" + designCommonTemplate, tokens})
+		}
+	}
 	for _, path := range paths {
 		if path == "" {
 			continue

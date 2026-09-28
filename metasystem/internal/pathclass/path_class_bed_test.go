@@ -20,8 +20,8 @@ import (
 // TestDeletedListsHaveNoReader (the static reader scan over the manifest's
 // behavior roots).
 
-// pathClassBedInstallation writes a repository whose installation carries
-// the shipped manifest. A non-empty installation name places it one level
+// pathClassBedInstallation writes a repository holding an installation (its
+// metasystem.conf); the manifest is the engine's compiled-in one. A non-empty installation name places it one level
 // below the repository; the template marker makes that layout a template.
 func pathClassBedInstallation(t *testing.T, installationName string, template bool) (repository, installation string) {
 	t.Helper()
@@ -33,11 +33,7 @@ func pathClassBedInstallation(t *testing.T, installationName string, template bo
 	if template {
 		pathClassBedWrite(t, filepath.Join(repository, "development", "metasystem-design.md"), "template marker\n")
 	}
-	manifest, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(ManifestPath)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pathClassBedWrite(t, filepath.Join(installation, filepath.FromSlash(ManifestPath)), string(manifest))
+	pathClassBedWrite(t, filepath.Join(installation, "metasystem.conf"), "")
 	return repository, installation
 }
 
@@ -106,7 +102,7 @@ func TestPathClassBedAnswersFromManifest(t *testing.T) {
 	}
 
 	unclassified := resolve(filepath.Join(repository, "product.txt"))
-	const refusal = "path product.txt has no class in scripts/agents/path-classes.txt; no classified ancestor; add a row for product.txt or its directory to scripts/agents/path-classes.txt"
+	const refusal = "path product.txt has no class in the engine's path-class policy (internal/pathclass/path-classes.txt); no classified ancestor"
 	if unclassified.Class != Unclassified || unclassified.Key != "product.txt" || RefusalText(unclassified.Key) != refusal {
 		t.Fatalf("product.txt resolved as %+v with refusal %q", unclassified, RefusalText(unclassified.Key))
 	}
@@ -260,10 +256,7 @@ func TestDeletedListsHaveNoReader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := os.ReadFile(filepath.Join(installation, filepath.FromSlash(ManifestPath)))
-	if err != nil {
-		t.Fatal(err)
-	}
+	manifest := Source()
 	installRoots := behaviorRoots(t, manifest, "install", installation)
 	if len(installRoots) == 0 {
 		t.Fatal("no installation behavior root exists on disk")

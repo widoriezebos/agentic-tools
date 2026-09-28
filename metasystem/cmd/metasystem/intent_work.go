@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -79,7 +81,6 @@ func (inv *intentInvocation) work() intentWorkOwners {
 		owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
 			manager := launchManager()
 			if layout.InstallationRoot != "" {
-				manager.TemplateDirectory = filepath.Join(layout.InstallationRoot, "scripts", "agents", "templates")
 				manager.Settings, manager.SettingsError = launch.ResolveSettings(intentConfPath(layout), launchLookupEnv)
 			}
 			return &launch.UnitRunner{Manager: manager, Git: launch.OSGitRunner{}}
@@ -606,11 +607,11 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	if problem != nil {
 		return unitRequest{}, problem
 	}
-	templates := runner.Manager.TemplateDirectory
-	if templates == "" {
-		templates = filepath.Join(inv.layout.InstallationRoot, "scripts", "agents", "templates")
+	templates := runner.Manager.Templates
+	if templates == nil {
+		templates = protocol.Templates()
 	}
-	template, err := os.ReadFile(filepath.Join(templates, "review-brief.md"))
+	template, err := fs.ReadFile(templates, "review-brief.md")
 	if err != nil {
 		return unitRequest{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "cannot read the review brief template: " + err.Error()}
 	}
@@ -685,7 +686,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		if _, err := launch.ReadUnitPlan(planPath); err != nil {
 			return "", fmt.Errorf("the generated unit plan is invalid: %w", err)
 		}
-		pack := &launch.Manager{TemplateDirectory: templates}
+		pack := &launch.Manager{Templates: templates}
 		if _, err := pack.CheckPack(launch.StartSpec{Kind: "read", Brief: readBrief, WorkingDirectory: worktree}); err != nil {
 			return "", fmt.Errorf("the generated read brief does not fill the review template: %w", err)
 		}

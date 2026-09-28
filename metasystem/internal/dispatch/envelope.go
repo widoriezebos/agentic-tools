@@ -13,12 +13,13 @@ import (
 // Writable roots demand a worktree and must stay inside it — a delegate never
 // writes outside the workspace it was given. A repository-wide network floor
 // of deny overrides whatever the envelope asked for; it only ever narrows.
-func ExpandPermissions(sourcePath, repo, workspace string, isWorktree bool, preset, networkFloor, outputPath string) error {
-	return expandPermissions(sourcePath, repo, workspace, isWorktree, preset, networkFloor, outputPath, gitWorktreeMetadata{})
+// The envelope is the preset's or the configured file's bytes.
+func ExpandPermissions(envelope []byte, repo, workspace string, isWorktree bool, preset, networkFloor, outputPath string) error {
+	return expandPermissions(envelope, repo, workspace, isWorktree, preset, networkFloor, outputPath, gitWorktreeMetadata{})
 }
 
-func expandPermissions(sourcePath, repo, workspace string, isWorktree bool, preset, networkFloor, outputPath string, metadata worktreeMetadata) error {
-	data, err := readJSON(sourcePath)
+func expandPermissions(source []byte, repo, workspace string, isWorktree bool, preset, networkFloor, outputPath string, metadata worktreeMetadata) error {
+	data, err := decodeJSON(source)
 	if err != nil {
 		return fmt.Errorf("invalid permissions envelope: %v", err)
 	}

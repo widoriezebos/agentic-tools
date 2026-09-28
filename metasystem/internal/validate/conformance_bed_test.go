@@ -31,8 +31,8 @@ func TestConformanceBedInstructionsCarryBoundedRead(t *testing.T) {
 	t.Parallel()
 	const boundedRead = "equest the smallest section you need, read a large file through a bounded view, and open a reference only through its path."
 	for _, instruction := range []string{
-		"scripts/agents/templates/brief.md", "scripts/agents/roles/design-critic.md",
-		"scripts/agents/roles/code-critic.md", "scripts/agents/roles/implementer.md", "docs/orchestration.md",
+		"internal/protocol/templates/brief.md", "internal/protocol/roles/design-critic.md",
+		"internal/protocol/roles/code-critic.md", "internal/protocol/roles/implementer.md", "docs/orchestration.md",
 	} {
 		if !strings.Contains(conformanceBedSource(t, instruction), boundedRead) {
 			t.Errorf("instruction file %s does not carry the bounded-read sentence", instruction)
@@ -43,14 +43,14 @@ func TestConformanceBedInstructionsCarryBoundedRead(t *testing.T) {
 func TestConformanceBedBriefReservesReceiptsForTheSeat(t *testing.T) {
 	t.Parallel()
 	const line = "Leave `metasystem/memory/receipts.log` unchanged; the seat writes the receipt at landing."
-	if !slices.Contains(strings.Split(conformanceBedSource(t, "scripts/agents/templates/brief.md"), "\n"), line) {
+	if !slices.Contains(strings.Split(conformanceBedSource(t, "internal/protocol/templates/brief.md"), "\n"), line) {
 		t.Fatal("builder brief template does not reserve receipts for the seat")
 	}
 }
 
 func TestConformanceBedInstructionsHandOffOverTheBound(t *testing.T) {
 	t.Parallel()
-	if !strings.Contains(conformanceBedSource(t, "scripts/agents/roles/steward-continuation.md"), "metasystem session handoff --root <installation> --verify") {
+	if !strings.Contains(conformanceBedSource(t, "internal/protocol/roles/steward-continuation.md"), "metasystem session handoff --root <installation> --verify") {
 		t.Error("steward-continuation role does not verify a named context handoff")
 	}
 	if !strings.Contains(conformanceBedSource(t, "docs/orchestration.md"), "metasystem session handoff --root") {
@@ -256,7 +256,7 @@ func TestConformanceBedCumulativeBoundaryUnionsRounds(t *testing.T) {
 
 func TestConformanceBedWaiverRefusals(t *testing.T) {
 	t.Parallel()
-	manifest, err := pathclass.Parse([]byte(conformanceBedSource(t, "scripts/agents/path-classes.txt")))
+	manifest, err := pathclass.Parse([]byte(conformanceBedSource(t, "internal/pathclass/path-classes.txt")))
 	if err != nil {
 		t.Fatal(err)
 	}

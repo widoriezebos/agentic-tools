@@ -789,7 +789,7 @@ func (inv *intentInvocation) reviewBriefFacts(targets []intentTarget, goalID str
 	return file.Budget.ReviewRoundLimit, calls, nil
 }
 
-// reviewBrief renders scripts/agents/templates/review-brief.md for one
+// reviewBrief renders the engine's review-brief.md template for one
 // subject. Every value is recorded state or the caller's explicit input.
 const designCritiqueRounds = 2
 

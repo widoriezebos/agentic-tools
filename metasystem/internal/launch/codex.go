@@ -4,14 +4,16 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 type Process struct {
@@ -40,10 +42,10 @@ func (scanner KernelProcessScanner) Scan() ([]Process, error) {
 }
 
 type CodexExec struct {
-	Binary, Model, Effort, SessionsRoot, CommonTemplate string
-	Now                                                 func() time.Time
-	Location                                            *time.Location
-	Scanner                                             ProcessScanner
+	Binary, Model, Effort, SessionsRoot string
+	Now                                 func() time.Time
+	Location                            *time.Location
+	Scanner                             ProcessScanner
 }
 
 func (adapter CodexExec) Command(record Record, stateDir string) (Command, error) {
@@ -82,6 +84,11 @@ func (adapter CodexExec) Command(record Record, stateDir string) (Command, error
 	return Command{Program: adapter.Binary, Directory: directory, Stdin: string(data),
 		Args: args, LogPath: filepath.Join(stateDir, "exec.log")}, nil
 }
+
+// designCommonTemplate is the critic's common instructions, copied beside
+// the critique inputs.
+const designCommonTemplate = "design-common.md"
+
 func (adapter CodexExec) prepareCritique(record Record) (string, error) {
 	if record.Tag == "" || len(record.Inputs) < 3 {
 		return "", fmt.Errorf("critique requires --tag and two --input files")
@@ -90,14 +97,16 @@ func (adapter CodexExec) prepareCritique(record Record) (string, error) {
 	if info, err := os.Stat(metasystem); err != nil || !info.IsDir() {
 		return "", fmt.Errorf("critique worktree has no metasystem directory: %s", metasystem)
 	}
-	common := adapter.CommonTemplate
-	if common == "" {
-		common = filepath.Join("scripts", "agents", "templates", "design-common.md")
+	common, err := protocol.Template(designCommonTemplate)
+	if err != nil {
+		return "", err
+	}
+	if _, err := atomicfile.WriteText(filepath.Join(metasystem, "artifacts", "reports", designCommonTemplate), string(common), record.WorkingDirectory); err != nil {
+		return "", err
 	}
 	copies := [][2]string{
 		{record.Inputs[1].Path, filepath.Join(metasystem, "plans", filepath.Base(record.Inputs[1].Path))},
 		{record.Inputs[2].Path, filepath.Join(metasystem, "artifacts", "reports", record.Tag+"-design-brief-r1.md")},
-		{common, filepath.Join(metasystem, "artifacts", "reports", "design-common.md")},
 	}
 	for _, pair := range copies {
 		if _, err := atomicfile.CopyFile(pair[0], pair[1], record.WorkingDirectory); err != nil {
