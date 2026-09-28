@@ -356,8 +356,9 @@ func writeBatchedAsk(repo, mission string, reasons []string) (string, error) {
 		named[i] = "`" + reason + "`"
 	}
 	value["question"] = fmt.Sprintf(
-		"Mission %s reached lifecycle fence(s) %s. Choose whether to amend, price, reseal, and sign the contract or leave the mission parked.",
-		mission, strings.Join(named, ", "))
+		"Mission %s reached lifecycle fence(s) %s. Choose whether to amend and price the contract, or leave the mission parked. "+
+			"To amend: edit plans/mission-%s.contract.md, run metasystem mission seal %s, add the approval line it names, commit, and run metasystem mission resume %s.",
+		mission, strings.Join(named, ", "), mission, mission, mission)
 	if err := atomicWriteJSON(path, value); err != nil {
 		return "", err
 	}

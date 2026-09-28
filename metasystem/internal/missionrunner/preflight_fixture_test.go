@@ -426,7 +426,7 @@ func TestArmAndPreflightFullPass(t *testing.T) {
 	os.MkdirAll(engine.missionDir(), 0o755)
 	writeText(t, filepath.Join(engine.missionDir(), "state.json"), "{}")
 	if err := engine.armAndPreflight("start"); err == nil ||
-		!strings.Contains(err.Error(), "already pinned; use resume") {
+		!strings.Contains(err.Error(), "already pinned; metasystem mission resume") {
 		t.Fatalf("second start after birth: %v", err)
 	}
 }
@@ -1084,7 +1084,7 @@ func TestLaunchLockSerializesStartDecisions(t *testing.T) {
 		map[string]any{"fabricated": "born in the gap"})
 	writeJSONFile(t, engine.birthRecordPath(), map[string]any{"missionId": engine.Mission})
 	hold.release()
-	if err := <-done; err == nil || !strings.Contains(err.Error(), "use resume") {
+	if err := <-done; err == nil || !strings.Contains(err.Error(), "metasystem mission resume") {
 		t.Fatalf("the unblocked launcher must see the birth and refuse: %v", err)
 	}
 	fencesAfter := readTestDoc(t, engine.fencesPath())

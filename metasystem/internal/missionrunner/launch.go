@@ -502,7 +502,7 @@ func (e *Engine) pinVerifiedContract(mode string, snapshot []byte, approvedSHA s
 			// exists a corrected start may simply re-pin — no partial
 			// cleanup can wedge the mission id.
 			if born {
-				return failf(3, "mission start refused: approved contract is already pinned; use resume")
+				return failf(3, "mission start refused: approved contract is already pinned; metasystem mission resume %s continues it", e.Mission)
 			}
 			// The never-born mission spent none of its sealed budget:
 			// the remnant's clock resets so an interrupted cleanup
@@ -662,7 +662,7 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 		}
 	}
 	if mode == "start" && stateBorn(statePath) {
-		return failf(3, "mission state already exists; use resume")
+		return failf(3, "mission state already exists; metasystem mission resume %s continues it", e.Mission)
 	}
 	// A mission without a contract is named before anything is read,
 	// cleaned or armed for it.

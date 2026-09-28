@@ -55,7 +55,7 @@ func TestPinVerifiedContract(t *testing.T) {
 	os.MkdirAll(engine.missionDir(), 0o755)
 	writeText(t, filepath.Join(engine.missionDir(), "state.json"), "{}")
 	if err := engine.pinVerifiedContract("start", snapshot, sha); err == nil ||
-		!strings.Contains(err.Error(), "already pinned; use resume") {
+		!strings.Contains(err.Error(), "already pinned; metasystem mission resume") {
 		t.Fatalf("double pin after birth: %v", err)
 	}
 

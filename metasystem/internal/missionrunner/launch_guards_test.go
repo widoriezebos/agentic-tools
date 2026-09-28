@@ -30,7 +30,7 @@ func TestLaunchGuardLadder(t *testing.T) {
 	// Start over an existing state steers to resume.
 	os.WriteFile(statePath, []byte(`{}`), 0o644)
 	if err := engine.launch("start", false); err == nil ||
-		!strings.Contains(err.Error(), "already exists; use resume") {
+		!strings.Contains(err.Error(), "already exists; metasystem mission resume mr-launch continues it") {
 		t.Fatalf("start over state: %v", err)
 	}
 	// Resume over a malformed state surfaces the verifier's refusal.
