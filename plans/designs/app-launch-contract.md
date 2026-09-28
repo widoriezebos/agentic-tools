@@ -83,16 +83,42 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   `launch.json`, selected by `launch.contract=launch.json` in
   `metasystem.conf` and validated by `settings check`. Schema 1 holds
   one application: its name; a `start` command (argv and cwd); an
-  optional `stop` command; a `ready` probe (an http URL or a tcp
-  address, both with the address substituted); the `address` the app
-  listens on for the standing run and a port range for candidates; a
-  `log` path; `readyMs` and `stopMs`; and an optional `build` command a
-  candidate runs first. The engine hands the command three facts as
-  environment: the address it must listen on, the state root it may
-  write under, and the log path. A project with no contract has no
-  `app` verbs, and the refusal says which file to write. Not a section
-  of `metasystem.conf`, because the testing contract is a file and a
-  merge driver already exists for that shape.
+  optional `stop` command; a `ready` probe; the `address` the app
+  listens on for the standing run and a port range for candidates; an
+  optional `log` path; `readyMs` and `stopMs`; an optional `build`
+  command a candidate runs first; and `tools`, declared as the testing
+  contract declares them (executable and version arguments), so
+  `settings check` names a missing JDK, cargo or Go before a build
+  fails. The contract is language-neutral by construction: the engine
+  interprets no language, it starts a process, probes, tracks a tree,
+  signals and copies a log, so `mvn spring-boot:run`, `cargo run`, `go
+  run`, `npm start` and `docker compose up` are all one thing to it.
+  Four rules make that hold for any application:
+  - **Placeholders in argv and probes.** `${address}`, `${host}` and
+    `${port}` are substituted in the command's argv and in the probe,
+    so an app that takes its port as an argument gets it there; the
+    same three facts, with the state root and the log path, reach the
+    command as environment.
+  - **Four forms of readiness.** An http URL that must answer 2xx, a
+    tcp address that must accept, a log line matching a pattern, or
+    none, where ready means the process tree is alive. A worker, a
+    batch job or a desktop application has nothing to probe, and the
+    contract says so rather than pretending.
+  - **The start command runs the app in the foreground**, and the
+    engine detaches it, so the tree it records is the app. A start
+    script that backgrounds a process and exits leaves nothing to stop,
+    and validation says so where it can (the command exits before the
+    probe answers). Where the app must be stopped its own way (a
+    compose stack, a service manager), the `stop` command does it, and
+    the proof of stopping is the probe going dark and the recorded tree
+    gone.
+  - **Stdout and stderr are captured to the log** unless the contract
+    names the application's own log file, in which case that file is
+    the log.
+  A project with no contract has no `app` verbs, and the refusal says
+  which file to write. Not a section of `metasystem.conf`, because the
+  testing contract is a file and a merge driver already exists for that
+  shape.
 - D2. **Four verbs, one object.** `metasystem app start|stop|restart|
   status`, audience both, forms mirroring `ui`. Start runs the start
   command detached under the bounded supervisor, writes the run record
@@ -147,10 +173,13 @@ free with the verbs; its browser half waits for the interface's slice.
 
 ## 5. Verification and box
 
-Contract: validation refuses a missing start, a probe without an
-address, a candidate range that overlaps the standing address, and
-names each fault; `settings check` reports it beside the testing
-contract. Verbs, against a fixture application (a small Go server in
+Contract: validation refuses a missing start, an http or tcp probe
+without an address, a candidate range that overlaps the standing
+address, an unknown placeholder, and a declared tool that is absent or
+answers a wrong version, and names each fault; `settings check` reports
+it beside the testing contract. Each readiness form is proven with the
+fixture: http, tcp, a log line, and none; a start command that exits
+before readiness is reported as such and not as running. Verbs, against a fixture application (a small Go server in
 testdata that answers its health URL after a delay and can be told to
 ignore TERM): start waits for ready and records; a second start rejoins;
 status is truthful in all three states, including a record whose
