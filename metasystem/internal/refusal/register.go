@@ -349,7 +349,7 @@ var Rows = []Row{
 	{Code: "tier1-full-gate-refused", Owner: "internal/landing", Site: "tierone.go:131", Shape: Agent, Override: CarriedLanding, Commands: 1},
 
 	{Code: "carry-ledger-moved", Owner: "internal/landing", Site: "carried.go:44", Shape: Question, H1: StandingInput},
-	{Code: "carry-remote-required", Owner: "internal/goal", Site: "verbs.go:5352", Shape: Question, H1: StandingInput},
+	{Code: "carry-remote-required", Owner: "internal/goal", Site: "verbs.go:5360", Shape: Question, H1: StandingInput},
 	{Code: "carry-goal-not-live", Owner: "internal/landing", Site: "carried.go:167", Shape: Question, H1: StandingInput},
 	{Code: "carry-word-missing", Owner: "internal/landing", Site: "carried.go:179", Shape: Question, H1: StandingInput},
 	{Code: "carry-word-unproven", Owner: "internal/landing", Site: "carried.go:277", Shape: Question, H1: StandingInput},

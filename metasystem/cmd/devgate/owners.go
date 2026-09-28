@@ -145,7 +145,7 @@ func stopSurface(root string) (string, bool) {
 	}
 	out.WriteString(result.Summary() + "\n")
 	if result.Refused() {
-		out.WriteString("restore the assertion, or run metasystem internal audit stop-decision-surface --declare --goal <goal-id> --reason <text> with the goal that permits the move\n")
+		out.WriteString("restore the assertion, or run metasystem internal audit stop-decision-surface --declare --goal <goal-id> --reason <text> with a goal allowed stop-test changes; a person allows the move with metasystem goal allow <goal-id> stop-test-changes --reason <text>\n")
 		return out.String(), false
 	}
 	return out.String(), true
