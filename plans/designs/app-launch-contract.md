@@ -449,3 +449,71 @@ stands for the build, from round 2 and retained by every round since:
 interrupt the supervisor between the spawn and the child's write and
 prove the application dead, or discoverable and stoppable by proven
 ownership. Built next, on Wido's "ok, now build it".
+
+## Built (2026-09-28)
+
+Landed on ui-development and main. Built by Claude on Opus 5.5 in the
+worktree `agentic-tools-alc` on branch `app-launch-contract` from
+`149c3b7a2`: ten build commits (the first four on Opus 5 through the
+subagent tool's `opus` alias before the roster's model was pinned by
+id, the rest on `claude-opus-5-5` headless), two fix rounds of four and
+two commits, merged with main at `05254901b` (six mechanical conflicts:
+the `helm` and `app` objects side by side in the verb tables, the
+ratchet ceilings summed to 294 and 128, one refusal site re-anchored,
+both floors kept). Read by Codex on Sol under R-124 (R-133-ui roster):
+five material findings, three fixed in round 1 (a missing evidence root
+refuses closure and keeps the record; a goal's candidate is origin's
+tip; a taken standing address is refused before launch and readiness is
+accepted only while the child lives) and two held and fixed in round 2
+(no ended record over a group that still has a member or cannot be
+read, and status checks the group before trusting an ended marker;
+`--at goal/G` records its goal as `--goal G` does); Sol's last re-read:
+"0 material findings". Every fix was held by a test that failed
+first. The reads are verbatim in `app-launch-contract-sol-read.md`;
+the builder's report and the briefs are under
+`~/LocalStorage/agentic-tools-evidence/review-room-20260928/`.
+
+What exists: `launch.json` schema 1 with every field but `start`
+optional and its defaults, validated by `settings check` beside the
+testing contract; `metasystem app start|stop|restart|status|log|reset|
+check`, each with `--at REF` or `--goal G`; the internal `app serve`
+supervisor writing its record before the spawn and the child's
+identity as the next act, staying while its group has members, ending
+into an ended record; stop through the supervisor's own group with
+identity re-proven before every signal; liveness and readiness reported
+apart; runs at any commit in their own worktree, address, state root
+and data directory, `prepare` before the first start and on `reset`;
+`log` with follow; `check` through the testing runner's canary form
+with `--app-address` overlaid in both environment modes and part of the
+group's identity; declared tools as a preflight written on the record;
+the evidence copy for a goal run at stop, reset and the next start,
+before the record is removed and the worktree reclaimed; this
+repository's own `launch.json`, proven for real: a candidate interface
+from the branch's tree served on 7980 beside the standing one on 7878,
+health answering with the tree's digest, a proven stop, the tree
+reclaimed. The package `internal/applaunch` has a floor of 82.0 in
+both ratchet files and measures 83.8 to 84.2.
+
+Departures the reads accepted: `LaunchSupervisor` takes a settle bound
+so `app start` does not wait two minutes for a failed supervisor that
+rightly stays for a live descendant (start passes stopMs plus five
+seconds; Reap keeps its default). The builder found and fixed four
+defects of its own earlier commits with failing tests first: the
+readiness descriptor leaked to the application, a moved tip rejoined a
+live run, the standing run's `prepare` was handed the installation as
+its state root, and evidence copies within one second collided.
+
+Later, when it hurts: SOL-06, the launcher kills its direct child by
+handle rather than by re-proven reference (harmless while the child is
+unreaped); the refusal hint "before it stopped" on a failed start whose
+supervisor still owns a descendant; a run at another commit uses the
+invoking checkout's `launch.json`, not the candidate tree's, which the
+design left unsaid; no end-to-end `check` ran against a real testing
+group, since no contract here declares one, which the Java test bed
+will supply; in the window between the spawn and the child's write,
+stop lists the orphaned application by identity and signals none of
+it, as designed, and a person ends it; `settings check` on a bare
+worktree refuses before the launch line for reasons outside this slice
+(`evidence.root` and runtime registrations); the browser half of D4
+and D7 are the interface's slice. The goal `app-launch-contract` is
+concluded by Wido's own act.

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -1460,6 +1461,24 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 	}
 	settings.Summary = "the settings of " + root + " and their testing contract are valid"
 	settings.text = append(settings.text, fmt.Sprintf("testing contract %s: %d group(s)", path, groups))
+	// The launch contract is validated here too, with the same kind of line:
+	// a project that has one gets its faults named before a start, and a
+	// project that has none is not a project with a problem.
+	launchPath, launchContract, launchTools, launchErr := launchContractReady(root)
+	switch {
+	case errors.Is(launchErr, errNoLaunchContract):
+		settings.text = append(settings.text, "launch contract: none declared")
+	case launchErr != nil:
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root},
+			Summary: "the settings of " + root + " and their testing contract are valid, but the launch contract is not: " + launchErr.Error()})
+	default:
+		settings.Summary = "the settings of " + root + ", their testing contract and their launch contract are valid"
+		settings.text = append(settings.text, fmt.Sprintf("launch contract %s: %s, readiness %s, %s",
+			launchPath, launchContractName(launchContract), launchContract.ReadyKind(), launchContract.DataWord()))
+		for _, tool := range launchTools {
+			settings.text = append(settings.text, "launch tool "+tool.Line())
+		}
+	}
 	return inv.render(settings)
 }
 
@@ -1777,4 +1796,13 @@ func adapterReport(root string) ([]string, int) {
 		}
 	}
 	return lines, len(reg.Refusals)
+}
+
+// launchContractName is what a contract calls its application, or the words
+// for one that named itself nothing.
+func launchContractName(contract applaunch.Contract) string {
+	if contract.Name == "" {
+		return "one unnamed application"
+	}
+	return contract.Name
 }

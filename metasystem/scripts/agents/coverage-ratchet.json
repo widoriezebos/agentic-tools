@@ -13,6 +13,7 @@
   "internal/acp": 88.7,
   "internal/adapter": 85.5,
   "internal/adapter/supervisor": 67.3,
+  "internal/applaunch": 82.0,
   "internal/adopt": 81.3,
   "internal/atif": 75.0,
   "internal/atomicfile": 71.6,

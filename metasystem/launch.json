@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "browser-interface",
+  "address": "127.0.0.1:7979",
+  "portRange": "7980-7999",
+  "start": {
+    "argv": ["bin/metasystem", "ui", "serve", "--repo", ".", "--listen", "${address}"],
+    "cwd": "metasystem"
+  },
+  "build": {
+    "argv": [
+      "sh",
+      "-c",
+      "go test ./internal/ui/web/ -run TestBundleIsCurrent -count=1 && go build -o bin/metasystem ./cmd/metasystem"
+    ],
+    "cwd": "metasystem"
+  },
+  "ready": {"kind": "http", "url": "http://${address}/-/health"},
+  "readyMs": 60000,
+  "stopMs": 20000,
+  "tools": [
+    {"id": "go", "executable": "go", "versionArgs": ["version"]},
+    {"id": "git", "executable": "git", "versionArgs": ["--version"]},
+    {"id": "shell", "executable": "sh", "versionArgs": ["-c", "exit 0"]}
+  ]
+}
