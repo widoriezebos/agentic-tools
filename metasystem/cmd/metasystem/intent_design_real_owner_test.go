@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 )
 
 // The design journeys below run against the dispatcher fixture's armed,
@@ -548,29 +548,10 @@ func TestIntentDesignAuthorRealOwnerJourney(t *testing.T) {
 // terminal records are never touched.
 func (b *designBed) fakeBehaviour() (marker string, restore func()) {
 	b.t.Helper()
-	provider := filepath.Join(b.repo, "scripts", "agents", "adapters", "fake.sh")
-	original, err := os.ReadFile(provider)
-	if err != nil {
-		b.t.Fatal(err)
-	}
-	marker = filepath.Join(b.repo, "artifacts", "agents", "intent-design-fake-behaviour.md")
-	anchor := "behavior_sources() {\n  printf '%s\\n' \"$prompt\"\n"
-	if !bytes.Contains(original, []byte(anchor)) {
-		b.t.Fatalf("the fake provider's behavior_sources() changed shape")
-	}
-	patched := bytes.Replace(original, []byte(anchor), []byte(anchor+"  [[ -f '"+marker+"' ]] && printf '%s\\n' '"+marker+"'\n"), 1)
-	if err := testexec.WriteFile(provider, patched, 0o755); err != nil {
-		b.t.Fatal(err)
-	}
-	return marker, func() {
-		os.Remove(marker)
-		if err := testexec.WriteFile(provider, original, 0o755); err != nil {
-			b.t.Errorf("restore the fake provider: %v", err)
-		}
-		if now, _ := os.ReadFile(provider); !bytes.Equal(now, original) {
-			b.t.Errorf("the fake provider was not restored byte for byte")
-		}
-	}
+	// The fake runtime reads FAKE markers from the installation's fixture
+	// behavior file beside every round's prompt while it exists.
+	marker = filepath.Join(b.repo, filepath.FromSlash(supervisor.FakeBehaviorFile))
+	return marker, func() { os.Remove(marker) }
 }
 
 func (b *designBed) waitFile(path string) {

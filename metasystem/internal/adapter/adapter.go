@@ -3,11 +3,11 @@
 // bounding the effective-permissions file a launch is measured against,
 // comparing that effective grant to what the job requested, writing the small
 // compare-and-swap patch files the record lifecycle consumes, and writing a
-// runtime's capability snapshot. Since the port it also carries the
-// runtime-specific decision helpers the shell adapters call back into —
-// command construction, event-stream reads, result-field derivation, and
-// session correlation (claude.go, codex.go, devin.go); what stays in each
-// scripts/agents/adapters/*.sh is launching and OS plumbing, not decisions.
+// runtime's capability snapshot. It also carries the runtime-specific
+// decision helpers — command construction, event-stream reads, result-field
+// derivation, and session correlation (claude.go, codex.go, devin.go). The
+// launch and supervision that compose them live above, in
+// internal/adapter/supervisor (the delegate-supervisor entry).
 package adapter
 
 import (

@@ -68,17 +68,15 @@ trap cleanup EXIT
 fail() { echo "go supervision fixture failed: $1" >&2; exit 1; }
 
 # The standing watcher separates repository state from its installation root.
-# Supply the smallest real installation its fingerprint and fake-runtime
-# signature require, and an authorized empty process universe. The scenario
+# Supply the smallest real installation its fingerprint requires (the
+# fake-runtime signature comes from the engine's runtime registry), and an authorized empty process universe. The scenario
 # repositories below stay independent state/scope roots.
 fixture_root="$tmp/fixture-install"
 mkdir -p "$fixture_root/bin"
 printf '%s\n' 'metasystem.runtimes=fake' 'watch.interval-sec=1' >"$fixture_root/metasystem.conf"
 cp "$bin" "$fixture_root/bin/metasystem"
 for dependency in \
-  scripts/agents/dispatch.sh \
-  scripts/agents/adapters/runtime-common.sh \
-  scripts/agents/adapters/fake.sh; do
+  scripts/agents/dispatch.sh; do
   mkdir -p "$fixture_root/${dependency%/*}"
   cp "$root/$dependency" "$fixture_root/$dependency"
 done

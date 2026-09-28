@@ -118,7 +118,7 @@ git -C "$harness" init -q -b main
 git -C "$harness" add .
 git -C "$harness" -c user.name=fixture -c user.email=fixture.invalid commit -qm fixture
 armed_repo=$harness
-"$harness/scripts/agents/adapters/fake.sh" probe >/dev/null
+"$harness/bin/metasystem" delegate-supervisor fake probe --root "$harness" >/dev/null
 
 # Fake-runtime fixtures authorize their disposable enrollment by staging the
 # accepted engine identity directly. Keep that engine under the scratch root
@@ -127,7 +127,6 @@ fixture_install=$tmp/fixture-install
 mkdir -p "$fixture_install/bin" "$fixture_install/scripts/agents"
 printf 'metasystem.runtimes=fake\n' >"$fixture_install/metasystem.conf"
 cp "$ms" "$fixture_install/bin/metasystem"
-cp -R "$source_root/scripts/agents/adapters" "$fixture_install/scripts/agents/"
 enrolled_engine=$fixture_install/bin/metasystem
 enrollment_digest=$("$enrolled_engine" util sha256 --file "$enrolled_engine")
 mkdir -p "$harness/artifacts/agents/steward"

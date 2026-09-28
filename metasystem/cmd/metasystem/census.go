@@ -180,21 +180,6 @@ func runCensusAlive(args []string) int {
 	return 1
 }
 
-func runCensusSignatureCheck(args []string) int {
-	flags := flag.NewFlagSet("proc signature-check", flag.ContinueOnError)
-	adapter := flags.String("adapter", "", "adapter path")
-	positive := flags.String("positive", "", "argv that must classify")
-	lookalike := flags.String("lookalike", "", "argv that must NOT classify")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if err := census.SignatureCheck(*adapter, *positive, *lookalike); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
 // runCensusFindAncestor walks the live process tree from --pid and prints the
 // first signature-matched agent ancestor as compact JSON.
 func runCensusFindAncestor(args []string) int {

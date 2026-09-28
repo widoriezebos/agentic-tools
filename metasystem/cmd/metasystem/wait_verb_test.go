@@ -138,8 +138,8 @@ func TestWaitPathSelectorIsValidated(t *testing.T) {
 	if err := metarun.ValidateWaitSelector(selector); err != nil {
 		t.Fatalf("valid path selector: %v", err)
 	}
-	originalAdapter, originalStat, originalSignature := waitAdapterPathForRuntime, waitPathStat, waitOpenWorkSignature
-	waitAdapterPathForRuntime = func(string, string) (string, error) { return "/unused/fake-adapter", nil }
+	originalAdapter, originalStat, originalSignature := waitDeliveryRuntime, waitPathStat, waitOpenWorkSignature
+	waitDeliveryRuntime = func(string, string) (string, error) { return "fake", nil }
 	waitPathStat = func(string) (os.FileInfo, error) {
 		return waitPathFileInfo{size: 4, modified: time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)}, nil
 	}
@@ -148,7 +148,7 @@ func TestWaitPathSelectorIsValidated(t *testing.T) {
 		return "", nil
 	}
 	t.Cleanup(func() {
-		waitAdapterPathForRuntime = originalAdapter
+		waitDeliveryRuntime = originalAdapter
 		waitPathStat = originalStat
 		waitOpenWorkSignature = originalSignature
 	})
@@ -185,12 +185,10 @@ func TestUnassociatedRegistrationRefusesNoRow(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(jobDir, "job-unassociated.json"), []byte(`{"jobId":"job-unassociated","operationId":"reserve-a","round":1,"status":"completed","startedAt":"2026-09-15T10:00:00Z"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	originalPID, originalAdapter := waitCallerPID, waitAdapterPathForRuntime
+	originalPID, originalAdapter := waitCallerPID, waitDeliveryRuntime
 	waitCallerPID = func() int64 { return self }
-	waitAdapterPathForRuntime = func(string, string) (string, error) {
-		return filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "adapters", "fake.sh"))
-	}
-	t.Cleanup(func() { waitCallerPID, waitAdapterPathForRuntime = originalPID, originalAdapter })
+	waitDeliveryRuntime = func(string, string) (string, error) { return "fake", nil }
+	t.Cleanup(func() { waitCallerPID, waitDeliveryRuntime = originalPID, originalAdapter })
 	code, _, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--job", "job-unassociated"}) })
 	rows, _ := filepath.Glob(filepath.Join(metarun.WaitersDir(root), "*.json"))
 	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "authenticated runtime session") || len(rows) != 0 {
@@ -226,9 +224,9 @@ func TestWaitProviderPollFailureStillReadsTheDurableSource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(jobs, "job-a.json"), []byte(`{"jobId":"job-a","operationId":"reserve-a","round":1,"status":"running","startedAt":"2026-09-13T10:00:00Z"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	original := waitAdapterPathForRuntime
-	waitAdapterPathForRuntime = func(string, string) (string, error) { return "/unused/fake-adapter", nil }
-	t.Cleanup(func() { waitAdapterPathForRuntime = original })
+	original := waitDeliveryRuntime
+	waitDeliveryRuntime = func(string, string) (string, error) { return "fake", nil }
+	t.Cleanup(func() { waitDeliveryRuntime = original })
 	options, err := waitOptions(root, metarun.WaitSelector{Kind: "job", TargetID: "job-a"}, metarun.Caller{OwnerLineage: "lineage-a"}, "fake", func(context.Context) error {
 		return errors.New("provider unavailable")
 	})
@@ -267,12 +265,12 @@ func TestWaitActionableCheckUsesNoGitAndHonorsItsContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	originalAdapter := waitAdapterPathForRuntime
-	waitAdapterPathForRuntime = func(string, string) (string, error) { return "/unused/fake-adapter", nil }
+	originalAdapter := waitDeliveryRuntime
+	waitDeliveryRuntime = func(string, string) (string, error) { return "fake", nil }
 	originalSignature := waitOpenWorkSignature
 	originalCurrentHolder := waitCurrentHolder
 	t.Cleanup(func() {
-		waitAdapterPathForRuntime = originalAdapter
+		waitDeliveryRuntime = originalAdapter
 		waitOpenWorkSignature = originalSignature
 		waitCurrentHolder = originalCurrentHolder
 	})
@@ -389,13 +387,11 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 	}
 	originalCallerPID := waitCallerPID
 	waitCallerPID = func() int64 { return self }
-	originalAdapterPath := waitAdapterPathForRuntime
-	waitAdapterPathForRuntime = func(string, string) (string, error) {
-		return filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "adapters", "fake.sh"))
-	}
+	originalAdapterPath := waitDeliveryRuntime
+	waitDeliveryRuntime = func(string, string) (string, error) { return "fake", nil }
 	t.Cleanup(func() {
 		waitCallerPID = originalCallerPID
-		waitAdapterPathForRuntime = originalAdapterPath
+		waitDeliveryRuntime = originalAdapterPath
 	})
 	code, output, problem := 0, "", ""
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
@@ -1184,8 +1180,6 @@ func installPendingWaitHookFixture(t *testing.T, root, binary string) (hook, can
 	for _, relative := range []string{
 		"scripts/agents/supervision-hook.sh",
 		"scripts/agents/dispatch.sh",
-		"scripts/agents/adapters/fake.sh",
-		"scripts/agents/adapters/runtime-common.sh",
 	} {
 		copyExecutableFixture(t, filepath.Join(sourceRoot, relative), filepath.Join(root, relative))
 	}
@@ -2253,12 +2247,10 @@ func TestWaitLeaseTakeoverRepairsAndResumes(t *testing.T) {
 	if lines, err := report.CurrentWaitingLines(root); err != nil || len(lines) != 1 || !strings.Contains(lines[0], waitID) {
 		t.Fatalf("takeover waiting lines=%q err=%v", lines, err)
 	}
-	originalPID, originalAdapter := waitCallerPID, waitAdapterPathForRuntime
+	originalPID, originalAdapter := waitCallerPID, waitDeliveryRuntime
 	waitCallerPID = func() int64 { return self }
-	waitAdapterPathForRuntime = func(string, string) (string, error) {
-		return filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "adapters", "fake.sh"))
-	}
-	t.Cleanup(func() { waitCallerPID, waitAdapterPathForRuntime = originalPID, originalAdapter })
+	waitDeliveryRuntime = func(string, string) (string, error) { return "fake", nil }
+	t.Cleanup(func() { waitCallerPID, waitDeliveryRuntime = originalPID, originalAdapter })
 	code, output, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--resume", waitID, "--json"}) })
 	var result metarun.WaitResult
 	decodeErr := json.Unmarshal([]byte(output), &result)

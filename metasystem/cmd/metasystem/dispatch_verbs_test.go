@@ -18,7 +18,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestComposeRolePacketCommandCarriesGoalTier(t *testing.T) {
@@ -791,19 +790,12 @@ func runCensusFreshCommandClockBody(t *testing.T) {
 		for _, rel := range []string{
 			"scripts/agents/dispatch.sh",
 			"bin/metasystem",
-			"scripts/agents/adapters/runtime-common.sh",
 		} {
 			path := filepath.Join(root, rel)
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(path, []byte("census clock fixture\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		if runtime == "fake" {
-			adapter := filepath.Join(root, "scripts", "agents", "adapters", "fake.sh")
-			if err := testexec.WriteFile(adapter, []byte("#!/bin/sh\nprintf 'match ^fixture$\\n'\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}

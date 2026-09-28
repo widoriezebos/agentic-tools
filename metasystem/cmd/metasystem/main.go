@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -115,11 +116,9 @@ func families() []family {
 				{"exists", "exit 0 if the pid exists (permission denial proves existence)", runIdentityExists},
 				{"group-exists", "exit 0 if the process group exists", runIdentityGroupExists},
 				{"group-owned", "exit 0 only when a group member carries a tag in a shipped argv position", runIdentityGroupOwned},
-				{"group-members", "print a process group's live member pids, optionally excluding one", runProcGroupMembers},
 				{"census", "compute a fixture-driven census verdict", runCensusRun},
 				{"alive", "exit 0 if a pid is live at its expected start", runCensusAlive},
 				{"classify", "print live, stale, dead, or unknown for a recorded pid and tag", runProcClassify},
-				{"signature-check", "verify an adapter's positive/lookalike signature contract", runCensusSignatureCheck},
 				{"find-ancestor", "walk up the process tree to the first agent-signature ancestor", runCensusFindAncestor},
 				{"acknowledge", "record one exact untracked pid as human-judged-harmless; the end-of-turn report then stays silent about it (KI-23)", runProcAcknowledge},
 				{"setsid", "run a command as the leader of a new session and exit with its status (proc setsid -- cmd args...)", runProcSetsid},
@@ -217,9 +216,7 @@ func families() []family {
 				{"fence-before-launch", "read the checkout process-creation fence before dispatch admission", runDispatchFenceBeforeLaunch},
 				{"fence-after-launch", "re-read the checkout process-creation fence after a job launch", runDispatchFenceAfterLaunch},
 				{"fixture-pause-before-launch", "pause a launch only in a fixture-mode root", runDispatchFixturePauseBeforeLaunch},
-				{"launch-capability-consume", "verify and spend one admitted adapter launch capability", runDispatchLaunchCapabilityConsume},
 				{"claim-occupancy-prepare", "prepare session-occupancy evidence off the record lock", runDispatchClaimOccupancyPrepare},
-				{"prefork-mark", "persist the pre-fork custody marker for an imminent launch", runDispatchPreforkMark},
 				{"custody-groups", "print a record's custody process-group kill targets", runDispatchCustodyGroups},
 				{"reconcile-reservation", "run the adoption engine over one reservation", runDispatchReconcileReservation},
 				{"ownership-patch", "build the launch ownership patch with a proven identity", runDispatchOwnershipPatch},
@@ -258,60 +255,9 @@ func families() []family {
 			summary: "shared runtime-adapter plumbing: permissions, patches, snapshots",
 			verbs: []verb{
 				{"root-job", "print a job's root ancestor by walking parentJob", runAdapterRootJob},
-				{"effective-init", "materialize the effective permissions from a job record", runAdapterEffectiveInit},
-				{"effective-workspace", "pin the effective writeRoots to the resolved workspace", runAdapterEffectiveWorkspace},
-				{"permission-check", "report which effective permission fields are wider than requested", runAdapterPermissionCheck},
-				{"model-patch", "write an {effectiveModel} record patch", runAdapterModelPatch},
-				{"transport-patch", "write a {transport} record patch (the D82 chain pin)", runAdapterTransportPatch},
-				{"repairs-patch", "write a {returnRepairs} record patch", runAdapterRepairsPatch},
 				{"result-patch", "write an {error,phase,usage} record patch", runAdapterResultPatch},
-				{"capability-snapshot", "write a validated capability snapshot", runAdapterCapabilitySnapshot},
-				{"version-parse", "extract the semver from CLI version output on stdin", runAdapterVersionParse},
-				{"codex-event", "read the session or turn field from a Codex event stream", runAdapterCodexEvent},
-				{"codex-usage", "extract Codex usage from its event stream", runAdapterCodexUsage},
-				{"codex-command", "build the Codex delegate argv (NUL-terminated)", runAdapterCodexCommand},
-				{"claude-command", "build the Claude argv (NUL-terminated)", runAdapterClaudeCommand},
-				{"claude-derive-result", "derive claude-result.json from a streamed round", runAdapterClaudeDeriveResult},
-				{"claude-settings", "build the Claude job settings from a record", runAdapterClaudeSettings},
-				{"claude-usage", "extract Claude usage from its result", runAdapterClaudeUsage},
 				{"claude-tool-gate", "decide one Claude tool call against the context budget", runAdapterClaudeToolGate},
-				{"claude-result-field", "read a Claude result field with modelUsage collapse", runAdapterClaudeResultField},
-				{"claude-append-result", "append a Claude result to the event stream", runAdapterClaudeAppendResult},
 				{"claude-session-signal", "record the Claude session-established signal", runAdapterClaudeSessionSignal},
-				{"devin-config", "build the Devin job config from the user config", runAdapterDevinConfig},
-				{"adjudicate-turn", "decide a turn's terminal outcome, repair, or settle stage", runAdapterAdjudicateTurn},
-				{"devin-session", "correlate the new Devin session against the baseline", runAdapterDevinSession},
-				{"devin-settle", "certify the transcript session and derive the effective model", runAdapterDevinSettle},
-				{"devin-collect", "walk the delivery channels for a devin turn (0 delivered, 3 empty, 5 oversize)", runAdapterDevinCollect},
-				{"devin-usage", "compute the Devin per-round usage delta", runAdapterDevinUsage},
-				{"acp-usage", "the acp transport's typed usage from a turn outcome", runAdapterACPUsage},
-				{"usage-unavailable", "write the unavailable-usage record", runAdapterUsageUnavailable},
-				{"fake-return", "write the fake runtime's canned role return", runAdapterFakeReturn},
-				{"fake-usage", "write the fake runtime's fixed native usage", runAdapterFakeUsage},
-				{"fake-effective-network", "edit the effective network for permission fixtures", runAdapterFakeEffectiveNetwork},
-				{"fake-guarded-write", "attempt a permission-guarded write (77 = refused)", runAdapterFakeGuardedWrite},
-				{"fake-guarded-network", "attempt a permission-guarded connection (77 = refused)", runAdapterFakeGuardedNetwork},
-				{"wait-start-gate", "wait for the runner-owned adapter or host start gate", runAdapterWaitStartGate},
-				{"fake-capability-snapshot", "write a fake capability-snapshot profile", runAdapterFakeCapabilitySnapshot},
-				{"fake-selftest-record", "write the fake selftest pass record", runAdapterFakeSelftestRecord},
-				{"normalize-return", "normalize the runtime reply into return.json/return.md", runAdapterNormalizeReturn},
-				{"selftest-run", "run the full-contract adapter self-test", runAdapterSelftestRun},
-				{"devin-prompt", "write the schema-augmented prompt copy the Devin CLI reads", runAdapterDevinPrompt},
-			},
-		},
-		{
-			name:    "host",
-			summary: "host-loop plumbing: result envelopes, usage, and return extraction",
-			verbs: []verb{
-				{"result-write", "write a host turn's result envelope", runHostResultWrite},
-				{"finish", "adjudicate a host turn outcome and write its envelope", runHostFinish},
-				{"devin-collect", "walk a devin host turn's delivery channels (0 delivered, 3 empty, 5 oversize)", runHostDevinCollect},
-				{"claude-result", "extract the Claude return and usage", runHostClaudeResult},
-				{"devin-config", "assemble the Devin job config", runHostDevinConfig},
-				{"devin-return", "extract the Devin return", runHostDevinReturn},
-				{"devin-usage", "compute the Devin per-round usage delta", runHostDevinUsage},
-				{"fake-return", "write the fake-runtime return and terminal record", runHostFakeReturn},
-				{"fake-result", "write the fake-runtime result envelope", runHostFakeResult},
 			},
 		},
 		{
@@ -413,16 +359,6 @@ func families() []family {
 				{"adoption-default", "the one default adoption runtime", runRuntimeAdoptionDefault},
 				{"dirs", "a runtime's adopted registration directories", runRuntimeDirs},
 				{"instruction-file", "a runtime's instruction-bearing filename", runRuntimeInstructionFile},
-				{"acp-expectation", "a runtime's expected ACP transport declaration as JSON", runRuntimeACPExpectation},
-			},
-		},
-		{
-			name:    "acp",
-			summary: "the ACP transport client (wire only; launch and custody stay with scripts)",
-			verbs: []verb{
-				{"preflight", "check an envelope's ACP-v1 eligibility before any launch", runACPPreflight},
-				{"mode", "resolve a runtime's session mode for an envelope tools grade", runACPMode},
-				{"turn", "drive one prompt attempt over pre-created pipes, emitting the typed outcome", runACPTurn},
 			},
 		},
 		{
@@ -469,7 +405,6 @@ func families() []family {
 			verbs: []verb{
 				{"token-hex", "print a random hex token of --bytes length", runUtilTokenHex},
 				{"sha256", "print the hex sha-256 of --file or stdin", runUtilSHA256},
-				{"slug", "print a stable slug of the argument (matches the sanitize rule)", runUtilSlug},
 				{"json-validate", "exit 0 if --file/--value is valid JSON, else 1", runUtilJSONValidate},
 				{"now-ns", "print the current wall-clock time in nanoseconds", runUtilNowNs},
 				{"bootclock", "print the operating-system boot identity and monotonic nanoseconds", runUtilBootClock},
@@ -749,6 +684,9 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 	}
 	// Process entrypoints whose first word is not an object (supervise,
 	// steward, up, ...) and the transitional families keep their argv.
+	if args[0] == runtimes.SupervisorEntry {
+		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+	}
 	if len(args) >= 2 && !isHelpWord(args[1]) && (args[0] == "up" || familyHasVerb(registered, args[0], args[1])) {
 		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
 	}
@@ -824,6 +762,9 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 	}
 	if args[0] == "hook" {
 		return runHookEntry(args[1:])
+	}
+	if args[0] == runtimes.SupervisorEntry {
+		return runDelegateSupervisor(args[1:])
 	}
 	if args[0] == "stop" {
 		return runProcessStop(args[1:])
@@ -920,6 +861,7 @@ func writeUsage(w io.Writer, registered []family) {
 	fmt.Fprintln(w, "       metasystem internal up [--repo <checkout>] [--pid <pid> --start-time <epoch>]")
 	fmt.Fprintln(w, "       metasystem internal up --print-scheduler-entry [--repo <checkout>]")
 	fmt.Fprintln(w, "       metasystem internal hook <runtime> <start|stop|end|receipt|tool>  (run by scripts/agents/supervision-hook.sh)")
+	fmt.Fprintln(w, "       metasystem internal delegate-supervisor <runtime> <verb> --root <installation> [flags]  (launched by scripts/agents/dispatch.sh and internal/missionrunner/host.go)")
 	fmt.Fprintln(w, "       metasystem internal stop [--repo <path>] [--installation <dir>] [--all]")
 	fmt.Fprintln(w, "       metasystem internal status [--repo <path>] [--installation <dir>] [--all]")
 	fmt.Fprintln(w, "       metasystem internal arm [--repo <path>] [--installation <dir>] [--all] [--temporary-human-word <word> --review-by <date>]")

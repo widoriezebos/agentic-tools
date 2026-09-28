@@ -228,7 +228,6 @@ ledger=$(cat "$clone/plans/goals.md" && printf x) && ledger=${ledger%x}
 # something to enroll — a fresh clone has no hooks at all.
 mkdir -p "$clone/scripts/agents"
 cp "$root/scripts/agents/pre-commit-guard.sh" "$clone/scripts/agents/"
-cp -R "$root/scripts/agents/adapters" "$clone/scripts/agents/"
 printf '%s\n' 'metasystem.runtimes=fake' >"$clone/metasystem.conf"
 git -C "$clone" add plans scripts metasystem.conf
 git -C "$clone" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm "legacy ledger"
@@ -291,11 +290,7 @@ FIXTURE_TOOL_SHELL
   # The bed stages the refusal's delegate ancestry. The fixture-human half
   # deliberately drops it, then makes the scratch installation's signature
   # universe agent-free before its staged terminal fact is read.
-  for adapter in "$clone"/scripts/agents/adapters/*.sh; do
-    case "${adapter##*/}" in fake.sh | runtime-common.sh) ;;
-      *) rm -f "$adapter" ;;
-    esac
-  done
+  export METASYSTEM_FIXTURE_SIGNATURE_RUNTIMES=fake
   printf '{"%s":{"terminal":true}}\n' "$$" >"$identity_file"
   "$clone/bin/metasystem" internal stop --repo "$clone" >"$tmp/wrong-terminal.stop"
   fence_changed=$("$clone/bin/metasystem" json get --file "$clone/artifacts/agents/supervision/transition.json" --field changedAt)
@@ -2290,7 +2285,6 @@ env -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git clone -q "$o
 git -C "$other" config metasystem.goal.machine fixture-other
 mkdir -p "$other/scripts/agents"
 cp "$root/scripts/agents/pre-commit-guard.sh" "$other/scripts/agents/"
-cp -R "$root/scripts/agents/adapters" "$other/scripts/agents/"
 "$ms" lease announce --root "$other" --session goal-cli-other \
   --pid "$$" --start "$fixture_start" --tag goal-cli-fixture \
   --runtime fake --owner-lineage other-lineage >/dev/null

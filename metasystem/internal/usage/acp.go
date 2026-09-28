@@ -24,7 +24,7 @@ type acpUsageOutcome struct {
 	} `json:"usage"`
 }
 
-// ACPUsage derives the turn's typed usage record from an acp turn
+// ACPUsage derives the turn's typed usage record from an ACP file turn
 // outcome file.
 func ACPUsage(usagePath, outcomePath string) error {
 	unavailable := map[string]any{

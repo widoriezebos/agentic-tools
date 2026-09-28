@@ -466,6 +466,45 @@ mission runner uses the same interface with role `host` (today
 delegate jobs and mission host turns.
 
 **Built-ins** (claude, codex, devin, fake) implement it in Go (U6a).
+Built (U6a): process recognition (census, lease classification, human
+authority) used the built-ins' signatures only until U6c. Built (U6c): the
+registry (`internal/runtimes/external`, `Load`) holds the built-ins and the
+named, trusted externals as one effective declaration per name with the
+cross-check and the VOA-31 merge; every recognizer, the janitor's shapes,
+configuration validation, wait delivery, dispatch, probes, self-test and the
+mission runner read it; the executable implementation of the operations is
+`internal/adapter/supervisor/external.go`; `docs/agent-adapters.md` is the
+contract. A refused override leaves the built-in's declaration to the
+recognizers and refuses running the runtime until fixed; a launch an
+override's own prepare made must be observed and finalized by it (a built-in
+cannot continue a launch it did not prepare). The Fable read's F1-F3 and
+F5(ii) are folded: a refused override keeps protecting its built-in in the
+cross-check; an override that leaves describe to its built-in keeps the
+built-in's whole description (repair included); a named but unsafe override
+refuses running the runtime with the fix; the shared self-test runs against
+an external runtime. Later (U6c read), one line each:
+
+- F4: adapter trust checks the file only: not the `adapters/` directory's
+  owner and mode, not a symlink's target (os.Stat follows it), and the check
+  and the exec are separate (a swap between them is not refused).
+- F6: an override may declare its own positive vector and stop claiming the
+  built-in's real CLI while its prepare falls back to the built-in, which then
+  launches that CLI unrecognized; require an override to claim the built-in's
+  positive vector unless it also answers prepare.
+- F7: the cross-check tests declared vectors only; a signature matching a flag
+  real claude or codex processes carry is admitted and, sorting first by name,
+  labels them (both are DELEGATE, so only the runtime label is wrong).
+- F8: the host path skips LookPath for an argv[0] containing '/', so a missing
+  absolute program fails at start instead of with 127.
+- F9 (fixed at U6c): a relative --root no longer hides the installation's
+  external adapters; the entry answers with its usage.
+- F10: every named adapter's describe runs in every recognizing process (hook,
+  census, janitor, settings show, system check), memoized per process only;
+  a cost and exposure to weigh when adapters multiply.
+- F11: still on the compiled runtime set: `internal runtime` list and lookup,
+  the hook's start context, steward context sampling, config tailor, the seat
+  manifest, LocalConfigManifest and runtimes.Lookup itself; route them through
+  the registry when a real external agent is adopted.
 **External runtimes** implement it as an executable at
 `<installation>/adapters/<name>` (any language; an extension point under rule
 S1): `<executable> OPERATION`, JSON request on stdin, JSON response on stdout

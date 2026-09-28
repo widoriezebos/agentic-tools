@@ -23,7 +23,7 @@ func runJobExaminationRetry(args []string) int {
 	}
 	latest, err := dispatchcore.ReadRecordObject(*record)
 	if err == nil {
-		err = dispatchcore.ExaminationRetryAdmissibleWith(*root, latest, dispatchcore.CustodyDeathDependencies{MatchesTag: positionedJobTag})
+		err = dispatchcore.ExaminationRetryAdmissibleWith(*root, latest, dispatchcore.CustodyDeathDependencies{MatchesTag: positionedJobTagAt(*root)})
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

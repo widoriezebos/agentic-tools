@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -75,16 +74,22 @@ var waitCurrentHolder = func(ctx context.Context, root string) (lease.CurrentHol
 	}
 }
 
-var waitAdapterPathForRuntime = func(root, runtimeName string) (string, error) {
-	installation, err := upMetasystemRoot("")
-	if err != nil {
-		installation = root
+// waitDeliveryRuntime names the runtime whose adapter answers wait delivery
+// for a caller; tests replace it.
+var waitDeliveryRuntime = func(root, runtimeName string) (string, error) {
+	if adapter.WaitDeliveryRuntime(waitInstallation(root), runtimeName) {
+		return runtimeName, nil
 	}
-	adapterPath := filepath.Join(installation, "scripts", "agents", "adapters", runtimeName+".sh")
-	if _, err := os.Stat(adapterPath); err != nil {
-		return "", fmt.Errorf("wait delivery adapter %s is unavailable", runtimeName)
+	return "", fmt.Errorf("wait delivery adapter %s is unavailable", runtimeName)
+}
+
+// waitInstallation is the installation whose adapters answer wait delivery:
+// the engine's own, else the state root.
+func waitInstallation(root string) string {
+	if installation, err := upMetasystemRoot(""); err == nil {
+		return installation
 	}
-	return adapterPath, nil
+	return root
 }
 
 func runWait(args []string) int {
@@ -383,7 +388,7 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 	if err != nil {
 		return metarun.WaitOptions{}, err
 	}
-	adapterPath, err := waitAdapterPathForRuntime(root, runtimeName)
+	deliveryRuntime, err := waitDeliveryRuntime(root, runtimeName)
 	if err != nil {
 		return metarun.WaitOptions{}, err
 	}
@@ -460,7 +465,7 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 		},
 		EmitEvent: emitWaitCommandEvent,
 		Deliver: func(ctx context.Context, waitID, nonce string, deadline time.Time, session string) (string, bool, error) {
-			answer, err := adapter.DeliverWait(ctx, adapterPath, adapter.WaitDeliveryRequest{WaitID: waitID, Nonce: nonce, Deadline: deadline, Session: session})
+			answer, err := adapter.DeliverWaitAt(ctx, waitInstallation(root), deliveryRuntime, adapter.WaitDeliveryRequest{WaitID: waitID, Nonce: nonce, Deadline: deadline, Session: session})
 			if errors.Is(err, adapter.ErrWaitDeliveryDeclined) {
 				return "", true, nil
 			}

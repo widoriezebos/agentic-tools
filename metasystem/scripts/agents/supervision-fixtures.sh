@@ -1490,14 +1490,10 @@ prepare_process_acceptance() {
 
   repo=$(cd "$repo" && pwd -P)
 
-  # Only the configured fake adapter participates in these process fixtures.
-  # Removing unrelated copied adapters prevents the ambient test runner from
-  # being mistaken for a delegate before the staged terminal fact is read.
-  for adapter in "$repo"/scripts/agents/adapters/*.sh; do
-    case "${adapter##*/}" in fake.sh | runtime-common.sh) ;;
-      *) rm -f "$adapter" ;;
-    esac
-  done
+  # Only the configured fake runtime's signature participates in these
+  # process fixtures, so the ambient test runner is not mistaken for a
+  # delegate before the staged terminal fact is read.
+  export METASYSTEM_FIXTURE_SIGNATURE_RUNTIMES=fake
   export METASYSTEM_CENSUS_PROCESS_FILE=$process_fixture
   export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_fixture
   export METASYSTEM_WATCH_INTERVAL_SEC=1
@@ -1570,11 +1566,11 @@ stop_minimal_acceptance() { # output file
 acceptance_start_job() {
   local brief=$tmp/stop-everything-brief.md outputs=$tmp/stop-everything-outputs.txt
   local record=$repo/artifacts/agents/jobs/stop-fixture-job.json
-  (cd "$repo" && scripts/agents/adapters/fake.sh probe >/dev/null)
+  "$repo/bin/metasystem" delegate-supervisor fake probe --root "$repo" >/dev/null
   sed 's/^Working Mode:.*/Working Mode: design/' \
     "$repo/scripts/agents/templates/brief.md" >"$brief"
   printf '\nFAKE:custodial-critique=%s\n' "$tmp/stop-everything-job-release" >>"$brief"
-  printf '%s\n' 'metasystem/scripts/agents/adapters/fake.sh' >"$outputs"
+  printf '%s\n' 'metasystem/scripts/agents/dispatch.sh' >"$outputs"
   # A census verdict older than its window refuses the dispatch and says
   # "retry in a moment": on a busy box (cadence run 18, 2026-09-12, load 37)
   # the census cycle outran the fixture's two-second window once. The
@@ -1842,14 +1838,12 @@ if [[ "$fixture_scenario" == stop-fence ]]; then
   [[ ! -e "$repo/artifacts/agents/steward/runner.json" ]] \
     || { echo "the watcher repair launched a steward under the closed fence" >&2; exit 1; }
   acceptance_process_snapshot "$tmp/stop-fence.processes.during-watcher" stop-fence-
-  # Besides its own row, the watcher may only be caught mid read-only signature
-  # probe of this fixture's adapter; the after snapshot below stays unfiltered.
+  # Besides its own row, the watcher creates no process (its runtime
+  # signatures are the engine's registry); the after snapshot below stays
+  # unfiltered.
   FENCE_WATCHER_PID="$fence_watcher_pid" \
-    FENCE_WATCHER_PROBE="bash $repo/scripts/agents/adapters/fake.sh signature" \
     awk '
-      { command = $0; sub(/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]+[0-9]+[ \t]/, "", command) }
       $1 == ENVIRON["FENCE_WATCHER_PID"] { next }
-      $2 == ENVIRON["FENCE_WATCHER_PID"] && command == ENVIRON["FENCE_WATCHER_PROBE"] { next }
       { print }
     ' "$tmp/stop-fence.processes.during-watcher" >"$tmp/stop-fence.processes.during-watcher-without-self"
   cmp -s "$tmp/stop-fence.processes.before" "$tmp/stop-fence.processes.during-watcher-without-self" \
@@ -1889,7 +1883,7 @@ if [[ "$fixture_scenario" == stop-fence ]]; then
   fence_outputs=$tmp/stop-fence-outputs.txt
   sed 's/^Working Mode:.*/Working Mode: design/' \
     "$repo/scripts/agents/templates/brief.md" >"$fence_brief"
-  printf '%s\n' 'scripts/agents/adapters/fake.sh' >"$fence_outputs"
+  printf '%s\n' 'scripts/agents/dispatch.sh' >"$fence_outputs"
   [[ "$(json_field "$repo/artifacts/agents/supervision/last-census.json" verdict)" == CENSUS-FAILED ]] \
     || { echo "stop-fence requires a failed census to prove the stopped refusal takes precedence" >&2; exit 1; }
   set +e
@@ -2494,51 +2488,6 @@ export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$identity_fixture"
 export METASYSTEM_WATCH_INTERVAL_SEC=1
 export METASYSTEM_CENSUS_LOG_MAX_BYTES=350
 
-# S4-7: all four adapters own a strict, line-oriented POSIX-ERE signature
-# grammar. Exclude wins ties, malformed declarations fail the whole census,
-# and lookalikes from each runtime stay out.
-# The vectors are PROVIDER-OWNED declarations (agnosticism B1, ric
-# critique r3-5): the registry serves them and this loop iterates the
-# declared adapter population with no shared runtime branch — a future
-# runtime joins by declaration, not by editing this fixture.
-s47_population=$("$census_engine" runtime list --with-adapter) \
-  || { echo "S4-7: the adapter population query refused" >&2; exit 1; }
-s47_count=0
-while IFS= read -r runtime; do
-  adapter="$source_root/scripts/agents/adapters/$runtime.sh"
-  signature=$($adapter signature)
-  [[ -n "$signature" ]] || { echo "S4-7: $runtime returned no signatures" >&2; exit 1; }
-  while IFS= read -r line; do
-    [[ "$line" == match\ * || "$line" == exclude\ * ]] \
-      || { echo "S4-7: malformed $runtime signature line: $line" >&2; exit 1; }
-  done <<<"$signature"
-  vectors=$("$census_engine" runtime signature-vectors "$runtime")
-  positive=$("$census_engine" json get --value "$vectors" --field positive)
-  lookalike=$("$census_engine" json get --value "$vectors" --field lookalike)
-  [[ -n "$positive" && -n "$lookalike" ]] \
-    || { echo "S4-7: $runtime declared no signature vectors" >&2; exit 1; }
-  "$census_engine" proc signature-check --adapter "$adapter" --positive "$positive" \
-    --lookalike "$lookalike" >/dev/null
-  s47_count=$((s47_count + 1))
-done <<<"$s47_population"
-(( s47_count >= 4 )) \
-  || { echo "S4-7: only $s47_count adapter runtimes exercised — the declared population went missing" >&2; exit 1; }
-for failure in malformed invalid-ere adapter-failed exclude-tie; do
-  bad_adapter="$tmp/signature-$failure.sh"
-  case "$failure" in
-    malformed) printf '#!/usr/bin/env bash\nprintf "bogus .*\\n"\n' >"$bad_adapter" ;;
-    invalid-ere) printf '#!/usr/bin/env bash\nprintf "match [\\n"\n' >"$bad_adapter" ;;
-    adapter-failed) printf '#!/usr/bin/env bash\nexit 9\n' >"$bad_adapter" ;;
-    exclude-tie) printf '#!/usr/bin/env bash\nprintf "match ^tie$\\nexclude ^tie$\\n"\n' >"$bad_adapter" ;;
-  esac
-  chmod +x "$bad_adapter"
-  if "$census_engine" proc signature-check --adapter "$bad_adapter" --positive tie \
-      --lookalike lookalike >/dev/null 2>&1; then
-    echo "S4-7: $failure signature adapter did not fail closed" >&2
-    exit 1
-  fi
-done
-
 # S4-8: omitted identity arguments have an executable rule. Run arming below a
 # fake agent-signature ancestor and require inferred session/process identity.
 cat >"$repo/metasystem-fake-agent" <<'SH'
@@ -2683,8 +2632,7 @@ grep -Fq '"pidStartedAt"' "$source_root/internal/dispatch/ownership.go" \
 grep -Fq 'pidStartedAt' "$source_root/docs/orchestration.md" \
   || { echo "S4-1/S4-10: host-turn contract does not document pidStartedAt" >&2; exit 1; }
 for owner_asset in \
-  scripts/agents/dispatch.sh \
-  scripts/agents/adapters/runtime-common.sh scripts/agents/supervision-hook.sh \
+  scripts/agents/dispatch.sh scripts/agents/supervision-hook.sh \
   scripts/enforcement/claude-code-hooks.json scripts/enforcement/codex-hooks.json \
   scripts/enforcement/devin-hooks.json; do
   [[ -f "$source_root/$owner_asset" ]] \
@@ -2843,13 +2791,12 @@ wait_for_census "S4-6 unreadable start time" pred_verdict_and_error_prefix CENSU
 printf '[]\n' >"$process_fixture"
 wait_for_census "S4-6 partial-failure recovery" pred_verdict_is SUCCESS
 
-# Fingerprint includes scripts, signatures, and relevant config. Mutating a
-# static identity owner invalidates the old verdict (S4-3).
-fingerprint_before=$(json_field "$last" fingerprint)
-printf '\n# signature fingerprint fixture\n' >>"$repo/scripts/agents/adapters/fake.sh"
-fingerprint_after=$($arm fingerprint --repo "$repo")
-[[ "$fingerprint_before" != "$fingerprint_after" ]] \
-  || { echo "S4-3: adapter change did not alter expected fingerprint" >&2; exit 1; }
+# A generation change for the replacement leg below. (S4-3, that the
+# fingerprint moves with the engine that carries the signature registry, is
+# TestFingerprintMovesWithEngineAndSignatureSetNotAdapterScripts in
+# internal/census.) The adapter scripts are no longer fingerprint inputs, so
+# the change lands on a static input that still is.
+printf '\n# generation change fixture\n' >>"$repo/scripts/agents/dispatch.sh"
 old_generation_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pid)
 replacement_output=$("$arm" --repo "$repo" --session generation-replacement --pid "$$" \
   --start-time "$(process_started_at "$$")" --tag fixture-main)
@@ -2857,9 +2804,9 @@ new_generation_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/own
 [[ "$new_generation_owner" != "$old_generation_owner" ]] \
   && grep -Fq 'component=supervision-owner outcome=replaced' <<<"$replacement_output" \
   || { echo "ordinary up did not replace the live older engine generation" >&2; echo "$replacement_output" >&2; exit 1; }
-git -C "$repo" show HEAD:scripts/agents/adapters/fake.sh >"$repo/scripts/agents/adapters/fake.sh.restored"
-mv "$repo/scripts/agents/adapters/fake.sh.restored" "$repo/scripts/agents/adapters/fake.sh"
-chmod +x "$repo/scripts/agents/adapters/fake.sh"
+git -C "$repo" show HEAD:scripts/agents/dispatch.sh >"$repo/scripts/agents/dispatch.sh.restored"
+chmod +x "$repo/scripts/agents/dispatch.sh.restored"
+mv "$repo/scripts/agents/dispatch.sh.restored" "$repo/scripts/agents/dispatch.sh"
 # Restoring the accepted bytes is another generation change; ordinary up
 # absorbs that replacement too, leaving later fixture legs on current code.
 "$arm" --repo "$repo" --session generation-restored --pid "$$" \
@@ -2884,7 +2831,7 @@ cp "$gate_repo/scripts/agents/roles/design-critic.md" "$gate_repo/$gate_design"
 git -C "$gate_repo" add "$gate_design"
 git -C "$gate_repo" -c user.name=metasystem -c user.email=metasystem.invalid \
   commit -qm 'add fixture design artifact'
-"$gate_repo/scripts/agents/adapters/fake.sh" probe >/dev/null
+"$gate_repo/bin/metasystem" delegate-supervisor fake probe --root "$gate_repo" >/dev/null
 become_main "$gate_repo" gate-session
 read -r gate_now_epoch gate_now < <(date -u '+%s %Y-%m-%dT%H:%M:%SZ')
 dispatch_fails() { # name, expected
@@ -3182,10 +3129,8 @@ mkdir -p "$stop_root/plans" "$stop_root/artifacts/agents/jobs" "$stop_root/artif
 cp "$source_root/scripts/agents/supervision-hook.sh" \
    "$source_root/scripts/agents/pre-commit-guard.sh" "$stop_root/scripts/agents/"
 # The hook (and the announcement step below) derive the caller's
-# main through the runtime-signature ancestor walk, and that walk
-# reads the adapters from THIS root — without them find-ancestor
-# refuses and every derived main is empty.
-cp -R "$source_root/scripts/agents/adapters" "$stop_root/scripts/agents/adapters"
+# main through the runtime-signature ancestor walk, whose signatures are
+# the engine's runtime registry.
 # The hook resolves its engine as <root>/bin/metasystem; the open-work,
 # stop-block, identity, and lease helpers it used to need as .py files all
 # live inside it now.

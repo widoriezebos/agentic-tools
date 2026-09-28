@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,19 +32,6 @@ func eventWaitRoot(t *testing.T) (string, string) {
 		}
 	}
 	announceProofFixtureHolder(t, root)
-	adapters := filepath.Join(root, "scripts", "agents", "adapters")
-	if err := os.MkdirAll(adapters, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"fake.sh", "runtime-common.sh"} {
-		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "adapters", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := testexec.WriteFile(filepath.Join(adapters, name), data, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
 	return root, upstream
 }
 
@@ -133,19 +119,6 @@ func TestIntentWaitGoalLandingGitAdapterObservesTheRealLanding(t *testing.T) {
 		}
 	}
 	announceProofFixtureHolder(t, f.mainRoot)
-	adapters := filepath.Join(f.mainRoot, "scripts", "agents", "adapters")
-	if err := os.MkdirAll(adapters, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"fake.sh", "runtime-common.sh"} {
-		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "adapters", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := testexec.WriteFile(filepath.Join(adapters, name), data, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
 	wait := func(args ...string) (int, intentResult, string) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer

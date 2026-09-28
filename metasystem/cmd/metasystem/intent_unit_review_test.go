@@ -20,7 +20,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // connectionBed is a physical Git repository (the work bed's goal ledger
@@ -383,24 +382,11 @@ func (c *connectionBed) dispositions() string {
 	return path
 }
 
-// adapterFixture puts the repository's real Claude adapter entrypoint and a
-// synthetic declared local settings file (plus a synthetic local
+// adapterFixture puts a synthetic declared local settings file (the Claude
+// runtime declares it in the runtime registry) (plus a synthetic local
 // configuration that must never be copied) into the selected checkout.
 func (c *connectionBed) adapterFixture() string {
 	c.t.Helper()
-	adapters := filepath.Join(c.root(), "scripts", "agents", "adapters")
-	if err := os.MkdirAll(adapters, 0o700); err != nil {
-		c.t.Fatal(err)
-	}
-	for _, name := range []string{"claude.sh", "runtime-common.sh"} {
-		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "adapters", name))
-		if err != nil {
-			c.t.Fatal(err)
-		}
-		if err := testexec.WriteFile(filepath.Join(adapters, name), data, 0o755); err != nil {
-			c.t.Fatal(err)
-		}
-	}
 	settings := `{"permissions":{"allow":["Bash(go test:*)"]},"fixture":"selected-installation"}`
 	os.MkdirAll(filepath.Join(c.root(), ".claude"), 0o700)
 	os.WriteFile(filepath.Join(c.root(), ".claude", "settings.local.json"), []byte(settings), 0o600)

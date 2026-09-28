@@ -52,8 +52,7 @@ for class in "$@"; do
     go) gate ;;
     supervision)
       gate
-      run supervision bash scripts/agents/supervision-fixtures.sh
-      run adapter-deadline bash scripts/agents/adapter-deadline-fixtures.sh ;;
+      run supervision bash scripts/agents/supervision-fixtures.sh ;;
     dispatch)
       gate
       run conformance bash scripts/agents/conformance-fixtures.sh

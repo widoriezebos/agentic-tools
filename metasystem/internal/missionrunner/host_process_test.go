@@ -184,12 +184,12 @@ func TestGroupProbes(t *testing.T) {
 func TestAssembleHostCommandExportsMissionLineage(t *testing.T) {
 	root := t.TempDir()
 	engine := &Engine{Mission: "mr-lineage", Root: root}
-	adapterDir := filepath.Join(root, "scripts", "agents", "hosts")
-	if err := os.MkdirAll(adapterDir, 0o755); err != nil {
+	// The host turn is the installation engine's delegate-supervisor entry.
+	engineBinary := filepath.Join(root, "bin", "metasystem")
+	if err := os.MkdirAll(filepath.Dir(engineBinary), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	adapter := filepath.Join(adapterDir, "fake.sh")
-	if err := testexec.WriteFile(adapter, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(engineBinary, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// The sealed-cap pass-through reads the PINNED approved snapshot and
@@ -217,6 +217,9 @@ func TestAssembleHostCommandExportsMissionLineage(t *testing.T) {
 	}
 	if err := engine.assembleHostCommand(launch); err != nil {
 		t.Fatalf("assemble: %v", err)
+	}
+	if args := launch.command.Args; len(args) < 4 || args[1] != "delegate-supervisor" || args[2] != "fake" || args[3] != "start-turn" {
+		t.Fatalf("host argv = %v", launch.command.Args)
 	}
 	want := "METASYSTEM_OWNER_LINEAGE=" + MissionLineage("mr-lineage")
 	for _, entry := range launch.command.Env {

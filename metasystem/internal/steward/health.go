@@ -1563,7 +1563,8 @@ func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) Ro
 				commands = append(commands, "metasystem internal config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
 				continue
 			}
-			commands = append(commands, fmt.Sprintf("%q probe", filepath.Join(metasystemRoot, "scripts", "agents", "adapters", name+".sh")))
+			commands = append(commands, fmt.Sprintf("%q internal %s %s probe --root %q",
+				filepath.Join(metasystemRoot, "bin", "metasystem"), runtimereg.SupervisorEntry, name, metasystemRoot))
 		}
 		return strings.Join(commands, " && ")
 	}

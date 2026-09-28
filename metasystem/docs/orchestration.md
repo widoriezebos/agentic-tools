@@ -238,7 +238,7 @@ A brief asks the delegate only for verification it can actually perform. Initial
 
 A brief that cites authority — a manifest key, a document section, a decided contract — is checked against that authority before dispatch, and the workspace the delegate will read is checked to actually contain it. Seven gap-stops on one chain came from briefs naming keys that were not there yet, or that existed only on the branch the delegate could not pull (IL-18, KI-9). A gap-stop is the correct delegate behavior and an avoidable orchestrator cost.
 
-The dispatcher resolves the roster, writes the job record, assembles the runtime-neutral prompt, expands the permissions preset from `scripts/agents/permissions/`, and invokes `scripts/agents/adapters/<runtime>.sh`. The adapter's `--help` and `scripts/agents/adapters/runtime-common.sh` are the executable adapter contract; exact provider flags live only in the adapter. Role behavior and capability needs live in `scripts/agents/roles/<role>.md` and `<role>.requirements.json`.
+The dispatcher resolves the roster, writes the job record, assembles the runtime-neutral prompt, expands the permissions preset from `scripts/agents/permissions/`, and launches the engine's `delegate-supervisor` process entry for the runtime. The runtime operation interface (`internal/adapter/supervisor/ops.go`) and the shared round (`round.go`, `lifecycle.go`) are the executable adapter contract; exact provider flags live only in the runtime's operations. Role behavior and capability needs live in `scripts/agents/roles/<role>.md` and `<role>.requirements.json`.
 The foreground `metasystem work wait` verb blocks on durable job, run, proof-attempt, accepted-ledger, and filesystem-path observations. A path wait uses `--path <absolute-path> --until present|absent`; `present` accepts a directory or a non-empty regular file, while an empty regular file remains pending. Its adapter seam is `wait-delivery --wait-id ID --nonce NONCE --deadline RFC3339-UTC --session SESSION-ID`: an eligible runtime prints exactly `blocking` and exits zero, while exit two declines registration. The adapter carries no event evidence; Go rereads the durable source and owns the version-2 waiter row, deadline, and records-only resume.
 
 A seat that ends its turn while work tracked by the harness is still running registers the process with `metasystem internal wait register --pid <pid> --label <text>`, optionally adding `--job <job-id>`. A seat waiting for a human answer registers `metasystem internal wait register --human --question <text> --timeout <duration>`; the human deadline is mandatory. Both forms have a maximum timeout of 24 hours, and local waits default to four hours. The stop gate then lets the seat stop and names the registered work or question and its deadline. `metasystem internal wait end --wait-id <id>` ends either registration explicitly.
@@ -451,12 +451,24 @@ convenience view of `bin/metasystem internal runtime registration <name>` — th
 verb is authoritative; this table describes the currently shipped
 runtimes, not the supported universe.
 
-| Runtime | Rostered adapter | Skill and profile registration |
+| Runtime | Rostered adapter (delegate supervisor) | Skill and profile registration |
 | --- | --- | --- |
-| Claude Code | `scripts/agents/adapters/claude.sh` | `.claude/skills/<name>` and `.claude/agents/<name>.md` |
-| OpenAI Codex | `scripts/agents/adapters/codex.sh` | `.agents/skills/<name>`; reads the skill's `agents/openai.yaml` |
-| Devin CLI | `scripts/agents/adapters/devin.sh` | `.agents/skills/<name>`, `.devin/skills/<name>`, and `.devin/agents/<name>/AGENT.md` |
-| Fake | `scripts/agents/adapters/fake.sh` | No runtime registration; fixture-only protocol simulator |
+| Claude Code | `internal/adapter/supervisor/claude.go` | `.claude/skills/<name>` and `.claude/agents/<name>.md` |
+| OpenAI Codex | `internal/adapter/supervisor/codex.go` | `.agents/skills/<name>`; reads the skill's `agents/openai.yaml` |
+| Devin CLI | `internal/adapter/supervisor/devin.go` | `.agents/skills/<name>`, `.devin/skills/<name>`, and `.devin/agents/<name>/AGENT.md` |
+| Fake | `internal/adapter/supervisor/fake.go` | No runtime registration; fixture-only protocol simulator |
+
+Each adapter runs as the engine's `delegate-supervisor` process entry, the
+persistent owner of one delegate round from its launch through the terminal
+record; a mission host turn runs as the same entry
+(`internal/missionrunner/hostturn`).
+
+An agent the engine does not ship needs no Go change: an executable at
+`<installation>/adapters/<name>`, named by `adapters.<name>.use=external`,
+implements the same operations as JSON, and an executable with a built-in's
+name overrides that built-in operation by operation (exit 64 hands one back).
+`docs/agent-adapters.md` is the contract, including the trust rules and the
+registry's cross-check.
 
 Per-runtime profile templates live under `skills/<name>/agents/`, and `scripts/adopt.sh` invokes runtime setup for its selected runtimes. Project-specific delegation facts belong in `docs/project-rules.md`.
 

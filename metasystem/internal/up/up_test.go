@@ -431,7 +431,6 @@ func syntheticFingerprintRoot(t *testing.T) string {
 	root := t.TempDir()
 	for _, relative := range []string{
 		"scripts/agents/dispatch.sh", "bin/metasystem",
-		"scripts/agents/adapters/runtime-common.sh",
 	} {
 		path := filepath.Join(root, relative)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

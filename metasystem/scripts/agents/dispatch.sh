@@ -959,9 +959,10 @@ is_review_role() { # role
 }
 
 select_snapshot() { # runtime, role, requested envelope, output json
-  local runtime=$1 role=$2 envelope=$3 output=$4 adapter="$root/scripts/agents/adapters/$1.sh" identity max_age
-  [[ -x "$adapter" ]] || die 1 "runtime adapter is not installed: $runtime"
-  identity=$($adapter config-identity) || die 1 "could not read $runtime adapter configuration identity"
+  local runtime=$1 role=$2 envelope=$3 output=$4 identity max_age
+  local -a adapter=("$ms" delegate-supervisor "$runtime")
+  "${adapter[@]}" signature --root "$root" >/dev/null 2>&1 || die 1 "runtime adapter is not installed: $runtime"
+  identity=$("${adapter[@]}" config-identity --root "$root") || die 1 "could not read $runtime adapter configuration identity"
   max_age=$(config_get --key capability.snapshot-max-age-days --default 30)
   [[ "$max_age" =~ ^[0-9]+$ ]] || die 1 "capability.snapshot-max-age-days must be a non-negative integer"
   local select_err
@@ -984,8 +985,8 @@ select_snapshot() { # runtime, role, requested envelope, output json
     return 1
   fi
   cat "$select_err" >&2; rm -f "$select_err"
-  "$adapter" probe >/dev/null || die 1 "capability snapshot missed and the $runtime adapter probe failed"
-  identity=$($adapter config-identity) || die 1 "could not read $runtime adapter configuration identity"
+  "${adapter[@]}" probe --root "$root" >/dev/null || die 1 "capability snapshot missed and the $runtime adapter probe failed"
+  identity=$("${adapter[@]}" config-identity --root "$root") || die 1 "could not read $runtime adapter configuration identity"
   "$ms" job snapshot-select \
     --root "$root" --runtime "$runtime" --role "$role" --identity "$identity" \
     --max-age "$max_age" --envelope "$envelope" --output "$output"
@@ -1000,7 +1001,7 @@ latest_chain_record() { # root job
 }
 
 launch_adapter() { # runtime verb job tag capability
-  local runtime=$1 verb=$2 job=$3 tag=$4 launch_capability=$5 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid patch cap started deadline elapsed poll_sleep handshake_budget handshake_deadline proven_at
+  local runtime=$1 verb=$2 job=$3 tag=$4 launch_capability=$5 gate="$heartbeats/$job.start" pid patch cap started deadline elapsed poll_sleep handshake_budget handshake_deadline proven_at
   local adapter_command
   local -a ownership_args
   poll_sleep=$(milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20}")
@@ -1010,7 +1011,10 @@ launch_adapter() { # runtime verb job tag capability
   # ownership CAS below, but not starting at all is cheaper than
   # starting and killing.
   [[ "$(json_field "$jobs/$job.json" status)" == pending ]] || return 1
-  adapter_command=("$adapter" "$verb" --job "$job" --start-gate "$gate" --instance-tag "$tag" --launch-capability "$launch_capability")
+  # The delegate-supervisor entry owns the round from the launch
+  # capability to the terminal record (the persistent owner that outlives
+  # this dispatcher).
+  adapter_command=("$ms" delegate-supervisor "$runtime" "$verb" --root "$root" --job "$job" --start-gate "$gate" --instance-tag "$tag" --launch-capability "$launch_capability")
   if (( checkout_execution_guard_held )); then
     adapter_command=("$root/scripts/agents/checkout-execution-guard.sh" run-member \
       --root "$checkout_execution_guard_root" --engine "$checkout_execution_guard_engine" -- "${adapter_command[@]}")
@@ -1843,7 +1847,7 @@ dispatch_job() {
   input_hash=$(sha256_file "$prompt_temp")
 
   local output_stream
-  output_stream=$("$root/scripts/agents/adapters/$runtime.sh" output-stream --round-dir "$round_dir") \
+  output_stream=$("$ms" delegate-supervisor "$runtime" output-stream --root "$root" --round-dir "$round_dir") \
     || die 1 "$runtime adapter could not resolve its child output stream"
   set +e
   preflight_output=$("$ms" job claim-launch --preflight --root "$root" --opid "$job" \
@@ -2804,7 +2808,7 @@ follow_up() {
   input_bytes=$(enforce_inline_input_limit "$prompt_temp" message)
   input_hash=$(sha256_file "$prompt_temp")
   local output_stream
-  output_stream=$("$root/scripts/agents/adapters/$runtime.sh" output-stream --round-dir "$round_dir") \
+  output_stream=$("$ms" delegate-supervisor "$runtime" output-stream --root "$root" --round-dir "$round_dir") \
     || die 1 "$runtime adapter could not resolve its child output stream"
   set +e
   preflight_output=$("$ms" job claim-launch --preflight --root "$root" --opid "$child" \
@@ -2978,7 +2982,7 @@ cancel_job() {
     return
   fi
   lease_run_held "$current_claim_epoch" \
-    "$root/scripts/agents/adapters/$(json_field "$jobs/$job.json" runtime).sh" cancel --job "$job"
+    "$ms" delegate-supervisor "$(json_field "$jobs/$job.json" runtime)" cancel --root "$root" --job "$job"
 }
 
 close_chain() {

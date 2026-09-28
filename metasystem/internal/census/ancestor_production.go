@@ -130,19 +130,13 @@ func signaturesFor(metasystemRoot, only string, allHosts ...bool) ([]Signature, 
 	}
 	var out []Signature
 	for _, runtime := range selected {
-		adapter := filepath.Join(metasystemRoot, "scripts", "agents", "adapters", runtime+".sh")
-		info, err := os.Stat(adapter)
-		if err != nil || info.Mode()&0o111 == 0 {
-			return nil, fmt.Errorf("runtime %q signature adapter is missing or not executable: %s", runtime, adapter)
+		if absentExternal(metasystemRoot, runtime) {
+			// A refused external runtime is absent to the recognizers.
+			continue
 		}
-		text, err := SignatureText(adapter)
+		sig, _, err := RuntimeSignatureAt(metasystemRoot, runtime)
 		if err != nil {
-			return nil, err
-		}
-		matches, excludes := ParseSignatureText(text)
-		sig, err := CompileSignature(runtime, matches, excludes)
-		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("runtime %q: %w", runtime, err)
 		}
 		out = append(out, sig)
 	}

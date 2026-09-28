@@ -27,14 +27,19 @@ import (
 
 const (
 	// R1/R3 residue: (family, verb) pairs plus dispatchInternal's top-level forms.
-	verbRatchetInternalVerbCeiling = 416
+	verbRatchetInternalVerbCeiling = 362
 	// R4: shell lines that reference the engine.
-	verbRatchetShellEngineCeiling = 2600
+	verbRatchetShellEngineCeiling = 2427
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
-	verbRatchetScriptLinesCeiling = 43453
+	verbRatchetScriptLinesCeiling = 39819
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
-	verbRatchetSelfSubprocessCeiling = 93
+	// U6a raised it by the process boundaries that were shell before: the
+	// mission host turn's delegate-supervisor entry launch, the fake runtime's
+	// fixture holds (its CLI stand-in children and the host hold exec, which
+	// counts twice: its argv and its exec), and the fake self-test's delegate
+	// children, launched through engineDelegate with the running binary.
+	verbRatchetSelfSubprocessCeiling = 101
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
 	verbRatchetInstructionCeiling = 47

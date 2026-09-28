@@ -35,7 +35,7 @@ This is the only part that cannot be scripted from here.
 ## 3. Probe
 
 ```
-scripts/agents/adapters/devin.sh probe
+bin/metasystem internal delegate-supervisor devin probe --root "$PWD"
 ```
 
 Writes a capability snapshot under `artifacts/agents/capabilities/`. Dispatch
@@ -44,7 +44,7 @@ refuses a runtime whose installed version has no snapshot, so this runs first.
 ## 4. Self-test
 
 ```
-scripts/agents/adapters/devin.sh selftest
+bin/metasystem internal delegate-supervisor devin selftest --root "$PWD"
 ```
 
 Exercises the full adapter contract for real: every verb, resume identity, the

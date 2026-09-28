@@ -193,7 +193,6 @@ fixture_install=$tmp/fixture-install
 mkdir -p "$fixture_install/bin" "$fixture_install/scripts/agents"
 printf 'metasystem.runtimes=fake\n' >"$fixture_install/metasystem.conf"
 cp "$ms" "$fixture_install/bin/metasystem"
-cp -R "$source_root/scripts/agents/adapters" "$fixture_install/scripts/agents/"
 enrolled_engine=$fixture_install/bin/metasystem
 enrollment_digest=$("$enrolled_engine" util sha256 --file "$enrolled_engine")
 mkdir -p "$repo/artifacts/agents/steward"
@@ -214,7 +213,7 @@ last=$repo/artifacts/agents/supervision/last-census.json
 brief=$tmp/brief.md
 sed 's/^Working Mode:.*/Working Mode: design/' "$repo/scripts/agents/templates/brief.md" >"$brief"
 probe_output=$tmp/fake-probe.out
-"$repo/scripts/agents/adapters/fake.sh" probe >"$probe_output" 2>&1 || {
+"$repo/bin/metasystem" delegate-supervisor fake probe --root "$repo" >"$probe_output" 2>&1 || {
   cat "$probe_output" >&2
   echo "fingerprint harness fake adapter probe failed" >&2
   exit 1
