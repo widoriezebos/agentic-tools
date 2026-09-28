@@ -11,6 +11,7 @@ package launch
 
 import (
 	"bytes"
+	"debug/buildinfo"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -120,6 +121,10 @@ func (OSHost) Stamp(binary string) (string, error) {
 		return "", err
 	}
 	defer file.Close()
+	// Only a Go executable is an engine; its stamp may still be empty.
+	if _, err := buildinfo.Read(file); err != nil {
+		return "", fmt.Errorf("%s is not an engine: %w", binary, err)
+	}
 	return enginebuild.ReadStamp(file)
 }
 
