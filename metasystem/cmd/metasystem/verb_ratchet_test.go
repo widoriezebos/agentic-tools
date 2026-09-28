@@ -34,7 +34,7 @@ const (
 	// R4: shell lines that reference the engine.
 	verbRatchetShellEngineCeiling = 165
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
-	verbRatchetScriptLinesCeiling = 2834
+	verbRatchetScriptLinesCeiling = 2762
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
 	// U6a raised it by the process boundaries that were shell before: the

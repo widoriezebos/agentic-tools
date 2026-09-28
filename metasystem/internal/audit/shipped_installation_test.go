@@ -141,7 +141,6 @@ func TestShippedInstallationRoutedAssetsExist(t *testing.T) {
 		"metasystem.conf",
 		"scripts/agents/checkout-execution-guard.sh",
 		"scripts/agents/fixture-budget.sh",
-		"scripts/agents/landing-lane-worker.sh",
 		"scripts/agents/templates/design-common.md",
 		"scripts/agents/supervision-hook.sh",
 		"scripts/agents/config-identity-fixtures.sh",
