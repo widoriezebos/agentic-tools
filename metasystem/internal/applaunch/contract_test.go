@@ -20,6 +20,7 @@ func writeContract(t *testing.T, body string) string {
 // no stop means TERM then KILL, no ready means alive is ready, no log means
 // the engine's capture, no prepare means shared data, no check and no tools.
 func TestStartAloneIsAWorkingContract(t *testing.T) {
+	t.Parallel()
 	contract, err := Decode([]byte(`{"schemaVersion":1,"start":{"argv":["./app"]}}`))
 	if err != nil {
 		t.Fatalf("a contract of start alone must validate: %v", err)
@@ -48,6 +49,7 @@ func TestStartAloneIsAWorkingContract(t *testing.T) {
 }
 
 func TestValidationNamesEveryFault(t *testing.T) {
+	t.Parallel()
 	for _, specimen := range []struct{ name, body, want string }{
 		{"missing start", `{"schemaVersion":1}`, "start is required"},
 		{"http without an address", `{"schemaVersion":1,"start":{"argv":["./app"]},"ready":{"kind":"http","url":"http://${address}/health"}}`,
@@ -77,6 +79,7 @@ func TestValidationNamesEveryFault(t *testing.T) {
 			`{"schemaVersion":1,"start":{"argv":["./app"],"cwd":"../elsewhere"}}`, "must be a relative normalized path"},
 	} {
 		t.Run(specimen.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := Decode([]byte(specimen.body))
 			if err == nil {
 				t.Fatalf("%s must be refused", specimen.name)
@@ -91,6 +94,7 @@ func TestValidationNamesEveryFault(t *testing.T) {
 // data: own with a prepare is the declaration the refusal exists to protect,
 // so it must validate.
 func TestOwnDataWithPrepareValidates(t *testing.T) {
+	t.Parallel()
 	contract, err := Decode([]byte(`{"schemaVersion":1,"start":{"argv":["./app"]},"prepare":{"argv":["./seed"]},"data":"own"}`))
 	if err != nil {
 		t.Fatalf("own data with a prepare must validate: %v", err)
@@ -101,6 +105,7 @@ func TestOwnDataWithPrepareValidates(t *testing.T) {
 }
 
 func TestLoadReadsTheFileAndItsDigest(t *testing.T) {
+	t.Parallel()
 	path := writeContract(t, `{"schemaVersion":1,"name":"demo","start":{"argv":["./app"]}}`)
 	contract, err := Load(path)
 	if err != nil {
@@ -117,6 +122,7 @@ func TestLoadReadsTheFileAndItsDigest(t *testing.T) {
 // The three facts reach the argv and the probe by substitution, and the same
 // three, with the state root and the log, reach the command as environment.
 func TestPlaceholdersAndEnvironment(t *testing.T) {
+	t.Parallel()
 	contract, err := Decode([]byte(`{"schemaVersion":1,"address":"127.0.0.1:9412",
 		"start":{"argv":["./app","--host","${host}","--port","${port}","--bind","${address}"]},
 		"ready":{"kind":"http","url":"http://${address}/-/health"}}`))
@@ -146,11 +152,16 @@ func TestPlaceholdersAndEnvironment(t *testing.T) {
 }
 
 func TestKeyForNamesOneRunPerRef(t *testing.T) {
+	t.Parallel()
 	if KeyFor("") != StandingKey {
 		t.Error("no ref is the standing run")
 	}
-	if KeyFor("main") != KeyFor("main") {
+	first, second := KeyFor("main"), KeyFor("refs/heads/main")
+	if first != KeyFor(" main ") {
 		t.Error("one run per ref at a time: the same ref is the same key")
+	}
+	if first == second {
+		t.Error("two spellings of two refs are two runs")
 	}
 	if KeyFor("main") == KeyFor("goal/g1-s70") {
 		t.Error("two refs are two runs")

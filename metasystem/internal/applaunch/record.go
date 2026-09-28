@@ -37,10 +37,6 @@ func RecordPath(stateRoot, key string) string {
 	return filepath.Join(Dir(stateRoot), key+".json")
 }
 
-func lockPath(stateRoot, key string) string {
-	return filepath.Join(Dir(stateRoot), key+".flock")
-}
-
 // DefaultLogPath is the engine's own capture for a run whose contract names
 // no log file of the application's.
 func DefaultLogPath(stateRoot, key string) string {

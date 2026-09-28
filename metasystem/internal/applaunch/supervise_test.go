@@ -68,6 +68,7 @@ func writeJSON(t *testing.T, path string, value map[string]any) {
 // own identity is the very next act after the spawn. The spawn itself
 // observes the record, so the order is held where it happens.
 func TestSuperviseWritesTheRecordBeforeTheSpawn(t *testing.T) {
+	t.Parallel()
 	app := mustApp(t)
 	bed := newSuperviseBed(t, map[string]any{
 		"start":  map[string]any{"argv": []string{app, "--no-listen", "--exit-after", "10s"}},
@@ -129,6 +130,7 @@ func TestSuperviseWritesTheRecordBeforeTheSpawn(t *testing.T) {
 // A start command that cannot be run at all leaves an ended record and a
 // refusal, never a run that seems to be starting.
 func TestSuperviseReportsASpawnThatCannotRun(t *testing.T) {
+	t.Parallel()
 	bed := newSuperviseBed(t, map[string]any{
 		"start":  map[string]any{"argv": []string{"./no-such-application"}},
 		"stopMs": 2000, "readyMs": 2000})
@@ -151,6 +153,7 @@ func TestSuperviseReportsASpawnThatCannotRun(t *testing.T) {
 // only the supervisor: a run must not outlive the engine's belief that it
 // never started.
 func TestSuperviseReadinessTimeoutEndsTheApplication(t *testing.T) {
+	t.Parallel()
 	app := mustApp(t)
 	bed := newSuperviseBed(t, map[string]any{
 		"start":   map[string]any{"argv": []string{app, "--no-listen"}},
@@ -184,6 +187,7 @@ func TestSuperviseReadinessTimeoutEndsTheApplication(t *testing.T) {
 
 // A signal to the supervisor ends the application it owns.
 func TestSuperviseEndsTheApplicationOnASignal(t *testing.T) {
+	t.Parallel()
 	app := mustApp(t)
 	bed := newSuperviseBed(t, map[string]any{
 		"start":  map[string]any{"argv": []string{app, "--no-listen"}},
@@ -224,6 +228,7 @@ func TestSuperviseEndsTheApplicationOnASignal(t *testing.T) {
 // The supervisor stays the owner while any process of its own group remains,
 // and only it may signal that group.
 func TestSuperviseStaysTheOwnerWhileItsGroupHasMembers(t *testing.T) {
+	t.Parallel()
 	app := mustApp(t)
 	bed := newSuperviseBed(t, map[string]any{
 		"start":  map[string]any{"argv": []string{app, "--no-listen", "--exit-after", "300ms"}},
@@ -278,6 +283,7 @@ func TestSuperviseStaysTheOwnerWhileItsGroupHasMembers(t *testing.T) {
 // A group is never signalled by a process that does not lead it: a group id
 // whose leader is not provably ours may be a reused one.
 func TestSuperviseNeverSignalsAGroupItDoesNotLead(t *testing.T) {
+	t.Parallel()
 	var sent []string
 	options := SuperviseOptions{
 		Contract:   Contract{Start: &Command{Argv: []string{"x"}}},
@@ -294,6 +300,7 @@ func TestSuperviseNeverSignalsAGroupItDoesNotLead(t *testing.T) {
 // AwaitReady answers each form, and an application that exits before it is
 // ready is reported as such rather than waited out.
 func TestAwaitReadyFormsAndEarlyExit(t *testing.T) {
+	t.Parallel()
 	logPath := filepath.Join(t.TempDir(), "app.log")
 	if err := os.WriteFile(logPath, []byte("starting\nREADY\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -328,6 +335,7 @@ func TestAwaitReadyFormsAndEarlyExit(t *testing.T) {
 
 // The supervisor's argument vector names the run it is to own.
 func TestServeArgsNameTheRun(t *testing.T) {
+	t.Parallel()
 	joined := strings.Join(ServeArgs("/repo", "/repo/metasystem", "at-main-1234", "main", "g1", "127.0.0.1:7981"), " ")
 	for _, want := range []string{"app serve", "--repo /repo", "--metasystem-root /repo/metasystem",
 		"--key at-main-1234", "--ready-fd 3", "--at main", "--goal g1", "--address 127.0.0.1:7981"} {
@@ -343,6 +351,7 @@ func TestServeArgsNameTheRun(t *testing.T) {
 
 // Records are per run and the standing one is listed first.
 func TestRecordsAreListedStandingFirst(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if keys, err := Keys(root); err != nil || len(keys) != 0 {
 		t.Fatalf("a seat with no runs lists none: %v %v", keys, err)
@@ -388,11 +397,16 @@ func TestRecordsAreListedStandingFirst(t *testing.T) {
 
 // Stop runs the contract's own stop command where there is one.
 func TestStopRunsTheContractsOwnStopCommand(t *testing.T) {
+	t.Parallel()
 	app := mustApp(t)
-	marker := filepath.Join(t.TempDir(), "stopped")
+	scratch := t.TempDir()
+	marker, live := filepath.Join(scratch, "stopped"), filepath.Join(scratch, "live")
+	// The stop command ends this run's own application by the pid it wrote,
+	// and nothing else: a fixture that reached for every process of its own
+	// name would end another test's run beside it.
 	b := newBed(t, map[string]any{
-		"start":  map[string]any{"argv": []string{app, "--no-listen"}},
-		"stop":   map[string]any{"argv": []string{"sh", "-c", "touch " + marker + "; pkill -f " + app + " || true"}},
+		"start":  map[string]any{"argv": []string{app, "--no-listen", "--live-file", live}},
+		"stop":   map[string]any{"argv": []string{"sh", "-c", "touch " + marker + "; kill $(cat " + live + ") 2>/dev/null || true"}},
 		"stopMs": 4000})
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
@@ -411,6 +425,7 @@ func TestStopRunsTheContractsOwnStopCommand(t *testing.T) {
 
 // A rejoin refuses a run that is not starting rather than waiting for one.
 func TestRejoinRefusesARunThatIsNotStarting(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	contract := Contract{Start: &Command{Argv: []string{"x"}}}
 	status, err := Rejoin(context.Background(), root, StandingKey, contract, ReadOptions{}, 200*time.Millisecond)

@@ -147,6 +147,25 @@ func (b *bed) cleanup(key string) {
 			}
 		}
 	}
+	// A KILL is delivered, not awaited: the test's temporary directory is
+	// removed next, and a supervisor still writing its ended record into it
+	// would fail that removal. Wait until nothing recorded is alive.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		alive := false
+		for _, encoded := range []string{record.Child, record.Supervisor} {
+			if ref, err := identity.ParseRef(encoded); err == nil && identity.AliveRef(prober, ref) != identity.Dead {
+				alive = true
+			}
+		}
+		if members, err := KernelGroup(record.Group); err == nil && len(members) > 0 {
+			alive = true
+		}
+		if !alive {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func reap(pid int) {
@@ -206,6 +225,7 @@ func httpContract(app, address string, extra ...string) map[string]any {
 // the group it leads and the application, and status says liveness and
 // readiness separately.
 func TestStartWaitsForReadyAndRecords(t *testing.T) {
+	t.Parallel()
 	address := freePort(t)
 	b := newBed(t, httpContract(mustApp(t), address, "--ready-after", "600ms"))
 	got, pid, err := b.start(StandingKey)
@@ -249,6 +269,7 @@ func mustApp(t *testing.T) string {
 // status says exactly that, the application is discoverable in that group by
 // its proven identity, and nothing is signalled by number.
 func TestSupervisorInterruptedBetweenSpawnAndChildWrite(t *testing.T) {
+	t.Parallel()
 	address := freePort(t)
 	live := filepath.Join(t.TempDir(), "alive")
 	b := newBed(t, httpContract(mustApp(t), address, "--live-file", live))
@@ -309,8 +330,10 @@ func TestSupervisorInterruptedBetweenSpawnAndChildWrite(t *testing.T) {
 
 // Each readiness form is proven with the fixture.
 func TestTheFourReadinessForms(t *testing.T) {
+	t.Parallel()
 	app := mustApp(t)
 	t.Run("http", func(t *testing.T) {
+		t.Parallel()
 		address := freePort(t)
 		b := newBed(t, httpContract(app, address, "--ready-after", "500ms"))
 		if _, _, err := b.start(StandingKey); err != nil {
@@ -321,6 +344,7 @@ func TestTheFourReadinessForms(t *testing.T) {
 		}
 	})
 	t.Run("tcp", func(t *testing.T) {
+		t.Parallel()
 		address := freePort(t)
 		b := newBed(t, map[string]any{
 			"address": address,
@@ -335,6 +359,7 @@ func TestTheFourReadinessForms(t *testing.T) {
 		}
 	})
 	t.Run("log", func(t *testing.T) {
+		t.Parallel()
 		b := newBed(t, map[string]any{
 			"start":   map[string]any{"argv": []string{app, "--no-listen", "--ready-line", "READY", "--ready-after", "400ms"}},
 			"ready":   map[string]any{"kind": "log", "pattern": "^READY$"},
@@ -348,6 +373,7 @@ func TestTheFourReadinessForms(t *testing.T) {
 		}
 	})
 	t.Run("none", func(t *testing.T) {
+		t.Parallel()
 		b := newBed(t, map[string]any{
 			"start":  map[string]any{"argv": []string{app, "--no-listen"}},
 			"stopMs": 4000})
@@ -359,6 +385,7 @@ func TestTheFourReadinessForms(t *testing.T) {
 		}
 	})
 	t.Run("a start that exits before readiness", func(t *testing.T) {
+		t.Parallel()
 		address := freePort(t)
 		b := newBed(t, httpContract(app, address, "--exit-now"))
 		_, _, err := b.start(StandingKey)
@@ -377,6 +404,7 @@ func TestTheFourReadinessForms(t *testing.T) {
 // A log readiness form is scoped to the offset this run's supervisor opened
 // the log at: a line an earlier run wrote can never make this one ready.
 func TestLogReadinessIsScopedToThisRun(t *testing.T) {
+	t.Parallel()
 	app := mustApp(t)
 	b := newBed(t, map[string]any{
 		"start":   map[string]any{"argv": []string{app, "--no-listen"}},
@@ -397,6 +425,7 @@ func TestLogReadinessIsScopedToThisRun(t *testing.T) {
 // Status says running and not answering, with the time the last answer was
 // observed, rather than calling a dark application stopped.
 func TestRunningAndNotAnswering(t *testing.T) {
+	t.Parallel()
 	address := freePort(t)
 	b := newBed(t, httpContract(mustApp(t), address, "--dark-after", "1s"))
 	if _, _, err := b.start(StandingKey); err != nil {
@@ -417,6 +446,7 @@ func TestRunningAndNotAnswering(t *testing.T) {
 
 // A record whose process was killed behind the engine's back reads as such.
 func TestAProcessKilledBehindTheEnginesBack(t *testing.T) {
+	t.Parallel()
 	address := freePort(t)
 	b := newBed(t, httpContract(mustApp(t), address))
 	if _, _, err := b.start(StandingKey); err != nil {
@@ -443,6 +473,7 @@ func TestAProcessKilledBehindTheEnginesBack(t *testing.T) {
 // A recorded pid a different process has taken is refused by name and never
 // signalled: the identity is re-proven immediately before every signal.
 func TestARecordedPidReusedByAnUnrelatedProcessIsRefusedByName(t *testing.T) {
+	t.Parallel()
 	address := freePort(t)
 	b := newBed(t, httpContract(mustApp(t), address))
 	if _, _, err := b.start(StandingKey); err != nil {
@@ -494,6 +525,7 @@ func TestARecordedPidReusedByAnUnrelatedProcessIsRefusedByName(t *testing.T) {
 // Stop proves death for a child that ignores TERM, and reports nothing as
 // stopped that is not.
 func TestStopProvesDeathForAChildThatIgnoresTERM(t *testing.T) {
+	t.Parallel()
 	address := freePort(t)
 	b := newBed(t, httpContract(mustApp(t), address, "--ignore-term"))
 	if _, _, err := b.start(StandingKey); err != nil {
@@ -529,6 +561,7 @@ func TestStopProvesDeathForAChildThatIgnoresTERM(t *testing.T) {
 // descendant through the supervisor's own group, and the record is kept
 // until the group is empty.
 func TestStopEndsTheOwnedTreeThroughTheSupervisorsGroup(t *testing.T) {
+	t.Parallel()
 	address := freePort(t)
 	live := filepath.Join(t.TempDir(), "wrapper")
 	b := newBed(t, httpContract(mustApp(t), address, "--spawn-descendant", "--live-file", live))
@@ -563,6 +596,7 @@ func TestStopEndsTheOwnedTreeThroughTheSupervisorsGroup(t *testing.T) {
 // An application that exits by itself leaves an ended record with its exit
 // status, and its log is still readable.
 func TestAnApplicationThatExitsByItselfLeavesAnEndedRecord(t *testing.T) {
+	t.Parallel()
 	b := newBed(t, map[string]any{
 		"start":  map[string]any{"argv": []string{mustApp(t), "--no-listen", "--exit-after", "700ms", "--exit-code", "3"}},
 		"stopMs": 3000})
@@ -586,6 +620,7 @@ func TestAnApplicationThatExitsByItselfLeavesAnEndedRecord(t *testing.T) {
 
 // A second start rejoins the run that is live and still waits for readiness.
 func TestASecondStartRejoinsAndWaitsForReadiness(t *testing.T) {
+	t.Parallel()
 	address := freePort(t)
 	b := newBed(t, httpContract(mustApp(t), address, "--ready-after", "500ms"))
 	if _, _, err := b.start(StandingKey); err != nil {
@@ -608,6 +643,7 @@ func TestASecondStartRejoinsAndWaitsForReadiness(t *testing.T) {
 // A launcher that dies after the spawn leaves a supervisor that owns the run:
 // the record was written before anything was spawned.
 func TestALauncherThatDiesLeavesTheSupervisorOwningTheRun(t *testing.T) {
+	t.Parallel()
 	address := freePort(t)
 	b := newBed(t, httpContract(mustApp(t), address))
 	if _, _, err := b.start(StandingKey); err != nil {
@@ -632,6 +668,7 @@ func TestALauncherThatDiesLeavesTheSupervisorOwningTheRun(t *testing.T) {
 // An engine that never got a supervisor started has left no run, and the
 // next status says stopped.
 func TestAnEngineKilledBeforeTheSupervisorStartedLeavesNoRun(t *testing.T) {
+	t.Parallel()
 	address := freePort(t)
 	b := newBed(t, httpContract(mustApp(t), address))
 	spec := LaunchSpec{Executable: filepath.Join(b.root, "no-such-engine"), Args: nil,
@@ -649,6 +686,7 @@ func TestAnEngineKilledBeforeTheSupervisorStartedLeavesNoRun(t *testing.T) {
 
 // Restart replaces the process and the record.
 func TestRestartReplacesTheProcessAndTheRecord(t *testing.T) {
+	t.Parallel()
 	address := freePort(t)
 	b := newBed(t, httpContract(mustApp(t), address))
 	if _, _, err := b.start(StandingKey); err != nil {
@@ -674,6 +712,7 @@ func TestRestartReplacesTheProcessAndTheRecord(t *testing.T) {
 // A log readiness form is proven stopped by death alone: nothing asks a
 // pattern that cannot unmatch whether it has gone dark.
 func TestALogReadinessFormStopsOnDeathAlone(t *testing.T) {
+	t.Parallel()
 	b := newBed(t, map[string]any{
 		"start":   map[string]any{"argv": []string{mustApp(t), "--no-listen", "--ready-line", "READY"}},
 		"ready":   map[string]any{"kind": "log", "pattern": "^READY$"},
@@ -698,6 +737,7 @@ func TestALogReadinessFormStopsOnDeathAlone(t *testing.T) {
 
 // log prints the captured tail and follows it.
 func TestLogTailAndFollow(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "app.log")
 	if err := os.WriteFile(path, []byte("one\ntwo\nthree\n"), 0o644); err != nil {
 		t.Fatal(err)
