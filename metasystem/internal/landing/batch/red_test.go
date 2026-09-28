@@ -702,6 +702,11 @@ func flakeBedWith(t *testing.T, prepare func(*Record), groups ...RedGroup) (Stor
 	bed := policyFixture(t)
 	bed.record.State, bed.record.TipTree = StateDiagnosing, "tip-tree"
 	bed.record.Units[0].Approver, bed.record.Units[1].Approver = "Ann", "Bob"
+	// Each member's closure is known and reaches none of the red's owner
+	// units, so nobody is named.
+	for index := range bed.record.Units {
+		bed.record.Units[index].Closure = &adapter.Closure{Tree: "tip-tree", Changed: []string{"unrelated-" + bed.record.Units[index].GoalID}}
+	}
 	proof := &Proof{Status: "failed", Tree: "tip-tree", AttemptID: "tip-attempt", SelectedGroups: []string{"fake-other"},
 		Executions: []string{"fake-other"}, GroupIdentities: map[string]string{}, RedGroups: groups}
 	for _, group := range groups {
@@ -1132,5 +1137,46 @@ func TestComposedPathVerifierErrorIsBoundedThenReturnsEveryMember(t *testing.T) 
 	everyMemberReturned(t, store, "retained worktree unavailable")
 	if verifications != MaxComposedVerifierAttempts || len(ledger.pendings) != 0 {
 		t.Fatalf("verifications=%d pendings=%d, want %d and no sighting for a landing that never happened", verifications, len(ledger.pendings), MaxComposedVerifierAttempts)
+	}
+}
+
+// A member whose closure is unknown (no adapter recognised its checkout, or
+// the closure failed at join) cannot be ruled out as the red's owner, so a
+// known flake does not carry it: that member returns naming why, before any
+// classification run, and nothing lands composed.
+func TestUnknownClosureMemberReturnsInsteadOfLandingOnAKnownFlake(t *testing.T) {
+	t.Parallel()
+	red := knownRed()
+	store, ledger := flakeBedWith(t, func(record *Record) {}, red)
+	must(t, store.Update(testBatchID, func(record *Record) error {
+		record.Units[0].Closure = nil
+		return nil
+	}))
+	strictReassembly(t, &store, expectedReassembly{kind: "assemble", base: "base-tree", goals: []string{"goal-b"}, chains: []string{"chain-b"},
+		prefixes: []string{testCommit(201)}})
+	ledger.entries = []OpenEntry{{ID: "F", Identity: FlakeID(red.ID, red.Failures[0]), Class: ClassKnownFlake, AllowanceUntil: flakeNow.Add(time.Hour), Owner: "Wido"}}
+	script := &flakeScript{tip: passedAt("identity-"+red.ID, red)}
+	composed := false
+	seams := flakeSeams(script, ledger, map[string]string{red.ID: "class-attempt", "fake-other": "tip-attempt"})
+	seams.Sources = func(Record) (map[string]string, error) { composed = true; return nil, nil }
+	must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{red}, "", flakeNow, seams))
+	record := load(t, store)
+	var returned, kept *Unit
+	for index := range record.Units {
+		switch record.Units[index].GoalID {
+		case "goal-a":
+			returned = &record.Units[index]
+		case "goal-b":
+			kept = &record.Units[index]
+		}
+	}
+	if record.State == StateLanding || composed || len(ledger.pendings) != 0 || returned == nil || returned.State != UnitReturnPending ||
+		!strings.Contains(returned.Failure, "BATCH_MEMBER_CLOSURE_UNKNOWN") || kept == nil || kept.State != UnitJoined {
+		t.Fatalf("an unknown-closure member was carried by a known flake: state=%s composed=%t returned=%+v kept=%+v", record.State, composed, returned, kept)
+	}
+	for _, request := range script.requests {
+		if request.Tree == "tip-tree" {
+			t.Fatalf("a classification run was spent on a batch that cannot land composed: %+v", script.requests)
+		}
 	}
 }

@@ -506,6 +506,14 @@ func (d redDecision) unnamed() error {
 	if !classifiable {
 		return returned(strings.Join(clauses, "; "), tip)
 	}
+	if len(clauses) == 0 {
+		// Nobody was named, but a member whose closure is unknown was never
+		// asked: it may own the red. A known flake does not carry it; it
+		// returns, and the others re-prove without it.
+		if unknown := d.unknownClosures(tip); len(unknown) > 0 {
+			return ReassembleSurvivorsWithReturns(d.store, d.record.BatchID, d.actor, d.at, unknown)
+		}
+	}
 	run, done, err := d.runOn(d.record.TipTree, d.failing, freshExecution(d.failing, d.seams.Adapter))
 	if done {
 		return err
@@ -566,6 +574,22 @@ func (d redDecision) unnamed() error {
 		current.Transition(StateLanding, d.at, "diagnose", d.actor, "composed on known flakes; classification attempt "+run.AttemptID)
 		return nil
 	})
+}
+
+// unknownClosures returns each joined member without a recorded closure: no
+// language adapter recognised its checkout at join, or the closure failed
+// there. Such a member can be neither named nor cleared by owner unit.
+func (d redDecision) unknownClosures(tip DiagnosticResult) []ReturnDecision {
+	var decisions []ReturnDecision
+	for _, unit := range d.joined {
+		if unit.Closure == nil {
+			decisions = append(decisions, ReturnDecision{GoalID: unit.GoalID, Outcome: UnitEjected, Reason: fmt.Sprintf(
+				"BATCH_MEMBER_CLOSURE_UNKNOWN: %s has no recorded closure (no language adapter recognised its checkout at join, or its closure failed there), "+
+					"so the lane cannot rule out that it owns this red; a known flake does not carry it and nothing of it lands; %s",
+				unit.GoalID, diagnosticFailure(tip, d.failing))})
+		}
+	}
+	return decisions
 }
 
 // MaxComposedVerifierAttempts bounds how often the composed path runs the
