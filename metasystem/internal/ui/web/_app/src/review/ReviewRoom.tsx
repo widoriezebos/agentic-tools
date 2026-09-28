@@ -4,10 +4,12 @@ import { useNavigate } from "react-router";
 
 import { loadChanges } from "./api";
 import { DeskAnchors } from "./anchors";
+import { MovedFiles } from "./Answers";
 import { Desk } from "./Desk";
 import {
   CLEAR_REFUSED,
   countsLine,
+  deskLabel,
   movedLine,
   NOD_LINE,
   nodded,
@@ -26,7 +28,8 @@ import { usePartner } from "../partner/store";
 import { SittingTable } from "../partner/Table";
 import { Transcript } from "../partner/Transcript";
 import { Help } from "../help/Help";
-import { backlogPath } from "../routes";
+import { backlogPath, reviewPath } from "../routes";
+import { useAbout } from "../shell/about";
 import { Composer } from "../shell/Composer";
 import { Button } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
@@ -51,6 +54,17 @@ export function Room({ record }: { record: string }) {
   const findings = table.entries.filter((entry) => entry.section === "Findings");
   const unanswered = unansweredIn(table.entries);
   const here = conversation === record;
+  // What the room is about, which every question asked from it carries: the
+  // review record, at the revision the room is reading, and the desk's item.
+  const up = room.desk.current >= 0 ? room.desk.items[room.desk.current] : undefined;
+  useAbout(`Review of ${reviewed.goal === "" ? record : reviewed.goal}`, {
+    kind: "document",
+    subject: record,
+    title: `Review of ${reviewed.goal}`,
+    revision: table.revision,
+    tab: up === undefined ? room.face : `${room.face}: ${deskLabel(up)}`,
+    returnTo: reviewPath(record),
+  });
 
   // The tip is compared once on arriving (D9): a moved branch is said, and the
   // findings anchored in files that changed are marked until the new tip is
@@ -226,6 +240,7 @@ export function Room({ record }: { record: string }) {
         </Panel>
         <Separator className="ms-room-grip" aria-label="Resize the desk and the conversation" />
         <Panel id="conversation" className="ms-room-conversation" defaultSize="40%" minSize="25%">
+          <MovedFiles.Provider value={moved?.changed ?? []}>
           <DeskAnchors.Provider value={putOnDesk}>
             <div className="ms-room-walks" role="group" aria-label="The walks">
               {WALKS.map((one) => (
@@ -254,6 +269,7 @@ export function Room({ record }: { record: string }) {
             </div>
             <Composer />
           </DeskAnchors.Provider>
+          </MovedFiles.Provider>
         </Panel>
       </Group>
       <EndSheet open={ending} onOpenChange={setEnding} />
@@ -308,12 +324,12 @@ function EndSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: 
       label="End this review"
       title="End this review"
       closeLabel="Close without ending"
-      bodyClassName="ms-sitting-sheet ms-end-sheet"
+      bodyClassName="ms-sitting-sheet ms-review-sheet"
       sheetName="End this review"
     >
       <p className="ms-sitting-said">
-        Your Partner drafts the Outcome with your verdict as its first line and what you examined after it; you read
-        it, edit it, and press Record it. It becomes the review's Outcome, and the review ends then.
+        {"Your Partner drafts the Outcome with your verdict as its first line and what you examined after it; " +
+          "you read it, edit it, and press Record it. It becomes the review\u2019s Outcome, and the review ends then."}
         <Help id="the-verdict" />
       </p>
       <EndWays entries={table.entries} busy={sittingBusy} onChoose={(verdict) => void choose(verdict)} />

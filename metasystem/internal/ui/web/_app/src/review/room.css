@@ -471,7 +471,11 @@
   background: var(--ms-surface-2);
 }
 
-/* --------------------------------------------------------------------- End -- */
+/* --------------------------------------------------- End and Accept sheets -- */
+
+.ms-review-sheet {
+  padding: 12px 16px 20px;
+}
 
 .ms-end-ways {
   display: flex;

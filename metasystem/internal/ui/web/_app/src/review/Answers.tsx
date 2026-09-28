@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { createContext, useEffect, useId, useState } from "react";
 
 import { ANSWERS, parseAnchor, type AnswerKind } from "./room";
 import { loadBacklog, type Backlog } from "../backlog/api";
@@ -7,6 +7,13 @@ import { usePartner } from "../partner/store";
 import { answerOf } from "../partner/sitting";
 import { Button } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
+
+/**
+ * The files that changed on the branch since the tip the review names, while
+ * the room says the tip moved: a finding anchored in one of them carries "may
+ * have moved" on its card and on the board until the new tip is reviewed (D9).
+ */
+export const MovedFiles = createContext<readonly string[]>([]);
 
 /**
  * A recorded finding's four answers (g1-s65 D8), on its card and on the board.
@@ -98,7 +105,7 @@ export function FindingAnswers({ mark, text, answer, moved }: { mark: string; te
         label="Accept this finding"
         title="Accept, with reason"
         closeLabel="Close without accepting"
-        bodyClassName="ms-sitting-sheet"
+        bodyClassName="ms-sitting-sheet ms-review-sheet"
         sheetName="Accept, with reason"
       >
         <AcceptSheet
@@ -142,8 +149,8 @@ function AcceptSheet({
   return (
     <>
       <p className="ms-sitting-said">
-        Accepting records the risk with your reason on this finding's own line. The reason is yours, and the finding
-        is not accepted without one.
+        {"Accepting records the risk with your reason on this finding\u2019s own line. " +
+          "The reason is yours, and the finding is not accepted without one."}
       </p>
       <p className="ms-deposit-text">{text}</p>
       <label className="ms-sitting-label" htmlFor={field}>

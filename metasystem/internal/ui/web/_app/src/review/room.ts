@@ -233,13 +233,30 @@ export function nodded(entries: readonly Entry[]): boolean {
   return entries.length === 0;
 }
 
-/** What was examined, from the desk's strip, for the Outcome's second line. */
+/** What was examined, from the desk's strip, for the Outcome's second line: each thing once, oldest first. */
 export function examinedLine(items: readonly DeskItem[]): string {
   if (items.length === 0) {
     return "Examined: nothing was put on the desk";
   }
-  const named = [...items].reverse().map((item) => (item.kind === "changes" ? "the change index" : anchorOf(item)));
+  const named: string[] = [];
+  for (const item of [...items].reverse()) {
+    const said = examinedAs(item);
+    if (!named.includes(said)) {
+      named.push(said);
+    }
+  }
   return `Examined: ${named.join("; ")}`;
+}
+
+function examinedAs(item: DeskItem): string {
+  switch (item.kind) {
+    case "changes":
+      return item.since === true ? "what changed since the reviewed tip" : "the change index";
+    case "diff":
+      return item.since === true ? `what changed since the reviewed tip in ${item.path}` : `${item.path}, as changed`;
+    default:
+      return anchorOf(item);
+  }
 }
 
 /**

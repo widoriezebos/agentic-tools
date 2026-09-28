@@ -13,7 +13,7 @@ import { scopeOf, type ScopeFilter } from "./project/pane";
 import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 
 /**
- * The twenty keys this build remembers, and nothing else.
+ * The twenty-one keys this build remembers, and nothing else.
  *
  * Every access is wrapped: a browser with site data blocked throws on the very
  * first read, and view state is never worth an error a human has to read. An

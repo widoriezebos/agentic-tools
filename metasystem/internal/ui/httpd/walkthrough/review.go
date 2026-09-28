@@ -28,7 +28,7 @@ import (
 // The two goals waiting to land.
 const (
 	reviewedGoal = "g1-s21"
-	secondGoal   = "g1-s26"
+	secondGoal   = "g1-s90"
 )
 
 // The commits: main, the merge base, the first tip, and the tip after a push.

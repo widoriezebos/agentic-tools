@@ -549,7 +549,7 @@ func fixtureCheckout(calm bool, register string) string {
 		// The two goals waiting to land, which a review record names: the
 		// record creator refuses a goal its ledger does not carry.
 		{"plans/goals/g1-s21.md", "# g1-s21\n\n- State: claimed\n- Intent: The Overview reads what needs a human\n"},
-		{"plans/goals/g1-s26.md", "# g1-s26\n\n- State: claimed\n- Intent: The owner holds one lock across publish and reconcile\n"},
+		{"plans/goals/g1-s90.md", "# g1-s90\n\n- State: claimed\n- Intent: The owner holds one lock across publish and reconcile\n"},
 		{"records/goals/g1-s9.md", "# g1-s9\n\n- State: done\n- Intent: The application shell, the rail and the header\n"},
 		{"records/goals/g1-s10.md", "# g1-s10\n\n- State: done\n- Intent: The backlog's data path and the list\n"},
 		{walkthroughBook, walkthroughBookText},
@@ -642,7 +642,7 @@ func newLedger(calm bool) *ledger {
 	landing.Landing = &goal.LandingRecord{At: stampedAgo(35 * time.Minute)}
 	// A second goal waiting to land, so a human can start a review, step out,
 	// start another on this one, and go back to the first through its door.
-	landed2 := add(ranked(walkthroughGoal("g1-s26", goal.StateClaimed, "The owner holds one lock across publish and reconcile"), 2, 13))
+	landed2 := add(ranked(walkthroughGoal("g1-s90", goal.StateClaimed, "The owner holds one lock across publish and reconcile"), 2, 13))
 	landed2.Claimed = &goal.ClaimRecord{Machine: "m2a", Lineage: "implementer", At: stampedAgo(3 * time.Hour)}
 	landed2.Landing = &goal.LandingRecord{At: stampedAgo(20 * time.Minute)}
 
@@ -1069,6 +1069,14 @@ func satOnPane(pane project.Pane, roots project.Roots) project.Pane {
 		return pane
 	}
 	pane.Sittings = read.Sittings
+	// And the review records, which a review sitting on this fixture writes
+	// into the checkout beside it: the board's door reads which records name
+	// which goal, and a canned list would name none (g1-s65 D9).
+	for _, record := range read.Records {
+		if record.Kind == "review" {
+			pane.Records = append(pane.Records, record)
+		}
+	}
 	return pane
 }
 

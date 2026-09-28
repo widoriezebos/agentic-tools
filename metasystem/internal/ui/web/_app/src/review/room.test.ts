@@ -109,6 +109,11 @@ describe("ending", () => {
     // was examined.
     const examined = examinedLine([source("owner.go", 41, 88), { kind: "changes" }]);
     expect(examined).toBe("Examined: the change index; owner.go:41-88");
+    // Each thing once, and the two readings of a change told apart.
+    expect(examinedLine([{ kind: "changes", since: true }, { kind: "diff", path: "a.go" }, { kind: "changes" },
+      { kind: "diff", path: "a.go", since: true }])).toBe(
+      "Examined: what changed since the reviewed tip in a.go; the change index; a.go, as changed; what changed since the reviewed tip",
+    );
     expect(outcomeWithVerdict("clear to land", "The lock is held.", examined)).toBe(
       "Verdict: clear to land\n\nExamined: the change index; owner.go:41-88\n\nThe lock is held.",
     );

@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useContext, useId, useState } from "react";
 
 import { usePartner } from "./store";
 import {
@@ -28,7 +28,8 @@ import {
   type Card,
 } from "./sitting";
 import { Copy } from "./Suggestion";
-import { AnchorPress, FindingAnswers } from "../review/Answers";
+import { AnchorPress, FindingAnswers, MovedFiles } from "../review/Answers";
+import { mayHaveMoved } from "../review/room";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
@@ -77,7 +78,8 @@ export function copyable(text: string, clause: string, label: string): string {
 }
 
 export function DepositCard({ id }: { id: string }) {
-  const { deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit } = usePartner();
+  const { deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, sitting, verdict } =
+    usePartner();
   const card = cardIn(deposits, id);
   const entryField = useId();
   const clauseField = useId();
@@ -188,6 +190,16 @@ export function DepositCard({ id }: { id: string }) {
         </>
       ) : (
         <>
+          {/* A review's Outcome opens with the verdict the human chose on the End
+              sheet, and names what they examined after it (g1-s65 D10): the
+              card says so before Record it, so the words written are the words
+              read. */}
+          {card.kind === "outcome" && sitting?.purpose === "review" && verdict !== "" && (
+            <p className="ms-deposit-clause">
+              <span className="ms-deposit-label">Verdict</span>
+              {`${verdict} — recorded as the first line of the Outcome, with what you examined after it`}
+            </p>
+          )}
           <label className="ms-visually-hidden" htmlFor={entryField}>
             {`The ${card.kind} to record`}
           </label>
@@ -247,7 +259,13 @@ export function DepositCard({ id }: { id: string }) {
                 recordDeposit(id);
               }}
             >
-              {card.mark.recording ? RECORDING : card.kind === "outcome" ? RECORD_OUTCOME : RECORD_IT}
+              {card.mark.recording
+                ? RECORDING
+                : card.kind === "outcome"
+                  ? sitting?.purpose === "review"
+                    ? "Record it and end the review"
+                    : RECORD_OUTCOME
+                  : RECORD_IT}
             </Button>
             <Button
               disabled={card.mark.recording}
@@ -282,6 +300,7 @@ function FindingCard({ card }: { card: Card }) {
   const needs = missing(card.kind, card.mark);
   const frozen = !editable(card.standing);
   const entry = table.entries.find((one) => one.mark === card.id);
+  const changed = useContext(MovedFiles);
   return (
     <div className="ms-deposit ms-deposit--finding" data-deposit={card.id} data-kind={card.kind}>
       <p className="ms-deposit-head">
@@ -304,7 +323,12 @@ function FindingCard({ card }: { card: Card }) {
               {entry?.consequence ?? card.consequence}
             </p>
           )}
-          <FindingAnswers mark={card.id} text={card.mark.text} answer={entry?.answer ?? ""} moved={false} />
+          <FindingAnswers
+            mark={card.id}
+            text={card.mark.text}
+            answer={entry?.answer ?? ""}
+            moved={entry !== undefined && mayHaveMoved(entry, changed)}
+          />
         </>
       ) : (
         <>
