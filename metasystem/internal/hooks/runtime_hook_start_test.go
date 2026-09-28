@@ -73,6 +73,7 @@ func TestHookStartDeclaredOutcomeMatrix(t *testing.T) {
 		{"screen-context-ready", func(s *startRun) { s.contextKind, s.notices = "screen", "screen context" }, `{"systemMessage":"screen context"}` + "\n", ""},
 		{"notices-ready", func(s *startRun) { s.notices = "notice text" }, `{"systemMessage":"notice text"}` + "\n", ""},
 		{"healthy-no-context", nil, "{}\n", ""},
+		{"helm", func(s *startRun) { s.helmResponse = `{"systemMessage":"helm: HUMAN AT THE HELM"}` }, `{"systemMessage":"helm: HUMAN AT THE HELM"}` + "\n", ""},
 	}
 	if len(intentional) != len(StartIntentionalOutcomes) {
 		t.Fatalf("intentional matrix has %d rows; the catalog has %d", len(intentional), len(StartIntentionalOutcomes))

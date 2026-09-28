@@ -72,9 +72,9 @@ var StartOutcomeNotices = map[string]startNotice{
 }
 
 // StartIntentionalOutcomes are the validated non-notice SessionStart
-// outcomes: two skips and four published responses.
+// outcomes: two skips and five published responses (the helm notice among them).
 var StartIntentionalOutcomes = []string{
-	"authenticated-delegate", "foreign-runtime", "context-ready", "screen-context-ready", "notices-ready", "healthy-no-context",
+	"authenticated-delegate", "foreign-runtime", "context-ready", "screen-context-ready", "notices-ready", "healthy-no-context", "helm",
 }
 
 // StartEngineMissingNotice is the SessionStart notice the plumbing stub
@@ -100,6 +100,8 @@ type startRun struct {
 	signal    atomic.Int32
 	finishing bool
 	published bool
+	// helmResponse is the one-line notice a seat at the helm publishes.
+	helmResponse string
 
 	armingStarted        bool
 	armingRearmed        bool
@@ -328,6 +330,11 @@ func (s *startRun) finish(family, key string) {
 				s.emergency()
 			}
 			response = built
+		case "helm":
+			if s.helmResponse == "" {
+				s.emergency()
+			}
+			response = s.helmResponse
 		default:
 			s.emergency()
 		}
@@ -437,9 +444,8 @@ func (s *startRun) main() {
 	if state := helm.Active(s.harnessRoot); state.Active {
 		helm.RecordYield(s.harnessRoot, helm.Yield{At: inv.Now(), Boundary: "start-hook", Gate: "session-start", Would: "not evaluated", PID: inv.Ppid})
 		form, _ := json.Marshal(map[string]string{"systemMessage": helmNotice(state) + " Nothing was armed and no role context was loaded."})
-		_ = writeLine(inv.Stdout, string(form))
-		s.published = true
-		exitHook(0)
+		s.helmResponse = string(form)
+		s.finish("intentional", "helm")
 	}
 
 	stateHint := inv.env("METASYSTEM_HOOK_DELEGATE_STATE_ROOT")
