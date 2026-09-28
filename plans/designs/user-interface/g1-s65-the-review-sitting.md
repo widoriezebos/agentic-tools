@@ -327,13 +327,34 @@ Each decision names the slice that builds it: A, B, C or D (§5).
   room: a pill in the header reads `app status --goal G` and offers Run
   and Stop through `app start|stop --goal G` as browser acts; the
   Behaves walk names the address; the Partner may propose the run.
-- D15 (D). **The landing gate.** `work land G` refuses, naming the
-  missing fact, when the goal requires a human review and no review
-  record with `Verdict: clear to land` is bound to the branch tip. Which
-  goals require it is Wido's ruling to record at approval: a `Review:
-  human` line on the approval, or every goal above a tier. The gate is
-  engine work beside the interface and lands last, after a real review
-  record has been written at least once.
+- D15 (D). **The landing gate, on R-132-ui.** Wido, 2026-09-28: "goals
+  on the validation lane with a risk tier below the setting get
+  automatically landed after a <setting> time. higher level tier needs a
+  human to either do a sitting, or decide to not do a sitting and then
+  move the goal into landing." Two settings in `metasystem.conf`, shown
+  on the Settings page with their source: `landing.review.human-from-tier`
+  (the first tier that waits for a person) and `landing.review.auto-after`
+  (the grace time). A goal in the Review lane below the tier lands by
+  itself when the grace time has passed since its Landing record's `At`
+  with no human act on it: the seat holding the claim lands it through
+  the ordinary `work land`, and the history line names the setting. A
+  goal at or above the tier waits for one of two human acts: a review
+  sitting whose Outcome records `Verdict: clear to land` against the
+  branch tip, or **Land without a sitting**, the Decide sheet with a
+  required reason, recorded as a decision on the goal's history by the
+  signed-in human and bound to the tip. `work land G` refuses a goal at
+  or above the tier, naming the missing fact, unless one of the two is
+  recorded against the current tip; a moved tip needs the act again. A
+  standing review sitting holds the landing, below and above the tier
+  alike, until it ends: Clear to land lands, Send back returns, End
+  without a verdict releases the clock. Silence is never a decision
+  above the tier. On the card in the Review lane: below the tier, "lands
+  by itself in 3h 12m" beside Review it; at or above it, "waits for your
+  review" with Review it and Land without a sitting, and a row in the
+  Decisions inbox, because landing waits on a person. The clock, the
+  due landing and the refusal are engine work; the card's words, the
+  presses and the inbox row are the interface's. D lands last, after a
+  real review record has been written at least once.
 
 ## 5. The four slices
 
