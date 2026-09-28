@@ -314,7 +314,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 		"--brief", filepath.Join(dir, "cancel.md"), "--workspace", scratch, "--op", cancelJob); err != nil {
 		return err
 	}
-	if err := runLoud(p.delegate(), "internal", "delegate", "--cancel", cancelJob); err != nil {
+	if err := p.cancelJob(cancelJob); err != nil {
 		return err
 	}
 	if p.dispatchStatus(cancelJob) != "cancelled" {
@@ -458,6 +458,11 @@ func (p SelftestParams) settleSelftest(dir string, jobs []string) bool {
 	return false
 }
 
+// cancelJob cancels one self-test job through the delegate entry.
+func (p SelftestParams) cancelJob(job string) error {
+	return runLoud(p.delegate(), "internal", "delegate", "--cancel", job)
+}
+
 // selftestJobEnded proves one dispatched job ended, or names why not.
 func (p SelftestParams) selftestJobEnded(job string) (bool, string) {
 	read := p.readRecord
@@ -476,7 +481,7 @@ func (p SelftestParams) selftestJobEnded(job string) (bool, string) {
 	if !dispatch.TerminalStatus(status) {
 		cancel := p.cancel
 		if cancel == nil {
-			cancel = func(job string) error { return runLoud(p.delegate(), "internal", "delegate", "--cancel", job) }
+			cancel = p.cancelJob
 		}
 		_ = cancel(job)
 		clock, pause := p.clockNow, p.clockSleep
