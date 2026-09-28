@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -126,11 +127,16 @@ type processRefusal struct {
 }
 
 func (r *processRefusal) print() int {
+	return r.printTo(os.Stderr)
+}
+
+// printTo writes the refusal to w.
+func (r *processRefusal) printTo(w io.Writer) int {
 	if r.plain != "" {
-		fmt.Fprintln(os.Stderr, r.plain)
+		fmt.Fprintln(w, r.plain)
 		return r.code
 	}
-	refuseProcessVerb(r.verb, r.checkout, r.sentence, r.second)
+	refuseProcessVerbTo(w, r.verb, r.checkout, r.sentence, r.second)
 	return r.code
 }
 
@@ -368,9 +374,13 @@ func armRefusalSecondLine(scope processScope, err error) string {
 }
 
 func refuseProcessVerb(verb, checkout, sentence, second string) int {
+	return refuseProcessVerbTo(os.Stderr, verb, checkout, sentence, second)
+}
+
+func refuseProcessVerbTo(w io.Writer, verb, checkout, sentence, second string) int {
 	sentence = strings.TrimSuffix(strings.TrimSpace(sentence), ".")
-	fmt.Fprintf(os.Stderr, "metasystem %s: %s.\n", publicProcessVerb(verb), sentence)
-	fmt.Fprintln(os.Stderr, second)
+	fmt.Fprintf(w, "metasystem %s: %s.\n", publicProcessVerb(verb), sentence)
+	fmt.Fprintln(w, second)
 	return 1
 }
 
@@ -452,9 +462,16 @@ func missionFenceBeforeArm(root, mode string) (int64, int) {
 }
 
 func missionFenceBeforeArmWith(root, mode string, repositoryTop func(string) (string, error), classify processCallerClassifier) (int64, int) {
+	return missionFenceBeforeArmFor(processIdentity{pid: int64(os.Getpid())}, os.Stderr, root, mode, repositoryTop, classify)
+}
+
+// missionFenceBeforeArmFor is the fence check with its caller and report
+// stream explicit: the process a human classification starts from (the
+// launching command supplies itself) and where refusals are written.
+func missionFenceBeforeArmFor(caller processIdentity, stderr io.Writer, root, mode string, repositoryTop func(string) (string, error), classify processCallerClassifier) (int64, int) {
 	record, err := stopfence.Read(root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "mission "+mode+":", err)
+		fmt.Fprintln(stderr, "mission "+mode+":", err)
 		return 0, 1
 	}
 	if record.State == stopfence.StateOpen {
@@ -462,52 +479,44 @@ func missionFenceBeforeArmWith(root, mode string, repositoryTop func(string) (st
 	}
 	scope, scopeErr := resolveProcessScopeWith(root, "", repositoryTop)
 	if scopeErr != nil {
-		fmt.Fprintln(os.Stderr, "mission "+mode+":", scopeErr)
+		fmt.Fprintln(stderr, "mission "+mode+":", scopeErr)
 		return 0, 1
 	}
 	retryCommand := fmt.Sprintf("metasystem mission %s --root %s --mission <id>", mode, scope.Checkout)
 	// Mission state and its stop fence remain application-owned. Only the
 	// process-control verbs move their supervision/accounting root to the
 	// authenticated installation.
-	classification, classifyErr := classify(scope.Checkout, scope.Installation, int64(os.Getpid()))
+	classification, classifyErr := classify(scope.Checkout, scope.Installation, caller.pid)
 	if classifyErr != nil {
-		if refuseClassificationData("mission "+mode, scope.Checkout, retryCommand, classifyErr) {
+		if refusal := classificationDataRefusal("mission "+mode, scope.Checkout, retryCommand, classifyErr); refusal != nil {
+			refusal.printTo(stderr)
 			return 0, 1
 		}
 	}
 	if classifyErr == nil && classification.Class == lease.ClassHuman {
 		generation, openErr := processTransition(scope, upWaitScale()).OpenFence("mission-" + mode)
 		if openErr != nil {
-			fmt.Fprintln(os.Stderr, "mission "+mode+":", openErr)
-			fmt.Fprintln(os.Stderr, armRefusalSecondLine(scope, openErr))
+			fmt.Fprintln(stderr, "mission "+mode+":", openErr)
+			fmt.Fprintln(stderr, armRefusalSecondLine(scope, openErr))
 			return 0, 1
 		}
 		return generation, 0
 	}
 	description, descriptionErr := stopfence.ClosedDescription(record, record.Checkout)
 	if descriptionErr != nil {
-		fmt.Fprintln(os.Stderr, "mission "+mode+":", descriptionErr)
+		fmt.Fprintln(stderr, "mission "+mode+":", descriptionErr)
 		return 0, 1
 	}
-	fmt.Fprintln(os.Stderr, description)
+	fmt.Fprintln(stderr, description)
 	if stopfence.Completed(record) {
-		fmt.Fprintln(os.Stderr, "at an agent-free terminal, run: "+retryCommand)
+		fmt.Fprintln(stderr, "at an agent-free terminal, run: "+retryCommand)
 	} else {
 		command, commandErr := stopfence.ClosedCommand(record, record.Checkout)
 		if commandErr != nil {
-			fmt.Fprintln(os.Stderr, "mission "+mode+":", commandErr)
+			fmt.Fprintln(stderr, "mission "+mode+":", commandErr)
 			return 0, 1
 		}
-		fmt.Fprintln(os.Stderr, "at an agent-free terminal, run: "+command)
+		fmt.Fprintln(stderr, "at an agent-free terminal, run: "+command)
 	}
 	return 0, 1
-}
-
-func refuseClassificationData(verb, checkout, retryCommand string, err error) bool {
-	refusal := classificationDataRefusal(verb, checkout, retryCommand, err)
-	if refusal == nil {
-		return false
-	}
-	refusal.print()
-	return true
 }

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -1627,12 +1629,7 @@ func runIntentAnswerQuestion(inv *intentInvocation) int {
 // resumeMission asks the mission runner to resume after an answer; the
 // runner decides whether that is lawful now.
 func (inv *intentInvocation) resumeMission(mission string, answered intentResult) intentResult {
-	ran, problem := inv.engineVerb("mission", "resume", "--root", inv.stateRoot, "--mission", mission)
-	if problem != nil {
-		problem.Summary = answered.Summary + "; " + problem.Summary
-		problem.Outcome = intentPartial
-		return *problem
-	}
+	ran := inv.missionOwnerLaunch(mission, "resume")
 	resumed := ownerVerbResult(ran, append(answered.Targets, intentTarget{Kind: "mission", ID: mission}), answered.Summary+"; mission "+mission+" resumed", nil)
 	resumed.Data = mergeData(map[string]any{"answer": answered.Data}, resumed.Data)
 	if already, running := missionAlreadyRunning(ran); running {
@@ -1658,9 +1655,14 @@ func runIntentMission(inv *intentInvocation, verb, mission string) int {
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	ran, problem := inv.engineVerb("mission", verb, "--root", inv.stateRoot, "--mission", mission)
-	if problem != nil {
-		return inv.render(*problem)
+	var ran intentProcessResult
+	if verb == "status" {
+		root := inv.stateRoot
+		ran = ownerCall(func(stdout, stderr io.Writer) int {
+			return inv.ownerCalls().missionStatus(stdout, stderr, root, mission)
+		})
+	} else {
+		ran = inv.missionOwnerLaunch(mission, verb)
 	}
 	done := map[string]string{"start": "mission " + mission + " started", "resume": "mission " + mission + " resumed", "status": "mission " + mission + " status"}[verb]
 	result := ownerVerbResult(ran, []intentTarget{{Kind: "mission", ID: mission}}, done, nil)
@@ -1675,6 +1677,16 @@ func runIntentMission(inv *intentInvocation, verb, mission string) int {
 		}
 	}
 	return inv.render(result)
+}
+
+// missionOwnerLaunch starts or resumes one mission through the runner in
+// this process (design 6.2); this process is the caller a closed fence's
+// reopening classifies.
+func (inv *intentInvocation) missionOwnerLaunch(mission, mode string) intentProcessResult {
+	caller, root := currentProcessIdentity(), inv.stateRoot
+	return ownerCall(func(stdout, stderr io.Writer) int {
+		return inv.ownerCalls().missionLaunch(caller, stdout, stderr, root, mission, mode)
+	})
 }
 
 // missionAlreadyRunning reads a start or resume that found the mission's

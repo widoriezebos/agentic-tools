@@ -10,10 +10,15 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
+	"strconv"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 type intentOwnerCalls struct {
@@ -31,6 +36,38 @@ type intentOwnerCalls struct {
 	configValidate func(stdout, stderr io.Writer, conf, repo string) int
 	// delegate is the delegate boundary: dispatch, review, follow-up.
 	delegate func(request delegateRequest, stdout, stderr io.Writer) int
+	// missionStatus prints a mission's runner status line.
+	missionStatus func(stdout, stderr io.Writer, root, mission string) int
+	// missionLaunch starts or resumes a mission's detached run loop; a
+	// closed fence's human reopening classifies caller.
+	missionLaunch func(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string) int
+	// missionResolveTaint applies a person's typed resolution; the
+	// human-reserved gate classifies caller.
+	missionResolveTaint func(caller processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int
+}
+
+// missionResolveRequest is one typed taint resolution: restore to a recorded
+// safe tree, or adopt the disputed workspace waiving the named claims.
+type missionResolveRequest struct {
+	root, mission string
+	taint         int64
+	variant, tree string
+	by, reason    string
+	waived        []string
+}
+
+// words is the resolution as the former child's argv carried it.
+func (r missionResolveRequest) words() []string {
+	words := []string{"mission", "resolve-taint", "--root", r.root, "--mission", r.mission, "--taint", strconv.FormatInt(r.taint, 10)}
+	if r.variant == "restore" {
+		words = append(words, "--restore", r.tree)
+	} else {
+		words = append(words, "--adopt")
+		for _, claim := range r.waived {
+			words = append(words, "--waives", claim)
+		}
+	}
+	return append(words, "--by", r.by, "--reason", r.reason)
 }
 
 func defaultIntentOwnerCalls() *intentOwnerCalls {
@@ -56,7 +93,36 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 			return configValidateTo(stdout, stderr, conf, cleanOwnerRoot(repo))
 		},
 		delegate: runDelegateWith,
+		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
+			engine := missionrunner.NewEngine(cleanOwnerRoot(root), mission)
+			engine.Output, engine.Errors = stdout, stderr
+			return engine.Status()
+		},
+		missionLaunch: missionLaunchTo,
+		missionResolveTaint: func(caller processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int {
+			engine := missionrunner.NewEngine(cleanOwnerRoot(request.root), request.mission)
+			engine.Output, engine.Errors, engine.Caller = stdout, stderr, caller.pid
+			return engine.ResolveTaint(request.taint, request.variant, request.tree, request.by, request.reason, request.waived)
+		},
 	}
+}
+
+// missionLaunchTo is mission start and resume under an explicit caller: the
+// fence check (a closed fence reopens only for a person, classified from
+// caller), then the runner's launch at the fence's generation.
+func missionLaunchTo(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string) int {
+	root = cleanOwnerRoot(root)
+	generation, code := missionFenceBeforeArmFor(caller, stderr, root, mode, stateroot.RepositoryTop, lease.ClassifyAt)
+	if code != 0 {
+		return code
+	}
+	engine, err := missionRunnerCommandEngine(root, mission)
+	if err != nil {
+		fmt.Fprintln(stderr, "mission "+mode+":", err)
+		return 1
+	}
+	engine.Output, engine.Errors, engine.Caller = stdout, stderr, caller.pid
+	return engine.LaunchAtGeneration(mode, false, generation)
 }
 
 // ownerCalls returns the invocation's owner functions.

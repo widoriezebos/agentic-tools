@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
@@ -303,22 +304,20 @@ func runIntentRepairMission(inv *intentInvocation, mission string) int {
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the installation's state root is unavailable: " + err.Error()})
 	}
-	args := []string{"mission", "resolve-taint", "--root", root, "--mission", mission, "--taint", inv.input.text("problem")}
+	taint, _ := strconv.ParseInt(inv.input.text("problem"), 10, 64)
+	request := missionResolveRequest{root: root, mission: mission, taint: taint, variant: "restore", tree: inv.input.text("confirm-restored"),
+		by: inv.input.text("by"), reason: inv.input.text("reason")}
 	done := fmt.Sprintf("mission %s: problem %s is resolved as confirmed restored; files were not changed by this command", mission, inv.input.text("problem"))
-	if choice == "confirm-restored" {
-		args = append(args, "--restore", inv.input.text("confirm-restored"))
-	} else {
-		args = append(args, "--adopt")
-		for _, claim := range inv.input.values["waive"] {
-			args = append(args, "--waives", claim)
-		}
+	if choice != "confirm-restored" {
+		request.variant, request.tree, request.waived = "adopt-disputed-tree", "", inv.input.values["waive"]
 		done = fmt.Sprintf("mission %s: the observed workspace is accepted for problem %s with the named claims waived", mission, inv.input.text("problem"))
 	}
-	args = append(args, "--by", inv.input.text("by"), "--reason", inv.input.text("reason"))
-	ran, problem := inv.engineVerb(args...)
-	if problem != nil {
-		return inv.render(*problem)
-	}
+	// The runner's human-reserved gate classifies this process, the parent
+	// the former child classified (design 6.2).
+	caller := currentProcessIdentity()
+	ran := ownerCall(func(stdout, stderr io.Writer) int {
+		return inv.ownerCalls().missionResolveTaint(caller, stdout, stderr, request)
+	})
 	result := ownerVerbResult(ran, []intentTarget{{Kind: "mission", ID: mission}}, done, nil)
 	if result.Outcome == intentConfirmed {
 		for _, line := range nonEmptyLines(string(ran.stdout)) {

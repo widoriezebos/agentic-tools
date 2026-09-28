@@ -92,6 +92,10 @@ func runMissionRunnerLaunch(mode string, args []string) int {
 		missionRunnerUsage()
 		return 2
 	}
+	if !foreground {
+		// The entry supplies itself as the caller, as it always did.
+		return missionLaunchTo(processIdentity{pid: int64(os.Getpid())}, os.Stdout, os.Stderr, root, mission, mode)
+	}
 	generation, code := missionFenceBeforeArm(root, mode)
 	if code != 0 {
 		return code

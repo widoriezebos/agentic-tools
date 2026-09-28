@@ -57,11 +57,11 @@ func TestIntentQuestionJourney(t *testing.T) {
 		return provider, channel.DestinationConfig{}
 	}
 	var engineCalls [][]string
-	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+	owners.delivery = processBackedDelivery(&intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
 		process: func(process intentProcess) intentProcessResult {
 			engineCalls = append(engineCalls, process.argv)
 			return intentProcessResult{stdout: []byte(`{"outcome":"resumed"}`)}
-		}}
+		}})
 	root := b.root()
 	for _, id := range []string{"q1", "q2", "shared"} {
 		writeQuestionFixture(t, filepath.Join(root, "artifacts", "agents", "channel", "questions", id+".json"),
@@ -189,11 +189,11 @@ func TestIntentAskContinuationsAreFollowed(t *testing.T) {
 	owners.processes.ask = func(string, channelAskInput) (channel.Question, []string, int, error) { return asked, nil, 0, nil }
 	var engineCalls [][]string
 	waitCode := 124
-	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+	owners.delivery = processBackedDelivery(&intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
 		process: func(process intentProcess) intentProcessResult {
 			engineCalls = append(engineCalls, process.argv)
 			return intentProcessResult{code: waitCode, stderr: []byte("the question is not answered yet\n")}
-		}}
+		}})
 	run := func(args ...string) (int, intentResult) { return b.runJSON(owners, args...) }
 	for _, id := range []string{"posted", "stored"} {
 		writeQuestionFixture(t, filepath.Join(root, "artifacts", "agents", "channel", "questions", id+".json"),

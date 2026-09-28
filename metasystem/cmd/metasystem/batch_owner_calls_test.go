@@ -85,7 +85,27 @@ func recordingOwnerCalls(prefix []string, record func([]string)) *intentOwnerCal
 			record(words(append([]string{"delegate"}, request.args...)...))
 			return real.delegate(request, stdout, stderr)
 		},
+		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
+			record(words("mission", "status", "--root", root, "--mission", mission))
+			return real.missionStatus(stdout, stderr, root, mission)
+		},
+		missionLaunch: func(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string) int {
+			record(words("mission", mode, "--root", root, "--mission", mission))
+			return real.missionLaunch(caller, stdout, stderr, root, mission, mode)
+		},
+		missionResolveTaint: func(caller processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int {
+			record(words(request.words()...))
+			return real.missionResolveTaint(caller, stdout, stderr, request)
+		},
 	}
+}
+
+// processBackedDelivery gives a delivery stand-in whose fake engine answers
+// by argv the owner calls too: each in-process owner call reaches the fake as
+// the argv its former child carried.
+func processBackedDelivery(delivery *intentDeliveryOwners) *intentDeliveryOwners {
+	delivery.calls = processBackedOwnerCalls(delivery.executable, delivery.process)
+	return delivery
 }
 
 // processBackedOwnerCalls route each owner call to a test's fake owner
@@ -128,6 +148,15 @@ func processBackedOwnerCalls(executable func() (string, error), process func(int
 		},
 		delegate: func(request delegateRequest, stdout, stderr io.Writer) int {
 			return run(request.dir, stdout, stderr, append([]string{"delegate"}, request.args...)...)
+		},
+		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
+			return run(root, stdout, stderr, "mission", "status", "--root", root, "--mission", mission)
+		},
+		missionLaunch: func(_ processIdentity, stdout, stderr io.Writer, root, mission, mode string) int {
+			return run(root, stdout, stderr, "mission", mode, "--root", root, "--mission", mission)
+		},
+		missionResolveTaint: func(_ processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int {
+			return run(request.root, stdout, stderr, request.words()...)
 		},
 	}
 }
