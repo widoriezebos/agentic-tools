@@ -135,7 +135,7 @@ import {
   answerLine,
   EMPTY_DESK,
   examinedLine,
-  outcomeWithVerdict,
+  reviewOutcome,
   retipped,
   keepDue,
   onDesk,
@@ -1615,11 +1615,13 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       changeMark(id, (mark) => ({ ...mark, recording: true, refusal: "" }));
       const entry = entryOf(card, nameOf(store.human), stampOf(new Date()), records);
       // A review's Outcome opens with the verdict the human chose, and names
-      // what they examined, so a nod cannot pass as a review (g1-s65 D10).
-      if (card.kind === "outcome" && sitting?.purpose === "review" && verdict !== "") {
-        entry.text = outcomeWithVerdict(verdict, entry.text, examinedLine(desk.items));
-      }
-      void held.press(entry, records?.kind ?? card.kind, into).then((outcome) => {
+      // what they examined, so a nod cannot pass as a review (g1-s65 D10). It is
+      // composed inside the recorder's queue, over the record as it then reads,
+      // so a Clear meets every finding recorded since the sheet opened.
+      const shape = card.kind === "outcome" && sitting?.purpose === "review" && verdict !== ""
+        ? reviewOutcome(verdict, examinedLine(desk.items))
+        : undefined;
+      void held.press(entry, records?.kind ?? card.kind, into, shape).then((outcome) => {
         if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
           setReading(outcome.reading);
         }

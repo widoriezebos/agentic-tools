@@ -1,4 +1,4 @@
-import { ACCEPTED, FIX, followUp, LEFT_OPEN, type Entry } from "../partner/sitting";
+import { ACCEPTED, entriesIn, FIX, followUp, LEFT_OPEN, type Entry } from "../partner/sitting";
 
 /**
  * The review room's own rules (g1-s65 §3, D5, D9, D10).
@@ -261,21 +261,51 @@ function examinedAs(item: DeskItem): string {
 
 /**
  * The Outcome's words with the verdict as its first line and what was examined
- * after it, so a nod cannot pass as a review. A draft that already opens with
- * the verdict line keeps the one it has.
+ * after it, so a nod cannot pass as a review. The first line is exactly
+ * `Verdict: <the chosen verdict>` and an `Examined:` line follows it before any
+ * other words; a draft missing either gets it, once. A draft that opens with
+ * another verdict line is refused in words rather than rewritten (Sol SOL-A-07).
  */
-export function outcomeWithVerdict(verdict: string, text: string, examined: string): string {
-  const said = text.replace(/^\s+/u, "");
+export function outcomeWithVerdict(verdict: string, text: string, examined: string): { text: string } | { refusal: string } {
   const line = `Verdict: ${verdict}`;
-  if (said.startsWith(line)) {
-    return said;
+  let said = text.replace(/^\s+/u, "");
+  const first = said.split("\n", 1)[0].trim();
+  if (/^verdict\s*:/iu.test(first)) {
+    if (first !== line) {
+      return {
+        refusal: `This Outcome opens with "${first}", but the verdict you chose is ${verdict}. Make its first line "${line}", or remove it, and press Record it again.`,
+      };
+    }
+    said = said.slice(said.indexOf(first) + first.length).replace(/^\s+/u, "");
   }
   const parts = [line];
-  if (examined.trim() !== "") {
-    parts.push(examined);
+  if (!/^examined\s*:/iu.test(said)) {
+    parts.push(examined.trim() === "" ? examinedLine([]) : examined);
   }
-  parts.push(said);
-  return parts.join("\n\n");
+  if (said !== "") {
+    parts.push(said);
+  }
+  return { text: parts.join("\n\n") };
+}
+
+/**
+ * The review's Outcome as the recorder composes it, over the reading as it
+ * stands when the press runs: Clear to land is refused while that reading's
+ * Findings carry an unanswered finding, named, and the verdict and Examined
+ * lines are held (Sol SOL-A-02, SOL-A-07). The End sheet's refusal is the
+ * first line of defence; this one holds after a conflict's reread.
+ */
+export function reviewOutcome(verdict: string, examined: string): (source: string, entry: Entry) => Entry | { refusal: string } {
+  return (source, entry) => {
+    if (verdict === "clear to land") {
+      const open = unansweredIn(entriesIn(source));
+      if (open.length > 0) {
+        return { refusal: `${CLEAR_REFUSED} ${open.map((finding) => finding.text).join("; ")}` };
+      }
+    }
+    const composed = outcomeWithVerdict(verdict, entry.text, examined);
+    return "refusal" in composed ? composed : { ...entry, text: composed.text };
+  };
 }
 
 /* ------------------------------------------------------------ a moved tip -- */

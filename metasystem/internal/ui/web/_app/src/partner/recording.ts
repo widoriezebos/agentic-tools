@@ -74,7 +74,7 @@ export type Recorder = {
    * earlier press, and it writes nothing where the record named is not the one
    * this recorder holds.
    */
-  press: (entry: Entry, kind: string, into: string) => Promise<Outcome>;
+  press: (entry: Entry, kind: string, into: string, shape?: Shape) => Promise<Outcome>;
   /**
    * Answer one recorded finding: its Answer line rewritten by the entry's mark,
    * the second composition beside the press (g1-s65 §6). It queues with the
@@ -89,6 +89,12 @@ export type Recorder = {
    */
   rewrite: (into: string, compose: (source: string) => string | null, refused: string) => Promise<Outcome>;
 };
+
+/**
+ * How a press may shape its entry from the reading as it stands when it runs,
+ * or refuse it in words: the review's Outcome is one (g1-s65 D10).
+ */
+export type Shape = (source: string, entry: Entry) => Entry | { refusal: string };
 
 /** What an answer to a finding the record does not carry is told. */
 export const NOT_A_FINDING = "This finding is not in the record, so there is nothing to answer.";
@@ -133,8 +139,11 @@ export function recorder(
 
   const reread = async (): Promise<Reading> => take(await read(held.id));
 
-  const press = (entry: Entry, kind: string, into: string): Promise<Outcome> =>
-    queued(into, entry.section, (source) => appended(source, entry, kind));
+  const press = (entry: Entry, kind: string, into: string, shape?: Shape): Promise<Outcome> =>
+    queued(into, entry.section, (source) => {
+      const shaped = shape === undefined ? entry : shape(source, entry);
+      return "refusal" in shaped ? shaped : appended(source, shaped, kind);
+    });
 
   const answer = (mark: string, said: string, into: string): Promise<Outcome> =>
     queued(into, "Findings", (source) => answered(source, mark, said));
@@ -150,7 +159,7 @@ export function recorder(
   const queued = (
     into: string,
     section: string,
-    compose: (source: string) => string | null,
+    compose: (source: string) => string | null | { refusal: string },
     refused = NOT_A_FINDING,
   ): Promise<Outcome> => {
     // The entry is composed from the reading as it stands WHEN THIS RUNS, which
@@ -163,6 +172,9 @@ export function recorder(
       const composed = compose(held.source);
       if (composed === null) {
         return { kind: "failed", reason: refused };
+      }
+      if (typeof composed !== "string") {
+        return { kind: "failed", reason: composed.refusal };
       }
       try {
         const answered = await save(held.id, composed, held.revision);

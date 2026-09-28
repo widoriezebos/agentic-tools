@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   ANSWERS,
+  CLEAR_REFUSED,
+  reviewOutcome,
   answerLine,
   retipped,
   reviewedOf,
@@ -25,7 +27,8 @@ import {
   type Desk,
   type DeskItem,
 } from "./room";
-import type { Entry } from "../partner/sitting";
+import { appended, type Entry } from "../partner/sitting";
+import { recorder, type Written } from "../partner/recording";
 
 /**
  * The review room's own rules (g1-s65 §3), each one a rule a human would notice
@@ -114,13 +117,63 @@ describe("ending", () => {
       { kind: "diff", path: "a.go", since: true }])).toBe(
       "Examined: what changed since the reviewed tip in a.go; the change index; a.go, as changed; what changed since the reviewed tip",
     );
-    expect(outcomeWithVerdict("clear to land", "The lock is held.", examined)).toBe(
-      "Verdict: clear to land\n\nExamined: the change index; owner.go:41-88\n\nThe lock is held.",
-    );
-    // A draft that already opens with the line keeps one.
-    expect(outcomeWithVerdict("send back", "Verdict: send back\n\nFix the press.", "")).toBe(
-      "Verdict: send back\n\nFix the press.",
-    );
+    expect(outcomeWithVerdict("clear to land", "The lock is held.", examined)).toEqual({
+      text: "Verdict: clear to land\n\nExamined: the change index; owner.go:41-88\n\nThe lock is held.",
+    });
+    // A draft that already opens with both lines keeps them, once each.
+    expect(outcomeWithVerdict("send back", "Verdict: send back\n\nExamined: a.go:1-2\n\nFix the press.", examined)).toEqual({
+      text: "Verdict: send back\n\nExamined: a.go:1-2\n\nFix the press.",
+    });
+  });
+
+  it("holds the verdict line exactly and never lets the Examined line go missing (Sol SOL-A-07)", () => {
+    const examined = "Examined: the change index";
+    // A draft that opens with the verdict line but says nothing examined gets it.
+    expect(outcomeWithVerdict("clear to land", "Verdict: clear to land\n\nThe lock is held.", examined)).toEqual({
+      text: "Verdict: clear to land\n\nExamined: the change index\n\nThe lock is held.",
+    });
+    expect(outcomeWithVerdict("clear to land", "Verdict: clear to land", examined)).toEqual({
+      text: "Verdict: clear to land\n\nExamined: the change index",
+    });
+    // A verdict line that only starts like the chosen one is another verdict, refused in words.
+    const prefix = outcomeWithVerdict("clear to land", "Verdict: clear to landing\n\nFine.", examined);
+    expect(prefix).toEqual({ refusal: expect.stringContaining("Verdict: clear to landing") });
+    expect("refusal" in prefix && prefix.refusal).toContain("clear to land");
+    expect(outcomeWithVerdict("clear to land", "Verdict: send back\n\nFine.", examined)).toHaveProperty("refusal");
+    // No desk items still says so, rather than leaving the line out.
+    expect(outcomeWithVerdict("no verdict", "Ended.", "")).toEqual({
+      text: "Verdict: no verdict\n\nExamined: nothing was put on the desk\n\nEnded.",
+    });
+  });
+
+  it("refuses a Clear Outcome inside the recorder while the record it now reads has an unanswered finding (Sol SOL-A-02)", async () => {
+    const empty = "# Review of g\n\n## Findings\n\n## Outcome\n";
+    const found = appended(empty, {
+      when: "2026-09-28", who: "Wido", text: "the lock is never released", clause: "owner.go:60-72",
+      consequence: "a dead press holds the lock", section: "Findings", mark: "deposit:t9#0",
+    }, "finding");
+    const saves: string[] = [];
+    // Another tab records the finding: the first write meets the moved record.
+    const save = (_id: string, source: string): Promise<Written> => {
+      saves.push(source);
+      return Promise.reject(new Error("stale"));
+    };
+    const record = recorder({ id: "r.md", revision: "1", source: empty }, save,
+      () => Promise.resolve({ revision: "2", source: found }), () => true);
+    const outcome: Entry = { when: "2026-09-28", who: "Wido", text: "Fine.", clause: "", section: "Outcome", mark: "deposit:t3#0" };
+    const shape = reviewOutcome("clear to land", "Examined: the change index");
+
+    expect((await record.press(outcome, "outcome", "r.md", shape)).kind).toBe("conflict");
+    expect(saves).toHaveLength(1);
+    const again = await record.press(outcome, "outcome", "r.md", shape);
+    expect(again).toEqual({ kind: "failed", reason: expect.stringContaining("the lock is never released") });
+    expect("reason" in again && again.reason).toContain(CLEAR_REFUSED);
+    // Nothing was written the second time.
+    expect(saves).toHaveLength(1);
+    // Send back is not refused for it.
+    const back = await record.press(outcome, "outcome", "r.md", reviewOutcome("send back", "Examined: x"));
+    expect(back.kind).toBe("conflict");
+    expect(saves[1]).toContain("Verdict: send back\n\nExamined: x\n\nFine.");
   });
 
   it("says a nod plainly when the piles are empty", () => {
