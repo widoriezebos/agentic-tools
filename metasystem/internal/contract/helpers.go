@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // The contract package's own small foundations. The three pure helpers are
@@ -40,16 +41,6 @@ func stateErr(format string, args ...any) error {
 func sha256Hex(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
-}
-
-func resolvePath(path string) string {
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
-	}
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		return resolved
-	}
-	return path
 }
 
 func isValidUTF8(data []byte) bool {
@@ -115,8 +106,8 @@ func nowUTC() time.Time { return clock().UTC() }
 
 // relUnderRepo returns path relative to repo, refusing anything outside it.
 func relUnderRepo(path, repo string) (string, error) {
-	pathAbs := resolvePath(path)
-	repoAbs := resolvePath(repo)
+	pathAbs := realpath.Resolve(path)
+	repoAbs := realpath.Resolve(repo)
 	rel, err := filepath.Rel(repoAbs, pathAbs)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return "", stateErr("mission ledger is outside the repository")

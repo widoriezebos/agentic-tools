@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -28,9 +29,9 @@ type mirrorSource struct {
 // gather the sources, judge unchanged against the manifest, land and verify
 // the copies, report.
 func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error {
-	evidenceResolved := resolvePath(evidence)
-	checkoutResolved := resolvePath(checkout)
-	if pathWithin(evidenceResolved, checkoutResolved) {
+	evidenceResolved := realpath.Resolve(evidence)
+	checkoutResolved := realpath.Resolve(checkout)
+	if realpath.Within(evidenceResolved, checkoutResolved) {
 		return fmt.Errorf("evidence.root is inside the repository")
 	}
 	agents := filepath.Join(repoRoot, "artifacts", "agents")
@@ -305,7 +306,7 @@ func runtimesConfigured(repoRoot string) string {
 // checkout's segment — a shared derivation is the
 // only way the two sides cannot drift.
 func CheckoutSegment(checkoutRoot string) string {
-	sum := sha256.Sum256([]byte(resolvePath(checkoutRoot)))
+	sum := sha256.Sum256([]byte(realpath.Resolve(checkoutRoot)))
 	return hex.EncodeToString(sum[:])[:12]
 }
 

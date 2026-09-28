@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -16,7 +17,7 @@ import (
 // organisation's policy refuses, and pins the workspace-scoped permission set
 // the host runs write-capable under.
 func DevinConfig(root, outputPath string) error {
-	workspace := resolvePath(root)
+	workspace := realpath.ResolveExisting(root)
 	value := userDevinConfig()
 	delete(value, "sandbox")
 	value["permissions"] = map[string]any{
@@ -76,18 +77,6 @@ func DevinReturn(rawPath, outputPath string) error {
 		return fmt.Errorf("write devin return: %w", err)
 	}
 	return nil
-}
-
-// resolvePath returns the absolute, symlink-free form of a path, matching the
-// canonical form the workspace write boundary is expressed in.
-func resolvePath(path string) string {
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
-	}
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		return real
-	}
-	return path
 }
 
 // The devin delivery recollection, registered seam-locally so the

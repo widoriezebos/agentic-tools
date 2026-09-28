@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // ExpandPermissions turns a permissions envelope into the absolute-rooted
@@ -41,8 +43,8 @@ func expandPermissions(sourcePath, repo, workspace string, isWorktree bool, pres
 		return fmt.Errorf("permission roots must be arrays")
 	}
 
-	repoResolved := resolvePath(repo)
-	workspaceResolved := resolvePath(workspace)
+	repoResolved := realpath.Resolve(repo)
+	workspaceResolved := realpath.Resolve(workspace)
 	expand := func(value string) string {
 		switch {
 		case value == ".":
@@ -50,9 +52,9 @@ func expandPermissions(sourcePath, repo, workspace string, isWorktree bool, pres
 		case value == "<worktree>":
 			return workspaceResolved
 		case filepath.IsAbs(value):
-			return resolvePath(value)
+			return realpath.Resolve(value)
 		default:
-			return resolvePath(filepath.Join(repoResolved, value))
+			return realpath.Resolve(filepath.Join(repoResolved, value))
 		}
 	}
 	expandAll := func(items []any) []any {
@@ -73,7 +75,7 @@ func expandPermissions(sourcePath, repo, workspace string, isWorktree bool, pres
 	}
 	for _, item := range expandedWrite {
 		root := item.(string)
-		if !pathWithin(resolvePath(root), workspaceResolved) {
+		if !realpath.Within(realpath.Resolve(root), workspaceResolved) {
 			return fmt.Errorf("permission write root escapes the job worktree: %s", root)
 		}
 	}
@@ -168,8 +170,8 @@ func worktreeGitWriteRootsWithMetadata(worktree string, metadata worktreeMetadat
 	// which the workspace write root already covers. The shared object
 	// database stays read-only to the delegate.
 	return []string{
-		resolvePath(gitDir),
-		resolvePath(refDir),
-		resolvePath(logDir),
+		realpath.Resolve(gitDir),
+		realpath.Resolve(refDir),
+		realpath.Resolve(logDir),
 	}, nil
 }

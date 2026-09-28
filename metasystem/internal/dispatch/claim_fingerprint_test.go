@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 type fingerprintGolden struct {
@@ -153,8 +155,8 @@ func TestFingerprintAcceptsDelegateWorktreeProductRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("delegate worktree product root was refused: %v", err)
 	}
-	if len(fingerprint.Request.ProductRoots) != 1 || fingerprint.Request.ProductRoots[0] != resolvePath(worktree) {
-		t.Fatalf("canonical product roots = %v, want %s", fingerprint.Request.ProductRoots, resolvePath(worktree))
+	if len(fingerprint.Request.ProductRoots) != 1 || fingerprint.Request.ProductRoots[0] != realpath.Resolve(worktree) {
+		t.Fatalf("canonical product roots = %v, want %s", fingerprint.Request.ProductRoots, realpath.Resolve(worktree))
 	}
 }
 

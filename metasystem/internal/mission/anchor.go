@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -127,23 +128,13 @@ func ledgerHash(path string) (string, error) {
 // relUnderRepo returns path relative to repo in posix form, erroring when path
 // is outside the repository.
 func relUnderRepo(path, repo string) (string, error) {
-	pathAbs := resolvePath(path)
-	repoAbs := resolvePath(repo)
+	pathAbs := realpath.Resolve(path)
+	repoAbs := realpath.Resolve(repo)
 	rel, err := filepath.Rel(repoAbs, pathAbs)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return "", stateErr("mission ledger is outside the repository")
 	}
 	return filepath.ToSlash(rel), nil
-}
-
-func resolvePath(path string) string {
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
-	}
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		return resolved
-	}
-	return path
 }
 
 var trailerRe = regexp.MustCompile(`(?m)^(Mission-[A-Za-z0-9-]+): (.+)$`)

@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // Measuring a candidate is the per-cycle reading the mission runner records: run
@@ -280,7 +281,7 @@ func (d *contractDoc) materializeCandidate(repo, projectRoot, candidateSHA, gate
 		cleanup()
 		return "", nil, err
 	}
-	rel, err := filepath.Rel(resolvePath(repo), resolvePath(projectRoot))
+	rel, err := filepath.Rel(realpath.Resolve(repo), realpath.Resolve(projectRoot))
 	if err != nil {
 		cleanup()
 		return "", nil, stateErr("metasystem project root is outside its git repository")

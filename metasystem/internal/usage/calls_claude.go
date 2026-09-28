@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 func claudeTranscript(opts ReadOptions, session string) (path string, reason string) {
@@ -27,7 +29,7 @@ func claudeTranscript(opts ReadOptions, session string) (path string, reason str
 		directory := filepath.Join(ClaudeProjectsRoot(home), ClaudeProjectFolder(cwd))
 		candidate := filepath.Join(directory, session+".jsonl")
 		candidates = append(candidates, candidate)
-		if !pathWithin(directory, candidate) {
+		if !realpath.Within(candidate, directory) {
 			continue
 		}
 		info, err := os.Lstat(candidate)
@@ -59,7 +61,7 @@ func MemoryDirectory(opts ReadOptions) (path string, reason string) {
 		}
 		candidate := filepath.Join(projects, ClaudeProjectFolder(cwd), "memory")
 		candidates = append(candidates, candidate)
-		if !pathWithin(projects, candidate) {
+		if !realpath.Within(candidate, projects) {
 			continue
 		}
 		info, err := os.Lstat(candidate)
@@ -155,11 +157,6 @@ func parseClaudeLine(line []byte, ordinal int64, runtime, session string) (sampl
 		Ordinal:       ordinal,
 		Source:        "claude-transcript",
 	}, nil, false
-}
-
-func pathWithin(directory, candidate string) bool {
-	relative, err := filepath.Rel(directory, candidate)
-	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func callTimestamp(raw any) time.Time {

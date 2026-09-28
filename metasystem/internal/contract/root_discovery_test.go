@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // mission-contract-1 (the review): the root-discovery off-by-one. The
@@ -20,7 +22,7 @@ func TestRootDiscoveryArithmetic(t *testing.T) {
 	exe := filepath.Join(root, "bin", "metasystem")
 
 	derived := filepath.Dir(filepath.Dir(exe))
-	if resolvePath(derived) != resolvePath(root) {
+	if realpath.ResolveExisting(derived) != realpath.ResolveExisting(root) {
 		t.Fatalf("Dir^2 of %s is %s, want the checkout %s", exe, derived, root)
 	}
 	// The old arithmetic, preserved as the counter-proof: Dir^3 is the
