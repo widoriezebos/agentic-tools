@@ -1,4 +1,4 @@
-import type { Deposit, Sitting } from "./api";
+import type { Deposit } from "./api";
 import { documentPath } from "../routes";
 
 /**
@@ -650,12 +650,6 @@ export function sittable(kind: string | null | undefined): boolean {
   return (SITTABLE_KINDS as readonly string[]).includes((kind ?? "").trim());
 }
 
-/** What the chip above the composer says while a sitting stands. */
-export function sittingChip(sitting: Sitting): string {
-  const named = sitting.subject.title.trim();
-  return `Sitting: ${named === "" ? sitting.subject.id : named}`;
-}
-
 /* --------------------------------------------------------- the deposit card -- */
 
 /** What identifies one card: the turn it arrived in, and its place in it. */
@@ -1152,7 +1146,7 @@ export function interfaceLine(text: string): string {
   if (text.startsWith("Open this review")) {
     return "asked by the interface, to open this review";
   }
-  const walk = /^Walk me through (\w+) for the review/u.exec(text);
+  const walk = /^Walk me through (\w+) for the (?:review|sitting)/u.exec(text);
   if (walk !== null) {
     return `asked by the interface: the ${walk[1]} walk`;
   }
@@ -1162,9 +1156,9 @@ export function interfaceLine(text: string): string {
   return THE_INTERFACES;
 }
 
-/** What the table is called, and what its empty state says. */
-export const TABLE = "The table";
-export const TABLE_EMPTY = "Nothing has been recorded in this sitting yet.";
+/** What the room's board is called, and what its empty state says (g1-s67 D5). */
+export const BOARD = "The board";
+export const BOARD_EMPTY = "Nothing has been recorded in this sitting yet.";
 
 /** What the table says about a record nobody is sitting on. */
 export const NO_SITTING = "No sitting is open.";

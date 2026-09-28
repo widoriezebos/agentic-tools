@@ -1,6 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { NavLink, useLocation } from "react-router";
+import { NavLink, useLocation, useNavigate } from "react-router";
 
 import {
   addRecordGoal,
@@ -61,7 +61,8 @@ import { loadBacklog, type Backlog } from "../backlog/api";
 import { OpenSheet } from "../backlog/OpenSheet";
 import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
-import { documentIdFromPath, documentPath } from "../routes";
+import { documentIdFromPath, documentPath, roomPath } from "../routes";
+import { sittingDoorLine } from "../review/room";
 import { ASK_REVISION, ASK_SOURCE, ASK_SURFACE } from "../partner/AskSelection";
 import { sittable, START } from "../partner/sitting";
 import { StartSittingSheet } from "../partner/StartSitting";
@@ -1025,8 +1026,9 @@ function Status({ status, onChange }: { status: string; onChange: (status: strin
  * each copy, so a second copy says so again; there is no timer anywhere in this
  * build, and a confirmation that needed one would be the first.
  *
- * Start a sitting is here and on the drawer's header, and here it is offered on
- * two record kinds only (g1-s53 D1). It is exported for the test that proves
+ * Start a sitting is here, and it is offered on two record kinds only (g1-s53
+ * D1). While a sitting stands on the record the same place is its door, back
+ * into its room (g1-s67 D6). It is exported for the test that proves
  * which: which kinds offer the press is a claim about this row, and the row is
  * the smallest thing that can be rendered to read the answer off.
  */
@@ -1036,6 +1038,7 @@ export function FileActions({
   onEdit,
   onNewGoal,
   busy,
+  now = new Date(),
 }: {
   path: string;
   /** The record this row acts on, which is also what Ask makes the subject. */
@@ -1045,6 +1048,8 @@ export function FileActions({
   onNewGoal: (() => void) | null;
   /** What is already in flight, by its own label, or "". */
   busy: string;
+  /** The moment the door's "you stepped out" is counted from. */
+  now?: Date;
 }) {
   const [copies, setCopies] = useState(0);
   const [refused, setRefused] = useState(false);
@@ -1052,7 +1057,9 @@ export function FileActions({
   // on the record's own act row, because a record's page is where a human is
   // when they decide to sit down on it (g1-s53 D2).
   const [sitting, setSitting] = useState(false);
-  const { ask, sitting: standing } = usePartner();
+  const { ask, sittingEnded } = usePartner();
+  const navigate = useNavigate();
+  const standing = read.sitting;
 
   const copy = () => {
     try {
@@ -1095,14 +1102,26 @@ export function FileActions({
           Edit
         </button>
       )}
-      {/* Start a sitting on this record. It is offered while no sitting stands:
-          there is one sitting on one conversation, and a second Start would be a
-          second answer to "which record is under discussion".
+      {/* Start a sitting on this record, and while one stands on it, the door
+          back into its room (g1-s67 D6): a second Start would be a second
+          answer to "which sitting is this record's".
 
           And only on the two kinds a sitting is about (D1). The service refuses
           the rest in its own words, which is the gate; this is the page not
           offering a press that would be refused. */}
-      {standing === null && sittable(read.record?.kind) && (
+      {standing !== undefined && (
+        <button
+          type="button"
+          className="ms-project-act ms-sitting-door"
+          title="Go back into the sitting's room where you left it"
+          onClick={() => {
+            void navigate(roomPath(standing.purpose, read.id));
+          }}
+        >
+          {sittingDoorLine(standing.steppedOutAt ?? "", now)}
+        </button>
+      )}
+      {standing === undefined && sittable(read.record?.kind) && (
         <button
           type="button"
           className="ms-project-act"
@@ -1112,6 +1131,14 @@ export function FileActions({
         >
           {START}
         </button>
+      )}
+      {/* What the last end without recording left behind, said where the
+          human lands once the room has closed: a sitting ended without an
+          outcome wrote nothing, and this is the one act that has to say so. */}
+      {standing === undefined && sittingEnded !== "" && (
+        <span className="ms-sitting-ended" role="status">
+          {sittingEnded}
+        </span>
       )}
       <StartSittingSheet
         open={sitting}

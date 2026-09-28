@@ -1,16 +1,19 @@
 import { useState } from "react";
 import { NavLink } from "react-router";
 
-import { usePartner } from "./store";
-import { askedFromSitting, ASK_IT, entryPath, goalsIn, pilesOf, TABLE, TABLE_EMPTY, type Entry } from "./sitting";
-import { AnchorPress, FindingAnswers } from "../review/Answers";
-import { mayHaveMoved } from "../review/room";
+import { AnchorPress, FindingAnswers } from "./Answers";
+import { mayHaveMoved } from "./room";
 import { Help } from "../help/Help";
+import { askedFromSitting, ASK_IT, BOARD, BOARD_EMPTY, entryPath, goalsIn, pilesOf, type Entry } from "../partner/sitting";
+import { usePartner } from "../partner/store";
 import { Sheet as WritingSheet } from "../project/Sheet";
-import "./sitting.css";
+import "../partner/sitting.css";
 
 /**
- * The room's table: the four piles, beside the conversation.
+ * The room's board: the piles of the record's kind (g1-s67 D5), the face of the
+ * desk pane that is not the desk. It is the table the drawer's focused view
+ * used to stand beside the conversation, moved into the room, which is now
+ * where every sitting sits (g1-s53 D7, g1-s65 D8).
  *
  * It is not a second store — it is the four sections of the sitting's record,
  * read from the one reading the sitting holds, each entry with its words, its
@@ -22,7 +25,7 @@ import "./sitting.css";
  * check, argue with or edit is checked, argued with and edited where it is
  * written, and the one press that gets there is the entry itself.
  */
-export function SittingTable({ changed = [] }: { changed?: readonly string[] }) {
+export function Board({ changed = [] }: { changed?: readonly string[] }) {
   const { sitting, table } = usePartner();
   // The open question the human pressed Ask it on, while its sheet is open.
   const [asking, setAsking] = useState<Entry | null>(null);
@@ -30,15 +33,15 @@ export function SittingTable({ changed = [] }: { changed?: readonly string[] }) 
     return null;
   }
   return (
-    <aside className="ms-table" aria-label={TABLE}>
+    <aside className="ms-table" aria-label={BOARD}>
       <p className="ms-table-head">
-        <span>{TABLE}</span>
-        <Help id="the-table" />
+        <span>{BOARD}</span>
+        <Help id="the-board" />
       </p>
       <p className="ms-table-subject" title={sitting.subject.id}>
         {sitting.subject.title === "" ? sitting.subject.id : sitting.subject.title}
       </p>
-      {table.entries.length === 0 && <p className="ms-table-empty">{TABLE_EMPTY}</p>}
+      {table.entries.length === 0 && <p className="ms-table-empty">{BOARD_EMPTY}</p>}
       {pilesOf(sitting.purpose).map((section) => {
         const entries = table.entries.filter((entry) => entry.section === section);
         if (entries.length === 0) {

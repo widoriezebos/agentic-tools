@@ -535,18 +535,6 @@
   font-size: 13px;
 }
 
-.ms-sitting-leave {
-  padding: 2px 8px;
-  border: 1px solid var(--ms-border);
-  border-radius: 999px;
-  background: var(--ms-surface-2);
-  color: var(--ms-text-2);
-  font: inherit;
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
 /* ------------------------------------------------------------ phone width -- */
 
 @media (max-width: 640px) {

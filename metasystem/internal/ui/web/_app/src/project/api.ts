@@ -210,6 +210,12 @@ export type DocumentPayload = {
   supersededBy: Link[];
   headings: Heading[];
   blocks: Block[];
+  /**
+   * The sitting this human has standing on the record, which its page's door
+   * reads (g1-s67 D6): what it is for and when its room was last kept. Absent
+   * where none stands.
+   */
+  sitting?: { purpose: string; steppedOutAt?: string };
 };
 
 /**

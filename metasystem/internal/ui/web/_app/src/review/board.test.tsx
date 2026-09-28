@@ -3,12 +3,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
-import { ASK_IT, countsIn, entriesIn, entryPath, sittingChip } from "./sitting";
-import { PartnerAs } from "./store";
-import { SittingTable } from "./Table";
+import { Board } from "./Board";
+import { ASK_IT, countsIn, entriesIn, entryPath } from "../partner/sitting";
+import { PartnerAs } from "../partner/store";
 
 /**
- * The table's entries, and where pressing one goes (g1-s53 D7).
+ * The board's entries, and where pressing one goes (g1-s53 D7): the table the
+ * focused view stood beside the conversation, moved into the room (g1-s67 D5).
  *
  * It is read from the markup because the claim is about the markup: an entry is
  * either a link into the record or it is a paragraph a human cannot press. What
@@ -50,7 +51,7 @@ function table(source: string): string {
             table: { counts: countsIn(source), entries: entriesIn(source), revision: "r1", source },
           }}
         >
-          <SittingTable />
+          <Board />
         </PartnerAs>
       </TooltipPrimitive.Provider>
     </MemoryRouter>,
@@ -109,7 +110,7 @@ describe("an entry of the table", () => {
 
   /**
    * Resume, from the browser's side: a conversation whose sitting mark stands
-   * comes back with its chip and its table on load (g1-s55 D3).
+   * comes back with its board on load (g1-s55 D3).
    *
    * There is nothing to submit here and nothing to remember: the sitting is the
    * server's answer and the table is a reading of the record, so a page that has
@@ -122,10 +123,5 @@ describe("an entry of the table", () => {
     expect(markup).toContain("Session limits");
     expect(markup).toContain("the limit is twelve hours");
     expect(markup).toContain("what the current limit protects");
-    expect(sittingChip({
-      subject: { kind: "record", id: RECORD, title: "Session limits" },
-      purpose: "shape a design",
-      startedAt: "2026-09-26T09:00:00Z",
-    })).toBe("Sitting: Session limits");
   });
 });

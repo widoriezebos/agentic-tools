@@ -27,7 +27,7 @@ import { NotFoundPane, SectionPane } from "../panes/sections";
 import { SettingsPane } from "../panes/Settings";
 import { DocumentPane } from "../project/DocumentPane";
 import { GoalPane, ProjectPane } from "../project/ProjectPane";
-import { activeSection, chromeOf, HOME_PATH, projectSections, reviewIdFromPath } from "../routes";
+import { activeSection, chromeOf, HOME_PATH, projectSections, reviewIdFromPath, roomIdFromPath } from "../routes";
 import { Room } from "../review/ReviewRoom";
 import { StickiesPanel } from "../stickies/Panel";
 import {
@@ -166,11 +166,13 @@ function Frame() {
 
   const section = activeSection(location.pathname);
   const focused = section?.id === "brain";
-  // The review room is a screen of its own (g1-s65 D2): no rail, no drawer, the
-  // bell and nothing more of the shell, because its own pane is the sitting's
-  // conversation and nothing else on screen should pull at the human in it.
-  const reviewing = reviewIdFromPath(location.pathname);
-  const sectionTitle = reviewing !== "" ? "Review" : (section?.title ?? "Not found");
+  // A room is a screen of its own (g1-s65 D2, g1-s67 D1): no rail, no drawer,
+  // the bell and nothing more of the shell, because its own pane is the
+  // sitting's conversation and nothing else on screen should pull at the human
+  // in it. A review's and a shaping sitting's alike.
+  const reviewing = roomIdFromPath(location.pathname);
+  const sectionTitle =
+    reviewing === "" ? (section?.title ?? "Not found") : reviewIdFromPath(location.pathname) !== "" ? "Review" : "Sitting";
   const { workspace } = useWorkspaceState();
   // What the steward has said and nobody has read. It leads the tab title,
   // because a human with six workspaces open reads the title bar first and a

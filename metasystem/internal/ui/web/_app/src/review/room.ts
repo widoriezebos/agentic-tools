@@ -2,7 +2,8 @@ import type { Deposit, Subject } from "../partner/api";
 import { ACCEPTED, entriesIn, FIX, followUp, LEFT_OPEN, type Entry } from "../partner/sitting";
 
 /**
- * The review room's own rules (g1-s65 §3, D5, D9, D10).
+ * The room's own rules (g1-s65 §3, D5, D9, D10), for every sitting (g1-s67): a
+ * review's, and the one a sitting that shapes an intent or a design has.
  *
  * The room is the sitting's recorder, cards and table with two things of its own
  * beside them: a desk that shows one thing at a time, large, with a strip of what
@@ -29,6 +30,37 @@ export type DeskItem =
 export type Desk = { items: readonly DeskItem[]; current: number };
 
 export const EMPTY_DESK: Desk = { items: [], current: -1 };
+
+/** A record's own sections, its level-two headings, in the order it writes them. */
+export function sectionsIn(source: string): string[] {
+  return source
+    .split("\n")
+    .filter((line) => line.startsWith("## "))
+    .map((line) => line.slice(3).trim())
+    .filter((section) => section !== "");
+}
+
+/**
+ * The desk a sitting that shapes a record opens on (g1-s67 D2): the record's own
+ * sections in the strip, in its order, and the first of them up.
+ */
+export function firstDesk(record: string, source: string): Desk {
+  const items = sectionsIn(source).map((section): DeskItem => ({ kind: "section", record, section }));
+  return items.length === 0 ? EMPTY_DESK : { items, current: 0 };
+}
+
+/**
+ * The desk a room opens on: the one its mark kept, and where the mark kept none
+ * — a first visit, or a sitting that stood before rooms were kept (Astra
+ * S67-02) — a shaping sitting's record sections. A review opens on an empty
+ * desk, as it always has.
+ */
+export function openingDesk(kept: Desk | undefined, purpose: string, record: string, source: string): Desk {
+  if (kept !== undefined && kept.items.length > 0) {
+    return kept;
+  }
+  return purpose === "review" ? EMPTY_DESK : firstDesk(record, source);
+}
 
 /** How many things the strip keeps. A sitting is a morning, not a year. */
 const STRIP = 40;
@@ -74,6 +106,47 @@ export function deskLabel(item: DeskItem): string {
 
 function baseName(path: string): string {
   return path.split("/").at(-1) ?? path;
+}
+
+/* -------------------------------------------------------------- purposes -- */
+
+/** The one word the room's header says for what the sitting is for (g1-s67 D1). */
+export function roomWord(purpose: string): string {
+  switch (purpose) {
+    case "review":
+      return "Reviewing";
+    case "shape intent":
+      return "Shaping the intent";
+    default:
+      return "Shaping the design";
+  }
+}
+
+/** What a selection on the desk makes beside Ask: a review's Finding, and a shaping sitting's Fact (g1-s67 D4). */
+export function selectionPress(purpose: string): { label: string; kind: string } {
+  return purpose === "review" ? { label: "Finding", kind: "finding" } : { label: "Fact", kind: "fact" };
+}
+
+/**
+ * A card the human made from a selection, as the deposit it stands for until it
+ * is recorded: its kind, the words they wrote and the anchor it was made at.
+ */
+export function localDeposit(local: Draft, subject: Subject | undefined): Deposit {
+  return {
+    kind: local.kind ?? "finding", text: local.text, anchor: local.clause, consequence: local.consequence ?? "",
+    offered: true, subject,
+  };
+}
+
+/** Which End sheet a room mounts (g1-s67 D7): a review's verdicts, or a shaping sitting's Outcome. */
+export function endOf(purpose: string): "verdict" | "outcome" {
+  return purpose === "review" ? "verdict" : "outcome";
+}
+
+/** The door line of a shaping sitting, on its record's page: "In a sitting · you stepped out 2h ago". */
+export function sittingDoorLine(steppedOutAt: string, now: Date): string {
+  const out = agoOf(steppedOutAt, now);
+  return out === "" ? "In a sitting" : `In a sitting · you stepped out ${out}`;
 }
 
 /* --------------------------------------------------------------- anchors -- */
@@ -482,6 +555,19 @@ export const WALKS = [
   { part: "proven", label: "Proven" },
   { part: "behaves", label: "Behaves" },
 ] as const;
+
+/** A shaping sitting's four walks (g1-s67 D3), the server's own parts in its order. */
+export const SHAPING_WALKS = [
+  { part: "records", label: "Records" },
+  { part: "today", label: "Today" },
+  { part: "cases", label: "Cases" },
+  { part: "open", label: "Open" },
+] as const;
+
+/** The walks a room offers, by what its sitting is for. */
+export function walksOf(purpose: string): readonly { part: string; label: string }[] {
+  return purpose === "review" ? WALKS : SHAPING_WALKS;
+}
 
 /* ------------------------------------------------------------ the answers -- */
 
