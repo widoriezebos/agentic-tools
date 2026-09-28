@@ -74,7 +74,7 @@ lessons a design page already states, are not repeated here. Distilled on
 ### Collapsed fixture roots hide routing defects
 
 - Symptom: a test passes whether or not the code reads the right root. The
-  custody guard refused a second `metasystem up` on every real checkout, and
+  custody guard refused a second supervision start on every real checkout, and
   a suite-progress leg stopped checking that dispatch relays the job's
   workspace root. Both beds were green.
 - Cause: the fixture put roots that production keeps apart (git scope, state
