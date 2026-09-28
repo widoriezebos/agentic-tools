@@ -93,7 +93,9 @@ type servedReview struct {
 	handler http.Handler
 	service *partner.Service
 	root    string
-	created []project.NewReview
+	// checkout is the checkout a shaping desk reads as it stands.
+	checkout string
+	created  []project.NewReview
 }
 
 func serveReview(t *testing.T, script fakeacp.Script) *servedReview {
@@ -116,17 +118,23 @@ func serveReviewOn(t *testing.T, opener func(context.Context) (partner.Endpoint,
 		case "plans/designs/sessions.md":
 			return project.Document{Kind: "document", ID: id, Title: "Sessions", Source: "# Sessions\n",
 				Record: &project.Head{Kind: "design"}}, nil
+		case "plans/intent/sessions.md":
+			return project.Document{Kind: "document", ID: id, Title: "Sessions", Source: "# Sessions\n",
+				Record: &project.Head{Kind: "intent"}}, nil
+		case "plans/doctrine/sessions.md":
+			return project.Document{Kind: "document", ID: id, Title: "Sessions", Source: "# Sessions\n",
+				Record: &project.Head{Kind: "doctrine"}}, nil
 		}
 		return project.Document{}, project.ErrNotFound
 	}
 	service := partner.NewService(runtime, host,
 		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
 		partner.Facts{Document: document}, func() time.Time { return time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC) })
-	served := &servedReview{service: service, root: root}
+	served := &servedReview{service: service, root: root, checkout: t.TempDir()}
 	info := Info{
 		Observe: withALanding, Authority: proven(), Partner: service, PartnerConfigured: true,
 		Document: document,
-		Review:   &review.Owner{Git: deskGit{}},
+		Review:   &review.Owner{Git: deskGit{}, Checkout: served.checkout},
 		CreateReview: func(asked project.NewReview) (project.Written, error) {
 			served.created = append(served.created, asked)
 			return project.Written{Path: reviewed, Record: project.Record{Kind: "review", Title: "Review of landing",
@@ -221,9 +229,11 @@ func TestTheDesksReadsAnswerFromTheReviewedTree(t *testing.T) {
 		testutil.Expect(t, refused.what+": status", answered.Code, refused.status)
 		testutil.Expect(t, refused.what+": words", errorOf(t, answered), refused.says)
 	}
+	// A design is a sitting's record now, with no change to index (g1-s67 §6).
 	notAReview := get(t, served.handler, reviewPrefix+"plans/designs/sessions.md/changes", nil)
 	testutil.Expect(t, "a record that is not a review", notAReview.Code, http.StatusBadRequest)
-	testutil.Expect(t, "says so", errorOf(t, notAReview), "plans/designs/sessions.md is not a review record")
+	testutil.Expect(t, "says so", errorOf(t, notAReview),
+		"a sitting on a design has no change to index; its desk reads the checkout as it stands")
 	missing := get(t, served.handler, reviewPrefix+"plans/reviews/gone.md/changes", nil)
 	testutil.Expect(t, "no such record", missing.Code, http.StatusNotFound)
 	unknown := get(t, served.handler, reviewPrefix+reviewed+"/elsewhere", nil)

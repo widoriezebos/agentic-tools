@@ -14,11 +14,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/review"
 )
 
-// The review room's routes (g1-s65 §6).
+// The room's routes (g1-s65 §6, g1-s67 §6).
 //
 // Three reads for the desk, each over one review record's Reviewed line and
 // answered by the review owner from the candidate's own tree: a source file at a
-// range, the change index, and one file's hunks. One write for the walks. The
+// range, the change index, and one file's hunks. A sitting that shapes an intent
+// or a design reads the first of them from the checkout as it stands, and has no
+// change for the other two. One write for the walks. The
 // review's start and the room's keep ride the sitting route, and the door's
 // counts ride the board.
 const (
@@ -49,7 +51,7 @@ func (h *handler) reviewRead(w http.ResponseWriter, r *http.Request, rest string
 		writeFailure(w, "this engine was built without a review reader")
 		return
 	}
-	reviewed, ok := h.reviewedOf(w, record)
+	reviewed, kind, ok := h.reviewedOf(w, record)
 	if !ok {
 		return
 	}
@@ -57,10 +59,17 @@ func (h *handler) reviewRead(w http.ResponseWriter, r *http.Request, rest string
 	var answer any
 	var err error
 	switch {
+	case kind != "review" && changes:
+		// A sitting that shapes a record has no change: its desk reads the
+		// checkout as it stands (g1-s67 D2, §6).
+		err = &review.Refusal{Reason: "a sitting on " + article(kind) + " has no change to index; " +
+			"its desk reads the checkout as it stands"}
 	case source:
 		from, fromErr := lineOf(query.Get("from"), "from")
 		to, toErr := lineOf(query.Get("to"), "to")
-		if err = errors.Join(fromErr, toErr); err == nil {
+		if err = errors.Join(fromErr, toErr); err == nil && kind != "review" {
+			answer, err = h.info.Review.AsItStands(query.Get("path"), from, to)
+		} else if err == nil {
 			answer, err = h.info.Review.Source(reviewed, query.Get("path"), from, to)
 		}
 	case query.Get("path") != "":
@@ -83,31 +92,48 @@ func (h *handler) reviewRead(w http.ResponseWriter, r *http.Request, rest string
 	_ = json.NewEncoder(w).Encode(answer)
 }
 
-// reviewedOf reads one review record's head, answering the refusal where the
-// record is not there or is not a review.
-func (h *handler) reviewedOf(w http.ResponseWriter, record string) (review.Reviewed, bool) {
+// reviewedOf reads the record a room's desk reads for, answering the refusal
+// where the record is not there or is no sitting's: a review's head, or the kind
+// of a record a sitting shapes, whose desk reads the checkout (g1-s67 D2).
+func (h *handler) reviewedOf(w http.ResponseWriter, record string) (review.Reviewed, string, bool) {
 	document, err := h.info.Document(record)
 	if err != nil {
 		if errors.Is(err, project.ErrNotFound) {
 			w.WriteHeader(http.StatusNotFound)
 			writeError(w, "no document at "+record)
-			return review.Reviewed{}, false
+			return review.Reviewed{}, "", false
 		}
 		writeFailure(w, err.Error())
-		return review.Reviewed{}, false
+		return review.Reviewed{}, "", false
 	}
-	if document.Record == nil || document.Record.Kind != "review" {
+	kind := ""
+	if document.Record != nil {
+		kind = document.Record.Kind
+	}
+	switch kind {
+	case "intent", "design":
+		return review.Reviewed{}, kind, true
+	case "review":
+	default:
 		w.WriteHeader(http.StatusBadRequest)
-		writeError(w, record+" is not a review record")
-		return review.Reviewed{}, false
+		writeError(w, record+" is not a record a sitting is about")
+		return review.Reviewed{}, "", false
 	}
 	reviewed, err := review.ReviewedIn(document.Source)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		writeError(w, err.Error())
-		return review.Reviewed{}, false
+		return review.Reviewed{}, "", false
 	}
-	return reviewed, true
+	return reviewed, kind, true
+}
+
+// article is a record kind as a sentence names one.
+func article(kind string) string {
+	if strings.HasPrefix(kind, "i") {
+		return "an " + kind
+	}
+	return "a " + kind
 }
 
 // lineOf is one line-number parameter: absent is zero, which the owner reads as
