@@ -1,6 +1,7 @@
 {
  "exempt": {
   "cmd/metasystem": "thin verb wiring exercised end to end by the shell fixtures",
+  "internal/layering": "architecture witness with no production code: the package is doc.go plus the R9 layering test (r9_test.go), which reads go list over the whole module and fails by name when an owner package imports a composition package such as internal/delegation; it has no statements to cover, so go test reports [no statements] and no percentage, and its value is the witness test passing in the gate",
   "internal/refusal": "declarative refusal types, constants, and register data contain no executable production statements; completeness tests independently join every row",
   "internal/testgoal": "test-only in-memory goal ledger repository fixture with no test files of its own: imported only by _test.go files of internal/dispatch, internal/gaterun and internal/report, and no non-test package imports it or depends on it on darwin or linux; its behavior is exercised through those importers' tests",
   "internal/testutil": "test-only subprocess installation support exercised by the importing packages' wait tests",

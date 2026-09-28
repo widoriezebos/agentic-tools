@@ -761,6 +761,91 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
       "test": "TestOrdinaryEstablishmentRefusesACeilingBelowAReservationThatRacedItsLockWait",
       "reason": "swaps the package arming clock seam (armingNow, armingSleep) to write the racing reservation inside the cap-authority lock wait"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
+      "test": "TestStartReaderServesTheFixtureOnlyForAFakeRoot",
+      "reason": "sets METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the start reader reads to choose the fixture identity table over the kernel"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
+      "test": "TestStartReaderWithoutFixtureReadsTheKernel",
+      "reason": "sets METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the start reader reads to choose the fixture identity table over the kernel"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
+      "test": "TestTaggedProcessScannerRefusesAProcessFixtureOnANonFakeRoot",
+      "reason": "sets METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the dispatch process surface reads to recognize a fixture process table and identity file"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
+      "test": "TestTaggedProcessScannerReportsAnUnreadableProcessFixture",
+      "reason": "sets METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the dispatch process surface reads to recognize a fixture process table and identity file"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
+      "test": "TestTaggedProcessScannerClassifiesTheFixtureTable",
+      "reason": "sets METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the dispatch process surface reads to recognize a fixture process table and identity file"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
+      "test": "TestTaggedProcessScannerBindsTheFixtureIdentity",
+      "reason": "sets METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the dispatch process surface reads to recognize a fixture process table and identity file"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
+      "test": "TestTaggedProcessScannerFindsNoCarrierOfAnUnusedTagInTheLiveTable",
+      "reason": "sets METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the dispatch process surface reads to recognize a fixture process table and identity file"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
+      "test": "TestFixtureAuthorizedNeedsBothFixtureFilesAndAFakeRoot",
+      "reason": "sets METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the dispatch process surface reads to recognize a fixture process table and identity file"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
+      "test": "TestClaimAuthorizedLetsTheCompleteFixtureDriveCustodyWithoutACapability",
+      "reason": "sets METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the dispatch process surface reads to recognize a fixture process table and identity file"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
+      "test": "TestClaimAuthorizedRefusesAnUnmintedCapability",
+      "reason": "sets METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the dispatch process surface reads to recognize a fixture process table and identity file"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth",
+      "test": "TestGroupOwnershipGrantRootAndRecordedProof",
+      "reason": "clears METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the group-ownership grant reads for fixture authorization"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth",
+      "test": "TestMissionHolderReadsEveryFixtureColumn",
+      "reason": "sets METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv to the fixture tables the mission-holder probe reads"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth",
+      "test": "TestGoalBootClockIsOneIndivisibleFixtureSample",
+      "reason": "sets the fixture-authorization and goal boot-clock variables (METASYSTEM_GOAL_BOOT_ID, METASYSTEM_GOAL_BOOT_NANOS) with t.Setenv, the process environment GoalBootClock reads"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth",
+      "test": "TestGoalClockRefusesALeakedFixtureTable",
+      "reason": "sets METASYSTEM_GOAL_NOW and the fixture-authorization variable with t.Setenv, the process environment GoalClock reads"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/delegation/fake",
+      "test": "TestProcessClaimReadsTheRealTableWithoutAScript",
+      "reason": "clears METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv so the unscripted claim reads the real process table"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes",
+      "test": "TestSignatureTextAndConfigRefuseWithoutAdapterOrLines",
+      "reason": "swaps the process-wide runtime declaration registry with OverrideForTest"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes",
+      "test": "TestAdoptionDefaultEmptyWithoutDefault",
+      "reason": "swaps the process-wide runtime declaration registry with OverrideForTest"
     }
   ]
 }
