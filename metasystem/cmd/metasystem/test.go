@@ -2500,15 +2500,26 @@ func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared tes
 	// The limits are read for their validity; the retained-result checks
 	// below run under no clock (proof-groups-detect-hangs-by-progress-not-
 	// the-clock, slice 2).
-	if _, err := resolveTestingPreparationWorkerPolicy(&prepared); err != nil {
+	limits, err := resolveTestingPreparationWorkerPolicy(&prepared)
+	if err != nil {
 		return proofrun.TestResult{}, err
-	}
-	if request.ExecutedWorkers > 0 {
-		prepared.Workers = request.ExecutedWorkers
 	}
 	attempts, err := proofrun.ReadAttempts(prepared.proofControlRoot())
 	if err != nil {
 		return proofrun.TestResult{}, err
+	}
+	if request.ExecutedWorkers > 0 {
+		prepared.Workers = request.ExecutedWorkers
+	} else if limits.automaticWorkers {
+		// An automatic allowance is the run's reading of this host's free
+		// memory, and group execution identity binds it because it shapes
+		// what a performance group or a whole-allowance command runs. A
+		// verification checks that run; re-sampling memory here would ask a
+		// different question and refuse an unchanged tree whenever the load
+		// moved (2026-09-28: five workers at run, six at verify).
+		if recorded, ok := recordedAutomaticTestingWorkers(prepared, attempts, limits.automaticWorkerCeiling); ok {
+			prepared.Workers = recorded
+		}
 	}
 	identityBase := context.Background()
 	if dependencies.scratch != nil {
@@ -3082,4 +3093,36 @@ func cancelOnRecordedIntent(ctx context.Context, cancel context.CancelFunc, cont
 			}
 		}
 	}
+}
+
+// recordedAutomaticTestingWorkers returns the allowance the newest successful
+// run for this goal and accounting revision recorded, preferring a run on the
+// verified candidate tree. Only an allowance the automatic policy could have
+// chosen on this host (one through ceiling) is taken; anything else leaves the
+// fresh resolution, which then refuses honestly.
+func recordedAutomaticTestingWorkers(prepared testingPreparation, attempts []proofrun.Attempt, ceiling int) (int, bool) {
+	var chosen *proofrun.Attempt
+	var chosenStarted time.Time
+	chosenSameTree := false
+	for index := range attempts {
+		attempt := &attempts[index]
+		if !attemptAccountsForCandidate(*attempt, prepared.GoalID, prepared.AccountingRevision) ||
+			attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess || attempt.TestResult == nil ||
+			attempt.TestResult.WorkerPolicyVersion != proofrun.TestWorkerPolicyVersion ||
+			attempt.TestResult.Workers < 1 || attempt.TestResult.Workers > ceiling {
+			continue
+		}
+		started, err := time.Parse(time.RFC3339Nano, attempt.StartedAt)
+		if err != nil {
+			continue
+		}
+		sameTree := attempt.TestResult.CandidateTree == prepared.CandidateTree
+		if chosen == nil || sameTree && !chosenSameTree || sameTree == chosenSameTree && started.After(chosenStarted) {
+			chosen, chosenStarted, chosenSameTree = attempt, started, sameTree
+		}
+	}
+	if chosen == nil {
+		return 0, false
+	}
+	return chosen.TestResult.Workers, true
 }

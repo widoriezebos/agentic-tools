@@ -356,6 +356,12 @@ func LaunchSuite(options LaunchOptions) int {
 		watchdog = custody.command
 	} else {
 		watchdog = watchdogCommand(options, suiteExact.Ref(), donePath, fence.Generation)
+		// The sibling watchdog belongs to this launch as much as the suite
+		// does, so it carries the launch's environment, fixture ownership
+		// included. It sits in its own process group; with the process's
+		// ambient environment instead, a test that owns the launch could not
+		// see or reap it after its launcher died (2026-09-28).
+		watchdog.Env = childEnvironment
 		watchdog.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		watchdogOut, err = watchdog.StdoutPipe()
 	}

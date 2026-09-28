@@ -520,3 +520,65 @@ func TestRecycledSuiteIdentityAuthorizesNoKillAction(t *testing.T) {
 		t.Fatalf("recycled identity caused %d signals and %d shutdowns", signals, shutdowns)
 	}
 }
+
+// TestRunWatchdogExitsWhenItsSuiteIsGone is the witness for the orphaned
+// watchdog of 2026-09-28: a launcher that dies before publishing done must
+// not leave its watchdog polling forever. A dead pid and a reused pid end the
+// watchdog without a single further poll; a zombie (launcher alive, about to
+// reap and publish done) and an unreadable process keep it polling.
+func TestRunWatchdogExitsWhenItsSuiteIsGone(t *testing.T) {
+	started := int64(1_700_000_000)
+	suite := identity.Ref{Pid: 424242, StartedAtSec: started}
+	for _, test := range []struct {
+		name     string
+		probe    fixedProbe
+		wantGone bool
+	}{
+		{name: "dead pid", probe: fixedProbe{state: identity.Dead}, wantGone: true},
+		{name: "reused pid", probe: fixedProbe{exact: identity.Exact{Pid: suite.Pid, StartedAt: time.Unix(started+60, 0)}, state: identity.Alive}, wantGone: true},
+		{name: "zombie awaiting its launcher", probe: fixedProbe{exact: identity.Exact{Pid: suite.Pid, StartedAt: time.Unix(started, 0), Zombie: true}, state: identity.Alive}},
+		{name: "alive", probe: fixedProbe{exact: identity.Exact{Pid: suite.Pid, StartedAt: time.Unix(started, 0)}, state: identity.Alive}},
+		{name: "unreadable", probe: fixedProbe{state: identity.Unknown}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			done := filepath.Join(root, "done")
+			ticks := make(chan time.Time)
+			result := make(chan error, 1)
+			go func() {
+				result <- RunWatchdog(WatchdogOptions{
+					Suite: "fixture", Root: root, ProgressPath: filepath.Join(root, "progress"), DonePath: done,
+					LogPaths: []string{filepath.Join(root, "log")}, SuiteIdentity: suite,
+					Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1,
+					Poll: time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
+					ErrorOutput: os.Stderr, Prober: test.probe,
+					Signal:    func(int, syscall.Signal) error { t.Error("a gone suite was signalled"); return nil },
+					Shutdown:  func() error { t.Error("supervision was shut down"); return nil },
+					NewTicker: func(time.Duration) (<-chan time.Time, func()) { return ticks, func() {} },
+				})
+			}()
+			polledAgain := false
+			select {
+			case ticks <- time.Unix(1, 0):
+				polledAgain = true
+			case err := <-result:
+				if err != nil {
+					t.Fatalf("watchdog of a gone suite returned %v, want a quiet exit", err)
+				}
+			}
+			if polledAgain {
+				// Release the watchdog the way its launcher would.
+				if err := os.WriteFile(done, nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case ticks <- time.Unix(2, 0):
+				case <-result:
+				}
+			}
+			if polledAgain == test.wantGone {
+				t.Fatalf("watchdog polled again = %t, want %t", polledAgain, !test.wantGone)
+			}
+		})
+	}
+}

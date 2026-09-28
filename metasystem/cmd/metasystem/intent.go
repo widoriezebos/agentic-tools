@@ -104,7 +104,7 @@ func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
 		goalIntentCommands(), intentPlanningCommands(), designIntentCommands(), intentWorkCommands(),
-		intentDeliveryCommands(), processIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
+		intentDeliveryCommands(), helmIntentCommands(), processIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
 	} {
 		commands = append(commands, part...)
 	}
@@ -501,6 +501,7 @@ type intentOwners struct {
 	work            intentWorkOwners
 	delivery        *intentDeliveryOwners
 	connection      intentConnectionOwners
+	helm            helmOwners
 }
 
 func defaultIntentOwners() intentOwners {
@@ -913,7 +914,7 @@ type intentGroup struct {
 var intentGroups = []intentGroup{
 	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
 	{"deliver", "Deliver", []string{"work", "test", "question", "incident"}},
-	{"run", "Run", []string{"status", "session", "mission", "system", "machine", "ui", "settings"}},
+	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "machine", "ui", "settings"}},
 	{"practice", "Practice", []string{"receipt", "experiment"}},
 }
 
@@ -928,6 +929,7 @@ var intentObjectSummaries = map[string]string{
 	"question":   "questions for a person, and their answers",
 	"incident":   "failures on main that someone must own",
 	"status":     "the overview of this checkout, or one goal's work",
+	"helm":       "human at the helm: take the whole seat out of the machinery's hands, and give it back",
 	"session":    "this agent session: start, stop, whether it may stop, and its handoff",
 	"mission":    "autonomous missions",
 	"system":     "MetaSystem for this checkout: start, stop, restart, status, check, enroll, adopt",

@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
@@ -64,6 +65,7 @@ const (
 	RoleCapabilitySnapshots HealthRole = "capability-snapshots"
 	RoleGovernedObligations HealthRole = "governed-obligations"
 	RoleProofAttempts       HealthRole = "proof-attempts"
+	RoleProofAdmission      HealthRole = "proof-admission"
 )
 
 var healthRoleOrder = []HealthRole{
@@ -87,6 +89,7 @@ var healthRoleOrder = []HealthRole{
 	RoleGovernedObligations,
 	RoleNonterminalJobs,
 	RoleProofAttempts,
+	RoleProofAdmission,
 	RoleCapabilitySnapshots,
 }
 
@@ -478,6 +481,7 @@ func evaluateHealthRolesWithMeasure(repoRoot, metasystemRoot string, now time.Ti
 		timed(func() RoleVerdict { return checkGovernedObligations(repoRoot) }),
 		timed(func() RoleVerdict { return checkNonterminalJobs(repoRoot, prober) }),
 		timed(func() RoleVerdict { return checkProofAttempts(repoRoot, prober) }),
+		timed(func() RoleVerdict { return checkProofAdmission(repoRoot, now, inspectHostLeases) }),
 		timed(func() RoleVerdict { return checkCapabilitySnapshots(repoRoot, metasystemRoot, now) }),
 	}, spendObservation
 }
@@ -1675,6 +1679,59 @@ func checkProofAttempts(repoRoot string, prober identity.Prober) RoleVerdict {
 		return roleUnknown(RoleProofAttempts, "live proof attempts with unreadable launcher evidence: "+strings.Join(unknown, ","), remedy)
 	}
 	return roleAlive(RoleProofAttempts, "no live proof attempt has a dead launcher")
+}
+
+// proofAdmissionRedKey bounds how long a heavy proof lease may stay dead or
+// unknown before the role turns red; a dead one is normally reclaimed by the
+// check itself or by the next admission pass well inside it.
+const proofAdmissionRedKey = "steward.proof-admission-red-min"
+
+const defaultProofAdmissionRedMinutes = 10
+
+// inspectHostLeases is the host's heavy lease census. It takes a provably
+// dead, settled lease through the admission reclaim path when admission.lock
+// is free. Package tests replace it: the admission directory is host-wide.
+var inspectHostLeases = proofrun.InspectHostLeases
+
+// checkProofAdmission reports every dirty heavy proof-admission lease with
+// its owner, age and state, and turns red when one has been dead or unknown
+// for longer than steward.proof-admission-red-min.
+func checkProofAdmission(repoRoot string, now time.Time, inspect func(string) ([]proofrun.HostLeaseReport, error)) RoleVerdict {
+	minutes, err := boundedConfig(repoRoot, proofAdmissionRedKey, defaultProofAdmissionRedMinutes, 1)
+	if err != nil {
+		return roleUnknown(RoleProofAdmission, err.Error(), "set "+proofAdmissionRedKey+" to a positive number of minutes in metasystem.conf")
+	}
+	threshold := time.Duration(minutes) * time.Minute
+	reports, err := inspect(repoRoot)
+	if err != nil {
+		return roleUnknown(RoleProofAdmission, "heavy proof leases are unreadable: "+err.Error(),
+			"inspect ~/.metasystem/proof-admission by hand; no metasystem verb reads it")
+	}
+	var lines, red, remedies []string
+	for _, report := range reports {
+		age := now.Sub(report.Since).Round(time.Second)
+		line := fmt.Sprintf("%s owner pid %d group %d age %s %s: %s", report.Lease, report.Owner.Pid, report.Owner.Pgid, age, report.State, report.Reason)
+		lines = append(lines, line)
+		if report.Remedy != "" {
+			remedies = append(remedies, report.Lease+": "+report.Remedy)
+		}
+		if (report.State == proofrun.HostLeaseDead || report.State == proofrun.HostLeaseUnknown) && age > threshold {
+			red = append(red, line)
+		}
+	}
+	remedy := strings.Join(remedies, "; ")
+	if len(red) > 0 {
+		if remedy == "" {
+			remedy = "a waiting heavy proof reclaims a dead lease on its next admission pass"
+		}
+		return roleDead(RoleProofAdmission, fmt.Sprintf("heavy proof leases dead or unknown for over %d min: %s", minutes, strings.Join(red, "; ")), remedy)
+	}
+	if len(lines) == 0 {
+		return roleAlive(RoleProofAdmission, "no dirty heavy proof lease")
+	}
+	verdict := roleAlive(RoleProofAdmission, "heavy proof leases: "+strings.Join(lines, "; "))
+	verdict.Remedy = remedy
+	return verdict
 }
 
 func processRef(value map[string]any) (identity.Ref, bool) {
