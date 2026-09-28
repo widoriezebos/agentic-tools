@@ -328,6 +328,9 @@ func scanPlans(root string, result goal.ScanResult, statuses map[string]bool) go
 			continue
 		}
 		name := relName(root, plan)
+		if unclosed := unclosedPlanFence(name, string(text)); unclosed != "" {
+			result.OpenWorkWarnings = append(result.OpenWorkWarnings, unclosed)
+		}
 		if waiting, ok := planField(string(text), "Waiting on the human"); ok && waiting != "" && !unblockedField.MatchString(waiting) {
 			full := fmt.Sprintf("%s waits on the human: %s", name, waiting)
 			result.WaitingOnHuman = append(result.WaitingOnHuman, goal.Item{
