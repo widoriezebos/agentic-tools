@@ -34,6 +34,13 @@ type family struct {
 func families() []family {
 	return []family{
 		{
+			name:    "app",
+			summary: "the application this project builds, under its launch contract",
+			verbs: []verb{
+				{"serve", "own one run of the application for its life (internal)", runAppServe},
+			},
+		},
+		{
 			name:    "ui",
 			summary: "the checkout's browser interface",
 			verbs: []verb{

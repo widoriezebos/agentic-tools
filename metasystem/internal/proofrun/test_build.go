@@ -42,7 +42,10 @@ const (
 	TestWorkerPolicyVersion = 1
 	// TestWorkersEnvironment is the reserved adapter allowance exported to
 	// native commands. Contract environment declarations cannot replace it.
-	TestWorkersEnvironment        = testpolicy.TestWorkersEnvironment
+	TestWorkersEnvironment = testpolicy.TestWorkersEnvironment
+	// AppAddressEnvironment is the launch contract's one declared runner
+	// input: the address of the application run a check is run against.
+	AppAddressEnvironment         = testpolicy.AppAddressEnvironment
 	proofExecutionRootEnvironment = "METASYSTEM_PROOF_EXECUTION_ROOT"
 )
 
@@ -106,7 +109,10 @@ type TestRunRequest struct {
 	Concurrency int
 	// AllGroups keeps a delivery run collecting after a failed group. Other
 	// purposes already collect every selected group.
-	AllGroups   bool `json:",omitempty"`
+	AllGroups bool `json:",omitempty"`
+	// AppAddress is the address of the application run a launch contract's
+	// check runs its named group against.
+	AppAddress  string `json:",omitempty"`
 	loadOptions []loadSampleOption
 	now         func() time.Time
 }
@@ -236,6 +242,9 @@ func ValidateTestWorkerRequest(request TestRunRequest) error {
 		}
 		if _, reserved := group.Env[TestWorkersEnvironment]; reserved {
 			return fmt.Errorf("testing group %s cannot set reserved environment %s", group.ID, TestWorkersEnvironment)
+		}
+		if _, reserved := group.Env[AppAddressEnvironment]; reserved {
+			return fmt.Errorf("testing group %s cannot set reserved environment %s", group.ID, AppAddressEnvironment)
 		}
 		if !TestWorkerPolicyActive(request) && group.Resources.Workers != nil {
 			return fmt.Errorf("testing group %s worker declaration requires negotiated worker policy", group.ID)
@@ -2785,6 +2794,14 @@ func groupTestEnvironment(request TestRunRequest, group testpolicy.Group) []stri
 		environment = overlayTestEnvironment(environment, map[string]string{
 			proofExecutionRootEnvironment: request.ProjectRoot,
 		})
+	}
+	// The launch contract's check bridges to this runner through one
+	// declared input, overlaid in both environment modes so that an explicit
+	// group gets it too, and left in the identity digest so that a result
+	// against one application run is never reused for a run at another
+	// address.
+	if request.AppAddress != "" {
+		environment = overlayTestEnvironment(environment, map[string]string{AppAddressEnvironment: request.AppAddress})
 	}
 	return environment
 }

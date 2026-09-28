@@ -30,7 +30,7 @@ var ExecSpawn Spawn = lifecycle.ExecSpawn
 // ServeArgs is the argument vector that makes an engine the supervisor of
 // one run.
 func ServeArgs(repo, installation, key, ref, goal, address string) []string {
-	args := []string{"internal", "app", "serve", "--repo", repo, "--metasystem-root", installation, "--key", key, "--ready-fd", "3"}
+	args := []string{"app", "serve", "--repo", repo, "--metasystem-root", installation, "--key", key, "--ready-fd", "3"}
 	if ref != "" {
 		args = append(args, "--at", ref)
 	}

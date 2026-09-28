@@ -27,7 +27,10 @@ import (
 
 const (
 	// R1/R3 residue: (family, verb) pairs plus dispatchInternal's top-level forms.
-	verbRatchetInternalVerbCeiling = 301
+	// The launch contract raised it by one: `app serve` is the supervisor that
+	// owns one run of the project's application for its life, in the shape of
+	// `ui serve`, and like it it is a process entrypoint a person never types.
+	verbRatchetInternalVerbCeiling = 302
 	// R4: shell lines that reference the engine.
 	verbRatchetShellEngineCeiling = 1189
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
@@ -46,7 +49,11 @@ const (
 	// directly, where they used to exec dispatch.sh, and the lifecycle
 	// launches the delegate-supervisor entry where it ran an adapter script.
 	// The hops existed before; the witness now sees them.
-	verbRatchetSelfSubprocessCeiling = 124
+	// The launch contract raised it by two, both real process boundaries of
+	// its design: `app start` launches the engine's own `app serve`
+	// supervisor detached (app.go), and `app check` bridges to the testing
+	// contract's own runner instead of running a test itself (intent_app.go).
+	verbRatchetSelfSubprocessCeiling = 126
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
 	verbRatchetInstructionCeiling = 47
