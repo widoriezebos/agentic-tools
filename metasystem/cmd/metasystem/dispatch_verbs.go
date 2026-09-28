@@ -12,10 +12,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
@@ -89,10 +87,6 @@ func runDispatchVerifyReferences(args []string) int {
 	}
 	fmt.Printf("references-verified count=%d\n", len(record.References))
 	return 0
-}
-
-func dispatchStartReader(root string) (identity.StartReader, error) {
-	return dispatchproc.StartReader(root)
 }
 
 // runDispatchResolveRoster relays `job resolve-roster`: the roster, tier,
