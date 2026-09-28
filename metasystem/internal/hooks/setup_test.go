@@ -14,6 +14,10 @@ var devinShipped = readShippedHooksFixture("devin")
 
 func readShippedHooksFixture(name string) string {
 	contents, err := os.ReadFile(filepath.Join("..", "..", "scripts", "enforcement", name+"-hooks.json"))
+	if err != nil && os.Getenv(directTestEngineEnv) != "" {
+		// This binary runs as a fixture engine outside the package directory.
+		return ""
+	}
 	if err != nil {
 		panic(err)
 	}
@@ -67,7 +71,7 @@ func TestMergeSplitsOwnedHandlerFromForeignSiblingWhenMatcherChanges(t *testing.
 			t.Errorf("merged settings lost %q: %s", fragment, text)
 		}
 	}
-	if strings.Count(text, "supervision-hook.sh claude start") != 1 {
+	if strings.Count(text, "internal hook claude start;") != 1 || strings.Contains(text, "supervision-hook.sh") {
 		t.Fatalf("owned start handler duplicated: %s", text)
 	}
 	again, err := MergeSettings(merged, []byte(claudeShipped), "claude", "metasystem", false)
@@ -186,7 +190,7 @@ func TestMergeSettingsPreservesPreToolUse(t *testing.T) {
 	}
 	handler := installed["hooks"].([]any)[0].(map[string]any)
 	command := handler["command"].(string)
-	if !strings.Contains(command, "supervision-hook.sh claude tool") || !strings.HasSuffix(command, ") || true") || handler["timeout"] != float64(5) {
+	if !strings.Contains(command, "internal hook claude tool;") || !strings.HasSuffix(command, ") || true") || handler["timeout"] != float64(5) {
 		t.Fatalf("installed PreToolUse handler lost its contract: %#v", handler)
 	}
 }
@@ -272,7 +276,7 @@ func TestClaudeMergeConsolidatesReceiptIntoTheOneDegradedStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(merged)
-	if strings.Count(text, "supervision-hook.sh claude receipt") != 0 || strings.Count(text, "supervision-hook.sh claude stop") != 1 ||
+	if strings.Contains(text, "claude receipt") || strings.Count(text, "internal hook claude stop;") != 1 || strings.Contains(text, "supervision-hook.sh") ||
 		!strings.Contains(text, `hook-bootstrap-failed`) || strings.Contains(text, `\"decision\":\"block\"`) {
 		t.Fatalf("Claude Stop was not consolidated to one degraded-capable handler: %s", text)
 	}
@@ -283,7 +287,7 @@ func TestClaudeMergeReplacesTheBlockFallbackLauncher(t *testing.T) {
 	// became a degraded allowance still carries the block: it is this
 	// installation's launcher, so readiness fails on it and setup replaces
 	// it with the shipped fallback, byte for byte.
-	blocking := renderGitRequiredCommand("claude", "stop", "metasystem", legacyBlockFallback)
+	blocking := renderStubGitRequiredCommand("claude", "stop", "metasystem", legacyBlockFallback)
 	live := []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":` + jsonString(t, blocking) + `,"timeout":60}]}]}}`)
 	if err := CheckSettings(live, []byte(claudeShipped), "claude", "metasystem", false); err == nil {
 		t.Fatal("a launcher with the retired block fallback passed readiness")
@@ -297,7 +301,7 @@ func TestClaudeMergeReplacesTheBlockFallbackLauncher(t *testing.T) {
 	}
 	text := string(merged)
 	want := renderGitRequiredCommand("claude", "stop", "metasystem", shippedFallback(shippedStopCommand(t, claudeShipped)))
-	if strings.Count(text, "supervision-hook.sh claude stop") != 1 || strings.Contains(text, `\"decision\":\"block\"`) || !strings.Contains(text, jsonString(t, want)) {
+	if strings.Count(text, "internal hook claude stop;") != 1 || strings.Contains(text, `\"decision\":\"block\"`) || !strings.Contains(text, jsonString(t, want)) {
 		t.Fatalf("the block fallback launcher was not replaced by the shipped degraded one: %s", text)
 	}
 }
@@ -362,7 +366,7 @@ func TestMergeScopesOwnedCommandsToSelectedInstallation(t *testing.T) {
 					t.Fatalf("foreign sibling state was lost: %s", text)
 				}
 			}
-			if !strings.Contains(text, "unset GIT_DIR") || strings.Count(text, "supervision-hook.sh codex start") != 1 {
+			if !strings.Contains(text, "unset GIT_DIR") || strings.Count(text, "internal hook codex start;") != 1 || strings.Contains(text, "supervision-hook.sh") {
 				t.Fatalf("selected installation command was not migrated exactly once: %s", text)
 			}
 		})
@@ -389,7 +393,7 @@ func TestMergeMigratesGitRequiredNonblockingLauncher(t *testing.T) {
 	}
 	events := live["hooks"].(map[string]any)
 	start := events["SessionStart"].([]any)[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)
-	previous := renderGitRequiredCommand("codex", "start", ".", "")
+	previous := renderStubGitRequiredCommand("codex", "start", ".", "")
 	start["command"] = previous
 	encoded, err := json.Marshal(live)
 	if err != nil {

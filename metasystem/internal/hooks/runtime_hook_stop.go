@@ -21,11 +21,11 @@ type lifecycle struct {
 	inv Invocation
 	ops Ops
 
-	scriptDir, harnessRoot, world, engine string
-	repo, session, transcript             string
-	sessionAbsent, stopHookActive         bool
-	payload                               string
-	stopStarted                           int64
+	harnessRoot, world, engine    string
+	repo, session, transcript     string
+	sessionAbsent, stopHookActive bool
+	payload                       string
+	stopStarted                   int64
 
 	identity, identityPid, identityStarted string
 	mainID, mainClass, mainHolder          string
@@ -71,10 +71,7 @@ func (l *lifecycle) refuse(message string, status int) {
 func runLifecycle(inv Invocation, ops Ops) int {
 	l := &lifecycle{inv: inv, ops: ops}
 	var ok bool
-	if l.scriptDir, ok = physicalDirectory(scriptParent(inv.Script)); !ok {
-		return 0
-	}
-	if l.harnessRoot, ok = physicalDirectory(l.scriptDir + "/../.."); !ok {
+	if l.harnessRoot, ok = inv.installationRoot(); !ok {
 		return 0
 	}
 	if inv.Event == "stop" && inv.env(stopDeadlineParentEnv) != strconv.Itoa(inv.Ppid) {

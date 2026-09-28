@@ -356,3 +356,15 @@ func TestCommitCarriedFallsBackToBaseJudge(t *testing.T) {
 	b.observed = landing.Observation{}
 	b.expect(b.commit(request), 3, "no live or base judge decided; the base judge build failed")
 }
+
+// TestCommitRetiredComposerRefusalNamesTheFix: a pre-commit composer from
+// before the engine guard refuses every commit without naming a fix; the
+// commit path's refusal names the command that re-enrolls it (rule H1).
+func TestCommitRetiredComposerRefusalNamesTheFix(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	b.git.on("commit", func(GitCall) GitResult {
+		return failed(1, "pre-commit: the metasystem ledger guard is missing at /r/metasystem/scripts/agents/pre-commit-guard.sh; refusing to commit without the fence\n")
+	})
+	b.expect(b.commit(CommitRequest{}), 1, "re-enroll it with: metasystem system setup")
+}

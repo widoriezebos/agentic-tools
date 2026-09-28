@@ -467,7 +467,7 @@ var ProseRows = []Prose{
 	{Owner: "internal/landing/landpath", Site: "land.go:289", Prose: "land refused: --staged cannot be combined with paths", Override: "the usage line"},
 	{Owner: "internal/landing/landpath", Site: "land.go:292", Prose: "land refused: name paths or choose --staged", Override: "the usage line"},
 	{Owner: "internal/landing/landpath", Site: "commit_record.go:19", Prose: "agent commit refused: the landing evaluator failed or returned an incomplete decision (<verdict>)", Override: CarriedLanding},
-	{Owner: "internal/landing/landpath", Site: "commit_record.go:287", Prose: "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back", Record: true},
+	{Owner: "internal/landing/landpath", Site: "commit_record.go:295", Prose: "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back", Record: true},
 	{Owner: "internal/landing/landpath", Site: "land.go:508", Prose: "carry asks: the carried landing lands main; you are on <branch>", Override: "checkout main and rerun"},
 	{Owner: "internal/landing/landpath", Site: "carried.go:35", Prose: "goal fetch returned no accepted ledger tip: <output>", Override: "goal fetch then rerun"},
 	{Owner: "internal/landing/landpath", Site: "carried.go:102", Prose: "rebase conflict on <paths>; resolve by hand against origin/main, stage, rerun", Override: "resolve and rerun"},
@@ -481,8 +481,8 @@ var ProseRows = []Prose{
 	{Owner: "internal/landing/landpath", Site: "commit_record.go:40", Prose: "agent commit refused: the Goal-Item's claim revision moved since this chain was dispatched (<verdict>)", Override: CarriedLanding},
 	{Owner: "internal/landing/landpath", Site: "commit_record.go:43", Prose: "agent commit refused: this landing names no goal and the ledger is not Goal-free (<verdict>)", Override: CarriedLanding},
 	{Owner: "internal/landing/landpath", Site: "commit_record.go:46", Prose: "agent commit refused: the chain was dispatched under a different goal than --goal names (<verdict>)", Override: CarriedLanding},
-	{Owner: "internal/landing/landpath", Site: "commit_record.go:314", Prose: "landing push refused: origin could not be fetched; the commit stands locally", Override: CarriedLanding},
-	{Owner: "internal/landing/landpath", Site: "commit_record.go:283", Prose: "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back; expected exactly one <trailer> trailer, found <count>", Override: CarriedLanding},
+	{Owner: "internal/landing/landpath", Site: "commit_record.go:322", Prose: "landing push refused: origin could not be fetched; the commit stands locally", Override: CarriedLanding},
+	{Owner: "internal/landing/landpath", Site: "commit_record.go:291", Prose: "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back; expected exactly one <trailer> trailer, found <count>", Override: CarriedLanding},
 }
 
 var Defects = []Defect{

@@ -48,6 +48,7 @@ func init() {
 
 	registerIdempotency("system start", idemStateful, "MetaSystem already runs for this checkout: success, no fence generation", witnessSystemStartRepeat)
 	registerIdempotency("system stop", idemStateful, "already stopped with nothing running: success, no fence generation", witnessSystemStopRepeat)
+	registerIdempotency("system setup", idemStateful, "the checkout's hooks and commit fence already run the engine: success, no settings or hook written", witnessSystemSetupRepeat)
 	registerIdempotency("system enroll", idemStateful, "the same person at the same terminal is already enrolled: success, no enrollment generation, no fleet publication", witnessSystemEnrollRepeat)
 	registerIdempotency("machine start", idemStateful, "a machine already launched and supervised from here: success, no launch record", witnessMachineStartRepeat)
 	registerIdempotency("ui start", idemStateful, "the interface already runs at the address asked for: success, nothing launched", witnessUIStartRepeat)

@@ -11,5 +11,8 @@ func TestMain(m *testing.M) {
 	if os.Getenv(hookWorkerModeEnv) == "1" {
 		os.Exit(runHookTestWorker())
 	}
+	if os.Getenv(directTestEngineEnv) != "" {
+		os.Exit(runHookTestEngine())
+	}
 	os.Exit(testenv.Main(m))
 }

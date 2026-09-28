@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -355,5 +356,47 @@ func TestLinkedWorktreeRunsThePrimaryEngineGitAdapter(t *testing.T) {
 	}
 	if ran, _ := os.ReadFile(marker); !strings.Contains(string(ran), resolved) && !strings.Contains(string(ran), linked) {
 		t.Fatalf("the primary engine did not guard the linked worktree's commit: %q", ran)
+	}
+}
+
+// TestEnsureLeavesAnEnrolledFenceAloneGitAdapter: a hook that already runs
+// the guard is enrolled, so a repeat Ensure writes nothing (R-129), and a
+// person's own hook that composes the guard is never moved aside. The probe's
+// status was once read after its context was cancelled, so no hook ever
+// counted as enrolled and every Ensure rewrote it.
+func TestEnsureLeavesAnEnrolledFenceAloneGitAdapter(t *testing.T) {
+	t.Parallel()
+	root, _ := fenceGitAdapterRepo(t, 0)
+	hook := filepath.Join(root, ".git", "hooks", "pre-commit")
+	if err := Ensure(root); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(hook)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(hook, before.ModTime().Add(-time.Hour), before.ModTime().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	before, _ = os.Stat(hook)
+	if err := Ensure(root); err != nil {
+		t.Fatal(err)
+	}
+	if after, err := os.Stat(hook); err != nil || !after.ModTime().Equal(before.ModTime()) {
+		t.Fatalf("Ensure rewrote an enrolled composer: %v", err)
+	}
+	// A person's own hook that runs the guard itself is enrolled as it is.
+	own := "#!/usr/bin/env bash\n\"$(git rev-parse --show-toplevel)/bin/metasystem\" internal pre-commit --root \"$(git rev-parse --show-toplevel)\" || exit $?\necho mine >/dev/null\n"
+	if err := testexec.WriteFile(hook, []byte(own), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Ensure(root); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(hook); err != nil || string(data) != own {
+		t.Fatalf("a person's enrolled hook was replaced: %v\n%s", err, data)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".git", "hooks", "pre-commit.local")); !os.IsNotExist(err) {
+		t.Fatalf("a person's enrolled hook was moved aside: %v", err)
 	}
 }

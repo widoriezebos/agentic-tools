@@ -79,8 +79,8 @@ func TestShippedEnforcementConfigurationsWireTheLifecycle(t *testing.T) {
 			}
 		}
 		hooks, _ := json.Marshal(document.Hooks)
-		if !strings.Contains(string(hooks), "supervision-hook.sh") {
-			t.Errorf("%s hooks never invoke supervision-hook.sh", name)
+		if !strings.Contains(string(hooks), "metasystem internal hook ") {
+			t.Errorf("%s hooks never invoke the engine's hook entry", name)
 		}
 	}
 }

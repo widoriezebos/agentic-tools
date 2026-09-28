@@ -131,7 +131,7 @@ func TestDeadlineParentPublishesAValidWorkerResponse(t *testing.T) {
 		if run.status != 0 || run.stdout != output+"\n" || run.stderr != "worker diagnostic\n" {
 			t.Fatalf("valid output %q = status %d stdout %q stderr %q", output, run.status, run.stdout, run.stderr)
 		}
-		if len(argv) < 2 || argv[0] != installation.script || argv[1] != "claude" ||
+		if len(argv) < 2 || argv[0] != installation.root || argv[1] != "claude" ||
 			!containsEnv(argv[2:], stopDeadlineParentEnv+"="+strconv.Itoa(os.Getpid())) {
 			t.Fatalf("worker launch = %q", argv)
 		}

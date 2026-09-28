@@ -5,13 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
 
 const gitSteeringUnset = "unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE GIT_IMPLICIT_WORK_TREE GIT_NO_REPLACE_OBJECTS GIT_PREFIX"
 
-var lifecycleCommand = regexp.MustCompile(`scripts/agents/supervision-hook\.sh\s+([a-z][a-z0-9-]{0,31})\s+(start|receipt|stop|end|tool)(?:[)[:space:]]|$)`)
+// lifecycleCommand reads one shipped handler: the runtime and the lifecycle
+// action of its `metasystem internal hook RUNTIME EVENT` template (or the
+// stub-era template that named scripts/agents/supervision-hook.sh). The
+// template is data: setup renders the command every checkout runs from it.
+var lifecycleCommand = regexp.MustCompile(`(?:scripts/agents/supervision-hook\.sh|(?:^|[\s(])metasystem internal hook)\s+([a-z][a-z0-9-]{0,31})\s+(start|receipt|stop|end|tool)(?:[)[:space:]]|$)`)
 
 // launcherFallback splits a shipped launcher of the form
 // `(<command>) || <fallback>`. The shipped template decides what a nonzero
@@ -264,6 +269,7 @@ func desiredSettings(shipped []byte, runtime, installationRel string, registrati
 				}
 				desiredCommand := renderCommand(runtime, match[2], installationRel, shippedFallback(command))
 				known[desiredCommand] = true
+				known[renderStubCommand(runtime, match[2], installationRel, shippedFallback(command))] = true
 				newHandler := cloneMap(handler)
 				newHandler["command"] = desiredCommand
 				newHandlers = append(newHandlers, newHandler)
@@ -276,9 +282,83 @@ func desiredSettings(shipped []byte, runtime, installationRel string, registrati
 	return desired, known, nil
 }
 
+// renderCommand is the runtime settings command of one lifecycle action: Git
+// discovery, the installation directory, then the engine's `internal hook
+// RUNTIME ACTION` entry run directly (plans/designs/verbs-object-action.md
+// 3.3, VOA-19), ending in the inline degraded answer when no engine is
+// installed. No script stands between the runtime and the engine.
 func renderCommand(runtime, action, installationRel, fallback string) string {
+	return renderLauncher(runtime, action, installationRel, fallback, engineInvocation(runtime, action, installationRel))
+}
+
+func renderGitRequiredCommand(runtime, action, installationRel, fallback string) string {
+	return renderGitRequiredLauncher(installationRel, fallback, engineInvocation(runtime, action, installationRel))
+}
+
+// renderStubCommand and renderStubGitRequiredCommand are the launchers the
+// cutover generation rendered through the plumbing stub
+// scripts/agents/supervision-hook.sh. They are recognized so a checkout's
+// settings switch to the direct command in place (`system setup`).
+func renderStubCommand(runtime, action, installationRel, fallback string) string {
+	return renderLauncher(runtime, action, installationRel, fallback, stubInvocation(runtime, action))
+}
+
+func renderStubGitRequiredCommand(runtime, action, installationRel, fallback string) string {
+	return renderGitRequiredLauncher(installationRel, fallback, stubInvocation(runtime, action))
+}
+
+func stubInvocation(runtime, action string) string {
+	return `bash scripts/agents/supervision-hook.sh ` + runtime + ` ` + action
+}
+
+// engineInvocation selects the engine as the cutover stub did and runs its
+// hook entry. The working directory is the installation. A linked worktree
+// runs its primary checkout's engine (found through the Git common
+// directory), except that Claude's tool gate prefers a local executable
+// engine and then asks Git nothing. METASYSTEM_BIN overrides the engine only
+// while the selected installation engine exists. With no engine installed
+// the event answers with its fixed degraded form: Stop allows and names the
+// rebuild, SessionStart says the session is uninstructed, every other event
+// is silent. Nothing here builds; an engine behind its sources is rebuilt by
+// the hook itself (SessionStart), and a missing one by the person the
+// degraded answer names the command to.
+func engineInvocation(runtime, action, installationRel string) string {
+	primary := `${common%/*}`
+	if installationRel != "" && installationRel != "." {
+		primary += `/` + shellDoubleQuoted(installationRel)
+	}
+	lookup := `gitdir=$(git rev-parse --path-format=absolute --git-dir) && common=$(git rev-parse --path-format=absolute --git-common-dir) || exit $?; ` +
+		`if [ "$gitdir" != "$common" ] && [ "${common##*/}" = .git ]; then engine="` + primary + `/bin/metasystem"; fi`
+	selection := `engine="$(pwd -P)/bin/metasystem" || exit $?; `
+	if action == "tool" {
+		selection += `if [ ! -x "$engine" ]; then ` + lookup + `; fi; `
+	} else {
+		selection += lookup + `; `
+	}
+	run := `if [ -x "$engine" ] && [ -x "${METASYSTEM_BIN:-$engine}" ]; then exec "${METASYSTEM_BIN:-$engine}" internal hook ` + runtime + ` ` + action + `; fi`
+	missing := ""
+	switch action {
+	case "stop":
+		missing = `; printf '%s\n' ` + shellSingleQuoteLiteral(mustDegradedStopForm("allowed", "engine-missing"))
+	case "start":
+		missing = `; printf '%s\n' ` + shellSingleQuoteLiteral(StartEngineMissingNotice())
+	}
+	return `{ ` + selection + run + missing + `; }`
+}
+
+// shellSingleQuoteLiteral quotes a fixed form that carries no single quote;
+// the degraded forms never do, and a form that did would be a programming
+// error caught by the renderer's tests.
+func shellSingleQuoteLiteral(value string) string {
+	if strings.Contains(value, "'") {
+		panic("hook launcher form carries a single quote: " + value)
+	}
+	return "'" + value + "'"
+}
+
+func renderLauncher(runtime, action, installationRel, fallback, invocation string) string {
 	if action == "stop" || fallback != "" {
-		return renderGitRequiredCommand(runtime, action, installationRel, fallback)
+		return renderGitRequiredLauncher(installationRel, fallback, invocation)
 	}
 	destination := renderDestination(installationRel)
 	// A fresh adopted installation can exist before `git init`. Ordinary
@@ -287,12 +367,12 @@ func renderCommand(runtime, action, installationRel, fallback string) string {
 	// error. Looking for an actual .git entry distinguishes absence from a Git
 	// command that failed against a repository it should have understood.
 	discovery := `command -v git >/dev/null 2>&1 || exit $?; repo=$(git rev-parse --show-toplevel 2>/dev/null); git_status=$?; if [ "$git_status" -ne 0 ]; then if git rev-parse --git-dir >/dev/null 2>&1; then git rev-parse --show-toplevel >/dev/null; exit $?; fi; probe=$(pwd -P) || exit $?; while [ "$probe" != / ] && [ ! -e "$probe/.git" ] && [ ! -L "$probe/.git" ]; do probe=${probe%/*}; [ -n "$probe" ] || probe=/; done; if [ ! -e "$probe/.git" ] && [ ! -L "$probe/.git" ]; then exit 0; fi; git rev-parse --show-toplevel >/dev/null; exit $?; fi`
-	return gitSteeringUnset + `; ` + discovery + `; cd ` + destination + ` && bash scripts/agents/supervision-hook.sh ` + runtime + ` ` + action
+	return gitSteeringUnset + `; ` + discovery + `; cd ` + destination + ` && ` + invocation
 }
 
-func renderGitRequiredCommand(runtime, action, installationRel, fallback string) string {
+func renderGitRequiredLauncher(installationRel, fallback, invocation string) string {
 	destination := renderDestination(installationRel)
-	core := gitSteeringUnset + `; repo=$(git rev-parse --show-toplevel) && cd ` + destination + ` && bash scripts/agents/supervision-hook.sh ` + runtime + ` ` + action
+	core := gitSteeringUnset + `; repo=$(git rev-parse --show-toplevel) && cd ` + destination + ` && ` + invocation
 	if fallback != "" {
 		return `(` + core + `) || ` + fallback
 	}
@@ -321,10 +401,12 @@ func knownLegacyCommands(runtime, installationRel string, registrationAtInstalla
 	for _, action := range []string{"start", "receipt", "stop", "end"} {
 		known[renderCommand(runtime, action, installationRel, "")] = true
 		known[renderGitRequiredCommand(runtime, action, installationRel, "")] = true
+		known[renderStubCommand(runtime, action, installationRel, "")] = true
+		known[renderStubGitRequiredCommand(runtime, action, installationRel, "")] = true
 	}
 	if runtime == "claude" {
-		known[renderGitRequiredCommand(runtime, "stop", installationRel, legacyBlockFallback)] = true
-		known[renderGitRequiredCommand(runtime, "stop", installationRel, legacyDegradedFallback)] = true
+		known[renderStubGitRequiredCommand(runtime, "stop", installationRel, legacyBlockFallback)] = true
+		known[renderStubGitRequiredCommand(runtime, "stop", installationRel, legacyDegradedFallback)] = true
 	}
 	legacyDirectory := `$CLAUDE_PROJECT_DIR`
 	if !registrationAtInstallation {
@@ -384,7 +466,7 @@ func sameHandlerContract(candidate, wanted map[string]any) bool {
 }
 
 func uncertainMetaSystemCommand(command, runtime string) bool {
-	return command != "" && ((strings.Contains(command, "scripts/agents/supervision-hook.sh") && strings.Contains(command, " "+runtime+" ")) || strings.Contains(command, "scripts/receipt.sh check"))
+	return command != "" && (((strings.Contains(command, "scripts/agents/supervision-hook.sh") || strings.Contains(command, "internal hook")) && strings.Contains(command, " "+runtime+" ")) || strings.Contains(command, "scripts/receipt.sh check"))
 }
 
 func decodeObject(data []byte) (map[string]any, error) {
@@ -416,4 +498,42 @@ func equalJSON(a, b any) bool {
 	left, _ := json.Marshal(a)
 	right, _ := json.Marshal(b)
 	return bytes.Equal(left, right)
+}
+
+// DirectEngine is the engine the direct settings command runs for a
+// lifecycle event of the installation (every event but Claude's tool gate):
+// the installation's own bin/metasystem, or, in a linked worktree, the
+// primary checkout's at the same installation path. git runs with the
+// inherited repository steering removed, as the command's does.
+func DirectEngine(installation string, git func(args ...string) (string, error)) (string, error) {
+	root, ok := physicalDirectory(installation)
+	if !ok {
+		return "", fmt.Errorf("the installation %s is not a directory", installation)
+	}
+	engine := filepath.Join(root, "bin", "metasystem")
+	gitDir, err := git("-C", root, "rev-parse", "--path-format=absolute", "--git-dir")
+	if err != nil {
+		return "", err
+	}
+	common, err := git("-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	gitDir, common = trimNewlines(gitDir), trimNewlines(common)
+	if gitDir == common || filepath.Base(common) != ".git" {
+		return engine, nil
+	}
+	top, err := git("-C", root, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	worktreeTop, ok := physicalDirectory(trimNewlines(top))
+	if !ok {
+		return "", fmt.Errorf("the worktree top %s is not a directory", trimNewlines(top))
+	}
+	relative, err := filepath.Rel(worktreeTop, root)
+	if err != nil || !filepath.IsLocal(relative) && relative != "." {
+		return "", fmt.Errorf("the installation %s is outside its worktree %s", root, worktreeTop)
+	}
+	return filepath.Join(filepath.Dir(common), relative, "bin", "metasystem"), nil
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adopt"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -506,6 +507,8 @@ type intentOwners struct {
 	// internal/adopt.
 	adopt func(adopt.Options) (adopt.Result, error)
 	helm  helmOwners
+	// hookSwitch adjusts system setup's seams; nil keeps production.
+	hookSwitch func(hookswitch.Deps) hookswitch.Deps
 }
 
 func defaultIntentOwners() intentOwners {
