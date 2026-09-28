@@ -234,9 +234,21 @@ Each decision names the slice that builds it: A, B, C or D (§5).
   (`service.go`, the `fresh` branch), applied to the sitting's
   conversation; Step out ends the session and keeps the conversation;
   the next turn in the drawer reopens the ordinary conversation the same
-  way. The one running turn stays one: a turn in flight when a room is
-  entered or left ends at its next boundary as attendance already
-  provides. The Sittings tab lists every standing sitting with its door
+  way. The one running turn stays one, and the handoff while a turn
+  runs is the service's, built from what it has (Astra S65-06): a turn
+  asked on conversation B while A's turn is running is not refused as
+  busy; the service stops A's turn through its existing Stop, which
+  cancels the prompt and waits, bounded, for the turn's terminal write,
+  and A's turn stays bound to A's conversation through that write, so
+  A's transcript ends with the answer marked stopped and Retry offered
+  on return; only when A's turn is written down does the service close
+  the live session and open B's. If the settlement wait passes without
+  A's terminal write, the switch is refused in words, "the previous
+  room's answer has not settled; try again in a moment", and nothing
+  of B starts. The same holds for Step out during an answer, and the
+  page says so before it happens. The precedent is the service's own
+  rule that a turn from another human ends the live session, because
+  the process carries one conversation. The Sittings tab lists every standing sitting with its door
   line, and the door reopens that sitting's conversation, desk and
   drafts. The mark that D9 describes lives on the sitting's
   conversation. A sitting that shapes intent or a design gets the same
@@ -459,7 +471,11 @@ record; the store opens a sitting's conversation by its own key beside
 the human's, the grants test still reaches neither, and two sittings'
 conversations never share a file; a turn on a second conversation
 closes the live session and opens the second's with only its own
-history replayed (proven by what the fake runtime received); the
+history replayed (proven by what the fake runtime received); a turn
+asked on the second while the first's turn is running stops the first
+through Stop, writes it down as stopped on the first's transcript, and
+only then opens the second's session, and a settlement that does not
+come refuses the switch in words with nothing of the second started; the
 kind's template and home; the head's `Reviewed:` line from
 the branch tip and from trailer commits, and the "none found" line; the
 three reads' bounds and refusals (a path outside the tree, a range past
@@ -545,5 +561,14 @@ the last keystroke before leaving is not the one that is lost.
 is a conversation, so a human can leave one room, open another and
 come back to the first. It changes slice A's shape (a store key, a
 route argument, the live session following the conversation), so it
-gets one scoped confirmation read from Astra on D16 alone, not a third
-round.
+got one scoped confirmation read from Astra on D16 alone, not a third
+round (verbatim in `g1-s65-astra-critique.md`, at `83f60f56a`). The
+read confirmed the store key, the private state per conversation and
+the replay isolation, and held D16 on one point, S65-06: the fold
+leaned on "attendance" for the in-flight handoff, and attendance is not
+built; the service refuses a second turn as busy, and the host's Close
+does not wait for the active prompt. Folded: the handoff is the
+service's, through its existing Stop with its bounded settlement wait,
+the first turn written down as stopped before the second session
+opens, and a refusal in words when the settlement does not come. Every
+cited line was re-read. Closed.
