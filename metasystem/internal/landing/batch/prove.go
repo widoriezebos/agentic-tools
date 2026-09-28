@@ -41,6 +41,9 @@ type Proof struct {
 	// immediately before publication (BL3S-01).
 	Sources map[string]Source `json:"sources,omitempty"`
 	Flakes  []FlakeUse        `json:"flakes,omitempty"`
+	// SourcesUnresolved says why an ordinary green proof's Sources were not
+	// recorded; the proof still lands, since nothing reads Sources before U5.
+	SourcesUnresolved string `json:"sourcesUnresolved,omitempty"`
 }
 
 // The kinds of a group's source: executed in the tip attempt, reused by
@@ -82,26 +85,30 @@ func ResolveSources(proof Proof, resolved map[string]string) (map[string]Source,
 	return sources, nil
 }
 
-// RecordSources fills a green proof's Sources through the retained verifier;
-// a group that does not resolve returns every member with the reason.
+// RecordSources fills an ordinary green proof's Sources through the retained
+// verifier, best effort: a verifier error or a group that does not resolve
+// (another batch's fresh base run can block reuse or leave a newer failed
+// observation) is recorded as the reason and the proof still lands. Only the
+// composed-proof path, which lands on the classification attempt, returns
+// every member when a group does not resolve.
 func RecordSources(store Store, id, actor string, at time.Time, resolve func(Record) (map[string]string, error)) error {
 	record, err := store.Load(id)
 	if err != nil || record.State != StateLanding || record.Proof == nil || record.Proof.Status != "green" || record.Proof.Sources != nil {
 		return err
 	}
-	resolved, err := resolve(record)
-	if err != nil {
-		return err
-	}
-	sources, err := ResolveSources(*record.Proof, resolved)
-	if err != nil {
-		return returnEveryMember(store, record, actor, at, err.Error()+"; nothing lands on it")
+	var sources map[string]Source
+	resolved, unresolved := resolve(record)
+	if unresolved == nil {
+		sources, unresolved = ResolveSources(*record.Proof, resolved)
 	}
 	return store.Update(id, func(current *Record) error {
 		if current.Proof == nil || current.Proof.AttemptID != record.Proof.AttemptID {
 			return fmt.Errorf("BATCH_PROOF_INPUT_MOVED: batch changed before its sources were recorded")
 		}
-		current.Proof.Sources = sources
+		current.Proof.Sources, current.Proof.SourcesUnresolved = sources, ""
+		if unresolved != nil {
+			current.Proof.SourcesUnresolved = unresolved.Error()
+		}
 		return nil
 	})
 }

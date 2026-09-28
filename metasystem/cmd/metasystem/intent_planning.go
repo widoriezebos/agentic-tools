@@ -1838,6 +1838,19 @@ func (inv *intentInvocation) recoverWaits() intentResult {
 	return result
 }
 
+// trackedDefectLabel says in plain words what a non-trunk-red entry is.
+func trackedDefectLabel(class string) string {
+	switch class {
+	case goal.TrunkRedClassPendingFlake:
+		return "pending flake, seen on a batch tip, not on main"
+	case goal.TrunkRedClassKnownFlake:
+		return "known flake, intermittent on main"
+	case goal.TrunkRedClassHang:
+		return "hang, a stalled test run"
+	}
+	return class + " entry"
+}
+
 // runIntentIncidents lists the trunk-red register, or claims or closes one
 // entry through the same owner calls as red own and red close.
 func runIntentIncidents(inv *intentInvocation) int {
@@ -1848,9 +1861,13 @@ func runIntentIncidents(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	lines, listed := []string{}, []goal.TrunkRedEntry{}
+	lines, listed, tracked := []string{}, []goal.TrunkRedEntry{}, []goal.TrunkRedEntry{}
 	for _, entry := range projection.Tree.TrunkRed {
 		if entry.Closed != nil && !inv.input.switched("all") {
+			continue
+		}
+		if entry.EntryClass() != goal.TrunkRedClassTrunkRed {
+			tracked = append(tracked, entry)
 			continue
 		}
 		listed = append(listed, entry)
@@ -1863,8 +1880,20 @@ func runIntentIncidents(inv *intentInvocation) int {
 		}
 		lines = append(lines, fmt.Sprintf("  %s  %s  %s (%s)", entry.ID, entry.Group, state, entry.Status))
 	}
-	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"incidents": listed},
-		Summary: fmt.Sprintf("%d incident(s) on main", len(listed))}
+	summary := fmt.Sprintf("%d incident(s) on main", len(listed))
+	if len(tracked) > 0 {
+		lines = append(lines, "  tracked defects (not failures on main; they never hold a landing):")
+		for _, entry := range tracked {
+			state := "open"
+			if entry.Closed != nil {
+				state = "closed"
+			}
+			lines = append(lines, fmt.Sprintf("  %s  %s  %s, %s", entry.ID, entry.Group, trackedDefectLabel(entry.EntryClass()), state))
+		}
+		summary += fmt.Sprintf("; %d tracked flake or hang entr%s", len(tracked), map[bool]string{true: "y", false: "ies"}[len(tracked) == 1])
+	}
+	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"incidents": listed, "trackedDefects": tracked},
+		Summary: summary}
 	for _, entry := range listed {
 		if entry.Closed == nil && entry.FixGoal == "" {
 			result.next, result.nextReason = []string{"metasystem", "incident", "claim", entry.ID, "--goal", "G"}, "an unowned incident needs a goal that fixes it"

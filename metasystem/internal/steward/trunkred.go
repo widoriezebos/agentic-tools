@@ -72,8 +72,15 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 
 	var open []goal.TrunkRedEntry
 	var unowned []string
+	tracked := 0
 	for _, entry := range projection.Tree.TrunkRed {
 		if entry.Closed != nil {
+			continue
+		}
+		if entry.EntryClass() != goal.TrunkRedClassTrunkRed {
+			// Flake, hang and quality entries are tracked defects, not reds on
+			// main; they never hold a landing and do not make this role dead.
+			tracked++
 			continue
 		}
 		open = append(open, entry)
@@ -90,8 +97,12 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 		return roleDead(RoleTrunkRed, "held trunk red was not recorded: "+strings.Join(staleBatches, ", "),
 			"metasystem internal landing batch tick; then metasystem internal goal trunk-red own --id <id> --goal <goal> (first held batch "+first+")")
 	}
+	defects := ""
+	if tracked > 0 {
+		defects = fmt.Sprintf("; %d flake or hang entr%s tracked separately (metasystem incident list)", tracked, map[bool]string{true: "y", false: "ies"}[tracked == 1])
+	}
 	if len(open) == 0 {
-		return roleAlive(RoleTrunkRed, "no open trunk red")
+		return roleAlive(RoleTrunkRed, "no open trunk red"+defects)
 	}
 	oldest, _ := time.Parse(time.RFC3339, open[0].Opened)
 	for _, entry := range open[1:] {
@@ -100,7 +111,7 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 			oldest = opened
 		}
 	}
-	return roleAlive(RoleTrunkRed, fmt.Sprintf("%d open, all owned; oldest %s", len(open), deliveryAge(now, oldest)))
+	return roleAlive(RoleTrunkRed, fmt.Sprintf("%d open, all owned; oldest %s", len(open), deliveryAge(now, oldest))+defects)
 }
 
 func staleUnrecordedTrunkRedBatchesWith(repoRoot string, now time.Time, resolveBatchLanding func(string, string, func() time.Time) (config.BatchLanding, error)) ([]string, error) {

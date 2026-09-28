@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -402,9 +403,34 @@ var batchBaseRearm = struct {
 	up          func(context.Context, string, string) (upOutcome, error)
 }{landing.FastForwardPreservingRegisters, landedRearmRebuild, landedRearmUp}
 
-// batchRearmMutex serializes re-arming the one control root across the
-// owner's concurrent proof runs; it is held for the re-arm, not the proof.
-var batchRearmMutex sync.Mutex
+// laneCheckout serializes every step that moves the one lane checkout
+// (settings.Root) across the owner's concurrent runs: a landing (branch prep,
+// apply, commit, reset, push recovery, the re-arm at the pushed tip) and a
+// proof start's re-arm at its base. Proofs still overlap: each runs in its own
+// detached worktree, and a re-arm holds the checkout only while it re-arms.
+type laneCheckout struct {
+	slot    chan struct{}
+	waiting atomic.Int32
+}
+
+var laneCheckouts sync.Map // cleaned root -> *laneCheckout
+
+func laneCheckoutFor(root string) *laneCheckout {
+	value, _ := laneCheckouts.LoadOrStore(filepath.Clean(root), &laneCheckout{slot: make(chan struct{}, 1)})
+	return value.(*laneCheckout)
+}
+
+// withLaneCheckout runs one checkout-moving step with the checkout held.
+func withLaneCheckout(root string, run func() error) error {
+	checkout := laneCheckoutFor(root)
+	checkout.waiting.Add(1)
+	checkout.slot <- struct{}{}
+	checkout.waiting.Add(-1)
+	defer func() { <-checkout.slot }()
+	return run()
+}
+
+func (checkout *laneCheckout) held() bool { return len(checkout.slot) == 1 }
 
 // batchRearmEdges are the control root's Git reads and the re-arm steps.
 type batchRearmEdges struct {
@@ -459,8 +485,10 @@ func rearmBatchBase(root, baseTree string) error {
 // landing moved it) stays, since the tip proof runs in its own detached
 // worktree at the batch tree.
 func rearmBatchBaseWith(root, baseTree string, edges batchRearmEdges) error {
-	batchRearmMutex.Lock()
-	defer batchRearmMutex.Unlock()
+	return withLaneCheckout(root, func() error { return rearmBatchBaseHeld(root, baseTree, edges) })
+}
+
+func rearmBatchBaseHeld(root, baseTree string, edges batchRearmEdges) error {
 	controlRoot := batch.ModuleRoot(root)
 	head, headTree, err := edges.head(root)
 	if err != nil {

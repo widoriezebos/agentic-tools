@@ -941,12 +941,6 @@ func TestSourcesComeFromTheRetainedVerifier(t *testing.T) {
 	if got := load(t, store).Proof.Sources; !reflect.DeepEqual(got, sources) {
 		t.Fatalf("recorded sources=%+v", got)
 	}
-	_, unresolved := landingBed(t)
-	must(t, unresolved.Update(testBatchID, func(record *Record) error { record.Proof.SelectedGroups = proof.SelectedGroups; return nil }))
-	must(t, RecordSources(unresolved, testBatchID, "owner", flakeNow, func(Record) (map[string]string, error) {
-		return map[string]string{"covered": "tip-attempt"}, nil
-	}))
-	everyMemberReturned(t, unresolved, "group executed does not resolve")
 	// A composed proof's recovered group resolves to the classification
 	// attempt only at the tip plan's execution identity.
 	red := knownRed()
@@ -1063,6 +1057,48 @@ func TestExpiredAllowanceBetweenPredicateAndPublicationRefusesPublication(t *tes
 				t.Fatalf("publication was not refused: err=%v events=%v", err, events)
 			}
 			everyMemberReturned(t, store, "known flake F")
+		})
+	}
+}
+
+// TestGreenBatchLandsWhenAnotherBatchsBaseRunBlocksReuse: another batch's
+// fresh base run leaves a live or failed observation, so the retained
+// verifier resolves a group of this perfectly green proof to nothing, or
+// fails outright. The ordinary green proof still lands with the reason
+// recorded; nothing reads Sources before U5 (B2).
+func TestGreenBatchLandsWhenAnotherBatchsBaseRunBlocksReuse(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name     string
+		resolved map[string]string
+		err      error
+		reason   string
+	}{
+		{"a live observation blocks reuse", map[string]string{"covered": "tip"}, nil, "group executed does not resolve"},
+		{"the verifier refuses", nil, errors.New("live-observation-blocks-reuse for group executed"), "live-observation-blocks-reuse"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, store := landingBed(t)
+			must(t, store.Update(testBatchID, func(record *Record) error {
+				record.Proof.SelectedGroups, record.Proof.AttemptID = []string{"covered", "executed"}, "tip"
+				return nil
+			}))
+			before := load(t, store)
+			if before.State != StateLanding || before.Proof.Status != "green" {
+				t.Fatalf("bed is not a green landing batch: %+v", before)
+			}
+			must(t, RecordSources(store, testBatchID, "owner", flakeNow, func(Record) (map[string]string, error) { return test.resolved, test.err }))
+			after := load(t, store)
+			if after.State != StateLanding || after.Proof == nil || after.Proof.Status != "green" || after.Proof.Sources != nil ||
+				!strings.Contains(after.Proof.SourcesUnresolved, test.reason) {
+				t.Fatalf("green batch did not stay landing with the reason recorded: state=%s proof=%+v", after.State, after.Proof)
+			}
+			for _, unit := range after.Units {
+				if unit.State != UnitJoined {
+					t.Fatalf("member %s left a green batch: %s", unit.GoalID, unit.State)
+				}
+			}
 		})
 	}
 }

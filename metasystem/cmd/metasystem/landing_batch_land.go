@@ -20,7 +20,13 @@ import (
 	receiptpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 )
 
+// executeBatchLanding lands one batch with the lane checkout held: concurrent
+// landings and base re-arms move the same checkout, so they take turns.
 func executeBatchLanding(root, id, actor string, at time.Time) error {
+	return withLaneCheckout(root, func() error { return landBatchInCheckout(root, id, actor, at) })
+}
+
+func landBatchInCheckout(root, id, actor string, at time.Time) error {
 	store := batch.NewStore(root, nil)
 	record, err := store.Load(id)
 	if err != nil {

@@ -36,6 +36,17 @@ func TestTrunkRedRoleVerdicts(t *testing.T) {
 			t.Fatalf("unowned entry: %+v", role)
 		}
 	})
+	t.Run("unowned flake and hang entries are tracked, not reds on main", func(t *testing.T) {
+		pending := healthTrunkRedEntry("pending", "", now.Add(-time.Hour))
+		pending.Class = goal.TrunkRedClassPendingFlake
+		hang := healthTrunkRedEntry("hang", "", now.Add(-time.Hour))
+		hang.Class = goal.TrunkRedClassHang
+		bed := newRoleTrunkRedBed(t, now, []goal.TrunkRedEntry{hang, pending}, healthCadence(now, "passed"))
+		role := bed.trunkRedWithoutBatch()
+		if role.Status != HealthAlive || role.Reason != "no open trunk red; 2 flake or hang entries tracked separately (metasystem incident list)" {
+			t.Fatalf("tracked defects: %+v", role)
+		}
+	})
 	t.Run("stale empty batch hold is dead but a fresh hold is alive", func(t *testing.T) {
 		bed := newRoleTrunkRedBed(t, now, nil, healthCadence(now, "passed"))
 		landing := t.TempDir()

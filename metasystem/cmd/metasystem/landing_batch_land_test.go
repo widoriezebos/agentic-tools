@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -314,6 +316,7 @@ func TestFirstGreenLandsOthersRebaseWhenNoInputMoved(t *testing.T) {
 // worktree, so a root already past the batch base stays where it is).
 func TestConcurrentRearmsNeverOverlapNorMoveTheControlRootBack(t *testing.T) {
 	t.Parallel()
+	root := t.TempDir()
 	var (
 		mu               sync.Mutex
 		head             = "T0"
@@ -329,8 +332,7 @@ func TestConcurrentRearmsNeverOverlapNorMoveTheControlRootBack(t *testing.T) {
 			overlaps++
 		}
 		mu.Unlock()
-		if batchRearmMutex.TryLock() {
-			batchRearmMutex.Unlock()
+		if !laneCheckoutFor(root).held() {
 			mu.Lock()
 			overlaps++
 			mu.Unlock()
@@ -358,9 +360,9 @@ func TestConcurrentRearmsNeverOverlapNorMoveTheControlRootBack(t *testing.T) {
 		up:      func(context.Context, string, string) (upOutcome, error) { step("up"); return upOutcome{}, nil },
 	}
 	errs := make(chan error, 2)
-	go func() { errs <- rearmBatchBaseWith("root", "tree-T2", edges) }()
+	go func() { errs <- rearmBatchBaseWith(root, "tree-T2", edges) }()
 	<-entered
-	go func() { errs <- rearmBatchBaseWith("root", "tree-T1", edges) }()
+	go func() { errs <- rearmBatchBaseWith(root, "tree-T1", edges) }()
 	close(proceed)
 	for range 2 {
 		if err := <-errs; err != nil {
@@ -369,5 +371,61 @@ func TestConcurrentRearmsNeverOverlapNorMoveTheControlRootBack(t *testing.T) {
 	}
 	if overlaps != 0 || !slices.Equal(moves, []string{"T0->T2"}) || head != "T2" {
 		t.Fatalf("rearms overlapped %d time(s) or moved the control root back: moves=%q head=%s", overlaps, moves, head)
+	}
+}
+
+// TestLandingsAndRearmsTakeTurnsOnTheLaneCheckout: two green batches landing
+// at once and a proof start's re-arm all move the one lane checkout, so while
+// batch A's landing holds it, batch B's production landing and the re-arm
+// wait; neither runs over A's unlanded tree (B1).
+func TestLandingsAndRearmsTakeTurnsOnTheLaneCheckout(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	checkout := laneCheckoutFor(root)
+	var inside atomic.Int32
+	var landedDuringA, rearmedDuringA atomic.Bool
+	entered, release := make(chan struct{}), make(chan struct{})
+	first := make(chan error, 1)
+	go func() {
+		first <- withLaneCheckout(root, func() error {
+			inside.Add(1)
+			close(entered)
+			<-release
+			inside.Add(-1)
+			return nil
+		})
+	}()
+	<-entered
+	landed, rearmed := make(chan error, 1), make(chan error, 1)
+	go func() {
+		err := executeBatchLanding(root, "batch-b", "owner", time.Unix(0, 0))
+		landedDuringA.Store(inside.Load() != 0)
+		landed <- err
+	}()
+	edges := batchRearmEdges{
+		head: func(string) (string, string, error) {
+			rearmedDuringA.Store(inside.Load() != 0)
+			return "T1", "tree-T1", nil
+		},
+		rebuild: func(context.Context, string) error { return nil },
+		up:      func(context.Context, string, string) (upOutcome, error) { return upOutcome{}, nil },
+	}
+	go func() { rearmed <- rearmBatchBaseWith(root, "tree-T1", edges) }()
+	for checkout.waiting.Load() != 2 && !landedDuringA.Load() && !rearmedDuringA.Load() {
+		runtime.Gosched()
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	<-landed // batch-b has no record in this bed; only the order is witnessed
+	if err := <-rearmed; err != nil {
+		t.Fatal(err)
+	}
+	if landedDuringA.Load() || rearmedDuringA.Load() {
+		t.Fatalf("the lane checkout was moved while batch A's landing held it: landing=%v rearm=%v", landedDuringA.Load(), rearmedDuringA.Load())
+	}
+	if checkout.held() {
+		t.Fatal("the lane checkout stayed held after every step finished")
 	}
 }
