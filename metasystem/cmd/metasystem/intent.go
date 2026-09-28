@@ -70,6 +70,9 @@ type intentCommand struct {
 	// with its own parser, output and exit codes: a machinery verb given a
 	// public home, or a process entrypoint.
 	passthrough func([]string) int
+	// owner is the handler a passthrough runs, once its public options
+	// (--repo, the installation found) are applied.
+	owner func([]string) int
 	// hidden rows are process entrypoints: routed, never listed in public
 	// help; launcher names the code that starts them.
 	hidden   bool

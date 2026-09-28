@@ -68,7 +68,7 @@ func TestIntentSwitchedRemediesReachTheFamilyOwner(t *testing.T) {
 			}
 			continue
 		}
-		if command.passthrough == nil || reflect.ValueOf(command.passthrough).Pointer() != reflect.ValueOf(test.handler).Pointer() {
+		if command.passthrough == nil || command.owner == nil || reflect.ValueOf(command.owner).Pointer() != reflect.ValueOf(test.handler).Pointer() {
 			t.Errorf("%s does not run the family handler of %s", test.printed, test.family)
 		}
 		if !slices.Equal(rest, test.rest) {

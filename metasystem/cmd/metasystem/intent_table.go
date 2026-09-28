@@ -45,7 +45,7 @@ func passthroughAction(object, action, audience, summary string, usage []string,
 		shownExamples[index] = strings.ReplaceAll(example, " --root .", "")
 	}
 	command := intentCommand{object: object, action: action, audience: audience, summary: summary, usage: lines,
-		flags: shown, examples: shownExamples, maxArgs: -1}
+		flags: shown, examples: shownExamples, maxArgs: -1, owner: run}
 	command.passthrough = func(args []string) int { return runPassthrough(command, run, args, os.Stderr) }
 	return command
 }
