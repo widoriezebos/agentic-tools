@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -198,4 +199,107 @@ func TestHelmTakeIsIdempotent(t *testing.T) {
 			t.Fatalf("a second person's take did not log both names:\n%s", log)
 		}
 	})
+}
+
+func (b *helmBed) wantReturn(code int, fragment string) string {
+	b.t.Helper()
+	got, out := b.run("helm", "return")
+	if got != code || !strings.Contains(out, fragment) {
+		b.t.Fatalf("return: exit %d (want %d), want %q in:\n%s", got, code, fragment, out)
+	}
+	return out
+}
+
+func TestHelmReturnIsIdempotent(t *testing.T) {
+	t.Parallel()
+	t.Run("HM-2", func(t *testing.T) {
+		b := newHelmBed(t, 20, true)
+		b.wantTake(nil, 0, "proven", "Wido")
+		b.wantReturn(0, "the machinery is at the helm again")
+		b.wantReturn(0, "the machinery is at the helm; nothing to return")
+		if strings.Count(b.log(), "\n") != 2 {
+			t.Fatalf("a repeat return wrote a record:\n%s", b.log())
+		}
+	})
+}
+
+func TestHelmReturnByAgentAllowed(t *testing.T) {
+	t.Parallel()
+	t.Run("HM-2", func(t *testing.T) {
+		b := newHelmBed(t, 20, true)
+		b.wantTake(nil, 0, "proven", "Wido")
+		b.owners.helm.pid = func() int64 { return 80 }
+		if b.wantReturn(0, "returned the helm Wido held"); helm.Active(b.root).Active {
+			t.Fatal("an agent's return left the helm taken")
+		}
+	})
+}
+
+func TestReturnRemovesFirstMalformed(t *testing.T) {
+	t.Parallel()
+	t.Run("HM-9", func(t *testing.T) {
+		b := newHelmBed(t, 20, true)
+		seat, err := helm.Write(b.root, helm.Record{By: "Wido"})
+		helmMust(t, err)
+		if b.wantReturn(0, "returned the helm unknown held: malformed"); helm.Active(b.root).Active || !strings.Contains(b.log(), `"by":"unknown"`) {
+			t.Fatalf("malformed signature at %s not returned; log:\n%s", seat.Signature, b.log())
+		}
+	})
+}
+
+func TestReturnRemovesFirstUnreadable(t *testing.T) {
+	t.Parallel()
+	t.Run("HM-9", func(t *testing.T) {
+		b := newHelmBed(t, 20, true)
+		seat, err := helm.Write(b.root, helm.Record{By: "Wido", At: helmNow.Format(time.RFC3339), Reason: "r"})
+		helmMust(t, err, os.Chmod(seat.Signature, 0))
+		if b.wantReturn(0, "returned the helm unknown held: open "); helm.Active(b.root).Active {
+			t.Fatal("a mode-000 signature was not removed")
+		}
+		helmMust(t, os.MkdirAll(filepath.Join(seat.Signature, "blocker"), 0o700))
+		b.wantReturn(1, seat.Signature+" cannot be removed")
+		if b.log() != "" && strings.Count(b.log(), "\n") != 1 {
+			t.Fatalf("a failed removal went on to log:\n%s", b.log())
+		}
+	})
+}
+
+func TestReturnWithoutGitStillReturns(t *testing.T) {
+	t.Parallel()
+	t.Run("HM-9", func(t *testing.T) {
+		b := newHelmBed(t, 20, true)
+		b.wantTake(nil, 0, "proven", "Wido")
+		b.owners.resolver = stateroot.NewResolver(func(string) (string, error) { return "", errors.New(`exec: "git": executable file not found in $PATH`) }, noExecutable)
+		if b.wantReturn(0, "running work: unavailable: "); helm.Active(b.root).Active {
+			t.Fatal("return without git left the helm taken")
+		}
+	})
+}
+
+func TestReturnRemovesOnlySignature(t *testing.T) {
+	t.Parallel()
+	t.Run("HM-9", func(t *testing.T) {
+		b := newHelmBed(t, 20, true)
+		seat := helm.Seat{Yields: filepath.Join(b.root, ".git", "metasystem", "helm-yields.log")}
+		b.wantTake(nil, 0, "proven", "Wido")
+		helm.RecordYield(b.root, helm.Yield{At: helmNow, Boundary: "stop-hook"})
+		b.wantReturn(0, "yields since the take: 1")
+		for _, path := range []string{seat.Yields, filepath.Join(b.root, ".git", "metasystem", "helm.log"), filepath.Join(b.inst, "metasystem.conf")} {
+			if _, err := os.Stat(path); err != nil {
+				t.Fatalf("return removed %s: %v", path, err)
+			}
+		}
+	})
+}
+
+func TestHelmStatusLinesInLocalTime(t *testing.T) {
+	t.Parallel()
+	b := newHelmBed(t, 60, true)
+	b.wantTake(nil, 0, "other-terminal", "wido")
+	inv := &intentInvocation{owners: b.owners}
+	result := inv.withHelm(intentResult{Summary: "status of " + b.root, text: []string{"machinery: stopped"}, Data: map[string]any{}}, b.root)
+	want := "HUMAN AT THE HELM since 21:14 CEST (2026-09-28) by wido: by hand — metasystem helm return ends it"
+	if result.Summary != want || !strings.HasPrefix(result.text[0], "taken at a terminal that is not enrolled; session leader sshd") || result.text[len(result.text)-1] != "machinery: stopped" {
+		t.Fatalf("status lines: %q %q", result.Summary, result.text)
+	}
 }
