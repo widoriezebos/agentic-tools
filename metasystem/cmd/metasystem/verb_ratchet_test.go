@@ -85,8 +85,9 @@ const (
 	// launch supervisor's proc setsid hop.
 	verbRatchetSelfSubprocessCeiling = 104
 	// R6: instruction text naming a form whose first word is not public, over
-	// the vocabulary frozen when the witness landed.
-	verbRatchetInstructionCeiling = 40
+	// the vocabulary frozen when the witness landed. Batch 9 (u9a's public
+	// homes, c3's plan deletions, distill's record removal): measured 12.
+	verbRatchetInstructionCeiling = 12
 )
 
 type ratchetSite struct {
