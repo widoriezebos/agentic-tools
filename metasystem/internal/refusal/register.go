@@ -257,7 +257,7 @@ var Rows = []Row{
 	{Code: "RISK_UNANSWERED", Owner: "internal/dispatch", Site: "admission.go:303", Shape: Agent, Override: "goal classify-sweep or goal unapprove, goal edit --risk, goal approve", Commands: 3},
 	{Code: "CLOCK_REGRESSED", Owner: "internal/dispatch", Site: "budget.go:340", Shape: Agent, Override: "goal set-budget", Commands: 1},
 	{Code: "ADMISSION_CLOSED_ELAPSED", Owner: "internal/dispatch", Site: "budget.go:857", Shape: Agent, Override: "goal resume", Commands: 1},
-	{Code: "ELAPSED_BREACH", Owner: "internal/steward", Site: "health.go:1418", Shape: Agent, Override: "goal resume", Commands: 1},
+	{Code: "ELAPSED_BREACH", Owner: "internal/steward", Site: "health.go:1414", Shape: Agent, Override: "goal resume", Commands: 1},
 	{Code: "BRIEF_AUTHORITY_REFUSED", Owner: "internal/dispatch", Site: "brief.go:38", Shape: Question, H1: StandingInput},
 	{Code: "BRIEF_BOUNDS_INVALID", Owner: "internal/dispatch", Site: "brief.go:57", Shape: Question, H1: StandingInput},
 	{Code: "BRIEF_BOUNDS_UNREADABLE", Owner: "internal/validate", Site: "brief_bounds_source.go:19", Shape: Question, H1: StandingInput},
