@@ -111,22 +111,14 @@ func loopBatchOwnerWithCadence(owner *batch.Owner, held batchOwnerLease, root st
 			return err
 		}
 		runBatchOwnerPass(owner, held, root, clock, cadence)
-		timer := time.NewTimer(interval)
+		// The harness's loop advances on events only: a wake, a completion
+		// or the stop; the interval's passing is never a test's clock (the
+		// production owner loop is the supervised component's).
 		select {
 		case <-wake:
-			if !timer.Stop() {
-				<-timer.C
-			}
-		case <-timer.C:
 		case done := <-owner.Completions():
 			owner.Complete(done)
-			if !timer.Stop() {
-				<-timer.C
-			}
 		case <-stop:
-			if !timer.Stop() {
-				<-timer.C
-			}
 			return nil
 		}
 	}

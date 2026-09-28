@@ -57,7 +57,7 @@ func TestPortP1BrainIntegrationDeclaredCheckoutRefusesEveryActWithItsRemedy(t *t
 	brief := b.brief("brief.md", "implement", "Let a node finish it.")
 	before := b.agentFiles()
 	remedy := map[string][]string{
-		"dispatch":  {"the brain never dispatches", "metasystem internal delegate --role"},
+		"dispatch":  {"the brain never dispatches", "metasystem work build"},
 		"follow-up": {"the brain never dispatches"},
 		"cancel":    {"the brain never cancels a node's job"},
 		"close":     {"the brain never closes or reaps dispatcher records"},
