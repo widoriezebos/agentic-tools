@@ -1,10 +1,11 @@
 # The evidence root has one owner and a default
 
-Design, 2026-09-28, revision 3. Author: Fable (design lane). Approved shape: Wido, 2026-09-28.
+Design, 2026-09-28, revision 4. Author: Fable (design lane). Approved shape: Wido, 2026-09-28.
 Revision 2 folded Astra's round 1 (`plans/evidence-root-default-astra-critique-r1.md`); revision 3
-folds round 2 (`plans/evidence-root-default-astra-critique-r2.md`, the failsafe round) as two fixture
-obligations in U4. Critique closed. Dispositions at the foot. Status: build on Opus after `embed` and
-`u9b` land (see Sequencing).
+folded round 2 (`plans/evidence-root-default-astra-critique-r2.md`, the failsafe round) as two
+fixture obligations in U4; revision 4 folds Wido's answers to the open questions (Decided, below)
+as a migration step with no new mechanism. Critique closed. Dispositions at the foot. Status: build
+on Opus after `embed` and `u9b` land (see Sequencing).
 
 ## Problem
 
@@ -323,6 +324,27 @@ the key when absent. The build proves the rest once, by hand, not by mechanism: 
 with `HOME` pointed at an empty scratch directory and assert that directory is still empty
 afterwards; any bed that wrote there names its root.
 
+### U6. The retirement pointer
+
+`internal/evidence/retired.go:WriteRetired(root string, checkouts []string, now time.Time) (changed
+bool, err error)` writes `<root>/RETIRED.json` exactly as m1e-c4 fixed it:
+`{"schemaVersion":1,"retiredAt":"<RFC3339 UTC>","checkouts":["<absolute checkout path>", ...],
+"successor":"per-checkout default","rule":"evidence-root-default"}`. Idempotent: an existing file is
+read first; its `retiredAt` is kept; the checkouts are the union of the file's and the call's,
+deduplicated and sorted, so a rerun with the same content leaves the file alone (`changed ==
+false`, bytes identical) and a new checkout is added, never removed. The write is atomic through
+`internal/atomicfile.WriteText` (temp file, then rename). Its caller is the one new verb of this
+design, internal and unavoidable because the migration must be rerunnable by the engine's own
+writer: `metasystem internal evidence retire --root ROOT --checkout PATH` (repeatable), in
+`cmd/metasystem/evidence_verbs.go` beside `evidence-gc`, refusing a relative root or checkout.
+Part B's census owns the reading.
+
+Test: `internal/evidence/retired_test.go:TestWriteRetiredIsIdempotent` (parallel, temp dir, no
+Git): the first write produces the format with the given checkouts and `retiredAt`; a second write
+with the same checkouts and a later clock changes nothing (bytes equal, `changed == false`); a
+third with one more checkout adds it, keeps `retiredAt`, reports `changed == true`; a fourth with a
+subset removes nothing. `internal/evidence`'s floor (80.5) holds with it.
+
 ## Sequencing (against m1e's three units in flight)
 
 The `embed` and `u9b` branches are NOT visible from this seat: `git branch -a` in
@@ -348,13 +370,37 @@ therefore written against the coordinator's description of them, not their code.
 
 ## Migration and compatibility
 
-- Explicit settings are untouched: every seat with an absolute value keeps it (`Origin` names the
-  source). `ui` keeps `/Users/wido/metasystem-evidence/ui`, which is NOT the default
-  (`~/metasystem-evidence/agentic-tools-ui` would be) and is not changed.
+- The resolver honours an explicit absolute value wherever a person sets one (`Origin` names the
+  source). On this host, though, every hand-set value moves onto the convention (Wido, Decided Q2
+  and Q3), so that nobody needs to set it and the defaults just work.
 - Placeholder seats start resolving to `~/metasystem-evidence/<basename>` on first use; they have
   nothing to migrate (zero records each).
-- Nothing moves anyone's existing evidence. The seven checkouts on the shared root stay on it; any
-  change to m1e waits for a heads-up to m1e.
+- Hand-set roots move onto the convention, as the LAST act of the build, after U5 is on main and
+  each seat runs an engine built from it (dropping the line earlier would make every live seat
+  mirror against the placeholder, which fails silently under KI-6). Per checkout, in this order:
+  1. Write the pointer in the root being retired, so m1e-c4's disk census reads it as "retired root
+     of <checkouts>, N bytes" instead of a silent orphan: `<old root>/RETIRED.json`, m1e-c4's fixed
+     format, written by U6's `metasystem internal evidence retire --root <old root> --checkout
+     <absolute path>...`. `/Users/wido/metasystem-evidence/agentic-tools` lists `agentic-tools`,
+     `agentic-tools-m1b`, `agentic-tools-m1b-retired-20260906`, `agentic-tools-m1c`,
+     `agentic-tools-m1e`, `agentic-tools-paper`, `agentic-tools-slc-r4` (all under
+     `/Users/wido/LocalStorage/GitHub/`); `/Users/wido/metasystem-evidence/agentic-tools-m1d` lists
+     `agentic-tools-m1d` (its explicit root equals its default, but the line goes too and the
+     non-empty root keeps the pointer). `/Users/wido/metasystem-evidence/ui` is empty and is simply
+     removed; no pointer, nothing to orphan.
+  2. Drop the one key from `<checkout>/metasystem/metasystem.conf.local` with a line that reads
+     nothing else and prints nothing: `sed -i '' '/^evidence\.root=/d' <local>` (BSD sed, no
+     backup copy of a secrets file). The engine's own writer is not used: `validate.SetConfKeys`
+     cannot delete and `config tailor` rewrites a whole conf for a runtime set. The rest of the file
+     is never read, printed or diffed. Checkouts: the eight above plus `agentic-tools-ui`.
+  3. Verify with the value only: `bin/metasystem config get --key evidence.root --conf
+     <checkout>/metasystem/metasystem.conf` no longer prints the hand-set path, and the seat's next
+     `system start` prints `evidence root: /Users/wido/metasystem-evidence/<basename> (default; ...)`.
+- Nothing moves: old evidence stays under the old roots and stays readable by hand, named by its
+  pointer. The cost, stated: `internal/metrics/data.go:loadJobs` reads mirrored records only under
+  the CURRENT root, so metrics on those seats stop counting the old mirrors from the moment the
+  line is dropped. m1e has been told. m1c keeps its committed placeholder, harmless under the
+  resolver (it resolves to the default like every other checkout).
 - Machines launched earlier keep the explicit sibling root in their `.local`. Launch records keep
   `Created.EvidenceRoot`; a resume of an earlier launch is judged as before.
 - Adopted repositories carrying the old committed placeholder resolve to the default through the
@@ -388,7 +434,9 @@ therefore written against the coordinator's description of them, not their code.
   `coverage-ratchet-linux.json`): no new package, so no new floor; the touched packages' floors must
   hold: `internal/config` 82.7, `internal/dispatch` 75.9, `internal/delegation` 72.1,
   `internal/metrics` 85.0, `internal/stateroot` 86.0, `internal/seat/launch` 74.6, `internal/adopt`
-  81.3, `internal/evidence` 80.5 (unchanged code); `cmd/metasystem` is exempt.
+  81.3, `internal/evidence` 80.5 (U6's `WriteRetired` fully covered by its test); `cmd/metasystem`
+  is exempt. U6's internal verb adds a row to `cmd/metasystem/main.go`'s verb table and no
+  refusal-register row (it refuses in prose, unrouted).
 - Stop decision surface audit (`cmd/devgate/owners.go:stopSurface`): the deleted tests carry no
   `Verdict{ShouldBlock` line; not triggered. SessionStart exit audit: no hook touched.
 - `internal/layering/r9_test.go`: `internal/config` is neither an owner nor a composition package;
@@ -425,26 +473,32 @@ therefore written against the coordinator's description of them, not their code.
   `/Users/wido/LocalStorage/agentic-tools-evidence/disk-lifetimes-20260927/engine-owns-disk-lifetimes.md`
   (amendment at line 1649, dated 2026-09-29, which reads as the same clock error). Its GC is not
   designed here.
+- The blob store: the large bytes under `~/LocalStorage/agentic-tools-evidence` were Go caches and
+  source copies from hand-run builders, not duplicate evidence; m1e-c4's Part B revision 4c makes
+  the blob store one per host and refuses caches under evidence. This design does nothing about it.
 
-## Open questions for Wido
+## Decided (Wido, 2026-09-28)
 
-1. Catch-up mirror (brief question a): recommend NO, and not in step 1. Evidence: every placeholder
-   checkout has zero job records; the only unmirrored terminal jobs are ten on m1d and m1e from
-   2026-09-10, which sit on seats with explicit roots and belong to KI-6's sweep.
-2. The shared root (brief question b): seven checkouts share
-   `/Users/wido/metasystem-evidence/agentic-tools`, with no record of a decision (grepped
-   `records/`, `plans/`, `memory/` in ui and m1e: only path mentions). It is safe for job mirrors
-   because `dispatch.CheckoutSegment` keys them by checkout path (five segments are visible there,
-   by design of `records/misc/multi-main-coexistence.md` lines 172-181); only app copies interleave.
-   The launch's "roots must not mix" rule guards a NEW machine's root and keeps doing so on the
-   resolved root (U4); it never judged seats already sharing one. Recommend: leave all seven as they
-   are, change no setting, and if you want
-   m1e separated later it is one `.local` line after a heads-up, at the cost that metrics on m1e
-   stop seeing the mirrors left under the old root.
-3. The default naming: `<checkout basename>` puts `ui` at `agentic-tools-ui` while its explicit
-   setting says `ui`. Keep the explicit setting, or drop the line and take the default?
-4. Should `system start` refuse an explicitly invalid root (this design: yes, by the resolver's
-   sentence, before the fence moves), or only print it and let the mirrors fail as today?
+Wido's rule, verbatim: "I want the easiest solution, by convention if possible, without anybody
+ever needing to set these themselves (because the defaults just work) rarely having to override
+these."
+
+1. Catch-up mirror (brief question a): NO, as recommended. Every placeholder checkout has zero job
+   records; the only unmirrored terminal jobs are ten on m1d and m1e from 2026-09-10, on seats
+   with explicit roots, and belong to KI-6's sweep.
+2. The shared root (brief question b): REVERSED against the recommendation to leave it. Seven
+   checkouts shared `/Users/wido/metasystem-evidence/agentic-tools` with no record of a decision
+   (only path mentions in `records/`, `plans/`, `memory/` of ui and m1e); job mirrors were safe
+   there because `dispatch.CheckoutSegment` keys them by checkout path. Hand-set values move onto
+   the convention: the build drops the `evidence.root` line from the `.local` of every checkout that
+   set one by hand (main, m1b, m1b-retired-20260906, m1c, m1e, paper, slc-r4, ui, and m1d whose
+   explicit root equals its default), leaves a pointer in each retired root, moves no evidence, and
+   accepts that metrics stop counting the old mirrors (Migration). m1e has been told; m1c keeps its
+   committed placeholder.
+3. `ui`: takes the default, `/Users/wido/metasystem-evidence/agentic-tools-ui`; its line is dropped
+   with the others and the empty `.../ui` directory is removed.
+4. `system start` refuses an explicitly invalid root, as designed (U3): by the resolver's sentence,
+   before the fence moves. Unset never refuses.
 
 ## Dispositions of Astra's rounds 1 and 2
 
