@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:58d7bd3f03fd4408e5b0c3ebc1b66e0fdc9f55fadca5fb1985fe149951ce9f69",
+  "sourceDigest": "sha256:24994023747ce219fb049b5c22c587977fe42ca0c2ee090d3a16d4939ed66193",
   "source": [
     {
       "path": ".npmrc",
@@ -292,7 +292,7 @@
     },
     {
       "path": "src/cuts.test.ts",
-      "sha256": "3ff755b4a8757d6cead0fdeaca40740aaab1f86c42cc9f3d8e9c125c8e2e7cd0"
+      "sha256": "878fbc299ea9b8f6cc09a5fca1bfce3248f0b8458654cb0e3420366127d673b7"
     },
     {
       "path": "src/decisions/BulkSheet.tsx",

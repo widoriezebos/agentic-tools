@@ -227,6 +227,9 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // record and answered from the candidate's own tree. The two suffixes are
   // listed on their own because the record's own path lies between the prefix
   // and them. Nothing here polls: a moved tip is read once, on return.
+  // Every sitting's room (g1-s67 D2) reads its desk through the same call site
+  // and the same source read, answered for a record a sitting shapes from the
+  // checkout as it stands; no read is added, and /changes is refused there.
   ["review/api.ts", 1, ["/api/review/", "/source", "/changes"]],
 ];
 
