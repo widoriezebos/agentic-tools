@@ -1319,8 +1319,9 @@ func (c *Conversation) Rise(now time.Time) error {
 
 // sittingsOn is every record one human has a standing sitting's conversation
 // about in this store, read from the marks on the state files beside the
-// transcripts. A file that cannot be read names nothing: it is a conversation
-// this process will open and report on its own when it is asked for.
+// transcripts. A state file that is there but cannot be read or parsed is
+// refused by name rather than skipped: a sign-in that skipped it would report
+// the seat's sittings moved and leave that one behind.
 func sittingsOn(directory, human string) ([]string, error) {
 	under := filepath.Join(directory, sittingsDirectory, fileName(human))
 	held, err := os.ReadDir(under)
@@ -1335,12 +1336,19 @@ func sittingsOn(directory, human string) ([]string, error) {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join(under, entry.Name()))
+		path := filepath.Join(under, entry.Name())
+		body, err := os.ReadFile(path)
 		if err != nil {
-			continue
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("the Partner's sitting state at %s could not be read: %w", path, err)
 		}
 		var state stateFile
-		if json.Unmarshal(body, &state) != nil || state.Sitting == nil {
+		if err := json.Unmarshal(body, &state); err != nil {
+			return nil, fmt.Errorf("the Partner's sitting state at %s could not be read: %w", path, err)
+		}
+		if state.Sitting == nil {
 			continue
 		}
 		if record := strings.TrimSpace(state.Sitting.Subject.ID); record != "" {
@@ -1420,14 +1428,33 @@ func (c *Conversation) writeStateHeld(now time.Time) error {
 		Session: c.session, Sitting: c.sitting, UpdatedAt: now.UTC().Format(time.RFC3339)})
 }
 
-// publishState writes one state file, whole.
+// publishState writes one state file, whole. The state is written beside the
+// file and put over it, so a reader not holding the conversation's lock — a
+// sign-in looking for the seat's sittings — finds the old state or the new one
+// and never a file cut short. The temporary ends in .tmp, which no reader of the
+// store counts, so one left by a crash is never taken for a state.
 func publishState(path string, held stateFile) error {
 	body, err := json.Marshal(held)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, append(body, '\n'), 0o600); err != nil {
+	failed := func(err error) error {
 		return fmt.Errorf("the Partner's conversation state could not be written: %w", err)
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return failed(err)
+	}
+	_, err = temporary.Write(append(body, '\n'))
+	if closed := temporary.Close(); err == nil {
+		err = closed
+	}
+	if err == nil {
+		err = os.Rename(temporary.Name(), path)
+	}
+	if err != nil {
+		_ = os.Remove(temporary.Name())
+		return failed(err)
 	}
 	return nil
 }
