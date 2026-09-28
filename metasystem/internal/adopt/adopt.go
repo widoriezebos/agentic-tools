@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
@@ -910,25 +911,7 @@ func writeFile(path string, data []byte, mode fs.FileMode) error {
 	}
 	syscall.ForkLock.RLock()
 	defer syscall.ForkLock.RUnlock()
-	temporary, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".adopt-")
-	if err != nil {
-		return err
-	}
-	name := temporary.Name()
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		os.Remove(name)
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		os.Remove(name)
-		return err
-	}
-	if err := os.Chmod(name, mode); err != nil {
-		os.Remove(name)
-		return err
-	}
-	return os.Rename(name, path)
+	return atomicfile.WriteVolatileFile(path, data, mode)
 }
 
 func regularFile(path string) bool {

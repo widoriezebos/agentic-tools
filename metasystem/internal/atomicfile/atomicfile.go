@@ -80,6 +80,21 @@ func WriteText(path, text, anchor string) (durable bool, err error) {
 	})
 }
 
+// WriteFile is WriteText for bytes whose published file carries mode: the
+// mode is set on the temporary before the rename, so the file never appears
+// with os.CreateTemp's 0600 (WriteText and CopyFile publish 0600). Callers
+// that replaced a hand-rolled os.WriteFile(tmp, data, mode)+Rename pass the
+// mode they used to hand os.WriteFile.
+func WriteFile(path string, data []byte, mode os.FileMode, anchor string) (durable bool, err error) {
+	return publish(path, anchor, func(tmp *os.File) error {
+		if err := tmp.Chmod(mode); err != nil {
+			return err
+		}
+		_, err := tmp.Write(data)
+		return err
+	})
+}
+
 // publish is the ONE publication sequence: make the
 // directory chain durable, fill a synced temp file in the target's own
 // directory, rename it into place, then sync the directory — with the
@@ -193,6 +208,27 @@ func CopyFile(sourcePath, targetPath, anchor string) (durable bool, err error) {
 // full-flushes (F_FULLFSYNC on darwin) for durability nobody reads —
 // enough load to destabilize the suite's timing-scaled fixtures.
 func WriteVolatile(path, text string) error {
+	return writeVolatile(path, func(f *os.File) error {
+		_, err := f.WriteString(text)
+		return err
+	})
+}
+
+// WriteVolatileFile is WriteVolatile for bytes whose published file carries
+// mode (set on the temporary before the rename). It is for writers that
+// never promised durability and publish many files, such as an installation
+// payload, where a full flush per file would be the whole cost of the write.
+func WriteVolatileFile(path string, data []byte, mode os.FileMode) error {
+	return writeVolatile(path, func(f *os.File) error {
+		if err := f.Chmod(mode); err != nil {
+			return err
+		}
+		_, err := f.Write(data)
+		return err
+	})
+}
+
+func writeVolatile(path string, fill func(*os.File) error) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -200,10 +236,7 @@ func WriteVolatile(path, text string) error {
 	// Shares the temp-write plumbing with publish, with the no-fsync
 	// semantics explicit: durable=false skips the temp sync, and no
 	// directory in the chain is synced at all.
-	tmp, err := writeTemp(dir, filepath.Base(path), func(f *os.File) error {
-		_, err := f.WriteString(text)
-		return err
-	}, false)
+	tmp, err := writeTemp(dir, filepath.Base(path), fill, false)
 	if err != nil {
 		return err
 	}

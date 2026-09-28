@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"golang.org/x/sys/unix"
 )
@@ -206,12 +207,8 @@ func writeEntry(repoRoot string, e Entry) error {
 	if err != nil {
 		return err
 	}
-	path := entryPath(repoRoot, e.Opid)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	_, err = atomicfile.WriteFile(entryPath(repoRoot, e.Opid), data, 0o644, "")
+	return err
 }
 
 // ReadEntry loads one entry by opid.

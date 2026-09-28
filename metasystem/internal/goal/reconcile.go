@@ -21,6 +21,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
 // baseRecordPath stores the materialized-edit-base, machine-local.
@@ -73,22 +75,9 @@ func WriteBase(repoRoot string, rec BaseRecord) error {
 	if err != nil {
 		return err
 	}
-	// A UNIQUE temp name per writer: a shared ".tmp" lets two
+	// atomicfile names a UNIQUE temp per writer: a shared ".tmp" lets two
 	// sessions clobber each other's half-written record.
-	tmpF, err := os.CreateTemp(dir, "materialized-*.json.tmp")
-	if err != nil {
-		return err
-	}
-	if _, err := tmpF.Write(data); err != nil {
-		tmpF.Close()
-		os.Remove(tmpF.Name())
-		return err
-	}
-	if err := tmpF.Close(); err != nil {
-		os.Remove(tmpF.Name())
-		return err
-	}
-	return os.Rename(tmpF.Name(), baseRecordPath(repoRoot))
+	return atomicfile.WriteVolatileFile(baseRecordPath(repoRoot), data, 0o600)
 }
 
 // claimReconcileLock serializes every owner of the pending record —
@@ -410,21 +399,7 @@ func refreshFor(e Endpoint, publishedCommit string, snap *Snapshot, anchor func(
 		// Write-then-rename: an in-place truncate torn by ENOSPC or
 		// death leaves partial bytes the RERUN would misread as a
 		// hand edit — and then record completion over the tear.
-		tmpF, tmpErr := os.CreateTemp(filepath.Dir(abs), ".goal-refresh-*")
-		if tmpErr != nil {
-			return skipped, tmpErr
-		}
-		if _, err := tmpF.Write(published[p]); err != nil {
-			tmpF.Close()
-			os.Remove(tmpF.Name())
-			return skipped, err
-		}
-		if err := tmpF.Close(); err != nil {
-			os.Remove(tmpF.Name())
-			return skipped, err
-		}
-		if err := os.Rename(tmpF.Name(), abs); err != nil {
-			os.Remove(tmpF.Name())
+		if err := atomicfile.WriteVolatileFile(abs, published[p], 0o600); err != nil {
 			return skipped, err
 		}
 	}

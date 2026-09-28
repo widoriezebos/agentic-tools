@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
@@ -346,20 +347,7 @@ func recordMeasureWorktree(projectRoot, path, sha, gateRef string) error {
 		return err
 	}
 	kept = append(kept, string(entry))
-	tmp, err := os.CreateTemp(dir, "measure-worktrees.")
-	if err != nil {
-		return err
-	}
-	if _, err := tmp.WriteString(strings.Join(kept, "\n") + "\n"); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
-		return err
-	}
-	return os.Rename(tmp.Name(), registry)
+	return atomicfile.WriteVolatileFile(registry, []byte(strings.Join(kept, "\n")+"\n"), 0o600)
 }
 
 // measureCommand runs one measurement command under the named per-job ceiling
