@@ -1,5 +1,10 @@
 # delegate-launch-sets-its-own-context-window: build design
 
+- Kind: design
+- Id: 01M3MJ3E9NBXSKYWSSCCBSGHYN
+- Status: done
+- Goals: delegate-launch-sets-its-own-context-window
+
 Revision: 1 (2026-09-16). Author: Claude Fable 5.1 design delegate, launched headless by seat m1e.
 Goal: `delegate-launch-sets-its-own-context-window` (tier 3, priority 1, approved by Wido 2026-09-16 13:17Z).
 Round boundary: the goal's DONE conditions (1) to (4), exactly. Section 8 lists what stays out.

@@ -1,5 +1,10 @@
 # Stop gate sees harness-tracked work
 
+- Kind: design
+- Id: 01M3MJ3E9NV13792J9P43EY209
+- Status: done
+- Goals: stop-gate-sees-harness-tracked-work
+
 Design for `metasystem/plans/goals/stop-gate-sees-harness-tracked-work.md` (tag sgh). Revision 1, 2026-09-16.
 Author: Claude Fable 5.1 design delegate, launched headless by seat m1e.
 Parent frame: `metasystem/plans/coordinator-wakes-on-events-not-polls-design.md` (m1b, in flight). This page adds one wait kind and one source to that frame. It changes no row of the parent's stop table, no waiter loop behaviour, no hint, delivery, resume or recovery rule, and none of the clause 5 measurement in the parent's amendments r1 to r4.

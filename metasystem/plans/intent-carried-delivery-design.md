@@ -1,5 +1,10 @@
 # Complete exceptional delivery through human intent
 
+- Kind: design
+- Id: 01M3MJ3E9NRC865VPJFXWJGE41
+- Status: accepted
+- Goals: verbs-match-intent
+
 Root-authored implementation correction to accepted designs/intent-workflows.md,
 IW-4. Status: accepted with required owner fixtures; Fable rounds complete. Goal: verbs-match-intent. 26 September 2026.
 This fixes a demonstrated missing composition, not a new authority policy.

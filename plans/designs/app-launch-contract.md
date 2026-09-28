@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3KA0C9CQZV1GAK720188VZ9
-- Status: draft
+- Status: done
 - Goals: app-launch-contract
 
 Wido, 2026-09-28: "we should probably have a verb for this that uses a

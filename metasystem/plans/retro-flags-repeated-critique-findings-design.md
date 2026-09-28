@@ -1,5 +1,10 @@
 # retro-flags-repeated-critique-findings: design, revision 1
 
+- Kind: design
+- Id: 01M3MJ3E9NR4NG5ERTP5TZTVCA
+- Status: done
+- Goals: retro-flags-repeated-critique-findings
+
 - Goal: retro-flags-repeated-critique-findings (tag rfc), tier 2, priority 1, sequence 8
 - Revision: 1 (first draft), dated 2026-09-16
 - Author: Claude Fable 5.1 design delegate, launched headless by seat m1e
