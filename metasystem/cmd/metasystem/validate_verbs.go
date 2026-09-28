@@ -131,27 +131,6 @@ func runValidatePreambleQuotes(args []string) int {
 	return 0
 }
 
-// runValidateWrapperToken proves the caller runs under the live commit
-// wrapper the token names: valid token fields, the wrapper pid in the
-// caller's native process ancestry, and the wrapper's kernel start time
-// matching the token. Exit 0 proven; 1 not proven; 2 usage.
-func runValidateWrapperToken(args []string) int {
-	flags := flag.NewFlagSet("validate wrapper-token", flag.ContinueOnError)
-	token := flags.String("token", "", "wrapper commit-token JSON file")
-	callerPid := flags.Int64("caller-pid", 0, "pid whose ancestry must contain the live wrapper")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *token == "" || *callerPid <= 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate wrapper-token --token F --caller-pid N")
-		return 2
-	}
-	if validate.WrapperToken(*token, *callerPid, validate.KernelProcessTree{}) {
-		return 0
-	}
-	return 1
-}
-
 // runValidateSessionIsolation copies adapter-declared local
 // configuration into a second-session worktree, audits the isolation,
 // and prints the new checkout's harness root. Exit 0 isolated; 1 an

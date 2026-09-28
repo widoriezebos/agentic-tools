@@ -208,7 +208,7 @@ func supARunMeasuredWait(t *testing.T, root string, clock *virtualWaitClock, wai
 const supARunRecord = `{"schemaVersion":1,"runId":"run-unpublished","kind":"suite","display":"unpublished run","custody":"wrapped","generation":1,"fenceGeneration":1,"pid":null,"pidStartedAt":null,"pgid":null,"launchNonce":"0123456789abcdef0123456789abcdef","log":"run.log","startedAt":"2026-09-16T10:00:00Z","mainId":null,"ownerLineage":null,"claimEpoch":null,"sessionId":"","goalId":"","staleAfterMin":30,"hungSince":null,"windDownMin":2,"evidence":{"mode":"exit-sidecar"},"expect":{},%s}`
 
 // Ported from supervision-fixtures.sh wait-measure-fake (its job and run
-// legs; the landing leg belongs to land.sh). A job wait whose publication
+// legs; the landing leg belongs to the landing path). A job wait whose publication
 // hint reaches it through its FIFO, a job wait that has no hint and returns on
 // its poll, and a run wait whose source publishes no wait-published event at
 // all are each measured from the events and rows the waits themselves wrote:

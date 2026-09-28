@@ -186,7 +186,12 @@ func TestHelmTakeDetachedLeaderIsAcceptedAndNamed(t *testing.T) {
 
 func TestHelmTakeIsIdempotent(t *testing.T) {
 	t.Parallel()
-	t.Run("HM-2", func(t *testing.T) {
+	t.Run("HM-2", witnessHelmTakeRepeat)
+}
+
+// witnessHelmTakeRepeat is HM-2's take leg, also U-idem's helm take witness.
+func witnessHelmTakeRepeat(t *testing.T) {
+	{
 		b := newHelmBed(t, 20, true)
 		first := b.wantTake(nil, 0, "proven", "Wido")
 		before, _ := os.ReadFile(filepath.Join(b.root, ".git", "metasystem", "helm.json"))
@@ -205,7 +210,7 @@ func TestHelmTakeIsIdempotent(t *testing.T) {
 		if log := b.log(); !strings.Contains(log, `"by":"Ann"`) || !strings.Contains(log, `"replaced":"Wido"`) {
 			t.Fatalf("a second person's take did not log both names:\n%s", log)
 		}
-	})
+	}
 }
 
 func (b *helmBed) wantReturn(code int, fragment string) string {
@@ -219,15 +224,19 @@ func (b *helmBed) wantReturn(code int, fragment string) string {
 
 func TestHelmReturnIsIdempotent(t *testing.T) {
 	t.Parallel()
-	t.Run("HM-2", func(t *testing.T) {
-		b := newHelmBed(t, 20, true)
-		b.wantTake(nil, 0, "proven", "Wido")
-		b.wantReturn(0, "the machinery is at the helm again")
-		b.wantReturn(0, "the machinery is at the helm; nothing to return")
-		if strings.Count(b.log(), "\n") != 2 {
-			t.Fatalf("a repeat return wrote a record:\n%s", b.log())
-		}
-	})
+	t.Run("HM-2", witnessHelmReturnRepeat)
+}
+
+// witnessHelmReturnRepeat is HM-2's return leg, also U-idem's helm return
+// witness.
+func witnessHelmReturnRepeat(t *testing.T) {
+	b := newHelmBed(t, 20, true)
+	b.wantTake(nil, 0, "proven", "Wido")
+	b.wantReturn(0, "the machinery is at the helm again")
+	b.wantReturn(0, "the machinery is at the helm; nothing to return")
+	if strings.Count(b.log(), "\n") != 2 {
+		t.Fatalf("a repeat return wrote a record:\n%s", b.log())
+	}
 }
 
 func TestHelmReturnByAgentAllowed(t *testing.T) {

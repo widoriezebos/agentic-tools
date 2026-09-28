@@ -279,6 +279,10 @@ func goalBranchMainCLIFixtureBelow(t *testing.T, lineage, subdir string) (string
 		for _, path := range []string{"metasystem.conf", "plans", "scripts"} {
 			goalSyncMutationGit(t, repo, "mv", path, filepath.ToSlash(filepath.Join(subdir, path)))
 		}
+		// The untracked fence engine moves with its installation.
+		if err := os.Rename(filepath.Join(repo, "bin"), filepath.Join(root, "bin")); err != nil {
+			t.Fatal(err)
+		}
 	}
 	rootPath := filepath.Join(root, "plans", "goals", "backlog.md")
 	rootBytes, err := os.ReadFile(rootPath)
@@ -1048,15 +1052,10 @@ func TestGoalBranchCommitIsTheGuardedCommitWrapper(t *testing.T) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build fixture engine: %s: %v", output, err)
 	}
-	guard, err := os.ReadFile(filepath.Join(moduleRoot, "scripts", "agents", "pre-commit-guard.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	guardPath := filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")
-	writeTestingFixtureFile(t, guardPath, guard, 0o755)
+	// The hook runs the built engine's pre-commit entry: the production guard.
 	common := goalSyncMutationGit(t, root, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	hook := filepath.Join(common, "hooks", "pre-commit")
-	writeTestingFixtureFile(t, hook, []byte("#!/bin/sh\nexec bash "+guardPath+"\n"), 0o755)
+	writeTestingFixtureFile(t, hook, []byte("#!/bin/sh\nexec "+shellQuote(filepath.Join(bin, "metasystem"))+" internal pre-commit --root "+shellQuote(root)+"\n"), 0o755)
 
 	product := filepath.Join(root, "metasystem", "guarded.go")
 	writeTestingFixtureFile(t, product, []byte("package fixture\n"), 0o644)

@@ -135,7 +135,9 @@ func setPriorityRequest(r VerbRequest, id string, priority uint8, sequence *uint
 				}
 			}
 			if len(changed) == 0 {
-				return nil, NothingToDo{Reason: "the requested priority and sequence already hold"}
+				// The rank this act asks for already holds: a repeat, and
+				// success with no record (R-129-ui).
+				return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already priority %d, sequence %d", id, target.Priority, target.Sequence)}
 			}
 
 			targets := make([]string, 0, len(changed))

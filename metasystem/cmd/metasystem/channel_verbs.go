@@ -197,7 +197,7 @@ func runChannelAsk(args []string) int {
 	for _, warning := range warnings {
 		fmt.Fprintln(os.Stderr, warning)
 	}
-	if err != nil {
+	if err != nil && !errors.Is(err, errQuestionAlreadyOpen) {
 		fmt.Fprintln(os.Stderr, err)
 		return code
 	}
@@ -265,12 +265,20 @@ func askChannelQuestionVia(root string, in channelAskInput, surface channelAskSu
 	if e != nil {
 		return channel.Question{}, warnings, 1, e
 	}
-	q, e := channel.Ask(channel.AskRequest{Context: ctx, RepoRoot: root, Goal: in.Goal, Kind: in.Kind, Machine: machine, Lineage: lineage, Facts: in.Facts, Options: opts, Recommendation: in.Recommendation, Wants: in.Wants, Budget: in.Budget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
+	q, existing, e := channel.AskOrFind(channel.AskRequest{Context: ctx, RepoRoot: root, Goal: in.Goal, Kind: in.Kind, Machine: machine, Lineage: lineage, Facts: in.Facts, Options: opts, Recommendation: in.Recommendation, Wants: in.Wants, Budget: in.Budget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
 	if e != nil {
 		return q, warnings, 1, e
 	}
+	if existing {
+		return q, warnings, 0, errQuestionAlreadyOpen
+	}
 	return q, warnings, 0, nil
 }
+
+// errQuestionAlreadyOpen is an ask whose exact question already stands open
+// (R-129-ui): the question is returned with it, and nothing was asked again.
+var errQuestionAlreadyOpen = errors.New("this exact question is already open; nothing was asked again")
+
 func runChannelShow(args []string) int {
 	root, id, ok := channelQuestionFlags("show", args)
 	if !ok {

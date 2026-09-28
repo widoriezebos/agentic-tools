@@ -207,6 +207,9 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) 
 			}
 			target = metarun.WaiterTarget{ProofDigest: attempt.ProofIdentity.IdentityDigest}
 		}
+	case "path":
+		path := filepath.Join(root, "outside-work", "ALL-BUILDERS-DONE")
+		selector = metarun.WaitSelector{Kind: "path", TargetID: metarun.PathWaitTargetID(path), Path: path, Until: "present"}
 	case "landing", "human-act", "channel":
 		tip := acceptedTipForEndpoint(t, endpoint)
 		selector.Kind, selector.TargetID, selector.GoalID, selector.After = "goal", pendingWaitGoalID, pendingWaitGoalID, tip

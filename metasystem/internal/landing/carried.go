@@ -254,7 +254,7 @@ func observeCarried(params ObserveParams) Observation {
 		return carriedRefusal("carry-battery-unverified", fmt.Sprintf("test verify failed: %v; no word carries an unverified battery; repair the testing tool or its evidence and rerun", verifyErr), provenance)
 	}
 	if decision == carriedUnneeded {
-		return carriedRefusal("carry-unneeded", "the refusal you named did not occur; land without --carried, or name what you see", provenance)
+		return carriedRefusal("carry-unneeded", "the refusal you named did not occur; land without --using-exception, or name what you see", provenance)
 	}
 	if decision == carriedMismatch {
 		return carriedRefusal("carry-refusal-mismatch", fmt.Sprintf("the landing saw ordinary=%s missing-or-failing=%v uncovered=%v discrepancies=%v, not %s", ordinaryObservation.Code, missingFailing, result.Delivery.UncoveredObligations, result.Delivery.Discrepancies, word.Past), provenance)
@@ -344,7 +344,11 @@ func carriedDebtText(debt goal.CarryDebt) string {
 	case "inflight":
 		return fmt.Sprintf("carry debt is unpaid: goal %s has carrying row %s %s", debt.Goal, debt.ID, debt.Detail)
 	default:
-		return fmt.Sprintf("carry debt is unpaid: word %s landed as %s without a carried row; run land.sh --carried %s", debt.ID, debt.Detail, debt.ID)
+		goalID := debt.Goal
+		if goalID == "" {
+			goalID = "G"
+		}
+		return fmt.Sprintf("carry debt is unpaid: word %s landed as %s without a carried row; run metasystem work land %s --using-exception %s", debt.ID, debt.Detail, goalID, debt.ID)
 	}
 }
 

@@ -100,7 +100,7 @@ func TestGLEBatchMovedRetryRejectsRevisedMemberBeforePublication(t *testing.T) {
 		pushed++
 		return originalPush(root, id, base, tip)
 	}
-	seams := batchLandSeams(root, id, record, baseCommit, "owner")
+	seams := batchLandSeamsWithRead(root, id, record, baseCommit, "owner", gitOutput, plantedBatchCommit)
 	seams.Prepare = func(string) error { return nil }
 	seams.Apply = func(batch.Unit) error { return nil }
 	seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }

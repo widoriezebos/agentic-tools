@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
 // EndpointPushError preserves whether git named a stale lease or another
@@ -258,24 +258,32 @@ func RunCommand(spec CommandSpec) error {
 	return nil
 }
 
-type CommitDeclaration struct{ args []string }
+// CommitDeclaration is the landing declaration a unit commits under.
+type CommitDeclaration struct {
+	chain, attested, snapshot, base string
+}
 
 func ChainDeclaration(chain string) CommitDeclaration {
-	return CommitDeclaration{args: []string{"--chain", chain}}
+	return CommitDeclaration{chain: chain}
 }
 
 func AttestedDeclaration(commit, snapshot, base string) CommitDeclaration {
-	return CommitDeclaration{args: []string{"--attested", commit, "--attested-snapshot", snapshot, "--attested-base", base}}
+	return CommitDeclaration{attested: commit, snapshot: snapshot, base: base}
 }
 
-// CommitWithWrapper invokes the repository commit boundary for one unit. The
-// caller supplies the goal approver's configured identity; ambient git author
-// and committer configuration is intentionally ignored.
-func CommitWithWrapper(root string, declaration CommitDeclaration, goalID, receipt, message, authorName, authorEmail, landedBy string) error {
-	return CommitWithWrapperWithRead(root, declaration, goalID, receipt, message, authorName, authorEmail, landedBy, landingGitOutput)
+// CommitBoundary runs the commit boundary (landpath.Commit) for one request
+// and returns what it printed and its exit status.
+type CommitBoundary func(landpath.CommitRequest) (string, int)
+
+// CommitWithWrapper commits one unit through the commit boundary. The caller
+// supplies the goal approver's configured identity, stamped as author and
+// committer; ambient git author and committer configuration is ignored. The
+// lineage is the landing owner's, named here rather than inherited.
+func CommitWithWrapper(root string, declaration CommitDeclaration, goalID, receipt, message, authorName, authorEmail, landedBy, lineage string, commit CommitBoundary) error {
+	return CommitWithWrapperWithRead(root, declaration, goalID, receipt, message, authorName, authorEmail, landedBy, lineage, commit, landingGitOutput)
 }
 
-func CommitWithWrapperWithRead(root string, declaration CommitDeclaration, goalID, receipt, message, authorName, authorEmail, landedBy string, readGit func(root string, args ...string) (string, error)) error {
+func CommitWithWrapperWithRead(root string, declaration CommitDeclaration, goalID, receipt, message, authorName, authorEmail, landedBy, lineage string, commit CommitBoundary, readGit func(root string, args ...string) (string, error)) error {
 	if authorName == "" || authorEmail == "" {
 		return fmt.Errorf("BATCH_LAND_AUTHOR_UNBOUND: goal %s has no configured approver identity", goalID)
 	}
@@ -283,7 +291,10 @@ func CommitWithWrapperWithRead(root string, declaration CommitDeclaration, goalI
 	if err != nil {
 		return err
 	}
-	messageFile, err := os.CreateTemp(root, ".batch-commit-message-*")
+	// The message lives outside the work tree: an untracked file there is a
+	// working-tree byte the commit would not record, which the boundary
+	// refuses.
+	messageFile, err := os.CreateTemp("", "metasystem-batch-commit-message-*")
 	if err != nil {
 		return err
 	}
@@ -296,12 +307,13 @@ func CommitWithWrapperWithRead(root string, declaration CommitDeclaration, goalI
 	if err := messageFile.Close(); err != nil {
 		return err
 	}
-	args := append([]string(nil), declaration.args...)
-	args = append(args, "--goal", goalID, "--test-receipt", receipt, "-F", name)
-	if err := RunCommand(CommandSpec{Dir: root, Name: filepath.Join(root, "scripts", "agents", "commit.sh"), Args: args,
+	request := landpath.CommitRequest{Root: root, Chain: declaration.chain, Attested: declaration.attested,
+		AttestedSnapshot: declaration.snapshot, AttestedBase: declaration.base, Goal: goalID, GoalSet: true,
+		TestReceipt: receipt, MessageFile: name, OwnerLineage: lineage, LandedBy: landedBy,
 		Env: []string{"GIT_AUTHOR_NAME=" + authorName, "GIT_AUTHOR_EMAIL=" + authorEmail,
-			"GIT_COMMITTER_NAME=" + authorName, "GIT_COMMITTER_EMAIL=" + authorEmail, "METASYSTEM_LANDED_BY=" + landedBy}}); err != nil {
-		return err
+			"GIT_COMMITTER_NAME=" + authorName, "GIT_COMMITTER_EMAIL=" + authorEmail}}
+	if output, status := commit(request); status != 0 {
+		return fmt.Errorf("commit boundary for goal %s exited %d: %s", goalID, status, strings.TrimSpace(output))
 	}
 	after, err := readGit(root, "rev-parse", "HEAD")
 	if err != nil {

@@ -623,8 +623,11 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 				// Apply twice on one proposal — two tabs read one card — and a
 				// second session approval used to write a second approval record
 				// with a second History line.
-				if f.Approved != nil && authority == f.Approved.Authority &&
-					(authority == ApprovalAuthorityProven || authority == ApprovalAuthoritySession) &&
+				// A person's approval is one effect whichever human hand gave
+				// it, the enrolled terminal or the signed-in browser: a repeat
+				// of either over the other is a repeat (R-129-ui).
+				humanHand := func(a string) bool { return a == ApprovalAuthorityProven || a == ApprovalAuthoritySession }
+				if f.Approved != nil && humanHand(authority) && humanHand(f.Approved.Authority) &&
 					f.Budget != nil && *f.Budget == *nextBudget {
 					if expired, _ := f.ApprovalExpired(approvalHorizon(t, r.Now)); !expired {
 						continue
@@ -657,13 +660,15 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 				changed = true
 			}
 			if !changed {
+				// Every target already carries this approval: the act's effect
+				// holds, so the repeat is success and writes nothing (R-129-ui).
 				switch authority {
 				case ApprovalAuthorityAttorney:
-					return nil, NothingToDo{Reason: "every target already has the same approval under power of attorney"}
+					return nil, AlreadyHolds{Reason: "every target already has the same approval under power of attorney"}
 				case ApprovalAuthoritySession:
-					return nil, NothingToDo{Reason: "every target already has the same approval from this signed-in session"}
+					return nil, AlreadyHolds{Reason: "every target already has the same approval from this signed-in session"}
 				}
-				return nil, NothingToDo{Reason: "every target already has the same proven approval"}
+				return nil, AlreadyHolds{Reason: "every target already has the same proven approval"}
 			}
 			changes = armApprovalGate(t, r, changes)
 			return ackDisplacements(t, r, changes), nil
@@ -706,10 +711,12 @@ func Unapprove(r VerbRequest, id, because string, proof *humanauthority.Proof) (
 				// lost, or a second tab held the same card. A goal that is not
 				// live is refused above — this rule reads a live goal's own
 				// approval and says nothing about one that has left the tree.
+				// At every authority (R-129-ui, U-idem): a withdrawal of an
+				// approval that is not there is a repeat, not a refusal.
 				if fromSignedInSession(proof) {
-					return nil, NothingToDo{Reason: "goal " + id + " carries no approval: the same withdrawal from this signed-in session"}
+					return nil, AlreadyHolds{Reason: "goal " + id + " carries no approval: the same withdrawal from this signed-in session"}
 				}
-				return nil, approvalRequired(f, "unapprove")
+				return nil, AlreadyHolds{Reason: "goal " + id + " is already not approved (it is " + f.State + ")"}
 			}
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
@@ -883,7 +890,7 @@ func RecordFleetEnrollment(r VerbRequest, generation uint64) (PublishResult, err
 				return nil, err
 			}
 			if t.Root.FleetEnrollment != nil {
-				return nil, NothingToDo{Reason: "the fleet's first terminal enrollment is already recorded"}
+				return nil, AlreadyHolds{Reason: "the fleet's first terminal enrollment is already recorded"}
 			}
 			t.Root.FleetEnrollment = &FleetEnrollmentRecord{At: r.stamp(), Machine: r.Actor.Machine, Generation: generation, Opid: r.opid()}
 			t.Root.Revision++

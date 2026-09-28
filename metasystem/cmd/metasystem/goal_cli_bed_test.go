@@ -115,9 +115,8 @@ func newGoalCLIBed(t *testing.T, seed goalCLISeed) *goalCLIBed {
 		seed.rootRecord(record)
 	}
 	files := map[string][]byte{
-		"metasystem.conf":                    []byte("metasystem.runtimes=fake\n" + seed.config),
-		"scripts/agents/pre-commit-guard.sh": []byte("#!/bin/sh\nexit 0\n"),
-		"plans/goals/backlog.md":             goal.RenderRoot(record),
+		"metasystem.conf":        []byte("metasystem.runtimes=fake\n" + seed.config),
+		"plans/goals/backlog.md": goal.RenderRoot(record),
 	}
 	for id, file := range goals {
 		if file == nil {
@@ -141,6 +140,12 @@ func newGoalCLIBed(t *testing.T, seed goalCLISeed) *goalCLIBed {
 		if err := write(full, data, mode); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// scripts/agents marks the installation for the state root; the bed
+	// once planted the retired pre-commit-guard.sh there (U5 moved the guard
+	// into the engine).
+	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	if !seed.noEnrollment {
 		writeFixtureEnrollment(t, root, "Wido")

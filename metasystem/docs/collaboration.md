@@ -42,7 +42,7 @@ obligations demand it, or an explicit `--mode deep` runs deep; every other
 landing runs canary plus standard and finishes in about a minute. The two
 whole-package coverage groups and the big process sections run at cadence
 only. The goal's four risk answers scale the landing's behavior-surface weight
-instead (`gate weight-add --goal`, the highest answer as the factor), so a
+instead (the landing weighs itself with the highest answer as the factor), so a
 riskier goal brings the deep cadence run sooner. When the configured threshold is due,
 the standing validator's custodian runs the deep cadence selection through the
 governed run boundary and joins its testing worker to that one reservation:
@@ -68,9 +68,11 @@ retained result group identities with the six catch classes. Wido is the
 custodian. Findings fix forward; no per-landing gate or retry is introduced.
 
 Ownership of the retained overlaps is explicit. For migrated contracts,
-`commit.sh` owns one verify-only consumption boundary and launches no tests or
-builds; `land.sh` may launch the selected shared run once when execution was
-explicitly requested and re-verifies after transport changes. Legacy
+the landing path's commit boundary (`metasystem work land`, in
+`internal/landing/landpath`) owns one verify-only consumption boundary and
+launches no tests or builds; its driver may launch the selected shared run
+once when execution was explicitly requested and re-verifies after transport
+changes. Legacy
 installations retain their migration-only coverage delta. The full Go gate
 (`go run ./cmd/devgate gate`) owns the legacy repository-wide coverage ratchet. Wido owns the review,
 after the next declared milestone, of whether that sweep still catches debt

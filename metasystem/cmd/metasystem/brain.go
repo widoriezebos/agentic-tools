@@ -99,11 +99,20 @@ func brainDeclareWith(caller processIdentity, stdout, stderr io.Writer, root, by
 		fmt.Fprintln(stderr, "brain declare needs --by")
 		return 2
 	}
+	ledgerIdentity := deps.ledgerIdentity(root)
+	// A declaration of a checkout already declared is a repeat whose effect
+	// holds (R-129-ui): success at every authority, and the declaration it
+	// keeps. It reads what the unguarded coordinator read shows and changes
+	// nothing, so no person's proof is needed to answer it.
+	if state := brain.Read(root, ledgerIdentity); ledgerIdentity != "" && state.State == brain.Declared {
+		writeJSONLine(stdout, stderr, map[string]any{"state": brain.Declared, "record": state.Record, "unchanged": true,
+			"summary": fmt.Sprintf("this checkout is already the coordinator of ledger %s, declared by %s at %s", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt)})
+		return 0
+	}
 	if err := brainHumanAct(caller, root, "declare", fixture, deps.classify); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	ledgerIdentity := deps.ledgerIdentity(root)
 	if ledgerIdentity == "" {
 		fmt.Fprintln(stderr, "brain declare needs a migrated ledger identity; run metasystem internal goal migrate first")
 		return 2
@@ -241,6 +250,13 @@ func brainWithdrawWith(caller processIdentity, stdout, stderr io.Writer, root, b
 		fmt.Fprintln(stderr, "brain withdraw needs --by")
 		return 2
 	}
+	// A withdrawal where nothing is declared is a repeat whose effect holds
+	// (R-129-ui): success at every authority, and nothing is touched.
+	if brain.Read(root, deps.ledgerIdentity(root)).State == brain.Undeclared {
+		writeJSONLine(stdout, stderr, map[string]any{"state": brain.Undeclared, "unchanged": true,
+			"summary": "no coordinator is declared for this checkout; there was nothing to withdraw"})
+		return 0
+	}
 	if err := brainHumanAct(caller, root, "withdraw", fixture, deps.classify); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
@@ -256,7 +272,11 @@ func brainWithdrawWith(caller processIdentity, stdout, stderr io.Writer, root, b
 		return 2
 	}
 	if !removed {
-		return 3
+		// Nothing was declared: the withdrawal's effect already holds
+		// (R-129-ui).
+		writeJSONLine(stdout, stderr, map[string]any{"state": brain.Undeclared, "unchanged": true,
+			"summary": "no coordinator is declared for this checkout; there was nothing to withdraw"})
+		return 0
 	}
 	writeJSONLine(stdout, stderr, map[string]any{"state": brain.Undeclared})
 	return 0

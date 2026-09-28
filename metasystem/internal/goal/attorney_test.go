@@ -467,7 +467,10 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	if err != nil || claimed.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim held-one: %+v %v", claimed, err)
 	}
-	expectRefusal(t, "claimed goal", mustPublish(UnparkUnderAttorney(withUlid(lifter, 56), "held-one", "nothing to lift")), nil, "is claimed, not parked")
+	// A claimed goal is not paused: the unpark's effect holds (U-idem).
+	if lifted := mustPublish(UnparkUnderAttorney(withUlid(lifter, 56), "held-one", "nothing to lift")); lifted.Outcome != OutcomeAbandoned || !lifted.Unchanged || !strings.Contains(lifted.Detail, "is not paused (it is claimed)") {
+		t.Fatalf("claimed goal: %+v", lifted)
+	}
 	before, err := loadTreeFor(endpoint, claimed.Tip)
 	if err != nil {
 		t.Fatal(err)

@@ -197,19 +197,23 @@ func goalHandoverEffect(invocation ownerInvocation, request goalHandoverRequest)
 }
 
 func printCarryMutation(res goal.PublishResult, detail string, err error) int {
+	return printCarryMutationTo(os.Stdout, os.Stderr, res, detail, err)
+}
+
+func printCarryMutationTo(stdout, stderr io.Writer, res goal.PublishResult, detail string, err error) int {
 	if err != nil {
 		var ask *goal.CarryAskError
 		if errors.As(err, &ask) {
-			fmt.Fprintln(os.Stderr, ask.Error())
+			fmt.Fprintln(stderr, ask.Error())
 			return 3
 		}
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	if detail != "" {
-		fmt.Printf("%s ledger=%s\n", detail, res.Tip)
+		fmt.Fprintf(stdout, "%s ledger=%s\n", detail, res.Tip)
 	} else {
-		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		writeJSONLine(stdout, stderr, map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
 	}
 	if res.Outcome != goal.OutcomeConfirmed {
 		return 1
@@ -345,129 +349,161 @@ func runGoalCarryLanding(args []string) int {
 func runGoalCarrying(args []string) int {
 	flags := flag.NewFlagSet("goal carrying", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
-	id := flags.String("id", "", "goal id")
-	ref := flags.String("ref", "", "carry word operation id")
-	carrying := flags.String("carrying", "", "fleet reservation row operation id")
-	commit := flags.String("commit", "", "carried commit id for the local intent form")
-	tree := flags.String("tree", "", "whole-project tree")
-	workspace := flags.String("workspace", "", "workspace projection for the local intent form")
-	past := flags.String("past", "", "named refusal")
-	battery := flags.String("battery", "", "green or red testing battery")
-	missing := flags.String("missing", "", "comma-separated missing groups")
-	failing := flags.String("failing", "", "comma-separated failing groups")
-	judge := flags.String("judge", "", "live or base")
-	judgeTree := flags.String("judge-tree", "", "base judge tree")
-	judgeDigest := flags.String("judge-digest", "", "judge SHA-256 digest")
-	liveFailure := flags.String("live-failure", "", "live judge failure")
-	ledger := flags.String("ledger", "", "accepted ledger tip")
-	by := flags.String("by", "", "human actor; reservations default to the carry word's actor")
-	ownerPID := flags.Int64("owner-pid", 0, "live ancestor process that owns the local intent")
-	abandon := flags.String("abandon", "", "reservation row to close")
-	why := flags.String("why", "landing is not continuing", "reason for abandoning the reservation")
+	var request goalCarryingRequest
+	flags.StringVar(&request.Goal, "id", "", "goal id")
+	flags.StringVar(&request.Ref, "ref", "", "carry word operation id")
+	flags.StringVar(&request.Carrying, "carrying", "", "fleet reservation row operation id")
+	flags.StringVar(&request.Commit, "commit", "", "carried commit id for the local intent form")
+	flags.StringVar(&request.Tree, "tree", "", "whole-project tree")
+	flags.StringVar(&request.Workspace, "workspace", "", "workspace projection for the local intent form")
+	flags.StringVar(&request.Past, "past", "", "named refusal")
+	flags.StringVar(&request.Battery, "battery", "", "green or red testing battery")
+	flags.StringVar(&request.Missing, "missing", "", "comma-separated missing groups")
+	flags.StringVar(&request.Failing, "failing", "", "comma-separated failing groups")
+	flags.StringVar(&request.Judge, "judge", "", "live or base")
+	flags.StringVar(&request.JudgeTree, "judge-tree", "", "base judge tree")
+	flags.StringVar(&request.JudgeDigest, "judge-digest", "", "judge SHA-256 digest")
+	flags.StringVar(&request.LiveFailure, "live-failure", "", "live judge failure")
+	flags.StringVar(&request.Ledger, "ledger", "", "accepted ledger tip")
+	flags.StringVar(&request.By, "by", "", "human actor; reservations default to the carry word's actor")
+	flags.Int64Var(&request.OwnerPID, "owner-pid", 0, "live ancestor process that owns the local intent")
+	flags.StringVar(&request.Abandon, "abandon", "", "reservation row to close")
+	flags.StringVar(&request.Why, "why", "landing is not continuing", "reason for abandoning the reservation")
 	lineage := flags.String("lineage", "", "coordinator lineage")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" {
+	if flags.Parse(args) != nil || flags.NArg() != 0 || request.Goal == "" {
 		return 2
 	}
 	req, err := syncReq("carrying", *root, "", *lineage)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	return goalCarryingTo(os.Stdout, os.Stderr, *root, req, err, request)
+}
+
+// goalCarryingRequest is one carry reservation, local pre-push intent, or
+// abandonment.
+type goalCarryingRequest struct {
+	Goal, Ref, Carrying, Commit, Tree, Workspace, Past, Battery, Missing, Failing string
+	Judge, JudgeTree, JudgeDigest, LiveFailure, Ledger, By, Abandon, Why          string
+	OwnerPID                                                                      int64
+}
+
+// goalCarryingTo runs the carry reservation owner for an already built
+// request and prints its outcome on the caller's streams.
+func goalCarryingTo(stdout, stderr io.Writer, root string, req goal.VerbRequest, reqErr error, request goalCarryingRequest) int {
+	if reqErr != nil {
+		fmt.Fprintln(stderr, reqErr)
 		return 1
 	}
-	if *abandon != "" {
-		result, err := goal.AbandonCarrying(req, *id, *abandon, *why)
-		return printCarryMutation(result, "", err)
+	if request.Abandon != "" {
+		why := request.Why
+		if why == "" {
+			why = "landing is not continuing"
+		}
+		result, err := goal.AbandonCarrying(req, request.Goal, request.Abandon, why)
+		return printCarryMutationTo(stdout, stderr, result, "", err)
 	}
-	if *ref == "" || *tree == "" || len(*tree) != 40 || gitObjectType(*root, *tree) != "tree" {
-		fmt.Fprintln(os.Stderr, "goal carrying needs --id, --ref, and a full --tree")
+	if request.Ref == "" || request.Tree == "" || len(request.Tree) != 40 || gitObjectType(root, request.Tree) != "tree" {
+		fmt.Fprintln(stderr, "goal carrying needs --id, --ref, and a full --tree")
 		return 2
 	}
-	projected, err := landing.ProjectWorkspaceTree(*root, *tree)
+	projected, err := landing.ProjectWorkspaceTree(root, request.Tree)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	if *commit != "" {
-		if *workspace == "" {
-			*workspace = projected
+	workspace := request.Workspace
+	if request.Commit != "" {
+		if workspace == "" {
+			workspace = projected
 		}
-		if *workspace != projected {
-			fmt.Fprintf(os.Stderr, "goal carrying --commit workspace differs: supplied=%s projected=%s\n", *workspace, projected)
+		if workspace != projected {
+			fmt.Fprintf(stderr, "goal carrying --commit workspace differs: supplied=%s projected=%s\n", workspace, projected)
 			return 1
 		}
-		if *carrying == "" || len(*commit) != 40 || gitObjectType(*root, *commit) != "commit" || *past == "" || (*battery != "green" && *battery != "red") || *judge == "" || *judgeDigest == "" || *ledger == "" || *by == "" || *ownerPID < 1 {
-			fmt.Fprintln(os.Stderr, "goal carrying --commit needs the reservation, carried fields, and a live --owner-pid")
+		if request.Carrying == "" || len(request.Commit) != 40 || gitObjectType(root, request.Commit) != "commit" || request.Past == "" || (request.Battery != "green" && request.Battery != "red") || request.Judge == "" || request.JudgeDigest == "" || request.Ledger == "" || request.By == "" || request.OwnerPID < 1 {
+			fmt.Fprintln(stderr, "goal carrying --commit needs the reservation, carried fields, and a live --owner-pid")
 			return 2
 		}
 	}
-	result, row, err := goal.Carrying(req, goal.CarryingArgs{Goal: *id, ApprovedRef: *ref, Carrying: *carrying, Commit: *commit, Project: *tree, Workspace: projected, Past: *past, Battery: *battery, Missing: *missing, Failing: *failing, Judge: *judge, JudgeTree: *judgeTree, JudgeDigest: *judgeDigest, LiveFailure: *liveFailure, Ledger: *ledger, By: *by, OwnerPID: *ownerPID})
-	if err != nil && *ownerPID > 0 && strings.Contains(err.Error(), "owner must be a live ancestor") {
-		fmt.Fprintln(os.Stderr, err)
+	result, row, err := goal.Carrying(req, goal.CarryingArgs{Goal: request.Goal, ApprovedRef: request.Ref, Carrying: request.Carrying, Commit: request.Commit, Project: request.Tree, Workspace: projected, Past: request.Past, Battery: request.Battery, Missing: request.Missing, Failing: request.Failing, Judge: request.Judge, JudgeTree: request.JudgeTree, JudgeDigest: request.JudgeDigest, LiveFailure: request.LiveFailure, Ledger: request.Ledger, By: request.By, OwnerPID: request.OwnerPID})
+	if err != nil && request.OwnerPID > 0 && strings.Contains(err.Error(), "owner must be a live ancestor") {
+		fmt.Fprintln(stderr, err)
 		return 2
 	}
 	detail := ""
 	if row != "" {
 		detail = "carrying=" + row
 	}
-	return printCarryMutation(result, detail, err)
+	return printCarryMutationTo(stdout, stderr, result, detail, err)
 }
 
 func runGoalCarried(args []string) int {
 	flags := flag.NewFlagSet("goal carried", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
-	entry := flags.String("entry", "", "created carried journal entry")
-	rebuild := flags.String("rebuild-from-commit", "", "landed commit whose carried trailers rebuild the record")
-	repair := flags.Bool("repair-counselor", false, "repair the counselor line from the carried row")
-	ref := flags.String("ref", "", "carry word operation id")
-	id := flags.String("id", "", "goal id for a rebuilt record")
+	var request goalCarriedRequest
+	flags.StringVar(&request.Entry, "entry", "", "created carried journal entry")
+	flags.StringVar(&request.Rebuild, "rebuild-from-commit", "", "landed commit whose carried trailers rebuild the record")
+	flags.BoolVar(&request.Repair, "repair-counselor", false, "repair the counselor line from the carried row")
+	flags.StringVar(&request.Ref, "ref", "", "carry word operation id")
+	flags.StringVar(&request.Goal, "id", "", "goal id for a rebuilt record")
 	lineage := flags.String("lineage", "", "coordinator lineage")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
 	req, err := syncReq("carried", *root, "", *lineage)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	return goalCarriedTo(os.Stdout, os.Stderr, *root, req, err, request)
+}
+
+// goalCarriedRequest completes, rebuilds, or repairs one carried record.
+type goalCarriedRequest struct {
+	Entry, Rebuild, Ref, Goal string
+	Repair                    bool
+}
+
+// goalCarriedTo runs the carried record owner for an already built request.
+func goalCarriedTo(stdout, stderr io.Writer, root string, req goal.VerbRequest, reqErr error, request goalCarriedRequest) int {
+	if reqErr != nil {
+		fmt.Fprintln(stderr, reqErr)
 		return 1
 	}
 	configureCarriedCounselor(&req.Endpoint)
 	selected := 0
-	if *entry != "" {
+	if request.Entry != "" {
 		selected++
 	}
-	if *rebuild != "" {
+	if request.Rebuild != "" {
 		selected++
 	}
-	if *repair {
+	if request.Repair {
 		selected++
 	}
 	if selected != 1 {
-		fmt.Fprintln(os.Stderr, "goal carried needs exactly one of --entry, --rebuild-from-commit, or --repair-counselor")
+		fmt.Fprintln(stderr, "goal carried needs exactly one of --entry, --rebuild-from-commit, or --repair-counselor")
 		return 2
 	}
-	if *repair {
-		if *ref == "" {
+	if request.Repair {
+		if request.Ref == "" {
 			return 2
 		}
-		if err := goal.RepairCarriedCounselor(req.Endpoint, *ref, req.Now); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+		if err := goal.RepairCarriedCounselor(req.Endpoint, request.Ref, req.Now); err != nil {
+			fmt.Fprintln(stderr, err)
 			return 1
 		}
 		return 0
 	}
-	if *entry != "" {
-		result, err := goal.Carried(req, *entry)
-		return printCarryMutation(result, "", err)
+	if request.Entry != "" {
+		result, err := goal.Carried(req, request.Entry)
+		return printCarryMutationTo(stdout, stderr, result, "", err)
 	}
-	if *id == "" || *ref == "" {
-		fmt.Fprintln(os.Stderr, "goal carried --rebuild-from-commit needs --id and --ref")
+	if request.Goal == "" || request.Ref == "" {
+		fmt.Fprintln(stderr, "goal carried --rebuild-from-commit needs --id and --ref")
 		return 2
 	}
-	carriedArgs, err := carriedArgsFromCommit(*root, *id, *ref, *rebuild)
+	carriedArgs, err := carriedArgsFromCommit(root, request.Goal, request.Ref, request.Rebuild)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	result, err := goal.CarriedFromCommit(req, carriedArgs)
-	return printCarryMutation(result, "", err)
+	return printCarryMutationTo(stdout, stderr, result, "", err)
 }
 
 func allLowerHex(value string) bool {
@@ -1389,6 +1425,12 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "read the current goal and critique finding before retrying"})
 	}
+	if res.Unchanged {
+		// The same person's acceptance of the same finding already holds
+		// (R-129-ui, U-idem): success with no record, at the owner too.
+		dependencies.outcomeBeforeRefusal(res)
+		return 0
+	}
 	if res.Outcome != goal.OutcomeConfirmed {
 		dependencies.outcomeBeforeRefusal(res)
 		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "read the current goal and critique finding before retrying"})
@@ -1529,13 +1571,13 @@ func completedBudgetRemedy(values *humanVerbValues, file *goal.GoalFile, complet
 			return humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")}
 		}
 		if values.approvedRef == "" {
-			return humanVerbRemedy{words: "the goal already carries that box, so there is no new act to record"}
+			return humanVerbRemedy{words: alreadyCarriesBox}
 		}
 	case goal.StateApproved, goal.StateParked:
 		expired, _ := file.ApprovalExpired(horizon)
 		if file.Approved != nil && file.Approved.Authority == goal.ApprovalAuthorityProven &&
 			values.temporaryWord == "" && values.reviewBy == "" && !expired {
-			return humanVerbRemedy{words: "the goal already carries that box, so there is no new act to record"}
+			return humanVerbRemedy{words: alreadyCarriesBox}
 		}
 	}
 	return humanVerbRemedy{command: values.budgetCommand(box)}
@@ -3593,11 +3635,34 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
 	req.Now = enrollment.EnrolledAt
+	// A repeated enrollment (the same person at the same terminal) whose
+	// fleet cutoff is already recorded publishes nothing (R-129-ui): no
+	// ledger operation is journaled for an effect that holds. One whose
+	// earlier publication failed still publishes it now.
+	if enrollment.Repeat {
+		if projection, projectErr := goal.Project(req.Endpoint, false, req.Now); projectErr == nil && projection.Tree != nil &&
+			projection.Tree.Root != nil && projection.Tree.Root.FleetEnrollment != nil {
+			res := goal.PublishResult{Outcome: goal.OutcomeAbandoned, Unchanged: true,
+				Detail: fmt.Sprintf("this terminal is already enrolled for %s (generation %d since %s) and the fleet cutoff is recorded",
+					enrollment.Human, enrollment.Generation, enrollment.EnrolledAt.UTC().Format(time.RFC3339))}
+			if dependencies.report != nil {
+				dependencies.report.result = &res
+				return 0
+			}
+			printJSON(enrollment)
+			return 0
+		}
+	}
 	res, err := goal.RecordFleetEnrollment(req, enrollment.Generation)
 	// Another machine may already own the immutable fleet cutoff. That leaves
 	// this machine's completed local enrollment valid and needs no root rewrite.
 	if err != nil || (res.Outcome != goal.OutcomeConfirmed && res.Outcome != goal.OutcomeConfirmedLate && res.Outcome != goal.OutcomeAbandoned) {
 		return refuseHumanVerb(values, 1, fmt.Sprint("the terminal enrolled locally but its fleet cutoff did not publish: ", err, " ", res.Detail), humanVerbRemedy{words: "the local enrollment stands; repair fleet synchronization without re-enrolling"})
+	}
+	// A fresh local enrollment is a change even when the fleet cutoff it
+	// would publish already stands; only a repeated enrollment is unchanged.
+	if !enrollment.Repeat {
+		res.Unchanged = false
 	}
 	if dependencies.report != nil {
 		dependencies.report.result = &res

@@ -32,10 +32,20 @@ func TestAuthorityCheckRefusesADelegateEvenWithTheRetiredMarker(t *testing.T) {
 }
 
 // authority-regression's source scan (U6b port): the retired marker stays out
-// of the shell control-plane sources that survive the dispatcher's port.
+// of the control-plane sources that survive the dispatcher's port. U5 moved
+// commit.sh, the last shell one, into the Go landing path, so the scan reads
+// its successors.
 func TestRetiredLeaseFenceMarkerStaysOutOfTheShellControlPlane(t *testing.T) {
 	t.Parallel()
-	for _, source := range []string{"scripts/agents/commit.sh"} {
+	sources, err := filepath.Glob(filepath.Join("..", "..", "internal", "landing", "landpath", "*.go"))
+	if err != nil || len(sources) == 0 {
+		t.Fatalf("the landing path's sources: %v %v", sources, err)
+	}
+	for index, source := range sources {
+		sources[index] = strings.TrimPrefix(filepath.ToSlash(source), "../../")
+	}
+	sources = append(sources, "cmd/metasystem/landing_path.go", "cmd/metasystem/precommit_entry.go")
+	for _, source := range sources {
 		content, err := os.ReadFile(filepath.Join("..", "..", source))
 		if err != nil {
 			t.Fatal(err)

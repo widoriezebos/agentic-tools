@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"os"
@@ -267,6 +268,55 @@ func markerHoldsOnlyOwner(marker string, entries []os.DirEntry) bool {
 // take the mission: refuse when the recorded runner is provably still live,
 // wind down any host group an open turn left behind and mark those turns
 // lost, then remove the marker directory and lease record.
+// AlreadyRunningPrefix begins the line a start or resume prints when the
+// mission's runner is already live: the command layer reads it as the
+// requested state already holding.
+const AlreadyRunningPrefix = "mission is already running: "
+
+// alreadyRunning is a start or resume whose mission already has a live
+// runner. It is success, never a refusal.
+type alreadyRunning struct {
+	mission string
+	pid     int64
+}
+
+func (a *alreadyRunning) Error() string {
+	return fmt.Sprintf("%s%s (runner pid %d); nothing was started", AlreadyRunningPrefix, a.mission, a.pid)
+}
+
+// liveRunner reads, under the lease lock and without changing anything,
+// whether the recorded runner of this mission is alive: the same verdict
+// cleanupStaleLease refuses on.
+func (e *Engine) liveRunner() (int64, bool, error) {
+	dir := e.missionDir()
+	leasePath := filepath.Join(dir, "lease.json")
+	if !pathExists(leasePath) {
+		return 0, false, nil
+	}
+	release, lockErr := lease.LockBounded(filepath.Join(dir, "lease.lock"), "mission lease")
+	if lockErr != nil {
+		return 0, false, lockErr
+	}
+	defer release()
+	if !pathExists(leasePath) {
+		return 0, false, nil
+	}
+	leaseDoc, err := readDocLabeled(leasePath, "mission lease", 3)
+	if err != nil {
+		return 0, false, err
+	}
+	pid, live := leaseHolderLive(leaseDoc)
+	return pid, live, nil
+}
+
+// leaseHolderLive says whether a lease document names a live runner: its
+// pid exists and that process's command carries the lease's instance tag.
+func leaseHolderLive(leaseDoc map[string]any) (int64, bool) {
+	pid, pidOK := jsonInt(leaseDoc["pid"])
+	tag, tagOK := leaseDoc["instanceTag"].(string)
+	return pid, pidOK && tagOK && pidExists(int(pid)) && strings.Contains(processCommand(int(pid), fixtureauth.CommandProbe{}), tag)
+}
+
 func (e *Engine) cleanupStaleLease() error {
 	dir := e.missionDir()
 	marker := filepath.Join(dir, "lease.d")
@@ -290,9 +340,7 @@ func (e *Engine) cleanupStaleLease() error {
 			return err
 		}
 	}
-	pid, pidOK := jsonInt(leaseDoc["pid"])
-	tag, tagOK := leaseDoc["instanceTag"].(string)
-	if pidOK && tagOK && pidExists(int(pid)) && strings.Contains(processCommand(int(pid), fixtureauth.CommandProbe{}), tag) {
+	if _, live := leaseHolderLive(leaseDoc); live {
 		return failf(3, "mission runner is already live for %s", e.Mission)
 	}
 	turnPaths, _ := filepath.Glob(filepath.Join(dir, "turns", "*", "turn.json"))
@@ -575,6 +623,11 @@ func (e *Engine) Launch(mode string, foreground bool) int {
 // both creator handshakes.
 func (e *Engine) LaunchAtGeneration(mode string, foreground bool, generation int64) int {
 	if err := e.launch(mode, foreground, generation); err != nil {
+		var running *alreadyRunning
+		if errors.As(err, &running) {
+			fmt.Println(running.Error())
+			return 0
+		}
 		fmt.Fprintln(os.Stderr, err)
 		return exitFor(err)
 	}
@@ -599,6 +652,16 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 	statePath := filepath.Join(e.missionDir(), "state.json")
 	if err := stateShapeRefusal(statePath); err != nil {
 		return err
+	}
+	if stateBorn(statePath) {
+		// A live runner for this mission is the requested state already
+		// holding, for start and for resume alike (R-129-ui): success, and
+		// nothing is armed, written or spawned again.
+		if pid, live, err := e.liveRunner(); err != nil {
+			return err
+		} else if live {
+			return &alreadyRunning{mission: e.Mission, pid: pid}
+		}
 	}
 	if mode == "start" && stateBorn(statePath) {
 		return failf(3, "mission state already exists; use resume")

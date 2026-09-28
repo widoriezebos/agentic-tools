@@ -231,7 +231,7 @@ func supBIdentities(lines []string, verdict func(string) (string, bool)) []strin
 // the exact live status page, the exact stop page in family order with each
 // family's verdict grammar, the terminal job record, the completed fence, the
 // status and stop pages naming the same identities, the stopped status page,
-// and a second stop that finds nothing and changes nothing but the fence.
+// and a second stop that finds nothing and changes nothing (U-idem: unchanged).
 func TestSupBStopEverythingStatusStopAndSecondStopPages(t *testing.T) {
 	t.Parallel()
 	bed := supBStopEverythingBed(t)
@@ -311,8 +311,10 @@ func TestSupBStopEverythingStatusStopAndSecondStopPages(t *testing.T) {
 
 	before := supBFileDigests(t, transition.Root)
 	second, err := transition.Stop()
-	wantSecond := "checkout /checkout\nnothing is running\nstopped /checkout; start again: metasystem system start --repo /checkout"
-	if err != nil || second.ExitCode != 0 || strings.Join(second.Lines, "\n") != wantSecond {
+	// U-idem: a stop of a stopped checkout is a repeat whose effect holds:
+	// success, unchanged, the stop it already carries named.
+	wantSecond := "MetaSystem is already stopped for /checkout (since 2026-09-27T12:00:00Z); nothing is running; start again: metasystem system start --repo /checkout"
+	if err != nil || second.ExitCode != 0 || !second.Unchanged || strings.Join(second.Lines, "\n") != wantSecond {
 		t.Fatalf("second stop = %#v err=%v, want %q", second, err, wantSecond)
 	}
 	afterSecond := supBFileDigests(t, transition.Root)

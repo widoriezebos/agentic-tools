@@ -522,7 +522,8 @@ func hookPreflight(d Deps, target string) *Refusal {
 	main, mainErr := os.ReadFile(filepath.Join(hooks, "pre-commit"))
 	_, localErr := os.Lstat(filepath.Join(hooks, "pre-commit.local"))
 	if mainErr == nil && localErr == nil &&
-		!(bytes.Contains(main, []byte("git rev-parse --show-toplevel")) && bytes.Contains(main, []byte("pre-commit-guard.sh"))) {
+		!(bytes.Contains(main, []byte("git rev-parse --show-toplevel")) &&
+			(bytes.Contains(main, []byte("internal pre-commit")) || bytes.Contains(main, []byte("pre-commit-guard.sh")))) {
 		return refuse(CodeRefused, "the target carries both pre-commit and pre-commit.local and neither enrolls the guard",
 			"compose them by hand (the guard first, then your hook), then run the same command again")
 	}
