@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:af925488a99fc54c8ab02865a23e83575e5e37912081cbc46107cacd21e31012",
+  "sourceDigest": "sha256:379c46c8fee9bac8a51582c49ec5d4824dfff9d0671069f2e4c73151a90ef608",
   "source": [
     {
       "path": ".npmrc",
@@ -372,7 +372,7 @@
     },
     {
       "path": "src/fleet/LaunchCard.test.tsx",
-      "sha256": "8ffd39d81e6c738721754d00569ab88f4540c23e88f016066754982c0374f6ae"
+      "sha256": "a224c31ba6309eabf1020e1fb9f5e864255796523cde8d7d21e696d1ec510ec8"
     },
     {
       "path": "src/fleet/LaunchCard.tsx",
