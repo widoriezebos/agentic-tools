@@ -176,8 +176,15 @@ func TestSuperviseKeepsWaitingWhenItsGroupCannotBeRead(t *testing.T) {
 		"stopMs": 800, "readyMs": 5000})
 	var reads atomic.Int32
 	var readable atomic.Bool
+	// Every group read the supervisor makes is an event the test waits on,
+	// so the test observes the supervisor's own loop and never a clock.
+	read := make(chan struct{}, 1024)
 	bed.options.Group = func(int64) ([]Member, error) {
 		reads.Add(1)
+		select {
+		case read <- struct{}{}:
+		default:
+		}
 		if readable.Load() {
 			return nil, nil
 		}
@@ -190,12 +197,11 @@ func TestSuperviseKeepsWaitingWhenItsGroupCannotBeRead(t *testing.T) {
 	bed.options.Context = ctx
 	done := make(chan error, 1)
 	go func() { done <- Supervise(bed.options) }()
-	deadline := time.Now().Add(20 * time.Second)
-	for reads.Load() < 8 && time.Now().Before(deadline) {
+	for reads.Load() < 8 {
 		select {
 		case <-done:
 			t.Fatal("the supervisor left while its group could not be read")
-		case <-time.After(50 * time.Millisecond):
+		case <-read:
 		}
 	}
 	record, err := ReadRecord(bed.stateRoot, StandingKey)
@@ -212,23 +218,24 @@ func TestSuperviseKeepsWaitingWhenItsGroupCannotBeRead(t *testing.T) {
 	// A signal ends the group by the leader's own signal, and still the
 	// supervisor does not write an ended record over a group it cannot read.
 	cancel()
-	// Past the group signal's stopMs and both of finish's.
-	for until := time.Now().Add(4 * time.Second); time.Now().Before(until); {
+	// Twenty more reads of the group after the signal: the supervisor reads
+	// every 200 milliseconds while it waits, so that is well past the group
+	// signal's stopMs and both of finish's waits, measured by its own loop.
+	for target := reads.Load() + 20; reads.Load() < target; {
 		select {
 		case <-done:
 			t.Fatal("the supervisor left after its signal while its group could not be read")
-		case <-time.After(50 * time.Millisecond):
+		case <-read:
 		}
 	}
 	if record, err := ReadRecord(bed.stateRoot, StandingKey); err != nil || record.Ended != nil {
 		t.Fatalf("no ended record over a group that cannot be read: %+v %v", record, err)
 	}
 	readable.Store(true)
-	select {
-	case <-done:
-	case <-time.After(20 * time.Second):
-		t.Fatal("the supervisor did not finish once its group read empty")
-	}
+	// The join is the event: the supervisor's next read finds the group
+	// empty and it finishes. No clock caps it; the test runner's own timeout
+	// is the only bound, by the standing rule that tests wait on events.
+	<-done
 	if record, err = ReadRecord(bed.stateRoot, StandingKey); err != nil || record.Ended == nil {
 		t.Fatalf("once the group reads empty, the run ends into an ended record: %+v %v", record, err)
 	}
