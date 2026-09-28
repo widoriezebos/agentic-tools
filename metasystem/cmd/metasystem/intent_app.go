@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os/signal"
@@ -446,10 +447,10 @@ func (inv *intentInvocation) appCheck(run appRun, targets []intentTarget) intent
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: appData(run, status),
 			Summary: "this run has no address, so there is nothing for group " + run.contract.Check + " to be run against"}
 	}
-	ran, problem := inv.engineVerb(appCheckArgv(run.roots.Installation, run.contract.Check, address)...)
-	if problem != nil {
-		return *problem
-	}
+	// The check runs the testing runner in this process (design 6.2).
+	var stderr bytes.Buffer
+	output, code, err := inv.work().testRun(run.roots.Installation, append([]string{"internal"}, appCheckArgv(run.roots.Installation, run.contract.Check, address)...), &stderr)
+	ran := intentProcessResult{stdout: output, stderr: stderr.Bytes(), code: code, err: err}
 	verdict := "pass"
 	if ran.code != 0 || ran.err != nil {
 		verdict = "fail"

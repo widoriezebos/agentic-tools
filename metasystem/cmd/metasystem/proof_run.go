@@ -564,6 +564,18 @@ type proofLaunchAdmission struct {
 	ForceGroups                                                                          bool
 	ManagedCapacity                                                                      bool
 	RequireDiagnosticHeadroom                                                            bool
+	// CallerPID is the supplied process the admission classifies and whose
+	// custody it authenticates (design 6.2); zero is this process's parent,
+	// the entry's own caller.
+	CallerPID int64
+}
+
+// callerPID is the supplied caller, or this process's parent at an entry.
+func (request proofLaunchAdmission) callerPID() int64 {
+	if request.CallerPID != 0 {
+		return request.CallerPID
+	}
+	return int64(os.Getppid())
 }
 
 // proofDeadline keeps the admitted absolute horizon in the command's clock
@@ -874,7 +886,7 @@ func admitProofLaunchWithReads(request proofLaunchAdmission, makeReads func() di
 
 func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeReads func() dispatchcore.ProofAdmissionReads,
 	classify func(string, int64) (lease.ClassifyResult, error)) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
-	classifiedCaller, err := classify(request.ControlRoot, int64(os.Getppid()))
+	classifiedCaller, err := classify(request.ControlRoot, request.callerPID())
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller classification failed: %w", err)
 	}
@@ -894,7 +906,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		if err != nil || canonicalParent != request.ControlRoot {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof parent control root does not match the requested root")
 		}
-		attempt, err := proofrun.AuthenticateContext(request.ControlRoot, parentAttempt, int64(os.Getppid()))
+		attempt, err := proofrun.AuthenticateContext(request.ControlRoot, parentAttempt, request.callerPID())
 		if err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}
@@ -917,7 +929,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, lockErr
 			}
 			defer heldProof.Release()
-			attempt, lockErr = proofrun.AuthenticateContext(request.ControlRoot, parentAttempt, int64(os.Getppid()))
+			attempt, lockErr = proofrun.AuthenticateContext(request.ControlRoot, parentAttempt, request.callerPID())
 			if lockErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, lockErr
 			}
@@ -964,7 +976,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		}
 		ancestor := proofrun.ProcessIdentity{Pid: *record.Pid, PidStartedAt: *record.PidStartedAt,
 			PidStartTicks: record.PidStartTicks, BootID: record.BootID}
-		if err := proofrun.AuthenticateAncestor(int64(os.Getppid()), ancestor); err != nil {
+		if err := proofrun.AuthenticateAncestor(request.callerPID(), ancestor); err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed proof custody: %w", err)
 		}
 		if err := enforceBoundProofGoals("governed run", record.GoalId, request.GoalID, request.AuthorityGoalID); err != nil {
@@ -988,7 +1000,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		if delegateState == "" || delegateInstallation == "" || delegateJob == "" {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("native delegate proof locator is incomplete")
 		}
-		verified, err := lease.HookDelegate(delegateState, delegateInstallation, delegateJob, int64(os.Getppid()))
+		verified, err := lease.HookDelegate(delegateState, delegateInstallation, delegateJob, request.callerPID())
 		if err != nil || !verified.Delegate || verified.JobID != delegateJob {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("native delegate proof locator is not authenticated")
 		}
@@ -1107,7 +1119,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 	if err := proofAdmissionMoved(admissionSnapshots, lockedSnapshots, request.GoalID, authorityGoalID); err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 	}
-	classifiedCaller, err = classify(request.ControlRoot, int64(os.Getppid()))
+	classifiedCaller, err = classify(request.ControlRoot, request.callerPID())
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller reclassification failed under admission lock: %w", err)
 	}
@@ -1125,11 +1137,11 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		}
 		ancestor := proofrun.ProcessIdentity{Pid: *runRecord.Pid, PidStartedAt: *runRecord.PidStartedAt,
 			PidStartTicks: runRecord.PidStartTicks, BootID: runRecord.BootID}
-		if err := proofrun.AuthenticateAncestor(int64(os.Getppid()), ancestor); err != nil {
+		if err := proofrun.AuthenticateAncestor(request.callerPID(), ancestor); err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed proof custody changed before reservation: %w", err)
 		}
 	} else if delegateJob != "" {
-		verified, verifyErr := lease.HookDelegate(delegateState, delegateInstallation, delegateJob, int64(os.Getppid()))
+		verified, verifyErr := lease.HookDelegate(delegateState, delegateInstallation, delegateJob, request.callerPID())
 		record, readErr := dispatchcore.ReadRecordObject(filepath.Join(delegateState, "artifacts", "agents", "jobs", delegateJob+".json"))
 		lens := dispatchcore.JobRecordOf(record)
 		revision, revisionOK := lens.GoalRevision()

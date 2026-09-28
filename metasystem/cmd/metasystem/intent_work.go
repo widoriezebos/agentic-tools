@@ -50,14 +50,16 @@ const intentMissingDecision = "MISSING DECISION:"
 var intentReaderToolCalls = regexp.MustCompile(`(?m)^Maximum reader tool calls:\s*([0-9]+)\s*$`)
 
 // intentWorkOwners are the owners the work commands call. Tests give each
-// invocation its own runner, Git, wait, subprocess and settings readers.
+// invocation its own runner, Git, wait, test runner and settings readers.
 type intentWorkOwners struct {
-	units      func(layout stateroot.Layout) *launch.UnitRunner
-	git        func(dir string, args ...string) ([]byte, error)
-	wait       func(args []string, print func(metarun.WaitResult, bool)) int
-	subprocess func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
-	settings   func(confPath string) (launch.Settings, error)
-	config     func(key, confPath string) (value, source string, code int, err error)
+	units func(layout stateroot.Layout) *launch.UnitRunner
+	git   func(dir string, args ...string) ([]byte, error)
+	wait  func(args []string, print func(metarun.WaitResult, bool)) int
+	// testRun is the testing runner, reached with the argv its former child
+	// carried; it returns the structured result it prints and its exit.
+	testRun  func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
+	settings func(confPath string) (launch.Settings, error)
+	config   func(key, confPath string) (value, source string, code int, err error)
 	// jobWatch and runWatch are the job and tracked-run waiters work wait
 	// --exit-code blocks in, with their own pinned exit codes.
 	jobWatch func(args []string) int
@@ -104,23 +106,18 @@ func (inv *intentInvocation) work() intentWorkOwners {
 			return runWaitCommandOnClock(args, nil, waitCallerPID(), print, clock)
 		}
 	}
-	if owners.subprocess == nil {
-		owners.subprocess = func(dir string, argv []string, stderr io.Writer) ([]byte, int, error) {
-			executable, err := os.Executable()
-			if err != nil {
-				return nil, 1, err
+	if owners.testRun == nil {
+		// The testing runner runs in this process (design 6.2): this process
+		// is the caller its proof admission classifies, the parent the former
+		// child classified, and its result comes back on a buffer as the
+		// child's standard output did.
+		owners.testRun = func(_ string, argv []string, stderr io.Writer) ([]byte, int, error) {
+			if len(argv) < 3 || argv[0] != "internal" || argv[1] != "test" || argv[2] != "run" {
+				return nil, 1, fmt.Errorf("the testing runner takes internal test run, not %q", argv)
 			}
-			command := exec.Command(executable, argv...)
-			command.Dir, command.Stdin, command.Stderr = dir, os.Stdin, stderr
-			output, err := command.Output()
-			var exit *exec.ExitError
-			if errors.As(err, &exit) {
-				return output, exit.ExitCode(), nil
-			}
-			if err != nil {
-				return output, 1, err
-			}
-			return output, 0, nil
+			var stdout bytes.Buffer
+			code := runTestRunWith(testRunInvocation{callerPID: int64(os.Getpid()), stdout: &stdout, stderr: stderr}, argv[3:])
+			return stdout.Bytes(), code, nil
 		}
 	}
 	if owners.jobWatch == nil {
@@ -1380,9 +1377,9 @@ func (inv *intentInvocation) waitUnit(run string, timeout time.Duration, targets
 
 // test
 
-// runIntentTest runs the selected installation's test runner as its own
-// process and reports the structured result it prints; its progress goes to
-// standard error unchanged.
+// runIntentTest runs the selected installation's test runner in this process
+// and reports the structured result it prints; its progress goes to standard
+// error unchanged.
 func runIntentTest(inv *intentInvocation) int {
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
@@ -1397,7 +1394,7 @@ func runIntentTest(inv *intentInvocation) int {
 	if inv.input.has("goal") {
 		targets = append(targets, intentTarget{Kind: "goal", ID: inv.input.text("goal")})
 	}
-	output, code, err := inv.work().subprocess(inv.layout.GitRoot, argv, inv.stderr)
+	output, code, err := inv.work().testRun(inv.layout.GitRoot, argv, inv.stderr)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: 1, Summary: "cannot run the test runner: " + err.Error()})
 	}
