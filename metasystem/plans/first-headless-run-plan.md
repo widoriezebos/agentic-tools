@@ -112,7 +112,7 @@ while the runner serves the target.
 
 ## 5. Contract skeleton (`plans/mission-birth-token.contract.md`)
 
-```
+````
 # Intent
 Land goal job-record-birth-token: every job record incarnation carries a
 mandatory, immutable, machine-minted birth token, proven by the six
@@ -149,7 +149,7 @@ envelope.dispatch-allow=codex:gpt-5.6-sol,claude:claude-fable-5-1
 exposure=EUR:40
 ```
 Approval: name=Wido; date=2026-09-03; contract-sha256=<from mission contract-hash>
-```
+````
 
 ## 6. The sequence
 

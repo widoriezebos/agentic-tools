@@ -261,6 +261,10 @@ func (a capAuthority) resolutionField() map[string]any {
 		"origin":       a.source["origin"],
 		"truncatedBy":  a.source["truncatedBy"],
 		"deadline":     a.deadline,
+		// The signed setting the cap answers to, which a budget-cap
+		// timeout names in its fence ask (mission.BudgetCapReason).
+		"key":       a.source["key"],
+		"signedMin": a.source["signedMin"],
 	}
 }
 

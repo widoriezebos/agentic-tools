@@ -85,4 +85,9 @@ floor:internal/delegation/ tier-1-refused
 floor:internal/protocol/schemas/ tier-1-refused
 floor:internal/pathclass/path-classes.txt tier-1-refused
 floor:internal/landing/landing-classes.json tier-1-refused
+# The code that writes or checks a landing's own receipt.
+floor:internal/receipt/ tier-1-refused
+floor:cmd/metasystem/landing_verbs.go tier-1-refused
+floor:cmd/metasystem/landing_path.go tier-1-refused
+floor:cmd/metasystem/landing_batch_land.go tier-1-refused
 floor:metasystem.conf tier-1-refused

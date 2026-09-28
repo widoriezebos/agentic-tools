@@ -1,6 +1,7 @@
 package delegation
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -223,12 +225,10 @@ func (s *session) reapOneLocked(job string) error {
 		s.reapVerdictEvents(job, "timeout", "budget-cap", casErr, observed)
 		missionID := fieldOr(record, "mission")
 		if casErr == nil && missionID != "" && missionID != "null" {
-			reason := "job-cap-min"
-			if fieldOr(record, "capResolution.truncatedBy") == "wall-clock" {
-				reason = "wall-clock-hours"
-			}
-			if err := s.missionRefuse(missionID, reason); err != nil {
-				s.eprintf("MISSION-FENCE-ASK-FAILED mission=%s job=%s error=%s\n", missionID, job, strings.ReplaceAll(err.Error(), "\n", " "))
+			if reason, ask := mission.BudgetCapReason(recordCapResolution(record)); ask {
+				if err := s.missionRefuse(missionID, reason); err != nil {
+					s.eprintf("MISSION-FENCE-ASK-FAILED mission=%s job=%s error=%s\n", missionID, job, strings.ReplaceAll(err.Error(), "\n", " "))
+				}
 			}
 			_ = s.aggregateMissionUsage(record)
 		}
@@ -562,4 +562,21 @@ func setJSONFields(path string, fields map[string]string) error {
 		object[key] = value
 	}
 	return os.WriteFile(path, []byte(encodeJSON(object)+"\n"), 0o600)
+}
+
+// recordCapResolution is the job record's capResolution object, or nil when
+// the record or the object is unreadable (a timeout then names the mission
+// default cap, as it always did).
+func recordCapResolution(record string) map[string]any {
+	data, err := os.ReadFile(record)
+	if err != nil {
+		return nil
+	}
+	var doc struct {
+		CapResolution map[string]any `json:"capResolution"`
+	}
+	if json.Unmarshal(data, &doc) != nil {
+		return nil
+	}
+	return doc.CapResolution
 }

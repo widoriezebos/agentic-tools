@@ -48,7 +48,7 @@ var (
 	positiveIntRe = regexp.MustCompile(`^[1-9][0-9]*$`)
 	sha256HexRe   = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	fenceBoundRe  = regexp.MustCompile(`^fence-bound(?:-([1-9][0-9]*))?\.json$`)
-	askReasonRe   = regexp.MustCompile("`([a-z-]+)`")
+	askReasonRe   = regexp.MustCompile("`([A-Za-z0-9._-]+)`")
 )
 
 func missionDir(repo, mission string) string {
@@ -325,10 +325,20 @@ func writeBatchedAsk(repo, mission string, reasons []string) (string, error) {
 			}
 		}
 		path, value = best.path, best.value
-		question, _ := value["question"].(string)
 		set := map[string]bool{}
-		for _, m := range askReasonRe.FindAllStringSubmatch(question, -1) {
-			set[m[1]] = true
+		if recorded, ok := value["reasons"].([]any); ok {
+			for _, reason := range recorded {
+				if text, ok := reason.(string); ok {
+					set[text] = true
+				}
+			}
+		} else {
+			// An ask written before reasons were recorded carries them
+			// only as the question's backticked names.
+			question, _ := value["question"].(string)
+			for _, m := range askReasonRe.FindAllStringSubmatch(question, -1) {
+				set[m[1]] = true
+			}
 		}
 		for _, r := range reasons {
 			set[r] = true
@@ -352,12 +362,19 @@ func writeBatchedAsk(repo, mission string, reasons []string) (string, error) {
 		combined = sortedKeysOfSet(set)
 	}
 	named := make([]string, len(combined))
+	keys := make([]string, len(combined))
 	for i, reason := range combined {
 		named[i] = "`" + reason + "`"
+		keys[i] = fenceReasonKey(reason)
 	}
+	contractPath := filepath.ToSlash(filepath.Join("plans", fmt.Sprintf("mission-%s.contract.md", mission)))
+	value["reasons"] = combined
 	value["question"] = fmt.Sprintf(
-		"Mission %s reached lifecycle fence(s) %s. Choose whether to amend, price, reseal, and sign the contract or leave the mission parked.",
-		mission, strings.Join(named, ", "))
+		"Mission %s reached lifecycle fence(s) %s. Choose whether to amend, price, reseal, and sign the contract or leave the mission parked. "+
+			"To raise it, set %s higher in the mission block of %s, delete that file's mission-seal block and Approval line, "+
+			"run metasystem mission contract-seal --file %s, add the line Approval: name=NAME; date=YYYY-MM-DD; contract-sha256=DIGEST "+
+			"with the digest it printed, and run metasystem mission resume %s.",
+		mission, strings.Join(named, ", "), strings.Join(keys, ", "), contractPath, contractPath, mission)
 	if err := atomicWriteJSON(path, value); err != nil {
 		return "", err
 	}
@@ -567,7 +584,13 @@ func AuthorizeCapWithClock(repo, mission, job, runtime, model, aliasSource strin
 		rule = "argument"
 		origin = "argument"
 	}
-	source := map[string]any{"rule": rule, "origin": origin, "truncatedBy": truncatedBy}
+	boundKey := "fence.job-cap-min"
+	if signedRule == "contract-pair" {
+		boundKey = selectedPairKey
+	}
+	// key and signedMin name the signed setting this cap answers to, so a
+	// timeout asks for the setting that actually ran out (H1).
+	source := map[string]any{"rule": rule, "origin": origin, "truncatedBy": truncatedBy, "key": boundKey, "signedMin": authorized}
 	reservations := reservationsMap(fences)
 	if _, exists := reservations[job]; exists {
 		return nil, fmt.Errorf("mission fence reservation already exists for job: %s", job)
@@ -582,12 +605,28 @@ func AuthorizeCapWithClock(repo, mission, job, runtime, model, aliasSource strin
 	return map[string]any{"capMin": capMin, "capDeadline": deadline, "source": source}, nil
 }
 
+// fenceReasonKeys maps each mission-wide fence reason to the contract key
+// that sets it; a signed pair cap's reason is its own key.
+var fenceReasonKeys = map[string]string{
+	"wall-clock-hours": "fence.wall-clock-hours", "cycles": "fence.cycles", "jobs": "fence.jobs",
+	"concurrency": "fence.concurrency", "job-cap-min": "fence.job-cap-min",
+}
+
+// pairCapReasonRe is a signed per-pair cap key, the reason a timeout at that
+// cap names.
+var pairCapReasonRe = regexp.MustCompile(`^cap\.min\.[A-Za-z0-9_-]+\.[A-Za-z0-9._-]+$`)
+
+// fenceReasonKey is the contract key a reason's human raises.
+func fenceReasonKey(reason string) string {
+	if key, ok := fenceReasonKeys[reason]; ok {
+		return key
+	}
+	return reason
+}
+
 // Refuse raises a batched fence ask for one allowed reason and returns its path.
 func Refuse(repo, mission, reason string) (string, error) {
-	allowed := map[string]bool{
-		"wall-clock-hours": true, "cycles": true, "jobs": true, "concurrency": true, "job-cap-min": true,
-	}
-	if !allowed[reason] {
+	if _, fence := fenceReasonKeys[reason]; !fence && !pairCapReasonRe.MatchString(reason) {
 		return "", fmt.Errorf("unknown mission fence refusal reason")
 	}
 	dir, _, lockPath := fencePaths(repo, mission)
@@ -602,14 +641,37 @@ func Refuse(repo, mission, reason string) (string, error) {
 	return writeBatchedAsk(repo, mission, []string{reason})
 }
 
-// RefuseBudgetCap raises the recovery ask owed after an applied budget-cap
-// timeout. Wall-clock truncation names the mission-wide wall fence; every
-// other timeout names the per-job cap. A failed ask write is both emitted and
-// returned because the terminal job verdict has already landed.
-func RefuseBudgetCap(repo, missionID, job string, capResolution map[string]any, emit func(string)) error {
-	reason := "job-cap-min"
+// BudgetCapReason names the fence a budget-cap timeout ran out (H1): the
+// mission-wide wall clock when it truncated the cap, else the signed setting
+// the cap answered to — the pair key `cap.min.<runtime>.<model>` for a pair
+// cap, `job-cap-min` for the mission default. ask is false when the job ran
+// out of its own explicit cap below the signed one: the contract still allows
+// more, so there is nothing for a person to raise. A resolution recorded
+// before keys were names the mission default, as it always did.
+func BudgetCapReason(capResolution map[string]any) (reason string, ask bool) {
 	if truncatedBy, _ := capResolution["truncatedBy"].(string); truncatedBy == "wall-clock" {
-		reason = "wall-clock-hours"
+		return "wall-clock-hours", true
+	}
+	if origin, _ := capResolution["origin"].(string); origin == "argument" {
+		requested, requestedKnown := intValue(capResolution["requestedMin"])
+		signed, signedKnown := intValue(capResolution["signedMin"])
+		if requestedKnown && signedKnown && requested < signed {
+			return "", false
+		}
+	}
+	if key, _ := capResolution["key"].(string); pairCapReasonRe.MatchString(key) {
+		return key, true
+	}
+	return "job-cap-min", true
+}
+
+// RefuseBudgetCap raises the recovery ask owed after an applied budget-cap
+// timeout, naming the fence BudgetCapReason finds. A failed ask write is both
+// emitted and returned because the terminal job verdict has already landed.
+func RefuseBudgetCap(repo, missionID, job string, capResolution map[string]any, emit func(string)) error {
+	reason, ask := BudgetCapReason(capResolution)
+	if !ask {
+		return nil
 	}
 	if _, err := Refuse(repo, missionID, reason); err != nil {
 		wrapped := fmt.Errorf("raise mission fence ask for mission %s after applied budget-cap reap of job %s: %w", missionID, job, err)

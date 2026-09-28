@@ -1,7 +1,9 @@
 package dispatch
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -159,4 +161,23 @@ func TestFMA_R2_MissionCapSourceBypassUnsigned(t *testing.T) {
 func writeSibling(t *testing.T, confPath, line string) error {
 	t.Helper()
 	return os.WriteFile(confPath+".local", []byte(line+"\n"), 0o644)
+}
+
+// TestCapResolutionCarriesTheSigningKey: the job record's capResolution keeps
+// the signed key and minutes the mission fence resolved the cap from, so a
+// budget-cap timeout can name the setting that ran out (H1).
+func TestCapResolutionCarriesTheSigningKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cap-resolution.json")
+	resolution := `{"capMin":30,"capDeadline":"2026-09-28T12:30:00Z","source":{"rule":"contract-pair","origin":"contract","truncatedBy":null,"key":"cap.min.codex.gpt-5-6-sol","signedMin":30}}`
+	if err := os.WriteFile(path, []byte(resolution), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	authority, err := readCapAuthority(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	field := authority.resolutionField()
+	if field["key"] != "cap.min.codex.gpt-5-6-sol" || fmt.Sprint(field["signedMin"]) != "30" || field["rule"] != "contract-pair" {
+		t.Fatalf("capResolution field = %v", field)
+	}
 }
