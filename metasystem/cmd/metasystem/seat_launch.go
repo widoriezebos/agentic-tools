@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -276,7 +277,16 @@ func seatLaunchFacts(request launch.Request, record launch.Record) (launch.Facts
 	for name := range taken {
 		names = append(names, name)
 	}
-	facts := launch.Facts{This: this, Taken: names}
+	installation, err := seatLaunchInstallation(request.From)
+	if err != nil {
+		return launch.Facts{}, err
+	}
+	evidence, _, err := config.Get(config.GetParams{Key: "evidence.root", Default: "", DefaultSet: true,
+		ConfPath: filepath.Join(request.From, installation, "metasystem.conf")})
+	if err != nil {
+		return launch.Facts{}, err
+	}
+	facts := launch.Facts{This: this, Taken: names, EvidenceRoot: strings.TrimSpace(evidence)}
 	if request.Resuming() {
 		facts.Created = record.Created
 	}
