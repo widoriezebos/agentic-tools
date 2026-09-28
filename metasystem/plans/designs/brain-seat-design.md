@@ -1,5 +1,10 @@
 # Design: the brain seat boots with its standing instruction (revision 3)
 
+- Kind: design
+- Id: 01M3MKDZN85GE0MT0EVVBB8ZQD
+- Status: done
+- Goals: fleet-coordinator-brain
+
 Goal: fleet-coordinator-brain (arc headless-fleet, tier 3). The role packet is
 landed at records/misc/fleet-coordinator-brain-role-packet.md; its four rules
 (never builds, never dispatches, never approves, never a bottleneck) are fixed

@@ -90,6 +90,12 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | Cross-repository coordination: readiness handshakes recording immutable SHAs, execution authority moved between repositories, approval decoupled from execution with grant-time re-baseline | First adoption spanning coordinated repositories or lanes |
 | Independent audit workflow: stable finding ids, independent re-verification before remediation, closure table with owner decisions and tripwires on kept behavior | Receipts show defects surviving normal review, or the human asks for a standing audit |
 
+## Deferred With Triggers (2026-08-30 LLM Wiki evaluation)
+
+| Item | Reopen trigger |
+| --- | --- |
+| `research-wiki` optional skill (Karpathy's LLM Wiki pattern, https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f): immutable sources, derived claim blocks that cite them, deterministic index, ingest/query/check/promote; query never writes. Rejected: plans or handoffs as memory, auto-compiling the repository and history, an always-loaded index, automatic writeback of answers, embeddings/database/MCP. | Two completed research tasks on one corpus record repeated source re-reading or a provenance-caused correction, or a person asks for it for a named corpus. Decision: defer (the 2026-09-03 review date lapsed with no word). Full evaluation: `metasystem/memory/llm-wiki-pattern.md` at 1a062750c (removed 2026-09-28; tag records-archive-2026-09-28). |
+
 ## Ideal Harness Judgment
 
 The ideal harness is not the union of best rules. It is a routing and enforcement system: a thin stable contract, one canonical design standard, triggered high-risk workflows, task-local evidence, and deterministic locks. Rich context remains available, but arrives only when useful.

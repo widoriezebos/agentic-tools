@@ -142,3 +142,33 @@ terminal authority, a general updater, or migration of private memories.
 | HOST-3 | HIGH | Owners 6-7 | Imported hooks cannot mutate lifecycle state for the wrong runtime; Claude behavior survives | runtime-hook transport and existing supervision owner | scripts/agents/runtime-hook.sh | isolated hook routing fixtures | captured routing outputs and unchanged foreign state | MISSING | Add routing fixtures |
 | HOST-4 | HIGH | Owners 8-9 | Check all installed hosts honestly and use shared registration during adoption | hooks CLI and adoption | cmd/metasystem/hooks.go and scripts/adopt.sh | CLI and adoption fixtures | setup/check outputs per runtime | MISSING | Generalize checks |
 | HOST-5 | MEDIUM | Verification | Report trust/restart needs and distinguish configuration from live execution | setup output and documentation | docs/project-adaptation.md | output assertions | observed Codex host; record other providers separately | MISSING | Document and run available proof |
+
+## Decisions (amendment of 2026-09-07 and review outcomes)
+
+Distilled 2026-09-28 from the revision note and the opus-r15, r15-r2, r26
+and r27 dispositions, removed that day (tag `records-archive-2026-09-28`).
+
+- One lifecycle entry owner. The proposed `scripts/agents/runtime-hook.sh`
+  wrapper (owner 6 and HOST-3 above) was dropped. The existing supervision
+  hook entry owns start, receipt, stop and end, so the runtime and role
+  guard runs inside the Stop deadline (HOST-D1-002). A wrapper in front of
+  it would add time that no budget covers.
+- Claude, Codex and Devin delegates run concurrently under one metasystem.
+  Registration prepares all hosts and never selects one active runtime. The
+  nearest runtime is found over the adoptable host registry, not the
+  execution roster (`proc find-ancestor --all-hosts`).
+- A hook skips silently only on proof of a job-owned ancestor
+  (`lease hook-delegate`, `internal/lease/hook_delegate.go`): the caller or a
+  live ancestor matches a job record's pid or custody process. The runtime
+  signature, mission custody and the environment hints that adapters pass
+  are not authority. Unreadable evidence is an error, never a skip. A fresh
+  coordinator therefore still enrols, and a forged hint cannot suppress it
+  (HOST-6, HOST-7).
+- Rejected: restoring a placeholder for the design role in the shared
+  roster. The shared Astra default was Wido's explicit request (R-87-m1c).
+  Later rulings moved design authoring to Fable (R-89-*, R-133-ui).
+- Known limits, accepted and not repaired: moving the enclosing Git layout
+  requires setup to run again (missing-installation errors stay loud). A
+  managed-instruction block whose markers were reversed by hand is not
+  repaired: setup and check refuse the mismatched marker count, and the
+  foreign text survives.

@@ -27,7 +27,7 @@
   package is uncovered.
 - Law: R-35-m3 (`memory/rulings.md:62`) — anything that converts
   load-slowness into failure is a defect to fix with progress-based
-  patience. Doctrine: `records/patience/patience-attempts.md`. Precedent:
+  patience. Doctrine: `docs/patience.md`, "Waits in tests: attempts, not wall-clock". Precedent:
   the steward tick landing 65c36111 (close-the-channel, cleanup handshake
   on every exit path, progress-based deadline).
 - Scope: exactly one product-test file changes,
@@ -122,8 +122,8 @@ signal each wait should key on:
 | GroupOwnershipFixtureFallbackStaysExact | none | none | unchanged |
 | Family-external: cleanup `SIGKILL` fire-and-forget (`:35-37`) | — | leaked groups/goroutines outlive the test into siblings — the goal's cross-package interference lead (internal/supervise flap); leader reap alone does not prove group exit (DC-PAT-007, spike-proven with a `sleep 600 & exit` leader) | reap-channel close AND group absence, red on failsafe expiry (§3.7) |
 
-Taxonomy fit (doctrine `records/patience/patience-attempts.md`,
-"Taxonomy of waits"), amended per DC-PAT-003: the critic is right that
+Taxonomy fit (doctrine `docs/patience.md`, "Waits in tests: attempts, not wall-clock";
+the taxonomy of waits), amended per DC-PAT-003: the critic is right that
 the group-membership fingerprint carries no intermediate progress on
 the healthy kill path — the spike measured exactly 2 distinct
 fingerprints per healthy kill, so the stall clock there is honestly a

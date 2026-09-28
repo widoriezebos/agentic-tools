@@ -81,7 +81,7 @@ Source jobs use `delegate --purpose diagnosis`: the implementer role returns the
 A human can also submit a record through the existing verified-human path. An additional payload-producing job is retained when the coordinator combines authored material. Reviewers supplying findings are not payload authors. Author identities cannot be dropped during revision.
 All machine author jobs must be completed and have observable model and session identities. Missing source identity refuses sealing; it never becomes an invented model label.
 
-**One reproduction owner.** The two-bars contract is one assertion, red on the old tree and green on the new (`metasystem/plans/two-bars-for-changes-design.md:412`, `metasystem/records/two-bars/two-bars-design.md:163`).
+**One reproduction owner.** The two-bars contract is one assertion, red on the old tree and green on the new (`metasystem/plans/two-bars-for-changes-design.md:412`; the earlier r3 record is in the tag `records-archive-2026-09-28`).
 That Defect-Proof primitive is specified but absent from this tree. The current `TestReceipt` proves a candidate execution, not this relationship (`metasystem/internal/landing/receipt.go:35`, `metasystem/internal/landing/receipt.go:186`).
 Member A implements the shared primitive and its evidence validator in `metasystem/internal/proofrun`. Landing commands produce it and landing consumes it. Dispatch can then validate it without importing the landing package, which already depends on dispatch through validation.
 It does not add a competing reproduction field to TestReceipt or reinterpret a failed receipt as proof. Goal stores the attachment; the command layer coordinates goal, dispatch and proof owners without reversing their dependencies.

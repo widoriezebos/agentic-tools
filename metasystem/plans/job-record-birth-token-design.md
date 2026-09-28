@@ -43,8 +43,8 @@ retention pin and the failed-job-attention dedup digest.
   `record.go:278-312` (writes at 310). The claim-launch path builds the
   reservation with `claimReservationRecord` (`internal/dispatch/claim.go:669-720`)
   and writes it directly at `claim.go:522`, inside `withRecordLock` taken at
-  `claim.go:450`. `docs/design/dispatch-sequence.md:119-128` names that
-  third path as the production reservation. Both `RecordCreate` variants
+  `claim.go:450`. `docs/design/dispatch-sequence.md:119-128` (removed 2026-09-28; tag
+  records-archive-2026-09-28) named that third path as the production reservation. Both `RecordCreate` variants
   also run under `withRecordLock` (`record.go:139-174`).
 - `RecordSetup` (`record.go:318-371`) REPLACES the husk with the caller's
   setup source. It refuses a mismatch on the identity fields at
@@ -404,8 +404,10 @@ Diff boundary of that slice, exhaustive:
 - `internal/dispatch/occupancy_index_test.go` (fixture 3)
 - `internal/dispatch/claim_test.go` (fixture 4)
 - `scripts/agents/record-protocol-fixtures.sh` (fixture 9)
-- `docs/design/dispatch-sequence.md` (one sentence in section 9, lines
-  119-128: the reservation also mints the birth token)
+- the `claimReservationRecord` doc comment in `internal/dispatch/claim.go`
+  (one sentence: the reservation also mints the birth token; the sequence
+  map `docs/design/dispatch-sequence.md` this line first named was removed
+  2026-09-28)
 - `docs/glossary.md` (one entry: birth token)
 
 Nothing else. No shell dispatcher change, no adapter change, no steward
