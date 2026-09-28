@@ -32,7 +32,7 @@ func TestOwnerRefusesAnExecutableOutsideAnInstallation(t *testing.T) {
 	executable := filepath.Join(t.TempDir(), "bin", "metasystem")
 	resolver := NewResolver(func(string) (string, error) { t.Fatal("unexpected Git lookup"); return "", nil }, func() (string, error) { return executable, nil })
 	owner, mode, err := resolver.Owner("README.md")
-	if err == nil || owner != OwnerOutside || mode != "" || !strings.Contains(err.Error(), "is not installed at <installation>/bin/metasystem") {
+	if err == nil || owner != OwnerOutside || mode != "" || !strings.Contains(err.Error(), "is not an installed metasystem") {
 		t.Fatalf("Owner() = %v, %q, %v; want uninstalled-executable refusal", owner, mode, err)
 	}
 }

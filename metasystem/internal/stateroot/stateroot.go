@@ -82,7 +82,11 @@ func repositoryTopWith(path string, environment []string, run func(commandReques
 	request := commandRequest{name: "git", args: []string{"-C", path, "rev-parse", "--show-toplevel"}, env: scrubGitSteering(environment)}
 	output, err := run(request)
 	if err != nil {
-		return "", fmt.Errorf("state root: installation is not inside a Git repository: %s", strings.TrimSpace(string(output)))
+		said := strings.TrimSpace(string(output))
+		if strings.Contains(said, "not a git repository") {
+			return "", fmt.Errorf("%s is not inside a Git repository", path)
+		}
+		return "", fmt.Errorf("cannot find the Git repository of %s: %s", path, said)
 	}
 	return filepath.Abs(strings.TrimSpace(string(output)))
 }
@@ -299,7 +303,7 @@ func (r Resolver) installationRoot() (string, error) {
 		return "", fmt.Errorf("state root: locate installation: %w", err)
 	}
 	if err := validateInstallationShape(root); err != nil {
-		return "", fmt.Errorf("state root: executable %q is not installed at <installation>/bin/metasystem", executable)
+		return "", fmt.Errorf("%s is not an installed metasystem (an installation runs its own bin/metasystem); run the installation's bin/metasystem instead", executable)
 	}
 	return root, nil
 }
