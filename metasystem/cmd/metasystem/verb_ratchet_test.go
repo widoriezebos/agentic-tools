@@ -68,11 +68,11 @@ const (
 	// U9b: a delegate request carrying configuration runs in this process
 	// (VOA-14, runDelegateChild gone), and the deleted verbs' self-launches
 	// went with them; measured 94.
-	verbRatchetSelfSubprocessCeiling = 94
+	verbRatchetSelfSubprocessCeiling = 93
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed. Batch 9 (u9a's public
 	// homes, c3's plan deletions, distill's record removal): measured 12.
-	verbRatchetInstructionCeiling = 12
+	verbRatchetInstructionCeiling = 2
 )
 
 type ratchetSite struct {

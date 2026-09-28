@@ -113,7 +113,7 @@ func runDelegateWith(request delegateRequest, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "--adapter-selftest" && !delegateSelftestInternalAuthorized(root) {
 		writeJSONLine(stdout, stderr, delegateOutcome{
 			Outcome: "REFUSED-REQUEST", Headline: "refused",
-			Detail: "delegate --adapter-selftest is reserved for the metasystem adapter self-test",
+			Detail: "delegate --adapter-selftest is reserved for the runtime adapters' own self-test",
 		})
 		return 2
 	}

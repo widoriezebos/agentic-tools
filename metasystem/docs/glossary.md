@@ -264,7 +264,8 @@ not paths.
   joins every covenant criterion to its proof: criterion id, proof id,
   evidence kind, declared repo deps, evidence source, status. It is
   gate-defining input and guardrail-classed with the covenant. The
-  `covenant evidence` verb is its traceability gate: every requirement
+  covenant evidence gate `metasystem system check` runs is its
+  traceability gate: every requirement
   backed by a matching row, every declared dependency present via a
   symlink-refusing held-handle walk, and a covenant-backed
   `planned-floating` row refused. Recorded statuses are claims on

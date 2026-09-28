@@ -30,7 +30,7 @@ func runTestingMergeDriver(args []string) int {
 		return 2
 	}
 	if err := mergeTestingFiles(args[0], args[1], args[2], args[1]); err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem testing merge-driver:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal testing merge-driver:", err)
 		return 1
 	}
 	return 0

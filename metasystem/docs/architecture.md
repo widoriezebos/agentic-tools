@@ -30,7 +30,8 @@ R-139-m1e, kept as history). A Go programmer must never read the engine
 and find a shell script wearing Go syntax; a script must never make a
 decision the engine owns. The delegate-job choreography that once lived in `dispatch.sh` is Go now
 (`internal/delegation`, verbs-object-action U6b): a composition package
-above the owners, reached through `metasystem internal delegate`.
+above the owners, which the public work, design and review actions call in
+process and the delegate entrypoint serves for the runtimes' callbacks.
 
 ## Runtime agnosticism
 

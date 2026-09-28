@@ -856,7 +856,7 @@ func (d *contractDoc) contractExpandPaths(repo, projectRoot, ref string, globs [
 	}
 	rel, err := filepath.Rel(realpath.Resolve(repo), realpath.Resolve(projectRoot))
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return nil, stateErr("metasystem project root is outside its git repository")
+		return nil, stateErr("the project root is outside its git repository")
 	}
 	prefix := ""
 	if rel != "." {

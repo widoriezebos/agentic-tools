@@ -292,7 +292,7 @@ reconcile can see it and republish it in canonical form. One edit computes
 (current ∪ adds) ∖ removes, and the same token in both refuses. Two
 concurrent edits are last-publish-wins over the whole field, the same as
 Blocked. A lost additive edit is re-run by its author, and there is no
-set-merge. `--label` on `goal next` narrows only the recommendation
+set-merge. `--label` on `goal list --ready` and on a `goal claim` without a goal narrows only the recommendation
 candidates. It never changes the claim quota, blocker gating, arc order or
 the rule that a held claim answers first. An empty filtered set reports
 "no goal matches --label <x>", never the empty-backlog wording.

@@ -68,7 +68,7 @@ var StartOutcomeNotices = map[string]startNotice{
 	"brain-timeout":           {`{"systemMessage":"Metasystem brain boot failed (timeout): this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild the engine with go run ./cmd/devgate build, then start a new session."}`, 0},
 	"arming":                  {`{"systemMessage":"Metasystem supervision arming failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem session start there. Then start a new session."}`, 0},
 	"wait-recovery":           {startNoticeTemplate("read durable wait recovery rows", "Repair supervision from the owning installation and run metasystem session start there."), 0},
-	"temporary-cleanup":       {startNoticeTemplate("remove its temporary files", "Restore temporary-directory access and remove leftover metasystem hook temporary files."), 0},
+	"temporary-cleanup":       {startNoticeTemplate("remove its temporary files", "Restore temporary-directory access and remove the hooks' leftover temporary files."), 0},
 	"interrupted":             {`{"systemMessage":"Metasystem SessionStart could not finish because it was interrupted: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore the runtime session. Then start a new session."}`, 143},
 }
 

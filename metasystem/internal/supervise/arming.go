@@ -1220,7 +1220,7 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 		if err := requireCeilingClear(options.Root, options.MetasystemRoot, options.WatcherCap); err != nil {
 			return EnsureResult{}, err
 		}
-		if _, err := stopOwner(options.Root, owner, options.WaitScaleMilli, "metasystem up engine-generation replacement"); err != nil {
+		if _, err := stopOwner(options.Root, owner, options.WaitScaleMilli, "an engine-generation replacement at session start"); err != nil {
 			return EnsureResult{}, err
 		}
 		if _, err := stopTakeoverComponents(options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli, false); err != nil {
@@ -1277,7 +1277,7 @@ func ShutdownAt(root, metasystemRoot, requestedStateRoot, expectedTagPrefix stri
 			return report, err
 		}
 	}
-	ownerOutcome, ownerErr := stopOwner(root, owner, scaleMilli, "metasystem up shutdown")
+	ownerOutcome, ownerErr := stopOwner(root, owner, scaleMilli, "a supervision shutdown")
 	report.Outcomes = append(report.Outcomes, ownerOutcome)
 	ownerOrderly := ownerOutcome.Result == ShutdownStopped && ownerOutcome.Signal == ShutdownSignalTerm
 	componentOutcomes, componentErr := stopTakeoverComponents(root, metasystemRoot, owner.InstanceTag, scaleMilli, ownerOrderly)

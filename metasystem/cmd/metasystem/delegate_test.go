@@ -109,7 +109,7 @@ func TestDelegateAdapterSelftestRefusesADirectInvocation(t *testing.T) {
 	out, code := captureStdout(t, func() int {
 		return runDelegate([]string{"--adapter-selftest", "fake", "--brief", "brief.md", "--workspace", root, "--op", "test-job"})
 	})
-	if code != 2 || !strings.Contains(out, `"outcome":"REFUSED-REQUEST"`) || !strings.Contains(out, "reserved for the metasystem adapter self-test") {
+	if code != 2 || !strings.Contains(out, `"outcome":"REFUSED-REQUEST"`) || !strings.Contains(out, "reserved for the runtime adapters' own self-test") {
 		t.Fatalf("direct adapter self-test exit=%d output=%q", code, out)
 	}
 }

@@ -152,13 +152,14 @@ predecessor in the same slice.
 | | stop | `stop design G` |
 | | find | `internal project design-of` (skills) |
 | | check-moves | `internal validate moved-effects` (design-critic role) |
+| | check | `internal validate design-obligations` (as `design check FILE... [--complete]`; U9b) |
 | **work** | brief | `brief` |
 | | build | `build` (and `build --resume RUN` as `work build ID`) |
 | | review | `review G`, `review goal G`, `review G --changes/--patch`, `review commit SHA --goal G`, `review changes`, `review diff`, `review job J`, `review run RUN`, `review G --finding F --test` |
 | | revise | `revise G`, `revise job R`, `revise run RUN` |
 | | land | `land G ...`, `land job J`, and `land [G] --message FILE (--staged \| --path P...)` for a hand-made change (`scripts/agents/land.sh`, U5) |
 | | wait | `wait G`, `wait goal G`, `wait job/run/proof/resume/review ID`, `wait G --for`, and `wait file PATH --until present\|absent` as `work wait --path PATH --until present\|absent` (caller-relative path, same observation and durable resumption, `intent_work.go:193,1219`) |
-| | stop | `stop job J`, `stop review REF`, `internal job stop-batch-reconcile` (as `work stop G`: finish a breach-stopped goal's recorded stop; U9a) |
+| | stop | `stop job J`, `stop review REF`; `work stop G` stops every running job of goal G and no other goal's (U9b; the budget stop's bookkeeping, once `internal job stop-batch-reconcile`, completes by itself on the steward's pass) |
 | | status | `status job J`, `status run RUN`, `status work`, `show review REF` |
 | | close | `done job J` (as `work close j2:J`), `repair review G` (as `work close G`) |
 | | watch | `internal job watch`, `internal run watch` (turn facts; `work watch --job J` or `--run RUN`) |
@@ -167,16 +168,16 @@ predecessor in the same slice.
 | **test** | run | `test` |
 | | plan, list, check, verify, report | `internal test plan/list/check/verify/report` |
 | | wait | `wait proof REF` (as `test wait proof:ID`; U1a adds no `test status`, so `proof:` is accepted by `test wait` only) |
-| | add, merge, baseline | `internal testing add-tests`, `internal testing merge`, `internal validate refactor-baseline record/check` (as `test baseline --gate`/`--check`; refactor skill) (U9a) |
+| | add, remove, baseline, declare-moves | `internal testing add-tests`, (U9b) `test remove` over the contract merge owner, `internal validate refactor-baseline record/check` (as `test baseline --gate`/`--check`; refactor skill) (U9a), `internal audit stop-decision-surface --declare` (as `test declare-moves G`; U9b). `test merge` left the surface in U9b: git's merge driver (`internal testing merge-driver`), which `system setup` registers, merges the contract |
 | **question** | ask, retry, withdraw | `ask`, `ask --retry`, `ask --withdraw` |
 | | answer, show, list, wait | `answer`, `show question`, (new list over the same owner), `wait question` |
-| **mission** | start, status, resume, repair | `start/status/resume/repair mission M` |
+| **mission** | start, status, resume, repair, seal | `start/status/resume/repair mission M`; `internal mission contract-seal` (as `mission seal M`; U9b) |
 | **incident** | list, claim, close | `incidents ...` |
 | **grant** | add, revoke, list | `grant`, `revoke`, (list over the same owner) |
 | **decision** | list, show | `show decisions`, `show record ID` |
-| **session** | start, stop, report | `start session`, `stop session`, `internal report stop-status` (the Stop hook's instruction) |
+| **session** | start, stop, report, wait | `start session`, `stop session`, `internal report stop-status` (the Stop hook's instruction); `internal wait register/end` (as `session wait`; U9b) |
 | | handoff, context, verify | `internal context handoff/status/verify` (steward continuation role) |
-| **system** | start, stop, restart, status, check, repair, setup, register | `start/stop/restart/status [checkout]`, `check`, `repair waits`, `internal up --recover-only --if-down` (as `system start --if-down`, the cron line), `internal steward status` (as `system status --steward`); `setup` (U9, refinement): connect this checkout's runtime hooks and pre-commit fence to its engine, the per-checkout activation of 3.3; `internal runtime setup` (as `system register`: install or check the installation's agent-runtime registrations; U9a) |
+| **system** | start, stop, restart, status, check, repair, setup, register | `start/stop/restart/status [checkout]`, `check`, `repair waits`, `internal up --recover-only --if-down` (as `system start --if-down`, the cron line), `internal steward status` (as `system status --steward`); `setup` (U9, refinement): the per-checkout activation of 3.3; U9b folds `system register` (`internal runtime setup`, U9a) into it: the runtimes metasystem.runtimes enables (or `--runtimes`, `--copy-skills`), their hooks on the engine, the commit fence and the testing contract's git merge driver; `--check` is gone, `system check` reports what setup would change and runs the covenant evidence gate |
 | **machine** | list, start | `status --machines`, `start machine NAME` |
 | **ui** | start, stop, restart, status | `start/stop/restart/status ui` |
 | **settings** | show, keys, check, coordinator, set | `settings`, `settings --keys`, `check settings`, `settings coordinator`, `internal config tailor --set` on the seat's `.local` (as `settings set KEY VALUE`; the placeholder-model remedy; U9a) |
@@ -184,7 +185,7 @@ predecessor in the same slice.
 | **receipt** | add, check, stats, correct, retro | `scripts/receipt.sh` and `internal receipt ...` |
 | **experiment** | record, challenge, status, check | `internal report frontier record/challenge/status`, `internal validate stop-loss` (improve, take-a-step-back) |
 | **critique** | rebind-budget, close-register | `internal job critique-budget-rebind`, `internal job critique-register-close` (critique skills) |
-| **covenant** | check | `internal covenant validate` (inception skill) |
+| **covenant** | check | `internal covenant validate` (inception skill); U9b: `system check` reads the covenant's shape and runs its evidence gate, and the covenant family is gone |
 
 `help` groups the objects: Plan (goal, design, decision, grant), Deliver (work,
 test, question, incident), Run (status, session, mission, system, machine, ui,
@@ -245,7 +246,7 @@ result strictly, as `test.go:932` does. No other pair may be both.
 | `mission run-loop` | `internal/missionrunner/launch.go:677` | detached loop |
 | `launch supervise` (under `proc setsid --`) | `internal/launch/process.go:143` | detached launch supervisor |
 | `seat launch` | `ui_launch.go:165-194` | must outlive the browser request and the UI server (VOA-04) |
-| seat destination steps: `validate session-isolation`, `config validate`, `config get`, `goal fetch`, `goal next`, `steward arm`, `up` | `internal/seat/launch/sequence.go:512-781` | run on the destination checkout's own engine |
+| seat destination steps: `validate session-isolation`, `config validate`, `goal fetch`, `goal next`, `steward arm`, `up` (`config get` left the launch path on main; U9b deleted it) | `internal/seat/launch/sequence.go:512-781` | run on the destination checkout's own engine |
 | `ui serve` | `internal/ui/lifecycle/launch.go:19` | background server with a ready fd |
 | `ui tools` | `internal/ui/partner/runtime.go:91` (ACP `mcpServers`) | stdio MCP server started by the runtime |
 | `proof-run watchdog`, `proof-run custody-exec` | `internal/proofrun/launcher.go:928`, `resource_custody.go:641` | sibling watchdog; exec barrier |
