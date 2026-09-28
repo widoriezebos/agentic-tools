@@ -98,6 +98,9 @@ func (r Report) machineLine(line MachineStanding) string {
 		fmt.Sprintf("generation %d", record.Generation),
 		"engine "+shortEngine(record.Engine),
 		r.runningWords(record))
+	if record.DiskFreeBytes != nil {
+		fields = append(fields, "free "+freeWords(*record.DiskFreeBytes))
+	}
 	if len(line.Holds) > 0 {
 		holds := "holds " + strings.Join(line.Holds, ", ")
 		if line.Flag != "" {
@@ -167,4 +170,15 @@ func shortEngine(engine string) string {
 		return engine[:7]
 	}
 	return engine
+}
+
+// freeWords renders a free-space figure the way machine list prints it.
+func freeWords(bytes int64) string {
+	switch {
+	case bytes >= 1<<30:
+		return fmt.Sprintf("%.1f GiB", float64(bytes)/(1<<30))
+	case bytes >= 1<<20:
+		return fmt.Sprintf("%.1f MiB", float64(bytes)/(1<<20))
+	}
+	return fmt.Sprintf("%d B", bytes)
 }

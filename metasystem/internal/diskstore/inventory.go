@@ -2,7 +2,6 @@ package diskstore
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -204,7 +203,7 @@ func (t TempStrays) Plan(ctx context.Context, pass *Pass) ([]Item, error) {
 		}
 		if foreign > 0 {
 			items = append(items, Item{Class: t.Name(), Key: filepath.Join(resolved, "tmp.*"), Path: filepath.Join(resolved, "tmp.*"), Foreign: true,
-				Verdict: Verdict{Decision: Keep, Reason: fmt.Sprintf("%d bare tmp.* entries: not engine-named, never touched", foreign)}})
+				Verdict: Verdict{Reason: fmt.Sprintf("%d bare tmp.* entries: not engine-named, never touched", foreign)}})
 		}
 	}
 	return items, nil
@@ -222,6 +221,3 @@ func hasAnyPrefix(name string, prefixes []string) bool {
 	}
 	return false
 }
-
-// errNotAStray is a strays-plan item that changed since the preview.
-var errNotAStray = errors.New("changed since the preview")

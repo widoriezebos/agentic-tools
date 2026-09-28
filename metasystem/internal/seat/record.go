@@ -72,6 +72,10 @@ type Record struct {
 	// Every field of it is still an identifier, a number or a time.
 	Working *Working `json:"working"`
 	TickAt  string   `json:"tickAt"`
+	// DiskFreeBytes is the least free space of the volumes this machine's
+	// last disk pass watched (engine-owns-disk-lifetimes 3.3); absent when no
+	// pass has reported. Readers without the field ignore it.
+	DiskFreeBytes *int64 `json:"diskFreeBytes,omitempty"`
 }
 
 // Encode renders the record as the single file a presence commit carries.
@@ -111,8 +115,9 @@ type rawRecord struct {
 	// every record written before it has none. A reader that refused those
 	// would read a live machine as dead, which is the one thing the
 	// schema-addition rule exists to prevent.
-	Working json.RawMessage `json:"working"`
-	TickAt  *string         `json:"tickAt"`
+	Working       json.RawMessage `json:"working"`
+	TickAt        *string         `json:"tickAt"`
+	DiskFreeBytes *int64          `json:"diskFreeBytes"`
 }
 
 // ParseRecord validates the keys this engine knows and ignores the rest. It
@@ -196,6 +201,10 @@ func ParseRecord(data []byte) (Record, error) {
 			return malformed("%v", err)
 		}
 		record.Working = working
+	}
+	if raw.DiskFreeBytes != nil && *raw.DiskFreeBytes >= 0 {
+		free := *raw.DiskFreeBytes
+		record.DiskFreeBytes = &free
 	}
 	return record, nil
 }

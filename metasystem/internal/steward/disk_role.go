@@ -67,7 +67,7 @@ func (c HandoffClass) Apply(ctx context.Context, pass *diskstore.Pass, item disk
 	case err != nil:
 		return diskstore.Verdict{Decision: diskstore.Pending, Reason: err.Error(), Command: "metasystem system check"}
 	}
-	return diskstore.Verdict{Decision: diskstore.Keep, Reason: "the handoff became live, consumed or newer since the plan"}
+	return diskstore.Verdict{Decision: diskstore.Keep, Reason: "the handoff became live, consumed or newer since the plan", Command: "metasystem disk show"}
 }
 
 // UsageClass is the usage store's owner in a checkout pass: complete call
@@ -127,6 +127,22 @@ type DiskPass struct {
 	FloorGiB int64
 	// SkipMachine leaves the machine pass to whichever steward wins it.
 	SkipMachine bool
+	// TempRoots and Volumes replace the host's temporary roots and the
+	// watched volumes, and Home the home state root (fixtures); empty is
+	// production.
+	TempRoots, Volumes []string
+	Home               string
+	// Proofs replaces the engine's owner-kind proofs, and Checkouts the
+	// armed checkouts read from the host registry (fixtures).
+	Proofs    map[diskstore.OwnerKind]diskstore.OwnerProof
+	Checkouts []string
+}
+
+func (p DiskPass) proofs() map[diskstore.OwnerKind]diskstore.OwnerProof {
+	if p.Proofs != nil {
+		return p.Proofs
+	}
+	return diskOwnerProofs()
 }
 
 // DiskPassResult is both reports.
@@ -151,9 +167,12 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 	if pass.Clock == nil {
 		return result, errors.New("a disk pass needs a clock for its budget")
 	}
-	home, err := HomeStateRoot()
-	if err != nil {
-		return result, err
+	home := pass.Home
+	if home == "" {
+		var err error
+		if home, err = HomeStateRoot(); err != nil {
+			return result, err
+		}
 	}
 	settings, settingsErr := diskSettingsFor(top)
 	checkoutOptions := diskstore.PassOptions{Kind: "checkout", Name: top, Registry: diskstore.CheckoutRegistry(top),
@@ -168,13 +187,14 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 		defer cancel()
 		ctx = budget
 		checkoutOptions.Classes = []diskstore.Class{
-			diskstore.RegisteredStores{Registry: diskstore.CheckoutRegistry(top), Proofs: diskOwnerProofs()},
+			diskstore.RegisteredStores{Registry: diskstore.CheckoutRegistry(top), Proofs: pass.proofs()},
 			HandoffClass{Root: top, Keep: settings.Duration(config.DiskContextKeepKey)},
 			UsageClass{StateRoot: top, Limit: settings.Count(config.DiskSweepItemsPerLockKey)},
 		}
 		checkoutOptions.CensusMinBudget = settings.Duration(config.DiskCensusMinBudgetKey)
 		checkoutOptions.CensusReader = kernelCensus()
 	}
+	var err error
 	result.Checkout, err = diskstore.RunPass(ctx, checkoutOptions)
 	if err != nil || pass.SkipMachine {
 		return result, err
@@ -192,24 +212,31 @@ func reportOnly(mode diskstore.Mode) diskstore.Mode {
 }
 
 func machinePass(ctx context.Context, home, top string, own diskstore.Settings, ownErr error, pass DiskPass) (diskstore.Report, error) {
-	checkouts := armedCheckouts()
+	checkouts := pass.Checkouts
+	if checkouts == nil {
+		checkouts = armedCheckouts()
+	}
+	checkouts = append([]string(nil), checkouts...)
 	if !containsPath(checkouts, top) {
 		checkouts = append(checkouts, top)
 	}
 	var participants []diskstore.Participant
-	var evidenceRoots []string
+	var evidenceRoots, gitRoots []string
 	for _, checkout := range checkouts {
+		layout, layoutErr := stateroot.ResolveLayout(checkout)
+		if layoutErr == nil && !containsPath(gitRoots, layout.GitRoot) {
+			gitRoots = append(gitRoots, layout.GitRoot)
+		}
 		settings, err := diskSettingsFor(checkout)
 		if checkout == top {
 			settings, err = own, ownErr
 		}
 		participants = append(participants, diskstore.Participant{Checkout: checkout, Settings: settings, Err: err})
-		if err == nil {
+		if err == nil && !containsPath(evidenceRoots, settings.EvidenceRoot.Path) {
 			evidenceRoots = append(evidenceRoots, settings.EvidenceRoot.Path)
 		}
 	}
 	host := diskstore.ResolveHost(participants)
-	hostTemp, _ := diskstore.HostTempRoot()
 	options := diskstore.PassOptions{Kind: "machine", Name: "machine", Registry: diskstore.MachineRegistry(home),
 		LockPath: filepath.Join(diskstore.MachineRegistry(home).Dir, ".sweep.flock"), ReportPath: diskstore.MachineReportPath(home),
 		PlanDir: filepath.Join(home, "stores", "plans"), Mode: pass.Mode, Now: pass.Now, Clock: pass.Clock, Entropy: rand.Reader,
@@ -218,11 +245,19 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 		options.Mode = reportOnly(pass.Mode)
 		return diskstore.RunPass(ctx, options)
 	}
-	options.Classes = []diskstore.Class{
-		diskstore.RegisteredStores{Registry: diskstore.MachineRegistry(home), Proofs: diskOwnerProofs()},
-		diskstore.TempStrays{Roots: nonEmpty(hostTemp, "/tmp")},
+	tempRoots := pass.TempRoots
+	if tempRoots == nil {
+		hostTemp, _ := diskstore.HostTempRoot()
+		tempRoots = nonEmpty(hostTemp, "/tmp")
 	}
-	options.Volumes = existing(append([]string{home, top, hostTemp}, evidenceRoots...))
+	options.Classes = []diskstore.Class{
+		diskstore.RegisteredStores{Registry: diskstore.MachineRegistry(home), Proofs: pass.proofs()},
+		diskstore.TempStrays{Roots: tempRoots},
+	}
+	options.Volumes = pass.Volumes
+	if options.Volumes == nil {
+		options.Volumes = existing(append(append([]string{home, top}, tempRoots...), evidenceRoots...))
+	}
 	options.FloorBytes = host.Bytes(config.DiskFloorKey)
 	if pass.FloorGiB > 0 {
 		options.FloorBytes, options.FloorForced = pass.FloorGiB<<30, true
@@ -239,26 +274,27 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 		return volumes, err
 	}
 	options.Consumers = func(ctx context.Context, census *diskstore.UseCensus) []diskstore.Consumer {
-		return diskstore.InventoryConsumers(ctx, pass.Now, consumerRoots(home, hostTemp, checkouts, evidenceRoots), registeredPaths(home, checkouts), census)
+		roots := consumerRoots(home, tempRoots, gitRoots, evidenceRoots)
+		return diskstore.InventoryConsumers(ctx, pass.Now, roots, registeredPaths(home, checkouts, gitRoots), census)
 	}
 	return diskstore.RunPass(ctx, options)
 }
 
 // consumerRoots are the places the floor names unregistered consumers in:
-// every evidence root, the host temporary root (the engine's namespace),
+// every evidence root, the host temporary roots (the engine's namespace),
 // each armed checkout's siblings (never an armed checkout itself), the Go
 // and staticcheck caches, and ~/.metasystem.
-func consumerRoots(home, hostTemp string, checkouts, evidenceRoots []string) []diskstore.ConsumerRoot {
+func consumerRoots(home string, tempRoots, gitRoots, evidenceRoots []string) []diskstore.ConsumerRoot {
 	var roots []diskstore.ConsumerRoot
 	for _, root := range evidenceRoots {
 		roots = append(roots, diskstore.ConsumerRoot{Path: root, Kind: "evidence root", Children: true})
 	}
-	if hostTemp != "" {
-		roots = append(roots, diskstore.ConsumerRoot{Path: hostTemp, Kind: "tmpdir", Children: true, Engine: true})
+	for _, root := range tempRoots {
+		roots = append(roots, diskstore.ConsumerRoot{Path: root, Kind: "tmpdir", Children: true, Engine: true})
 	}
 	parents := map[string]bool{}
-	for _, checkout := range checkouts {
-		parents[filepath.Dir(checkout)] = true
+	for _, gitRoot := range gitRoots {
+		parents[filepath.Dir(gitRoot)] = true
 	}
 	for parent := range parents {
 		roots = append(roots, diskstore.ConsumerRoot{Path: parent, Kind: "checkout sibling", Children: true})
@@ -276,17 +312,17 @@ func consumerRoots(home, hostTemp string, checkouts, evidenceRoots []string) []d
 }
 
 // registeredPaths are the paths the floor never names as unregistered: the
-// registered stores and the armed checkouts themselves.
-func registeredPaths(home string, checkouts []string) map[string]bool {
+// registered stores, the armed checkouts and their git roots.
+func registeredPaths(home string, checkouts, gitRoots []string) map[string]bool {
 	paths := map[string]bool{}
+	for _, gitRoot := range gitRoots {
+		paths[gitRoot] = true
+	}
 	for _, checkout := range checkouts {
 		paths[checkout] = true
-		registries := []diskstore.Registry{diskstore.CheckoutRegistry(checkout)}
-		for _, registry := range registries {
-			records, _ := registry.Inventory()
-			for _, record := range records {
-				paths[record.Path] = true
-			}
+		records, _ := diskstore.CheckoutRegistry(checkout).Inventory()
+		for _, record := range records {
+			paths[record.Path] = true
 		}
 	}
 	records, _ := diskstore.MachineRegistry(home).Inventory()
@@ -310,7 +346,13 @@ func kernelCensus() *diskstore.CensusReader {
 	return &reader
 }
 
+// diskSettingsFor reads the settings of the checkout whose state root (or
+// repository) is checkout: its metasystem.conf beside it in the template
+// layout, else the installation its layout names.
 func diskSettingsFor(checkout string) (diskstore.Settings, error) {
+	if conf := filepath.Join(checkout, "metasystem.conf"); regularFileExists(conf) {
+		return diskstore.LoadSettings(conf, nil)
+	}
 	layout, err := stateroot.ResolveLayout(checkout)
 	if err != nil {
 		return diskstore.Settings{}, err
@@ -414,4 +456,32 @@ func checkDisk(repoRoot string) RoleVerdict {
 		return roleAlive(RoleDisk, "no disk pass has run yet")
 	}
 	return roleAlive(RoleDisk, "free space is above the floor and every disk setting is readable")
+}
+
+// diskFreeBytes is the least free space the last disk reports saw, for the
+// machine's presence; nil when no pass has measured a volume.
+func diskFreeBytes(repoRoot string) *int64 {
+	paths := []string{diskstore.CheckoutReportPath(repoRoot)}
+	if home, err := HomeStateRoot(); err == nil {
+		paths = append(paths, diskstore.MachineReportPath(home))
+	}
+	var least *int64
+	for _, path := range paths {
+		report, err := diskstore.ReadReport(path)
+		if err != nil {
+			continue
+		}
+		for _, volume := range report.Volumes {
+			if least == nil || volume.FreeBytes < *least {
+				free := volume.FreeBytes
+				least = &free
+			}
+		}
+	}
+	return least
+}
+
+func regularFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }

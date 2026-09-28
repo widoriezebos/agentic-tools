@@ -188,6 +188,7 @@ func publishSeatPresence(repoRoot string, transport seat.Git, fleetCopy seat.Cop
 		report.Outcome, report.Detail = seat.OutcomeFailed, err.Error()
 		return report, nil
 	}
+	record.DiskFreeBytes = diskFreeBytes(repoRoot)
 	report.Detail = detail
 	if published, seen := fleetCopy.Records[machine]; seen {
 		if conflict := seat.Conflict(&published, record); conflict != nil {
