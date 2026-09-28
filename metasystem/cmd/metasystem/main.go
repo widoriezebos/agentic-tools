@@ -536,13 +536,6 @@ func families() []family {
 			},
 		},
 		{
-			name:    "evidence",
-			summary: "durable-evidence lifecycle: collect mirrored chains, prune residue, age archives",
-			verbs: []verb{
-				{"gc", "collect closed mirrored chains, prune residue, age flight-recorder archives", runEvidenceGC},
-			},
-		},
-		{
 			name:    "supervise",
 			summary: "the supervision lifecycle (docs/design/supervision-lifecycle.md)",
 			verbs: []verb{

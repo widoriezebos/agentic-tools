@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -16,26 +15,6 @@ import (
 // The evidence family owns the durable-evidence lifecycle: raw run evidence
 // under gitignored artifacts/ is mirrored to the evidence root before it
 // counts as disposable, and disposable evidence eventually gets disposed of.
-
-// runEvidenceGC runs one collection pass: collect closed terminal chains
-// verified against the mirror manifest, prune mirrored job records past the
-// grace window, sweep per-job residue, prune empty non-spine directories, and
-// copy-then-age flight-recorder archives. The pass is a checkout write: it
-// runs as the lease holder (this process is the supplied caller), under the
-// lease lock at the holder's claim epoch, or ungated for a HUMAN caller.
-// The evidence root defaults to the checkout's configured evidence.root and
-// the grace window to METASYSTEM_CHAIN_GRACE_SECONDS or 5400 seconds.
-func runEvidenceGC(args []string) int {
-	flags := flag.NewFlagSet("evidence gc", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	evidenceRoot := flags.String("evidence", "", "durable evidence root (absolute path; default evidence.root)")
-	grace := flags.Float64("grace-seconds", evidenceGCDefaultGrace(), "seconds a mirrored terminal chain's job records stay after mirroring")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal evidence gc [--root DIR] [--evidence DIR] [--grace-seconds SEC]")
-		return 2
-	}
-	return evidenceGC(*root, *evidenceRoot, *grace, os.Stdout, os.Stderr)
-}
 
 // evidenceGC is one collection pass for the checkout at root, with this
 // process as the lease caller: an empty evidenceRoot means the checkout's
