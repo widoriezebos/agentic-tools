@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -137,11 +138,25 @@ type stateComponent struct {
 	Heartbeat     string `json:"heartbeat"`
 }
 
-// BuildStamp is set by the linker at build time and stamped into
-// every artifact this engine writes (execution is
-// attested by the workload's own artifacts, not installation
-// paperwork).
+// BuildStampRecord is set by the linker (enginebuild.StampLinkerFlags) to the
+// stamp record, which a reader finds in the file's bytes even under -trimpath.
+var BuildStampRecord string
+
+// BuildStamp is linked beside BuildStampRecord (for readers that predate the
+// record), reconciled with it at init, and stamped into every artifact this
+// engine writes (execution is attested by the workload's own artifacts, not
+// installation paperwork). "dev" stands when nothing is linked.
 var BuildStamp = "dev"
+
+// init refuses an engine linked with two different stamps: every artifact it
+// wrote would carry an identity its file does not.
+func init() {
+	stamp, err := enginebuild.LinkedStamp(BuildStampRecord, BuildStamp, "dev")
+	if err != nil {
+		panic("metasystem: refusing to run a mis-built engine: " + err.Error())
+	}
+	BuildStamp = stamp
+}
 
 // PriorGeneration reads the previously published state's generation so a
 // replacement owner can continue the sequence rather than repeat it. A
