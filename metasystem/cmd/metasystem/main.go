@@ -115,7 +115,7 @@ func registeredFamilies() []family {
 		{
 			name: "testing", summary: "the testing contract's git merge driver",
 			verbs: []verb{
-				{name: "merge-driver", summary: "merge the testing contract as git's merge driver", run: runTestingMergeDriver, launcher: "internal/testpolicy/contractgit/driver.go", evidence: "testing merge-driver"},
+				{name: "merge-driver", summary: "merge the testing contract as git's merge driver", run: runTestingMergeDriver, launcher: "internal/testpolicy/contractgit/register.go", evidence: "testing merge-driver"},
 			},
 		},
 		{
@@ -148,7 +148,6 @@ func registeredFamilies() []family {
 		{
 			name: "config", summary: "a new machine's configuration steps",
 			verbs: []verb{
-				{name: "get", summary: "resolve one setting on a new machine's own engine", run: runConfigGet, launcher: "internal/seat/launch/sequence.go", evidence: "\"config\", \"get\"", required: []string{"key"}},
 				{name: "validate", summary: "validate a new machine's configuration on its own engine", run: runConfigValidate, launcher: "internal/seat/launch/sequence.go", evidence: "\"config\", \"validate\""},
 			},
 		},

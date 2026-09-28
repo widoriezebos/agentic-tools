@@ -82,10 +82,14 @@ func TestGoalLandingHostContractRetainsPriorGroupsAndGoGate(t *testing.T) {
 // (plans/designs/verbs-object-action.md 6.1). Each maps to that verb; nothing
 // else may leave the legacy floor this way.
 var retiredWithDeletedVerb = map[string]string{
-	"context-standard/TestRuntimeContextSampleVerb":  "runtime context-sample",
-	"launch-standard/TestPackCheckVerbPrintsOneLine": "launch pack-check",
-	"launch-standard/TestUnitRunPrintsOneLine":       "unit run",
-	"launch-standard/TestUnitFamilyIsRegistered":     "unit run",
+	// U9b (B3): test merge left the public surface; git's merge driver,
+	// which system setup registers, is the one merge (its witness is
+	// TestTestingMergeDriverPreservesOursOnRefusal).
+	"command-interface-smoke/TestTestingMergeVerbRoutesAndPreservesOutputOnRefusal": "test merge",
+	"context-standard/TestRuntimeContextSampleVerb":                                 "runtime context-sample",
+	"launch-standard/TestPackCheckVerbPrintsOneLine":                                "launch pack-check",
+	"launch-standard/TestUnitRunPrintsOneLine":                                      "unit run",
+	"launch-standard/TestUnitFamilyIsRegistered":                                    "unit run",
 	// U7c: the only caller was dependency-tree-guard.sh.
 	"batch-buildcd-standard/TestAuditParallelRatchetVerbRefusesAndLowers": "audit parallel-ratchet",
 	// U7c step B: proc fixture-key lost its last caller with the fixture

@@ -14,7 +14,7 @@ Replace this file when adopting the metasystem. Keep facts concrete and reposito
 
 ## Commands
 
-- Testing contract: `testing.json`, selected through `testing.contract=testing.json` in `metasystem.conf`. `bin/metasystem test list --root .` describes it, `settings check` validates it with the settings without compiling, `test plan --goal <goal> --mode auto` resolves the actual risk-selected groups, `test run` executes the selected stages, and `test status --tree <tree>` reads sufficient retained evidence without rerunning it. `metasystem test merge --base <file> --ours <file> --theirs <file> --out <file>` merges concurrent contract edits by surface, group, and list identity; `testing merge-driver` prints the Git driver setup and accepts Git's `%O %A %B` order; `metasystem test add --file <file> --group <id> --tests <name,...>` verifies and adds named Go tests.
+- Testing contract: `testing.json`, selected through `testing.contract=testing.json` in `metasystem.conf`. `bin/metasystem test list --root .` describes it, `settings check` validates it with the settings without compiling, `test plan --goal <goal> --mode auto` resolves the actual risk-selected groups, `test run` executes the selected stages, and `test status --tree <tree>` reads sufficient retained evidence without rerunning it. Concurrent contract edits merge by surface, group, and list identity through the git merge driver `metasystem system setup` registers; `metasystem test add --file <file> --group <id> --tests <name,...>` verifies and adds named Go tests.
 
   Application-language-neutral schema 2 fields and a command/JUnit example are in [the testing contract guide](testing-contract.md).
 

@@ -2,7 +2,7 @@ package main
 
 // Public homes for the machinery verbs people and agents are told to run by
 // hand (plans/designs/verbs-object-action.md, sections 3.1, 3.4 and 3.6;
-// U9a): test add, test merge, test baseline and settings set (system register was folded into system setup in U9b).
+// U9a): test add, test baseline and settings set (U9b folded system register into system setup and left test merge to git's merge driver).
 // Each routes through the public router to the owner the retired internal
 // verb reached, and each has an idempotency row with its witness here.
 
@@ -23,7 +23,6 @@ import (
 func init() {
 	registerIdempotency("test add", idemStateful, "tests already in the group: success, the contract's bytes unchanged", witnessTestAddRepeat)
 	registerIdempotency("test remove", idemStateful, "tests already absent from the group: success, the contract's bytes unchanged", witnessTestRemoveRepeat)
-	registerIdempotency("test merge", idemStateful, "the same three contracts merge to the same bytes; a repeat rewrites them unchanged", witnessTestMergeRepeat)
 	registerIdempotency("test baseline", idemCreation, "--gate records that the gate passed at this moment, so the baseline's age restarts from each call; --check only reads", nil)
 	registerIdempotency("settings set", idemStateful, "a key already holding the value: success, the local configuration unchanged", witnessSettingsSetRepeat)
 }
@@ -108,40 +107,6 @@ func newHomesMergeFixture(t *testing.T) []string {
 		}
 	}
 	return paths
-}
-
-// TestTestMergeIsThePublicHomeOfTheContractMerge: the documented manual merge
-// of concurrent contract edits is test merge.
-func TestTestMergeIsThePublicHomeOfTheContractMerge(t *testing.T) {
-	paths := newHomesMergeFixture(t)
-	if code := dispatch([]string{"test", "merge", "--base", paths[0], "--ours", paths[1], "--theirs", paths[2], "--out", paths[3]}); code != 0 {
-		t.Fatalf("test merge exit = %d", code)
-	}
-	merged, err := testpolicy.Load(paths[3])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, names, _ := testpolicy.GoTests(merged.Groups[0]); !reflect.DeepEqual(names, []string{"TestBase", "TestOurs", "TestTheirs"}) {
-		t.Fatalf("test merge wrote tests %v", names)
-	}
-}
-
-func witnessTestMergeRepeat(t *testing.T) {
-	paths := newHomesMergeFixture(t)
-	args := []string{"test", "merge", "--base", paths[0], "--ours", paths[1], "--theirs", paths[2], "--out", paths[3]}
-	if code := dispatch(args); code != 0 {
-		t.Fatalf("first test merge exit = %d", code)
-	}
-	first, err := os.ReadFile(paths[3])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if code := dispatch(args); code != 0 {
-		t.Fatalf("repeated test merge exit = %d", code)
-	}
-	if second, err := os.ReadFile(paths[3]); err != nil || !bytes.Equal(first, second) {
-		t.Fatalf("a repeated test merge wrote different bytes: err=%v", err)
-	}
 }
 
 // TestTestBaselineRoutesRecordAndCheck: the refactor skill's record and

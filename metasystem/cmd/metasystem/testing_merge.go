@@ -9,28 +9,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractmerge"
 )
 
-const testingMergeDriverUsage = `usage: metasystem testing merge-driver BASE OURS THEIRS
+const testingMergeDriverUsage = `usage: metasystem internal testing merge-driver BASE OURS THEIRS
 
 Git passes %O %A %B as BASE OURS THEIRS. The driver writes the merge to OURS.
-metasystem/testing.json merge=metasystem-testing
-git config merge.metasystem-testing.driver 'metasystem testing merge-driver %O %A %B'`
-
-func runTestingMerge(args []string) int {
-	flags := newFlagSet("test merge")
-	base := flags.String("base", "", "merge-base testing contract")
-	ours := flags.String("ours", "", "current-side testing contract")
-	theirs := flags.String("theirs", "", "incoming-side testing contract")
-	out := flags.String("out", "", "merged output path")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *base == "" || *ours == "" || *theirs == "" || *out == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test merge --base FILE --ours FILE --theirs FILE --out FILE")
-		return 2
-	}
-	if err := mergeTestingFiles(*base, *ours, *theirs, *out); err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test merge:", err)
-		return 1
-	}
-	return 0
-}
+It is git's merge driver for the testing contract, not a command for people
+or agents: metasystem system setup registers it.`
 
 func runTestingMergeDriver(args []string) int {
 	for _, arg := range args {

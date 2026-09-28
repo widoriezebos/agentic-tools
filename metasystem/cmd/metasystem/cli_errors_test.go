@@ -71,15 +71,6 @@ func TestEveryInternalEntrypointNamesAnUnknownFlag(t *testing.T) {
 	}
 }
 
-// A required option is named as required.
-func TestConfigGetNamesItsRequiredKey(t *testing.T) {
-	t.Parallel()
-	code, _, stderr := captureCommandOutput(t, true, true, func() int { return runConfigGet(nil) })
-	if code != 2 || !strings.Contains(stderr, "--key is required") || strings.Contains(stderr, "invalid configuration key") {
-		t.Fatalf("config get without --key: code %d stderr %q", code, stderr)
-	}
-}
-
 // Every public miss names the nearest real command, however far it is.
 func TestEveryPublicMissNamesTheNearestCommand(t *testing.T) {
 	t.Parallel()

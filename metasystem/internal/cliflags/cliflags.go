@@ -1,7 +1,7 @@
 // Package cliflags builds the engine's flag sets. A parse error is answered
 // in the public style, naming the command, the option it does not take and
-// the options it takes ("metasystem internal config get: does not take --x;
-// it takes --key, --mode; nothing was done"), never Go's raw "flag provided
+// the options it takes ("metasystem internal steward run: does not take --x;
+// it takes --repo, --tag; nothing was done"), never Go's raw "flag provided
 // but not defined" with a usage dump. A help request prints the command's
 // options on standard output.
 package cliflags
