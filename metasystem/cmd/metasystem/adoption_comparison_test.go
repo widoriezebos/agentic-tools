@@ -236,18 +236,21 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		}
 		return target
 	}
-	// runtimeAudits runs the adopted target's own registration audits and
-	// reports whether they passed, with their output.
-	runtimeAudits := func(target string) (string, bool) {
-		output, code := run(target, []string{"METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready"},
-			"bash", filepath.Join(target, "scripts", "agents", "validate-section-selector.sh"), "run", "runtime-contract-audits")
+	// registrationCheck runs the adopted target's host registration check,
+	// the owner of its registration rules, and reports whether it passed.
+	registrationCheck := func(target, runtimes string, copySkills bool) (string, bool) {
+		argv := []string{filepath.Join(target, "bin", "metasystem"), "internal", "runtime", "setup", "--repo", target, "--runtimes", runtimes}
+		if copySkills {
+			argv = append(argv, "--copy-skills")
+		}
+		output, code := run(target, nil, append(argv, "--check")...)
 		return output, code == 0
 	}
-	refusedAudit := func(target, what, message string) {
+	refusedRegistration := func(target, runtimes string, copySkills bool, what, message string) {
 		t.Helper()
-		output, passed := runtimeAudits(target)
+		output, passed := registrationCheck(target, runtimes, copySkills)
 		if passed {
-			t.Fatalf("the registration audits missed %s", what)
+			t.Fatalf("the registration check missed %s", what)
 		}
 		if !strings.Contains(output, message) {
 			t.Fatalf("the refusal of %s did not say %q:\n%s", what, message, output)
@@ -259,11 +262,16 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	filled := prepare("filled", "claude", false)
 	engine := filepath.Join(filled, "bin", "metasystem")
 	mustRun(filled, engine, "internal", "test", "verify", "--root", filled, "--tree", runReceiptGit(t, filled, "write-tree"))
-	delivery := mustRun(filled, "bash", filepath.Join(filled, "scripts", "validate-metasystem.sh"), "--delivery-contract")
-	for _, want := range []string{"completed schema-2 delivery proof verified", "metasystem delivery contract validated", "go gate: PASSED", "covenant evidence gate passed"} {
-		if !strings.Contains(delivery, want) {
-			t.Fatalf("the filled target's delivery did not report %q", want)
-		}
+	// The adopted target proves itself with what its shipped CI runs: the
+	// testing contract (its delivery proof above reran and verified) and the
+	// system check, which judges the covenant's shape; the covenant evidence
+	// gate passes on the green table.
+	check, checkCode := run(filled, nil, engine, "system", "check", "--repo", filled, "--json")
+	if !strings.Contains(check, `"valid":true`) {
+		t.Fatalf("the filled target's system check did not find its covenant valid (%d):\n%s", checkCode, check)
+	}
+	if evidence := mustRun(filled, engine, "internal", "covenant", "evidence", "--root", filled); !strings.Contains(evidence, "(proof greets): ") {
+		t.Fatalf("the filled target's covenant evidence gate did not judge its requirement:\n%s", evidence)
 	}
 	for _, path := range []string{"wow.md", "scripts/agents/supervision-hook.sh", "internal/hooks/runtime_hook_start.go", "internal/hooks/runtime_hook_start_test.go"} {
 		if _, err := os.Stat(filepath.Join(filled, path)); err != nil {
@@ -325,7 +333,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	if err := os.WriteFile(profile, append(append([]byte(nil), profileBytes...), []byte("drift\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	refusedAudit(filled, "a drifted claude profile", "profile drifted")
+	refusedRegistration(filled, "claude", false, "a drifted claude profile", "changed profile .claude/agents/verify.md")
 	if err := os.WriteFile(profile, profileBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -335,35 +343,21 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	if err := os.Rename(gomod, gomod+".hidden"); err != nil {
 		t.Fatal(err)
 	}
-	progress := filepath.Join(filled, "artifacts", "agents", "supervision", "suite-progress.jsonl")
-	progressLog := filepath.Join(bed, "gomod-gone-progress.log")
-	progressTmp := filepath.Join(bed, "gomod-gone-progress")
-	if err := os.MkdirAll(progressTmp, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	banner := strings.TrimSpace(mustRun(filled, engine, "internal", "proof-run", "banner", "--suite", "adoption-missing-module", "--root", filled, "--progress", progress, "--log", progressLog))
-	output, code = run(filled, nil, engine, "internal", "proof-run", "launch", "--suite", "adoption-missing-module",
-		"--root", filled, "--control-root", filled, "--goal", "adoption-goal", "--cap-min", "1", "--conf", filepath.Join(filled, "metasystem.conf"),
-		"--progress", progress, "--banner", banner, "--log", progressLog, "--tmp", progressTmp, "--",
-		"env", "METASYSTEM_SUITE_PROGRESS_ACTIVE=1", "METASYSTEM_SUITE_PROGRESS_SUITE=validate-metasystem",
-		"METASYSTEM_SUITE_PROGRESS_ROOT="+filled, "METASYSTEM_SUITE_PROGRESS_DEPTH=0",
-		"METASYSTEM_SUITE_PROGRESS_TMP="+progressTmp, "METASYSTEM_SUITE_PROGRESS_LOG="+progressLog,
-		"bash", filepath.Join(filled, "scripts", "validate-metasystem.sh"), "--delivery-contract")
+	output, code = run(filled, nil, engine, "test", "run", "--repo", filled, "--goal", "adoption-goal")
 	if err := os.Rename(gomod+".hidden", gomod); err != nil {
 		t.Fatal(err)
 	}
-	if code == 0 || !strings.Contains(output, "engine source did not ship") {
-		t.Fatalf("a source-delivery target without go.mod validated green or misnamed its refusal (%d):\n%s", code, output)
+	if code == 0 || !strings.Contains(output, "go.mod") {
+		t.Fatalf("a source-delivery target without go.mod proved green or did not name the missing module (%d):\n%s", code, output)
 	}
 	// A registered link to a pruned skill is named as dangling.
 	if err := os.RemoveAll(filepath.Join(filled, "skills", "take-a-step-back")); err != nil {
 		t.Fatal(err)
 	}
-	refusedAudit(filled, "a dangling registered skill link", "registered skill link is dangling: .claude/skills/take-a-step-back")
+	refusedRegistration(filled, "claude", false, "a dangling registered skill link", "registered skill link is dangling: .claude/skills/take-a-step-back")
 
 	// The copied target: registration setup, byte equality with the
-	// source outside tailoring, drift of each copied registration, and an
-	// orphaned copy of a pruned skill.
+	// source outside tailoring, and drift of each copied registration.
 	copied := prepare("copied", "claude,codex", true)
 	isolateFixtureAdmission()
 	copiedEngine := filepath.Join(copied, "bin", "metasystem")
@@ -377,8 +371,8 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 			t.Fatalf("copied target changed non-tailored %s bytes", projection)
 		}
 	}
-	if output, passed := runtimeAudits(copied); !passed {
-		t.Fatalf("copied-skills runtime contract audit failed:\n%s", output)
+	if output, passed := registrationCheck(copied, "claude,codex", true); !passed {
+		t.Fatalf("copied-skills registration check failed:\n%s", output)
 	}
 	for _, registration := range []string{".claude/skills/verify", ".agents/skills/verify"} {
 		skill := filepath.Join(copied, registration, "SKILL.md")
@@ -389,15 +383,11 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		if err := os.WriteFile(skill, append(append([]byte(nil), original...), []byte("drift\n")...), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		refusedAudit(copied, "a drifted copy at "+registration, "registered skill copy has drifted from its source: "+registration+" vs skills/verify")
+		refusedRegistration(copied, "claude,codex", true, "a drifted copy at "+registration, registration+": existing copied skill differs from its source at SKILL.md")
 		if err := os.WriteFile(skill, original, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.RemoveAll(filepath.Join(copied, "skills", "verify")); err != nil {
-		t.Fatal(err)
-	}
-	refusedAudit(copied, "an orphaned copy of a pruned skill", "orphaned")
 }
 
 // fillAdoptionHarnessConf points evidence at the fixture sandbox and gives

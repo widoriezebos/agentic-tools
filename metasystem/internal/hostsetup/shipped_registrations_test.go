@@ -2,6 +2,7 @@ package hostsetup
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -21,6 +22,11 @@ func TestShippedRepositoryHostRegistrationsAreConfigurationReady(t *testing.T) {
 	}
 	if resolved, resolveErr := filepath.EvalSymlinks(repository); resolveErr == nil {
 		repository = resolved
+	}
+	// The registrations live in the template repository around the
+	// installation; a payload-only copy of the installation carries none.
+	if _, err := os.Stat(filepath.Join(repository, "development", "metasystem-design.md")); os.IsNotExist(err) {
+		t.Skip("the installation is not inside the template repository; its host registrations are not present")
 	}
 	resolver := stateroot.NewResolver(func(string) (string, error) { return repository, nil },
 		func() (string, error) {

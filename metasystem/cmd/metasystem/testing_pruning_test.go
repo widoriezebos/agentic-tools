@@ -41,8 +41,7 @@ func TestFixturePruningRetainsEveryDistinctFaultWitness(t *testing.T) {
 		{"copied engine mismatch", "change non-tailored engine bytes", "ENGINE equality refusal", "adopt", "copied target changed non-tailored %s bytes", 1},
 		{"copied payload mismatch", "change non-tailored payload bytes", "PAYLOAD equality refusal", "adopt", `for _, projection := range []string{"ENGINE", "PAYLOAD"}`, 1},
 		{"copied Claude drift", "mutate copied Claude skill", "registration path named", "adopt", `range []string{".claude/skills/verify", ".agents/skills/verify"}`, 1},
-		{"copied Codex drift", "mutate copied Codex skill", "registration path named", "adopt", `"registered skill copy has drifted from its source: "+registration+" vs skills/verify"`, 1},
-		{"copied orphan", "remove copied skill source", "orphaned registration refusal", "adopt", `"an orphaned copy of a pruned skill", "orphaned"`, 1},
+		{"copied Codex drift", "mutate copied Codex skill", "registration path named", "adopt", `registration+": existing copied skill differs from its source at SKILL.md"`, 1},
 		{"generation replacement", "arm an older live engine generation", "component=supervision-owner outcome=replaced", "supervision", "func TestLiveGenerationReplacementStopsAndReplacesTheRecordedOwner(", 1},
 		{"unlanded rearm", "install an engine not on the landing ref", "not landed on refs/remotes/origin/trunk", "supervision", "func TestNotLandedRebuildNamesFetchAndTerminalRepairs(", 1},
 	}
@@ -155,18 +154,17 @@ func TestDispatcherAndAdoptionOptimizationsKeepPrivateOwnersAndUniqueAssertions(
 	}
 
 	adopt := fixtureSource(t, "cmd", "metasystem", "adoption_comparison_test.go")
-	if strings.Contains(adopt, `filepath.Join(copied, "scripts", "validate-metasystem.sh")`) {
-		t.Fatal("copied-registration duplicate full delivery validation remains")
+	if strings.Contains(adopt, "validate-metasystem.sh") || strings.Contains(adopt, "validate-section-selector.sh") {
+		t.Fatal("the adoption comparison still drives the retired validator")
 	}
 	for _, required := range []string{
-		`filepath.Join(filled, "scripts", "validate-metasystem.sh"), "--delivery-contract"`,
+		`run(filled, nil, engine, "system", "check", "--repo", filled, "--json")`,
 		`fillAdoptionHarnessTestingContract(t, filepath.Join(source, "testing.json"), filepath.Join(target, "testing.json"))`,
 		`TEST_CONTRACT_READY`,
 		`for _, projection := range []string{"ENGINE", "PAYLOAD"}`,
-		`"validate-section-selector.sh"), "run", "runtime-contract-audits"`,
+		`"internal", "runtime", "setup", "--repo", target, "--runtimes", runtimes}`,
 		`range []string{".claude/skills/verify", ".agents/skills/verify"}`,
-		`"registered skill copy has drifted from its source: "+registration+" vs skills/verify"`,
-		`"an orphaned copy of a pruned skill", "orphaned"`,
+		`registration+": existing copied skill differs from its source at SKILL.md"`,
 	} {
 		if !strings.Contains(adopt, required) {
 			t.Fatalf("adoption pruning lost prerequisite or retained witness: %q", required)

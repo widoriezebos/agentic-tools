@@ -496,6 +496,9 @@ func validateGroup(group Group) error {
 	}
 	switch group.Adapter {
 	case "go":
+		if len(group.Argv) != 0 || group.Section != "" {
+			return fmt.Errorf("go adapter discovers its tests; argv and section belong to the command and section adapters")
+		}
 		if group.Resources.Workers != nil {
 			return fmt.Errorf("resource workers are declared only by command and section adapters")
 		}

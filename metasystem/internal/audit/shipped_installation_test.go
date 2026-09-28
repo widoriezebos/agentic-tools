@@ -27,12 +27,14 @@ func shippedInstallationRoot(t *testing.T) string {
 	return root
 }
 
-// The shipped installation passes the full metasystem audit, both as the
-// suite ran it (placeholders tolerated) and strictly.
+// The shipped installation passes the full metasystem audit as the suite ran
+// it: placeholders tolerated, since only the template's surrounding repository
+// (absent from a payload-only copy) marks the tree as the template; the
+// placeholder rule itself is TestAuditMetasystemRefusals'.
 func TestShippedInstallationPassesMetasystemAudit(t *testing.T) {
 	t.Parallel()
 	root := shippedInstallationRoot(t)
-	for _, options := range []AuditOptions{{AllowPlaceholders: true}, {}} {
+	for _, options := range []AuditOptions{{AllowPlaceholders: true}} {
 		result, err := AuditMetasystem(root, options)
 		if err != nil {
 			t.Fatalf("metasystem audit (allow placeholders=%v) could not run on the shipped installation: %v", options.AllowPlaceholders, err)
