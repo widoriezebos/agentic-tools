@@ -165,10 +165,14 @@ func resolveAppRun(roots lifecycle.Roots, contract applaunch.Contract, contractP
 	run := appRun{roots: roots, contract: contract, contractPath: contractPath, ref: ref, goal: goal,
 		key: applaunch.KeyFor(ref)}
 	run.runDir = applaunch.RunDir(roots.StateRoot, run.key)
+	// Every run's data has a directory of its own, the standing run's too:
+	// the state root a prepare is given is one it may clear, and the
+	// engine's own installation is never that.
+	run.dataRoot = filepath.Join(run.runDir, "data")
 	if ref == "" {
-		run.tree, run.dataRoot = roots.Checkout, roots.StateRoot
+		run.tree = roots.Checkout
 	} else {
-		run.tree, run.dataRoot = filepath.Join(run.runDir, "tree"), filepath.Join(run.runDir, "data")
+		run.tree = filepath.Join(run.runDir, "tree")
 	}
 	if contract.Log != "" {
 		run.logPath = filepath.Join(run.tree, filepath.FromSlash(contract.Log))

@@ -279,6 +279,22 @@ func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset 
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the run record could not be read: " + err.Error()}
 	}
 	var lines []string
+	if moved, commit := run.tipMoved(status); moved {
+		// One run per ref at a time, and a moved ref makes the next start
+		// replace the run: a review is never shown the commit before the
+		// one it asked for.
+		lines = append(lines, "ref "+run.ref+" moved to "+shortCommit(commit)+"; the run at "+shortCommit(status.Record.Commit)+" is replaced")
+		stopped := inv.appStop(run, targets, 0, false)
+		lines = append(lines, stopped.text...)
+		if stopped.Outcome != intentConfirmed {
+			stopped.text = lines
+			stopped.Summary = "the run at the old commit was not stopped, so the new one was not started: " + stopped.Summary
+			return stopped
+		}
+		if status, err = run.status(); err != nil {
+			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: "the run record could not be read: " + err.Error()}
+		}
+	}
 	switch status.State {
 	case applaunch.Running, applaunch.Starting:
 		rejoined, err := applaunch.Rejoin(context.Background(), run.roots.StateRoot, run.key, run.contract, run.readOptions(), 0)
@@ -348,6 +364,18 @@ func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset 
 	}
 	return intentResult{Outcome: intentConfirmed, Targets: targets, text: append(lines, after.Lines()...), Data: appData(run, after),
 		Summary: "the application is started " + where}
+}
+
+// tipMoved reports a live run at a ref that now names another commit.
+func (r appRun) tipMoved(status applaunch.Status) (bool, string) {
+	if r.ref == "" || status.Record == nil || (status.State != applaunch.Running && status.State != applaunch.Starting) {
+		return false, ""
+	}
+	commit, err := r.resolveCommitFor(r.ref)
+	if err != nil || commit == status.Record.Commit {
+		return false, ""
+	}
+	return true, commit
 }
 
 // appStop ends one run and proves it, then copies a goal run's evidence and

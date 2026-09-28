@@ -875,3 +875,68 @@ func TestAppAddressIsOneNamedDiagnosticGroupsInput(t *testing.T) {
 		t.Fatalf("the run request carries the address to the runner: %+v", request.AppAddress)
 	}
 }
+
+// A moved ref makes the next start replace the run even while the old one is
+// live: a review must never be shown the commit before the one it asked for.
+func TestAppStartReplacesALiveRunWhoseTipMoved(t *testing.T) {
+	address := appFreePort(t)
+	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
+	bed.git("branch", "goal/g1")
+	t.Cleanup(func() { bed.run("app", "stop", "--goal", "g1", "--clean") })
+	code, first := bed.runJSON("app", "start", "--goal", "g1")
+	if code != 0 {
+		t.Fatalf("app start --goal g1: %v", first)
+	}
+	before, err := applaunch.ReadRecord(bed.installation, applaunch.KeyFor("goal/g1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bed.root, "moved.txt"), []byte("moved\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bed.git("checkout", "--quiet", "goal/g1")
+	bed.git("add", "-A")
+	bed.git("commit", "--quiet", "-m", "move the goal branch")
+	bed.git("checkout", "--quiet", "main")
+	code, out := bed.run("app", "start", "--goal", "g1")
+	if code != 0 || strings.Contains(out, "already running") {
+		t.Fatalf("a live run whose tip moved is replaced, not rejoined: %d\n%s", code, out)
+	}
+	after, err := applaunch.ReadRecord(bed.installation, applaunch.KeyFor("goal/g1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Commit == before.Commit || after.Supervisor == before.Supervisor {
+		t.Fatalf("the replaced run is a new run at the new tip: before %s, after %s", before.Commit, after.Commit)
+	}
+	if identity := before.Supervisor; identity == after.Supervisor {
+		t.Fatal("the old run's supervisor must be gone")
+	}
+	if code, out := bed.run("app", "status", "--goal", "g1"); code != 0 || !strings.Contains(out, "commit: "+after.Commit) {
+		t.Fatalf("status names the new commit:\n%s", out)
+	}
+}
+
+// The standing run's prepare is given a state root of the run's own, never
+// the engine's installation: a prepare that clears its state root must not
+// be able to clear the engine.
+func TestAppStandingPrepareGetsAStateRootOfItsOwn(t *testing.T) {
+	address := appFreePort(t)
+	contract := appHTTPContract(appFixtureApp(t), address)
+	contract["prepare"] = map[string]any{"argv": []string{"sh", "-c",
+		`mkdir -p "$METASYSTEM_APP_STATE_ROOT" && echo "$METASYSTEM_APP_STATE_ROOT" > "$METASYSTEM_APP_STATE_ROOT/where.txt"`}}
+	bed := newAppBed(t, contract)
+	if code, out := bed.run("app", "start"); code != 0 {
+		t.Fatalf("app start: %d\n%s", code, out)
+	}
+	record, err := applaunch.ReadRecord(bed.installation, applaunch.StandingKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.StateRoot == bed.installation || !strings.HasPrefix(record.StateRoot, applaunch.Dir(bed.installation)+string(filepath.Separator)) {
+		t.Fatalf("the standing run's state root must be its own, under the app directory, not %s", record.StateRoot)
+	}
+	if where, err := os.ReadFile(filepath.Join(record.StateRoot, "where.txt")); err != nil || strings.TrimSpace(string(where)) != record.StateRoot {
+		t.Fatalf("prepare was given that state root: %q %v", where, err)
+	}
+}
