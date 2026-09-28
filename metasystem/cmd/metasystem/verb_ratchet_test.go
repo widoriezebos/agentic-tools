@@ -19,10 +19,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 const (
@@ -30,10 +33,10 @@ const (
 	// The launch contract raised it by one: `app serve` is the supervisor that
 	// owns one run of the project's application for its life, in the shape of
 	// `ui serve`, and like it it is a process entrypoint a person never types.
-	// +1: disk-lifetimes A1 adds `util engine-stamp`, the one shell-callable
-	// stamp reader (rule A3). Its first caller, fixture-budget.sh's
-	// `go version -m` parser, was deleted on main (U7c) before this merge.
-	verbRatchetInternalVerbCeiling = 279
+	verbRatchetInternalVerbCeiling = 295
+	// U9a made the scan count delegate-supervisor, routed through the
+	// runtimes.SupervisorEntry constant, which the literal-only scan missed:
+	// the measurement rose by one with no new verb.
 	// R4: shell lines that reference the engine.
 	verbRatchetShellEngineCeiling = 28
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
@@ -245,6 +248,18 @@ func ratchetRoutedWords(t *testing.T) map[string]bool {
 	return routed
 }
 
+// TestVerbRatchetCountsConstantRoutedForms holds the scan to every top-level
+// form dispatchInternal routes, including one compared against a named
+// constant of another package: delegate-supervisor is routed through
+// runtimes.SupervisorEntry, and a scan that read only string literals missed
+// it.
+func TestVerbRatchetCountsConstantRoutedForms(t *testing.T) {
+	t.Parallel()
+	if !slices.Contains(dispatchInternalTopLevelForms(t), runtimes.SupervisorEntry) {
+		t.Fatalf("the top-level form scan misses %q, which dispatchInternal routes through runtimes.SupervisorEntry", runtimes.SupervisorEntry)
+	}
+}
+
 func dispatchInternalTopLevelForms(t *testing.T) []string {
 	t.Helper()
 	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
@@ -276,18 +291,89 @@ func dispatchInternalTopLevelForms(t *testing.T) []string {
 			if lit, ok := index.Index.(*ast.BasicLit); !ok || lit.Value != "0" {
 				continue
 			}
-			word, ok := cond.Y.(*ast.BasicLit)
-			if !ok || word.Kind != token.STRING {
-				continue
-			}
+			forms = append(forms, ratchetRoutedFormWord(t, file, cond.Y))
+		}
+	}
+	return forms
+}
+
+// ratchetRoutedFormWord resolves the word an `args[0] == X` test compares
+// against: a string literal, or a string constant of an imported package of
+// this module (runtimes.SupervisorEntry). Anything else fails the scan, so a
+// routed form can never be missed silently again.
+func ratchetRoutedFormWord(t *testing.T, file *ast.File, expr ast.Expr) string {
+	t.Helper()
+	switch word := expr.(type) {
+	case *ast.BasicLit:
+		if word.Kind == token.STRING {
 			value, err := strconv.Unquote(word.Value)
 			if err != nil {
 				t.Fatal(err)
 			}
-			forms = append(forms, value)
+			return value
+		}
+	case *ast.SelectorExpr:
+		if pkg, ok := word.X.(*ast.Ident); ok {
+			if value, ok := ratchetImportedStringConst(t, file, pkg.Name, word.Sel.Name); ok {
+				return value
+			}
 		}
 	}
-	return forms
+	t.Fatalf("dispatchInternal routes a top-level form through %T that the ratchet scan cannot resolve; teach ratchetRoutedFormWord to read it", expr)
+	return ""
+}
+
+// ratchetImportedStringConst reads a string constant from the non-test
+// sources of the module package main.go imports under the name pkg.
+func ratchetImportedStringConst(t *testing.T, file *ast.File, pkg, name string) (string, bool) {
+	t.Helper()
+	const module = "github.com/widoriezebos/agentic-tools/metasystem/"
+	for _, spec := range file.Imports {
+		path, err := strconv.Unquote(spec.Path.Value)
+		if err != nil || !strings.HasPrefix(path, module) {
+			continue
+		}
+		if spec.Name != nil && spec.Name.Name != pkg || spec.Name == nil && filepath.Base(path) != pkg {
+			continue
+		}
+		_, moduleRoot := verbRatchetRoots(t)
+		dir := filepath.Join(moduleRoot, filepath.FromSlash(strings.TrimPrefix(path, module)))
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+				continue
+			}
+			source, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, entry.Name()), nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, decl := range source.Decls {
+				gen, ok := decl.(*ast.GenDecl)
+				if !ok || gen.Tok != token.CONST {
+					continue
+				}
+				for _, spec := range gen.Specs {
+					value := spec.(*ast.ValueSpec)
+					for i, ident := range value.Names {
+						if ident.Name != name || i >= len(value.Values) {
+							continue
+						}
+						if lit, ok := value.Values[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+							unquoted, err := strconv.Unquote(lit.Value)
+							if err != nil {
+								t.Fatal(err)
+							}
+							return unquoted, true
+						}
+					}
+				}
+			}
+		}
+	}
+	return "", false
 }
 
 /* ------------------------------------------ 2, 3 shell and the engine -- */
