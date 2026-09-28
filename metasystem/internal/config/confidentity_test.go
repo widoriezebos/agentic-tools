@@ -51,3 +51,49 @@ func TestConfigIdentityStableAcrossEquivalentJSON(t *testing.T) {
 		}
 	}
 }
+
+// TestConfigIdentityCanonicalJSONIsDeterministicAcrossCalls is the port of
+// config-identity-fixtures.sh (verbs-object-action U7c): a Codex
+// configuration with nested tables, quoted keys and a notice section yields
+// the same non-empty canonical identity on every call, the property the
+// fixture smoked through the built executable.
+func TestConfigIdentityCanonicalJSONIsDeterministicAcrossCalls(t *testing.T) {
+	t.Parallel()
+	config := writeFile(t, t.TempDir(), "config.toml", `model = "gpt-5.6-sol"
+
+[notice]
+hide_rate_limit_model_nudge = false
+
+[notice.model_migrations]
+"gpt-5.2" = "gpt-5.3-codex"
+
+[tui.model_availability_nux]
+"gpt-5.6-sol" = 1
+`)
+	render := func() string {
+		t.Helper()
+		identity, err := BuildConfigIdentity("codex", "0.146.0", []string{config})
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := CanonicalConfigJSON(identity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded
+	}
+	first := render()
+	if first == "" {
+		t.Fatal("empty configuration identity")
+	}
+	identity, err := BuildConfigIdentity("codex", "0.146.0", []string{config})
+	if err != nil {
+		t.Fatal(err)
+	}
+	configHashOf(t, identity) // fails on an empty hash
+	for call := 0; call < 5; call++ {
+		if again := render(); again != first {
+			t.Fatalf("identity differs across calls:\n%s\n%s", first, again)
+		}
+	}
+}

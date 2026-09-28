@@ -2,14 +2,13 @@ package testutil
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 )
 
-func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
+func TestFakeHostDelegatesItsLifetimeToUtilHold(t *testing.T) {
 	_, source, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate prologue source test")
@@ -17,21 +16,6 @@ func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
 	root := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
 	if override := os.Getenv("FIXTURE_SOURCE_ROOT"); override != "" {
 		root = override
-	}
-	budget := filepath.Join(root, "scripts", "agents", "fixture-budget.sh")
-	command := exec.Command("bash", "-c", `source "$1"; harness_fixture_prologue`, "bash", budget)
-	printed, err := command.Output()
-	if err != nil || string(printed) != ShellPrologue {
-		t.Fatalf("harness_fixture_prologue = %q, %v; want %q", printed, err, ShellPrologue)
-	}
-
-	// The hang scenario's bed is the Go-held Bash source the fixture bed
-	// tests run; it re-executes through the Bash form of the prologue.
-	if !strings.Contains(fixtureBedInnerBed, strings.ReplaceAll(ShellPrologue, "exec /bin/sh", "exec /bin/bash")) {
-		t.Fatal("fixture bed inner bed prologue differs from ShellPrologue")
-	}
-	if !strings.Contains(fixtureBedInnerBed, "exec 3<\"$METASYSTEM_FIXTURE_LEASH\"\n    read -r _ <&3") {
-		t.Fatal("hang fixture does not block on its leash")
 	}
 	// The fake host's hold (formerly hosts/fake.sh's `exec "$ms" util hold`)
 	// replaces the host process with the engine's leash-bound hold.

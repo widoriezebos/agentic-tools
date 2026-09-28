@@ -176,7 +176,7 @@ CLAUDE.md            runtime compatibility pointer to AGENTS.md
 wow.md               the single routing index
 cmd/, internal/      the Go engine: one binary, decisions live here (docs/architecture.md)
 go.mod, go.sum       the engine's module identity, shipped with adoption
-bin/metasystem       untracked build artifact; scripts/agents/go-build.sh rebuilds it
+bin/metasystem       untracked build artifact; go run ./cmd/devgate build rebuilds it
 docs/
   architecture.md    the engine map: packages, layering, family table
   project-rules.md   project facts, replaced on adoption

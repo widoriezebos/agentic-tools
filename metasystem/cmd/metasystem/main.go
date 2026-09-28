@@ -110,12 +110,8 @@ func families() []family {
 			name:    "proc",
 			summary: "process identity and census: who is running, provably",
 			verbs: []verb{
-				{"custodian", "reap fixture children after their exact owner dies", runFixtureCustodian},
-				{"fixture-key", "mint an encoded fixture key for an exact owner", runFixtureKey},
 				{"fixture-survivors", "name or reap fixture children that outlived their owner", runFixtureSurvivors},
-				{"ref", "print a pid's exact process reference", runIdentityRef},
 				{"started-at", "print a pid's start time in epoch seconds", runIdentityStartedAt},
-				{"probe", "print a pid's exact identity as JSON", runIdentityProbe},
 				{"exists", "exit 0 if the pid exists (permission denial proves existence)", runIdentityExists},
 				{"group-exists", "exit 0 if the process group exists", runIdentityGroupExists},
 				{"group-owned", "exit 0 only when a group member carries a tag in a shipped argv position", runIdentityGroupOwned},
@@ -133,7 +129,6 @@ func families() []family {
 			summary: "configuration and identity helpers",
 			verbs: []verb{
 				{"canonical-model", "print the canonical model key for a name", runConfigCanonicalModel},
-				{"identity", "print an adapter's canonical configuration identity", runConfigIdentity},
 				{"get", "resolve a config key with flag/env/local/mode/conf/default precedence", runConfigGet},
 				{"validate", "validate the whole metasystem.conf domain", runConfigValidate},
 				{"keys", "enumerate config keys, optionally by prefix", runConfigKeys},
@@ -209,7 +204,6 @@ func families() []family {
 			summary: "mechanical fences the gate bootstrap consults between steps",
 			verbs: []verb{
 				{"dependency-ratchet", "refuse undeclared executable interpreter dependencies in shell sources", runAuditDependencyRatchet},
-				{"parallel-ratchet", "refuse increases in each package's serial Go test count", runAuditParallelRatchet},
 				{"hook-start-exits", "refuse SessionStart paths around the outcome owner", runAuditHookStartExits},
 				{"metasystem", "instruction-asset audit: required files, outside references, placeholders, word budgets", runAuditMetasystem},
 				{"stop-decision-surface", "report additions and refuse undeclared moves of Stop assertions", runAuditStopDecisionSurface},
@@ -221,7 +215,6 @@ func families() []family {
 			summary: "versioned byte projections shared by witness, landing, adoption, and weight laws",
 			verbs: []verb{
 				{"select", "filter newline- or NUL-delimited paths through one projection", runBehaviorSurfaceSelect},
-				{"digest", "print a projection-scoped digest report naming its endpoint", runBehaviorSurfaceDigest},
 				{"skip-allowed", "exit 0 only for a family declared under the caller's witness or delivery scope", runBehaviorSurfaceSkipAllowed},
 			},
 		},
@@ -240,8 +233,6 @@ func families() []family {
 				{"unit", "gate changed Go packages and every transitive reverse dependent", runGateUnit},
 				{"register", "record that this process is a running gate", runGateRegister},
 				{"fence", "exit 1 naming every live gate run foreign to --self-pid's chain", runGateFence},
-				{"guard-acquire", "wait for exclusive checkout execution or join the caller's owning chain", runGateGuardAcquire},
-				{"guard-release", "release the invoking process's checkout execution membership", runGateGuardRelease},
 				{"weight-discharge", "reset validation weight at the exact authorized green-run boundary", runGateWeightDischarge},
 				{"cadence-tick", "run one landing-owner deep validation cadence decision", runGateCadenceTick},
 			},
@@ -250,7 +241,6 @@ func families() []family {
 			name:    "report",
 			summary: "turn-end report decisions",
 			verbs: []verb{
-				{"stop-response", "resolve one runtime Stop payload to its immutable report", runReportStopResponse},
 				{"stop-status", "read one exact immutable Stop report", runReportStopStatus},
 				{"turn-verdict", "the one structured turn-end decision: scan, goal, block-once state", runReportTurnVerdict},
 				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},
@@ -359,10 +349,8 @@ func families() []family {
 			name:    "json",
 			summary: "JSON field access for shell callers",
 			verbs: []verb{
-				{"get", "print a dotted field from a JSON file or string", runJSONGet},
 				{"object", "build a compact JSON object from key=value args", runJSONObject},
 				{"set", "set top-level fields in a JSON object file atomically", runJSONSet},
-				{"strip", "print a JSON object with named top-level keys removed", runJSONStrip},
 			},
 		},
 		{
@@ -392,7 +380,6 @@ func families() []family {
 				{"wait", "wait for one recorded answer", runChannelWait},
 				{"poll", "receive and durably disposition replies", runChannelPoll},
 				{"fake", "fixture-only fake serve and code verbs", runChannelFake},
-				{"telegram", "inspect pending Telegram bot updates", runChannelTelegram},
 			},
 		},
 		{
@@ -541,18 +528,9 @@ func families() []family {
 			},
 		},
 		{
-			name:    "evidence",
-			summary: "durable-evidence lifecycle: collect mirrored chains, prune residue, age archives",
-			verbs: []verb{
-				{"gc", "collect closed mirrored chains, prune residue, age flight-recorder archives", runEvidenceGC},
-			},
-		},
-		{
 			name:    "supervise",
 			summary: "the supervision lifecycle (docs/design/supervision-lifecycle.md)",
 			verbs: []verb{
-				{"fingerprint", "print a checkout's supervision fingerprint (code, signatures, configuration)", runCensusFingerprint},
-				{"derive-ceiling", "derive the watcher cap ceiling from config, environment, and the declared maximum", runSuperviseDeriveCeiling},
 				{"verify-armed", "exit 0 when supervision is verifiably armed at this instant", runSuperviseVerifyArmed},
 				{"owner", "run the owner loop for a checkout (internal; launched by up)", runSuperviseOwnerLoop},
 				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -378,9 +379,16 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	if setup := mustRun(copied, copiedEngine, "internal", "runtime", "setup", "--repo", copied, "--runtimes", "claude,codex", "--copy-skills", "--check"); !strings.Contains(setup, "TEST_CONTRACT_READY") {
 		t.Fatalf("copied registration setup passed without a ready testing contract:\n%s", setup)
 	}
-	for _, projection := range []string{"ENGINE", "PAYLOAD"} {
-		sourceDigest := mustRun(copied, copiedEngine, "internal", "behavior-surface", "digest", "--root", source, "--projection", projection, "--endpoint", "copied-registration")
-		targetDigest := mustRun(copied, copiedEngine, "internal", "behavior-surface", "digest", "--root", copied, "--projection", projection, "--endpoint", "copied-registration")
+	surfacePolicy, err := behaviorsurface.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, projection := range []behaviorsurface.Projection{behaviorsurface.Engine, behaviorsurface.Payload} {
+		sourceDigest, sourceErr := surfacePolicy.DigestWithPrefix(source, projection, "")
+		targetDigest, targetErr := surfacePolicy.DigestWithPrefix(copied, projection, "")
+		if sourceErr != nil || targetErr != nil {
+			t.Fatalf("%s digest: source %v, target %v", projection, sourceErr, targetErr)
+		}
 		if sourceDigest != targetDigest {
 			t.Fatalf("copied target changed non-tailored %s bytes", projection)
 		}

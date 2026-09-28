@@ -11,8 +11,7 @@ import (
 // fixture tree has no real engine to compile, so its build owner remains the
 // fixture's own scripts/agents/go-build.sh and any other action runs the
 // fixture's scripts/agents/devgate-ACTION.sh, each with the arguments after
-// the action, passing output and exit status through. The shell beds plant
-// the same program (scripts/agents/fixture-budget.sh).
+// the action, passing output and exit status through.
 const FixtureDevgateSource = `package main
 
 import (

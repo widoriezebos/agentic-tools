@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -493,36 +492,6 @@ func TestCustodianHardHaltBoundsBlockedLeashProbe(t *testing.T) {
 	}
 }
 
-func TestFixtureBedInterruptUsesCleanupFactsAndReportsFailures(t *testing.T) {
-	t.Parallel()
-
-	root := filepath.Clean(filepath.Join("..", ".."))
-	if override := os.Getenv("FIXTURE_SOURCE_ROOT"); override != "" {
-		root = override
-	}
-	harness := readLauncherSource(t, filepath.Join(root, "scripts", "agents", "fixture-bed-scenarios.sh"))
-	for _, want := range []string{
-		"fixture_bed_term_grace_sec=5",
-		"fixture_bed_kill_grace_sec=5",
-		`kill -0 -- "-$pgid" 2>/dev/null || kill -0 "$pgid" 2>/dev/null`,
-		`kill -"$signal" -- "-$pgid" 2>/dev/null || kill -"$signal" "$pgid" 2>/dev/null`,
-		"deadline=$((SECONDS + fixture_bed_term_grace_sec))",
-		"deadline=$((SECONDS + fixture_bed_kill_grace_sec))",
-	} {
-		if !strings.Contains(harness, want) {
-			t.Fatalf("fixture bed cleanup omits production timing %q", want)
-		}
-	}
-	if strings.Count(harness, `while fixture_bed_process_set_alive "$pgid"`) != 2 {
-		t.Fatal("fixture bed cleanup does not use the process-set fact before and after KILL")
-	}
-	killAt := strings.Index(harness, `fixture_bed_signal_process_set KILL "$pgid"`)
-	waitAt := strings.Index(harness, `wait "$pgid"`)
-	if killAt < 0 || waitAt < killAt {
-		t.Fatalf("fixture bed cleanup can block in wait before KILL: kill=%d wait=%d", killAt, waitAt)
-	}
-}
-
 func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 	t.Parallel()
 
@@ -664,60 +633,6 @@ func TestControlledLaunchersExportTheirOwnRef(t *testing.T) {
 		t.Fatalf("existing run owner changed: %v, %v", preserved, err)
 	}
 
-	root := filepath.Clean(filepath.Join("..", ".."))
-	sourceRoot := os.Getenv("FIXTURE_SOURCE_ROOT")
-	if sourceRoot == "" {
-		sourceRoot = root
-	}
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-o", engine, "./cmd/metasystem")
-	build.Dir = root
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build proc ref witness: %v\n%s", err, output)
-	}
-	command := exec.Command("sh", "-c", "metasystem internal proc ref --pid $$")
-	command.Env = append(os.Environ(), "PATH="+filepath.Dir(engine)+":"+os.Getenv("PATH"))
-	var output strings.Builder
-	command.Stdout = &output
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	shellPID := int64(command.Process.Pid)
-	if err := command.Wait(); err != nil {
-		t.Fatalf("shell proc ref: %v, output=%q", err, output.String())
-	}
-	shellRef, err := ParseRef(strings.TrimSpace(output.String()))
-	if err != nil || shellRef.Pid != shellPID || !shellRef.NativeExact() {
-		t.Fatalf("shell proc ref = %+v, %v; shell pid=%d output=%q", shellRef, err, shellPID, output.String())
-	}
-
-	// The Go gate names itself the run owner of its test children in
-	// process (cmd/devgate: TestStaticPublishesTheCollectedBuildWithoutRecompiling
-	// and TestGateFullPassRunsEveryStageInOrder witness it).
-	bed := readLauncherSource(t, filepath.Join(sourceRoot, "scripts", "agents", "fixture-bed-scenarios.sh"))
-	ownerAt, childAt := strings.Index(bed, "harness_fixture_owner \"$fixture_bed_harness_root\""), strings.Index(bed, "\"$script\" --fixture-bed-child")
-	if ownerAt < 0 || childAt < 0 || ownerAt > childAt {
-		t.Fatalf("fixture bed owner position=%d, first scenario child position=%d", ownerAt, childAt)
-	}
-	budget := readLauncherSource(t, filepath.Join(sourceRoot, "scripts", "agents", "fixture-budget.sh"))
-	ownerStart, ownerEnd := strings.Index(budget, "harness_fixture_owner()"), strings.Index(budget, "harness_fixture_record_pid()")
-	if ownerStart < 0 || ownerEnd <= ownerStart {
-		t.Fatal("fixture owner helper boundaries were not found")
-	}
-	ownerSource := budget[ownerStart:ownerEnd]
-	ownerRefAt, ownerExportAt, custodianAt := strings.Index(ownerSource, "METASYSTEM_RUN_OWNER=$("), strings.Index(ownerSource, "export METASYSTEM_RUN_OWNER"), strings.Index(ownerSource, "proc custodian")
-	if ownerRefAt < 0 || ownerExportAt < ownerRefAt || custodianAt < ownerExportAt {
-		t.Fatalf("fixture owner ref=%d export=%d first child=%d", ownerRefAt, ownerExportAt, custodianAt)
-	}
-}
-
-func readLauncherSource(t *testing.T, path string) string {
-	t.Helper()
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(contents)
 }
 
 func TestRunOwnerResolution(t *testing.T) {

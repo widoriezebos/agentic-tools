@@ -1705,11 +1705,6 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	}
 	freshProject := t.TempDir()
 	freshCandidateRoot := filepath.Join(freshProject, "metasystem")
-	script, err := os.ReadFile(filepath.Join(candidateRoot, "scripts", "agents", "checkout-execution-guard.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeTestingFixtureFile(t, filepath.Join(freshCandidateRoot, "scripts", "agents", "checkout-execution-guard.sh"), script, 0o755)
 	freshEngine := filepath.Join(freshCandidateRoot, "bin", "metasystem")
 	writeTestingFixtureFile(t, freshEngine, data, 0o755)
 	testingFixtureGit(t, freshProject, "init", "-q", "-b", "main")
@@ -1981,11 +1976,6 @@ chmod +x "$3"
 `
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "go-build.sh"), []byte(buildScript), 0o755)
 	writeFixtureDevgate(t, installationRoot)
-	guardScript, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "checkout-execution-guard.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "checkout-execution-guard.sh"), guardScript, 0o755)
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "bed.sh"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "cmd", "metasystem", "engine.txt"), []byte("enrolled engine source\n"), 0o644)
 	testingFixtureGit(t, projectRoot, "init", "-q", "-b", "main")

@@ -159,11 +159,6 @@ func TestGroupOwnershipShapesRequireTheTagPosition(t *testing.T) {
 			argv: supervisorArgv("codex", runtimes.SupervisorDispatch, "--root", "/repo", "--job", "job-a", "--start-gate", "/tmp/gate", "--instance-tag", tag),
 		},
 		{
-			name: "delegate supervisor follow-up behind the execution guard",
-			argv: append([]string{"bash", "/repo/scripts/agents/checkout-execution-guard.sh", "run-member", "--root", "/repo", "--engine", "/repo/bin/metasystem", "--"},
-				supervisorArgv("codex", runtimes.SupervisorFollowUp, "--root", "/repo", "--job", "job-b", "--instance-tag", tag)...),
-		},
-		{
 			name: "delegate supervisor behind the delegate guard member wrapper",
 			argv: append([]string{"/repo/bin/metasystem", "internal", "delegate", "__run-member", "--root", "/repo", "--"},
 				supervisorArgv("codex", runtimes.SupervisorFollowUp, "--root", "/repo", "--job", "job-b", "--instance-tag", tag)...),
