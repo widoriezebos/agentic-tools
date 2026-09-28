@@ -65,6 +65,10 @@ type Enrollment struct {
 	TerminalID    string     `json:"terminalId"`
 	TerminalRef   ProcessRef `json:"terminalRef"`
 	SessionLeader ProcessRef `json:"sessionLeaderRef"`
+	// Repeat marks an Enroll whose enrollment already held (R-129-ui): the
+	// same person at the same terminal and session, so the recorded
+	// enrollment was returned and nothing was written. Never persisted.
+	Repeat bool `json:"-"`
 }
 
 // Node is one stable process observation. Argument bytes are represented only
@@ -813,6 +817,13 @@ func Enroll(root string, invokerPID int64, reader Reader, human string, now time
 	}
 	generation := uint64(1)
 	if prior, readErr := ReadEnrollment(root); readErr == nil {
+		// The same person enrolled at this very terminal and session is a
+		// repeat whose effect holds: no second enrollment generation.
+		if prior.Human == human && prior.TerminalID == proof.observedTerminalID &&
+			sameRef(prior.TerminalRef, proof.InvokerRef) && sameRef(prior.SessionLeader, proof.TerminalRef) {
+			prior.Repeat = true
+			return prior, nil
+		}
 		generation = prior.Generation + 1
 	} else if !os.IsNotExist(readErr) {
 		return Enrollment{}, readErr

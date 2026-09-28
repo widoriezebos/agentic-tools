@@ -260,7 +260,7 @@ func TestDeliveryInputParityBoundary(t *testing.T) {
 			}},
 			plan: testpolicy.Plan{SelectedGroups: []string{"one", "two", "section", "command"}},
 			declarations: []string{
-				"metasystem/metasystem.conf", "metasystem/scripts/agents/validate-section-selector.sh",
+				"metasystem/metasystem.conf",
 				"metasystem/testing.json", "other", "shared", "src/*.go", "tools/run.sh",
 			},
 			workingTree: "candidate-boundary-tree", wantCalls: 1,

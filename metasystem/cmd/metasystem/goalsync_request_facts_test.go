@@ -27,8 +27,9 @@ func newSyncRequestFacts(t *testing.T) *syncRequestFacts {
 	t.Helper()
 	root := t.TempDir()
 	for path, data := range map[string][]byte{
-		"metasystem.conf":                    []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"),
-		"scripts/agents/pre-commit-guard.sh": []byte("#!/bin/sh\nexit 0\n"),
+		"metasystem.conf":         []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"),
+		"bin/metasystem":          []byte("#!/bin/sh\nexit 0\n"),
+		"scripts/agents/.gitkeep": nil,
 		"plans/goals/backlog.md": goal.RenderRoot(&goal.RootRecord{
 			Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
 		}),
@@ -38,7 +39,7 @@ func newSyncRequestFacts(t *testing.T) *syncRequestFacts {
 			t.Fatal(err)
 		}
 		mode := os.FileMode(0o644)
-		if path == "scripts/agents/pre-commit-guard.sh" {
+		if path == "bin/metasystem" {
 			mode = 0o755
 		}
 		if err := os.WriteFile(full, data, mode); err != nil {

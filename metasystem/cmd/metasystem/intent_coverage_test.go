@@ -27,9 +27,10 @@ var publicPairs = []string{
 	"question ask", "question retry", "question withdraw", "question answer", "question show", "question list", "question wait",
 	"incident list", "incident claim", "incident close",
 	"status",
+	"helm take", "helm return",
 	"session start", "session stop", "session status", "session handoff", "session isolate",
 	"mission start", "mission status", "mission resume", "mission repair",
-	"system start", "system stop", "system restart", "system status", "system check", "system enroll",
+	"system start", "system stop", "system restart", "system status", "system check", "system enroll", "system adopt",
 	"machine list", "machine start",
 	"ui start", "ui stop", "ui restart", "ui status",
 	"settings show", "settings keys", "settings check", "settings coordinator",
@@ -37,9 +38,10 @@ var publicPairs = []string{
 	"experiment record", "experiment challenge", "experiment status", "experiment check",
 }
 
-// revisionSevenObjects are the objects section 3.4 leaves, in help order.
+// revisionSevenObjects are the objects section 3.4 leaves, in help order,
+// with helm (human-control design, section 3.1) in the Run group.
 var revisionSevenObjects = []string{"goal", "design", "decision", "grant", "work", "test", "question", "incident",
-	"session", "mission", "system", "machine", "ui", "settings", "receipt", "experiment"}
+	"helm", "session", "mission", "system", "machine", "ui", "settings", "receipt", "experiment"}
 
 // hiddenPairs are the process entrypoints whose first word is an object.
 var hiddenPairs = []string{"goal fetch", "goal next", "test worker", "test worker-capabilities", "mission run-loop", "ui serve", "ui tools"}

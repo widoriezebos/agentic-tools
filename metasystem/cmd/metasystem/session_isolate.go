@@ -78,6 +78,13 @@ func runSessionIsolate(args []string) int {
 			return command.Run()
 		},
 	})
+	var isolated *launch.SecondSessionIsolated
+	if errors.As(err, &isolated) {
+		// The named isolation already exists (R-129-ui).
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Printf("cd '%s'\n", isolated.Path)
+		return 0
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		var refusal *launch.SecondSessionError

@@ -369,6 +369,48 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 			t.Fatalf("executed allowance %d lost its retained proof: workers=%d groups=%+v", prepared.Workers, result.Workers, result.Groups)
 		}
 	})
+	t.Run("automatic allowance is the run's reading, not the verifier's", func(t *testing.T) {
+		// The run and the verification each read available memory. The run
+		// read enough for the recorded allowance; the verification reads
+		// less. It checks the run, so it must accept the unchanged tree.
+		automatic := prepared
+		automatic.ConfPath = filepath.Join(t.TempDir(), "metasystem.conf")
+		writeTestingFixtureFile(t, automatic.ConfPath, []byte("metasystem.runtimes=fake\n"), 0o644)
+		reading := func(workers uint64) func() (uint64, string, bool) {
+			return func() (uint64, string, bool) {
+				return testingWorkerMemoryHeadroom + workers*testingWorkerMemoryBytes, "fixture", true
+			}
+		}
+		previous := testingAvailableMemory
+		t.Cleanup(func() { testingAvailableMemory = previous })
+		testingAvailableMemory = reading(uint64(prepared.Workers))
+		atRun, err := resolveProofRunLimits(automatic.ConfPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if atRun.workers != prepared.Workers || !atRun.automaticWorkers {
+			t.Logf("this host's automatic ceiling %d cannot choose the recorded allowance %d", atRun.automaticWorkerCeiling, prepared.Workers)
+			return
+		}
+		testingAvailableMemory = reading(uint64(prepared.Workers - 1))
+		if atVerify, err := resolveProofRunLimits(automatic.ConfPath); err != nil || atVerify.workers == prepared.Workers {
+			t.Fatalf("the verifier's reading resolves %d workers (err=%v), want another allowance than %d", atVerify.workers, err, prepared.Workers)
+		}
+		fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
+		fixture.queueBed(ordinaryProjectTree)
+		queueProjection()
+		result, err := verifyRetainedTestingPrepared(request, automatic, retainedTestingVerification{
+			clock: fixedClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+			workspace: workspace, candidateIO: fixture.dependency(), openCandidate: fixture.openBed,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !result.Delivery.Sufficient || result.Workers != prepared.Workers {
+			t.Fatalf("verification re-sampled memory and refused the run's proof: workers=%d want %d; missing=%v groups=%+v",
+				result.Workers, prepared.Workers, result.Delivery.MissingGroups, result.Groups)
+		}
+	})
 	for _, boundary := range []struct {
 		name       string
 		at         time.Time
@@ -1101,7 +1143,7 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 
 	group := testpolicy.Group{ID: "candidate-bed", Kind: "integration", Adapter: "section", CWD: "metasystem",
 		Inputs: []string{"metasystem/cmd/metasystem/engine.txt"}, Obligations: []string{"candidate-engine"},
-		Platforms: []string{"any"}, TargetMS: 1, Section: "candidate-bed"}
+		Platforms: []string{"any"}, TargetMS: 1, Section: "candidate-bed", Argv: []string{"bash", "scripts/bed.sh"}}
 	contract := testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}}
 	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard,
 		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
@@ -1944,7 +1986,7 @@ chmod +x "$3"
 		t.Fatal(err)
 	}
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "checkout-execution-guard.sh"), guardScript, 0o755)
-	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "validate-section-selector.sh"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
+	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "bed.sh"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "cmd", "metasystem", "engine.txt"), []byte("enrolled engine source\n"), 0o644)
 	testingFixtureGit(t, projectRoot, "init", "-q", "-b", "main")
 	testingFixtureGit(t, projectRoot, "add", ".")
@@ -2504,7 +2546,7 @@ func prepareFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout
 		Argv:    []string{"sh", "-c", `mkdir -p reports-smoke; printf '%s\n' '<testsuite><testcase classname="candidate" name="smoke"/></testsuite>' > reports-smoke/result.xml`},
 		Reports: []string{"metasystem/reports-smoke"}, Format: "junit-xml", ExpectedTests: []testpolicy.ExpectedTest{{Report: "metasystem/reports-smoke/result.xml", Classname: "candidate", Name: "smoke"}}}
 	groups := []testpolicy.Group{group, smoke}
-	for index, id := range []string{"fast-static-build", "section/dispatcher-adapter-and-mission-runner-fixtures", "goal-cli-standard", "section/land-fixtures", "section/adoption-fixtures"} {
+	for index, id := range []string{"fast-static-build", "section/dispatcher-adapter-and-mission-runner-fixtures", "goal-cli-standard", "landing-command-standard", "section/adoption-fixtures"} {
 		reportDir := fmt.Sprintf("reports-transition-%d", index)
 		projectReportDir := "metasystem/" + reportDir
 		fixtureCommand := fmt.Sprintf(`test -s testing.json && mkdir -p %s && printf '%%s\n' '<testsuite><testcase classname="transition" name="case-%d"/></testsuite>' > %s/result.xml`, reportDir, index, reportDir)

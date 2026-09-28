@@ -27,8 +27,8 @@ type ReceiptLineParams struct {
 }
 
 // ReceiptLineDecision is the check's answer. Outcome is pass, exempt or
-// refused; Reason is its one-word cause; Detail is the sentence land.sh
-// shows; Command is the one command that writes the missing line. Ledger
+// refused; Reason is its one-word cause; Detail is the sentence the landing
+// path shows; Command is the one command that writes the missing line. Ledger
 // and CodePaths are paths from the installation root, the paths a
 // landing's caller names.
 type ReceiptLineDecision struct {

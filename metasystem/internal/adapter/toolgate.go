@@ -32,7 +32,6 @@ const (
 	matchTool toolGateMatch = iota
 	matchToolPrefix
 	matchCommand
-	matchLandingScript
 	matchMemoryPath
 )
 
@@ -62,7 +61,7 @@ var toolGateRows = []toolGateRow{
 	{pattern: "metasystem test wait", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "test", "wait"}, trigger: true, ceiling: true},
 	{pattern: "metasystem internal wait", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "internal", "wait"}, trigger: true, ceiling: true},
 	{pattern: "metasystem internal job watch", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "internal", "job", "watch"}, trigger: true, ceiling: true},
-	{pattern: "scripts/agents/land.sh", kind: NeverDenied, match: matchLandingScript, trigger: true, ceiling: true},
+	{pattern: "metasystem work land", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "work", "land"}, trigger: true, ceiling: true},
 	{pattern: "metasystem session handoff", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "session", "handoff"}, trigger: true, ceiling: true},
 	{pattern: "metasystem internal context handoff", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "internal", "context", "handoff"}, trigger: true, ceiling: true},
 	{pattern: "metasystem internal context resume", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "internal", "context", "resume"}, trigger: true, ceiling: true},
@@ -230,10 +229,6 @@ func commandRow(words []string) *toolGateRow {
 			if commandPrefixMatches(words, row.words) {
 				return row
 			}
-		case matchLandingScript:
-			if len(words) > 0 && landingScriptCommand(words[0]) {
-				return row
-			}
 		}
 	}
 	return nil
@@ -249,11 +244,6 @@ func commandPrefixMatches(command, pattern []string) bool {
 		}
 	}
 	return true
-}
-
-func landingScriptCommand(word string) bool {
-	cleaned := filepath.ToSlash(filepath.Clean(word))
-	return cleaned == "scripts/agents/land.sh" || strings.HasSuffix(cleaned, "/scripts/agents/land.sh")
 }
 
 func isOutputFilter(words []string) bool {

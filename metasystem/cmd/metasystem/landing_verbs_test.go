@@ -518,48 +518,10 @@ func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitT
 			t.Fatal(err)
 		}
 	}
-	copyFixture("../../scripts/agents/land.sh", "scripts/agents/land.sh", 0o755)
 	copyFixture("../../scripts/agents/path-classes.txt", "scripts/agents/path-classes.txt", 0o644)
 	copyFixture("../../scripts/agents/landing-classes.json", "scripts/agents/landing-classes.json", 0o644)
 	copyFixture("../../memory/rulings.md", "memory/rulings.md", 0o644)
 
-	// This is the established landing fixture's reduced commit boundary: it
-	// performs the real Go observation over the exact staged tree and then a
-	// real Git commit, while omitting the unrelated full static re-proof.
-	writeReceiptFixture(t, root, "scripts/agents/commit.sh", `#!/usr/bin/env bash
-set -euo pipefail
-root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
-chain= goal= receipt= recertification=
-commit_args=()
-while (( $# )); do
-  case "$1" in
-    --chain) chain=$2; shift 2 ;;
-    --goal) goal=$2; shift 2 ;;
-    --test-receipt) receipt=$2; shift 2 ;;
-    --recertification) recertification=$2; shift 2 ;;
-    *) commit_args+=("$1"); shift ;;
-  esac
-done
-tree=$(git -C "$root" write-tree)
-prefix=$(git -C "$root" rev-parse --show-prefix)
-if [[ -n "$prefix" ]]; then
-  tree=$(git -C "$root" rev-parse "$tree:${prefix%/}")
-fi
-actor=$(git -C "$root" config --get metasystem.goal.machine)+${METASYSTEM_OWNER_LINEAGE:?}
-observation=$("$root/bin/metasystem" landing observe --root "$root" --tree "$tree" \
-  --chain "$chain" --goal "$goal" --actor "$actor" --test-receipt "$receipt" \
-  --recertification "$recertification")
-verdict=$("$root/bin/metasystem" json get --value "$observation" --field verdictTrailer)
-[[ "$verdict" == "pass bar=a" ]] || { printf '%s\n' "$observation" >&2; exit 83; }
-provenance=$("$root/bin/metasystem" json get --value "$observation" --field provenance)
-revision=$("$root/bin/metasystem" json get --value "$observation" --field goalRevision)
-git commit "${commit_args[@]}" --trailer "Landing-Provenance: $provenance" \
-  --trailer "Landing-Provenance-Verdict: $verdict" --trailer "Machine: $actor" \
-  --trailer "Goal-Item: $goal" --trailer "Goal-Revision: $revision"
-`)
-	if err := os.Chmod(filepath.Join(root, "scripts", "agents", "commit.sh"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	build := exec.Command("go", "build", "-o", filepath.Join(root, "bin", "metasystem"), ".")
 	build.Env = gittree.ScrubbedEnviron()
 	if out, err := build.CombinedOutput(); err != nil {
@@ -865,9 +827,9 @@ exit "$status"`
 	}
 	if !moveOrigin {
 		landOutput, landCode := runAsHolder([]string{
-			"bash", filepath.Join(root, "scripts", "agents", "land.sh"), "--skip-transport", "-m", message,
-			"--chain", "park-chain", "--goal", "landing-goal", "--recertification", proof,
-			"--test-receipt", landing.TestReceiptPath(root, candidateTree), "internal/app/source.txt",
+			filepath.Join(root, "bin", "metasystem"), "work", "land", "landing-goal", "--repo", root, "--skip-transport", "--message", message,
+			"--chain", "park-chain", "--recertification", proof,
+			"--test-receipt", landing.TestReceiptPath(root, candidateTree), "--path", "internal/app/source.txt",
 		}, []string{"CLBM_GIT_LOG=" + gitLog, "CLBM_PUSH_COUNT=" + pushCount,
 			"CLBM_PEER=" + peer, "CLBM_REAL_GIT=" + realGit, "CLBM_SKIP_MOVE=1"})
 		if landCode != 0 {
@@ -898,9 +860,9 @@ exit "$status"`
 		return
 	}
 	unknownWidthOutput, unknownWidthCode := runAsHolder([]string{
-		"bash", filepath.Join(root, "scripts", "agents", "land.sh"), "-m", message,
-		"--chain", "invalid_chain", "--goal", "landing-goal", "--recertification", proof,
-		"--test-receipt", filepath.Join(bed, "missing-receipt.json"), "internal/app/source.txt",
+		filepath.Join(root, "bin", "metasystem"), "work", "land", "landing-goal", "--repo", root, "--message", message,
+		"--chain", "invalid_chain", "--recertification", proof,
+		"--test-receipt", filepath.Join(bed, "missing-receipt.json"), "--path", "internal/app/source.txt",
 	}, []string{
 		"CLBM_GIT_LOG=" + gitLog, "CLBM_PUSH_COUNT=" + pushCount, "CLBM_PEER=" + peer,
 		"CLBM_REAL_GIT=" + realGit,
@@ -911,9 +873,9 @@ exit "$status"`
 	}
 	runReceiptGit(t, top, "reset", "--mixed", "HEAD")
 	landOutput, landCode := runAsHolder([]string{
-		"bash", filepath.Join(root, "scripts", "agents", "land.sh"), "-m", message,
-		"--chain", "park-chain", "--goal", "landing-goal", "--recertification", proof,
-		"--test-receipt", landing.TestReceiptPath(root, candidateTree), "internal/app/source.txt",
+		filepath.Join(root, "bin", "metasystem"), "work", "land", "landing-goal", "--repo", root, "--message", message,
+		"--chain", "park-chain", "--recertification", proof,
+		"--test-receipt", landing.TestReceiptPath(root, candidateTree), "--path", "internal/app/source.txt",
 	}, []string{
 		"CLBM_GIT_LOG=" + gitLog, "CLBM_PUSH_COUNT=" + pushCount, "CLBM_PEER=" + peer,
 		"CLBM_REAL_GIT=" + realGit,
@@ -1384,11 +1346,6 @@ esac
 		if err := os.Chmod(filepath.Join(root, relative), 0o755); err != nil {
 			t.Fatal(err)
 		}
-	}
-	selector := "#!/usr/bin/env bash\ncase \"${1:-}\" in\n  list) printf 'tiny\\ttiny receipt canary\\n' ;;\n  twice) exit 0 ;;\n  *) exit 2 ;;\nesac\n"
-	writeReceiptFixture(t, root, "scripts/agents/validate-section-selector.sh", selector)
-	if err := os.Chmod(filepath.Join(root, "scripts", "agents", "validate-section-selector.sh"), 0o755); err != nil {
-		t.Fatal(err)
 	}
 	validator := `#!/usr/bin/env bash
 set -euo pipefail
@@ -2239,16 +2196,13 @@ func TestLandingReceiptLineRefusesCodeWithoutItsLineAndPassesWithIt(t *testing.T
 	}
 
 	writeReceiptFixture(t, root, "payload.txt", "candidate\n")
-	if code := runLandingReceiptLineWithRawSource([]string{"--root", root, "--tree", withoutLine, "--goal", "fx"}, raw); code != 2 {
-		t.Fatalf("a code landing without its receipt line exited %d, want 2", code)
+	if decision, err := landingPathReceiptLineFrom(raw, root, withoutLine, "fx", ""); err != nil || !decision.Refused {
+		t.Fatalf("a code landing without its receipt line was not refused: %+v %v", decision, err)
 	}
 
 	writeReceiptFixture(t, root, "memory/receipts.log", appendedLedger)
-	if code := runLandingReceiptLineWithRawSource([]string{"--root", root, "--tree", withLine, "--goal", "fx"}, raw); code != 0 {
-		t.Fatalf("a code landing with its receipt line exited %d, want 0", code)
-	}
-	if code := runLandingReceiptLineWithRawSource([]string{"--root", root}, raw); code != 2 {
-		t.Fatalf("a call without a tree exited %d, want 2", code)
+	if decision, err := landingPathReceiptLineFrom(raw, root, withLine, "fx", ""); err != nil || decision.Refused {
+		t.Fatalf("a code landing with its receipt line was refused: %+v %v", decision, err)
 	}
 	if consumed != len(operations) || len(stub.Calls()) != len(expected) {
 		t.Fatalf("raw Git transcript consumed %d of %d requests", consumed, len(expected))

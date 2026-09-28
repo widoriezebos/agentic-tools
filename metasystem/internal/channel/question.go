@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -203,37 +204,48 @@ func factsDigest(goalID, kind string, facts []string) string {
 }
 
 func Ask(r AskRequest) (Question, error) {
+	q, _, err := AskOrFind(r)
+	return q, err
+}
+
+// AskOrFind is Ask that also says whether the question already stood. An
+// open question for the same goal and kind with the same facts, options,
+// recommendation, wanted token and proposed budget is the requested state
+// already holding (R-129-ui): it is returned with existing set, and nothing
+// is written, posted or published again. The same facts with any other
+// parameter is a different question and is asked.
+func AskOrFind(r AskRequest) (Question, bool, error) {
 	if r.Now.IsZero() {
 		r.Now = time.Now().UTC()
 	}
 	if r.Goal == "" || r.Kind == "" || len(r.Facts) == 0 {
-		return Question{}, fmt.Errorf("ask requires goal, kind, and a fact")
+		return Question{}, false, fmt.Errorf("ask requires goal, kind, and a fact")
 	}
 	switch r.Kind {
 	case "budget-above-norm", "carry", "fork", "reserved-decision", "stop", "other":
 	default:
-		return Question{}, fmt.Errorf("unknown question kind %q", r.Kind)
+		return Question{}, false, fmt.Errorf("unknown question kind %q", r.Kind)
 	}
 	digest := factsDigest(r.Goal, r.Kind, r.Facts)
 	existing, err := listQuestions(r.RepoRoot)
 	if err != nil {
-		return Question{}, err
+		return Question{}, false, err
 	}
 	for _, q := range existing {
-		if q.State == "open" && q.Goal == r.Goal && q.Kind == r.Kind && q.FactsDigest == digest {
-			return q, nil
+		if q.State == "open" && q.Goal == r.Goal && q.Kind == r.Kind && q.FactsDigest == digest && sameAsk(q, r) {
+			return q, true, nil
 		}
 	}
 	id, err := goal.NewOperationULID()
 	if err != nil {
-		return Question{}, err
+		return Question{}, false, err
 	}
 	q := Question{ID: id, Goal: r.Goal, Kind: r.Kind, Machine: r.Machine, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor}
 	if err = validateQuestionBudget(q); err != nil {
-		return Question{}, err
+		return Question{}, false, err
 	}
 	if err = writeJSON(questionPath(r.RepoRoot, id), q); err != nil {
-		return Question{}, err
+		return Question{}, false, err
 	}
 	if r.Provider != nil {
 		postContext := r.Context
@@ -247,27 +259,44 @@ func Ask(r AskRequest) (Question, error) {
 			q.Undelivered++
 		}
 		if err = writeJSON(questionPath(r.RepoRoot, id), q); err != nil {
-			return q, err
+			return q, false, err
 		}
 	}
 	if r.Lineage != "" {
 		ep, e := goal.ResolveEndpoint(r.RepoRoot)
 		if e != nil {
-			return q, e
+			return q, false, e
 		}
 		ulid, e := goal.NewOperationULID()
 		if e != nil {
-			return q, e
+			return q, false, e
 		}
 		published, e := goal.Asked(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: r.Machine, Lineage: r.Lineage}, Ulid: ulid, Now: r.Now}, r.Goal, id, r.Kind, r.Facts[0])
 		if e != nil {
-			return q, e
+			return q, false, e
 		}
 		if published.Outcome != goal.OutcomeConfirmed {
-			return q, fmt.Errorf("goal ask was not confirmed: %s", published.Detail)
+			return q, false, fmt.Errorf("goal ask was not confirmed: %s", published.Detail)
 		}
 	}
-	return q, nil
+	return q, false, nil
+}
+
+// sameAsk says whether an open question carries exactly the options,
+// recommendation, wanted token and proposed budget a new request asks with.
+func sameAsk(q Question, r AskRequest) bool {
+	if q.Recommendation != r.Recommendation || q.Wants != r.Wants || !reflect.DeepEqual(q.Budget, r.Budget) {
+		return false
+	}
+	if len(q.Options) != len(r.Options) {
+		return false
+	}
+	for index := range q.Options {
+		if q.Options[index] != r.Options[index] {
+			return false
+		}
+	}
+	return true
 }
 
 // contextBackground avoids making Ask's durable-write ordering dependent on a caller context.
@@ -422,6 +451,10 @@ func Close(repo, id, because string, p Provider, d DestinationConfig) error {
 	q, err := ReadQuestion(repo, id)
 	if err != nil {
 		return err
+	}
+	if q.State == "closed" {
+		// Already closed (R-129-ui): nothing is posted or written again.
+		return nil
 	}
 	if q.Thread != nil && p != nil {
 		_, _ = p.Post(contextBackground{}, d, "closed: "+because, q.Thread)

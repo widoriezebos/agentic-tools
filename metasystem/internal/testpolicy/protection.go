@@ -34,6 +34,9 @@ func FrozenProtectionProbeCases() []ProtectionProbeCase {
 	return result
 }
 
+// ProtectedPolicyChange reports whether a change touches the proof policy or
+// the landing path that enforces it (internal/landing/landpath, formerly
+// scripts/agents/commit.sh and land.sh): such a change plans deep.
 func ProtectedPolicyChange(paths []string) bool {
 	for _, path := range paths {
 		path = strings.TrimPrefix(path, "./")
@@ -41,7 +44,7 @@ func ProtectedPolicyChange(paths []string) bool {
 			strings.Contains(path, "/internal/testpolicy/") || strings.HasPrefix(path, "internal/testpolicy/") ||
 			strings.Contains(path, "/internal/proofrun/test_") || strings.HasPrefix(path, "internal/proofrun/test_") ||
 			strings.HasSuffix(path, "coverage-ratchet.json") || strings.HasSuffix(path, "coverage-ratchet-linux.json") ||
-			strings.HasSuffix(path, "validate-section-selector.sh") || strings.HasSuffix(path, "commit.sh") || strings.HasSuffix(path, "land.sh") {
+			strings.Contains(path, "/internal/landing/landpath/") || strings.HasPrefix(path, "internal/landing/landpath/") {
 			return true
 		}
 	}

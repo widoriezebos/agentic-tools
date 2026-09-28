@@ -390,11 +390,13 @@ func TestGoalCLIBudgetScopeBounds(t *testing.T) {
 // The owner prints its preview and refusals on the process streams, so the
 // tests read the listing and the refusal codes from goal.PreviewClassificationSweep,
 // the owner's own preview, and assert the command's exit and the ledger.
-func gcliBudgetSweep(bed *goalCLIBed, args ...string) int {
-	code, _, _ := bed.owner(func(dependencies syncRequestDependencies) int {
+// gcliBudgetSweep runs classify-sweep on the bed's own streams: its listing,
+// outcome and refusals never touch the process's, which a parallel test may
+// be capturing.
+func gcliBudgetSweep(bed *goalCLIBed, args ...string) (int, string, string) {
+	return bed.owner(func(dependencies syncRequestDependencies) int {
 		return runGoalClassifySweepWithInputs(append([]string{"--root", bed.root}, args...), bed.prove, bed.commandNow, dependencies)
 	})
-	return code
 }
 
 // classification-sweep: a tierless claim resolves under tier-three rules
@@ -441,8 +443,9 @@ func TestGoalCLIBudgetClassificationSweep(t *testing.T) {
 	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(listing.Digest) {
 		t.Fatalf("classification preview did not carry its SHA-256 digest: %q", listing.Digest)
 	}
-	if code := gcliBudgetSweep(bed, "--draft", draft, "--preview"); code != 0 || bed.tip() != before {
-		t.Fatalf("the preview was not inert: code=%d", code)
+	if code, stdout, stderr := gcliBudgetSweep(bed, "--draft", draft, "--preview"); code != 0 || bed.tip() != before ||
+		stdout != want+"\nlisting-digest "+listing.Digest+"\n" || stderr != "" {
+		t.Fatalf("the preview was not inert on the supplied streams: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 
 	for _, row := range []struct{ code, body string }{
@@ -455,8 +458,9 @@ func TestGoalCLIBudgetClassificationSweep(t *testing.T) {
 		if _, err := goal.PreviewClassificationSweep(endpoint, []byte(row.body+"\n"), bed.clock()); err == nil || !strings.Contains(err.Error(), row.code) {
 			t.Fatalf("classification refusal %s did not fire: %v", row.code, err)
 		}
-		if code := gcliBudgetSweep(bed, "--draft", path, "--preview"); code == 0 || bed.tip() != before {
-			t.Fatalf("classify-sweep --preview did not refuse %s: code=%d", row.code, code)
+		if code, stdout, stderr := gcliBudgetSweep(bed, "--draft", path, "--preview"); code == 0 || bed.tip() != before ||
+			stdout != "" || !strings.HasPrefix(stderr, "goal classify-sweep: "+row.code) {
+			t.Fatalf("classify-sweep --preview did not refuse %s on the supplied stderr: code=%d stdout=%q stderr=%q", row.code, code, stdout, stderr)
 		}
 	}
 	changedBody := strings.Replace(draftBody, "claimed migration", "changed migration", 1)
@@ -465,12 +469,14 @@ func TestGoalCLIBudgetClassificationSweep(t *testing.T) {
 		t.Fatalf("a changed draft kept the listing digest: %+v %v", changedListing, err)
 	}
 	changed := writeDraft("changed-draft.txt", changedBody)
-	if code := gcliBudgetSweep(bed, "--draft", changed, "--confirm", listing.Digest, "--by", "Wido", "--fixture-human-authority"); code != 1 || bed.tip() != before {
-		t.Fatalf("changed classification draft did not refuse by digest: code=%d", code)
+	if code, stdout, stderr := gcliBudgetSweep(bed, "--draft", changed, "--confirm", listing.Digest, "--by", "Wido", "--fixture-human-authority"); code != 1 || bed.tip() != before ||
+		stdout != "" || !strings.HasPrefix(stderr, "goal classify-sweep: SWEEP_LISTING_CHANGED") {
+		t.Fatalf("changed classification draft did not refuse by digest on the supplied stderr: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 
-	if code := gcliBudgetSweep(bed, "--draft", draft, "--confirm", listing.Digest, "--by", "Wido", "--fixture-human-authority"); code != 0 {
-		t.Fatalf("classification confirmation did not confirm: code=%d", code)
+	if code, stdout, stderr := gcliBudgetSweep(bed, "--draft", draft, "--confirm", listing.Digest, "--by", "Wido", "--fixture-human-authority"); code != 0 ||
+		!strings.Contains(stdout, `"outcome":"confirmed"`) || !strings.Contains(stdout, `"classified":3`) || stderr != "" {
+		t.Fatalf("classification confirmation did not confirm on the supplied stdout: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	for _, row := range []struct{ id, tier, rounds string }{{"fix-docs", "1", "0"}, {"perf-pass", "2", "2"}, {"ship-widget", "3", "3"}} {
 		record := bed.goalRecord(row.id)

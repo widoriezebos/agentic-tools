@@ -341,6 +341,14 @@ func TestCorrectLifecycle(t *testing.T) {
 	if !strings.HasPrefix(string(data), original+"\n") || !strings.Contains(string(data), "|CORRECTION|") {
 		t.Fatalf("ledger wrong after correction: %s", data)
 	}
+	// The same correction again already stands (R-129-ui): success, and no
+	// second line.
+	if result := Correct(opts); result.Code != 0 || !strings.Contains(result.Out[0], "correction already recorded") {
+		t.Fatalf("repeated correction: %+v", result)
+	}
+	if again, _ := os.ReadFile(opts.File); string(again) != string(data) {
+		t.Fatalf("a repeated correction appended: %s", again)
+	}
 	// The --was value must match the original field.
 	opts.Was = "wrong"
 	if result := Correct(opts); result.Code != 2 ||

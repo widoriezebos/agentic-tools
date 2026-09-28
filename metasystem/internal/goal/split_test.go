@@ -103,6 +103,17 @@ func TestSplitIsAtomicPermanentAndRewritesDependencies(t *testing.T) {
 	if entry, ok := rootDecomposed(tree.Root, "split-parent"); !ok || entry.Opid != request.opid() {
 		t.Fatalf("root decomposition registry did not land with split: %+v", tree.Root.Decomposed)
 	}
+	// The same split again is a repeat whose effect already holds (R-129-ui):
+	// success, nothing written. Other members are a different split, refused.
+	repeated, err := Split(verbReqFor(endpoint, "01J5X00000000000000000S161", "mac-a"), "split-parent", members, mainRatification("split-parent", members), nil)
+	if err != nil || repeated.Outcome != OutcomeAbandoned || !repeated.Unchanged || repeated.Tip != result.Tip ||
+		!strings.Contains(repeated.Detail, "already split into split-parent-one, split-parent-two") {
+		t.Fatalf("a repeated split was not a no-op: %+v %v", repeated, err)
+	}
+	others := append(testMembers("split-parent"), MemberDraft{ID: "split-parent-three", Intent: "Deliver a third part.", NextStep: "Build part three."})
+	if different, err := Split(verbReqFor(endpoint, "01J5X00000000000000000S162", "mac-a"), "split-parent", others, mainRatification("split-parent", others), nil); err != nil || different.Outcome != OutcomeRejected || !strings.Contains(different.Detail, "already split") {
+		t.Fatalf("a different split of a decomposed parent was not refused: %+v %v", different, err)
+	}
 	debts, err := retrodebt.Open(root)
 	if err != nil || len(debts) != 1 || !strings.HasPrefix(debts[0].Source, "old-arc:") {
 		t.Fatalf("last old-arc member split did not raise debt: %+v %v", debts, err)

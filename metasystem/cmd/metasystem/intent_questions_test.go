@@ -424,7 +424,7 @@ func TestIntentSettingsKeysAndCheck(t *testing.T) {
 	valid := []byte("metasystem.version=1\nmetasystem.runtimes=fake\ntesting.contract=testing.json\n" +
 		"evidence.root=" + t.TempDir() + "\nrole.default.runtime=fake\n" +
 		"role.default.model.fake=fake-model\nmodel.tier.1=fake:fake-model\nfixture.alpha.one=1\n")
-	contract := []byte(`{"schemaVersion":1,"projectRisk":{"severity":1,"exposure":1,"reversibility":"revert","detection":"immediate","recovery":"bounded"},"surfaces":[{"id":"app","paths":["src/**"],"dependsOn":[],"standard":["section/smoke"],"deep":[],"critical":[]}],"groups":[{"id":"section/smoke","kind":"integration","adapter":"section","cwd":".","inputs":["metasystem.conf"],"outputs":[],"tools":[],"obligations":[],"platforms":["any"],"targetMs":1000,"section":"smoke"}],"always":{"canary":["section/smoke"],"standard":[]},"unknown":["section/smoke"],"cadence":["section/smoke"]}`)
+	contract := []byte(`{"schemaVersion":1,"projectRisk":{"severity":1,"exposure":1,"reversibility":"revert","detection":"immediate","recovery":"bounded"},"surfaces":[{"id":"app","paths":["src/**"],"dependsOn":[],"standard":["section/smoke"],"deep":[],"critical":[]}],"groups":[{"id":"section/smoke","kind":"integration","adapter":"section","cwd":".","inputs":["metasystem.conf"],"outputs":[],"tools":[],"obligations":[],"platforms":["any"],"targetMs":1000,"section":"smoke","argv":["bash","scripts/smoke.sh"]}],"always":{"canary":["section/smoke"],"standard":[]},"unknown":["section/smoke"],"cadence":["section/smoke"]}`)
 	os.WriteFile(conf, valid, 0o644)
 	os.WriteFile(filepath.Join(bed.root(), "testing.json"), contract, 0o644)
 	// The testing contract is checked with the settings; it belongs to a

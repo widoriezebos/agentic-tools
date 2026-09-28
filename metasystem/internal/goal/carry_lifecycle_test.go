@@ -494,7 +494,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		request := carryVerb(human, "01J5X00000000000000000D040", 121)
 		request.Now = word.Expires.Add(time.Minute)
 		result, err := Abandon(request, "g", AbandonSpec{Because: "the landing will not continue"}, goalHumanProof(t, root, request.Now))
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal g has carried commit "+commit+" without its ledger row") || !strings.Contains(result.Detail, "land.sh --carried "+ref) {
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal g has carried commit "+commit+" without its ledger row") || !strings.Contains(result.Detail, "metasystem work land g --using-exception "+ref) {
 			t.Fatalf("unrecorded carried commit refusal: %+v %v", result, err)
 		}
 	})

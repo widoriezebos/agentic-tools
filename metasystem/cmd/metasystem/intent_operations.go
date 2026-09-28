@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 )
 
@@ -320,6 +321,12 @@ func runIntentRepairMission(inv *intentInvocation, mission string) int {
 	}
 	result := ownerVerbResult(ran, []intentTarget{{Kind: "mission", ID: mission}}, done, nil)
 	if result.Outcome == intentConfirmed {
+		for _, line := range nonEmptyLines(string(ran.stdout)) {
+			if strings.Contains(line, missionrunner.TaintAlreadyResolved) {
+				// The same resolution again (R-129-ui): nothing was recorded.
+				result.Outcome, result.Summary = intentUnchanged, fmt.Sprintf("mission %s: problem %s %s", mission, inv.input.text("problem"), line[strings.Index(line, missionrunner.TaintAlreadyResolved):])
+			}
+		}
 		result.next, result.nextReason = inv.publicArgv("mission", "status", mission), "every recorded problem must be resolved before the mission resumes"
 	}
 	return inv.render(result)
@@ -349,7 +356,14 @@ func runIntentSettingsCoordinator(inv *intentInvocation) int {
 		ran := ownerCall(func(stdout, stderr io.Writer) int {
 			return inv.ownerCalls().brain(choice, caller, stdout, stderr, inv.stateRoot, by)
 		})
-		return inv.render(ownerVerbResult(ran, targets, map[string]string{"declare": "this checkout is declared its ledger's coordinator", "withdraw": "this checkout's coordinator declaration is withdrawn"}[choice], nil))
+		result := ownerVerbResult(ran, targets, map[string]string{"declare": "this checkout is declared its ledger's coordinator", "withdraw": "this checkout's coordinator declaration is withdrawn"}[choice], nil)
+		if owner, _ := result.Data.(map[string]any)["owner"].(map[string]any); result.Outcome == intentConfirmed && owner["unchanged"] == true {
+			result.Outcome = intentUnchanged
+			if summary, _ := owner["summary"].(string); summary != "" {
+				result.Summary = summary
+			}
+		}
+		return inv.render(result)
 	}
 	state := brain.Read(inv.stateRoot, goal.ExistingLedgerIdentity(inv.stateRoot))
 	data := map[string]any{"state": state.State}

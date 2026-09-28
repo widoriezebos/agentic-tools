@@ -12,19 +12,18 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 )
 
-func TestOutputSpillVerbPrintsTheTextLine(t *testing.T) {
+func TestLandingOutputSpillReturnsTheTextLine(t *testing.T) {
 	root := t.TempDir()
 	data := []byte("complete landing output\n")
 	input := filepath.Join(t.TempDir(), "step.log")
 	if err := os.WriteFile(input, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	stdout, code := captureStdout(t, func() int {
-		return runOutputSpill([]string{"--root", root, "--verb", "land", "--ext", "log", "--file", input})
-	})
-	if code != 0 {
-		t.Fatalf("output spill exit = %d", code)
+	line, err := landingPathSpill(root, "land", "log", data)
+	if err != nil {
+		t.Fatalf("output spill: %v", err)
 	}
+	stdout := line + "\n"
 	files, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(output.Dir), "land-*.log"))
 	if err != nil || len(files) != 1 {
 		t.Fatalf("output spill files = %v, err=%v", files, err)

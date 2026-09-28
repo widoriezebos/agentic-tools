@@ -37,8 +37,15 @@ func TestToolGateAllowlist(t *testing.T) {
 		allowCase{name: "dot-path-prefix", call: bashToolGateCall("./bin/metasystem session handoff --verify n"), wantPattern: "metasystem session handoff", wantKind: AllowedAtTrigger, allow: true},
 		allowCase{name: "cd-prefix", call: bashToolGateCall("cd /tmp && metasystem session handoff --status --root /repo"), wantPattern: "metasystem session handoff", wantKind: AllowedAtTrigger, allow: true},
 		allowCase{name: "assignment-prefix", call: bashToolGateCall("A=one B='two words' metasystem internal delegate --root /repo"), wantPattern: "metasystem internal delegate", wantKind: AllowedAtTrigger, allow: true},
-		allowCase{name: "bash-script-wrapper", call: bashToolGateCall("bash /repo/scripts/agents/land.sh goal"), wantPattern: "scripts/agents/land.sh", wantKind: NeverDenied, allow: true},
-		allowCase{name: "sh-script-wrapper", call: bashToolGateCall("sh ./scripts/agents/land.sh goal"), wantPattern: "scripts/agents/land.sh", wantKind: NeverDenied, allow: true},
+		allowCase{name: "public-landing", call: bashToolGateCall("bin/metasystem work land goal --message msg.txt --staged"), wantPattern: "metasystem work land", wantKind: NeverDenied, allow: true},
+		allowCase{name: "public-carried-landing", call: bashToolGateCall("metasystem work land goal --using-exception opid"), wantPattern: "metasystem work land", wantKind: NeverDenied, allow: true},
+		allowCase{name: "bash-script-wrapper", call: bashToolGateCall("bash /repo/bin/metasystem work land goal"), wantPattern: "metasystem work land", wantKind: NeverDenied, allow: true},
+		allowCase{name: "sh-script-wrapper", call: bashToolGateCall("sh ./bin/metasystem work wait --restore job"), wantPattern: "metasystem work wait", wantKind: NeverDenied, allow: true},
+		// The landing is the engine's public verb: the retired script path is
+		// no longer the landing process and is not recognized as one.
+		allowCase{name: "retired-landing-script", call: bashToolGateCall("./scripts/agents/land.sh goal"), wantKind: Other, allow: false},
+		allowCase{name: "retired-landing-script-wrapper", call: bashToolGateCall("bash /repo/scripts/agents/land.sh goal"), wantKind: Other, allow: false},
+		allowCase{name: "work-land-prefix-only", call: bashToolGateCall("metasystem work landing goal"), wantKind: Other, allow: false},
 		allowCase{name: "bash-c-wrapper", call: bashToolGateCall("bash -c 'metasystem work wait --restore goal'"), wantPattern: "metasystem work wait", wantKind: NeverDenied, allow: true},
 		allowCase{name: "bash-lc-wrapper", call: bashToolGateCall("bash -lc 'metasystem system status --steward --root /repo'"), wantPattern: "metasystem system status", wantKind: AllowedAtTrigger, allow: true},
 		allowCase{name: "pipe-filter", call: bashToolGateCall("metasystem work wait | head -1"), wantPattern: "metasystem work wait", wantKind: NeverDenied, allow: true},
@@ -201,8 +208,6 @@ func toolGateCallForRow(row *toolGateRow, memoryDir string) Call {
 	case matchCommand:
 		command := strings.ReplaceAll(strings.Join(row.words, " "), "<verb>", "finish")
 		return bashToolGateCall(command)
-	case matchLandingScript:
-		return bashToolGateCall("./scripts/agents/land.sh goal")
 	case matchMemoryPath:
 		return toolGatePathCall(row.words[0], filepath.Join(memoryDir, "note.md"))
 	default:

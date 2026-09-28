@@ -243,6 +243,8 @@ func (s *Store) currentSessionLifecycle(sessionId, mainId string, lease sessionS
 // the caller that obtained the proof: code deliberately supplying another
 // process's valid proof is the same trust class as code forging marker bytes,
 // and belongs to durable goal-ledger authentication rather than this gate.
+// When the same person's authorization for this session already holds, it
+// returns that authorization and AlreadyHolds, and writes nothing.
 func (s *Store) WriteSessionStop(marker SessionStop, proof humanauthority.Proof) (SessionStop, error) {
 	resolvedRoot, err := ResolveStateRoot(s.Root)
 	if err != nil {
@@ -273,6 +275,7 @@ func (s *Store) WriteSessionStop(marker SessionStop, proof humanauthority.Proof)
 		}
 		marker.AuthorizationId = id
 	}
+	var held SessionStop
 	_, err = s.withLock(func() (Result, error) {
 		lease, err := s.currentSessionStopLease()
 		if err != nil {
@@ -280,6 +283,15 @@ func (s *Store) WriteSessionStop(marker SessionStop, proof humanauthority.Proof)
 		}
 		if lease.HolderMainId != marker.HolderMainId || lease.ClaimEpoch != marker.ClaimEpoch {
 			return Result{}, fmt.Errorf("session stop coordinates do not match the current holder lease")
+		}
+		// The same person's unspent, unexpired authorization for this very
+		// session, holder and epoch already holds (R-129-ui): it is kept,
+		// and no second authorization is minted over it.
+		if existing, authorized, _, inspectErr := s.inspectSessionStop(marker.SessionId, marker.HolderMainId); inspectErr == nil && authorized &&
+			existing.ClaimEpoch == marker.ClaimEpoch && existing.By == strings.TrimSpace(marker.By) {
+			held = existing
+			return Result{}, AlreadyHolds{Reason: fmt.Sprintf("session stop is already authorized once for %s at holder %s epoch %d by %s until %s",
+				existing.SessionId, existing.HolderMainId, existing.ClaimEpoch, existing.By, existing.ExpiresAt)}
 		}
 		marker.SessionLifecycle, err = s.currentSessionLifecycle(marker.SessionId, marker.HolderMainId, lease)
 		if err != nil {
@@ -301,6 +313,10 @@ func (s *Store) WriteSessionStop(marker SessionStop, proof humanauthority.Proof)
 		}
 		return Result{}, nil
 	})
+	var already AlreadyHolds
+	if errors.As(err, &already) {
+		return held, already
+	}
 	if err != nil {
 		return SessionStop{}, err
 	}

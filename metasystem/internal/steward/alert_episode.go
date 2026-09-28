@@ -271,7 +271,7 @@ func RecordSeatIdleIncident(repoRoot string, incident SeatIdleIncident, now time
 }
 
 func seatIdleIncidentMessage(incident SeatIdleIncident) string {
-	message := fmt.Sprintf("seat %s reached idle refusal %d for unchanged backlog %s", incident.SessionID, incident.Refusal, incident.BacklogDigest)
+	message := fmt.Sprintf("seat %s reached idle refusal %d in idle interval %s", incident.SessionID, incident.Refusal, incident.BacklogDigest)
 	if incident.GoalID != "" {
 		message += "; next goal " + incident.GoalID
 	}

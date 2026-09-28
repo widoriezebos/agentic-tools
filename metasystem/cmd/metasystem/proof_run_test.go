@@ -1492,80 +1492,6 @@ func TestSuiteProgressPrinterSurfacesDeepestLiveSection(t *testing.T) {
 	}
 }
 
-func TestSelectedSectionsReadsTwiceConsultedDataFromSelector(t *testing.T) {
-	selector := filepath.Join(t.TempDir(), "selector.sh")
-	script := `#!/usr/bin/env bash
-case "$1" in
-  list) printf 'first\tfirst section\nrepeat\trepeated section\n' ;;
-  fixture) [[ "$2" == hidden ]] && printf 'hidden\tfixture-only section\n' ;;
-  twice) printf 'repeat\n' ;;
-  *) exit 2 ;;
-esac
-`
-	if err := testexec.WriteFile(selector, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	sections, repeated, err := selectedSections(selector, "", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(sections, ",") != "first,repeat" || len(repeated) != 1 || !repeated["repeat"] {
-		t.Fatalf("selector data = %v, %v", sections, repeated)
-	}
-	// A selected run drives one call site, so even a declared-twice section
-	// expects a single interval there.
-	sections, repeated, err = selectedSections(selector, "repeat", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sections) != 1 || sections[0] != "repeat" || len(repeated) != 0 {
-		t.Fatalf("selected selector data = %v, %v", sections, repeated)
-	}
-	sections, repeated, err = selectedSections(selector, "first", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sections) != 1 || sections[0] != "first" || len(repeated) != 0 {
-		t.Fatalf("non-repeated selected selector data = %v, %v", sections, repeated)
-	}
-	sections, repeated, err = selectedSections(selector, "hidden", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sections) != 1 || sections[0] != "hidden" || len(repeated) != 0 {
-		t.Fatalf("fixture-only selected selector data = %v, %v", sections, repeated)
-	}
-	if _, _, err = selectedSections(selector, "undeclared", false); err == nil || !strings.Contains(err.Error(), "absent from the selector and bounded fixture declarations") {
-		t.Fatalf("undeclared selected section error = %v", err)
-	}
-	sections, repeated, err = selectedSections(selector, "", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(sections, ",") != "first,repeat" || len(repeated) != 0 {
-		t.Fatalf("enumerated selector data = %v, %v", sections, repeated)
-	}
-}
-
-func TestValidationSelectorDeclaresGuardFixtureOutsideNormalSelection(t *testing.T) {
-	t.Parallel()
-	selector := filepath.Join("..", "..", "scripts", "agents", "validate-section-selector.sh")
-	listed, err := exec.Command("bash", selector, "list").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(listed), "checkout-execution-guard-fixture") {
-		t.Fatalf("normal validation selection contains the bounded guard fixture:\n%s", listed)
-	}
-	sections, repeated, err := selectedSections(selector, "checkout-execution-guard-fixture", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sections) != 1 || sections[0] != "checkout-execution-guard-fixture" || len(repeated) != 0 {
-		t.Fatalf("guard fixture selection = %v, %v", sections, repeated)
-	}
-}
-
 type authenticatedGuardInvocation struct {
 	command       *exec.Cmd
 	output        bytes.Buffer
@@ -1656,7 +1582,6 @@ printf '{"suite":"validate-metasystem","section":"gate-fence-fixtures","event":"
 		"--command-class", "fixture-events-authenticated-guard", "--conf", filepath.Join(executionRoot, "metasystem.conf"),
 		"--progress", progress, "--log", filepath.Join(private, "outer.log"),
 		"--tmp", tmp, "--banner", "authenticated checkout guard fixture",
-		"--selector", filepath.Join(executionRoot, "scripts", "agents", "validate-section-selector.sh"),
 		"--selected", "gate-fence-fixtures", "--result", resultPath,
 		"--", outerScript, progress, executionRoot, engine, tmp)
 	run := &authenticatedGuardInvocation{

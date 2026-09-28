@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -413,6 +414,33 @@ func MarkTerminal(repoRoot, opid string, outcome Outcome, evidence string) error
 	e.Evidence = evidence
 	e.TerminalAt = time.Now().UTC().Format(time.RFC3339)
 	return writeEntry(repoRoot, e)
+}
+
+// DiscardUnpushed removes the journal entry of an operation that decided,
+// before any commit was built or pushed, that its effect already holds
+// (AlreadyHolds, R-129-ui). Such an operation never acted, so the crash
+// record has nothing to recover and a repeat leaves no record at all. Only
+// the owner's own never-pushed entry is removed; every other phase refuses.
+func DiscardUnpushed(repoRoot, opid string) error {
+	if opid == "" || opid != filepath.Base(opid) || strings.ContainsAny(opid, `/\`) {
+		return fmt.Errorf("journal entry %q is not a plain operation id", opid)
+	}
+	lock, err := AcquireJournalLock(repoRoot)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	e, err := ReadEntry(repoRoot, opid)
+	if err != nil {
+		return err
+	}
+	if !callerIsOwner(e) {
+		return fmt.Errorf("journal entry %s belongs to process %d; only its owner discards it", opid, e.Owner.Pid)
+	}
+	if e.Phase != PhaseCreated || e.TxnCommit != "" {
+		return fmt.Errorf("journal entry %s is %s; only a never-built entry is discarded", opid, e.Phase)
+	}
+	return os.Remove(entryPath(repoRoot, e.Opid))
 }
 
 // CorrectLate is the ONE lawful terminal correction: a

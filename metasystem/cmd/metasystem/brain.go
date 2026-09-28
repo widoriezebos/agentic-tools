@@ -17,7 +17,42 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 )
 
-func brainHumanAct(caller processIdentity, root, verb string, fixture bool) error {
+// brainActDependencies are the reads the brain declaration owners make
+// outside the declaration record: caller classification, the ledger identity
+// and machine (Git configuration), the goal projection, the in-flight scan,
+// the registry home, and the clock. Production uses
+// defaultBrainActDependencies; tests supply per-test instances.
+type brainActDependencies struct {
+	classify       func(root string, callerPid int64) (lease.ClassifyResult, error)
+	ledgerIdentity func(string) string
+	machine        func(string) (string, error)
+	project        func(root string) (goal.Projection, error)
+	scan           func(root string) goal.ScanResult
+	registryHome   func() (string, error)
+	now            func() time.Time
+}
+
+func defaultBrainActDependencies() brainActDependencies {
+	return brainActDependencies{
+		classify: func(root string, callerPid int64) (lease.ClassifyResult, error) {
+			return classifyVerbCaller(root, callerPid)
+		},
+		ledgerIdentity: goal.ExistingLedgerIdentity,
+		machine:        goal.ResolveMachine,
+		project: func(root string) (goal.Projection, error) {
+			endpoint, err := goal.ResolveEndpoint(root)
+			if err != nil {
+				return goal.Projection{}, err
+			}
+			return goal.Project(endpoint, false, time.Now().UTC())
+		},
+		scan:         report.ScanForBrainDeclaration,
+		registryHome: brain.RegistryHome,
+		now:          time.Now,
+	}
+}
+
+func brainHumanAct(caller processIdentity, root, verb string, fixture bool, classify func(string, int64) (lease.ClassifyResult, error)) error {
 	if fixture {
 		authorization, err := fixtureauth.New(root)
 		if err != nil {
@@ -31,7 +66,7 @@ func brainHumanAct(caller processIdentity, root, verb string, fixture bool) erro
 	if err != nil {
 		return fmt.Errorf("brain %s could not classify its caller: %w", verb, err)
 	}
-	classification, err := classifyVerbCaller(root, callerPid)
+	classification, err := classify(root, callerPid)
 	if err != nil {
 		return fmt.Errorf("brain %s could not classify its caller: %w", verb, err)
 	}
@@ -56,25 +91,38 @@ func runBrainDeclare(args []string) int {
 // supplied caller identity (owner_invocation.go), and the outcome goes to the
 // caller's streams.
 func brainDeclare(caller processIdentity, stdout, stderr io.Writer, root, by string, fixture bool) int {
+	return brainDeclareWith(caller, stdout, stderr, root, by, fixture, defaultBrainActDependencies())
+}
+
+func brainDeclareWith(caller processIdentity, stdout, stderr io.Writer, root, by string, fixture bool, deps brainActDependencies) int {
 	if by == "" {
 		fmt.Fprintln(stderr, "brain declare needs --by")
 		return 2
 	}
-	if err := brainHumanAct(caller, root, "declare", fixture); err != nil {
+	ledgerIdentity := deps.ledgerIdentity(root)
+	// A declaration of a checkout already declared is a repeat whose effect
+	// holds (R-129-ui): success at every authority, and the declaration it
+	// keeps. It reads what the unguarded coordinator read shows and changes
+	// nothing, so no person's proof is needed to answer it.
+	if state := brain.Read(root, ledgerIdentity); ledgerIdentity != "" && state.State == brain.Declared {
+		writeJSONLine(stdout, stderr, map[string]any{"state": brain.Declared, "record": state.Record, "unchanged": true,
+			"summary": fmt.Sprintf("this checkout is already the coordinator of ledger %s, declared by %s at %s", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt)})
+		return 0
+	}
+	if err := brainHumanAct(caller, root, "declare", fixture, deps.classify); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	ledgerIdentity := goal.ExistingLedgerIdentity(root)
 	if ledgerIdentity == "" {
 		fmt.Fprintln(stderr, "brain declare needs a migrated ledger identity; run metasystem internal goal migrate first")
 		return 2
 	}
-	machine, err := goal.ResolveMachine(root)
+	machine, err := deps.machine(root)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	stamp := time.Now().UTC().Format(time.RFC3339)
+	stamp := deps.now().UTC().Format(time.RFC3339)
 	if err := brain.ValidateDeclaration(ledgerIdentity, machine, by, stamp); err != nil {
 		fmt.Fprintln(stderr, "brain declare refused:", err)
 		return 2
@@ -88,7 +136,7 @@ func brainDeclare(caller processIdentity, stdout, stderr io.Writer, root, by str
 		fmt.Fprintln(stderr, brain.RemedialRefusal(state.Reason, root))
 		return 2
 	}
-	if obstacles, err := brainDeclarationObstacles(root, machine); err != nil {
+	if obstacles, err := brainDeclarationObstacles(root, machine, deps); err != nil {
 		fmt.Fprintln(stderr, "brain declare could not prove quiescence:", err)
 		return 2
 	} else if len(obstacles) > 0 {
@@ -97,12 +145,12 @@ func brainDeclare(caller processIdentity, stdout, stderr io.Writer, root, by str
 		}
 		return 2
 	}
-	registryHome, err := brain.RegistryHome()
+	registryHome, err := deps.registryHome()
 	if err != nil {
 		fmt.Fprintln(stderr, "brain declare:", err)
 		return 2
 	}
-	record, err := brain.Declare(brain.DeclareOptions{StateRoot: root, RegistryHome: registryHome, LedgerIdentity: ledgerIdentity, Machine: machine, DeclaredBy: by, Now: time.Now().UTC()})
+	record, err := brain.Declare(brain.DeclareOptions{StateRoot: root, RegistryHome: registryHome, LedgerIdentity: ledgerIdentity, Machine: machine, DeclaredBy: by, Now: deps.now().UTC()})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
@@ -111,12 +159,8 @@ func brainDeclare(caller processIdentity, stdout, stderr io.Writer, root, by str
 	return 0
 }
 
-func brainDeclarationObstacles(root, machine string) ([]string, error) {
-	endpoint, err := goal.ResolveEndpoint(root)
-	if err != nil {
-		return nil, err
-	}
-	projection, err := goal.Project(endpoint, false, time.Now().UTC())
+func brainDeclarationObstacles(root, machine string, deps brainActDependencies) ([]string, error) {
+	projection, err := deps.project(root)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +176,7 @@ func brainDeclarationObstacles(root, machine string) ([]string, error) {
 		}
 		obstacles = append(obstacles, fmt.Sprintf("goal %s is claimed here; release it to a node: %s", id, command))
 	}
-	scan := report.ScanForBrainDeclaration(root)
+	scan := deps.scan(root)
 	if len(scan.Unreadable) > 0 || len(scan.RunUnreadable) > 0 {
 		return nil, fmt.Errorf("scanner inputs are unreadable: %s", strings.Join(append(scan.Unreadable, scan.RunUnreadable...), "; "))
 	}
@@ -198,26 +242,41 @@ func runBrainWithdraw(args []string) int {
 
 // brainWithdraw is the withdrawal owner under a supplied caller identity.
 func brainWithdraw(caller processIdentity, stdout, stderr io.Writer, root, by string, fixture bool) int {
+	return brainWithdrawWith(caller, stdout, stderr, root, by, fixture, defaultBrainActDependencies())
+}
+
+func brainWithdrawWith(caller processIdentity, stdout, stderr io.Writer, root, by string, fixture bool, deps brainActDependencies) int {
 	if by == "" {
 		fmt.Fprintln(stderr, "brain withdraw needs --by")
 		return 2
 	}
-	if err := brainHumanAct(caller, root, "withdraw", fixture); err != nil {
+	// A withdrawal where nothing is declared is a repeat whose effect holds
+	// (R-129-ui): success at every authority, and nothing is touched.
+	if brain.Read(root, deps.ledgerIdentity(root)).State == brain.Undeclared {
+		writeJSONLine(stdout, stderr, map[string]any{"state": brain.Undeclared, "unchanged": true,
+			"summary": "no coordinator is declared for this checkout; there was nothing to withdraw"})
+		return 0
+	}
+	if err := brainHumanAct(caller, root, "withdraw", fixture, deps.classify); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	registryHome, err := brain.RegistryHome()
+	registryHome, err := deps.registryHome()
 	if err != nil {
 		fmt.Fprintln(stderr, "brain withdraw:", err)
 		return 2
 	}
-	removed, err := brain.Withdraw(root, registryHome, goal.ExistingLedgerIdentity(root))
+	removed, err := brain.Withdraw(root, registryHome, deps.ledgerIdentity(root))
 	if err != nil {
 		fmt.Fprintln(stderr, "brain withdraw:", err)
 		return 2
 	}
 	if !removed {
-		return 3
+		// Nothing was declared: the withdrawal's effect already holds
+		// (R-129-ui).
+		writeJSONLine(stdout, stderr, map[string]any{"state": brain.Undeclared, "unchanged": true,
+			"summary": "no coordinator is declared for this checkout; there was nothing to withdraw"})
+		return 0
 	}
 	writeJSONLine(stdout, stderr, map[string]any{"state": brain.Undeclared})
 	return 0

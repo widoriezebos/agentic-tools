@@ -222,9 +222,14 @@ func freezeWork(work ClaimableBudgetedWork, workRead bool, workErr error) TurnWo
 	if len(result.Claimed) > 0 {
 		selected := result.Claimed[0]
 		result.Selected, result.Selection = &selected, "held"
-	} else if len(result.Claimable) > 0 {
-		selected := result.Claimable[0]
-		result.Selected, result.Selection = &selected, "claimable"
+	} else if id, ok := preferredClaimable(work); ok {
+		for _, fact := range result.Claimable {
+			if fact.Id == id {
+				selected := fact
+				result.Selected, result.Selection = &selected, "claimable"
+				break
+			}
+		}
 	}
 	return result
 }

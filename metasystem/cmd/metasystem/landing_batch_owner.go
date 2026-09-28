@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -571,7 +573,8 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 				return executeBatchProof(settings.Root, id, landingOwnerLineage, window, sample, now(), productionBatchProofDependencies)
 			}
 		},
-		After: time.After,
+		After:      time.After,
+		HelmActive: func(root string) bool { return helm.Active(root).Active },
 		Report: func(id string, err error) {
 			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "batch": id, "error": err.Error()})
 			fmt.Fprintln(os.Stderr, string(line))
@@ -688,12 +691,64 @@ func loopBatchOwnerWithCadence(owner *batch.Owner, held batchOwnerLease, root st
 }
 
 func runBatchOwnerPass(owner *batch.Owner, held batchOwnerLease, root string, clock func() time.Time, cadence *batchOwnerCadence) {
-	batchOwnerResume(owner)
-	cadence.start(func() {
-		if err := batchOwnerCadenceTick(root, held, clock); err != nil {
-			batchOwnerCadenceReport(err)
+	batchOwnerPassWith(owner, root, batchOwnerPassSeams{helm: helm.Active, resume: batchOwnerResume, out: os.Stderr, now: clock,
+		cadence: func() {
+			cadence.start(func() {
+				if err := batchOwnerCadenceTick(root, held, clock); err != nil {
+					batchOwnerCadenceReport(err)
+				}
+			})
+		}})
+}
+
+type batchOwnerPassSeams struct {
+	helm    func(string) helm.State
+	resume  func(*batch.Owner)
+	cadence func()
+	out     io.Writer
+	now     func() time.Time
+}
+
+// batchOwnerPassWith is one owner pass. The landing seat's own helm stands the
+// whole pass down: neither the batches nor the cadence run, and every queue
+// registration the owner holds is withdrawn on every held pass. Another seat's
+// helm holds only the batches carrying its units (Owner.Resume); the cadence
+// is main's proof and runs on. Each hold prints one helm: line and appends one
+// yield record in the landing seat's common dir, on the transition only.
+func batchOwnerPassWith(owner *batch.Owner, root string, seams batchOwnerPassSeams) {
+	if state := seams.helm(root); state.Active && owner != nil {
+		first, withdrawn, err := owner.Withdraw()
+		if err != nil {
+			fmt.Fprintf(seams.out, "helm: landing owner: withdraw queue registrations: %v\n", err)
 		}
-	})
+		if first {
+			entries := strings.Join(withdrawn, ",")
+			fmt.Fprintf(seams.out, "helm: the landing seat is at the helm (%s); the landing owner stands down, queue entries withdrawn: %s\n", state.By, cmpOrNone(entries))
+			helm.RecordYield(root, helm.Yield{At: seams.now(), Boundary: "landing-owner", Gate: "owner-pass", Would: "resume every batch and tick the cadence",
+				By: state.By, Subject: "landing seat " + root + " at the helm; queue entries withdrawn: " + cmpOrNone(entries)})
+		}
+		return
+	}
+	seams.resume(owner)
+	if owner != nil {
+		for _, held := range owner.Held() {
+			if !held.New {
+				continue
+			}
+			by := seams.helm(held.Seat).By
+			fmt.Fprintf(seams.out, "helm: batch %s held whole for seat %s at the helm (%s); queue entry withdrawn: %s\n", held.ID, held.Seat, by, cmpOrNone(held.Entry))
+			helm.RecordYield(root, helm.Yield{At: seams.now(), Boundary: "landing-owner", Gate: "batch-tick", Would: "tick batch " + held.ID, By: by,
+				Subject: "batch " + held.ID + " held for seat " + held.Seat + "; queue entry " + cmpOrNone(held.Entry) + " withdrawn"})
+		}
+	}
+	seams.cadence()
+}
+
+func cmpOrNone(value string) string {
+	if value == "" {
+		return "none"
+	}
+	return value
 }
 
 func runBatchTick(args []string) (code int) {

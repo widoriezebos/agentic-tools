@@ -144,10 +144,10 @@ func TestGoalCLILedgerLabelsAndFiltering(t *testing.T) {
 	}
 	revisionBefore := goalCLILine(edited, "- Revision: ")
 	gcliLedgerMust(t, bed, "goal", "edit", "labeled-one", "--label", "alpha")
-	// Idempotency follow-up (R-129): an edit whose final label set is
-	// unchanged still records an edit and advances the revision today.
-	if before, after := revisionBefore, goalCLILine(bed.goalRecord("labeled-one"), "- Revision: "); before == after {
-		t.Fatalf("an equal final label set did not follow the shipped edit behaviour: revision stayed %q", after)
+	// R-129 (U-idem): an edit whose final label set is unchanged is a
+	// repeat whose effect holds: success, no record, the revision stays.
+	if before, after := revisionBefore, goalCLILine(bed.goalRecord("labeled-one"), "- Revision: "); before != after {
+		t.Fatalf("an equal final label set recorded an edit: revision %q became %q", before, after)
 	}
 	gcliLedgerRefused(t, bed, "both --label and --unlabel", "goal", "edit", "labeled-one", "--label", "alpha", "--unlabel", "alpha")
 	gcliLedgerRefused(t, bed, "must match ^[a-z][a-z0-9-]{0,31}$", append([]string{"goal", "open", "bad-label", "--origin", "human",
@@ -258,7 +258,7 @@ func TestGoalCLILedgerLandingSlot(t *testing.T) {
 	// A repeated land-ready is nothing to do (R-129): success, and no second
 	// record.
 	tip := bed.tip()
-	if code, out, errOut := bed.public("work", "land", "ship-widget", "--queue-only"); code != 0 || !strings.Contains(out, "already in landing") || bed.tip() != tip {
+	if code, out, errOut := bed.public("work", "land", "ship-widget", "--queue-only"); code != 0 || !strings.Contains(out, "already queued to land") || bed.tip() != tip {
 		t.Fatalf("a repeated land-ready was not nothing to do: code=%d out=%q err=%q", code, out, errOut)
 	}
 

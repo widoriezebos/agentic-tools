@@ -180,3 +180,13 @@ func TestDelegateOperatorEnvReplacesInheritedInternalAuthority(t *testing.T) {
 		t.Fatalf("operator env = %#v; want the boundary's own standing and the inherited lineage", env)
 	}
 }
+
+func TestDelegateCriticWithoutReviewsRefusesAtTheFrontDoor(t *testing.T) {
+	t.Parallel()
+	for _, role := range []string{"code-critic", "warden"} {
+		_, _, err := normalizeDelegateArgs([]string{"--role", role, "--brief", "brief.md", "--goal", "none-explicit", "--destructive-reach", "MECHANICAL"})
+		if want := role + " dispatch requires --reviews <implementer-job-id>"; err == nil || err.Error() != want {
+			t.Fatalf("%s dispatch without --reviews = %v, want %q", role, err, want)
+		}
+	}
+}

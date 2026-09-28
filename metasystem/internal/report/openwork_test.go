@@ -370,3 +370,24 @@ func mustSelfStart(t *testing.T) int64 {
 	}
 	return exact.StartedAt.Unix()
 }
+
+// A plan naming an open chain between rounds is current for a bounded window
+// after the newest round ends; an aged-out or closed chain no longer vouches
+// for the claim.
+func TestStalePlanChainBetweenRoundsIsCurrentOnlyWithinTheGraceWindow(t *testing.T) {
+	root := newPlanRoot(t)
+	writePlan(t, root, "stream.md", "- In flight right now: chain implementer-20260101t000000z-cccc (round 2 adjudicating)\n- Waiting on the human: nothing blocking\n- Next step: none\n")
+	writeJob(t, root, "implementer-20260101t000000z-cccc.json", `{"jobId":"implementer-20260101t000000z-cccc","status":"completed"}`)
+	if lines := openWorkWithoutGoal(t, root); hasLine(lines, "STALE-PLAN") {
+		t.Fatalf("a plan naming an open chain between rounds was called stale: %v", lines)
+	}
+	t.Setenv("METASYSTEM_CHAIN_GRACE_SECONDS", "0")
+	if lines := openWorkWithoutGoal(t, root); !hasLine(lines, "STALE-PLAN") {
+		t.Fatalf("an aged-out chain still vouched for the plan: %v", lines)
+	}
+	t.Setenv("METASYSTEM_CHAIN_GRACE_SECONDS", "5400")
+	writeJob(t, root, "implementer-20260101t000000z-cccc.json", `{"jobId":"implementer-20260101t000000z-cccc","status":"completed","chainClosed":true}`)
+	if lines := openWorkWithoutGoal(t, root); !hasLine(lines, "STALE-PLAN") {
+		t.Fatalf("a closed chain still vouched for the plan: %v", lines)
+	}
+}

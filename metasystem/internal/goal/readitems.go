@@ -174,7 +174,7 @@ func AddReadItems(r VerbRequest, id, label string, texts []string) (PublishResul
 				added++
 			}
 			if added == 0 {
-				return nil, NothingToDo{Reason: "all read items already tracked"}
+				return nil, AlreadyHolds{Reason: "all read items already tracked"}
 			}
 			touchDisplaced(file, r, "read-items-add", []string{id}, displaced)
 			return ackDisplacements(tree, r, []Change{{Path: livePath(id), Content: RenderFile(file)}}), nil
@@ -266,8 +266,14 @@ func closeReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure, re
 			if index < 0 {
 				return nil, fmt.Errorf("goal %s has no read item %s", id, itemID)
 			}
-			if file.ReadItems[index].State != ReadItemOpen {
-				return nil, fmt.Errorf("read item %s is already %s", itemID, file.ReadItems[index].State)
+			if item := file.ReadItems[index]; item.State != ReadItemOpen {
+				// The same close again is a repeat whose effect already
+				// holds (R-129-ui); another disposition of a closed item is a
+				// conflict and stays refused.
+				if item.State == state && item.ClosingReference == reference {
+					return nil, AlreadyHolds{Reason: fmt.Sprintf("read item %s of goal %s is already %s (%s, since %s)", itemID, id, item.State, item.ClosingReference, item.ChangedAt)}
+				}
+				return nil, fmt.Errorf("read item %s is already %s (%s); a closed item takes no other disposition", itemID, item.State, item.ClosingReference)
 			}
 			changes := []Change{}
 			targets := []string{id}

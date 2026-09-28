@@ -8,5 +8,8 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv(fixtureBedEngineStubEnv) == "1" {
+		os.Exit(runFixtureBedEngineStub(os.Args[1:], os.Stdout, os.Stderr))
+	}
 	os.Exit(testenv.Main(m))
 }

@@ -22,28 +22,27 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-// Ensure installs or composes the pre-commit guard
-// before any goal mutation publishes: git does not clone
-// hooks, so a fresh clone would otherwise mutate the ledger with no
-// accidental-edit fence. An existing hook is preserved as
-// pre-commit.local behind the guard; a hook already referencing the
-// guard is left alone; BOTH files existing without the guard
-// refuses toward manual composition — enrollment never clobbers
-// (the never-clobber rule, held here too). The composer pins the guard's
-// absolute path: hooks are per-clone by nature, and the vendored
-// layout keeps the guard below the git toplevel.
+// Ensure installs or composes the pre-commit guard before any goal mutation
+// publishes: git does not clone hooks, so a fresh clone would otherwise mutate
+// the ledger with no accidental-edit fence. The guard is the engine's
+// `internal pre-commit` entry (plans/designs/verbs-object-action.md 3.3,
+// VOA-20). An existing hook is preserved as pre-commit.local behind the
+// guard; a hook already running the guard is left alone; BOTH files existing
+// without the guard refuses toward manual composition — enrollment never
+// clobbers (the never-clobber rule, held here too). A composer this program
+// wrote earlier (including the retired script-guard shapes) is upgraded in
+// place.
 func Ensure(root string) error {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return err
 	}
-	guard := filepath.Join(absRoot, "scripts", "agents", "pre-commit-guard.sh")
-	info, statErr := os.Stat(guard)
-	if statErr != nil || info.Mode()&0o111 == 0 {
-		// Fail closed: a checkout without an
-		// EXECUTABLE guard cannot claim the fence exists, and a
-		// mutation without the fence is exactly what enrollment forbids.
-		return fmt.Errorf("this checkout ships no executable pre-commit guard at %s; the ledger fence cannot be enrolled, so the mutation refuses", guard)
+	engine := filepath.Join(absRoot, "bin", "metasystem")
+	if !fenceEngineRuns(absRoot, engine) {
+		// Fail closed: a checkout without an EXECUTABLE engine cannot run
+		// the fence, and a mutation without the fence is exactly what
+		// enrollment forbids.
+		return fmt.Errorf("this checkout has no executable engine at %s to run the pre-commit guard; the ledger fence cannot be enrolled, so the mutation refuses; build it with: go run ./cmd/devgate build", engine)
 	}
 	// The probes run with git's steering env scrubbed (GIT_DIR and
 	// friends): an inherited broken GIT_DIR must neither read as
@@ -148,11 +147,9 @@ func Ensure(root string) error {
 			enrolled = ackSeen && statusPropagated
 		}
 	}
-	// An enrolled hook of OUR OWN shape still carrying the fail-open
-	// body upgrades in place: a missing guard must block the commit,
-	// not silently wave it through.
-	upgradeOurs := readErr == nil && isOurComposer(string(existing)) &&
-		!strings.Contains(string(existing), "if [[ ! -x \"$guard\" ]]")
+	// An enrolled hook of OUR OWN shape that is not the current composer
+	// (a retired script-guard composer) upgrades in place.
+	upgradeOurs := readErr == nil && isOurComposer(string(existing)) && !isCurrentComposer(string(existing))
 	if enrolled && !upgradeOurs {
 		return nil
 	}
@@ -168,26 +165,22 @@ func Ensure(root string) error {
 			return err
 		}
 	}
-	// A hook WE wrote earlier (recognized by its own shape) upgrades
-	// or recomposes in place — the local dispatch stays intact. The
-	// guard path is resolved dynamically per invocation: hooks live
-	// in the COMMON git directory shared by every linked worktree,
-	// and a pinned absolute path from one worktree leaves every
-	// sibling unfenced the day that worktree moves. The composer
-	// FAILS CLOSED when the resolved guard is missing — a fence that
-	// silently steps aside is no fence.
+	// A hook WE wrote earlier (recognized by its own shape) upgrades or
+	// recomposes in place — the local dispatch stays intact. The engine is
+	// resolved per invocation: hooks live in the COMMON git directory shared
+	// by every linked worktree, and a linked worktree without its own built
+	// engine runs its primary checkout's. The composer FAILS CLOSED when no
+	// engine runs the guard — a fence that silently steps aside is no fence.
 	prefixCmd := exec.Command("git", "-C", absRoot, "rev-parse", "--show-prefix")
 	prefixCmd.Env = EnvironWithoutGitSteering()
 	prefixOut, prefixErr := prefixCmd.Output()
 	if prefixErr != nil {
 		return fmt.Errorf("the checkout's toplevel prefix cannot be resolved: %v", prefixErr)
 	}
-	// Newline-only trim (a prefix beginning with whitespace is a
-	// lawful path), and the relative part rides SINGLE-QUOTED: a
-	// directory component carrying $(), backticks, or quotes must
-	// reach bash as bytes, never as syntax.
-	guardRel := strings.TrimRight(string(prefixOut), "\n") + "scripts/agents/pre-commit-guard.sh"
-	composer := "#!/usr/bin/env bash\nguard=\"$(git rev-parse --show-toplevel)/\"" + shellSingleQuote(guardRel) + "\n" + composerBodyFailClosed
+	// Newline-only trim (a prefix beginning with whitespace is a lawful
+	// path), and the prefix rides SINGLE-QUOTED: a directory component
+	// carrying $(), backticks, or quotes must reach bash as bytes.
+	composer := composerFor(strings.TrimRight(string(prefixOut), "\n"))
 	if err := os.WriteFile(hookPath, []byte(composer), 0o755); err != nil {
 		return err
 	}
@@ -203,10 +196,64 @@ func Ensure(root string) error {
 	return nil
 }
 
-// The composer bodies, byte-exact below the guard= line: the current
-// fail-closed body, and the retired fail-open body still present in
-// hooks enrolled by earlier versions (recognized so they upgrade in
-// place instead of stacking).
+// fenceEngineRuns reports whether the composed hook finds an executable
+// engine for the checkout at absRoot: its own bin/metasystem, or, as the
+// composer resolves it for a linked worktree without a built engine, the
+// primary checkout's at the same installation prefix.
+func fenceEngineRuns(absRoot, engine string) bool {
+	executable := func(path string) bool {
+		info, err := os.Stat(path)
+		return err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0
+	}
+	if executable(engine) {
+		return true
+	}
+	common := exec.Command("git", "-C", absRoot, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	common.Env = EnvironWithoutGitSteering()
+	commonOut, commonErr := common.Output()
+	prefix := exec.Command("git", "-C", absRoot, "rev-parse", "--show-prefix")
+	prefix.Env = EnvironWithoutGitSteering()
+	prefixOut, prefixErr := prefix.Output()
+	if commonErr != nil || prefixErr != nil {
+		return false
+	}
+	primary := filepath.Join(filepath.Dir(strings.TrimRight(string(commonOut), "\n")), strings.TrimRight(string(prefixOut), "\n"), "bin", "metasystem")
+	return executable(primary)
+}
+
+// composerFor is the hook this program writes for an installation at prefix
+// below the Git toplevel: the prefix line, then the engine body.
+func composerFor(prefix string) string {
+	return "#!/usr/bin/env bash\nprefix=" + shellSingleQuote(prefix) + "\n" + composerBodyEngine
+}
+
+// composerBodyEngine is the current composer body, byte-exact below the
+// prefix line: it runs the engine's guard entry, then the local hook.
+const composerBodyEngine = `installation="$(git rev-parse --show-toplevel)/$prefix"
+engine="${installation}bin/metasystem"
+if [[ ! -x "$engine" ]]; then
+  engine="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/${prefix}bin/metasystem"
+fi
+if [[ ! -x "$engine" ]]; then
+  echo "pre-commit: no metasystem engine at $engine runs the ledger fence, so the commit is refused; build one with: go run ./cmd/devgate build" >&2
+  exit 1
+fi
+"$engine" internal pre-commit --root "$installation"
+status=$?
+if [[ $status -eq 2 ]]; then
+  echo "pre-commit: the engine at $engine does not run the pre-commit guard; rebuild it with: go run ./cmd/devgate build" >&2
+fi
+[[ $status -eq 0 ]] || exit $status
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -x "$here/pre-commit.local" ]]; then
+  exec "$here/pre-commit.local" "$@"
+fi
+exit 0
+`
+
+// The retired composer bodies, byte-exact below their guard= line: they ran
+// the deleted scripts/agents/pre-commit-guard.sh. They are recognized so an
+// enrolled checkout upgrades in place instead of stacking.
 const composerBodyFailClosed = `if [[ ! -x "$guard" ]]; then
   echo "pre-commit: the metasystem ledger guard is missing at $guard; refusing to commit without the fence" >&2
   exit 1
@@ -229,13 +276,54 @@ fi
 exit 0
 `
 
-// isOurComposer recognizes the enrollment composer this program (and
-// adopt.sh) writes by its EXACT shape: the shebang, one guard=
-// assignment, and one of the two known bodies byte-for-byte. A
-// foreign or locally extended hook that merely contains similar
-// fragments is a human's file — rewriting it would delete their
-// checks.
+// isCurrentComposer recognizes the current composer by its exact shape: the
+// shebang, one prefix= line whose value is a single-quoted literal, and the
+// engine body byte-for-byte.
+func isCurrentComposer(hook string) bool {
+	lines := strings.SplitN(hook, "\n", 3)
+	if len(lines) < 3 || lines[0] != "#!/usr/bin/env bash" || lines[2] != composerBodyEngine {
+		return false
+	}
+	quoted, found := strings.CutPrefix(lines[1], "prefix=")
+	if !found {
+		return false
+	}
+	value, ok := parseSingleQuoted(quoted)
+	return ok && shellSingleQuote(value) == quoted
+}
+
+// parseSingleQuoted reads a word made only of '...' runs and \' escapes.
+func parseSingleQuoted(word string) (string, bool) {
+	var out strings.Builder
+	for word != "" {
+		switch {
+		case strings.HasPrefix(word, `\'`):
+			out.WriteByte('\'')
+			word = word[2:]
+		case strings.HasPrefix(word, "'"):
+			end := strings.IndexByte(word[1:], '\'')
+			if end < 0 {
+				return "", false
+			}
+			out.WriteString(word[1 : 1+end])
+			word = word[2+end:]
+		default:
+			return "", false
+		}
+	}
+	return out.String(), true
+}
+
+// isOurComposer recognizes a composer this program (or an earlier adopter) wrote by
+// its EXACT shape: the current engine composer, or a retired script-guard
+// composer (the shebang, one guard= assignment, and one of the two retired
+// bodies byte-for-byte). A foreign or locally extended hook that merely
+// contains similar fragments is a human's file — rewriting it would delete
+// their checks.
 func isOurComposer(hook string) bool {
+	if isCurrentComposer(hook) {
+		return true
+	}
 	lines := strings.SplitN(hook, "\n", 3)
 	if len(lines) < 3 || lines[0] != "#!/usr/bin/env bash" {
 		return false
@@ -253,7 +341,7 @@ func isOurComposer(hook string) bool {
 		return false
 	}
 	// The ONLY lawful command substitution is the literal toplevel
-	// resolution our composers emit; any other $( is a human's logic.
+	// resolution our composers emitted; any other $( is a human's logic.
 	rest := strings.ReplaceAll(guardLine, `guard="$(git rev-parse --show-toplevel)/"`, "")
 	rest = strings.ReplaceAll(rest, `"$(git rev-parse --show-toplevel)/`, "")
 	if strings.Contains(rest, "$(") {

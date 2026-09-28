@@ -81,6 +81,12 @@ func (e *InventoryReadError) Unwrap() error { return e.Err }
 type Report struct {
 	Lines    []string
 	ExitCode int
+	// Unchanged marks a repeat whose effect already held (R-129-ui): a stop
+	// of a checkout already completely stopped with nothing running, or an
+	// arm of a checkout whose recorded fence was already open. The fence
+	// record was not rewritten; Since is when it reached that state.
+	Unchanged bool
+	Since     string
 }
 
 type reportSlot struct {
@@ -378,6 +384,16 @@ func (t *Transition) Stop() (Report, error) {
 	previous, err := stopfence.Read(t.Root)
 	if err != nil {
 		return Report{ExitCode: 1}, err
+	}
+	// A stop of a checkout already completely stopped, with nothing of any
+	// family running, is a repeat whose effect holds (R-129-ui): no new
+	// fence generation is written. Anything running, or any family that
+	// cannot be read, is a stop to perform.
+	if stopfence.Completed(previous) {
+		if items, inventoryErr := t.Inventory(); inventoryErr == nil && len(items) == 0 {
+			return Report{Lines: []string{fmt.Sprintf("MetaSystem is already stopped for %s (since %s); nothing is running; start again: metasystem system start --repo %s", t.Checkout, previous.ChangedAt, t.Checkout)},
+				Unchanged: true, Since: previous.ChangedAt}, nil
+		}
 	}
 	generation := previous.Generation + 1
 	carriedRemote := remoteSurvivors(previous.NotStopped)
@@ -937,6 +953,23 @@ func (t *Transition) Arm() (Report, error) {
 		return Report{ExitCode: 1}, err
 	}
 	defer held.Release()
+	// An arm of a checkout whose recorded fence is already open changes no
+	// fence (R-129-ui): its generation, and every creator claim bound to it,
+	// stay as they are. The arm sequence still runs, and it starts only what
+	// is down.
+	if record, open := t.recordedOpenFence(); open {
+		report := Report{Lines: []string{"checkout " + t.Checkout}, Unchanged: true, Since: record.ChangedAt}
+		if t.ArmFunc != nil {
+			lines, armErr := t.ArmFunc()
+			report.Lines = append(report.Lines, lines...)
+			if armErr != nil {
+				report.ExitCode = 1
+				return report, armErr
+			}
+		}
+		report.Lines = append(report.Lines, fmt.Sprintf("already armed %s generation %d since %s", t.Checkout, record.Generation, record.ChangedAt))
+		return report, nil
+	}
 	generation, replacement, err := t.armFenceHeld(self)
 	if err != nil {
 		return Report{ExitCode: 1}, err
@@ -955,6 +988,20 @@ func (t *Transition) Arm() (Report, error) {
 	}
 	report.Lines = append(report.Lines, fmt.Sprintf("armed %s generation %d", t.Checkout, generation))
 	return report, nil
+}
+
+// recordedOpenFence is the fence record when one was written and it is open.
+// An absent record is the implicit generation-zero fence of a checkout never
+// armed, which a first arm records.
+func (t *Transition) recordedOpenFence() (stopfence.Record, bool) {
+	if _, err := os.Lstat(stopfence.TransitionPath(t.Root)); err != nil {
+		return stopfence.Record{}, false
+	}
+	record, err := stopfence.Read(t.Root)
+	if err != nil || record.State != stopfence.StateOpen || record.Phase != stopfence.PhaseArmed {
+		return stopfence.Record{}, false
+	}
+	return record, true
 }
 
 func (t *Transition) acquire(verb string, self identity.Ref) (*lock.Lock, error) {

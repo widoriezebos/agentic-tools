@@ -44,7 +44,7 @@ type Declaration struct {
 	Name            string
 	HasAdapter      bool
 	HasHostLauncher bool
-	// Adoptable gates scripts/adopt.sh's population; fake is never
+	// Adoptable gates system adopt's runtime selection; fake is never
 	// adoptable. AdoptionDefault marks the one default (claude).
 	Adoptable       bool
 	AdoptionDefault bool

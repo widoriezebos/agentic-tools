@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
 var (
@@ -79,7 +80,6 @@ func TestIntentRepairAuthority(t *testing.T) {
 		// not an authority refusal.
 		{[]string{"goal", "sync", "--accept-remote-history", "--by", "Wido"}, []string{"goal", "repair", "--accept-remote", "--by", "Wido", "--root"}, "git fetch"},
 		{[]string{"settings", "coordinator", "--declare", "--by", "Wido"}, []string{"brain", "declare", "--root"}, "is a human act; run it from an agent-free terminal"},
-		{[]string{"settings", "coordinator", "--withdraw", "--by", "Wido"}, []string{"brain", "withdraw", "--root"}, "is a human act; run it from an agent-free terminal"},
 		{[]string{"mission", "repair", "demo", "--problem", "2", "--confirm-restored", strings.Repeat("b", 40), "--by", "Wido", "--reason", "restored"}, []string{"mission", "resolve-taint", "--root"}, "human-reserved act"},
 		{[]string{"mission", "repair", "demo", "--problem", "2", "--accept-workspace", "--waive", "claim-a", "--by", "Wido", "--reason", "accepted"}, []string{"mission", "resolve-taint", "--root"}, "human-reserved act"},
 	} {
@@ -87,6 +87,12 @@ func TestIntentRepairAuthority(t *testing.T) {
 		if result.Outcome != intentRefused || code == 0 || len(ran) < len(row.verb)+1 || !slicesHasPrefix(ran[2:], row.verb) || !strings.Contains(result.Summary, row.reason) {
 			t.Errorf("%v without a person's proof = %d %+v (owner argv %v)", row.args, code, result, ran)
 		}
+	}
+	// Withdrawing where nothing is declared is the owner's idempotent repeat
+	// (R-129-ui): success at every authority, and nothing is touched.
+	if code, result, ran := owner("settings", "coordinator", "--withdraw", "--by", "Wido"); code != 0 || result.Outcome != intentUnchanged ||
+		len(ran) < 3 || !slicesHasPrefix(ran[2:], []string{"brain", "withdraw", "--root"}) || !strings.Contains(result.Summary, "nothing to withdraw") {
+		t.Errorf("withdraw of an undeclared coordinator = %d %+v (owner argv %v)", code, result, ran)
 	}
 	if _, result, ran := owner("mission", "repair", "demo", "--problem", "2", "--accept-workspace", "--waive", "claim-a", "--by", "Wido", "--reason", "accepted"); !strings.Contains(strings.Join(ran, " "), "--adopt --waives claim-a --by Wido --reason accepted") {
 		t.Errorf("accept-workspace inputs: %v %+v", ran, result)
@@ -184,7 +190,7 @@ func TestIntentSplitHelpExampleParses(t *testing.T) {
 // TestIntentLandException: an exceptional landing computes the candidate
 // through the landing owner seam, records the person's exception only
 // through the real carry owner (the built engine, which refuses this
-// non-human caller), and delivers through land.sh --carried (process seam);
+// non-human caller), and delivers through the carried landing seam;
 // an interrupted delivery continues under the same exception.
 func TestIntentLandException(t *testing.T) {
 	t.Parallel()
@@ -196,14 +202,12 @@ func TestIntentLandException(t *testing.T) {
 		return goalBranchLandPrepOutcome{Result: branch.LandResult{Candidate: candidate}}, 0, nil
 	}
 	landFails := true
-	b.handler = func(process intentProcess) intentProcessResult {
-		if filepath.Base(process.argv[0]) == "land.sh" {
-			if landFails {
-				return intentProcessResult{code: 1, stderr: []byte("land.sh: the proof token was not reserved\n")}
-			}
-			return intentProcessResult{stdout: []byte(`{"landed":true}`)}
+	b.handler = runIntentOwnerProcess
+	b.owners.landCarried = func(landpath.LandRequest) intentProcessResult {
+		if landFails {
+			return intentProcessResult{code: 1, stderr: []byte("land: the proof token was not reserved\n")}
 		}
-		return runIntentOwnerProcess(process)
+		return intentProcessResult{stdout: []byte(`{"landed":true}`)}
 	}
 	owners := b.intentBed.owners()
 	owners.delivery = b.owners
@@ -233,8 +237,8 @@ func TestIntentLandException(t *testing.T) {
 	// and goal ledger before any carry owner runs. This stub bed has no main
 	// checkout, so both a fresh exception and a named one refuse with no
 	// owner run and nothing recorded. The real owner routing (goal fetch,
-	// then the carry owner's own person decision, then land.sh --carried
-	// --staged-only) is proved on real Git by TestIntentCarriedCarryOwnerDecidesThePerson,
+	// then the carry owner's own person decision, then the carried landing
+	// of the staged candidate) is proved on real Git by TestIntentCarriedCarryOwnerDecidesThePerson,
 	// TestIntentCarriedGoalDeliveryGitAdapter and TestIntentCarriedReplay.
 	for _, args := range [][]string{
 		{"work", "land", bedGoal, "--exception", "group:unit", "--reason", "flaky host", "--by", "Wido"},

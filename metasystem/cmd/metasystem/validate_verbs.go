@@ -131,27 +131,6 @@ func runValidatePreambleQuotes(args []string) int {
 	return 0
 }
 
-// runValidateWrapperToken proves the caller runs under the live commit
-// wrapper the token names: valid token fields, the wrapper pid in the
-// caller's native process ancestry, and the wrapper's kernel start time
-// matching the token. Exit 0 proven; 1 not proven; 2 usage.
-func runValidateWrapperToken(args []string) int {
-	flags := flag.NewFlagSet("validate wrapper-token", flag.ContinueOnError)
-	token := flags.String("token", "", "wrapper commit-token JSON file")
-	callerPid := flags.Int64("caller-pid", 0, "pid whose ancestry must contain the live wrapper")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *token == "" || *callerPid <= 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate wrapper-token --token F --caller-pid N")
-		return 2
-	}
-	if validate.WrapperToken(*token, *callerPid, validate.KernelProcessTree{}) {
-		return 0
-	}
-	return 1
-}
-
 // runValidateSessionIsolation copies adapter-declared local
 // configuration into a second-session worktree, audits the isolation,
 // and prints the new checkout's harness root. Exit 0 isolated; 1 an
@@ -540,30 +519,8 @@ Exit codes: 0 safe; 1 blocked; 2 usage or environment error.`)
 		}
 	}
 	confPath := filepath.Join(installation, "metasystem.conf")
-	for _, cadence := range []struct {
-		key, value, fallback string
-		target               *int
-	}{
-		{"refactor.max-age-minutes", *maxAge, "1440", &p.MaxAgeMinutes},
-		{"refactor.max-commits", *maxCommits, "40", &p.MaxCommits},
-	} {
-		flagName := strings.TrimPrefix(cadence.key, "refactor.")
-		value, code, err := config.Get(config.GetParams{
-			Key: cadence.key, Flag: cadence.value, FlagSet: set[flagName],
-			Default: cadence.fallback, DefaultSet: true, ConfPath: confPath,
-		})
-		if err != nil || code != 0 {
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-			}
-			return 2
-		}
-		number, err := strconv.Atoi(value)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "invalid value %q for %s\n", value, cadence.key)
-			return 2
-		}
-		*cadence.target = number
+	if code := resolveRefactorCadence(&p, set, *maxAge, *maxCommits, confPath, os.Stderr); code != 0 {
+		return code
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -572,6 +529,39 @@ Exit codes: 0 safe; 1 blocked; 2 usage or environment error.`)
 	}
 	p.Cwd = cwd
 	return validate.RefactorBaseline(p, os.Stdout, os.Stderr)
+}
+
+// resolveRefactorCadence resolves the refactor gate's cadence backstops: the
+// flag when given, then the environment, then the installation's
+// metasystem.conf, then 1440 minutes and 40 commits. It returns 2 on an
+// unreadable or non-numeric value.
+func resolveRefactorCadence(p *validate.RefactorBaselineParams, set map[string]bool, maxAge, maxCommits, confPath string, errOut io.Writer) int {
+	for _, cadence := range []struct {
+		key, value, fallback string
+		target               *int
+	}{
+		{"refactor.max-age-minutes", maxAge, "1440", &p.MaxAgeMinutes},
+		{"refactor.max-commits", maxCommits, "40", &p.MaxCommits},
+	} {
+		flagName := strings.TrimPrefix(cadence.key, "refactor.")
+		value, code, err := config.Get(config.GetParams{
+			Key: cadence.key, Flag: cadence.value, FlagSet: set[flagName],
+			Default: cadence.fallback, DefaultSet: true, ConfPath: confPath,
+		})
+		if err != nil || code != 0 {
+			if err != nil {
+				fmt.Fprintln(errOut, err)
+			}
+			return 2
+		}
+		number, err := strconv.Atoi(value)
+		if err != nil {
+			fmt.Fprintf(errOut, "invalid value %q for %s\n", value, cadence.key)
+			return 2
+		}
+		*cadence.target = number
+	}
+	return 0
 }
 
 // runValidateSkills validates skills: every skill under the root's skills and

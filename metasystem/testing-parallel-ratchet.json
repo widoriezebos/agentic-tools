@@ -76,8 +76,6 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes": 12,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/seat": 0,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch": 0,
-    "github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions": 0,
-    "github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet": 0,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/spend": 36,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot": 17,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/steward": 398,
@@ -95,6 +93,8 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testselect/testdata/rules/testimporter": 0,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testutil": 22,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/turn": 3,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions": 0,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet": 0,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/up": 30,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/usage": 74,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/validate": 122,
@@ -102,6 +102,11 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc": 7
   },
   "exempt": [
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/helm",
+      "test": "TestActiveIgnoresGitSteering",
+      "reason": "sets GIT_DIR and GIT_COMMON_DIR in the process environment to prove the resolver ignores them"
+    },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
       "test": "TestReserveCensusReadsOnlyItsOwnAdmissionNamespace",
@@ -761,6 +766,26 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
       "test": "TestOrdinaryEstablishmentRefusesACeilingBelowAReservationThatRacedItsLockWait",
       "reason": "swaps the package arming clock seam (armingNow, armingSleep) to write the racing reservation inside the cap-authority lock wait"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
+      "test": "TestSupBOrderlyShutdownEndsTheOwnerAndReportsItsComponentsGoneByTheOwner",
+      "reason": "sets the process-wide METASYSTEM_SUPERVISION_REGISTRY_HOME the owner's registry row is written under"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
+      "test": "TestSupCShutdownRefusesAForeignOwnerLock",
+      "reason": "sets the process-wide METASYSTEM_SUPERVISION_REGISTRY_HOME the shutdown reads"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
+      "test": "TestSupCWatchdogSurfacesDriftAndADeadOwnerTogether",
+      "reason": "sets the process-wide METASYSTEM_FAKE_PROCESS_IDENTITY_FILE the watchdog's process reads use"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/up",
+      "test": "TestSupCOmittedIdentityIsInferredFromTheRuntimeAncestor",
+      "reason": "sets the process session environment (METASYSTEM_SESSION_ID, METASYSTEM_AGENT_RUNTIME) the identity inference reads"
     }
   ]
 }

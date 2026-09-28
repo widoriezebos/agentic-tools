@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -25,6 +26,31 @@ type humanVerbValues struct {
 	// report, when set, receives the refusal for the public intent commands
 	// to render; the legacy calls print it below exactly as before.
 	report *ownerReport
+	// stdout and stderr are the caller's streams (syncRequestDependencies'),
+	// nil meaning the process's own: a refusal printed below never reaches a
+	// parallel test's capture of the process streams.
+	stdout, stderr io.Writer
+}
+
+// bindDependencies takes the owner's report and printing streams from the
+// caller's dependencies.
+func (values *humanVerbValues) bindDependencies(dependencies syncRequestDependencies) {
+	values.report = dependencies.report
+	values.stdout, values.stderr = dependencies.stdout, dependencies.stderr
+}
+
+func (values *humanVerbValues) outStream() io.Writer {
+	if values.stdout != nil {
+		return values.stdout
+	}
+	return os.Stdout
+}
+
+func (values *humanVerbValues) errStream() io.Writer {
+	if values.stderr != nil {
+		return values.stderr
+	}
+	return os.Stderr
 }
 
 type humanVerbRemedy struct {
@@ -67,18 +93,35 @@ func (values *humanVerbValues) bindGoalView(file *goal.GoalFile, tierBox goal.Bu
 	}
 }
 
+// alreadyCarriesBox is the remedy that says a budget request completes to the
+// box the goal already carries.
+const alreadyCarriesBox = "the goal already carries that box, so there is no new act to record"
+
 func refuseHumanVerb(values *humanVerbValues, code int, sentence string, remedy humanVerbRemedy) int {
+	// A budget request that completes to the box the goal already carries
+	// asks for an effect that holds: success with no record (R-129-ui,
+	// U-idem), not a refusal with no way forward.
+	if remedy.command == "" && remedy.words == alreadyCarriesBox && values.box != nil {
+		detail := fmt.Sprintf("goal %s already carries the box %s; nothing new was recorded", values.id, goalbudget.FormatBox(*values.box))
+		if values.report != nil {
+			values.report.result = &goal.PublishResult{Outcome: goal.OutcomeAbandoned, Unchanged: true, Detail: detail}
+			return 0
+		}
+		fmt.Fprintln(values.outStream(), detail)
+		return 0
+	}
 	sentence = strings.Join(strings.Fields(strings.TrimSpace(sentence)), " ")
 	sentence = strings.TrimSuffix(sentence, ".") + "."
 	if values.report != nil {
 		values.report.refusal = &ownerRefusal{code: code, sentence: sentence, remedy: remedy}
 		return code
 	}
-	fmt.Fprintf(os.Stderr, "goal %s: %s\n", values.verb, sentence)
+	stderr := values.errStream()
+	fmt.Fprintf(stderr, "goal %s: %s\n", values.verb, sentence)
 	if remedy.command != "" {
-		fmt.Fprintln(os.Stderr, "run:", remedy.command)
+		fmt.Fprintln(stderr, "run:", remedy.command)
 	} else {
-		fmt.Fprintln(os.Stderr, "no command completes this:", strings.TrimSpace(remedy.words))
+		fmt.Fprintln(stderr, "no command completes this:", strings.TrimSpace(remedy.words))
 	}
 	return code
 }
@@ -148,9 +191,12 @@ func (values *humanVerbValues) sameCommandWithout(drop ...string) string {
 	for _, name := range drop {
 		dropped[strings.TrimPrefix(name, "--")] = true
 	}
-	// The caller used the goal family's own form, which is reached through
-	// the explicit internal entry.
+	// A public command's remedy is the public form of the same act; the
+	// goal family's own form is reached through the explicit internal entry.
 	args := []string{"metasystem", "internal", "goal", values.verb}
+	if action, public := publicGoalActions[values.verb]; public && values.report != nil && publicGoalTakesKept(action, values.rawArgs, dropped) {
+		args = []string{"metasystem", "goal", action}
+	}
 	for index := 0; index < len(values.rawArgs); index++ {
 		token := values.rawArgs[index]
 		if !strings.HasPrefix(token, "--") {
@@ -171,6 +217,13 @@ func (values *humanVerbValues) sameCommandWithout(drop ...string) string {
 		}
 	}
 	return shellCommand(args)
+}
+
+// publicGoalActions are the public goal actions of the goal family's verbs
+// whose remedies repeat the caller's command.
+var publicGoalActions = map[string]string{
+	"accept-risk": "accept-risk", "budget": "budget", "set-budget": "budget", "approve": "approve",
+	"unapprove": "unapprove", "resume": "resume", "unpark": "resume",
 }
 
 func shellCommand(args []string) string {
@@ -204,4 +257,32 @@ func goalBooleanFlag(name string) bool {
 	default:
 		return false
 	}
+}
+
+// publicGoalTakesKept reports whether the public goal action accepts every
+// option the remedy keeps. A kept option only the family form takes (the
+// approval --sweep) makes the remedy the family form, so the printed command
+// runs instead of being refused.
+func publicGoalTakesKept(action string, raw []string, dropped map[string]bool) bool {
+	command, found := findIntentAction("goal", action)
+	if !found {
+		return false
+	}
+	accepted := map[string]bool{"repo": true, "root": true, "json": true}
+	for _, flag := range command.flags {
+		accepted[flag.name] = true
+		for _, alias := range flag.aliases {
+			accepted[alias] = true
+		}
+	}
+	for _, token := range raw {
+		if !strings.HasPrefix(token, "--") {
+			continue
+		}
+		name, _, _ := strings.Cut(strings.TrimPrefix(token, "--"), "=")
+		if !dropped[name] && !accepted[name] {
+			return false
+		}
+	}
+	return true
 }

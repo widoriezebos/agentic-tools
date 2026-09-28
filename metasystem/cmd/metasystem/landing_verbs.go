@@ -19,14 +19,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-type landingRepeatedStrings []string
-
-func (values *landingRepeatedStrings) String() string { return fmt.Sprint([]string(*values)) }
-func (values *landingRepeatedStrings) Set(value string) error {
-	*values = append(*values, value)
-	return nil
-}
-
 func runLandingObserve(args []string) int {
 	flags := flag.NewFlagSet("landing observe", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "project checkout root")
@@ -83,39 +75,6 @@ func runLandingObserve(args []string) int {
 	return 0
 }
 
-func runLandingCarryStatus(args []string) int {
-	flags := flag.NewFlagSet("landing carry-status", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "project checkout root")
-	carried := flags.String("carried", "", "human carry word operation id")
-	goalID := flags.String("goal", "", "goal item that holds the word")
-	ledgerTip := flags.String("ledger-tip", "", "frozen accepted goal-ledger tip")
-	jsonOutput := flags.Bool("json", false, "print the complete machine-readable status")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *carried == "" || *goalID == "" || *ledgerTip == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing carry-status --root ROOT --carried OPID --goal ID --ledger-tip SHA")
-		return 2
-	}
-	now, err := goalCommandNow(*root)
-	if err != nil {
-		return recordExit(err)
-	}
-	status, err := landing.ReadCarryStatus(*root, *carried, *goalID, *ledgerTip, now)
-	if err != nil {
-		return recordExit(err)
-	}
-	if *jsonOutput {
-		printJSON(status)
-		return 0
-	}
-	fmt.Println(status.Word)
-	fmt.Println(status.Consumption)
-	fmt.Println(status.Reservation)
-	fmt.Println(status.Intent)
-	if status.Counselor != "" {
-		fmt.Println(status.Counselor)
-	}
-	return 0
-}
-
 func runLandingWorkspace(args []string) int {
 	flags := flag.NewFlagSet("landing workspace", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
@@ -130,19 +89,6 @@ func runLandingWorkspace(args []string) int {
 	}
 	fmt.Println(workspace)
 	return 0
-}
-
-func runLandingHeld(args []string) int {
-	flags := flag.NewFlagSet("landing held", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "project checkout root")
-	base := flags.String("base", "", "fetched commit below the pushed range")
-	commit := flags.String("commit", "", "tip commit to push")
-	remote := flags.String("remote", "", "remote receiving the push")
-	ref := flags.String("ref", "", "fully qualified branch receiving the push")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *base == "" || *commit == "" || *remote == "" || *ref == "" {
-		return 2
-	}
-	return landingHeldTo(os.Stdout, os.Stderr, *root, *base, *commit, *remote, *ref)
 }
 
 // landingHeld re-checks the goal binding of every commit a push introduces,
@@ -314,16 +260,11 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 	}()
 	confPath := filepath.Join(preparation.ExecutionRoot(), "metasystem.conf")
 	executionEnvironment := []string(nil)
-	var expected []string
 	if *command == landing.CanonicalValidatorCommand {
 		if proofRunAlternateGoInputs() {
 			return recordExit(fmt.Errorf("canonical validator refuses GOFLAGS containing -modfile or -overlay"))
 		}
 		executionEnvironment = canonicalValidatorEnvironment()
-		expected, _, err = selectedSections(filepath.Join(preparation.ExecutionRoot(), "scripts", "agents", "validate-section-selector.sh"), "", false)
-		if err != nil {
-			return recordExit(err)
-		}
 	}
 	limits, err := resolveProofRunLimits(confPath)
 	if err != nil {
@@ -336,7 +277,7 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 	}
 	attempt, decision, joined, err := admit(proofLaunchAdmission{ControlRoot: controlRoot,
 		ExecutionRoot: preparation.ExecutionRoot(), ConfPath: confPath, GoalID: *goalID, CapMin: *capMin,
-		RetryDecision: *retryDecision, ScopeClass: "full", CommandClass: "landing-test-receipt", Sections: expected,
+		RetryDecision: *retryDecision, ScopeClass: "full", CommandClass: "landing-test-receipt", Sections: nil,
 		ExpectedGoalRevision: *expectedGoalRevision, ExpectedAccountingRevision: *expectedAccountingRevision,
 		Environment: executionEnvironment, Now: commandClock()})
 	if err != nil {
@@ -430,49 +371,27 @@ func canonicalValidatorEnvironment() []string {
 	return append(environment, "GOFLAGS=-mod=readonly", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1")
 }
 
-func runLandingDrift(args []string) int {
-	flags := flag.NewFlagSet("landing drift", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "project checkout root")
-	requireEmptyIndex := flags.Bool("require-empty-index", false, "refuse every staged entry")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
+func runLandingAdoptionRulings(args []string) int {
+	flags := flag.NewFlagSet("landing adoption-rulings", flag.ContinueOnError)
+	source := flags.String("source", "", "staged template installation")
+	target := flags.String("target", "", "application installation")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *source == "" || *target == "" {
 		return 2
 	}
-	drift, tolerated, err := landing.WorktreeDrift(*root, *requireEmptyIndex)
+	data, err := landing.AdoptionRulings(*source, *target)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return 2
+		return 1
 	}
-	for _, path := range tolerated {
-		fmt.Fprintf(os.Stderr, "tolerated register append: %s\n", path)
-	}
-	for _, entry := range drift {
-		fmt.Printf("%s\t%c%c\t%s\n", entry.Kind, entry.Index, entry.Worktree, entry.Path)
-	}
-	if len(drift) != 0 {
+	if _, err := os.Stdout.Write(data); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func runLandingAdvance(args []string) int {
-	flags := flag.NewFlagSet("landing advance", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "project checkout root")
-	upstream := flags.String("upstream", "", "upstream commit or ref")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *upstream == "" {
-		return 2
-	}
-	err := landing.Advance(*root, *upstream, os.Stdout, os.Stderr)
-	if err == nil {
-		return 0
-	}
-	fmt.Fprintln(os.Stderr, err)
-	var refusal interface{ IsAdvanceRefusal() }
-	if errors.As(err, &refusal) {
-		return 1
-	}
-	return 2
-}
-
+// runLandingPark durably records one stopped recertified landing attempt
+// (`landing park`); the landing path parks through the same owner.
 func runLandingPark(args []string) int {
 	flags := flag.NewFlagSet("landing park", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "integration project root")
@@ -505,87 +424,10 @@ func runLandingPark(args []string) int {
 	return 0
 }
 
-func runLandingAdoptionRulings(args []string) int {
-	flags := flag.NewFlagSet("landing adoption-rulings", flag.ContinueOnError)
-	source := flags.String("source", "", "staged template installation")
-	target := flags.String("target", "", "application installation")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *source == "" || *target == "" {
-		return 2
-	}
-	data, err := landing.AdoptionRulings(*source, *target)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if _, err := os.Stdout.Write(data); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
+type landingRepeatedStrings []string
 
-// runLandingReceiptLine answers whether a prospective landing appends the
-// RECEIPT line for its goal; land.sh runs it on the staged whole-project
-// tree right after staging. Exit 2 is a refusal with the detail in the
-// printed decision, exit 1 an unreadable checkout.
-func runLandingReceiptLine(args []string) int {
-	return runLandingReceiptLineWithRawSource(args, nil)
-}
-
-func runLandingReceiptLineWithRawSource(args []string, raw func(gittree.RawRequest) gittree.RawResult) int {
-	flags := flag.NewFlagSet("landing receipt-line", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "MetaSystem installation root")
-	tree := flags.String("tree", "", "whole-project staged tree")
-	goalID := flags.String("goal", "", "goal the landing serves")
-	directFix := flags.String("direct-fix", "", "direct-fix landing class")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *tree == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing receipt-line --root INSTALLATION --tree TREE [--goal ID] [--direct-fix CLASS]")
-		return 2
-	}
-	decision, err := landing.ObserveReceiptLine(landing.ReceiptLineParams{
-		RepoRoot: *root, CandidateTree: *tree, Goal: *goalID, DirectFix: *directFix, RawSource: raw,
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "landing receipt-line:", err)
-		return 1
-	}
-	encoded, err := json.Marshal(decision)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "landing receipt-line:", err)
-		return 1
-	}
-	fmt.Println(string(encoded))
-	if decision.Outcome == landing.ReceiptLineOutcomeRefused {
-		return 2
-	}
-	return 0
-}
-
-// runLandingSyncTransport mirrors origin's branch head to the transport
-// remote (landing.SyncTransport): `landing sync-transport [--root R] [BRANCH]`.
-// BRANCH defaults to main when absent; an explicitly empty BRANCH refuses.
-func runLandingSyncTransport(args []string) int {
-	flags := flag.NewFlagSet("landing sync-transport", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout whose origin and transport remotes are synchronized")
-	if flags.Parse(args) != nil || flags.NArg() > 1 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing sync-transport [--root CHECKOUT] [BRANCH]")
-		return 2
-	}
-	branch := "main"
-	if flags.NArg() == 1 {
-		branch = flags.Arg(0)
-	}
-	last, err := landing.SyncTransport(*root, branch, nil)
-	if last != "" {
-		fmt.Println(last)
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		var refusal *landing.TransportError
-		if errors.As(err, &refusal) {
-			return refusal.Code
-		}
-		return 1
-	}
-	return 0
+func (values *landingRepeatedStrings) String() string { return fmt.Sprint([]string(*values)) }
+func (values *landingRepeatedStrings) Set(value string) error {
+	*values = append(*values, value)
+	return nil
 }

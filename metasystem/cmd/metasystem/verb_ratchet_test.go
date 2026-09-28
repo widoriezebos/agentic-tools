@@ -30,11 +30,11 @@ const (
 	// The launch contract raised it by one: `app serve` is the supervisor that
 	// owns one run of the project's application for its life, in the shape of
 	// `ui serve`, and like it it is a process entrypoint a person never types.
-	verbRatchetInternalVerbCeiling = 302
+	verbRatchetInternalVerbCeiling = 294
 	// R4: shell lines that reference the engine.
-	verbRatchetShellEngineCeiling = 1189
+	verbRatchetShellEngineCeiling = 165
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
-	verbRatchetScriptLinesCeiling = 25044
+	verbRatchetScriptLinesCeiling = 2834
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
 	// U6a raised it by the process boundaries that were shell before: the
@@ -53,10 +53,12 @@ const (
 	// its design: `app start` launches the engine's own `app serve`
 	// supervisor detached (app.go), and `app check` bridges to the testing
 	// contract's own runner instead of running a test itself (intent_app.go).
-	verbRatchetSelfSubprocessCeiling = 126
+	// U5 added one: the Go landing path runs the engine's landing workspace
+	// (landing_path.go), a hop commit.sh made from shell.
+	verbRatchetSelfSubprocessCeiling = 128
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
-	verbRatchetInstructionCeiling = 47
+	verbRatchetInstructionCeiling = 46
 )
 
 type ratchetSite struct {

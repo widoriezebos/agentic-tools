@@ -357,6 +357,7 @@ func Correct(opts Options) Result {
 		return fail(2, "correction --was value does not match field %s on the original line", opts.Field)
 	}
 	effective := ledgerFields(original)
+	recordedBefore := false
 	for _, candidate := range readLines(string(data)) {
 		fields := ledgerFields(candidate)
 		if fields["ref_epoch"] != opts.RefEpoch || fields["ref_sha1"] != opts.RefSHA1 {
@@ -364,9 +365,17 @@ func Correct(opts Options) Result {
 		}
 		if field, found := fields["field"]; found {
 			effective[field] = fields["now"]
+			if field == opts.Field && fields["was"] == was && fields["now"] == nowValue {
+				recordedBefore = true
+			}
 		}
 	}
 	previous := effective[opts.Field]
+	if recordedBefore && previous == nowValue {
+		// The same correction already stands (R-129-ui): success, and no
+		// second line is appended.
+		return ok(fmt.Sprintf("correction already recorded in %s: %s is %s; nothing was appended", opts.File, opts.Field, nowValue))
+	}
 	effective[opts.Field] = nowValue
 	if (isUsageField(opts.Field) && nowValue == "") ||
 		(isTokenField(opts.Field) && previous == "" && nowValue != "") {

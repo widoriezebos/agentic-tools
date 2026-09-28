@@ -21,8 +21,10 @@ import (
 
 // gcliCarryAsk runs the carry owner as goal carry does, from the person's
 // fixture proof through the request to goal.Carry, and maps its outcome to
-// the command's exit code (printCarryMutation: an ask exits 3).
-func gcliCarryAsk(t *testing.T, bed *goalCLIBed, why string, raise bool) (int, error) {
+// the command's exit code (printCarryMutationTo: an ask exits 3). The ask is
+// printed on the bed's own stderr buffer, never the process's stream, so a
+// parallel test capturing os.Stderr never receives it.
+func gcliCarryAsk(t *testing.T, bed *goalCLIBed, why string, raise bool) (int, string, error) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	dependencies := bed.dependencies(&stdout, &stderr)
@@ -42,9 +44,10 @@ func gcliCarryAsk(t *testing.T, bed *goalCLIBed, why string, raise bool) (int, e
 	result, err := goal.Carry(req, goal.CarryArgs{Goal: "ship-widget", Workspace: strings.Repeat("a", 40), Past: "missing-declaration",
 		Why: why, Expires: req.Now.Add(2 * time.Hour), RaiseFormat: raise}, &proof)
 	if err == nil && result.Outcome == goal.OutcomeConfirmed {
-		return 0, nil
+		return 0, stderr.String(), nil
 	}
-	return printCarryMutation(result, "", err), err
+	code := printCarryMutationTo(&stdout, &stderr, result, "", err)
+	return code, stderr.String(), err
 }
 
 // TestGoalCLICarryAsks is carry-word's two asks: a single-machine checkout
@@ -56,17 +59,19 @@ func TestGoalCLICarryAsks(t *testing.T) {
 	before := bed.tip()
 
 	bed.remote = "local"
-	code, err := gcliCarryAsk(t, bed, "fixture remote fence", false)
+	code, stderr, err := gcliCarryAsk(t, bed, "fixture remote fence", false)
 	var ask *goal.CarryAskError
 	if code != 3 || !errors.As(err, &ask) ||
-		!strings.Contains(err.Error(), "carry-remote-required: a carried landing needs a code remote: set goal.sync-remote") {
-		t.Fatalf("single-machine carry did not ask for a code remote: rc=%d %v", code, err)
+		!strings.Contains(err.Error(), "carry-remote-required: a carried landing needs a code remote: set goal.sync-remote") ||
+		stderr != ask.Error()+"\n" {
+		t.Fatalf("single-machine carry did not ask for a code remote on the supplied stderr: rc=%d %v stderr=%q", code, err, stderr)
 	}
 
 	bed.remote = "origin"
-	code, err = gcliCarryAsk(t, bed, "fixture format fence", false)
-	if code != 3 || !errors.As(err, &ask) || ask.Code != "carry-format-required" || !strings.Contains(err.Error(), "carry-format-required") {
-		t.Fatalf("format-1 carry did not ask for the one-way raise: rc=%d %v", code, err)
+	code, stderr, err = gcliCarryAsk(t, bed, "fixture format fence", false)
+	if code != 3 || !errors.As(err, &ask) || ask.Code != "carry-format-required" || !strings.Contains(err.Error(), "carry-format-required") ||
+		stderr != ask.Error()+"\n" {
+		t.Fatalf("format-1 carry did not ask for the one-way raise on the supplied stderr: rc=%d %v stderr=%q", code, err, stderr)
 	}
 	if bed.tip() != before {
 		t.Fatal("a carry ask published to the accepted ledger")
@@ -133,7 +138,7 @@ func TestGoalCLICarryDischarge(t *testing.T) {
 			bed.prove, bed.commandNow, dependencies, readCommit)
 	})
 	register, err = os.ReadFile(filepath.Join(bed.root, "records", "counselor", "accepted-risk-register.jsonl"))
-	if code != 0 || !strings.Contains(stdout, `"detail":"idempotent"`) || bed.tip() != tip || err != nil || bytes.Count(register, []byte("\n")) != 1 {
+	if code != 0 || !strings.Contains(stdout, "is already accepted by Wido") || bed.tip() != tip || err != nil || bytes.Count(register, []byte("\n")) != 1 || stderr != "" {
 		t.Fatalf("accept-risk replay was not idempotent: code=%d stdout=%q stderr=%q err=%v\n%s", code, stdout, stderr, err, register)
 	}
 }
