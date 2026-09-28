@@ -20,6 +20,8 @@ type Adapter struct {
 	Owners map[string]string
 	// Unidentified names failures (classname#name) that carry no identity.
 	Unidentified map[string]bool
+	// Fresh is the fake tool's fresh-execution argv.
+	Fresh []string
 	// Calls records every method call, for witnesses.
 	Calls *[]string
 }
@@ -34,6 +36,7 @@ func New() *Adapter {
 			"com.example.LedgerTest":  "ledger",
 		},
 		Unidentified: map[string]bool{"com.example.PaymentTest#<compile>": true},
+		Fresh:        []string{"--rerun-fake"},
 		Calls:        &[]string{},
 	}
 }
@@ -68,6 +71,12 @@ func (a *Adapter) Identity(failure adapter.Failure) (adapter.TestIdentity, bool)
 		return adapter.TestIdentity{}, false
 	}
 	return adapter.TestIdentity{Report: "junit-xml", Classname: failure.Classname, Name: failure.Name}, true
+}
+
+// FreshExecution returns the scripted fresh-execution argv.
+func (a *Adapter) FreshExecution() []string {
+	a.record("FreshExecution")
+	return append([]string(nil), a.Fresh...)
 }
 
 // UnitGateSteps plans one fake build step per unit.

@@ -283,7 +283,7 @@ func runBatchLandingLifecycleEjectRed(t *testing.T, harness *batchE2EHarness, en
 	fixture.tick(batchID)
 	record := fixture.load(batchID)
 	unit := batchE2EUnit(record, "goal-b")
-	if unit.State != batch.UnitReturnPending || unit.Outcome != batch.UnitEjected || !strings.Contains(unit.Failure, "TestGoalB") {
+	if unit.State != batch.UnitReturnPending || unit.Outcome != batch.UnitEjected || !strings.Contains(unit.Failure, "app-unit") {
 		t.Fatalf("diagnosed unit = %+v", unit)
 	}
 	fixture.tick(batchID)

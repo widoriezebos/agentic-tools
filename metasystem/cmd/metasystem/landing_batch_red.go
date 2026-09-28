@@ -15,6 +15,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/trunkredmap"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
 var productionTrunkRedLedgerOwner = productionBatchLedgerOwner
@@ -23,7 +25,49 @@ var batchDiagnosticLauncher = launchBatchDiagnostic
 var batchDiagnosisSeams = struct {
 	commitForTree func(string, string, string) (string, error)
 	diagnose      func(batch.Store, string, string, []batch.RedGroup, string, time.Time, batch.RedSeams) error
-}{commitForTree, batch.DiagnoseRed}
+	redLanguage   func(string) func(batch.RedGroup) (adapter.Adapter, bool)
+}{commitForTree, batch.DiagnoseRed, productionBatchRedLanguage}
+
+// productionBatchRedLanguage binds red groups to their adapters through the
+// installation's testing contract; an unreadable contract binds none, so
+// naming falls back on declared manifests alone.
+func productionBatchRedLanguage(root string) func(batch.RedGroup) (adapter.Adapter, bool) {
+	_, contract, _, err := loadPhysicalTestingContract(batch.ModuleRoot(root))
+	if err != nil {
+		return nil
+	}
+	return batchRedLanguageFromContract(contract)
+}
+
+// batchRedLanguageFromContract resolves a red group to its adapter; a group
+// named TEMPLATE/PACKAGE whose template is a packageSelection selector is an
+// expansion, whose manifest is the whole module. An unknown group has none.
+func batchRedLanguageFromContract(contract testpolicy.Contract) func(batch.RedGroup) (adapter.Adapter, bool) {
+	find := func(id string) (testpolicy.Group, bool) {
+		for _, group := range contract.Groups {
+			if group.ID == id {
+				return group, true
+			}
+		}
+		return testpolicy.Group{}, false
+	}
+	return func(red batch.RedGroup) (adapter.Adapter, bool) {
+		group, found := find(red.ID)
+		expansion := false
+		if !found {
+			template, _, cut := strings.Cut(red.ID, "/")
+			if group, found = find(template); !cut || !found || group.PackageSelection == "" {
+				return nil, false
+			}
+			expansion = true
+		}
+		language, err := adapter.Resolve(group)
+		if err != nil {
+			return nil, false
+		}
+		return language, expansion
+	}
+}
 
 func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 	return executeBatchDiagnosisWithConfig(root, id, actor, at, nil)
@@ -81,6 +125,7 @@ func executeBatchDiagnosisWithConfig(root, id, actor string, at time.Time, looku
 		},
 		Ledger:     ledgerOwner,
 		BaseCommit: baseCommit,
+		Adapter:    batchDiagnosisSeams.redLanguage(root),
 		UpdateNext: func(goalID, status string) error {
 			return batchEditNext(controlRoot, goalID, status)
 		},

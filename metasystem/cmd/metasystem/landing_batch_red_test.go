@@ -4,12 +4,17 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch/goadapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter/fakeadapter"
 )
 
 func TestBatchDiagnosticDiscardsStaleResultAfterFailedRun(t *testing.T) {
@@ -67,8 +72,20 @@ func TestFirstTrunkRedHoldUsesLedgerOwnerOpid(t *testing.T) {
 		baseReads++
 		return baseCommit, nil
 	}
+	fake := fakeadapter.New()
+	batchDiagnosisSeams.redLanguage = func(gotRoot string) func(batch.RedGroup) (adapter.Adapter, bool) {
+		if gotRoot != root {
+			t.Fatalf("red language root = %q, want %q", gotRoot, root)
+		}
+		return func(batch.RedGroup) (adapter.Adapter, bool) { return fake, false }
+	}
 	batchDiagnosticLauncher = func(gotRoot, gotID string, request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
-		if gotRoot != root || gotID != batchID || request.Tree != baseTree || launches != 0 {
+		wantFresh := []string(nil)
+		if launches == 1 {
+			wantFresh = fake.Fresh
+		}
+		if gotRoot != root || gotID != batchID || request.Tree != baseTree || launches > 1 || !request.NeverReuse ||
+			!slices.Equal(request.Fresh, wantFresh) {
 			t.Fatalf("diagnostic launch %d: root=%q id=%q request=%+v", launches, gotRoot, gotID, request)
 		}
 		launches++
@@ -85,7 +102,7 @@ func TestFirstTrunkRedHoldUsesLedgerOwnerOpid(t *testing.T) {
 	if err := executeBatchDiagnosisWithConfig(root, batchID, landingOwnerLineage, clock, lookup); err != nil {
 		t.Fatal(err)
 	}
-	if baseReads != 1 || machineReads != 1 || launches != 1 {
+	if baseReads != 1 || machineReads != 1 || launches != 2 {
 		t.Fatalf("raw reads and diagnostic launches: base=%d machine=%d launches=%d", baseReads, machineReads, launches)
 	}
 	record, err := store.Load(batchID)
@@ -132,4 +149,32 @@ func TestBatchFencedDiagnosticAuthorityRequiresExactSealedHandover(t *testing.T)
 	file.Claimed.HandedOver.Batch = batchID
 	record.Seal["goal-b"] = batch.Claim{Revision: 9, AccountingRevision: 2}
 	assertFenced(false)
+}
+
+func TestBatchRedGroupLanguageFromTheTestingContract(t *testing.T) {
+	t.Parallel()
+	language := batchRedLanguageFromContract(testpolicy.Contract{Groups: []testpolicy.Group{
+		{ID: "go-affected", Adapter: "go", PackageSelection: "changed-and-consumers"},
+		{ID: "verb-ratchet", Adapter: "go"},
+		{ID: "section/land-fixtures", Adapter: "section"},
+	}})
+	for _, test := range []struct {
+		group         string
+		goLanguage    bool
+		known, expand bool
+	}{
+		{"go-affected/cmd-metasystem-0123456789ab", true, true, true},
+		{"verb-ratchet", true, true, false},
+		{"section/land-fixtures", false, true, false},
+		{"retired/group", false, false, false},
+	} {
+		got, expansion := language(batch.RedGroup{ID: test.group})
+		_, isGo := got.(goadapter.Adapter)
+		if (got != nil) != test.known || isGo != test.goLanguage || expansion != test.expand {
+			t.Fatalf("%s: adapter=%T expansion=%t", test.group, got, expansion)
+		}
+	}
+	if fresh := (goadapter.Adapter{}).FreshExecution(); !slices.Equal(fresh, []string{"-count=1"}) {
+		t.Fatalf("Go fresh execution=%v", fresh)
+	}
 }

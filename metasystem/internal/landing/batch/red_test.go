@@ -2,6 +2,7 @@ package batch
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,6 +11,9 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter/fakeadapter"
 )
 
 type redLedger struct {
@@ -57,110 +61,21 @@ func TestBatchOwnerSearch(t *testing.T) {
 			t.Fatalf("requests=%+v record=%+v", requests, record)
 		}
 	})
-	t.Run("W12b named units run alone serially in join order", func(t *testing.T) {
-		bed := policyFixture(t)
-		unnamedTail := Unit{GoalID: "goal-c", Chain: "chain-c", Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, State: UnitJoined, ChangedPaths: []string{"c.go"}}
-		bed.record.Units[0].ChangedPaths = []string{"a.go"}
-		bed.record.Units[1].ChangedPaths = []string{"b.go"}
-		bed.record.Units = []Unit{bed.record.Units[0], unnamedTail, bed.record.Units[1]}
-		bed.record.State = StateDiagnosing
-		bed.record.Proof = &Proof{Status: "failed", AttemptID: "tip-attempt"}
-		store := NewStore(bed.root, nil)
-		must(t, store.Create(bed.record))
-		strictReassembly(t, &store,
-			expectedAssembly(bed.base, []string{"goal-c"}, []string{"chain-c"}, []string{"prefix-c"}),
-			expectedAssembly(bed.base, []string{"goal-a", "goal-c"}, []string{"chain-a", "chain-c"}, []string{"prefix-a", "prefix-ac"}),
-			expectedAssembly(bed.base, []string{"goal-a", "goal-c", "goal-b"}, []string{"chain-a", "chain-c", "chain-b"}, []string{"prefix-a", "prefix-ac", "prefix-acb"}),
-			expectedAssembly(bed.base, []string{"goal-a", "goal-c"}, []string{"chain-a", "chain-c"}, []string{"prefix-a", "prefix-ac"}))
-		groups := []RedGroup{{ID: "group", InputManifest: []string{"a.go", "b.go"}}}
-		var requests []DiagnosticRequest
-		calls := 0
-		err := DiagnoseRed(store, testBatchID, "owner", groups, "", time.Unix(2, 0), RedSeams{Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
-			requests = append(requests, request)
-			calls++
-			if calls == 4 {
-				return DiagnosticResult{AttemptID: "b", Groups: groups}, nil
-			}
-			return DiagnosticResult{AttemptID: "green"}, nil
-		}})
-		must(t, err)
-		record := load(t, store)
-		gotGoals := []string{}
-		for _, request := range requests {
-			gotGoals = append(gotGoals, request.GoalID)
-		}
-		if !slices.Equal(gotGoals, []string{"goal-b", "goal-c", "goal-a", "goal-b"}) ||
-			requests[0].Claim.Revision != 8 || requests[1].Claim.Revision != 9 || requests[1].Claim.AccountingRevision != 7 ||
-			requests[2].Claim.Revision != 7 || requests[3].Claim.Revision != 8 ||
-			record.Units[0].State != UnitJoined || record.Units[1].State != UnitJoined || record.Units[2].State != UnitReturnPending || record.State != StateOpen ||
-			record.TipTree != "prefix-ac" || !slices.Equal(record.PrefixTrees, []string{"prefix-a", "prefix-ac"}) {
-			t.Fatalf("requests=%+v record=%+v", requests, record)
-		}
-	})
-	t.Run("W12c three named units eject C and name its landed partners", func(t *testing.T) {
-		bed, store := diagnosingBed(t)
-		must(t, store.Update(testBatchID, func(record *Record) error {
-			record.Units = append(record.Units, Unit{GoalID: "goal-c", Chain: "chain-c", Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, State: UnitJoined, ChangedPaths: []string{"c.go"}})
-			return nil
-		}))
-		strictReassembly(t, &store,
-			expectedAssembly(bed.base, []string{"goal-a"}, []string{"chain-a"}, []string{"prefix-a"}),
-			expectedAssembly(bed.base, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"prefix-a", "prefix-ab"}),
-			expectedAssembly(bed.base, []string{"goal-a", "goal-b", "goal-c"}, []string{"chain-a", "chain-b", "chain-c"}, []string{"prefix-a", "prefix-ab", "prefix-abc"}),
-			expectedAssembly(bed.base, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"prefix-a", "prefix-ab"}))
-		groups := []RedGroup{{ID: "group", InputManifest: []string{"*.go"}, LogPath: "logs/group.log", Failures: []Failure{{Name: "TestC"}}}}
-		calls := 0
-		err := DiagnoseRed(store, testBatchID, "owner", groups, "", time.Unix(2, 0), RedSeams{Run: func(DiagnosticRequest) (DiagnosticResult, error) {
-			calls++
-			if calls == 4 {
-				return DiagnosticResult{AttemptID: "attempt-c", Groups: groups}, nil
-			}
-			return DiagnosticResult{AttemptID: "base"}, nil
-		}})
-		must(t, err)
-		record := load(t, store)
-		failure := record.Units[2].Failure
-		for _, want := range []string{"attempt-c", "group", "logs/group.log", "TestC", "goal-a", "goal-b"} {
-			if !strings.Contains(failure, want) {
-				t.Fatalf("failure %q does not contain %q; record=%+v", failure, want, record)
-			}
-		}
-		if calls != 4 || record.Units[0].State != UnitJoined || record.Units[1].State != UnitJoined || record.Units[2].State != UnitReturnPending ||
-			record.TipTree != "prefix-ab" || !slices.Equal(record.PrefixTrees, []string{"prefix-a", "prefix-ab"}) {
-			t.Fatalf("calls=%d record=%+v", calls, record)
-		}
-	})
-	for _, test := range []struct {
-		name    string
-		groups  []RedGroup
-		baseRed bool
-	}{
-		{"W12d red base holds trunk red", failing, true},
-		{"W12e green base without attribution holds unclassified", []RedGroup{{ID: "group", InputManifest: []string{"other/**"}}}, false},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			_, store := diagnosingBed(t)
-			strictReassembly(t, &store)
-			ledger := &redLedger{}
-			err := DiagnoseRed(store, testBatchID, "owner", test.groups, "", time.Unix(2, 0), RedSeams{
-				Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
-					if test.baseRed {
-						return DiagnosticResult{AttemptID: "base", Groups: test.groups}, nil
-					}
-					return DiagnosticResult{AttemptID: "base"}, nil
-				}, MintOpid: func() (string, error) { return "op-1", nil }, Ledger: ledger, BaseCommit: "base-commit",
-			})
-			must(t, err)
-			record := load(t, store)
-			if test.baseRed {
-				if record.State != StateHeldTrunkRed || ledger.calls != 1 || ledger.last.BaseCommit != "base-commit" || slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
-					t.Fatalf("record=%+v ledger calls=%d", record, ledger.calls)
-				}
-			} else if record.State != StateHeldUnclassified || ledger.calls != 0 || slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
-				t.Fatalf("unattributed failure was assigned to trunk or member: record=%+v ledger calls=%d", record, ledger.calls)
-			}
+	t.Run("W12d red base holds trunk red", func(t *testing.T) {
+		_, store := diagnosingBed(t)
+		strictReassembly(t, &store)
+		ledger := &redLedger{}
+		err := DiagnoseRed(store, testBatchID, "owner", failing, "", time.Unix(2, 0), RedSeams{
+			Run: func(DiagnosticRequest) (DiagnosticResult, error) {
+				return DiagnosticResult{AttemptID: "base", Groups: failing}, nil
+			}, MintOpid: func() (string, error) { return "op-1", nil }, Ledger: ledger, BaseCommit: "base-commit",
 		})
-	}
+		must(t, err)
+		record := load(t, store)
+		if record.State != StateHeldTrunkRed || ledger.calls != 1 || ledger.last.BaseCommit != "base-commit" || slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
+			t.Fatalf("record=%+v ledger calls=%d", record, ledger.calls)
+		}
+	})
 }
 
 func TestBatchEjectAndReassemble(t *testing.T) {
@@ -263,7 +178,8 @@ func TestBatchDiagnosticRefusalHoldsWithoutEjection(t *testing.T) {
 	})
 	must(t, err)
 	record := load(t, store)
-	if record.State != StateHeldUnclassified || next == "" || slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
+	if record.State != StateDiagnosing || record.Proof == nil || record.Proof.Status != "failed" || next == "" ||
+		slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
 		t.Fatalf("record=%+v next=%q", record, next)
 	}
 }
@@ -310,7 +226,7 @@ func TestBatchDiagnosticRefusalRequiresLiveExactFenceBeforeEjection(t *testing.T
 					record.TipTree != "prefix-a" || !slices.Equal(record.PrefixTrees, []string{"prefix-a"}) {
 					t.Fatalf("confirmed fence did not reassemble only the survivor: %+v", record)
 				}
-			} else if record.State != StateHeldUnclassified || record.Proof == nil ||
+			} else if record.State != StateDiagnosing || record.Proof == nil ||
 				slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
 				t.Fatalf("unconfirmed fence was treated as an ejection: %+v", record)
 			}
@@ -426,48 +342,276 @@ func TestBatchReopenAssemblyFailurePreservesHeldRecord(t *testing.T) {
 	}
 }
 
-func TestBatchDiagnosticNamedConflictEjectsInOrder(t *testing.T) {
-	t.Parallel()
-	bed, store := diagnosingBed(t)
-	must(t, store.Update(testBatchID, func(record *Record) error {
-		record.Units = append(record.Units, Unit{GoalID: "goal-c", Chain: "chain-c",
-			Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7},
-			State: UnitJoined, ChangedPaths: []string{"c.go"}})
-		return nil
-	}))
-	conflict := &assemblyConflict{GoalID: "goal-b", Cause: errors.New("goal-b patch conflict")}
-	strictReassembly(t, &store,
-		expectedAssembly(bed.base, []string{"goal-a"}, []string{"chain-a"}, []string{"prefix-a"}),
-		expectedReassembly{kind: "assemble", base: bed.base, goals: []string{"goal-b"}, chains: []string{"chain-b"}, err: conflict},
-		expectedAssembly(bed.base, []string{"goal-c"}, []string{"chain-c"}, []string{"prefix-c"}),
-		expectedAssembly(bed.base, []string{"goal-c"}, []string{"chain-c"}, []string{"prefix-c"}))
-	groups := []RedGroup{{ID: "group", InputManifest: []string{"*.go"}, LogPath: "logs/group.log", Failures: []Failure{{Name: "TestA"}}}}
-	var requested []string
-	must(t, DiagnoseRed(store, testBatchID, "owner", groups, "", time.Unix(2, 0), RedSeams{
-		Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
-			requested = append(requested, request.GoalID)
-			if len(requested) == 2 {
-				return DiagnosticResult{AttemptID: "a-red", Groups: groups}, nil
-			}
-			return DiagnosticResult{AttemptID: "green"}, nil
-		},
-	}))
-	record := load(t, store)
-	if !slices.Equal(requested, []string{"goal-c", "goal-a", "goal-c"}) || record.State != StateOpen ||
-		record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitReturnPending || record.Units[2].State != UnitJoined ||
-		!strings.Contains(record.Units[0].Failure, "a-red") || !strings.Contains(record.Units[0].Failure, "TestA") ||
-		!strings.Contains(record.Units[1].Failure, "cannot apply after returning goal-a") ||
-		!strings.Contains(record.Units[1].Failure, conflict.Error()) ||
-		record.TipTree != "prefix-c" || !slices.Equal(record.PrefixTrees, []string{"prefix-c"}) {
-		t.Fatalf("requests=%v record=%+v", requested, record)
+// fakeRedLanguage binds red groups to the fake, non-Go adapter: fake-affected/*
+// groups are package-selection expansions whose manifest is the whole module,
+// section/* groups are section beds, anything else is a targeted fake group.
+func fakeRedLanguage(fake *fakeadapter.Adapter) func(RedGroup) (adapter.Adapter, bool) {
+	return func(group RedGroup) (adapter.Adapter, bool) {
+		if strings.HasPrefix(group.ID, "section/") {
+			section, _ := adapter.Resolve(testpolicy.Group{Adapter: "section"})
+			return section, false
+		}
+		return fake, strings.HasPrefix(group.ID, "fake-affected/")
 	}
-	var returns []string
+}
+
+func fakeClosure(changed, dependents []string) *adapter.Closure {
+	return &adapter.Closure{Module: "com.example", Changed: changed, Dependents: dependents}
+}
+
+// threeMemberRedBed is A (closure ledger), B (closure payments, dependent
+// ledger) and C (closure reports), each with its own changed paths.
+func threeMemberRedBed(t *testing.T) (policyBed, Store) {
+	t.Helper()
+	bed := policyFixture(t)
+	bed.record.State = StateDiagnosing
+	bed.record.Proof = &Proof{Status: "failed", AttemptID: "tip-attempt"}
+	bed.record.Units = append(bed.record.Units, Unit{GoalID: "goal-c", Chain: "chain-c",
+		Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, State: UnitJoined})
+	bed.record.Units[0].ChangedPaths, bed.record.Units[0].Closure = []string{"ledger/Ledger.java"}, fakeClosure([]string{"ledger"}, nil)
+	bed.record.Units[1].ChangedPaths, bed.record.Units[1].Closure = []string{"payments/Pay.java"}, fakeClosure([]string{"payments"}, []string{"ledger"})
+	bed.record.Units[2].ChangedPaths, bed.record.Units[2].Closure = []string{"fixtures/land.sh"}, fakeClosure([]string{"reports"}, nil)
+	store := NewStore(bed.root, nil)
+	must(t, store.Create(bed.record))
+	return bed, store
+}
+
+var wholeModuleManifest = []string{"*", "*/**"}
+
+func paymentRed() RedGroup {
+	return RedGroup{ID: "fake-affected/payments", Status: "failed", InputManifest: wholeModuleManifest, LogPath: "logs/payments.log",
+		Failures: []Failure{{Report: "junit-xml", Classname: "com.example.PaymentTest", Name: "rejectsInvalidInput", Status: "failed"}}}
+}
+
+func neverHeldUnclassified(t *testing.T, record Record) {
+	t.Helper()
 	for _, entry := range record.History {
-		if entry.Verb == "return-request" {
-			returns = append(returns, strings.Fields(entry.Detail)[0])
+		if entry.To == StateHeldUnclassified {
+			t.Fatalf("a red with a green base reached held-unclassified: %+v", entry)
 		}
 	}
-	if !slices.Equal(returns, []string{"goal-a", "goal-b"}) {
-		t.Fatalf("return order=%v", returns)
+}
+
+func TestRedWithGreenBaseNeverHolds(t *testing.T) {
+	t.Parallel()
+	green := func(DiagnosticRequest) (DiagnosticResult, error) {
+		return DiagnosticResult{AttemptID: "base-green"}, nil
+	}
+	t.Run("one named member is ejected and the survivor goes on", func(t *testing.T) {
+		t.Parallel()
+		bed, store := diagnosingBed(t)
+		must(t, store.Update(testBatchID, func(record *Record) error {
+			record.Units[0].Closure, record.Units[1].Closure = fakeClosure([]string{"payments"}, nil), fakeClosure([]string{"reports"}, nil)
+			return nil
+		}))
+		strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-b"}, []string{"chain-b"}, []string{"prefix-b"}))
+		must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{paymentRed()}, "", time.Unix(2, 0),
+			RedSeams{Run: green, Adapter: fakeRedLanguage(fakeadapter.New())}))
+		record := load(t, store)
+		if record.State != StateOpen || record.Units[0].State != UnitReturnPending || record.Units[0].Outcome != UnitEjected ||
+			record.Units[1].State != UnitJoined || record.TipTree != "prefix-b" {
+			t.Fatalf("named member was not ejected with the survivor kept: %+v", record)
+		}
+		neverHeldUnclassified(t, record)
+	})
+	t.Run("nobody named returns every member and the batch dissolves", func(t *testing.T) {
+		t.Parallel()
+		_, store := diagnosingBed(t)
+		strictReassembly(t, &store)
+		unowned := paymentRed()
+		unowned.Failures[0].Classname = "com.example.UnknownTest"
+		must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{unowned}, "", time.Unix(2, 0),
+			RedSeams{Run: green, Adapter: fakeRedLanguage(fakeadapter.New())}))
+		record := load(t, store)
+		if record.State != StateDissolved || record.Proof != nil {
+			t.Fatalf("an unnamed red did not dissolve the batch: %+v", record)
+		}
+		for _, unit := range record.Units {
+			if unit.State != UnitReturnPending || unit.Outcome != UnitEjected || !strings.Contains(unit.Failure, "logs/payments.log") ||
+				!strings.Contains(unit.Failure, "rejectsInvalidInput") {
+				t.Fatalf("member %s was not returned with the log: %+v", unit.GoalID, unit)
+			}
+		}
+		neverHeldUnclassified(t, record)
+	})
+}
+
+func TestNamingByOwnerUnitInClosure(t *testing.T) {
+	t.Parallel()
+	fake := fakeadapter.New()
+	for classname, unit := range fake.Owners {
+		if classname == unit {
+			t.Fatalf("the fake's classname %s equals its unit name", classname)
+		}
+	}
+	for _, test := range []struct {
+		name      string
+		red       RedGroup
+		survivors []string
+		named     string
+	}{
+		{"owner unit in the closure, not the whole-module manifest", paymentRed(), []string{"goal-a", "goal-c"}, "goal-b"},
+		{"a section red names by its manifest", RedGroup{ID: "section/land-fixtures", Status: "failed",
+			InputManifest: []string{"fixtures/**"}, LogPath: "logs/land.log"}, []string{"goal-a", "goal-b"}, "goal-c"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			bed, store := threeMemberRedBed(t)
+			chains := []string{}
+			for _, goalID := range test.survivors {
+				chains = append(chains, "chain-"+strings.TrimPrefix(goalID, "goal-"))
+			}
+			strictReassembly(t, &store, expectedAssembly(bed.base, test.survivors, chains, []string{"prefix-1", "prefix-2"}))
+			must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{test.red}, "", time.Unix(2, 0), RedSeams{
+				Run: func(DiagnosticRequest) (DiagnosticResult, error) {
+					return DiagnosticResult{AttemptID: "base-green"}, nil
+				},
+				Adapter: fakeRedLanguage(fakeadapter.New()),
+			}))
+			record := load(t, store)
+			for _, unit := range record.Units {
+				want := UnitJoined
+				if unit.GoalID == test.named {
+					want = UnitReturnPending
+				}
+				if unit.State != want {
+					t.Fatalf("member %s state=%s, want %s; record=%+v", unit.GoalID, unit.State, want, record)
+				}
+			}
+		})
+	}
+}
+
+func TestEjectAllNamedAtOnce(t *testing.T) {
+	t.Parallel()
+	bed, store := threeMemberRedBed(t)
+	strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-c"}, []string{"chain-c"}, []string{"prefix-c"}))
+	red := paymentRed()
+	red.Failures = append(red.Failures, Failure{Report: "junit-xml", Classname: "com.example.LedgerTest", Name: "balances", Status: "failed"})
+	runs := 0
+	must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{red}, "", time.Unix(2, 0), RedSeams{
+		Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
+			runs++
+			if request.Tree != bed.base {
+				t.Fatalf("a diagnostic ran on %s, not the base", request.Tree)
+			}
+			return DiagnosticResult{AttemptID: "base-green"}, nil
+		},
+		Adapter: fakeRedLanguage(fakeadapter.New()),
+	}))
+	record := load(t, store)
+	if runs != 1 || record.State != StateOpen || record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitReturnPending ||
+		record.Units[2].State != UnitJoined || record.TipTree != "prefix-c" {
+		t.Fatalf("runs=%d record=%+v", runs, record)
+	}
+	reassemblies := 0
+	for _, entry := range record.History {
+		if entry.Verb == "reassemble" {
+			reassemblies++
+		}
+	}
+	if reassemblies != 1 {
+		t.Fatalf("named members were not ejected in one reassembly: %+v", record.History)
+	}
+}
+
+func TestBaseRedTwiceStillHoldsTrunkRed(t *testing.T) {
+	t.Parallel()
+	for _, secondRed := range []bool{true, false} {
+		t.Run(fmt.Sprintf("second base run red=%t", secondRed), func(t *testing.T) {
+			t.Parallel()
+			_, store := diagnosingBed(t)
+			strictReassembly(t, &store)
+			fake, red, ledger := fakeadapter.New(), paymentRed(), &redLedger{}
+			var requests []DiagnosticRequest
+			must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{red, {ID: "section/land-fixtures", Status: "failed"}}, "", time.Unix(2, 0), RedSeams{
+				Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
+					requests = append(requests, request)
+					if len(requests) == 2 && !secondRed {
+						return DiagnosticResult{AttemptID: "base-2"}, nil
+					}
+					return DiagnosticResult{AttemptID: fmt.Sprintf("base-%d", len(requests)), Groups: []RedGroup{red}}, nil
+				},
+				Adapter: fakeRedLanguage(fake), MintOpid: func() (string, error) { return "op-1", nil }, Ledger: ledger, BaseCommit: "base-commit",
+			}))
+			record := load(t, store)
+			if len(requests) != 2 || requests[1].Tree != record.BaseTree || !requests[1].NeverReuse ||
+				!slices.Equal(requests[1].Fresh, fake.Fresh) || !slices.Equal(requests[1].Groups, []string{red.ID}) || len(requests[0].Fresh) != 0 {
+				t.Fatalf("the second base run was not one executed run of the red groups: %+v", requests)
+			}
+			if secondRed {
+				if record.State != StateHeldTrunkRed || ledger.calls != 1 || ledger.last.AttemptID != "base-2" ||
+					slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
+					t.Fatalf("a base red twice did not hold as a trunk red: record=%+v ledger=%d", record, ledger.calls)
+				}
+				return
+			}
+			if record.State != StateDissolved || ledger.calls != 0 ||
+				slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitReturnPending }) {
+				t.Fatalf("a base red then green held or landed: record=%+v ledger=%d", record, ledger.calls)
+			}
+			neverHeldUnclassified(t, record)
+		})
+	}
+}
+
+func TestUnavailableDiagnosticStaysDiagnosing(t *testing.T) {
+	t.Parallel()
+	for _, unavailable := range []error{&DiagnosticRefusal{Status: "PROOF_ADMISSION_REFUSED host cap"}, errors.New("runner exited without a result")} {
+		t.Run(unavailable.Error(), func(t *testing.T) {
+			t.Parallel()
+			bed, store := diagnosingBed(t)
+			strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-b"}, []string{"chain-b"}, []string{"prefix-b"}))
+			failing := []RedGroup{{ID: "group", InputManifest: []string{"a.go"}}}
+			var next string
+			seams := RedSeams{
+				Run:        func(DiagnosticRequest) (DiagnosticResult, error) { return DiagnosticResult{}, unavailable },
+				UpdateNext: func(_ string, status string) error { next = status; return nil },
+			}
+			err := DiagnoseRed(store, testBatchID, "owner", failing, "", time.Unix(2, 0), seams)
+			var refusal *DiagnosticRefusal
+			if errors.As(unavailable, &refusal) != (err == nil) {
+				t.Fatalf("diagnosis error=%v", err)
+			}
+			record := load(t, store)
+			if record.State != StateDiagnosing || record.Proof == nil || record.Proof.Status != "failed" || !strings.Contains(next, "next tick") ||
+				slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
+				t.Fatalf("an unavailable diagnostic did not leave the batch diagnosing: %+v next=%q", record, next)
+			}
+			seams.Run = func(DiagnosticRequest) (DiagnosticResult, error) {
+				return DiagnosticResult{AttemptID: "base-green"}, nil
+			}
+			must(t, DiagnoseRed(store, testBatchID, "owner", failing, "", time.Unix(3, 0), seams))
+			if record := load(t, store); record.State != StateOpen || record.Units[0].State != UnitReturnPending {
+				t.Fatalf("the next tick did not decide the red: %+v", record)
+			}
+		})
+	}
+}
+
+// detectingFake is the fake adapter as the one language adapter that
+// recognises a single test's checkout.
+type detectingFake struct {
+	*fakeadapter.Adapter
+	root string
+}
+
+func (fake detectingFake) Detects(root string) bool { return root == fake.root }
+
+func TestLaneDecisionsWithAFakeAdapter(t *testing.T) {
+	t.Parallel()
+	bed := newOrdinaryJoinBed(t)
+	fake := fakeadapter.New()
+	adapter.Register("fake-"+filepath.Base(bed.root), detectingFake{Adapter: fake, root: bed.root})
+	unitTree := bed.expectJoin(joiningUnit("goal-a", "chain-a"), testpolicy.Plan{RequiredMode: testpolicy.ModeStandard})
+	must(t, PublishJoin(bed.store, testBatchID, joiningUnit("goal-a", "chain-a"), "seat+goal-a", time.Unix(1, 0),
+		joinPlanMode(testpolicy.ModeStandard), func() error { return nil }))
+	unit := load(t, bed.store).Units[0]
+	if unit.State != UnitJoined || unit.Closure == nil || unit.Closure.Tree != unitTree ||
+		!slices.Equal(unit.Closure.Changed, []string{"payments"}) || !slices.Equal(unit.Closure.Dependents, []string{"ledger"}) {
+		t.Fatalf("join did not record the adapter's closure: %+v", unit)
+	}
+	if !slices.Equal(*fake.Calls, []string{"Closure"}) {
+		t.Fatalf("fake adapter calls at join=%v", *fake.Calls)
 	}
 }

@@ -72,6 +72,9 @@ type Adapter interface {
 	// Identity returns the failure's test identity; ok is false for a
 	// pseudo-identity such as a build terminal or a section leg.
 	Identity(failure Failure) (TestIdentity, bool)
+	// FreshExecution is the argv a run adds when its purpose is to execute
+	// every selected test again rather than reuse a tool's cached pass.
+	FreshExecution() []string
 }
 
 // GateStep is one command the unit gate runs.
@@ -166,6 +169,9 @@ type opaque struct{ reportsIdentities bool }
 func (opaque) Closure(_, _, tree string) (Closure, error) { return Closure{Tree: tree}, nil }
 
 func (opaque) OwnerUnit(Failure, Closure) (string, bool) { return "", false }
+
+// FreshExecution is empty: the engine executes a command or section afresh.
+func (opaque) FreshExecution() []string { return nil }
 
 func (o opaque) Identity(failure Failure) (TestIdentity, bool) {
 	if !o.reportsIdentities || failure.Classname == "" || failure.Name == "" {
