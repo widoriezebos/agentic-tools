@@ -68,3 +68,50 @@ Commit reviewed: `81acda402b39acf547bdac7a9af2f9a6e4c503b6`.
 
 Limitations: read-only review; no tests, browser proof or Mermaid execution. g1-s67 is a closed design prerequisite, not implemented in this commit’s reviewed room code. No subagents, edits, local configuration or `artifacts/` reads. Proposed receipt, unwritten: “S71 design critique round 1: three material first-use findings; static review at 81acda402.”
 
+
+## Round 2, the declared failsafe
+
+---
+
+Revision 2 answers the three original findings. One new material finding remains in the shaping-room remark rule. Evidence below was checked by reading `04bc1fdd5`; the failure scenario is inferred, not executed.
+
+**Round-1 dispositions**
+
+| Finding | Status | Evidence |
+|---|---|---|
+| **S71-01** | **CONFIRMED ANSWERED** for the changed-tip failure | [D1, lines 74–87](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s71-the-whiteboard.md:74) now removes mismatched markers, retains the remark visibly on the board, and preserves its commit on promotion. This accommodates the existing [commit-free DeskItem](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/review/room.ts:22) and [record-selected source read](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/review/review.go:528). The unchanged-head shaping case is S71-04 below. |
+| **S71-02** | **CONFIRMED ANSWERED** | [D4, lines 109–117](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s71-the-whiteboard.md:109) supplies the bounded listing to Behaves and establishes one evidence-relative path convention. That supplies discovery which [present itself does not perform](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/uitools/review.go:43). |
+| **S71-03** | **CONFIRMED ANSWERED** | [D4, lines 118–125](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s71-the-whiteboard.md:118) and [§6](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s71-the-whiteboard.md:141) give evidence its own persistent desk identity and render returned text bytes, including headingless reports. This avoids [SectionView’s document-route dependency](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/review/Desk.tsx:354). |
+
+**S71-04 — High — material: yes — An unchanged head does not establish that a shaping remark still belongs on the displayed lines.**
+
+**Claim:** Revision 2 uses path, range and commit to decide whether an inline remark matches. In a shaping room, the commit is expressly provenance only; the displayed bytes can change without it changing.
+
+**Evidence:** [D1, lines 74–87](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s71-the-whiteboard.md:74) removes markers when the head moves but specifies the three-field match. The closed prerequisite, [g1-s67 D2, lines 102–115](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s67-the-room-for-every-sitting.md:102), requires uncommitted checkout bytes and a fresh read on return. The existing review reader can identify committed bytes through [Source.Commit](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/review/review.go:572); that guarantee does not extend to the proposed live shaping read.
+
+**Concrete failure:** In a shaping room at head A, remark on lines 41–46: “this lock is taken twice.” Step out, change those lines without committing, and return. The desk rereads different text, but path, range and A still match. The design therefore permits the old remark to appear attached to unrelated current code without a warning.
+
+**Change to the design:** Scope shaping markers to the live source reading on which they were created. After a fresh read, retain the remark on the board with an explicit earlier-reading label unless the relevant bytes are established unchanged. Head equality alone must never reattach it. Historical reads and automatic reanchoring are unnecessary.
+
+**Test 1 — DIFFERENT/WRONG:** **WRONG** without correction: the specified match accepts changed text. D1’s matching rule and §8’s shaping fixture must change.
+
+**Test 2 — WORKS/SAFE:** **Fails SAFE:** an ordinary first return silently associates the human’s words with different code. Fixture obligation: `shaping_remark_after_uncommitted_edit`—same head, changed selected lines, return, no current-line marker, original words and provenance retained.
+
+**Deferred and non-material**
+
+Human drawing, editing kept drawings, historical reads and automatic reanchoring remain deferred. **Material: no. Test 1: DIFFERENT if added. Test 2: WORKS/SAFE passes without them.** Requesting, inspecting and keeping a Partner drawing supplies useful first-step value without a drawing editor.
+
+**What I verified holds**
+
+- D2 retains its real-policy proof and explicit source fallback. The [CSP](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/httpd/httpd.go:300) and [page nonce](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/httpd/httpd.go:540) exist; the [nonce unit test](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/nonce.test.ts:5) is a Node stub, not browser proof. The cut guard also [prohibits markup-string injection](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/cuts.test.ts:727); adding network rows alone does not establish rendering compatibility.
+- Same-origin chunks have a serving path: [bundle inventory](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/scripts/bundle.mjs:147), [embedding](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/embed.go:15), and [static serving](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/httpd/httpd.go:503).
+- Keep it can use the [recorder’s rewrite queue](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/recording.ts:151), including record identity and conflict handling. D3 expressly requires the caption, first-section creation and duplicate prevention across reload.
+- Evidence containment now has the correct requirement: anchored filesystem access, following [document.go:130](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/project/document.go:130), rather than the [lexical inside check](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/review/review.go:627). The Evidence value is [copied verbatim](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/project/review.go:129); its current review template is in that file, not `write.go`.
+- Stickies retain [private per-human storage](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/stickies/stickies.go:119). D5 requires unfinished remarks in room drafts; existing [Step out refuses departure when keeping fails](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/review/room.ts:457).
+
+**VERDICT: 1 material finding (fail test 2): S71-04**
+
+Commit reviewed: `04bc1fdd56f302f961aff69cee722018d18e9c42`.
+
+Limitations: static review only; no tests, browser execution or Mermaid proof. Mermaid remains unpinned, and g1-s67’s shaping reader is a design prerequisite at this commit. No subagents, edits, secret configuration or `artifacts/` reads. Proposed receipt, unwritten: “S71 failsafe critique: three prior findings answered; one material shaping-remark finding.”
+

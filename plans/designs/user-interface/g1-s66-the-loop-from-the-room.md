@@ -355,4 +355,10 @@ adjudications, since each round has its own decisions file
 the appendix composes from every answered round. Non-material: §6's
 `outputs.md` corrected to `return.json`. Closed at the failsafe round
 on three folds, with one scoped confirmation read on S66-06 to S66-08
-alone (recorded below when it returns).
+alone.
+
+**Confirmation read (2026-09-28, at `c93f0483d`):** S66-06, S66-07 and
+S66-08 confirmed answered as design obligations, no new finding, zero
+material; the read says, rightly, that it certifies the design and not
+the implementation, which Sol's read of the build will. The loop is
+CLOSED.

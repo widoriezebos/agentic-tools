@@ -154,3 +154,30 @@ Commit reviewed: `0324a0cc4b0a3ce71265aee42d67e829995c3b41`.
 
 Limitations: Read-only source review; no tests, commands executing the engine, paid runs, subagents or edits. Prohibited paths were not read. Reviewed files were checked unchanged against the dispatched commit; unrelated concurrent edits were left untouched.
 
+
+## Confirmation read on S66-06 to S66-08
+
+---
+
+No new findings. All three are **CONFIRMED ANSWERED as design obligations**; this does not certify their implementation.
+
+| Finding | Confirmation and evidence |
+|---|---|
+| **S66-06 — CONFIRMED ANSWERED** | [D4:201](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s66-the-loop-from-the-room.md:201) requires validated decisions to reach the register before closure, distinguishing refutation from risk acceptance. This addresses the [join persisting only `out-of-scope`](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/validate/critiqueclosed.go:72) and the [close refusing unresolved findings before exhaustion](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/dispatch/finding_register.go:667). |
+| **S66-07 — CONFIRMED ANSWERED** | [D4:211](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s66-the-loop-from-the-room.md:211) explicitly requires clean closure, fixture closure with published obligations, or human-required refusal leaving the chain open. These match the [engine’s classification](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/dispatch/finding_register.go:643) and [obligation publication](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/dispatch/finding_register.go:689). “All decided” no longer independently authorizes closure. |
+| **S66-08 — CONFIRMED ANSWERED** | [D4:217](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s66-the-loop-from-the-room.md:217) composes the appendix from every answered round, retaining round identity, reasoning and amendment. This accounts for the [separate round-local decisions files](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/intent_design_review.go:369), whose [templates contain that examination’s findings](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/intent_review_binding.go:78). |
+
+What I verified holds, by reading:
+
+- [§8:281](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s66-the-loop-from-the-room.md:281) requires the unchanged-design refutation fixture through the real register close, all three final-round outcomes, and preservation of recurring findings across answered rounds.
+- [D2:169](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s66-the-loop-from-the-room.md:169) keeps decision presses from changing the design digest; [§6:251](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s66-the-loop-from-the-room.md:251) now names each round’s retained `return.json`.
+- Within these folds, I found no remaining specified first-use path that wrongly blocks a closable round, closes human-required residue, or omits a human’s earlier decision from the handoff. Human-required refusal intentionally remains open.
+
+Under **R-124**, the folds address first-use requirements: removing them would change implementation and restore failed closure, incorrect exit classification, or an incomplete handoff. No residual issue warrants another material finding under both tests.
+
+Proposed receipt, unwritten: scoped S66 confirmation; S66-06–08 answered; zero new material findings.
+
+**VERDICT: 0 material findings: none**
+
+Commit reviewed: `c93f0483d0eed4d701ff2128b1f4aaf0ec70ce11` (`ui-development`); reviewed files match that commit. Limitations: scoped source reading only; no runtime tests, edits or subagents. Prohibited paths were not read.
+

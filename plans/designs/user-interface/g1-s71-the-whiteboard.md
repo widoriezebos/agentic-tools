@@ -83,8 +83,16 @@ remark leaves the lines and stays on the board as "on lines 41-46 at
   desk as the desk reads now, with the remark's commit beside it, and
   a fact or finding made of it keeps that commit in its anchor. A
   desk item carries no commit of its own (`review/room.ts:22`; the
-  source read takes the record's current head, `review/review.go:528`),
-  so the marker's match is path, range and commit, all three.
+  source read takes the record's current head, `review/review.go:528`,
+  and names the commit it read, `:572`), so in a review room the
+  marker's match is path, range and commit, all three. In a shaping
+  room the commit proves nothing about the bytes, since the desk reads
+  the checkout as it stands and an uncommitted edit changes the lines
+  under the same head, so there the remark also keeps the text of the
+  lines it was made on, and the marker is drawn only while the lines
+  the desk shows at that range are byte-identical to that text; after
+  a fresh read that shows other bytes the remark stays on the board as
+  "on lines 41-46 at an earlier reading", never on the current lines.
   Findings from a remark stay review-only, as g1-s67 rules.
 - D2. **Drawings render, and the CSP is proven first.** A mermaid fence
   renders in the conversation, on the desk and on the board through one
@@ -167,7 +175,12 @@ on failure; Remark from a selection and from the board with both
 presses; the marker on the lines at the remark's commit and not after
 Review the new tip, where the board names the commit and a fact made
 of it keeps it; a remark in a shaping room carrying the head as
-provenance; an external `.md` report and a headingless `.txt` opened
+provenance and drawn only on byte-identical lines
+(`shaping_remark_after_uncommitted_edit`: remark at head A, step out,
+edit those lines without committing, return; no marker on the current
+lines, the remark on the board with its words and "at an earlier
+reading", the marker back when the lines are restored); an external
+`.md` report and a headingless `.txt` opened
 through `present` and again from the restored desk after a reload;
 Keep it appending once across a reload and the board showing it; the
 drafts carrying an unwritten remark across Step out; the cut guard's
@@ -206,3 +219,19 @@ is a Node stub and no substitute for the browser proof; that
 same-origin chunks have a serving path; that Keep it can use the
 recorder's rewrite queue (`recording.ts:151`); and that evidence
 containment must be an anchored root open, since `inside` is lexical.
+
+**Round 2, the declared failsafe (2026-09-28, at `04bc1fdd5`):**
+S71-01, S71-02 and S71-03 confirmed answered. One new material
+finding, S71-04: in a shaping room the commit is provenance only, the
+desk reads the checkout as it stands, and an uncommitted edit changes
+the lines under the same head, so a match on path, range and commit
+would reattach a remark to other code; fold, in D1 and §8: a shaping
+remark keeps the text of its lines and is drawn only on byte-identical
+lines, otherwise it stays on the board "at an earlier reading", with
+the named fixture. Astra also noted that the cut guard forbids markup
+strings (`cuts.test.ts:727`), so the chunk's rendering compatibility
+is the proof's, not the guard's; that the review template lives in
+`project/review.go`; and that Step out already refuses to leave when
+keeping fails (`room.ts:457`). Closed at the failsafe round on one
+fold, with one scoped confirmation read on S71-04 alone (recorded
+below when it returns).
