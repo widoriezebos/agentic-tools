@@ -240,6 +240,15 @@ func expectCallSite() callSite {
 }
 
 func repositoryRelative(file string) string {
+	if rest, trimmed := strings.CutPrefix(filepath.ToSlash(file), ModulePath+"/"); trimmed {
+		// A -trimpath build records module-relative files; anchor them at
+		// the module root so both builds report the same repository path.
+		root, err := SourceRoot()
+		if err != nil {
+			return rest
+		}
+		file = filepath.Join(root, filepath.FromSlash(rest))
+	}
 	if absolute, err := filepath.Abs(file); err == nil {
 		file = absolute
 	}

@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +13,7 @@ import (
 
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func landingBed(t *testing.T) (assemblyBed, Store) {
@@ -957,11 +957,7 @@ func TestCommitWithRealWrapperWritesBatchTrailersAndExplicitIdentity(t *testing.
 	for _, dir := range []string{"scripts/agents", "bin", "artifacts/agents/mains"} {
 		must(t, os.MkdirAll(filepath.Join(root, dir), 0o755))
 	}
-	_, source, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate real commit wrapper fixture")
-	}
-	realWrapper, err := os.ReadFile(filepath.Join(filepath.Dir(source), "..", "..", "..", "scripts", "agents", "commit.sh"))
+	realWrapper, err := os.ReadFile(filepath.Join(testutil.MustSourceRoot(t), "scripts", "agents", "commit.sh"))
 	must(t, err)
 	must(t, testexec.WriteFile(filepath.Join(root, "scripts", "agents", "commit.sh"), realWrapper, 0o755))
 	engine := `#!/usr/bin/env bash

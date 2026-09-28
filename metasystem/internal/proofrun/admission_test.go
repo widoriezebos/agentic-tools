@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 type admissionCensusProcess struct {
@@ -639,17 +639,14 @@ func TestHeldHostAdmissionGuardRefusesWithoutAllocatingAttempt(t *testing.T) {
 
 func assertAdmissionHasNoWaitPath(t *testing.T) {
 	t.Helper()
-	_, testPath, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate admission test source")
-	}
+	packageDirectory := filepath.Join(testutil.MustSourceRoot(t), "internal", "proofrun")
 	targets := map[string]map[string]bool{
 		"admission.go": {"ResolveAdmissionCap": true, "Refuses": true, "RefusalReason": true},
 		"attempt.go":   {"ReserveLocked": true},
 	}
 	var violations []string
 	for file, functions := range targets {
-		path := filepath.Join(filepath.Dir(testPath), file)
+		path := filepath.Join(packageDirectory, file)
 		set := token.NewFileSet()
 		parsed, err := parser.ParseFile(set, path, nil, 0)
 		if err != nil {

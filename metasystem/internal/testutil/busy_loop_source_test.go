@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -117,14 +116,7 @@ func TestFixtureSourcesHaveNoBareBusyLoop(t *testing.T) {
 
 func fixtureSourceRoot(t *testing.T) string {
 	t.Helper()
-	if override := os.Getenv("FIXTURE_SOURCE_ROOT"); override != "" {
-		return override
-	}
-	_, source, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate fixture source test")
-	}
-	return filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
+	return MustSourceRoot(t)
 }
 
 func goTestBusyLoops(relative, path string) ([]busyLoopFinding, error) {

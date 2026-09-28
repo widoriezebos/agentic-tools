@@ -4,20 +4,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
-	_, source, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate prologue source test")
-	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
-	if override := os.Getenv("FIXTURE_SOURCE_ROOT"); override != "" {
-		root = override
-	}
+	root := MustSourceRoot(t)
 	budget := filepath.Join(root, "scripts", "agents", "fixture-budget.sh")
 	command := exec.Command("bash", "-c", `source "$1"; harness_fixture_prologue`, "bash", budget)
 	printed, err := command.Output()

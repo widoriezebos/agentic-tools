@@ -3,11 +3,11 @@ package proofrun
 import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -542,11 +542,7 @@ func coverageScriptExecutable(t *testing.T) string {
 
 func packageRoot(t *testing.T) string {
 	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate proofrun package")
-	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	return testutil.MustSourceRoot(t)
 }
 
 func copyScriptFile(t *testing.T, source, destination string) {
