@@ -147,11 +147,11 @@ func registryPointerDocs(t *testing.T, root string) {
 	t.Helper()
 	os.MkdirAll(filepath.Join(root, "docs"), 0o755)
 	os.WriteFile(filepath.Join(root, "docs", "orchestration.md"),
-		[]byte("the registry: bin/metasystem internal runtime list\n"), 0o644)
+		[]byte("the registry: the runtime registry in `internal/runtimes`\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "docs", "glossary.md"),
-		[]byte("the registry: bin/metasystem internal runtime list\n"), 0o644)
+		[]byte("the registry: the runtime registry in `internal/runtimes`\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "README.md"),
-		[]byte("the registry: bin/metasystem internal runtime list\n"), 0o644)
+		[]byte("the registry: the runtime registry in `internal/runtimes`\n"), 0o644)
 }
 
 func TestAuditMetasystemRefusals(t *testing.T) {

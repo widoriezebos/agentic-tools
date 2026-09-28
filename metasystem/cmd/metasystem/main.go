@@ -93,7 +93,6 @@ func families() []family {
 				{"fixture-survivors", "name or reap fixture children that outlived their owner", runFixtureSurvivors},
 				{"started-at", "print a pid's start time in epoch seconds", runIdentityStartedAt},
 				{"census", "compute a fixture-driven census verdict", runCensusRun},
-				{"setsid", "run a command as the leader of a new session and exit with its status (proc setsid -- cmd args...)", runProcSetsid},
 			},
 		},
 		{
