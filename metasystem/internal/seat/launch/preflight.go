@@ -9,7 +9,7 @@ package launch
 // every one of its refusals is a fact about the host rather than about a
 // step: a nickname that cannot publish, a nickname somebody already carries,
 // a destination that is there, a destination inside another checkout, a seat
-// with no evidence root of its own to put the new machine's beside.
+// with no evidence root of its own to compare the new machine's against.
 //
 // A resume is exempted from exactly two of them, and only for what the record
 // says this launch itself created: the destination it made, and the nickname
@@ -64,10 +64,10 @@ type Facts struct {
 	// Created is what the launch a resume names created, all false for a
 	// fresh launch. It is the whole of what a resume is exempted from.
 	Created Created
-	// EvidenceRoot is this seat's effective evidence.root. The new machine's
-	// root is its sibling, so a seat that still carries the template's
-	// placeholder has nothing to put it beside, and finding that out after
-	// the clone leaves a directory for a human to delete.
+	// EvidenceRoot is this seat's effective evidence root, as the engine's
+	// one owner resolves it. The launch compares the new machine's root with
+	// it, so a seat whose root cannot be named is refused here, before the
+	// clone leaves a directory for a human to delete.
 	EvidenceRoot string
 }
 
@@ -87,7 +87,7 @@ func Preflight(request Request, facts Facts) error {
 func evidenceRootSet(facts Facts) error {
 	if !filepath.IsAbs(facts.EvidenceRoot) {
 		return refuse(CodeEvidenceRootUnsafe,
-			"this seat's evidence root is not set (evidence.root reads %q)", facts.EvidenceRoot)
+			"this seat's evidence root is not set (the evidence root reads %q)", facts.EvidenceRoot)
 	}
 	return nil
 }
