@@ -76,72 +76,6 @@ func runValidateSessionIsolation(args []string) int {
 	return 0
 }
 
-// runValidateDesignObligations checks design-obligation matrices with the
-// calling convention of metasystem internal validate design-obligations: repeated
-// --file arguments, an optional --runtime-required, and --root for
-// resolving a relative path unreadable from the working directory. Exit 0
-// passed; 1 failed; 2 usage.
-func runValidateDesignObligations(args []string) int {
-	usage := func() {
-		fmt.Fprint(os.Stderr, `Usage:
-  metasystem internal validate design-obligations --file <plan.md> [--file <plan.md>...]
-  metasystem internal validate design-obligations --runtime-required --file <plan.md>...
-
-Checks the structure and declared state of design-obligation matrices.
-
-Required table header:
-| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
-
-By default, CRITICAL/HIGH obligations must be DONE or READY_FOR_RUNTIME.
-With --runtime-required, CRITICAL/HIGH obligations must be DONE.
-
-Proof cells on CRITICAL/HIGH rows must be concrete: a backticked token, a
-path-shaped token (a slash, or a filename with a letter-bearing stem and an
-extension of two or more characters, plus .c/.h/.m/.r), or "Not applicable"
-followed by a reason. Bare "Not applicable" fails, and so does keyword-only
-prose ("needs testing"): a status is only as trustworthy as the proof behind
-it. Owner cells on CRITICAL/HIGH rows need a backticked, dotted, slashed,
-double-colon, or CamelCase code token; plain prose fails.
-
-Matrix rows inside fenced code blocks are ignored, so documentation that shows
-the template does not satisfy the gate. Table cells must not contain literal
-pipe characters; the column parser cannot see an escaped pipe as content.
-`)
-	}
-	flags := flag.NewFlagSet("validate design-obligations", flag.ContinueOnError)
-	flags.Usage = usage
-	root := pathFlag(flags, "root", ".", "root for resolving relative plan paths")
-	files := []string{}
-	flags.Func("file", "design-obligation matrix (repeatable)", func(value string) error {
-		files = append(files, value)
-		return nil
-	})
-	runtimeRequired := flags.Bool("runtime-required", false, "CRITICAL/HIGH obligations must be DONE")
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return 0
-		}
-		return 2
-	}
-	if flags.NArg() > 0 {
-		usage()
-		return 2
-	}
-	if len(files) == 0 {
-		fmt.Fprintln(os.Stderr, "at least one --file is required")
-		usage()
-		return 2
-	}
-	out, errs, code := validate.DesignObligations(*root, files, *runtimeRequired)
-	for _, line := range out {
-		fmt.Println(line)
-	}
-	for _, line := range errs {
-		fmt.Fprintln(os.Stderr, line)
-	}
-	return code
-}
-
 // runValidateConformance relays the retired conformance wrapper's
 // calling convention: --stage review|recertify|merge and --job, with --root naming
 // the merge-target checkout. Exit 0 conforming; 1 conformance failure; 2
@@ -402,42 +336,6 @@ func resolveRefactorCadence(p *validate.RefactorBaselineParams, set map[string]b
 			return 2
 		}
 		*cadence.target = number
-	}
-	return 0
-}
-
-// runValidateSkills validates skills: every skill under the root's skills and
-// optional-skills (validate.SkillInventory), or only the named skill
-// directories: `validate skills [--root R] [DIR ...]`.
-func runValidateSkills(args []string) int {
-	flags := flag.NewFlagSet("validate skills", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout whose skills and optional-skills are validated")
-	if flags.Parse(args) != nil {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate skills [--root CHECKOUT] [DIR ...]")
-		return 2
-	}
-	if flags.NArg() > 0 {
-		for _, dir := range flags.Args() {
-			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-				fmt.Fprintf(os.Stderr, "skill directory is not a directory: %s\n", dir)
-				return 2
-			}
-			name, err := validate.Skill(dir)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return 1
-			}
-			fmt.Printf("%s is valid\n", name)
-		}
-		return 0
-	}
-	if info, err := os.Stat(*root); err != nil || !info.IsDir() {
-		fmt.Fprintf(os.Stderr, "skill inventory root is not a directory: %s\n", *root)
-		return 2
-	}
-	if err := validate.SkillInventory(*root, os.Stdout); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
 	}
 	return 0
 }

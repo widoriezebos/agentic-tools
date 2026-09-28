@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adopt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
@@ -509,6 +510,9 @@ type intentOwners struct {
 	helm  helmOwners
 	// hookSwitch adjusts system setup's seams; nil keeps production.
 	hookSwitch func(hookswitch.Deps) hookswitch.Deps
+	// stopMovesDeclare writes a Stop decision move declaration; nil selects
+	// audit.DeclareStopDecisionSurface.
+	stopMovesDeclare func(string, audit.StopSurfaceOptions, string, string) (string, error)
 }
 
 func defaultIntentOwners() intentOwners {

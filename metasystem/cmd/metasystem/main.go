@@ -99,8 +99,6 @@ func families() []family {
 			summary: "whole-artifact validators the assert scripts exec into",
 			verbs: []verb{
 				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
-				{"skills", "validate every present skill's SKILL.md frontmatter, or the named skill directories", runValidateSkills},
-				{"design-obligations", "check the structure and declared state of design-obligation matrices", runValidateDesignObligations},
 			},
 		},
 		{
@@ -119,14 +117,6 @@ func families() []family {
 			verbs: []verb{
 				{"claude-tool-gate", "decide one Claude tool call against the context budget", runAdapterClaudeToolGate},
 				{"claude-session-signal", "record the Claude session-established signal", runAdapterClaudeSessionSignal},
-			},
-		},
-		{
-			name:    "audit",
-			summary: "mechanical fences the gate bootstrap consults between steps",
-			verbs: []verb{
-				{"metasystem", "instruction-asset audit: required files, outside references, placeholders, word budgets", runAuditMetasystem},
-				{"stop-decision-surface", "report additions and refuse undeclared moves of Stop assertions", runAuditStopDecisionSurface},
 			},
 		},
 		{

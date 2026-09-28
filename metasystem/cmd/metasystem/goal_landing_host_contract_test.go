@@ -112,6 +112,8 @@ var retiredWithDeletedVerb = map[string]string{
 	"landing-command-standard/TestCadenceResultNamesTriggerForJoinedAndOccupiedClaims":        "gate cadence-tick",
 	"batch-buildcd-standard/TestGateUnitGreenOutputAndAggregatedSteps":                        "gate unit",
 	"batch-buildcd-standard/TestGateUnitRedOutputAndExitCode":                                 "gate unit",
+	"command-interface-smoke/TestAuditStopDecisionSurfaceVerb":                                "audit stop-decision-surface",
+	"command-interface-smoke/TestAuditStopDecisionSurfaceRefusesRecordTheGoalParserRejects":   "audit stop-decision-surface",
 }
 
 // retiredWithDeletedBed names legacy mandatory tests whose only subject was a

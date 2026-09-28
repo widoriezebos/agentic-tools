@@ -29,8 +29,7 @@ an allow.
 Generate the declaration instead of writing it by hand:
 
 ```sh
-metasystem internal audit stop-decision-surface --declare \
-  --goal <goal-id> --reason '<why this Stop decision moves>'
+metasystem test declare-moves <goal-id> --reason '<why this Stop decision moves>'
 ```
 
 The command writes `docs/stop-decision-moves/<goal>-<digest>.txt`. The audit

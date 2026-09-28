@@ -76,10 +76,10 @@ Each failure class has a named answer, and where the rule is binary, a script th
 
 | Failure | Addressed by | Enforced by |
 | --- | --- | --- |
-| Context bloat | A small always-loaded contract (`AGENTS.md`) with a single routing index (`wow.md`). Everything else loads at the phase where it helps, and new rules must pass the change gate | The engine's structural audit (`metasystem internal audit metasystem`) fails when the always-loaded word count exceeds its cap; the retro removes rules that cannot show their value |
+| Context bloat | A small always-loaded contract (`AGENTS.md`) with a single routing index (`wow.md`). Everything else loads at the phase where it helps, and new rules must pass the change gate | The engine's structural audit (the testing contract's shipped-installation group, and adoption) fails when the always-loaded word count exceeds its cap; the retro removes rules that cannot show their value |
 | Rabbit holes | The take-a-step-back skill: every attempt gets a written contract with a budget, every result gets classified, and the stop-loss triggers end an investigation that stopped producing facts | `metasystem experiment check` blocks new cycles once the ledger records a dead end, two no-progress cycles, or an exhausted cycle budget |
 | Silent behavior drift | The refactor skill: a trusted baseline, tests before restructuring, replayable batches, and the project's acceptance gate as the only proof that behavior was preserved | `metasystem test baseline --check` blocks new batches on a dirty worktree, diverged history, or an overdue gate run |
-| False completion | The verify skill (drive the change end to end and report the observed output) and the five-question completion check, with the obligation matrix for risky changes | `metasystem internal validate design-obligations` refuses completion while critical obligations lack proof. A report that says "should work" is treated as a defect |
+| False completion | The verify skill (drive the change end to end and report the observed output) and the five-question completion check, with the obligation matrix for risky changes | `metasystem design check --complete` refuses completion while critical obligations lack proof. A report that says "should work" is treated as a defect |
 | Forgotten lessons | Correction capture (a correction updates the instructions in their one owning document) and handoff notes that carry unfinished work across sessions | Receipts record every correction, the retro reviews the pattern, and the instruction ledger holds every rule change with a testable expected effect |
 | Unreviewable output | The collaboration rules: one intent per commit, mechanical churn separated from behavior change, and reports that start with the riskiest part | The human sends unreviewable diffs back; splitting them is the agent's job, and repeated offenses become retro findings |
 | Unsupervised runs | The supervision rules in `docs/orchestration.md`: detached launches, a verified liveness signal, one watcher armed per session over every job the session can create, budgets that wind down instead of interrupting | The supervision set armed once per checkout watches every job: the reaper ends capped and vanished jobs, `metasystem work wait` waits for one, and `metasystem status` shows them; remaining incidents land in receipts and `memory/known-issues.md` |
@@ -204,9 +204,8 @@ to adopting projects.
 | Script | Job |
 | --- | --- |
 | `testing.json` (run by `metasystem test run`) | The testing contract: audit, skill validation, routed assets, positive and negative fixture tests for the gates, selected by what changed |
-| `metasystem internal audit metasystem` | Required files, no outside references in metasystem files, placeholder leakage, always-loaded word cap |
-| `metasystem internal validate skills` | Skill frontmatter and naming rules |
-| `metasystem internal validate design-obligations` | Structure and declared state of an obligation matrix |
+| `metasystem system check` | This checkout's health, with its skills' frontmatter and naming rules and the shape of its app covenant |
+| `metasystem design check` | Structure and declared state of an obligation matrix; `--complete` is the completion gate |
 | `metasystem test baseline` | Trusted-baseline record and check for refactor mode: clean worktree, ancestry, cadence backstop |
 | `metasystem experiment` | Best-known-state ledger for improvement mode. `record` refuses frontier regressions, `challenge` enforces the noise floor, and both refuse comparisons against a frontier older than its declared measurement window |
 | `metasystem experiment check` | Blocks new investigation cycles once the ledger records a dead end, two no-progress cycles, or an exhausted cycle budget |

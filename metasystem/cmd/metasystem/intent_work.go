@@ -18,8 +18,10 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	goalpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -260,6 +262,19 @@ func intentWorkCommands() []intentCommand {
 			maxArgs:  0,
 			examples: []string{"metasystem test run", "metasystem test run --goal verbs-match-intent --mode standard"},
 			run:      runIntentTest,
+		},
+		{
+			object: "test", action: "declare-moves", audience: "agent", summary: "record that this change moves or removes Stop test assertions on purpose",
+			usage: []string{"metasystem test declare-moves G --reason TEXT [--base COMMIT]"},
+			details: []string{
+				"The static gate refuses a change that removes or changes an assertion deciding whether work must stop, unless the change carries a declaration.",
+				"This writes that declaration under docs/stop-decision-moves for goal G, which a person must first allow: metasystem goal allow G stop-test-changes --reason TEXT.",
+				"Commit the file with the change; a declaration binds exactly the moves it names, so a later change needs its own.",
+			},
+			flags: []intentFlag{reasonFlag("why", "why this change moves a Stop decision"),
+				{name: "base", value: "COMMIT", advanced: true, usage: "the base the moves are measured from (default: the merge base with origin/main)"}},
+			maxArgs: 1, examples: []string{"metasystem test declare-moves verbs-match-intent --reason 'the Stop checks moved into Go'"},
+			run: runIntentDeclareStopMoves,
 		},
 		{
 			object: "test", action: "wait", audience: "agent", summary: "wait for a proof attempt's recorded end",
@@ -1853,4 +1868,54 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
 		Summary: key + "=" + value + " is set in " + local})
+}
+
+// runIntentDeclareStopMoves writes the Stop decision move declaration for
+// one goal through the stop-surface owner in this process. The same moves
+// and reason again change nothing (R-129).
+func runIntentDeclareStopMoves(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "test declare-moves needs the goal: metasystem test declare-moves G --reason TEXT; nothing was done"})
+	}
+	id, reason := inv.input.args[0], inv.input.text("reason")
+	if strings.TrimSpace(reason) == "" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: "needs the reason the change moves a Stop decision; nothing was done", Decision: "state it with --reason TEXT"})
+	}
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	declare := inv.owners.stopMovesDeclare
+	if declare == nil {
+		declare = audit.DeclareStopDecisionSurface
+	}
+	root := inv.layout.InstallationRoot
+	before := stopMovesSnapshot(root)
+	path, err := declare(root, audit.StopSurfaceOptions{Base: inv.input.text("base"), GoalRecord: goalpkg.StopSurfaceGoalReader}, id, reason)
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: err.Error() + "; nothing was declared",
+			next: inv.publicArgv("goal", "allow", id, "stop-test-changes", "--reason", "TEXT"), nextReason: "a person allows goal " + id + " to move Stop assertions, then this declares the moves"})
+	}
+	result := intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), Summary: "declared the Stop decision moves in " + path + "; commit it with the change",
+		Data: map[string]any{"declaration": path}}
+	if before == stopMovesSnapshot(root) {
+		result.Outcome, result.Summary = intentUnchanged, "the declaration "+path+" already records these moves; nothing changed"
+	}
+	return inv.render(result)
+}
+
+// stopMovesSnapshot is the declarations directory's names and bytes, so a
+// repeat that rewrote nothing is seen as such.
+func stopMovesSnapshot(root string) string {
+	directory := filepath.Join(root, "docs", "stop-decision-moves")
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return ""
+	}
+	var snapshot strings.Builder
+	for _, entry := range entries {
+		data, _ := os.ReadFile(filepath.Join(directory, entry.Name()))
+		snapshot.WriteString(entry.Name() + "\x00" + string(data) + "\x00")
+	}
+	return snapshot.String()
 }

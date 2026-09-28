@@ -13,16 +13,6 @@ import (
 
 var skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-// Skill validates one skill directory's SKILL.md frontmatter: it opens on
-// line 1 and closes, names the skill (lowercase words joined by hyphens, at
-// most 64 characters, equal to the folder name) and describes it. Extra
-// frontmatter keys are allowed: runtimes add their own (allowed-tools,
-// model, ...) and project skills must not fail validation for using them.
-// It returns the skill's name. dir is reported as given.
-func Skill(dir string) (string, error) {
-	return skillAt(dir, dir)
-}
-
 // skillAt validates the skill at path, naming it shown in every message.
 func skillAt(path, shown string) (string, error) {
 	file := shown + "/SKILL.md"

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 // The rows of the object-action table that are not goal, work or process
@@ -51,6 +52,19 @@ func designIntentCommands() []intentCommand {
 			maxArgs:  0,
 			examples: []string{"metasystem design list", "metasystem design list --goal verbs-match-intent"},
 			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "designs", inv.input.args) },
+		},
+		{
+			object: "design", action: "check", audience: "both", summary: "check a plan's obligation matrix: is every critical or high obligation proven",
+			usage: []string{"metasystem design check FILE... [--complete]"},
+			details: []string{
+				"Checks the structure and declared state of each file's design-obligation matrix (docs/design/design-obligation-gate.md); it reads, never changes, the files.",
+				"By default a critical or high obligation may still await its one named runtime proof (READY_FOR_RUNTIME); --complete, the completion gate, requires every one DONE.",
+				"Proof and owner cells on critical and high rows must name something concrete; a passing check does not prove the named tests are truthful.",
+			},
+			flags:    []intentFlag{{name: "complete", usage: "the completion gate: every critical or high obligation is DONE"}},
+			maxArgs:  -1,
+			examples: []string{"metasystem design check plans/rate-limit.md", "metasystem design check plans/rate-limit.md --complete"},
+			run:      runIntentDesignCheck,
 		},
 		{
 			object: "design", action: "review", audience: "both", summary: "independently critique an existing project design",
@@ -475,4 +489,35 @@ func testBaselineArgs(args []string) ([]string, error) {
 		return append([]string{"record"}, rest...), nil
 	}
 	return nil, fmt.Errorf("record the baseline with --gate COMMAND, or check it with --check")
+}
+
+// runIntentDesignCheck judges the obligation matrices of the named files
+// through the design-obligation owner in this process.
+func runIntentDesignCheck(inv *intentInvocation) int {
+	if len(inv.input.args) == 0 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design check needs the plan: metasystem design check FILE...; nothing was checked"})
+	}
+	files := make([]string, 0, len(inv.input.args))
+	targets := make([]intentTarget, 0, len(inv.input.args))
+	for _, name := range inv.input.args {
+		path := inv.callerPath(name)
+		files = append(files, path)
+		targets = append(targets, intentTarget{Kind: "design", ID: path})
+	}
+	out, problems, code := validate.DesignObligations(inv.cwd, files, inv.input.switched("complete"))
+	data := map[string]any{"files": files, "complete": inv.input.switched("complete"), "lines": nonNilLines(out), "problems": nonNilLines(problems)}
+	switch {
+	case code == 0:
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: out, Data: data,
+			Summary: fmt.Sprintf("%d obligation matrix(es) pass the %s gate", len(files), map[bool]string{true: "completion", false: "default"}[inv.input.switched("complete")])})
+	case code == 2:
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, text: problems, Data: data,
+			Summary: strings.Join(nonNilLines(problems), "; ") + "; nothing was checked"})
+	}
+	summary := "the obligation matrix does not pass"
+	if len(problems) > 0 {
+		summary = problems[0]
+	}
+	return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: problems, Data: data, Summary: summary,
+		nextReason: "prove or re-state the named obligations in the plan, then check again"})
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -106,7 +107,7 @@ func processIntentCommands() []intentCommand {
 		{
 			object: "system", action: "check", primary: true, audience: "both", summary: "diagnose problems with this checkout, changing nothing",
 			usage:    []string{"metasystem system check"},
-			details:  []string{"Checks this checkout once, with the shape of its app covenant when it has one, and repairs nothing.", "Each problem names the command that fixes it, where there is one."},
+			details:  []string{"Checks this checkout once, with its skills and the shape of its app covenant when it has one, and repairs nothing.", "Each problem names the command that fixes it, where there is one."},
 			flags:    []intentFlag{intentInstallationFlag},
 			maxArgs:  0,
 			examples: []string{"metasystem system check", "metasystem system check --json"},
@@ -1310,8 +1311,17 @@ func runIntentDoctor(inv *intentInvocation) int {
 	if refused > 0 {
 		code = max(code, 1)
 	}
+	// Skills are where users extend the metasystem; their frontmatter and
+	// naming rules are part of this checkout's health.
+	skillsData := map[string]any{"valid": true}
+	var skillLines strings.Builder
+	if err := validate.SkillInventory(scope.Installation, &skillLines); err != nil {
+		skillsData = map[string]any{"valid": false, "reason": err.Error()}
+		lines = append(lines, "skills invalid: "+err.Error()+"; fix that skill's SKILL.md (its name and description frontmatter)")
+		code = max(code, 1)
+	}
 	result := intentResult{Outcome: intentConfirmed, code: code, Targets: inv.checkoutTarget(scope),
-		Summary: verdict.Line(), text: lines, Data: additiveData(steward.NewHookHealthPreview(verdict), map[string]any{"publicRemedies": remedies, "covenant": covenantData, "adapters": adapters})}
+		Summary: verdict.Line(), text: lines, Data: additiveData(steward.NewHookHealthPreview(verdict), map[string]any{"publicRemedies": remedies, "covenant": covenantData, "adapters": adapters, "skills": skillsData})}
 	if first != nil {
 		result.next, result.nextReason = first, "the first public remedy check found"
 	}

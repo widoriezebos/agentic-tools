@@ -49,7 +49,7 @@ Decide the fate of every rule with the table below. A file is not the unit of de
 | Authorization boundaries, protected areas, "never touch X" | `docs/project-rules.md`, in the reserved decisions and external state sections |
 | Judgment rules duplicating metasystem guidance | Drop in favor of the metasystem owner; note the mapping in the ledger |
 | Judgment rules the metasystem lacks, backed by evidence | Keep as a project delta in the correct owner; propose upstream to the template in the final report |
-| Repeated specialist workflows | Keep as a project skill validated by `metasystem internal validate skills`, or map to `verify`, `refactor`, or `take-a-step-back` and deprecate |
+| Repeated specialist workflows | Keep as a project skill (`metasystem system check` validates its frontmatter), or map to `verify`, `refactor`, or `take-a-step-back` and deprecate |
 | Machine-verifiable rules stated as prose | Convert to a script or CI check, or map to an existing metasystem script. Delete the prose |
 | Incident history, one-off lessons, session logs | Delete. Git history is the archive. Promote only lessons with repeated evidence, through the change gate |
 | Provider- or model-specific prompt recipes | Delete unless repeated product-specific evidence justifies a per-runtime adapter |

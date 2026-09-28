@@ -24,7 +24,7 @@ truth.certification=certified
 gate.direction=min
 gate.threshold.validation=<=0
 gate.noise-floor.validation=0
-guard.audit.command=bash -c 'bin/metasystem internal audit metasystem --root .; status=$?; passed=$((status == 0)); printf "metric=audit=%s\n" "$passed"; exit 0'
+guard.audit.command=bash -c 'go test -count=1 -run TestShippedInstallationPassesMetasystemAudit ./internal/audit >/dev/null; status=$?; passed=$((status == 0)); printf "metric=audit=%s\n" "$passed"; exit 0'
 guard.audit.floor=1
 guard.audit.noise=0
 guard.cadence=1
