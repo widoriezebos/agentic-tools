@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -381,46 +380,4 @@ func canonicalValidatorEnvironmentFrom(inherited []string) []string {
 	// GOFLAGS must equal cmd/devgate's ownedGoFlags: the gate's frozen-tree
 	// check accepts exactly that value (disk-lifetimes A4).
 	return append(environment, "GOFLAGS=-mod=readonly -trimpath", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1")
-}
-
-// runLandingPark durably records one stopped recertified landing attempt
-// (`landing park`); the landing path parks through the same owner.
-func runLandingPark(args []string) int {
-	flags := flag.NewFlagSet("landing park", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "integration project root")
-	chain := flags.String("chain", "", "root implementation chain")
-	target := flags.String("target", "", "frozen target commit")
-	reason := flags.String("reason", "", "original landing refusal code")
-	detail := flags.String("detail", "", "specific refusal explanation")
-	recertification := flags.String("recertification", "", "diagnostic recertification record path")
-	candidate := flags.String("candidate-commit", "", "retained local landing commit")
-	var refs landingRepeatedStrings
-	flags.Var(&refs, "recovery-ref", "retained source/result anchor ref (repeatable)")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		return 2
-	}
-	result, err := landing.Park(landing.ParkParams{
-		Root: *root, Chain: *chain, TargetCommit: *target, Reason: *reason, Detail: *detail,
-		Recertification: *recertification, CandidateCommit: *candidate, RecoveryRefs: refs,
-		CallerPID: int64(os.Getppid()),
-	})
-	if err != nil {
-		var failure *landing.ParkFailure
-		if errors.As(err, &failure) {
-			fmt.Fprintf(os.Stderr, "reason=chain-recertification-park-failed cause=%s error=%v\n", failure.Cause, failure.Err)
-		} else {
-			fmt.Fprintln(os.Stderr, err)
-		}
-		return 1
-	}
-	fmt.Printf("state=%s\nreason=%s\nparkRecord=%s\n", result.State, result.Reason, result.ParkRecord)
-	return 0
-}
-
-type landingRepeatedStrings []string
-
-func (values *landingRepeatedStrings) String() string { return fmt.Sprint([]string(*values)) }
-func (values *landingRepeatedStrings) Set(value string) error {
-	*values = append(*values, value)
-	return nil
 }

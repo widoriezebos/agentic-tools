@@ -1083,19 +1083,16 @@ func TestRiskGateAdmissionCommandMarksThenEnforces(t *testing.T) {
 		file.Risk = nil
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "5", "--destructive-reach", "MECHANICAL"}
 	want := "RISK_UNANSWERED goal=standing-validation tier=3 next: goal edit --risk"
-	refusal, refusalCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
-	if refusalCode != 9 || strings.TrimSpace(refusal) != want {
-		t.Fatalf("unanswered-risk command did not refuse: code=%d output=%q", refusalCode, refusal)
+	if verdict, err := goalRevisionAdmissionVerdict(root, 5, "implementer", reads, commandNow); err != nil || !verdict.Refused() || verdict.PolicyRefusal != want {
+		t.Fatalf("unanswered-risk admission did not refuse: %+v err=%v", verdict, err)
 	}
 	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.Risk = &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture answers every risk question."}
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	output, admittedCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
-	if admittedCode != 0 || strings.TrimSpace(output) != "" {
-		t.Fatalf("answered-risk command was not admitted: code=%d output=%q", admittedCode, output)
+	if verdict, err := goalRevisionAdmissionVerdict(root, 5, "implementer", reads, commandNow); err != nil || verdict.Refused() {
+		t.Fatalf("answered-risk admission was not admitted: %+v err=%v", verdict, err)
 	}
 }
 
@@ -1364,11 +1361,8 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 	if err := json.Unmarshal(fixture.proofRecord(), &proofRecord); err != nil || proofRecord.OperationID != opid || proofRecord.Action != "goal accept-risk" {
 		t.Fatalf("accepted-risk authority proof does not match the decision: record=%+v err=%v", proofRecord, err)
 	}
-	closeOut, closeCode := captureStdout(t, func() int {
-		return runDispatchCritiqueRegisterClose([]string{"--repo", root, "--root-job", "critic"})
-	})
-	if closeCode != 0 || strings.TrimSpace(closeOut) != "closed" {
-		t.Fatalf("accepted-risk chain did not close: exit %d output %q", closeCode, closeOut)
+	if closeOut, closeErr := dispatchcore.CritiqueRegisterClose(root, "critic"); closeErr != nil || closeOut != "closed" {
+		t.Fatalf("accepted-risk chain did not close: outcome %q err %v", closeOut, closeErr)
 	}
 
 	boundedRoot := map[string]any{

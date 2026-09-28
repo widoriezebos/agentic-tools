@@ -184,19 +184,6 @@ func configValidateTo(stdout, stderr io.Writer, conf, repo string) int {
 	return 0
 }
 
-// runConfigKeys enumerates configured keys under the --matching prefix, one per
-// line, unioning the committed file, its .local sibling, and numeric-suffix
-// members named only in the environment.
-func runConfigKeys(args []string) int {
-	flags := flag.NewFlagSet("config keys", flag.ContinueOnError)
-	conf := flags.String("conf", "metasystem.conf", "path to metasystem.conf")
-	matching := flags.String("matching", "", "enumerate keys starting with this prefix")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	return configKeysTo(os.Stdout, *conf, *matching, os.Environ())
-}
-
 // configKeysTo enumerates configured keys onto the caller's stream; the
 // environment is the one whose numeric-suffix members count.
 func configKeysTo(stdout io.Writer, conf, matching string, environment []string) int {

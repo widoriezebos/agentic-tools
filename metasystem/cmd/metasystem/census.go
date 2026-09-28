@@ -77,38 +77,3 @@ func runProcClassify(args []string) int {
 	fmt.Println(identity.TagState(identity.KernelProber{}, *pid, *tag))
 	return 0
 }
-
-// runCensusFindAncestor walks the live process tree from --pid and prints the
-// first signature-matched agent ancestor as compact JSON.
-func runCensusFindAncestor(args []string) int {
-	flags := flag.NewFlagSet("proc find-ancestor", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "metasystem root")
-	pid := flags.Int64("pid", 0, "process id to walk up from")
-	runtime := flags.String("runtime", "", "restrict to one runtime (optional)")
-	allHosts := flags.Bool("all-hosts", false, "search every adoptable host independent of the execution roster")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" || *pid == 0 {
-		fmt.Fprintln(os.Stderr, "proc find-ancestor: --repo and --pid are required")
-		return 2
-	}
-	if *allHosts && *runtime != "" {
-		fmt.Fprintln(os.Stderr, "proc find-ancestor: --all-hosts and --runtime are mutually exclusive")
-		return 2
-	}
-	var ancestor census.AgentAncestor
-	var err error
-	if *allHosts {
-		ancestor, err = census.FindAncestorAllHosts(*repo, *pid)
-	} else {
-		ancestor, err = census.FindAncestorProduction(*repo, *pid, *runtime)
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	encoded, _ := json.Marshal(ancestor)
-	fmt.Println(string(encoded))
-	return 0
-}

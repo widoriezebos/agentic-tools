@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -97,41 +96,6 @@ func runValidateSessionIsolation(args []string) int {
 		return 1
 	}
 	fmt.Println(newHarness)
-	return 0
-}
-
-// runValidateReturnComplete validates a canonical agent return against the
-// shipped role schema — by role and file, or by job (walking the chain and
-// checking identity). Violations print to stderr, one per line.
-func runValidateReturnComplete(args []string) int {
-	flags := flag.NewFlagSet("validate return-complete", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	role := flags.String("role", "", "role name (with --file)")
-	file := flags.String("file", "", "return file (with --role)")
-	job := flags.String("job", "", "job id (instead of --role/--file)")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" {
-		fmt.Fprintln(os.Stderr, "validate return-complete: --root is required")
-		return 2
-	}
-	var violations []string
-	switch {
-	case *job != "" && *role == "" && *file == "":
-		violations = returnschema.ReturnCompleteJob(*root, *job)
-	case *job == "" && *role != "" && *file != "":
-		violations = returnschema.ReturnCompleteRole(*root, *role, *file)
-	default:
-		fmt.Fprintln(os.Stderr, "validate return-complete: --job, or --role with --file")
-		return 2
-	}
-	for _, violation := range violations {
-		fmt.Fprintf(os.Stderr, "violation: %s\n", violation)
-	}
-	if len(violations) > 0 {
-		return 1
-	}
 	return 0
 }
 
@@ -334,48 +298,6 @@ Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 		fmt.Fprintln(os.Stderr, line)
 	}
 	return code
-}
-
-func runValidateMovedEffects(args []string) int {
-	usage := func() {
-		fmt.Fprint(os.Stderr, `Usage:
-  metasystem internal validate moved-effects --file <page.md> [--root <repository-root>]
-  (a person or critic uses metasystem design review PAGE --check-only)
-
-Checks a Moved effects inventory with this table header:
-| Effect | From | To | Code |
-
-Use the exact line "No owner moves." when the page moves no owner.
-`)
-	}
-	flags := flag.NewFlagSet("validate moved-effects", flag.ContinueOnError)
-	flags.Usage = usage
-	root := pathFlag(flags, "root", "..", "repository root containing the metasystem root")
-	file := flags.String("file", "", "design page")
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return 0
-		}
-		return 2
-	}
-	if flags.NArg() > 0 || *file == "" {
-		fmt.Fprintln(os.Stderr, "validate moved-effects: --file is required and positional arguments are not accepted")
-		usage()
-		return 2
-	}
-	page, err := os.ReadFile(*file)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "validate moved-effects: read %s: %v\n", *file, err)
-		return 2
-	}
-	lines, problems := movedEffectsReport(page, *root)
-	for _, line := range lines {
-		fmt.Println(line)
-	}
-	if problems > 0 {
-		return 1
-	}
-	return 0
 }
 
 // movedEffectsReport checks a design page's moved-effect inventory against

@@ -431,7 +431,7 @@ func standingInstruction(packet []byte) string {
 }
 
 func RemedialRefusal(reason, checkout string) string {
-	return fmt.Sprintf("this checkout's brain declaration is unreadable (%s); until a human repairs it nothing here dispatches, lands, claims, cancels, closes, reaps, or carries a human's word: metasystem internal brain withdraw --root %s --by <name>, then metasystem internal brain declare --root %s --by <name> if this seat is the brain", reason, checkout, checkout)
+	return fmt.Sprintf("this checkout's brain declaration is unreadable (%s); until a human repairs it nothing here dispatches, lands, claims, cancels, closes, reaps, or carries a human's word: metasystem settings coordinator --withdraw --by <name> --repo %s, then metasystem settings coordinator --declare --by <name> --repo %s if this seat is the brain", reason, checkout, checkout)
 }
 
 func Fence(stateRoot, act, ledgerIdentity string) string {

@@ -17,67 +17,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
-func TestVerifyReferencesVerbExitsNineAndPrintsTheLine(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	testRoot := filepath.Join(root, "artifacts", "agents", "test-"+t.Name())
-	t.Cleanup(func() { os.RemoveAll(testRoot) })
-	stageDir := filepath.Join(testRoot, "record-locks", "staged")
-	referenceDir := filepath.Join(testRoot, "rounds", "1", "staged")
-	temp := t.TempDir()
-	brief := filepath.Join(temp, "brief.md")
-	if err := os.WriteFile(brief, []byte(strings.Repeat("b", 40*1024)), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	composition := filepath.Join(temp, "composition.json")
-	if _, err := dispatchcore.ComposeRolePacket(dispatchcore.ComposeRolePacketParams{
-		Root: root, Role: "verifier", Brief: brief, JobID: "verify-references", Runtime: "fake",
-		Model: "fake-model", ToolPolicy: "read-only", Round: 1, DestructiveReach: dispatchcore.HazardMechanical,
-		Output: filepath.Join(temp, "prompt.md"), CompositionOutput: composition,
-		StageDir: stageDir, ReferenceDir: referenceDir, ReturnMarginMinutes: -1,
-	}); err != nil {
-		t.Fatalf("compose role packet: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(referenceDir), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(stageDir, referenceDir); err != nil {
-		t.Fatal(err)
-	}
-	out, code := captureStdout(t, func() int {
-		return runDispatchVerifyReferences([]string{"--root", root, "--composition", composition})
-	})
-	if code != 0 || strings.TrimSpace(out) != "references-verified count=1" {
-		t.Fatalf("verified command = exit %d, output %q", code, out)
-	}
-	staged := filepath.Join(referenceDir, "task-direction.md")
-	handle, err := os.OpenFile(staged, os.O_APPEND|os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := handle.WriteString("tampered\n"); err != nil {
-		handle.Close()
-		t.Fatal(err)
-	}
-	if err := handle.Close(); err != nil {
-		t.Fatal(err)
-	}
-	out, code = captureStdout(t, func() int {
-		return runDispatchVerifyReferences([]string{"--root", root, "--composition", composition})
-	})
-	if code != 9 || strings.Count(strings.TrimSpace(out), "\n") != 0 || !strings.HasPrefix(out, "REFERENCE_"+"MISMATCH path=") {
-		t.Fatalf("mismatch command = exit %d, output %q", code, out)
-	}
-	_, code = captureStderr(t, func() int {
-		return runDispatchVerifyReferences([]string{"--root", root, "--composition", filepath.Join(temp, "missing.json")})
-	})
-	if code != 1 {
-		t.Fatalf("missing composition exit = %d, want 1", code)
-	}
-}
-
 func TestGoalRevisionAdmissionCommandMarksThenEnforcesWithExplicitDispatchContext(t *testing.T) {
 	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
 	repository := newProofAdmissionRepositoryFixture(t, now, false)
@@ -88,20 +27,29 @@ func TestGoalRevisionAdmissionCommandMarksThenEnforcesWithExplicitDispatchContex
 		file.Risk = nil
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "5", "--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
 	want := "RISK_UNANSWERED goal=standing-validation tier=3 next: goal edit --risk"
-	refusal, refusalCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
-	if refusalCode != 9 || strings.TrimSpace(refusal) != want {
-		t.Fatalf("unanswered-risk command did not refuse: code=%d output=%q", refusalCode, refusal)
+	verdict, err := goalRevisionAdmissionVerdict(root, 5, "implementer", reads, commandNow)
+	if err != nil || !verdict.Refused() || verdict.PolicyRefusal != want {
+		t.Fatalf("unanswered-risk admission did not refuse: %+v err=%v", verdict, err)
 	}
 	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.Risk = &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture answers every risk question."}
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	output, admittedCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
-	if admittedCode != 0 || strings.TrimSpace(output) != "" {
-		t.Fatalf("answered-risk command was not admitted: code=%d output=%q", admittedCode, output)
+	if verdict, err := goalRevisionAdmissionVerdict(root, 5, "implementer", reads, commandNow); err != nil || verdict.Refused() || verdict.PolicyNotice != "" {
+		t.Fatalf("answered-risk admission was not admitted: %+v err=%v", verdict, err)
 	}
+}
+
+// goalRevisionAdmissionVerdict runs the dispatch admission owner the internal
+// job goal-revision-admission printed, for standing-validation revision 2, a
+// fresh dispatch and MECHANICAL reach, at the command clock.
+func goalRevisionAdmissionVerdict(root string, proposedCap uint64, role string, reads dispatchcore.ProofAdmissionReads, commandNow func(string) (time.Time, error)) (dispatchcore.GoalRevisionAdmission, error) {
+	now, err := commandNow(root)
+	if err != nil {
+		return dispatchcore.GoalRevisionAdmission{}, err
+	}
+	return dispatchcore.EvaluateGoalRevisionAdmissionForDispatchWithReads(root, "standing-validation", 2, proposedCap, now, role, "fresh", reads, dispatchcore.HazardMechanical)
 }
 
 // An abandoned breach-stopped goal cannot enter command budget admission.
@@ -164,10 +112,9 @@ func TestGoalRevisionAdmissionCommandRefusesAbandonedBreachStoppedGoalBeforeBudg
 	if projection.Tree.Live[file.Id] != nil || archived == nil || archived.State != goal.StateAbandoned || archived.Claimed != nil || archived.StopCapability == nil || archived.StopFence == nil || archived.StopFence.StopID != stopID || archived.Abandoned == nil || archived.Abandoned.StopID != stopID {
 		t.Fatalf("accepted ledger does not contain the abandoned stopped goal: %+v", archived)
 	}
-	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "1", "--destructive-reach", "MECHANICAL"}
-	output, code := captureStderr(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
-	if code == 0 || !strings.Contains(output, "not a claimed accepted goal") || strings.Contains(output, "BUDGET_") {
-		t.Fatalf("abandoned goal reached budget admission: code=%d output=%q", code, output)
+	verdict, err := goalRevisionAdmissionVerdict(root, 1, "implementer", reads, commandNow)
+	if err == nil || !strings.Contains(err.Error(), "not a claimed accepted goal") || strings.Contains(err.Error(), "BUDGET_") || verdict.Refused() {
+		t.Fatalf("abandoned goal reached budget admission: %+v err=%v", verdict, err)
 	}
 }
 
@@ -195,10 +142,10 @@ func TestGoalRevisionAdmissionCommandRefusesExhaustedCodeCriticClass(t *testing.
 			"reviewChainCounted": true,
 		})
 	}
-	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "1", "--role", "code-critic", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
-	refusal, code := captureStdout(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
-	if code != 9 || !strings.Contains(refusal, "codeCritiques=2/2") {
-		t.Fatalf("command did not refuse the exhausted code-critic class: code=%d stdout=%q", code, refusal)
+	verdict, err := goalRevisionAdmissionVerdict(root, 1, "code-critic", reads, commandNow)
+	refusal := strings.Join(dispatchcore.FormatGoalRevisionAdmission(verdict), "\n")
+	if err != nil || !verdict.Refused() || !strings.Contains(refusal, "codeCritiques=2/2") {
+		t.Fatalf("admission did not refuse the exhausted code-critic class: err=%v lines=%q", err, refusal)
 	}
 }
 
@@ -230,15 +177,14 @@ func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.
 		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:20:00Z", "endedAt": "2026-08-30T08:21:00Z",
 		"pid": 4242,
 	})
-	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "1",
-		"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL", "--format", "json"}
-	output, code := captureStdout(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, repository.commandNow(now)) })
-	if code != 9 {
-		t.Fatalf("JSON offer command exit=%d output=%s", code, output)
+	verdict, err := goalRevisionAdmissionVerdict(root, 1, "implementer", reads, repository.commandNow(now))
+	if err != nil || !verdict.Refused() {
+		t.Fatalf("offer admission was not a refusal: %+v err=%v", verdict, err)
 	}
-	var verdict dispatchcore.GoalRevisionAdmission
-	if err := json.Unmarshal([]byte(output), &verdict); err != nil || verdict.Extension == nil || verdict.Extension.EvidenceKind != "landing" {
-		t.Fatalf("JSON verdict lost the offer: %+v err=%v output=%s", verdict, err, output)
+	encoded, err := json.Marshal(verdict)
+	var decoded dispatchcore.GoalRevisionAdmission
+	if err != nil || json.Unmarshal(encoded, &decoded) != nil || decoded.Extension == nil || decoded.Extension.EvidenceKind != "landing" {
+		t.Fatalf("the verdict's JSON lost the offer: %+v err=%v output=%s", decoded, err, encoded)
 	}
 
 	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
@@ -482,18 +428,12 @@ func TestDispatchCritiqueAdvanceVerbsPath(t *testing.T) {
 			"schemaVersion": 3, "jobId": job, "round": round,
 			"findings": findings, "rigor": rigor,
 		})
-		out, code := captureStdout(t, func() int {
-			return runDispatchCritiqueRegisterAdvance([]string{"--repo", repo, "--root-job", "critic", "--round-job", job})
-		})
-		if code != 0 || strings.TrimSpace(out) != "advanced" {
-			t.Fatalf("register round %d: exit=%d out=%q", round, code, out)
+		if outcome, err := dispatchcore.CritiqueRegisterAdvance(repo, "critic", job); err != nil || outcome != "advanced" {
+			t.Fatalf("register round %d: outcome=%q err=%v", round, outcome, err)
 		}
 	}
 	if ids, err := dispatchcore.CritiqueOpenFindingIDs(repo, "critic"); err != nil || strings.Join(ids, ",") != "S-1" {
 		t.Fatalf("open finding identifiers after the folds = %v, %v", ids, err)
-	}
-	if code := runDispatchCritiqueRegisterAdvance([]string{"--repo", repo}); code != 2 {
-		t.Fatalf("register usage error exit=%d, want 2", code)
 	}
 }
 
@@ -507,10 +447,7 @@ func TestDispatchCritiqueRegisterCloseKeepsRegisterlessCompatibility(t *testing.
 		"jobId": "legacy-critic", "role": "code-critic", "round": 1,
 		"parentJob": nil, "status": "completed",
 	})
-	out, code := captureStdout(t, func() int {
-		return runDispatchCritiqueRegisterClose([]string{"--repo", repo, "--root-job", "legacy-critic"})
-	})
-	if code != 0 || strings.TrimSpace(out) != "closed" {
-		t.Fatalf("register-less close verb = exit %d output %q", code, out)
+	if outcome, err := dispatchcore.CritiqueRegisterClose(repo, "legacy-critic"); err != nil || outcome != "closed" {
+		t.Fatalf("register-less close = outcome %q err %v", outcome, err)
 	}
 }

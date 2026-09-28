@@ -76,17 +76,6 @@ func brainHumanAct(caller processIdentity, root, verb string, fixture bool, clas
 	return nil
 }
 
-func runBrainDeclare(args []string) int {
-	flags := flag.NewFlagSet("brain declare", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout state root")
-	by := flags.String("by", "", "human making the declaration")
-	fixture := flags.Bool("fixture-human-authority", false, "fixture-only authority under an exact fake-runtime root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	return brainDeclare(entryCallerIdentity(), os.Stdout, os.Stderr, *root, *by, *fixture)
-}
-
 // brainDeclare is the declaration owner: the human gate classifies the
 // supplied caller identity (owner_invocation.go), and the outcome goes to the
 // caller's streams.

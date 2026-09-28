@@ -1,61 +1,11 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
-
-	"golang.org/x/sys/unix"
-
-	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 )
-
-func runIdentityGroupOwned(args []string) int {
-	flags := flag.NewFlagSet("proc group-owned", flag.ContinueOnError)
-	pgid := flags.Int64("pgid", 0, "process group id")
-	tag := flags.String("tag", "", "instance tag required in a shipped argv position")
-	root := pathFlag(flags, "root", "", "checkout root for an authorized fake-runtime fallback")
-	record := flags.String("record", "", "job record carrying an exact trusted-launcher proof")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *pgid < 2 || *tag == "" || (*root == "") != (*record == "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal proc group-owned --pgid P --tag TAG [--root R --record FILE]")
-		return 2
-	}
-	switch janitor.GroupOwnershipAt(*root, *pgid, *tag) {
-	case janitor.GroupOwned:
-		return 0
-	case janitor.GroupNotOwned:
-		return 1
-	}
-	if *root == "" {
-		return 3
-	}
-	if err := unix.Kill(int(-*pgid), 0); err != nil && err != unix.EPERM {
-		return 1
-	}
-	authorization, err := fixtureauth.New(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proc group-owned:", err)
-		return 3
-	}
-	matches, err := dispatchcore.RecordedGroupProofMatches(
-		*record, *pgid, *tag, authorization.GroupOwnership(),
-	)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proc group-owned:", err)
-		return 3
-	}
-	if matches {
-		return 0
-	}
-	return 3
-}
 
 // runProcSetsid makes this process the leader of a new session and then
 // replaces it with the command, so the command runs with no controlling

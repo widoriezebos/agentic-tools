@@ -185,27 +185,6 @@ func runTestList(args []string) int {
 	return 0
 }
 
-func runTestCheck(args []string) int {
-	flags := flag.NewFlagSet("test check", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "MetaSystem installation root")
-	jsonOutput := flags.Bool("json", false, "emit structured JSON")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem settings check [--repo INSTALLATION]")
-		return 2
-	}
-	path, groups, err := testingContractReady(*root, true)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "testing contract:", err)
-		return 1
-	}
-	if *jsonOutput {
-		printJSON(map[string]any{"schemaVersion": 1, "status": "ready", "contract": path, "groupCount": groups})
-	} else {
-		fmt.Printf("TEST-CONTRACT READY groups=%d contract=%s\n", groups, path)
-	}
-	return 0
-}
-
 // testingContractReady validates the committed testing contract and its
 // declared tools without running a test; with discovery it also resolves
 // every group's native tests under the host's heavy resource lease.

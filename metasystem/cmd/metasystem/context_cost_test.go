@@ -945,12 +945,24 @@ func (bed *contextCostBed) runDiagnosticOverrides(live contextCostSnapshot) {
 	}
 }
 
+// weekReport runs the weekly cohort owner (steward.WriteContextReport, the
+// internal context report's owner) over the bed's installation, at the
+// instant the week 2026-09-07 ends.
+func (bed *contextCostBed) weekReport() (steward.ContextReport, error) {
+	bed.t.Helper()
+	stateRoot, err := goal.ResolveStateRoot(bed.outer)
+	if err != nil {
+		bed.t.Fatal(err)
+	}
+	week := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
+	_, _, report, err := steward.WriteContextReport(stateRoot, week, week.AddDate(0, 0, 7))
+	return report, err
+}
+
 func (bed *contextCostBed) requireReport(wantCalls int) {
 	bed.t.Helper()
-	output, code, err := runContextCostCommand(bed.outer, bed.environment(false), nil, bed.engine,
-		"context", "report", "--root", bed.outer, "--week", "2026-09-07")
-	if err != nil || code != 0 || !strings.Contains(output, "verdict=PASS") {
-		bed.t.Fatalf("%s report: code=%d err=%v output=%s", bed.runtime, code, err, output)
+	if report, err := bed.weekReport(); err != nil || !report.Pass {
+		bed.t.Fatalf("%s report: pass=%v err=%v", bed.runtime, report.Pass, err)
 	}
 	callsPath := filepath.Join(bed.installation, "artifacts", "reports", "coordinator-context", "2026-09-07", "calls.jsonl")
 	if got := contextCostCompleteLines(bed.t, callsPath); got != wantCalls {
@@ -976,36 +988,37 @@ func (bed *contextCostBed) runLockedReaderContention() {
 		}
 	}()
 
-	reader := startContextCostBarrierProcess(bed.t, bed.outer, bed.environment(false), nil, bed.engine,
-		"context", "report", "--root", bed.outer, "--week", "2026-09-07")
-	stopProcess := bed.startStopBehindBarrier("held-cursor-lock")
-	defer cleanupContextCostBarrier(reader)
-	defer cleanupContextCostBarrier(stopProcess)
-	waitContextCostBarrierReady(bed.t, reader)
-	waitContextCostBarrierReady(bed.t, stopProcess)
-	releaseContextCostBarrier(bed.t, reader)
-	releaseContextCostBarrier(bed.t, stopProcess)
-	select {
-	case <-reader.process.done:
-		bed.t.Fatalf("%s blocking report finished before the held cursor lock was released: %v\n%s", bed.runtime, reader.process.err, reader.process.output.String())
-	default:
+	// The blocking reader is the report owner on its own descriptor: flock
+	// conflicts between open file descriptions, so it waits on the lock held
+	// above exactly as the report process did.
+	type reportOutcome struct {
+		report steward.ContextReport
+		err    error
 	}
+	reader := make(chan reportOutcome, 1)
+	go func() {
+		report, err := bed.weekReport()
+		reader <- reportOutcome{report, err}
+	}()
+	stopProcess := bed.startStopBehindBarrier("held-cursor-lock")
+	defer cleanupContextCostBarrier(stopProcess)
+	waitContextCostBarrierReady(bed.t, stopProcess)
+	releaseContextCostBarrier(bed.t, stopProcess)
 	stop := bed.finishStop("held-cursor-lock", stopProcess.process)
 	if stop.role.Status != steward.HealthUnknown || !strings.Contains(stop.role.Reason, "busy") || !strings.Contains(stop.reportRole, "context-budget=unknown") {
 		bed.t.Fatalf("%s held-lock Stop report did not expose a bounded busy role: role=%s response=%s\nreport=%s", bed.runtime, stop.role.Line(), stop.output, stop.report)
 	}
 	select {
-	case <-reader.process.done:
-		bed.t.Fatalf("%s report did not wait on the held real cursor lock: %v\n%s", bed.runtime, reader.process.err, reader.process.output.String())
+	case outcome := <-reader:
+		bed.t.Fatalf("%s report did not wait on the held real cursor lock: pass=%v err=%v", bed.runtime, outcome.report.Pass, outcome.err)
 	default:
 	}
 	if err := unix.Flock(int(lock.Fd()), unix.LOCK_UN); err != nil {
 		bed.t.Fatal(err)
 	}
 	locked = false
-	output, _, err := waitContextCostProcess(reader.process)
-	if err != nil || !strings.Contains(output, "verdict=PASS") {
-		bed.t.Fatalf("%s report did not complete after the explicit lock release: %v\n%s", bed.runtime, err, output)
+	if outcome := <-reader; outcome.err != nil || !outcome.report.Pass {
+		bed.t.Fatalf("%s report did not complete after the explicit lock release: pass=%v err=%v", bed.runtime, outcome.report.Pass, outcome.err)
 	}
 }
 

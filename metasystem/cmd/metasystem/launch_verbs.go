@@ -129,56 +129,7 @@ func runLaunchSupervise(args []string) int {
 	}
 	return 0
 }
-func runLaunchWait(args []string) int {
-	return launchWaitWith(launchManager(), args, os.Stdout, os.Stderr)
-}
-func launchWaitWith(manager *launch.Manager, args []string, stdout, stderr io.Writer) int {
-	flags := flag.NewFlagSet("launch wait", flag.ContinueOnError)
-	flags.SetOutput(stderr)
-	id := flags.String("id", "", "launch id")
-	timeout := flags.Duration("timeout", time.Duration(1<<63-1), "maximum wait")
-	if flags.Parse(args) != nil || *id == "" || flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: metasystem internal launch wait --id <id> [--timeout <duration>] (one call waits at most launch.wait.cap.seconds)")
-		return 2
-	}
-	cap, err := manager.WaitCap()
-	if err != nil {
-		fmt.Fprintln(stderr, "launch wait:", err)
-		return 1
-	}
-	effectiveWait := *timeout
-	if effectiveWait > cap {
-		effectiveWait = cap
-		record, statusErr := manager.Status(*id)
-		if statusErr != nil {
-			fmt.Fprintln(stderr, "launch wait:", statusErr)
-			return 1
-		}
-		if record.State.Terminal() {
-			fmt.Fprintln(stdout, launchReport(record))
-			return 0
-		}
-		fmt.Fprintf(stderr, "launch wait: --timeout %s exceeds launch.wait.cap.seconds=%d; waiting %s\n", *timeout, cap/time.Second, cap)
-	}
-	record, terminal, err := manager.Wait(*id, *timeout)
-	if err != nil {
-		fmt.Fprintln(stderr, "launch wait:", err)
-		return 1
-	}
-	if !terminal {
-		fmt.Fprintf(stderr, "launch wait: %s still %s after %s; run launch wait again or launch status\n", *id, record.State, effectiveWait)
-		return 3
-	}
-	fmt.Fprintln(stdout, launchReport(record))
-	return 0
-}
-func runLaunchStatus(args []string) int {
-	return launchRecordVerb(args, "status", (*launch.Manager).Status)
-}
 
-func runLaunchCancel(args []string) int {
-	return launchRecordVerb(args, "cancel", (*launch.Manager).Cancel)
-}
 func launchID(args []string, verb string) (string, bool) {
 	flags := flag.NewFlagSet("launch "+verb, flag.ContinueOnError)
 	id := flags.String("id", "", "launch id")
@@ -196,23 +147,6 @@ func writeLaunchRecordUsage(w io.Writer, verb string) {
 	fmt.Fprintf(w, "usage: metasystem launch %s --id <id>\n", verb)
 	fmt.Fprintln(w, "Launch records belong to the current user under ~/.metasystem/launch; they are not selected by repository.")
 	fmt.Fprintln(w, "--root is not a launch flag. Use --id to select a launch record.")
-}
-func launchRecordVerb(args []string, verb string, action func(*launch.Manager, string) (launch.Record, error)) int {
-	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
-		writeLaunchRecordUsage(os.Stdout, verb)
-		return 0
-	}
-	id, ok := launchID(args, verb)
-	if !ok {
-		return 2
-	}
-	record, err := action(launchManager(), id)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "launch %s: %v\n", verb, err)
-		return 1
-	}
-	fmt.Println(launchReport(record))
-	return 0
 }
 func runLaunchSettings(args []string) int {
 	flags := flag.NewFlagSet("launch settings", flag.ContinueOnError)

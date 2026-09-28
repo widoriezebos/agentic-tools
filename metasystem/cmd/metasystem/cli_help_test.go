@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"strings"
 	"testing"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 func runCLIHelp(args []string, registered []family) (int, string, string) {
@@ -107,41 +105,11 @@ func TestLaunchFamilyHelpShowsRecordCommands(t *testing.T) {
 	}
 	for _, want := range []string{
 		"metasystem internal launch start --help",
-		"metasystem internal launch status --id <id>",
-		"metasystem internal launch wait --id <id> [--timeout <duration>]",
-		"metasystem internal launch cancel --id <id>",
 		"current user", "~/.metasystem/launch", "--root is not a launch flag",
 	} {
 		if !strings.Contains(output, want) {
 			t.Errorf("launch help omits %q", want)
 		}
-	}
-}
-
-func TestLaunchRecordHelpAndInvalidInputsSkipManager(t *testing.T) {
-	old := launchManager
-	calls := 0
-	launchManager = func() *launch.Manager { calls++; return nil }
-	t.Cleanup(func() { launchManager = old })
-	for _, verb := range []struct {
-		name string
-		run  func([]string) int
-	}{{"status", runLaunchStatus}, {"cancel", runLaunchCancel}} {
-		for _, alias := range []string{"--help", "-h"} {
-			code, output, problem := captureCommandOutput(t, true, true, func() int { return verb.run([]string{alias}) })
-			if code != 0 || problem != "" || !strings.Contains(output, "usage: metasystem launch "+verb.name+" --id <id>") || !strings.Contains(output, "~/.metasystem/launch") {
-				t.Errorf("%s %s = code %d, stdout %q, stderr %q", verb.name, alias, code, output, problem)
-			}
-		}
-		for _, args := range [][]string{nil, {"--root", "metasystem", "--id", "example"}, {"--unknown"}} {
-			code, output, problem := captureCommandOutput(t, true, true, func() int { return verb.run(args) })
-			if code != 2 || output != "" || !strings.Contains(problem, "usage: metasystem launch "+verb.name+" --id <id>") || !strings.Contains(problem, "--root is not a launch flag") || !strings.Contains(problem, "~/.metasystem/launch") {
-				t.Errorf("%s %v = code %d, stdout %q, stderr %q", verb.name, args, code, output, problem)
-			}
-		}
-	}
-	if calls != 0 {
-		t.Fatalf("launch help or invalid input called manager %d times", calls)
 	}
 }
 

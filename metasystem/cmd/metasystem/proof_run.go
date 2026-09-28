@@ -2023,20 +2023,6 @@ func runProofRunPreserve(args []string) int {
 	return 0
 }
 
-// coverageReuseLines projects matching retained full coverage for packages,
-// one "coverage reuse" line per package.
-func coverageReuseLines(controlRoot, executionRoot, baseline string, packages, environment []string) ([]string, bool, error) {
-	evidence, found, err := proofrun.ReusableCoverageInEnvironment(controlRoot, executionRoot, baseline, packages, environment)
-	if err != nil || !found {
-		return nil, found, err
-	}
-	lines := make([]string, 0, len(packages))
-	for _, pkg := range packages {
-		lines = append(lines, fmt.Sprintf("coverage reuse: ./%s: %.1f%%", pkg, evidence.Measurements[pkg]))
-	}
-	return lines, true, nil
-}
-
 func runProofRunBanner(args []string) int {
 	flags := flag.NewFlagSet("proof-run banner", flag.ContinueOnError)
 	suite := flags.String("suite", "", "suite name")
@@ -2063,21 +2049,6 @@ func proofRunBannerText(suite, root, progress, logPath string) string {
 	}
 	return fmt.Sprintf("suite-cost suite=%s witness=%s duration=%s heartbeat=%s logs=%s",
 		suite, state, duration, proofRunDisplayPath(root, progress), proofRunDisplayPath(root, logPath))
-}
-
-func runProofRunHeartbeat(args []string) int {
-	flags := flag.NewFlagSet("proof-run heartbeat", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "watched root")
-	if flags.Parse(args) != nil || *root == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal proof-run heartbeat --root R")
-		return 2
-	}
-	heartbeat, ok := deepestSuiteHeartbeat(*root, time.Now())
-	if !ok {
-		return 1
-	}
-	fmt.Println(heartbeat)
-	return 0
 }
 
 func deepestSuiteHeartbeat(root string, now time.Time) (string, bool) {

@@ -61,12 +61,9 @@ func families() []family {
 			name:    "test",
 			summary: "risk-selected common application testing with retained proof and reuse",
 			verbs: []verb{
-				{"list", "list every group in the committed testing contract", runTestList},
-				{"check", "validate the committed contract and declared tools without running tests", runTestCheck},
 				{"plan", "compute the candidate's risk-selected groups without running tests", runTestPlan},
 				{"run", "admit and execute the recomputed selected test plan", runTestRun},
 				{"verify", "verify sufficient retained proof without launching tests or builds", runTestVerify},
-				{"report", "summarize measured cost from one retained test result", runTestReport},
 				{"worker-capabilities", "report the installed testing worker protocol (internal)", runTestWorkerCapabilities},
 				{"worker", "execute one admitted selected plan (internal)", runTestWorker},
 			},
@@ -75,7 +72,6 @@ func families() []family {
 			name:    "brain",
 			summary: "the fleet brain seat: designation, boot context, and checkout-local fences",
 			verbs: []verb{
-				{"declare", "human-only: designate this quiescent checkout as the brain", runBrainDeclare},
 				{"withdraw", "human-only: remove this checkout's brain declaration", runBrainWithdraw},
 				{"boot", "compose the declared brain's bounded standing context", runBrainBoot},
 				{"boot-inputs", "read optional brain boot inputs in the bounded child (internal)", runBrainBootInputs},
@@ -86,13 +82,11 @@ func families() []family {
 			summary: "priced validation runs with structural progress and a sibling watchdog",
 			verbs: []verb{
 				{"banner", "print the suite witness state, duration class, heartbeat, and log paths", runProofRunBanner},
-				{"heartbeat", "print the deepest live suite section under a root", runProofRunHeartbeat},
 				{"launch", "launch a suite in its own process group with a sibling watchdog", runProofRunLaunch},
 				{"worker-authorized", "authenticate a suite worker against its live parent proof", runProofRunWorkerAuthorized},
 				{"watchdog", "watch suite output growth and enforce the section ceiling (internal)", runProofRunWatchdog},
 				{"custody-exec", "hold a resource-active command until its custodian binds exact identity (internal)", runProofRunCustodyExec},
 				{"preserve", "copy bounded watchdog evidence (internal)", runProofRunPreserve},
-				{"coverage-delta", "check coverage for the packages a landing names or touches against their ratchet floors", runProofRunCoverageDelta},
 			},
 		},
 		{
@@ -101,12 +95,9 @@ func families() []family {
 			verbs: []verb{
 				{"fixture-survivors", "name or reap fixture children that outlived their owner", runFixtureSurvivors},
 				{"started-at", "print a pid's start time in epoch seconds", runIdentityStartedAt},
-				{"group-owned", "exit 0 only when a group member carries a tag in a shipped argv position", runIdentityGroupOwned},
 				{"census", "compute a fixture-driven census verdict", runCensusRun},
 				{"classify", "print live, stale, dead, or unknown for a recorded pid and tag", runProcClassify},
-				{"find-ancestor", "walk up the process tree to the first agent-signature ancestor", runCensusFindAncestor},
 				{"setsid", "run a command as the leader of a new session and exit with its status (proc setsid -- cmd args...)", runProcSetsid},
-				{"default-signals", "run a command with INT, QUIT, and HUP restored to their default disposition", runProcDefaultSignals},
 			},
 		},
 		{
@@ -115,7 +106,6 @@ func families() []family {
 			verbs: []verb{
 				{"get", "resolve a config key with flag/env/local/mode/conf/default precedence", runConfigGet},
 				{"validate", "validate the whole metasystem.conf domain", runConfigValidate},
-				{"keys", "enumerate config keys, optionally by prefix", runConfigKeys},
 				{"tailor", "rewrite metasystem.conf in place for a selected runtime set", runConfigTailor},
 			},
 		},
@@ -128,10 +118,7 @@ func families() []family {
 				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
 				{"refactor-baseline", "record or check the trusted refactor baseline", runValidateRefactorBaseline},
 				{"skills", "validate every present skill's SKILL.md frontmatter, or the named skill directories", runValidateSkills},
-				{"return-complete", "validate an agent return against its role schema and job identity", runValidateReturnComplete},
 				{"design-obligations", "check the structure and declared state of design-obligation matrices", runValidateDesignObligations},
-				{"moved-effects", "check a design page's moved-effect inventory and code paths", runValidateMovedEffects},
-				{"conformance", "review, recertify, or merge conformance for an implementer job", runValidateConformance},
 			},
 		},
 		{
@@ -141,7 +128,6 @@ func families() []family {
 				{"batch", "join, status, withdraw, owner, tick, or wait for a guarded landing batch", runLandingBatch},
 				{"observe", "emit a provenance verdict for the prospective project tree", runLandingObserve},
 				{"workspace", "print the delivery workspace projection of a whole-project tree", runLandingWorkspace},
-				{"park", "durably record one stopped recertified landing attempt", runLandingPark},
 				{"test-receipt", "run tests against one exact candidate tree and record their result", runLandingTestReceipt},
 			},
 		},
@@ -149,15 +135,9 @@ func families() []family {
 			name:    "job",
 			summary: "the delegate-job domain: records, chains, locks, caps, snapshots, authority",
 			verbs: []verb{
-				{"verify-references", "re-read every referenced file against the composition record before a launch", runDispatchVerifyReferences},
 				{"resolve-roster", "resolve a role's roster pair and classify escalation", runDispatchResolveRoster},
 				{"goal-admission", "judge the structured goal budget before reservation", runDispatchGoalAdmission},
-				{"goal-revision-admission", "judge one exact revision and proposed cap under its lock", runDispatchGoalRevisionAdmission},
-				{"breach-stop", "close a breached revision's fence and initialize its stop batch", runDispatchBreachStop},
-				{"breach-stop-routes", "list steward and dispatch breach-stop routes", runDispatchBreachStopRoutes},
 				{"cap-continuation", "write the prior-worktree paragraph a continuation round is told after its predecessor was cut off at its cap", runDispatchCapContinuation},
-				{"critique-register-advance", "fold one critic round into its canonical register", runDispatchCritiqueRegisterAdvance},
-				{"critique-register-close", "close or defer a critic register", runDispatchCritiqueRegisterClose},
 				{"prove-round", "prove a chain round's committed worktree tree on this installation's engine and record the attempt in the round directory", runDispatchProveRound},
 				{"owner-lock", "claim or release the dispatch owner lock (0 done, 3 busy, 4 not-owner)", runDispatchOwnerLock},
 				{"snapshot-select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},
@@ -177,7 +157,6 @@ func families() []family {
 			name:    "audit",
 			summary: "mechanical fences the gate bootstrap consults between steps",
 			verbs: []verb{
-				{"dependency-ratchet", "refuse undeclared executable interpreter dependencies in shell sources", runAuditDependencyRatchet},
 				{"hook-start-exits", "refuse SessionStart paths around the outcome owner", runAuditHookStartExits},
 				{"metasystem", "instruction-asset audit: required files, outside references, placeholders, word budgets", runAuditMetasystem},
 				{"stop-decision-surface", "report additions and refuse undeclared moves of Stop assertions", runAuditStopDecisionSurface},
@@ -188,15 +167,6 @@ func families() []family {
 			name:    "behavior-surface",
 			summary: "versioned byte projections shared by witness, landing, adoption, and weight laws",
 			verbs: []verb{
-				{"select", "filter newline- or NUL-delimited paths through one projection", runBehaviorSurfaceSelect},
-			},
-		},
-		{
-			name:    "path",
-			summary: "path oracles: which law owns and governs a repository path",
-			verbs: []verb{
-				{"class", "print the manifest class governing one path", runPathClass},
-				{"state-root", "validate and print one metasystem installation", runPathStateRoot},
 			},
 		},
 		{
@@ -219,14 +189,6 @@ func families() []family {
 			},
 		},
 		{
-			name:    "receipt",
-			summary: "the task-receipt ledger and retro cadence",
-			verbs: []verb{
-				{"add", "append one task receipt at completion", func(args []string) int { return runReceipt(append([]string{"add"}, args...)) }},
-				{"correct", "append a correction referencing an existing receipt line", func(args []string) int { return runReceipt(append([]string{"correct"}, args...)) }},
-			},
-		},
-		{
 			name:    "metrics",
 			summary: "actionable process, proof, lifecycle, delegation, collision, and cost measures",
 			verbs: []verb{
@@ -246,27 +208,16 @@ func families() []family {
 			verbs: []verb{
 				{"setup", "install or check host runtime entry points without selecting an active runtime", runRuntimeSetup},
 				{"list", "runtime names in priority order (--adoptable/--with-* filter)", runRuntimeList},
-				{"signature-vectors", "a runtime's declared positive/lookalike process vectors", runRuntimeSignatureVectors},
 				{"collision-roots", "the deduplicated full population of adoption collision roots", runRuntimeCollisionRoots},
-				{"enforcement-map", "a runtime's static envelope-enforcement map as canonical JSON", runRuntimeEnforcementMap},
 				{"registration", "a runtime's declared registration rows (registration/v1 wire)", runRuntimeRegistration},
-				{"adoption-default", "the one default adoption runtime", runRuntimeAdoptionDefault},
 				{"dirs", "a runtime's adopted registration directories", runRuntimeDirs},
-				{"instruction-file", "a runtime's instruction-bearing filename", runRuntimeInstructionFile},
 			},
 		},
 		{
 			name:    "launch",
 			summary: "owned external agent processes with durable state and exact cancellation",
 			verbs: []verb{
-				{"start", "start an agent process and return after its child is recorded", runLaunchStart}, {"supervise", "own one launch child through its terminal state (internal)", runLaunchSupervise}, {"wait", "wait up to a bounded timeout for a terminal launch", runLaunchWait}, {"status", "show and reconcile one launch", runLaunchStatus}, {"cancel", "end a launch group and prove every recorded process dead", runLaunchCancel}, {"round-task", "derive a critique task from its predecessor", runLaunchRoundTask}, {"settings", "show launch and context settings with their sources", runLaunchSettings}, {"report", "summarize launch outcomes and refusals", runLaunchReport},
-			},
-		},
-		{
-			name:    "output",
-			summary: "bounded command output retained under the control root",
-			verbs: []verb{
-				{"prune", "remove retained output files older than a duration", runOutputPrune},
+				{"start", "start an agent process and return after its child is recorded", runLaunchStart}, {"supervise", "own one launch child through its terminal state (internal)", runLaunchSupervise}, {"round-task", "derive a critique task from its predecessor", runLaunchRoundTask}, {"settings", "show launch and context settings with their sources", runLaunchSettings}, {"report", "summarize launch outcomes and refusals", runLaunchReport},
 			},
 		},
 		{
@@ -274,10 +225,8 @@ func families() []family {
 			summary: "the coordinator's recorded provider-call context budget",
 			verbs: []verb{
 				{"status", "show the holder's current context-budget evidence", runContextStatus},
-				{"report", "publish one seven-day UTC context cohort", runContextReport},
 				{"handoff", "record a noted task-aware handoff, or cancel one", runContextHandoff},
 				{"verify", "verify an immutable coordinator handoff", runContextVerify},
-				{"prune", "retire old coordinator context evidence", runContextPrune},
 			},
 		},
 		{
@@ -305,14 +254,12 @@ func families() []family {
 			name:    "json",
 			summary: "JSON field access for shell callers",
 			verbs: []verb{
-				{"object", "build a compact JSON object from key=value args", runJSONObject},
 			},
 		},
 		{
 			name:    "covenant",
 			summary: "the app's covenant: the versioned declaration binding intent to proofs",
 			verbs: []verb{
-				{"validate", "structural check of a covenant document (shape only; adequacy is never a parser's to prove)", runCovenantValidate},
 				{"evidence", "the traceability gate: every requirement backed by the evidence table, declared deps present (statuses stay claims)", runCovenantEvidence},
 			},
 		},
@@ -670,9 +617,6 @@ func writeFamilyHelp(w io.Writer, fam family) {
 	}
 	fmt.Fprintln(w, "Flags are specific to each verb; use the verb help before adding options such as --root or --dir.")
 	if fam.name == "launch" {
-		fmt.Fprintln(w, "example: metasystem internal launch status --id <id>")
-		fmt.Fprintln(w, "example: metasystem internal launch wait --id <id> [--timeout <duration>]")
-		fmt.Fprintln(w, "example: metasystem internal launch cancel --id <id>")
 		fmt.Fprintln(w, "Launch records belong to the current user under ~/.metasystem/launch; they are not selected by repository.")
 		fmt.Fprintln(w, "--root is not a launch flag. Use --id to select a launch record.")
 	}

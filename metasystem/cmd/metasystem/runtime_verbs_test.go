@@ -27,17 +27,10 @@ func TestRuntimeVerbContract(t *testing.T) {
 		{"list with-adapter", runRuntimeList, []string{"--with-adapter"}, 0, joinLines(runtimes.WithAdapter())},
 		{"list with-common-lifecycle", runRuntimeList, []string{"--with-common-lifecycle"}, 0, joinLines(runtimes.WithCommonLifecycle())},
 		{"collision-roots", runRuntimeCollisionRoots, nil, 0, joinLines(runtimes.CollisionRootsAll())},
-		{"signature-vectors", runRuntimeSignatureVectors, []string{"fake"}, 0, "{\"lookalike\":\"metasystem-fake-lookalike\",\"positive\":\"metasystem-fake-agent\"}\n"},
-		{"signature-vectors unknown", runRuntimeSignatureVectors, []string{"nope"}, 1, ""},
-		{"enforcement-map", runRuntimeEnforcementMap, []string{"devin"}, 0, "{\"network\":\"notEnforced\",\"readRoots\":\"notEnforced\",\"writeRoots\":\"notEnforced\"}\n"},
-		{"enforcement-map absent", runRuntimeEnforcementMap, []string{"fake"}, 1, ""},
 		{"list usage", runRuntimeList, []string{"--bogus"}, 2, ""},
-		{"adoption-default", runRuntimeAdoptionDefault, nil, 0, "claude\n"},
-		{"adoption-default usage", runRuntimeAdoptionDefault, []string{"x"}, 2, ""},
 		{"dirs", runRuntimeDirs, []string{"devin"}, 0, ".agents/skills\n.devin/skills\n.devin/agents\n"},
 		{"dirs unknown", runRuntimeDirs, []string{"ghostrt"}, 1, ""},
 		{"dirs usage", runRuntimeDirs, nil, 2, ""},
-		{"instruction-file", runRuntimeInstructionFile, []string{"claude"}, 0, "CLAUDE.md\n"},
 	}
 	for _, row := range rows {
 		t.Run(strings.ReplaceAll(row.name, " ", "-"), func(t *testing.T) {

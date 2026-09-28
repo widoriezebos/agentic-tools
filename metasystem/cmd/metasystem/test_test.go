@@ -3222,8 +3222,9 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	if status := runTestList([]string{"--root", root, "--json"}); status != 0 {
 		t.Fatalf("test list status = %d", status)
 	}
-	if status := runTestCheck([]string{"--root", root, "--json"}); status != 0 {
-		t.Fatalf("test check status = %d", status)
+	// The contract check settings check runs (formerly internal test check).
+	if _, _, err := testingContractReady(root, true); err != nil {
+		t.Fatalf("testing contract not ready: %v", err)
 	}
 	if status := runTestPlan([]string{"--root", root, "--tree", tree, "--purpose", "diagnostic", "--json"}); status != 0 {
 		t.Fatalf("test plan status = %d", status)

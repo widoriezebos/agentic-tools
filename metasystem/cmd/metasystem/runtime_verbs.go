@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -49,23 +48,6 @@ func runRuntimeList(args []string) int {
 	return 0
 }
 
-func runRuntimeSignatureVectors(args []string) int {
-	declaration, code := runtimeArg(args, "signature-vectors")
-	if code != 0 {
-		return code
-	}
-	if declaration.SignatureVectors.Positive == "" {
-		fmt.Fprintln(os.Stderr, "no signature vectors declared for "+declaration.Name)
-		return 1
-	}
-	payload, _ := json.Marshal(map[string]string{
-		"positive":  declaration.SignatureVectors.Positive,
-		"lookalike": declaration.SignatureVectors.Lookalike,
-	})
-	fmt.Println(string(payload))
-	return 0
-}
-
 func runRuntimeCollisionRoots(args []string) int {
 	if len(args) != 0 {
 		fmt.Fprintln(os.Stderr, "usage: metasystem internal runtime collision-roots")
@@ -74,33 +56,6 @@ func runRuntimeCollisionRoots(args []string) int {
 	for _, root := range runtimes.CollisionRootsAll() {
 		fmt.Println(root)
 	}
-	return 0
-}
-
-func runRuntimeEnforcementMap(args []string) int {
-	declaration, code := runtimeArg(args, "enforcement-map")
-	if code != 0 {
-		return code
-	}
-	if declaration.ExpectedEnvelopeEnforcement == nil {
-		fmt.Fprintln(os.Stderr, "no static enforcement map declared for "+declaration.Name)
-		return 1
-	}
-	ordered := map[string]string{}
-	for field, value := range declaration.ExpectedEnvelopeEnforcement {
-		ordered[field] = string(value)
-	}
-	payload, _ := json.Marshal(ordered)
-	fmt.Println(string(payload))
-	return 0
-}
-
-func runRuntimeAdoptionDefault(args []string) int {
-	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal runtime adoption-default")
-		return 2
-	}
-	fmt.Println(runtimes.AdoptionDefault())
 	return 0
 }
 
@@ -113,27 +68,6 @@ func runRuntimeDirs(args []string) int {
 		fmt.Println(dir)
 	}
 	return 0
-}
-
-// singleValue prints a declared value, or refuses with exit 1 and
-// empty output when the runtime does not declare the capability — the
-// pinned absent semantics every shell consumer relies on.
-func singleValue(value, absentNote string) int {
-	if value == "" {
-		fmt.Fprintln(os.Stderr, absentNote)
-		return 1
-	}
-	fmt.Println(value)
-	return 0
-}
-
-func runRuntimeInstructionFile(args []string) int {
-	declaration, code := runtimeArg(args, "instruction-file")
-	if code != 0 {
-		return code
-	}
-	return singleValue(declaration.InstructionFile,
-		"no instruction file declared for "+declaration.Name)
 }
 
 func runRuntimeRegistration(args []string) int {
