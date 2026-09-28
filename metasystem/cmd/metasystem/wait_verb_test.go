@@ -188,10 +188,12 @@ func TestUnassociatedRegistrationRefusesNoRow(t *testing.T) {
 	waitCallerPID = func() int64 { return self }
 	waitDeliveryRuntime = func(string, string) (string, error) { return "fake", nil }
 	t.Cleanup(func() { waitCallerPID, waitDeliveryRuntime = originalPID, originalAdapter })
-	code, _, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--job", "job-unassociated"}) })
+	// A refusal before the wait starts is the wait's result, printed where
+	// the caller reads every outcome.
+	code, output, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--job", "job-unassociated"}) })
 	rows, _ := filepath.Glob(filepath.Join(metarun.WaitersDir(root), "*.json"))
-	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "authenticated runtime session") || len(rows) != 0 {
-		t.Fatalf("unassociated registration code=%d stderr=%q rows=%v", code, problem, rows)
+	if code != metarun.ExitWaiterBusy || !strings.Contains(output, "authenticated runtime session") || len(rows) != 0 {
+		t.Fatalf("unassociated registration code=%d stdout=%q stderr=%q rows=%v", code, output, problem, rows)
 	}
 	if err := lease.AssociateSession(root, mainID, "session-associated", "start", "clear"); err != nil {
 		t.Fatal(err)
