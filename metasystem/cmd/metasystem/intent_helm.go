@@ -20,7 +20,7 @@ import (
 // helmYielding names the boundaries that yield under the helm in this binary;
 // each unit that adds a yield appends its clause, so help never promises a
 // yield the binary does not make.
-var helmYielding = []string{"status names the person at the helm"}
+var helmYielding = []string{"the hooks allow every turn", "the tool gate is silent", "status names the person at the helm"}
 
 // helmOwners are the facts helm take reads besides the signature. Zero values
 // are the production readers.
