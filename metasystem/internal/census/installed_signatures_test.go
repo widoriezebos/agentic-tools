@@ -1,10 +1,11 @@
 package census
 
 import (
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // TestInstalledAdapterSignaturesNarrowOnlyInFixtureMode: a fixture-mode

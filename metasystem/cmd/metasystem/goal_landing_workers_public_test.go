@@ -459,7 +459,7 @@ func preparePublicApplicationWorkerBase(t *testing.T, fixture *portableProofFixt
 		t.Fatal("public application group does not reserve the complete attempt allowance")
 	}
 	if fixture.installedSnapshot != "" {
-		fixture.write("scripts/agents/go-build.sh", publicApplicationInstalledCandidateScript(fixture.installedSnapshot, fixture.installedDigest), 0o755)
+		fixture.write("scripts/agents/go-build.sh", publicApplicationInstalledCandidateScript(fixture.installedSnapshot), 0o755)
 	}
 }
 
@@ -940,19 +940,15 @@ func runPublicApplicationGit(t *testing.T, root string, args ...string) string {
 	return string(output)
 }
 
-func publicApplicationInstalledCandidateScript(snapshot, digest string) string {
+func publicApplicationInstalledCandidateScript(snapshot string) string {
 	return fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 [[ "$#" -eq 3 && "$1" == --trimpath && "$2" == --out && -n "$3" ]] || { echo "installed candidate build requires --trimpath --out PATH" >&2; exit 2; }
 snapshot=%s
-expected=%s
-actual=$("$snapshot" util sha256 --file "$snapshot")
-[[ "$actual" == "$expected" ]] || { echo "installed candidate snapshot digest mismatch: got=$actual want=$expected" >&2; exit 1; }
 cp "$snapshot" "$3"
 chmod 0500 "$3"
-actual=$("$snapshot" util sha256 --file "$3")
-[[ "$actual" == "$expected" ]] || { echo "installed candidate output digest mismatch: got=$actual want=$expected" >&2; exit 1; }
-`, strconv.Quote(snapshot), strconv.Quote(digest))
+cmp -s "$snapshot" "$3" || { echo "installed candidate output differs from its snapshot" >&2; exit 1; }
+`, strconv.Quote(snapshot))
 }
 
 func publicApplicationNativeLog(resultPath string) string {

@@ -87,15 +87,6 @@ func families() []family {
 			},
 		},
 		{
-			name:    "proc",
-			summary: "process identity and census: who is running, provably",
-			verbs: []verb{
-				{"fixture-survivors", "name or reap fixture children that outlived their owner", runFixtureSurvivors},
-				{"started-at", "print a pid's start time in epoch seconds", runIdentityStartedAt},
-				{"census", "compute a fixture-driven census verdict", runCensusRun},
-			},
-		},
-		{
 			name:    "config",
 			summary: "configuration and identity helpers",
 			verbs: []verb{
@@ -198,9 +189,6 @@ func families() []family {
 			name:    "util",
 			summary: "small utilities for shell callers",
 			verbs: []verb{
-				{"sha256", "print the hex sha-256 of --file or stdin", runUtilSHA256},
-				{"engine-stamp", "print the build stamp read from an engine file's bytes; exit 1 when it has none", runUtilEngineStamp},
-				{"now-ns", "print the current wall-clock time in nanoseconds", runUtilNowNs},
 				{"hold", "stay alive carrying --tag until SIGTERM, then write the stopped file", runUtilHold},
 			},
 		},

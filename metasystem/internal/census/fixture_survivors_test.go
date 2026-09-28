@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -48,7 +47,7 @@ func (prober unknownFixtureOwner) Probe(pid int64) (identity.Exact, identity.Liv
 	return prober.Prober.Probe(pid)
 }
 
-func TestCensusReapsOnlyDeadOwnedSurvivors(t *testing.T) {
+func TestCensusNamesOnlyDeadOwnedSurvivorsCertain(t *testing.T) {
 	base := int64(os.Getpid()) * 10
 	deadOwner := survivorRef(base+1, 101)
 	liveOwner := survivorRef(base+2, 102)
@@ -86,19 +85,18 @@ func TestCensusReapsOnlyDeadOwnedSurvivors(t *testing.T) {
 	table := FixtureProcessProber(rows)
 	prober := unknownFixtureOwner{Prober: table, pid: unknownOwner.Pid}
 
-	var signals []int64
-	survivors, err := ReapFixtureSurvivors(prober, rows, FixtureSurvivorSelection{}, func(pid int, signal syscall.Signal) error {
-		if signal != syscall.SIGKILL {
-			t.Fatalf("signal = %v, want KILL", signal)
-		}
-		signals = append(signals, int64(pid))
-		return nil
-	})
+	survivors, err := ScanFixtureSurvivors(prober, rows, FixtureSurvivorSelection{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(signals) != 2 || signals[0] != dead.Pid || signals[1] != recorded.Pid {
-		t.Fatalf("signals = %v, want KILL for dead-owned pids %d and %d", signals, dead.Pid, recorded.Pid)
+	var certain []int64
+	for _, survivor := range survivors {
+		if survivor.Class == identity.FixtureSurvivorCertain {
+			certain = append(certain, survivor.Ref.Pid)
+		}
+	}
+	if len(certain) != 2 || certain[0] != dead.Pid || certain[1] != recorded.Pid {
+		t.Fatalf("certain survivors = %v, want the dead-owned pids %d and %d", certain, dead.Pid, recorded.Pid)
 	}
 	lines := make([]string, len(survivors))
 	for index, survivor := range survivors {
@@ -144,23 +142,18 @@ func TestFixtureSurvivorScanExcludesItsOwnProcess(t *testing.T) {
 	rows := []Process{process}
 	prober := FixtureProcessProber(rows)
 
-	lines, certain, err := FixtureSurvivorLines(prober, rows)
+	survivors, err := ScanFixtureSurvivors(prober, rows, FixtureSurvivorSelection{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(lines) != 0 || certain {
-		t.Fatalf("scan listed its own process: lines=%v certain=%t", lines, certain)
+	if len(survivors) != 0 {
+		t.Fatalf("scan listed its own process: %#v", survivors)
 	}
-
-	var signals []int
-	survivors, err := ReapFixtureSurvivors(prober, rows, FixtureSurvivorSelection{Key: &key}, func(pid int, signal syscall.Signal) error {
-		signals = append(signals, pid)
-		return nil
-	})
+	keyed, err := ScanFixtureSurvivors(prober, rows, FixtureSurvivorSelection{Key: &key})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(survivors) != 0 || len(signals) != 0 {
-		t.Fatalf("reap saw own-process survivors %#v and signals %v, want neither", survivors, signals)
+	if len(keyed) != 0 {
+		t.Fatalf("keyed scan saw own-process survivors %#v", keyed)
 	}
 }

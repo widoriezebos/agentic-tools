@@ -360,7 +360,7 @@ type ProductionCommand struct {
 }
 
 // ProductionCommands is the command inventory. shasum is deliberately absent:
-// production hashing is `util sha256`.
+// production hashing is the engine's own Go.
 var ProductionCommands = []ProductionCommand{
 	{"git", "git"}, {"ps", "procps"}, {"pgrep", "procps"}, {"awk", "mawk or gawk"},
 	{"sed", "sed"}, {"grep", "grep"}, {"tar", "tar"}, {"date", "coreutils"},

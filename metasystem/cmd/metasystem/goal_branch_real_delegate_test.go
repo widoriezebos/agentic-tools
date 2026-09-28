@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -301,12 +303,9 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 	if err := testexec.WriteFile(installed, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	digest, err := exec.Command(installed, "util", "sha256", "--file", installed).Output()
-	if err != nil {
-		t.Fatalf("engine digest: %v", err)
-	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(body))
 	writeTestingFixtureFile(t, filepath.Join(worktree, "artifacts", "agents", "steward", "identity.json"), []byte(
-		`{"repoIdentity":"`+worktree+`","generation":1,"installPath":"`+installed+`","installDigest":"sha256:`+strings.TrimSpace(string(digest))+
+		`{"repoIdentity":"`+worktree+`","generation":1,"installPath":"`+installed+`","installDigest":"sha256:`+digest+
 			`","mintedAt":"1970-01-01T00:00:00Z","enrollment":"fixture"}`+"\n"), 0o600)
 	// Supervision is armed the way the dispatch fixture bed arms it and shut
 	// down when the case ends. Shutdown stops the supervision rings but not
@@ -358,12 +357,12 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 			t.Errorf("steward runner %d outlived fixture cleanup: disarm=%s/%s", runner.Pid, outcome.Result, outcome.Reason)
 		}
 	})
-	started, err := exec.Command(installed, "proc", "started-at", "--pid", strconv.Itoa(os.Getpid())).Output()
-	if err != nil {
-		t.Fatalf("started-at: %v", err)
+	self, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe this test process: %s %v", state, err)
 	}
 	armCommand := exec.Command(installed, append(arm, "--repo", worktree, "--session", "real-delegate", "--pid", strconv.Itoa(os.Getpid()),
-		"--start-time", strings.TrimSpace(string(started)), "--tag", "real-delegate-fixture")...)
+		"--start-time", strconv.FormatInt(self.StartedAt.Unix(), 10), "--tag", "real-delegate-fixture")...)
 	armCommand.Env = armEnv
 	if output, err := armCommand.CombinedOutput(); err != nil {
 		t.Fatalf("arm supervision: %v: %s", err, output)

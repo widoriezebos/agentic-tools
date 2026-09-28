@@ -139,7 +139,7 @@ on it.
   Debian-family package — adoption runs it before any target mutation and
   supervision arming runs it at entry. perl and python3 are suite-host
   concerns only (fixture drivers), never production dependencies; hashing
-  runs through `metasystem internal util sha256`.
+  runs in the engine (Go), never through shasum.
 - **Link versus operation**: CGO_ENABLED=0 makes the binary run anywhere
   compatible, but the SYSTEM also execs git, bash, ps, and repository
   scripts and reads standard procfs — a scratch or distroless container is
