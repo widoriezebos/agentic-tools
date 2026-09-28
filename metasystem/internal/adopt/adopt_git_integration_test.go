@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"io"
 	"io/fs"
 	"os"
@@ -447,10 +448,16 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 		}
 	}
 	lines := confLines(t, target)
-	for _, want := range []string{"metasystem.runtimes=claude", "role.default.runtime=claude", "suite.progress-silence-min=30",
-		"suite.section-cap-min=45", "suite.evidence-copy-timeout-sec=60", "suite.evidence-copy-max-mb=512"} {
-		if !hasLine(lines, want) {
-			t.Fatalf("tailored configuration lacks %s", want)
+	if !hasLine(lines, "metasystem.runtimes=claude") {
+		t.Fatal("tailored configuration lacks metasystem.runtimes=claude")
+	}
+	// The conf holds overrides only; the rest resolves to compiled defaults.
+	for key, want := range map[string]string{"role.default.runtime": "claude", "suite.progress-silence-min": "30",
+		"suite.section-cap-min": "45", "suite.evidence-copy-timeout-sec": "60", "suite.evidence-copy-max-mb": "512"} {
+		value, _, err := config.Get(config.GetParams{Key: key, ConfPath: filepath.Join(target, "metasystem.conf"),
+			LookupEnv: func(string) (string, bool) { return "", false }})
+		if err != nil || value != want {
+			t.Fatalf("tailored configuration resolves %s=%q (%v), want %q", key, value, err, want)
 		}
 	}
 	unselected := regexp.MustCompile(`(^|\.)model\.(codex|devin)=|\.runtime=(codex|devin)$`)

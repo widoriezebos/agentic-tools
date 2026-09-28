@@ -58,23 +58,25 @@ type Settings struct {
 	Values                                            []Setting
 }
 
+// settingDefaults are the launch settings in their read order; each value
+// is the compiled default (config.CompiledSettings), which lives once.
 var settingDefaults = []Setting{
-	{Key: SeatWindowKey, Value: "0", Source: "default"}, {Key: BuildWindowKey, Value: "0", Source: "default"},
-	{Key: DesignWindowKey, Value: "0", Source: "default"}, {Key: ReadWindowKey, Value: "0", Source: "default"},
-	{Key: BuildModelKey, Value: "claude-opus-5-5", Source: "default"}, {Key: BuildEffortKey, Value: "xhigh", Source: "default"},
-	{Key: DesignModelKey, Value: "claude-fable-5-1", Source: "default"}, {Key: ReadModelKey, Value: "claude-fable-5-1", Source: "default"},
-	{Key: WaitCapKey, Value: "240", Source: "default"}, {Key: BriefCapKey, Value: "120000", Source: "default"},
-	{Key: BuildLinesCapKey, Value: "1500", Source: "default"}, {Key: ReadSplitLinesKey, Value: "1200", Source: "default"},
-	{Key: DesignBaselineTokensKey, Value: "2432374", Source: "default"}, {Key: DesignBaselineRequestsKey, Value: "28", Source: "default"},
-	{Key: DesignBaselinePeakTokensKey, Value: "163000", Source: "default"},
+	{Key: SeatWindowKey, Value: config.MustDefault(SeatWindowKey), Source: "default"}, {Key: BuildWindowKey, Value: config.MustDefault(BuildWindowKey), Source: "default"},
+	{Key: DesignWindowKey, Value: config.MustDefault(DesignWindowKey), Source: "default"}, {Key: ReadWindowKey, Value: config.MustDefault(ReadWindowKey), Source: "default"},
+	{Key: BuildModelKey, Value: config.MustDefault(BuildModelKey), Source: "default"}, {Key: BuildEffortKey, Value: config.MustDefault(BuildEffortKey), Source: "default"},
+	{Key: DesignModelKey, Value: config.MustDefault(DesignModelKey), Source: "default"}, {Key: ReadModelKey, Value: config.MustDefault(ReadModelKey), Source: "default"},
+	{Key: WaitCapKey, Value: config.MustDefault(WaitCapKey), Source: "default"}, {Key: BriefCapKey, Value: config.MustDefault(BriefCapKey), Source: "default"},
+	{Key: BuildLinesCapKey, Value: config.MustDefault(BuildLinesCapKey), Source: "default"}, {Key: ReadSplitLinesKey, Value: config.MustDefault(ReadSplitLinesKey), Source: "default"},
+	{Key: DesignBaselineTokensKey, Value: config.MustDefault(DesignBaselineTokensKey), Source: "default"}, {Key: DesignBaselineRequestsKey, Value: config.MustDefault(DesignBaselineRequestsKey), Source: "default"},
+	{Key: DesignBaselinePeakTokensKey, Value: config.MustDefault(DesignBaselinePeakTokensKey), Source: "default"},
 	// The roster proper (R-123): every lane names its agent and its model,
 	// appended after the index reads above so those hold. The critique lane
 	// has a model of its own, because the author and the critic are
 	// different models; and a lane names its runtime because a model name is
 	// not an agent — more than one agent can serve the same model.
-	{Key: CritiqueModelKey, Value: "claude-opus-5-5", Source: "default"},
-	{Key: BuildRuntimeKey, Value: "claude", Source: "default"}, {Key: CritiqueRuntimeKey, Value: "claude", Source: "default"},
-	{Key: DesignRuntimeKey, Value: "claude", Source: "default"}, {Key: ReadRuntimeKey, Value: "claude", Source: "default"},
+	{Key: CritiqueModelKey, Value: config.MustDefault(CritiqueModelKey), Source: "default"},
+	{Key: BuildRuntimeKey, Value: config.MustDefault(BuildRuntimeKey), Source: "default"}, {Key: CritiqueRuntimeKey, Value: config.MustDefault(CritiqueRuntimeKey), Source: "default"},
+	{Key: DesignRuntimeKey, Value: config.MustDefault(DesignRuntimeKey), Source: "default"}, {Key: ReadRuntimeKey, Value: config.MustDefault(ReadRuntimeKey), Source: "default"},
 }
 
 // LoadShippedSeatWindow reads the seat window the engine's shipped Claude

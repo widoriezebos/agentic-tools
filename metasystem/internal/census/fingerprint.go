@@ -31,14 +31,15 @@ var fingerprintFiles = []string{
 // hashes, relative to the metasystem root.
 func FingerprintFiles() []string { return append([]string(nil), fingerprintFiles...) }
 
-// fingerprintConfig maps each relevant config key to its default.
-var fingerprintConfig = map[string]string{
-	"metasystem.runtimes":               "",
-	"watch.interval-sec":                "60",
-	"watch.stale-min":                   "20",
-	"watch.cap-min":                     "180",
-	"census.log-max-bytes":              "1048576",
-	"census.max-interval-share-percent": "50",
+// fingerprintConfig lists the config keys the fingerprint binds; each
+// resolves to its compiled default when the conf does not name it.
+var fingerprintConfig = []string{
+	"metasystem.runtimes",
+	"watch.interval-sec",
+	"watch.stale-min",
+	"watch.cap-min",
+	"census.log-max-bytes",
+	"census.max-interval-share-percent",
 }
 
 // SignatureText returns a runtime's normalized signature declaration — the
@@ -251,8 +252,8 @@ func Fingerprint(metasystemRoot, repo string) (string, error) {
 	}
 
 	relevantConfig := map[string]string{}
-	for key, def := range fingerprintConfig {
-		relevantConfig[key] = config.ConfValue(confPath, key, def)
+	for _, key := range fingerprintConfig {
+		relevantConfig[key] = config.ConfValue(confPath, key, "")
 	}
 
 	payload := map[string]any{

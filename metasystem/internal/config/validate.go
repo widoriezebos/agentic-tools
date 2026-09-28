@@ -73,6 +73,20 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		}
 	})
 
+	// The committed layer is the file over the compiled defaults
+	// (defaults.go): a key the file does not name validates as its
+	// applicable default, exactly as the full shipped file did.
+	fileSelection := fileRuntimes(string(content))
+	for _, setting := range compiledSettings {
+		if _, present := values[setting.Key]; present {
+			continue
+		}
+		if value, ok := applicableDefault(setting.Key, fileSelection); ok {
+			values[setting.Key] = value
+			order = append(order, setting.Key)
+		}
+	}
+
 	// The .local override contributes capability floors here. Budget settings
 	// are checked with the other numeric knobs below; other keys are the
 	// developer's own and not template invariants.
@@ -129,14 +143,10 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		}
 	}
 
-	// The runtime roster gates almost everything else.
-	if _, ok := values["metasystem.runtimes"]; !ok {
-		add("metasystem.runtimes is required")
-	}
-	contractRel, hasTestingContract := values["testing.contract"]
-	if !hasTestingContract {
-		add("testing.contract is required")
-	} else if filepath.IsAbs(contractRel) || filepath.ToSlash(filepath.Clean(contractRel)) != contractRel || strings.HasPrefix(contractRel, "../") {
+	// The runtime roster gates almost everything else. It and the testing
+	// contract always have a value: the file's, else the compiled default.
+	contractRel := values["testing.contract"]
+	if filepath.IsAbs(contractRel) || filepath.ToSlash(filepath.Clean(contractRel)) != contractRel || strings.HasPrefix(contractRel, "../") {
 		add("testing.contract must be a relative normalized path")
 	} else {
 		contractPath := filepath.Join(filepath.Dir(confPath), filepath.FromSlash(contractRel))

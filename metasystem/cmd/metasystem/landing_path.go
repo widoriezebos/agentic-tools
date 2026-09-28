@@ -100,7 +100,7 @@ func landingPathFileReadable(path string) bool {
 }
 
 func landingPathConfValue(root, key string) string {
-	value, found, err := config.ConfLookup(filepath.Join(root, "metasystem.conf"), key)
+	value, found, err := config.CommittedLookup(filepath.Join(root, "metasystem.conf"), key)
 	if err != nil || !found {
 		return ""
 	}

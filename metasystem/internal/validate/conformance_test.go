@@ -61,7 +61,7 @@ func newConformanceFixture(t *testing.T) *conformanceFixture {
 	os.WriteFile(filepath.Join(f.controller, "source.txt"), []byte("base\n"), 0o644)
 	os.WriteFile(filepath.Join(f.controller, "docs", "note.md"), []byte("base\n"), 0o644)
 	os.WriteFile(filepath.Join(f.controller, "metasystem.conf"),
-		[]byte("metasystem.version=1\nrole.code-critic.runtime=fake\n"), 0o644)
+		[]byte("metasystem.version=1\nrole.code-critic.runtime=fake\ntesting.contract=\n"), 0o644)
 	f.git(f.controller, "init", "-q")
 	f.git(f.controller, "add", ".")
 	f.git(f.controller, "-c", "user.name=m", "-c", "user.email=m@x", "commit", "-qm", "base")
@@ -651,7 +651,7 @@ func TestConformanceReviewRefusesDelegateReceiptChange(t *testing.T) {
 
 func TestConformanceMissingCriticConfiguration(t *testing.T) {
 	f := newFileConformanceFixture(t)
-	if err := os.WriteFile(filepath.Join(f.controller, "metasystem.conf"), []byte("metasystem.version=1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(f.controller, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	f.writeImplementer("", "source.txt")

@@ -2,6 +2,7 @@ package launch
 
 import (
 	"encoding/json"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"os"
 	"path/filepath"
 	"strings"
@@ -201,13 +202,15 @@ func TestRecordWithoutMeasuredFieldDefaultsToMeasured(t *testing.T) {
 func TestBriefAdmissionSettingExplainsReservedWorkingRoom(t *testing.T) {
 	t.Parallel()
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "metasystem.conf"))
-	if err != nil {
-		t.Fatal(err)
+	// The basis is compiled beside the default it explains.
+	for _, setting := range config.CompiledSettings() {
+		if setting.Key != BriefCapKey {
+			continue
+		}
+		if setting.Default != "120000" || !strings.Contains(setting.Meaning, "SMALLEST window") || !strings.Contains(setting.Meaning, "model_context_window=258400") {
+			t.Fatalf("the brief admission default does not carry its basis: %+v", setting)
+		}
+		return
 	}
-	want := "# No lane imposes a window any more, so this cap is sized against the SMALLEST window a lane actually runs in, which is Codex at model_context_window=258400: a full brief leaves about 138000 tokens for tool output and the diff.\n" +
-		"launch.brief.admitted.tokens=120000"
-	if !strings.Contains(string(data), want) {
-		t.Fatalf("metasystem.conf does not contain the setting basis directly above the setting")
-	}
+	t.Fatalf("%s has no compiled default", BriefCapKey)
 }

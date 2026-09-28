@@ -69,8 +69,10 @@ func TestValidateRequiresStrictCommittedTestingContract(t *testing.T) {
 	repo := t.TempDir()
 	conf := filepath.Join(repo, "metasystem.conf")
 	putFile(t, conf, "metasystem.runtimes=fake\n")
+	// testing.contract defaults to testing.json: an absent file is reported
+	// as the defaulted contract's own fault.
 	_, problems, err := Validate(conf, repo)
-	if err != nil || !hasProblem(problems, "testing.contract is required") {
+	if err != nil || !hasProblem(problems, "testing.contract is invalid") {
 		t.Fatalf("missing testing contract was not reported: problems=%v err=%v", problems, err)
 	}
 	putFile(t, filepath.Join(repo, "testing.json"), minimalTestingContract)
@@ -93,11 +95,15 @@ func hasProblem(problems []string, substr string) bool {
 const validConf = "metasystem.version=1\n" +
 	"metasystem.runtimes=claude,codex,fake\n" +
 	"testing.contract=testing.json\n" +
-	"runtime.claude.maximal-models=claude-fable-5\n" +
+	"runtime.claude.maximal-models=claude-fable-5-1\n" +
 	"evidence.root=@EVIDENCE@\n" +
 	"role.default.runtime=fake\n" +
 	"role.default.model.fake=fake-model\n" +
-	"model.tier.1=fake:fake-model\n"
+	"model.tier.1=fake:fake-model\n" +
+	// Claude is selected, so its compiled role models are configured
+	// models and each needs its tier.
+	"model.tier.2=claude:claude-fable-5-1\n" +
+	"model.tier.3=claude:claude-opus-5-5\n"
 
 func TestValidateAccepts(t *testing.T) {
 	if problems := validateRepo(t, validConf); len(problems) != 0 {
@@ -228,13 +234,13 @@ func TestValidateRejections(t *testing.T) {
 		},
 		{
 			name:   "empty maximal mapping member",
-			conf:   strings.Replace(validConf, "runtime.claude.maximal-models=claude-fable-5", "runtime.claude.maximal-models=claude-fable-5,", 1),
+			conf:   strings.Replace(validConf, "runtime.claude.maximal-models=claude-fable-5-1\n", "runtime.claude.maximal-models=claude-fable-5-1,\n", 1),
 			expect: "runtime.claude.maximal-models must contain only non-empty comma-separated model names",
 		},
 		{
 			name:   "duplicate maximal mapping member",
-			conf:   strings.Replace(validConf, "runtime.claude.maximal-models=claude-fable-5", "runtime.claude.maximal-models=claude-fable-5,claude-fable-5", 1),
-			expect: "runtime.claude.maximal-models contains duplicate model 'claude-fable-5'",
+			conf:   strings.Replace(validConf, "runtime.claude.maximal-models=claude-fable-5-1\n", "runtime.claude.maximal-models=claude-fable-5-1,claude-fable-5-1\n", 1),
+			expect: "runtime.claude.maximal-models contains duplicate model 'claude-fable-5-1'",
 		},
 		{
 			name:   "unsupported runtime",

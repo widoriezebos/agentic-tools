@@ -30,9 +30,7 @@ func ResolveModelAlias(confPath, runtime, model string) (canonical string, alias
 	if err != nil {
 		return "", false, err
 	}
-	origin, err := KeyOrigin(GetParams{Key: key, ConfPath: confPath})
-	if err != nil {
-		return "", false, err
-	}
-	return target, origin != "default", nil
+	// A compiled alias (defaults.go) is as much an alias as a written one:
+	// the pointer is aliased when it resolves to another model.
+	return target, target != model, nil
 }

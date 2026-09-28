@@ -10,8 +10,7 @@ const (
 	// SeatPresenceStaleMinutesKey is the reader's own window on a seat's
 	// presence. The threshold a standing is judged against is this window or
 	// three of the writer's own ticks, whichever is longer.
-	SeatPresenceStaleMinutesKey     = "seat.presence-stale-min"
-	DefaultSeatPresenceStaleMinutes = uint64(30)
+	SeatPresenceStaleMinutesKey = "seat.presence-stale-min"
 
 	// SeatPresenceNamespaceKey pins the presence ladder to one namespace for
 	// an operator who knows the host. Unset, the publisher climbs the ladder
@@ -22,12 +21,14 @@ const (
 	seatBranchNamespace     = "refs/heads/presence"
 )
 
+// DefaultSeatPresenceStaleMinutes is the compiled default (defaults.go).
+var DefaultSeatPresenceStaleMinutes = uintDefault(SeatPresenceStaleMinutesKey)
+
 // SeatPresenceStaleMinutes resolves the presence stale window. Like the other
 // steward thresholds it is operational law, so production reads accept only
 // the committed repository value.
 func SeatPresenceStaleMinutes(confPath string) (uint64, error) {
-	value, err := budgetLawValue(confPath, SeatPresenceStaleMinutesKey,
-		strconv.FormatUint(DefaultSeatPresenceStaleMinutes, 10))
+	value, err := budgetLawValue(confPath, SeatPresenceStaleMinutesKey, MustDefault(SeatPresenceStaleMinutesKey))
 	if err != nil {
 		return 0, fmt.Errorf("resolve %s: %w", SeatPresenceStaleMinutesKey, err)
 	}

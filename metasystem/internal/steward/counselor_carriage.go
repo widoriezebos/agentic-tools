@@ -19,11 +19,13 @@ import (
 )
 
 const (
-	counselorBriefCadenceKey          = "metasystem.counselor.brief-cadence-hours"
-	defaultCounselorBriefCadenceHours = 24
-	counselorBriefDelivered           = "DELIVERED"
-	counselorBriefRenderFailed        = "RENDER_FAILED"
+	counselorBriefCadenceKey   = "metasystem.counselor.brief-cadence-hours"
+	counselorBriefDelivered    = "DELIVERED"
+	counselorBriefRenderFailed = "RENDER_FAILED"
 )
+
+// defaultCounselorBriefCadenceHours is the compiled default (config).
+var defaultCounselorBriefCadenceHours = config.MustIntDefault(counselorBriefCadenceKey)
 
 type counselorBriefCursor struct {
 	Schema       int    `json:"schema"`
@@ -41,7 +43,6 @@ func counselorBriefCursorPath(repoRoot string) string {
 func counselorBriefCadenceHours(repoRoot string) (int, error) {
 	value, _, err := config.Get(config.GetParams{
 		Key: counselorBriefCadenceKey, ConfPath: filepath.Join(repoRoot, "metasystem.conf"),
-		Default: strconv.Itoa(defaultCounselorBriefCadenceHours), DefaultSet: true,
 	})
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {

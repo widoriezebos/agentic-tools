@@ -107,9 +107,9 @@ func runReportWatchJobsTo(args []string, stdout, stderr io.Writer) int {
 		number, err := strconv.ParseInt(resolved, 10, 64)
 		return number, err == nil
 	}
-	stale, okStale := resolve("watch.stale-min", "stale-min", *staleMin, "20")
-	capped, okCap := resolve("watch.cap-min", "cap-min", *capMin, "180")
-	intervalSec, okInterval := resolve("watch.interval-sec", "interval", *interval, "60")
+	stale, okStale := resolve("watch.stale-min", "stale-min", *staleMin, config.MustDefault("watch.stale-min"))
+	capped, okCap := resolve("watch.cap-min", "cap-min", *capMin, config.MustDefault("watch.cap-min"))
+	intervalSec, okInterval := resolve("watch.interval-sec", "interval", *interval, config.MustDefault("watch.interval-sec"))
 	if !okStale || !okCap || !okInterval {
 		fmt.Fprintln(stderr, "watch-jobs: --stale-min, --cap-min and --interval must be integers")
 		return 2
@@ -161,7 +161,7 @@ func runReportWatchJobsTo(args []string, stdout, stderr io.Writer) int {
 		if tag == "" {
 			tag = fmt.Sprintf("watch-jobs-%d", os.Getpid())
 		}
-		maxBytes, _ := resolve("census.log-max-bytes", "", "", "1048576")
+		maxBytes, _ := resolve("census.log-max-bytes", "", "", config.MustDefault("census.log-max-bytes"))
 		options.CensusLog = filepath.Join(dir, "census.log")
 		options.CensusLogMaxBytes = maxBytes
 		options.Census = func() (string, error) {

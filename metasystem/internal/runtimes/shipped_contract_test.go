@@ -32,8 +32,7 @@ func shippedRoot(t *testing.T) string {
 }
 
 // The template ships its optional model tiers and mode role overrides as
-// commented examples; the only active mode role keys are the shared
-// Claude/Fable design-author default.
+// commented examples.
 func TestShippedTemplateConfigurationKeepsOptionalKeysDemoted(t *testing.T) {
 	t.Parallel()
 	conf, err := os.ReadFile(filepath.Join(shippedRoot(t), "metasystem.conf"))
@@ -47,10 +46,11 @@ func TestShippedTemplateConfigurationKeepsOptionalKeysDemoted(t *testing.T) {
 	if got := len(regexp.MustCompile(`(?m)^# Example mode\.[a-z0-9-]+\.role\.`).FindAllString(text, -1)); got != 3 {
 		t.Errorf("template demotion: %d commented mode role override examples, want 3", got)
 	}
-	active := regexp.MustCompile(`(?m)^mode\.[a-z0-9-]+\.role\..*$`).FindAllString(text, -1)
-	want := []string{"mode.design.role.implementer.runtime=claude", "mode.design.role.implementer.model.claude=claude-fable-5-1"}
-	if !reflect.DeepEqual(active, want) {
-		t.Errorf("template demotion: active mode role keys %q differ from the shared Claude/Fable design-author default %q", active, want)
+	// The shared Claude/Fable design-author default is compiled
+	// (internal/config/defaults.go, TestCompiledModeRoleDefaultsAreTheDesignAuthor);
+	// the overrides-only file holds no active mode role key.
+	if active := regexp.MustCompile(`(?m)^mode\.[a-z0-9-]+\.role\..*$`).FindAllString(text, -1); len(active) != 0 {
+		t.Errorf("template demotion: active mode role keys %q in the overrides-only conf", active)
 	}
 	if regexp.MustCompile(`(?m)^model\.tier\.`).MatchString(text) {
 		t.Error("template demotion: an optional model tier key is still active")

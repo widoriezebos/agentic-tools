@@ -47,7 +47,7 @@ func DeriveCeiling(confPath string, declared int64, environ []string) (int64, er
 		return value, err
 	}
 
-	value, err := get("dispatch.cap-min", "120")
+	value, err := get("dispatch.cap-min", config.MustDefault("dispatch.cap-min"))
 	if err != nil {
 		return 0, err
 	}

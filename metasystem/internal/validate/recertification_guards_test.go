@@ -194,7 +194,9 @@ func TestCommandForWidthFollowsTheContractAndTheGateWidth(t *testing.T) {
 	if _, _, _, err := commandForWidth(root, map[string]any{}, "go test ./..."); err == nil {
 		t.Fatal("an absent configuration resolved a width")
 	}
-	if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+	// An installation that names no testing contract (an explicit empty
+	// value; the compiled default is testing.json) takes the legacy width.
+	if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\ntesting.contract=\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	width, command, schema, err := commandForWidth(root, map[string]any{}, "go test ./...")

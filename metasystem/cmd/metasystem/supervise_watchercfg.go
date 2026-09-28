@@ -28,9 +28,9 @@ func watcherConfig(metasystemRoot, stateRoot, scope, supervisionDir string, inte
 			intervalMS = parsed
 		}
 	}
-	budgetPercent := 50
+	budgetPercent := config.MustIntDefault("census.max-interval-share-percent")
 	if parsed, err := strconv.Atoi(config.ConfValue(filepath.Join(metasystemRoot, "metasystem.conf"),
-		"census.max-interval-share-percent", "50")); err == nil && parsed >= 1 && parsed <= 100 {
+		"census.max-interval-share-percent", "")); err == nil && parsed >= 1 && parsed <= 100 {
 		budgetPercent = parsed
 	}
 	return supervise.WatcherConfig{

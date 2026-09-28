@@ -43,13 +43,24 @@ func TestContextBudgetConfigDefaultsAndAccessor(t *testing.T) {
 }
 
 func TestContextConfKeysDocumented(t *testing.T) {
+	// The context defaults and their meaning are compiled (defaults.go);
+	// the conf documents the per-runtime key that has no default.
 	content, err := os.ReadFile(filepath.Join("..", "..", "metasystem.conf"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"context.ceiling.tokens=250000", "context.handoff.margin.tokens=145000", "context.handoff.note-directory.codex=", "context.toolgate.mode=observe", "trigger 105000", "106638"} {
-		if !strings.Contains(string(content), text) {
-			t.Fatalf("metasystem.conf does not document %q", text)
+	if !strings.Contains(string(content), "context.handoff.note-directory.codex=") {
+		t.Fatal("metasystem.conf does not document context.handoff.note-directory.codex=")
+	}
+	for key, want := range map[string]string{ContextCeilingTokensKey: "250000", ContextHandoffMarginTokensKey: "145000", ContextToolGateModeKey: "observe"} {
+		if got, ok := CompiledDefault(key); !ok || got != want {
+			t.Fatalf("compiled default %s = %q, want %q", key, got, want)
+		}
+	}
+	ceiling, _ := compiledSetting(ContextCeilingTokensKey)
+	for _, text := range []string{"trigger 105000", "106638"} {
+		if !strings.Contains(ceiling.Meaning, text) {
+			t.Fatalf("the context ceiling's meaning does not document %q", text)
 		}
 	}
 }

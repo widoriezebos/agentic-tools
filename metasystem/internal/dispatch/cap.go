@@ -19,7 +19,10 @@ var capMinPattern = regexp.MustCompile(`^[1-9][0-9]*$`)
 
 // builtInCapMin is the last rung of the chain: no explicit argument, no
 // configured key anywhere.
-const builtInCapMin = "120"
+// builtInCapMin is dispatch.cap-min's compiled default: the floor the chain
+// ends on.
+var builtInCapMin = config.MustDefault("dispatch.cap-min")
+
 const dispatchCapMaxKey = "dispatch.cap-max"
 
 func capGet(confPath, key string) (string, error) {
@@ -64,6 +67,10 @@ func ResolveCap(confPath, role, runtime, model, source, requested string) (int64
 				return 0, "", "", err
 			}
 			capText, rule, origin = value, step.rule, keyOrigin
+			// The general key's compiled default is the built-in floor.
+			if step.key == "dispatch.cap-min" && keyOrigin == "default" {
+				rule = "built-in"
+			}
 			break
 		}
 	}

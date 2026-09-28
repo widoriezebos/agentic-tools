@@ -60,10 +60,17 @@ func runRuntimeSetupWithResolver(args []string, resolve func(string) (stateroot.
 	}
 	confPath := filepath.Join(result.Layout.InstallationRoot, "metasystem.conf")
 	contractRel, present, lookupErr := config.ConfLookup(confPath, "testing.contract")
+	if lookupErr == nil && !present {
+		// The compiled default names testing.json; an installation that has
+		// not written it has no testing contract yet, not a broken one.
+		contractRel = config.MustDefault("testing.contract")
+		_, statErr := os.Lstat(filepath.Join(result.Layout.InstallationRoot, filepath.FromSlash(contractRel)))
+		present = statErr == nil
+	}
 	switch {
 	case lookupErr != nil || !present:
-		// Registration remains independently checkable while an older
-		// installation is still outside the testing-contract migration.
+		// Registration remains independently checkable while an
+		// installation has no testing contract.
 	case strings.TrimSpace(contractRel) == "":
 		fmt.Printf("TEST_CONTRACT_INVALID configuration=%s reason=testing.contract-is-unavailable\n", confPath)
 	case filepath.IsAbs(contractRel) || filepath.ToSlash(filepath.Clean(contractRel)) != contractRel || strings.HasPrefix(contractRel, "../"):

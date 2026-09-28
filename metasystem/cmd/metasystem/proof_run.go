@@ -1778,19 +1778,19 @@ func resolveProofRunLimitsWithInputs(confPath string, lookup func(string) (strin
 		}
 		return parsed, nil
 	}
-	silence, err := read("suite.progress-silence-min", 30, 1, 600)
+	silence, err := read("suite.progress-silence-min", config.MustIntDefault("suite.progress-silence-min"), 1, 600)
 	if err != nil {
 		return proofRunLimits{}, err
 	}
-	section, err := read("suite.section-cap-min", 45, 1, 600)
+	section, err := read("suite.section-cap-min", config.MustIntDefault("suite.section-cap-min"), 1, 600)
 	if err != nil {
 		return proofRunLimits{}, err
 	}
-	evidenceTimeout, err := read("suite.evidence-copy-timeout-sec", 60, 1, 600)
+	evidenceTimeout, err := read("suite.evidence-copy-timeout-sec", config.MustIntDefault("suite.evidence-copy-timeout-sec"), 1, 600)
 	if err != nil {
 		return proofRunLimits{}, err
 	}
-	evidenceMB, err := read("suite.evidence-copy-max-mb", 512, 1, 10240)
+	evidenceMB, err := read("suite.evidence-copy-max-mb", config.MustIntDefault("suite.evidence-copy-max-mb"), 1, 10240)
 	if err != nil {
 		return proofRunLimits{}, err
 	}

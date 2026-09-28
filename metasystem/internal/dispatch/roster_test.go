@@ -42,7 +42,9 @@ func TestResolveRosterDecisions(t *testing.T) {
 			name: "default roster fills an absent role entry",
 			conf: []string{rosterBase,
 				"role.default.runtime=claude", "role.default.model.claude=sonnet"},
-			params: RosterParams{Role: "verifier"},
+			// The verifier's compiled default is main; a role with no entry
+			// takes the default roster.
+			params: RosterParams{Role: "ghost"},
 			want: RosterResolution{
 				Model: "sonnet", RequestedPair: "claude:sonnet",
 				RosterModel: "sonnet", RosterPair: "claude:sonnet",
@@ -51,7 +53,7 @@ func TestResolveRosterDecisions(t *testing.T) {
 		},
 		{
 			name:    "no roster anywhere refuses",
-			conf:    []string{rosterBase},
+			conf:    []string{"metasystem.runtimes=codex"},
 			params:  RosterParams{Role: "ghost"},
 			refusal: "role ghost has neither a runtime entry nor role.default.runtime",
 		},

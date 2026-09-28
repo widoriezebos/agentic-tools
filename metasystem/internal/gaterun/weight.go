@@ -393,9 +393,11 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 	if !sameWeightEpoch(record.Governed.BudgetEpoch, projection.WeightEpoch) {
 		return result, fmt.Errorf("REFUSED-PROOF-STALE: run %s is not bound to the current obligation budget epoch", runID)
 	}
-	if _, migrated, lookupErr := config.ConfLookup(filepath.Join(root, "metasystem.conf"), "testing.contract"); lookupErr != nil {
+	// The compiled default names testing.json; an installation that names
+	// no contract (an explicit empty value) is not migrated.
+	if contract, present, lookupErr := config.CommittedLookup(filepath.Join(root, "metasystem.conf"), "testing.contract"); lookupErr != nil {
 		return result, fmt.Errorf("weight discharge refused: testing contract migration state is unreadable: %w", lookupErr)
-	} else if migrated {
+	} else if present && strings.TrimSpace(contract) != "" {
 		attempt, testingResult, proofErr := proofrun.GovernedTestResult(root, runID)
 		if proofErr != nil || attempt.GoalID != goalID || attempt.GoalRevision != binding.Revision || attempt.ReservationOwner == nil ||
 			attempt.ReservationOwner.RunGeneration != record.Generation || attempt.ReservationOwner.ObligationRevision != obligationRevision ||
