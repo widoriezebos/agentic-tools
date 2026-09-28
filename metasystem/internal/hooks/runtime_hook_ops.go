@@ -199,9 +199,15 @@ type Invocation struct {
 	// Pid and Ppid are this process and its parent: the parent is the
 	// runtime (or the Stop deadline parent for a worker).
 	Pid, Ppid int
-	// Script is the stub's path as it was invoked; relative paths resolve
-	// against the working directory, exactly as the stub resolved them.
+	// Script is the stub's path as it was invoked, when the cutover stub
+	// scripts/agents/supervision-hook.sh launched the entry; relative paths
+	// resolve against the working directory, exactly as the stub resolved
+	// them. Empty when the runtime settings run the entry directly.
 	Script string
+	// Installation is the directory the direct settings command entered
+	// before running the entry: the installation the hook serves. It is read
+	// only when Script is empty.
+	Installation string
 	// Now is the wall clock.
 	Now func() time.Time
 	// Monotonic is elapsed time since an arbitrary origin, for budgets.
@@ -217,9 +223,10 @@ type Invocation struct {
 	Exec func(path string, argv []string, env []string) error
 	// Environ is the environment an exec or a worker inherits.
 	Environ func() []string
-	// StartWorker launches the Stop worker: the stub again, for this
-	// runtime, with the deadline parent's markers in its environment.
-	StartWorker func(script, runtime string, env []string, stdin, stdout, stderr *os.File) (Worker, error)
+	// StartWorker launches the Stop worker: the engine's own `internal hook
+	// RUNTIME stop` entry in the installation directory, with the deadline
+	// parent's markers in its environment (LaunchEngineWorker).
+	StartWorker func(installation, runtime string, env []string, stdin, stdout, stderr *os.File) (Worker, error)
 	// IsExecutable reports whether a path is an executable file.
 	IsExecutable func(path string) bool
 	// TempDir is where the hook stages files.

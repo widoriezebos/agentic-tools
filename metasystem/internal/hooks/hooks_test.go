@@ -67,7 +67,7 @@ func TestShippedHooksInstallPreToolUseWithFallback(t *testing.T) {
 		t.Fatalf("shipped PreToolUse handlers = %d, want 1", len(group.Hooks))
 	}
 	handler := group.Hooks[0]
-	if handler.Type != "command" || handler.Command != "(bash scripts/agents/supervision-hook.sh claude tool) || true" || handler.Timeout != 5 {
+	if handler.Type != "command" || handler.Command != "(metasystem internal hook claude tool) || true" || handler.Timeout != 5 {
 		t.Fatalf("shipped PreToolUse handler = %#v", handler)
 	}
 

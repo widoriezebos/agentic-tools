@@ -248,7 +248,7 @@ func TestSetupUpgradesClaudeCompactMatcherAndPreservesForeignGroupModeAndIdempot
 			t.Fatalf("compact matcher upgrade lost %q: %s", kept, text)
 		}
 	}
-	if strings.Count(text, "supervision-hook.sh claude start") != 1 {
+	if strings.Count(text, "internal hook claude start;") != 1 || strings.Contains(text, "supervision-hook.sh") {
 		t.Fatalf("compact matcher upgrade duplicated the owned handler: %s", text)
 	}
 	if info, err := os.Stat(settingsPath); err != nil || info.Mode().Perm() != 0o600 {
@@ -399,7 +399,7 @@ func TestGeneratedHookCommandIgnoresGitSteeringEnvironment(t *testing.T) {
 			repo, installation := hostFixture(t, nested)
 			capture := filepath.Join(t.TempDir(), "hook capture")
 			script := "#!/usr/bin/env bash\nprintf '%s\\n' \"$PWD|$*\" >\"$HOOK_CAPTURE\"\n"
-			writeHostFile(t, filepath.Join(installation, "scripts", "agents", "supervision-hook.sh"), script, 0o755)
+			writeHostFile(t, filepath.Join(installation, "bin", "metasystem"), script, 0o755)
 			if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"codex"}}); err != nil {
 				t.Fatal(err)
 			}
@@ -435,7 +435,7 @@ func TestGeneratedHookCommandIgnoresGitSteeringEnvironment(t *testing.T) {
 				wantDirectory = installation
 			}
 			wantDirectory, _ = filepath.EvalSymlinks(wantDirectory)
-			if strings.TrimSpace(string(observed)) != wantDirectory+"|codex start" {
+			if strings.TrimSpace(string(observed)) != wantDirectory+"|internal hook codex start" {
 				t.Fatalf("generated command selected wrong root: %s", observed)
 			}
 		})
@@ -447,7 +447,7 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 	populateHostInstallation(t, installation)
 	capture := filepath.Join(t.TempDir(), "handler capture")
 	script := "#!/usr/bin/env bash\nprintf '%s\\n' \"$PWD|$*\" >\"$HOOK_CAPTURE\"\nif [[ ${HOOK_FAIL:-0} == 1 ]]; then echo \"handler failed: $*\" >&2; exit 23; fi\n"
-	writeHostFile(t, filepath.Join(installation, "scripts", "agents", "supervision-hook.sh"), script, 0o755)
+	writeHostFile(t, filepath.Join(installation, "bin", "metasystem"), script, 0o755)
 	if _, err := Setup(Options{RepositoryPath: installation, Runtimes: []string{"claude"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +468,7 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 		for _, group := range groups {
 			for _, handler := range group.Hooks {
 				for _, action := range []string{"start", "stop", "end"} {
-					if strings.Contains(handler.Command, "supervision-hook.sh claude "+action) {
+					if strings.Contains(handler.Command, "internal hook claude "+action+";") {
 						commands[action] = handler.Command
 					}
 				}
@@ -544,22 +544,25 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 		_ = os.Remove(capture)
 		stdout, stderr, err := run(commands[action])
 		exit, ok := err.(*exec.ExitError)
-		if !ok || exit.ExitCode() != 23 || len(stdout) != 0 || !strings.Contains(string(stderr), "handler failed: claude "+action) {
+		if !ok || exit.ExitCode() != 23 || len(stdout) != 0 || !strings.Contains(string(stderr), "handler failed: internal hook claude "+action) {
 			t.Fatalf("Git %s handler failure = stdout %q, stderr %q, error %v; want handler exit 23", action, stdout, stderr, err)
 		}
 	}
 	_ = os.Remove(capture)
 	stdout, stderr, err := run(commands["stop"])
-	if err != nil || !strings.Contains(string(stderr), "handler failed: claude stop") {
+	if err != nil || !strings.Contains(string(stderr), "handler failed: internal hook claude stop") {
 		t.Fatalf("Git Stop handler failure lost its degraded allowance: stdout %q, stderr %q, error %v", stdout, stderr, err)
 	}
 	assertDegradedAllowance(stdout)
 
-	if err := os.Remove(filepath.Join(installation, "scripts", "agents", "supervision-hook.sh")); err != nil {
+	// Without an installed engine the start answers with the engine-missing
+	// notice naming the build, never silently.
+	if err := os.Remove(filepath.Join(installation, "bin", "metasystem")); err != nil {
 		t.Fatal(err)
 	}
-	if stdout, stderr, err := run(commands["start"]); err == nil || len(stdout) != 0 || !strings.Contains(string(stderr), "supervision-hook.sh") {
-		t.Fatalf("missing invoked handler was hidden: stdout %q, stderr %q, error %v", stdout, stderr, err)
+	if stdout, _, err := run(commands["start"]); err != nil || !strings.Contains(string(stdout), "Metasystem engine missing") ||
+		!strings.Contains(string(stdout), "go run ./cmd/devgate build") {
+		t.Fatalf("missing engine was hidden: stdout %q, error %v", stdout, err)
 	}
 }
 
@@ -696,7 +699,7 @@ func generatedClaudeCommands(t *testing.T, settingsPath, action string) []string
 	for _, groups := range settings.Hooks {
 		for _, group := range groups {
 			for _, handler := range group.Hooks {
-				if strings.Contains(handler.Command, "supervision-hook.sh claude "+action) {
+				if strings.Contains(handler.Command, "internal hook claude "+action+";") {
 					commands = append(commands, handler.Command)
 				}
 			}
@@ -745,7 +748,7 @@ func TestSetupSupportsNestedAdoptedInstallationWithoutOwningParent(t *testing.T)
 	writeHostFile(t, filepath.Join(installation, "AGENTS.md"), "nested instructions\n", 0o640)
 	writeHostFile(t, filepath.Join(installation, ".codex", "hooks.json"), hostHookFixture(t, "codex"), 0o640)
 	capture := filepath.Join(t.TempDir(), "nested hook capture")
-	writeHostFile(t, filepath.Join(installation, "scripts", "agents", "supervision-hook.sh"), "#!/usr/bin/env bash\nprintf '%s\\n' \"$PWD|$*\" >\"$HOOK_CAPTURE\"\n", 0o755)
+	writeHostFile(t, filepath.Join(installation, "bin", "metasystem"), "#!/usr/bin/env bash\nprintf '%s\\n' \"$PWD|$*\" >\"$HOOK_CAPTURE\"\n", 0o755)
 
 	result, err := Setup(Options{RepositoryPath: filepath.Join(installation, "skills", "demo")})
 	if err != nil {
@@ -807,7 +810,7 @@ func TestSetupSupportsNestedAdoptedInstallationWithoutOwningParent(t *testing.T)
 		t.Fatalf("execute nested generated command: %v: %s", err, output)
 	}
 	observed, err := os.ReadFile(capture)
-	if err != nil || strings.TrimSpace(string(observed)) != wantInstallation+"|codex start" {
+	if err != nil || strings.TrimSpace(string(observed)) != wantInstallation+"|internal hook codex start" {
 		t.Fatalf("nested generated command selected wrong installation: %q, %v", observed, err)
 	}
 	if _, err := os.Stat(filepath.Join(launchDirectory, "METASYSTEM_PATH_EXECUTED")); !os.IsNotExist(err) {
@@ -922,5 +925,38 @@ func TestSetupCheckRefusesADanglingSkillLink(t *testing.T) {
 	_, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}, Check: true}, resolver.ResolveLayout)
 	if err == nil || !strings.Contains(err.Error(), "registered skill link is dangling: .claude/skills/gone") {
 		t.Fatalf("check did not refuse the dangling registration: %v", err)
+	}
+}
+
+// A hooks-only setup (system setup) rewrites the runtimes' lifecycle hook
+// settings and nothing else: no instruction pointers, skill links or
+// profiles appear, and a repeat changes nothing.
+func TestSetupHooksOnlyTouchesOnlyHookSettings(t *testing.T) {
+	repo, resolver := hostGitFreeNestedFixture(t)
+	settingsPath := filepath.Join(repo, ".claude", "settings.json")
+	legacy := `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR/metasystem\" && bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}]}}`
+	writeHostFile(t, settingsPath, legacy, 0o644)
+	result, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}, HooksOnly: true}, resolver.ResolveLayout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(result.Changed, ",") != ".claude/settings.json" {
+		t.Fatalf("hooks-only setup changed %v", result.Changed)
+	}
+	for _, path := range []string{".claude/skills", ".claude/agents", "AGENTS.md", "CLAUDE.md"} {
+		if _, err := os.Lstat(filepath.Join(repo, path)); !os.IsNotExist(err) {
+			t.Fatalf("hooks-only setup wrote %s: %v", path, err)
+		}
+	}
+	text, err := os.ReadFile(settingsPath)
+	if err != nil || strings.Contains(string(text), "supervision-hook.sh") || strings.Count(string(text), "internal hook claude ") != 4 {
+		t.Fatalf("hooks-only settings = %s, %v", text, err)
+	}
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}, HooksOnly: true, Check: true}, resolver.ResolveLayout); err != nil {
+		t.Fatalf("hooks-only check after setup: %v", err)
+	}
+	again, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}, HooksOnly: true}, resolver.ResolveLayout)
+	if err != nil || len(again.Changed) != 0 {
+		t.Fatalf("hooks-only repeat changed %v: %v", again.Changed, err)
 	}
 }

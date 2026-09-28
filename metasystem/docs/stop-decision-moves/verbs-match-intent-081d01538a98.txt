@@ -1,0 +1,4 @@
+goal: verbs-match-intent
+reason: U9 hook: the Claude Stop hook is called through the engine (internal hook claude stop) instead of the supervision-hook.sh stub; the check that no block decision is hard-coded in the settings is unchanged
+moved:
+internal/hooks/setup_test.go	if strings.Count(text, "supervision-hook.sh claude stop") != 1 || strings.Contains(text, `\"decision\":\"block\"`) || !strings.Contains(text, jsonString(t, want)) {

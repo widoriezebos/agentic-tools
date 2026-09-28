@@ -2,8 +2,8 @@ allowed	unreadable-output		{"systemMessage":"Task unknown; Stop allowed; needs s
 allowed	unreadable-output	condition-log-failed	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable; condition log failed. The steward must restore supervision. Status unavailable."}
 allowed	unreadable-output	no-resolved-checkout	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable; no resolved checkout. The steward must restore supervision. Status unavailable."}
 allowed	unreadable-output	condition-log-failed,no-resolved-checkout	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable; condition log failed; no resolved checkout. The steward must restore supervision. Status unavailable."}
-allowed	engine-missing		{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}
-allowed	engine-skew		{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine does not answer path state-root. Rebuild bin/metasystem. Status unavailable."}
+allowed	engine-missing		{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild it with go run ./cmd/devgate build. Status unavailable."}
+allowed	engine-skew		{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine does not answer path state-root. Rebuild it with go run ./cmd/devgate build. Status unavailable."}
 allowed	staging-failed		{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; payload staging failed. The steward must restore supervision. Status unavailable."}
 allowed	deadline-expired		{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired. The steward must restore supervision. Status unavailable."}
 allowed	deadline-expired	record-update-failed	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; record update failed. The steward must restore supervision. Status unavailable."}

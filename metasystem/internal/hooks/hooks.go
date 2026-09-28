@@ -80,7 +80,10 @@ func CheckOwnHooks(livePath, shippedPath, vendoredMarker string) error {
 // the start of the command or right after a shell connector, optionally
 // through an interpreter — never a mere mention in another command's
 // arguments (the false-pass foundations-11 names).
-var supervisionInvokeRe = regexp.MustCompile(`(?:^|&&|\|\||;)\s*(?:bash\s+|sh\s+)?\S*scripts/agents/supervision-hook\.sh"?(?:\s|$)`)
+// The engine's hook entry is in command position too: the shipped template's
+// `metasystem internal hook`, or the rendered command's exec of the selected
+// engine.
+var supervisionInvokeRe = regexp.MustCompile(`(?:(?:^|&&|\|\||;|\()\s*(?:bash\s+|sh\s+)?\S*scripts/agents/supervision-hook\.sh"?(?:\s|$))|(?:(?:^|&&|\|\||;|\(|then)\s*(?:exec\s+)?(?:"\$\{METASYSTEM_BIN:-\$engine\}"|\S*metasystem)\s+internal\s+hook\s)`)
 
 func anyInvokesSupervision(commands []string) bool {
 	for _, command := range commands {

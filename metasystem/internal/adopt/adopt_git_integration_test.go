@@ -414,7 +414,7 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 			t.Fatalf("an unselected runtime key survived: %s", line)
 		}
 	}
-	if settings := readText(t, filepath.Join(target, ".claude", "settings.json")); !strings.Contains(settings, "SessionStart") || !regexp.MustCompile(`supervision-hook\.sh.*claude start`).MatchString(settings) {
+	if settings := readText(t, filepath.Join(target, ".claude", "settings.json")); !strings.Contains(settings, "SessionStart") || !regexp.MustCompile(`internal hook claude start;`).MatchString(settings) {
 		t.Fatal("the Claude session-start supervision hook is missing")
 	}
 	if _, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: target, Runtimes: []string{"claude"}, Check: true}); err != nil {
@@ -507,7 +507,7 @@ func TestAdoptGitIntegrationRuntimeSelections(t *testing.T) {
 		if !hasLine(confLines(t, target), "metasystem.runtimes=devin") || !hasLine(confLines(t, target), "role.default.runtime=devin") {
 			t.Fatal("the devin selection was not recorded as the default")
 		}
-		if !regexp.MustCompile(`supervision-hook\.sh.*devin start`).MatchString(readText(t, filepath.Join(target, ".devin", "config.json"))) || exists(filepath.Join(target, ".claude")) {
+		if !regexp.MustCompile(`internal hook devin start;`).MatchString(readText(t, filepath.Join(target, ".devin", "config.json"))) || exists(filepath.Join(target, ".claude")) {
 			t.Fatal("a devin-only target has the wrong hook configuration")
 		}
 		if _, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: target, Runtimes: []string{"devin"}, Check: true}); err != nil {
@@ -528,7 +528,7 @@ func TestAdoptGitIntegrationRuntimeSelections(t *testing.T) {
 		if !hasLine(confLines(t, target), "metasystem.runtimes=codex") || !hasLine(confLines(t, target), "role.default.runtime=codex") {
 			t.Fatal("the codex selection was not recorded as the default")
 		}
-		if !regexp.MustCompile(`supervision-hook\.sh.*codex start`).MatchString(readText(t, filepath.Join(target, ".codex", "hooks.json"))) {
+		if !regexp.MustCompile(`internal hook codex start;`).MatchString(readText(t, filepath.Join(target, ".codex", "hooks.json"))) {
 			t.Fatal("the Codex session-start hook is missing")
 		}
 		if _, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: target, Runtimes: []string{"codex"}, Check: true}); err != nil {

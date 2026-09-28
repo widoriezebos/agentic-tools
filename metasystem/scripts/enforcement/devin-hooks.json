@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash scripts/agents/supervision-hook.sh devin start",
+            "command": "metasystem internal hook devin start",
             "timeout": 15
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash scripts/agents/supervision-hook.sh devin stop",
+            "command": "metasystem internal hook devin stop",
             "timeout": 60
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash scripts/agents/supervision-hook.sh devin end",
+            "command": "metasystem internal hook devin end",
             "timeout": 3
           }
         ]

@@ -133,6 +133,9 @@ func Ensure(root string) error {
 			probeRun.Env = append(EnvironWithoutGitSteering(), "METASYSTEM_GUARD_PROBE="+nonce)
 			probeRun.WaitDelay = 5 * time.Second
 			probeOutBytes, probeRunErr := probeRun.CombinedOutput()
+			// Read the deadline before cancel: after cancel ctx.Err() is
+			// always set, and no hook would ever count as enrolled.
+			timedOut := ctx.Err() != nil
 			cancel()
 			// The ack alone is not enrollment: the guard exits 42
 			// under probe, and the hook chain must PROPAGATE that
@@ -143,7 +146,7 @@ func Ensure(root string) error {
 			// own fence — the fence guards accidents, not authors.)
 			var exitErr *exec.ExitError
 			ackSeen := strings.Contains(string(probeOutBytes), "guard-probe-ack "+nonce)
-			statusPropagated := errors.As(probeRunErr, &exitErr) && exitErr.ExitCode() == 42 && ctx.Err() == nil
+			statusPropagated := errors.As(probeRunErr, &exitErr) && exitErr.ExitCode() == 42 && !timedOut
 			enrolled = ackSeen && statusPropagated
 		}
 	}
@@ -381,3 +384,34 @@ func EnvironWithoutGitSteering() []string {
 	}
 	return out
 }
+
+// HookPath is the pre-commit hook git runs for the checkout at root: the
+// effective hooks directory, honoring core.hooksPath.
+func HookPath(root string) (string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	command := exec.Command("git", "-C", absRoot, "rev-parse", "--path-format=absolute", "--git-path", "hooks")
+	command.Env = EnvironWithoutGitSteering()
+	out, err := command.Output()
+	if err != nil {
+		return "", fmt.Errorf("the hooks directory cannot be resolved for %s: %v", absRoot, err)
+	}
+	return filepath.Join(strings.TrimRight(string(out), "\n"), "pre-commit"), nil
+}
+
+// RetiredComposer reports whether a pre-commit hook is a composer written
+// before the engine guard (U5): it runs the deleted
+// scripts/agents/pre-commit-guard.sh, so its fail-closed shape refuses every
+// commit. The next Ensure, which `system setup` runs, upgrades it in place.
+func RetiredComposer(hook string) bool {
+	return isOurComposer(hook) && !isCurrentComposer(hook)
+}
+
+// RetiredComposerRefusal is the refusal line a retired fail-closed composer
+// prints on every commit; RetiredComposerRemedy is the fix it never named.
+const (
+	RetiredComposerRefusal = "the metasystem ledger guard is missing at "
+	RetiredComposerRemedy  = "this checkout's git pre-commit hook predates the engine guard and refuses every commit; re-enroll it with: metasystem system setup"
+)

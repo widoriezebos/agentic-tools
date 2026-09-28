@@ -30,7 +30,7 @@ var publicPairs = []string{
 	"helm take", "helm return",
 	"session start", "session stop", "session status", "session handoff", "session isolate",
 	"mission start", "mission status", "mission resume", "mission repair",
-	"system start", "system stop", "system restart", "system status", "system check", "system enroll", "system adopt",
+	"system start", "system stop", "system restart", "system status", "system check", "system enroll", "system setup", "system adopt",
 	"machine list", "machine start",
 	"app start", "app stop", "app restart", "app status", "app log", "app reset", "app check",
 	"ui start", "ui stop", "ui restart", "ui status",

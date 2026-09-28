@@ -41,6 +41,7 @@ type deadlineParent struct {
 	dir, stdoutPath, stderrPath, payloadPath string
 
 	installation, engine string
+	harnessRoot          string
 	session, repo        string
 	record               string
 	fromEngine           bool
@@ -79,7 +80,7 @@ func runStopDeadlineParent(inv Invocation, ops Ops, harnessRoot string) int {
 	if inv.Sleep == nil {
 		inv.Sleep = time.Sleep
 	}
-	p := &deadlineParent{inv: inv, ops: ops}
+	p := &deadlineParent{inv: inv, ops: ops, harnessRoot: harnessRoot}
 	p.budgetSec = deadlineBudget(inv.env(stopDeadlineBudgetEnv))
 	p.workerSec = p.budgetSec - 3
 	p.startedEpoch = inv.Now().Unix()
@@ -354,7 +355,7 @@ func (p *deadlineParent) startWorker() (Worker, error) {
 	env := append(withoutEnv(inv.Environ(), stopDeadlineParentEnv, stopDeadlineStartedEnv),
 		stopDeadlineParentEnv+"="+strconv.Itoa(inv.Pid),
 		stopDeadlineStartedEnv+"="+strconv.FormatInt(p.startedEpoch, 10))
-	return inv.StartWorker(inv.Script, inv.Runtime, env, stdin, stdout, stderr)
+	return inv.StartWorker(p.harnessRoot, inv.Runtime, env, stdin, stdout, stderr)
 }
 
 func withoutEnv(environment []string, names ...string) []string {

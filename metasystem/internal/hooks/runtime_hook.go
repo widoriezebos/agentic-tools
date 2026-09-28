@@ -112,11 +112,14 @@ func runToolGate(inv Invocation) int {
 	if inv.env("METASYSTEM_HOOK_DELEGATE_JOB") != "" {
 		return 0
 	}
-	scriptDir := inv.Script
-	if index := strings.LastIndex(scriptDir, "/"); index >= 0 {
-		scriptDir = scriptDir[:index]
+	cache := inv.Installation + "/artifacts/agents/context/engine-path"
+	if inv.Script != "" {
+		scriptDir := inv.Script
+		if index := strings.LastIndex(scriptDir, "/"); index >= 0 {
+			scriptDir = scriptDir[:index]
+		}
+		cache = scriptDir + "/../../artifacts/agents/context/engine-path"
 	}
-	cache := scriptDir + "/../../artifacts/agents/context/engine-path"
 	data, err := os.ReadFile(cache)
 	if err != nil {
 		return 0
@@ -291,6 +294,23 @@ func worldInstallation(ops Ops, harnessRoot string) (string, bool) {
 		}
 	}
 	return world, true
+}
+
+// installationRoot is the physical installation the hook serves: the
+// directory the direct settings command entered, or, when the cutover stub
+// launched the entry, the stub's grandparent directory.
+func (inv Invocation) installationRoot() (string, bool) {
+	if inv.Script == "" {
+		if inv.Installation == "" {
+			return "", false
+		}
+		return physicalDirectory(inv.Installation)
+	}
+	scriptDir, ok := physicalDirectory(scriptParent(inv.Script))
+	if !ok {
+		return "", false
+	}
+	return physicalDirectory(scriptDir + "/../..")
 }
 
 // scriptParent is the directory the stub was invoked from.

@@ -175,7 +175,7 @@ predecessor in the same slice.
 | **decision** | list, show | `show decisions`, `show record ID` |
 | **session** | start, stop, report | `start session`, `stop session`, `internal report stop-status` (the Stop hook's instruction) |
 | | handoff, context, verify | `internal context handoff/status/verify` (steward continuation role) |
-| **system** | start, stop, restart, status, check, repair | `start/stop/restart/status [checkout]`, `check`, `repair waits`, `internal up --recover-only --if-down` (as `system start --if-down`, the cron line), `internal steward status` (as `system status --steward`) |
+| **system** | start, stop, restart, status, check, repair, setup | `start/stop/restart/status [checkout]`, `check`, `repair waits`, `internal up --recover-only --if-down` (as `system start --if-down`, the cron line), `internal steward status` (as `system status --steward`); `setup` (U9, refinement): connect this checkout's runtime hooks and pre-commit fence to its engine, the per-checkout activation of 3.3 |
 | **machine** | list, start | `status --machines`, `start machine NAME` |
 | **ui** | start, stop, restart, status | `start/stop/restart/status ui` |
 | **settings** | show, keys, check, coordinator | `settings`, `settings --keys`, `check settings`, `settings coordinator` |
@@ -730,6 +730,32 @@ reconciliation owner's scoped publication (3.4, VOA-21).
   usability run by an agent that has never seen the CLI (discover, plan, build,
   review, land, recover from a refused land) recorded in the goal's verification
   page.
+
+  U9 build notes (hook part, as built): the settings renderer
+  (`internal/hooks/setup.go`) writes the direct command: Git discovery, `cd`
+  into the installation, the engine selected as the stub selected it (the
+  primary checkout's `bin/metasystem` through `--git-common-dir` for a linked
+  worktree; Claude's tool gate prefers a local executable engine;
+  `METASYSTEM_BIN` only beside an installed engine), `exec ENGINE internal
+  hook RUNTIME EVENT`, and the inline degraded answer naming `go run
+  ./cmd/devgate build` when no engine is installed. The shipped templates name
+  `metasystem internal hook RUNTIME EVENT`; the stub-era rendered commands are
+  recognized and replaced. The entry takes its installation from its working
+  directory when no stub names itself, and the Stop deadline parent launches
+  its worker as the engine's own entry in that directory
+  (`hooks.LaunchEngineWorker`). The engine-behind-its-sources rebuild was
+  already the Go start's (`bootstrapEngine`). The per-checkout activation is
+  the public `system setup` (refinement, 3.1): it validates `internal hook
+  --accepts` on the selected engine, renders the hook settings of every
+  runtime the checkout already registers (hooks only), and runs the fence
+  enrollment, which upgrades a composer that still runs the deleted
+  `pre-commit-guard.sh`; a repeat writes nothing. Until a checkout switches, a
+  commit through the Go commit path that such a composer refuses names
+  `metasystem system setup` (H1). The template repository's own tracked
+  settings are regenerated in the same landing, so a seat that pulls runs the
+  direct command from its next session; its `system setup` then validates the
+  engine and re-enrolls its fence. The stub is deleted in a following commit
+  once every seat has switched.
 
 ## 6. Protocols
 
