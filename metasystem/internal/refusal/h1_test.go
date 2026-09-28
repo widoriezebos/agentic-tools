@@ -17,7 +17,7 @@ var forwardForm = regexp.MustCompile(`^[a-z]+ [a-z][a-z-]*$`)
 
 // h1GuideDefectCeiling is the number of guide rows the register admits with
 // no public command yet (rule H1 gaps recorded as Defects). It only falls.
-const h1GuideDefectCeiling = 1
+const h1GuideDefectCeiling = 0
 
 // Rule H1 / witness R14, register half: every row has a standing; a row a
 // person meets (Question) states it explicitly; a guide row names the public

@@ -25,7 +25,7 @@ import (
 // : a concurrent edit that moved a field past the base is a
 // conflict, never an overwrite.
 type MappedVerb struct {
-	Verb      string // open | park | unpark | done | reopen | edit
+	Verb      string // open | park | unpark | done | reopen | edit | allow | disallow
 	Id        string
 	Because   string // park
 	Conclude  string // done
@@ -371,6 +371,19 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 		fields.Labels = &labels
 		baseFields.Labels = &baseLabels
 		editNeeded = true
+	}
+	// A goal permission's line is on the closed surface: adding it is
+	// goal allow, removing it goal disallow, each judged at replay as the
+	// verb judges it (allowing is a person's act under a proof).
+	for _, permission := range Permissions {
+		if allowed := permission.Holds(edited); allowed != permission.Holds(base) {
+			verb := "disallow"
+			if allowed {
+				verb = "allow"
+			}
+			rows = append(rows, MappedVerb{Verb: verb, Id: base.Id, BaseState: base.State,
+				Fields: EditFields{Permission: &PermissionChange{Name: permission.Name, Allowed: allowed}}})
+		}
 	}
 	// Arc IS on the closed surface: a membership change maps
 	// to its verbs — set-arc for a join or move, detach for a clear.

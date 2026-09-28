@@ -638,18 +638,30 @@ func requireStopSurfaceAuditGoalRefusal(t *testing.T, result StopSurfaceResult) 
 	}
 }
 
+// Rule H1: the refusal names the public command a person runs to grant the
+// permission, so nobody is left with a hand edit the Integrity seal refuses.
+func requireStopSurfaceGrantRemedy(t *testing.T, text, goalID string) {
+	t.Helper()
+	if want := "goal " + goalID + " is not allowed stop-test changes; a person runs: metasystem goal allow " + goalID + " stop-test-changes --reason TEXT"; !strings.Contains(text, want) {
+		t.Fatalf("the unpermitted-goal refusal does not name %q: %s", want, text)
+	}
+}
+
 func TestStopSurfaceRefusesUnpermittedGoalAtDeclarationAndAudit(t *testing.T) {
 	t.Run("declaration creation", func(t *testing.T) {
 		fixture, _ := stopSurfaceRemovedAssertionFixture(t)
 		fixture.writeGoal("unrelated", "queued", false)
 		_, err := fixture.declareDecision(stopSurfaceTestOptions(), "unrelated", "policy")
 		requireStopSurfaceGoalRefusal(t, err)
+		requireStopSurfaceGrantRemedy(t, err.Error(), "unrelated")
 	})
 	t.Run("audit acceptance", func(t *testing.T) {
 		fixture, removed := stopSurfaceRemovedAssertionFixture(t)
 		fixture.writeGoal("unrelated", "queued", false)
 		fixture.declare("unrelated", "policy", []StopSurfaceLine{removed})
-		requireStopSurfaceAuditGoalRefusal(t, fixture.audit(stopSurfaceTestOptions()))
+		result := fixture.audit(stopSurfaceTestOptions())
+		requireStopSurfaceAuditGoalRefusal(t, result)
+		requireStopSurfaceGrantRemedy(t, result.Problems[0], "unrelated")
 	})
 }
 

@@ -18,7 +18,7 @@ import (
 var publicPairs = []string{
 	"goal list", "goal show", "goal approve", "goal budget", "goal pause", "goal resume", "goal done", "goal open", "goal edit",
 	"goal claim", "goal release", "goal accept-risk", "goal pin", "goal prioritize", "goal reopen", "goal abandon", "goal block",
-	"goal unblock", "goal unapprove", "goal split", "goal group", "goal ungroup", "goal notes", "goal sync",
+	"goal unblock", "goal unapprove", "goal split", "goal group", "goal ungroup", "goal notes", "goal sync", "goal allow", "goal disallow",
 	"grant add", "grant revoke", "grant list",
 	"decision list", "decision show",
 	"design write", "design show", "design list", "design review", "design stop",

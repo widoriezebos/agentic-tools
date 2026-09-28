@@ -3472,9 +3472,13 @@ type EditFields struct {
 	NextStepAppend *string
 	Blocked        *[]string
 	Labels         *[]string
-	Why            string
-	Evidence       string
-	Proof          *humanauthority.Proof
+	// Permission allows or disallows one goal permission (goal allow and
+	// goal disallow; see Permissions). Allowing is a person's act under the
+	// proof a lowering takes; disallowing is anyone's.
+	Permission *PermissionChange
+	Why        string
+	Evidence   string
+	Proof      *humanauthority.Proof
 	// QueuedOnly narrows this verb to the one edit a browser may make without
 	// a proposal: a goal that is still queued and carries no approval. The
 	// allowlist is the mutation's rather than a caller's, so an approval or a
@@ -3516,6 +3520,17 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 			return PublishRequest{}, err
 		}
 		fields.Labels = &canonical
+	}
+	var permission Permission
+	if fields.Permission != nil {
+		known, err := LookupPermission(fields.Permission.Name)
+		if err != nil {
+			return PublishRequest{}, err
+		}
+		permission = known
+		if strings.ContainsAny(fields.Why, "\r\n") {
+			return PublishRequest{}, fmt.Errorf("the reason for a permission is one line")
+		}
 	}
 	if fields.Risk != nil {
 		if err := fields.Risk.Validate(); err != nil {
@@ -3603,6 +3618,17 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 			if raise && strings.TrimSpace(fields.Evidence) == "" {
 				return nil, fmt.Errorf("raising the derived tier after approval requires --evidence")
 			}
+			// Allowing a permission is a person's act under the same proof a
+			// lowering takes; the refusal names the command the person runs.
+			if fields.Permission != nil && fields.Permission.Allowed && !permission.Holds(f) {
+				remedy := "a person runs " + AllowCommand(id, permission.Name) + " at the enrolled terminal"
+				if r.Actor.Human == "" {
+					return nil, fmt.Errorf("allowing %s is a person's act; %s", permission.Words, remedy)
+				}
+				if _, _, _, proofErr := approvalProofClass(r.Endpoint.Root, fields.Proof); proofErr != nil {
+					return nil, fmt.Errorf("allowing %s is a person's act: %v; %s", permission.Words, proofErr, remedy)
+				}
+			}
 			// The table's edit rows: queued is open to all, claimed is
 			// the claimant's or a human's (the foreign-human override
 			// leaves the displacement signal), parked has no
@@ -3630,7 +3656,15 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 			// browser is the one hand with two tabs on one card, and its
 			// second press used to land a second edit with a second History
 			// line.
-			if editChangesNothing(f, fields) {
+			if editChangesNothing(f, fields, permission) {
+				if fields.Permission != nil && fields.Intent == nil && fields.NextStep == nil && fields.Labels == nil {
+					// goal allow and goal disallow say what already holds in
+					// their own words.
+					if fields.Permission.Allowed {
+						return nil, AlreadyHolds{Reason: "goal " + id + " is already allowed " + permission.Words}
+					}
+					return nil, AlreadyHolds{Reason: "goal " + id + " is already not allowed " + permission.Words}
+				}
 				if fromSignedInSession(r.Authority) {
 					return nil, AlreadyHolds{Reason: "goal " + id + " already reads exactly this way: the same edit from this signed-in session"}
 				}
@@ -3662,10 +3696,17 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 			if fields.Labels != nil {
 				f.Labels = append([]string(nil), (*fields.Labels)...)
 			}
+			permissionChanged := fields.Permission != nil && fields.Permission.Allowed != permission.Holds(f)
+			if fields.Permission != nil {
+				permission.Set(f, fields.Permission.Allowed)
+			}
 			touchDisplaced(f, r, "edit", []string{id}, displaced)
 			// An edit a signed-in browser made says so on its own line, as an
 			// approval does: the ledger names the hand that acted.
 			recordSessionAuthority(&f.History[len(f.History)-1], r.Authority)
+			if permissionChanged {
+				f.History[len(f.History)-1].Reason = permissionReason(*fields.Permission, fields.Why)
+			}
 			if raise {
 				if riskRaised != nil {
 					*riskRaised = true
@@ -3704,11 +3745,14 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 // word is still its own word. It answers for the three fields that hand sends
 // — the intent, the next step and the labels — and an edit carrying anything
 // else is not the repeat this rule is about, so it lands as it always did.
-func editChangesNothing(f *GoalFile, fields EditFields) bool {
+func editChangesNothing(f *GoalFile, fields EditFields, permission Permission) bool {
 	if fields.Tier != nil || fields.Risk != nil || fields.Blocked != nil || fields.NextStepAppend != nil {
 		return false
 	}
-	if fields.Intent == nil && fields.NextStep == nil && fields.Labels == nil {
+	if fields.Intent == nil && fields.NextStep == nil && fields.Labels == nil && fields.Permission == nil {
+		return false
+	}
+	if fields.Permission != nil && fields.Permission.Allowed != permission.Holds(f) {
 		return false
 	}
 	if fields.Intent != nil && *fields.Intent != f.Intent {
@@ -4747,6 +4791,9 @@ func editDeltas(id string, fields EditFields) []FieldDelta {
 	}
 	if fields.Labels != nil {
 		deltas = append(deltas, FieldDelta{Target: id, Field: "labels", New: strings.Join(*fields.Labels, ",")})
+	}
+	if fields.Permission != nil {
+		deltas = append(deltas, FieldDelta{Target: id, Field: "permission", New: permissionDelta(*fields.Permission)})
 	}
 	return deltas
 }

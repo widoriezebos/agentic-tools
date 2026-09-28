@@ -315,6 +315,31 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentUngroup,
 		},
 		{
+			object: "goal", action: "allow", audience: "human", summary: "allow a goal something it may not do by default",
+			usage: []string{"metasystem goal allow G PERMISSION --reason TEXT"},
+			details: []string{
+				"PERMISSION is " + strings.Join(goal.PermissionNames(), ", ") + ".",
+				"stop-test-changes lets the goal's landing move or change a test assertion that says whether work must stop, under a declaration the Stop decision audit checks.",
+				"Allowing is a person's act at the enrolled terminal; goal show lists what a goal is allowed.",
+			},
+			flags: withFlags([]intentFlag{
+				intentTargetFlag,
+				reasonFlag("why", "why the goal is allowed it"), fileFlag("reason", "read the reason from FILE"),
+			}, intentHumanActFlags, intentRelayFlags),
+			maxArgs:  2,
+			examples: []string{"metasystem goal allow verbs-match-intent stop-test-changes --reason 'the Stop hook runs the engine directly'"},
+			run:      runIntentAllow,
+		},
+		{
+			object: "goal", action: "disallow", audience: "both", summary: "withdraw something a goal was allowed",
+			usage:    []string{"metasystem goal disallow G PERMISSION [--reason TEXT]"},
+			details:  []string{"PERMISSION is " + strings.Join(goal.PermissionNames(), ", ") + ". Anyone may withdraw a permission."},
+			flags:    withFlags([]intentFlag{intentTargetFlag, reasonFlag("why", "why the permission is withdrawn"), fileFlag("reason", "read the reason from FILE")}, intentHumanActFlags),
+			maxArgs:  2,
+			examples: []string{"metasystem goal disallow verbs-match-intent stop-test-changes"},
+			run:      runIntentDisallow,
+		},
+		{
 			object: "goal", action: "notes", audience: "both", summary: "read, add or close a goal's non-breaking read findings",
 			usage: []string{"metasystem goal notes G", "metasystem goal notes G --read LABEL --add TEXT...", "metasystem goal notes G --close ITEM --fixed COMMIT|--moved G2|--accepted REASON"},
 			details: []string{

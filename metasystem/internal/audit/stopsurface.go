@@ -719,7 +719,7 @@ func requireStopSurfaceGoalPermission(root, goalID string, reader StopSurfaceGoa
 		return stopSurfaceGoalRefusal("goal %s is %s", goalID, record.State)
 	}
 	if !record.StopSurfaceMoves {
-		return stopSurfaceGoalRefusal("goal %s does not permit Stop-surface moves", goalID)
+		return stopSurfaceGoalRefusal("goal %s is not allowed stop-test changes; a person runs: metasystem goal allow %s stop-test-changes --reason TEXT", goalID, goalID)
 	}
 	return nil
 }

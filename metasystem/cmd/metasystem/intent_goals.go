@@ -387,6 +387,10 @@ func runIntentShow(inv *intentInvocation) int {
 		data["designsUnreadable"] = designProblem
 	}
 	text := []string{"intent: " + file.Intent, "next step: " + file.NextStep}
+	if allowed := goal.AllowedWords(file); len(allowed) > 0 {
+		text = append(text, "Allowed: "+strings.Join(allowed, ", "))
+		data["allowed"] = allowed
+	}
 	if file.StopFence != nil {
 		text = append(text, "stopped: "+string(file.StopFence.Reason)+" at "+file.StopFence.ClosedAt)
 	}

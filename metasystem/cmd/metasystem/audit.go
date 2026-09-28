@@ -157,7 +157,7 @@ func runAuditStopDecisionSurfaceWith(args []string, dependencies stopDecisionSur
 	}
 	fmt.Println(result.Summary())
 	if result.Refused() {
-		fmt.Fprintln(os.Stderr, "restore the assertion, or run metasystem internal audit stop-decision-surface --declare --goal <goal-id> --reason <text> with the goal that permits the move")
+		fmt.Fprintln(os.Stderr, "restore the assertion, or run metasystem internal audit stop-decision-surface --declare --goal <goal-id> --reason <text> with a goal allowed stop-test changes; a person allows the move with metasystem goal allow <goal-id> stop-test-changes --reason <text>")
 		return 1
 	}
 	return 0
