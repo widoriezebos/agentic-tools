@@ -3,7 +3,7 @@
 - Kind: design
 - Id: 01M3KCV1EDQPB9X3PFZBE0R77R
 - Status: draft
-- Goals: browser-interface, partner-runs-the-design-loop
+- Goals: browser-interface partner-runs-the-design-loop
 
 Wido, 2026-09-28, after asking whether the design discussion we were
 having in a terminal could be held in the interface with the Partner,
