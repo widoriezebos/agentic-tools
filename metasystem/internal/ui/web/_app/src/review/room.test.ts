@@ -382,6 +382,24 @@ describe("keeping the room in order", () => {
     expect(server.mark.text).toBe("half a finding");
   });
 
+  it("sends the leaving keep at once even when the same words are already out", async () => {
+    // The request that is out may die with the page; only the leaving one is
+    // sent to outlive it.
+    const server = markServer();
+    const keeper = new RoomKeeper(server.send);
+    keeper.open("review.md", words(""), 7);
+    const typed = words("half a finding");
+    const first = keeper.keep(() => typed);
+    const leaving = keeper.keep(() => typed, true);
+    expect(server.out.map((sent) => [sent.text, sent.leaving])).toEqual([["half a finding", false], ["half a finding", true]]);
+    expect(server.out[1].seq).toBeGreaterThan(server.out[0].seq);
+    server.out[1].arrive();
+    server.out[0].arrive();
+    expect(await leaving).toBe(true);
+    expect(await first).toBe(true);
+    expect(server.mark).toEqual({ text: "half a finding", seq: server.out[1].seq });
+  });
+
   it("numbers a room's keeps above what its mark held when it opened", async () => {
     const server = markServer();
     const keeper = new RoomKeeper(server.send);

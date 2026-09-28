@@ -525,6 +525,9 @@ type Conversation struct {
 	messages []Message
 	session  string
 	sitting  *Sitting
+	// publish writes the state file; nil is publishState. A test sets it to
+	// hold one write back while another runs.
+	publish func(path string, held stateFile) error
 }
 
 // Subject is what a sitting is about: one record of this project, by the kind
@@ -1372,16 +1375,17 @@ func (c *Conversation) Keep(room Room, now time.Time) error {
 		c.mu.Unlock()
 		return nil
 	}
+	// The lock is held through the write, so the file is published in the order
+	// the keeps were admitted: a keep admitted earlier cannot write its older
+	// room over a later one's.
 	previous := c.sitting
 	kept := *c.sitting
 	room.At = now.UTC().Format(time.RFC3339)
 	kept.Room = &room
 	c.sitting = &kept
-	c.mu.Unlock()
-	if err := c.writeState(now); err != nil {
-		c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.writeStateHeld(now); err != nil {
 		c.sitting = previous
-		c.mu.Unlock()
 		return err
 	}
 	return nil
@@ -1395,18 +1399,24 @@ func (c *Conversation) Key() string { return c.key }
 // state as it stands. It is whole rather than a field at a time because the two
 // things it holds are written by different acts, and a write that carried only
 // its own field would drop the other's.
+//
+// The state is captured and published under the lock, so a state captured
+// earlier is never the one left on disk after a later one.
 func (c *Conversation) writeState(now time.Time) error {
 	c.mu.Lock()
-	held := stateFile{Session: c.session, Sitting: c.sitting, UpdatedAt: now.UTC().Format(time.RFC3339)}
-	c.mu.Unlock()
-	return publishState(c.state, held)
+	defer c.mu.Unlock()
+	return c.writeStateHeld(now)
 }
 
 // writeStateHeld is writeState with this conversation's own lock already held,
 // for the sitting's move to a name at the first sign-in (Service.Adopt), which
 // holds both conversations while it moves them.
 func (c *Conversation) writeStateHeld(now time.Time) error {
-	return publishState(c.state, stateFile{
+	publish := publishState
+	if c.publish != nil {
+		publish = c.publish
+	}
+	return publish(c.state, stateFile{
 		Session: c.session, Sitting: c.sitting, UpdatedAt: now.UTC().Format(time.RFC3339)})
 }
 

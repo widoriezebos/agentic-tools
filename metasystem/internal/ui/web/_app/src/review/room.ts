@@ -571,7 +571,8 @@ export class RoomKeeper {
 
   /**
    * Keep the room as `room` reads when the keep is sent, answering whether it
-   * landed. The same words as the last keep answer that keep's answer.
+   * landed. The same words as the last keep answer that keep's answer, unless
+   * the page is going away while that keep is still out.
    */
   async keep(room: () => RoomState, leaving = false): Promise<boolean> {
     while (!leaving && this.out !== null) {
@@ -581,7 +582,9 @@ export class RoomKeeper {
       return true;
     }
     const kept = JSON.stringify(room());
-    if (kept === this.last) {
+    // The page going away sends its own request even for the words already
+    // out, since the one out may die with the page; only its own outlives it.
+    if (kept === this.last && (!leaving || this.out === null)) {
       return this.answer;
     }
     this.last = kept;

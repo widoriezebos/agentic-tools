@@ -134,3 +134,43 @@ func TestAnOlderKeepArrivingLateLeavesTheMarkAsItWas(t *testing.T) {
 	testutil.Expect(t, "replaces it", string(again.Sitting().Room.Drafts), `{"local-1":{"text":"half a finding, and why"}}`)
 	testutil.Expect(t, "with its sequence", again.Sitting().Room.Seq, int64(3))
 }
+
+// Two keeps admitted in order publish the mark in that order: the older keep's
+// write is held back while the newer one tries to complete, and the file read
+// back carries the newer room and sequence.
+func TestTwoKeepsAdmittedInOrderPublishTheNewerLast(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	at := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)
+	record := "metasystem/plans/reviews/review-of-g1-s64.md"
+	conversation, err := OpenConversation(directory, "Wido", record)
+	testutil.Require(t, "open", err, nil)
+	testutil.Require(t, "sit", conversation.Sit(Sitting{Subject: Subject{Kind: SubjectRecord, ID: record},
+		Purpose: PurposeReview, StartedAt: at.Format(time.RFC3339)}, at), nil)
+
+	words := func(text string, seq int64) Room {
+		return Room{Face: "desk", Drafts: []byte(`{"local-1":{"text":"` + text + `"}}`), Seq: seq}
+	}
+	newerDone := make(chan error, 1)
+	conversation.publish = func(path string, held stateFile) error {
+		if held.Sitting != nil && held.Sitting.Room != nil && held.Sitting.Room.Seq == 1 {
+			// The older keep is writing. The newer one sets out now; where the
+			// conversation's lock is free it can finish first, and it is let.
+			go func() { newerDone <- conversation.Keep(words("half a finding", 2), at.Add(2*time.Minute)) }()
+			if conversation.mu.TryLock() {
+				conversation.mu.Unlock()
+				testutil.Require(t, "the newer keep", <-newerDone, nil)
+				newerDone <- nil
+			}
+		}
+		return publishState(path, held)
+	}
+	testutil.Require(t, "the older keep", conversation.Keep(words("hal", 1), at.Add(time.Minute)), nil)
+	testutil.Require(t, "the newer keep, done", <-newerDone, nil)
+
+	again, err := OpenConversation(directory, "Wido", record)
+	testutil.Require(t, "open again", err, nil)
+	held := again.Sitting().Room
+	testutil.Expect(t, "the newer words are on disk", string(held.Drafts), `{"local-1":{"text":"half a finding"}}`)
+	testutil.Expect(t, "under the newer sequence", held.Seq, int64(2))
+}
