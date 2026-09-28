@@ -216,7 +216,14 @@ Each decision names the slice that builds it: A, B, C or D (§5).
   holds unchanged.
 - D3 (A). **The reviewer's Partner is fresh.** The review's turns run in
   a provider session started at Start with the boot context and the
-  review brief, and none of the conversation's earlier turns. The
+  review brief, and none of the conversation's earlier turns. That
+  covers both paths the service has today: the history it restores
+  into a fresh session (`internal/ui/partner/service.go`, the `fresh`
+  branch that reads `conversation.History()`) and the proposals block
+  it composes from the whole transcript (`proposalsBlock`), and it holds
+  on recovery too: a review session's opening carries the boot context,
+  the review brief and the review record, and nothing of the
+  conversation (Astra, round 1). The
   Partner's instructions gain the review rules: bring what the record
   holds in the five parts; anchor every claim; name what the examination
   did not try, what the tests assume and what is not recorded; offer the
@@ -229,10 +236,16 @@ Each decision names the slice that builds it: A, B, C or D (§5).
   checkout.** Three reads over the review record's `Reviewed:` line:
   a source file at a line range, bounded, from the reviewed tree with
   the lines the change touched marked; the change index, files with
-  counts, between the merge base with main and the tip; one file's diff
-  as hunks. The same owner serves the Partner's `changes` operation, so
-  the colleague and the human read one tree. A record section on the
-  desk is the existing document reader.
+  counts; one file's diff as hunks. What is compared depends on the
+  subject. For a goal waiting to land: the merge base of main and the
+  tip against the tip, and the tip's tree for source reads. For a done
+  goal: each `Goal-Item` commit against its first parent, in order,
+  combined, and the last commit's tree for source reads, because those
+  commits are already on main and a merge base would compare a commit
+  with itself and show nothing (Astra S65-02). The same owner serves
+  the Partner's `changes` operation, so the colleague and the human read
+  one tree. A record section on the desk is the existing document
+  reader.
 - D5 (A). **Anchors put things on the desk.** An anchor chip in the
   conversation names a file and range, a change, or a record section,
   and pressing it opens that on the desk; the strip keeps every desk
@@ -246,23 +259,37 @@ Each decision names the slice that builds it: A, B, C or D (§5).
   with the board (B). Ask reuses the passage chip with the desk item as
   its document and the tip as its revision. Finding opens a finding card
   with the anchor filled and the text empty for the human's words.
-- D8 (A). **The finding card and its four answers.** `deposit` gains the
-  kind `finding` with text, anchor and consequence. The card is the case
-  card's shape with four answers, each writing the finding into the
-  Findings section with an `Answer:` clause line: `fix — waits for Send
-  back`, `follow-up — goal G2` after the New goal sheet opened the goal
-  with the finding as its prefilled intent, `accepted — <reason>` from
-  the Decide sheet with the reason required, `left open`. Dismiss folds.
-  An entry's clause block may carry `Anchor:` and `Answer:` lines; the
-  piles are a property of the record's kind. A finding the human states
-  in words is offered back by the Partner as a card with the anchor it
-  found.
+- D8 (A). **The finding card, Record it, and its four answers.**
+  `deposit` gains the kind `finding` with text, anchor and consequence.
+  The card is recorded like every other deposit: Record it is the
+  human's press, and it writes the finding into the Findings section
+  with `Anchor:` and `Answer: unanswered` as its clause lines. A card
+  never recorded is a card, not a finding: it is not counted and it
+  binds nobody, which is the paper's rule that only records rule. The
+  four answers are presses on a recorded finding, on its card and on
+  the board, and each rewrites that entry's `Answer:` line through the
+  recorder, by the entry's deposit mark, as a second composition beside
+  `appended`: `fix — waits for Send back`; `follow-up — goal G2`,
+  written only after the New goal sheet opened the goal with the
+  finding as its prefilled intent; `accepted — <reason>`, from the
+  Decide sheet with the reason required; `left open`. Dismiss folds an
+  unrecorded card. The door's counts and End's refusal read the record,
+  so an unanswered finding is a fact of the record and not of one
+  browser (Astra S65-01). An entry's clause block may carry `Anchor:`
+  and `Answer:` lines; the piles are a property of the record's kind. A
+  finding the human states in words is offered back by the Partner as a
+  card with the anchor it found.
 - D9 (A). **Step out and come back.** The sitting mark on the
   conversation carries the room's working state: the desk strip and the
-  current item, and the board or desk face. It is written on every
-  change and read on return, in the private store. The Review lane card
-  and the goal page show the door line from the review record's counts
-  and the mark's time. On return, the room compares the record's
+  current item, the board or desk face, and the human's unfinished
+  words, that is every unrecorded card's edited text and clause and the
+  fields of an open Decide sheet, keyed by deposit id (Astra S65-03). It
+  is written on every change, a second after the last keystroke, and
+  read on return, in the private store; a draft is cleared when its card
+  is recorded or dismissed, and drafts never touch the record. The
+  Review lane card and the goal page show the door line from the review
+  record's counts, findings and those still `unanswered`, and the mark's
+  time. On return, the room compares the record's
   `Reviewed:` tip with the branch tip; a moved tip shows the banner,
   Show what changed puts the diff of the two tips on the desk, and
   findings anchored in changed files carry the "may have moved" mark
@@ -272,7 +299,8 @@ Each decision names the slice that builds it: A, B, C or D (§5).
 - D10 (A). **End with a verdict line, no act yet.** The End sheet offers
   Clear to land, Send back and End without a verdict; each drafts and
   records the Outcome with `Verdict:` as its first line, and the sheet
-  refuses Clear to land while a finding is unanswered and lists them. In
+  refuses Clear to land while the record carries a finding whose answer
+  is `unanswered`, and lists them. In
   A the verdict is recorded intent only: nothing lands or returns. The
   nod line shows when the piles are empty.
 - D11 (B). **The board.** The desk pane's second face: the four piles,
@@ -338,11 +366,14 @@ kind, its template and its home; the resolver its kind. Three reads:
 `GET /api/review/<record>/source?path=&from=&to=` (a text file at the
 reviewed tree, at most four hundred lines per call, with the touched
 lines marked), `GET /api/review/<record>/changes` (files with counts,
-merge base to tip), `GET /api/review/<record>/changes?path=` (hunks,
-bounded); the Partner's `changes` operation reads the same owner.
-`deposit` gains `finding`; `entriesIn` reads `Answer:` beside
-`Anchor:`. The sitting mark gains `desk` and `face`, written through
-the existing sitting route. The room route `/review/<record>`; the
+merge base to tip for a waiting goal, parent to commit per trailer
+commit for a done goal), `GET /api/review/<record>/changes?path=`
+(hunks, bounded); the Partner's `changes` operation reads the same
+owner. `deposit` gains `finding`; `entriesIn` reads `Answer:` beside
+`Anchor:`; the recorder gains `answered`, which rewrites one entry's
+clause block by its deposit mark under the same reading rule. The
+sitting mark gains `desk`, `face` and `drafts`, written through the
+existing sitting route. The room route `/review/<record>`; the
 Review lane card's door line from the backlog payload's records naming
 the goal; the five walks as fixed requests; the New goal sheet's
 prefill; the End sheet's three ways. The cut guard's call sites gain the
@@ -371,10 +402,14 @@ and Step out returns to the board; the desk shows a file at a range
 with touched lines marked, the change index, a file's diff and a record
 section; the strip restores an item; an anchor chip opens its subject;
 selection offers Ask and Finding and the finding card carries the
-anchor; the four answers write their `Answer:` lines, follow-up only
-after the goal opened, accept refusing without a reason; the door line;
-step out and return restore desk, face and item; a moved tip shows the
-banner and Show what changed; End refuses Clear to land with an
+anchor; Record it writes the finding `unanswered`, and the four answers
+rewrite that one entry's `Answer:` line by its mark, follow-up only
+after the goal opened, accept refusing without a reason, an unrecorded
+card counted nowhere; the door line reads the record; step out and
+return restore desk, face, item and the unfinished words of a card and
+an open Decide sheet; a moved tip shows the banner and Show what
+changed; a done goal's change index shows its commits' own changes and
+never an empty diff; End refuses Clear to land with a recorded
 unanswered finding and lists it; the nod line with empty piles; the
 guards stay green. Walkthrough: the fake Partner answers a canned
 opening turn, one walk that presents a file, one finding; screenshots
@@ -382,9 +417,9 @@ at 1280 and 400: the room, the desk with a file and with the change
 index, a finding card and its four answers, the door line on the
 Review lane card, the moved-tip banner, the End sheet. Box: two build
 lanes (Claude on Opus): the desk's reads and pane, and the room, the
-sitting and the finding; one code read each (Codex on Sol) with one fix
-round under R-124, after Astra's read of this page; two attempts, 360
-to 540 job-minutes.
+sitting and the finding; one code read each by the code-review lane the
+roster names, with one fix round under R-124, after Astra's read of
+this page; two attempts, 360 to 540 job-minutes.
 
 ## 9. Self-grade
 
@@ -399,3 +434,30 @@ default with the divider resizable as the drawer's is. Weakest: A
 records a verdict that changes nothing until C and D, which is honest
 and is said on the End sheet; and remarks wait for B, so in A a jotting
 is a finding left open or a fact. That is the cut Wido agreed to.
+
+## Dispositions (Astra round 1, 2026-09-28, under R-121 and R-124)
+
+Read of revision 2 at `2bfac8174` (code at `647234149`), verbatim in
+`g1-s65-astra-critique.md`. Three material findings, all folded; one
+deferred. Every cited line was re-read at whole-function depth before
+folding.
+
+| id | finding | fold |
+|---|---|---|
+| S65-01 | a finding written only when answered leaves the door's "unanswered" count and End's refusal without a source in the record; the table and the sittings list read the record only (`store.tsx`, `sittings.go`) | D8: Record it writes the finding with `Answer: unanswered`; the four answers rewrite that entry's line through a second recorder composition; an unrecorded card is a card, counted nowhere; D9 and D10 read the record |
+| S65-02 | for a done goal the merge base of main and a landed commit is that commit, so the change index is empty for changed work | D4 and §6: a done goal's changes are each `Goal-Item` commit against its first parent, and source reads use the last commit's tree; the merge-base comparison stays for a waiting goal |
+| S65-03 | `desk` and `face` do not keep an unrecorded card's edited words or an open Decide sheet's reason; leave and return loses them (`store.tsx`, `Deposit.tsx`, `conversation.go`) | D9: the mark carries `drafts`, every unrecorded card's text and clause and the open sheet's fields, written a second after the last keystroke, cleared on record or dismiss, never written to the record |
+| S65-04 | §8 named Codex on Sol for the code read, which `development/project-rules-local.md` forbids | deferred as non-material: §8 now names the code-review lane the roster names; the roster question is Wido's, since the UI lane's reads to date were Sol's with his knowledge |
+
+Astra also verified, and D3 now says, that a fresh provider session
+alone would not satisfy D3: the service restores the conversation's
+history into a fresh session and composes a proposals block from the
+whole transcript, and both must be excluded in a review session,
+including on recovery.
+
+**Round 2, the declared failsafe (2026-09-28, at `9eb7cf433`):** S65-01,
+S65-02 and S65-03 confirmed answered; no new finding; "VERDICT: 0
+material findings". The loop is closed at round 2 with zero material
+findings. One mechanical check for the build, not a mechanism: the
+drafts' one-second debounce must flush on Step out and on unload, so
+the last keystroke before leaving is not the one that is lost.
