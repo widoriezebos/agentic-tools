@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ANSWERS,
+  reviewStart,
   deskKey,
   deskReadKey,
   KEEP_REFUSED,
@@ -309,5 +310,15 @@ describe("stepping out (Sol SOL-A-01, SOL-A-06)", () => {
     settled = true;
     expect(await steppingOut(true, true, stop, keep)).toEqual({ kind: "leave" });
     expect(keeps).toEqual(["kept"]);
+  });
+});
+
+describe("Review it after a refused open (Sol SOL-A-05)", () => {
+  it("asks for the goal until a refused open names its record, then for that record", () => {
+    expect(reviewStart("g1-s64", "")).toEqual({ purpose: "review", subject: { kind: "goal", id: "g1-s64", title: "g1-s64" } });
+    expect(reviewStart("g1-s64", "metasystem/plans/reviews/review-of-g1-s64.md")).toEqual({
+      purpose: "review",
+      subject: { kind: "record", id: "metasystem/plans/reviews/review-of-g1-s64.md", title: "Review of g1-s64" },
+    });
   });
 });

@@ -1,9 +1,10 @@
 import { createContext, useContext, useState } from "react";
 import { useNavigate } from "react-router";
 
-import { doorLine } from "./room";
+import { doorLine, reviewStart } from "./room";
 import type { ReviewDoor as Door } from "../backlog/api";
 import { Help } from "../help/Help";
+import { draftOf } from "../partner/api";
 import { usePartner } from "../partner/store";
 import { reviewPath } from "../routes";
 import { Button } from "../shell/controls";
@@ -31,6 +32,8 @@ export function ReviewItOrDoor({ goal, doors, now = new Date() }: { goal: string
   const { startSitting, sittingBusy } = usePartner();
   const navigate = useNavigate();
   const [refusal, setRefusal] = useState("");
+  // The record a refused press left behind, which the next press is about.
+  const [made, setMade] = useState("");
   const door = standingDoor(doors ?? board, goal);
   if (door !== null) {
     return (
@@ -54,7 +57,7 @@ export function ReviewItOrDoor({ goal, doors, now = new Date() }: { goal: string
         disabled={sittingBusy}
         onClick={() => {
           setRefusal("");
-          startSitting({ purpose: "review", subject: { kind: "goal", id: goal, title: goal } }).then(
+          startSitting(reviewStart(goal, made)).then(
             (opened) => {
               if (opened !== "") {
                 void navigate(reviewPath(opened));
@@ -62,6 +65,10 @@ export function ReviewItOrDoor({ goal, doors, now = new Date() }: { goal: string
             },
             (error: unknown) => {
               setRefusal(error instanceof Error ? error.message : String(error));
+              const created = draftOf(error);
+              if (created !== "") {
+                setMade(created);
+              }
             },
           );
         }}

@@ -1,3 +1,4 @@
+import type { Subject } from "../partner/api";
 import { ACCEPTED, entriesIn, FIX, followUp, LEFT_OPEN, type Entry } from "../partner/sitting";
 
 /**
@@ -306,6 +307,19 @@ export function reviewOutcome(verdict: string, examined: string): (source: strin
     const composed = outcomeWithVerdict(verdict, entry.text, examined);
     return "refusal" in composed ? composed : { ...entry, text: composed.text };
   };
+}
+
+/* ------------------------------------------------------------- the door -- */
+
+/**
+ * What Review it asks for: the goal, or — once a press was refused after the
+ * server had made the record — that record, so the next press opens the sitting
+ * on it rather than making another (Sol SOL-A-05).
+ */
+export function reviewStart(goal: string, made: string): { purpose: string; subject: Subject } {
+  return made === ""
+    ? { purpose: "review", subject: { kind: "goal", id: goal, title: goal } }
+    : { purpose: "review", subject: { kind: "record", id: made, title: `Review of ${goal}` } };
 }
 
 /* ------------------------------------------------------------ a moved tip -- */
