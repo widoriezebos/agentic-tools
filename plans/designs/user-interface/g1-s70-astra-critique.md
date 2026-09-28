@@ -140,3 +140,35 @@ Limitations: static, read-only review; no tests or reproductions run. The checko
 
 Proposed receipt, unwritten: “S70 design critique round 2 — three material findings; publication boundary, lane bypass and steward execution authority.”
 
+
+## Confirmation read on S70-05 to S70-07
+
+---
+
+**S70-08 — High; material: the claimed continuation cannot deliver a due landing to the existing live holder.**
+
+[D3:139](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:139) relies on the steward’s “existing continuation” handing work to that session. The mechanism exists, but in a different form: ordinary revival suppresses dispatch while a worker is live ([verdict.go:120](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/steward/verdict.go:120)); the `seatIdle` exception requires an explicit seat handoff ([revive.go:320](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/steward/revive.go:320)); dispatch launches a separate `delegate --revive` process, rather than submitting work to the existing session ([steward_verbs.go:545](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/steward_verbs.go:545)).
+
+Consequently, the first below-tier expiry with a distinct live holder has no demonstrated execution route. Naming the desired handoff and its fixture does not supply that route.
+
+- **Test 1 — DIFFERENT/WRONG:** D3 and its §8 fixture require either an actual delivery mechanism or a changed execution trigger.
+- **Test 2, R-124 — WORKS: no; SAFE: yes**, provided existing authority refusals remain intact. The promised automatic landing fails at ordinary first use; this is material without invoking scale, offline takeover or unusual concurrency.
+
+**Smallest honest alternative:** add the eligibility check to the holder’s next governed turn/Stop path, then have that holder invoke `work land G` with fresh claim and gate checks. Explicitly promise eligibility after the grace period and execution on the next holder activity. Unattended execution on the next steward pass would require additional delivery work; the existing continuation cannot substantiate that promise.
+
+What I verified holds, by reading:
+
+| Finding | Confirmation | Design and code evidence |
+|---|---|---|
+| **S70-05** | **CONFIRMED ANSWERED** | [D2:115](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:115) requires fresh gate checks at publication and retries. Existing authorization boundaries support this at [landing_batch_land.go:216](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/landing_batch_land.go:216) and moved-base recovery at [409](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/landing_batch_land.go:409). |
+| **S70-06** | **CONFIRMED ANSWERED** | [D2:105](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:105) explicitly removes Review-lane dependence. This covers direct joining at [intent_delivery.go:1543](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/intent_delivery.go:1543), whose binding requires a claim but no Landing record ([stop.go:77](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/dispatch/stop.go:77)). |
+| **S70-07** | **STILL OPEN** | [D3:139](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:139) depends on the unsupported handoff described above; [verdict.go:120](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/steward/verdict.go:120) suppresses ordinary revival with a live worker. |
+
+[§8:209](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s70-the-landing-gate.md:209) captures all three intended regression scenarios. S70-05 and S70-06 need no further design machinery from this read.
+
+**VERDICT: 1 material findings: S70-08**
+
+Commit reviewed: `a4541e20dda84dc06be785f147afdc22f9393114`.
+
+Limitations: static confirmation only; failures inferred, no tests run. Eleven tool calls; no subagents or edits. No forbidden configuration or `artifacts/` contents read. Proposed receipt, unwritten: “S70 confirmation: S70-05/06 answered; S70-07 remains open through S70-08.”
+

@@ -52,9 +52,10 @@ Author Fable. Every cite re-read at `12611b98c`. Depends on slice C
 
 ## 3. The moment
 
-A tier-1 goal reaches Review at 14:02. Its card says "lands by itself
-in 4h" beside Review it. Nobody opens a room. At 18:02 the seat holding
-the claim lands it; the history line reads "landed under
+A tier-1 goal reaches Review at 14:02. Its card says "eligible to land
+in 4h" beside Review it. Nobody opens a room. At 18:02 the card says
+"eligible to land, waiting for the holder", and on the holding seat's
+next turn it lands; the history line reads "landed under
 landing.review.auto-after=4h, tier 1 below human-from-tier=2". A tier-2
 goal reaches Review; its card says "waits for your review", with Review
 it and Land without a sitting, and your inbox gains "backlog-ordered-by-
@@ -131,26 +132,32 @@ sitting") until you end it.
   seat already passes over its claims (the resident steward's loop,
   `internal/steward/runner.go:214`, over this machine's claims,
   `goal/project.go:744`), never by a timer of its own; expiry is
-  eligibility on the next pass. The loop only finds the goal due; it
-  never lands it in its own name, because the runner is detached and
-  classified as the steward (`runner.go:892`, `lease/classify.go:427`)
-  and the holder check that every landing makes before preparing
-  (`goal_branch.go:614`) admits no steward (`lease/verbs.go:440`). The
-  due landing is handed to the session that holds the claim through
-  the steward's existing continuation, the same way its other work
-  reaches a holder: the holder runs `work land G` under its own
-  identity, with the gate of D2 evaluated then; a claim that changed
-  hands or was released between the finding and the landing
-  invalidates the handoff, and nothing is inferred from the machine's
-  identity or the runner's remembered lineage. The history says
+  eligibility, and the card says so. The steward's loop never lands a
+  goal in its own name: the runner is detached and classified as the
+  steward (`runner.go:892`, `lease/classify.go:427`), the holder check
+  every landing makes before preparing (`goal_branch.go:614`) admits no
+  steward (`lease/verbs.go:440`), and the steward's revival hands work
+  to a fresh delegate process, not to a live session (`verdict.go:120`,
+  `revive.go:320`, `steward_verbs.go:545`), so there is no route from
+  the loop to the holder for this. The execution is the holder's own:
+  the session that holds the claim checks its claims' eligibility on
+  its next governed turn and on its Stop path, the places it already
+  passes over what it holds, and lands an eligible goal with `work land
+  G` under its own identity, with the gate of D2 evaluated then against
+  the fresh ledger. What the design promises is therefore eligibility
+  after the grace time and the landing on the holder's next activity;
+  a holder that is idle for hours lands hours late, and the card's
+  "lands by itself in 3h 12m" reads "eligible to land in 3h 12m" when
+  the wording would otherwise promise a moment. The history says
   "landed" only after the publication is confirmed. The clock never
   runs at or above the tier.
 - D4. **Land without a sitting is a human-only act.** `goal land-without
   -sitting G --reason TEXT`, recorded on the history bound to the
   current tip, performed from the card's Decide sheet under the sign-in
   as the other goal acts are; the reason is required.
-- D5. **The card and the inbox say it.** Below the tier: "lands by
-  itself in 3h 12m" beside Review it, or "held by your sitting"; at or
+- D5. **The card and the inbox say it.** Below the tier: "eligible to
+  land in 3h 12m" beside Review it, then "eligible to land, waiting for
+  the holder", or "held by your sitting"; at or
   above: "waits for your review" with Review it and Land without a
   sitting, and a Decisions inbox need of a new kind, landing, "waits for
   your review", answered by either act. The words are computed from the
@@ -209,10 +216,11 @@ reason; the register row for the refusal; idempotency rows and public
 forms; the gate met at publication: a goal joins a batch, a hold is
 published while it proves, the publication and its retry refuse; a
 tier-2 claimed goal with a certified chain and no Landing record
-landed with `work land j2:J` refuses without the human's word; a due
-tier-1 landing found by a detached steward with a distinct live holder
-is landed by the holder and refused in the steward's name, and a claim
-that changed hands in between voids the handoff.
+landed with `work land j2:J` refuses without the human's word; an
+eligible tier-1 goal is landed by its holder on its next governed
+turn and on its Stop path with the gate evaluated then, a landing
+attempted in the steward's name is refused, and a claim that changed
+hands before the holder's next activity lands nothing.
 Frontend: the card's four wordings from the project payload; the Decide
 sheet's required reason and the act; the inbox row and its two answers;
 the Settings page's two facts with sources; the cut guard. Walkthrough:
@@ -278,5 +286,21 @@ session through the steward's continuation, which lands under its own
 identity, a changed claim voiding the handoff. Non-material: `Get`
 returns no source, so the Settings page's source line is
 implementation work. Closed at the failsafe round on three folds,
-with one scoped confirmation read on S70-05 to S70-07 alone (recorded
-below when it returns).
+with one scoped confirmation read on S70-05 to S70-07 alone.
+
+**Confirmation read (2026-09-28, at `a4541e20d`):** S70-05 and S70-06
+confirmed answered. S70-07 held open through S70-08: the steward's
+"existing continuation" cannot deliver a due landing to a live holder,
+since revival is suppressed while a worker is live (`verdict.go:120`),
+the one exception needs the seat's own handoff (`revive.go:320`), and
+dispatch launches a fresh delegate process rather than reaching a
+session (`steward_verbs.go:545`). Folded as Astra's own smallest
+honest alternative, D3: the holder checks eligibility on its next
+governed turn and on its Stop path and lands under its own identity;
+the promise is eligibility after the grace time and the landing on the
+holder's next activity, and the card's words say so (D5, §3). Every
+cited line re-read. No further read: the fold is the reader's own
+alternative and changes no other decision. The loop is CLOSED. One
+residual for Wido: unattended landing while the holder is idle for
+hours would need a delivery route the steward does not have; "later,
+when it hurts".
