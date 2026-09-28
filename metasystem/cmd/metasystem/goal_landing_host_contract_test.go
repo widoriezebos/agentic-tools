@@ -81,6 +81,9 @@ var retiredWithDeletedVerb = map[string]string{
 	"launch-standard/TestUnitFamilyIsRegistered":     "unit run",
 	// U7c: the only caller was dependency-tree-guard.sh.
 	"batch-buildcd-standard/TestAuditParallelRatchetVerbRefusesAndLowers": "audit parallel-ratchet",
+	// U7c step B: proc fixture-key lost its last caller with the fixture
+	// libraries; identity.EncodeKey, its owner, stays.
+	"command-interface-smoke/TestProcFixtureKeyPrintsAnEncodedKey": "proc fixture-key",
 }
 
 // retiredWithDeletedBed names legacy mandatory tests whose only subject was a

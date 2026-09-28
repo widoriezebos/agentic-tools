@@ -2592,7 +2592,13 @@ func frozenCorpusGoCache(t *testing.T) string {
 func writeFrozenCorpusEngineClosure(t *testing.T, moduleRoot, root, devgate, goCache string) {
 	t.Helper()
 	list := exec.Command("go", "list", "-deps", "-f",
-		"{{if not .Standard}}{{.Dir}}{{range .GoFiles}}|{{.}}{{end}}{{range .SFiles}}|{{.}}{{end}}{{range .EmbedFiles}}|{{.}}{{end}}{{end}}",
+		// Only the main module's packages are copied; a dependency outside it
+		// comes from the module cache. The package directory is made relative
+		// to the module directory go list itself reports, never to this
+		// test's own spelling of the root: the two differ when the root is
+		// reached through a symlink (the Linux VM's home is one), and a
+		// mismatch used to drop every engine package without a word.
+		"{{if and (not .Standard) .Module .Module.Main}}{{.Module.Dir}}|{{.Dir}}{{range .GoFiles}}|{{.}}{{end}}{{range .SFiles}}|{{.}}{{end}}{{range .EmbedFiles}}|{{.}}{{end}}{{end}}",
 		"./cmd/metasystem")
 	list.Dir = moduleRoot
 	list.Env = candidateEngineBuildEnvironment(gittree.ScrubbedEnviron(), "")
@@ -2602,15 +2608,25 @@ func writeFrozenCorpusEngineClosure(t *testing.T, moduleRoot, root, devgate, goC
 	}
 	// The coverage ratchets are read by the lower-coverage-floor probe.
 	relatives := []string{"go.mod", "go.sum", ".gitignore", "scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"}
+	engineFiles := 0
 	for _, line := range strings.Split(strings.TrimSpace(string(listed)), "\n") {
 		fields := strings.Split(line, "|")
-		directory, err := filepath.Rel(moduleRoot, fields[0])
-		if err != nil || directory == ".." || strings.HasPrefix(directory, ".."+string(filepath.Separator)) {
-			continue // a dependency outside this module comes from the module cache
+		if len(fields) < 2 {
+			continue // a package outside the main module printed nothing
 		}
-		for _, name := range fields[1:] {
+		directory, err := filepath.Rel(fields[0], fields[1])
+		if err != nil || directory == ".." || strings.HasPrefix(directory, ".."+string(filepath.Separator)) {
+			t.Fatalf("main-module package %s is not under its module directory %s", fields[1], fields[0])
+		}
+		if directory == filepath.Join("cmd", "metasystem") {
+			engineFiles += len(fields) - 2
+		}
+		for _, name := range fields[2:] {
 			relatives = append(relatives, filepath.Join(directory, name))
 		}
+	}
+	if engineFiles == 0 {
+		t.Fatalf("the engine's compile closure names no cmd/metasystem file; go list printed:\n%s", listed)
 	}
 	for _, relative := range relatives {
 		data, err := os.ReadFile(filepath.Join(moduleRoot, relative))
