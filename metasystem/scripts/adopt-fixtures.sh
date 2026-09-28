@@ -142,8 +142,10 @@ trap cleanup EXIT
 if (( ! fixture_bed_child )) && [[ "$adopt_fixture_selection" == all && -z "${METASYSTEM_GATE_WITNESS:-}" \
   && -z "${METASYSTEM_PROOF_ATTEMPT:-}" ]] \
   && grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod; then
-  delivery_contract=0
-  WITNESS_GATE_FALLBACK=none source scripts/agents/witness-gate.sh
+  adopt_witness_state=$(mktemp "${TMPDIR:-/tmp}/metasystem-adopt-witness.XXXXXX")
+  go run ./cmd/devgate gate --arm none --controller-pid $$ --state-out "$adopt_witness_state"
+  source "$adopt_witness_state"
+  rm -f "$adopt_witness_state"
 fi
 
 source "$root/scripts/adopt-fixture-helpers.sh"

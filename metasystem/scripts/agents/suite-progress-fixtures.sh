@@ -170,7 +170,7 @@ mkdir -p "$context_bed"
 METASYSTEM_DELIVERY_CONTRACT=1 bash "$context_selector" list \
   | cut -f1 >"$context_sections"
 for inactive_section in adoption-fixtures \
-    witness-gate-fixtures suite-progress-fixtures \
+    suite-progress-fixtures \
     fixture-bed-scenarios-fixtures; do
   grep -qxF "$inactive_section" "$context_sections" && {
     echo "suite-progress fixture: delivery context retained inactive section $inactive_section" >&2

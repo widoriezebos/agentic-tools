@@ -1279,36 +1279,14 @@ func runCanonicalReceiptFixture(t *testing.T, frozen bool) {
 	writeReceiptFixture(t, root, ".gitignore", "artifacts/\nbin/\n")
 	writeReceiptFixture(t, root, "go.mod", "module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.27.0\n")
 	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		writeReceiptFixture(t, root, filepath.Join("scripts", "agents", name), `{"floors":{"internal/proofrun":1},"exempt":{}}`)
+		writeReceiptFixture(t, root, filepath.Join("scripts", "agents", name), `{"floors":{"internal/proofrun":1},"exempt":{"cmd/tool":"fixture command"}}`)
 	}
-	gateSource, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "go-gate.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeReceiptFixture(t, root, "scripts/agents/go-gate.sh", string(gateSource))
-	witnessSource, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "witness-gate.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeReceiptFixture(t, root, "scripts/agents/witness-gate.sh", string(witnessSource))
-	writeReceiptFixture(t, root, "scripts/agents/go-build.sh", `#!/usr/bin/env bash
-set -euo pipefail
-target=bin/metasystem
-candidate=0
-while (($#)); do
-  case "$1" in
-    --out) target=$2; candidate=1; shift 2 ;;
-    *) shift ;;
-  esac
-done
-mkdir -p "$(dirname "$target")"
-if (( candidate )); then
-  "$RECEIPT_CANARY_REAL_GO" build -o "$target" ./helpers/native-candidate.go
-else
-  cp "$RECEIPT_CANARY_ENGINE" "$target"
-fi
-chmod 755 "$target"
-`)
+	// The tiny module the real Go gate proves: its native selection runs
+	// these tests for real and measures their coverage.
+	writeReceiptFixture(t, root, "internal/proofrun/candidate.go", "package proofrun\n\nfunc Candidate() int { return 1 }\n")
+	writeReceiptFixture(t, root, "internal/proofrun/candidate_test.go", "package proofrun\n\nimport \"testing\"\n\nfunc TestCandidate(t *testing.T) {\n\tif Candidate() != 1 {\n\t\tt.Fatal(\"candidate\")\n\t}\n}\n")
+	writeReceiptFixture(t, root, "cmd/tool/main.go", "package main\n\nfunc main() {}\n")
+	writeReceiptFixture(t, root, "cmd/tool/main_test.go", "package main\n\nimport \"testing\"\n\nfunc TestTool(t *testing.T) {}\n")
 	writeReceiptFixture(t, root, "helpers/gofmt", `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$PWD" >"$RECEIPT_CANARY_SNAPSHOT_PATH"
@@ -1316,94 +1294,55 @@ printf '%s\n' "$PWD" >"$RECEIPT_CANARY_SNAPSHOT_PATH"
 `)
 	writeReceiptFixture(t, root, "helpers/proof-auth", `#!/usr/bin/env bash
 if [[ "${1:-} ${2:-}" == 'proof-run worker-authorized' ]]; then exit 0; fi
-if [[ "${1:-} ${2:-}" == 'proof-run go-gate-tests' ]]; then
-  printf 'unexpected\n' >"$RECEIPT_CANARY_OLD_AUTH_NEW_VERB"
-  echo 'old authentication engine: unknown verb go-gate-tests' >&2
-  exit 64
-fi
 exec "$RECEIPT_CANARY_ENGINE" "$@"
 `)
-	writeReceiptFixture(t, root, "helpers/native-candidate.go", `package main
-import (
- "fmt"
- "os"
- "path/filepath"
- "strconv"
- "strings"
- "syscall"
-)
-func main() {
- if len(os.Args) >= 3 && os.Args[1] == "proof-run" && os.Args[2] == "go-gate-tests" {
-  logRoot := ""
-  for index := 3; index < len(os.Args); index++ {
-   if os.Args[index] != "--log-root" { continue }
-   if index+1 >= len(os.Args) { fmt.Fprintln(os.Stderr, "proof-run go-gate-tests: --log-root requires a value"); os.Exit(2) }
-   logRoot = os.Args[index+1]
-   index++
-  }
-  if logRoot == "" { fmt.Fprintln(os.Stderr, "proof-run go-gate-tests: --log-root is required"); os.Exit(2) }
-  if err := os.MkdirAll(logRoot, 0755); err != nil { panic(err) }
-  if err := os.WriteFile(filepath.Join(logRoot, "go-gate-native.log"), []byte("native fixture diagnostics\n"), 0600); err != nil { panic(err) }
-  path := os.Getenv("RECEIPT_CANARY_MEASUREMENT_COUNT")
-  measurements := 0
-  if data, err := os.ReadFile(path); err == nil { measurements, _ = strconv.Atoi(strings.TrimSpace(string(data))) }
-  if err := os.WriteFile(path, []byte(strconv.Itoa(measurements+1)+"\n"), 0600); err != nil { panic(err) }
-  packagePath := "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
-  output := "ok  \t"+packagePath+"\t0.1s\tcoverage: 85.0% of statements\n"
-  fmt.Printf("{\"Action\":\"output\",\"Package\":%q,\"Test\":\"\",\"Output\":%q}\n", packagePath, output)
-  return
- }
- engine := os.Getenv("RECEIPT_CANARY_ENGINE")
- if err := syscall.Exec(engine, append([]string{engine}, os.Args[1:]...), os.Environ()); err != nil { panic(err) }
-}
-`)
+	// Only the stages whose subject is not this bed are stubbed: vet,
+	// staticcheck, govulncheck and the builds (which install the test's
+	// engine, so the native custodians run as a real engine). The bootstrap
+	// itself runs as the prebuilt cmd/devgate; package discovery and the
+	// native tests run on the real toolchain.
 	writeReceiptFixture(t, root, "helpers/go", `#!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
-  version|env) exec "$RECEIPT_CANARY_REAL_GO" "$@" ;;
+  vet) exit 0 ;;
   run)
     shift
     case "${1:-}" in
       -p=*) [[ "$1" =~ ^-p=[1-9][0-9]*$ ]] || exit 97; shift ;;
-      -p) [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] || exit 97; shift 2 ;;
     esac
     case "${1:-}" in
       honnef.co/go/tools/cmd/staticcheck@v0.8.0|golang.org/x/vuln/cmd/govulncheck@v1.2.0)
         [[ "$#" -eq 2 && "${2:-}" == ./... ]] || exit 97
         exit 0
         ;;
-      ./cmd/devgate)
-        [[ "${2:-}" == build ]] || exit 97
-        shift 2
-        exec bash scripts/agents/go-build.sh "$@"
-        ;;
+      ./cmd/devgate) shift; exec "$RECEIPT_CANARY_DEVGATE" "$@" ;;
     esac
-    [[ "${1:-}" == ./cmd/metasystem ]] || exit 97
-    shift
-    exec "$RECEIPT_CANARY_ENGINE" "$@"
+    exit 97
     ;;
-  vet|build) exit 0 ;;
+  build)
+    out=
+    while (($#)); do
+      [[ "$1" != -o ]] || { out=$2; break; }
+      shift
+    done
+    if [[ -n "$out" ]]; then
+      cp "$RECEIPT_CANARY_ENGINE" "$out"
+      chmod 755 "$out"
+    fi
+    exit 0
+    ;;
   list)
+    if [[ " $* " == *" -json "* ]]; then exec "$RECEIPT_CANARY_REAL_GO" "$@"; fi
     if [[ " $* " == *" {{.Dir}} "* ]]; then
-      printf '%s/internal/proofrun\n' "$PWD"
+      printf '%s/internal/proofrun\n%s/cmd/tool\n' "$PWD" "$PWD"
     else
       printf 'github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun\n'
     fi
     ;;
-  test)
-	if [[ " $* " == *" ./internal/... "* ]]; then
-	  if [[ " $* " == *" -run NoSuchTestEver "* ]]; then exit 0; fi
-      measurements=0
-      if [[ -f "$RECEIPT_CANARY_MEASUREMENT_COUNT" ]]; then measurements=$(cat "$RECEIPT_CANARY_MEASUREMENT_COUNT"); fi
-      printf '%d\n' "$((measurements + 1))" >"$RECEIPT_CANARY_MEASUREMENT_COUNT"
-      printf 'ok  github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun 0.1s coverage: 85.0%% of statements\n'
-    fi
-    exit 0
-    ;;
-  *) printf 'unexpected tiny go invocation: %q\n' "$*" >&2; exit 97 ;;
+  *) exec "$RECEIPT_CANARY_REAL_GO" "$@" ;;
 esac
 `)
-	for _, relative := range []string{"scripts/agents/go-gate.sh", "scripts/agents/witness-gate.sh", "scripts/agents/go-build.sh", "helpers/go", "helpers/gofmt", "helpers/proof-auth"} {
+	for _, relative := range []string{"helpers/go", "helpers/gofmt", "helpers/proof-auth"} {
 		if err := os.Chmod(filepath.Join(root, relative), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -1422,21 +1361,20 @@ printf 'ready\n' >"$RECEIPT_CANARY_RESOURCE_READY"
 while [[ ! -f "$RECEIPT_CANARY_RESOURCE_RELEASE" ]]; do sleep .05; done
 progress="$METASYSTEM_PROOF_CONTROL_ROOT/artifacts/agents/proof-runs/delivery/$METASYSTEM_PROOF_ATTEMPT.progress.jsonl"
 printf '{"suite":"landing-receipt","section":"tiny","event":"start","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
-evidence="$METASYSTEM_PROOF_CONTROL_ROOT/artifacts/agents/proof-runs/delivery/$METASYSTEM_PROOF_ATTEMPT.coverage"
-mkdir -p "$evidence"
 root=$PWD
 export METASYSTEM_PROOF_AUTH_BIN="$root/helpers/proof-auth"
-delivery_contract=0
 export PATH="$root/helpers:$PATH"
-WITNESS_GATE_FALLBACK=plain source scripts/agents/witness-gate.sh
-[[ "$(cat "$RECEIPT_CANARY_SNAPSHOT_PATH")" == "$witness_snap" ]]
-[[ ! -e "$witness_snap" ]]
+arm_state=$(mktemp)
+go run ./cmd/devgate gate --arm plain --controller-pid $$ --state-out "$arm_state"
+source "$arm_state"
+rm -f "$arm_state"
+[[ -n "$METASYSTEM_GATE_WITNESS" && -f "$METASYSTEM_GATE_WITNESS" ]]
 [[ "$(cat "$root/internal/proofrun/candidate.txt")" == 'candidate source' ]]
 printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
 `
 	if frozen {
 		// Only this detached measurement worktree's HEAD is moved. Its source
-		// stays equal to the candidate; the production witness must freeze it
+		// stays equal to the candidate; the Go gate's witness must freeze it
 		// instead of archiving the older commit.
 		validator = strings.Replace(validator, "root=$PWD\n", "root=$PWD\ngit symbolic-ref -q HEAD && exit 98\ngit update-ref --no-deref HEAD HEAD^^\n", 1)
 	}
@@ -1481,14 +1419,16 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build receipt canary engine: %v\n%s", err, output)
 	}
-	launchCount := filepath.Join(root, "artifacts", "receipt-validator-launches")
-	measurementCount := filepath.Join(root, "artifacts", "receipt-coverage-measurements")
-	oldAuthNewVerb := filepath.Join(root, "artifacts", "receipt-old-auth-new-verb")
-	snapshotPath := filepath.Join(root, "artifacts", "receipt-witness-snapshot-path")
+	devgate := filepath.Join(t.TempDir(), "devgate")
+	if output, err := exec.Command("go", "build", "-o", devgate, "../devgate").CombinedOutput(); err != nil {
+		t.Fatalf("build receipt canary bootstrap: %v\n%s", err, output)
+	}
 	realGo, err := exec.LookPath("go")
 	if err != nil {
 		t.Fatal(err)
 	}
+	snapshotPath := filepath.Join(root, "artifacts", "receipt-witness-snapshot-path")
+	launchCount := filepath.Join(root, "artifacts", "receipt-validator-launches")
 	receiptsParent := filepath.Dir(landing.TestReceiptPath(root, tree))
 	if err := os.MkdirAll(filepath.Dir(receiptsParent), 0o700); err != nil {
 		t.Fatal(err)
@@ -1513,9 +1453,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	command := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "landing", "test-receipt", "--root", root, "--tree", tree,
 		"--command", landing.CanonicalValidatorCommand, "--goal", "receipt-goal", "--cap-min", "1", "--result", resultPath)
 	command.Env = append(command.Env, "RECEIPT_CANARY_ENGINE="+engine, "RECEIPT_CANARY_LAUNCH_COUNT="+launchCount,
-		"RECEIPT_CANARY_MEASUREMENT_COUNT="+measurementCount, "RECEIPT_CANARY_SNAPSHOT_PATH="+snapshotPath,
-		"RECEIPT_CANARY_OLD_AUTH_NEW_VERB="+oldAuthNewVerb,
-		"RECEIPT_CANARY_REAL_GO="+realGo, "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"RECEIPT_CANARY_DEVGATE="+devgate, "RECEIPT_CANARY_REAL_GO="+realGo, "RECEIPT_CANARY_SNAPSHOT_PATH="+snapshotPath,
 		"RECEIPT_CANARY_RESOURCE_READY="+resourceReady, "RECEIPT_CANARY_RESOURCE_RELEASE="+resourceRelease,
 		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable,
 		"METASYSTEM_CENSUS_PROCESS_FILE="+processTable,
@@ -1570,20 +1508,15 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 		t.Fatalf("canonical receipt lost controlled one-minute accounting: start=%s deadline=%s end=%s reserved=%d observed=%d",
 			attempts[0].StartedAt, attempts[0].Deadline, attempts[0].EndedAt, attempts[0].ReservedMinutes, attempts[0].ObservedMinutes)
 	}
-	measurements, measureErr := os.ReadFile(measurementCount)
+	// The Go gate proved the candidate in its private frozen export, not the
+	// admitted execution root, and released that export.
 	snapshotBytes, snapshotErr := os.ReadFile(snapshotPath)
-	if measureErr != nil || strings.TrimSpace(string(measurements)) != "1" || snapshotErr != nil ||
-		strings.TrimSpace(string(snapshotBytes)) == attempts[0].ExecutionRoot {
-		t.Fatalf("snapshot coverage handoff measurements=%q measureErr=%v snapshot=%q snapshotErr=%v admitted=%q",
-			measurements, measureErr, snapshotBytes, snapshotErr, attempts[0].ExecutionRoot)
+	snapshot := strings.TrimSpace(string(snapshotBytes))
+	if snapshotErr != nil || snapshot == "" || snapshot == attempts[0].ExecutionRoot {
+		t.Fatalf("witness snapshot=%q err=%v admitted=%q", snapshot, snapshotErr, attempts[0].ExecutionRoot)
 	}
-	if _, err := os.Stat(oldAuthNewVerb); !os.IsNotExist(err) {
-		t.Fatalf("wrapper sent candidate native behavior to the old authentication engine: %v", err)
-	}
-	if snapshot := strings.TrimSpace(string(snapshotBytes)); snapshot != "" {
-		if _, err := os.Stat(snapshot); !os.IsNotExist(err) {
-			t.Fatalf("canonical receipt witness snapshot survived its source lifetime: %s (%v)", snapshot, err)
-		}
+	if _, err := os.Stat(snapshot); !os.IsNotExist(err) {
+		t.Fatalf("canonical receipt witness snapshot survived its source lifetime: %s (%v)", snapshot, err)
 	}
 	receiptPath := landing.TestReceiptPath(root, tree)
 	original := append([]byte(nil), attempts[0].DeliveryReceipt...)
@@ -1594,9 +1527,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	repeat := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "landing", "test-receipt", "--root", root, "--tree", tree,
 		"--command", landing.CanonicalValidatorCommand, "--goal", "receipt-goal", "--cap-min", "1", "--result", repeatResult)
 	repeat.Env = append(repeat.Env, "RECEIPT_CANARY_ENGINE="+engine, "RECEIPT_CANARY_LAUNCH_COUNT="+launchCount,
-		"RECEIPT_CANARY_MEASUREMENT_COUNT="+measurementCount, "RECEIPT_CANARY_SNAPSHOT_PATH="+snapshotPath,
-		"RECEIPT_CANARY_OLD_AUTH_NEW_VERB="+oldAuthNewVerb,
-		"RECEIPT_CANARY_REAL_GO="+realGo, "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"RECEIPT_CANARY_DEVGATE="+devgate, "RECEIPT_CANARY_REAL_GO="+realGo, "RECEIPT_CANARY_SNAPSHOT_PATH="+snapshotPath,
 		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable,
 		"METASYSTEM_CENSUS_PROCESS_FILE="+processTable,
 		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
@@ -1619,10 +1550,6 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	launches, err := os.ReadFile(launchCount)
 	if err != nil || strings.TrimSpace(string(launches)) != "1" {
 		t.Fatalf("repeat launched the validator again: launches=%q err=%v", launches, err)
-	}
-	measurements, err = os.ReadFile(measurementCount)
-	if err != nil || strings.TrimSpace(string(measurements)) != "1" {
-		t.Fatalf("repeat launched coverage again: measurements=%q err=%v", measurements, err)
 	}
 	attempts, err = proofrun.ReadAttempts(root)
 	if err != nil || len(attempts) != 1 {
@@ -1653,9 +1580,6 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	}
 	if got, _ := os.ReadFile(launchCount); strings.TrimSpace(string(got)) != "1" {
 		t.Fatalf("refused environment/custody launched the validator: %q", got)
-	}
-	if got, _ := os.ReadFile(measurementCount); strings.TrimSpace(string(got)) != "1" {
-		t.Fatalf("refused environment/custody measured coverage: %q", got)
 	}
 	if got, _ := os.ReadFile(receiptPath); !bytes.Equal(bytes.TrimSpace(original), bytes.TrimSpace(got)) {
 		t.Fatal("refused environment/custody changed terminal receipt bytes")

@@ -27,11 +27,11 @@ import (
 
 const (
 	// R1/R3 residue: (family, verb) pairs plus dispatchInternal's top-level forms.
-	verbRatchetInternalVerbCeiling = 408
+	verbRatchetInternalVerbCeiling = 399
 	// R4: shell lines that reference the engine.
-	verbRatchetShellEngineCeiling = 2317
+	verbRatchetShellEngineCeiling = 2220
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
-	verbRatchetScriptLinesCeiling = 36491
+	verbRatchetScriptLinesCeiling = 34598
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
 	verbRatchetSelfSubprocessCeiling = 93
@@ -464,6 +464,13 @@ var ratchetModuleSkipNames = []string{".git", "node_modules", "artifacts", "reco
 // ratchetGoSkipPrefixes are module-relative packages compiled only into test
 // binaries; their os.Args[0] is the test binary, not the engine.
 var ratchetGoSkipPrefixes = []string{"internal/testenv", "internal/testutil"}
+
+// ratchetBootstrapPrefixes is the Go bootstrap (design 3.3): a program of its
+// own, run as `go run ./cmd/devgate` from the tree it builds. It is not the
+// engine, so R5 does not count it: its engine calls cross a binary boundary by
+// design (it builds the engine, launches the proof owner from that build, and
+// asks the trusted engine the `proof-run worker-authorized` entry).
+var ratchetBootstrapPrefixes = []string{"cmd/devgate"}
 
 // ratchetEngineNameRE matches identifiers, fields and functions that name the
 // engine executable when the scan cannot follow a local assignment.
@@ -1169,7 +1176,7 @@ func TestVerbRatchetEngineSelfSubprocess(t *testing.T) {
 		file *ast.File
 	}
 	packages := map[string][]parsed{}
-	walkRatchetFiles(t, module, ratchetModuleSkipNames, ratchetGoSkipPrefixes, func(path, rel string) {
+	walkRatchetFiles(t, module, ratchetModuleSkipNames, append(append([]string(nil), ratchetGoSkipPrefixes...), ratchetBootstrapPrefixes...), func(path, rel string) {
 		if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {
 			return
 		}

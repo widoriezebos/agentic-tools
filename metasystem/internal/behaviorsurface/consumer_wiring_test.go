@@ -18,13 +18,14 @@ func TestEveryEffectiveDeliverySkipIsPolicyOwned(t *testing.T) {
 	if !policy.SkipAllowed(WitnessScope, witnessEngineGate) {
 		t.Fatalf("the witnessed engine-gate omission is absent from policy: %q", witnessEngineGate)
 	}
-	goGate, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "go-gate.sh"))
+	// The Go gate's witness fast path consults the prospective policy it was
+	// compiled from (cmd/devgate witness.go).
+	goGate, err := os.ReadFile(filepath.Join("..", "..", "cmd", "devgate", "witness.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	consult := `--scope WITNESS --family witness-engine-gate`
-	canonicalInvocation := `go run -p="$gate_workers" ./cmd/metasystem behavior-surface skip-allowed`
-	if !strings.Contains(string(goGate), canonicalInvocation) || !strings.Contains(string(goGate), consult) {
+	consult := `policy.SkipAllowed(behaviorsurface.WitnessScope, "` + witnessEngineGate + `")`
+	if !strings.Contains(string(goGate), consult) {
 		t.Fatalf("the witness fast path does not consult its declared skip family: %q", witnessEngineGate)
 	}
 	for _, family := range policy.DeliveryContractSkips {

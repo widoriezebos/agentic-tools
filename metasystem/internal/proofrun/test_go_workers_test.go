@@ -106,19 +106,6 @@ func TestReal(t *testing.T) {
 	}
 }
 
-func TestGoGateNativeFailurePrintsCompleteLogBeforeLocalEvidenceMove(t *testing.T) {
-	t.Parallel()
-	source, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "go-gate.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	complete := bytes.Index(source, []byte("cat \"$coverage_log\" >&2"))
-	move := bytes.Index(source, []byte("mv \"$coverage_log\" \"$keep\""))
-	if complete < 0 || move < 0 || complete > move {
-		t.Fatalf("native failure output is not copied to retained parent evidence before local move")
-	}
-}
-
 func TestGoNativePlainOutputPreservesDiagnosticLargerThanScannerLimit(t *testing.T) {
 	t.Parallel()
 	diagnostic := strings.Repeat("native-diagnostic-", 8192)

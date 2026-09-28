@@ -19,7 +19,7 @@ self-set cache is cold every round. The proof of your round is made by the
 orchestrator's engine on the worktree as you leave it (metasystem job
 prove-round).
 
-Before you return, run the tests your change impacts, never whole packages: every test you added or changed; in each package you changed, every test whose file references a function, type, constant, verb, flag or file you changed; in each package that imports a changed package, every test whose file references a changed exported symbol; each by -run name, plain and with every build tag its package's tests use, and -count=3 only for new tests that start processes, goroutines or fixtures. Run gofmt, `go build ./...`, `go vet ./...` and `scripts/agents/go-gate.sh --fast` as well. Whole packages run once, at the orchestrator's proof; a red there comes back to you as a follow-up.
+Before you return, run the tests your change impacts, never whole packages: every test you added or changed; in each package you changed, every test whose file references a function, type, constant, verb, flag or file you changed; in each package that imports a changed package, every test whose file references a changed exported symbol; each by -run name, plain and with every build tag its package's tests use, and -count=3 only for new tests that start processes, goroutines or fixtures. Run gofmt, `go build ./...`, `go vet ./...` and `go run ./cmd/devgate static` (from `metasystem/`) as well. Whole packages run once, at the orchestrator's proof; a red there comes back to you as a follow-up.
 
 Leave everything you return in the worktree, uncommitted.
 

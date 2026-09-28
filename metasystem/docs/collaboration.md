@@ -73,8 +73,8 @@ the landing path's commit boundary (`metasystem work land`, in
 launches no tests or builds; its driver may launch the selected shared run
 once when execution was explicitly requested and re-verifies after transport
 changes. Legacy
-installations retain their migration-only coverage delta. `go-gate.sh` owns
-the legacy repository-wide coverage ratchet. Wido owns the review,
+installations retain their migration-only coverage delta. The full Go gate
+(`go run ./cmd/devgate gate`) owns the legacy repository-wide coverage ratchet. Wido owns the review,
 after the next declared milestone, of whether that sweep still catches debt
 the landing delta cannot. `validate-metasystem.sh` owns VM delivery and
 guest-runtime invariants; `adopt-fixtures.sh` owns installed-tree and update
