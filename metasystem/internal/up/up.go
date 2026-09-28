@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -988,14 +989,10 @@ func Shutdown(options Options) Result {
 	return Result{RawLines: report.Lines(), Outcome: "stopped"}
 }
 
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
-}
-
 // SchedulerEntry prints the optional operator-owned recovery entry. It has no
 // filesystem side effects and the command it prints carries no session or
 // lease authority.
 func SchedulerEntry(options Options) string {
 	return fmt.Sprintf("0 * * * * cd %s && %s up --metasystem-root %s --repo %s --recover-only --if-down",
-		shellQuote(options.Scope), shellQuote(options.Binary), shellQuote(installationRoot(options)), shellQuote(options.Scope))
+		shellquote.Quote(options.Scope), shellquote.Quote(options.Binary), shellquote.Quote(installationRoot(options)), shellquote.Quote(options.Scope))
 }

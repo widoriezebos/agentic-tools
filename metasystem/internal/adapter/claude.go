@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 )
 
 // BuildClaudeSettings writes the settings file a Claude delegate launches
@@ -124,7 +126,7 @@ func BuildClaudeSettings(recordPath, outputPath, metasystemBin, scratch string) 
 				"matcher": "startup|resume",
 				"hooks": []any{map[string]any{
 					"type":    "command",
-					"command": shellQuote(metasystemBin) + " adapter claude-session-signal",
+					"command": shellquote.Word(metasystemBin) + " adapter claude-session-signal",
 					"timeout": 5,
 				}},
 			}},

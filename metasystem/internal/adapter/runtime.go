@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strings"
 )
 
 // The per-runtime adapters share a handful of small transformations over a
@@ -163,16 +162,4 @@ func scalarString(value any) string {
 		encoded, _ := json.Marshal(typed)
 		return string(encoded)
 	}
-}
-
-var shellSafe = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
-
-// shellQuote renders a string so a shell reads it as a single word: a string of
-// only safe characters is left bare, anything else is single-quoted with
-// embedded quotes escaped.
-func shellQuote(value string) string {
-	if value != "" && shellSafe.MatchString(value) {
-		return value
-	}
-	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
