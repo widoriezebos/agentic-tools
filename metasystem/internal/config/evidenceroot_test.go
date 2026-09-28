@@ -294,3 +294,14 @@ func TestResolveEvidenceRootTreatsAMissingConfAsUnspecified(t *testing.T) {
 		t.Fatal("an unreadable conf was accepted")
 	}
 }
+
+// SOL-ER-01: the default is judged like a named root. A HOME that is the
+// checkout (or lies inside it) would put the default inside the repository.
+func TestResolveEvidenceRootRefusesADefaultInsideTheCheckout(t *testing.T) {
+	t.Parallel()
+	f := newEvidenceFixture(t, evidencePlaceholder, "")
+	_, err := ResolveEvidenceRoot(EvidenceRootParams{ConfPath: f.conf, LookupEnv: envMap(map[string]string{"HOME": f.checkout})})
+	if err == nil || !strings.Contains(err.Error(), "must be outside the repository") {
+		t.Fatalf("a default under a HOME that is the checkout = %v, want the outside-the-repository refusal", err)
+	}
+}

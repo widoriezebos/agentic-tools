@@ -99,7 +99,11 @@ func ResolveEvidenceRoot(p EvidenceRootParams) (EvidenceRoot, error) {
 	if !ok || strings.TrimSpace(home) == "" || !filepath.IsAbs(home) {
 		return EvidenceRoot{}, fmt.Errorf("the evidence root has no default because HOME is not set to an absolute path; set HOME, or set %s in metasystem.conf.local", EvidenceRootKey)
 	}
-	return EvidenceRoot{Path: filepath.Join(home, "metasystem-evidence", filepath.Base(checkout)), Origin: "default"}, nil
+	path := filepath.Join(home, "metasystem-evidence", filepath.Base(checkout))
+	if withinRepo(realpath.Resolve(path), realpath.Resolve(checkout)) {
+		return EvidenceRoot{}, fmt.Errorf("%s must be outside the repository (the default %s lies under HOME=%s); set %s in metasystem.conf.local", EvidenceRootKey, path, home, EvidenceRootKey)
+	}
+	return EvidenceRoot{Path: path, Origin: "default"}, nil
 }
 
 // specified reports whether a source names a root: not empty after trimming
