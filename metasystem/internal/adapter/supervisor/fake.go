@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 )
 
 // The fake runtime: the deterministic protocol simulator the fixture beds
@@ -130,26 +131,11 @@ func touchStrict(path string) error {
 	return file.Close()
 }
 
-// fakeRecordBuildCachePath mirrors job_build_cache_env for the fake's
-// rounds, so they record the same cache path a real runtime's rounds would:
-// only a job worktree under artifacts/agents/worktrees whose git dir is a
-// linked worktree's, with the go-cache and go-tmp directories made. It
-// differs from recordBuildCachePath in exactly the script's ways: no
-// staticcheck directory, and a failed mkdir records an empty path.
-func fakeRecordBuildCachePath(git GitQuery, agents, workspace, roundDir string) {
-	cache := ""
-	if jobsRoot, ok := realDir(filepath.Join(agents, "worktrees")); ok {
-		ws, _ := realDir(workspace)
-		if strings.HasPrefix(ws+"/", jobsRoot+"/") {
-			if gitdir, ok := git(workspace, "rev-parse", "--absolute-git-dir"); ok && strings.Contains(gitdir, "/.git/worktrees/") {
-				cache = filepath.Join(gitdir, "metasystem-build-cache", "go-cache")
-				if os.MkdirAll(cache, 0o755) != nil || os.MkdirAll(filepath.Join(gitdir, "metasystem-build-cache", "go-tmp"), 0o755) != nil {
-					cache = ""
-				}
-			}
-		}
-	}
-	_ = os.WriteFile(filepath.Join(roundDir, "build-cache.txt"), []byte(cache+"\n"), 0o644)
+// fakeRecordBuildCachePath mirrors recordBuildCachePath for the fake's
+// rounds, so they record the cache a real runtime's rounds would: the one
+// machine delegate cache (disk-lifetimes A7).
+func fakeRecordBuildCachePath(git GitQuery, agents, workspace, roundDir string, caches gocache.Paths) {
+	recordBuildCachePath(git, agents, workspace, roundDir, caches)
 }
 
 // startFakeHold starts an `ENGINE util hold --tag TAG [flags]` child in this

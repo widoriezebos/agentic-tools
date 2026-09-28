@@ -15,7 +15,7 @@ func TestClaudeJobSettingsInstallNoToolGate(t *testing.T) {
 		"permissions": {"requested": {"writeRoots": [], "readRoots": ["/ws"], "network": "deny"}}
 	}`)
 	settingsPath := filepath.Join(dir, "settings.json")
-	if err := BuildClaudeSettings(record, settingsPath, "/opt/bin/metasystem", ""); err != nil {
+	if err := BuildClaudeSettings(record, settingsPath, "/opt/bin/metasystem", "", SandboxCaches{}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(settingsPath)

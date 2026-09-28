@@ -12,10 +12,9 @@ Changed-line allocation: <the design's estimate for this unit, additions plus de
 
 <State the path, branch, what may be touched, and what must not be touched.>
 
-The build cache is provided: the adapter sets GOCACHE, GOTMPDIR and
-STATICCHECK_CACHE to the chain's cache in the worktree's git dir, shared by every
-round; never set, unset or strip them (no env -u, no env -i before the go gate): a
-self-set cache is cold every round. The proof of your round is made by the
+The build cache is provided: the adapter sets GOCACHE and STATICCHECK_CACHE to the machine delegate cache, shared by every round of every chain, and GOTMPDIR; never set, unset or strip them, never point GOCACHE elsewhere, never run go clean, never strip the METASYSTEM_HOOK_DELEGATE_ markers, and never run a gate under env -u or env -i: a self-set cache is cold every round, and only the steward trims the shared one.
+
+The proof of your round is made by the
 orchestrator's engine on the worktree as you leave it (metasystem job
 prove-round).
 

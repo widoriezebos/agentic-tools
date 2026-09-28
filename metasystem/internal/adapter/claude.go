@@ -15,13 +15,22 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
+// SandboxCaches are the machine cache directories a delegate's sandbox
+// grants (the delegate cache) and denies (the engine cache).
+type SandboxCaches struct {
+	Grant []string
+	Deny  []string
+}
+
 // BuildClaudeSettings writes the settings file a Claude delegate launches
 // under. The tool allow/deny lists and OS sandbox are derived from the job's
 // requested permissions, and the SessionStart hook signals session
 // establishment back to the adapter by running the metasystem session-signal
 // verb. metasystemBin is the binary that command invokes. scratch is the
 // delegate's private writable directory; an empty value grants no scratch.
-func BuildClaudeSettings(recordPath, outputPath, metasystemBin, scratch string) error {
+// caches names the machine cache directories the round is granted (the
+// delegate pair) and denied (the engine pair), disk-lifetimes A7.
+func BuildClaudeSettings(recordPath, outputPath, metasystemBin, scratch string, caches SandboxCaches) error {
 	requested, err := requestedPermissions(recordPath)
 	if err != nil {
 		return err
@@ -37,6 +46,9 @@ func BuildClaudeSettings(recordPath, outputPath, metasystemBin, scratch string) 
 	allowWrite := append([]any{}, writeRoots...)
 	if scratch != "" {
 		allowWrite = append(allowWrite, scratch)
+	}
+	for _, dir := range caches.Grant {
+		allowWrite = append(allowWrite, dir)
 	}
 	network, _ := requested["network"].(string)
 	if network == "" {
@@ -107,6 +119,11 @@ func BuildClaudeSettings(recordPath, outputPath, metasystemBin, scratch string) 
 		for _, path := range denied {
 			denyWrite = append(denyWrite, path)
 		}
+	}
+	// The engine cache is never a delegate's to write: a sandboxed
+	// delegate whose markers were stripped resolves it and fails closed.
+	for _, dir := range caches.Deny {
+		denyWrite = append(denyWrite, dir)
 	}
 	if len(denyWrite) > 0 {
 		filesystemSandbox["denyWrite"] = denyWrite
