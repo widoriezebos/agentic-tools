@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -488,36 +489,6 @@ chmod +x "${out:-bin/metasystem}"
 `, strconv.Quote(portable.buildCounter), strconv.Quote(portable.engine), strconv.Quote(portable.engine))
 	portable.write("scripts/agents/go-build.sh", buildScript, 0o755)
 	portable.write("scripts/agents/commit.sh", batchE2ECommitScript, 0o755)
-	// The portable hook drives the same public stop-batch verbs as the
-	// installed dispatch script. A bare breach-stop only closes the fence;
-	// it does not cancel queued proofs or complete the stop batch.
-	portable.write("scripts/agents/dispatch.sh", fmt.Sprintf(`#!/bin/sh
-set -eu
-[ "$1" = __breach-stop-goal ] || exit 2
-shift
-ms=%s
-root=$(pwd -P)
-batch=$("$ms" job breach-stop --root "$root" "$@")
-stop_id=$(printf '%%s\n' "$batch" | sed -n 's/.*"stopId":"\([^"]*\)".*/\1/p')
-[ -n "$stop_id" ] || exit 3
-for pass in 1 2 3 4; do
-  verdict=$("$ms" job stop-batch-reconcile --root "$root" --stop "$stop_id")
-  state=$(printf '%%s\n' "$verdict" | sed -n 's/.*"state":"\([^"]*\)".*/\1/p')
-  if [ "$state" = COMPLETE ]; then
-    printf 'stop=%%s state=COMPLETE\n' "$stop_id"
-    exit 0
-  fi
-  [ "$state" = OPEN ] || exit 4
-  pending_jobs=$("$ms" job stop-batch-pending --root "$root" --stop "$stop_id")
-  [ -z "$pending_jobs" ] || exit 5
-  pending_proofs=$("$ms" job stop-batch-proof-pending --root "$root" --stop "$stop_id")
-  [ -n "$pending_proofs" ] || exit 6
-  for proof_attempt in $pending_proofs; do
-    "$ms" job stop-proof-cancel --root "$root" --stop "$stop_id" --attempt "$proof_attempt"
-  done
-done
-exit 7
-`, strconv.Quote(portable.engine)), 0o755)
 	// The steward may append during the stop. Keep the real append-only
 	// registers present in the base tree so rearming can prove their suffixes.
 	portable.write("records/narrator-digest.log", "", 0o644)
@@ -782,43 +753,36 @@ exit 7
 		t.Fatalf("public elapsed breach route absent for active B: revision=%d routes=%s error=%v budget=%+v", revision, routesOutput, routesErr, dispatchcore.ProjectBudget(controlRoot, projection.Tree.Live["goal-b"], t1))
 	}
 	// The enrolled steward is the authorized stop custodian while the owner
-	// holds the checkout. Its dispatch script only forwards the actual CLI verb.
-	stop := exec.Command(portable.engine, "steward", "tick", "--repo", controlRoot)
-	stop.Dir = controlRoot
-	stop.Env = clockEnvironment(t1)
-	stopOutput, stopErr := stop.CombinedOutput()
-	if stopErr != nil {
-		t.Fatalf("real steward elapsed breach-stop for revision %d: %v: %s", revision, stopErr, stopOutput)
-	}
-	var tickReport struct {
-		GoalStops []struct {
-			GoalID   string `json:"goalId"`
-			Revision uint64 `json:"revision"`
-			State    string `json:"state"`
-			Detail   string `json:"detail"`
-		} `json:"goalStops"`
-	}
-	if err := json.Unmarshal(stopOutput, &tickReport); err != nil {
-		t.Fatalf("steward tick did not return its stop report: %v: %s", err, stopOutput)
-	}
-	completedStop := false
-	completedStopID := ""
-	for _, report := range tickReport.GoalStops {
-		if report.GoalID == "goal-b" && report.Revision == revision && report.State == "COMPLETE" {
-			completedStop = true
-			for _, field := range strings.Fields(report.Detail) {
-				if strings.HasPrefix(field, "stop=") {
-					completedStopID = strings.TrimPrefix(field, "stop=")
-				}
-			}
+	// holds the checkout: its resident runner (`steward run`, its own session
+	// as steward arm launches it) runs the delegate lifecycle's breach stop in
+	// process under the real classifier. The runner's terminal fact is staged
+	// false in the fixture identity table, so the verdict is STEWARD wherever
+	// the suite runs, never the test process's own terminal.
+	portable.git("config", "metasystem.steward.tick-seconds", "1")
+	runner, runnerLog, runnerExited := startPortableStewardRunner(t, portable.engine, controlRoot, clockEnvironment(t1))
+	var completedStopID string
+	for completedStopID == "" {
+		select {
+		case runErr := <-runnerExited:
+			t.Fatalf("the steward runner exited before B's elapsed stop completed: %v: %s", runErr, readPortableRunnerLog(t, runnerLog))
+		case <-t.Context().Done():
+			t.Fatalf("the steward runner did not complete B's elapsed stop for revision %d before test cancellation: %s", revision, readPortableRunnerLog(t, runnerLog))
+		case <-time.After(100 * time.Millisecond):
+		}
+		observed, observeErr := goal.Project(endpoint, true, t1)
+		if observeErr != nil || observed.Tree == nil || observed.Tree.Live["goal-b"] == nil || observed.Tree.Live["goal-b"].StopFence == nil {
+			continue
+		}
+		stopID := observed.Tree.Live["goal-b"].StopFence.StopID
+		if batch, batchErr := goal.ReadStopBatch(controlRoot, stopID); batchErr == nil && batch.State == goal.StopBatchComplete {
+			completedStopID = stopID
 		}
 	}
-	if !completedStop || completedStopID == "" {
-		t.Fatalf("steward did not complete B's exact elapsed stop: %+v", tickReport.GoalStops)
-	}
+	stopPortableStewardRunner(t, runner, runnerExited)
+	stopOutput := readPortableRunnerLog(t, runnerLog)
 	stopBatch, err := goal.ReadStopBatch(controlRoot, completedStopID)
-	if err != nil || stopBatch.State != goal.StopBatchComplete {
-		t.Fatalf("real stop batch did not complete: id=%s batch=%+v err=%v", completedStopID, stopBatch, err)
+	if err != nil || stopBatch.State != goal.StopBatchComplete || stopBatch.GoalID != "goal-b" || stopBatch.GoalRevision != revision {
+		t.Fatalf("real stop batch did not complete B's exact revision %d: id=%s batch=%+v err=%v", revision, completedStopID, stopBatch, err)
 	}
 	projection, err = goal.Project(endpoint, true, t1)
 	if err != nil || projection.Tree == nil || projection.Tree.Live["goal-b"] == nil || !projection.Tree.Live["goal-b"].IsFencedClaim() {
@@ -1053,4 +1017,73 @@ func portableGoalBranch(t *testing.T, bed *batchE2EFixture, seat, goalID, input 
 	if tip := batchE2EGit(t, bed.origin, "rev-parse", "refs/heads/goal/"+goalID); tip == base {
 		t.Fatalf("%s goal branch did not advance origin", goalID)
 	}
+}
+
+// startPortableStewardRunner starts the enrolled engine's resident runner as
+// steward arm does (steward run in its own session) with its terminal fact
+// staged false: a shell gate holds the process until its pid's fact is in
+// the fixture identity table, then execs the runner in that same process, so
+// the classifier never reads the kernel's terminal for it.
+func startPortableStewardRunner(t *testing.T, engine, repo string, environment []string) (*exec.Cmd, string, <-chan error) {
+	t.Helper()
+	dir := t.TempDir()
+	table := filepath.Join(dir, "runner-identity.json")
+	log := filepath.Join(dir, "runner.log")
+	output, err := os.Create(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = output.Close() })
+	runner := exec.Command("/bin/sh", "-c", `read -r gate && exec "$0" "$@"`, engine, "steward", "run", "--repo", repo, "--lineage", "no-lease")
+	runner.Dir = repo
+	runner.Env = append(append([]string(nil), environment...), "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+table)
+	runner.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	runner.Stdout, runner.Stderr = output, output
+	gate, err := runner.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := 0
+	testenv.ReapFixtureProcessGroups(t, []testenv.FixtureProcessGroup{{
+		Verb:    "portable steward runner",
+		Resolve: func() (int, bool, error) { return pid, pid != 0, nil },
+	}})
+	if err := runner.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid = runner.Process.Pid
+	exited := make(chan error, 1)
+	go func() { exited <- runner.Wait() }()
+	if err := os.WriteFile(table, fmt.Appendf(nil, `{"%d": {"terminal": false}}`, runner.Process.Pid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gate.Write([]byte("go\n")); err != nil {
+		t.Fatalf("release the steward runner gate: %v", err)
+	}
+	if err := gate.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return runner, log, exited
+}
+
+// stopPortableStewardRunner ends the runner's session and waits for its exit.
+func stopPortableStewardRunner(t *testing.T, runner *exec.Cmd, exited <-chan error) {
+	t.Helper()
+	if err := syscall.Kill(-runner.Process.Pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("stop the steward runner: %v", err)
+	}
+	select {
+	case <-exited:
+	case <-t.Context().Done():
+		t.Fatalf("the steward runner did not exit after SIGTERM before test cancellation")
+	}
+}
+
+func readPortableRunnerLog(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err.Error()
+	}
+	return string(data)
 }

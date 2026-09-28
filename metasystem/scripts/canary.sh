@@ -52,17 +52,14 @@ for class in "$@"; do
     go) gate ;;
     supervision)
       gate
-      run supervision bash scripts/agents/supervision-fixtures.sh
-      run adapter-deadline bash scripts/agents/adapter-deadline-fixtures.sh ;;
+      run supervision bash scripts/agents/supervision-fixtures.sh ;;
     dispatch)
       gate
-      run conformance bash scripts/agents/conformance-fixtures.sh
-      run delegate-caps bash scripts/agents/delegate-caps-fixtures.sh ;;
+      run conformance bash scripts/agents/conformance-fixtures.sh ;;
     mission) gate; run mission bash scripts/agents/mission-fixtures.sh ;;
     lease) gate; run lease bash scripts/agents/lease-succession-fixtures.sh ;;
     records)
       gate
-      run record-protocol bash scripts/agents/record-protocol-fixtures.sh
       run flight-recorder bash scripts/agents/flight-recorder-fixtures.sh ;;
     shell)
       while IFS= read -r script; do

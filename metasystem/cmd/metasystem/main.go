@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -111,11 +112,9 @@ func families() []family {
 				{"exists", "exit 0 if the pid exists (permission denial proves existence)", runIdentityExists},
 				{"group-exists", "exit 0 if the process group exists", runIdentityGroupExists},
 				{"group-owned", "exit 0 only when a group member carries a tag in a shipped argv position", runIdentityGroupOwned},
-				{"group-members", "print a process group's live member pids, optionally excluding one", runProcGroupMembers},
 				{"census", "compute a fixture-driven census verdict", runCensusRun},
 				{"alive", "exit 0 if a pid is live at its expected start", runCensusAlive},
 				{"classify", "print live, stale, dead, or unknown for a recorded pid and tag", runProcClassify},
-				{"signature-check", "verify an adapter's positive/lookalike signature contract", runCensusSignatureCheck},
 				{"find-ancestor", "walk up the process tree to the first agent-signature ancestor", runCensusFindAncestor},
 				{"acknowledge", "record one exact untracked pid as human-judged-harmless; the end-of-turn report then stays silent about it (KI-23)", runProcAcknowledge},
 				{"setsid", "run a command as the leader of a new session and exit with its status (proc setsid -- cmd args...)", runProcSetsid},
@@ -169,73 +168,21 @@ func families() []family {
 			name:    "job",
 			summary: "the delegate-job domain: records, chains, locks, caps, snapshots, authority",
 			verbs: []verb{
-				{"compose-role-packet", "assemble a role's closed packet and provenance record", runDispatchComposeRolePacket},
 				{"verify-references", "re-read every referenced file against the composition record before a launch", runDispatchVerifyReferences},
-				{"operation-id", "derive the v2 default delegate operation identity", runDispatchOperationID},
-				{"record-create", "reserve a job by writing its pending-setup record", runDispatchRecordCreate},
-				{"record-setup", "complete a reservation into the full pending record", runDispatchRecordSetup},
-				{"record-cas", "compare-and-swap a record's status and fields", runDispatchRecordCAS},
-				{"record-protocol-error", "stamp a job failed with a protocol violation", runDispatchRecordProtocolError},
-				{"repair-claim", "atomically claim the round's one paid repair (0 won, 3 lost, 1 mechanical)", runDispatchRepairClaim},
 				{"resolve-roster", "resolve a role's roster pair and classify escalation", runDispatchResolveRoster},
-				{"resolve-model-alias", "resolve a model-family pointer", runDispatchResolveModelAlias},
-				{"serving-goal", "print the brief section projecting the current goal (exit 3 when none is usable)", runDispatchServingGoal},
 				{"goal-revision", "print a live accepted goal's revision for reservation binding", runDispatchGoalRevision},
 				{"goal-binding", "print a claimed goal's stop-capability binding", runDispatchGoalBinding},
-				{"goal-lock-path", "print the ranked lock path for one goal revision", runDispatchGoalLockPath},
 				{"goal-admission", "judge the structured goal budget before reservation", runDispatchGoalAdmission},
 				{"goal-revision-admission", "judge one exact revision and proposed cap under its lock", runDispatchGoalRevisionAdmission},
-				{"slice-admission", "judge a reservation cap against the configured slice norm", runDispatchSliceAdmission},
 				{"breach-stop", "close a breached revision's fence and initialize its stop batch", runDispatchBreachStop},
 				{"breach-stop-routes", "list steward and dispatch breach-stop routes", runDispatchBreachStopRoutes},
 				{"stop-batch-reconcile", "advance one stop batch from authoritative job records", runDispatchStopBatchReconcile},
-				{"stop-batch-pending", "list the matching non-terminal jobs in a stop batch", runDispatchStopBatchPending},
-				{"stop-batch-proof-pending", "list the matching non-terminal proof attempts in a stop batch", runDispatchStopBatchProofPending},
-				{"stop-proof-cancel", "cancel and terminally join one exact proof attempt", runDispatchStopProofCancel},
-				{"stop-cancel-authorize", "authorize cancellation of one exact stop-batch job", runDispatchStopCancelAuthorize},
-				{"build-record", "assemble the full pending job record", runDispatchBuildRecord},
-				{"build-follow-record", "assemble a follow-up round's record from its parent", runDispatchBuildFollowRecord},
-				{"follow-up-rebase-plan", "decide whether trunk movement overlaps a follow-up chain", runDispatchFollowUpRebasePlan},
 				{"cap-continuation", "write the prior-worktree paragraph a continuation round is told after its predecessor was cut off at its cap", runDispatchCapContinuation},
-				{"verify-chain-incarnation", "refuse a follow-up whose mission was re-provisioned", runDispatchVerifyChainIncarnation},
-				{"latest-chain-record", "print the newest record path in a job chain", runDispatchLatestChainRecord},
-				{"chain-members", "list a chain's jobs and statuses", runDispatchChainMembers},
-				{"chain-usage", "aggregate a chain's usage (exit 7 when unchanged)", runDispatchChainUsage},
-				{"custody-add", "append a custody process to a job record under its lock", runDispatchCustodyAdd},
-				{"claim-launch", "reserve a launch operation through the typed claim state machine", runDispatchClaimLaunch},
-				{"fence-before-launch", "read the checkout process-creation fence before dispatch admission", runDispatchFenceBeforeLaunch},
-				{"fence-after-launch", "re-read the checkout process-creation fence after a job launch", runDispatchFenceAfterLaunch},
-				{"fixture-pause-before-launch", "pause a launch only in a fixture-mode root", runDispatchFixturePauseBeforeLaunch},
-				{"launch-capability-consume", "verify and spend one admitted adapter launch capability", runDispatchLaunchCapabilityConsume},
-				{"claim-occupancy-prepare", "prepare session-occupancy evidence off the record lock", runDispatchClaimOccupancyPrepare},
-				{"prefork-mark", "persist the pre-fork custody marker for an imminent launch", runDispatchPreforkMark},
-				{"custody-groups", "print a record's custody process-group kill targets", runDispatchCustodyGroups},
-				{"reconcile-reservation", "run the adoption engine over one reservation", runDispatchReconcileReservation},
-				{"ownership-patch", "build the launch ownership patch with a proven identity", runDispatchOwnershipPatch},
-				{"handshake-eval", "evaluate a handshake into its record patch", runDispatchHandshakeEval},
-				{"reap-facts", "print a record's reap verdict facts", runDispatchReapFacts},
-				{"census-fresh", "require a fresh successful census for dispatch", runDispatchCensusFresh},
 				{"examination-retry", "admit one fresh examination round after a critic round ended without a return (internal)", runJobExaminationRetry},
-				{"census-wait", "wait for current freshness or an explicit post-event census", runDispatchCensusWait},
-				{"watcher-ceiling", "print the attested watcher ceiling", runDispatchWatcherCeiling},
-				{"expand-permissions", "expand a role's permission preset for a workspace", runDispatchExpandPermissions},
-				{"validate-mission", "validate a mission id and lease for dispatch", runDispatchValidateMission},
-				{"mirror", "mirror a job's evidence with a manifest", runDispatchMirror},
-				{"close-check", "validate a chain is closable", runDispatchCloseCheck},
-				{"review-reference-reconcile", "derive a pre-stamping review evidence pointer", runDispatchReviewReferenceReconcile},
 				{"critique-register-advance", "fold one critic round into its canonical register", runDispatchCritiqueRegisterAdvance},
-				{"critique-open-finding-ids", "print a critic register's open finding identifiers", runDispatchCritiqueOpenFindingIDs},
 				{"critique-register-close", "close or defer a critic register", runDispatchCritiqueRegisterClose},
-				{"critique-close", "close a critic chain: closure and chainClosed in one record write; reached only through dispatch.sh close", runDispatchCritiqueClose},
 				{"critique-budget-rebind", "copy the goal review-round limit onto a critic root", runDispatchCritiqueBudgetRebind},
-				{"read-subject", "compute and persist a critic round's read subject before launch", runDispatchReadSubject},
-				{"critique-read-admission", "admit a computed critic read before publishing its job", runDispatchCritiqueReadAdmission},
-				{"critique-exhaustion-advance", "atomically advance register-backed critique exhaustion", runDispatchCritiqueExhaustionAdvance},
-				{"cap-resolution", "write a cap-resolution record", runDispatchCapResolution},
-				{"resolve-cap", "resolve the non-mission cap chain or refuse an unsigned mission cap", runDispatchResolveCap},
-				{"testing-requirement", "print the shared testing requirement for an implementer brief", runDispatchTestingRequirement},
 				{"prove-round", "prove a chain round's committed worktree tree on this installation's engine and record the attempt in the round directory", runDispatchProveRound},
-				{"brief-mode", "check a brief names a known mode", runDispatchBriefMode},
 				{"owner-lock", "claim or release the dispatch owner lock (0 done, 3 busy, 4 not-owner)", runDispatchOwnerLock},
 				{"snapshot-select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},
 				{"authority-check", "check a control-plane write against the authority matrix", runAuthorityCheck},
@@ -246,61 +193,8 @@ func families() []family {
 			name:    "adapter",
 			summary: "shared runtime-adapter plumbing: permissions, patches, snapshots",
 			verbs: []verb{
-				{"root-job", "print a job's root ancestor by walking parentJob", runAdapterRootJob},
-				{"effective-init", "materialize the effective permissions from a job record", runAdapterEffectiveInit},
-				{"effective-workspace", "pin the effective writeRoots to the resolved workspace", runAdapterEffectiveWorkspace},
-				{"permission-check", "report which effective permission fields are wider than requested", runAdapterPermissionCheck},
-				{"model-patch", "write an {effectiveModel} record patch", runAdapterModelPatch},
-				{"transport-patch", "write a {transport} record patch (the D82 chain pin)", runAdapterTransportPatch},
-				{"repairs-patch", "write a {returnRepairs} record patch", runAdapterRepairsPatch},
-				{"result-patch", "write an {error,phase,usage} record patch", runAdapterResultPatch},
-				{"capability-snapshot", "write a validated capability snapshot", runAdapterCapabilitySnapshot},
-				{"version-parse", "extract the semver from CLI version output on stdin", runAdapterVersionParse},
-				{"codex-event", "read the session or turn field from a Codex event stream", runAdapterCodexEvent},
-				{"codex-usage", "extract Codex usage from its event stream", runAdapterCodexUsage},
-				{"codex-command", "build the Codex delegate argv (NUL-terminated)", runAdapterCodexCommand},
-				{"claude-command", "build the Claude argv (NUL-terminated)", runAdapterClaudeCommand},
-				{"claude-derive-result", "derive claude-result.json from a streamed round", runAdapterClaudeDeriveResult},
-				{"claude-settings", "build the Claude job settings from a record", runAdapterClaudeSettings},
-				{"claude-usage", "extract Claude usage from its result", runAdapterClaudeUsage},
 				{"claude-tool-gate", "decide one Claude tool call against the context budget", runAdapterClaudeToolGate},
-				{"claude-result-field", "read a Claude result field with modelUsage collapse", runAdapterClaudeResultField},
-				{"claude-append-result", "append a Claude result to the event stream", runAdapterClaudeAppendResult},
 				{"claude-session-signal", "record the Claude session-established signal", runAdapterClaudeSessionSignal},
-				{"devin-config", "build the Devin job config from the user config", runAdapterDevinConfig},
-				{"adjudicate-turn", "decide a turn's terminal outcome, repair, or settle stage", runAdapterAdjudicateTurn},
-				{"devin-session", "correlate the new Devin session against the baseline", runAdapterDevinSession},
-				{"devin-settle", "certify the transcript session and derive the effective model", runAdapterDevinSettle},
-				{"devin-collect", "walk the delivery channels for a devin turn (0 delivered, 3 empty, 5 oversize)", runAdapterDevinCollect},
-				{"devin-usage", "compute the Devin per-round usage delta", runAdapterDevinUsage},
-				{"acp-usage", "the acp transport's typed usage from a turn outcome", runAdapterACPUsage},
-				{"usage-unavailable", "write the unavailable-usage record", runAdapterUsageUnavailable},
-				{"fake-return", "write the fake runtime's canned role return", runAdapterFakeReturn},
-				{"fake-usage", "write the fake runtime's fixed native usage", runAdapterFakeUsage},
-				{"fake-effective-network", "edit the effective network for permission fixtures", runAdapterFakeEffectiveNetwork},
-				{"fake-guarded-write", "attempt a permission-guarded write (77 = refused)", runAdapterFakeGuardedWrite},
-				{"fake-guarded-network", "attempt a permission-guarded connection (77 = refused)", runAdapterFakeGuardedNetwork},
-				{"wait-start-gate", "wait for the runner-owned adapter or host start gate", runAdapterWaitStartGate},
-				{"fake-capability-snapshot", "write a fake capability-snapshot profile", runAdapterFakeCapabilitySnapshot},
-				{"fake-selftest-record", "write the fake selftest pass record", runAdapterFakeSelftestRecord},
-				{"normalize-return", "normalize the runtime reply into return.json/return.md", runAdapterNormalizeReturn},
-				{"selftest-run", "run the full-contract adapter self-test", runAdapterSelftestRun},
-				{"devin-prompt", "write the schema-augmented prompt copy the Devin CLI reads", runAdapterDevinPrompt},
-			},
-		},
-		{
-			name:    "host",
-			summary: "host-loop plumbing: result envelopes, usage, and return extraction",
-			verbs: []verb{
-				{"result-write", "write a host turn's result envelope", runHostResultWrite},
-				{"finish", "adjudicate a host turn outcome and write its envelope", runHostFinish},
-				{"devin-collect", "walk a devin host turn's delivery channels (0 delivered, 3 empty, 5 oversize)", runHostDevinCollect},
-				{"claude-result", "extract the Claude return and usage", runHostClaudeResult},
-				{"devin-config", "assemble the Devin job config", runHostDevinConfig},
-				{"devin-return", "extract the Devin return", runHostDevinReturn},
-				{"devin-usage", "compute the Devin per-round usage delta", runHostDevinUsage},
-				{"fake-return", "write the fake-runtime return and terminal record", runHostFakeReturn},
-				{"fake-result", "write the fake-runtime result envelope", runHostFakeResult},
 			},
 		},
 		{
@@ -396,16 +290,6 @@ func families() []family {
 				{"adoption-default", "the one default adoption runtime", runRuntimeAdoptionDefault},
 				{"dirs", "a runtime's adopted registration directories", runRuntimeDirs},
 				{"instruction-file", "a runtime's instruction-bearing filename", runRuntimeInstructionFile},
-				{"acp-expectation", "a runtime's expected ACP transport declaration as JSON", runRuntimeACPExpectation},
-			},
-		},
-		{
-			name:    "acp",
-			summary: "the ACP transport client (wire only; launch and custody stay with scripts)",
-			verbs: []verb{
-				{"preflight", "check an envelope's ACP-v1 eligibility before any launch", runACPPreflight},
-				{"mode", "resolve a runtime's session mode for an envelope tools grade", runACPMode},
-				{"turn", "drive one prompt attempt over pre-created pipes, emitting the typed outcome", runACPTurn},
 			},
 		},
 		{
@@ -451,7 +335,6 @@ func families() []family {
 			verbs: []verb{
 				{"token-hex", "print a random hex token of --bytes length", runUtilTokenHex},
 				{"sha256", "print the hex sha-256 of --file or stdin", runUtilSHA256},
-				{"slug", "print a stable slug of the argument (matches the sanitize rule)", runUtilSlug},
 				{"json-validate", "exit 0 if --file/--value is valid JSON, else 1", runUtilJSONValidate},
 				{"now-ns", "print the current wall-clock time in nanoseconds", runUtilNowNs},
 				{"bootclock", "print the operating-system boot identity and monotonic nanoseconds", runUtilBootClock},
@@ -731,6 +614,9 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 	}
 	// Process entrypoints whose first word is not an object (supervise,
 	// steward, up, ...) and the transitional families keep their argv.
+	if args[0] == runtimes.SupervisorEntry {
+		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+	}
 	if len(args) >= 2 && !isHelpWord(args[1]) && (args[0] == "up" || familyHasVerb(registered, args[0], args[1])) {
 		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
 	}
@@ -809,6 +695,9 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 	}
 	if args[0] == "pre-commit" {
 		return runPreCommitEntry(args[1:], stdout, stderr)
+	}
+	if args[0] == runtimes.SupervisorEntry {
+		return runDelegateSupervisor(args[1:])
 	}
 	if args[0] == "stop" {
 		return runProcessStop(args[1:])
@@ -906,6 +795,7 @@ func writeUsage(w io.Writer, registered []family) {
 	fmt.Fprintln(w, "       metasystem internal up --print-scheduler-entry [--repo <checkout>]")
 	fmt.Fprintln(w, "       metasystem internal hook <runtime> <start|stop|end|receipt|tool>  (run by scripts/agents/supervision-hook.sh)")
 	fmt.Fprintln(w, "       metasystem internal pre-commit --root <installation>  (run by the enrolled git pre-commit hook)")
+	fmt.Fprintln(w, "       metasystem internal delegate-supervisor <runtime> <verb> --root <installation> [flags]  (launched by internal/delegation and internal/missionrunner/host.go)")
 	fmt.Fprintln(w, "       metasystem internal stop [--repo <path>] [--installation <dir>] [--all]")
 	fmt.Fprintln(w, "       metasystem internal status [--repo <path>] [--installation <dir>] [--all]")
 	fmt.Fprintln(w, "       metasystem internal arm [--repo <path>] [--installation <dir>] [--all] [--temporary-human-word <word> --review-by <date>]")
@@ -929,9 +819,6 @@ func writeUsage(w io.Writer, registered []family) {
 	for _, fam := range registered {
 		fmt.Fprintf(w, "  %-10s %s\n", fam.name, fam.summary)
 		for _, v := range fam.verbs {
-			if fam.name == "job" && (v.name == "claim-launch" || v.name == "claim-occupancy-prepare" || v.name == "compose-role-packet" || v.name == "operation-id") {
-				continue
-			}
 			fmt.Fprintf(w, "    %-14s %s\n", v.name, v.summary)
 		}
 	}

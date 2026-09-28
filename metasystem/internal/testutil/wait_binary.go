@@ -10,10 +10,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
-// InstalledWaitBinary places the candidate in a temporary installation whose
-// adapter directory is the source tree's real adapter directory. Wait adapter
-// discovery follows the executable installation even when --root names a
-// separate state fixture.
+// InstalledWaitBinary places the candidate in a temporary installation that
+// carries the source tree's configuration. The installation follows the
+// executable even when --root names a separate state fixture.
 func InstalledWaitBinary(t testing.TB, candidate string) string {
 	t.Helper()
 	sourceRoot := sourceMetasystemRoot(t)
@@ -27,9 +26,6 @@ func InstalledWaitBinary(t testing.TB, candidate string) string {
 	}
 	if err := os.Symlink(filepath.Join(sourceRoot, "metasystem.conf"), filepath.Join(installation, "metasystem.conf")); err != nil {
 		t.Fatalf("link source configuration into temporary wait installation: %v", err)
-	}
-	if err := os.Symlink(filepath.Join(sourceRoot, "scripts", "agents", "adapters"), filepath.Join(installation, "scripts", "agents", "adapters")); err != nil {
-		t.Fatalf("link source adapters into temporary wait installation: %v", err)
 	}
 
 	source, err := os.Open(candidate)
@@ -69,9 +65,9 @@ func sourceMetasystemRoot(t testing.TB) string {
 	}
 	for {
 		configuration := filepath.Join(dir, "metasystem.conf")
-		adapter := filepath.Join(dir, "scripts", "agents", "adapters", "fake.sh")
+		module := filepath.Join(dir, "go.mod")
 		if _, configurationErr := os.Stat(configuration); configurationErr == nil {
-			if _, adapterErr := os.Stat(adapter); adapterErr == nil {
+			if _, moduleErr := os.Stat(module); moduleErr == nil {
 				return dir
 			}
 		}

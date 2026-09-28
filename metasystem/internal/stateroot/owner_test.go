@@ -40,7 +40,7 @@ func TestOwnerFourAnswersInVendoredAdoptedShape(t *testing.T) {
 		path string
 		want Ownership
 	}{
-		{"metasystem/scripts/agents/dispatch.sh", OwnerMetasystem},
+		{"metasystem/scripts/agents/arm-supervision.sh", OwnerMetasystem},
 		{"metasystem", OwnerMetasystem},
 		{"memory/rulings.md", OwnerApp},
 		{"plans/goals/x.md", OwnerApp},

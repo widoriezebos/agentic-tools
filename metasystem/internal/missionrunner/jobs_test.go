@@ -1,7 +1,6 @@
 package missionrunner
 
 import (
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -120,43 +119,35 @@ func TestCloseTerminalChainsFinishesTheSweepPastAFailure(t *testing.T) {
 		map[string]any{"jobId": "aa", "mission": mission, "status": "failed", "phase": "reaped"})
 	writeJSONFile(t, filepath.Join(jobs, "bb.json"),
 		map[string]any{"jobId": "bb", "mission": mission, "status": "completed", "phase": "reaped"})
-	stub := `#!/bin/sh
-verb=$1; shift
-job=""
-while [ $# -gt 0 ]; do
-  if [ "$1" = "--job" ]; then job=$2; shift; fi
-  shift
-done
-[ "$verb" = "reap" ] && exit 0
-echo "$job" >> "$(dirname "$0")/closes.log"
-if [ "$job" = "aa" ]; then echo "cannot close an unmirrored chain" >&2; exit 1; fi
-exit 0
-`
-	scripts := filepath.Join(root, "scripts", "agents")
-	if err := os.MkdirAll(scripts, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(filepath.Join(scripts, "dispatch.sh"), []byte(stub), 0o755); err != nil {
-		t.Fatal(err)
+	var closes []string
+	delegate := func(args ...string) (string, string, int) {
+		if args[0] == "reap" {
+			return "", "", 0
+		}
+		job := args[2]
+		closes = append(closes, job)
+		if !reflect.DeepEqual(args, []string{"close", "--job", job, "--runner-closed"}) {
+			t.Errorf("close argv %v", args)
+		}
+		if job == "aa" {
+			return "", "cannot close an unmirrored chain\n", 1
+		}
+		return "", "", 0
 	}
 
-	e := &Engine{Root: root, Mission: mission}
+	e := &Engine{Root: root, Mission: mission, Delegate: delegate}
 	err := e.closeTerminalChains()
 	if err == nil || !strings.Contains(err.Error(), "aa: cannot close an unmirrored chain") {
 		t.Fatalf("the failure must name the refusing chain: %v", err)
 	}
-	logBytes, readErr := os.ReadFile(filepath.Join(scripts, "closes.log"))
-	if readErr != nil {
-		t.Fatalf("no close attempts recorded: %v", readErr)
-	}
-	if got := string(logBytes); got != "aa\nbb\n" {
-		t.Fatalf("the sweep must continue past the failure, attempts: %q", got)
+	if !reflect.DeepEqual(closes, []string{"aa", "bb"}) {
+		t.Fatalf("the sweep must continue past the failure, attempts: %v", closes)
 	}
 }
 
 // missionrunner-5: the drain's reap cadence is decoupled from the
 // millisecond heartbeat — reaps run on their own coarser interval, so a
-// cap-length drain no longer spawns dispatch.sh at heartbeat speed.
+// cap-length drain no longer reaps at heartbeat speed.
 func TestDrainReapCadenceIsDecoupled(t *testing.T) {
 	root := t.TempDir()
 	mission := "demo"
@@ -170,23 +161,18 @@ func TestDrainReapCadenceIsDecoupled(t *testing.T) {
 	// The runner record the heartbeat reads.
 	writeJSONFile(t, filepath.Join(root, "artifacts", "agents", "missions", "runners", mission+".json"),
 		map[string]any{"pid": 1, "pidStartedAt": 1, "instanceTag": "t", "status": "running"})
-	// A dispatch stub that counts reap invocations, then completes the job
-	// on the second reap so the drain ends.
-	scripts := filepath.Join(root, "scripts", "agents")
-	if err := os.MkdirAll(scripts, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	stub := `#!/bin/sh
-count_file="$(dirname "$0")/reaps"
-echo x >> "$count_file"
-if [ "$(wc -l < "$count_file")" -ge 2 ]; then
-  record="$(dirname "$0")/../../artifacts/agents/jobs/busy.json"
-  printf '%s\n' '{"jobId":"busy","mission":"demo","status":"completed"}' > "$record"
-fi
-exit 0
-`
-	if err := testexec.WriteFile(filepath.Join(scripts, "dispatch.sh"), []byte(stub), 0o755); err != nil {
-		t.Fatal(err)
+	// A delegate that counts reap invocations, then completes the job on
+	// the second reap so the drain ends.
+	reaps := 0
+	delegate := func(args ...string) (string, string, int) {
+		if args[0] != "reap" {
+			t.Errorf("drain ran %v", args)
+		}
+		reaps++
+		if reaps >= 2 {
+			writeJSONFile(t, filepath.Join(jobs, "busy.json"), map[string]any{"jobId": "busy", "mission": "demo", "status": "completed"})
+		}
+		return "", "", 0
 	}
 
 	t.Setenv("METASYSTEM_HEARTBEAT_INTERVAL_MS", "10")
@@ -202,7 +188,7 @@ exit 0
 		sleeps++
 	}
 	t.Cleanup(func() { runClock = original })
-	e := &Engine{Root: root, Mission: mission}
+	e := &Engine{Root: root, Mission: mission, Delegate: delegate}
 	state, err := e.drainJobs(filepath.Join(root, "state.json"), filepath.Join(root, "ledger.md"), "t1", 1)
 	if err != nil || state != nil {
 		t.Fatalf("drain: state=%v err=%v", state, err)
@@ -212,8 +198,7 @@ exit 0
 	if sleeps != 30 {
 		t.Fatalf("heartbeat sleeps before the second reap = %d, want 30", sleeps)
 	}
-	data, _ := os.ReadFile(filepath.Join(scripts, "reaps"))
-	if reaps := strings.Count(string(data), "x"); reaps != 2 {
+	if reaps != 2 {
 		t.Fatalf("reap count = %d, want exactly two cadence passes", reaps)
 	}
 }

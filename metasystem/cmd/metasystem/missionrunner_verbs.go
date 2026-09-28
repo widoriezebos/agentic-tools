@@ -3,12 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	missionpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
-
-	"strconv"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 )
 
@@ -80,6 +78,7 @@ func missionRunnerCommandEngine(root, mission string) (*missionrunner.Engine, er
 	}
 	engine := missionrunner.NewEngine(root, mission)
 	engine.Now = commandClock
+	engine.Delegate = delegateInProcess(root)
 	return engine, nil
 }
 

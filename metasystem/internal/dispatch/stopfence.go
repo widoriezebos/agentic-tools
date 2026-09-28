@@ -45,7 +45,7 @@ func FenceBeforeLaunch(root string) (LaunchFenceResult, error) {
 }
 
 // FenceAfterLaunch performs the second fence read for the shell-owned launch
-// seam. It does not signal: dispatch.sh owns the existing identity-proven
+// seam. It does not signal: the delegate lifecycle owns the existing identity-proven
 // cancellation path and invokes it when this result is REFUSED-STOPPED.
 func FenceAfterLaunch(root, job string) (LaunchFenceResult, error) {
 	if !validJobID.MatchString(job) {

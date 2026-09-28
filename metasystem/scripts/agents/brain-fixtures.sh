@@ -59,7 +59,6 @@ setup_ledger() {
   cp "$ms" "$bed_clone/bin/metasystem"
   chmod 0755 "$bed_clone/bin/metasystem"
   printf '%s\n' 'bin/' >>"$(git -C "$bed_clone" rev-parse --path-format=absolute --git-path info/exclude)"
-  cp -R "$root/scripts/agents/adapters" "$bed_clone/scripts/agents/"
   cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$bed_clone/records/misc/"
   cat >"$bed_clone/plans/goals.md" <<'LEDGER'
 # Goals

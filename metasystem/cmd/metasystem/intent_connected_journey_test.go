@@ -175,11 +175,11 @@ func newJourneyBed(t *testing.T) *journeyBed {
 // A and review it again while B survives, and review the rewritten B commit;
 // then public land admits exactly those subjects into the actual batch join
 // on the same physical accepted goal. Each committed critic is closed by
-// the actual scripts/agents/dispatch.sh close and the real engine, after the
+// the real delegate lifecycle's close over the real owners, after the
 // actual register advance of a subject-bound fake model return; nothing here
 // stamps a closure. Model launches, proof, the fast gate, the claim and the
 // commit token stay the connection bed's declared fixture effects; the lease
-// and brain fence are realCloseOwner's; the batch join's goal binding,
+// is realCloseOwner's; the batch join's goal binding,
 // claim handover, admission proof, plan and owner start are declared fixture
 // effects. Asynchronous sealing, proof and push are proved separately
 // (TestBatchLandingLifecycleEndToEnd). It sets METASYSTEM_BIN and the

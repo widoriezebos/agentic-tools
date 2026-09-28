@@ -2,18 +2,23 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 const delegateClaimCapabilityEnv = "METASYSTEM_DELEGATE_CLAIM_CAPABILITY"
@@ -25,17 +30,26 @@ type delegateOutcome struct {
 	Detail   string `json:"detail,omitempty"`
 }
 
-// runDelegate is the operator boundary. The shell remains the custody
-// implementation while its callbacks migrate; operator callers receive only
-// typed JSON and dispatch.sh itself immediately calls this verb.
+// runDelegate is the operator boundary and the delegate lifecycle's process
+// entry: operator forms answer typed JSON; the runtime adapters' "__"
+// callbacks and the guard member wrapper keep their process shape.
 func runDelegate(args []string) int { return runDelegateIn(args, "", os.Stdout, os.Stderr) }
 
-// runDelegateIn is runDelegate with the dispatch script started in dir (empty
-// is the current directory) and its typed outcome written to stdout. It is
-// the process entry: the installation comes from METASYSTEM_DELEGATE_ROOT or
-// this engine, and the script inherits this process's stdin.
+// runDelegateIn is runDelegate with its typed outcome written to stdout. dir
+// is the working directory relative file arguments resolve against (empty is
+// the current directory). It is the process entry: the installation comes
+// from METASYSTEM_DELEGATE_ROOT or this engine, and the lifecycle reads this
+// process's stdin.
 func runDelegateIn(args []string, dir string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == delegation.RunMemberCallback {
+		return runDelegateGuardMember(args[1:], stdout, stderr)
+	}
 	return runDelegateWith(delegateRequest{rootOverride: os.Getenv("METASYSTEM_DELEGATE_ROOT"), args: args, dir: dir, stdin: os.Stdin}, stdout, stderr)
+}
+
+// runDelegateAt is the delegate boundary for an explicit installation root.
+func runDelegateAt(installation string, args []string, stdout, stderr io.Writer) int {
+	return runDelegateWith(delegateRequest{rootOverride: installation, args: args, stdin: os.Stdin}, stdout, stderr)
 }
 
 // delegateRequest is one call of the delegate boundary made in the caller's
@@ -49,12 +63,16 @@ type delegateRequest struct {
 	// derived from; empty is this process's own.
 	engine string
 	args   []string
-	// dir is the dispatch script's working directory.
+	// dir is the working directory relative file arguments resolve against.
 	dir string
-	// environment is added to the dispatch script's environment (the
-	// variables the child used to receive beside its inherited ones).
+	// environment is configuration the request carries beside this
+	// process's own (KEY=VALUE, config.EnvName keys): a critic read's
+	// selected-installation roster. The lifecycle resolves configuration
+	// from its process environment, so a request carrying one runs in a
+	// child engine that inherits it (runDelegateChild).
 	environment []string
-	// stdin is the dispatch script's input; nil is none.
+	// stdin is the lifecycle's input (the escalation approval prompt); nil
+	// is none.
 	stdin io.Reader
 }
 
@@ -74,6 +92,12 @@ func runDelegateWith(request delegateRequest, stdout, stderr io.Writer) int {
 		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
 		return 1
 	}
+	if len(request.environment) > 0 {
+		return runDelegateChild(root, request, stdout, stderr)
+	}
+	if len(args) > 0 && (strings.HasPrefix(args[0], "__") || delegateRawCommand(args[0])) {
+		return runDelegateRaw(root, args, stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "--adapter-selftest" && !delegateSelftestInternalAuthorized(root) {
 		writeJSONLine(stdout, stderr, delegateOutcome{
 			Outcome: "REFUSED-REQUEST", Headline: "refused",
@@ -86,18 +110,13 @@ func runDelegateWith(request delegateRequest, stdout, stderr io.Writer) int {
 		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-REQUEST", Headline: "refused", Detail: err.Error()})
 		return 2
 	}
+	if dir != "" {
+		internalArgs = absoluteDelegatePaths(internalArgs, dir)
+	}
 	if detail := brain.Fence(root, mode, goal.ExistingLedgerIdentity(root)); detail != "" {
 		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "BRAIN_REFUSED", Headline: "refused", Detail: detail})
 		return 2
 	}
-	outcomeFile, err := os.CreateTemp("", "metasystem-delegate-outcome.*")
-	if err != nil {
-		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
-		return 1
-	}
-	outcomePath := outcomeFile.Name()
-	_ = outcomeFile.Close()
-	defer os.Remove(outcomePath)
 	claimCapability := ""
 	if mode == "dispatch" || mode == "follow-up" {
 		dispatchMode := dispatchcore.DispatchModeFresh
@@ -111,28 +130,41 @@ func runDelegateWith(request delegateRequest, stdout, stderr io.Writer) int {
 		}
 		defer dispatchcore.RemoveDelegateClaimCapability(root, claimCapability)
 	}
+	lifecycle, err := newDelegationLifecycle(root)
+	if err != nil {
+		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
+		return 1
+	}
+	var diagnostics bytes.Buffer
+	result := lifecycle.Run(context.Background(),
+		delegateLifecycleRequest(delegateOperatorEnv(os.LookupEnv, claimCapability), request.stdin, io.MultiWriter(stderr, &diagnostics)), internalArgs)
+	return writeDelegateResult(result, mode, args, diagnostics.String(), stdout, stderr)
+}
 
-	command := exec.Command(filepath.Join(root, "scripts", "agents", "dispatch.sh"), internalArgs...)
-	command.Env = delegateCommandEnvironment(append(os.Environ(), request.environment...), outcomePath, claimCapability)
-	command.Stdin = request.stdin
-	command.Dir = dir
-	var scriptOut bytes.Buffer
-	var scriptErr bytes.Buffer
-	command.Stdout = &scriptOut
-	command.Stderr = io.MultiWriter(stderr, &scriptErr)
-	runErr := command.Run()
-	exitCode := commandExitCode(runErr)
+// delegateOperatorEnv is the operator boundary's invocation state: the
+// inherited environment, with the boundary's own standing and claim
+// capability replacing anything a caller inherited.
+func delegateOperatorEnv(lookup func(string) (string, bool), claimCapability string) delegation.Env {
+	env := delegation.EnvFromEnviron(lookup)
+	env.RecordOutcome, env.DelegateInternal, env.ClaimCapability = true, true, claimCapability
+	return env
+}
 
-	if encoded, readErr := os.ReadFile(outcomePath); readErr == nil && json.Valid(bytes.TrimSpace(encoded)) && len(bytes.TrimSpace(encoded)) > 0 {
-		writeDelegateOutcome(stdout, stderr, bytes.TrimSpace(encoded))
+// writeDelegateResult maps a lifecycle result to the boundary's one typed
+// JSON line: the recorded outcome, else a JSON standard output, else the
+// started job (or cancelled target), else the refusal with the diagnostics.
+func writeDelegateResult(result delegation.Result, mode string, args []string, diagnostics string, stdout, stderr io.Writer) int {
+	exitCode := result.ExitCode
+	if encoded := bytes.TrimSpace(result.Outcome); json.Valid(encoded) && len(encoded) > 0 {
+		writeDelegateOutcome(stdout, stderr, encoded)
 		return exitCode
 	}
-	if encoded := bytes.TrimSpace(scriptOut.Bytes()); json.Valid(encoded) && len(encoded) > 0 {
+	if encoded := bytes.TrimSpace(result.Stdout); json.Valid(encoded) && len(encoded) > 0 {
 		fmt.Fprintln(stdout, string(encoded))
 		return exitCode
 	}
 	if exitCode == 0 {
-		job := strings.TrimSpace(scriptOut.String())
+		job := strings.TrimSpace(string(result.Stdout))
 		if line, _, found := strings.Cut(job, "\n"); found {
 			job = line
 		}
@@ -144,32 +176,160 @@ func runDelegateWith(request delegateRequest, stdout, stderr io.Writer) int {
 		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: outcome, Headline: headline, JobID: job})
 		return 0
 	}
-	detail := delegateInternalRefusalDetail(scriptErr.String(), runErr, exitCode)
-	writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: detail})
+	writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused",
+		Detail: delegateInternalRefusalDetail(diagnostics, nil, exitCode)})
 	return exitCode
 }
 
-func delegateCommandEnvironment(base []string, outcomePath, claimCapability string) []string {
-	blocked := map[string]bool{
-		"METASYSTEM_DELEGATE_INTERNAL":     true,
-		"METASYSTEM_DELEGATE_OUTCOME_FILE": true,
-		delegateClaimCapabilityEnv:         true,
+// delegateRawCommand names the lifecycle's own command words: the internal
+// grammar the retired dispatch.sh answered. Outside the delegate boundary
+// (METASYSTEM_DELEGATE_INTERNAL unset) the lifecycle refuses the
+// authority-bearing ones exactly as the script did.
+func delegateRawCommand(word string) bool {
+	switch word {
+	case "dispatch", "follow-up", "watch", "status", "cancel", "close", "reap":
+		return true
 	}
-	environment := make([]string, 0, len(base)+3)
-	for _, entry := range base {
-		key, _, _ := strings.Cut(entry, "=")
-		if !blocked[key] {
-			environment = append(environment, entry)
+	return false
+}
+
+// runDelegateRaw runs one lifecycle command or callback with the raw
+// process contract: its standard output, its diagnostics and its exit code.
+func runDelegateRaw(root string, args []string, stdout, stderr io.Writer) int {
+	lifecycle, err := newDelegationLifecycle(root)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	result := lifecycle.Run(context.Background(), delegateLifecycleRequest(delegation.EnvFromEnviron(os.LookupEnv), os.Stdin, stderr), args)
+	_, _ = stdout.Write(result.Stdout)
+	if path := os.Getenv("METASYSTEM_DELEGATE_OUTCOME_FILE"); path != "" && len(result.Outcome) > 0 {
+		_ = os.WriteFile(path, result.Outcome, 0o600)
+	}
+	return result.ExitCode
+}
+
+// runDelegateGuardMember is the guard member wrapper the lifecycle launches
+// its adapter under: __run-member --root R -- COMMAND...
+func runDelegateGuardMember(args []string, stdout, stderr io.Writer) int {
+	if len(args) < 4 || args[0] != "--root" || args[1] == "" || args[2] != "--" {
+		fmt.Fprintln(stderr, "checkout execution guard wrapper: root and command are required")
+		return 2
+	}
+	return gaterun.RunGuardMember(args[1], args[3:], stdout, stderr)
+}
+
+// delegateLifecycleRequest is this process's invocation: the current process
+// is the supplied identity (design 6.2), and its whole command line is the
+// owner lock tag a contender re-reads. stdin is the approval prompt's input,
+// a terminal only when it is this process's own terminal standard input.
+func delegateLifecycleRequest(env delegation.Env, stdin io.Reader, stderr io.Writer) delegation.Request {
+	stdinTTY := false
+	if file, ok := stdin.(*os.File); ok && file != nil {
+		stdinTTY = isTerminal(file.Fd())
+	}
+	return delegation.Request{
+		Invocation: delegation.Invocation{CallerPid: int64(os.Getpid())},
+		Env:        env, LockTag: delegation.LockTagOf(os.Args),
+		Stdin: stdin, StdinTTY: stdinTTY, StderrTTY: isTerminal(os.Stderr.Fd()),
+		Stderr: stderr,
+	}
+}
+
+// runDelegateChild runs a delegate request that carries configuration in a
+// child of this engine (`internal delegate`) whose environment holds it: the
+// lifecycle's roster, cap and hazard resolution and the adapters it launches
+// read configuration from their process environment, which this process
+// must not change for one request. The child answers the boundary's own
+// typed line on stdout.
+func runDelegateChild(root string, request delegateRequest, stdout, stderr io.Writer) int {
+	engine := request.engine
+	if engine == "" {
+		engine = delegationEngine(root)
+	}
+	command := exec.Command(engine, append([]string{"internal", "delegate"}, request.args...)...)
+	command.Env = append(append(os.Environ(), request.environment...), "METASYSTEM_DELEGATE_ROOT="+root)
+	command.Dir = request.dir
+	command.Stdin = request.stdin
+	command.Stdout, command.Stderr = stdout, stderr
+	return commandExitCode(command.Run())
+}
+
+// delegateInProcess runs one delegate lifecycle command in this process for
+// a resident caller (the mission runner's reap and close): the current
+// process is the supplied identity, its environment the invocation state.
+func delegateInProcess(root string) func(args ...string) (string, string, int) {
+	return func(args ...string) (string, string, int) {
+		lifecycle, err := newDelegationLifecycle(root)
+		if err != nil {
+			return "", err.Error(), 1
+		}
+		var diagnostics bytes.Buffer
+		result := lifecycle.Run(context.Background(), delegateLifecycleRequest(delegation.EnvFromEnviron(os.LookupEnv), os.Stdin, &diagnostics), args)
+		return string(result.Stdout), diagnostics.String(), result.ExitCode
+	}
+}
+
+// delegateBreachStop is the steward tick's breach-stop custodian: the
+// lifecycle's stop-custodian entry run in this (steward) process, its
+// combined report returned.
+func delegateBreachStop(root string) func(string, uint64) (string, error) {
+	run := delegateInProcess(root)
+	return func(goalID string, revision uint64) (string, error) {
+		stdout, stderr, code := run("__breach-stop-goal", "--goal", goalID, "--revision", strconv.FormatUint(revision, 10))
+		if code != 0 {
+			return stdout + stderr, fmt.Errorf("exit status %d", code)
+		}
+		return stdout + stderr, nil
+	}
+}
+
+// delegateCancel is the stop transition's job cancel: the delegate
+// boundary's cancel form run in this process against the installation.
+func delegateCancel(installation string) func(string) (string, error) {
+	return func(job string) (string, error) {
+		var stdout, stderr bytes.Buffer
+		code := runDelegateAt(installation, []string{"--cancel", job}, &stdout, &stderr)
+		output := stdout.String() + stderr.String()
+		if code != 0 {
+			return output, fmt.Errorf("exit status %d", code)
+		}
+		return output, nil
+	}
+}
+
+// newDelegationLifecycle composes the lifecycle over the real owners.
+func newDelegationLifecycle(root string) (*delegation.Lifecycle, error) {
+	engine := delegationEngine(root)
+	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: root, Engine: engine, Host: engineHost{}})
+	if err != nil {
+		return nil, err
+	}
+	return delegation.New(delegation.Config{Root: root, Engine: engine}, ports)
+}
+
+// delegationEngine is the installation's engine the lifecycle launches and
+// records: METASYSTEM_BIN when set, else the installation's own.
+func delegationEngine(root string) string {
+	if engine := os.Getenv("METASYSTEM_BIN"); engine != "" {
+		return engine
+	}
+	return filepath.Join(root, "bin", "metasystem")
+}
+
+// absoluteDelegatePaths resolves the file arguments of a normalized request
+// against dir, where the retired script ran.
+func absoluteDelegatePaths(args []string, dir string) []string {
+	out := append([]string(nil), args...)
+	for index := 0; index+1 < len(out); index++ {
+		switch out[index] {
+		case "--brief", "--message", "--outputs", "--workspace":
+			if !filepath.IsAbs(out[index+1]) {
+				out[index+1] = filepath.Join(dir, out[index+1])
+			}
 		}
 	}
-	environment = append(environment,
-		"METASYSTEM_DELEGATE_INTERNAL=1",
-		"METASYSTEM_DELEGATE_OUTCOME_FILE="+outcomePath,
-	)
-	if claimCapability != "" {
-		environment = append(environment, delegateClaimCapabilityEnv+"="+claimCapability)
-	}
-	return environment
+	return out
 }
 
 func delegateInternalRefusalDetail(stderr string, runErr error, exitCode int) string {
@@ -183,9 +343,9 @@ func delegateInternalRefusalDetail(stderr string, runErr error, exitCode int) st
 }
 
 // delegateSelftestInternalAuthorized keeps the fixed self-test grammar behind
-// its two actual orchestrators. The environment marker is necessary but not
-// sufficient: the live parent must also be the same binary's self-test verb or
-// the repository's fixed fake-adapter self-test script.
+// its actual orchestrator. The environment marker is necessary but not
+// sufficient: the live parent must also be the same binary's
+// delegate-supervisor self-test for this installation.
 func delegateSelftestInternalAuthorized(root string) bool {
 	if os.Getenv("METASYSTEM_DELEGATE_SELFTEST_INTERNAL") != "1" {
 		return false
@@ -205,16 +365,17 @@ func delegateSelftestInternalAuthorized(root string) bool {
 		return false
 	}
 	executable = resolvedDelegatePath(executable)
-	if executable == self && len(exact.Argv) >= 3 && exact.Argv[1] == "adapter" && exact.Argv[2] == "selftest-run" {
-		return true
+	if executable != self {
+		return false
 	}
-	fakeAdapter := resolvedDelegatePath(filepath.Join(root, "scripts", "agents", "adapters", "fake.sh"))
-	for index := 0; index+1 < len(exact.Argv) && index < 2; index++ {
-		if resolvedDelegatePath(exact.Argv[index]) == fakeAdapter && exact.Argv[index+1] == "selftest" {
-			return filepath.Base(executable) == "bash"
-		}
+	// The self-test orchestrator is the same binary's delegate-supervisor
+	// entry running RUNTIME selftest for this installation root.
+	args := exact.Argv[1:]
+	if len(args) > 0 && args[0] == "internal" {
+		args = args[1:]
 	}
-	return false
+	return len(args) >= 5 && args[0] == runtimes.SupervisorEntry && args[2] == "selftest" &&
+		args[3] == "--root" && resolvedDelegatePath(args[4]) == resolvedDelegatePath(root)
 }
 
 func resolvedDelegatePath(path string) string {

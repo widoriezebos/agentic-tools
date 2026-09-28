@@ -26,7 +26,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type goalSyncEnrollmentReader struct {
@@ -70,14 +69,9 @@ func (r goalSyncEnrollmentReader) SessionLeader(int64) (int64, error) {
 
 func goalSyncTerminalReader(t *testing.T, root, terminalID string) goalSyncEnrollmentReader {
 	t.Helper()
-	adapters := filepath.Join(root, "scripts", "agents", "adapters")
-	if err := os.MkdirAll(adapters, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	adapter := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-an-attended-human-shell'\n"
-	if err := testexec.WriteFile(filepath.Join(adapters, "human-fixture.sh"), []byte(adapter), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// The ancestry is classified against the engine registry's runtime
+	// signatures; the installation needs no adapter script.
+	_ = root
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe enrollment fixture process: state=%s err=%v", state, err)

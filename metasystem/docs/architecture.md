@@ -27,9 +27,10 @@ fixture drivers — remains in scripts, because that is what scripts are
 for. A Go programmer must never read the engine and find a shell script
 wearing Go syntax; a script must never make a decision the engine
 owns. In practice: `scripts/agents/*.sh` launch, wait, and wire
-environments, and call back into engine verbs at every decision point
-(`dispatch.sh` is the largest example — the delegate-job choreography
-stays shell, every verdict inside it is a verb).
+environments, and call back into engine verbs at every decision point.
+The delegate-job choreography that once lived in `dispatch.sh` is Go now
+(`internal/delegation`, verbs-object-action U6b): a composition package
+above the owners, reached through `metasystem internal delegate`.
 
 ## Runtime agnosticism
 
@@ -48,9 +49,11 @@ sanctioned seams as declarations the core consumes:
   seam-locally into their owner package's typed table; the registry
   only declares what is EXPECTED, and a conformance test joins the two
   both ways.
-- `scripts/agents/adapters/*.sh` (with their runtime-owned JSON
-  assets), `scripts/agents/hosts/*.sh`, per-skill runtime profiles,
-  and `scripts/enforcement/<runtime>-*.json` — the shell seams.
+- `internal/adapter/supervisor/<runtime>.go` — each built-in runtime's
+  operations (describe, probe, selftest, prepare, observe, finalize,
+  repair, cancel) behind the one runtime interface the shared delegate
+  round and host turn call; per-skill runtime profiles and
+  `scripts/enforcement/<runtime>-*.json` remain data seams.
 
 Sanctioned appearances of runtime names outside seam files: (a)
 provenance comments naming the critic or incident behind a decision,

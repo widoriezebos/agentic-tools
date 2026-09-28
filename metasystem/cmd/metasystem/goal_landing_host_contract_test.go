@@ -33,11 +33,11 @@ func TestGoalLandingHostContractRetainsPriorGroupsAndGoGate(t *testing.T) {
 		if group.Phase == "" || group.EnvironmentMode != "inherit" {
 			t.Fatalf("group %s lost phase or inherited environment", group.ID)
 		}
-		if group.ID != "refusal-register-standard" && group.ID != "fast-static-build" && group.ID != "policy-canary" && group.ID != "adapter-canary" && group.ID != "command-interface-smoke" && group.ID != "verb-ratchet" && group.Phase != "acceptance" {
+		if group.ID != "refusal-register-standard" && group.ID != "fast-static-build" && group.ID != "policy-canary" && group.ID != "adapter-canary" && group.ID != "command-interface-smoke" && group.ID != "verb-ratchet" && group.ID != "delegation-layering" && group.Phase != "acceptance" {
 			t.Fatalf("group %s entered admission outside the reviewed static reproof and canary floor", group.ID)
 		}
 	}
-	for _, id := range []string{"refusal-register-standard", "fast-static-build", "policy-canary", "adapter-canary", "command-interface-smoke", "verb-ratchet"} {
+	for _, id := range []string{"refusal-register-standard", "fast-static-build", "policy-canary", "adapter-canary", "command-interface-smoke", "verb-ratchet", "delegation-layering"} {
 		if ids[id].Phase != "admission" {
 			t.Fatalf("%s must be admission", id)
 		}
@@ -142,51 +142,11 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			}
 		}
 	}
-	currentSurfaces := map[string]testpolicy.Surface{}
-	for _, surface := range current.Surfaces {
-		currentSurfaces[surface.ID] = surface
-	}
-	// The landing path's shell beds retired into the landing-path-standard
-	// Go group (U5): a surface that selected a retired bed selects the
-	// group instead, and the beds' own surfaces go with them.
-	landingBeds := map[string]bool{"section/land-fixtures": true, "section/pre-commit-guard-fixtures": true}
-	replaceBeds := func(names []string) []string {
-		var out []string
-		for _, name := range names {
-			if landingBeds[name] {
-				name = "landing-path-standard"
-			}
-			if !slices.Contains(out, name) {
-				out = append(out, name)
-			}
-		}
-		return out
-	}
-	retiredSurfaces := map[string]bool{"land-fixture": true, "pre-commit-guard-fixture": true}
-	for _, old := range previous.Surfaces {
-		now, ok := currentSurfaces[old.ID]
-		if !ok && retiredSurfaces[old.ID] {
-			continue
-		}
-		if !ok {
-			t.Errorf("legacy surface %s disappeared", old.ID)
-			continue
-		}
-		containsAll(old.ID+" standard", now.Standard, replaceBeds(old.Standard))
-		containsAll(old.ID+" deep", now.Deep, replaceBeds(old.Deep))
-		containsAll(old.ID+" critical", now.Critical, replaceBeds(old.Critical))
-		containsAll(old.ID+" cross-cutting", now.CrossCutting, replaceBeds(old.CrossCutting))
-	}
-	containsAll("always canary", current.Always.Canary, previous.Always.Canary)
-	containsAll("always standard", current.Always.Standard, previous.Always.Standard)
-	containsAll("unknown", current.Unknown, previous.Unknown)
-	currentGroups := map[string]testpolicy.Group{}
-	for _, group := range current.Groups {
-		currentGroups[group.ID] = group
-	}
 	// A retired fixture section may leave the contract only when every one of
 	// its scenarios was ported to named Go tests that a replacement group,
 	// itself on the cadence, discovers. Only these exact sections qualify.
+	// Empty tests means the replacement group's own named tests are the
+	// port.
 	retiredSections := map[string]struct {
 		replacement string
 		tests       []string
@@ -213,7 +173,51 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			"TestGuardNewPlanNeedsAcknowledgment",
 			"TestGuardRefusesPatchBackups",
 		}},
+		// goal-cli-fixtures.sh moved into the goal CLI Go tests (verbs-object-action U7b part 2).
+		"section/goal-cli-fixtures": {replacement: "goal-cli-standard"},
 	}
+	currentGroups := map[string]testpolicy.Group{}
+	for _, group := range current.Groups {
+		currentGroups[group.ID] = group
+	}
+	// retiredName is a legacy selection reference after its section's port:
+	// the replacement group once the section left the contract.
+	retiredNames := func(names []string) []string {
+		out := make([]string, 0, len(names))
+		for _, name := range names {
+			if retired, ok := retiredSections[name]; ok {
+				if _, still := currentGroups[name]; !still {
+					name = retired.replacement
+				}
+			}
+			out = append(out, name)
+		}
+		return out
+	}
+	currentSurfaces := map[string]testpolicy.Surface{}
+	for _, surface := range current.Surfaces {
+		currentSurfaces[surface.ID] = surface
+	}
+	// The landing path's shell beds retired into the landing-path-standard
+	// Go group (U5), and the beds' own surfaces went with them.
+	retiredSurfaces := map[string]bool{"land-fixture": true, "pre-commit-guard-fixture": true}
+	for _, old := range previous.Surfaces {
+		now, ok := currentSurfaces[old.ID]
+		if !ok && retiredSurfaces[old.ID] {
+			continue
+		}
+		if !ok {
+			t.Errorf("legacy surface %s disappeared", old.ID)
+			continue
+		}
+		containsAll(old.ID+" standard", now.Standard, retiredNames(old.Standard))
+		containsAll(old.ID+" deep", now.Deep, retiredNames(old.Deep))
+		containsAll(old.ID+" critical", now.Critical, retiredNames(old.Critical))
+		containsAll(old.ID+" cross-cutting", now.CrossCutting, retiredNames(old.CrossCutting))
+	}
+	containsAll("always canary", current.Always.Canary, previous.Always.Canary)
+	containsAll("always standard", current.Always.Standard, retiredNames(previous.Always.Standard))
+	containsAll("unknown", current.Unknown, previous.Unknown)
 	requiredCadence := make([]string, 0, len(previous.Cadence))
 	for _, name := range previous.Cadence {
 		if retired, ok := retiredSections[name]; ok {
@@ -233,8 +237,13 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 				continue
 			}
 			probe := replacement
-			if probe.Tests, err = json.Marshal(retired.tests); err != nil {
-				t.Fatal(err)
+			if len(retired.tests) != 0 {
+				if probe.Tests, err = json.Marshal(retired.tests); err != nil {
+					t.Fatal(err)
+				}
+			} else if string(probe.Tests) == `"all"` || len(probe.Tests) == 0 {
+				t.Errorf("retired section %s: replacement %s names no ported tests", old.ID, retired.replacement)
+				continue
 			}
 			probeContract := testpolicy.Contract{SchemaVersion: current.SchemaVersion, Groups: []testpolicy.Group{probe}}
 			if err := proofrun.CheckNativeDiscovery(t.Context(), projectRoot, installation, probeContract, os.Environ()); err != nil {

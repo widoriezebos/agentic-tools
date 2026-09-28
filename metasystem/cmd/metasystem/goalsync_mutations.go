@@ -2998,7 +2998,15 @@ func runGoalExtendBudget(args []string) int {
 }
 
 func runGoalExtendBudgetWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, reads dispatchcore.ProofAdmissionReads) int {
+	return goalExtendBudgetTo(args, commandNow, dependencies, reads, os.Stdout, os.Stderr)
+}
+
+// goalExtendBudgetTo is goal extend-budget onto the caller's streams; the
+// delegation lifecycle calls it in-process with its own supplied caller in
+// dependencies (design 6.2).
+func goalExtendBudgetTo(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, reads dispatchcore.ProofAdmissionReads, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("goal extend-budget", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	revision := flags.Uint64("revision", 0, "exact accepted goal revision")
@@ -3008,54 +3016,62 @@ func runGoalExtendBudgetWithInputs(args []string, commandNow func(string) (time.
 	destructiveReach := flags.String("destructive-reach", "", "MECHANICAL, DESIGN-BEARING, or DESTRUCTIVE-REACH")
 	lineage := flags.String("lineage", "", "this coordinator's lineage (or export METASYSTEM_OWNER_LINEAGE)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *revision == 0 || *proposedCap == 0 || *role == "" || *dispatchMode == "" || *destructiveReach == "" {
-		fmt.Fprintln(os.Stderr, "goal extend-budget needs --id, --revision, a positive --proposed-cap, --role, --dispatch-mode, and --destructive-reach")
+		fmt.Fprintln(stderr, "goal extend-budget needs --id, --revision, a positive --proposed-cap, --role, --dispatch-mode, and --destructive-reach")
 		return 2
 	}
 	if !converted(*root) {
-		fmt.Fprintln(os.Stderr, "goal extend-budget works the synced backlog; this checkout still carries the legacy ledger")
+		fmt.Fprintln(stderr, "goal extend-budget works the synced backlog; this checkout still carries the legacy ledger")
 		return 1
 	}
 	req, err := syncReqWithProofAtWithDependencies("extend-budget", *root, "", *lineage, nil, commandNow, dependencies)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	held, err := goalrevision.Acquire(*root, *id, *revision, "goal-extend-budget")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "goal extend-budget could not acquire the goal-revision lock:", err)
+		fmt.Fprintln(stderr, "goal extend-budget could not acquire the goal-revision lock:", err)
 		return 1
 	}
 	defer held.Release()
 	verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatchWithReads(*root, *id, *revision, *proposedCap, req.Now, *role, *dispatchMode, reads, dispatchcore.HazardClass(*destructiveReach))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	if !verdict.Refused() {
-		fmt.Fprintf(os.Stderr, "goal %s revision %d is admitted; there is no budget refusal to extend\n", *id, *revision)
+		fmt.Fprintf(stderr, "goal %s revision %d is admitted; there is no budget refusal to extend\n", *id, *revision)
 		return 1
 	}
 	if verdict.PolicyRefusal != "" {
-		fmt.Fprintln(os.Stderr, verdict.PolicyRefusal)
+		fmt.Fprintln(stderr, verdict.PolicyRefusal)
 		return 1
 	}
 	if verdict.LiveStopReason != "" || verdict.Extension == nil {
 		for _, line := range dispatchcore.FormatGoalRevisionAdmission(verdict) {
-			fmt.Fprintln(os.Stderr, line)
+			fmt.Fprintln(stderr, line)
 		}
 		if verdict.LiveStopReason != "" {
-			fmt.Fprintf(os.Stderr, "goal %s revision %d names a live stop, not an extendable exhaustion\n", *id, *revision)
+			fmt.Fprintf(stderr, "goal %s revision %d names a live stop, not an extendable exhaustion\n", *id, *revision)
 		} else {
-			fmt.Fprintf(os.Stderr, "goal %s revision %d has no consumption-earned budget extension offer\n", *id, *revision)
+			fmt.Fprintf(stderr, "goal %s revision %d has no consumption-earned budget extension offer\n", *id, *revision)
 		}
 		return 1
 	}
 	if err := verdict.Extension.Validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	res, err := goal.ExtendBudget(req, *id, verdict.Extension.GoalOffer())
-	return printSyncResult(res, err)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	writeJSONLine(stdout, stderr, map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+	if res.Outcome != goal.OutcomeConfirmed {
+		return 1
+	}
+	return 0
 }
 
 func runGoalSetBudgetWithAuthority(args []string, prove goalAuthorityProver) int {

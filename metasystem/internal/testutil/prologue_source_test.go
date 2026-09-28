@@ -32,7 +32,6 @@ func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
 		{name: "hang", path: filepath.Join(root, "scripts", "agents", "fixture-bed-scenarios-fixtures.sh")},
 		{name: "stopped", path: filepath.Join(root, "scripts", "agents", "suite-progress-fixtures.sh")},
 		{name: "detached", path: filepath.Join(root, "scripts", "agents", "suite-progress-fixtures.sh")},
-		{name: "fake host", path: filepath.Join(root, "scripts", "agents", "hosts", "fake.sh")},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			contents, readErr := os.ReadFile(fixture.path)
@@ -40,9 +39,6 @@ func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
 				t.Fatal(readErr)
 			}
 			expected := ShellPrologue
-			if fixture.name == "fake host" {
-				expected = strings.ReplaceAll(ShellPrologue, "exec /bin/sh", "exec /bin/bash")
-			}
 			if !strings.Contains(string(contents), expected) {
 				t.Fatalf("%s prologue differs from ShellPrologue", fixture.path)
 			}
@@ -65,8 +61,10 @@ func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
 	if !strings.Contains(suite, "exec 3<\"$METASYSTEM_FIXTURE_LEASH\"\n      read -r _ <&3") {
 		t.Fatal("suite-progress detached fixture does not block on its leash")
 	}
-	fake := readFixtureSource(t, filepath.Join(root, "scripts", "agents", "hosts", "fake.sh"))
-	if !strings.Contains(fake, `exec "$ms" util hold --tag "$instance_tag"`) {
+	// The fake host's hold (formerly hosts/fake.sh's `exec "$ms" util hold`)
+	// replaces the host process with the engine's leash-bound hold.
+	fake := readFixtureSource(t, filepath.Join(root, "internal", "adapter", "supervisor", "fake_host.go"))
+	if !strings.Contains(fake, `syscall.Exec(d.Engine, append([]string{d.Engine, "util", "hold"}, flags...)`) || !strings.Contains(fake, `"--tag", t.Tag`) {
 		t.Fatal("fake host does not delegate its leash-bound lifetime to util hold")
 	}
 }

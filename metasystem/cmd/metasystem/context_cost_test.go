@@ -117,7 +117,7 @@ func TestTurnVerdictPrintsTheContextLine(t *testing.T) {
 
 // contextLineRidesTheTrailer: the line sits directly above the full-verdict
 // path, never above the ladder the Stop beds read by position
-// (goal-cli-fixtures.sh:1082-1090 and :1121-1127).
+// (TestGoalCLIBrainStopSeeded and TestGoalCLIBrainStopCorrupt).
 func contextLineRidesTheTrailer(display, want string) bool {
 	lines := strings.Split(display, "\n")
 	return len(lines) >= 2 && lines[0] != want && lines[len(lines)-2] == want &&

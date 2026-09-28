@@ -34,7 +34,7 @@ import (
 // into a follow-up, close a finished chain and land a goal. Each one resolves
 // the named subject to its recorded evidence and hands it to the existing
 // owner: the delegate boundary for critic dispatch and follow-ups, the goal
-// branch read for a unit commit, dispatch.sh for the whole chain close, and
+// branch read for a unit commit, the delegate lifecycle for the whole chain close, and
 // the batch join or the hand land-prep and land-push for landing. The owners
 // keep their authority, proof and retry identity; these commands never judge
 // a finding, certify a standalone result or conclude a goal.
@@ -219,6 +219,9 @@ type intentDeliveryOwners struct {
 	// landCarried runs one carried landing through the landing path and
 	// returns what it printed and its exit status.
 	landCarried func(landpath.LandRequest) intentProcessResult
+	// closeOwner runs the delegate lifecycle's close command (the whole
+	// chain close) for an installation root.
+	closeOwner  func(root string, args []string) intentProcessResult
 	executable  func() (string, error)
 	branchRead  func([]string) (branch.BranchReadResult, int, error)
 	branchState func(root, goalID string) (intentBranchState, error)
@@ -269,6 +272,7 @@ func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 		recordWriter: recordWriterPreflight,
 		process:      runIntentOwnerProcess,
 		landCarried:  landCarriedInProcess,
+		closeOwner:   inProcessCloseOwner,
 		executable:   os.Executable,
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 			return goalBranchReadRun(args, goalBranchReadDependencies{})
@@ -301,6 +305,12 @@ func (inv *intentInvocation) delivery() *intentDeliveryOwners {
 		inv.owners.delivery = defaultIntentDeliveryOwners()
 	}
 	return inv.owners.delivery
+}
+
+// inProcessCloseOwner runs the delegate lifecycle's close in this process.
+func inProcessCloseOwner(root string, args []string) intentProcessResult {
+	stdout, stderr, code := delegateInProcess(root)(args...)
+	return intentProcessResult{stdout: []byte(stdout), stderr: []byte(stderr), code: code}
 }
 
 // runIntentOwnerProcess runs one owner with its own output pipes; the
@@ -1389,11 +1399,15 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 	if problem := inv.rebindCritiqueBudget(targets, job); problem != nil {
 		return *problem
 	}
-	argv := []string{filepath.Join(inv.layout.InstallationRoot, "scripts", "agents", "dispatch.sh"), "close", "--job", job}
+	argv := []string{"close", "--job", job}
 	if evidence := inv.input.text("evidence"); evidence != "" {
 		argv = append(argv, "--reconcile-evidence", evidence)
 	}
-	ran := inv.delivery().process(intentProcess{argv: argv, dir: inv.layout.InstallationRoot})
+	closeOwner := inv.delivery().closeOwner
+	if closeOwner == nil {
+		closeOwner = inProcessCloseOwner
+	}
+	ran := closeOwner(inv.layout.InstallationRoot, argv)
 	after, readErr := inv.jobRecord(job)
 	closed := false
 	if readErr == nil {

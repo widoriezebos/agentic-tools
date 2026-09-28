@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
@@ -114,13 +115,37 @@ func TestKillable(t *testing.T) {
 }
 
 func TestMatchShapeRequiresAllIncludes(t *testing.T) {
-	// "dispatch.sh" alone must not match the reaper shape without its
-	// "reap" subcommand — dispatch runs many verbs that are not
-	// supervision components.
-	argv := []string{"bash", "/repo/scripts/agents/dispatch.sh", "dispatch", "--instance-tag", tag}
+	// "metasystem mission" alone must not match the run-loop shape without
+	// its "run-loop" subcommand: the mission family runs many verbs that
+	// are not the detached loop.
+	argv := []string{"/repo/bin/metasystem", "mission", "status", "--instance-tag", tag}
 	if _, ok := MatchShape(DefaultShapes(), argv, tag); ok {
-		t.Fatal("a non-reap dispatch verb matched the reaper shape")
+		t.Fatal("a non-run-loop mission verb matched the run-loop shape")
 	}
+}
+
+// The retired dispatch.sh's standing shell reaper no longer exists (the
+// delegate lifecycle reaps in-process, lease-held, single-shot), so no
+// shape recognizes a process by the script's name (design 6.6).
+func TestNoShapeRecognizesTheRetiredDispatchScript(t *testing.T) {
+	t.Parallel()
+	for _, shape := range DefaultShapes() {
+		for _, include := range shape.Includes {
+			if include == "dispatch.sh" {
+				t.Fatalf("shape %s still recognizes the retired dispatch.sh", shape.Name)
+			}
+		}
+	}
+	argv := []string{"bash", "/repo/scripts/agents/dispatch.sh", "reap", "--instance-tag", tag}
+	if _, ok := MatchShape(DefaultShapes(), argv, tag); ok {
+		t.Fatal("a dispatch.sh reap argv still proves ownership")
+	}
+}
+
+// supervisorArgv is the delegate-supervisor argv the launcher builds, under
+// the engine /repo/bin/metasystem.
+func supervisorArgv(runtime, verb string, flags ...string) []string {
+	return append([]string{"/repo/bin/metasystem"}, runtimes.SupervisorArgs(runtime, verb, flags...)...)
 }
 
 func TestGroupOwnershipShapesRequireTheTagPosition(t *testing.T) {
@@ -130,24 +155,34 @@ func TestGroupOwnershipShapesRequireTheTagPosition(t *testing.T) {
 		argv []string
 	}{
 		{
-			name: "adapter supervisor dispatch",
-			argv: []string{"bash", "/repo/scripts/agents/adapters/codex.sh", "dispatch", "--job", "job-a", "--start-gate", "/tmp/gate", "--instance-tag", tag},
+			name: "delegate supervisor dispatch",
+			argv: supervisorArgv("codex", runtimes.SupervisorDispatch, "--root", "/repo", "--job", "job-a", "--start-gate", "/tmp/gate", "--instance-tag", tag),
 		},
 		{
-			name: "adapter supervisor follow-up behind the execution guard",
-			argv: []string{"bash", "/repo/scripts/agents/checkout-execution-guard.sh", "run-member", "--", "/repo/scripts/agents/adapters/codex.sh", "follow-up", "--job", "job-b", "--instance-tag=" + tag},
+			name: "delegate supervisor follow-up behind the execution guard",
+			argv: append([]string{"bash", "/repo/scripts/agents/checkout-execution-guard.sh", "run-member", "--root", "/repo", "--engine", "/repo/bin/metasystem", "--"},
+				supervisorArgv("codex", runtimes.SupervisorFollowUp, "--root", "/repo", "--job", "job-b", "--instance-tag", tag)...),
 		},
 		{
-			name: "claude adapter supervisor",
-			argv: []string{"bash", "/repo/scripts/agents/adapters/claude.sh", "dispatch", "--job", "job-c", "--instance-tag", tag},
+			name: "delegate supervisor behind the delegate guard member wrapper",
+			argv: append([]string{"/repo/bin/metasystem", "internal", "delegate", "__run-member", "--root", "/repo", "--"},
+				supervisorArgv("codex", runtimes.SupervisorFollowUp, "--root", "/repo", "--job", "job-b", "--instance-tag", tag)...),
 		},
 		{
-			name: "devin adapter supervisor",
-			argv: []string{"bash", "/repo/scripts/agents/adapters/devin.sh", "follow-up", "--job", "job-d", "--instance-tag", tag},
+			name: "claude delegate supervisor",
+			argv: supervisorArgv("claude", runtimes.SupervisorDispatch, "--root", "/repo", "--job", "job-c", "--instance-tag", tag),
 		},
 		{
-			name: "fake adapter supervisor dispatch",
-			argv: []string{"bash", "/repo/scripts/agents/adapters/fake.sh", "dispatch", "--job", "job-e", "--start-gate", "/tmp/gate", "--instance-tag", tag},
+			name: "devin delegate supervisor",
+			argv: supervisorArgv("devin", runtimes.SupervisorFollowUp, "--root", "/repo", "--job", "job-d", "--instance-tag", tag),
+		},
+		{
+			name: "fake delegate supervisor dispatch",
+			argv: supervisorArgv("fake", runtimes.SupervisorDispatch, "--root", "/repo", "--job", "job-e", "--start-gate", "/tmp/gate", "--instance-tag", tag),
+		},
+		{
+			name: "codex host start-turn",
+			argv: supervisorArgv("codex", runtimes.SupervisorHostTurn, "--root", "/repo", "--instance-tag", tag),
 		},
 		{
 			name: "codex cli launch",
@@ -174,6 +209,17 @@ func TestGroupOwnershipShapesRequireTheTagPosition(t *testing.T) {
 				t.Fatal("a matching adapter shape must carry a report label")
 			}
 		})
+	}
+
+	// The retired shell adapter argv is no longer a supervisor shape.
+	retired := []string{"bash", "/repo/scripts/agents/adapters/codex.sh", "dispatch", "--job", "job-a", "--instance-tag", tag}
+	if shape, ok := MatchShape(shapes, retired, tag); ok {
+		t.Fatalf("a retired adapter-script argv still proves ownership through %s", shape.Name)
+	}
+	// A supervisor argv carrying another round's tag proves nothing.
+	foreign := supervisorArgv("codex", runtimes.SupervisorDispatch, "--job", "job-a", "--instance-tag", "some-other-tag")
+	if _, ok := MatchShape(shapes, foreign, tag); ok {
+		t.Fatal("a supervisor argv with a foreign tag matched")
 	}
 
 	rgLeader := []string{"rg", tag, "/repo"}

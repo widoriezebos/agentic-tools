@@ -358,12 +358,9 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 		}
 		writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", name), data, 0o644)
 	}
-	// The batteries the commit owner re-proves are carried stubs, and its
-	// proof engine is the bed's built engine, copied by the bed's
-	// go-build.sh: this bed proves the carried transport, not the suites.
-	for _, battery := range []string{"agents/dispatch-fixtures.sh", "agents/goal-cli-fixtures.sh"} {
-		writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", filepath.FromSlash(battery)), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
-	}
+	// The commit owner's proof engine is the bed's built engine, copied by
+	// the bed's go-build.sh: this bed proves the carried transport, not the
+	// suites.
 	gate := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == --proof-out && -n \"${2:-}\" ]]\ncp %q \"$2\"\n", engine)
 	writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", "devgate-static.sh"), []byte(gate), 0o755)
 	build := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == --trimpath && \"${2:-}\" == --out && -n \"${3:-}\" ]]\ncp %q \"$3\"\nchmod +x \"$3\"\n", engine)

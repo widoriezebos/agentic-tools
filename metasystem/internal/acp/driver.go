@@ -25,7 +25,7 @@ import (
 )
 
 // DefaultHandshakeTimeout is the one handshake default, shared with
-// the acp turn verb's flag so the two surfaces cannot drift.
+// the ACP file turn (RunFileTurn)'s flag so the two surfaces cannot drift.
 const DefaultHandshakeTimeout = 120 * time.Second
 
 // SpoolCapacity bounds the turn's event spool by COUNT, and
@@ -93,7 +93,7 @@ type nativeSession struct {
 // Quiescer is the evidence owner's finalization surface: after the
 // owner closes the pipes, Quiesce waits for the connection's read
 // loop to stop (bounded by ctx) and reports journal health — the
-// same Done-wait + JournalErr sampling the acp turn verb performs.
+// same Done-wait + JournalErr sampling the ACP file turn (RunFileTurn) performs.
 // The native session implements it; the owner type-asserts.
 type Quiescer interface {
 	Quiesce(ctx context.Context) error
