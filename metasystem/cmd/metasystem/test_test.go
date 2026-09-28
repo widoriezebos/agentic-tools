@@ -369,6 +369,48 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 			t.Fatalf("executed allowance %d lost its retained proof: workers=%d groups=%+v", prepared.Workers, result.Workers, result.Groups)
 		}
 	})
+	t.Run("automatic allowance is the run's reading, not the verifier's", func(t *testing.T) {
+		// The run and the verification each read available memory. The run
+		// read enough for the recorded allowance; the verification reads
+		// less. It checks the run, so it must accept the unchanged tree.
+		automatic := prepared
+		automatic.ConfPath = filepath.Join(t.TempDir(), "metasystem.conf")
+		writeTestingFixtureFile(t, automatic.ConfPath, []byte("metasystem.runtimes=fake\n"), 0o644)
+		reading := func(workers uint64) func() (uint64, string, bool) {
+			return func() (uint64, string, bool) {
+				return testingWorkerMemoryHeadroom + workers*testingWorkerMemoryBytes, "fixture", true
+			}
+		}
+		previous := testingAvailableMemory
+		t.Cleanup(func() { testingAvailableMemory = previous })
+		testingAvailableMemory = reading(uint64(prepared.Workers))
+		atRun, err := resolveProofRunLimits(automatic.ConfPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if atRun.workers != prepared.Workers || !atRun.automaticWorkers {
+			t.Logf("this host's automatic ceiling %d cannot choose the recorded allowance %d", atRun.automaticWorkerCeiling, prepared.Workers)
+			return
+		}
+		testingAvailableMemory = reading(uint64(prepared.Workers - 1))
+		if atVerify, err := resolveProofRunLimits(automatic.ConfPath); err != nil || atVerify.workers == prepared.Workers {
+			t.Fatalf("the verifier's reading resolves %d workers (err=%v), want another allowance than %d", atVerify.workers, err, prepared.Workers)
+		}
+		fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
+		fixture.queueBed(ordinaryProjectTree)
+		queueProjection()
+		result, err := verifyRetainedTestingPrepared(request, automatic, retainedTestingVerification{
+			clock: fixedClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+			workspace: workspace, candidateIO: fixture.dependency(), openCandidate: fixture.openBed,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !result.Delivery.Sufficient || result.Workers != prepared.Workers {
+			t.Fatalf("verification re-sampled memory and refused the run's proof: workers=%d want %d; missing=%v groups=%+v",
+				result.Workers, prepared.Workers, result.Delivery.MissingGroups, result.Groups)
+		}
+	})
 	for _, boundary := range []struct {
 		name       string
 		at         time.Time

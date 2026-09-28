@@ -1620,6 +1620,12 @@ type proofRunLimits struct {
 	concurrency      int
 	workers          int
 	admissionMaximum int
+	// automaticWorkers is set when testing.workers is unconfigured and the
+	// allowance came from this host's CPU and available-memory reading.
+	// automaticWorkerCeiling is the most that policy could choose here: the
+	// CPU candidate under any inherited ceiling. Memory only lowers it.
+	automaticWorkers       bool
+	automaticWorkerCeiling int
 }
 
 // defaultTestingConcurrency is how many groups of one stage run at once when
@@ -1727,8 +1733,12 @@ func resolveProofRunLimits(confPath string) (proofRunLimits, error) {
 	return resolveProofRunLimitsWithEnvironment(confPath, os.LookupEnv)
 }
 
+// testingAvailableMemory is the available-memory reading behind the automatic
+// testing allowance; tests inject readings here.
+var testingAvailableMemory = hostload.AvailableMemory
+
 func resolveProofRunLimitsWithEnvironment(confPath string, lookup func(string) (string, bool)) (proofRunLimits, error) {
-	return resolveProofRunLimitsWithInputs(confPath, lookup, runtime.GOMAXPROCS(0), runtime.NumCPU(), hostload.AvailableMemory)
+	return resolveProofRunLimitsWithInputs(confPath, lookup, runtime.GOMAXPROCS(0), runtime.NumCPU(), testingAvailableMemory)
 }
 
 func validateProofRunLimits(confPath string) error {
@@ -1797,8 +1807,10 @@ func resolveProofRunLimitsWithInputs(confPath string, lookup func(string) (strin
 			workerValue = confirmedValue
 		}
 	}
+	automaticCeiling := 0
 	if !workersConfigured {
 		cpuWorkers := defaultTestingWorkers(capturedGOMAXPROCS, admission.Max)
+		automaticCeiling = cpuWorkers
 		availableBytes, available := uint64(0), false
 		if memoryProbe != nil {
 			availableBytes, _, available = memoryProbe()
@@ -1815,6 +1827,9 @@ func resolveProofRunLimitsWithInputs(confPath string, lookup func(string) (strin
 			return proofRunLimits{}, fmt.Errorf("inherited %s must be a positive integer, got %q", proofrun.TestWorkersEnvironment, inherited)
 		}
 		workers = min(workers, ceiling)
+		if automaticCeiling > 0 {
+			automaticCeiling = min(automaticCeiling, ceiling)
+		}
 	}
 	return proofRunLimits{
 		silence:          time.Duration(silence) * time.Minute,
@@ -1824,6 +1839,9 @@ func resolveProofRunLimitsWithInputs(confPath string, lookup func(string) (strin
 		concurrency:      concurrency,
 		workers:          workers,
 		admissionMaximum: admission.Max,
+
+		automaticWorkers:       !workersConfigured,
+		automaticWorkerCeiling: automaticCeiling,
 	}, nil
 }
 
@@ -1943,6 +1961,21 @@ func runProofRunWatchdog(args []string) int {
 	flags.Var(&logs, "log", "watched output log (repeatable)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || (!*resourceCustody && *conf == "") {
 		return 2
+	}
+	// The sibling watchdog is started with stdio and no ExtraFiles, so every
+	// other descriptor it holds without close-on-exec was inherited from the
+	// launcher's ancestors by accident. On 2026-09-28 that was the Lima suite
+	// runner's flock descriptor (flock(1) runs its command with the lock
+	// descriptor open and inheritable, go test and the test binary pass it on
+	// because Go never sets close-on-exec on descriptors it inherited): an
+	// orphaned watchdog then held the lock and wedged every later suite run.
+	// The resource custodian receives its descriptors by number and keeps
+	// them.
+	if !*resourceCustody {
+		if err := closeInheritedDescriptorsAbove(2); err != nil {
+			fmt.Fprintln(os.Stderr, "proof-run watchdog:", err)
+			return 1
+		}
 	}
 	// Re-read the layered configuration in the sibling process immediately
 	// before watchdog startup. A conf.local or environment change between
