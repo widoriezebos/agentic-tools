@@ -430,6 +430,11 @@ func TestEnrollmentBuildSourceCheckSeparatesNotAnAncestorFromARepositoryFailure(
 
 func TestEngineSkewPathspecsAreTheEnrollmentSkewPaths(t *testing.T) {
 	got := EngineSkewPathspecs()
+	// The engine's data (protocol, landing and path policy) is compiled in
+	// under internal/, so the engine source trees are the whole skew.
+	if !reflect.DeepEqual(got, []string{"internal", "cmd"}) {
+		t.Fatalf("engine skew paths %v, want the engine source trees internal and cmd", got)
+	}
 	if !reflect.DeepEqual(got, enrollmentSkewPathspecs[:]) {
 		t.Fatalf("engine skew paths %v differ from the enrollment skew paths %v", got, enrollmentSkewPathspecs)
 	}

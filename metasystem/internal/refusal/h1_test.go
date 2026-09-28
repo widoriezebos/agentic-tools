@@ -4,14 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 )
-
-// forwardWindowRadius is how far from its site a guide row's message may
-// name its public command: the message and its format arguments.
-const forwardWindowRadius = 8
 
 var forwardForm = regexp.MustCompile(`^[a-z]+ [a-z][a-z-]*$`)
 
@@ -65,7 +60,7 @@ func TestH1EveryRowHasAStanding(t *testing.T) {
 			path, line = root, row.ForwardSite
 		}
 		if !forwardNamedNear(t, path, line, "metasystem "+row.Forward) {
-			t.Errorf("guide row %s: no message within %d lines of %s names metasystem %s", row.Code, forwardWindowRadius, line, row.Forward)
+			t.Errorf("guide row %s: no message inside %s names metasystem %s", row.Code, line, row.Forward)
 		}
 	}
 	if gaps > h1GuideDefectCeiling {
@@ -78,20 +73,18 @@ func TestH1EveryRowHasAStanding(t *testing.T) {
 
 func forwardNamedNear(t *testing.T, directory, site, needle string) bool {
 	t.Helper()
-	file, lineText, ok := strings.Cut(site, ":")
-	line, err := strconv.Atoi(lineText)
-	if !ok || err != nil || line < 1 {
-		t.Errorf("site %q does not name a positive line", site)
-		return false
-	}
-	data, err := os.ReadFile(filepath.Join(directory, filepath.FromSlash(file)))
+	data, err := os.ReadFile(filepath.Join(directory, filepath.FromSlash(SiteFile(site))))
 	if err != nil {
 		t.Errorf("read %s: %v", site, err)
 		return false
 	}
+	first, last, err := siteSpan(site, data)
+	if err != nil {
+		t.Errorf("site %q %v", site, err)
+		return false
+	}
 	lines := strings.Split(string(data), "\n")
-	first, last := max(0, line-1-forwardWindowRadius), min(len(lines), line+forwardWindowRadius)
-	return first < last && strings.Contains(strings.Join(lines[first:last], "\n"), needle)
+	return strings.Contains(strings.Join(lines[first-1:min(len(lines), last)], "\n"), needle)
 }
 
 // The witness fails on the shapes it exists to catch.

@@ -245,7 +245,6 @@ func TestP4ReapRecollectsAReturnDeliveredBeforeTheLoss(t *testing.T) {
 		returned, status string
 	}{{p4DeliveredReturn, "completed"}, {`{`, "failed"}} {
 		b := newBed(t)
-		b.installAsset("scripts/agents/schemas/design-critic.schema.json")
 		b.writeRecord("recollect-loss", map[string]any{"status": "running", "role": "design-critic", "round": 1,
 			"pid": 8201, "pgid": 8201, "sessionId": "fake-session", "requestedModel": "fake-model", "effectiveModel": "fake-model",
 			"startedAt": b.doubles.Clock.Now().Format(time.RFC3339), "capMin": 60})
@@ -426,47 +425,32 @@ func TestP4ReapRetriesAFailedMirrorIdempotently(t *testing.T) {
 	}
 }
 
-// L3241-3275 (the lifecycle's part): a post-wait reap keeps the chain's warm
-// build cache for the next round; a reap that finds every chain member
-// terminal removes it and keeps the worktree; a chain with a live member
-// keeps its cache.
-func TestP4ReapRemovesATerminalChainsBuildCacheOnly(t *testing.T) {
+// Nothing but the steward's trimmer removes a build cache (disk-lifetimes
+// A7, 3.3): every round of every chain builds in the one machine delegate
+// cache, so a reap, a post-wait reap, a reap sweep and a chain close leave
+// whatever a round wrote beside its worktree's git dir, and the worktree.
+func TestP4ReapNeverRemovesABuildCache(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
-	cacheOf := func(chain string) (string, string) {
-		worktree := filepath.Join(b.root, "artifacts", "agents", "worktrees", chain)
-		gitDir := filepath.Join(b.root, ".git", "worktrees", chain)
-		cache := filepath.Join(gitDir, "metasystem-build-cache", "go-cache")
-		b.writeFile(strings.TrimPrefix(filepath.Join(cache, "warm-cache-sentinel"), b.root+"/"), "created-by-round-1\n")
-		if err := os.MkdirAll(worktree, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		b.doubles.Git.Responses[worktree+"|rev-parse --absolute-git-dir"] = fake.GitResponse{Stdout: gitDir + "\n"}
-		return worktree, cache
+	worktree := filepath.Join(b.root, "artifacts", "agents", "worktrees", "cache-chain")
+	gitDir := filepath.Join(b.root, ".git", "worktrees", "cache-chain")
+	sentinel := filepath.Join(gitDir, "metasystem-build-cache", "go-cache", "warm-cache-sentinel")
+	b.writeFile(strings.TrimPrefix(sentinel, b.root+"/"), "created-by-round-1\n")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	worktree, cache := cacheOf("cache-chain")
+	b.doubles.Git.Responses[worktree+"|rev-parse --absolute-git-dir"] = fake.GitResponse{Stdout: gitDir + "\n"}
 	b.writeRecord("cache-chain", map[string]any{"status": "completed", "round": 1, "workspaceRoot": worktree})
 	b.writeRecord("cache-chain-r2", map[string]any{"status": "completed", "round": 2, "parentJob": "cache-chain", "workspaceRoot": worktree})
-	liveWorktree, liveCache := cacheOf("cache-live")
-	b.writeRecord("cache-live", map[string]any{"status": "completed", "round": 1, "workspaceRoot": liveWorktree})
-	b.writeRecord("cache-live-r2", map[string]any{"status": "running", "round": 2, "parentJob": "cache-live", "workspaceRoot": liveWorktree,
-		"pid": 8501, "pgid": 8501, "sessionId": "s", "startedAt": b.doubles.Clock.Now().Format(time.RFC3339), "capMin": 60})
-	b.doubles.Process.Tags[8501] = "tag-cache-live-r2"
 
 	requireExit(t, b.run("__reap-held", "--job", "cache-chain-r2", "--purpose", "post-wait"), 0, b.stderr.String())
-	if _, err := os.Stat(cache); err != nil {
-		t.Fatalf("a post-wait reap removed the chain cache the next round owns: %v", err)
-	}
-	requireExit(t, b.run("reap", "--job", "cache-live"), 0, b.stderr.String())
-	if _, err := os.Stat(liveCache); err != nil {
-		t.Fatalf("a chain with a live member lost its cache: %v", err)
-	}
 	requireExit(t, b.run("reap", "--job", "cache-chain"), 0, b.stderr.String())
-	if _, err := os.Stat(filepath.Dir(cache)); !os.IsNotExist(err) {
-		t.Fatalf("the reap of a terminal chain kept its build cache: %v", err)
+	requireExit(t, b.run("reap"), 0, b.stderr.String())
+	if data, err := os.ReadFile(sentinel); err != nil || string(data) != "created-by-round-1\n" {
+		t.Fatalf("a reap of a terminal chain removed a build cache: %q %v", data, err)
 	}
 	if _, err := os.Stat(worktree); err != nil {
-		t.Fatalf("the cache cleanup removed the worktree: %v", err)
+		t.Fatalf("the reap removed the worktree: %v", err)
 	}
 }
 

@@ -3,8 +3,6 @@ package launch
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -33,7 +31,7 @@ const (
 	DesignBaselineRequestsKey   = "launch.design.baseline.requests"
 	DesignBaselinePeakTokensKey = "launch.design.baseline.peak.tokens"
 	ShippedSeatWindowKey        = "launch.seat.window.shipped"
-	ShippedClaudeSettingsSource = "scripts/enforcement/claude-code-hooks.json"
+	ShippedClaudeSettingsSource = "internal/runtimes/enforcement/claude-code-hooks.json"
 )
 
 type Setting struct {
@@ -79,15 +77,9 @@ var settingDefaults = []Setting{
 	{Key: DesignRuntimeKey, Value: "claude", Source: "default"}, {Key: ReadRuntimeKey, Value: "claude", Source: "default"},
 }
 
-func LoadShippedSeatWindow(moduleRoot string, configured int64) (ShippedSeatWindow, error) {
-	path := filepath.Join(moduleRoot, filepath.FromSlash(ShippedClaudeSettingsSource))
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return ShippedSeatWindow{Source: "absent", DiffersFromConf: configured != 0}, nil
-	}
-	if err != nil {
-		return ShippedSeatWindow{}, err
-	}
+// LoadShippedSeatWindow reads the seat window the engine's shipped Claude
+// settings (runtimes.ShippedEnforcement("claude")) impose.
+func LoadShippedSeatWindow(data []byte, configured int64) (ShippedSeatWindow, error) {
 	var source struct {
 		AutoCompactWindow *int64 `json:"autoCompactWindow"`
 	}

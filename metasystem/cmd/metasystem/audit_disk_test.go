@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -12,14 +13,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
-// auditDiskTestMainAllowance names the one TestMain still allowed to allocate
-// a temp entry before testenv's custodian exists: the wait candidate, which
-// unit A9 of disk-lifetimes moves under custody and then removes from here.
-var auditDiskTestMainAllowance = map[string]bool{"cmd/metasystem/ambient_controls_test.go": true}
+// auditDiskTestMainAllowance names a TestMain still allowed to allocate a
+// temp entry before testenv's custodian exists: none since the wait
+// candidate moved under custody (disk-lifetimes A9).
+var auditDiskTestMainAllowance = map[string]bool{}
 
 const auditDiskTestenvImport = "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 
@@ -207,6 +206,194 @@ func TestAuditNoGoSourceSpellsTheLowercaseStampSentinel(t *testing.T) {
 	}
 	if len(sites) != 0 {
 		t.Fatalf("Go sources spell the lowercase stamp sentinel (use enginebuild's uppercase constant): %v", sites)
+	}
+}
+
+// auditDiskGoFiles parses every non-test Go file under the given
+// directories of the module, relative to the module root.
+func auditDiskGoFiles(t *testing.T, directories ...string) map[string]*ast.File {
+	t.Helper()
+	root := filepath.Join("..", "..")
+	files := map[string]*ast.File{}
+	for _, directory := range directories {
+		err := filepath.WalkDir(filepath.Join(root, directory), func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				if name := entry.Name(); name == "testdata" || strings.HasPrefix(name, ".") {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+			if err != nil {
+				return err
+			}
+			relative, _ := filepath.Rel(root, path)
+			files[filepath.ToSlash(relative)] = parsed
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", directory, err)
+		}
+	}
+	return files
+}
+
+// auditDiskGoCleanSites names every call or literal that assembles a `go
+// clean` argv: the literal "clean" beside the literal "go" or one of Go's
+// cache-clean flags.
+func auditDiskGoCleanSites(file *ast.File) int {
+	sites := 0
+	check := func(elements []ast.Expr) {
+		words := map[string]bool{}
+		for _, element := range elements {
+			if literal, ok := element.(*ast.BasicLit); ok && literal.Kind == token.STRING {
+				if value, err := strconv.Unquote(literal.Value); err == nil {
+					words[value] = true
+				}
+			}
+		}
+		if words["clean"] && (words["go"] || words["-cache"] || words["-testcache"] || words["-modcache"] || words["-fuzzcache"]) {
+			sites++
+		}
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch value := node.(type) {
+		case *ast.CallExpr:
+			check(value.Args)
+		case *ast.CompositeLit:
+			check(value.Elts)
+		}
+		return true
+	})
+	return sites
+}
+
+// The engine never runs `go clean` (disk-lifetimes rule A7): the steward's
+// trimmer is the only thing that removes a cache entry.
+func TestAuditDiskEngineNeverRunsGoClean(t *testing.T) {
+	t.Parallel()
+	for relative, file := range auditDiskGoFiles(t, "cmd", "internal") {
+		if sites := auditDiskGoCleanSites(file); sites != 0 {
+			t.Errorf("%s assembles %d `go clean` argv; the engine never runs go clean", relative, sites)
+		}
+	}
+	for source, want := range map[string]int{
+		`package p; import "os/exec"; func f() { exec.Command("go", "clean", "-cache") }`: 1,
+		`package p; var argv = []string{"clean", "-testcache"}`:                           1,
+		`package p; func f(run func(...string)) { run("git", "clean", "-fdq") }`:          0,
+	} {
+		parsed, err := parser.ParseFile(token.NewFileSet(), "fixture.go", source, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := auditDiskGoCleanSites(parsed); got != want {
+			t.Errorf("witness over %q found %d, want %d", source, got, want)
+		}
+	}
+}
+
+// auditDiskSelectorCalls returns the qualifier.Name calls in file whose
+// package is imported from importPath and whose name is in names.
+func auditDiskSelectorCalls(fileSet *token.FileSet, file *ast.File, importPath string, names ...string) []string {
+	locals := map[string]bool{}
+	for _, spec := range file.Imports {
+		path, _ := strconv.Unquote(spec.Path.Value)
+		if path != importPath {
+			continue
+		}
+		local := filepath.Base(path)
+		if spec.Name != nil {
+			local = spec.Name.Name
+		}
+		locals[local] = true
+	}
+	var found []string
+	ast.Inspect(file, func(node ast.Node) bool {
+		selector, ok := node.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if ident, ok := selector.X.(*ast.Ident); ok && locals[ident.Name] {
+			for _, name := range names {
+				if selector.Sel.Name == name {
+					found = append(found, ident.Name+"."+name+" at line "+strconv.Itoa(fileSet.Position(selector.Pos()).Line))
+				}
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// internal/gocache reads time only in its seam file (rule A9) and removes
+// nothing by path (rule A12, DL3A-09): every removal is an Unlinkat or a
+// directory Unlinkat relative to a verified shard handle.
+func TestAuditDiskGocacheClockAndHandleRelativeRemoval(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join("..", "..", "internal", "gocache")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		fileSet := token.NewFileSet()
+		parsed, err := parser.ParseFile(fileSet, filepath.Join(root, name), nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checked++
+		if name != "clock.go" {
+			if found := auditDiskSelectorCalls(fileSet, parsed, "time", "Now", "Sleep", "Since", "Until", "After", "Tick", "NewTimer", "NewTicker"); len(found) != 0 {
+				t.Errorf("internal/gocache/%s reads the wall clock outside clock.go: %v", name, found)
+			}
+		}
+		removals := auditDiskSelectorCalls(fileSet, parsed, "os", "Remove", "RemoveAll")
+		removals = append(removals, auditDiskSelectorCalls(fileSet, parsed, "golang.org/x/sys/unix", "Unlink", "Rmdir")...)
+		removals = append(removals, auditDiskSelectorCalls(fileSet, parsed, "syscall", "Unlink", "Rmdir", "Unlinkat")...)
+		if len(removals) != 0 {
+			t.Errorf("internal/gocache/%s removes by path: %v", name, removals)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no internal/gocache source was checked")
+	}
+	fileSet := token.NewFileSet()
+	parsed, err := parser.ParseFile(fileSet, "fixture.go", `package p; import ("os"; t "time"); func f() { os.RemoveAll("x"); _ = t.Now() }`, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(auditDiskSelectorCalls(fileSet, parsed, "os", "RemoveAll")) != 1 || len(auditDiskSelectorCalls(fileSet, parsed, "time", "Now")) != 1 {
+		t.Fatal("the witness does not see an aliased or plain call")
+	}
+}
+
+// Every engine site that starts a compile takes its cache paths from the
+// authenticated domain (disk-lifetimes A8): no non-test source outside the
+// cache packages resolves the cache from the inherited environment alone.
+// testenv inherits by design (a test process is not an engine; it issues
+// the context its children authenticate).
+func TestAuditDiskEveryCompileSiteResolvesTheDomain(t *testing.T) {
+	t.Parallel()
+	allowed := map[string]bool{"internal/gocache": true, "internal/cachedomain": true, "internal/testenv": true}
+	for relative, file := range auditDiskGoFiles(t, "cmd", "internal") {
+		if allowed[filepath.ToSlash(filepath.Dir(relative))] {
+			continue
+		}
+		found := auditDiskSelectorCalls(token.NewFileSet(), file, "github.com/widoriezebos/agentic-tools/metasystem/internal/gocache", "Carry", "Resolve", "ResolveUsing")
+		if len(found) != 0 {
+			t.Errorf("%s resolves the cache from the inherited environment: %v; use cachedomain.Carry or cachedomain.Resolve", relative, found)
+		}
 	}
 }
 

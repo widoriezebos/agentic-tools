@@ -1174,8 +1174,8 @@ func proofAttemptFixture(t *testing.T, commandClass string) (string, ProofIdenti
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.cap-max=120\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1281,5 +1281,32 @@ func TestReserveLockedRefusesGovernedReservationWhoseCapHasPassed(t *testing.T) 
 	var passed *ReservationOwnerCapPassedError
 	if !errors.As(err, &passed) || !passed.OwnerDeadline.Equal(ownerDeadline) || !passed.RequestNow.Equal(now) {
 		t.Fatalf("passed governed cap did not retain typed facts: %#v, %v", passed, err)
+	}
+}
+
+// Where evidence is mirrored never changes what a proof proves: two checkouts
+// that differ only in their evidence root (a hand-set one, or the per-checkout
+// default the general readers now report) have one configuration digest.
+func TestProofConfigurationDigestIgnoresTheEvidenceRoot(t *testing.T) {
+	t.Parallel()
+	digest := func(local string) string {
+		t.Helper()
+		conf := filepath.Join(t.TempDir(), "metasystem.conf")
+		if err := os.WriteFile(conf, []byte("suite.section-cap-min=30\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if local != "" {
+			if err := os.WriteFile(conf+".local", []byte(local), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		value, err := effectiveProofConfigurationDigest(conf, []string{"HOME=" + t.TempDir()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	if a, b := digest(""), digest(config.EvidenceRootKey+"=/somewhere/else\n"); a != b {
+		t.Fatalf("digest differs only by evidence root: %s vs %s", a, b)
 	}
 }

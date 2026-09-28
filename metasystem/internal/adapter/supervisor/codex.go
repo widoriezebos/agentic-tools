@@ -69,14 +69,16 @@ func codexProbe(d Deps, args []string) int {
 // or a permission envelope file (a host turn), never from values handed in.
 // `codex exec resume` has no --sandbox or -C flags: a resumed thread
 // inherits its cwd and config and takes per-turn overrides through -c only.
-func CodexCommand(verb, model, workspace, schema, output, instanceTag, reasoningEffort, permissionsPath, recordPath, session string) ([]string, error) {
+// cacheDirs are the machine delegate cache directories a delegate round's
+// sandbox is granted (disk-lifetimes A7); a host turn passes none.
+func CodexCommand(verb, model, workspace, schema, output, instanceTag, reasoningEffort, permissionsPath, recordPath, session string, cacheDirs []string) ([]string, error) {
 	sandbox, network, err := adapter.CodexPermissionSettings(permissionsPath, recordPath)
 	if err != nil {
 		return nil, err
 	}
 	// Write roots outside the workspace — the worktree's git metadata
 	// (issue #5) — must reach the sandbox explicitly.
-	extraDirs, err := adapter.CodexExtraWriteRoots(permissionsPath, recordPath, workspace)
+	extraDirs, err := adapter.CodexExtraWriteRoots(permissionsPath, recordPath, workspace, cacheDirs)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +112,7 @@ func (codexOps) Prepare(t *Turn) (Launch, error) {
 			verb = "follow-up"
 		}
 		raw := filepath.Join(t.Dir, "raw.out")
-		command, err := CodexCommand(verb, model, t.Workspace, t.Schema, raw, t.Tag, "", t.Requested, "", t.ResumeSession)
+		command, err := CodexCommand(verb, model, t.Workspace, t.Schema, raw, t.Tag, "", t.Requested, "", t.ResumeSession, nil)
 		if err != nil {
 			return Launch{}, err
 		}
@@ -118,7 +120,8 @@ func (codexOps) Prepare(t *Turn) (Launch, error) {
 		return Launch{Argv: command, StdinPath: t.Prompt, StdoutPath: filepath.Join(t.Dir, "events.jsonl"),
 			Private: codexLaunch{events: filepath.Join(t.Dir, "events.jsonl"), raw: raw}}, nil
 	}
-	recordBuildCachePath(d.git(), d.agents(), t.Workspace, t.Dir)
+	caches := d.delegateCaches()
+	recordBuildCachePath(d.git(), d.agents(), t.Workspace, t.Dir, caches)
 	raw := filepath.Join(t.Dir, "raw.out")
 	// The working directory is the write boundary: `codex exec resume` has
 	// no -C, so entering the workspace makes the recorded boundary true on
@@ -138,13 +141,13 @@ func (codexOps) Prepare(t *Turn) (Launch, error) {
 	}
 	// The envelope decides sandbox and network — in the engine, from the
 	// record itself (KI-12).
-	command, err := CodexCommand(t.Verb, t.Model, t.Workspace, t.Schema, raw, t.Tag, effort, "", t.Record, t.ResumeSession)
+	command, err := CodexCommand(t.Verb, t.Model, t.Workspace, t.Schema, raw, t.Tag, effort, "", t.Record, t.ResumeSession, caches.Directories())
 	if err != nil {
 		return Launch{}, err
 	}
-	// The chain's build cache: the sandbox cannot write the user's Go
-	// cache.
-	env := withEnv(jobGitQuarantineEnv(d.git(), t.Workspace), jobBuildCacheEnv(d.git(), d.agents(), t.Workspace)...)
+	// The machine delegate cache, granted above as extra write roots: the
+	// sandbox cannot write the user's (engine) Go cache.
+	env := delegateRoundEnv(d, t.Workspace)
 	return Launch{Argv: command, Env: env, StdinPath: t.Prompt, StdoutPath: t.Events,
 		Private: codexLaunch{events: t.Events, raw: raw}}, nil
 }

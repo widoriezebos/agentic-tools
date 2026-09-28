@@ -510,9 +510,10 @@ type intentOwners struct {
 	// internal/adopt.
 	adopt func(adopt.Options) (adopt.Result, error)
 	helm  helmOwners
-	disk  diskOwners
 	// hookSwitch adjusts system setup's seams; nil keeps production.
 	hookSwitch func(hookswitch.Deps) hookswitch.Deps
+	// disk are the disk verbs' seams; the zero value is production.
+	disk diskOwners
 }
 
 func defaultIntentOwners() intentOwners {

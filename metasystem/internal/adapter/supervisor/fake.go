@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 // The fake runtime: the deterministic protocol simulator the fixture beds
@@ -130,26 +132,11 @@ func touchStrict(path string) error {
 	return file.Close()
 }
 
-// fakeRecordBuildCachePath mirrors job_build_cache_env for the fake's
-// rounds, so they record the same cache path a real runtime's rounds would:
-// only a job worktree under artifacts/agents/worktrees whose git dir is a
-// linked worktree's, with the go-cache and go-tmp directories made. It
-// differs from recordBuildCachePath in exactly the script's ways: no
-// staticcheck directory, and a failed mkdir records an empty path.
-func fakeRecordBuildCachePath(git GitQuery, agents, workspace, roundDir string) {
-	cache := ""
-	if jobsRoot, ok := realDir(filepath.Join(agents, "worktrees")); ok {
-		ws, _ := realDir(workspace)
-		if strings.HasPrefix(ws+"/", jobsRoot+"/") {
-			if gitdir, ok := git(workspace, "rev-parse", "--absolute-git-dir"); ok && strings.Contains(gitdir, "/.git/worktrees/") {
-				cache = filepath.Join(gitdir, "metasystem-build-cache", "go-cache")
-				if os.MkdirAll(cache, 0o755) != nil || os.MkdirAll(filepath.Join(gitdir, "metasystem-build-cache", "go-tmp"), 0o755) != nil {
-					cache = ""
-				}
-			}
-		}
-	}
-	_ = os.WriteFile(filepath.Join(roundDir, "build-cache.txt"), []byte(cache+"\n"), 0o644)
+// fakeRecordBuildCachePath mirrors recordBuildCachePath for the fake's
+// rounds, so they record the cache a real runtime's rounds would: the one
+// machine delegate cache (disk-lifetimes A7).
+func fakeRecordBuildCachePath(git GitQuery, agents, workspace, roundDir string, caches gocache.Paths) {
+	recordBuildCachePath(git, agents, workspace, roundDir, caches)
 }
 
 // startFakeHold starts an `ENGINE util hold --tag TAG [flags]` child in this
@@ -315,8 +302,8 @@ func fakeContract(d Deps) ([]byte, error) {
 
 // designBrief is the brief template with its Working Mode line set to
 // design (the script's sed).
-func designBrief(template string) ([]byte, error) {
-	data, err := os.ReadFile(template)
+func designBrief() ([]byte, error) {
+	data, err := protocol.Template("brief.md")
 	if err != nil {
 		return nil, err
 	}
@@ -356,11 +343,10 @@ func fakeSelftest(d Deps) int {
 		return 1
 	}
 	id := fmt.Sprintf("fake-selftest-%s-%d", d.Clock.Now().UTC().Format("20060102t150405z"), d.Pid)
-	templates := filepath.Join(d.Root, "scripts", "agents", "templates")
 	rootEnv := "METASYSTEM_DELEGATE_ROOT=" + d.Root
 	internalEnv := "METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1"
 
-	brief, err := designBrief(filepath.Join(templates, "brief.md"))
+	brief, err := designBrief()
 	if err == nil {
 		err = os.WriteFile(filepath.Join(dir, "brief.md"), brief, 0o644)
 	}
@@ -372,7 +358,7 @@ func fakeSelftest(d Deps) int {
 		"--brief", filepath.Join(dir, "brief.md"), "--workspace", d.Root, "--op", id, "--wait"); code != 0 {
 		return code
 	}
-	follow, err := os.ReadFile(filepath.Join(templates, "follow-up.md"))
+	follow, err := protocol.Template("follow-up.md")
 	if err == nil {
 		err = os.WriteFile(filepath.Join(dir, "follow.md"), follow, 0o644)
 	}
@@ -384,7 +370,7 @@ func fakeSelftest(d Deps) int {
 		"--brief", filepath.Join(dir, "follow.md"), "--wait"); code != 0 {
 		return code
 	}
-	cancel, err := designBrief(filepath.Join(templates, "brief.md"))
+	cancel, err := designBrief()
 	if err == nil {
 		err = os.WriteFile(filepath.Join(dir, "cancel.md"), append(cancel, []byte("\nFAKE:timeout\n")...), 0o644)
 	}

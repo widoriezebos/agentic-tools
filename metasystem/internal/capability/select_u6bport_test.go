@@ -27,7 +27,7 @@ func TestSelectEmptyWriteRootsOnAnUnenforcedBoundaryIsRestrictive(t *testing.T) 
 		e.writeEnvelope(t, envelope)
 		e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": decode(t, waivers)})
 		identity := `{"runtime":"` + runtime + `","cliVersion":"1.0","configHash":"cfg1","configKeyHashes":{}}`
-		return Select(e.root, runtime, e.role, identity, 30, e.envelopePath, e.outputPath)
+		return selectFixture(e.root, runtime, e.role, identity, 30, e.envelopePath, e.outputPath)
 	}
 	if err := stage(t, "devin", `{}`); err == nil || !strings.Contains(err.Error(), "permission field writeRoots") ||
 		!strings.Contains(err.Error(), "devin-write-roots-unenforced") {

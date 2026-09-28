@@ -5,8 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -14,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
 
@@ -58,6 +62,18 @@ type SelftestParams struct {
 	// returnCheck replaces the shipped job-mode return checker; nil is
 	// returnschema.ReturnCompleteJob.
 	returnCheck func(root, job string) []string
+	// The cleanup's seams (disk-lifetimes A10): the job record by id (nil
+	// reads ROOT/artifacts/agents/jobs/JOB.json), the custody-death proof
+	// (nil is dispatch.ProveCustodyDeath with the reaper's positioned-tag
+	// matcher), the cancel (nil runs the delegate entry's --cancel), where
+	// a kept directory is reported (nil is stderr), and the clock the
+	// cancel poll reads (nil is the package clock).
+	readRecord   func(job string) (map[string]any, error)
+	custodyDeath func(record map[string]any) dispatch.CustodyDeathResult
+	cancel       func(job string) error
+	cleanupLog   io.Writer
+	clockNow     func() time.Time
+	clockSleep   func(time.Duration)
 }
 
 func (p SelftestParams) agentsDir() string { return filepath.Join(p.Root, "artifacts", "agents") }
@@ -203,7 +219,7 @@ Keep the original session identity and role return contract.
 
 The original design-critic schema remains binding without additions, removals, or relaxations.
 
-Schema: scripts/agents/schemas/design-critic.schema.json
+Schema: internal/protocol/schemas/design-critic.schema.json
 `
 
 // SelftestRun executes the full-contract self-test. It returns the error a
@@ -228,6 +244,10 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// The directory holds the scratch repository every delegate works in:
+	// it is removed only once every job dispatched is proven ended.
+	var dispatched []string
+	defer func() { p.settleSelftest(dir, dispatched) }()
 	selftestID := fmt.Sprintf("%s-selftest-%s-%d", p.Runtime, now().UTC().Format("20060102t150405z"), os.Getpid())
 	scratch := filepath.Join(dir, "repo")
 	nonce := p.Runtime + "-" + randomToken()
@@ -237,6 +257,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 
 	// Main leg: dispatch, completeness, typed usage.
 	mainJob := selftestID + "-main"
+	dispatched = append(dispatched, mainJob)
 	if err := writeBrief(filepath.Join(dir, "brief.md"),
 		"Read README.md, then return a valid empty-findings design critique proving the read in evidence."); err != nil {
 		return err
@@ -271,6 +292,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 		return err
 	}
 	followJob := mainJob + "-r2"
+	dispatched = append(dispatched, followJob)
 	if !p.waitForJob(followJob) {
 		return fmt.Errorf("%s selftest follow-up failed", p.Runtime)
 	}
@@ -283,6 +305,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 
 	// Cancel leg: the cancellation must be recorded as the job's outcome.
 	cancelJob := selftestID + "-cancel"
+	dispatched = append(dispatched, cancelJob)
 	if err := writeBrief(filepath.Join(dir, "cancel.md"),
 		"Inspect repository files one at a time and continue until the orchestrator cancels this scratch turn."); err != nil {
 		return err
@@ -291,7 +314,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 		"--brief", filepath.Join(dir, "cancel.md"), "--workspace", scratch, "--op", cancelJob); err != nil {
 		return err
 	}
-	if err := runLoud(p.delegate(), "internal", "delegate", "--cancel", cancelJob); err != nil {
+	if err := p.cancelJob(cancelJob); err != nil {
 		return err
 	}
 	if p.dispatchStatus(cancelJob) != "cancelled" {
@@ -327,6 +350,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 				"network", requestLog},
 		} {
 			attemptJob := permissionJob + "-" + attempt.name
+			dispatched = append(dispatched, attemptJob)
 			briefPath := filepath.Join(dir, "permissions-"+attempt.name+".md")
 			if err := writeBrief(briefPath, attempt.goal); err != nil {
 				return err
@@ -354,6 +378,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if err := writeBrief(filepath.Join(dir, "permissions.md"), permittedGoal+skillInstruction); err != nil {
 		return err
 	}
+	dispatched = append(dispatched, permissionJob)
 	if err := runSelftestDelegateQuiet(p.ExtraEnv, p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
 		"--brief", filepath.Join(dir, "permissions.md"), "--workspace", scratch, "--op", permissionJob); err != nil {
 		return err
@@ -400,6 +425,108 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	fmt.Fprintf(stdout, "%s adapter selftest passed: full protocol sequence, permission probes, and usage=%s\n",
 		p.Runtime, p.Usage)
 	return nil
+}
+
+// settleSelftest removes the self-test directory, and the scratch
+// repository in it, only when every job it dispatched is proven ended
+// (disk-lifetimes A10, DL3A-06): a job still live is cancelled and polled
+// to a terminal status within the turn ceiling; a terminal status alone is
+// no proof, so a terminal job counts as ended only with the reaper's
+// recorded groupDeathProvenAt or a fresh PROVEN-DEAD from the custody-death
+// proof; a job that recorded no process never ran one. Otherwise the
+// directory is kept and the path is printed with each job's outcome and
+// reason. It reports whether it kept the directory.
+func (p SelftestParams) settleSelftest(dir string, jobs []string) bool {
+	log := p.cleanupLog
+	if log == nil {
+		log = os.Stderr
+	}
+	var open []string
+	for _, job := range jobs {
+		if ended, why := p.selftestJobEnded(job); !ended {
+			open = append(open, job+" "+why)
+		}
+	}
+	if len(open) > 0 {
+		fmt.Fprintf(log, "%s selftest: kept %s: %s\n", p.Runtime, dir, strings.Join(open, "; "))
+		return true
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		fmt.Fprintf(log, "%s selftest: kept %s: removal failed: %v\n", p.Runtime, dir, err)
+		return true
+	}
+	return false
+}
+
+// cancelJob cancels one self-test job through the delegate entry.
+func (p SelftestParams) cancelJob(job string) error {
+	return runLoud(p.delegate(), "internal", "delegate", "--cancel", job)
+}
+
+// selftestJobEnded proves one dispatched job ended, or names why not.
+func (p SelftestParams) selftestJobEnded(job string) (bool, string) {
+	read := p.readRecord
+	if read == nil {
+		read = func(job string) (map[string]any, error) { return readObject(filepath.Join(p.jobsDir(), job+".json")) }
+	}
+	record, err := read(job)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			// The dispatch refused before it wrote a record: nothing ran.
+			return true, ""
+		}
+		return false, "UNREADABLE: " + err.Error()
+	}
+	status, _ := record["status"].(string)
+	if !dispatch.TerminalStatus(status) {
+		cancel := p.cancel
+		if cancel == nil {
+			cancel = p.cancelJob
+		}
+		_ = cancel(job)
+		clock, pause := p.clockNow, p.clockSleep
+		if clock == nil {
+			clock = now
+		}
+		if pause == nil {
+			pause = sleep
+		}
+		deadline := clock().Add(time.Duration(max(p.TurnCeilingSec, 1)) * time.Second)
+		for status = p.dispatchStatus(job); !dispatch.TerminalStatus(status); status = p.dispatchStatus(job) {
+			if !clock().Before(deadline) {
+				return false, "LIVE: still " + nonEmpty(status, "unknown") + " past the turn ceiling after its cancel"
+			}
+			p.reapJob(job)
+			pause(200 * time.Millisecond)
+		}
+		if record, err = read(job); err != nil {
+			return false, "UNREADABLE: " + err.Error()
+		}
+	}
+	if record["pid"] == nil {
+		return true, ""
+	}
+	if proven, _ := record["groupDeathProvenAt"].(string); proven != "" {
+		return true, ""
+	}
+	prove := p.custodyDeath
+	if prove == nil {
+		prove = func(record map[string]any) dispatch.CustodyDeathResult {
+			return dispatch.ProveCustodyDeath(p.Root, record, dispatch.CustodyDeathDependencies{MatchesTag: dispatchproc.PositionedJobTagAt(p.Root)})
+		}
+	}
+	death := prove(record)
+	if death.Outcome == dispatch.CustodyDeathProven {
+		return true, ""
+	}
+	return false, string(death.Outcome) + ": " + death.Reason
+}
+
+func nonEmpty(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 // stageScratchRepo builds the committed scratch workspace: the nonce the

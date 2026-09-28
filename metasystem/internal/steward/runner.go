@@ -136,15 +136,19 @@ func runnerContext(repoRoot, lineage string) *seat.RunnerContext {
 func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig) error {
 	return runLoopWithDependencies(repoRoot, census, revive, interval, cfg, runnerLoopDependencies{
 		Tick: RunTick, DeliverPending: DeliverPending, Resumable: ResumableIntent, Channel: channelphase.Run,
-		Now: runnerNow, Sleep: runnerSleep, AfterRecordPublished: runnerAfterRecordPublished, SweepDisk: runnerSweepDisk,
+		TrimCaches: machineCacheTrimmer(nil, ""),
+		Now:        runnerNow, Sleep: runnerSleep, AfterRecordPublished: runnerAfterRecordPublished, SweepDisk: runnerSweepDisk,
 	})
 }
 
 type runnerLoopDependencies struct {
-	Tick                 func(string, TickConfig, WorkerCensus) (TickResult, error)
-	DeliverPending       func(string) (int, error)
-	Resumable            func(string) (string, bool, error)
-	Channel              func(context.Context, string) (int, error)
+	Tick           func(string, TickConfig, WorkerCensus) (TickResult, error)
+	DeliverPending func(string) (int, error)
+	Resumable      func(string) (string, bool, error)
+	Channel        func(context.Context, string) (int, error)
+	// TrimCaches trims the machine caches as the cycle's last step; nil
+	// trims nothing.
+	TrimCaches           func(context.Context, string, TickConfig) error
 	Now                  func() time.Time
 	Sleep                func(time.Duration)
 	AfterRecordPublished func()
@@ -290,6 +294,14 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			fmt.Fprintf(os.Stderr, "channel pending: %d undelivered: %v\n", undelivered, channelErr)
 		}
 		cancelChannel()
+		// The machine caches are trimmed last, after the tick released
+		// arbitration; the trim holds only its own per-cache flock, runs
+		// under its budget and ends at the stop file.
+		if deps.TrimCaches != nil {
+			if trimErr := deps.TrimCaches(context.Background(), top, cfg); trimErr != nil {
+				fmt.Fprintf(os.Stderr, "cache trim: %v\n", trimErr)
+			}
+		}
 		if stopped := runnerWait(top, interval, deps); stopped {
 			return nil
 		}

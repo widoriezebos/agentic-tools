@@ -7,8 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 // Roles are the role schemas this materializer knows.
@@ -170,16 +171,20 @@ func rigorSchema() map[string]any {
 	}
 }
 
-// Materialize reads a role's v1 schema, applies the requested version, and
-// writes it (indented, key-sorted) to outputPath.
-func Materialize(root, role string, version int, outputPath string) error {
-	source := filepath.Join(root, "scripts/agents/schemas", role+".schema.json")
-	data, err := os.ReadFile(source)
+// Materialize reads a role's compiled-in v1 schema, applies the requested
+// version, and writes it (indented, key-sorted) to outputPath.
+func Materialize(role string, version int, outputPath string) error {
+	data, err := protocol.RoleSchema(role)
 	if err != nil {
 		return err
 	}
+	return materialize(role, "protocol:schemas/"+role+".schema.json", data, version, outputPath)
+}
+
+func materialize(role, source string, data []byte, version int, outputPath string) error {
 	var schema map[string]any
-	if err := json.Unmarshal(data, &schema); err != nil {
+	err := json.Unmarshal(data, &schema)
+	if err != nil {
 		return fmt.Errorf("%s is not valid JSON: %w", source, err)
 	}
 	if version == 2 {

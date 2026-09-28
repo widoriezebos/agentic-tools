@@ -1545,30 +1545,9 @@ func equipFullCycleFiles(t *testing.T, engine *Engine) {
 	// script travels with the bed.
 	// The human entrypoint IS the engine verb now (the wrapper died in
 	// the L15 delete tranche); the resolution fixtures drive the same
-	// binary a human types. The prompt checker runs for real too — the
-	// authority artifacts below make its pass honest instead of stubbed.
-	// The prompt authority artifacts, verbatim from the repository: without
-	// them AssemblePrompt refuses and the cycle parks before any host runs.
-	// The return checker's role schema travels the same way:
-	// without it EVERY orchestrator return is rejected and each
-	// mission ends in a host-failure park that loose terminal
-	// assertions read as success.
-	for _, artifact := range []string{
-		filepath.Join("scripts", "agents", "roles", "orchestrator.md"),
-		filepath.Join("scripts", "agents", "templates", "host-turn-instruction.md"),
-		filepath.Join("scripts", "agents", "schemas", "orchestrator.schema.json"),
-	} {
-		data, err := os.ReadFile(filepath.Join("..", "..", artifact))
-		if err != nil {
-			t.Skipf("prompt authority artifact not readable: %v", err)
-		}
-		mode := os.FileMode(0o644)
-		if strings.HasSuffix(artifact, ".sh") {
-			mode = 0o755
-		}
-		os.MkdirAll(filepath.Dir(filepath.Join(root, artifact)), 0o755)
-		testexec.WriteFile(filepath.Join(root, artifact), data, mode)
-	}
+	// binary a human types. The prompt checker and the return checker run
+	// for real too, against the orchestrator preamble, host-turn
+	// instruction and return schema compiled into that binary.
 }
 
 // equipFullCycleBed then pins the contract in-process and installs the

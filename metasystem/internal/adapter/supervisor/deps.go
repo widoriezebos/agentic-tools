@@ -61,6 +61,9 @@ type Deps struct {
 	LookPath func(string) (string, error)
 	// Git runs read-only git queries.
 	Git GitQuery
+	// UserCacheDir is the user cache dir the machine cache pairs live
+	// under; nil is os.UserCacheDir.
+	UserCacheDir func() (string, error)
 }
 
 // Clock is the supervisor's time: wall readings and waits.

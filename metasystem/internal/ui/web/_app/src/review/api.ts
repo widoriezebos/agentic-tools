@@ -1,9 +1,10 @@
 /**
- * The review room's desk reads (g1-s65 D4), and the only place the room talks
- * to the server beyond the conversation's own call site.
+ * The room's desk reads (g1-s65 D4), and the only place the room talks to the
+ * server beyond the conversation's own call site.
  *
  * Three reads over one review record, each answered from the candidate's own
- * tree rather than this checkout: a source file at a range of lines with the
+ * tree rather than this checkout — and over a record a sitting shapes, the
+ * source read answered from the checkout as it stands (g1-s67 D2): a source file at a range of lines with the
  * changed lines marked, the change index, and one file's hunks. Each is made
  * when a human puts something on the desk, and at no other time; nothing here
  * polls and nothing here sets a timer.
@@ -17,11 +18,13 @@ const CHANGES = "/changes";
 export type SourceLine = { number: number; text: string; touched?: boolean };
 
 /**
- * One text file of the reviewed tree at a range of lines. `unmarked` says the
- * touched lines could not be established, so none are marked.
+ * One text file of the reviewed tree at a range of lines, or of the checkout as
+ * it stands where `checkout` says so and `commit` is "" (g1-s67 D2). `unmarked`
+ * says the touched lines could not be established, so none are marked.
  */
 export type Source = {
-  path: string; commit: string; from: number; to: number; total: number; lines: SourceLine[]; unmarked?: string;
+  path: string; commit: string; checkout?: boolean; from: number; to: number; total: number; lines: SourceLine[];
+  unmarked?: string;
 };
 
 /** One file of the change, with its counts. */

@@ -5,7 +5,6 @@ package proofrun
 import (
 	"errors"
 	"fmt"
-	"math"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -15,25 +14,6 @@ import (
 )
 
 func TestPlatformProcessReaderContract(t *testing.T) {
-	for value, want := range map[string]float64{
-		"00:07":         7,
-		"12:34":         12*60 + 34,
-		"02:03:04":      2*60*60 + 3*60 + 4,
-		"3-02:03:04":    3*24*60*60 + 2*60*60 + 3*60 + 4,
-		"0:00.00":       0,
-		"0:00.01":       0.01,
-		"137:14.32":     137*60 + 14.32,
-		"12:34.5":       12*60 + 34.5,
-		"1-02:03:04.50": 24*60*60 + 2*60*60 + 3*60 + 4.5,
-	} {
-		got, err := parseCPUTime(value)
-		if err != nil || math.Abs(got-want) > 1e-9 {
-			t.Fatalf("parse cputime %q = %.9f, want %.9f, err=%v", value, got, want, err)
-		}
-	}
-	if _, err := parseCPUTime("12.5:34"); err == nil {
-		t.Fatal("fractional minutes were accepted")
-	}
 	parents := map[int]int{100: 1, 101: 100, 102: 101, 200: 1}
 	got := descendantProcessIDs(100, parents)
 	if len(got) != 3 || got[0] != 100 || got[1] != 101 || got[2] != 102 {

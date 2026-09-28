@@ -100,7 +100,7 @@ describe("a launch that stopped", () => {
     const markup = rendered(stopped);
     expect(markup).toContain("Launching m1f stopped");
     expect(markup).toContain("go-build: refused: the gate fence holds this checkout");
-    expect(markup).toContain("go-gate.sh --fast");
+    expect(markup).toContain("go run ./cmd/devgate static");
   });
 
   it("offers Retry, and asks for the authorization again", () => {

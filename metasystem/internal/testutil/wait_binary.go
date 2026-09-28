@@ -18,9 +18,6 @@ func InstalledWaitBinary(t testing.TB, candidate string) string {
 	sourceRoot := sourceMetasystemRoot(t)
 	installation := t.TempDir()
 	binDir := filepath.Join(installation, "bin")
-	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
-		t.Fatalf("create temporary wait installation: %v", err)
-	}
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("create temporary wait binary directory: %v", err)
 	}

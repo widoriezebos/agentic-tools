@@ -1,6 +1,7 @@
 package delegation
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -64,7 +66,9 @@ func (s *session) reapJobs(args []string) error {
 	if err := s.fenceBrain("reap"); err != nil {
 		return err
 	}
-	job, purpose, err := s.parseReapArgs(args)
+	// --purpose (post-wait) stays accepted; it decided only the chain-cache
+	// removal the delegate cache retired.
+	job, _, err := s.parseReapArgs(args)
 	if err != nil {
 		return err
 	}
@@ -75,14 +79,10 @@ func (s *session) reapJobs(args []string) error {
 		return s.runHeld(s.inv.ClaimEpoch, func() error { return s.internalReapHeld(job, "") })
 	}
 	if job != "" {
-		reapErr := s.reapOne(job)
-		// A waited round still needs its terminal record reconciled, but the
-		// next round owns the same chain cache until an explicit reap or
-		// close cleans it.
-		if purpose != "post-wait" {
-			s.reapChainBuildCache(job)
-		}
-		return reapErr
+		// A build cache is never the reap's: every round builds in the
+		// machine delegate cache, which only the steward's trimmer trims
+		// (disk-lifetimes A7).
+		return s.reapOne(job)
 	}
 	if err := os.MkdirAll(s.jobs, 0o755); err != nil {
 		return exitWith(1)
@@ -100,7 +100,6 @@ func (s *session) reapJobs(args []string) error {
 			failed = true
 		}
 	}
-	s.reapChainBuildCaches()
 	if failed {
 		s.eprintln("reap sweep finished with failures (see above)")
 		return exitWith(1)
@@ -224,12 +223,10 @@ func (s *session) reapOneLocked(job string) error {
 		s.reapVerdictEvents(job, "timeout", "budget-cap", casErr, observed)
 		missionID := fieldOr(record, "mission")
 		if casErr == nil && missionID != "" && missionID != "null" {
-			reason := "job-cap-min"
-			if fieldOr(record, "capResolution.truncatedBy") == "wall-clock" {
-				reason = "wall-clock-hours"
-			}
-			if err := s.missionRefuse(missionID, reason); err != nil {
-				s.eprintf("MISSION-FENCE-ASK-FAILED mission=%s job=%s error=%s\n", missionID, job, strings.ReplaceAll(err.Error(), "\n", " "))
+			if reason, ask := mission.BudgetCapReason(recordCapResolution(record)); ask {
+				if err := s.missionRefuse(missionID, reason); err != nil {
+					s.eprintf("MISSION-FENCE-ASK-FAILED mission=%s job=%s error=%s\n", missionID, job, strings.ReplaceAll(err.Error(), "\n", " "))
+				}
 			}
 			_ = s.aggregateMissionUsage(record)
 		}
@@ -489,69 +486,6 @@ func (s *session) mirrorRecord(job string) error {
 	return nil
 }
 
-// removeChainBuildCache is remove_chain_build_cache: the chain's warm gate
-// cache in the root worktree's private git dir (0.5 to 1 GB once warm).
-func (s *session) removeChainBuildCache(rootJob string) {
-	workspace := fieldOr(s.recordPath(rootJob), "workspaceRoot")
-	if workspace == "" || workspace == "null" || !isDir(workspace) {
-		return
-	}
-	worktrees, err := physicalDir(s.worktrees)
-	if err != nil {
-		return
-	}
-	resolved, err := physicalDir(workspace)
-	if err != nil || !strings.HasPrefix(resolved+"/", worktrees+"/") {
-		return
-	}
-	out, _, err := s.l.ports.Git.Run(s.ctx, workspace, "rev-parse", "--absolute-git-dir")
-	if err != nil {
-		return
-	}
-	gitDir := strings.TrimSpace(string(out))
-	cache := filepath.Join(gitDir, "metasystem-build-cache")
-	if !strings.Contains(gitDir, "/.git/worktrees/") || !isDir(cache) {
-		return
-	}
-	_ = os.RemoveAll(cache)
-}
-
-func (s *session) reapChainBuildCache(job string) {
-	if !isFile(s.recordPath(job)) {
-		return
-	}
-	rootJob, err := s.rootJobID(job)
-	if err != nil || rootJob == "" || !isFile(s.recordPath(rootJob)) || !isDir(filepath.Join(s.worktrees, rootJob)) {
-		return
-	}
-	s.reapChainBuildCacheOfRoot(rootJob)
-}
-
-// reapChainBuildCaches visits chains that have a job worktree, not every
-// record: the cache can only live under one.
-func (s *session) reapChainBuildCaches() {
-	entries, _ := os.ReadDir(s.worktrees)
-	for _, entry := range entries {
-		if entry.IsDir() && isFile(s.recordPath(entry.Name())) {
-			s.reapChainBuildCacheOfRoot(entry.Name())
-		}
-	}
-}
-
-func (s *session) reapChainBuildCacheOfRoot(rootJob string) {
-	members, err := dispatch.ChainMemberStatuses(s.jobs, rootJob, false)
-	if err != nil {
-		return
-	}
-	terminalMembers, err := dispatch.ChainMemberStatuses(s.jobs, rootJob, true)
-	if err != nil {
-		return
-	}
-	if len(members) > 0 && len(members) == len(terminalMembers) {
-		s.removeChainBuildCache(rootJob)
-	}
-}
-
 // setJSONFields is `json set --file PATH --field k=v ...` for string values.
 func setJSONFields(path string, fields map[string]string) error {
 	object, err := dispatch.ReadRecordObject(path)
@@ -562,4 +496,21 @@ func setJSONFields(path string, fields map[string]string) error {
 		object[key] = value
 	}
 	return os.WriteFile(path, []byte(encodeJSON(object)+"\n"), 0o600)
+}
+
+// recordCapResolution is the job record's capResolution object, or nil when
+// the record or the object is unreadable (a timeout then names the mission
+// default cap, as it always did).
+func recordCapResolution(record string) map[string]any {
+	data, err := os.ReadFile(record)
+	if err != nil {
+		return nil
+	}
+	var doc struct {
+		CapResolution map[string]any `json:"capResolution"`
+	}
+	if json.Unmarshal(data, &doc) != nil {
+		return nil
+	}
+	return doc.CapResolution
 }

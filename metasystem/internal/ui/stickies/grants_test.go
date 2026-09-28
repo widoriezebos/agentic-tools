@@ -136,7 +136,7 @@ func TestTheCriticsReadRootDoesNotReachTheNotepad(t *testing.T) {
 	// The permission files live in the metasystem installation; the repository
 	// a critic is handed is the one above it where this kit is self-hosted,
 	// so both are proved below.
-	grant := filepath.Join(checkout, "scripts", "agents", "permissions", "critic.json")
+	grant := filepath.Join(checkout, "internal", "protocol", "permissions", "critic.json")
 	data, err := os.ReadFile(grant)
 	testutil.Require(t, "reading the critic's grant", err, nil)
 	var held struct {

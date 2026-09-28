@@ -234,7 +234,7 @@ func (s *Supervision) prepare(args []string) error {
 		schemaVersion = 4
 	}
 	s.schema = filepath.Join(s.roundDir, fmt.Sprintf("return-schema.v%d.json", schemaVersion))
-	if err := returnschema.Materialize(s.d.Root, role, schemaVersion, s.schema); err != nil {
+	if err := returnschema.Materialize(role, schemaVersion, s.schema); err != nil {
 		fmt.Fprintln(s.d.Stderr, err)
 		return errPrepare
 	}

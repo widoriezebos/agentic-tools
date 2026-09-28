@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
@@ -260,6 +261,10 @@ func (a capAuthority) resolutionField() map[string]any {
 		"origin":       a.source["origin"],
 		"truncatedBy":  a.source["truncatedBy"],
 		"deadline":     a.deadline,
+		// The signed setting the cap answers to, which a budget-cap
+		// timeout names in its fence ask (mission.BudgetCapReason).
+		"key":       a.source["key"],
+		"signedMin": a.source["signedMin"],
 	}
 }
 
@@ -1056,7 +1061,7 @@ func readCompositionForJob(path, job, role, runtimeName, model, mission string, 
 	if expectedErr != nil || !configurationOK || !configurationObligationsMatchObject(expectedConfiguration, configuration) {
 		return nil, fmt.Errorf("composition record does not carry the hazard configuration obligations")
 	}
-	if asString(record["recipe"]) != rolePacketTablePath+"#"+role || !incarnationRe.MatchString(asString(record["recipeDigest"])) ||
+	if asString(record["recipe"]) != protocol.RolePacketRecipe(role) || !incarnationRe.MatchString(asString(record["recipeDigest"])) ||
 		!incarnationRe.MatchString(packetDigest) || packetBytes <= 0 {
 		return nil, fmt.Errorf("composition record has invalid recipe or packet provenance")
 	}
@@ -1201,9 +1206,15 @@ func productRootsEmpty(value any) bool {
 
 // ImpactedTestsRule is the test set a builder runs before it returns: the
 // tests its change impacts, never whole packages. Whole packages run once,
-// at the orchestrator's proof. scripts/agents/templates/brief.md carries the
+// at the orchestrator's proof. The engine's brief.md template carries the
 // same sentence.
 const ImpactedTestsRule = "Before you return, run the tests your change impacts, never whole packages: every test you added or changed; in each package you changed, every test whose file references a function, type, constant, verb, flag or file you changed; in each package that imports a changed package, every test whose file references a changed exported symbol; each by -run name, plain and with every build tag its package's tests use, and -count=3 only for new tests that start processes, goroutines or fixtures. Run gofmt, `go build ./...`, `go vet ./...` and `go run ./cmd/devgate static` (from `metasystem/`) as well. Whole packages run once, at the orchestrator's proof; a red there comes back to you as a follow-up."
+
+// BuildCacheRule is the delegate build cache contract every build brief
+// carries (disk-lifetimes A7): one machine delegate cache for every round of
+// every chain, never the engine's. scripts/agents/templates/brief.md carries
+// the same sentence.
+const BuildCacheRule = "The build cache is provided: the adapter sets GOCACHE and STATICCHECK_CACHE to the machine delegate cache, shared by every round of every chain, and GOTMPDIR; never set, unset or strip them, never point GOCACHE elsewhere, never run go clean, never strip the METASYSTEM_HOOK_DELEGATE_ markers, and never run a gate under env -u or env -i: a self-set cache is cold every round, and only the steward trims the shared one."
 
 // TestingRequirement is the one runtime-neutral brief requirement for both
 // initial and follow-up implementers. Gate width remains an immutable risk
@@ -1212,7 +1223,7 @@ func TestingRequirement(goalID, gateWidth string) (string, error) {
 	if goalID == "" || (gateWidth != "area" && gateWidth != "full") {
 		return "", fmt.Errorf("testing requirement needs an accepted goal and gate width")
 	}
-	return fmt.Sprintf("\n# Required testing contract\n\nUse the committed shared testing contract for goal %s (recorded gate width %s). The proof of your round is made by the orchestrator, not inside your sandbox: when you return, the orchestrator's enrolled engine runs the risk-selected public `metasystem test` plan on your worktree as you left it, HEAD plus every change in the working tree, the same snapshot conformance reviews, a diagnostic run that collects every failed group, and the chain lands only when the landing's own delivery receipt, which reuses that run's passed groups by execution identity, is sufficient. Retained proof is reused across rounds and attempts by execution identity, so a round that changed no group's inputs proves in seconds and the landing reuses the last round's attempt. Your worktree carries no enrolled engine: do not run `metasystem test run`, `test plan` or `test status` there. %s Leave every change in the worktree and do not commit (the dispatcher and the proof read the worktree); report the commands you ran. A failed group comes back to you as a follow-up with its evidence. The build cache is provided for the whole chain (GOCACHE, GOTMPDIR and STATICCHECK_CACHE are set): never set, unset or strip them, and never run a gate under env -u or env -i.\n", goalID, gateWidth, ImpactedTestsRule), nil
+	return fmt.Sprintf("\n# Required testing contract\n\nUse the committed shared testing contract for goal %s (recorded gate width %s). The proof of your round is made by the orchestrator, not inside your sandbox: when you return, the orchestrator's enrolled engine runs the risk-selected public `metasystem test` plan on your worktree as you left it, HEAD plus every change in the working tree, the same snapshot conformance reviews, a diagnostic run that collects every failed group, and the chain lands only when the landing's own delivery receipt, which reuses that run's passed groups by execution identity, is sufficient. Retained proof is reused across rounds and attempts by execution identity, so a round that changed no group's inputs proves in seconds and the landing reuses the last round's attempt. Your worktree carries no enrolled engine: do not run `metasystem test run`, `test plan` or `test status` there. %s Leave every change in the worktree and do not commit (the dispatcher and the proof read the worktree); report the commands you ran. A failed group comes back to you as a follow-up with its evidence. %s\n", goalID, gateWidth, ImpactedTestsRule, BuildCacheRule), nil
 }
 
 // validateAfterCapParent is the record owner's own check of a continuation

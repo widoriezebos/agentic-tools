@@ -18,16 +18,16 @@ func newFileConformanceFixture(t *testing.T) *conformanceFixture {
 		worktree:   filepath.Join(root, "worktree"),
 		baseSha:    strings.Repeat("a", 40),
 	}
-	pathClasses, err := os.ReadFile("../../scripts/agents/path-classes.txt")
+	pathClasses, err := os.ReadFile("../../internal/pathclass/path-classes.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	files := map[string][]byte{
-		"scripts/agents/path-classes.txt": pathClasses,
-		".gitignore":                      []byte("artifacts/\nlocal.conf\n"),
-		"source.txt":                      []byte("base\n"),
-		"docs/note.md":                    []byte("base\n"),
-		"metasystem.conf":                 []byte("metasystem.version=1\nrole.code-critic.runtime=fake\n"),
+		"internal/pathclass/path-classes.txt": pathClasses,
+		".gitignore":                          []byte("artifacts/\nlocal.conf\n"),
+		"source.txt":                          []byte("base\n"),
+		"docs/note.md":                        []byte("base\n"),
+		"metasystem.conf":                     []byte("metasystem.version=1\nrole.code-critic.runtime=fake\n"),
 	}
 	for _, dir := range []string{f.controller, f.worktree} {
 		for name, data := range files {

@@ -1,10 +1,13 @@
 package capability
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 // The SHIPPED role files' waiver decisions are
@@ -14,8 +17,7 @@ import (
 // identifier under the wrong field never matches; a malformed waiver
 // entry is ignored, not honored.
 func TestShippedRoleWaiverMatrixGolden(t *testing.T) {
-	roleDir := "../../scripts/agents/roles"
-	entries, err := filepath.Glob(filepath.Join(roleDir, "*.requirements.json"))
+	entries, err := fs.Glob(protocol.Files(), "roles/*.requirements.json")
 	if err != nil || len(entries) == 0 {
 		t.Fatalf("no shipped role files found: %v", err)
 	}
@@ -29,14 +31,14 @@ func TestShippedRoleWaiverMatrixGolden(t *testing.T) {
 		snap["permissions"] = map[string]any{"unverified": unverified}
 		e.writeSnapshot(t, "devin-1.0.0-abc123-20260810-001.json", snap)
 		e.writeEnvelope(t, envelope)
-		source, err := os.ReadFile(roleFile)
+		source, err := fs.ReadFile(protocol.Files(), roleFile)
 		if err != nil {
 			t.Fatal(err)
 		}
-		target := filepath.Join(e.root, "scripts", "agents", "roles", "golden-role.requirements.json")
+		target := filepath.Join(e.root, "roles", "golden-role.requirements.json")
 		os.MkdirAll(filepath.Dir(target), 0o755)
 		os.WriteFile(target, source, 0o644)
-		return Select(e.root, "devin", "golden-role", devinIdentity, 30, e.envelopePath, e.outputPath)
+		return selectFixture(e.root, "devin", "golden-role", devinIdentity, 30, e.envelopePath, e.outputPath)
 	}
 
 	restrictiveRoots := map[string]any{"readRoots": []any{"src"}, "writeRoots": []any{"src"}}
@@ -76,7 +78,7 @@ func TestShippedRoleWaiverMatrixGolden(t *testing.T) {
 
 	// Negatives against a synthetic role file.
 	writeRole := func(t *testing.T, e env, body string) {
-		target := filepath.Join(e.root, "scripts", "agents", "roles", "golden-role.requirements.json")
+		target := filepath.Join(e.root, "roles", "golden-role.requirements.json")
 		os.MkdirAll(filepath.Dir(target), 0o755)
 		os.WriteFile(target, []byte(body), 0o644)
 	}
@@ -89,7 +91,7 @@ func TestShippedRoleWaiverMatrixGolden(t *testing.T) {
 		e.writeSnapshot(t, "devin-1.0.0-abc123-20260810-001.json", snap)
 		e.writeEnvelope(t, map[string]any{"writeRoots": []any{"src"}})
 		writeRole(t, e, body)
-		err := Select(e.root, "devin", "golden-role", devinIdentity, 30, e.envelopePath, e.outputPath)
+		err := selectFixture(e.root, "devin", "golden-role", devinIdentity, 30, e.envelopePath, e.outputPath)
 		if err == nil || !strings.Contains(err.Error(), wantErr) {
 			t.Fatalf("want refusal %q, got %v", wantErr, err)
 		}

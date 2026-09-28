@@ -72,12 +72,14 @@ func newDiskBed(t *testing.T) *diskBed {
 			pass.Clock = func() time.Time { return diskNow }
 			return steward.SweepDiskStores(ctx, top, pass)
 		},
-		home:      func() (string, error) { return bed.home, nil },
-		now:       func() time.Time { return diskNow },
-		person:    func(string) (string, error) { return "Wido", bed.person },
-		census:    func() *diskstore.UseCensus { return bed.census },
-		proofs:    map[diskstore.OwnerKind]diskstore.OwnerProof{diskstore.OwnerProcess: diskProof{}},
-		tempRoots: func() []string { return []string{bed.tmp} },
+		home:         func() (string, error) { return bed.home, nil },
+		now:          func() time.Time { return diskNow },
+		person:       func(string) (string, error) { return "Wido", bed.person },
+		census:       func() *diskstore.UseCensus { return bed.census },
+		proofs:       map[diskstore.OwnerKind]diskstore.OwnerProof{diskstore.OwnerProcess: diskProof{}},
+		tempRoots:    func() []string { return []string{bed.tmp} },
+		userCacheDir: func() (string, error) { return filepath.Join(root, "user-cache"), nil },
+		stateDir:     filepath.Join(root, "cache-trim"),
 	}}
 	return bed
 }
@@ -191,10 +193,10 @@ func TestDiskObjectRoutesAndHelps(t *testing.T) {
 func TestDiskCleanTwiceSecondIsEmpty(t *testing.T) {
 	t.Parallel()
 	bed := newDiskBed(t)
-	witnessDiskCleanRepeat(t, bed)
+	witnessDiskSweepRepeat(t, bed)
 }
 
-func witnessDiskCleanRepeat(t *testing.T, bed *diskBed) {
+func witnessDiskSweepRepeat(t *testing.T, bed *diskBed) {
 	t.Helper()
 	dead := bed.store("dead", "dead")
 	alive := bed.store("alive", "alive")
@@ -335,9 +337,6 @@ func TestDiskReleaseByAPerson(t *testing.T) {
 	}
 	if code, out := bed.run("disk", "clean", "--release", "01ARZ3NDEKTSV4RRFFQ69G5FAV"); code != 2 || !strings.Contains(out, "no registered store has the id") {
 		t.Fatalf("an unknown id = %d:\n%s", code, out)
-	}
-	if code, out := bed.run("disk", "clean", "--go-cache"); code != 2 || !strings.Contains(out, "no Go cache trimmer yet") || !strings.Contains(out, "metasystem disk show") {
-		t.Fatalf("go-cache before Part A = %d:\n%s", code, out)
 	}
 	if code, out := bed.run("disk", "clean", "--preview", "--strays"); code != 2 || !strings.Contains(out, "one thing at a time") {
 		t.Fatalf("two acts at once = %d:\n%s", code, out)

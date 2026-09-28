@@ -982,14 +982,8 @@ func checkGroupCoverage(root, modulePrefix string, inventory []string, output st
 // selected floor and the absence of a competing policy input are part of the
 // group execution identity.
 func coverageBaselineInputs() []string {
-	name := "coverage-ratchet.json"
-	if runtime.GOOS == "linux" {
-		name = "coverage-ratchet-linux.json"
-	}
-	return []string{
-		filepath.ToSlash(filepath.Join("scripts", "agents", name)),
-		filepath.ToSlash(filepath.Join("metasystem", "scripts", "agents", name)),
-	}
+	name := testpolicy.CoverageFloorsFile(runtime.GOOS)
+	return []string{name, "metasystem/" + name}
 }
 
 func goExpectedName(expected map[string]map[string]bool, packageName, name string) bool {

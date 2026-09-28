@@ -1,8 +1,10 @@
 import type { Deposit, Subject } from "../partner/api";
+import type { Store } from "../partner/conversation";
 import { ACCEPTED, entriesIn, FIX, followUp, LEFT_OPEN, type Entry } from "../partner/sitting";
 
 /**
- * The review room's own rules (g1-s65 §3, D5, D9, D10).
+ * The room's own rules (g1-s65 §3, D5, D9, D10), for every sitting (g1-s67): a
+ * review's, and the one a sitting that shapes an intent or a design has.
  *
  * The room is the sitting's recorder, cards and table with two things of its own
  * beside them: a desk that shows one thing at a time, large, with a strip of what
@@ -29,6 +31,36 @@ export type DeskItem =
 export type Desk = { items: readonly DeskItem[]; current: number };
 
 export const EMPTY_DESK: Desk = { items: [], current: -1 };
+
+/** A record's own sections, its level-two headings, in the order it writes them. */
+export function sectionsIn(source: string): string[] {
+  return source
+    .split("\n")
+    .filter((line) => line.startsWith("## "))
+    .map((line) => line.slice(3).trim())
+    .filter((section) => section !== "");
+}
+
+/**
+ * The desk a sitting that shapes a record opens on (g1-s67 D2): the record's own
+ * sections in the strip, in its order, and the first of them up.
+ */
+export function firstDesk(record: string, source: string): Desk {
+  const items = sectionsIn(source).map((section): DeskItem => ({ kind: "section", record, section }));
+  return items.length === 0 ? EMPTY_DESK : { items, current: 0 };
+}
+
+/**
+ * The desk a room opens on: the one its mark kept, and where the mark kept none
+ * — a first visit, or a sitting that stood before rooms were kept — a shaping
+ * sitting's record sections. A review opens on an empty desk, as it always has.
+ */
+export function openingDesk(kept: Desk | undefined, purpose: string, record: string, source: string): Desk {
+  if (kept !== undefined && kept.items.length > 0) {
+    return kept;
+  }
+  return purpose === "review" ? EMPTY_DESK : firstDesk(record, source);
+}
 
 /** How many things the strip keeps. A sitting is a morning, not a year. */
 const STRIP = 40;
@@ -74,6 +106,58 @@ export function deskLabel(item: DeskItem): string {
 
 function baseName(path: string): string {
   return path.split("/").at(-1) ?? path;
+}
+
+/* -------------------------------------------------------------- purposes -- */
+
+/** The one word the room's header says for what the sitting is for (g1-s67 D1). */
+export function roomWord(purpose: string): string {
+  switch (purpose) {
+    case "review":
+      return "Reviewing";
+    case "shape intent":
+      return "Shaping the intent";
+    default:
+      return "Shaping the design";
+  }
+}
+
+/** What a selection on the desk makes beside Ask: a review's Finding, and a shaping sitting's Fact (g1-s67 D4). */
+export function selectionPress(purpose: string): { label: string; kind: string } {
+  return purpose === "review" ? { label: "Finding", kind: "finding" } : { label: "Fact", kind: "fact" };
+}
+
+/**
+ * A card the human made from a selection, as the deposit it stands for until it
+ * is recorded: its kind, the words they wrote and the anchor it was made at.
+ */
+export function localDeposit(local: Draft, subject: Subject | undefined): Deposit {
+  return {
+    kind: local.kind ?? "finding", text: local.text, anchor: local.clause, consequence: local.consequence ?? "",
+    offered: true, subject,
+  };
+}
+
+/**
+ * Whether the page's conversation snapshot is this room's own: read for this
+ * record and answered. The page holds the snapshot of wherever it was before
+ * the room until the room's own is read, and that one may carry a sitting — the
+ * ordinary conversation's, marked before D16 (g1-s67 D6) — which the room must
+ * not take for its own and then close on when the store moves to the room.
+ */
+export function ownSnapshot(store: Pick<Store, "conversation" | "state">, record: string): boolean {
+  return store.conversation === record && store.state !== "loading";
+}
+
+/** Which End sheet a room mounts (g1-s67 D7): a review's verdicts, or a shaping sitting's Outcome. */
+export function endOf(purpose: string): "verdict" | "outcome" {
+  return purpose === "review" ? "verdict" : "outcome";
+}
+
+/** The door line of a shaping sitting, on its record's page: "In a sitting · you stepped out 2h ago". */
+export function sittingDoorLine(steppedOutAt: string, now: Date): string {
+  const out = agoOf(steppedOutAt, now);
+  return out === "" ? "In a sitting" : `In a sitting · you stepped out ${out}`;
 }
 
 /* --------------------------------------------------------------- anchors -- */
@@ -433,11 +517,100 @@ function isDesk(value: unknown): value is Desk {
 /**
  * Whether the room is due to be kept, a second after the last keep: at most once
  * a second while a human types, and always when they leave the field, step out
- * or leave the page. This build sets no timer (src/cuts.test.ts), so the second
- * is measured between keystrokes and the last one is kept by the leaving.
+ * or leave the page. The words typed last are kept by keepAfterSilence below.
  */
 export function keepDue(lastKeptAt: number, now: number): boolean {
   return lastKeptAt === 0 || now - lastKeptAt >= 1000;
+}
+
+/** How long the room waits after the last keystroke before it keeps the drafts. */
+export const KEEP_AFTER_SILENCE = 1000;
+
+/**
+ * Keep the room once a second has passed with no further change, answering the
+ * cancel the next change calls. It is the one timer this build sets, a named
+ * row of src/cuts.test.ts: it fires once, reads nothing, and calls the room's
+ * own keep, so words typed just before the typing stops are kept without a blur.
+ */
+export function keepAfterSilence(keep: () => void): () => void {
+  const settled = setTimeout(keep, KEEP_AFTER_SILENCE);
+  return () => {
+    clearTimeout(settled);
+  };
+}
+
+/**
+ * Keeps one room on its sitting's mark, in order. One keep is out at a time: a
+ * keep asked while one is out waits for it and then sends the words as they
+ * stand by then, so an older snapshot is never sent after a newer one, and the
+ * keeps asked while waiting become one. Every keep carries the next number of
+ * the room's sequence, which starts above what the mark held when the room was
+ * opened, and above the clock, so a page opened later numbers above one opened
+ * earlier; the server ignores a keep not numbered above the one it holds, so a
+ * request that arrives late changes nothing. The keep made as the page goes
+ * away does not wait, since nothing runs after the page has gone to send it;
+ * its number is what keeps an older keep still out from overwriting it.
+ */
+export class RoomKeeper {
+  private record = "";
+  private seq = 0;
+  private last = "";
+  private out: Promise<boolean> | null = null;
+  private answer: Promise<boolean> = Promise.resolve(true);
+
+  constructor(
+    private readonly send: (record: string, room: RoomState & { seq: number }, leaving: boolean) => Promise<unknown>,
+  ) {}
+
+  /** Take a room as its mark carried it back, with the sequence the mark holds. */
+  open(record: string, kept: RoomState, held: number, now = Date.now()): void {
+    this.record = record;
+    this.seq = Math.max(held, now);
+    this.last = JSON.stringify(kept);
+  }
+
+  /**
+   * Keep the room as `room` reads when the keep is sent, answering whether it
+   * landed. The same words as the last keep answer that keep's answer, unless
+   * the page is going away while that keep is still out.
+   */
+  async keep(room: () => RoomState, leaving = false): Promise<boolean> {
+    while (!leaving && this.out !== null) {
+      await this.out;
+    }
+    if (this.record === "") {
+      return true;
+    }
+    const kept = JSON.stringify(room());
+    // The page going away sends its own request even for the words already
+    // out, since the one out may die with the page; only its own outlives it.
+    if (kept === this.last && (!leaving || this.out === null)) {
+      return this.answer;
+    }
+    this.last = kept;
+    this.seq += 1;
+    const landed = this.send(this.record, { ...(JSON.parse(kept) as RoomState), seq: this.seq }, leaving).then(
+      () => true,
+      () => {
+        // The next change keeps it again: a keep that could not be made is
+        // words still on the screen.
+        if (this.last === kept) {
+          this.last = "";
+        }
+        return false;
+      },
+    );
+    this.answer = landed;
+    if (!leaving) {
+      this.out = landed;
+      void landed.then(() => {
+        if (this.out === landed) {
+          this.out = null;
+        }
+      });
+    }
+    return landed;
+  }
 }
 
 /** What Step out says when the room's working state could not be kept (Sol SOL-A-01). */
@@ -482,6 +655,19 @@ export const WALKS = [
   { part: "proven", label: "Proven" },
   { part: "behaves", label: "Behaves" },
 ] as const;
+
+/** A shaping sitting's four walks (g1-s67 D3), the server's own parts in its order. */
+export const SHAPING_WALKS = [
+  { part: "records", label: "Records" },
+  { part: "today", label: "Today" },
+  { part: "cases", label: "Cases" },
+  { part: "open", label: "Open" },
+] as const;
+
+/** The walks a room offers, by what its sitting is for. */
+export function walksOf(purpose: string): readonly { part: string; label: string }[] {
+  return purpose === "review" ? WALKS : SHAPING_WALKS;
+}
 
 /* ------------------------------------------------------------ the answers -- */
 

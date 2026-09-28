@@ -569,13 +569,6 @@ func newContextCostBed(t *testing.T, runtimeName, candidate, readerHelper string
 	if err := os.WriteFile(filepath.Join(outer, "development", "metasystem-design.md"), []byte("context cost fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sourceRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.CopyFS(filepath.Join(installation, "scripts"), os.DirFS(filepath.Join(sourceRoot, "scripts"))); err != nil {
-		t.Fatal(err)
-	}
 	copyContextCostFile(t, candidate, filepath.Join(installation, "bin", "metasystem"), 0o755)
 	config := "metasystem.version=1\nmetasystem.engine-delivery=source\nmetasystem.runtimes=claude,codex\nsteward.stop-slow-sec=15\n"
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte(config), 0o644); err != nil {

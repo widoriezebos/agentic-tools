@@ -275,6 +275,14 @@ func newGitFreePreflightBed(t *testing.T, behavior string) (*Engine, *hostCycleS
 // gate script's bytes supplied by the caller; nil keeps the passing gate.
 func newGitFreePreflightBedWithGate(t *testing.T, behavior string, gate []byte) (*Engine, *hostCycleSource) {
 	t.Helper()
+	return newGitFreePreflightBedWithContract(t, behavior, gate, nil)
+}
+
+// newGitFreePreflightBedWithContract is newGitFreePreflightBedWithGate with
+// the contract document passed through edit before it is written; nil keeps
+// the fixture contract.
+func newGitFreePreflightBedWithContract(t *testing.T, behavior string, gate []byte, edit func(string) string) (*Engine, *hostCycleSource) {
+	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -311,6 +319,9 @@ func newGitFreePreflightBedWithGate(t *testing.T, behavior string, gate []byte) 
 	}
 	if behavior != "" {
 		document = strings.Replace(document, "stream.primary=Reach the acceptance score.", "stream.primary=Reach the acceptance score. "+behavior, 1)
+	}
+	if edit != nil {
+		document = edit(document)
 	}
 	if err := writeHostCycleFile(f.contractPath, []byte(document), 0o644); err != nil {
 		t.Fatal(err)

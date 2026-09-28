@@ -16,10 +16,10 @@ func returnRoot(t *testing.T) string {
 	root := t.TempDir()
 	// The checkers read role schemas from the checkout; give them the real
 	// ones so the shape validation runs exactly as in production.
-	dir := filepath.Join(root, "scripts", "agents", "schemas")
+	dir := filepath.Join(root, "internal", "protocol", "schemas")
 	os.MkdirAll(dir, 0o755)
 	for _, role := range []string{"design-critic", "implementer"} {
-		source, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "schemas", role+".schema.json"))
+		source, err := os.ReadFile(filepath.Join("..", "..", "internal", "protocol", "schemas", role+".schema.json"))
 		if err != nil {
 			t.Skip("role schema not readable from the test working directory")
 		}

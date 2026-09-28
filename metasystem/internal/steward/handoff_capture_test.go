@@ -60,10 +60,6 @@ func installHandoffFixtureFiles(t *testing.T, root string) {
 		}
 	}
 	write("metasystem.conf", "metasystem.runtimes=fake\nrole.steward-continuation.runtime=fake\nrole.steward-continuation.model.fake=fixture\n")
-	write("scripts/agents/roles/steward-continuation.md", "# Role: steward-continuation\ncontract\n")
-	write("scripts/agents/roles/steward-continuation.requirements.json", `{"required":[]}`)
-	write("scripts/agents/schemas/steward-continuation.schema.json", `{"type":"object"}`)
-	write("scripts/agents/permissions/workspace.json", `{"write":["workspace"]}`)
 	write("plans/handoff-capture.md", "# Handoff capture\n\nContinue the exact goal.\n")
 	write("memory/receipts.log", "1789408800|2026-09-14T17:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|goal=fix-it|note=prior landing\n")
 	top, err := canonicalExistingPath(root)

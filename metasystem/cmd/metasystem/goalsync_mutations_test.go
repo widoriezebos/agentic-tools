@@ -1466,8 +1466,8 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 		t.Fatalf("projected accepted goal does not match accepted tip %s", fixture.repo.accepted)
 	}
 	policyFiles := map[string][]byte{"memory/rulings.md": []byte("| R-35-m0 | landing class authority |\n| R-54-m1 | tier-1 landing authority |\n")}
-	for _, name := range []string{"path-classes.txt", "landing-classes.json"} {
-		policyFiles["scripts/agents/"+name], err = os.ReadFile(filepath.Join("..", "..", "scripts", "agents", name))
+	for _, name := range []string{"internal/pathclass/path-classes.txt", "internal/landing/landing-classes.json"} {
+		policyFiles[name], err = os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(name)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1475,9 +1475,9 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 	const riskPath = "records/counselor/accepted-risk-register.jsonl"
 	baseTree, candidateTree := strings.Repeat("7", 40), strings.Repeat("8", 40)
 	pathOID := map[string]string{
-		"scripts/agents/landing-classes.json": strings.Repeat("1", 40),
-		"scripts/agents/path-classes.txt":     strings.Repeat("2", 40),
-		"memory/rulings.md":                   strings.Repeat("3", 40),
+		"internal/landing/landing-classes.json": strings.Repeat("1", 40),
+		"internal/pathclass/path-classes.txt":   strings.Repeat("2", 40),
+		"memory/rulings.md":                     strings.Repeat("3", 40),
 	}
 	blobs := map[string][]byte{}
 	for path, data := range policyFiles {
@@ -1553,7 +1553,7 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 	}
 	delete(calls, prefixKey)
 	wantCalls := [][]string{{"rev-parse", "HEAD^{tree}"}, {"diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none", baseTree, candidateTree, "--"}}
-	for _, path := range []string{"scripts/agents/landing-classes.json", "memory/rulings.md", "scripts/agents/path-classes.txt", riskPath} {
+	for _, path := range []string{"internal/landing/landing-classes.json", "memory/rulings.md", "internal/pathclass/path-classes.txt", riskPath} {
 		wantCalls = append(wantCalls, []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", baseTree, "--", path})
 		if oid := pathOID[path]; oid != "" {
 			wantCalls = append(wantCalls, []string{"cat-file", "blob", oid})

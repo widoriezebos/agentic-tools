@@ -91,11 +91,11 @@ func (r *rawConformanceFixture) fact() rawConformanceFact {
 		".gitignore": "artifacts/\nlocal.conf\n", "source.txt": "base\n",
 		"docs/note.md": "base\n", "metasystem.conf": "metasystem.version=1\nrole.code-critic.runtime=fake\n",
 	}
-	classes, err := os.ReadFile(filepath.Join(r.f.controller, "scripts", "agents", "path-classes.txt"))
+	classes, err := os.ReadFile(filepath.Join(r.f.controller, "internal", "pathclass", "path-classes.txt"))
 	if err != nil {
 		r.f.t.Fatal(err)
 	}
-	base["scripts/agents/path-classes.txt"] = string(classes)
+	base["internal/pathclass/path-classes.txt"] = string(classes)
 	changes := map[string]string{}
 	seen := map[string]bool{}
 	err = filepath.WalkDir(r.f.worktree, func(path string, entry os.DirEntry, walkErr error) error {

@@ -231,10 +231,16 @@ export function routeFor(reference: Reference): string | null {
  */
 export const REVIEW_PREFIX = "/review/";
 
-/** Where one review's room is. */
-export function reviewPath(record: string): string {
+/**
+ * Everything beneath this prefix is the room of one sitting that shapes an
+ * intent or a design, named by its record's path (g1-s67 D1): the same room a
+ * review has, at an address of its own.
+ */
+export const SITTING_PREFIX = "/sitting/";
+
+function roomAddress(prefix: string, record: string): string {
   return (
-    REVIEW_PREFIX +
+    prefix +
     record
       .split("/")
       .map((segment) => encodeURIComponent(segment))
@@ -242,21 +248,45 @@ export function reviewPath(record: string): string {
   );
 }
 
-/** The review record an address names, or "" for an address that is not a room. */
-export function reviewIdFromPath(pathname: string): string {
-  if (!pathname.startsWith(REVIEW_PREFIX)) {
+/** Where one review's room is. */
+export function reviewPath(record: string): string {
+  return roomAddress(REVIEW_PREFIX, record);
+}
+
+/** Where the room of one sitting that shapes a record is. */
+export function sittingPath(record: string): string {
+  return roomAddress(SITTING_PREFIX, record);
+}
+
+/** Where one sitting's room is, by what the sitting is for. */
+export function roomPath(purpose: string, record: string): string {
+  return purpose === "review" ? reviewPath(record) : sittingPath(record);
+}
+
+function recordUnder(prefix: string, pathname: string): string {
+  if (!pathname.startsWith(prefix)) {
     return "";
   }
   return pathname
-    .slice(REVIEW_PREFIX.length)
+    .slice(prefix.length)
     .split("/")
     .map((segment) => decodeSegment(segment))
     .join("/");
 }
 
+/** The review record an address names, or "" for an address that is not a review's room. */
+export function reviewIdFromPath(pathname: string): string {
+  return recordUnder(REVIEW_PREFIX, pathname);
+}
+
+/** The record a room's address names, a review's or a shaping sitting's, or "" for an address that is not a room. */
+export function roomIdFromPath(pathname: string): string {
+  return reviewIdFromPath(pathname) || recordUnder(SITTING_PREFIX, pathname);
+}
+
 /**
- * What of the shell an address is shown in: the review room is a screen of its
- * own with no rail and no drawer (g1-s65 D2); the Partner's own page has no
+ * What of the shell an address is shown in: a room is a screen of its own with
+ * no rail and no drawer (g1-s65 D2, g1-s67 D1); the Partner's own page has no
  * drawer; everything else has both.
  */
 export type Chrome = "room" | "focused" | "shell";
@@ -268,9 +298,9 @@ export function chromeOf(pathname: string): Chrome {
   return activeSection(pathname)?.id === "brain" ? "focused" : "shell";
 }
 
-/** Whether an address is a review room. */
+/** Whether an address is a room, a review's or a shaping sitting's. */
 export function inTheRoom(pathname: string): boolean {
-  return reviewIdFromPath(pathname) !== "";
+  return roomIdFromPath(pathname) !== "";
 }
 
 /** Everything beneath this prefix is a document, named by the rest of it. */

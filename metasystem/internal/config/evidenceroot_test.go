@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -303,5 +304,37 @@ func TestResolveEvidenceRootRefusesADefaultInsideTheCheckout(t *testing.T) {
 	_, err := ResolveEvidenceRoot(EvidenceRootParams{ConfPath: f.conf, LookupEnv: envMap(map[string]string{"HOME": f.checkout})})
 	if err == nil || !strings.Contains(err.Error(), "must be outside the repository") {
 		t.Fatalf("a default under a HOME that is the checkout = %v, want the outside-the-repository refusal", err)
+	}
+}
+
+// The general readers answer the evidence root as its owner does: a checkout
+// with no setting has the compiled-in default, from source "default", and the
+// key is listed among the configured keys. Before this, `settings show
+// evidence.root` said there was no such setting once a seat's hand-set line
+// was dropped.
+func TestGeneralReadersAnswerTheEvidenceRootDefault(t *testing.T) {
+	t.Parallel()
+	f := newEvidenceFixture(t, "", "")
+	home := t.TempDir()
+	lookup := envMap(map[string]string{"HOME": home})
+	want := filepath.Join(home, "metasystem-evidence", "repo")
+	params := GetParams{Key: EvidenceRootKey, ConfPath: f.conf, LookupEnv: lookup}
+	if value, code, err := Get(params); err != nil || code != 0 || value != want {
+		t.Fatalf("Get = %q, %d, %v; want %q", value, code, err, want)
+	}
+	if origin, err := KeyOrigin(params); err != nil || origin != "default" {
+		t.Fatalf("KeyOrigin = %q, %v; want default", origin, err)
+	}
+	if keys := Keys(f.conf, "evidence.", nil); !slices.Contains(keys, EvidenceRootKey) {
+		t.Fatalf("Keys(evidence.) = %v; want it to list %s", keys, EvidenceRootKey)
+	}
+	// A named root still wins, and its source is named.
+	f2 := newEvidenceFixture(t, "", EvidenceRootKey+"="+filepath.Join(home, "named")+"\n")
+	params2 := GetParams{Key: EvidenceRootKey, ConfPath: f2.conf, LookupEnv: lookup}
+	if value, _, _ := Get(params2); value != filepath.Join(home, "named") {
+		t.Fatalf("Get with a .local root = %q", value)
+	}
+	if origin, _ := KeyOrigin(params2); origin != "conf-local" {
+		t.Fatalf("KeyOrigin with a .local root = %q", origin)
 	}
 }

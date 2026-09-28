@@ -82,7 +82,7 @@ const (
 	OpDeposit       = "deposit"
 	OpPropose       = "propose"
 	// OpChanges reads the candidate a review reviews, and OpPresent puts one
-	// thing on the review's desk (g1-s65 D4, D5).
+	// thing on a sitting's desk (g1-s65 D4, D5, g1-s67 D4).
 	OpChanges = "changes"
 	OpPresent = "present"
 )

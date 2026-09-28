@@ -56,7 +56,7 @@ For code critique and the warden, Part One stores the review-round member in
 the goal's tier box: zero rounds for Tier 1, two for Tier 2, and three for Tier
 3. The tier derives from severity and novelty (exposure and accumulation
 weight the proof), never from the change's shape. Design critique has two rounds at tier 3 and does not exist below tier 3. A design-critic chain's `reviewRoundLimit` is 2 whatever the goal's stored member says. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root (a goal-free non-design root reads `metasystem.budget.review-round-max` alone), counts each follow-up round against it, refuses the round past it, and exhaustion opens no fresh budget. Start every chain from
-`scripts/agents/templates/review-brief.md` — budget, threat model, appetite,
+`internal/protocol/templates/review-brief.md` — budget, threat model, appetite,
 and scope declared BEFORE round one; a true finding outside the declared
 threat model closes as out-of-scope citing the brief. Record the goal's budget
 in the brief. As the reviewer's R-60-m1 rule, stop at the first round with no

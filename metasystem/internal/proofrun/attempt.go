@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 const (
@@ -1344,6 +1345,11 @@ func effectiveProofConfigurationDigest(configurationPath string, environment []s
 		if key == AdmissionCapKey {
 			continue
 		}
+		// Where evidence is mirrored is a host-local destination with a
+		// per-checkout default, not an input to what the tests prove.
+		if key == config.EvidenceRootKey {
+			continue
+		}
 		// The shipped template's model slot is metadata, not a resolvable key.
 		// Concrete local/runtime bindings below carry the effective model;
 		// the source manifest still binds the template's original bytes.
@@ -1373,11 +1379,7 @@ func CompleteToolchainIdentityAt(root string) (string, error) {
 }
 
 func coverageRatchetPath(root string) string {
-	name := "coverage-ratchet.json"
-	if runtime.GOOS == "linux" {
-		name = "coverage-ratchet-linux.json"
-	}
-	return filepath.Join(root, "scripts", "agents", name)
+	return filepath.Join(root, testpolicy.CoverageFloorsFile(runtime.GOOS))
 }
 
 func coverageRatchetDigest(root string) (string, error) {

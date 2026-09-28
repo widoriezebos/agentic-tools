@@ -75,21 +75,69 @@ func TestOpenWorkUsesRealNextStepBesideFencedExample(t *testing.T) {
 	}
 }
 
-func TestOpenWorkFallsBackWhenFenceIsUnclosed(t *testing.T) {
+// TestOpenWorkStrayFirstAndStrayLastFences are the OSR-08 critic's plans,
+// read through the open-work report and the stop scan: under CommonMark an
+// unclosed fence runs to the end of the file, so a stray opener before a
+// closed example leaves nothing to report (the pairing no longer slides), a
+// stray fence after the fields keeps them, and each plan with a fence that
+// never closes is named with that fence's line rather than dropped silently.
+func TestOpenWorkStrayFirstAndStrayLastFences(t *testing.T) {
 	root := newPlanRoot(t)
-	writePlan(t, root, "unclosed.md", "```text\nexample without a closing fence\n- Next step: Ship the real change after the broken example\n- In flight right now: none\n")
+	writePlan(t, root, "unclosed.md", "```text\nexample without a closing fence\n- Next step: FAKE field inside the unclosed fence\n- In flight right now: none\n")
+	writePlan(t, root, "first.md", "```\n- Next step: FAKE after the stray opener\n```text\n- Next step: FAKE inside\n```\n\n```text\n- Next step: FAKE in the example\n")
+	writePlan(t, root, "trap.md", "```text\n- Next step: FAKE example from a closed fence\n```\n\n```text\n- Next step: FAKE after an unclosed fence\n- In flight right now: none\n")
+	writePlan(t, root, "last.md", "- Next step: REAL work before a stray fence\n- In flight right now: none\n```\n")
 	lines := openWorkWithoutGoal(t, root)
-	if !hasLine(lines, "OPEN-WORK plans/unclosed.md: Ship the real change after the broken example") {
-		t.Fatalf("an unclosed fence swallowed the real field: %v", lines)
+	if hasLine(lines, "FAKE") {
+		t.Fatalf("a fenced field became open work: %v", lines)
+	}
+	named := []string{
+		"PLAN-FENCE-UNCLOSED plans/unclosed.md: the code fence opened at line 1",
+		"PLAN-FENCE-UNCLOSED plans/first.md: the code fence opened at line 7",
+		"PLAN-FENCE-UNCLOSED plans/trap.md: the code fence opened at line 5",
+		"PLAN-FENCE-UNCLOSED plans/last.md: the code fence opened at line 3",
+	}
+	for _, want := range append(named, "OPEN-WORK plans/last.md: REAL work before a stray fence") {
+		if !hasLine(lines, want) {
+			t.Fatalf("missing %q in %v", want, lines)
+		}
+	}
+	scan := scanWithoutGoal(t, root)
+	for _, want := range named {
+		if !hasLine(scan.OpenWorkWarnings, want) {
+			t.Fatalf("the stop scan's warnings lack %q: %v", want, scan.OpenWorkWarnings)
+		}
+	}
+	for _, item := range scan.Open {
+		if strings.Contains(item.Detail, "FAKE") {
+			t.Fatalf("the stop scan read a fenced field as open work: %+v", item)
+		}
 	}
 }
 
-func TestOpenWorkKeepsClosedFenceExcludedBeforeUnclosedFence(t *testing.T) {
-	root := newPlanRoot(t)
-	writePlan(t, root, "trap.md", "```text\n- Next step: FAKE example from a closed fence\n```\n\n```text\n- Next step: REAL work to do\n- In flight right now: none\n")
-	lines := openWorkWithoutGoal(t, root)
-	if !hasLine(lines, "OPEN-WORK plans/trap.md: REAL work to do") || hasLine(lines, "FAKE example from a closed fence") {
-		t.Fatalf("the unpaired fence exposed a field from a closed fence: %v", lines)
+// TestPlanFieldFencesFollowCommonMark: a fence closes only on a bare fence of
+// the same character at least as long, with up to three spaces of indent, so
+// a fence inside a longer fence, an info-string line and a tilde block's
+// backticks are all fenced text; a backtick line whose info string holds a
+// backtick opens nothing, and four spaces of indent is no fence.
+func TestPlanFieldFencesFollowCommonMark(t *testing.T) {
+	t.Parallel()
+	for name, body := range map[string]string{
+		"fence inside a fence":       "````markdown\n```text\n- Next step: FAKE nested\n```\n- Next step: FAKE outer\n````\n\n- Next step: REAL\n",
+		"indented fences":            "   ```\n- Next step: FAKE indented\n   ```\n- Next step: REAL\n",
+		"info string does not close": "```\n- Next step: FAKE\n```go\n- Next step: FAKE still\n```\n- Next step: REAL\n",
+		"tilde fence":                "~~~\n```\n- Next step: FAKE\n~~~\n- Next step: REAL\n",
+		"backtick in the info":       "``` a`b\n- Next step: REAL\n",
+		"four spaces is no fence":    "    ```\n- Next step: REAL\n",
+		"crlf lines":                 "```text\r\n- Next step: FAKE\r\n```\r\n- Next step: REAL\r\n",
+	} {
+		step, ok := planField(body, "Next step")
+		if !ok || step != "REAL" {
+			t.Errorf("%s: planField = %q, %v; want REAL", name, step, ok)
+		}
+		if unclosed := unclosedPlanFence("plans/plan.md", body); unclosed != "" {
+			t.Errorf("%s: every fence closes, but %q", name, unclosed)
+		}
 	}
 }
 

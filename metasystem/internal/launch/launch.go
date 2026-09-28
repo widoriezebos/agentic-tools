@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 const DefaultWaitTimeout = 240 * time.Second
@@ -45,9 +47,10 @@ type StartSpec struct {
 	readMode                                           string
 }
 type Manager struct {
-	Store             Store
-	Adapters          map[string]Adapter
-	TemplateDirectory string
+	Store    Store
+	Adapters map[string]Adapter
+	// Templates holds the brief templates; nil is the engine's own.
+	Templates         fs.FS
 	Processes         ProcessSystem
 	Signaler          ProcessSignaler
 	Prober            identity.Prober

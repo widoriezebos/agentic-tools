@@ -14,6 +14,7 @@ package main
 // verdict, the publication state and this machine's own presence record.
 
 import (
+	"context"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
@@ -39,9 +40,17 @@ const (
 // announceFixturePresence stands in for the fetch owner this fixture has
 // none of: it tells every open stream that a presence attempt finished, on a
 // cadence, so a Fleet page that is already open can be watched re-reading.
-func announceFixturePresence(watch *fleet.Watch, every time.Duration) {
-	for range time.Tick(every) {
-		watch.Announce()
+// It stops when ctx ends.
+func announceFixturePresence(ctx context.Context, watch *fleet.Watch, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			watch.Announce()
+		}
 	}
 }
 

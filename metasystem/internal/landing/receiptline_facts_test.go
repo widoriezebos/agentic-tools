@@ -46,12 +46,12 @@ func newReceiptLineFixture(t *testing.T, adopted bool) *receiptLineFixture {
 	}
 	f.ownerRoot = ownerRoot
 	f.writeInstall("product.txt", "before\n")
-	manifest, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "path-classes.txt"))
+	manifest, err := os.ReadFile(filepath.Join("..", "..", "internal", "pathclass", "path-classes.txt"))
 	if err != nil {
 		t.Fatalf("read shipped path-class manifest: %v", err)
 	}
 	f.manifest = append([]byte(nil), manifest...)
-	f.writeInstall(pathclass.ManifestPath, string(manifest))
+	f.writeInstall(pathclass.SourcePath, string(manifest))
 	f.writeTop(f.ledger, "receipt=existing\n")
 	return f
 }
@@ -129,7 +129,7 @@ func (r *receiptLineRun) expectCandidateLedger(content string, present bool) {
 
 func (r *receiptLineRun) expectManifest() {
 	r.expect("Prefix", "", "")
-	r.expectFile(r.base, path.Join(r.fixture.prefix, pathclass.ManifestPath), string(r.fixture.manifest), true)
+	r.expectFile(r.base, path.Join(r.fixture.prefix, pathclass.SourcePath), string(r.fixture.manifest), true)
 }
 
 func (r *receiptLineRun) expectOwner() {

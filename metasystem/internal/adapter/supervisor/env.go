@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 )
 
 // GitQuery runs one read-only git query in dir and returns its trimmed
@@ -45,53 +47,87 @@ func realDir(path string) (string, bool) {
 	return abs, true
 }
 
-// jobBuildCacheEnv prints the build cache assignments for a job workspace:
-// one build cache per chain (goal delegate-rounds-reuse-a-warm-gate). Every
-// round of a chain runs in the chain root's worktree, and the sandboxes grant
-// writes only inside that worktree and its derived git roots, so the cache
-// lives in the worktree's private git dir beside the quarantine object store.
-// Only a job worktree the dispatcher made (under artifacts/agents/worktrees)
-// qualifies: a seat checkout that is itself a linked worktree, or a landing's
-// detached one, has a git dir the envelope never grants. A job without a
-// worktree gets nothing.
-func jobBuildCacheEnv(git GitQuery, agents, workspace string) []string {
+// jobBuildCacheEnv prints the build cache assignments for a job workspace
+// (disk-lifetimes A7): every job, in a worktree or a shared checkout,
+// builds in the one machine delegate cache pair (caches, created here and
+// granted by every sandbox), so follow-up rounds and other chains start warm
+// and a delegate can plant nothing the engine's own builds reuse. A job
+// worktree the dispatcher made (under artifacts/agents/worktrees, with a
+// linked worktree's git dir) adds a chain-private GOTMPDIR in its git dir,
+// which the envelope grants and which goes with the worktree. An empty
+// caches (the user cache dir did not resolve) exports no cache.
+func jobBuildCacheEnv(git GitQuery, agents, workspace string, caches gocache.Paths) []string {
+	var env []string
+	if caches.GoCache != "" && caches.StaticcheckCache != "" &&
+		os.MkdirAll(caches.GoCache, 0o755) == nil && os.MkdirAll(caches.StaticcheckCache, 0o755) == nil {
+		env = append(env, "GOCACHE="+caches.GoCache, "STATICCHECK_CACHE="+caches.StaticcheckCache)
+	}
+	if gitdir, ok := jobWorktreeGitDir(git, agents, workspace); ok {
+		tmp := filepath.Join(gitdir, "metasystem-go-tmp")
+		if os.MkdirAll(tmp, 0o755) == nil {
+			env = append(env, "GOTMPDIR="+tmp)
+		}
+	}
+	return env
+}
+
+// jobWorktreeGitDir is the private git dir of a job worktree the dispatcher
+// made; a seat checkout that is itself a linked worktree, or a landing's
+// detached one, is not one.
+func jobWorktreeGitDir(git GitQuery, agents, workspace string) (string, bool) {
 	jobsRoot, ok := realDir(filepath.Join(agents, "worktrees"))
 	if !ok {
-		return nil
+		return "", false
 	}
 	ws, ok := realDir(workspace)
 	if !ok || !strings.HasPrefix(ws+"/", jobsRoot+"/") {
-		return nil
+		return "", false
 	}
 	gitdir, ok := git(workspace, "rev-parse", "--absolute-git-dir")
 	if !ok || !strings.Contains(gitdir, "/.git/worktrees/") {
-		return nil
+		return "", false
 	}
-	cache := filepath.Join(gitdir, "metasystem-build-cache")
-	for _, dir := range []string{"go-cache", "go-tmp", "staticcheck"} {
-		if err := os.MkdirAll(filepath.Join(cache, dir), 0o755); err != nil {
-			return nil
-		}
-	}
-	return []string{
-		"GOCACHE=" + filepath.Join(cache, "go-cache"),
-		"GOTMPDIR=" + filepath.Join(cache, "go-tmp"),
-		// staticcheck (the fast gate) keeps its own cache and exits 1
-		// when it cannot write one.
-		"STATICCHECK_CACHE=" + filepath.Join(cache, "staticcheck"),
-	}
+	return gitdir, true
 }
 
-// recordBuildCachePath writes the round's build-cache.txt: the chain cache
-// a round used, empty for a job without a worktree.
-func recordBuildCachePath(git GitQuery, agents, workspace, roundDir string) {
+// recordBuildCachePath writes the round's build-cache.txt: the delegate
+// cache the round builds in, empty when it did not resolve.
+func recordBuildCachePath(git GitQuery, agents, workspace, roundDir string, caches gocache.Paths) {
 	cache := ""
-	for _, assignment := range jobBuildCacheEnv(git, agents, workspace) {
+	for _, assignment := range jobBuildCacheEnv(git, agents, workspace, caches) {
 		if value, found := strings.CutPrefix(assignment, "GOCACHE="); found {
 			cache = value
 		}
 	}
 	_ = os.WriteFile(filepath.Join(roundDir, "build-cache.txt"), []byte(cache+"\n"), 0o644)
+}
+
+// delegateCaches is the machine delegate cache pair under the user cache
+// dir (the Deps seam, else os.UserCacheDir); an unresolvable dir is empty.
+func (d Deps) delegateCaches() gocache.Paths {
+	paths, err := gocache.DomainPathsUsing(gocache.DomainDelegate, d.UserCacheDir)
+	if err != nil {
+		return gocache.Paths{}
+	}
+	return paths
+}
+
+// engineCaches is the machine engine cache pair a delegate's sandbox is
+// denied.
+func (d Deps) engineCaches() gocache.Paths {
+	paths, err := gocache.DomainPathsUsing(gocache.DomainEngine, d.UserCacheDir)
+	if err != nil {
+		return gocache.Paths{}
+	}
+	return paths
+}
+
+// delegateRoundEnv is what every delegate launch form adds for its
+// workspace: the quarantine object store and the machine delegate cache.
+// Devin has no OS sandbox, so for it the export is the whole protection
+// (disk-lifetimes 3.1's stated limit).
+func delegateRoundEnv(d Deps, workspace string) []string {
+	return withEnv(jobGitQuarantineEnv(d.git(), workspace), jobBuildCacheEnv(d.git(), d.agents(), workspace, d.delegateCaches())...)
 }
 
 // jobGitQuarantineEnv routes the delegate's git object writes into the

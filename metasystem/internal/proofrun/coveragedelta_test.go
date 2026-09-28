@@ -31,12 +31,12 @@ func newCoverageDeltaBed(t *testing.T) *coverageDeltaBed {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.invalid/metasystem\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
 		ratchet := `{"floors":{"internal/proofrun":80,"internal/low":90.5},"exempt":{}}`
-		if name == "coverage-ratchet-linux.json" {
+		if name == "testing-coverage-floors-linux.json" {
 			ratchet = `{"floors":{"internal/proofrun":70},"exempt":{}}`
 		}
-		if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(ratchet), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(ratchet), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -100,7 +100,7 @@ func TestCoverageDeltaWorkerMeasuresEachPackageAgainstItsFloor(t *testing.T) {
 	if !reflect.DeepEqual(bed.tests, []string{"./internal/proofrun"}) {
 		t.Fatalf("tests=%v", bed.tests)
 	}
-	wantReuse := [][]string{{filepath.Join(bed.options.Root, "scripts", "agents", "coverage-ratchet.json"), "internal/proofrun"}}
+	wantReuse := [][]string{{filepath.Join(bed.options.Root, "testing-coverage-floors.json"), "internal/proofrun"}}
 	if !reflect.DeepEqual(bed.reused, wantReuse) {
 		t.Fatalf("reuse=%v want %v", bed.reused, wantReuse)
 	}
@@ -119,7 +119,7 @@ func TestCoverageDeltaOutsideAProofLaunchesOneAdmittedProof(t *testing.T) {
 	if code := bed.run(); code != 23 {
 		t.Fatalf("code=%d want the launch's status; stderr=%s", code, bed.err.String())
 	}
-	want := [][]string{{filepath.Join(bed.options.Root, "scripts", "agents", "coverage-ratchet.json"), "internal/proofrun", "internal/low"}}
+	want := [][]string{{filepath.Join(bed.options.Root, "testing-coverage-floors.json"), "internal/proofrun", "internal/low"}}
 	if !reflect.DeepEqual(bed.launches, want) || len(bed.tests) != 0 {
 		t.Fatalf("launches=%v tests=%v", bed.launches, bed.tests)
 	}
@@ -185,7 +185,7 @@ func TestCoverageDeltaSelectionAndSkips(t *testing.T) {
 
 	bed = newCoverageDeltaBed(t)
 	bed.options.Staged = true
-	if err := os.Remove(filepath.Join(bed.options.Root, "scripts", "agents", "coverage-ratchet.json")); err != nil {
+	if err := os.Remove(filepath.Join(bed.options.Root, "testing-coverage-floors.json")); err != nil {
 		t.Fatal(err)
 	}
 	if code := bed.run(); code != 0 || !strings.Contains(bed.out.String(), "no ratchet registry at this root; skipped") {
@@ -239,8 +239,8 @@ func TestCoverageDeltaResolvesRatchetEngineAndPackages(t *testing.T) {
 
 	bed = newCoverageDeltaBed(t)
 	bed.options.Packages = []string{"internal/proofrun"}
-	bed.options.InvocationDir = filepath.Join(bed.options.Root, "scripts")
-	bed.options.Ratchet = "agents/coverage-ratchet-linux.json"
+	bed.options.InvocationDir = filepath.Join(bed.options.Root, "internal")
+	bed.options.Ratchet = "../testing-coverage-floors-linux.json"
 	if code := bed.run(); code != 0 || !strings.Contains(bed.out.String(), "(floor 70.0%)") {
 		t.Fatalf("relative ratchet code=%d stdout=%q stderr=%q", code, bed.out.String(), bed.err.String())
 	}

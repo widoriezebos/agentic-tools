@@ -13,6 +13,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 func assertCAS(t *testing.T, call []string, job, expect, status string) string {
@@ -53,8 +56,8 @@ func TestFakeCompleteValidSequence(t *testing.T) {
 	if got, want := readText(t, f.heartbeat()), `{"pid":`+strconv.Itoa(os.Getpid())+`,"pgid":`+strconv.Itoa(os.Getpid())+`,"instanceTag":"fake-tag-1"}`+"\n"; got != want {
 		t.Fatalf("heartbeat = %q, want %q", got, want)
 	}
-	if got := readText(t, f.roundFile("build-cache.txt")); got != "\n" {
-		t.Fatalf("build cache = %q, want empty line", got)
+	if got, want := readText(t, f.roundFile("build-cache.txt")), filepath.Join(f.root, "user-cache", "metasystem-delegate-go-build")+"\n"; got != want {
+		t.Fatalf("build cache = %q, want the machine delegate cache %q", got, want)
 	}
 	if got, want := readText(t, f.roundFile("events.jsonl")),
 		`{"event":"session-established","sessionId":"fake-session-fake-job-1","round":1}`+"\n"+`{"event":"turn.completed","topLevel":true}`+"\n"; got != want {
@@ -777,8 +780,9 @@ func TestFakeSuperviseRefusals(t *testing.T) {
 	})
 }
 
-// TestFakeRecordBuildCachePath mirrors job_build_cache_env: a job
-// worktree under artifacts/agents/worktrees records its private cache.
+// TestFakeRecordBuildCachePath: the fake records the path a real runtime's
+// round records (disk-lifetimes A7), the one machine delegate cache for a
+// job worktree and a shared checkout alike, and makes no per-chain cache.
 func TestFakeRecordBuildCachePath(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -797,18 +801,17 @@ func TestFakeRecordBuildCachePath(t *testing.T) {
 			t.Fatalf("git %v: %v %s", args, err, output)
 		}
 	}
+	caches := gocache.Paths{GoCache: filepath.Join(root, "cache", "metasystem-delegate-go-build"), StaticcheckCache: filepath.Join(root, "cache", "metasystem-delegate-staticcheck")}
 	roundDir := t.TempDir()
-	fakeRecordBuildCachePath(runGit, agents, worktree, roundDir)
-	cache := filepath.Join(repo, ".git", "worktrees", "job-1", "metasystem-build-cache")
-	if got := readText(t, filepath.Join(roundDir, "build-cache.txt")); got != filepath.Join(cache, "go-cache")+"\n" {
-		t.Fatalf("build cache = %q", got)
+	for _, workspace := range []string{worktree, repo} {
+		fakeRecordBuildCachePath(runGit, agents, workspace, roundDir, caches)
+		if got := readText(t, filepath.Join(roundDir, "build-cache.txt")); got != caches.GoCache+"\n" {
+			t.Fatalf("%s: build cache = %q", workspace, got)
+		}
 	}
-	if !exists(filepath.Join(cache, "go-tmp")) || exists(filepath.Join(cache, "staticcheck")) {
-		t.Fatal("the fake makes go-cache and go-tmp only")
-	}
-	fakeRecordBuildCachePath(runGit, agents, repo, roundDir)
-	if got := readText(t, filepath.Join(roundDir, "build-cache.txt")); got != "\n" {
-		t.Fatalf("a checkout outside the job worktrees recorded %q", got)
+	gitdir := filepath.Join(repo, ".git", "worktrees", "job-1")
+	if !exists(filepath.Join(gitdir, "metasystem-go-tmp")) || exists(filepath.Join(gitdir, "metasystem-build-cache")) {
+		t.Fatal("the fake makes the worktree's GOTMPDIR and no per-chain cache")
 	}
 }
 
@@ -961,8 +964,6 @@ func TestFakeSelftest(t *testing.T) {
 	t.Parallel()
 	setup := func(t *testing.T) *fakeInstall {
 		f := newFakeInstall(t, installOptions{})
-		mustWrite(t, filepath.Join(f.root, "scripts", "agents", "templates", "brief.md"), "Working Mode: <working mode>\nGoal: fake\nWorking Mode: again\n")
-		mustWrite(t, filepath.Join(f.root, "scripts", "agents", "templates", "follow-up.md"), "follow up\n")
 		f.env["TMPDIR"] = t.TempDir()
 		f.clock = &stepClock{now: time.Date(2026, 9, 27, 10, 11, 12, 0, time.UTC)}
 		return f
@@ -992,13 +993,22 @@ func TestFakeSelftest(t *testing.T) {
 		if !reflect.DeepEqual(lines, want) {
 			t.Fatalf("delegate calls =\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
 		}
-		if got := readText(t, filepath.Join(dir, "brief.md")); got != "Working Mode: design\nGoal: fake\nWorking Mode: design\n" {
+		template, err := protocol.Template("brief.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		designed := strings.Replace(string(template), "Working Mode: <working mode>", "Working Mode: design", 1)
+		if !strings.HasPrefix(string(template), "Working Mode: <working mode>\n") || strings.Count(designed, "Working Mode:") != 1 {
+			t.Fatalf("the engine's brief template changed its working-mode header: %q", template[:min(len(template), 80)])
+		}
+		if got := readText(t, filepath.Join(dir, "brief.md")); got != designed {
 			t.Fatalf("brief = %q", got)
 		}
-		if got := readText(t, filepath.Join(dir, "cancel.md")); got != "Working Mode: design\nGoal: fake\nWorking Mode: design\n\nFAKE:timeout\n" {
+		if got := readText(t, filepath.Join(dir, "cancel.md")); got != designed+"\nFAKE:timeout\n" {
 			t.Fatalf("cancel brief = %q", got)
 		}
-		if got := readText(t, filepath.Join(dir, "follow.md")); got != "follow up\n" {
+		if followUp, err := protocol.Template("follow-up.md"); err != nil || readText(t, filepath.Join(dir, "follow.md")) != string(followUp) {
+			got := readText(t, filepath.Join(dir, "follow.md"))
 			t.Fatalf("follow brief = %q", got)
 		}
 		record := readJSON(t, filepath.Join(f.agents(), "selftests", id+".json"))

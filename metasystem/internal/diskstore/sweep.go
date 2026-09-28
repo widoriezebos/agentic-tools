@@ -348,7 +348,7 @@ func (p *Pass) floor(ctx context.Context, report *Report) {
 	}
 	switch {
 	case p.options.Trim == nil:
-		floor.Trim = "the Go cache trimmer is not in this engine yet (Part A); nothing was trimmed"
+		floor.Trim = "the caches are trimmed to their caps by the steward's cache step (Part A) each cycle; the floor's half-cap trim is not built yet"
 	case p.Mode != ModeApply:
 		floor.Trim = "the Go cache trimmer would run at half caps"
 	default:

@@ -11,7 +11,7 @@ import type {
 } from "./api";
 import { ACTIONS, ASK, type Kind } from "./writing";
 import type { HelpId } from "../help/terms";
-import { documentPath, goalPath } from "../routes";
+import { documentPath, goalPath, reviewPath, sittingPath } from "../routes";
 
 /**
  * What the briefing shows, and what the reader shows around one document,
@@ -1205,11 +1205,34 @@ export function opensLine(row: SittingRow, _stands: boolean): string {
       : `Read the review recorded in ${row.record.path}`;
   }
   if (row.standing) {
-    return `Open the conversation on ${row.record.path}`;
+    return `Go back into the sitting's room on ${row.record.path}`;
   }
   // A sitting is a conversation of its own (g1-s65 D16), so one standing on
   // another record is not ended by starting this one.
-  return `Open the conversation on ${row.record.path} and start a sitting on it`;
+  return `Start a sitting on ${row.record.path} and open its room`;
+}
+
+/**
+ * What pressing one Sittings row does (g1-s67 D6): a standing sitting's row is
+ * its door, into its room, whatever its mark keeps of the room; a review that
+ * has ended is its record; a shaping sitting that has ended is started again on
+ * its record, whose room the press then opens.
+ */
+export function sittingRowPress(
+  row: SittingRow,
+): { go: string } | { start: { purpose: string; subject: { kind: string; id: string; title: string } } } {
+  if (row.record.kind === "review") {
+    return { go: row.standing ? reviewPath(row.record.path) : documentPath(row.record.path) };
+  }
+  if (row.standing) {
+    return { go: sittingPath(row.record.path) };
+  }
+  return {
+    start: {
+      purpose: row.record.kind === "intent" ? "shape intent" : "shape a design",
+      subject: { kind: "record", id: row.record.path, title: row.record.title },
+    },
+  };
 }
 
 /** When a row's last entry was recorded, as the row says it, or "". */

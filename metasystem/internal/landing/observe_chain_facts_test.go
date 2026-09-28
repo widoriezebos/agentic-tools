@@ -112,9 +112,9 @@ func (c *observationCase) wantChain(key string, count int) {
 
 func (c *observationCase) wantChainPolicy(paths ...string) {
 	c.wantChain("head", 1)
-	c.wantChain("file:"+observeBaseTree+":scripts/agents/landing-classes.json", 1)
+	c.wantChain("file:"+observeBaseTree+":internal/landing/landing-classes.json", 1)
 	c.wantChain("file:"+observeBaseTree+":memory/rulings.md", 1)
-	c.wantChain("file:"+observeBaseTree+":scripts/agents/path-classes.txt", 1)
+	c.wantChain("file:"+observeBaseTree+":internal/pathclass/path-classes.txt", 1)
 	c.wantChain("paths:"+observeBaseTree+":"+c.candidate, 1)
 	c.wantChain("prefix", 1)
 	for _, path := range paths {
@@ -196,9 +196,9 @@ func (c *observationCase) wantChainReceiptAppend(times int) {
 
 func (c *observationCase) wantChainRegister(paths ...string) {
 	c.wantChain("head", 1)
-	c.wantChain("file:"+observeBaseTree+":scripts/agents/landing-classes.json", 1)
+	c.wantChain("file:"+observeBaseTree+":internal/landing/landing-classes.json", 1)
 	c.wantChain("file:"+observeBaseTree+":memory/rulings.md", 1)
-	c.wantChain("file:"+observeBaseTree+":scripts/agents/path-classes.txt", 1)
+	c.wantChain("file:"+observeBaseTree+":internal/pathclass/path-classes.txt", 1)
 	c.wantChain("prefix", 1)
 	for _, path := range paths {
 		c.wantChain("owner:"+path, 1)

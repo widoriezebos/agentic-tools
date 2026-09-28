@@ -6,6 +6,7 @@ package pathclass
 
 import (
 	"bufio"
+	_ "embed"
 	"errors"
 	"fmt"
 	"os"
@@ -17,7 +18,21 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-const ManifestPath = "scripts/agents/path-classes.txt"
+// SourcePath is the installation-relative path of the manifest's source.
+// The engine reads its compiled-in copy; a landing reads the file at this
+// path in its base tree, so a candidate never judges itself by its own policy.
+const SourcePath = "internal/pathclass/path-classes.txt"
+
+// LegacySourcePath is where a base tree from before the manifest was
+// compiled in keeps it; a landing reads it only when SourcePath is absent
+// from its base, which is true of exactly one landing: the move itself.
+const LegacySourcePath = "scripts/agents/path-classes.txt"
+
+//go:embed path-classes.txt
+var manifestSource []byte
+
+// Source is the compiled-in manifest bytes.
+func Source() []byte { return append([]byte(nil), manifestSource...) }
 
 type Class string
 
@@ -68,13 +83,9 @@ type Resolution struct {
 	Mode      Mode
 }
 
-// Load reads the checked-out manifest beneath an installation root.
-func Load(installationRoot string) (*Manifest, error) {
-	data, err := os.ReadFile(filepath.Join(installationRoot, filepath.FromSlash(ManifestPath)))
-	if err != nil {
-		return nil, fmt.Errorf("path class manifest is unreadable: %w", err)
-	}
-	return Parse(data)
+// Load parses the manifest compiled into this engine.
+func Load() (*Manifest, error) {
+	return Parse(manifestSource)
 }
 
 // Parse validates and parses one complete manifest.
@@ -278,7 +289,7 @@ func rowMatches(rowKey, key string) bool {
 
 // RefusalText is the one fail-closed explanation for an unclassified key.
 func RefusalText(key string) string {
-	return fmt.Sprintf("path %s has no class in %s; no classified ancestor; add a row for %s or its directory to %s", key, ManifestPath, key, ManifestPath)
+	return fmt.Sprintf("path %s has no class in the engine's path-class policy (%s); no classified ancestor", key, SourcePath)
 }
 
 // ResolvePath discovers the installation and repository around the running
@@ -317,7 +328,7 @@ func resolveDiscovered(absolute, installationRoot, repositoryRoot string, owner 
 	if ownership == stateroot.OwnerOutside {
 		return Resolution{Class: Outside, Mode: mode}, nil
 	}
-	manifest, err := Load(installationRoot)
+	manifest, err := Load()
 	if err != nil {
 		return Resolution{}, err
 	}
@@ -377,7 +388,7 @@ func discoverInstallationRoot() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("path class: locate installation: %w", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(ManifestPath))); err != nil {
+	if _, err := stateroot.RootForCandidate(root); err != nil {
 		return "", fmt.Errorf("path class: executable %q is not installed at <installation>/bin/metasystem", executable)
 	}
 	return root, nil

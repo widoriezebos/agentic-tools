@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -101,10 +102,12 @@ func TestScratchEnvironmentManagesEveryAdapterInBothModes(t *testing.T) {
 	t.Parallel()
 	fixture := newScratchEnvFixture(t)
 	request, run := prepareScratchEnv(t, fixture.control, scratchEnvRequest(fixture.base, scratchEnvGroups()))
-	caches, err := gocache.Resolve(fixture.base)
+	// The pair is this engine process's own domain (disk-lifetimes A8).
+	resolution, err := cachedomain.Resolve(os.Environ(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	caches := resolution.Paths
 	for _, group := range request.Contract.Groups {
 		environment := groupTestEnvironment(request, group)
 		// Under v2 the managed tree lies in the group's lease (A5.2s).
@@ -951,10 +954,11 @@ func TestScratchEnvironmentCarriesTheResolvedEngineCache(t *testing.T) {
 	// GOCACHE and STATICCHECK_CACHE unset under a replaced HOME: the group
 	// gets the outer machine value, never one under the replaced HOME.
 	unset := withoutScratchCaches(fixture.base)
-	outer, err := gocache.Resolve(nil)
+	resolution, err := cachedomain.Resolve(os.Environ(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	outer := resolution.Paths
 	request, run := prepareScratchEnvV2(t, fixture.control, scratchEnvRequest(unset, groups))
 	descriptor := request.ScratchEnvironment
 	for _, name := range []string{"gocache", "staticcheck"} {
@@ -1021,11 +1025,10 @@ func TestScratchEnvironmentEngineCacheIsNotInIdentity(t *testing.T) {
 	fixture := newScratchEnvFixture(t)
 	groups := scratchEnvGroups()
 	base := withoutScratchCaches(fixture.base)
-	firstBase := append(append([]string(nil), base...), "GOCACHE=/machine-a/go-build", "STATICCHECK_CACHE=/machine-a/staticcheck")
-	secondBase := append(append([]string(nil), base...), "GOCACHE=/machine-b/Library/Caches/go-build", "STATICCHECK_CACHE=/machine-b/Library/Caches/staticcheck")
+	firstBase, secondBase := base, base
 	lockedScratch(t, func() {
-		first, firstRun := prepareScratchEnvV2(t, fixture.control, scratchEnvRequest(firstBase, groups))
-		second, secondRun := prepareScratchEnvV2(t, fixture.control, scratchEnvRequest(secondBase, groups))
+		first, firstRun := prepareScratchEnvV2(t, fixture.control, withCaches(scratchEnvRequest(firstBase, groups), "/machine-a/go-build", "/machine-a/staticcheck"))
+		second, secondRun := prepareScratchEnvV2(t, fixture.control, withCaches(scratchEnvRequest(secondBase, groups), "/machine-b/Library/Caches/go-build", "/machine-b/Library/Caches/staticcheck"))
 		if firstRun.Root() == secondRun.Root() || first.ScratchEnvironment.GoCache == second.ScratchEnvironment.GoCache {
 			t.Fatal("fixture runs share a root or a cache")
 		}
@@ -1106,9 +1109,18 @@ func TestScratchEnvironmentIdentityChangedExactlyOnce(t *testing.T) {
 func withoutScratchCaches(environment []string) []string {
 	var result []string
 	for _, entry := range environment {
-		if name, _, _ := strings.Cut(entry, "="); name != "GOCACHE" && name != "STATICCHECK_CACHE" {
+		if name, _, _ := strings.Cut(entry, "="); name != "GOCACHE" && name != "STATICCHECK_CACHE" && name != gocache.ContextEnv {
 			result = append(result, entry)
 		}
 	}
 	return result
+}
+
+// withCaches is request with its v2 cache pair decided as given, the way
+// the engine's authenticated domain decides it (disk-lifetimes A8).
+func withCaches(request TestRunRequest, goCache, staticcheckCache string) TestRunRequest {
+	request.cacheDomain = func(string) (gocache.Resolution, error) {
+		return gocache.Resolution{Domain: gocache.DomainEngine, Paths: gocache.Paths{GoCache: goCache, StaticcheckCache: staticcheckCache}}, nil
+	}
+	return request
 }

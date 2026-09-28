@@ -24,12 +24,12 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
@@ -878,9 +878,17 @@ type protectedCoverageBaseline struct {
 }
 
 func protectCoverageRatchets(workspace gittree.Workspace, baseTree, candidateTree, prefix string) error {
-	for _, relative := range []string{"scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"} {
-		path := strings.TrimPrefix(filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), relative)), "./")
+	inTree := func(relative string) string {
+		return strings.TrimPrefix(filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), relative)), "./")
+	}
+	for _, relative := range testpolicy.CoverageFloorsFiles() {
+		path := inTree(relative)
+		// A base from before the floors moved beside testing.json keeps them
+		// at the legacy path; the landing that moves them is judged by those.
 		baseBytes, basePresent, err := workspace.FileAt(baseTree, path)
+		if err == nil && !basePresent {
+			baseBytes, basePresent, err = workspace.FileAt(baseTree, inTree(testpolicy.LegacyCoverageFloorsFile(relative)))
+		}
 		if err != nil || !basePresent {
 			continue
 		}
@@ -1565,7 +1573,11 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 	command.Dir = installationRoot
 	// The compiler caches are the resolved machine engine cache, set
 	// explicitly; module and user caches stay inherited.
-	command.Env = gocache.Carry(candidateEngineBuildEnvironment(environment, candidateCommit))
+	carried, err := cachedomain.Carry(candidateEngineBuildEnvironment(environment, candidateCommit), "")
+	if err != nil {
+		return nil, fmt.Errorf("candidate engine build at commit %s: %w", candidateCommit, err)
+	}
+	command.Env = carried
 	if scratch != nil {
 		// The run's temp lives in its root.
 		command.Env = append(command.Env, "GOTMPDIR="+scratch.Dir("engine"), "TMPDIR="+scratch.Dir("engine"))

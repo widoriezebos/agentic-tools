@@ -15,9 +15,9 @@ func TestScratchEnvironmentV2PlacesGroupsInLeases(t *testing.T) {
 	t.Parallel()
 	fixture := newScratchEnvFixture(t)
 	groups := []testpolicy.Group{{ID: "go-inherit", Adapter: "go", Env: map[string]string{"PATH": "/usr/bin:/bin"}}}
-	base := append(append([]string(nil), fixture.base...), "GOCACHE=/machine/go-build", "STATICCHECK_CACHE=/machine/staticcheck")
+	base := fixture.base
 	prepare := func(policy string) (TestRunRequest, *ScratchRun) {
-		request := scratchEnvRequest(base, groups)
+		request := withCaches(scratchEnvRequest(base, groups), "/machine/go-build", "/machine/staticcheck")
 		run, err := CreateScratchRun(fixture.control)
 		if err != nil {
 			t.Fatal(err)

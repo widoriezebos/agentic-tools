@@ -6,6 +6,9 @@ import "testing"
 func init() {
 	registerIdempotency("disk show", idemRead, "reads the last pass reports and the evidence roots; changes nothing", nil)
 	registerIdempotency("disk clean", idemStateful,
-		"a pass with nothing left to release is success and changes no store, record or marker; --strays, --release and --discard repeat as success and write nothing",
-		func(t *testing.T) { witnessDiskCleanRepeat(t, newDiskBed(t)) })
+		"a pass with nothing left to release and every cache within its cap is success and changes no store, record, marker or cache entry (only the reports' timestamps move); --strays, --release and --discard repeat as success and write nothing",
+		func(t *testing.T) {
+			witnessDiskSweepRepeat(t, newDiskBed(t))
+			witnessDiskTrimRepeat(t)
+		})
 }

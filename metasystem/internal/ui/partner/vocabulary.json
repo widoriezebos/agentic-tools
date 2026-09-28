@@ -460,18 +460,33 @@
     "text": "How this review ends, recorded as the first line of its Outcome: Clear to land, Send back, or End without a verdict. Clear to land waits until every finding is answered. In this build the verdict is your recorded word only — nothing lands or returns because of it yet."
   },
   {
-    "id": "the-table",
-    "term": "The table",
-    "text": "The four kinds of working material this sitting has put into its record: Facts, Proposals, Decisions and Open questions. It is not a second store — it is those four sections of the record itself, so everything here is something you recorded and anything you did not record is not here. The counts beside your Project Partner are the same four."
+    "id": "the-board",
+    "term": "The board",
+    "text": "The working material this sitting has put into its record, pile by pile: Facts, Proposals, Decisions and Open questions for a sitting that shapes a record, Facts, Findings, Decisions and Open questions for a review. It is not a second store — it is those sections of the record itself, so everything here is something you recorded and anything you did not record is not here. An anchor puts what it names back on the desk."
   },
   {
     "id": "sittings",
     "term": "Sittings",
-    "text": "The records this project has sat on, newest first: what each sitting recorded into its record, how much of each pile it holds, when its last entry was written, and whether a sitting stands on it right now. It is a view over those records and not a second store — a record is here because its own entries say a sitting put them there. Opening a row takes you to the conversation on that record, and starts a sitting on it where none stands; the press is your consent to that."
+    "text": "The records this project has sat on, newest first: what each sitting recorded into its record, how much of each pile it holds, when its last entry was written, and whether a sitting stands on it right now. It is a view over those records and not a second store — a record is here because its own entries say a sitting put them there. Opening a row takes you into that sitting's room, and starts a sitting on the record where none stands; the press is your consent to that."
   },
   {
     "id": "no-recommendation",
     "term": "No recommendation",
     "text": "Your Project Partner lays out options with their consequences and does not say which to pick. That is deliberate: when every option comes pre-weighed, choosing the recommended one every time is approval by habit, and the values in this project are yours. Ask it to weigh them and it will; unasked, it brings the cases at the edge, the conflicts and the consequences, and leaves the choice where it belongs."
+  },
+  {
+    "id": "sitting-room",
+    "term": "The room for a sitting",
+    "text": "Where you shape an intent or a design with your Project Partner beside you. The desk on the left shows one thing at a time — a section of the record, or the code as this checkout has it today — and the conversation stays on the right. The Partner brings what the records hold and points at the code; it lays out the cases and never says which way to decide. Step out whenever you like; the room keeps the desk, the conversation and your unfinished words, and the record's page becomes the door back."
+  },
+  {
+    "id": "shaping-desk",
+    "term": "The desk",
+    "text": "The record you are shaping, section by section, and the code as this checkout has it now — the same files your Partner reads, uncommitted edits included. Nothing on it is pinned: when you come back it reads its item again, so it shows what the code does today. The strip above it lists everything that has been on the desk, and pressing one brings it back. Select lines to Ask about them or to make a Fact anchored where they are."
+  },
+  {
+    "id": "shaping-walks",
+    "term": "The walks",
+    "text": "Four questions the interface asks your Partner in your name: Records, what earlier rulings, decisions and open questions touch this subject; Today, what the code does now, with the lines on the desk; Cases, the cases at the edge, each a card you decide or leave open; Open, what this sitting has not settled and what would settle it. None of them weighs anything for you."
   }
 ]

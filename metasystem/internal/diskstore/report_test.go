@@ -14,7 +14,7 @@ func TestReportGolden(t *testing.T) {
 	t.Parallel()
 	report := Report{Schema: ReportSchema, Kind: "machine", Name: "machine", At: testNow, Mode: ModeApply,
 		Volumes: []Volume{{Path: "/Users/wido", FreeBytes: 277 << 20, FloorBytes: 50 << 30, BelowFloor: true}},
-		Floor: &FloorReport{Active: true, MinAge: "1h0m0s", Trim: "the Go cache trimmer is not in this engine yet (Part A); nothing was trimmed",
+		Floor: &FloorReport{Active: true, MinAge: "1h0m0s", Trim: "the caches are trimmed to their caps by the steward's cache step (Part A) each cycle; the floor's half-cap trim is not built yet",
 			Consumers: []Consumer{{Path: "/Users/wido/evidence/gocache-x", Kind: "evidence root", Bytes: 60 << 30, Measured: true, AgeSecs: 7200,
 				Use: "no live process has it open", Command: "a person removes it once nothing needs it: rm -rf -- '/Users/wido/evidence/gocache-x'"}},
 			Remedy: "metasystem disk clean --preview"},
@@ -35,7 +35,7 @@ func TestReportGolden(t *testing.T) {
 	want := []string{
 		"machine: apply pass at 2026-09-28T12:00:00Z",
 		"  free: 277.0 MiB on /Users/wido, BELOW the floor of 50.0 GiB",
-		"  floor mode: ageing lowered to 1h0m0s; the Go cache trimmer is not in this engine yet (Part A); nothing was trimmed",
+		"  floor mode: ageing lowered to 1h0m0s; the caches are trimmed to their caps by the steward's cache step (Part A) each cycle; the floor's half-cap trim is not built yet",
 		"  consumer: /Users/wido/evidence/gocache-x (evidence root): 60.0 GiB, last written 2h0m0s ago, no live process has it open; a person removes it once nothing needs it: rm -rf -- '/Users/wido/evidence/gocache-x'",
 		"  context handoffs: 3 item(s), 2 released",
 		"  tmpdir strays: 1 item(s), 4.0 MiB",

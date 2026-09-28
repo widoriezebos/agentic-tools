@@ -22,17 +22,7 @@ func u6bportAssembledPrompt(t *testing.T, intent string) (root, promptPath, turn
 		t.Helper()
 		writeFile(t, filepath.Join(root, rel), content)
 	}
-	preamble, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "roles", "orchestrator.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	instruction, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "templates", "host-turn-instruction.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	write("metasystem.conf", "metasystem.runtimes=fake\n")
-	write("scripts/agents/roles/orchestrator.md", string(preamble))
-	write("scripts/agents/templates/host-turn-instruction.md", string(instruction))
 	write("plans/mission-m1.contract.md", "# Intent\n\nAdvance the candidate.\n"+intent+
 		"\n# Non-goals\n\nDo not deploy.\n\n```mission\nfence.cycles=5\nfence.jobs=4\nfence.concurrency=1\nstream.primary=Advance.\n```\n")
 	base := "artifacts/agents/missions/m1"

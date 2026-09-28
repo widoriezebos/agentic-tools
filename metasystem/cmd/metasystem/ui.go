@@ -490,11 +490,14 @@ func runUIServe(args []string) int {
 				},
 				// The review record a review sitting starts on, created by the
 				// server with the head it resolved (g1-s65 D1), and the reads
-				// its desk makes over the candidate's own tree (D4).
+				// its desk makes over the candidate's own tree (D4) — or, for
+				// a sitting that shapes a record, over the checkout as it
+				// stands, beneath the root the document reader opens (g1-s67
+				// D2).
 				CreateReview: func(asked project.NewReview) (project.Written, error) {
 					return project.CreateReview(projectRoots(roots), asked, time.Now())
 				},
-				Review: &review.Owner{Git: gittree.Workspace{Dir: roots.Checkout}},
+				Review: &review.Owner{Git: gittree.Workspace{Dir: roots.Checkout}, Checkout: projectRoots(roots).Checkout},
 				SetStatus: func(id, status string) (project.Written, error) {
 					return project.SetStatus(projectRoots(roots), id, status)
 				},

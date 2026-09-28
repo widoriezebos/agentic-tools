@@ -1,0 +1,93 @@
+# Installation-relative behavior.
+install:AGENTS.md behavior
+install:CLAUDE.md behavior
+install:wow.md behavior
+install:README.md behavior
+install:metasystem.conf behavior
+install:go.mod behavior
+install:go.sum behavior
+install:go.work behavior
+install:go.work.sum behavior
+install:.gitattributes behavior
+install:.gitignore behavior
+install:testing.json behavior
+install:launch.json behavior
+install:testing-parallel-ratchet.json behavior
+install:testing-coverage-floors.json behavior
+install:testing-coverage-floors-linux.json behavior
+install:cmd/ behavior
+install:internal/ behavior
+install:docs/ behavior
+install:skills/ behavior
+install:optional-skills/ behavior
+install:.claude/ behavior
+install:.codex/ behavior
+install:.agents/ behavior
+install:.devin/ behavior
+install:.github/ behavior
+install:memory/README.md behavior
+install:plans/README.md behavior
+install:records/README.md behavior
+
+# Installation-relative records.
+install:memory/ record
+install:plans/ record
+install:records/ record
+
+# Installation-relative ledgers.
+install:plans/goals/ ledger
+install:plans/channel/ ledger
+install:plans/goals.md ledger
+install:plans/goals-accepted.json ledger
+install:records/goals/ ledger
+
+# Installation-relative runtime state.
+install:artifacts/ runtime
+install:bin/ runtime
+install:metasystem runtime
+install:metasystem.conf.local runtime
+
+# Repository-relative behavior, consulted only in template mode.
+repo:AGENTS.md behavior
+repo:CLAUDE.md behavior
+repo:README.md behavior
+repo:LICENSE behavior
+repo:.gitignore behavior
+repo:.gitattributes behavior
+repo:.agents/ behavior
+repo:.claude/ behavior
+repo:.codex/ behavior
+repo:.devin/ behavior
+repo:environment/ behavior
+repo:development/README.md behavior
+repo:development/project-rules-local.md behavior
+repo:development/devin-selftest.md behavior
+
+# Repository-relative records, consulted only in template mode.
+repo:development/ record
+repo:records/ record
+repo:plans/ record
+repo:paper/ record
+
+# Ownership rows are exact files beneath install:plans/ and are initially empty.
+
+# Tier-1 protected paths. These rows do not change the four path classes.
+floor:internal/goal/ tier-1-refused
+floor:internal/goalbudget/ tier-1-refused
+floor:internal/humanauthority/ tier-1-refused
+floor:internal/dispatch/ tier-1-refused
+floor:internal/landing/ tier-1-refused
+floor:internal/validate/ tier-1-refused
+floor:internal/critique/ tier-1-refused
+floor:internal/returnschema/ tier-1-refused
+floor:internal/config/ tier-1-refused
+floor:internal/delegation/ tier-1-refused
+floor:internal/protocol/schemas/ tier-1-refused
+floor:internal/pathclass/path-classes.txt tier-1-refused
+floor:internal/landing/landing-classes.json tier-1-refused
+# The code that writes or checks a landing's own receipt.
+floor:internal/receipt/ tier-1-refused
+floor:cmd/metasystem/landing_verbs.go tier-1-refused
+floor:cmd/metasystem/landing_path.go tier-1-refused
+floor:cmd/metasystem/landing_batch_land.go tier-1-refused
+floor:metasystem.conf tier-1-refused

@@ -299,10 +299,12 @@ func consumerRoots(home string, tempRoots, gitRoots, evidenceRoots []string) []d
 	for parent := range parents {
 		roots = append(roots, diskstore.ConsumerRoot{Path: parent, Kind: "checkout sibling", Children: true})
 	}
-	if paths, err := gocache.Resolve(os.Environ()); err == nil {
-		for _, cache := range []string{paths.GoCache, paths.StaticcheckCache} {
-			if cache != "" {
-				roots = append(roots, diskstore.ConsumerRoot{Path: cache, Kind: "Go cache"})
+	for _, domain := range []gocache.Domain{gocache.DomainEngine, gocache.DomainDelegate} {
+		if paths, err := gocache.DomainPaths(domain); err == nil {
+			for _, cache := range []string{paths.GoCache, paths.StaticcheckCache} {
+				if cache != "" {
+					roots = append(roots, diskstore.ConsumerRoot{Path: cache, Kind: "Go cache"})
+				}
 			}
 		}
 	}
