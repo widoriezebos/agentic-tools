@@ -123,6 +123,7 @@ var Rows = []Row{
 	{Code: "BATCH_PROOF_INPUT_MOVED", Owner: "internal/landing/batch", Site: "prove.go:106", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_PROOF_NOT_ADMITTED", Owner: "internal/landing/batch", Site: "prove.go:203", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_PROOF_STATE_REFUSED", Owner: "internal/landing/batch", Site: "prove.go:145", Shape: Question, H1: StandingAgent},
+	{Code: "BATCH_VERIFIER_UNAVAILABLE", Owner: "internal/landing/batch", Site: "red.go:589", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_PROOF_STALE_COMPLETION", Owner: "internal/landing/batch", Site: "prove.go:280", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_PROOF_UNION_UNCOVERED", Owner: "internal/landing/batch", Site: "prove.go:159", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_REASSEMBLE_MOVED", Owner: "internal/landing/batch", Site: "prove.go:351", Shape: Question, H1: StandingAgent},
@@ -391,6 +392,7 @@ var Rows = []Row{
 var Exclusions = []Exclusion{
 	{Pattern: "trunk-red-record-refused", Reason: "a batch history verb rather than a refusal returned to a caller"},
 	{Pattern: "admission-refused", Reason: "a durable batch proof status rather than a refusal returned to a caller"},
+	{Pattern: "verifier-unavailable", Reason: "a durable batch history verb counting a failed retained verification rather than a refusal returned to a caller"},
 	{Pattern: "prove-refused", Reason: "a durable batch history verb rather than a refusal returned to a caller"},
 	{Pattern: "FETCH_HEAD", Reason: "Git's fetched-head pseudoref"},
 	{Pattern: "budget-malformed", Reason: "a typed health remedy cause name rather than a refusal returned to a caller"},

@@ -1102,3 +1102,32 @@ func TestGreenBatchLandsWhenAnotherBatchsBaseRunBlocksReuse(t *testing.T) {
 		})
 	}
 }
+
+// A retained verifier that keeps failing on the composed path is retried a
+// bounded number of times, each counted on the record, and then every member
+// returns naming why; the batch never sits diagnosing forever.
+func TestComposedPathVerifierErrorIsBoundedThenReturnsEveryMember(t *testing.T) {
+	t.Parallel()
+	red := knownRed()
+	store, ledger := flakeBed(t, red)
+	ledger.entries = []OpenEntry{{ID: "F", Identity: FlakeID(red.ID, red.Failures[0]), Class: ClassKnownFlake, AllowanceUntil: flakeNow.Add(time.Hour), Owner: "Wido"}}
+	script := &flakeScript{tip: passedAt("identity-"+red.ID, red)}
+	seams := flakeSeams(script, ledger, nil)
+	verifications := 0
+	seams.Sources = func(Record) (map[string]string, error) { verifications++; return nil, fmt.Errorf("retained worktree unavailable") }
+	for attempt := 1; attempt < MaxComposedVerifierAttempts; attempt++ {
+		err := DiagnoseRed(store, testBatchID, "owner", []RedGroup{red}, "", flakeNow, seams)
+		record := load(t, store)
+		last := record.History[len(record.History)-1]
+		if err == nil || !strings.Contains(err.Error(), "retained worktree unavailable") || record.State != StateDiagnosing ||
+			last.Verb != "verifier-unavailable" || !strings.Contains(last.Detail, fmt.Sprintf("%d of %d", attempt, MaxComposedVerifierAttempts)) {
+			t.Fatalf("attempt %d: err=%v state=%s last=%+v", attempt, err, record.State, last)
+		}
+	}
+	must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{red}, "", flakeNow, seams))
+	everyMemberReturned(t, store, "BATCH_VERIFIER_UNAVAILABLE")
+	everyMemberReturned(t, store, "retained worktree unavailable")
+	if verifications != MaxComposedVerifierAttempts || len(ledger.pendings) != 0 {
+		t.Fatalf("verifications=%d pendings=%d, want %d and no sighting for a landing that never happened", verifications, len(ledger.pendings), MaxComposedVerifierAttempts)
+	}
+}

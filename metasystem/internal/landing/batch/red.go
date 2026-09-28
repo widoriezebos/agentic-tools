@@ -549,7 +549,7 @@ func (d redDecision) unnamed() error {
 	}
 	resolved, err := d.seams.Sources(composed)
 	if err != nil {
-		return err
+		return d.verifierUnavailable(err, run)
 	}
 	sources, err := ResolveSources(*composed.Proof, resolved)
 	if err != nil {
@@ -566,6 +566,37 @@ func (d redDecision) unnamed() error {
 		current.Transition(StateLanding, d.at, "diagnose", d.actor, "composed on known flakes; classification attempt "+run.AttemptID)
 		return nil
 	})
+}
+
+// MaxComposedVerifierAttempts bounds how often the composed path runs the
+// retained verifier for one tip proof before every member returns: each
+// failed try is counted on the record, so an owner restart keeps the count.
+const MaxComposedVerifierAttempts = 3
+
+// verifierUnavailable counts one failed retained verification of this tip
+// proof on the record and leaves the batch diagnosing for the next tick; the
+// last allowed failure returns every member with the classification log and
+// the verifier's error instead.
+func (d redDecision) verifierUnavailable(cause error, run DiagnosticResult) error {
+	prefix := "attempt=" + d.record.Proof.AttemptID + " "
+	tries := 1
+	for _, entry := range d.record.History {
+		if entry.Verb == "verifier-unavailable" && strings.HasPrefix(entry.Detail, prefix) {
+			tries++
+		}
+	}
+	if tries >= MaxComposedVerifierAttempts {
+		return returnEveryMember(d.store, d.record, d.actor, d.at, fmt.Sprintf("BATCH_VERIFIER_UNAVAILABLE: the retained verifier failed %d times composing the known-flake landing (%v); nothing lands on it; %s",
+			tries, cause, diagnosticFailure(run, d.failing)))
+	}
+	err := d.store.Update(d.record.BatchID, func(current *Record) error {
+		if current.State != StateDiagnosing || current.Proof == nil || current.Proof.AttemptID != d.record.Proof.AttemptID {
+			return fmt.Errorf("BATCH_PROOF_INPUT_MOVED: batch changed before its verifier failure was counted")
+		}
+		current.Transition(StateDiagnosing, d.at, "verifier-unavailable", d.actor, fmt.Sprintf("%stry %d of %d: %v", prefix, tries, MaxComposedVerifierAttempts, cause))
+		return nil
+	})
+	return errors.Join(fmt.Errorf("batch %s stays diagnosing: retained verifier try %d of %d: %w", d.record.BatchID, tries, MaxComposedVerifierAttempts, cause), err)
 }
 
 // classificationRed judges the classification run in reverse: it is green
