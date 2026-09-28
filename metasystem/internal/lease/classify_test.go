@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // childOf spawns a child whose parent is this test process, so classifying the
@@ -42,6 +42,32 @@ func writeJSON(t *testing.T, path string, body string) {
 	}
 }
 
+// useSignatures pins the delegate signature universe for one test. The
+// universe is the static runtime registry, and a test run inside an agent
+// session has that agent's CLI among its real ancestors; a test about what
+// its staged ancestry classifies as pins the universe instead.
+func useSignatures(t *testing.T, signatures ...census.Signature) {
+	t.Helper()
+	prior := delegateSignatures
+	delegateSignatures = func(string) ([]census.Signature, error) { return signatures, nil }
+	t.Cleanup(func() { delegateSignatures = prior })
+}
+
+// useRegistrySignatures pins the universe to the named runtimes' real
+// registry signatures.
+func useRegistrySignatures(t *testing.T, names ...string) {
+	t.Helper()
+	var signatures []census.Signature
+	for _, name := range names {
+		signature, _, err := census.RuntimeSignature(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signatures = append(signatures, signature)
+	}
+	useSignatures(t, signatures...)
+}
+
 // stageTerminalFact pins the caller's controlling-terminal fact so
 // these tests decide identically at a desk and on a headless runner.
 func stageTerminalFact(t *testing.T, root string, pid int64, terminal bool) {
@@ -55,6 +81,8 @@ func stageTerminalFact(t *testing.T, root string, pid int64, terminal bool) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
+	// No ambient agent CLI above the test process may decide the walk.
+	useRegistrySignatures(t, "fake")
 }
 
 func TestClassifyHumanWhenNoAncestorRecognisedAtATerminal(t *testing.T) {
@@ -133,19 +161,13 @@ func TestClassifyDelegateThroughSignedAncestor(t *testing.T) {
 	if !ok {
 		t.Skip("cannot read our own command to build a matching signature")
 	}
-	// An adapter whose signature matches our exact command, so the child's
+	// A delegate signature that matches our exact command, so the child's
 	// ancestor (us) classifies as a delegate of that runtime.
-	adapterDir := filepath.Join(root, "scripts/agents/adapters")
-	if err := os.MkdirAll(adapterDir, 0o755); err != nil {
+	signature, err := census.CompileSignature("fake", []string{regexp.QuoteMeta(command)}, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	// printf the pattern as an argument, not a format string, so QuoteMeta's
-	// backslashes reach the signature registry intact.
-	line := "match " + regexp.QuoteMeta(command)
-	script := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' '" + line + "'\n"
-	if err := testexec.WriteFile(filepath.Join(adapterDir, "fake.sh"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	useSignatures(t, signature)
 	got, err := Classify(root, childOf(t))
 	if err != nil {
 		t.Fatal(err)
@@ -222,12 +244,27 @@ func TestClassifyDevinAcpHelperWalksToAnnouncedMain(t *testing.T) {
 	if got.Class != ClassMain {
 		t.Fatalf("a tool shell under the host's acp helper must classify MAIN through the exclusion; got %+v", got)
 	}
+	// Under an override of Devin (VOA-31): one that keeps the reserved
+	// exclusion is the effective declaration, one that drops it is refused
+	// and the built-in's stays; either way the helper stays transparent.
+	for name, describe := range map[string]string{"kept": devinKeepsHelper, "dropped (refused)": devinDropsTheHelper} {
+		if got := classifyUnderAdapters(t, "devin acp", map[string]string{"devin": describe}); got.Class != ClassMain {
+			t.Fatalf("override %s: a host tool call under devin acp must classify MAIN through the reserved exclusion; got %+v", name, got)
+		}
+	}
 }
 
 func TestClassifyDevinDelegateServerStaysDelegate(t *testing.T) {
 	got := classifyThroughDevinShape(t, "devin-delegate-acp acp")
 	if got.Class != ClassDelegate {
 		t.Fatalf("a tool shell under the delegate acp server must stay DELEGATE even with a main announced above; got %+v", got)
+	}
+	if got := classifyUnderAdapters(t, "devin-delegate-acp acp", map[string]string{"devin": devinKeepsHelper}); got.Class != ClassDelegate {
+		t.Fatalf("the delegate ACP server must stay DELEGATE under an override; got %+v", got)
+	}
+	// An external runtime's CLI is a delegate through its describe (R13).
+	if got := classifyUnderAdapters(t, "/opt/newagent/bin/newagent -p task --tag t", map[string]string{"newagent": newagentDescribe}); got.Class != ClassDelegate {
+		t.Fatalf("a tool shell under an external runtime's CLI must classify DELEGATE; got %+v", got)
 	}
 }
 
@@ -260,22 +297,11 @@ func classifyThroughDevinShape(t *testing.T, intermediateCommand string) Classif
 	return got
 }
 
-// writeDevinAdapter ships the real devin signature lines into a bed.
+// writeDevinAdapter pins the real registry devin signature (with fake's)
+// as the delegate universe of a bed.
 func writeDevinAdapter(t *testing.T, root string) {
 	t.Helper()
-	adapterDir := filepath.Join(root, "scripts/agents/adapters")
-	if err := os.MkdirAll(adapterDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	script := `#!/bin/sh
-[ "$1" = signature ] && printf '%s\n' \
-  'match ^([^[:space:]]*/)?devin([[:space:]]|$)' \
-  'match ^([^[:space:]]*/)?devin-delegate-acp([[:space:]]|$)' \
-  'exclude ^([^[:space:]]*/)?devin[[:space:]]+acp([[:space:]]|$)'
-`
-	if err := testexec.WriteFile(filepath.Join(adapterDir, "devin.sh"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	useRegistrySignatures(t, "devin", "fake")
 }
 
 // grandchild spawns a real intermediate (a plain shell) and returns both
@@ -602,6 +628,7 @@ func TestTerminalCallerUnderPlumbingAncestorStaysHuman(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	useRegistrySignatures(t, "fake")
 	intermediate, child := grandchild(t)
 	// A NON-steward invocation of the installed binary (run-held) is
 	// transparent, so the terminal decides: pre-arming parity for a

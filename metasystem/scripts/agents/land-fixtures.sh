@@ -596,9 +596,8 @@ JSON
     printf 'digest=seed\n' >"$leg_seed/records/narrator-digest.log"
     printf 'memory/receipts.log merge=union\nrecords/narrator-digest.log merge=union\n' \
       >"$leg_seed/.gitattributes"
-    for battery_script in devgate-static.sh dispatch-fixtures.sh goal-cli-fixtures.sh; do
-      printf '#!/usr/bin/env bash\nexit 0\n' >"$leg_seed/scripts/agents/$battery_script"
-      chmod +x "$leg_seed/scripts/agents/$battery_script"
+    for battery_script in devgate-static.sh; do
+      printf '#!/usr/bin/env bash\nexit 0\n' >"$leg_seed/scripts/agents/$battery_script" && chmod +x "$leg_seed/scripts/agents/$battery_script"
     done
     harness_fixture_plant_devgate "$leg_seed"
   fi
@@ -2812,7 +2811,8 @@ full_chain_identity=$leg_root/process-identities.local.json
 full_chain_registry=$leg_root/registry.local
 mkdir -p "$full_chain_registry"
 printf '{}\n' >"$full_chain_identity"
-prepare_receipt_environment "$full_chain_identity" "$full_chain_registry" "$leg_local"
+mkdir -p "$leg_root/battery-bin" && printf '#!/usr/bin/env bash\nexit 0\n' >"$leg_root/battery-bin/go" && chmod +x "$leg_root/battery-bin/go" # the battery's go tests (the dispatch lifecycle and the goal CLI) answer green: this bed proves receipts, not suites
+prepare_receipt_environment "$full_chain_identity" "$full_chain_registry" "$leg_local" && receipt_environment=("${receipt_environment[@]/#PATH=/PATH=$leg_root/battery-bin:}")
 full_chain_message=$leg_root/message.txt
 full_chain_missing_output=$leg_root/missing-receipt.out
 full_chain_usage_output=$leg_root/usage-refusal.out

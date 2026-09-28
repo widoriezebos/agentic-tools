@@ -1,8 +1,7 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 	"strings"
 	"testing"
 
@@ -61,23 +60,22 @@ func TestCapabilityDeclarationsMatchRegistrations(t *testing.T) {
 	}
 }
 
-// The adapter/host capability FLAGS are backed by executable seam
-// files: a declaration cannot claim an adapter or launcher that does
-// not exist.
+// The adapter/host capability FLAGS are backed by runtime operations: a
+// declaration cannot claim an adapter or a host launcher that the
+// delegate-supervisor entry does not serve.
 func TestCapabilityFlagsBackedByExecutables(t *testing.T) {
-	root := "../.."
 	for _, declaration := range runtimes.All() {
-		if declaration.HasAdapter {
-			path := filepath.Join(root, "scripts", "agents", "adapters", declaration.Name+".sh")
-			if info, err := os.Stat(path); err != nil || info.Mode()&0o111 == 0 {
-				t.Errorf("%s declares an adapter but %s is not an executable file", declaration.Name, path)
-			}
+		ops, served := supervisor.OperationsFor(supervisor.Deps{}, declaration.Name)
+		if declaration.HasAdapter && !served {
+			t.Errorf("%s declares an adapter but no runtime operations serve it", declaration.Name)
+			continue
 		}
-		if declaration.HasHostLauncher {
-			path := filepath.Join(root, "scripts", "agents", "hosts", declaration.Name+".sh")
-			if info, err := os.Stat(path); err != nil || info.Mode()&0o111 == 0 {
-				t.Errorf("%s declares a host launcher but %s is not an executable file", declaration.Name, path)
-			}
+		if !declaration.HasHostLauncher {
+			continue
+		}
+		description, err := ops.Describe(supervisor.Deps{})
+		if err != nil || !description.Capabilities.Host {
+			t.Errorf("%s declares a host launcher but its operations do not describe the host role: %+v %v", declaration.Name, description.Capabilities, err)
 		}
 	}
 }

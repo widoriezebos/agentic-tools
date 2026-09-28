@@ -126,8 +126,8 @@ func TestIntentCheckPublicRemedies(t *testing.T) {
 		}
 	}
 	for _, role := range []steward.HealthRole{steward.RoleNonterminalJobs, steward.RoleRetroDebt, steward.RoleSpendFence, "unlisted-role"} {
-		public, instruction := publicHealthRemedy(steward.RoleVerdict{Role: role, Remedy: `"/x/scripts/agents/dispatch.sh" reap`}, false)
-		if public != nil || instruction == "" || strings.Contains(instruction, "dispatch.sh") || strings.Contains(instruction, "internal") || strings.Contains(instruction, "--json") {
+		public, instruction := publicHealthRemedy(steward.RoleVerdict{Role: role, Remedy: `"/x/bin/metasystem" internal delegate reap`}, false)
+		if public != nil || instruction == "" || strings.Contains(instruction, "delegate") || strings.Contains(instruction, "internal") || strings.Contains(instruction, "--json") {
 			t.Errorf("%s = %v %q", role, public, instruction)
 		}
 	}

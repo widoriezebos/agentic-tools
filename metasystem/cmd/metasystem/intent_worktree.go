@@ -1,15 +1,12 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -305,22 +302,13 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 // its local configuration (its local-config-paths manifest) in a new goal
 // worktree, through the same session-isolation owner second sessions use.
 func (inv *intentInvocation) isolateAdapterConfiguration(source, destination string) error {
-	adapters, _ := filepath.Glob(filepath.Join(inv.layout.InstallationRoot, "scripts", "agents", "adapters", "*.sh"))
+	paths, err := supervisor.LocalConfigManifest(supervisor.Deps{Root: inv.layout.InstallationRoot})
+	if err != nil {
+		return err
+	}
 	var manifest strings.Builder
-	for _, adapter := range adapters {
-		if filepath.Base(adapter) == "runtime-common.sh" {
-			continue
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		command := exec.CommandContext(ctx, adapter, "local-config-paths")
-		var stderr bytes.Buffer
-		command.Dir, command.Stderr = inv.layout.InstallationRoot, &stderr
-		output, err := command.Output()
-		cancel()
-		if err != nil {
-			return fmt.Errorf("%s local-config-paths: %v: %s", filepath.Base(adapter), err, strings.TrimSpace(stderr.String()))
-		}
-		manifest.Write(output)
+	for _, path := range paths {
+		manifest.WriteString(path + "\n")
 	}
 	if manifest.Len() == 0 {
 		return nil

@@ -38,7 +38,7 @@ type CollectParams struct {
 	NamedPath      string
 	TranscriptPath string
 	// ACPOutcomePath selects the ACP transport's EXCLUSIVE channel:
-	// the typed outcome of `acp turn`. When set, the walk consults
+	// the typed outcome of the ACP file turn (acp.RunFileTurn). When set, the walk consults
 	// nothing else — an invalid or undelivered ACP candidate fails
 	// honestly and never falls through to the legacy scraping
 	// channels, because evidence never crosses transports (the
@@ -158,7 +158,7 @@ func readCandidate(path string) ([]byte, error) {
 // canonical validator. Acceptance writes the RAW candidate bytes as the
 // accepted snapshot — the downstream pipeline keeps its own
 // normalization and validation authority; selection never replaces it.
-// acpOutcome is the subset of the acp turn verb's stdout wire shape
+// acpOutcome is the subset of the ACP file turn's outcome document
 // the collector consumes; the candidate distinguishes nil (no
 // candidate row) from present-but-empty by the pointer.
 type acpOutcome struct {

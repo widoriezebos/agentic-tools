@@ -28,7 +28,7 @@ import (
 // FullBatteryCommand is the existing landing full-width command, exported
 // here so recertification selection and landing consumption bind the same
 // bytes. internal/landing retains its compatibility alias.
-const FullBatteryCommand = "go run ./cmd/devgate static && scripts/agents/dispatch-fixtures.sh && scripts/agents/goal-cli-fixtures.sh"
+const FullBatteryCommand = "go run ./cmd/devgate static && go test -count=1 ./internal/delegation/... && go test -count=1 -run '^(TestGoalCLI|TestGitAdapterEnsureEnrollsTheGuardInAFreshCheckout)' ./cmd/metasystem/ ./internal/goal/ ./internal/dispatch/ ./internal/channel/ ./internal/ledgerfence/"
 
 const recertificationPreparationLimit = 5 * time.Minute
 

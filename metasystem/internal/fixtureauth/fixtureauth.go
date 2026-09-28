@@ -171,6 +171,15 @@ type GroupOwnershipGrant struct{ a *Authorization }
 
 func (a *Authorization) GroupOwnership() GroupOwnershipGrant { return GroupOwnershipGrant{a} }
 
+// Root is the checkout root the grant was issued for ("" for none): the
+// installation whose runtime registry names its processes' shapes.
+func (g GroupOwnershipGrant) Root() string {
+	if g.a == nil {
+		return ""
+	}
+	return g.a.root
+}
+
 // AllowsRecordedGroupProof lets a fake checkout use the exact launch proof in
 // a job record when the kernel cannot enumerate the group's current argv.
 func (g GroupOwnershipGrant) AllowsRecordedGroupProof() bool {
@@ -333,4 +342,20 @@ func fixtureModeRoot(root string) (bool, error) {
 		LookupEnv: func(string) (string, bool) { return "", false },
 	})
 	return err == nil && value == "fake", err
+}
+
+// GoalClock resolves a command's goal clock once for root: a fixture root's
+// one stable semantic instant, else wall sampled on every call. The engine's
+// goal commands and the delegation lifecycle share it.
+func GoalClock(root string, wall func() time.Time) (func() time.Time, bool, error) {
+	authorization, err := New(root)
+	if err != nil {
+		return nil, false, err
+	}
+	if fixtureNow, ok, err := authorization.Clock().GoalNow(); err != nil {
+		return nil, false, err
+	} else if ok {
+		return func() time.Time { return fixtureNow }, true, nil
+	}
+	return wall, false, nil
 }

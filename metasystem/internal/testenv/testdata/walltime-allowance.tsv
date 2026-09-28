@@ -1,12 +1,18 @@
-cmd/metasystem/goal_landing_portable_lifecycle_test.go	4	Two pauses poll exact owner or private-guard state; two tickers observe real proof planning and admitted attempts, with success determined by recorded state and native evidence.
+cmd/metasystem/goal_landing_portable_lifecycle_test.go	5	Three pauses poll exact owner, private-guard or resident-runner stop-batch state; two tickers observe real proof planning and admitted attempts, with success determined by recorded state and native evidence.
 cmd/metasystem/goal_landing_workers_public_test.go	4	Three deadlines cap readiness, launcher registration, and cancellation of real child processes; the 10ms pause polls a recorded running process, and success requires observed process events rather than elapsed time.
 cmd/metasystem/proof_run_test.go	1	The ticker polls for a real public proof child file; success requires the published file or the exact child result.
-cmd/metasystem/test_scratch_public_test.go	4	Three deadlines are failure ceilings on the real CLI wait, its post-SIGKILL join, and the blocked launcher join; the 50ms pause polls recovery of a drained run root, and success requires the process result or the observed removal.
+cmd/metasystem/test_scratch_public_test.go	3	One ticker paces the CLI call's progress-measured hang detector (idle for the bound, then a dump request, then the kill and its join) and one deadline bounds the blocked launcher join; the 50ms pause polls recovery of a drained run root, and success requires the process result or the observed removal.
 cmd/metasystem/wait_verb_test.go	2	Both deadlines are fixed in the past to test cancellation propagation and never wait.
+internal/adapter/supervisor/devin_test.go	1	The pause polls a real ACP stub's journal for the sent prompt before the signal; success requires the observed wire record.
+internal/adapter/supervisor/fake_helpers_test.go	1	The pause polls a real fixture hold's pid file until its whole content lands; success requires the observed file.
+internal/adapter/supervisor/fake_test.go	3	Two pauses poll real hold and critique children; the deadline caps a released-critique round; success requires the observed process and record state.
+internal/adapter/supervisor/protocol_acpfixtures_test.go	2	Both pauses poll a real ACP stub's journal and outcome files; success requires the observed wire records.
 internal/dispatch/proof_attempt_test.go	1	The sleeping child is the stop fixture's subject and is killed, never waited out.
 internal/identity/fixture_custodian_witness_test.go	2	The timers are failure ceilings around a real command and its forced reap; successful observation comes from the command result.
 internal/identity/survivors_test.go	2	The scans observe real kernel process membership; success is a survivor fact and the delays only avoid busy-spinning.
 internal/launch/launch_test.go	1	Real sleep paces the concurrent supervisor cancellation test; the timer caps observation of its terminal result.
+internal/missionrunner/hostturn/devin_test.go	1	The pause polls a real ACP stub's journal for the sent prompt before the signal; success requires the observed wire record.
+internal/missionrunner/hostturn/fake_test.go	2	Both pauses poll a real fixture hold's ready and term-observed files; success requires the observed files.
 internal/missionrunner/preflight_fixture_test.go	2	The sleeps only pace forced teardown of real process groups before temporary-directory removal.
 internal/proofrun/host_resource_custody_test.go	4	Deadlines bound native launcher-grandchild custody; pauses poll exact process and final custodian spool facts.
 internal/proofrun/host_resources_review_test.go	1	Deadlines prove denial while native host-slot owners live; the sleeping helper is a subject killed by the test.

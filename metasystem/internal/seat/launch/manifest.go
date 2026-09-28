@@ -1,27 +1,38 @@
 package launch
 
-// The adapter-declared local configuration a new machine or a second session
+// The runtime-declared local configuration a new machine or a second session
 // gets.
 //
-// Each adapter declares its own local configuration (`adapter.sh
-// local-config-paths`); `validate session-isolation` takes the paths in a
-// file. Neither a seat launch nor a second session runs the adapters for it:
-// the list is written here, once, and manifest_test.go runs every shipped
-// adapter and compares their declarations with it, so a new adapter that
-// declares a local file fails there, by name, rather than launching machines
-// or sessions that quietly lack it.
+// `validate session-isolation` takes the paths in a file. The paths are each
+// runtime's declared local configuration in the runtime registry
+// (internal/runtimes, LocalConfigPaths), the one definition the seat launch,
+// the second session (session isolate) and the goal worktree isolation read.
 
-import "strings"
+import (
+	"sort"
+	"strings"
 
-// LocalConfigPaths is the adapters' declared local configuration, in the
-// sorted order the manifest is written in.
-var LocalConfigPaths = []string{
-	".claude/settings.json",
-	".claude/settings.local.json",
-	".codex/config.toml",
-	".devin/config.json",
-	".devin/config.local.json",
-	".devin/hooks.v1.json",
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+)
+
+// LocalConfigPaths is every adapter-bearing runtime's declared local
+// configuration, deduplicated, in the sorted order the manifest is written in.
+var LocalConfigPaths = declaredLocalConfigPaths()
+
+func declaredLocalConfigPaths() []string {
+	seen := map[string]bool{}
+	var paths []string
+	for _, runtime := range runtimes.WithAdapter() {
+		declared, _ := runtimes.LocalConfigPaths(runtime)
+		for _, path := range declared {
+			if !seen[path] {
+				seen[path] = true
+				paths = append(paths, path)
+			}
+		}
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 // Manifest is the file's contents: one relative path per line.

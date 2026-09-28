@@ -20,8 +20,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func shippedRoot(t *testing.T) string {
@@ -132,164 +130,26 @@ func buildShippedEngine(t *testing.T, ctx context.Context) string {
 	return engine
 }
 
-func runShippedScript(t *testing.T, ctx context.Context, engine, script string, args ...string) (string, string, error) {
-	t.Helper()
-	command := exec.CommandContext(ctx, "bash", append([]string{script}, args...)...)
-	command.Dir = shippedRoot(t)
-	command.Env = append(os.Environ(), "METASYSTEM_BIN="+engine, "TMPDIR="+t.TempDir())
-	var stdout, stderr bytes.Buffer
-	command.Stdout, command.Stderr = &stdout, &stderr
-	err := command.Run()
-	return stdout.String(), stderr.String(), err
-}
-
-// The declared runtime populations agree with the shipped adapter and host
-// scripts: every common-lifecycle adapter exists, parses, advertises its ten
-// verbs and binds its snapshot identity; every adapter's contract snapshot
-// decodes with its own identity and the full production shape; every static
-// enforcement map equals the adapter's own; every host advertises start-turn;
-// and the fake adapter's envelope probe observes both denials.
+// The fake runtime honors its registry declaration through the engine's
+// delegate supervisor: its envelope probe, run from a bare root, snapshots the
+// declared enforcement map and observes both denials. The per-runtime adapter
+// and host script contracts retired with the adapters' port to Go (batch 2,
+// U6a): internal/adapter/supervisor's TestRuntimeAdapterContracts and the
+// internal/missionrunner/hostturn host tests own them.
 func TestShippedAdapterScriptsHonorTheRuntimeRegistry(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	root := shippedRoot(t)
 	engine := buildShippedEngine(t, ctx)
 
-	common := WithCommonLifecycle()
-	if len(common) == 0 {
-		t.Fatal("the common-lifecycle population is empty")
-	}
-	for _, runtime := range common {
-		adapter := filepath.Join("scripts", "agents", "adapters", runtime+".sh")
-		info, err := os.Stat(filepath.Join(root, adapter))
-		if err != nil {
-			t.Fatalf("missing %s runtime adapter: %s", runtime, adapter)
-		}
-		if info.Mode().Perm()&0o111 == 0 {
-			t.Errorf("%s runtime adapter is not executable: %s", runtime, adapter)
-		}
-		if _, stderr, err := runShippedScript(t, ctx, engine, "-n", adapter); err != nil {
-			t.Errorf("%s adapter does not parse: %v\n%s", runtime, err, stderr)
-		}
-		stdout, stderr, _ := runShippedScript(t, ctx, engine, adapter, "--help")
-		usage := stdout + stderr
-		for _, verb := range []string{"identity", "config-identity", "signature", "enforcement-map", "contract", "probe", "dispatch", "follow-up", "cancel", "selftest"} {
-			if !strings.Contains(usage, "adapters/"+runtime+".sh "+verb) {
-				t.Errorf("%s adapter usage does not advertise %s", runtime, verb)
-			}
-		}
-		source, err := os.ReadFile(filepath.Join(root, adapter))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(source), "adapter_common_init "+runtime) {
-			t.Errorf("%s adapter does not bind its snapshot runtime identity", runtime)
-		}
-		if !strings.Contains(string(source), `write_capability_snapshot `+runtime+` "$version" "$hash"`) {
-			t.Errorf("%s adapter does not write its named capability snapshot", runtime)
-		}
-	}
-
-	adapters := WithAdapter()
-	if len(adapters) == 0 {
-		t.Fatal("the adapter population is empty")
-	}
-	for _, runtime := range adapters {
-		adapter := filepath.Join("scripts", "agents", "adapters", runtime+".sh")
-		stdout, stderr, err := runShippedScript(t, ctx, engine, adapter, "contract")
-		if err != nil {
-			t.Fatalf("%s adapter contract failed: %v\n%s", runtime, err, stderr)
-		}
-		var snapshot map[string]any
-		if err := json.Unmarshal([]byte(stdout), &snapshot); err != nil {
-			t.Fatalf("%s adapter contract snapshot is not JSON: %v\n%s", runtime, err, stdout)
-		}
-		if snapshot["runtime"] != runtime {
-			t.Errorf("%s adapter contract snapshot carries wrong identity: %v", runtime, snapshot["runtime"])
-		}
-		for _, field := range []string{"cliVersion", "configHash", "capabilities", "permissions"} {
-			if _, ok := snapshot[field]; !ok {
-				t.Errorf("%s adapter contract snapshot lacks %s", runtime, field)
-			}
-		}
-		enforcement, _ := snapshot["envelopeEnforcement"].(map[string]any)
-		for _, field := range EnforcementFields {
-			if _, ok := enforcement[field]; !ok {
-				t.Errorf("%s adapter contract snapshot lacks envelopeEnforcement.%s", runtime, field)
-			}
-		}
-	}
-
-	compared := 0
-	for _, runtime := range adapters {
-		declaration, ok := Lookup(runtime)
-		if !ok || declaration.ExpectedEnvelopeEnforcement == nil {
-			continue
-		}
-		stdout, stderr, err := runShippedScript(t, ctx, engine, filepath.Join("scripts", "agents", "adapters", runtime+".sh"), "enforcement-map")
-		if err != nil {
-			t.Fatalf("%s adapter enforcement-map failed: %v\n%s", runtime, err, stderr)
-		}
-		var adapterMap map[string]string
-		if err := json.Unmarshal([]byte(stdout), &adapterMap); err != nil {
-			t.Fatalf("%s adapter enforcement map is not a string map: %v\n%s", runtime, err, stdout)
-		}
-		registryMap := map[string]string{}
-		for field, value := range declaration.ExpectedEnvelopeEnforcement {
-			registryMap[field] = string(value)
-		}
-		if len(adapterMap) != 3 || len(registryMap) != 3 {
-			t.Errorf("%s enforcement map carries unexpected members (adapter=%d registry=%d)", runtime, len(adapterMap), len(registryMap))
-		}
-		if !reflect.DeepEqual(adapterMap, registryMap) {
-			t.Errorf("%s adapter envelope enforcement %v drifted from the registry declaration %v", runtime, adapterMap, registryMap)
-		}
-		compared++
-	}
-	if compared < 3 {
-		t.Errorf("only %d static enforcement maps compared: the population went missing", compared)
-	}
-
-	hosts := WithHost()
-	if len(hosts) == 0 {
-		t.Fatal("the host population is empty")
-	}
-	for _, runtime := range hosts {
-		host := filepath.Join("scripts", "agents", "hosts", runtime+".sh")
-		info, err := os.Stat(filepath.Join(root, host))
-		if err != nil || info.Mode().Perm()&0o111 == 0 {
-			t.Errorf("%s host adapter is missing or not executable: %s", runtime, host)
-			continue
-		}
-		stdout, stderr, _ := runShippedScript(t, ctx, engine, host, "--help")
-		if !strings.Contains(stdout+stderr, "start-turn") {
-			t.Errorf("%s host adapter does not advertise start-turn", runtime)
-		}
-	}
-
-	// The fake runtime is the only sandbox this suite owns: its probe drives
-	// the denied write and network-call paths from a bare copied root and
-	// reports the observed status.
 	probeRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(probeRoot, "scripts", "agents", "adapters"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	fake, err := os.ReadFile(filepath.Join(root, "scripts", "agents", "adapters", "fake.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	fakeCopy := filepath.Join(probeRoot, "scripts", "agents", "adapters", "fake.sh")
-	if err := testexec.WriteFile(fakeCopy, fake, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	probeResult := filepath.Join(t.TempDir(), "fake-envelope-probe-result.json")
-	probe := exec.CommandContext(ctx, fakeCopy, "probe")
+	probe := exec.CommandContext(ctx, engine, "delegate-supervisor", "fake", "probe", "--root", probeRoot)
 	probe.Dir = probeRoot
-	probe.Env = append(os.Environ(), "METASYSTEM_BIN="+engine, "METASYSTEM_FAKE_ENVELOPE_PROBE_RESULT="+probeResult, "TMPDIR="+t.TempDir())
+	probe.Env = append(os.Environ(), "METASYSTEM_FAKE_ENVELOPE_PROBE_RESULT="+probeResult, "TMPDIR="+t.TempDir())
 	var probeOut, probeErr bytes.Buffer
 	probe.Stdout, probe.Stderr = &probeOut, &probeErr
 	if err := probe.Run(); err != nil {
-		t.Fatalf("fake adapter probe failed: %v\n%s", err, probeErr.String())
+		t.Fatalf("fake runtime probe failed: %v\n%s", err, probeErr.String())
 	}
 	snapshotPath := strings.TrimSpace(probeOut.String())
 	var snapshot struct {

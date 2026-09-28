@@ -1541,16 +1541,8 @@ func equipFullCycleFiles(t *testing.T, engine *Engine) {
 	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), binary, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(filepath.Join(root, "scripts", "agents", "hosts"), 0o755)
-	// The host and its shared library travel together:
-	// fake.sh sources host-common.sh from its own directory.
-	for _, name := range []string{"fake.sh", "host-common.sh"} {
-		adapter, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "hosts", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		testexec.WriteFile(filepath.Join(root, "scripts", "agents", "hosts", name), adapter, 0o755)
-	}
+	// The host turn is that binary's delegate-supervisor entry; no host
+	// script travels with the bed.
 	// The human entrypoint IS the engine verb now (the wrapper died in
 	// the L15 delete tranche); the resolution fixtures drive the same
 	// binary a human types. The prompt checker runs for real too — the

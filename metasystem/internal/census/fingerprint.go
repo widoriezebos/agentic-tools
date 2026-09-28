@@ -7,14 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 )
 
 // The fingerprint is the supervision code staleness detector. It hashes the
@@ -25,9 +26,7 @@ import (
 // metasystem root (order does not affect the hash — the map is sorted — but
 // it documents the contract).
 var fingerprintFiles = []string{
-	"scripts/agents/dispatch.sh",
 	"bin/metasystem",
-	"scripts/agents/adapters/runtime-common.sh",
 }
 
 // FingerprintFiles returns the fixed supervision inputs the fingerprint
@@ -44,38 +43,163 @@ var fingerprintConfig = map[string]string{
 	"census.max-interval-share-percent": "50",
 }
 
-// SignatureText returns an adapter's normalized signature declaration — the
-// `match`/`exclude` lines joined by newlines with a trailing newline. This is
-// the value hashed per runtime.
-func SignatureText(adapterPath string) (string, error) {
-	cmd := exec.Command(adapterPath, "signature")
-	var out strings.Builder
-	cmd.Stdout = &out
-	// Bounded: a hung adapter would otherwise hang watcher passes and
-	// lease classification. Adapters live at
-	// <root>/scripts/agents/adapters/<runtime>.sh, so the checkout's conf is
-	// four steps up; anywhere else the stated default applies — a missing
-	// conf must not disable bounding.
-	conf := filepath.Join(adapterPath, "..", "..", "..", "..", "metasystem.conf")
-	limit := boundedexec.Timeout(conf, boundedexec.Local)
-	if err := boundedexec.Run(cmd, limit, "signature adapter "+filepath.Base(adapterPath)); err != nil {
-		return "", fmt.Errorf("signature adapter failed: %s: %w", filepath.Base(adapterPath), err)
+// SignatureText returns a runtime's normalized signature declaration — the
+// `match`/`exclude` lines joined by newlines with a trailing newline, from
+// the runtime registry's one process definition. This is the value hashed
+// per runtime.
+func SignatureText(runtime string) (string, error) {
+	return runtimes.SignatureText(runtime)
+}
+
+// RuntimeSignature compiles one built-in runtime's registry signature.
+func RuntimeSignature(runtime string) (Signature, string, error) {
+	text, err := SignatureText(runtime)
+	if err != nil {
+		return Signature{}, "", err
 	}
-	var normalized []string
-	for _, raw := range strings.Split(strings.TrimRight(out.String(), "\n"), "\n") {
-		if raw == "" || raw != strings.TrimSpace(raw) {
-			return "", fmt.Errorf("malformed signature declaration from %s", filepath.Base(adapterPath))
+	return compileText(runtime, text)
+}
+
+func compileText(runtime, text string) (Signature, string, error) {
+	matches, excludes := ParseSignatureText(text)
+	sig, err := CompileSignature(runtime, matches, excludes)
+	if err != nil {
+		return Signature{}, "", err
+	}
+	return sig, text, nil
+}
+
+// RuntimeSignatureAt is a runtime's recognizer signature for an
+// installation root, from the runtime registry (design 3.5): a built-in's,
+// an overridden built-in's one effective declaration (the override's
+// signature plus the built-in's reserved exclusions, VOA-31), or an external
+// runtime's cross-checked declaration.
+func RuntimeSignatureAt(root, runtime string) (Signature, string, error) {
+	if root != "" {
+		reg, err := external.Load(root)
+		if err != nil {
+			return Signature{}, "", err
 		}
-		verb, pattern, found := strings.Cut(raw, " ")
-		if (verb != "match" && verb != "exclude") || !found || pattern == "" {
-			return "", fmt.Errorf("malformed signature declaration from %s: %s", filepath.Base(adapterPath), raw)
+		if entry, found := reg.Lookup(runtime); found {
+			return compileText(runtime, entry.Signature)
 		}
-		normalized = append(normalized, raw)
+		if refusal, refused := reg.Refusal(runtime); refused {
+			return Signature{}, "", refusal
+		}
 	}
-	if len(normalized) == 0 {
-		return "", fmt.Errorf("signature adapter returned nothing: %s", filepath.Base(adapterPath))
+	return RuntimeSignature(runtime)
+}
+
+// absentExternal reports whether a runtime name is an external adapter the
+// registry refused: absent to the recognizers, never an error for them.
+func absentExternal(root, runtime string) bool {
+	if _, builtin := runtimes.Lookup(runtime); builtin {
+		return false
 	}
-	return strings.Join(normalized, "\n") + "\n", nil
+	reg, err := external.Load(root)
+	if err != nil {
+		return false
+	}
+	if _, found := reg.Lookup(runtime); found {
+		return false
+	}
+	_, refused := reg.Refusal(runtime)
+	return refused
+}
+
+// ExternalAdapters reports the external adapters an installation declares
+// and the executables it refused, without executing any of them.
+func ExternalAdapters(root string) ([]external.Adapter, []external.Refusal, error) {
+	return external.Discover(root)
+}
+
+// FixtureSignatureRuntimesEnv narrows the adapter signature universe in a
+// fixture-mode root (metasystem.runtimes=fake) to the named runtimes, so a
+// process fixture's ancestry is agent-free although the test runner itself
+// may run under a real runtime. It stands in for what fixture beds did when
+// the signatures were scripts: delete the unrelated adapter scripts from the
+// scratch installation. Outside a fixture-mode root it is ignored.
+const FixtureSignatureRuntimesEnv = "METASYSTEM_FIXTURE_SIGNATURE_RUNTIMES"
+
+// AllAdapterSignatures compiles the delegate signature of every runtime
+// that declares an adapter (all of them, not only the configured runtimes: a
+// delegate of any installed runtime must be recognised as a delegate). The
+// order is the runtime names' sort order, the order the adapter scripts'
+// directory listing used to give.
+func AllAdapterSignatures() ([]Signature, error) {
+	sigs, _, err := adapterSignatures(runtimes.WithAdapter())
+	return sigs, err
+}
+
+// InstalledAdapterSignatures is AllAdapterSignatures for an installation
+// root: every runtime of its registry (built-ins, overrides as one
+// effective declaration, and the external runtimes it names), narrowed in a
+// fixture-mode root to its configured runtimes and
+// FixtureSignatureRuntimesEnv. It also returns the runtime names and each
+// signature text in the same order.
+func InstalledAdapterSignatures(root string) ([]Signature, []string, []string, error) {
+	return installedAdapterSignatures(root, os.Getenv)
+}
+
+func installedAdapterSignatures(root string, getenv func(string) string) ([]Signature, []string, []string, error) {
+	reg, err := external.Load(root)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	names := reg.Names()
+	if fixtureauth.FixtureModeRoot(root) {
+		// A fixture-mode root (metasystem.runtimes=fake) classifies against
+		// its configured runtimes only: a test or bed runs under whatever
+		// agent CLI its person uses, and that ambient runtime must not turn
+		// a staged human ancestry into a delegate one. The environment can
+		// narrow further.
+		names = splitRuntimes(config.ConfValue(filepath.Join(root, "metasystem.conf"), "metasystem.runtimes", ""))
+		if narrowed := getenv(FixtureSignatureRuntimesEnv); narrowed != "" {
+			names = strings.Fields(strings.ReplaceAll(narrowed, ",", " "))
+		}
+		names = registered(reg, names)
+	}
+	sort.Strings(names)
+	var sigs []Signature
+	var texts []string
+	for _, runtime := range names {
+		entry, _ := reg.Lookup(runtime)
+		sig, text, err := compileText(runtime, entry.Signature)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		sigs = append(sigs, sig)
+		texts = append(texts, text)
+	}
+	return sigs, names, texts, nil
+}
+
+// registered keeps the names the registry has (a refused external is
+// absent, never an error).
+func registered(reg external.Registry, names []string) []string {
+	var kept []string
+	for _, name := range names {
+		if _, ok := reg.Lookup(name); ok {
+			kept = append(kept, name)
+		}
+	}
+	return kept
+}
+
+func adapterSignatures(names []string) ([]Signature, []string, error) {
+	names = append([]string(nil), names...)
+	sort.Strings(names)
+	var sigs []Signature
+	var texts []string
+	for _, runtime := range names {
+		sig, text, err := RuntimeSignature(runtime)
+		if err != nil {
+			return nil, nil, err
+		}
+		sigs = append(sigs, sig)
+		texts = append(texts, text)
+	}
+	return sigs, texts, nil
 }
 
 // Fingerprint computes the supervision fingerprint for a repo, hashing files
@@ -87,10 +211,26 @@ func Fingerprint(metasystemRoot, repo string) (string, error) {
 	}
 	confPath := filepath.Join(metasystemRoot, "metasystem.conf")
 
-	selected := splitRuntimes(config.ConfValue(confPath, "metasystem.runtimes", ""))
+	reg, err := external.Load(metasystemRoot)
+	if err != nil {
+		return "", err
+	}
+	// The selected runtimes as the recognizers see them: a refused external
+	// is absent (never an error), an accepted external or override hashes
+	// its executable and its effective signature.
+	var selected []string
 	files := append([]string(nil), fingerprintFiles...)
-	for _, runtime := range selected {
-		files = append(files, filepath.Join("scripts", "agents", "adapters", runtime+".sh"))
+	for _, runtime := range splitRuntimes(config.ConfValue(confPath, "metasystem.runtimes", "")) {
+		entry, found := reg.Lookup(runtime)
+		if !found {
+			if _, refused := reg.Refusal(runtime); refused {
+				continue
+			}
+		}
+		selected = append(selected, runtime)
+		if found && entry.Adapter != nil {
+			files = append(files, filepath.Join(external.Dir, runtime))
+		}
 	}
 
 	fileHashes := map[string]string{}
@@ -105,7 +245,7 @@ func Fingerprint(metasystemRoot, repo string) (string, error) {
 
 	signatures := map[string]string{}
 	for _, runtime := range selected {
-		text, err := SignatureText(filepath.Join(metasystemRoot, "scripts", "agents", "adapters", runtime+".sh"))
+		_, text, err := RuntimeSignatureAt(metasystemRoot, runtime)
 		if err != nil {
 			return "", err
 		}

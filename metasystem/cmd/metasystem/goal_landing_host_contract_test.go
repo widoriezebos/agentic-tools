@@ -33,11 +33,11 @@ func TestGoalLandingHostContractRetainsPriorGroupsAndGoGate(t *testing.T) {
 		if group.Phase == "" || group.EnvironmentMode != "inherit" {
 			t.Fatalf("group %s lost phase or inherited environment", group.ID)
 		}
-		if group.ID != "refusal-register-standard" && group.ID != "fast-static-build" && group.ID != "policy-canary" && group.ID != "adapter-canary" && group.ID != "command-interface-smoke" && group.ID != "verb-ratchet" && group.Phase != "acceptance" {
+		if group.ID != "refusal-register-standard" && group.ID != "fast-static-build" && group.ID != "policy-canary" && group.ID != "adapter-canary" && group.ID != "command-interface-smoke" && group.ID != "verb-ratchet" && group.ID != "delegation-layering" && group.Phase != "acceptance" {
 			t.Fatalf("group %s entered admission outside the reviewed static reproof and canary floor", group.ID)
 		}
 	}
-	for _, id := range []string{"refusal-register-standard", "fast-static-build", "policy-canary", "adapter-canary", "command-interface-smoke", "verb-ratchet"} {
+	for _, id := range []string{"refusal-register-standard", "fast-static-build", "policy-canary", "adapter-canary", "command-interface-smoke", "verb-ratchet", "delegation-layering"} {
 		if ids[id].Phase != "admission" {
 			t.Fatalf("%s must be admission", id)
 		}
@@ -194,8 +194,21 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			"TestWatcherRestartRequestReplacesOnlyTheEnrolledGenerationWithinOneCycle",
 			"TestCompletedWatcherRequestIsReplacedByANewGeneration",
 		}},
-		"section/suite-host-prerequisites":  {reason: "python3 is a declared tool of the dispatcher bed that needs it"},
+		"section/suite-host-prerequisites":  {reason: "the host prerequisites it checked belonged to the retired validator and dispatcher bed"},
 		"section/enumeration-mode-fixtures": {reason: "enumeration mode was deleted with validate-metasystem.sh"},
+		// goal-cli-fixtures.sh moved into the goal CLI Go tests (verbs-object-action U7b part 2).
+		"section/goal-cli-fixtures": {replacement: "goal-cli-standard"},
+		// Batch 2 (U6a/U6b) deleted these beds with the adapters' and the
+		// delegate lifecycle's port to Go; main kept each section as a printed
+		// pointer inside validate-metasystem.sh, which U7b-1 retired. Their
+		// scenarios are Go tests the go gate runs in the named packages.
+		"section/telemetry-census-fixtures":                      {reason: "retired to Go tests in internal/census and internal/adapter/supervisor (batch 2, U6a)"},
+		"section/acp-fixtures":                                   {reason: "retired to Go tests in internal/adapter/supervisor, internal/missionrunner/hostturn and internal/acp (batch 2, U6a)"},
+		"section/adapter-deadline-fixtures":                      {reason: "retired to Go tests in internal/adapter/supervisor (batch 2, U6a)"},
+		"section/authority-regression-fixtures":                  {reason: "retired to Go tests in internal/delegation and the owners' packages (batch 2, U6b)"},
+		"section/record-protocol-fixtures":                       {reason: "retired to Go tests in internal/delegation and the owners' packages (batch 2, U6b)"},
+		"section/delegate-caps-fixtures":                         {reason: "retired to Go tests in internal/delegation and the owners' packages (batch 2, U6b)"},
+		"section/dispatcher-adapter-and-mission-runner-fixtures": {reason: "retired to Go tests in internal/delegation and the owners' packages (batch 2, U6b)"},
 	}
 	currentGroupIDs := map[string]bool{}
 	for _, group := range current.Groups {

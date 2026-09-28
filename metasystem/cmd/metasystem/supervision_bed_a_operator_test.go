@@ -15,25 +15,17 @@ import (
 // supAOperatorLayout builds the ordinary operator layout of the retired
 // supervision bed's operator-layout scenario: an application repository whose
 // vendored metasystem installation sits one directory below the Git toplevel.
-// The installation carries a configuration listing the fake runtime, the
-// source tree's real signature adapters, and a standing enrollment of the
-// engine that runs this test, so up reaches the session-identity step.
+// The installation carries a configuration listing the fake runtime and a
+// standing enrollment of the engine that runs this test (whose registry holds
+// the runtime signatures), so up reaches the session-identity step.
 func supAOperatorLayout(t *testing.T) (scope, installation string) {
 	t.Helper()
 	scope = t.TempDir()
 	installation = filepath.Join(scope, "metasystem")
-	adapters := filepath.Join(installation, "scripts", "agents")
-	if err := os.MkdirAll(adapters, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	source, err := filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "adapters"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(source, filepath.Join(adapters, "adapters")); err != nil {
 		t.Fatal(err)
 	}
 	canonicalScope, err := canonicalPath(scope)

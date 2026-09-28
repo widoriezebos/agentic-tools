@@ -1171,8 +1171,13 @@ func runIntentDoctor(inv *intentInvocation) int {
 			lines = append(lines, "covenant shape valid: "+path+"; adequacy not established: shape says the rows parse, never that the proofs guard the intent")
 		}
 	}
+	adapters, refused := adapterReport(scope.Installation)
+	lines = append(lines, adapters...)
+	if refused > 0 {
+		code = max(code, 1)
+	}
 	result := intentResult{Outcome: intentConfirmed, code: code, Targets: inv.checkoutTarget(scope),
-		Summary: verdict.Line(), text: lines, Data: additiveData(steward.NewHookHealthPreview(verdict), map[string]any{"publicRemedies": remedies, "covenant": covenantData})}
+		Summary: verdict.Line(), text: lines, Data: additiveData(steward.NewHookHealthPreview(verdict), map[string]any{"publicRemedies": remedies, "covenant": covenantData, "adapters": adapters})}
 	if first != nil {
 		result.next, result.nextReason = first, "the first public remedy check found"
 	}

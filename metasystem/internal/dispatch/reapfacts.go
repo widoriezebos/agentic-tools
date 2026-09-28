@@ -38,7 +38,7 @@ type ReapFacts struct {
 const AbandonedSetupGrace = 10 * time.Minute
 
 // HandshakeBackstopGraceSec is the slack past a recorded handshake deadline
-// before a backstop may act — the same number dispatch.sh passes as
+// before a backstop may act — the same number the delegate lifecycle passes as
 // handshake_backstop_grace_sec, named here so every Go caller computes
 // handshake expiry from one constant.
 const HandshakeBackstopGraceSec int64 = 2

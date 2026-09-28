@@ -21,8 +21,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // supCNow is the injected census clock every pass in this file uses.
@@ -51,7 +49,6 @@ func supCNewBed(t *testing.T) supCBed {
 		process: filepath.Join(parent, "process-fixture.json"),
 	}
 	for _, dir := range []string{
-		filepath.Join(bed.repo, "scripts", "agents", "adapters"),
 		filepath.Join(bed.repo, "artifacts", "agents", "mains"),
 		filepath.Join(bed.repo, "artifacts", "agents", "jobs"),
 		filepath.Join(bed.repo, "artifacts", "agents", "supervision"),
@@ -61,14 +58,8 @@ func supCNewBed(t *testing.T) supCBed {
 			t.Fatal(err)
 		}
 	}
-	// The shipped fake adapter declares the signature the census compiles.
-	shipped, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "adapters", "fake.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(filepath.Join(bed.repo, "scripts", "agents", "adapters", "fake.sh"), shipped, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// The census compiles the fake runtime's signature from the engine's
+	// registry (the adapter scripts retired with the adapters' port to Go).
 	supCWrite(t, filepath.Join(bed.repo, "metasystem.conf"), "metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n")
 	supCWrite(t, filepath.Join(bed.repo, "artifacts", "agents", "supervision", "state.json"),
 		`{"generation":3,"owner":{"pid":71001,"pidStartedAt":1,"instanceTag":"owner-t"},`+
@@ -438,8 +429,10 @@ func TestSupCCensusPrunesDeadAnnouncements(t *testing.T) {
 	}
 }
 
-// S4-3: the fingerprint moves with an adapter's bytes and with relevant
-// configuration, and never with the supervisor's own instance identity.
+// S4-3: the fingerprint moves with relevant configuration and never with the
+// supervisor's own instance identity. That it moves with the engine carrying
+// the signature registry, not with adapter scripts, is internal/census's
+// TestFingerprintMovesWithEngineAndSignatureSetNotAdapterScripts.
 func TestSupCFingerprintTracksCodeAndConfigNotInstances(t *testing.T) {
 	t.Parallel()
 	bed := supCNewBed(t)
@@ -462,24 +455,6 @@ func TestSupCFingerprintTracksCodeAndConfigNotInstances(t *testing.T) {
 	}
 	base := fingerprint()
 
-	adapter := filepath.Join(bed.repo, "scripts", "agents", "adapters", "fake.sh")
-	original, err := os.ReadFile(adapter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(adapter, append(append([]byte(nil), original...), "\n# signature fingerprint fixture\n"...), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if fingerprint() == base {
-		t.Fatal("S4-3: adapter change did not alter the fingerprint")
-	}
-	if err := testexec.WriteFile(adapter, original, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if fingerprint() != base {
-		t.Fatal("restoring the adapter bytes did not restore the fingerprint")
-	}
-
 	conf := filepath.Join(bed.repo, "metasystem.conf")
 	confBytes, err := os.ReadFile(conf)
 	if err != nil {
@@ -499,52 +474,5 @@ func TestSupCFingerprintTracksCodeAndConfigNotInstances(t *testing.T) {
 	supCWrite(t, state, strings.Replace(string(stateBytes), `"owner-t"`, `"owner-t-changed"`, 1))
 	if fingerprint() != base {
 		t.Fatal("S4-3: supervisor instance identity altered the static fingerprint")
-	}
-}
-
-// S4-7: every runtime that declares an adapter ships a strict, line-oriented
-// POSIX-ERE signature grammar whose provider-owned positive vector classifies
-// and whose lookalike does not; the population is the registry's, not a list
-// kept here. Malformed, invalid-ERE, failing and exclude-tie declarations all
-// fail closed.
-func TestSupCShippedSignaturesHonorTheirVectors(t *testing.T) {
-	t.Parallel()
-	population := runtimes.WithAdapter()
-	if len(population) < 4 {
-		t.Fatalf("S4-7: only %d adapter runtimes declared: %v", len(population), population)
-	}
-	for _, runtime := range population {
-		adapter := filepath.Join("..", "..", "scripts", "agents", "adapters", runtime+".sh")
-		text, err := SignatureText(adapter)
-		if err != nil {
-			t.Fatalf("S4-7: %s signature: %v", runtime, err)
-		}
-		for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
-			if !strings.HasPrefix(line, "match ") && !strings.HasPrefix(line, "exclude ") {
-				t.Fatalf("S4-7: malformed %s signature line: %q", runtime, line)
-			}
-		}
-		declaration, ok := runtimes.Lookup(runtime)
-		if !ok || declaration.SignatureVectors.Positive == "" || declaration.SignatureVectors.Lookalike == "" {
-			t.Fatalf("S4-7: %s declared no signature vectors", runtime)
-		}
-		if err := SignatureCheck(adapter, declaration.SignatureVectors.Positive, declaration.SignatureVectors.Lookalike); err != nil {
-			t.Fatalf("S4-7: %s: %v", runtime, err)
-		}
-	}
-	dir := t.TempDir()
-	for name, body := range map[string]string{
-		"malformed":      "#!/bin/sh\nprintf 'bogus .*\\n'\n",
-		"invalid-ere":    "#!/bin/sh\nprintf 'match [\\n'\n",
-		"adapter-failed": "#!/bin/sh\nexit 9\n",
-		"exclude-tie":    "#!/bin/sh\nprintf 'match ^tie$\\nexclude ^tie$\\n'\n",
-	} {
-		adapter := filepath.Join(dir, "signature-"+name+".sh")
-		if err := testexec.WriteFile(adapter, []byte(body), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := SignatureCheck(adapter, "tie", "lookalike"); err == nil {
-			t.Fatalf("S4-7: %s signature adapter did not fail closed", name)
-		}
 	}
 }

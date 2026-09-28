@@ -1,16 +1,8 @@
-scripts/agents/acp-fixtures.sh	section/acp-fixtures
-scripts/agents/adapter-deadline-fixtures.sh	section/adapter-deadline-fixtures
-scripts/agents/authority-regression-fixtures.sh	section/authority-regression-fixtures
 scripts/agents/checkout-execution-guard-fixtures.sh	section/gate-fence-fixtures
 scripts/agents/config-identity-fixtures.sh	section/config-identity-fixtures
-scripts/agents/delegate-caps-fixtures.sh	section/delegate-caps-fixtures
-scripts/agents/dispatch-fixtures.sh	section/dispatcher-adapter-and-mission-runner-fixtures
 scripts/agents/evidence-segment-fixtures.sh	section/evidence-segment-fixtures
 scripts/agents/flight-recorder-fixtures.sh	section/flight-recorder-fixtures
-scripts/agents/goal-cli-fixtures.sh	section/goal-cli-fixtures
 scripts/agents/land-fixtures.sh	section/land-fixtures
 scripts/agents/lease-succession-fixtures.sh	section/lease-succession-fixtures
 scripts/agents/pre-commit-guard-fixtures.sh	section/pre-commit-guard-fixtures
-scripts/agents/record-protocol-fixtures.sh	section/record-protocol-fixtures
 scripts/agents/supervision-go-fixtures.sh	section/supervision-go-fixtures
-scripts/agents/telemetry-census-fixtures.sh	section/telemetry-census-fixtures

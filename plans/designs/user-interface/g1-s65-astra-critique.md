@@ -118,3 +118,41 @@ Proposed receipt, unwritten: “g1-s65 round 2 reviewed at `9eb7cf433`; S65-01�
 
 Codex session ID: 01a0e6be-3e14-7fa2-834d-28d0773b543f
 Resume in Codex: codex resume 01a0e6be-3e14-7fa2-834d-28d0773b543f
+
+
+---
+
+# Scoped confirmation read of D16 (2026-09-28, fresh session, after the closed loop), at `83f60f56a`. Verbatim.
+
+**VERDICT: held — 1 material finding: S65-06**
+
+Commit read: `83f60f56a93e221ba28a629293124fcbf30decc1`. This is the scoped confirmation of D16 after the closed critique loop. Evidence was **read**; behavioral conclusions are static inferences.
+
+**The conversation key and replay approach hold.** The unresolved point is the handoff while a turn is running.
+
+- **Store ownership and repair:** A sitting can have its own conversation under the existing private-store owner. The same canonical file identity must key both `conversations` and `opening`, including housekeeping access. [Service.conversation](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:244) already enforces one opener per transcript. [OpenConversation and repair](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/conversation.go:580) operate on that conversation’s files; the repair archives before rewriting. D16 does not require weakening either protection.
+- **Private sitting state:** The sitting mark and its persistence belong to the `Conversation`, so separate conversations can own separate desks and drafts. Keeping them under [uihome](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/uihome/uihome.go:90) preserves the existing boundary outside the checkout. [grants_test.go](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/grants_test.go:101) checks the Partner’s and critic’s grants against that boundary; D16’s verification explicitly extends this proof to sitting files.
+- **Replay isolation:** Both [history replay and the proposals block](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:629) read the selected conversation. [History](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/conversation.go:1276) retains at most twenty messages and 8,000 bytes of message content. With D16’s separate conversation and fresh session, return and recovery replay only that sitting’s retained words.
+- **Host reuse:** Session identity, update listener and tool-call bookkeeping live in the host’s replaceable `live` object. Sequential reuse fits. The service’s human-only `spokeLast`, snapshot selection and `Resume` freshness checks must follow the full conversation identity, as D16 requires. The host’s active-turn state, however, survives `Close` until the old prompt settles.
+
+**S65-06 — Medium — material: yes**
+
+**Claim:** D16 relies on an existing attendance mechanism for its in-flight handoff, but that mechanism is absent at the pinned commit.
+
+**Evidence read:** [D16:237](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s65-the-review-sitting.md:237) says a turn ends at its next boundary “as attendance already provides.” The targeted search for `attendance` in the UI implementation returned no matches. More decisively, [submit:569](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:569) refuses any second turn while `current` exists; it records no pending switch. [Host.Close:721](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/host.go:721) tears down the session without waiting for the active prompt. The host clears `turning` in the [prompt’s deferred settlement](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/host.go:579). The separate [Service.Stop](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:1296) provides cancellation and a bounded settlement wait.
+
+**Concrete failure:** Review A is answering when the human steps out and starts review B. Adding the conversation key and session-switch logic to the existing admission path still returns `ErrBusy`; no attendance callback completes the promised handoff. Closing and reopening the host immediately also does not establish that A has settled before B starts. This is an ordinary use of the newly promised flow.
+
+**Change to the design:** Specify the service-owned handoff using the existing cancellation and settlement primitives: preserve A’s turn binding through its terminal write, establish settlement before replacing its session, then admit or resume B. State how the promised boundary is reached and how an unsettled turn is reported. Extend §8’s two-room fixture to switch during an active answer and check both transcripts and the prompts received by the fake runtime.
+
+**Test 1 — DIFFERENT/WRONG:** yes; this changes session-switch control flow and its fixture.  
+**Test 2 — WORKS/SAFE without it:** fails WORKS. Transcript corruption is not demonstrated.
+
+Deferred: matters outside D16 remain with the closed loop and existing deferred slices.
+
+**Limitations:** Static confirmation only; no tests, browser interaction or provider sessions ran. The checkout had advanced, so evidence was read directly from the requested Git revision. No edits, subagents, secret configuration or files under `artifacts/` were used.
+
+Proposed receipt, unwritten: “D16 confirmed for store ownership and replay isolation at `83f60f56a`; held on S65-06, the active-turn handoff; static evidence only.”
+
+Codex session ID: 01a0e6ce-e1b9-75e1-a276-d888c8ce5089
+Resume in Codex: codex resume 01a0e6ce-e1b9-75e1-a276-d888c8ce5089

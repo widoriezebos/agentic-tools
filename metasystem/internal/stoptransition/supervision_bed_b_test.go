@@ -80,18 +80,18 @@ func supBStopEverythingBed(t *testing.T) supBBed {
 	}
 	job := newJobFamily(LocalConfig{Root: root, Checkout: checkout})
 	var cancelled []string
-	job.cancel = func(id string) ([]byte, error) {
+	job.config.CancelJob = func(id string) (string, error) {
 		cancelled = append(cancelled, id)
 		record, err := dispatch.ReadRecordObject(jobPath)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		record["status"] = "cancelled"
 		data, err := json.Marshal(record)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-		return nil, os.WriteFile(jobPath, data, 0o644)
+		return "", os.WriteFile(jobPath, data, 0o644)
 	}
 	t.Cleanup(func() {
 		if len(cancelled) > 1 {

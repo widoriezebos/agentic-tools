@@ -191,18 +191,15 @@ func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(
 	if err := testexec.WriteFile(filepath.Join(installation, "bin", "metasystem"), []byte("fixture"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// The nested installation is fixture-mode (metasystem.runtimes=fake):
+	// its classifier, not the checkout's, must recognize the fake runtime's
+	// agent as the caller.
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	adapter := filepath.Join(installation, "scripts", "agents", "adapters", "fake.sh")
-	if err := os.MkdirAll(filepath.Dir(adapter), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(adapter, []byte("#!/bin/sh\n[ \"$1\" = signature ] && printf 'match .*\\n'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	caller := agentChildPid(t)
 	table := filepath.Join(t.TempDir(), "identities.json")
-	if err := os.WriteFile(table, []byte(fmt.Sprintf(`{"%d":{"terminal":false}}`, os.Getpid())), 0o644); err != nil {
+	if err := os.WriteFile(table, []byte(fmt.Sprintf(`{"%d":{"terminal":false}}`, caller)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
@@ -216,13 +213,13 @@ func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(
 	var gotRoot, gotInstallation string
 	classify := func(stateRoot, installed string, _ int64) (lease.Classification, error) {
 		gotRoot, gotInstallation = stateRoot, installed
-		return lease.ClassifyAt(stateRoot, installed, int64(os.Getpid()))
+		return lease.ClassifyAt(stateRoot, installed, caller)
 	}
 	_, code := missionFenceBeforeArmWith(root, "start", repositoryTop, classify)
 	if code != 1 || gotRoot != root || gotInstallation != installation {
 		t.Fatalf("mission classifier root=%q installation=%q code=%d, want %q and %q", gotRoot, gotInstallation, code, root, installation)
 	}
-	classification, err := lease.ClassifyAt(root, installation, int64(os.Getpid()))
+	classification, err := lease.ClassifyAt(root, installation, caller)
 	if err != nil || classification.Class != lease.ClassDelegate {
 		t.Fatalf("nested installation did not classify the mission caller as an agent: %+v, %v", classification, err)
 	}

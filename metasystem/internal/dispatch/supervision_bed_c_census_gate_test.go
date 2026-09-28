@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -149,46 +148,6 @@ func TestSupCCensusGateGenerationFailedAndFingerprint(t *testing.T) {
 	}
 }
 
-// An absent verdict refuses before the engine gate runs: dispatch.sh's
-// require_fresh_census names the absence and the re-arm command. The function
-// is driven from the shipped script with the engine replaced by a command
-// that must never run.
-func TestSupCCensusGateAbsentVerdictRefusesInDispatchScript(t *testing.T) {
-	t.Parallel()
-	script, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "dispatch.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := regexp.MustCompile(`(?ms)^require_fresh_census\(\) \{\n.*?^\}\n`).Find(script)
-	if body == nil {
-		t.Fatal("dispatch.sh no longer defines require_fresh_census")
-	}
-	agents := filepath.Join(t.TempDir(), "artifacts", "agents")
-	program := "set -euo pipefail\n" +
-		"die() { code=$1; shift; printf '%s\\n' \"$*\" >&2; exit \"$code\"; }\n" +
-		string(body) +
-		"require_fresh_census\n"
-	// The function reads its inputs as shell variables set by the script's
-	// preamble; this program sets exactly those.
-	preamble := "agents=" + supCShellQuote(agents) +
-		" ms=/nonexistent/engine-must-not-run arm_supervision='metasystem system start'" +
-		" repo_scope=" + supCShellQuote(supCGateRepo) + " root=" + supCShellQuote(supCGateRepo) + "\n"
-	command := exec.Command("bash", "-c", preamble+program)
-	output, err := command.CombinedOutput()
-	exit, ok := err.(*exec.ExitError)
-	if !ok || exit.ExitCode() != 1 {
-		t.Fatalf("absent census did not refuse with exit 1: %v\n%s", err, output)
-	}
-	want := "dispatch refused: census verdict is absent; run metasystem system start --repo " + supCGateRepo
-	if !strings.Contains(string(output), want) {
-		t.Fatalf("absent census refusal = %q, want %q", output, want)
-	}
-}
-
-func supCShellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
-}
-
 // S4-1 and S4-10: the job record's ownership identity carries the census join
 // key pidStartedAt beside pid, the host-turn contract documents it, and every
 // cross-component owner asset the census and the hooks depend on ships.
@@ -209,8 +168,7 @@ func TestSupCJobRecordCarriesTheCensusJoinKey(t *testing.T) {
 		t.Fatal("S4-1/S4-10: the host-turn contract does not document pidStartedAt")
 	}
 	for _, asset := range []string{
-		"scripts/agents/dispatch.sh",
-		"scripts/agents/adapters/runtime-common.sh", "scripts/agents/supervision-hook.sh",
+		"internal/delegation/lifecycle.go", "scripts/agents/supervision-hook.sh",
 		"scripts/enforcement/claude-code-hooks.json", "scripts/enforcement/codex-hooks.json",
 		"scripts/enforcement/devin-hooks.json",
 	} {

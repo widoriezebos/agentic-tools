@@ -30,7 +30,7 @@ func TestPolicyVersionAndDeclaredSkipSet(t *testing.T) {
 	wantDelivery := []string{
 		"supervision-go-fixtures", "gate-fence-fixtures", "gate-fail-open-tripwire",
 		"supervision and census fixtures", "supervisor fingerprint heal harness", "mission-fixtures",
-		"conformance-fixtures", "goal-cli-fixtures", "telemetry-census-fixtures", "return-schema-fixtures",
+		"conformance-fixtures", "telemetry-census-fixtures", "return-schema-fixtures",
 		"authority-regression-fixtures", "pre-commit-guard-fixtures", "static-reproof-fixtures",
 		"project-extra-suites", "record-protocol-fixtures", "evidence-segment-fixtures",
 		"lease-succession-fixtures", "flight-recorder-fixtures", "acp-fixtures",

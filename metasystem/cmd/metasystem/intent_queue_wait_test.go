@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"io"
 	"os"
 	"path/filepath"
@@ -155,19 +154,6 @@ func TestIntentWaitRealOwner(t *testing.T) {
 	bed := newWorkBed(t)
 	bed.lineage = "m1"
 	announceProofFixtureHolder(t, bed.root())
-	// The holder's runtime adapter is the repository's own fake adapter,
-	// whose wait-delivery answers for the fixture runtime.
-	adapters := filepath.Join(bed.root(), "scripts", "agents", "adapters")
-	os.MkdirAll(adapters, 0o755)
-	for _, name := range []string{"fake.sh", "runtime-common.sh"} {
-		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "adapters", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := testexec.WriteFile(filepath.Join(adapters, name), data, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
 	owners := bed.workOwners()
 	owners.work.wait = nil
 	// The wait's deadlines run on this test's clock, not the machine's: the

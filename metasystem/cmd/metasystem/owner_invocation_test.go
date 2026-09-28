@@ -24,15 +24,10 @@ import (
 // signature, and both it and this process carry a terminal.
 func stageUnannouncedAgentParent(t *testing.T, root string) {
 	t.Helper()
-	adapter := "#!/usr/bin/env bash\nset -euo pipefail\n[[ ${1:-} == signature ]] || exit 2\nprintf '%s\\n' 'match ^fixture-agent-runtime([[:space:]]|$)'\n"
-	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents", "adapters"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(filepath.Join(root, "scripts", "agents", "adapters", "fixtureagent.sh"), []byte(adapter), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// The parent is an agent CLI the registry recognizes: the built-in fake
+	// runtime's signature matches metasystem-fake-agent.
 	table := filepath.Join(t.TempDir(), "agent-parent-table.json")
-	rows := fmt.Sprintf(`{"%d": {"terminal": true}, "%d": {"terminal": true, "pidStartedAt": 1700000000, "command": "fixture-agent-runtime --print"}}`, os.Getpid(), os.Getppid())
+	rows := fmt.Sprintf(`{"%d": {"terminal": true}, "%d": {"terminal": true, "pidStartedAt": 1700000000, "command": "metasystem-fake-agent --print"}}`, os.Getpid(), os.Getppid())
 	if err := os.WriteFile(table, []byte(rows), 0o644); err != nil {
 		t.Fatal(err)
 	}

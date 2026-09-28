@@ -11,6 +11,7 @@ import (
 	"time"
 
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/adapterfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -169,13 +170,13 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	}
 	var unsupported []string
 	for r := range runtimeSet {
-		if !runtimereg.Supported(r) {
+		if !runtimeKnown(confPath, r) {
 			unsupported = append(unsupported, r)
 		}
 	}
 	sort.Strings(unsupported)
 	for _, r := range unsupported {
-		add("metasystem.runtimes names unsupported runtime %s", pyRepr(r))
+		add("metasystem.runtimes names unsupported runtime %s%s", pyRepr(r), externalRuntimeProblem(confPath, r))
 	}
 	for _, problem := range validateSpendConfiguration(confPath, localPath, values, runtimeSet, fixtureBudgetLawRoot(confPath)) {
 		add("%s", problem)
@@ -186,7 +187,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			continue
 		}
 		runtime := match[1]
-		if !runtimereg.Supported(runtime) {
+		if !runtimeKnown(confPath, runtime) {
 			add("%s names unsupported runtime %s", key, pyRepr(runtime))
 		}
 		seen := map[string]bool{}
@@ -871,4 +872,53 @@ func pyRepr(s string) string {
 	}
 	b.WriteByte(quote)
 	return b.String()
+}
+
+// runtimeKnown reports whether a runtime name is a built-in or an external
+// adapter the installation names and trusts (design verbs-object-action
+// 3.5): adapters.<name>.use=external in the configuration and a safe
+// executable at <installation>/adapters/<name>. Validation never executes
+// the adapter; the runtime registry's cross-check reports the rest
+// (`system check`).
+func runtimeKnown(confPath, runtime string) bool {
+	if runtimereg.Supported(runtime) {
+		return true
+	}
+	admitted, _ := externalRuntime(confPath, runtime)
+	return admitted
+}
+
+// externalRuntimeProblem is the fix for a name that is not an admitted
+// external runtime, as a suffix ("" when there is nothing to say).
+func externalRuntimeProblem(confPath, runtime string) string {
+	_, hint := externalRuntime(confPath, runtime)
+	if hint == "" {
+		return ""
+	}
+	return " (" + hint + ")"
+}
+
+func externalRuntime(confPath, runtime string) (admitted bool, hint string) {
+	if !adapterfile.ValidName(runtime) {
+		return false, ""
+	}
+	root := filepath.Dir(confPath)
+	value, _, err := Get(GetParams{Key: adapterfile.UseKey(runtime), Default: "", DefaultSet: true, ConfPath: confPath,
+		LookupEnv: func(string) (string, bool) { return "", false }})
+	if err != nil {
+		return false, err.Error()
+	}
+	named := value == adapterfile.UseValue
+	reason, checkErr := adapterfile.Check(root, runtime)
+	switch {
+	case checkErr != nil && !named:
+		return false, ""
+	case checkErr != nil:
+		return false, fmt.Sprintf("%s=%s is set but %s is not an executable file", adapterfile.UseKey(runtime), adapterfile.UseValue, adapterfile.Path(root, runtime))
+	case !named:
+		return false, adapterfile.Unnamed(runtime)
+	case reason != "":
+		return false, reason
+	}
+	return true, ""
 }

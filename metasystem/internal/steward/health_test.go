@@ -396,7 +396,7 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 		root, projection, projectionErr := budgetHealthProjectionBed(t, caseNow, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
 		role := checkClaimedGoalBudgetsFromProjection(root, caseNow, projection, true, projectionErr, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "ELAPSED_BREACH") ||
-			!strings.Contains(role.Remedy, "steward tick") {
+			!strings.Contains(role.Remedy, "the armed steward stops this revision on its next tick") || !strings.Contains(role.Remedy, "metasystem goal pause bounded-goal") {
 			t.Fatalf("the grace boundary was not typed breach-stop evidence: %+v", role)
 		}
 	})
@@ -407,7 +407,7 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 		writeHealthJob(t, root, "two", `{"jobId":"two","operationId":"reserve-two","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"pending"}`)
 		role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "reservedJobMinutesLimit") ||
-			!strings.Contains(role.Reason, "activeJobLimit") || !strings.Contains(role.Remedy, "steward tick") {
+			!strings.Contains(role.Reason, "activeJobLimit") || !strings.Contains(role.Remedy, "the armed steward stops this revision on its next tick") || !strings.Contains(role.Remedy, "metasystem goal pause bounded-goal") {
 			t.Fatalf("structured breaches did not route to breach-stop healing: %+v", role)
 		}
 		if len(role.RemedyFacts) != 1 || role.RemedyFacts[0] != (RemedyFact{Cause: CauseBudgetBreach, Goal: "bounded-goal"}) {
@@ -659,7 +659,7 @@ func TestNonterminalJobWithProvablyDeadProcessIsNamed(t *testing.T) {
 	}
 	role := checkNonterminalJobs(root, healthProbe{44001: {state: identity.Dead}})
 	if role.Status != HealthDead || !strings.Contains(role.Reason, "dead-job") ||
-		!strings.Contains(role.Remedy, "dispatch.sh") || !strings.Contains(role.Remedy, "reap") {
+		!strings.Contains(role.Remedy, "internal delegate reap") {
 		t.Fatalf("the dead-process job and its current remedy must be named: %+v", role)
 	}
 }

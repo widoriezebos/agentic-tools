@@ -9,7 +9,7 @@
     {
       "id": "budget-stops-work",
       "ref": "A budget is enforced: when it is exhausted, the machinery stops, records what it learned and then escalates or closes the attempt according to its authority (docs/paper/05-first-principles.md:63). Resuming needs a fresh complete budget from a human (docs/paper/19-appendix-functional-design.md:213).",
-      "proof": "testing.json group goal-decision-standard: TestBudgetTupleIsCompletePositiveAndCanonical, TestElapsedBreachDurationAppliesGraceAtTheStopBoundary, TestSetBudgetLiftsCompletedFenceInOneTransaction, TestHolderSetBudgetRebindsEpochForProofAdmission; group dispatch-proof-standard: TestProofOnlyGoalStopBatch, TestOrdinaryProofSharesGoalBudget; group mission-decision-standard: TestProjectFences; group section/goal-cli-fixtures"
+      "proof": "testing.json group goal-decision-standard: TestBudgetTupleIsCompletePositiveAndCanonical, TestElapsedBreachDurationAppliesGraceAtTheStopBoundary, TestSetBudgetLiftsCompletedFenceInOneTransaction, TestHolderSetBudgetRebindsEpochForProofAdmission; group dispatch-proof-standard: TestProofOnlyGoalStopBatch, TestOrdinaryProofSharesGoalBudget; group mission-decision-standard: TestProjectFences; group goal-cli-standard"
     },
     {
       "id": "approval-is-a-human-act",

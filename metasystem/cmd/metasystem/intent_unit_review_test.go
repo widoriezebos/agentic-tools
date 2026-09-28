@@ -20,7 +20,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // connectionBed is a physical Git repository (the work bed's goal ledger
@@ -218,6 +217,9 @@ func (c *connectionBed) connectionOwners() intentOwners {
 		// same classification.
 		recordWriter: humanRecordWriter,
 		process:      c.closeOwner,
+		closeOwner: func(root string, args []string) intentProcessResult {
+			return c.closeOwner(intentProcess{argv: append([]string{"close-owner"}, args...), dir: root})
+		},
 		publishRead: func(root, goalID, unit string) (branch.PublishReadResult, error) {
 			c.publications++
 			return branch.PublishCollectedRead(branch.PublishReadRequest{Repo: root, Remote: "origin", EndpointTip: c.endpointTip(),
@@ -311,7 +313,7 @@ func (c *connectionBed) writeJSON(path string, value any) {
 	}
 }
 
-// closeOwner is the whole close owner (dispatch.sh close): it stamps the
+// closeOwner is the whole close owner (the delegate lifecycle's close): it stamps the
 // chain's closure after the public close joined the dispositions.
 func (c *connectionBed) closeOwner(process intentProcess) intentProcessResult {
 	c.closes = append(c.closes, process.argv)
@@ -320,7 +322,7 @@ func (c *connectionBed) closeOwner(process intentProcess) intentProcessResult {
 		c.failCloses--
 		return intentProcessResult{code: 1, stderr: []byte("close check: the evidence mirror is missing\n")}
 	}
-	if filepath.Base(process.argv[0]) != "dispatch.sh" || process.argv[1] != "close" || slices.Contains(process.argv, "--runner-closed") {
+	if process.argv[0] != "close-owner" || process.argv[1] != "close" || slices.Contains(process.argv, "--runner-closed") {
 		c.t.Fatalf("close must invoke the whole owner: %v", process.argv)
 	}
 	var record map[string]any
@@ -383,24 +385,11 @@ func (c *connectionBed) dispositions() string {
 	return path
 }
 
-// adapterFixture puts the repository's real Claude adapter entrypoint and a
-// synthetic declared local settings file (plus a synthetic local
+// adapterFixture puts a synthetic declared local settings file (the Claude
+// runtime declares it in the runtime registry) (plus a synthetic local
 // configuration that must never be copied) into the selected checkout.
 func (c *connectionBed) adapterFixture() string {
 	c.t.Helper()
-	adapters := filepath.Join(c.root(), "scripts", "agents", "adapters")
-	if err := os.MkdirAll(adapters, 0o700); err != nil {
-		c.t.Fatal(err)
-	}
-	for _, name := range []string{"claude.sh", "runtime-common.sh"} {
-		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "adapters", name))
-		if err != nil {
-			c.t.Fatal(err)
-		}
-		if err := testexec.WriteFile(filepath.Join(adapters, name), data, 0o755); err != nil {
-			c.t.Fatal(err)
-		}
-	}
 	settings := `{"permissions":{"allow":["Bash(go test:*)"]},"fixture":"selected-installation"}`
 	os.MkdirAll(filepath.Join(c.root(), ".claude"), 0o700)
 	os.WriteFile(filepath.Join(c.root(), ".claude", "settings.local.json"), []byte(settings), 0o600)
@@ -416,7 +405,7 @@ func (c *connectionBed) adapterFixture() string {
 // owners are the real ones on a repository with a bare origin. The claim,
 // commit token, model launches, fast gate and critic dispatch are per-test
 // fakes. The whole close owner is a FAKE here: it stamps a recorded closure
-// the way dispatch.sh close would; the real close/register fixture and the
+// the way the lifecycle's close would; the real close/register fixture and the
 // real public land are delivery's (TestIntentCloseWholeOwner and its land
 // fixtures) and are not claimed by this test. Landing is observed through
 // the landing admission reader on the published branch only.

@@ -2,9 +2,9 @@ package stoptransition
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -30,6 +30,11 @@ type LocalConfig struct {
 	Installation string
 	Binary       string
 	ScaleMilli   int
+	// CancelJob cancels one local delegate job through the delegate
+	// lifecycle (the owned cancel, or the job's runtime) and returns its
+	// report. The lifecycle composes above this package (design 6.3), so
+	// the command layer supplies it.
+	CancelJob func(job string) (string, error)
 }
 
 // LocalFamilies returns every per-checkout process family in stop order.
@@ -158,9 +163,6 @@ func missionOutcomeLine(current missionrunner.Item, outcome missionrunner.StopOu
 type jobFamily struct {
 	config LocalConfig
 	items  map[string]jobItem
-	// cancel runs the job's cancel path and returns its combined output.
-	// Production leaves it nil and runs the engine's delegate cancel.
-	cancel func(id string) ([]byte, error)
 }
 
 type jobItem struct {
@@ -250,14 +252,18 @@ func (f *jobFamily) Stop(item Item) (Outcome, error) {
 		survivor.Reason = fmt.Sprintf("owned by another machine; cancel it from %s with metasystem work stop j2:%s, then restore its terminal record", current.machine, id)
 		return Outcome{Line: line, Complete: false, Survivor: survivor}, nil
 	}
-	output, commandErr := f.runCancel(id)
+	var output string
+	commandErr := errors.New("the stop transition has no delegate lifecycle wired to cancel the job")
+	if f.config.CancelJob != nil {
+		output, commandErr = f.config.CancelJob(id)
+	}
 	record, readErr := dispatch.ReadRecordObject(current.path)
 	if readErr != nil {
 		return Outcome{}, readErr
 	}
 	lens := dispatch.JobRecordOf(record)
 	if !dispatch.TerminalStatus(lens.Status()) {
-		detail := strings.TrimSpace(string(output))
+		detail := strings.TrimSpace(output)
 		if commandErr != nil {
 			detail = firstNonEmpty(detail, commandErr.Error())
 		}
@@ -269,15 +275,6 @@ func (f *jobFamily) Stop(item Item) (Outcome, error) {
 		mechanism = "cancel path, KILL after TERM was ignored"
 	}
 	return Outcome{Line: jobIdentityLine(id, current.lens.Status(), current.pid, current.pgid, current.lens.Role()) + ": cancelled (" + mechanism + ")", Complete: true}, nil
-}
-
-func (f *jobFamily) runCancel(id string) ([]byte, error) {
-	if f.cancel != nil {
-		return f.cancel(id)
-	}
-	command := exec.Command(f.config.Binary, "internal", "delegate", "--cancel", id)
-	command.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+f.config.Installation)
-	return command.CombinedOutput()
 }
 
 func jobIdentityLine(id, status string, pid, pgid int64, role string) string {

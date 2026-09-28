@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func fixtureSource(t *testing.T, relative ...string) string {
@@ -125,34 +126,9 @@ func TestDispatcherSharedEngineCapabilityRejectsTamperAndForeignBed(t *testing.T
 	}
 }
 
-func TestDispatcherAndAdoptionOptimizationsKeepPrivateOwnersAndUniqueAssertions(t *testing.T) {
-	dispatch := fixtureSource(t, "scripts", "agents", "dispatch-fixtures.sh")
-	for _, required := range []string{
-		`dispatch_fixture_shared_engine=$1/fixture-engine`,
-		`harness_dispatch_fixture_bed_mint_capability "$1" "$2" "$3" "$dispatch_fixture_shared_engine"`,
-		`fixture_bed_mint_capability=dispatch_fixture_bed_mint_capability`,
-		`if harness_dispatch_fixture_bed_child_scenario dispatch "$@"; then`,
-		`fixture_scenario=$harness_fixture_child_scenario`,
-		`export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/supervision-home"`,
-		`armed_supervision_repos=()`,
-		`if [[ "$fixture_scenario" == mission-runner ]]; then`,
-		`if [[ "$fixture_scenario" == adapter-selftest ]]; then`,
-		`bash scripts/agents/go-build.sh --out "$engine"`, // standalone fallback remains
-		`(cd "$skew_repo" && bash scripts/agents/go-build.sh >/dev/null)`,
-	} {
-		if !strings.Contains(dispatch, required) {
-			t.Fatalf("dispatcher optimization lost required private owner or unique assertion: %q", required)
-		}
-	}
-	if strings.Contains(dispatch, "cap_fixture_round") || strings.Contains(dispatch, "cap_fixture=") {
-		t.Fatal("repeated shell cap probes remain after the Go-owned cap-contract cutover")
-	}
-	for _, scenario := range []string{"dispatch", "mission-runner", "adapter-selftest", "steward-continuation", "brain-delegate-refuses", "brain-cancel-close-reap-refuse", "brain-breach-stop-exempt", "brain-absent-node-proceeds", "brain-fence-helper-fails", "seat-refused"} {
-		if !strings.Contains(dispatch, scenario) {
-			t.Fatalf("dispatcher parent dropped scenario %s", scenario)
-		}
-	}
-
+// The dispatcher bed's optimizations retired with the bed (verbs-object-action
+// U6b: its scenarios are Go tests); the adoption pruning keeps its witnesses.
+func TestAdoptionOptimizationsKeepPrivateOwnersAndUniqueAssertions(t *testing.T) {
 	adopt := fixtureSource(t, "cmd", "metasystem", "adoption_comparison_test.go")
 	if strings.Contains(adopt, "validate-metasystem.sh") || strings.Contains(adopt, "validate-section-selector.sh") {
 		t.Fatal("the adoption comparison still drives the retired validator")
