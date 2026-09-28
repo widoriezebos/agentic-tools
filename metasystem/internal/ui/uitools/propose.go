@@ -41,8 +41,9 @@ import (
 // Partner asked for one can say where it is done instead of offering a card the
 // interface could never have had.
 
-// The ten acts one proposal can be: the goal object's public actions, exactly
-// as `metasystem goal ACTION --help` names them.
+// The acts one proposal can be: the goal object's public actions, exactly as
+// `metasystem goal ACTION --help` names them, and the app object's start of a
+// goal's candidate (g1-s69 §6).
 const (
 	ActionOpen       = "open"
 	ActionApprove    = "approve"
@@ -1139,7 +1140,7 @@ func listed(names []string) string {
 	}
 }
 
-// proposeDescription is the tool's own description: the ten acts under their
+// proposeDescription is the tool's own description: the acts under their
 // public names with the flags each takes, and the rule that words alone propose
 // nothing.
 //

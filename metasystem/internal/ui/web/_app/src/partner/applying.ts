@@ -25,7 +25,7 @@ import { startCandidate } from "../review/candidate";
  * These three are what that run needs of the world, and they are HERE rather
  * than in either caller because there are two callers: the card in the
  * transcript and the row in the Decisions inbox (g1-s60 D4). Two copies of the
- * dispatch would be two lists of ten acts, and the day an eleventh is added one
+ * dispatch would be two lists of acts, and the day one more is added one
  * of them would be right.
  *
  * Nothing here reaches the network itself. The act goes through the clients

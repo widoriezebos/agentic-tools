@@ -9,7 +9,7 @@ import { derivedTier, type Answer, type NewGoal, type Risk } from "../backlog/op
  *
  * The Partner cannot act. It has no session, no cookie and no way to obtain one,
  * and the act routes refuse a cookie-less request while a Partner is configured.
- * What it can do is name one of this interface's ten acts with its arguments;
+ * What it can do is name one of this interface's acts with its arguments;
  * the card renders it, the human ticks what they want, and their press is the
  * act. This file is the whole of the rules around that press — what a line says,
  * which lines may be sent, what the run does with each answer, and what the card

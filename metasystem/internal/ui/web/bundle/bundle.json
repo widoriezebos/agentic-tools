@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:78a9a7229d063a84dff345d4f311d7b3a2bb72fc7ac74a8e6dd564e075e9faea",
+  "sourceDigest": "sha256:72bc0a1f936d381b2c2694d3a034259bfe00587572c2f41a164c88f77fcb9061",
   "source": [
     {
       "path": ".npmrc",
@@ -624,7 +624,7 @@
     },
     {
       "path": "src/partner/applying.ts",
-      "sha256": "ac3c190084246c2350d534effbc5cd4a9f369ffb1d2f2c10149bcbe245addd4d"
+      "sha256": "0e1f006c301ff015b2ac781f63fcafcd4632e86d1a1e5283d33da0fb183acee7"
     },
     {
       "path": "src/partner/asking.test.ts",
@@ -712,7 +712,7 @@
     },
     {
       "path": "src/partner/proposing.ts",
-      "sha256": "b2822505a6862ef9309d3e27223ff47ca27bc2b0fef3428fd6550951385288e7"
+      "sha256": "6d9d8c45d16307c873925b809dea9eb8bb63a1b11d920c4093346ad57a0eb795"
     },
     {
       "path": "src/partner/proposing.verdicts.test.ts",
