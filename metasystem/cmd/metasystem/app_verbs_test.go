@@ -476,6 +476,8 @@ func eventuallyTrue(t *testing.T, what string, done func() bool) {
 func TestAppGoalRunFollowsItsBranchTip(t *testing.T) {
 	address := appFreePort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
+	// A goal run is closed only once its evidence is copied.
+	bed.withEvidenceRoot()
 	bed.git("branch", "goal/g1")
 	t.Cleanup(func() { bed.run("app", "stop", "--goal", "g1", "--clean") })
 	code, first := bed.runJSON("app", "start", "--goal", "g1")
@@ -648,6 +650,8 @@ func TestAppAtMainBesideGoal(t *testing.T) {
 		`mkdir -p "$METASYSTEM_APP_STATE_ROOT" && echo "$METASYSTEM_APP_ADDRESS" >> "$METASYSTEM_APP_STATE_ROOT/prepared.txt"`}}
 	contract["data"] = "own"
 	bed := newAppBed(t, contract)
+	// A goal run is closed only once its evidence is copied.
+	bed.withEvidenceRoot()
 	bed.git("branch", "goal/g1")
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("standing start: %d\n%s", code, out)
@@ -881,6 +885,8 @@ func TestAppAddressIsOneNamedDiagnosticGroupsInput(t *testing.T) {
 func TestAppStartReplacesALiveRunWhoseTipMoved(t *testing.T) {
 	address := appFreePort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
+	// A goal run is closed only once its evidence is copied.
+	bed.withEvidenceRoot()
 	bed.git("branch", "goal/g1")
 	t.Cleanup(func() { bed.run("app", "stop", "--goal", "g1", "--clean") })
 	code, first := bed.runJSON("app", "start", "--goal", "g1")

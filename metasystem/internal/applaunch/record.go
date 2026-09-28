@@ -102,12 +102,15 @@ func (t ToolLine) Line() string {
 // every other verb reads. Nothing in it is authority; it is one seat's
 // observation of one run.
 type Record struct {
-	SchemaVersion  int    `json:"schemaVersion"`
-	Name           string `json:"name,omitempty"`
-	Key            string `json:"key"`
-	Ref            string `json:"ref,omitempty"`
-	Goal           string `json:"goal,omitempty"`
-	Commit         string `json:"commit,omitempty"`
+	SchemaVersion int    `json:"schemaVersion"`
+	Name          string `json:"name,omitempty"`
+	Key           string `json:"key"`
+	Ref           string `json:"ref,omitempty"`
+	Goal          string `json:"goal,omitempty"`
+	Commit        string `json:"commit,omitempty"`
+	// ResolvedFrom is the ref the commit was read from: for a goal, origin's
+	// branch unless origin has none.
+	ResolvedFrom   string `json:"resolvedFrom,omitempty"`
 	ContractDigest string `json:"contractDigest,omitempty"`
 	// Supervisor is the app serve process's native identity ref, written
 	// before the application is spawned. Group is the process group it leads

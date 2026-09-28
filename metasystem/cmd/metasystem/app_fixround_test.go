@@ -9,7 +9,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
 )
 
-// withEvidenceRoot names a durable evidence root in the bed's settings.
+// withEvidenceRoot names a durable evidence root in the bed's settings and
+// commits it, so that a test moving between branches keeps it.
 func (b *appBed) withEvidenceRoot() string {
 	b.t.Helper()
 	evidence := b.t.TempDir()
@@ -21,6 +22,7 @@ func (b *appBed) withEvidenceRoot() string {
 	if err := os.WriteFile(conf, append(body, []byte("evidence.root="+evidence+"\n")...), 0o644); err != nil {
 		b.t.Fatal(err)
 	}
+	b.git("commit", "--quiet", "-m", "the evidence root", "--", conf)
 	return evidence
 }
 

@@ -151,6 +151,7 @@ type appRun struct {
 	ref          string
 	goal         string
 	commit       string
+	resolvedFrom string
 	address      string
 	tree         string
 	dataRoot     string
@@ -195,22 +196,28 @@ func (r appRun) status() (applaunch.Status, error) {
 // seedRecord is what the supervisor writes before it spawns anything.
 func (r appRun) seedRecord() applaunch.Record {
 	return applaunch.Record{Key: r.key, Name: r.contract.Name, Ref: r.ref, Goal: r.goal, Commit: r.commit,
-		Address: r.address, Log: r.logPath, StateRoot: r.dataRoot, Tree: r.tree}
+		ResolvedFrom: r.resolvedFrom, Address: r.address, Log: r.logPath, StateRoot: r.dataRoot, Tree: r.tree}
 }
 
 // environment is the base every command of the contract inherits.
 func (r appRun) environment() []string { return os.Environ() }
 
-// resolveCommitFor reads the commit a ref names, trying the goal branch at
-// origin when the local branch is not there.
-func (r appRun) resolveCommitFor(ref string) (string, error) {
+// resolveCommitFor reads the commit a ref names and says which ref named it.
+// A goal's candidate is origin's tip, so goal/G tries origin/goal/G first and
+// falls back to the local branch only when origin has none; any other ref is
+// read locally first and at origin when the local ref is not there.
+func (r appRun) resolveCommitFor(ref string) (string, string, error) {
 	workspace := gittree.Workspace{Dir: r.roots.Checkout}
-	for _, candidate := range []string{ref, "origin/" + ref} {
+	candidates := []string{ref, "origin/" + ref}
+	if strings.HasPrefix(ref, "goal/") {
+		candidates = []string{"origin/" + ref, ref}
+	}
+	for _, candidate := range candidates {
 		if commit, err := workspace.ResolveCommit(candidate); err == nil {
-			return commit, nil
+			return commit, candidate, nil
 		}
 	}
-	return "", fmt.Errorf("no commit is named by %s", ref)
+	return "", "", fmt.Errorf("no commit is named by %s", ref)
 }
 
 // gitIn runs one git command in a directory and returns its combined output.
@@ -549,8 +556,8 @@ func runAppServe(args []string) int {
 	}
 	run.address = *address
 	if *at != "" {
-		if commit, err := run.resolveCommitFor(*at); err == nil {
-			run.commit = commit
+		if commit, from, err := run.resolveCommitFor(*at); err == nil {
+			run.commit, run.resolvedFrom = commit, from
 		}
 	}
 	tools, err := launchToolLines(run.tree, contract)

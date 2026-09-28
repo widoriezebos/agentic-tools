@@ -319,7 +319,9 @@ func (s Status) Lines() []string {
 	if record.Ref != "" {
 		lines = append(lines, "ref: "+record.Ref)
 	}
-	if record.Commit != "" {
+	if record.Commit != "" && record.ResolvedFrom != "" {
+		lines = append(lines, "commit: "+record.Commit+" (resolved from "+record.ResolvedFrom+")")
+	} else if record.Commit != "" {
 		lines = append(lines, "commit: "+record.Commit)
 	}
 	if record.Goal != "" {

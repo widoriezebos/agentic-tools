@@ -195,6 +195,9 @@ func appData(run appRun, status applaunch.Status) map[string]any {
 	if status.Record != nil {
 		data["address"] = status.Record.Address
 		data["commit"] = status.Record.Commit
+		if status.Record.ResolvedFrom != "" {
+			data["resolvedFrom"] = status.Record.ResolvedFrom
+		}
 		data["data"] = status.Record.Data
 		data["log"] = status.Record.Log
 		if status.Record.Check != nil {
@@ -318,11 +321,11 @@ func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset 
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was started"}
 	}
 	if run.ref != "" {
-		commit, err := run.resolveCommitFor(run.ref)
+		commit, from, err := run.resolveCommitFor(run.ref)
 		if err != nil {
 			return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was started"}
 		}
-		run.commit = commit
+		run.commit, run.resolvedFrom = commit, from
 		if err := run.takeWorktree(logWriter(&lines)); err != nil {
 			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: "the run's tree could not be taken: " + err.Error()}
 		}
@@ -371,7 +374,7 @@ func (r appRun) tipMoved(status applaunch.Status) (bool, string) {
 	if r.ref == "" || status.Record == nil || (status.State != applaunch.Running && status.State != applaunch.Starting) {
 		return false, ""
 	}
-	commit, err := r.resolveCommitFor(r.ref)
+	commit, _, err := r.resolveCommitFor(r.ref)
 	if err != nil || commit == status.Record.Commit {
 		return false, ""
 	}
