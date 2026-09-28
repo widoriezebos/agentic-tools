@@ -589,9 +589,24 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 	})
 }
 
+// batchProofResultPath is the result file a batch's tip proof writes.
+func batchProofResultPath(controlRoot, id string) string {
+	return filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", id+".json")
+}
+
+func argvNamesResult(argv []string, path string) bool {
+	for index, argument := range argv {
+		if argument == "--result="+path || argument == "--result" && index+1 < len(argv) && argv[index+1] == path {
+			return true
+		}
+	}
+	return false
+}
+
 // probeBatchProofRun reads a planned proof's launcher from the proof store
-// after an owner restart: a non-terminal attempt of the head goal with a live
-// launcher is live; the batch's result file for the planned tree, written by
+// after an owner restart: a non-terminal attempt of the head goal on the
+// planned tree, started after the plan, whose live launcher (when its argv is
+// readable) writes this batch's result file, is live; the batch's result file for the planned tree, written by
 // a terminal attempt that started after the plan, is terminal; else dead.
 func probeBatchProofRun(controlRoot, id string, record batch.Record, prober identity.Prober, readAttempts func(string) ([]proofrun.Attempt, error)) (batch.RunProbe, error) {
 	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
@@ -610,13 +625,22 @@ func probeBatchProofRun(controlRoot, id string, record batch.Record, prober iden
 		}
 	}
 	plannedAt, _ := time.Parse(time.RFC3339Nano, planned)
+	resultPath := batchProofResultPath(controlRoot, id)
 	for _, attempt := range attempts {
-		if attempt.GoalID == head && attempt.Terminal == nil && identity.AliveRef(prober, attempt.Launcher.Ref()) == identity.Alive {
-			return batch.RunProbe{State: batch.RunLive}, nil
+		started, parseErr := time.Parse(time.RFC3339Nano, attempt.StartedAt)
+		if attempt.GoalID != head || attempt.Terminal != nil || attempt.CandidateTree != record.Proof.Tree || parseErr != nil || started.Before(plannedAt) ||
+			identity.AliveRef(prober, attempt.Launcher.Ref()) != identity.Alive {
+			continue
 		}
+		// The launcher names the result file it writes; one naming another
+		// file is some other proof of the head goal on the same tree.
+		if exact, _, probeErr := prober.Probe(attempt.Launcher.Pid); probeErr == nil && exact.ArgvKnown && !argvNamesResult(exact.Argv, resultPath) {
+			continue
+		}
+		return batch.RunProbe{State: batch.RunLive}, nil
 	}
 	var result proofrun.TestResult
-	if readStrictJSON(filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", id+".json"), &result) == nil && result.CandidateTree == record.Proof.Tree {
+	if readStrictJSON(resultPath, &result) == nil && result.CandidateTree == record.Proof.Tree {
 		for _, attempt := range attempts {
 			started, parseErr := time.Parse(time.RFC3339Nano, attempt.StartedAt)
 			if attempt.AttemptID == result.AttemptID && attempt.Terminal != nil && parseErr == nil && !started.Before(plannedAt) {

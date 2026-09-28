@@ -322,7 +322,7 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 	if err != nil {
 		return err
 	}
-	resultPath := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", id+".json")
+	resultPath := batchProofResultPath(controlRoot, id)
 	sealed := admitted.Seal[head.GoalID]
 	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: head.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath, Token: token,
 		Mode: plan.ExecutedMode, Groups: slices.Clone(plan.SelectedGroups), GoalRevision: sealed.Revision, AccountingRevision: sealed.AccountingRevision}
