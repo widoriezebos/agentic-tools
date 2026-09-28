@@ -957,7 +957,8 @@ func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
 	targets := []intentTarget{{Kind: "goal", ID: id}}
 	file, _ := goalRecord(projection, id)
 	if file == nil {
-		return unknownGoal(inv, id)
+		// Neither a goal nor a record of any kind work stop takes.
+		return inv.render(*inv.noReference(id, inv.command.accepts))
 	}
 	if file.StopFence == nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
