@@ -229,15 +229,28 @@ func TestObserveRegisterCarriagePerClassRules(t *testing.T) {
 		}
 	})
 
-	t.Run("landing class authority must name an existing ruling row", func(t *testing.T) {
-		missing := newRepositoryObservationFixture(t)
-		missing.base("memory/rulings.md", "| R-1 | unrelated ruling |\n")
-		c := registerComparison(missing, observeTreeB, registerChange{"memory/receipts.log", observationText("receipt=existing\n"), observationText("receipt=existing\nreceipt=carried\n")})
+	t.Run("landing class authority is compiled policy, not a register read", func(t *testing.T) {
+		// The register holds no authority row: the authority is compiled
+		// into the engine, and memory/rulings.md is the human register.
+		withoutRows := newRepositoryObservationFixture(t)
+		withoutRows.base("memory/rulings.md", "| R-1 | unrelated ruling |\n")
+		c := registerComparison(withoutRows, observeTreeB, registerChange{"memory/receipts.log", observationText("receipt=existing\n"), observationText("receipt=existing\nreceipt=carried\n")})
 		got := c.observe(ObserveParams{
-			RepoRoot: missing.root, CandidateTree: c.candidate, DirectFix: "register-carriage",
+			RepoRoot: withoutRows.root, CandidateTree: c.candidate, DirectFix: "register-carriage",
+		})
+		if got.Bar != BarDirectFix || got.Verdict != "pass" || got.Code != "register-carriage" {
+			t.Fatalf("carriage over a register without the authority rows classified as %+v", got)
+		}
+
+		// A manifest naming an authority outside the compiled policy is refused.
+		foreign := newRepositoryObservationFixture(t)
+		foreign.base(LandingClassesSourcePath, strings.ReplaceAll(string(foreign.baseFiles[LandingClassesSourcePath]), "R-35-m0", "R-1"))
+		c = registerComparison(foreign, observeTreeB, registerChange{"memory/receipts.log", observationText("receipt=existing\n"), observationText("receipt=existing\nreceipt=carried\n")})
+		got = c.observe(ObserveParams{
+			RepoRoot: foreign.root, CandidateTree: c.candidate, DirectFix: "register-carriage",
 		})
 		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-policy-unreadable" {
-			t.Fatalf("manifest with absent authority row classified as %+v", got)
+			t.Fatalf("manifest with a foreign authority classified as %+v", got)
 		}
 	})
 

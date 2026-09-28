@@ -628,7 +628,7 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 	}
 	// The landing owner selects required authority and preserves the
 	// application's own rulings.
-	rulings, err := landing.AdoptionRulings(stage, target)
+	rulings, err := landing.AdoptionRulings(target)
 	if err != nil {
 		return refuse(CodeRefused, fmt.Sprintf("could not prepare the adopted landing authority: %v", err), "repair the target's memory/rulings.md or the template's landing classes")
 	}
