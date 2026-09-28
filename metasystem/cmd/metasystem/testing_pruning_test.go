@@ -40,7 +40,7 @@ func TestFixturePruningRetainsEveryDistinctFaultWitness(t *testing.T) {
 		{"severe core cap", "severe finding at exhausted round", "cap-exhausted-human-raise at terminal round 3", "cap-contract", "TestCritiqueSevereTerminalBoundary", 1},
 		{"severe cap", "severe finding at exhausted round", "exit 10 and terminal round 3", "cap-contract", "TestDispatchCritiqueAdvanceVerbsPath", 1},
 		{"copied engine mismatch", "change non-tailored engine bytes", "ENGINE equality refusal", "adopt", "copied target changed non-tailored %s bytes", 1},
-		{"copied payload mismatch", "change non-tailored payload bytes", "PAYLOAD equality refusal", "adopt", `for _, projection := range []string{"ENGINE", "PAYLOAD"}`, 1},
+		{"copied payload mismatch", "change non-tailored payload bytes", "PAYLOAD equality refusal", "adopt", `for _, projection := range []behaviorsurface.Projection{behaviorsurface.Engine, behaviorsurface.Payload}`, 1},
 		{"copied Claude drift", "mutate copied Claude skill", "registration path named", "adopt", `range []string{".claude/skills/verify", ".agents/skills/verify"}`, 1},
 		{"copied Codex drift", "mutate copied Codex skill", "registration path named", "adopt", `registration+": existing copied skill differs from its source at SKILL.md"`, 1},
 		{"generation replacement", "arm an older live engine generation", "component=supervision-owner outcome=replaced", "supervision", "func TestLiveGenerationReplacementStopsAndReplacesTheRecordedOwner(", 1},
