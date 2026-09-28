@@ -174,15 +174,20 @@ func runWaitCommandOnClock(args []string, poll func(context.Context) error, call
 			return metarun.ExitInvalidWait
 		}
 	}
+	// A refusal before the wait starts is its result, so the caller reads
+	// the reason where it reads every outcome.
+	refused := func(code int, outcome string, err error) int {
+		printResult(metarun.WaitResult{SchemaVersion: 2, WaitID: *resume, ExitCode: code, Reason: err.Error(), SourceOutcome: outcome,
+			ReturnedAt: time.Now().UTC().Format(time.RFC3339Nano)}, *jsonOutput)
+		return code
+	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return metarun.ExitWaiterIO
+		return refused(metarun.ExitWaiterIO, "unreadable-root", err)
 	}
 	resolved, code, err := resolveWaitCaller(stateRoot, callerPID)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return code
+		return refused(code, "not-the-main-session", err)
 	}
 	view, owner, runtimeSession := resolved.view, resolved.owner, resolved.runtimeSession
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

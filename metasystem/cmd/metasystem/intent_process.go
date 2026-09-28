@@ -459,7 +459,7 @@ func (inv *intentInvocation) selectInstallation() (stateroot.Layout, string, boo
 		layout, err := inv.owners.resolver.ResolveLayout(path)
 		if err != nil {
 			return stateroot.Layout{}, "", false, &intentResult{Outcome: intentRefused, code: 2,
-				Summary:  fmt.Sprintf("%s is not inside one metasystem installation: %v", shellCommand([]string{path}), err),
+				Summary:  notAnInstallation(path, err),
 				Decision: "run this inside the repository, name it with --repo PATH, or name its installation with --installation DIR"}
 		}
 		return layout, layout.InstallationRoot, false, nil
@@ -690,7 +690,7 @@ func (inv *intentInvocation) selectLayoutRoot() *intentResult {
 	}
 	if err != nil {
 		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("%s is not inside one metasystem installation: %v", shellCommand([]string{path}), err),
+			Summary:  notAnInstallation(path, err),
 			Decision: "run this inside the repository, or name it with --repo PATH"}
 	}
 	return nil

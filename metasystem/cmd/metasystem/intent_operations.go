@@ -62,6 +62,8 @@ func ownerVerbResult(ran intentProcessResult, targets []intentTarget, done strin
 	if ran.err != nil {
 		summary = "the owner could not run: " + ran.err.Error()
 	}
+	// The summary is not repeated under itself.
+	problem = slices.DeleteFunc(problem, func(line string) bool { return line == summary })
 	return intentResult{Outcome: intentRefused, Targets: targets, Data: data, code: max(ran.code, 1), Summary: summary, text: problem}
 }
 

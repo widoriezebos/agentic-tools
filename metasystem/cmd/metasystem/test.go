@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -175,6 +176,10 @@ func runTestList(args []string) int {
 	}
 	installation, contract, path, err := loadPhysicalTestingContract(*root)
 	if err != nil {
+		if _, statErr := os.Stat(*root); errors.Is(statErr, fs.ErrNotExist) {
+			fmt.Fprintf(os.Stderr, "metasystem test list: %s does not exist; nothing was listed\n", *root)
+			return 1
+		}
 		fmt.Fprintln(os.Stderr, "metasystem test list:", err)
 		return 1
 	}

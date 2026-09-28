@@ -368,7 +368,7 @@ func gcliAuthorityStoppingJournals(t *testing.T, root, verb string) []string {
 // refused TERMINAL_NOT_ENROLLED.
 func TestGoalCLIAuthorityProofGrades(t *testing.T) {
 	t.Parallel()
-	const agentRefusal = `AGENT_IN_AUTHORITY_CHAIN: [[:alnum:]_-]+`
+	const agentRefusal = `AGENT_IN_AUTHORITY_CHAIN: [[:alnum:]_-]+|started by an agent \([[:alnum:]_-]+\)`
 	agentRefused := func(t *testing.T, label string, code int, stdout, stderr string) {
 		t.Helper()
 		if code == 0 {
@@ -454,7 +454,7 @@ func TestGoalCLIAuthorityProofGrades(t *testing.T) {
 
 		before := main.tip()
 		code, stdout, stderr = human.public(t, "goal", "approve", "fix-docs", "--budget", "1d/10/720m/1/3", "--by", "Wido")
-		if code == 0 || !strings.Contains(stdout+stderr, "TERMINAL_NOT_ENROLLED") || main.tip() != before {
+		if code == 0 || !strings.Contains(stdout+stderr, "no terminal is enrolled on this machine") || main.tip() != before {
 			t.Fatalf("unenrolled human approval did not name its enrolled-grade refusal: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 		}
 	})

@@ -545,3 +545,14 @@ func TestValidateRefusesRetiredGoalNormFromEverySource(t *testing.T) {
 		})
 	}
 }
+
+// EM-26: the shipped placeholder is named as the placeholder, with the
+// public command that sets the value.
+func TestValidateNamesTheEvidenceRootPlaceholder(t *testing.T) {
+	conf := strings.ReplaceAll(validConf, "evidence.root=@EVIDENCE@\n", "evidence.root=<durable evidence root, outside the repository>\n")
+	problems := validateRepo(t, conf)
+	if !hasProblem(problems, "evidence.root is still the template placeholder; set it: metasystem settings set evidence.root /absolute/path") ||
+		hasProblem(problems, "evidence.root must be absolute") {
+		t.Fatalf("problems %v", problems)
+	}
+}

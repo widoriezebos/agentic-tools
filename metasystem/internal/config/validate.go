@@ -648,7 +648,9 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	evidence := values["evidence.root"]
 	switch {
 	case evidence == "":
-		add("evidence.root is required")
+		add("evidence.root is required; set it: metasystem settings set evidence.root /absolute/path")
+	case strings.HasPrefix(evidence, "<"):
+		add("evidence.root is still the template placeholder; set it: metasystem settings set evidence.root /absolute/path")
 	case !filepath.IsAbs(evidence):
 		add("evidence.root must be absolute")
 	default:
@@ -665,7 +667,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			declaration, _ := runtimereg.Lookup(runtime)
 			for _, relative := range declaration.RegistrationDirs {
 				if !isDir(filepath.Join(repo, filepath.FromSlash(relative))) {
-					add("metasystem.runtimes enables %s but registration directory %s is missing", pyRepr(runtime), relative)
+					add("metasystem.runtimes enables %s but registration directory %s is missing; metasystem system register --repo %s installs it", pyRepr(runtime), relative, repo)
 				}
 			}
 		}

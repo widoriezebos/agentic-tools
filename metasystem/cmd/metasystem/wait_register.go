@@ -31,7 +31,7 @@ func resolveWaitCaller(root string, callerPID int64) (resolvedWaitCaller, int, e
 		return resolvedWaitCaller{}, metarun.ExitWaiterUnknown, fmt.Errorf("wait caller identity is uncertain: %w", err)
 	}
 	if view.Class != lease.ClassMain || !view.Holder || view.Announcement == nil {
-		return resolvedWaitCaller{}, metarun.ExitWaiterBusy, fmt.Errorf("wait registration is eligible only for the live checkout holder's main session")
+		return resolvedWaitCaller{}, metarun.ExitWaiterBusy, fmt.Errorf("only this checkout's main agent session can wait, so it may stop while it waits; this shell is not that session")
 	}
 	lineage := view.Announcement.OwnerLineage
 	if lineage == "" {

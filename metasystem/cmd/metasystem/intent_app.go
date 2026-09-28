@@ -334,6 +334,11 @@ func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset 
 	}
 	if run.ref != "" {
 		commit, from, err := run.resolveCommitFor(run.ref)
+		if err != nil && run.goal != "" {
+			return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines,
+				Summary: "goal " + run.goal + " has no work branch here or at origin; nothing was started",
+				next:    inv.publicArgv("goal", "show", run.goal), nextReason: "shows whether the goal exists and where its work stands"}
+		}
 		if err != nil {
 			return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was started"}
 		}

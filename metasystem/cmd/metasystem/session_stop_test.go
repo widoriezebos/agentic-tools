@@ -281,9 +281,15 @@ func TestSessionStopAgentClassifiedCallerCannotReachTheWriter(t *testing.T) {
 	}
 
 	// The owner the public session stop calls (processes.sessionStop).
-	_, _, code := authorizeSessionStop(root, "Agent")
+	_, sentence, code := authorizeSessionStop(root, "Agent")
 	if code != 3 {
 		t.Fatalf("an agent-classified caller must be refused before persistence: exit %d", code)
+	}
+	// EM-39: the refusal says who may stop, in plain words, never the
+	// classifier's value.
+	if strings.Contains(sentence, "DELEGATE") || strings.Contains(sentence, "classifies") ||
+		!strings.Contains(sentence, "only a person at the enrolled terminal can stop a session quietly; this shell was started by an agent") {
+		t.Fatalf("agent refusal sentence %q", sentence)
 	}
 	if entries, err := os.ReadDir(filepath.Join(root, "artifacts", "agents", "session-stops")); err == nil && len(entries) > 0 {
 		t.Fatalf("the refused command wrote authorization bytes: %v", entries)

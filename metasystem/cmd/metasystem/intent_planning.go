@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -548,9 +550,22 @@ func (inv *intentInvocation) textValue(name string) (string, *intentResult) {
 func (inv *intentInvocation) readTextFile(option, path string) (string, *intentResult) {
 	data, err := os.ReadFile(inv.inputPath(path))
 	if err != nil {
-		return "", &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("cannot read --%s: %v; nothing was done", option, err)}
+		return "", &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s: %s; nothing was done", option, fileProblem("file", inv.inputPath(path), err))}
 	}
 	return strings.TrimRight(string(data), "\r\n"), nil
+}
+
+// fileProblem names a file that cannot be read by its path, in plain words:
+// absent, or unreadable with the reason, never the system call's own text.
+func fileProblem(what, path string, err error) string {
+	if errors.Is(err, fs.ErrNotExist) {
+		return "no " + what + " at " + path
+	}
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return what + " at " + path + " cannot be read: " + pathErr.Err.Error()
+	}
+	return what + " at " + path + " cannot be read: " + err.Error()
 }
 
 // resolveTextFiles reads every --NAME-file of this command whose NAME is a

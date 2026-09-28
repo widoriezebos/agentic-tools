@@ -309,6 +309,13 @@ func TestAppAtAndGoalAreOneThing(t *testing.T) {
 	if code == 0 || !strings.Contains(out, "use one of them") {
 		t.Fatalf("naming both must be refused, not guessed:\n%s", out)
 	}
+	// EM-34: a goal without a branch is named as a goal, with the command
+	// that shows it.
+	code, out = bed.run("app", "start", "--goal", "nosuchgoal")
+	if code == 0 || !strings.Contains(out, "goal nosuchgoal has no work branch here or at origin") ||
+		!strings.Contains(out, "metasystem goal show nosuchgoal") || strings.Contains(out, "no commit is named") {
+		t.Fatalf("app start --goal nosuchgoal: %d\n%s", code, out)
+	}
 }
 
 // A run at a commit gets a tree, an address and a state root of its own, and

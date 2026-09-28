@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -618,7 +620,7 @@ func (inv *intentInvocation) selectRoot() *intentResult {
 	}
 	if err != nil {
 		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("%s is not inside one metasystem installation: %v", shellCommand([]string{path}), err),
+			Summary:  notAnInstallation(path, err),
 			Decision: "run this inside the repository, or name it with --repo PATH"}
 	}
 	if !converted(inv.stateRoot) {
@@ -627,6 +629,25 @@ func (inv *intentInvocation) selectRoot() *intentResult {
 			Decision: "a person upgrades the legacy goals file to the synced ledger first: metasystem goal sync --upgrade --by NAME (it shows the digest to review)"}
 	}
 	return nil
+}
+
+// notAnInstallation says why path is not a metasystem installation in plain
+// words: it does not exist, it is not inside a Git repository, or the
+// repository has no installation. The resolver's own wording is kept only
+// for a cause none of these names.
+func notAnInstallation(path string, err error) string {
+	shown := shellCommand([]string{path})
+	if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
+		return shown + " does not exist; nothing was done"
+	}
+	text := err.Error()
+	switch {
+	case strings.Contains(text, "not inside a Git repository"), strings.Contains(text, "not a git repository"):
+		return shown + " is not inside a Git repository; nothing was done"
+	case strings.Contains(text, "no metasystem installation"), strings.Contains(text, "not a metasystem installation"):
+		return shown + " is not inside a repository with a metasystem installation; nothing was done"
+	}
+	return fmt.Sprintf("%s is not inside one metasystem installation (%v); nothing was done", shown, err)
 }
 
 // The outcomes a public result can have.

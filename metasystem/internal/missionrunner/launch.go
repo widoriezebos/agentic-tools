@@ -666,6 +666,11 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 	if mode == "start" && stateBorn(statePath) {
 		return failf(3, "mission state already exists; use resume")
 	}
+	// A mission without a contract is named before anything is read,
+	// cleaned or armed for it.
+	if mode == "start" && !pathExists(e.contractPath()) {
+		return failf(3, "no mission contract %s: %s does not exist; nothing was started", e.Mission, e.contractPath())
+	}
 	// Birth evidence is consulted before ANY mutation on the launch
 	// path — the stale-lease cleanup below rewrites lease and turn
 	// records, and a mission that lived must stay untouched.
@@ -676,7 +681,7 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 	}
 	if mode == "resume" {
 		if !pathExists(statePath) {
-			return failf(7, "mission state does not exist")
+			return failf(7, "no mission %s has started here; nothing was done; metasystem mission start %s starts it", e.Mission, e.Mission)
 		}
 		state, err := e.verifyState(statePath, false)
 		if err != nil {

@@ -359,7 +359,7 @@ func (inv *intentInvocation) resolveLayout() *intentResult {
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	if err != nil {
 		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("%s is not inside one metasystem installation: %v", shellCommand([]string{path}), err),
+			Summary:  notAnInstallation(path, err),
 			Decision: "run this inside the repository, or name it with --repo PATH"}
 	}
 	inv.layout = layout
@@ -604,7 +604,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	briefPath := inv.callerPath(inv.input.text("brief"))
 	brief, err := os.ReadFile(briefPath)
 	if err != nil {
-		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: "cannot read the brief: " + err.Error() + "; nothing was built"}
+		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was built"}
 	}
 	if missing := missingDecisionLines(brief); len(missing) > 0 {
 		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, text: missing,
@@ -650,7 +650,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		Effort        string            `json:"effort,omitempty"`
 	}{Check: check, Lines: inv.input.text("lines"), ReadToolCalls: toolCalls, Model: inv.input.text("model"), Effort: inv.input.text("effort"), Designs: []unitRequestFile{}}
 	if identity.Brief, err = fileIdentity(briefPath); err != nil {
-		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: "cannot read the brief: " + err.Error()}
+		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was built"}
 	}
 	for _, design := range designs {
 		entry, err := fileIdentity(design)

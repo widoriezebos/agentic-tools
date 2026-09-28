@@ -1010,6 +1010,12 @@ func PlainReason(err error) string {
 		return ""
 	}
 	text := err.Error()
+	if _, runtime, found := strings.Cut(text, OutcomeAgent+": "); found {
+		runtime, _, _ = strings.Cut(runtime, ";")
+		if runtime = strings.TrimSpace(runtime); runtime != "" {
+			return "this shell was started by an agent (" + runtime + ")"
+		}
+	}
 	for _, row := range []struct{ code, plain string }{
 		{OutcomeTerminalMissing, "this shell does not descend from the terminal enrolled on this machine"},
 		{OutcomeAgent, "this shell was started by an agent"},

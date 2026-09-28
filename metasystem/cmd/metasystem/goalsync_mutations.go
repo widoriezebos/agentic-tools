@@ -638,11 +638,11 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 				if fullErr == nil {
 					fullErr = fmt.Errorf("proof outcome %s was not a valid enrolled-grade proof", fullProof.Outcome)
 				}
-				return goal.VerbRequest{}, fmt.Errorf("a human stopping act could not prove enrolled human ancestry: %w", fullErr)
+				return goal.VerbRequest{}, fmt.Errorf("only a person may stop this, at a terminal no agent started: %s", humanauthority.PlainReason(fullErr))
 			}
 			terminalProof, terminalErr := dependencies.proveTerminal(root, dependencies.authorityFacts.caller.pid, nil, now)
 			if terminalErr != nil {
-				return goal.VerbRequest{}, fmt.Errorf("a human stopping act could not prove terminal human ancestry: %w", terminalErr)
+				return goal.VerbRequest{}, fmt.Errorf("only a person may stop this, at a terminal no agent started: %s", humanauthority.PlainReason(terminalErr))
 			}
 			if !terminalProof.TerminalValidFor(root) || terminalProof.AuthorityGrade() != humanauthority.GradeTerminal {
 				return goal.VerbRequest{}, fmt.Errorf("a human stopping act did not produce a valid terminal-grade proof")

@@ -193,9 +193,13 @@ func runIntentDesign(inv *intentInvocation) int {
 		}
 		after = value
 	}
-	brief, err := os.ReadFile(inv.callerPath(inv.input.text("brief")))
-	if err != nil || len(strings.TrimSpace(string(brief))) == 0 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the design brief is missing or empty; nothing was done"})
+	briefPath := inv.callerPath(inv.input.text("brief"))
+	brief, err := os.ReadFile(briefPath)
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was done"})
+	}
+	if len(strings.TrimSpace(string(brief))) == 0 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the brief at " + briefPath + " is empty; nothing was done"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)

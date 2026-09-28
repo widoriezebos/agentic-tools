@@ -124,6 +124,14 @@ func TestPassthroughActionsFindTheirInstallation(t *testing.T) {
 			t.Errorf("%v: code %d stdout %q stderr %q", args, code, stdout, stderr)
 		}
 	}
+	// EM-02, EM-37: the receipt actions find the installation and its
+	// ledger from the current directory, not from where the binary lives.
+	for _, args := range [][]string{{"receipt", "status"}, {"receipt", "status", "--repo", "../.."}} {
+		_, _, stderr := runPublic(t, args...)
+		if strings.Contains(stderr, "is not installed at") || strings.Contains(stderr, "does not parse") || strings.Contains(stderr, "cannot read metasystem configuration") {
+			t.Errorf("%v: stderr %q", args, stderr)
+		}
+	}
 	// EM-04: a bare test status names what it needs in public words.
 	code, _, stderr := runPublic(t, "test", "status")
 	if code != 2 || !strings.Contains(stderr, "metasystem test status") || !strings.Contains(stderr, "--tree") ||
@@ -281,5 +289,69 @@ func TestQuestionMissesPointAtTheQuestionList(t *testing.T) {
 			strings.Contains(text, "settings show") || strings.Contains(text, "show question") {
 			t.Errorf("%v: code %d text %q", args, code, text)
 		}
+	}
+}
+
+// EM-13, EM-24: an owner's refusal is printed once: its first line is the
+// summary and is not repeated under it.
+func TestOwnerRefusalIsPrintedOnce(t *testing.T) {
+	t.Parallel()
+	result := ownerVerbResult(intentProcessResult{code: 7, stderr: []byte("no mission x has started here\ndetail\n")}, nil, "done", nil)
+	if result.Summary != "no mission x has started here" || slices.Contains(result.text, result.Summary) || !slices.Contains(result.text, "detail") {
+		t.Fatalf("result %+v", result)
+	}
+}
+
+// EM-23: a wait this shell may not register says why in plain words, as the
+// result, never "its message is on standard error".
+func TestAWaitThisShellMayNotRegisterSaysWhy(t *testing.T) {
+	b := newIntentBed(t, false, nil)
+	code, stdout, stderr := b.run(b.owners(), "test", "wait", "proof:nosuch")
+	text := stdout + stderr
+	if code == 0 || strings.Contains(text, "its message is on standard error") || strings.Contains(text, "wait registration") ||
+		!strings.Contains(text, "only this checkout's main agent session") {
+		t.Fatalf("test wait from a non-main shell: code %d text %q", code, text)
+	}
+}
+
+// EM-36: a repository that is not there is named plainly: no state-root
+// words, no git or Go error text.
+func TestNotInsideARepositoryIsSaidPlainly(t *testing.T) {
+	outside := t.TempDir()
+	for _, row := range []struct{ repo, want string }{
+		{filepath.Join(outside, "absent"), "does not exist"},
+		{outside, "is not inside a Git repository"},
+	} {
+		code, _, stderr := runPublic(t, "goal", "list", "--repo", row.repo)
+		if code == 0 || !strings.Contains(stderr, row.want) || strings.Contains(stderr, "state root") || strings.Contains(stderr, "fatal:") || strings.Contains(stderr, "stat ") {
+			t.Errorf("--repo %s: code %d stderr %q", row.repo, code, stderr)
+		}
+	}
+}
+
+// EM-43, EM-49: a file that is not there is named by its path in plain
+// words, the goal is checked before the file, and every refusal says
+// nothing was done.
+func TestMissingFilesAreNamedByPath(t *testing.T) {
+	b := newIntentBed(t, false, nil)
+	missing := filepath.Join(t.TempDir(), "absent.md")
+	for _, row := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"work", "revise", "nosuchgoal", "--brief", missing}, "no goal nosuchgoal on the accepted ledger"},
+		{[]string{"work", "revise", bedGoal, "--brief", missing}, "no brief at " + missing},
+		{[]string{"design", "write", bedGoal, "--brief", missing}, "no brief at " + missing},
+		{[]string{"work", "review"}, "nothing was done"},
+	} {
+		code, stdout, stderr := b.run(b.owners(), row.args...)
+		text := stdout + stderr
+		if code == 0 || !strings.Contains(text, row.want) || strings.Contains(text, "no such file") || strings.Contains(text, "open ") {
+			t.Errorf("%v: code %d text %q", row.args, code, text)
+		}
+	}
+	code, _, stderr := runPublic(t, "test", "list", "--root", missing)
+	if code == 0 || !strings.Contains(stderr, missing+" does not exist") || strings.Contains(stderr, "lstat") {
+		t.Errorf("test list --root absent: code %d stderr %q", code, stderr)
 	}
 }
