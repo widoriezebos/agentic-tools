@@ -127,6 +127,34 @@ func RegisterFixtureKey(key identity.FixtureKey) {
 	fixtureKeys.keys = append(fixtureKeys.keys, key)
 }
 
+// SetupFixtureTag mints a fixture key owned by this test binary for a child
+// a package setup starts (MainWithSetup), registers it for the exit scan, and
+// returns the environment word that tags the child. A child carrying it, and
+// every process it starts, is a fixture the custodian ends when this binary
+// dies, so a build started in setup and orphaned by a kill never writes into
+// a namespace a later start removes. It needs the custodian: call it from
+// setup, never before MainWithSetup.
+func SetupFixtureTag(name string) (identity.FixtureKey, string, error) {
+	if _, started := FixtureCustodian(); !started {
+		return identity.FixtureKey{}, "", errors.New("a setup fixture needs the custodian: call SetupFixtureTag from MainWithSetup's setup")
+	}
+	owner, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive || !owner.Ref().NativeExact() {
+		return identity.FixtureKey{}, "", fmt.Errorf("setup fixture owner identity is unproven: state=%v err=%v", state, err)
+	}
+	nonce := make([]byte, 4)
+	if _, err := rand.Read(nonce); err != nil {
+		return identity.FixtureKey{}, "", err
+	}
+	key := identity.FixtureKey{Owner: owner.Ref(), Test: name, Nonce: hex.EncodeToString(nonce)}
+	encoded, err := identity.EncodeKey(key)
+	if err != nil {
+		return identity.FixtureKey{}, "", err
+	}
+	RegisterFixtureKey(key)
+	return key, identity.FixtureOwnerEnv + "=" + encoded, nil
+}
+
 func registeredFixtureKeys() []identity.FixtureKey {
 	fixtureKeys.Lock()
 	defer fixtureKeys.Unlock()

@@ -13,10 +13,10 @@ import (
 	"testing"
 )
 
-// auditDiskTestMainAllowance names the one TestMain still allowed to allocate
-// a temp entry before testenv's custodian exists: the wait candidate, which
-// unit A9 of disk-lifetimes moves under custody and then removes from here.
-var auditDiskTestMainAllowance = map[string]bool{"cmd/metasystem/ambient_controls_test.go": true}
+// auditDiskTestMainAllowance names a TestMain still allowed to allocate a
+// temp entry before testenv's custodian exists: none since the wait
+// candidate moved under custody (disk-lifetimes A9).
+var auditDiskTestMainAllowance = map[string]bool{}
 
 const auditDiskTestenvImport = "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 
