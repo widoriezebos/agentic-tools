@@ -1,7 +1,9 @@
 # The evidence root has one owner and a default
 
-Design, 2026-09-28. Author: Fable (design lane). Approved shape: Wido, 2026-09-28. Status: for
-Astra's critique, then a build on Opus after `embed` and `u9b` land (see Sequencing).
+Design, 2026-09-28, revision 2. Author: Fable (design lane). Approved shape: Wido, 2026-09-28.
+Revision 2 folds Astra's round 1 (`plans/evidence-root-default-astra-critique-r1.md`; dispositions at
+the foot). Status: for Astra's round 2, then a build on Opus after `embed` and `u9b` land (see
+Sequencing).
 
 ## Problem
 
@@ -65,7 +67,10 @@ Resolution order today (`internal/config/resolve.go:Get`): flag, environment (`E
    `metasystem.conf`, then the COMPILED-IN default. Placed in `internal/config` because every reader
    already imports it and `internal/evidence` cannot be the owner (`internal/evidence` imports
    `internal/dispatch`, which imports `internal/stateroot`, which would import the owner: a cycle).
-   No new package, so no new coverage floors.
+   No new package, so no new coverage floors. The resolver takes the CONF FILE PATH, as `config.Get`
+   does, and derives `.local` as `ConfPath + ".local"`; the checkout is found from the file's
+   directory. A caller validating `candidate.conf` is judged on `candidate.conf`, never on the
+   `metasystem.conf` beside it (ERD-03).
 2. Unspecified at a source means: key absent, value empty after trimming, or a placeholder (`<...>`:
    begins with `<` and ends with `>`). Unspecified falls through to the NEXT source, so a
    placeholder in `.local` above a real committed value resolves to the committed value. A specified
@@ -87,15 +92,20 @@ Resolution order today (`internal/config/resolve.go:Get`): flag, environment (`E
    `evidence root: PATH (metasystem.conf.local)` / `(METASYSTEM_EVIDENCE_ROOT)` /
    `(metasystem.conf)`. An explicitly invalid root refuses `system start` by the resolver's
    sentence; unset never does.
-6. The launch stops deriving a sibling and relies on the default for the new machine: the clone's
-   default is `~/metasystem-evidence/<destination basename>` =
-   `~/metasystem-evidence/<repository>-<nickname>`, distinct per machine by construction because the
-   preflight already refuses an existing destination. The copied `.local` has its `evidence.root`
-   blanked so the seat's own root does not travel. Writing the default explicitly would freeze it
-   and duplicate the rule; deriving a sibling needed the seat's root to exist, which is the gap this
-   design closes.
+6. The launch stops deriving a sibling and relies on the resolver for the new machine: the copied
+   `.local` has its `evidence.root` blanked so the seat's own root does not travel, and the clone
+   then resolves like any checkout, to its committed conf if that carries a concrete root, else to
+   `~/metasystem-evidence/<repository>-<nickname>`. The launch KEEPS its three isolation checks and
+   judges the clone's RESOLVED root after the configuration is written: it refuses a fresh launch
+   when that root is the source seat's, already exists and was not created by this launch, or
+   resolves through a link, with the resume exemptions as today (ERD-01, ERD-02). A distinct
+   destination does not prove a distinct root (`/elsewhere/ui` would resolve to this seat's
+   `~/metasystem-evidence/ui`), which is why the checks stay. Writing the default explicitly would
+   freeze it and duplicate the rule; deriving a sibling needed the seat's root to exist, which is
+   the gap this design closes.
 7. The committed `metasystem.conf` loses its `evidence.root=<placeholder>` line (a comment names the
-   default). Otherwise the adopted-repository placeholder audit would still demand a value.
+   default), and the placeholder audit loses that alternative, so an adopted repository still
+   carrying the old line passes its ordinary audit instead of being told to fill it (ERD-04).
 8. Held by tests as listed per unit; a structural test keeps the key's spelling in one file.
 9. KI-6 (the silent mirror failure) stays out; listed under Later.
 
@@ -117,13 +127,16 @@ Files: `internal/config/evidenceroot.go` (new), `internal/config/evidenceroot_te
 `TestValidateJudgesTheEffectiveEvidenceRoot` flipped), `metasystem/metasystem.conf` (line 152
 removed; comment at 149-151 reworded to name the default), `docs/project-rules.md` line 13 (the
 `<path outside the repository>` placeholder replaced by the default and the `.local` sentence, so
-adopters have nothing to fill).
+adopters have nothing to fill), `internal/audit/metasystem.go:auditPlaceholderRe` (the `<durable
+evidence root, outside the repository>` alternative removed; every other placeholder check stays),
+`internal/audit/coverage_test.go` (the adopted-repository placeholder case at ~line 239 gains a
+fixture).
 
 ```go
 const EvidenceRootKey = "evidence.root"          // the only file that spells it
 type EvidenceRootParams struct {
-    Installation string                        // the directory holding metasystem.conf
-    LookupEnv    func(string) (string, bool)   // nil: os.LookupEnv; answers HOME too
+    ConfPath  string                           // the conf file judged; .local is ConfPath+".local"
+    LookupEnv func(string) (string, bool)      // nil: os.LookupEnv; answers HOME too
 }
 type EvidenceRoot struct {
     Path   string // absolute, cleaned
@@ -136,9 +149,11 @@ func ResolveEvidenceRoot(p EvidenceRootParams) (EvidenceRoot, error)
 
 Behavior: decisions 2-4. Reads through `ConfLookup` (strict duplicates, as today). Refusal sentences
 keep validate's phrases so its tests survive: `evidence.root must be absolute (metasystem.conf.local
-reads "relative/dir")`, `evidence.root must be outside the repository (...)`. `validate.go`
-additionally keeps its `withinRepo(path, repo)` check against `--repo`, since the resolver's
-checkout is the `.git` walk and `--repo` may differ.
+reads "relative/dir")`, `evidence.root must be outside the repository (...)`. `validate.go` passes
+its actual `confPath` (`runConfigValidate --conf` and `intent_owner_calls.go:configValidate` forward
+a caller-chosen filename, an existing supported case) and additionally keeps its
+`withinRepo(path, repo)` check against `--repo`, since the resolver's checkout is the `.git` walk
+and `--repo` may differ. Every other caller passes `<installation>/metasystem.conf`.
 
 Tests (all in `evidenceroot_test.go`, table-driven over a fixture installation with a `.git` file
 two levels up and a map-backed `LookupEnv`): env wins over `.local`; `.local` over committed;
@@ -147,22 +162,30 @@ m1c-shaped case, named as such); placeholder everywhere resolves to
 `<home>/metasystem-evidence/<checkout basename>` with `Origin=="default"`; empty and set-but-empty
 env are unspecified; a relative `.local` value is refused naming `.local`; a value inside the
 checkout is refused; `HOME` unset is an error; a `.git`-less installation names its own basename; a
-nested `<repo>/metasystem` names `<repo>`; duplicate key is an error. `validate_test.go`: a conf
-with no key passes; the placeholder alone passes; relative and in-repository still refuse.
+nested `<repo>/metasystem` names `<repo>`; duplicate key is an error; two neighbouring files in one
+directory, `metasystem.conf` with an absolute root and `candidate.conf` with a relative one, each
+resolve by their own file (the candidate refuses, the standard file passes, and the reverse), and
+`candidate.conf` with no `metasystem.conf` beside it still resolves (ERD-03). `validate_test.go`: a
+conf with no key passes; the placeholder alone passes; relative and in-repository still refuse; a
+`candidate.conf` beside a valid `metasystem.conf` is refused on its own relative root.
+`internal/audit/coverage_test.go`: an adopted repository whose `metasystem.conf` keeps
+`evidence.root=<durable evidence root, outside the repository>` passes without `AllowPlaceholders`,
+while `<model>` in the same file still fails (ERD-04).
 
 ### U2. The engine readers
 
 Files and functions:
-- `internal/delegation/reap.go:session.mirrorRecord`: resolver over `s.root` with the lookup U9b
-  threads through the session; an error goes to `mirrorFail(job, err.Error())` and returns
-  `exitWith(1)` exactly as today (KI-6's shape is untouched).
+- `internal/delegation/reap.go:session.mirrorRecord`: resolver over `<s.root>/metasystem.conf` with
+  the lookup U9b threads through the session; an error goes to `mirrorFail(job, err.Error())` and
+  returns `exitWith(1)` exactly as today (KI-6's shape is untouched).
 - `internal/dispatch/mirror.go:Mirror`: logic unchanged; the message uses `config.EvidenceRootKey`
   (dispatch already imports config).
 - `cmd/metasystem/evidence_verbs.go:evidenceGC`: the `config.Get` replaced by the resolver when
   `evidenceRoot == ""`; an error is the refusal line.
-- `cmd/metasystem/app.go:appRun.preserveRunEvidence`: resolver over `r.roots.Installation` with
-  `intentOwners.lookupEnv` (new field beside `commandNow`, nil = `os.LookupEnv`, carried onto
-  `appRun`); the "record is kept" sentence stays, prefixed by the resolver's error.
+- `cmd/metasystem/app.go:appRun.preserveRunEvidence`: resolver over
+  `<r.roots.Installation>/metasystem.conf` with `intentOwners.lookupEnv` (new field beside
+  `commandNow`, nil = `os.LookupEnv`, carried onto `appRun`); the "record is kept" sentence stays,
+  prefixed by the resolver's error.
 - `internal/metrics/data.go:evidenceRoot`: resolver; an error becomes one `coverage.Details` line
   instead of silence.
 - `internal/stateroot/stateroot.go`: the `Evidence` kind, its `StateRoot` branch and its
@@ -181,14 +204,15 @@ nothing. `evidenceGC` unit: no key collects against the default; relative refuse
 
 ### U3. Setup says it: adoption and `system start`
 
-- `internal/adopt/adopt.go:Adopt`: after the payload lands, resolve over the target installation
-  with a new `Deps.LookupEnv` (nil = `os.LookupEnv`) and append `EvidenceRoot.Line()` to
-  `result.Notes`. `cmd/metasystem/intent_adopt.go:runIntentAdopt` checklist step 3 becomes
+- `internal/adopt/adopt.go:Adopt`: after the payload lands, resolve over the target's
+  `metasystem.conf` with a new `Deps.LookupEnv` (nil = `os.LookupEnv`) and append
+  `EvidenceRoot.Line()` to `result.Notes`. `cmd/metasystem/intent_adopt.go:runIntentAdopt` checklist step 3 becomes
   "Optionally set models, tiers and the evidence root in metasystem.conf.local; the defaults above
   apply until you do." No test pins the old checklist text (grepped `cmd/metasystem/*_test.go`,
   `internal/adopt/*_test.go`).
-- `cmd/metasystem/process_verbs.go:processOwners.arm`: a new `evidenceRoot func(installation string)
-  (config.EvidenceRoot, error)` field (default: the resolver), called before `armSteps`; its line is
+- `cmd/metasystem/process_verbs.go:processOwners.arm`: a new `evidenceRoot func(conf string)
+  (config.EvidenceRoot, error)` field (default: the resolver over `<scope.Root>/metasystem.conf`),
+  called before `armSteps`; its line is
   the first of `report.Lines`; an error is a `processRefusal` with the resolver's sentence and the
   plain `metasystem system start: ...` form, before the fence moves.
 
@@ -198,37 +222,62 @@ a root yields the `(metasystem.conf.local)` note. `cmd/metasystem/intent_process
 `armSteps` already): a start with nothing configured prints the default line; a relative `.local`
 root refuses before the fence with the resolver's sentence.
 
-### U4. The launch relies on the default
+### U4. The launch relies on the resolver and keeps its isolation checks (ERD-01, ERD-02)
 
-- `internal/seat/launch/sequence.go`: delete `Sequencer.evidenceRoot`; `configuration` copies with
-  `Host.CopyLocalConf(source, destination)` (two arguments) and then asks
-  `Host.EvidenceRoot(destinationInstall)` for the line, appended to the step's words.
-  `Record.Created.EvidenceRoot` is deleted (records carrying it are read unchanged; unknown fields
-  are ignored). The package header comment's `METASYSTEM_EVIDENCE_ROOT` sentence stays: the scrub is
-  still what makes the file the last word.
-- `internal/seat/launch/host.go`: `OSHost.CopyLocalConf` blanks the key via
-  `validate.SetConfKeys(name, {Key: config.EvidenceRootKey, Value: ""})` (empty is unspecified by
-  decision 2; a `DropConfKeys` is Later). New `OSHost.EvidenceRoot(installation)` calls the resolver
-  with a lookup that answers only `HOME` from this process, which is the scrubbed view the machine's
-  own steps run under. `Host` loses `MakeDir` and `Canonical` (their only user was the sibling
-  derivation) and gains `EvidenceRoot(installation string) (line string, err error)`.
-- `internal/seat/launch/preflight.go`: delete `Facts.EvidenceRoot` and `evidenceRootSet`;
-  `Preflight` ends at `destination`. `cmd/metasystem/seat_launch.go:seatLaunchFacts` drops its
-  `config.Get`, the file's only use of `config`, so the import goes with it.
-- `internal/seat/launch/refusal.go`: delete `CodeEvidenceRootUnsafe` and the H1 branch of
-  `Refusal.Error` that names it.
-- `internal/refusal/register.go`: delete row `SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE` (line 381); re-pin
-  the rows the deletions shift (below).
+- `internal/seat/launch/host.go`: `OSHost.CopyLocalConf(source, destination)` (two arguments)
+  blanks the key via `validate.SetConfKeys(name, {Key: config.EvidenceRootKey, Value: ""})`; blank
+  is unspecified (decision 2; a `DropConfKeys` is Later), so the clone falls through to its
+  committed conf and then the default. New `OSHost.EvidenceRoot(installation string)
+  (config.EvidenceRoot, error)` resolves `<installation>/metasystem.conf` with a lookup that
+  answers only `HOME` from this process, which is the scrubbed view the machine's own steps run
+  under. `Host` gains `EvidenceRoot` and keeps `MakeDir` and `Canonical`. The launch package
+  imports `internal/config` (no cycle: config imports nothing above it).
+- `internal/seat/launch/sequence.go:Sequencer.configuration`: the order becomes copy (when `.local`
+  is absent), then judge, then the manifest and the two validations. `Sequencer.evidenceRoot` is
+  REWRITTEN, not deleted: it no longer runs `config get` and derives no sibling. It resolves the
+  SOURCE seat's root (`Host.EvidenceRoot(sourceInstall)`) and the CLONE's root
+  (`Host.EvidenceRoot(destinationInstall)`) after the configuration is written, and refuses
+  `CodeEvidenceRootUnsafe` when: either resolution errors (an explicitly invalid root, in the
+  resolver's sentence); the clone's root is the source's, compared canonically where a path exists
+  and cleaned where it does not (a root nobody has written to cannot be a link, and today's
+  unconditional `Canonical` would refuse every seat whose default directory is not there yet);
+  `MakeDir(clone root)` did not create it and `record.Created.EvidenceRoot` is false; or
+  `Canonical(clone root)` differs from it. `record.Created.EvidenceRoot` is set and persisted the
+  moment the directory is made, exactly as today, and the resume exemption is unchanged. The
+  judgement runs on every pass of the step, resume included; `MakeDir` is a no-op on a directory the
+  record says this launch made. The step's words carry the clone's `EvidenceRoot.Line()`. A clone
+  whose committed conf carries a concrete root resolves to it once `.local` is blanked and is
+  accepted only if it is not the source's, not already there and not a link; a committed root the
+  source seat also uses is refused with the H1 remedy (a root of its own in `.local`).
+- `internal/seat/launch/preflight.go`: unchanged; `Facts.EvidenceRoot` and `evidenceRootSet` stay.
+  `cmd/metasystem/seat_launch.go:seatLaunchFacts` fills the fact from
+  `config.ResolveEvidenceRoot` over the seat's conf (the `config.Get` goes) and returns a resolver
+  error as `&launch.Refusal{Code: launch.CodeEvidenceRootUnsafe, Message: err.Error()}` before the
+  lock, the shape `CodeFleetUnreadable` already takes at line 266.
+- `internal/seat/launch/refusal.go`: `CodeEvidenceRootUnsafe` and the H1 branch of `Refusal.Error`
+  stay; the guide sentence spells the key through `config.EvidenceRootKey`.
+- `internal/refusal/register.go`: row `SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE` stays; its `Site` is
+  re-stated to the rewritten function's first `refuse(CodeEvidenceRootUnsafe, ...)` line.
 
-Tests: `sequence_test.go`: the four `TestTheEvidenceRoot...` cases and the two "record says this
-launch made the evidence root" cases (lines ~262-330, ~463-482) are deleted; new: the copied conf's
-evidence root is blanked and the configuration step's words carry the fake host's line; a host whose
-`EvidenceRoot` errors fails the configuration step in its words.
-`preflight_test.go:TestASeatWithNoEvidenceRootIsRefusedBeforeAnythingIsCloned` deleted. `host_test`
-(new, no Git): `OSHost.CopyLocalConf` on a fixture `.local` keeps every other line and blanks the
-key; `OSHost.EvidenceRoot` on a fixture installation names `<HOME>/metasystem-evidence/<basename>`.
-`integration_test.go` (the one narrowly named real-Git test, allowed by the rule) drops its canned
-`config get` answer and asserts the blanked key instead of the sibling path (lines 72, 141-150).
+Tests: `sequence_test.go`: the four `TestTheEvidenceRoot...` cases (~262-330) stay, adapted to
+resolver-derived paths through `fakeHost.evidenceRoots map[string]config.EvidenceRoot` keyed by
+installation (source `/w/evidence/m1u`; clone `/w/evidence/agentic-tools-m1f`, origin `default`): a
+clone resolving to the source's root refuses (an inherited committed root); a clone root already
+present refuses; one resolving elsewhere refuses; a resolver error on either side refuses in its
+sentence; the placeholder case becomes "a blanked `.local` over a placeholder committed conf
+resolves to the default and is accepted". The two "record says this launch made the evidence root"
+cases (~463-482) stay. New: the copied conf's key is blanked; the step's words carry the line.
+`preflight_test.go`: unchanged. `host_test` (new, no Git): `CopyLocalConf` keeps every other line
+and blanks the key; `EvidenceRoot` on a fixture installation names
+`<HOME>/metasystem-evidence/<basename>`. `integration_test.go` (the one narrowly named real-Git
+test): the source `.local` names the bed's created `evidence/m1u` directory (today
+`/the/launching/seat`, which the source-side comparison would now read as absent); the committed
+conf keeps a concrete root but as a bed path, `<bed>/evidence/committed` (the literal `/not/this/one`
+would make `MakeDir` fail on this host and turn the test into an environment-dependent refusal);
+the test asserts the clone's RESOLVED root is that committed path (through
+`config.ResolveEvidenceRoot` over the clone's conf with a `HOME`-only lookup), that the launch
+created it, and that the copied `.local` carries the blank key; the canned `config get` answer
+(line 72) goes.
 
 ### U5. The structural guard
 
@@ -237,9 +286,9 @@ key; `OSHost.EvidenceRoot` on a fixture installation names `<HOME>/metasystem-ev
 `_test.go` and every `*.sh`, skipping `node_modules`, and fails by path when any file other than
 `internal/config/evidenceroot.go` contains the substring `evidence.root`. Comments count,
 deliberately: the spelling lives in one place, and prose says "the evidence root". This unit also
-sweeps the last spellings U2-U4 left (`evidence_verbs.go:21`, `sequence.go:65`, `preflight.go:67`,
-`host.go` comments, `validate.go` comment) and is green only once nothing outside the owner names
-the key.
+sweeps the last spellings U2-U4 left (`evidence_verbs.go:21`, `sequence.go:65`, `preflight.go:67`
+and `:90`, `refusal.go:75`, `host.go` comments, `validate.go` comment) and is green only once
+nothing outside the owner names the key.
 
 Fixture hygiene, a safety matter of this unit: until now a bed that copied the template conf and
 never set the key mirrored nothing; from U1 on it resolves to a real directory under the test
@@ -282,11 +331,12 @@ therefore written against the coordinator's description of them, not their code.
   nothing to migrate (zero records each).
 - Nothing moves anyone's existing evidence. The seven checkouts on the shared root stay on it; any
   change to m1e waits for a heads-up to m1e.
-- Machines launched earlier keep the explicit sibling root in their `.local`. Old launch records
-  with `Created.EvidenceRoot` load unchanged.
+- Machines launched earlier keep the explicit sibling root in their `.local`. Launch records keep
+  `Created.EvidenceRoot`; a resume of an earlier launch is judged as before.
 - Adopted repositories carrying the old committed placeholder resolve to the default through the
-  transition rule; the audit's `<durable evidence root, outside the repository>` alternative in
-  `auditPlaceholderRe` is left in place (nothing matches it after U1; removing it is not needed).
+  transition rule AND pass their ordinary audit, because U1 removes that alternative from
+  `auditPlaceholderRe`; without that they would keep failing `internal audit metasystem` for a
+  value nothing requires any more (ERD-04).
 - `metasystem config get --key evidence.root` keeps working as a generic read; nothing in the engine
   uses it for this key any more.
 - `/Users/wido/LocalStorage/agentic-tools-evidence` (22 hand-named run trees such as
@@ -298,15 +348,15 @@ therefore written against the coordinator's description of them, not their code.
 ## Pinned checks to re-pin
 
 - `internal/refusal/register.go`, ±2-line window (`register_test.go:refusalSiteWindowRadius = 2`):
-  delete row 381 (`SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE`, `sequence.go:553`, `ForwardSite
-  refusal.go:75`; also its H1 `StandingGuide` forward `machine start`). Re-pin
-  `SEAT_LAUNCH_WORD_REQUIRED` (`sequence.go:664`), `SEAT_LAUNCH_SUPERVISION_DOWN` (`:703`),
-  `SEAT_LAUNCH_IDENTITY_UNREADABLE` (`:731`), which shift by the ~60 lines U4 removes above them;
-  `SEAT_LAUNCH_DISK_SHORT` (`:354`) sits above the removal and holds. Re-pin
-  `SEAT_LAUNCH_NICKNAME_INVALID` (`preflight.go:99`), `NICKNAME_TAKEN` (`:113`),
-  `DESTINATION_EXISTS` (`:125`), `DESTINATION_INSIDE_A_CHECKOUT` (`:142`), which shift by the ~10
-  lines of `evidenceRootSet`. No row names `validate.go`, `app.go`, `evidence_verbs.go`, `reap.go`,
-  `data.go`, `process_verbs.go`, `intent_adopt.go` or `adopt.go`.
+  row 381 (`SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE`, today `sequence.go:553`) STAYS and is re-stated to
+  the rewritten `evidenceRoot`'s first refusal line; its `ForwardSite refusal.go:75` and H1
+  `StandingGuide` forward `machine start` hold (the guide sentence changes wording only through the
+  constant). Re-pin `SEAT_LAUNCH_WORD_REQUIRED` (`sequence.go:664`),
+  `SEAT_LAUNCH_SUPERVISION_DOWN` (`:703`), `SEAT_LAUNCH_IDENTITY_UNREADABLE` (`:731`) by whatever
+  the rewrite above them shifts; `SEAT_LAUNCH_DISK_SHORT` (`:354`) sits above it and holds. The
+  `preflight.go` rows (375-378) do not move: the file is unchanged. No row names `validate.go`,
+  `app.go`, `evidence_verbs.go`, `reap.go`, `data.go`, `process_verbs.go`, `intent_adopt.go`,
+  `adopt.go` or `audit/metasystem.go`.
 - `testing-parallel-ratchet.json`: no new serial tests; deletions lower counts, which the ratchet
   allows.
 - Coverage ratchet (full gate only, `scripts/agents/coverage-ratchet.json` and
@@ -320,7 +370,11 @@ therefore written against the coordinator's description of them, not their code.
   unaffected.
 - `cmd/metasystem/adoption_comparison_test.go` (~line 437) must append the key it can no longer
   substitute (U5, fixture hygiene); `internal/validate/conftailor_test.go` writes its own fixture
-  conf with the key and is unaffected.
+  conf with the key and is unaffected. `internal/audit/coverage_test.go` ~line 239 (one violation,
+  "unreplaced placeholders") keeps passing only if its fixture's placeholder is not the evidence
+  one; the build checks which placeholder it plants and adds the ERD-04 case beside it.
+  `internal/audit/shipped_installation_test.go` audits the shipped template with
+  `AllowPlaceholders: true` and is unaffected.
 
 ## Later, when it hurts
 
@@ -333,8 +387,10 @@ therefore written against the coordinator's description of them, not their code.
 - App run copies are not segmented by checkout (`<root>/goals/<goal>/app/<key>/<ts>`), unlike job
   mirrors (`agents/<CheckoutSegment>/`); two checkouts with one root or one basename interleave per
   goal without overwriting. Add the segment when someone reads them across seats.
-- A launch postcondition that the clone's resolved root differs from the launching seat's (only an
-  explicit setting could make them equal).
+- ERD-05: the structural guard protects the spelling, not ownership; a reader could call
+  `config.Get` with `config.EvidenceRootKey` and keep a private fallback unseen. Extend the guard to
+  reads through the exported key when a second owner appears; step 1 migrates every current reader
+  by hand.
 - `~/LocalStorage/agentic-tools-evidence` (100+ GB/day of source copies and private `gocache-*`
   dirs, pruned by hand) is the boundary of m1e-c4's disk-lifetimes design, Part B, amendment
   "unregistered consumers": the sweeper's floor report inventories the largest unregistered
@@ -355,11 +411,22 @@ therefore written against the coordinator's description of them, not their code.
    `records/`, `plans/`, `memory/` in ui and m1e: only path mentions). It is safe for job mirrors
    because `dispatch.CheckoutSegment` keys them by checkout path (five segments are visible there,
    by design of `records/misc/multi-main-coexistence.md` lines 172-181); only app copies interleave.
-   The launch's "roots must not mix" rule guarded a NEW machine's root, and the default now gives
-   each machine its own. Recommend: leave all seven as they are, change no setting, and if you want
+   The launch's "roots must not mix" rule guards a NEW machine's root and keeps doing so on the
+   resolved root (U4); it never judged seats already sharing one. Recommend: leave all seven as they
+   are, change no setting, and if you want
    m1e separated later it is one `.local` line after a heads-up, at the cost that metrics on m1e
    stop seeing the mirrors left under the old root.
 3. The default naming: `<checkout basename>` puts `ui` at `agentic-tools-ui` while its explicit
    setting says `ui`. Keep the explicit setting, or drop the line and take the default?
 4. Should `system start` refuse an explicitly invalid root (this design: yes, by the resolver's
    sentence, before the fence moves), or only print it and let the mirrors fail as today?
+
+## Dispositions of Astra's round 1
+
+| Finding | Disposition | Folded where |
+|---|---|---|
+| ERD-01 blanking `.local` does not make a launch use the default | accepted | Decision 6; U4: the clone's RESOLVED root is judged after its configuration is written, so an inherited committed concrete root is covered by the same three checks; integration fixture asserts the resolved destination root |
+| ERD-02 an unused destination does not prove an unused root | accepted | Decision 6; U4: the three isolation checks stay (source's root, existing and not created by this launch, link elsewhere) on the resolver's result, resume exemptions as today; `SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE` stays, row re-stated; the Later "launch postcondition" bullet withdrawn |
+| ERD-03 the resolver cannot judge the file explicitly requested | accepted | Decision 1; U1: `EvidenceRootParams.ConfPath`, `.local` derived as `ConfPath + ".local"`, validate passes its own `confPath`; two-neighbouring-files test |
+| ERD-04 legacy placeholders stay mandatory under the audit | accepted | Decision 7; U1: the alternative removed from `auditPlaceholderRe`, adopted fixture keeping the old line in `internal/audit/coverage_test.go`; Migration |
+| ERD-05 the guard protects spelling, not ownership | deferred | Later |
