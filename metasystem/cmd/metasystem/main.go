@@ -231,7 +231,6 @@ func families() []family {
 			summary: "unit validation and gate-run state",
 			verbs: []verb{
 				{"unit", "gate changed Go packages and every transitive reverse dependent", runGateUnit},
-				{"register", "record that this process is a running gate", runGateRegister},
 				{"fence", "exit 1 naming every live gate run foreign to --self-pid's chain", runGateFence},
 				{"weight-discharge", "reset validation weight at the exact authorized green-run boundary", runGateWeightDischarge},
 				{"cadence-tick", "run one landing-owner deep validation cadence decision", runGateCadenceTick},
@@ -265,13 +264,6 @@ func families() []family {
 			summary: "actionable process, proof, lifecycle, delegation, collision, and cost measures",
 			verbs: []verb{
 				{"report", "compute and atomically publish a period or per-goal report", runMetricsReport},
-			},
-		},
-		{
-			name:    "schema",
-			summary: "role-return schema materialization",
-			verbs: []verb{
-				{"materialize", "write a role's return schema at a version", runSchemaMaterialize},
 			},
 		},
 		{
@@ -337,13 +329,6 @@ func families() []family {
 				{"now-ns", "print the current wall-clock time in nanoseconds", runUtilNowNs},
 				{"bootclock", "print the operating-system boot identity and monotonic nanoseconds", runUtilBootClock},
 				{"hold", "stay alive carrying --tag until SIGTERM, then write the stopped file", runUtilHold},
-			},
-		},
-		{
-			name:    "event",
-			summary: "append a flight-recorder event",
-			verbs: []verb{
-				{"emit", "append one event (key=value args); best-effort, never fails", runEventEmit},
 			},
 		},
 		{

@@ -33,7 +33,7 @@ const (
 	// +1: disk-lifetimes A1 adds `util engine-stamp`, the one shell-callable
 	// stamp reader (rule A3). Its first caller, fixture-budget.sh's
 	// `go version -m` parser, was deleted on main (U7c) before this merge.
-	verbRatchetInternalVerbCeiling = 276
+	verbRatchetInternalVerbCeiling = 273
 	// R4: shell lines that reference the engine.
 	verbRatchetShellEngineCeiling = 4
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
