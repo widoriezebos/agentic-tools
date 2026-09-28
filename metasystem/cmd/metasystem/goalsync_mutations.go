@@ -196,10 +196,10 @@ func goalHandoverEffect(invocation ownerInvocation, request goalHandoverRequest)
 	return goal.Handover(req, request.GoalID, request.TargetMachine, request.TargetLineage, request.TargetEpoch, request.Batch, liveness)
 }
 
-func printCarryMutation(res goal.PublishResult, detail string, err error) int {
-	return printCarryMutationTo(os.Stdout, os.Stderr, res, detail, err)
-}
-
+// printCarryMutationTo prints a carry owner's outcome on the caller's
+// streams: the command edge passes the process's own, a test its buffers. No
+// process-stream default exists below the edge, so a carry ask never lands in
+// a parallel test's capture of os.Stderr.
 func printCarryMutationTo(stdout, stderr io.Writer, res goal.PublishResult, detail string, err error) int {
 	if err != nil {
 		var ask *goal.CarryAskError
@@ -294,7 +294,7 @@ func runGoalCarryLanding(args []string) int {
 	opid := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 	result, err := goal.Carry(req, goal.CarryArgs{Goal: *id, Workspace: projected, Past: *past, Why: *why, Supersede: *supersede, Expires: req.Now.Add(*expires), Transfer: *transfer, RaiseFormat: *raiseFormat}, &proof)
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
-		return printCarryMutation(result, "", err)
+		return printCarryMutationTo(os.Stdout, os.Stderr, result, "", err)
 	}
 	if err := humanauthority.RecordCarryProof(*root, opid, proof); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -897,7 +897,7 @@ func runGoalReadItems(args []string) int {
 
 func runGoalReadItemsWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, resolveCodeCommit func(root, ref string) (string, error)) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal goal read-items add|close|list [flags]")
+		fmt.Fprintln(dependencies.errStream(), "usage: metasystem internal goal read-items add|close|list [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -908,7 +908,7 @@ func runGoalReadItemsWithInputs(args []string, commandNow func(string) (time.Tim
 	case "list":
 		return runGoalReadItemsListWithInputs(args[1:], commandNow, dependencies.endpoint)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown goal read-items verb %q\n", args[0])
+		fmt.Fprintf(dependencies.errStream(), "unknown goal read-items verb %q\n", args[0])
 		return 2
 	}
 }
@@ -1371,7 +1371,7 @@ func runGoalAcceptRiskWithInputs(args []string, prove goalAuthorityProver, comma
 
 func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, commitMessage func(root, commit string) ([]byte, error)) int {
 	values := newHumanVerbValues("accept-risk", args)
-	values.report = dependencies.report
+	values.bindDependencies(dependencies)
 	f, ok := parseHumanSyncFlags(values, "accept-risk", args)
 	if !ok {
 		return 2
@@ -1671,7 +1671,7 @@ type goalBindingResolver func(string, string, time.Time) (dispatchcore.GoalBindi
 
 func runGoalBudgetWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values := newHumanVerbValues("budget", args)
-	values.report = dependencies.report
+	values.bindDependencies(dependencies)
 	cleaned, box, err := extractGoalBudgetBox(args)
 	if err != nil {
 		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "give exactly one compact box after or before the flags"})
@@ -1687,7 +1687,7 @@ func runGoalBudgetWithInputs(args []string, prove goalAuthorityProver, commandNo
 func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, boxToken string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values.bindSyncFlags(flags)
 	values.boxTyped = boxToken
-	values.report = dependencies.report
+	values.bindDependencies(dependencies)
 	if !converted(flags.root) {
 		return refuseHumanVerb(values, 1, "works only with the synced backlog", humanVerbRemedy{words: "migrate this checkout to the synced backlog first"})
 	}
@@ -2165,7 +2165,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 				dependencies.complain(err)
 				return 1, true
 			}
-			printJSON(map[string]any{"outcome": "confirmed", "skipped": skipped})
+			writeJSONLine(dependencies.outStream(), dependencies.errStream(), map[string]any{"outcome": "confirmed", "skipped": skipped})
 			return 0, true
 		}
 		// Reconcile is the hand-edit path and always names its human, but
@@ -2183,7 +2183,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 			dependencies.complain(err)
 			return 1, true
 		}
-		printJSON(map[string]any{"outcome": res.Publish.Outcome, "tip": res.Publish.Tip, "rows": len(res.Rows), "skipped": res.Skipped})
+		writeJSONLine(dependencies.outStream(), dependencies.errStream(), map[string]any{"outcome": res.Publish.Outcome, "tip": res.Publish.Tip, "rows": len(res.Rows), "skipped": res.Skipped})
 		if res.Publish.Outcome != goal.OutcomeConfirmed && len(res.Rows) > 0 {
 			return 1, true
 		}
@@ -2708,6 +2708,8 @@ func runGoalClassifySweepWithAuthority(args []string, prove goalAuthorityProver)
 
 func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("classify-sweep", args)
+	values.bindDependencies(dependencies)
+	stdout, stderr := dependencies.outStream(), dependencies.errStream()
 	fs := flag.NewFlagSet("goal classify-sweep", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	root := pathFlag(fs, "root", ".", "checkout root")
@@ -2749,9 +2751,9 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 	}
 	if *preview {
 		for _, line := range listing.Lines {
-			fmt.Println(line)
+			fmt.Fprintln(stdout, line)
 		}
-		fmt.Println("listing-digest " + listing.Digest)
+		fmt.Fprintln(stdout, "listing-digest "+listing.Digest)
 		return 0
 	}
 	if listing.Digest != *confirm {
@@ -2772,7 +2774,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 	values.by = *by
 	if len(listing.Proposals) == 0 {
 		if listing.TierLawInstalled {
-			printJSON(map[string]any{"outcome": goal.OutcomeConfirmed, "detail": "the tier law is already installed and no tierless goals remain"})
+			writeJSONLine(stdout, stderr, map[string]any{"outcome": goal.OutcomeConfirmed, "detail": "the tier law is already installed and no tierless goals remain"})
 			return 0
 		}
 		req, reqErr := syncReqWithProofAtWithDependencies("classify-sweep", *root, *by, *lineage, &proof, commandNow, dependencies)
@@ -2790,7 +2792,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 		if proofErr := recordGoalApprovalProof(*root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal classify-sweep", proof); proofErr != nil {
 			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+proofErr.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 		}
-		printJSON(map[string]any{"outcome": goal.OutcomeConfirmed, "classified": 0, "listingDigest": listing.Digest})
+		writeJSONLine(stdout, stderr, map[string]any{"outcome": goal.OutcomeConfirmed, "classified": 0, "listingDigest": listing.Digest})
 		return 0
 	}
 	for index, proposal := range listing.Proposals {
@@ -2803,14 +2805,14 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 			return refuseHumanVerb(values, 1, classifyErr.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 		}
 		if res.Outcome != goal.OutcomeConfirmed {
-			printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+			writeJSONLine(stdout, stderr, map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
 			return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 		}
 		if proofErr := recordGoalApprovalProof(*root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal classify-sweep", proof); proofErr != nil {
 			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+proofErr.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 		}
 	}
-	printJSON(map[string]any{"outcome": goal.OutcomeConfirmed, "classified": len(listing.Proposals), "listingDigest": listing.Digest})
+	writeJSONLine(stdout, stderr, map[string]any{"outcome": goal.OutcomeConfirmed, "classified": len(listing.Proposals), "listingDigest": listing.Digest})
 	return 0
 }
 
@@ -2820,7 +2822,7 @@ func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
 
 func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values := newHumanVerbValues("approve", args)
-	values.report = dependencies.report
+	values.bindDependencies(dependencies)
 	f, ok := parseHumanSyncFlags(values, "approve", args)
 	if !ok {
 		return 2
@@ -2847,12 +2849,13 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 		if err != nil {
 			return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the approval sweep listing"})
 		}
+		stdout := dependencies.outStream()
 		for _, line := range listing.Lines {
-			fmt.Println(line)
+			fmt.Fprintln(stdout, line)
 		}
-		fmt.Println("listing-sha256=" + listing.Digest)
+		fmt.Fprintln(stdout, "listing-sha256="+listing.Digest)
 		if len(listing.Skipped) > 0 {
-			fmt.Println("without-budget=" + strings.Join(listing.Skipped, ","))
+			fmt.Fprintln(stdout, "without-budget="+strings.Join(listing.Skipped, ","))
 		}
 		return 0
 	}
@@ -2947,7 +2950,7 @@ func runGoalUnapproveWithAuthority(args []string, prove goalAuthorityProver) int
 
 func runGoalUnapproveWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("unapprove", args)
-	values.report = dependencies.report
+	values.bindDependencies(dependencies)
 	f, ok := parseHumanSyncFlags(values, "unapprove", args)
 	if !ok {
 		return 2
@@ -3004,7 +3007,7 @@ func runGoalExtendBudget(args []string) int {
 }
 
 func runGoalExtendBudgetWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, reads dispatchcore.ProofAdmissionReads) int {
-	return goalExtendBudgetTo(args, commandNow, dependencies, reads, os.Stdout, os.Stderr)
+	return goalExtendBudgetTo(args, commandNow, dependencies, reads, dependencies.outStream(), dependencies.errStream())
 }
 
 // goalExtendBudgetTo is goal extend-budget onto the caller's streams; the
@@ -3086,13 +3089,14 @@ func runGoalSetBudgetWithAuthority(args []string, prove goalAuthorityProver) int
 
 func runGoalSetBudgetWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values := newHumanVerbValues("set-budget", args)
+	values.bindDependencies(dependencies)
 	f, ok := parseHumanSyncFlags(values, "set-budget", args)
 	if !ok {
 		return 2
 	}
 	if f.under != "" {
 		if !converted(f.root) || f.id == "" {
-			fmt.Fprintln(os.Stderr, "goal set-budget --under needs a synced backlog plus --id")
+			fmt.Fprintln(dependencies.errStream(), "goal set-budget --under needs a synced backlog plus --id")
 			return 2
 		}
 		return runGoalUnderAttorneyWithInputs("set-budget", f, commandNow, dependencies)
@@ -3101,7 +3105,7 @@ func runGoalSetBudgetWithInputs(args []string, prove goalAuthorityProver, comman
 	if parsed, err := f.budgetTuple(true); err == nil {
 		box = goalbudget.FormatBox(*parsed)
 	}
-	fmt.Fprintln(os.Stderr, "hint:", values.budgetCommand(box))
+	fmt.Fprintln(dependencies.errStream(), "hint:", values.budgetCommand(box))
 	if box != "" && stoppedGoalForSetBudgetWithInputs(f, commandNow, dependencies.endpoint) {
 		return runGoalStoppedSetBudgetWithInputs(values, f, prove, commandNow, dependencies, binding)
 	}
@@ -3159,16 +3163,16 @@ func runGoalStoppedSetBudgetWithInputs(values *humanVerbValues, flags *syncFlags
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
 	}
 	if result.Outcome != goal.OutcomeConfirmed {
-		printJSON(map[string]any{"outcome": result.Outcome, "tip": result.Tip, "detail": result.Detail})
+		writeJSONLine(dependencies.outStream(), dependencies.errStream(), map[string]any{"outcome": result.Outcome, "tip": result.Tip, "detail": result.Detail})
 		return refuseHumanVerb(values, 1, result.Detail, humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
 	}
 	if err := recordGoalApprovalProof(flags.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal set-budget", proof); err != nil {
 		return refuseHumanVerb(values, 1, "the act landed at tip "+result.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 	}
 	if proof.TemporaryResumeFor(flags.root) {
-		fmt.Printf("goal set-budget: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", flags.reviewBy)
+		fmt.Fprintf(dependencies.outStream(), "goal set-budget: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", flags.reviewBy)
 	}
-	return printSyncResult(result, nil)
+	return writeSyncResult(dependencies.outStream(), dependencies.errStream(), result, nil)
 }
 
 // runGoalUnderAttorneyWithInputs is the seat's own act under a recorded power
@@ -3353,7 +3357,7 @@ func runGoalResumeWithAuthorityFacts(args []string, prove goalAuthorityProver, c
 
 func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values := newHumanVerbValues("resume", args)
-	values.report = dependencies.report
+	values.bindDependencies(dependencies)
 	f, ok := parseHumanSyncFlags(values, "resume", args)
 	if !ok {
 		return 2
@@ -3606,7 +3610,7 @@ func runGoalEnrollTerminalWith(args []string, enroll goalTerminalEnroller) int {
 
 func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnroller, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("enroll-terminal", args)
-	values.report = dependencies.report
+	values.bindDependencies(dependencies)
 	flags := flag.NewFlagSet("goal enroll-terminal", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	root := pathFlag(flags, "root", ".", "checkout root")
@@ -3649,7 +3653,7 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 				dependencies.report.result = &res
 				return 0
 			}
-			printJSON(enrollment)
+			writeJSONLine(dependencies.outStream(), dependencies.errStream(), enrollment)
 			return 0
 		}
 	}
@@ -3668,7 +3672,7 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 		dependencies.report.result = &res
 		return 0
 	}
-	printJSON(enrollment)
+	writeJSONLine(dependencies.outStream(), dependencies.errStream(), enrollment)
 	return 0
 }
 
@@ -3690,7 +3694,7 @@ func runGoalSetObligationWithAuthorityFacts(args []string, prove goalAuthorityPr
 
 func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("set-obligation", args)
-	values.report = dependencies.report
+	values.bindDependencies(dependencies)
 	flags := flag.NewFlagSet("goal set-obligation", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	root := pathFlag(flags, "root", ".", "checkout root")
