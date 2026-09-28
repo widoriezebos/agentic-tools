@@ -407,16 +407,28 @@ func available(address string) bool {
 // preserveRunEvidence copies a goal's run evidence — the log tail and the
 // last check — to the durable evidence root before the record is removed and
 // before the tree is reclaimed, as the proof runner preserves evidence
-// before it disposes of a candidate.
+// before it disposes of a candidate. The record's own goal decides: every
+// spelling of a goal's run is the same run, and the invocation's goal is a
+// convenience only. A goal run whose evidence cannot be copied is refused
+// closure, so the record and the tree stay for the next stop or start.
 func (r appRun) preserveRunEvidence(record *applaunch.Record, out io.Writer) error {
-	if r.goal == "" || record == nil {
+	if record == nil {
+		return nil
+	}
+	goal := record.Goal
+	if goal == "" {
+		goal = r.goal
+	}
+	if goal == "" {
 		return nil
 	}
 	root, _, err := config.Get(config.GetParams{Key: "evidence.root", Default: "", DefaultSet: true,
 		ConfPath: filepath.Join(r.roots.Installation, "metasystem.conf")})
-	if err != nil || !filepath.IsAbs(root) {
-		fmt.Fprintln(out, "evidence: no durable evidence root is configured; nothing was copied")
-		return nil
+	if err != nil {
+		return fmt.Errorf("evidence.root could not be read (%v), so goal %s's run evidence was not copied and its record is kept", err, goal)
+	}
+	if !filepath.IsAbs(root) {
+		return fmt.Errorf("evidence.root is not set to an absolute path in metasystem.conf, so goal %s's run evidence was not copied and its record is kept; set evidence.root, then stop or start again to close the run", goal)
 	}
 	staging, err := os.MkdirTemp("", "app-evidence.")
 	if err != nil {
@@ -436,7 +448,7 @@ func (r appRun) preserveRunEvidence(record *applaunch.Record, out io.Writer) err
 		}
 		sources = append(sources, tailPath)
 	}
-	destination := filepath.Join(root, "goals", r.goal, "app", r.key, time.Now().UTC().Format("20060102T150405.000000000Z"))
+	destination := filepath.Join(root, "goals", goal, "app", r.key, time.Now().UTC().Format("20060102T150405.000000000Z"))
 	result, err := proofrun.PreserveEvidence(destination, sources, 32*1024*1024)
 	if err != nil {
 		return err
