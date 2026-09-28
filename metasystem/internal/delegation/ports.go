@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wallclock"
 )
 
 // Invocation is the explicit invocation context of design 6.2: the supplied
@@ -210,10 +211,7 @@ func (e *GitExitError) Error() string {
 }
 
 // Clock is the lifecycle's time: every deadline, poll and stamp reads it.
-type Clock interface {
-	Now() time.Time
-	Sleep(d time.Duration)
-}
+type Clock = wallclock.Clock
 
 // WaitOutcome is the job waiter's answer (metasystem internal wait): its
 // exit code and its combined output.
