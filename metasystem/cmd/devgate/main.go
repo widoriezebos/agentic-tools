@@ -4,25 +4,46 @@
 // metasystem module directory, so it never recurses into the test scheduler
 // and never needs bin/metasystem to exist.
 //
-// Its one action today is `build`, the one fenced, pinned, stamped engine
-// build (go-production-grade Phase 0a), which replaced the body of
-// scripts/agents/go-build.sh: the gate and adoption both build through here,
-// so no second unfenced path can swap bin/metasystem under a live gate run.
+// Actions:
+//
+//   - build: the one fenced, pinned, stamped engine build (go-production-grade
+//     Phase 0a), which replaced the body of scripts/agents/go-build.sh. The
+//     gate and adoption both build through here, so no second unfenced path
+//     can swap bin/metasystem under a live gate run.
+//   - static: the fast static/build leaf the fast-static-build group runs
+//     (dependency and parallel ratchets, gofmt, the bash -n shell parse, vet,
+//     staticcheck, the refusal
+//     register, the SessionStart exit audit, the Stop decision surface audit,
+//     the project check, and the build). It replaced `go-gate.sh --fast`.
+//   - gate: the full Go gate (cross-builds, govulncheck, the native race and
+//     coverage selection, the coverage ratchet, the boundary-scoped witness).
+//     It replaced `go-gate.sh` and, with --arm, the sourced witness-gate.sh.
+//
+// Every action is a leaf: none of them schedules `metasystem test run`
+// (VOA-09), so a testing group that runs one cannot recurse.
 package main
 
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 )
 
 func main() {
+	// `go run` places $GOROOT/bin at the beginning of its child's PATH. The
+	// gate resolves gofmt, go and every other tool from its caller's PATH, so
+	// a caller that puts a tool first (the fail-open tripwire's broken gofmt)
+	// is heard.
+	_ = os.Setenv("PATH", callerPath(os.Getenv("PATH")))
 	root, err := os.Getwd()
 	if err == nil {
 		root, err = filepath.EvalSymlinks(root)
@@ -36,17 +57,23 @@ func main() {
 
 func run(ctx context.Context, args []string, root string, deps deps) int {
 	if len(args) == 0 {
-		fmt.Fprintln(deps.stderr, "usage: go run ./cmd/devgate build [--out PATH] [--trimpath]")
+		fmt.Fprintln(deps.stderr, usage)
 		return 2
 	}
 	switch args[0] {
 	case "build":
 		return runBuild(ctx, args[1:], root, deps)
+	case "static":
+		return runStatic(ctx, args[1:], root, deps)
+	case "gate":
+		return runGateAction(ctx, args[1:], root, deps)
 	default:
-		fmt.Fprintf(deps.stderr, "devgate: unknown action %q; usage: go run ./cmd/devgate build [--out PATH] [--trimpath]\n", args[0])
+		fmt.Fprintf(deps.stderr, "devgate: unknown action %q; %s\n", args[0], usage)
 		return 2
 	}
 }
+
+const usage = "usage: go run ./cmd/devgate build [--out PATH] [--trimpath] | static [--proof-out PATH] | gate [--goal G] [--cap-min N] [--witness-check-only] [--arm plain|none --controller-pid PID --state-out FILE [--delivery]]"
 
 // deps is every effect the build has on the world, so a test drives the
 // whole action against stubbed Git, a stubbed Go toolchain and a chosen fence.
@@ -66,6 +93,24 @@ type deps struct {
 	environ func() []string
 	stdout  io.Writer
 	stderr  io.Writer
+
+	// tool runs one child program (gofmt, the trusted authentication
+	// engine, the temporary proof launcher) and returns its exit error.
+	tool func(ctx context.Context, call toolCall) error
+	// now is the gate's clock for evidence names and witness stamps.
+	now func() time.Time
+	// owners are the in-process owners the static and full gates consult.
+	owners owners
+}
+
+// toolCall is one child program run from dir with an explicit environment.
+type toolCall struct {
+	dir    string
+	env    []string
+	name   string
+	args   []string
+	stdout io.Writer
+	stderr io.Writer
 }
 
 func nativeDeps() deps {
@@ -94,5 +139,57 @@ func nativeDeps() deps {
 		environ: os.Environ,
 		stdout:  os.Stdout,
 		stderr:  os.Stderr,
+		tool: func(ctx context.Context, call toolCall) error {
+			command := exec.CommandContext(ctx, call.name, call.args...)
+			command.Dir = call.dir
+			command.Env = call.env
+			command.Stdout, command.Stderr = call.stdout, call.stderr
+			return command.Run()
+		},
+		now:    time.Now,
+		owners: nativeOwners(),
 	}
+}
+
+// callerPath is PATH without the leading $GOROOT/bin entry `go run` adds.
+func callerPath(path string) string {
+	first, rest, found := strings.Cut(path, string(os.PathListSeparator))
+	if !found || !goRootBin(first) {
+		return path
+	}
+	return rest
+}
+
+// goRootBin reports a Go installation's bin directory: go and gofmt beside
+// a sibling pkg/tool.
+func goRootBin(dir string) bool {
+	if filepath.Base(dir) != "bin" || !executableFile(filepath.Join(dir, "go")) || !executableFile(filepath.Join(dir, "gofmt")) {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(filepath.Dir(dir), "pkg", "tool"))
+	return err == nil && info.IsDir()
+}
+
+// withEnvironment is d with its environment reads bound to env, so the build
+// and child tools a gate stage runs see that stage's environment rather than
+// the process's.
+func (d deps) withEnvironment(env *environment) deps {
+	d.getenv = env.get
+	d.environ = env.list
+	return d
+}
+
+// exitStatus is a child's exit status; a child that could not start is 127.
+func exitStatus(err error) int {
+	if err == nil {
+		return 0
+	}
+	var coded interface{ ExitCode() int }
+	if errors.As(err, &coded) {
+		if coded.ExitCode() > 0 {
+			return coded.ExitCode()
+		}
+		return 1
+	}
+	return 127
 }

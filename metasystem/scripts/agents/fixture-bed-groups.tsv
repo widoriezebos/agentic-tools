@@ -7,7 +7,6 @@ scripts/agents/enumerate-suite-fixtures.sh	section/enumeration-mode-fixtures
 scripts/agents/evidence-segment-fixtures.sh	section/evidence-segment-fixtures
 scripts/agents/fixture-bed-scenarios-fixtures.sh	section/fixture-bed-scenarios-fixtures
 scripts/agents/flight-recorder-fixtures.sh	section/flight-recorder-fixtures
-scripts/agents/go-gate.sh	section/gate-fence-fixtures
 scripts/agents/health-fixtures.sh	section/supervision-and-census-fixtures
 scripts/agents/land-fixtures.sh	section/land-fixtures
 scripts/agents/lease-succession-fixtures.sh	section/lease-succession-fixtures
@@ -19,4 +18,3 @@ scripts/agents/static-reproof-fixtures.sh	section/static-reproof-fixtures
 scripts/agents/suite-progress-fixtures.sh	section/suite-progress-fixtures
 scripts/agents/supervision-fixtures.sh	section/supervision-and-census-fixtures
 scripts/agents/supervision-go-fixtures.sh	section/supervision-go-fixtures
-scripts/agents/witness-gate-fixtures.sh	section/witness-gate-fixtures

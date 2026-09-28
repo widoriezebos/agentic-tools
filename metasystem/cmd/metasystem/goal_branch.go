@@ -142,7 +142,7 @@ func readGate(worktree string) (string, error) {
 	proofPath := proof.Name()
 	proof.Close()
 	defer os.Remove(proofPath)
-	command := exec.Command("bash", filepath.Join(worktree, "scripts", "agents", "go-gate.sh"), "--fast", "--proof-out", proofPath)
+	command := exec.Command("go", "run", "./cmd/devgate", "static", "--proof-out", proofPath)
 	command.Dir = worktree
 	command.Env = os.Environ()
 	output, err := command.CombinedOutput()

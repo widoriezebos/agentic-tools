@@ -17,7 +17,6 @@ covenant-evidence-post-rebuild	covenant evidence after rebuild
 suite-host-prerequisites	suite host prerequisites
 metasystem-audit	metasystem audit
 gate-fail-open-tripwire	Go gate fail-open tripwire
-witness-gate-fixtures	witness gate fixtures
 suite-progress-fixtures	suite progress and watchdog fixtures
 fixture-bed-scenarios-fixtures	fixture bed harness fixtures
 land-fixtures	landing chain fixtures
@@ -84,7 +83,7 @@ selected_sections() {
   while IFS=$'\t' read -r section_id section_name; do
     if [[ "$context" == adopted ]]; then
       case "$section_id" in
-        witness-gate-fixtures | suite-progress-fixtures | land-fixtures | adoption-fixtures | fixture-bed-scenarios-fixtures)
+        suite-progress-fixtures | land-fixtures | adoption-fixtures | fixture-bed-scenarios-fixtures)
           continue
           ;;
       esac

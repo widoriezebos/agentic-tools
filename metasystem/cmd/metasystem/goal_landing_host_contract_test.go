@@ -81,6 +81,33 @@ var retiredWithDeletedVerb = map[string]string{
 	"launch-standard/TestUnitFamilyIsRegistered":     "unit run",
 }
 
+// retiredWithDeletedScript names legacy mandatory tests (group/test) whose only
+// subject was a script deleted by its provider transition (6.4) and maps each to
+// the test that now carries the behavior, which must be in the contract.
+var retiredWithDeletedScript = map[string]string{
+	"proof-standard/TestGoGateCopiedRootStopsAfterOneUnauthorizedRelaunch":                "TestGateRefusesAnUnauthorizedRelaunchedChild",
+	"proof-standard/TestGoGateRelaunchUsesBuiltEngineForWorkerAuthorization":              "TestGateRelaunchesAStandaloneRunUnderItsRetainedProofOwner",
+	"batch-buildcd-standard/TestGoGateFastModeRunsParallelRatchetBesideDependencyRatchet": "TestStaticRatchetsRefuseBeforeAnyToolRuns",
+}
+
+// providerTransitions names legacy groups whose command moved to a new
+// provider under the two-step transition (plans/designs/verbs-object-action.md
+// 6.4): the group keeps its id so a candidate's proof runs the base's command,
+// and holds exactly the new provider's definition. Nothing else may leave the
+// legacy definition this way.
+var providerTransitions = map[string]func(testpolicy.Group) bool{
+	// go-gate.sh --fast became the Go bootstrap's static leaf.
+	"fast-static-build": func(group testpolicy.Group) bool {
+		return group.Adapter == "command" && slices.Equal(group.Argv, []string{"go", "run", "./cmd/devgate", "static"}) &&
+			slices.Contains(group.Obligations, "gate-integrity")
+	},
+	// witness-gate-fixtures.sh became the devgate witness and arming tests.
+	"section/witness-gate-fixtures": func(group testpolicy.Group) bool {
+		return group.Adapter == "go" && slices.Equal(group.Packages, []string{"cmd/devgate"}) && len(group.Tests) > 2 &&
+			slices.Contains(group.Obligations, "test-execution-integrity")
+	},
+}
+
 func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract) {
 	t.Helper()
 	installation, err := filepath.Abs(filepath.Join("..", ".."))
@@ -176,6 +203,12 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			t.Errorf("legacy host group %s disappeared", old.ID)
 			continue
 		}
+		if transitioned, moved := providerTransitions[old.ID]; moved {
+			if !transitioned(now) {
+				t.Errorf("legacy group %s left its definition without holding its new provider's", old.ID)
+			}
+			continue
+		}
 		requiredInputs := old.Inputs
 		if old.ID == "hook-start-audit-standard" {
 			// U4 retired the shell hook bed and the sourced degraded-form
@@ -213,6 +246,19 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		for _, name := range oldTests {
 			if verb, retired := retiredWithDeletedVerb[old.ID+"/"+name]; retired {
 				t.Logf("%s %s retired with the deleted verb %s", old.ID, name, verb)
+				continue
+			}
+			if replacement, retired := retiredWithDeletedScript[old.ID+"/"+name]; retired {
+				carried := false
+				for _, group := range current.Groups {
+					var names []string
+					if json.Unmarshal(group.Tests, &names) == nil && slices.Contains(names, replacement) {
+						carried = true
+					}
+				}
+				if !carried {
+					t.Errorf("%s %s retired with its deleted script, but %s is not in the contract", old.ID, name, replacement)
+				}
 				continue
 			}
 			requiredNames := []string{name}

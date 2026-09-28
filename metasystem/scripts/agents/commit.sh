@@ -451,11 +451,26 @@ fi
 # binary cannot classify any prospective byte.
 proof_engine=$(mktemp "${TMPDIR:-/tmp}/metasystem-proof-engine.XXXXXX")
 trap 'rm -f -- "$proof_engine" "$token"' EXIT
-if (( static_reproof )); then
-  "$root/scripts/agents/go-gate.sh" --fast --proof-out "$proof_engine" 1>&2 || {
-    echo "agent commit refused: the static re-proof failed (go-gate.sh --fast)" >&2
+if (( static_reproof )) && grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root/go.mod"; then
+  go -C "$root" run ./cmd/devgate static --proof-out "$proof_engine" 1>&2 || {
+    echo "agent commit refused: the static re-proof failed (devgate static)" >&2
     exit 1
   }
+elif (( static_reproof )); then
+  # An installation without the engine module predates the Go engine: the
+  # static gate has no source to judge. Engine source without the module
+  # line is a damaged template, refused rather than skipped; the declared
+  # memory is still checked by the executable that shipped with it.
+  if [[ -f "$root/internal/missionrunner/stoploss.go" || -f "$root/internal/mission/ledger.go" ]]; then
+    echo "agent commit refused: metasystem Go source present but go.mod does not declare the metasystem module" >&2
+    exit 1
+  fi
+  if [[ -x "$root/bin/metasystem" ]]; then
+    "$root/bin/metasystem" internal project check --root "$root" 1>&2 || {
+      echo "agent commit refused: project check refused the declared memory (docs/design/design-obligation-gate.md, A design is a record)" >&2
+      exit 1
+    }
+  fi
 else
   bash "$root/scripts/agents/go-build.sh" --out "$proof_engine" 1>&2 || {
     echo "agent commit refused: the proof engine could not be built (go-build.sh --out)" >&2

@@ -343,8 +343,8 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 	// carried stubs, and its proof engine is the bed's built engine, as
 	// land-fixtures.sh's go-build.sh copies it: this bed proves the carried
 	// transport, not the suites.
-	gate := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == --fast && \"${2:-}\" == --proof-out && -n \"${3:-}\" ]]\ncp %q \"$3\"\n", engine)
-	writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", "go-gate.sh"), []byte(gate), 0o755)
+	gate := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == --proof-out && -n \"${2:-}\" ]]\ncp %q \"$2\"\n", engine)
+	writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", "devgate-static.sh"), []byte(gate), 0o755)
 	build := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == --trimpath && \"${2:-}\" == --out && -n \"${3:-}\" ]]\ncp %q \"$3\"\nchmod +x \"$3\"\n", engine)
 	writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", "go-build.sh"), []byte(build), 0o755)
 	writeFixtureDevgate(t, filepath.Join(clone, filepath.FromSlash(prefix)))

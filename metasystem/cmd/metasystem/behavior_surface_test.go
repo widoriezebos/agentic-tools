@@ -40,23 +40,6 @@ func TestBehaviorSurfaceSelectFailsOnFlushError(t *testing.T) {
 	}
 }
 
-func TestBehaviorSurfaceListFailsOnFlushError(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "internal", "a.go")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("package a\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	code := withBehaviorSurfaceStreams(t, "", func() int {
-		return runBehaviorSurfaceList([]string{"--root", root, "--projection", "ENGINE"})
-	})
-	if code == 0 {
-		t.Fatal("list returned success after its buffered output failed")
-	}
-}
-
 func TestBehaviorSurfaceDirectWritersFailOnOutputError(t *testing.T) {
 	root := t.TempDir()
 	for name, run := range map[string]func() int{

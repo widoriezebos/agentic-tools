@@ -648,16 +648,20 @@ go_engine_gate_section() {
   # the exact bytes adoption stages — and its witness is handed to the
   # nested delivery-contract runs this suite spawns. Dirty roots, seed,
   # force, or any refusal fall back to the plain worktree gate, no
-  # witness, exactly as before. The machinery lives in the sourced
-  # helper so standalone direct-validator stages (adopt-fixtures) arm the same
-  # witness instead of re-proving identical bytes per nested run. The
-  # fallback is FORCED here: canonical validation always runs a real
-  # gate when the witness cannot arm, immune to ambient state. The
-  # narrow trap guards the window between arming and the full cleanup
-  # trap far below — any early exit still takes the witness with it
-  # (the later validation_cleanup trap replaces this one and repeats
-  # the removal).
-  WITNESS_GATE_FALLBACK=plain source scripts/agents/witness-gate.sh
+  # witness, exactly as before. The machinery lives in the Go gate's
+  # arming controller so standalone direct-validator stages (adopt-fixtures)
+  # arm the same witness instead of re-proving identical bytes per nested
+  # run; this shell names itself the controller and adopts the state the
+  # controller hands back. The fallback is FORCED here: canonical validation
+  # always runs a real gate when the witness cannot arm, immune to ambient
+  # state. The narrow trap guards the window between arming and the full
+  # cleanup trap far below — any early exit still takes the witness with it
+  # (the later validation_cleanup trap replaces this one and repeats the
+  # removal).
+  local witness_arm_args=(--arm plain --controller-pid $$ --state-out "$stage_work/witness-arm.sh")
+  (( ! delivery_contract )) || witness_arm_args+=(--delivery)
+  go run ./cmd/devgate gate "${witness_arm_args[@]}"
+  source "$stage_work/witness-arm.sh"
   if (( delivery_contract )); then
     # The delivery smoke (D33): the freshly stamped binary answers a
     # decision verb, and when the outer run's witness matches this tree
@@ -667,7 +671,7 @@ go_engine_gate_section() {
       || { echo "delivery contract: the rebuilt binary did not answer" >&2; exit 1; }
     if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]] \
       && METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=DELIVERY \
-        bash scripts/agents/go-gate.sh --witness-check-only >/dev/null 2>&1; then
+        go run ./cmd/devgate gate --witness-check-only >/dev/null 2>&1; then
       delivery_reuse=1
       delivery_stamp=$(go version -m bin/metasystem | sed -n 's/.*BuildStamp=\(witness-[a-f0-9]*\).*/\1/p' | head -1)
       delivery_recorded=$(sed -n 's/.*"engineDigest":"\([a-f0-9]*\)".*/\1/p' "$METASYSTEM_GATE_WITNESS")
@@ -723,7 +727,7 @@ if (( run_gate_fence_fixture )); then
   fi
   gate_fence_err=$(mktemp)
   if env -u METASYSTEM_GATE_WITNESS -u METASYSTEM_GATE_WITNESS_WRITE \
-      bash scripts/agents/go-gate.sh --fast 2>"$gate_fence_err"; then
+      go run ./cmd/devgate static 2>"$gate_fence_err"; then
     echo "go-gate rebuilt over a foreign live gate run" >&2; exit 1
   fi
   grep -q "swap its binary mid-run" "$gate_fence_err" \
@@ -961,7 +965,7 @@ gate_fail_open_tripwire_section() {
   chmod +x "$gofmt_shim_dir/gofmt"
   if METASYSTEM_ALLOW_CONCURRENT_GATE=1 PATH="$gofmt_shim_dir:$PATH" \
       env -u METASYSTEM_GATE_WITNESS -u METASYSTEM_GATE_WITNESS_WRITE \
-      bash scripts/agents/go-gate.sh --fast >"$gofmt_shim_dir/out" 2>&1; then
+      go run ./cmd/devgate static >"$gofmt_shim_dir/out" 2>&1; then
     echo "go gate passed with a broken gofmt; the fail-open hole is back" >&2
     exit 1
   fi
@@ -1051,7 +1055,6 @@ for link in \
   scripts/agents/pre-commit-guard-fixtures.sh \
   scripts/agents/static-reproof-fixtures.sh \
   scripts/agents/path-class-fixtures.sh \
-  scripts/agents/witness-gate-fixtures.sh \
   scripts/agents/suite-progress-fixtures.sh \
   scripts/agents/fixture-bed-scenarios-fixtures.sh \
   scripts/agents/land-fixtures.sh \
@@ -1108,7 +1111,6 @@ bash -n scripts/agents/landing-lane-worker.sh
 bash -n scripts/agents/enumerate-suite.sh
 bash -n scripts/agents/validate-section-selector.sh
 bash -n scripts/agents/enumerate-suite-fixtures.sh
-bash -n scripts/agents/witness-gate.sh
 bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
@@ -1120,7 +1122,6 @@ bash -n scripts/agents/flight-recorder-fixtures.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
 bash -n scripts/agents/static-reproof-fixtures.sh
 bash -n scripts/agents/path-class-fixtures.sh
-bash -n scripts/agents/witness-gate-fixtures.sh
 bash -n scripts/agents/suite-progress-fixtures.sh
 bash -n scripts/agents/fixture-bed-scenarios-fixtures.sh
 bash -n scripts/agents/land.sh
@@ -2853,9 +2854,6 @@ fi
 # adopt.sh self-test: extracted to its own sub-suite (script-validate-4/D35).
 if (( template_mode )) && section_selected adoption-fixtures; then
   run_section adoption-fixtures needs-engine bash scripts/adopt-fixtures.sh
-fi
-if (( template_mode )) && section_selected witness-gate-fixtures; then
-  run_section witness-gate-fixtures needs-engine bash scripts/agents/witness-gate-fixtures.sh
 fi
 if (( template_mode )) && section_selected suite-progress-fixtures; then
   # Watchdog fixtures emit heartbeat evidence while the sequencer records their outcome.

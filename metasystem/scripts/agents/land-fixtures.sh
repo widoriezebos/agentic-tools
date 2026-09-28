@@ -596,9 +596,10 @@ JSON
     printf 'digest=seed\n' >"$leg_seed/records/narrator-digest.log"
     printf 'memory/receipts.log merge=union\nrecords/narrator-digest.log merge=union\n' \
       >"$leg_seed/.gitattributes"
-    for battery_script in go-gate.sh; do
+    for battery_script in devgate-static.sh; do
       printf '#!/usr/bin/env bash\nexit 0\n' >"$leg_seed/scripts/agents/$battery_script" && chmod +x "$leg_seed/scripts/agents/$battery_script"
     done
+    harness_fixture_plant_devgate "$leg_seed"
   fi
   chmod +x "$leg_seed/scripts/agents/land.sh" \
     "$leg_seed/scripts/agents/pre-commit-guard.sh" \
@@ -710,7 +711,7 @@ BACKLOG
     git -C "$leg_seed" config goal.sync-branch refs/heads/main
   fi
   git -C "$leg_seed" add -- scripts payload.txt plans/existing.md .gitignore
-  if is_workspace_receipt_scenario || is_carried_scenario; then
+  if is_workspace_receipt_scenario || is_carried_scenario || [[ "$fixture_scenario" == full-width-chain ]]; then
     git -C "$leg_seed" add -- cmd/devgate/main.go go.mod
   fi
   if ! is_workspace_receipt_scenario; then
@@ -2879,10 +2880,10 @@ full_chain_other_tree=$(git -C "$leg_local" rev-parse HEAD^{tree})
 ) >/dev/null
 full_chain_other_receipt=artifacts/agents/landing/receipts/$full_chain_other_tree.json
 
-printf '# full-width candidate\n' >>"$leg_local/scripts/agents/go-gate.sh"
+printf '# full-width candidate\n' >>"$leg_local/scripts/agents/devgate-static.sh"
 full_chain_receipt_line_1='2|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=verify|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=fx|built_by=coordinator|critique_waived=none|waiver_stream=none|note=full-width-candidate-one'
 printf '%s\n' "$full_chain_receipt_line_1" >>"$leg_local/memory/receipts.log"
-git -C "$leg_local" add -- scripts/agents/go-gate.sh memory/receipts.log
+git -C "$leg_local" add -- scripts/agents/devgate-static.sh memory/receipts.log
 full_chain_candidate=$(git -C "$leg_local" write-tree)
 mkdir -p "$leg_local/artifacts/agents/jobs" \
   "$leg_local/artifacts/agents/full-chain/rounds/1"
@@ -3005,10 +3006,10 @@ grep -Fq 'Landing-Provenance: chain=full-chain change=' <<<"$full_chain_commit_m
   || { echo "land full-width-chain fixture: the landed commit omitted chain provenance" >&2; exit 1; }
 [[ $(git -C "$leg_local" rev-parse HEAD) == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
 
-printf '# full-width candidate two\n' >>"$leg_local/scripts/agents/go-gate.sh"
+printf '# full-width candidate two\n' >>"$leg_local/scripts/agents/devgate-static.sh"
 full_chain_receipt_line_2='3|2026-09-12T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=verify|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=fx|built_by=coordinator|critique_waived=none|waiver_stream=none|note=full-width-candidate-two'
 printf '%s\n' "$full_chain_receipt_line_2" >>"$leg_local/memory/receipts.log"
-git -C "$leg_local" add -- scripts/agents/go-gate.sh memory/receipts.log
+git -C "$leg_local" add -- scripts/agents/devgate-static.sh memory/receipts.log
 full_chain_candidate_2=$(git -C "$leg_local" write-tree)
 mkdir -p "$leg_local/artifacts/agents/jobs" \
   "$leg_local/artifacts/agents/full-chain-2/rounds/1"

@@ -468,7 +468,6 @@ func (fixture *batchE2EFixture) writeSeed(root string, goals []string) {
 	write("app/app_test.go", "package app\n\nimport \"testing\"\n\nfunc TestSmoke(t *testing.T) { if !Healthy() { t.Fatal(\"unhealthy\") } }\n", 0o644)
 	write("testing.json", string(contractData)+"\n", 0o644)
 	write("scripts/agents/fixture-bed-groups.tsv", "", 0o644)
-	write("scripts/agents/go-gate.sh", "#!/usr/bin/env bash\nset -euo pipefail\ngo test ./...\n", 0o755)
 	write("scripts/agents/e2e-proof.sh", "#!/usr/bin/env bash\nset -euo pipefail\ngrep -q 'func Healthy' app/app.go\nmkdir -p reports\nprintf '%s\\n' '<testsuite><testcase classname=\"batch\" name=\"healthy\"/></testsuite>' > reports/app.xml\n", 0o755)
 	write("scripts/agents/pre-commit-guard.sh", "#!/usr/bin/env bash\nexit 0\n", 0o755)
 	engine, err := os.Executable()

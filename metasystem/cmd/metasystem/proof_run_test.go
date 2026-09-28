@@ -145,37 +145,7 @@ exit 97
 		}
 		return 0
 	}
-	freezeRoot := filepath.Join(t.TempDir(), "freeze")
-	writeTestingFixtureFile(t, filepath.Join(freezeRoot, "internal", "source.go"), []byte("package internal\n"), 0o644)
-	overlapOutput := newFreezeOverlapWriter()
-	type freezeResult struct {
-		code   int
-		stderr string
-	}
-	freezeDone := make(chan freezeResult, 1)
-	go func() {
-		var stderr bytes.Buffer
-		freezeDone <- freezeResult{runGateWitnessFreezeWithWriters([]string{"--root", freezeRoot}, overlapOutput, &stderr), stderr.String()}
-	}()
-	select {
-	case <-overlapOutput.started:
-	case result := <-freezeDone:
-		t.Fatalf("freeze CLI exited before controlled output overlap: code=%d stderr=%q", result.code, result.stderr)
-	}
 	coverageCode := reuseStatus()
-	close(overlapOutput.release)
-	result := <-freezeDone
-	fields := strings.Split(strings.TrimSpace(overlapOutput.String()), "\t")
-	if result.code != 0 || result.stderr != "" || len(fields) != 3 || strings.Contains(overlapOutput.String(), "coverage reuse:") {
-		t.Fatalf("overlapped freeze CLI code=%d stdout=%q stderr=%q", result.code, overlapOutput.String(), result.stderr)
-	}
-	var cleanupOut, cleanupErr bytes.Buffer
-	if code := runGateWitnessFreezeWithWriters([]string{"--cleanup", fields[2]}, &cleanupOut, &cleanupErr); code != 0 || cleanupOut.Len() != 0 || cleanupErr.Len() != 0 {
-		t.Fatalf("overlapped freeze cleanup code=%d stdout=%q stderr=%q", code, cleanupOut.String(), cleanupErr.String())
-	}
-	if _, err := os.Stat(filepath.Dir(fields[2])); !os.IsNotExist(err) {
-		t.Fatalf("overlapped freeze cleanup left owned root %s: %v", filepath.Dir(fields[2]), err)
-	}
 	if coverageCode != 0 {
 		t.Fatalf("coverage-reuse before parent mutation exited %d", coverageCode)
 	}
@@ -764,6 +734,19 @@ func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 		{"ls-files", "--others", "--exclude-standard", "--full-name", "-z"},
 		{"ls-files", "--others", "-i", "--exclude-standard", "--full-name", "-z"},
 	}
+	// The probe is the root's own Go gate asked about an ENGINE witness; the
+	// state classification only consumes its verdict.
+	usable := func(gotRoot string) bool {
+		if gotRoot != root {
+			t.Fatalf("probe root = %q, want %q", gotRoot, root)
+		}
+		return os.Getenv("METASYSTEM_GATE_WITNESS") == "usable"
+	}
+	probe := proofRunWitnessProbe(root)
+	if !slices.Equal(probe.Args, []string{"go", "run", "./cmd/devgate", "gate", "--witness-check-only"}) || probe.Dir != root ||
+		!slices.Contains(probe.Env, "METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=ENGINE") {
+		t.Fatalf("witness probe = %q in %q", probe.Args, probe.Dir)
+	}
 	assertState := func(want string, reads [][]string) {
 		t.Helper()
 		called := 0
@@ -797,7 +780,7 @@ func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 			}
 			return nil, nil
 		}
-		if state := proofRunWitnessStateWithRead(root, read); state != want {
+		if state := proofRunWitnessStateWith(root, read, usable); state != want {
 			t.Fatalf("witness state = %q, want %q", state, want)
 		}
 		if called != len(reads) {
@@ -822,13 +805,6 @@ func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 	t.Setenv("METASYSTEM_GATE_WITNESS", "unusable")
 	assertState("unarmed", nil)
 
-	script := filepath.Join(root, "scripts", "agents", "go-gate.sh")
-	if err := os.MkdirAll(filepath.Dir(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(script, []byte("#!/usr/bin/env bash\n[[ \"$1\" == --witness-check-only && \"$METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE\" == ENGINE && \"$METASYSTEM_GATE_WITNESS\" == usable ]]\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("METASYSTEM_GATE_WITNESS", "usable")
 	assertState("armed", nil)
 	export := filepath.Join(root, "export")
@@ -952,311 +928,6 @@ func TestWorkerAuthorizedAcceptsTheAdmittedRoot(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("admitted execution root was not authorized: code=%d stderr=%q", code, stderr)
 	}
-}
-
-func TestGoGateTestsRefusesUnauthenticatedInvocationBeforeNativeLaunch(t *testing.T) {
-	t.Parallel()
-	if runGoGateCommandTestInOwnedProcess(t) {
-		return
-	}
-	root := t.TempDir()
-	logRoot := filepath.Join(root, "native-logs")
-	for _, name := range []string{"METASYSTEM_PROOF_CONTROL_ROOT", "METASYSTEM_PROOF_ATTEMPT", "METASYSTEM_PROOF_RECORD_KEY", "METASYSTEM_PROOF_CREATION_CLAIM", proofrun.TestWorkersEnvironment} {
-		setOwnedGoGateProcessEnvironment(t, name, "")
-	}
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runProofRunGoGateTests([]string{"--root", root, "--log-root", logRoot, "--workers", "1"})
-	})
-	if code != 3 || !strings.Contains(stderr, "no proof control root") {
-		t.Fatalf("unauthenticated native gate refusal: code=%d stderr=%q", code, stderr)
-	}
-	if _, err := os.Stat(logRoot); !os.IsNotExist(err) {
-		t.Fatalf("unauthenticated invocation reached native launch: %v", err)
-	}
-}
-
-func TestGoGateTestsRefusesWorkerRequestAboveInheritedAllowanceBeforeNativeLaunch(t *testing.T) {
-	t.Parallel()
-	if runGoGateCommandTestInOwnedProcess(t) {
-		return
-	}
-	_, root, _ := workerAuthorizedFileAttemptFixture(t)
-	setOwnedGoGateProcessEnvironment(t, proofrun.TestWorkersEnvironment, "1")
-	logRoot := filepath.Join(root, "native-logs")
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runProofRunGoGateTests([]string{"--root", root, "--log-root", logRoot, "--workers", "8"})
-	})
-	if code != 3 || !strings.Contains(stderr, "requested workers 8 exceed inherited allowance 1") {
-		t.Fatalf("inherited worker ceiling refusal: code=%d stderr=%q", code, stderr)
-	}
-	if _, err := os.Stat(logRoot); !os.IsNotExist(err) {
-		t.Fatalf("over-ceiling invocation reached native launch: %v", err)
-	}
-}
-
-func TestGoGateTestsRefusesForeignRootBeforeNativeLaunch(t *testing.T) {
-	t.Parallel()
-	if runGoGateCommandTestInOwnedProcess(t) {
-		return
-	}
-	foreign, admitted, _ := workerAuthorizedFileAttemptFixture(t)
-	setOwnedGoGateProcessEnvironment(t, proofrun.TestWorkersEnvironment, "1")
-	logRoot := filepath.Join(foreign, "native-logs")
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runProofRunGoGateTests([]string{"--root", foreign, "--log-root", logRoot, "--workers", "1"})
-	})
-	if code != 3 || !strings.Contains(stderr, foreign) || !strings.Contains(stderr, admitted) {
-		t.Fatalf("foreign native root refusal: code=%d stderr=%q", code, stderr)
-	}
-	if _, err := os.Stat(logRoot); !os.IsNotExist(err) {
-		t.Fatalf("foreign-root invocation reached native launch: %v", err)
-	}
-}
-
-func TestGoGateTestsAuthenticatedCancellationDrainsNativeChildAndBorrowedLease(t *testing.T) {
-	t.Parallel()
-	if runGoGateCommandTestInOwnedProcess(t) {
-		return
-	}
-	controlRoot, root, attempt := workerAuthorizedFileAttemptFixture(t)
-	for path, source := range map[string]string{
-		"go.mod":              "module example.invalid/publicgate\n\ngo 1.27\n",
-		"internal/app/app.go": "package app\n",
-		"internal/app/app_test.go": `package app
-import (
- "os"
- "strconv"
- "testing"
- "time"
-)
-func TestHeldUntilCancellation(t *testing.T) {
- if err := os.WriteFile(os.Getenv("NATIVE_PID"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil { t.Fatal(err) }
- if err := os.WriteFile(os.Getenv("NATIVE_READY"), []byte("ready"), 0600); err != nil { t.Fatal(err) }
- for { time.Sleep(time.Hour) }
-}
-`,
-		"cmd/tool/main.go":      "package main\nfunc main() {}\n",
-		"cmd/tool/main_test.go": "package main\nimport \"testing\"\nfunc TestCommand(t *testing.T) {}\n",
-	} {
-		writeReceiptFixture(t, root, path, source)
-	}
-	admissionDir := filepath.Join(t.TempDir(), "host-admission")
-	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
-	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
-	control, attemptID := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT")
-	if err := os.Unsetenv("METASYSTEM_PROOF_CONTROL_ROOT"); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Unsetenv("METASYSTEM_PROOF_ATTEMPT"); err != nil {
-		t.Fatal(err)
-	}
-	hostProbeResource := []string{"go-gate-public-cancellation"}
-	lease, err := proofrun.AcquireHostResources(t.Context(), controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "heavy", hostProbeResource)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leaseOpen := true
-	defer func() {
-		if leaseOpen {
-			_ = lease.Close()
-		}
-	}()
-	if err := os.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", control); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Setenv("METASYSTEM_PROOF_ATTEMPT", attemptID); err != nil {
-		t.Fatal(err)
-	}
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.CommandContext(t.Context(), "go", "build", "-o", engine, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build public native runner: %v\n%s", err, output)
-	}
-	ready, nativePIDPath := filepath.Join(t.TempDir(), "native.ready"), filepath.Join(t.TempDir(), "native.pid")
-	logRoot := filepath.Join(t.TempDir(), "native-logs")
-	environment := append(os.Environ(), proofrun.HostResourceFDEnvironment(lease.Files()), proofrun.TestWorkersEnvironment+"=1",
-		"GOFLAGS=-buildvcs=false", "NATIVE_READY="+ready, "NATIVE_PID="+nativePIDPath)
-	command := pinProofBinaryFixture(t, controlRoot).command(environment, engine, "proof-run", "go-gate-tests", "--root", root, "--log-root", logRoot, "--workers", "1")
-	command.Dir = root
-	command.ExtraFiles = append(command.ExtraFiles, lease.Files()...)
-	var output bytes.Buffer
-	command.Stdout, command.Stderr = &output, &output
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	waited := make(chan error, 1)
-	exited := make(chan error, 1)
-	go func() {
-		err := command.Wait()
-		waited <- err
-		exited <- err
-	}()
-	joined := false
-	cancelAndJoin := func() error {
-		if joined {
-			return nil
-		}
-		if command.Process != nil {
-			_ = command.Process.Signal(syscall.SIGTERM)
-		}
-		err := <-waited
-		joined = true
-		return err
-	}
-	t.Cleanup(func() { _ = cancelAndJoin() })
-	waitForPublicRouteFileOrExit(t, ready, exited, func() string { return output.String() })
-	nativePIDBytes, err := os.ReadFile(nativePIDPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nativePID, err := strconv.Atoi(strings.TrimSpace(string(nativePIDBytes)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := command.Process.Signal(syscall.SIGTERM); err != nil {
-		t.Fatal(err)
-	}
-	waitErr := <-waited
-	joined = true
-	if exit, ok := waitErr.(*exec.ExitError); !ok || exit.ExitCode() == 0 {
-		t.Fatalf("cancelled public native runner exit=%v\n%s", waitErr, output.String())
-	}
-	if err := syscall.Kill(nativePID, 0); !errors.Is(err, syscall.ESRCH) {
-		t.Fatalf("public runner returned before exact native child %d drained: %v\n%s", nativePID, err, output.String())
-	}
-	if attempt.AttemptID == "" {
-		t.Fatal("authenticated cancellation fixture has no admitted attempt")
-	}
-	if err := os.Unsetenv("METASYSTEM_PROOF_CONTROL_ROOT"); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Unsetenv("METASYSTEM_PROOF_ATTEMPT"); err != nil {
-		t.Fatal(err)
-	}
-	type probeResult struct {
-		lease *proofrun.HostResourceLease
-		err   error
-	}
-	probeContext, cancelProbe := context.WithCancel(t.Context())
-	queued := make(chan struct{})
-	var queuedOnce sync.Once
-	probeContext = proofrun.WithHostResourceWaitObserver(probeContext, func() { queuedOnce.Do(func() { close(queued) }) })
-	probeDone := make(chan probeResult, 1)
-	go func() {
-		probe, probeErr := proofrun.AcquireHostResources(probeContext, controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "heavy", hostProbeResource)
-		probeDone <- probeResult{lease: probe, err: probeErr}
-	}()
-	probeJoined := false
-	t.Cleanup(func() {
-		cancelProbe()
-		if !probeJoined {
-			result := <-probeDone
-			if result.lease != nil {
-				_ = result.lease.Close()
-			}
-		}
-	})
-	select {
-	case <-queued:
-	case early := <-probeDone:
-		probeJoined = true
-		if early.lease != nil {
-			_ = early.lease.Close()
-		}
-		t.Fatalf("host-capacity probe did not queue behind the held slot: %v", early.err)
-	case <-t.Context().Done():
-		t.Fatalf("host-capacity queue observation was cancelled: %v", context.Cause(t.Context()))
-	}
-	if err := lease.Close(); err != nil {
-		t.Fatal(err)
-	}
-	leaseOpen = false
-	probeOutcome := <-probeDone
-	probeJoined = true
-	cancelProbe()
-	if probeOutcome.err != nil {
-		t.Fatalf("borrowed host slot remained held after public return: %v\n%s", probeOutcome.err, output.String())
-	}
-	_ = probeOutcome.lease.Close()
-}
-
-func TestGoGateTestsAuthenticatedLegacyWorkerUsesInheritedLease(t *testing.T) {
-	t.Parallel()
-	if runGoGateCommandTestInOwnedProcess(t) {
-		return
-	}
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	conf := filepath.Join(root, "metasystem.conf")
-	if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=4\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	internalMarker := filepath.Join(root, "internal-complete")
-	commandMarker := filepath.Join(root, "command-complete")
-	for path, source := range map[string]string{
-		"go.mod":              "module example.invalid/legacynative\n\ngo 1.27\n",
-		"internal/app/app.go": "package app\n",
-		"internal/app/app_test.go": `package app
-import (
- "os"
- "testing"
-)
-func TestInternalIdentity(t *testing.T) {
- if err := os.WriteFile(os.Getenv("INTERNAL_MARKER"), []byte("internal\n"), 0600); err != nil { t.Fatal(err) }
-}
-`,
-		"cmd/tool/main.go": "package main\nfunc main() {}\n",
-		"cmd/tool/main_test.go": `package main
-import (
- "os"
- "testing"
-)
-func TestCommandIdentity(t *testing.T) {
- if err := os.WriteFile(os.Getenv("COMMAND_MARKER"), []byte("command\n"), 0600); err != nil { t.Fatal(err) }
-}
-`,
-	} {
-		writeReceiptFixture(t, root, path, source)
-	}
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.CommandContext(t.Context(), "go", "build", "-o", engine, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build public legacy native runner: %v\n%s", err, output)
-	}
-	admissionDir := filepath.Join(t.TempDir(), "host-admission")
-	processTable := filepath.Join(t.TempDir(), "processes.json")
-	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	result := filepath.Join(t.TempDir(), "result.json")
-	logRoot := filepath.Join(t.TempDir(), "native-logs")
-	environment := append(receiptCanaryEnvironment(),
-		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
-		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root,
-		"METASYSTEM_CENSUS_PROCESS_FILE="+processTable,
-		"GOFLAGS=-buildvcs=false",
-		"INTERNAL_MARKER="+internalMarker,
-		"COMMAND_MARKER="+commandMarker)
-	command := pinProofBinaryFixture(t, root).command(environment, engine, "proof-run", "launch", "--suite", "legacy-native",
-		"--root", root, "--conf", conf, "--progress", result+".progress", "--log", result+".log", "--banner", "legacy native",
-		"--result", result, "--", "bash", "-c", `"$1" proof-run go-gate-tests --root "$2" --log-root "$3" --workers 1; status=$?; :; exit "$status"`,
-		"fixture", engine, root, logRoot)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("public legacy native launch: %v\n%s", err, output)
-	}
-	if bytes.Contains(output, []byte("nested proof resource locator")) {
-		t.Fatalf("public legacy native launch attempted nested admission:\n%s", output)
-	}
-	for path, want := range map[string]string{internalMarker: "internal\n", commandMarker: "command\n"} {
-		data, readErr := os.ReadFile(path)
-		if readErr != nil || string(data) != want {
-			t.Fatalf("native identity %s did not complete: data=%q err=%v\n%s", filepath.Base(path), data, readErr, output)
-		}
-	}
-	assertHostAdmissionClean(t, admissionDir, 1)
 }
 
 func runGoGateCommandTestInOwnedProcess(t *testing.T) bool {

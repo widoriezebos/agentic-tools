@@ -27,11 +27,11 @@ import (
 
 const (
 	// R1/R3 residue: (family, verb) pairs plus dispatchInternal's top-level forms.
-	verbRatchetInternalVerbCeiling = 362
+	verbRatchetInternalVerbCeiling = 301
 	// R4: shell lines that reference the engine.
-	verbRatchetShellEngineCeiling = 2427
+	verbRatchetShellEngineCeiling = 1189
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
-	verbRatchetScriptLinesCeiling = 39819
+	verbRatchetScriptLinesCeiling = 25044
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
 	// U6a raised it by the process boundaries that were shell before: the
@@ -39,7 +39,14 @@ const (
 	// fixture holds (its CLI stand-in children and the host hold exec, which
 	// counts twice: its argv and its exec), and the fake self-test's delegate
 	// children, launched through engineDelegate with the running binary.
-	verbRatchetSelfSubprocessCeiling = 101
+	// Batch 2 (U6a+U6b) raised it again: with dispatch.sh gone, the
+	// supervisor's lifecycle callbacks (__record-cas, __handshake,
+	// __register-custody, __protocol-error, __repair-claim, __cancel-owned,
+	// the self-test's status and reap) exec the engine's delegate entry
+	// directly, where they used to exec dispatch.sh, and the lifecycle
+	// launches the delegate-supervisor entry where it ran an adapter script.
+	// The hops existed before; the witness now sees them.
+	verbRatchetSelfSubprocessCeiling = 124
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
 	verbRatchetInstructionCeiling = 47
@@ -469,6 +476,13 @@ var ratchetModuleSkipNames = []string{".git", "node_modules", "artifacts", "reco
 // ratchetGoSkipPrefixes are module-relative packages compiled only into test
 // binaries; their os.Args[0] is the test binary, not the engine.
 var ratchetGoSkipPrefixes = []string{"internal/testenv", "internal/testutil"}
+
+// ratchetBootstrapPrefixes is the Go bootstrap (design 3.3): a program of its
+// own, run as `go run ./cmd/devgate` from the tree it builds. It is not the
+// engine, so R5 does not count it: its engine calls cross a binary boundary by
+// design (it builds the engine, launches the proof owner from that build, and
+// asks the trusted engine the `proof-run worker-authorized` entry).
+var ratchetBootstrapPrefixes = []string{"cmd/devgate"}
 
 // ratchetEngineNameRE matches identifiers, fields and functions that name the
 // engine executable when the scan cannot follow a local assignment.
@@ -1174,7 +1188,7 @@ func TestVerbRatchetEngineSelfSubprocess(t *testing.T) {
 		file *ast.File
 	}
 	packages := map[string][]parsed{}
-	walkRatchetFiles(t, module, ratchetModuleSkipNames, ratchetGoSkipPrefixes, func(path, rel string) {
+	walkRatchetFiles(t, module, ratchetModuleSkipNames, append(append([]string(nil), ratchetGoSkipPrefixes...), ratchetBootstrapPrefixes...), func(path, rel string) {
 		if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {
 			return
 		}

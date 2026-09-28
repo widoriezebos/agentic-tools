@@ -103,16 +103,6 @@ bare-test	scripts/agents/supervision-fixtures.sh	e5e1a54d9e06cf8639b17b7c4676089
 bare-test	scripts/agents/supervision-fixtures.sh	e941b91ee51ab99eacaf90a103894977a5921f222eb8f068b6ecf0aaf9311afa	[[ "$observed" =~ ^[0-9]+$ && "$observed" -gt "$first" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	e9eaca1d448f58a21a87c03344f6790060224f926e8030d0a7912c5420448b9a	[[ "$decision_surface_stop_hook_assertions" =~ $decision_pattern_regex ]]
 bare-test	scripts/agents/supervision-fixtures.sh	ef5a98ae989018787859aae126ec6eef3f0e455eb3845d554863888d2298b451	[[ "$(census_field "$1" verdict)" == "$2" ]]
-bare-test	scripts/agents/witness-gate-fixtures.sh	0632409191e1bb1bc88a455fbaa0d6c8e0cb1ff275ea67fe18108595d79c76a1	[[ "$wrong_start_pid" == $$ ]]
-bare-test	scripts/agents/witness-gate-fixtures.sh	296e54f9f5a419aa7198dd34d1c7e6b93e1e172c07be013643af5601acf684d5	[[ -n "${METASYSTEM_GATE_WITNESS_EXPORT:-}" && -d "$METASYSTEM_GATE_WITNESS_EXPORT" ]]
-bare-test	scripts/agents/witness-gate-fixtures.sh	8f1bc80aad6d366cbd527c61583cf8122eb4592e97d0bbd32a4f486f85fb5a92	[[ "${GOFLAGS:-}" == -mod=readonly ]]
-bare-test	scripts/agents/witness-gate-fixtures.sh	a9ee6fd5dcdc65a8716ba6b315ebb1f9fb5292058b3d7a332678c7444f784e30	[[ "$frozen_digest" =~ ^[a-f0-9]{64}$ && -d "$frozen_tree" ]]
-bare-test	scripts/agents/witness-gate-fixtures.sh	ad9888472983b0f219b046f54fd6f64a602a2ab683119aa57cca2c748f9b44f0	[[ "$("$source_engine" json get --file "$witness_path" --field controller.pid)" == $$ ]]
-bare-test	scripts/agents/witness-gate-fixtures.sh	b0a9ede68cb1f128777d5cc65fb9d68288d0d8cf5a18ccedcc241a5ebde822a6	[[ -z "${METASYSTEM_GATE_WITNESS_EXPORT:-}" ]]
-bare-test	scripts/agents/witness-gate-fixtures.sh	bf6860d838ea928e930de74542988710e3821ace24ebf466d40b8acb91b9bf5e	[[ "$("$source_engine" json get --file "$witness_path" --field controller.startTicks)" != "$wrong_start_ticks" ]]
-bare-test	scripts/agents/witness-gate-fixtures.sh	ca171606b3fdd9b83b78f3fcc8b45d245b89a3079d2aaea6e0e1c99e2e3f805d	[[ "${GOMODCACHE:-}" == "${WITNESS_FIXTURE_EXPECT_GOMODCACHE:-}" ]]
-bare-test	scripts/agents/witness-gate-fixtures.sh	dcb22c6e5f188538709761280db6ae90b7965dc597a3dfe3ca855d51721a0b02	[[ ${2:-} == ./cmd/metasystem ]]
-bare-test	scripts/agents/witness-gate-fixtures.sh	f258b6f3973a301bab9994e58c1ac5f8bda9b4316a8d3e84039d65d2d8b97d02	[[ "$("$source_engine" json get --file "$witness_path" --field controller.startedAtSec)" != "$wrong_start_started" ]]
 empty-array	scripts/adopt-fixture-helpers.sh	017a08e5fcbf3644eff3a30869b1fdd10c4cae18340c7fe0a37b714bddf71539	joined=$(printf '%s\n' "${models[@]}" | LC_ALL=C sort -u | paste -sd, -)
 empty-array	scripts/agents/fixture-bed-scenarios.sh	b68485456c5d31c3f709e57c6545028680d0867ed4005064c6196f29040c3699	fixture_bed_parent_child_pids="${live_pids[*]}"
 empty-array	scripts/agents/land-fixtures.sh	2888abdbb6415c3f5ff34bb6ebcbea738508282c4056dda7c402035f1cb16c03	for entry in "${receipt_environment[@]}"; do

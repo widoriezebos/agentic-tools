@@ -20,7 +20,6 @@ type relaunchScriptSite struct {
 }
 
 var relaunchScriptSites = []relaunchScriptSite{
-	{name: "go gate", relative: "scripts/agents/go-gate.sh", marker: "METASYSTEM_GO_GATE_RELAUNCHED", diagnostic: "go gate: relaunched child is not an authorized proof worker"},
 	{name: "validator", relative: "scripts/validate-metasystem.sh", marker: "METASYSTEM_VALIDATE_RELAUNCHED", diagnostic: "validate metasystem: relaunched child is not an authorized proof worker"},
 	{name: "adoption fixtures", relative: "scripts/adopt-fixtures.sh", marker: "METASYSTEM_ADOPT_FIXTURES_RELAUNCHED", diagnostic: "adopt fixtures: relaunched child is not an authorized proof worker"},
 }
@@ -78,43 +77,9 @@ func TestProofScriptsExportDepthAndAuthenticationEngine(t *testing.T) {
 	}
 }
 
-func TestGoGateCopiedRootStopsAfterOneUnauthorizedRelaunch(t *testing.T) {
-	t.Parallel()
-	site := relaunchScriptSites[0]
-	fixture := newRelaunchScriptFixture(t, site)
-	environment := fixture.environment(site, 3, true)
-	environment = append(environment, "METASYSTEM_PROOF_AUTH_BIN=")
-	output, status := runRelaunchScript(t, fixture.root, site, environment)
-	if status != 1 || !strings.Contains(output, site.diagnostic) {
-		t.Fatalf("status=%d want=1 diagnostic=%q output:\n%s", status, site.diagnostic, output)
-	}
-	assertRelaunchCount(t, fixture.launches, 1)
-	assertRelaunchCount(t, fixture.workerChecks, 1)
-	if _, err := os.Stat(fixture.progressed); !os.IsNotExist(err) {
-		t.Fatalf("unauthorized child progressed past its worker check: %v", err)
-	}
-}
-
-func TestGoGateRelaunchUsesBuiltEngineForWorkerAuthorization(t *testing.T) {
-	t.Parallel()
-	site := relaunchScriptSites[0]
-	fixture := newRelaunchScriptFixture(t, site)
-	environment := fixture.environment(site, 0, true)
-	environment = append(environment, "METASYSTEM_PROOF_AUTH_BIN=")
-	output, status := runRelaunchScript(t, fixture.root, site, environment)
-	if status == 0 {
-		t.Fatalf("bounded gate fixture unexpectedly completed:\n%s", output)
-	}
-	assertRelaunchCount(t, fixture.launches, 1)
-	assertRelaunchCount(t, fixture.workerChecks, 1)
-	if _, err := os.Stat(fixture.progressed); err != nil {
-		t.Fatalf("authorized child did not reach the bounded Go stub: %v\n%s", err, output)
-	}
-}
-
 func TestValidatorGuardFixtureRequiresAndSelectsExplicitBoundedInvocation(t *testing.T) {
 	t.Parallel()
-	site := relaunchScriptSites[1]
+	site := relaunchScriptSites[0]
 	control := filepath.Join(t.TempDir(), "guard-control.json")
 
 	ambientFixture := newRelaunchScriptFixture(t, site)

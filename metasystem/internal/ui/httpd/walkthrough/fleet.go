@@ -244,7 +244,7 @@ func fixtureLaunches(now time.Time) []launch.Record {
 				{Step: launch.StepTracking, Outcome: launch.StepDone, At: seat.FormatTime(now.Add(-21 * time.Minute))},
 				{
 					Step: launch.StepEngine, Outcome: launch.StepFailed, At: ended,
-					Words: "go-build: refused: the gate fence holds this checkout; run scripts/agents/go-gate.sh --fast and land the red it names before building here",
+					Words: "go-build: refused: the gate fence holds this checkout; run go run ./cmd/devgate static and land the red it names before building here",
 				},
 			},
 			Next: launch.Next{
