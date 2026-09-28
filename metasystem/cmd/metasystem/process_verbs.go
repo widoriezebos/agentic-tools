@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -161,6 +162,9 @@ type processOwners struct {
 	classify      processCallerClassifier
 	transition    func(processScope, int) *stoptransition.Transition
 	armSteps      func(processScope, int, processArmAuthority) (processArmResult, error)
+	// evidenceRoot resolves the evidence root a start says; nil is the
+	// owner over the process environment.
+	evidenceRoot func(conf string) (config.EvidenceRoot, error)
 }
 
 // processArmResult is the arm sequence's report: its lines, and whether it
@@ -293,6 +297,16 @@ func (o processOwners) arm(scope processScope, scale int, temporaryWord, reviewB
 	if err := humanauthority.ValidateTemporaryWordPair(temporaryWord, reviewBy); err != nil {
 		return stoptransition.Report{}, &processRefusal{verb: "arm", checkout: scope.Checkout, sentence: err.Error(), plain: "metasystem system start: " + err.Error(), code: 2}
 	}
+	resolveEvidence := o.evidenceRoot
+	if resolveEvidence == nil {
+		resolveEvidence = func(conf string) (config.EvidenceRoot, error) {
+			return config.ResolveEvidenceRoot(config.EvidenceRootParams{ConfPath: conf})
+		}
+	}
+	evidence, err := resolveEvidence(filepath.Join(scope.Installation, "metasystem.conf"))
+	if err != nil {
+		return stoptransition.Report{}, &processRefusal{verb: "arm", checkout: scope.Checkout, sentence: err.Error(), plain: "metasystem system start: " + err.Error(), code: 1}
+	}
 	transition := o.transition(scope, scale)
 	authority := processArmAuthority{fixtureGranted: fixtureGranted, temporaryWord: temporaryWord, reviewBy: reviewBy}
 	var steps processArmResult
@@ -305,6 +319,7 @@ func (o processOwners) arm(scope processScope, scale int, temporaryWord, reviewB
 	if err != nil {
 		return report, &processRefusal{verb: "arm", checkout: scope.Checkout, sentence: err.Error(), second: armRefusalSecondLine(scope, err), code: 1}
 	}
+	report.Lines = append([]string{evidence.Line()}, report.Lines...)
 	// The start is a repeat only when the fence was already open and the arm
 	// sequence found everything running; otherwise it started something.
 	report.Unchanged = report.Unchanged && steps.unchanged

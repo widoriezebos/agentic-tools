@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -104,6 +105,9 @@ type Deps struct {
 	Genesis func(target string) error
 	// Now is the clock for the goal-free declaration.
 	Now func() time.Time
+	// LookupEnv answers the environment the target's evidence root resolves
+	// under; nil is os.LookupEnv.
+	LookupEnv func(string) (string, bool)
 }
 
 // Refusal is a stop before or during adoption. Remedy names the way forward:
@@ -425,7 +429,18 @@ func Adopt(options Options) (Result, error) {
 	} else {
 		result.Notes = append(result.Notes, "the target is not a git repository; the pre-commit guard is enrolled by the first goal action after git init")
 	}
+	result.Notes = append(result.Notes, evidenceRootNote(target, d.LookupEnv))
 	return result, nil
+}
+
+// evidenceRootNote is the one line adoption says about the target's evidence
+// root; it never requires one, so a refusal is said, not raised.
+func evidenceRootNote(target string, lookup func(string) (string, bool)) string {
+	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{ConfPath: filepath.Join(target, "metasystem.conf"), LookupEnv: lookup})
+	if err != nil {
+		return "evidence root: " + err.Error()
+	}
+	return resolved.Line()
 }
 
 func displayStamp(stamp string) string {

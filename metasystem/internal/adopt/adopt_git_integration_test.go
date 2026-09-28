@@ -464,23 +464,23 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 	// Unreplaced placeholders fail the full audit, which the structural
 	// pass tolerated, and the audit names them as the adopted placeholder
 	// refusal (the retired validator's static scan carried this message;
-	// the audit owns it): first in the project rules, then, with those
-	// filled, in the configuration.
-	for _, fill := range []string{"docs/project-rules.md", ""} {
-		audited, err := audit.AuditMetasystem(target, audit.AuditOptions{})
-		if err != nil || len(audited.Violations) == 0 {
-			t.Fatalf("the audit accepted unreplaced placeholders (%q still unfilled): %v", fill, err)
-		}
-		if !hasLine(audited.Violations, "adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf") {
-			t.Fatalf("the audit did not name the adopted placeholder refusal (%q still unfilled): %q", fill, audited.Violations)
-		}
-		if fill != "" {
-			path := filepath.Join(target, fill)
-			filled := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(readText(t, path), "filled")
-			if err := os.WriteFile(path, []byte(filled), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
+	// the audit owns it) in the project rules. With those filled the audit
+	// passes: the configuration carries nothing to fill, since the evidence
+	// root has a compiled-in default (ERD-04).
+	audited, err := audit.AuditMetasystem(target, audit.AuditOptions{})
+	if err != nil || !hasLine(audited.Violations, "adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf") {
+		t.Fatalf("the audit did not name the adopted placeholder refusal in the project rules: %v %q", err, audited.Violations)
+	}
+	path := filepath.Join(target, "docs", "project-rules.md")
+	filled := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(readText(t, path), "filled")
+	if err := os.WriteFile(path, []byte(filled), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if audited, err := audit.AuditMetasystem(target, audit.AuditOptions{}); err != nil || len(audited.Violations) != 0 {
+		t.Fatalf("the filled adoption still fails the audit: %v %q", err, audited.Violations)
+	}
+	if last := result.Notes[len(result.Notes)-1]; !strings.HasPrefix(last, "evidence root: ") {
+		t.Fatalf("adoption did not say the evidence root: %v", result.Notes)
 	}
 }
 
