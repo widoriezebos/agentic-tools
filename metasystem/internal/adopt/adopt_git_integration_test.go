@@ -93,7 +93,7 @@ func moduleRoot(t *testing.T) string {
 // entries only: adoption drops it, and the tests prove it is dropped.
 func copyModule(from, to string) error {
 	history := map[string]bool{"plans/README.md": true, "plans/designs/verbs-object-action.md": true,
-		"records/misc/fleet-coordinator-brain-role-packet.md": true, "records/README.md": true}
+		"records/README.md": true}
 	return filepath.WalkDir(from, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -423,6 +423,10 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 	// like the coverage floors: it stays home.
 	if exists(filepath.Join(target, "testing-parallel-ratchet.json")) {
 		t.Fatal("adoption shipped the template's parallel ratchet")
+	}
+	// The brain's role packet is compiled into the engine; no copy ships.
+	if exists(filepath.Join(target, "records", "misc")) {
+		t.Fatal("adoption shipped a records/misc tree")
 	}
 	for _, dir := range []string{"internal", "cmd", "artifacts"} {
 		if info, err := os.Stat(filepath.Join(target, dir)); err != nil || !info.IsDir() {
@@ -1083,7 +1087,6 @@ func TestAdoptGitIntegrationWritesOnlyTheDeclaredInventory(t *testing.T) {
 		"metasystem.conf": true, "plans/goals-accepted.json": true, "bin/metasystem": true, ".github/workflows/metasystem.yml": true,
 		"memory/known-issues.md": true, "memory/instruction-ledger.md": true, "memory/rulings.md": true,
 		"plans/goals.md": true, "plans/README.md": true, "memory/README.md": true, "records/README.md": true,
-		"records/misc/fleet-coordinator-brain-role-packet.md": true,
 	}
 	for _, runtime := range []string{"claude", "codex"} {
 		t.Run(runtime, func(t *testing.T) {

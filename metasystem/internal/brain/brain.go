@@ -5,6 +5,7 @@ package brain
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,8 +29,22 @@ const (
 	DeclaredAtBytes = 20
 	HeaderBytes     = 320
 
-	PacketRelativePath = "records/misc/fleet-coordinator-brain-role-packet.md"
+	// PacketSource names where the role packet's text is kept in the
+	// engine source; the engine never reads it from a checkout.
+	PacketSource = "internal/brain/role-packet.md"
 )
+
+// rolePacket is the brain seat's role packet and standing instruction,
+// compiled into the engine: data the engine reads to decide a seat's
+// behaviour is source code.
+//
+//go:embed role-packet.md
+var rolePacket []byte
+
+// RolePacket returns a copy of the compiled-in role packet.
+func RolePacket() []byte {
+	return append([]byte(nil), rolePacket...)
+}
 
 type State string
 
@@ -373,38 +388,30 @@ func canonicalPath(path string) (string, error) {
 	return filepath.Clean(absolute), nil
 }
 
-// PhaseOne reads only the declaration, ledger identity supplied by the
-// caller, and role packet. Its returned text is immutable input to the
-// bounded second boot phase.
-func PhaseOne(stateRoot, repo, ledgerIdentity string, bound int) (ReadResult, string) {
+// PhaseOne reads only the declaration, the ledger identity supplied by the
+// caller, and the compiled-in role packet. Its returned text is immutable
+// input to the bounded second boot phase.
+func PhaseOne(stateRoot, ledgerIdentity string, bound int) (ReadResult, string) {
 	state := Read(stateRoot, ledgerIdentity)
 	if state.State == Undeclared {
 		return state, ""
 	}
-	header := fmt.Sprintf("BRAIN SEAT declaration unreadable for ledger %s. The standing instruction is the record at %s.", ledgerIdentity, PacketRelativePath)
+	header := fmt.Sprintf("BRAIN SEAT declaration unreadable for ledger %s. The standing instruction is the engine's compiled role packet (%s).", ledgerIdentity, PacketSource)
 	if state.State == Declared {
-		header = fmt.Sprintf("BRAIN SEAT %s for ledger %s, declared by %s %s. The standing instruction is the record at %s.", state.Record.Machine, state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, PacketRelativePath)
+		header = fmt.Sprintf("BRAIN SEAT %s for ledger %s, declared by %s %s. The standing instruction is the engine's compiled role packet (%s).", state.Record.Machine, state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, PacketSource)
 	}
 	parts := []string{header}
 	if state.State == Corrupt {
 		parts = append(parts, RemedialRefusal(state.Reason, stateRoot))
 	}
-	packetPath := filepath.Join(repo, filepath.FromSlash(PacketRelativePath))
-	packet, err := os.ReadFile(packetPath)
-	if err != nil {
-		parts = append(parts, fmt.Sprintf("THE ROLE PACKET IS MISSING at %s (%v); this seat is declared brain and has no instruction: take no work, tell Wido", packetPath, err))
+	whole := len(header) + 1 + len(rolePacket)
+	if whole <= bound*60/100 {
+		parts = append(parts, string(rolePacket))
 		return state, strings.Join(parts, "\n")
 	}
-	if len(header)+1+len(packet) <= bound*60/100 {
-		parts = append(parts, string(packet))
-		return state, strings.Join(parts, "\n")
-	}
-	parts = append(parts, fmt.Sprintf("PACKET TOO LARGE FOR THIS CHANNEL (%d of %d); read the whole record before anything else", len(packet), bound))
-	if standing := standingInstruction(packet); standing != "" {
-		parts = append(parts, standing)
-	} else {
-		parts = append(parts, fmt.Sprintf("THE ROLE PACKET IS MISSING at %s (section \"The standing instruction\" was not found); this seat is declared brain and has no instruction: take no work, tell Wido", packetPath))
-	}
+	// The smallest bound whose 60 percent share holds the whole packet.
+	parts = append(parts, fmt.Sprintf("PACKET TOO LARGE FOR THIS CHANNEL (%d of %d); read it whole with `metasystem brain boot --bytes %d --read-only` before anything else", len(rolePacket), bound, (whole*100+59)/60))
+	parts = append(parts, standingInstruction(rolePacket))
 	return state, strings.Join(parts, "\n")
 }
 

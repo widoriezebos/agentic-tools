@@ -71,7 +71,7 @@ var newBrainBootTimer = func(duration time.Duration) brainBootTimer {
 func runBrainBootCommand(args []string) int {
 	flags := flag.NewFlagSet("brain boot", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout state root")
-	repo := pathFlag(flags, "repo", ".", "checkout containing the role packet")
+	repo := pathFlag(flags, "repo", ".", "checkout the optional boot inputs are read from")
 	bound := flags.Int("bytes", 10000, "maximum payload bytes")
 	deadlineMS := flags.Int("deadline-ms", 5000, "hard deadline in milliseconds")
 	readOnly := flags.Bool("read-only", false, "compose context without recording delivery")
@@ -128,7 +128,7 @@ func composeBrainBootModeWithIdentity(root, repo string, bound, deadlineMS int, 
 
 func composeBrainBootWith(root, repo string, bound, deadlineMS int, readOnly bool, deps brainBootDependencies) (brainBootOutput, error) {
 	started := deps.now()
-	state, phaseOne := brain.PhaseOne(root, repo, deps.ledgerIdentity(root), bound)
+	state, phaseOne := brain.PhaseOne(root, deps.ledgerIdentity(root), bound)
 	if state.State == brain.Undeclared {
 		return brainBootOutput{Declared: false}, nil
 	}

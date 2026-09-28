@@ -618,20 +618,8 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 		return refuse(CodeRefused, fmt.Sprintf("cannot unpack the template payload: %v", err), "repair the template checkout")
 	}
 
-	// The brain's role packet lives under records/; keep it without
-	// shipping the template's history.
-	kept := map[string][]byte{}
-	for _, rel := range []string{"records/misc/fleet-coordinator-brain-role-packet.md"} {
-		path := filepath.Join(stage, filepath.FromSlash(rel))
-		if !regularFile(path) {
-			return refuse(CodeRefused, "the payload is missing "+rel, "restore it in the template, commit, then run the same command again")
-		}
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return refuse(CodeRefused, readErr.Error(), "repair the template checkout")
-		}
-		kept[rel] = data
-	}
+	// records/ is the template's history; the brain's role packet is
+	// compiled into the engine, so nothing under it ships.
 	if err := os.RemoveAll(filepath.Join(stage, "records")); err != nil {
 		return refuse(CodeRefused, err.Error(), "retry")
 	}
@@ -668,9 +656,6 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 		"memory/known-issues.md":       []byte(knownIssues),
 		"records/README.md":            []byte(recordsReadme),
 		"plans/goals.md":               []byte(GoalFreeLedger(options.Deps.Now())),
-	}
-	for rel, data := range kept {
-		files[rel] = data
 	}
 	for rel, data := range files {
 		if err := writeFile(filepath.Join(stage, filepath.FromSlash(rel)), data, 0o644); err != nil {

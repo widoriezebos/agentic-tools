@@ -659,9 +659,11 @@ The fixture that proves it is `brain-absent-node-proceeds` (decision 8).
   decide; the hook relays JSON, advances the brain's cursor when told, and
   posts the status when told. Without the engine it relays one notice and
   nothing else.
-- The packet's text lives in records/misc/fleet-coordinator-brain-role-packet.md
-  and is read at boot. No copy, no excerpt in code; the shrunk form is the
-  record's own section, read by heading at boot.
+- The packet's text lives in internal/brain/role-packet.md and is compiled
+  into the engine (repo-hygiene C4, 2026-09-29: data the engine reads to
+  decide its behaviour is source code; it was
+  records/misc/fleet-coordinator-brain-role-packet.md, read at boot). One
+  copy; the shrunk form is the packet's own section, found by heading.
 - The ledger's bytes and verbs are unchanged. The one new verb family is
   `brain`; the new registry declarations are `StartContextField`,
   `StartContextBytes`, and `StartContextSources`; the digest package gains a

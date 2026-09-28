@@ -107,8 +107,7 @@ func TestBrainBedBootCaps(t *testing.T) {
 	if code, _, stderr := b.declare(strings.Repeat("b", 64)); code != 0 {
 		t.Fatalf("the maximal declaration was refused: %d %s", code, stderr)
 	}
-	b.writePacket(t)
-	_, payload := brain.PhaseOne(b.root, b.root, brainBedLedger, 10000)
+	_, payload := brain.PhaseOne(b.root, brainBedLedger, 10000)
 	header, _, _ := strings.Cut(payload, "\n")
 	if len(header) > brain.HeaderBytes {
 		t.Fatalf("maximal declaration produced a %d-byte header", len(header))
@@ -210,20 +209,11 @@ func TestBrainBedVerbsHumanOnly(t *testing.T) {
 	}
 }
 
-func (b *brainBed) writePacket(t *testing.T) []byte {
+// packet is the role packet a declared brain boots with: the one compiled
+// into the engine.
+func (b *brainBed) packet(t *testing.T) []byte {
 	t.Helper()
-	packet, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(brain.PacketRelativePath)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(b.root, filepath.FromSlash(brain.PacketRelativePath))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, packet, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return packet
+	return brain.RolePacket()
 }
 
 // declaredBootBed is a checkout declared the brain with the shipped role
@@ -234,7 +224,7 @@ func declaredBootBed(t *testing.T) (*brainBed, []byte) {
 	if code, _, stderr := b.declare("Wido"); code != 0 {
 		t.Fatalf("declare failed: %d %s", code, stderr)
 	}
-	return b, b.writePacket(t)
+	return b, b.packet(t)
 }
 
 func (b *brainBed) writeFile(relative, body string) {
