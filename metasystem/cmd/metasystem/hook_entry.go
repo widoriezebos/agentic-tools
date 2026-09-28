@@ -168,6 +168,10 @@ func stopDeadlineFixtureEvent(ctx context.Context, installation string) (<-chan 
 // diagnostics reach the hook's stderr as the verbs' did.
 type hookOwners struct {
 	diagnostics io.Writer
+	// engineBuild makes the bootstrap build command, run in the
+	// installation; nil is `go run ./cmd/devgate build`. Tests stand in for
+	// the Go toolchain here.
+	engineBuild func() *exec.Cmd
 }
 
 func (o hookOwners) diagnose(format string, args ...any) {
@@ -640,12 +644,16 @@ func (o hookOwners) UnmigratableRetainedPlans(string) ([]string, error) { return
 // the hook: in its own session, logging to the bootstrap log, holding the
 // proof mutation lock (handed to the build as an inherited descriptor, so no
 // attempt is admitted while the engine changes) and named by the bootstrap
-// fence. It returns once the build has started: through the Go bootstrap
-// when the tree carries it, else the fenced build script. A live fence means
-// a rebuild already runs; a held proof lock refuses without waiting.
+// fence. It returns once the build has started through the Go bootstrap,
+// `go run ./cmd/devgate build`; an installation without cmd/devgate cannot
+// rebuild and is refused. A live fence means a rebuild already runs; a held
+// proof lock refuses without waiting.
 func (o hookOwners) StartEngineRebuild(installation string) error {
 	if hooks.BootstrapFenceHeld(installation, hookProcessAlive) {
 		return nil
+	}
+	if info, err := os.Stat(filepath.Join(installation, "cmd", "devgate")); err != nil || !info.IsDir() {
+		return fmt.Errorf("the installation carries no cmd/devgate, so its engine cannot be rebuilt here: build it with go run ./cmd/devgate build from a complete metasystem tree")
 	}
 	lock, err := proofrun.TryAcquireMutation(installation)
 	if err != nil {
@@ -661,11 +669,9 @@ func (o hookOwners) StartEngineRebuild(installation string) error {
 		return err
 	}
 	defer logFile.Close()
-	var command *exec.Cmd
-	if info, err := os.Stat(filepath.Join(installation, "cmd", "devgate")); err == nil && info.IsDir() {
-		command = exec.Command("go", "run", "./cmd/devgate", "build")
-	} else {
-		command = exec.Command("bash", "scripts/agents/go-build.sh")
+	command := exec.Command("go", "run", "./cmd/devgate", "build")
+	if o.engineBuild != nil {
+		command = o.engineBuild()
 	}
 	command.Dir = installation
 	command.Stdout, command.Stderr = logFile, logFile

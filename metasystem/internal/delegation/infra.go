@@ -73,7 +73,7 @@ func (s *session) engineSkewPreflight(stamp string) error {
 		}
 	}
 	if checkoutCommit != "" && relevant {
-		return s.die(1, fmt.Sprintf("dispatch refused: engine commit %s is older than checkout commit %s and engine or agent scripts changed; run scripts/agents/go-build.sh, then steward arm", stamp, checkoutCommit))
+		return s.die(1, fmt.Sprintf("dispatch refused: engine commit %s is older than checkout commit %s and engine or agent scripts changed; run go run ./cmd/devgate build, then steward arm", stamp, checkoutCommit))
 	}
 	return nil
 }

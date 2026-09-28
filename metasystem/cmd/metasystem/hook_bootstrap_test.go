@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -36,10 +37,11 @@ func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 			_ = file.Close()
 		}
 	})
-	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(installation, "cmd", "devgate"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := testexec.WriteFile(filepath.Join(installation, "scripts", "agents", "go-build.sh"), []byte("#!/usr/bin/env bash\n"+
+	build := filepath.Join(t.TempDir(), "build")
+	if err := testexec.WriteFile(build, []byte("#!/usr/bin/env bash\n"+
 		"printf '%s\\n' \"$$\" >>"+shellQuote(record)+"\n"+
 		"read -r _ <"+shellQuote(release)+" || true\n"+
 		"echo 'go-build: bin/metasystem @ fixture'\n"+
@@ -47,7 +49,9 @@ func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	owners := hookOwners{diagnostics: io.Discard}
+	// The bootstrap build is cmd/devgate's; the fixture stands in for the Go
+	// toolchain through the owner's own injection point.
+	owners := hookOwners{diagnostics: io.Discard, engineBuild: func() *exec.Cmd { return exec.Command(build) }}
 	if err := owners.StartEngineRebuild(installation); err != nil {
 		t.Fatal(err)
 	}
@@ -100,5 +104,25 @@ func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 	}
 	if hooks.BootstrapFenceHeld(installation, hookProcessAlive) {
 		t.Fatal("a finished build still holds the fence")
+	}
+}
+
+// An installation without cmd/devgate cannot rebuild its engine: the
+// go-build.sh fallback is gone (verbs-object-action U7c), so the owner
+// refuses, naming the bootstrap, instead of starting a build that cannot run.
+func TestStartEngineRebuildRefusesAnInstallationWithoutDevgate(t *testing.T) {
+	t.Parallel()
+	installation := t.TempDir()
+	started := false
+	owners := hookOwners{diagnostics: io.Discard, engineBuild: func() *exec.Cmd {
+		started = true
+		return exec.Command("true")
+	}}
+	err := owners.StartEngineRebuild(installation)
+	if err == nil || !strings.Contains(err.Error(), "cmd/devgate") || started {
+		t.Fatalf("rebuild without cmd/devgate = %v, started %t", err, started)
+	}
+	if hooks.BootstrapFenceHeld(installation, hookProcessAlive) {
+		t.Fatal("a refused rebuild left the bootstrap fence held")
 	}
 }
