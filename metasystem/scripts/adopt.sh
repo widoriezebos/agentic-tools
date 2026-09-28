@@ -91,6 +91,18 @@ enrolls_guard() {
   [[ $rc -eq 42 && "$out" == *"guard-probe-ack $nonce"* ]]
 }
 
+# A hook this program (or the engine's enrollment) wrote, recognized
+# without executing it: the dynamic toplevel resolution plus either the
+# engine guard entry or the retired script guard's name. Ours upgrades in
+# place; a foreign hook is preserved as pre-commit.local.
+is_our_composer() {
+  local hook="$1"
+  [[ -f "$hook" ]] || return 1
+  [[ "$(head -n 1 "$hook")" == '#!/usr/bin/env bash' ]] || return 1
+  grep -qF 'git rev-parse --show-toplevel' "$hook" || return 1
+  grep -qF 'internal pre-commit' "$hook" || grep -qF 'pre-commit-guard.sh' "$hook"
+}
+
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 target=
@@ -191,12 +203,11 @@ if probe_out=$(git_target -C "$target" rev-parse --is-inside-work-tree 2>&1); th
   pre_hook_dir=$(git_target -C "$target" rev-parse --path-format=absolute --git-path hooks)
   # This PRE-WRITE gate must not execute foreign hook code (the
   # zero-write refusal would otherwise have side effects), so it
-  # uses a non-executing heuristic: our composers' dynamic guard
-  # resolution marker. The authoritative behavioral probe runs at
-  # the post-payload enrollment phase.
+  # uses a non-executing heuristic: our composers' shape marker. The
+  # authoritative behavioral probe runs at the post-payload enrollment
+  # phase.
   if [[ -e "$pre_hook_dir/pre-commit" && -e "$pre_hook_dir/pre-commit.local" ]] \
-    && ! { grep -qF 'git rev-parse --show-toplevel' "$pre_hook_dir/pre-commit" \
-           && grep -qF 'pre-commit-guard.sh' "$pre_hook_dir/pre-commit"; }; then
+    && ! is_our_composer "$pre_hook_dir/pre-commit"; then
     die 1 "target carries both pre-commit and pre-commit.local and neither enrolls the guard; compose them by hand, then re-run adoption"
   fi
 elif [[ "$probe_out" != *"not a git repository"* ]]; then
@@ -463,7 +474,7 @@ echo "  1. Replace testing.json with a reviewed application test contract; until
 echo "  2. Fill docs/project-rules.md with verified project facts (commands, invariants, budgets, reserved decisions)."
 echo "  3. Fill metasystem.conf with verified models, tiers, and the durable evidence root."
 echo "  4. Commit and publish those reviewed initialization bytes from the enrolled human terminal, migrate the committed goal ledger, then fast-forward the published baseline before opening the first implementation goal."
-echo "  5. Run test run --mode auto --purpose delivery, project it with landing test-receipt --mode auto, and use the normal commit/land wrappers for the first agent change."
+echo "  5. Run test run --mode auto --purpose delivery, project it with landing test-receipt --mode auto, and land the first agent change with bin/metasystem work land."
 echo "  Or run the guided path for both plus covenant v1 and the first goals: the inception interview (skills/inception/SKILL.md), on the coordinator seat, with the human present."
 # --git-common-dir answers relative to the target, so resolve it there or the
 # hook lands wherever this script happens to be standing (it once created a
@@ -487,36 +498,54 @@ if git_target -C "$target" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     "$target"|"$target"/*|"$common_real"|"$common_real"/*) ;;
     *) die 1 "the target's hooks directory $hook_dir is outside the repository (shared core.hooksPath); enroll the guard by hand, then re-run adoption" ;;
   esac
-  # The composer runs the guard FIRST, then hands off to whatever hook
-  # the project already had (preserved as pre-commit.local). Declining
-  # to enroll because a hook existed left the ledger fence unenforced
-  # in exactly the repositories that care about their hooks (F15).
-  # The guard path is prefix-aware (a target nested below its git
-  # toplevel resolves under its own prefix) and the relative part
-  # rides SINGLE-QUOTED so lawful path bytes never become syntax:
-  # the template carries a placeholder, substituted once below.
+  # The composer runs the engine's guard entry FIRST, then hands off to
+  # whatever hook the project already had (preserved as
+  # pre-commit.local). Declining to enroll because a hook existed left
+  # the ledger fence unenforced in exactly the repositories that care
+  # about their hooks (F15). The text is byte-for-byte the engine's own
+  # composer (internal/ledgerfence composerFor): the installation prefix
+  # (a target nested below its git toplevel) rides SINGLE-QUOTED so
+  # lawful path bytes never become syntax, and the body resolves the
+  # engine per invocation, falling back to the primary checkout's engine
+  # for a linked worktree, and fails closed when none runs the guard.
   target_prefix=$(git_target -C "$target" rev-parse --show-prefix)
-  guard_rel="${target_prefix}scripts/agents/pre-commit-guard.sh"
-  guard_rel_quoted="'${guard_rel//\'/\'\\\'\'}'"
-  composer='#!/usr/bin/env bash
-guard="$(git rev-parse --show-toplevel)/"__GUARD_REL__
-if [[ ! -x "$guard" ]]; then
-  echo "pre-commit: the metasystem ledger guard is missing at $guard; refusing to commit without the fence" >&2
+  prefix_quoted="'$(printf '%s' "$target_prefix" | sed "s/'/'\\\\''/g")'"
+  composer_body='installation="$(git rev-parse --show-toplevel)/$prefix"
+engine="${installation}bin/metasystem"
+if [[ ! -x "$engine" ]]; then
+  engine="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/${prefix}bin/metasystem"
+fi
+if [[ ! -x "$engine" ]]; then
+  echo "pre-commit: no metasystem engine at $engine runs the ledger fence, so the commit is refused; build one with: go run ./cmd/devgate build" >&2
   exit 1
 fi
-"$guard" || exit $?
+"$engine" internal pre-commit --root "$installation"
+status=$?
+if [[ $status -eq 2 ]]; then
+  echo "pre-commit: the engine at $engine does not run the pre-commit guard; rebuild it with: go run ./cmd/devgate build" >&2
+fi
+[[ $status -eq 0 ]] || exit $status
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 if [[ -x "$here/pre-commit.local" ]]; then
   exec "$here/pre-commit.local" "$@"
 fi
 exit 0
 '
-  composer=${composer/__GUARD_REL__/$guard_rel_quoted}
-  if [[ -e "$hook_dir/pre-commit" ]] && enrolls_guard "$hook_dir/pre-commit"; then
+  composer="#!/usr/bin/env bash"$'\n'"prefix=${prefix_quoted}"$'\n'"${composer_body}"
+  if [[ -e "$hook_dir/pre-commit" ]] && [[ "$(cat "$hook_dir/pre-commit"; printf x)" == "${composer}x" ]] \
+    && enrolls_guard "$hook_dir/pre-commit"; then
+    echo "pre-commit guard already enrolled in the target's hook; left as is"
+  elif [[ -e "$hook_dir/pre-commit" ]] && is_our_composer "$hook_dir/pre-commit"; then
+    # A composer of our own shape (the current one, or a retired
+    # script-guard one) is rewritten in place: the local dispatch
+    # stays where it is.
+    printf '%s' "$composer" >"$hook_dir/pre-commit"
+    chmod +x "$hook_dir/pre-commit"
+    echo "pre-commit guard composer upgraded in place to the engine guard"
+  elif [[ -e "$hook_dir/pre-commit" ]] && enrolls_guard "$hook_dir/pre-commit"; then
     echo "pre-commit guard already enrolled in the target's hook; left as is"
   else
-    if [[ -e "$hook_dir/pre-commit" && -e "$hook_dir/pre-commit.local" ]] \
-      && ! enrolls_guard "$hook_dir/pre-commit"; then
+    if [[ -e "$hook_dir/pre-commit" && -e "$hook_dir/pre-commit.local" ]]; then
       # Never clobber (R2-15) — and never limp on either: adoption
       # itself performs goal mutations (genesis), and the CLI's
       # enrollment refuses this exact shape, so a warn-and-continue

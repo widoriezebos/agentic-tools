@@ -927,30 +927,34 @@ case "$fixture_scenario" in
 	' _ "$measure_root" "$landing_goal"
 	git -C "$measure_root" revert --no-commit "$revert_target"
 	printf '%s\n' 'revert the landing measurement target' >"$tmp/landing-message"
-	land_engine=$tmp/wait-measure-land-engine
-	land_sample_log=$tmp/wait-measure-land-sample
-	cat >"$land_engine" <<'LAND_ENGINE'
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ ${1:-} == util && ${2:-} == bootclock ]]; then
-  sample=$("${MEASURE_REAL_ENGINE:?}" "$@")
-  printf '%s\n' "$sample" >"${MEASURE_BOOT_LOG:?}"
-  printf '%s\n' "$sample"
-  exit 0
-fi
-exec "${MEASURE_REAL_ENGINE:?}" "$@"
-LAND_ENGINE
-	chmod +x "$land_engine"
-	MEASURE_REAL_ENGINE="$measure_engine" MEASURE_BOOT_LOG="$land_sample_log" METASYSTEM_BIN="$land_engine" \
-	  METASYSTEM_OWNER_LINEAGE=wait-measure-lineage \
-	  harness_fixture_without_outer_proof bash "$measure_root/scripts/agents/land.sh" -m "$tmp/landing-message" --goal "$landing_goal" \
-	    --direct-fix exact-revert --revert-of "$revert_target" --staged-only --skip-transport \
-	    >"$tmp/landing.out" 2>&1 \
-	  || { echo "wait-measure-fake land.sh failed" >&2; tail -n 80 "$tmp/landing.out" >&2; exit 1; }
+	# The landing path (work land, internal/landing/landpath) samples the boot
+	# clock before its push, commits with the Goal-Item and the evaluator's
+	# Landing-Provenance trailers, and, once origin carries the landed commit,
+	# hints the goal's waiters with that sample and the landed head as the
+	# publication. A landing through it needs retained delivery proof this bed
+	# does not build, so the bed publishes the exact revert the same way: the
+	# engine's own landing observation for the reverted tree, the sample, the
+	# stamped commit, the push, then the engine's goal hint. The landing path's
+	# own sample-and-hint order is its Go tests'.
+	landing_tree=$(git -C "$measure_root" write-tree)
+	landing_observation=$("$measure_engine" landing observe --root "$measure_root" --tree "$landing_tree" \
+	  --goal "$landing_goal" --direct-fix exact-revert --revert-of "$revert_target" --actor wait-measure+wait-measure-lineage)
+	landing_provenance=$("$measure_engine" json get --value "$landing_observation" --field provenance)
+	landing_verdict=$("$measure_engine" json get --value "$landing_observation" --field verdictTrailer)
+	case "$landing_verdict" in
+	  pass | pass\ *) ;;
+	  *) echo "wait-measure-fake: the exact revert did not observe as a passing landing: $landing_observation" >&2; exit 1 ;;
+	esac
+	read -r landing_boot_id landing_sample < <("$measure_engine" util bootclock)
+	git -C "$measure_root" commit -q -F "$tmp/landing-message" --trailer "Goal-Item: $landing_goal" \
+	  --trailer "Landing-Provenance: $landing_provenance" --trailer "Landing-Provenance-Verdict: $landing_verdict"
+	landing_head=$(git -C "$measure_root" rev-parse HEAD)
+	git -C "$measure_root" push -q origin main
+	"$measure_engine" internal wait notify --root "$measure_root" --goal "$landing_goal" \
+	  --began-boot-nanos "$landing_sample" --boot-id "$landing_boot_id" --publication-id "$landing_head" >/dev/null
 	wait_until "landing wait returns" bash -c '! kill -0 "$1" 2>/dev/null' _ "$landing_wait_pid"
 	wait "$landing_wait_pid"
 	grep -Fq '"exitCode":0' "$tmp/landing-wait.out" || { cat "$tmp/landing-wait.out" >&2; exit 1; }
-	landing_sample=$(awk '{print $2}' "$land_sample_log")
 
 	measure_report=$tmp/wait-measure.txt
 	"$measure_engine" internal wait measure --root "$measure_root" >"$measure_report"
@@ -970,7 +974,7 @@ LAND_ENGINE
 	  || { echo "unhinted bracket was not wider: control=$control_uncertainty unhinted=$unhinted_uncertainty" >&2; cat "$measure_report" >&2; exit 1; }
 	landing_lower=$(grep "\"targetId\":\"$landing_goal\"" "$measure_report" | sed -n 's/.*"publishedLower":\([0-9][0-9]*\).*/\1/p')
 	[[ "$landing_lower" == "$landing_sample" ]] \
-	  || { echo "landing lower edge $landing_lower differs from land.sh sample $landing_sample" >&2; cat "$measure_report" >&2; exit 1; }
+	  || { echo "landing lower edge $landing_lower differs from the landing's boot sample $landing_sample" >&2; cat "$measure_report" >&2; exit 1; }
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0
@@ -3179,8 +3183,7 @@ if [[ "$fixture_scenario" == stop-hook-monitor ]]; then
 # session; an unbounded refusal is the loop the design forbids.
 stop_root=$tmp/stop-hook
 mkdir -p "$stop_root/plans" "$stop_root/artifacts/agents/jobs" "$stop_root/artifacts/agents/supervision" "$stop_root/scripts/agents"
-cp "$source_root/scripts/agents/supervision-hook.sh" \
-   "$source_root/scripts/agents/pre-commit-guard.sh" "$stop_root/scripts/agents/"
+cp "$source_root/scripts/agents/supervision-hook.sh" "$stop_root/scripts/agents/"
 # The hook (and the announcement step below) derive the caller's
 # main through the runtime-signature ancestor walk, and that walk
 # reads the adapters from THIS root — without them find-ancestor

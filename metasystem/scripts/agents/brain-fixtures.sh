@@ -53,8 +53,12 @@ setup_ledger() {
   git -C "$bed_clone" config metasystem.goal.machine "$machine"
   git -C "$bed_clone" remote add origin "$bed_origin"
   git -C "$bed_clone" commit -q --allow-empty -m seed
-  mkdir -p "$bed_clone/plans" "$bed_clone/scripts/agents" "$bed_clone/records/misc"
-  cp "$root/scripts/agents/pre-commit-guard.sh" "$bed_clone/scripts/agents/"
+  mkdir -p "$bed_clone/plans" "$bed_clone/scripts/agents" "$bed_clone/records/misc" "$bed_clone/bin"
+  # Goal mutations enroll the ledger fence, whose composer runs the
+  # checkout's own engine: the bed carries an untracked copy.
+  cp "$ms" "$bed_clone/bin/metasystem"
+  chmod 0755 "$bed_clone/bin/metasystem"
+  printf '%s\n' 'bin/' >>"$(git -C "$bed_clone" rev-parse --path-format=absolute --git-path info/exclude)"
   cp -R "$root/scripts/agents/adapters" "$bed_clone/scripts/agents/"
   cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$bed_clone/records/misc/"
   cat >"$bed_clone/plans/goals.md" <<'LEDGER'
@@ -114,6 +118,10 @@ clone_same_ledger() {
   git -C "$destination" config user.email fixture@example.invalid
   git -C "$destination" config metasystem.goal.machine "$machine"
   git -C "$destination" update-ref refs/metasystem/goals/accepted origin/main
+  mkdir -p "$destination/bin"
+  cp "$ms" "$destination/bin/metasystem"
+  chmod 0755 "$destination/bin/metasystem"
+  printf '%s\n' 'bin/' >>"$(git -C "$destination" rev-parse --path-format=absolute --git-path info/exclude)"
 }
 
 if [[ "$fixture_scenario" == brain-boot-caps ]]; then

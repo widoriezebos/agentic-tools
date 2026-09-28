@@ -4959,7 +4959,7 @@ func CarryableName(root, name string) bool {
 		return false
 	}
 	for _, row := range refusal.Rows {
-		if row.Code == name && strings.HasPrefix(row.Override, "land.sh --carried") && row.Pending == "" {
+		if row.Code == name && row.Override == refusal.CarriedLanding && row.Pending == "" {
 			return true
 		}
 	}
@@ -5294,7 +5294,7 @@ func carryDebtText(debt CarryDebt) string {
 	case "inflight":
 		return fmt.Sprintf("carry debt is unpaid: reservation %s on goal %s is in flight (%s)", debt.ID, debt.Goal, debt.Detail)
 	case "unrecorded":
-		return fmt.Sprintf("carry debt is unpaid: commit %s carries word %s without its ledger row; close it with land.sh --carried %s", debt.Detail, debt.ID, debt.ID)
+		return fmt.Sprintf("carry debt is unpaid: commit %s carries word %s without its ledger row; close it with metasystem work land %s --using-exception %s", debt.Detail, debt.ID, carryDebtGoal(debt), debt.ID)
 	default:
 		return "carry debt is unpaid"
 	}
@@ -5356,7 +5356,7 @@ func doneCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id string,
 			return err
 		}
 		if consumption.Kind == "origin" || (consumption.Kind == "none" && now.Before(word.Expires)) {
-			return fmt.Errorf("goal %s has open carry word %s; land it, supersede it, or let it expire; a carried commit without its ledger row must be closed with land.sh --carried %s whether the word is expired or not", id, word.History.Opid, word.History.Opid)
+			return fmt.Errorf("goal %s has open carry word %s; land it, supersede it, or let it expire; a carried commit without its ledger row must be closed with metasystem work land %s --using-exception %s whether the word is expired or not", id, word.History.Opid, id, word.History.Opid)
 		}
 	}
 	return nil
@@ -5476,7 +5476,7 @@ func carrySupersedePrecondition(r VerbRequest, tree *TreeGoals, codeTip string, 
 	}
 	if consumption.Kind != "none" {
 		if consumption.Kind == "origin" {
-			return CarryWord{}, nil, fmt.Errorf("consumed on origin by %s at %s; the record is incomplete: rerun land.sh --carried %s", consumption.ID, codeTip, target.History.Opid)
+			return CarryWord{}, nil, fmt.Errorf("consumed on origin by %s at %s; the record is incomplete: rerun metasystem work land %s --using-exception %s", consumption.ID, codeTip, target.Goal, target.History.Opid)
 		}
 		return CarryWord{}, nil, fmt.Errorf("supersede target consumed by %s", consumption.ID)
 	}
@@ -6087,4 +6087,13 @@ func validHistoryReason(reason string) error {
 // appendNextStep adds text to a next step as one more sentence.
 func appendNextStep(current, addition string) string {
 	return strings.TrimSpace(strings.TrimSpace(current) + " " + strings.TrimSpace(addition))
+}
+
+// carryDebtGoal names the debt's goal for its remedy, or the placeholder G
+// when the debt names none.
+func carryDebtGoal(debt CarryDebt) string {
+	if debt.Goal == "" {
+		return "G"
+	}
+	return debt.Goal
 }

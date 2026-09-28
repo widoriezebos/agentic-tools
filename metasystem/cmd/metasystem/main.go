@@ -147,7 +147,6 @@ func families() []family {
 				{"plan-consistency", "report retired terms still prescribed in plans", runValidatePlanConsistency},
 				{"critique-closed", "join a critic return's findings against the dispositions table", runValidateCritiqueClosed},
 				{"preamble-quotes", "verify role-preamble quote blocks are byte-exact substrings of their sources", runValidatePreambleQuotes},
-				{"wrapper-token", "prove the caller's ancestry contains the live commit wrapper", runValidateWrapperToken},
 				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
 				{"refactor-baseline", "record or check the trusted refactor baseline", runValidateRefactorBaseline},
 				{"skills", "validate every present skill's SKILL.md frontmatter, or the named skill directories", runValidateSkills},
@@ -163,17 +162,11 @@ func families() []family {
 			summary: "classify and record the two bars for a prospective landing",
 			verbs: []verb{
 				{"batch", "join, status, withdraw, owner, tick, or wait for a guarded landing batch", runLandingBatch},
-				{"advance", "rebase a landing commit without moving dirty registers", runLandingAdvance},
-				{"drift", "classify worktree changes tolerated during landing", runLandingDrift},
 				{"observe", "emit a provenance verdict for the prospective project tree", runLandingObserve},
-				{"carry-status", "report a carried word, consumption, reservation, intent, and counselor state", runLandingCarryStatus},
 				{"workspace", "print the delivery workspace projection of a whole-project tree", runLandingWorkspace},
-				{"held", "re-check the goal binding of every commit a push introduces, each at its parent, against the goal endpoint; every route that pushes a landing commit runs it first", runLandingHeld},
-				{"adoption-rulings", "prepare required landing authority while preserving application rulings", runLandingAdoptionRulings},
 				{"park", "durably record one stopped recertified landing attempt", runLandingPark},
+				{"adoption-rulings", "prepare required landing authority while preserving application rulings", runLandingAdoptionRulings},
 				{"test-receipt", "run tests against one exact candidate tree and record their result", runLandingTestReceipt},
-				{"receipt-line", "decide whether a staged landing appends the RECEIPT line for its goal", runLandingReceiptLine},
-				{"sync-transport", "mirror origin's branch head to the transport remote", runLandingSyncTransport},
 			},
 		},
 		{
@@ -357,7 +350,6 @@ func families() []family {
 				{"witness-verify", "compare a tree's manifest digest with a witness", runGateWitnessVerify},
 				{"guard-acquire", "wait for exclusive checkout execution or join the caller's owning chain", runGateGuardAcquire},
 				{"guard-release", "release the invoking process's checkout execution membership", runGateGuardRelease},
-				{"weight-add", "fold a landing's measured weight into the validation accumulator (numstat on stdin)", runGateWeightAdd},
 				{"weight-discharge", "reset validation weight at the exact authorized green-run boundary", runGateWeightDischarge},
 				{"cadence-tick", "run one landing-owner deep validation cadence decision", runGateCadenceTick},
 			},
@@ -443,7 +435,6 @@ func families() []family {
 			name:    "output",
 			summary: "bounded command output retained under the control root",
 			verbs: []verb{
-				{"spill", "retain a command output file and print its reference", runOutputSpill},
 				{"prune", "remove retained output files older than a duration", runOutputPrune},
 			},
 		},
@@ -825,6 +816,9 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 	if args[0] == "hook" {
 		return runHookEntry(args[1:])
 	}
+	if args[0] == "pre-commit" {
+		return runPreCommitEntry(args[1:], stdout, stderr)
+	}
 	if args[0] == "stop" {
 		return runProcessStop(args[1:])
 	}
@@ -920,6 +914,7 @@ func writeUsage(w io.Writer, registered []family) {
 	fmt.Fprintln(w, "       metasystem internal up [--repo <checkout>] [--pid <pid> --start-time <epoch>]")
 	fmt.Fprintln(w, "       metasystem internal up --print-scheduler-entry [--repo <checkout>]")
 	fmt.Fprintln(w, "       metasystem internal hook <runtime> <start|stop|end|receipt|tool>  (run by scripts/agents/supervision-hook.sh)")
+	fmt.Fprintln(w, "       metasystem internal pre-commit --root <installation>  (run by the enrolled git pre-commit hook)")
 	fmt.Fprintln(w, "       metasystem internal stop [--repo <path>] [--installation <dir>] [--all]")
 	fmt.Fprintln(w, "       metasystem internal status [--repo <path>] [--installation <dir>] [--all]")
 	fmt.Fprintln(w, "       metasystem internal arm [--repo <path>] [--installation <dir>] [--all] [--temporary-human-word <word> --review-by <date>]")

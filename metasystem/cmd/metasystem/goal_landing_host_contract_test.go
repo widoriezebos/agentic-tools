@@ -81,6 +81,14 @@ var retiredWithDeletedVerb = map[string]string{
 	"launch-standard/TestUnitFamilyIsRegistered":     "unit run",
 }
 
+// retiredWithDeletedBed names legacy mandatory tests whose only subject was a
+// deleted shell fixture bed; the bed's scenarios moved to named Go tests
+// (verbs-object-action 6.7, U5).
+var retiredWithDeletedBed = map[string]string{
+	"batch-buildcd-standard/TestLandFixtureConfigurationsPinProofAdmission": "land-fixtures.sh",
+	"batch-buildcd-standard/TestLandFixtureScenarioRegistryMatchesCount":    "land-fixtures.sh",
+}
+
 func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract) {
 	t.Helper()
 	installation, err := filepath.Abs(filepath.Join("..", ".."))
@@ -111,16 +119,36 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 	for _, surface := range current.Surfaces {
 		currentSurfaces[surface.ID] = surface
 	}
+	// The landing path's shell beds retired into the landing-path-standard
+	// Go group (U5): a surface that selected a retired bed selects the
+	// group instead, and the beds' own surfaces go with them.
+	landingBeds := map[string]bool{"section/land-fixtures": true, "section/pre-commit-guard-fixtures": true}
+	replaceBeds := func(names []string) []string {
+		var out []string
+		for _, name := range names {
+			if landingBeds[name] {
+				name = "landing-path-standard"
+			}
+			if !slices.Contains(out, name) {
+				out = append(out, name)
+			}
+		}
+		return out
+	}
+	retiredSurfaces := map[string]bool{"land-fixture": true, "pre-commit-guard-fixture": true}
 	for _, old := range previous.Surfaces {
 		now, ok := currentSurfaces[old.ID]
+		if !ok && retiredSurfaces[old.ID] {
+			continue
+		}
 		if !ok {
 			t.Errorf("legacy surface %s disappeared", old.ID)
 			continue
 		}
-		containsAll(old.ID+" standard", now.Standard, old.Standard)
-		containsAll(old.ID+" deep", now.Deep, old.Deep)
-		containsAll(old.ID+" critical", now.Critical, old.Critical)
-		containsAll(old.ID+" cross-cutting", now.CrossCutting, old.CrossCutting)
+		containsAll(old.ID+" standard", now.Standard, replaceBeds(old.Standard))
+		containsAll(old.ID+" deep", now.Deep, replaceBeds(old.Deep))
+		containsAll(old.ID+" critical", now.Critical, replaceBeds(old.Critical))
+		containsAll(old.ID+" cross-cutting", now.CrossCutting, replaceBeds(old.CrossCutting))
 	}
 	containsAll("always canary", current.Always.Canary, previous.Always.Canary)
 	containsAll("always standard", current.Always.Standard, previous.Always.Standard)
@@ -142,6 +170,21 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			"TestSecondSessionCreatesAnIsolatedArmedWorktree",
 			"TestSecondSessionMintsANameAndRefusesUnlawfulOnes",
 			"TestSecondSessionStopsWhenArmingFails",
+		}},
+		// land-fixtures.sh moved into internal/landing/landpath (U5; scenario
+		// map in the unit's evidence).
+		"section/land-fixtures": {replacement: "landing-path-standard", tests: []string{
+			"TestDriverPushRetryRecoversOneMovingOriginRejection",
+			"TestCarriedFreshLandsOneCommitPastOneRefusal",
+			"TestCarriedCrashAfterPushCompletesTheRecord",
+			"TestAbandonRouteNormalRefusesAtTheFetchedParent",
+			"TestAbandonRouteRecertifiedHeldBeforePushAndParks",
+		}},
+		// pre-commit-guard-fixtures.sh moved into landpath.Guard's tests (U5).
+		"section/pre-commit-guard-fixtures": {replacement: "landing-path-standard", tests: []string{
+			"TestGuardLedgerFenceOutranksBothExceptions",
+			"TestGuardNewPlanNeedsAcknowledgment",
+			"TestGuardRefusesPatchBackups",
 		}},
 	}
 	requiredCadence := make([]string, 0, len(previous.Cadence))
@@ -193,6 +236,21 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			}
 			requiredInputs = append(requiredInputs, "metasystem/internal/hooks/**")
 		}
+		if old.ID == "batch-buildcd-standard" {
+			// U5 retired the landing scripts; the landing path is the Go
+			// package the group names instead. Only these exact inputs.
+			retired := map[string]bool{
+				"metasystem/scripts/agents/commit.sh":        true,
+				"metasystem/scripts/agents/land-fixtures.sh": true,
+			}
+			requiredInputs = nil
+			for _, input := range old.Inputs {
+				if !retired[input] {
+					requiredInputs = append(requiredInputs, input)
+				}
+			}
+			requiredInputs = append(requiredInputs, "metasystem/internal/landing/landpath/**")
+		}
 		containsAll(old.ID+" inputs", now.Inputs, requiredInputs)
 		containsAll(old.ID+" packages", now.Packages, old.Packages)
 		containsAll(old.ID+" obligations", now.Obligations, old.Obligations)
@@ -213,6 +271,10 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		for _, name := range oldTests {
 			if verb, retired := retiredWithDeletedVerb[old.ID+"/"+name]; retired {
 				t.Logf("%s %s retired with the deleted verb %s", old.ID, name, verb)
+				continue
+			}
+			if bed, retired := retiredWithDeletedBed[old.ID+"/"+name]; retired {
+				t.Logf("%s %s retired with the deleted bed %s", old.ID, name, bed)
 				continue
 			}
 			requiredNames := []string{name}

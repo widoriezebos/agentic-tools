@@ -23,7 +23,6 @@ func TestHostStaticReproofFixturePrerequisites(t *testing.T) {
 	}
 	for _, id := range []string{
 		"section/supervision-and-census-fixtures",
-		"section/land-fixtures",
 		"section/adoption-fixtures",
 	} {
 		if !slices.Contains(groups[id].Requires, "fast-static-build") {
@@ -58,18 +57,6 @@ func TestGoGateGroupsOwnWholeAttemptAllowance(t *testing.T) {
 		if workers == nil || *workers != 0 {
 			t.Errorf("%s workers=%v, want explicit zero for the whole attempt allowance", id, workers)
 		}
-	}
-}
-
-func TestLandFixtureConsumesWholeAttemptWorkerAllowance(t *testing.T) {
-	t.Parallel()
-	contract, err := Load(filepath.Join("..", "..", "testing.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	workers := groupMap(contract.Groups)["section/land-fixtures"].Resources.Workers
-	if workers == nil || *workers != 0 {
-		t.Fatalf("section/land-fixtures workers=%v, want explicit zero for the whole attempt allowance", workers)
 	}
 }
 

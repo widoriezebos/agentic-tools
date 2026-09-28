@@ -69,7 +69,10 @@ func edgeLedger(t *testing.T) string {
 	root := filepath.Join(t.TempDir(), "clone")
 	runGit(t, t.TempDir(), "clone", "-q", origin, root)
 	runGit(t, root, "config", "metasystem.goal.machine", "mac-ui")
-	writeFixture(t, filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh"), "#!/usr/bin/env bash\nexit 0\n", 0o755)
+	// The ledger fence needs an executable engine to enroll; the installation
+	// keeps its scripts/agents directory.
+	writeFixture(t, filepath.Join(root, "bin", "metasystem"), "#!/usr/bin/env bash\nexit 0\n", 0o755)
+	writeFixture(t, filepath.Join(root, "scripts", "agents", ".gitkeep"), "", 0o644)
 
 	record := &goal.RootRecord{
 		Identity: "01J5X000000000000000000000", FormatVersion: "1",

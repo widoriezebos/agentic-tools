@@ -224,10 +224,14 @@ ledger=$(cat "$clone/plans/goals.md" && printf x) && ledger=${ledger%x}
   sha256="$(shasum -a 256 "$clone/plans/goals.md" | cut -d' ' -f1)" \
   >"$clone/plans/goals-accepted.json"
 "$ms" json set --file "$clone/plans/goals-accepted.json" --int schemaVersion=1
-# The sandbox ships the guard so the CLI's enrollment (R2-11) has
-# something to enroll — a fresh clone has no hooks at all.
-mkdir -p "$clone/scripts/agents"
-cp "$root/scripts/agents/pre-commit-guard.sh" "$clone/scripts/agents/"
+# The sandbox ships an engine so the CLI's enrollment (R2-11) has
+# something to enroll — a fresh clone has no hooks at all, and the
+# composer runs <root>/bin/metasystem internal pre-commit. The engine is
+# a host build, never tracked.
+mkdir -p "$clone/scripts/agents" "$clone/bin"
+cp "$ms" "$clone/bin/metasystem"
+chmod 0755 "$clone/bin/metasystem"
+printf '%s\n' 'bin/' >>"$(git -C "$clone" rev-parse --path-format=absolute --git-path info/exclude)"
 cp -R "$root/scripts/agents/adapters" "$clone/scripts/agents/"
 printf '%s\n' 'metasystem.runtimes=fake' >"$clone/metasystem.conf"
 git -C "$clone" add plans scripts metasystem.conf
@@ -377,7 +381,7 @@ fi
 
 # 2b. The mutation ENROLLED the guard (R2-11): a fresh clone has no
 # hooks, and the migrate installed the composer before publishing.
-grep -q "pre-commit-guard.sh" "$clone/.git/hooks/pre-commit" \
+grep -qF 'internal pre-commit --root "$installation"' "$clone/.git/hooks/pre-commit" \
   || { echo "goal migrate did not enroll the pre-commit guard (R2-11)" >&2; exit 1; }
 
 # 3. The read-side fetch reports the canonical tip and settles on
@@ -669,6 +673,10 @@ if [[ "$fixture_scenario" == proof-grades ]]; then
   git clone -q --bare "$origin" "$proof_grade_arc_origin"
   git clone -q -b main "$proof_grade_arc_origin" "$proof_grade_arc_clone"
   git -C "$proof_grade_arc_clone" config metasystem.goal.machine fixture-arc-machine
+  mkdir -p "$proof_grade_arc_clone/bin"
+  cp "$ms" "$proof_grade_arc_clone/bin/metasystem"
+  chmod 0755 "$proof_grade_arc_clone/bin/metasystem"
+  printf '%s\n' 'bin/' >>"$(git -C "$proof_grade_arc_clone" rev-parse --path-format=absolute --git-path info/exclude)"
 
   # The holder is a signed fake-runtime sibling, never an ancestor of the
   # pseudo-terminal shell. The clone keeps every real runtime signature so
@@ -2288,8 +2296,10 @@ approve_fixture_goal plain-goal --budget box
 other="$tmp/other"
 env -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git clone -q "$origin" "$other"
 git -C "$other" config metasystem.goal.machine fixture-other
-mkdir -p "$other/scripts/agents"
-cp "$root/scripts/agents/pre-commit-guard.sh" "$other/scripts/agents/"
+mkdir -p "$other/scripts/agents" "$other/bin"
+cp "$ms" "$other/bin/metasystem"
+chmod 0755 "$other/bin/metasystem"
+printf '%s\n' 'bin/' >>"$(git -C "$other" rev-parse --path-format=absolute --git-path info/exclude)"
 cp -R "$root/scripts/agents/adapters" "$other/scripts/agents/"
 "$ms" lease announce --root "$other" --session goal-cli-other \
   --pid "$$" --start "$fixture_start" --tag goal-cli-fixture \

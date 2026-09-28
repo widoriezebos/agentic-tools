@@ -137,12 +137,12 @@ The origin/main validator still consumes its four-column compatibility projectio
 | Re-arm | Lane seat | BA11a | `metasystem/cmd/metasystem/rearm_on_landed.go` supplies re-arm behavior. |
 | Proof reservation | Lane seat | BA11b | `metasystem/cmd/metasystem/proof_run.go` owns admission. |
 | Receipt row | Lane seat | BA13 and BA14a | `metasystem/internal/landing/receiptline.go` owns row construction. |
-| Commit | Lane seat | BA14a through BA14b | `metasystem/scripts/agents/commit.sh` remains the invoked boundary. |
-| Push | Lane seat | BA14b | `metasystem/scripts/agents/land.sh` is the old writer being replaced. |
+| Commit | Lane seat | BA14a through BA14b | `metasystem/internal/landing/landpath/commit.go` remains the invoked boundary (formerly `commit.sh`, U5). |
+| Push | Lane seat | BA14b | `metasystem/internal/landing/landpath/land.go` is the old writer being replaced (formerly `land.sh`, U5). |
 | Fast-forward | Lane seat | BA10 | `metasystem/cmd/metasystem/rearm_on_landed.go` is the integration edge. |
 | Goal Next edits | Seat | BA6b | `metasystem/internal/goal/verbs.go` owns the ledger mutation. |
 | Trunk-red record | Seat file hook | BA17 through BA12a | `metasystem/memory/flake-registry.md` is the test-only old sink. |
-| Worktree cleanup | Lane seat | BA14a in P6 | `metasystem/scripts/agents/land.sh` is the old cleanup writer. |
+| Worktree cleanup | Lane seat | BA14a in P6 | `metasystem/internal/landing/landpath/land.go` is the old cleanup writer (formerly `land.sh`, U5). |
 | Reporting | Seat | BA15 | `metasystem/cmd/metasystem/wait_verb.go` is the existing wait boundary. |
 
 BRIEF-B DONE units=24 lines=148 moved-effects=pass

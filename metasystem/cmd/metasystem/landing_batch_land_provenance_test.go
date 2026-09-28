@@ -143,7 +143,7 @@ func landBatchProvenanceBed(t *testing.T, bed batchProvenanceBed) error {
 	if err != nil {
 		return err
 	}
-	seams := batchLandSeams(bed.root, batchProvenanceTestID, record, bed.baseCommit, landingOwnerLineage)
+	seams := batchLandSeamsWithRead(bed.root, batchProvenanceTestID, record, bed.baseCommit, landingOwnerLineage, gitOutput, plantedBatchCommit)
 	seams.VerifySeries = func(units []batch.Unit, _ map[string]string) error {
 		if len(units) == 0 || record.Proof == nil || record.Proof.Status != "green" {
 			return errors.New("provenance fixture has no declared green series")
@@ -360,7 +360,7 @@ func TestBatchLandingVerdictPolicyWithoutGit(t *testing.T) {
 				readCount++
 				return value, nil
 			}
-			seams := batchLandSeamsWithRead(root, batchProvenanceTestID, record, "base", landingOwnerLineage, readGit)
+			seams := batchLandSeamsWithRead(root, batchProvenanceTestID, record, "base", landingOwnerLineage, readGit, plantedBatchCommit)
 			calls := map[string]int{}
 			call := func(name string) { calls[name]++ }
 			seams.Origin = func() (string, error) { call("origin"); return "base", nil }
@@ -481,7 +481,7 @@ func TestBatchLandingVerdictPolicyWithoutGit(t *testing.T) {
 				declaration = []string{"--attested", "source-commit", "--attested-snapshot", "source-tip", "--attested-base", "base"}
 			}
 			wantPrefix := append(declaration, "--goal", "goal-a", "--test-receipt", filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", batchProvenanceTestID+".json"), "-F")
-			if len(lines) != len(wantPrefix)+1 || !reflect.DeepEqual(lines[:len(wantPrefix)], wantPrefix) || !strings.HasPrefix(lines[len(wantPrefix)], filepath.Join(root, ".batch-commit-message-")) {
+			if len(lines) != len(wantPrefix)+1 || !reflect.DeepEqual(lines[:len(wantPrefix)], wantPrefix) || strings.HasPrefix(lines[len(wantPrefix)], root+string(filepath.Separator)) || !strings.HasPrefix(filepath.Base(lines[len(wantPrefix)]), "metasystem-batch-commit-message-") {
 				t.Fatalf("wrapper argv=%q want prefix=%q and message path", lines, wantPrefix)
 			}
 		})

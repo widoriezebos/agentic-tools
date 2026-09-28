@@ -54,16 +54,10 @@ func legacyHumanTerminalRoot(t *testing.T, machine string, pids ...int) (string,
 			t.Fatal(err)
 		}
 	}
-	// The ledger fence enrols the shipped production guard; its caller
-	// question is the one simulated fact, answered as the same person.
-	guardBytes, err := os.ReadFile("../../scripts/agents/pre-commit-guard.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh"), guardBytes, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	stub := "#!/usr/bin/env bash\nset -euo pipefail\n" +
+	// The ledger fence enrols the production guard, the real engine's
+	// pre-commit entry; the caller question is the one simulated fact,
+	// answered as the same person.
+	stub := "#!/usr/bin/env bash\nset -euo pipefail\n" + preCommitEngineDispatch(t) +
 		"if [[ ${1:-} == lease && ${2:-} == classify ]]; then printf '%s\\n' '{\"class\":\"HUMAN\"}'; exit 0; fi\n" +
 		"if [[ ${1:-} == json && ${2:-} == get ]]; then printf '%s\\n' HUMAN; exit 0; fi\nexit 1\n"
 	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte(stub), 0o755); err != nil {
@@ -543,7 +537,7 @@ func TestIntentRepairGoalsGitAdapterAcceptsRemoteHistoryInADeclaredCoordinator(t
 // process seam records the adapter's exact argv, then appends the existing
 // fixture enrolled-human flag and a lineage), the landing owner's staging of
 // the candidate and its RECEIPT line into a main checkout that is behind
-// origin, and the repository's unmodified land.sh --carried --staged-only.
+// origin, and the engine's own carried landing path (landpath.Land).
 // The carried commit refuses until the person's public test run proves the
 // staged candidate; the shown continuation then lands it under the same
 // word. Git is the claim because the candidate, the carry word and the
