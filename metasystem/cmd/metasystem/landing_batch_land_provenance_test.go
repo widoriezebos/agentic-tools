@@ -837,14 +837,14 @@ func TestBatchLastBranchLandingSweepsGoalBranch(t *testing.T) {
 			batchProvenanceWrite(t, filepath.Join(root, "metasystem", "batch-last.go"), "package fixture\n", 0o644)
 			batchProvenanceGit(t, "-C", root, "add", "metasystem/batch-last.go")
 			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-				return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "last", "--root", root})
+				return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "last", "--root", root})
 			})
 			unit := strings.TrimSpace(stdout)
 			if code != 0 || stderr != "" || len(unit) != 40 {
 				t.Fatalf("unit commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 			}
 			code, _, stderr = captureCommandOutput(t, true, true, func() int {
-				return runGoalBranch([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "batch-last-push"})
+				return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "batch-last-push"})
 			})
 			if code != 0 || stderr != "" {
 				t.Fatalf("goal push: code=%d stderr=%q", code, stderr)

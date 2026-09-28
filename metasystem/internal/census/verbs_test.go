@@ -2,11 +2,12 @@ package census
 
 import (
 	"encoding/json"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 // TestAgentAncestorWireShape pins `proc find-ancestor`'s JSON bytes to what

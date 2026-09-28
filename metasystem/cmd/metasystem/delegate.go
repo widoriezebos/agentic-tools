@@ -33,7 +33,22 @@ type delegateOutcome struct {
 // runDelegate is the operator boundary and the delegate lifecycle's process
 // entry: operator forms answer typed JSON; the runtime adapters' "__"
 // callbacks and the guard member wrapper keep their process shape.
-func runDelegate(args []string) int { return runDelegateIn(args, "", os.Stdout, os.Stderr) }
+func runDelegate(args []string) int {
+	// An operator form begins with one of its options; a lifecycle
+	// callback begins with its __ word and parses its own options.
+	if len(args) > 0 && strings.HasPrefix(args[0], "--") && !delegateFormOptions[strings.SplitN(args[0], "=", 2)[0]] {
+		return refuseUnknownOption(nil, "delegate", args[0], "it takes --revive, --cancel, --follow-up, --adapter-selftest, a dispatch's --role/--brief/--goal/--destructive-reach, or a lifecycle callback")
+	}
+	return runDelegateIn(args, "", os.Stdout, os.Stderr)
+}
+
+// delegateFormOptions are the options an operator form of the delegate entry
+// may begin with.
+var delegateFormOptions = map[string]bool{
+	"--revive": true, "--cancel": true, "--follow-up": true, "--adapter-selftest": true, "--role": true, "--brief": true,
+	"--goal": true, "--destructive-reach": true, "--op": true, "--reviews": true, "--runtime": true, "--model": true,
+	"--outputs": true, "--design": true, "--approved-ref": true, "--source": true, "--wait": true,
+}
 
 // runDelegateIn is runDelegate with its typed outcome written to stdout. dir
 // is the working directory relative file arguments resolve against (empty is
@@ -67,9 +82,9 @@ type delegateRequest struct {
 	dir string
 	// environment is configuration the request carries beside this
 	// process's own (KEY=VALUE, config.EnvName keys): a critic read's
-	// selected-installation roster. The lifecycle resolves configuration
-	// from its process environment, so a request carrying one runs in a
-	// child engine that inherits it (runDelegateChild).
+	// selected-installation roster. The lifecycle resolves it in this
+	// process above the process environment and hands it to the adapter
+	// processes it starts (delegation.Request.ConfigEnv, VOA-14).
 	environment []string
 	// stdin is the lifecycle's input (the escalation approval prompt); nil
 	// is none.
@@ -92,16 +107,13 @@ func runDelegateWith(request delegateRequest, stdout, stderr io.Writer) int {
 		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
 		return 1
 	}
-	if len(request.environment) > 0 {
-		return runDelegateChild(root, request, stdout, stderr)
-	}
 	if len(args) > 0 && (strings.HasPrefix(args[0], "__") || delegateRawCommand(args[0])) {
 		return runDelegateRaw(root, args, stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "--adapter-selftest" && !delegateSelftestInternalAuthorized(root) {
 		writeJSONLine(stdout, stderr, delegateOutcome{
 			Outcome: "REFUSED-REQUEST", Headline: "refused",
-			Detail: "delegate --adapter-selftest is reserved for the metasystem adapter self-test",
+			Detail: "delegate --adapter-selftest is reserved for the runtime adapters' own self-test",
 		})
 		return 2
 	}
@@ -130,14 +142,15 @@ func runDelegateWith(request delegateRequest, stdout, stderr io.Writer) int {
 		}
 		defer dispatchcore.RemoveDelegateClaimCapability(root, claimCapability)
 	}
-	lifecycle, err := newDelegationLifecycle(root)
+	lifecycle, err := newDelegationLifecycle(root, request.environment...)
 	if err != nil {
 		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
 		return 1
 	}
 	var diagnostics bytes.Buffer
-	result := lifecycle.Run(context.Background(),
-		delegateLifecycleRequest(delegateOperatorEnv(os.LookupEnv, claimCapability), request.stdin, io.MultiWriter(stderr, &diagnostics)), internalArgs)
+	lifecycleRequest := delegateLifecycleRequest(delegateOperatorEnv(os.LookupEnv, claimCapability), request.stdin, io.MultiWriter(stderr, &diagnostics))
+	lifecycleRequest.ConfigEnv = request.environment
+	result := lifecycle.Run(context.Background(), lifecycleRequest, internalArgs)
 	return writeDelegateResult(result, mode, args, diagnostics.String(), stdout, stderr)
 }
 
@@ -236,25 +249,6 @@ func delegateLifecycleRequest(env delegation.Env, stdin io.Reader, stderr io.Wri
 	}
 }
 
-// runDelegateChild runs a delegate request that carries configuration in a
-// child of this engine (`internal delegate`) whose environment holds it: the
-// lifecycle's roster, cap and hazard resolution and the adapters it launches
-// read configuration from their process environment, which this process
-// must not change for one request. The child answers the boundary's own
-// typed line on stdout.
-func runDelegateChild(root string, request delegateRequest, stdout, stderr io.Writer) int {
-	engine := request.engine
-	if engine == "" {
-		engine = delegationEngine(root)
-	}
-	command := exec.Command(engine, append([]string{"internal", "delegate"}, request.args...)...)
-	command.Env = append(append(os.Environ(), request.environment...), "METASYSTEM_DELEGATE_ROOT="+root)
-	command.Dir = request.dir
-	command.Stdin = request.stdin
-	command.Stdout, command.Stderr = stdout, stderr
-	return commandExitCode(command.Run())
-}
-
 // delegateInProcess runs one delegate lifecycle command in this process for
 // a resident caller (the mission runner's reap and close): the current
 // process is the supplied identity, its environment the invocation state.
@@ -298,10 +292,12 @@ func delegateCancel(installation string) func(string) (string, error) {
 	}
 }
 
-// newDelegationLifecycle composes the lifecycle over the real owners.
-func newDelegationLifecycle(root string) (*delegation.Lifecycle, error) {
+// newDelegationLifecycle composes the lifecycle over the real owners; the
+// adapter processes it starts receive configEnv, a request's carried
+// configuration.
+func newDelegationLifecycle(root string, configEnv ...string) (*delegation.Lifecycle, error) {
 	engine := delegationEngine(root)
-	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: root, Engine: engine, Host: engineHost{}})
+	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: root, Engine: engine, Host: engineHost{}, ConfigEnv: configEnv})
 	if err != nil {
 		return nil, err
 	}

@@ -118,6 +118,13 @@ func MinimumHazardConfiguration(class HazardClass) (ConfigurationObligations, er
 // adapter has no executable channel for the class's minimum effort. Recording
 // a duty that the launcher cannot enforce would not satisfy admission.
 func ValidateRuntimeHazardConfiguration(root, runtime, model string, class HazardClass) error {
+	return ValidateRuntimeHazardConfigurationWith(nil, root, runtime, model, class)
+}
+
+// ValidateRuntimeHazardConfigurationWith is ValidateRuntimeHazardConfiguration
+// reading configuration through the invocation's lookup (nil is the process
+// environment).
+func ValidateRuntimeHazardConfigurationWith(lookup func(string) (string, bool), root, runtime, model string, class HazardClass) error {
 	configuration, err := MinimumHazardConfiguration(class)
 	if err != nil {
 		return err
@@ -125,7 +132,7 @@ func ValidateRuntimeHazardConfiguration(root, runtime, model string, class Hazar
 	if configuration.BuilderReasoningEffort != "xhigh" {
 		return nil
 	}
-	proven, err := runtimeProvesMaximalExecution(root, runtime, model)
+	proven, err := runtimeProvesMaximalExecution(root, runtime, model, lookup)
 	if err != nil {
 		return err
 	}
@@ -135,13 +142,17 @@ func ValidateRuntimeHazardConfiguration(root, runtime, model string, class Hazar
 	return nil
 }
 
-func runtimeProvesMaximalExecution(root, runtime, model string) (bool, error) {
+func runtimeProvesMaximalExecution(root, runtime, model string, lookup ...func(string) (string, bool)) (bool, error) {
+	var lookupEnv func(string) (string, bool)
+	if len(lookup) > 0 {
+		lookupEnv = lookup[0]
+	}
 	if runtime == "codex" || runtime == "fake" {
 		return true, nil
 	}
 	key := "runtime." + runtime + ".maximal-models"
 	value, _, err := config.Get(config.GetParams{
-		Key: key, ConfPath: filepath.Join(root, "metasystem.conf"), Default: "", DefaultSet: true,
+		Key: key, ConfPath: filepath.Join(root, "metasystem.conf"), Default: "", DefaultSet: true, LookupEnv: lookupEnv,
 	})
 	if err != nil {
 		return false, fmt.Errorf("resolve %s: %w", key, err)

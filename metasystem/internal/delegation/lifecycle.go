@@ -173,6 +173,12 @@ type Request struct {
 	// Stderr receives every diagnostic the retired script wrote to its
 	// standard error; nil discards.
 	Stderr io.Writer
+	// ConfigEnv is configuration this request carries (KEY=VALUE with
+	// config.EnvName keys, for example a critic read's selected-installation
+	// roster). The lifecycle resolves configuration through it above the
+	// process environment, in this process (VOA-14); the adapter processes
+	// it starts receive it through OwnerConfig.ConfigEnv.
+	ConfigEnv []string
 }
 
 // LockTagOf is the owner-lock instance tag for a process whose argv is args:
@@ -219,8 +225,18 @@ func ExitCode(err error) int {
 // what it produced. argv is the script's argv after its path.
 func (l *Lifecycle) Run(ctx context.Context, request Request, argv []string) Result {
 	s := l.newSession(ctx, request)
+	written := &countingWriter{w: s.stderr}
+	s.stderr = written
 	err := s.route(argv)
 	code := ExitCode(err)
+	if code == 2 && written.n == 0 && s.stdout.Len() == 0 {
+		// A refused form is answered by name, never by a bare status.
+		name := "(no arguments)"
+		if len(argv) > 0 {
+			name = argv[0]
+		}
+		fmt.Fprintf(s.stderr, "metasystem internal delegate %s: these arguments (%s) are not a form it takes; it is started by the delegate adapters and the dispatcher with the form they write; nothing was done\n", name, strings.Join(argv, " "))
+	}
 	if s.trap != nil {
 		trap := s.trap
 		s.trap = nil
@@ -261,6 +277,17 @@ func (l *Lifecycle) newSession(ctx context.Context, request Request) *session {
 		s.guardRoot = s.env.GuardFixtureRoot
 	}
 	return s
+}
+
+// countingWriter counts what a session wrote to its standard error.
+type countingWriter struct {
+	w io.Writer
+	n int
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.n += len(p)
+	return c.w.Write(p)
 }
 
 // session is one command's state: the globals the retired script kept.

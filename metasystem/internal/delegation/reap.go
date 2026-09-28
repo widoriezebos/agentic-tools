@@ -447,7 +447,7 @@ func (s *session) mirrorRecord(job string) error {
 		return nil
 	}
 	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{
-		ConfPath: filepath.Join(s.root, "metasystem.conf"), LookupEnv: s.l.lookupEnv})
+		ConfPath: filepath.Join(s.root, "metasystem.conf"), LookupEnv: s.configLookup()})
 	if err != nil {
 		s.mirrorFail(job, err.Error())
 		return exitWith(1)

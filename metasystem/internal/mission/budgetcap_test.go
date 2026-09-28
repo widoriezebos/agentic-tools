@@ -66,7 +66,7 @@ func TestRefuseBudgetCapNamesTheSettingThatRanOut(t *testing.T) {
 			question, _ := ask["question"].(string)
 			contractPath := "plans/mission-demo.contract.md"
 			for _, want := range []string{"`" + test.wantToken + "`", test.wantKey, contractPath,
-				"metasystem internal mission contract-seal --file " + contractPath, "metasystem mission resume demo"} {
+				"metasystem mission seal demo", "metasystem mission resume demo"} {
 				if !strings.Contains(question, want) {
 					t.Fatalf("ask question lacks %q:\n%s", want, question)
 				}

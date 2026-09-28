@@ -372,9 +372,8 @@ func writeBatchedAsk(repo, mission string, reasons []string) (string, error) {
 	value["question"] = fmt.Sprintf(
 		"Mission %s reached lifecycle fence(s) %s. Choose whether to amend, price, reseal, and sign the contract or leave the mission parked. "+
 			"To raise it, set %s higher in the mission block of %s, delete that file's mission-seal block and Approval line, "+
-			"run metasystem internal mission contract-seal --file %s, add the line Approval: name=NAME; date=YYYY-MM-DD; contract-sha256=DIGEST "+
-			"with the digest it printed, and run metasystem mission resume %s.",
-		mission, strings.Join(named, ", "), strings.Join(keys, ", "), contractPath, contractPath, mission)
+			"run metasystem mission seal %s, add the approval line it names with the digest it printed, commit, and run metasystem mission resume %s.",
+		mission, strings.Join(named, ", "), strings.Join(keys, ", "), contractPath, mission, mission)
 	if err := atomicWriteJSON(path, value); err != nil {
 		return "", err
 	}

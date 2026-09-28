@@ -143,9 +143,6 @@ func TestIntentRouterTransitionalFallthrough(t *testing.T) {
 	if code, _, problem := routeWith(registered, "util", "hold", "--tag", "t"); code != 0 || problem != "" || !slices.Equal(sentinel.taken(), []string{"util hold --tag t"}) {
 		t.Errorf("util hold did not fall through to its family: %d %q", code, problem)
 	}
-	if code, _, problem := routeWith(registered, "goal", "branch", "status", "--id", "g"); code != 0 || problem != "" || !slices.Equal(sentinel.taken(), []string{"goal branch status --id g"}) {
-		t.Errorf("goal branch did not fall through to its family: %d %q", code, problem)
-	}
 	fallthroughPairs := 0
 	for _, fam := range families() {
 		for _, v := range fam.verbs {
@@ -156,7 +153,7 @@ func TestIntentRouterTransitionalFallthrough(t *testing.T) {
 	}
 	// The ceiling ratchets down as scripts are ported and verbs deleted; it
 	// reaches zero when the family registry goes.
-	const fallthroughCeiling = 60
+	const fallthroughCeiling = 30
 	t.Logf("family pairs falling through: measured %d, ceiling %d", fallthroughPairs, fallthroughCeiling)
 	if fallthroughPairs > fallthroughCeiling {
 		t.Errorf("%d family pairs fall through without internal; the ceiling is %d", fallthroughPairs, fallthroughCeiling)

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -140,15 +139,14 @@ func runUtilHold(args []string) int {
 }
 
 func runUtilHoldWithDependencies(args []string, deps fixtureLifetimeDependencies) int {
-	flags := flag.NewFlagSet("util hold", flag.ContinueOnError)
-	flags.SetOutput(deps.stderr)
+	flags := newFlagSet("util hold", deps.stderr)
 	tag := flags.String("tag", "", "instance tag carried in this process's command line")
 	stoppedFile := flags.String("stopped-file", "", "file that receives \"stopped\" on an orderly stop")
 	readyFile := flags.String("ready-file", "", "file written after signal handling and lifetime custody are armed")
 	maxSecondsText := flags.String("max-seconds", "0", "terminal lifetime when no owner leash closes")
 	ignoreTerm := flags.Bool("ignore-term", false, "leave SIGTERM ignored while an owner leash controls lifetime")
 	termObservedFile := flags.String("term-observed-file", "", "fixture acknowledgement written after a resisted SIGTERM")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, deps.stderr, "tag") {
 		return 2
 	}
 	if *tag == "" || flags.NArg() != 0 {

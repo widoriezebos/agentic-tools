@@ -444,13 +444,13 @@ func Fence(stateRoot, act, ledgerIdentity string) string {
 	}
 	switch act {
 	case "dispatch", "follow-up":
-		return "this checkout is declared the brain; the brain never dispatches. A node runs, from its own checkout: metasystem internal delegate --role <role> --brief <file> --goal <id> --destructive-reach <class>"
+		return "this checkout is declared the brain; the brain never dispatches. A node starts the work from its own checkout, for example: metasystem work build <goal>"
 	case "cancel":
 		return "this checkout is declared the brain; the brain never cancels a node's job. The node that owns it runs: metasystem work stop j2:<job id>"
 	case "close":
 		return "this checkout is declared the brain; the brain never closes or reaps dispatcher records. The node that owns the chain runs: metasystem work finish j2:<root job>"
 	case "reap":
-		return "this checkout is declared the brain; the brain never closes or reaps dispatcher records. The node that owns the chain runs: metasystem internal delegate reap"
+		return "this checkout is declared the brain; the brain never closes or reaps dispatcher records. The node that owns the chain reaps its records itself; metasystem work status there lists them"
 	case "land":
 		return "land refused: this checkout is declared the brain; the brain never lands. A node lands from its own checkout: metasystem work land <goal> --message <file> --chain <root-job> --path <path>"
 	case "claim":

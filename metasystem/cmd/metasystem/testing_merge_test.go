@@ -47,14 +47,26 @@ func TestTestingMergeDriverUsesGitArgumentOrderAndPrintsUsage(t *testing.T) {
 	}
 
 	stderr := captureTestingStderr(t, func() { runTestingMergeDriver(nil) })
-	for _, want := range []string{"BASE OURS THEIRS", "%O %A %B", "metasystem/testing.json merge=metasystem-testing", "git config merge.metasystem-testing.driver"} {
+	for _, want := range []string{"BASE OURS THEIRS", "%O %A %B", "metasystem system setup registers it"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("usage missing %q:\n%s", want, stderr)
 		}
 	}
 }
 
-func TestTestingMergeVerbRoutesAndPreservesOutputOnRefusal(t *testing.T) {
+// TestTestMergeIsNoPublicAction: concurrent contract edits merge through
+// git's merge driver, which system setup registers (U9b, B3); no person
+// runs a merge by hand.
+func TestTestMergeIsNoPublicAction(t *testing.T) {
+	t.Parallel()
+	if _, ok := findIntentAction("test", "merge"); ok {
+		t.Fatal("test merge is still a public action")
+	}
+}
+
+// TestTestingMergeDriverPreservesOursOnRefusal: the driver writes the merge
+// to OURS only when it succeeds.
+func TestTestingMergeDriverPreservesOursOnRefusal(t *testing.T) {
 	root := t.TempDir()
 	base := testingMergeFixture()
 	base.Groups = append(base.Groups, base.Groups[0])
@@ -72,17 +84,16 @@ func TestTestingMergeVerbRoutesAndPreservesOutputOnRefusal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	out := filepath.Join(root, "out.json")
-	marker := []byte("unchanged on refusal\n")
-	if err := os.WriteFile(out, marker, 0o644); err != nil {
+	before, err := os.ReadFile(paths[1])
+	if err != nil {
 		t.Fatal(err)
 	}
-	args := []string{"test", "merge", "--base", paths[0], "--ours", paths[1], "--theirs", paths[2], "--out", out}
+	args := []string{"testing", "merge-driver", paths[0], paths[1], paths[2]}
 	if code := dispatch(args); code != 1 {
-		t.Fatalf("invalid merge dispatch exit = %d", code)
+		t.Fatalf("invalid merge driver exit = %d", code)
 	}
-	if got, err := os.ReadFile(out); err != nil || !reflect.DeepEqual(got, marker) {
-		t.Fatalf("refused merge changed output: got=%q err=%v", got, err)
+	if got, err := os.ReadFile(paths[1]); err != nil || !reflect.DeepEqual(got, before) {
+		t.Fatalf("refused merge changed ours: got=%q err=%v", got, err)
 	}
 
 	clean := testingMergeFixture()
@@ -96,9 +107,9 @@ func TestTestingMergeVerbRoutesAndPreservesOutputOnRefusal(t *testing.T) {
 		}
 	}
 	if code := dispatch(args); code != 0 {
-		t.Fatalf("valid merge dispatch exit = %d", code)
+		t.Fatalf("valid merge driver exit = %d", code)
 	}
-	if _, err := testpolicy.Load(out); err != nil {
+	if _, err := testpolicy.Load(paths[1]); err != nil {
 		t.Fatalf("merge output did not load: %v", err)
 	}
 }

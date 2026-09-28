@@ -12,6 +12,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 )
 
@@ -156,8 +157,8 @@ func (inv *intentInvocation) actorArgs(id string, names ...string) ([]string, *i
 	}
 	refused := func(err error) *intentResult {
 		return &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
-			Summary:  "cannot tell who acts: no --by, --lineage or METASYSTEM_OWNER_LINEAGE, and the enrolled-terminal proof failed: " + err.Error() + "; nothing was done",
-			Decision: "a person runs this at the enrolled terminal; an agent session passes its own lineage with --lineage LINEAGE (a session is started with metasystem session start)"}
+			Summary:  "cannot tell who runs metasystem " + inv.command.name + ": " + humanauthority.PlainReason(err) + ", and no agent session is named; nothing was done",
+			Decision: "a person runs it at the terminal enrolled on this machine; an agent runs it from the session its launcher started, which names itself in METASYSTEM_OWNER_LINEAGE, or passes --lineage LINEAGE"}
 	}
 	if dependencies.proveHuman == nil {
 		return nil, refused(fmt.Errorf("no human proof reader is available"))

@@ -13,8 +13,7 @@ import (
 )
 
 // watcherConfig is the ONE constructor of supervise.WatcherConfig: with
-// two assemblers, the standing component and the one-shot census pass of `report watch-jobs --census`
-// would resolve the same tuning key through different precedence rules
+// two assemblers, two census writers would resolve the same tuning key through different precedence rules
 // — a .local override honored by one census writer and ignored by the
 // other. The deliberate resolution choice is the
 // COMMITTED conf (config.ConfValue): a watcher is an armed component whose

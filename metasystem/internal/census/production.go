@@ -64,10 +64,6 @@ func (source productionProcessSource) enumerate() ([]Process, error) {
 	return source.enumerateProcesses(false)
 }
 
-func (source productionProcessSource) enumerateFixtureSurvivors() ([]Process, error) {
-	return source.enumerateProcesses(true)
-}
-
 func (source productionProcessSource) enumerateProcesses(retainEmptyArgv bool) ([]Process, error) {
 	pids, err := source.pids()
 	if err != nil {

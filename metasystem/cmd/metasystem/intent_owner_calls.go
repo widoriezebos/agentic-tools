@@ -16,6 +16,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -56,9 +57,14 @@ type intentOwnerCalls struct {
 	channelWait func(caller processIdentity, lineage string, stdout, stderr io.Writer, args []string) int
 	// missionStatus prints a mission's runner status line.
 	missionStatus func(stdout, stderr io.Writer, root, mission string) int
-	// missionLaunch starts or resumes a mission's detached run loop; a
-	// closed fence's human reopening classifies caller.
-	missionLaunch func(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string) int
+	// missionLaunch starts or resumes a mission's detached run loop, or with
+	// wait runs the whole mission in this process; a closed fence's human
+	// reopening classifies caller.
+	missionLaunch func(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string, wait bool) int
+	// missionSeal checks one authored mission contract and seals it,
+	// returning the digest its approval line signs and the sizing warnings;
+	// a sealed contract answers contract.ErrAlreadySealed.
+	missionSeal func(path string) (string, []string, error)
 	// missionResolveTaint applies a person's typed resolution; the
 	// human-reserved gate classifies caller.
 	missionResolveTaint func(caller processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int
@@ -116,7 +122,18 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 			engine.Output, engine.Errors = stdout, stderr
 			return engine.Status()
 		},
-		missionLaunch:      missionLaunchTo,
+		missionLaunch: missionLaunchTo,
+		missionSeal: func(path string) (string, []string, error) {
+			if _, _, err := contract.Validate(path); err != nil {
+				return "", nil, err
+			}
+			digest, err := contract.Seal(path)
+			if err != nil {
+				return "", nil, err
+			}
+			_, warnings, _ := contract.Validate(path)
+			return digest, warnings, nil
+		},
 		landingTestReceipt: landingTestReceiptFor,
 		channelWait: func(caller processIdentity, lineage string, stdout, stderr io.Writer, args []string) int {
 			return channelWaitWith(caller.pid, lineage, stdout, stderr, args, nil)
@@ -140,8 +157,9 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 
 // missionLaunchTo is mission start and resume under an explicit caller: the
 // fence check (a closed fence reopens only for a person, classified from
-// caller), then the runner's launch at the fence's generation.
-func missionLaunchTo(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string) int {
+// caller), then the runner's launch at the fence's generation, detached or,
+// with wait, in this process until the mission ends.
+func missionLaunchTo(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
 	root = cleanOwnerRoot(root)
 	generation, code := missionFenceBeforeArmFor(caller, stderr, root, mode, stateroot.RepositoryTop, lease.ClassifyAt)
 	if code != 0 {
@@ -153,7 +171,7 @@ func missionLaunchTo(caller processIdentity, stdout, stderr io.Writer, root, mis
 		return 1
 	}
 	engine.Output, engine.Errors, engine.Caller = stdout, stderr, caller.pid
-	return engine.LaunchAtGeneration(mode, false, generation)
+	return engine.LaunchAtGeneration(mode, wait, generation)
 }
 
 // ownerCalls returns the invocation's owner functions.

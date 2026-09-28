@@ -4,17 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"flag"
-	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func hostFixture(t *testing.T, nested bool) (repo, installation string) {
@@ -676,46 +673,6 @@ func TestGeneratedShippedClaudeStopHasNoSeparateReceiptHandler(t *testing.T) {
 	if commands := generatedClaudeCommands(t, settings, "stop"); len(commands) != 1 {
 		t.Fatalf("generated shipped settings contain %d Claude Stop commands; want one", len(commands))
 	}
-}
-
-func TestHostSetupIdentityEngineHelper(t *testing.T) {
-	if os.Getenv("HOSTSETUP_IDENTITY_HELPER") != "1" {
-		return
-	}
-	args := flag.Args()
-	realEngine := os.Getenv("HOSTSETUP_REAL_ENGINE")
-	if len(args) >= 2 && args[0] == "proc" && args[1] == "find-ancestor" {
-		pid := ""
-		for index := 2; index+1 < len(args); index++ {
-			if args[index] == "--pid" {
-				pid = args[index+1]
-				break
-			}
-		}
-		pidNumber, parseErr := strconv.Atoi(pid)
-		exact, startedState, startedErr := (identity.KernelProber{}).Probe(int64(pidNumber))
-		if parseErr != nil || startedErr != nil || startedState != identity.Alive {
-			fmt.Fprintf(os.Stderr, "fixture identity unavailable: pid=%q parse=%v started=%v state=%s\n", pid, parseErr, startedErr, startedState)
-			os.Exit(1)
-		}
-		if err := json.NewEncoder(os.Stdout).Encode(map[string]any{"runtime": "claude", "pid": pidNumber, "pidStartedAt": exact.StartedAt.Unix()}); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
-	command := exec.Command(realEngine, args...)
-	command.Stdin = os.Stdin
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
-	if err := command.Run(); err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
-			os.Exit(exit.ExitCode())
-		}
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	os.Exit(0)
 }
 
 func generatedClaudeCommands(t *testing.T, settingsPath, action string) []string {

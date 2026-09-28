@@ -194,6 +194,15 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 		[]byte("metasystem.runtimes=fake\nrole.default.runtime=fake\n"), 0o644)
 
 	fixtureGit(t, gitInitDir, "init", "-q", "-b", "main")
+	if nested {
+		// The nested template layout (stateroot's templateMode): the
+		// public mission actions keep this installation's state in it,
+		// as the runner's own root. The marker is excluded, never
+		// committed, so the projection sees only the installation.
+		os.MkdirAll(filepath.Join(gitInitDir, "development"), 0o755)
+		os.WriteFile(filepath.Join(gitInitDir, "development", "metasystem-design.md"), []byte("fixture template marker\n"), 0o644)
+		os.WriteFile(filepath.Join(gitInitDir, ".git", "info", "exclude"), []byte("/development/\n/docs/\n"), 0o644)
+	}
 	fixtureGit(t, root, "config", "user.name", "fixture")
 	fixtureGit(t, root, "config", "user.email", "fixture@example.invalid")
 	// The fixture mirrors the deployment's projection boundary: runtime
@@ -239,11 +248,16 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 			t.Fatal(werr)
 		}
 		stdout, stderr, code := runCaptured(root, nil,
-			filepath.Join(root, "bin", "metasystem"), "mission", "contract-seal", "--file", contractPath)
-		if code != 0 {
+			filepath.Join(root, "bin", "metasystem"), "mission", "seal", contractPath, "--json")
+		var sealed struct {
+			Data struct {
+				ContractSha256 string `json:"contractSha256"`
+			} `json:"data"`
+		}
+		if code != 0 || json.Unmarshal([]byte(stdout), &sealed) != nil || sealed.Data.ContractSha256 == "" {
 			t.Fatalf("seal through the bed binary: exit %d\n%s%s", code, stdout, stderr)
 		}
-		sha = strings.TrimSpace(stdout)
+		sha = sealed.Data.ContractSha256
 	} else {
 		sealed, err := contract.Seal(contractPath)
 		if err != nil {
@@ -412,7 +426,7 @@ func TestArmAndPreflightFullPass(t *testing.T) {
 	os.MkdirAll(engine.missionDir(), 0o755)
 	writeText(t, filepath.Join(engine.missionDir(), "state.json"), "{}")
 	if err := engine.armAndPreflight("start"); err == nil ||
-		!strings.Contains(err.Error(), "already pinned; use resume") {
+		!strings.Contains(err.Error(), "already pinned; metasystem mission resume") {
 		t.Fatalf("second start after birth: %v", err)
 	}
 }
@@ -1070,7 +1084,7 @@ func TestLaunchLockSerializesStartDecisions(t *testing.T) {
 		map[string]any{"fabricated": "born in the gap"})
 	writeJSONFile(t, engine.birthRecordPath(), map[string]any{"missionId": engine.Mission})
 	hold.release()
-	if err := <-done; err == nil || !strings.Contains(err.Error(), "use resume") {
+	if err := <-done; err == nil || !strings.Contains(err.Error(), "metasystem mission resume") {
 		t.Fatalf("the unblocked launcher must see the birth and refuse: %v", err)
 	}
 	fencesAfter := readTestDoc(t, engine.fencesPath())
@@ -1383,7 +1397,7 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 		}
 	})
 	cmd := exec.Command(filepath.Join(engine.Root, "bin", "metasystem"),
-		"internal", "mission", "start", "--root", engine.Root, "--mission", engine.Mission, "--foreground")
+		"mission", "start", engine.Mission, "--wait", "--repo", engine.Root)
 	cmd.Dir = engine.Root
 	cmd.Env = supervisionForSubprocess(t, engine)
 	out, err := cmd.CombinedOutput()

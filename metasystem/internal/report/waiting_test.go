@@ -46,7 +46,7 @@ func TestWaitingLinesUseDurableResumeCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines, err := WaitingLines(root, "lineage-a")
-	if err != nil || len(lines) != 3 || lines[0] != "WAITING goal goal-a until 2026-09-14T12:00:00Z: metasystem work wait wait:0123456789abcdef0123456789abcdef" || lines[1] != "WAITING goal goal-b until 2026-09-14T13:00:00Z: metasystem internal channel wait --resume abcdefabcdefabcdefabcdefabcdefab" || !strings.Contains(lines[2], "run-broken-owner.json") || !strings.Contains(lines[2], "unreadable") {
+	if err != nil || len(lines) != 3 || lines[0] != "WAITING goal goal-a until 2026-09-14T12:00:00Z: metasystem work wait wait:0123456789abcdef0123456789abcdef" || lines[1] != "WAITING goal goal-b until 2026-09-14T13:00:00Z: metasystem work wait wait:abcdefabcdefabcdefabcdefabcdefab" || !strings.Contains(lines[2], "run-broken-owner.json") || !strings.Contains(lines[2], "unreadable") {
 		t.Fatalf("waiting lines=%q err=%v", lines, err)
 	}
 	if foreign, err := WaitingLines(root, "lineage-b"); err != nil || len(foreign) != 1 || !strings.Contains(foreign[0], "run-broken-owner.json") {
@@ -84,7 +84,7 @@ func TestWaitingLinesUseWaitEndForLiveLocalWait(t *testing.T) {
 	}
 
 	lines, err := WaitingLines(root, "lineage-a")
-	want := "WAITING local compile release for job job-a until 2026-09-18T14:00:00Z: metasystem internal wait end --wait-id 0123456789abcdef0123456789abcdef"
+	want := "WAITING local compile release for job job-a until 2026-09-18T14:00:00Z: metasystem session wait --end 0123456789abcdef0123456789abcdef"
 	if err != nil || len(lines) != 1 || lines[0] != want || strings.Contains(lines[0], "--resume") {
 		t.Fatalf("waiting lines=%q err=%v", lines, err)
 	}
@@ -115,7 +115,7 @@ func TestWaitingLinesUseWaitEndForPendingHumanWait(t *testing.T) {
 	}
 
 	lines, err := WaitingLines(root, "lineage-a")
-	want := "WAITING human answer to Proceed with release? until 2026-09-18T15:00:00Z: metasystem internal wait end --wait-id abcdefabcdefabcdefabcdefabcdefab"
+	want := "WAITING human answer to Proceed with release? until 2026-09-18T15:00:00Z: metasystem session wait --end abcdefabcdefabcdefabcdefabcdefab"
 	if err != nil || len(lines) != 1 || lines[0] != want || strings.Contains(lines[0], "--resume") {
 		t.Fatalf("waiting lines=%q err=%v", lines, err)
 	}

@@ -84,7 +84,7 @@ func detachedWaitingLine(row run.Waiter, status string) string {
 	if row.Deadline != "" {
 		line += " until " + row.Deadline
 	}
-	return line + ": metasystem internal wait end --wait-id " + row.WaitID
+	return line + ": metasystem session wait --end " + row.WaitID
 }
 
 // SucceededWaitOwner proves that candidateMain is connected to the current

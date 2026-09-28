@@ -1,18 +1,14 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
-	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 )
 
 const weightThresholdKey = "validation.weight-threshold"
@@ -42,39 +38,6 @@ func gateWeightAddTo(stdout, stderr io.Writer, root, commit, prefix, goalID stri
 	fmt.Fprintf(stdout, "validation weight %d over %d landing(s) since %s (this landing scaled by goal risk %d)\n", state.Accumulated, state.Landings, state.SinceUTC, scale)
 	if due {
 		fmt.Fprintf(stdout, "validation weight reached (threshold %d): run the governed direct validator; findings fix forward\n", weightThreshold(root))
-	}
-	return 0
-}
-
-func runGateWeightDischarge(args []string) int {
-	flags := flag.NewFlagSet("gate weight-discharge", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	goalID := flags.String("goal", "", "goal owning the governed validation")
-	revision := flags.Uint64("obligation-revision", 0, "exact obligation revision")
-	runID := flags.String("run-id", "", "green governed run")
-	if flags.Parse(args) != nil || *root == "" || *goalID == "" || *revision == 0 || *runID == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate weight-discharge --root R --goal ID --obligation-revision N --run-id ID")
-		return 2
-	}
-	binding, err := dispatchcore.ResolveGoalBinding(*root, *goalID, time.Now().UTC())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	held, err := goalrevision.Acquire(*root, *goalID, binding.Revision, "validation-weight-discharge")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer held.Release()
-	result, err := gaterun.WeightDischarge(*root, *goalID, *revision, *runID)
-	printJSON(result)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if !result.Decision.Applied {
-		return 3
 	}
 	return 0
 }

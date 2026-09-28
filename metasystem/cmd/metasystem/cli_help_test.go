@@ -67,8 +67,12 @@ func TestFamilyHelpAliasesForEveryRegisteredFamily(t *testing.T) {
 					if code != 0 || got != page.String() || problem != "" {
 						t.Errorf("%v must show the object's public actions: %d %q %q", args, code, got, problem)
 					}
-				} else if code != 2 || got != "" || !strings.Contains(problem, "metasystem lists the objects") || strings.Contains(problem, "<verb>") {
-					t.Errorf("%v must refuse without private discovery: %d %q %q", args, code, got, problem)
+				} else if args[0] == "help" {
+					if code != 2 || got != "" || !strings.Contains(problem, "not an object people or agents use") || strings.Contains(problem, "<verb>") {
+						t.Errorf("%v must say the word is not a public object: %d %q %q", args, code, got, problem)
+					}
+				} else if code != 0 || got != want || problem != "" {
+					t.Errorf("%v must show the family's internal help: %d %q %q", args, code, got, problem)
 				}
 			}
 		})
@@ -86,29 +90,24 @@ func TestFamilyHelpDoesNotInvokeHandler(t *testing.T) {
 			t.Fatalf("%v = code %d, stderr %q", args, code, problem)
 		}
 	}
-	for _, args := range [][]string{{"help", "safe"}, {"safe"}, {"safe", "--help"}, {"help", "internal"}} {
+	for _, args := range [][]string{{"help", "safe"}, {"help", "internal"}} {
 		if code, out, problem := runCLIHelp(args, registered); code != 2 || out != "" || !strings.Contains(problem, "metasystem lists the objects") {
+			t.Errorf("%v = code %d, stdout %q, stderr %q", args, code, out, problem)
+		}
+	}
+	// A family word outside internal is answered by that family's own help,
+	// marked internal.
+	if code, _, problem := runCLIHelp([]string{"safe"}, registered); code != 2 || !strings.Contains(problem, "metasystem internal safe: safe help; process entrypoints") {
+		t.Errorf("safe = code %d, stderr %q", code, problem)
+	}
+	for _, args := range [][]string{{"safe", "--help"}, {"safe", "-h"}} {
+		if code, out, problem := runCLIHelp(args, registered); code != 0 || problem != "" || !strings.Contains(out, "metasystem internal safe: safe help; process entrypoints") {
 			t.Errorf("%v = code %d, stdout %q, stderr %q", args, code, out, problem)
 		}
 	}
 
 	if called != 0 {
 		t.Fatalf("family help invoked a handler %d times", called)
-	}
-}
-
-func TestLaunchFamilyHelpShowsRecordCommands(t *testing.T) {
-	t.Parallel()
-	code, output, problem := runCLIHelp([]string{"internal", "launch", "--help"}, families())
-	if code != 0 || problem != "" {
-		t.Fatalf("launch help = code %d, stderr %q", code, problem)
-	}
-	for _, want := range []string{
-		"current user", "~/.metasystem/launch", "--root is not a launch flag",
-	} {
-		if !strings.Contains(output, want) {
-			t.Errorf("launch help omits %q", want)
-		}
 	}
 }
 
@@ -121,9 +120,9 @@ func TestUnknownFamilyHelpAliasErrors(t *testing.T) {
 	}{
 		{[]string{"help", "no-such-family"}, `unknown object "no-such-family"`},
 		{[]string{"no-such-family", "--help"}, `unknown object "no-such-family"`},
-		{[]string{"launch", "no-such-verb"}, `unknown object "launch"`},
-		{[]string{"help", "launch", "extra"}, `unknown object "launch"`},
-		{[]string{"launch", "--help", "extra"}, `unknown object "launch"`},
+		{[]string{"launch", "no-such-verb"}, `metasystem internal launch: "no-such-verb" is not one of its entrypoints`},
+		{[]string{"help", "launch", "extra"}, `"launch" is not an object people or agents use but a family of process entrypoints`},
+		{[]string{"launch", "--help", "extra"}, "metasystem internal launch: --help takes no further word"},
 		{[]string{"--help", "extra"}, "usage: metasystem help [OBJECT [ACTION]]"},
 		{[]string{"goal", "--help", "extra"}, "usage: metasystem goal ACTION"},
 	}
@@ -139,7 +138,7 @@ func TestKnownFamilyVerbErrorsShowOnlyThatFamily(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{{"internal", "launch"}, {"internal", "launch", "no-such-verb"}} {
 		code, output, problem := runCLIHelp(args, families())
-		if code != 2 || output != "" || !strings.Contains(problem, "usage: metasystem internal launch <verb> [flags]") || !strings.Contains(problem, "Flags are specific to each verb") || strings.Contains(problem, "usage: metasystem <family> <verb>") {
+		if code != 2 || output != "" || !strings.Contains(problem, "metasystem internal launch: the launch supervisor; process entrypoints") || !strings.Contains(problem, "metasystem internal launch supervise --help shows one entrypoint's options") || strings.Contains(problem, "metasystem internal proof-run") {
 			t.Errorf("%v = code %d, stdout %q, stderr %q", args, code, output, problem)
 		}
 	}

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -33,7 +32,7 @@ import (
 // no state between calls beyond the readers themselves.
 
 func runUITools(args []string) int {
-	flags := flag.NewFlagSet("ui tools", flag.ContinueOnError)
+	flags := newFlagSet("ui tools")
 	root := pathFlag(flags, "root", "", "checkout the tools read (default: the checkout that contains the installation)")
 	installation := flags.String("metasystem-root", "", "metasystem installation")
 	// Which interface server run started this tool server. The fleet tool

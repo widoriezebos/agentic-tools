@@ -83,7 +83,7 @@ and the confusion this rule prevents lives in prose, not paths.
   a second session is armed as a read-only `advisor` without displacing the
   lease holder.
 - **Census** — the periodic scan (the engine's census, run by
-  the supervision watcher and `metasystem internal report watch-jobs --census`; `internal/census`) that classifies every process
+  the supervision watcher; `internal/census`) that classifies every process
   touching the checkout: **ANNOUNCED** (a registered main), **CUSTODY**
   (owned by a tracked job), or **UNTRACKED** (nobody can account for it —
   surfaced, never killed). Each scan ends in a **verdict**: SUCCESS or
@@ -263,7 +263,8 @@ and the confusion this rule prevents lives in prose, not paths.
   joins every covenant criterion to its proof: criterion id, proof id,
   evidence kind, declared repo deps, evidence source, status. It is
   gate-defining input and guardrail-classed with the covenant. The
-  `covenant evidence` verb is its traceability gate: every requirement
+  covenant evidence gate `metasystem system check` runs is its
+  traceability gate: every requirement
   backed by a matching row, every declared dependency present via a
   symlink-refusing held-handle walk, and a covenant-backed
   `planned-floating` row refused. Recorded statuses are claims on

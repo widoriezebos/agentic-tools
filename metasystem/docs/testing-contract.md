@@ -180,7 +180,8 @@ maximum separately; an admission maximum of zero is reported as unlimited.
 
 Before trusted policy-plan execution, package expansion, candidate-engine
 construction, native preparation, proof reservation, or admission, `test run`
-asks the trusted destination worker for `metasystem internal test worker-capabilities`.
+asks the trusted destination worker for its capabilities (the engine's test
+worker-capabilities entrypoint, which a person never runs).
 The response binds the capability schema, protocol
 version, result schema, execution-identity version, and worker-policy version.
 An unknown verb, malformed response, or mismatch is unsupported and refuses

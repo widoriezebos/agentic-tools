@@ -66,7 +66,7 @@ func contextBudgetLineWithProber(stateRoot, installationRoot string, now time.Ti
 	diagnostic := opts.Transcript != ""
 	budget, err := config.ContextBudget(installationRoot)
 	if err != nil {
-		return roleUnknown(RoleContext, err.Error(), "metasystem internal config validate --conf "+filepath.Join(installationRoot, "metasystem.conf")), usage.Reading{}, err
+		return roleUnknown(RoleContext, err.Error(), "metasystem settings check --repo "+installationRoot), usage.Reading{}, err
 	}
 	holder, noHolderReason, unobservableReason, err := resolveContextIdentity(stateRoot, opts, prober)
 	if err != nil {

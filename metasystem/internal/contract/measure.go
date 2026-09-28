@@ -283,7 +283,7 @@ func (d *contractDoc) materializeCandidate(repo, projectRoot, candidateSHA, gate
 	rel, err := filepath.Rel(realpath.Resolve(repo), realpath.Resolve(projectRoot))
 	if err != nil {
 		cleanup()
-		return "", nil, stateErr("metasystem project root is outside its git repository")
+		return "", nil, stateErr("the project root is outside its git repository")
 	}
 	commandRoot := worktree
 	if rel != "." {

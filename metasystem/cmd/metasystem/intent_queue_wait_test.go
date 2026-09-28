@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"

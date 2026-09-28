@@ -6,11 +6,12 @@ import (
 
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -30,7 +31,7 @@ func designCommand() intentCommand {
 		details: []string{
 			"The design author works in this checkout and writes a staged draft; the goal's design document is updated only",
 			"when it still holds the bytes the request was made against. A document someone edited meanwhile is left as it is",
-			"and the proposal is kept: design show --goal G --attempt N shows it.",
+			"and the proposal is kept: design show G --attempt N shows it.",
 			"Without --out: the goal's one draft design, or a new <goal>.md in the project's design home. --out names a file",
 			"inside a design home. An accepted design is never rewritten; ask for a new draft file instead.",
 			"The same request again reports the same attempt; --after N asks for one new attempt after attempt N.",
@@ -192,9 +193,13 @@ func runIntentDesign(inv *intentInvocation) int {
 		}
 		after = value
 	}
-	brief, err := os.ReadFile(inv.callerPath(inv.input.text("brief")))
-	if err != nil || len(strings.TrimSpace(string(brief))) == 0 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the design brief is missing or empty; nothing was done"})
+	briefPath := inv.callerPath(inv.input.text("brief"))
+	brief, err := os.ReadFile(briefPath)
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was done"})
+	}
+	if len(strings.TrimSpace(string(brief))) == 0 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the brief at " + briefPath + " is empty; nothing was done"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)

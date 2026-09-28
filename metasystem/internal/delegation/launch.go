@@ -80,7 +80,7 @@ func (s *session) composePacket(request composeRequest) (composedPacket, error) 
 		margin = resolved
 	}
 	_, err = dispatch.ComposeRolePacket(dispatch.ComposeRolePacketParams{
-		Root: s.root, Role: request.role, Brief: request.brief, JobID: request.job, Runtime: request.runtime,
+		LookupEnv: s.configLookup(), Root: s.root, Role: request.role, Brief: request.brief, JobID: request.job, Runtime: request.runtime,
 		Model: request.model, ToolPolicy: request.toolPolicy, Round: request.round, Mission: request.mission,
 		DestructiveReach: dispatch.HazardClass(request.destructiveReach), GoalTier: request.goalTier,
 		Output: packet.prompt, CompositionOutput: packet.composition, StageDir: packet.stage,

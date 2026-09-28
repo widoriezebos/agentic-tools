@@ -3,9 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adopt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
@@ -68,6 +70,9 @@ type intentCommand struct {
 	// with its own parser, output and exit codes: a machinery verb given a
 	// public home, or a process entrypoint.
 	passthrough func([]string) int
+	// owner is the handler a passthrough runs, once its public options
+	// (--repo, the installation found) are applied.
+	owner func([]string) int
 	// hidden rows are process entrypoints: routed, never listed in public
 	// help; launcher names the code that starts them.
 	hidden   bool
@@ -115,6 +120,18 @@ func intentCommands() []intentCommand {
 		command.name = strings.TrimSpace(command.object + " " + command.action)
 		if command.group == "" {
 			command.group = intentObjectGroup(command.object)
+		}
+		// --lineage is shown where an agent may act: it is the remedy an
+		// actor refusal names. A person's act keeps it out of sight.
+		if command.audience == "agent" || command.audience == "both" {
+			flags := slices.Clone(command.flags)
+			for i := range flags {
+				if flags[i].name == "lineage" {
+					flags[i].hidden = false
+					flags[i].usage = "the acting agent session, as its launcher named it in METASYSTEM_OWNER_LINEAGE (default: that variable)"
+				}
+			}
+			command.flags = flags
 		}
 	}
 	return commands
@@ -373,7 +390,7 @@ func parseIntentArgs(command intentCommand, raw []string) (intentInput, *intentI
 		return input, nil
 	}
 	// Go's own flag parsing checks each value against its option's kind.
-	set := flag.NewFlagSet(command.name, flag.ContinueOnError)
+	set := newFlagSet(command.name)
 	set.SetOutput(io.Discard)
 	for _, definition := range command.allFlags() {
 		if definition.value == "" {
@@ -385,7 +402,11 @@ func parseIntentArgs(command intentCommand, raw []string) (intentInput, *intentI
 	for _, one := range pairs {
 		definition, _ := command.lookupFlag(one.name)
 		if err := set.Set(one.name, one.value); err != nil {
-			return input, &intentInputError{summary: fmt.Sprintf("--%s cannot be %q: %v", one.name, one.value, err), reason: "see metasystem help " + command.name}
+			summary := fmt.Sprintf("--%s cannot be %q: %v", one.name, one.value, err)
+			if definition.value == "" {
+				summary = fmt.Sprintf("--%s takes true or false, not %q", one.name, one.value)
+			}
+			return input, &intentInputError{summary: summary, reason: "see metasystem help " + command.name}
 		}
 		value := set.Lookup(one.name).Value.String()
 		previous := input.values[one.name]
@@ -406,8 +427,12 @@ func parseIntentArgs(command intentCommand, raw []string) (intentInput, *intentI
 	}
 	if command.maxArgs >= 0 && len(input.args) > command.maxArgs {
 		extra := input.args[command.maxArgs:]
+		takes := map[int]string{0: "no target", 1: "one target"}[command.maxArgs]
+		if takes == "" {
+			takes = fmt.Sprintf("at most %d targets", command.maxArgs)
+		}
 		return input, &intentInputError{
-			summary: fmt.Sprintf("takes at most %d word(s) before its options; unexpected %s", command.maxArgs, shellCommand(extra)),
+			summary: fmt.Sprintf("%s takes %s; unexpected %s", command.name, takes, shellCommand(extra)),
 			reason:  "quote a text value as one argument, or see metasystem help " + command.name,
 		}
 	}
@@ -442,6 +467,11 @@ func unknownIntentFlag(command intentCommand, raw []string, index int, name stri
 				near = append(near, candidate.name)
 			}
 		}
+	}
+	// A guess is offered only when it is close for the name's length: a
+	// far one names an unrelated option.
+	if closest*3 > len(name) {
+		near = nil
 	}
 	if len(near) == 1 {
 		corrected := append(append([]string{"metasystem"}, command.words()...), raw...)
@@ -512,6 +542,9 @@ type intentOwners struct {
 	helm  helmOwners
 	// hookSwitch adjusts system setup's seams; nil keeps production.
 	hookSwitch func(hookswitch.Deps) hookswitch.Deps
+	// stopMovesDeclare writes a Stop decision move declaration; nil selects
+	// audit.DeclareStopDecisionSurface.
+	stopMovesDeclare func(string, audit.StopSurfaceOptions, string, string) (string, error)
 }
 
 func defaultIntentOwners() intentOwners {
@@ -593,7 +626,7 @@ func (inv *intentInvocation) selectRoot() *intentResult {
 	}
 	if err != nil {
 		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("%s is not inside one metasystem installation: %v", shellCommand([]string{path}), err),
+			Summary:  notAnInstallation(path, err),
 			Decision: "run this inside the repository, or name it with --repo PATH"}
 	}
 	if !converted(inv.stateRoot) {
@@ -602,6 +635,25 @@ func (inv *intentInvocation) selectRoot() *intentResult {
 			Decision: "a person upgrades the legacy goals file to the synced ledger first: metasystem goal sync --upgrade --by NAME (it shows the digest to review)"}
 	}
 	return nil
+}
+
+// notAnInstallation says why path is not a metasystem installation in plain
+// words: it does not exist, it is not inside a Git repository, or the
+// repository has no installation. The resolver's own wording is kept only
+// for a cause none of these names.
+func notAnInstallation(path string, err error) string {
+	shown := shellCommand([]string{path})
+	if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
+		return shown + " does not exist; nothing was done"
+	}
+	text := err.Error()
+	switch {
+	case strings.Contains(text, "not inside a Git repository"), strings.Contains(text, "not a git repository"):
+		return shown + " is not inside a Git repository; nothing was done"
+	case strings.Contains(text, "no metasystem installation"), strings.Contains(text, "not a metasystem installation"):
+		return shown + " is not inside a repository with a metasystem installation; nothing was done"
+	}
+	return fmt.Sprintf("%s is not inside one metasystem installation (%v); nothing was done", shown, err)
 }
 
 // The outcomes a public result can have.
@@ -942,7 +994,7 @@ var intentObjectSummaries = map[string]string{
 	"helm":       "human at the helm: take the whole seat out of the machinery's hands, and give it back",
 	"session":    "this agent session: start, stop, whether it may stop, and its handoff",
 	"mission":    "autonomous missions",
-	"system":     "MetaSystem for this checkout: start, stop, restart, status, check, enroll, adopt",
+	"system":     "MetaSystem for this checkout: set up, start, stop, restart, status, check, enroll, adopt",
 	"machine":    "the fleet's machines",
 	"app":        "the application this project builds, under its launch contract",
 	"ui":         "the browser interface",
@@ -1223,6 +1275,16 @@ func suggestIntent(word string, rest []string) []string {
 	if len(near) > 4 {
 		near = near[:4]
 	}
+	if len(near) == 0 {
+		// Nothing is close: the nearest object, however far, so the caller
+		// always has a real command to go on.
+		closest = -1
+		for _, object := range intentObjects() {
+			if distance := editDistance(object, word); closest < 0 || distance < closest {
+				closest, near = distance, []string{suggestedCommand([]string{object}, nil)}
+			}
+		}
+	}
 	return near
 }
 
@@ -1248,6 +1310,15 @@ func suggestIntentAction(object, word string, rest []string) []string {
 	for _, command := range publicIntentCommands() {
 		if command.action == word {
 			near = append(near, suggestedCommand(command.words(), rest))
+		}
+	}
+	if len(near) == 0 {
+		// Nothing is close: the object's nearest action, however far.
+		closest = -1
+		for _, command := range objectActions(object) {
+			if distance := editDistance(command.action, word); closest < 0 || distance < closest {
+				closest, near = distance, []string{suggestedCommand(command.words(), rest)}
+			}
 		}
 	}
 	return near

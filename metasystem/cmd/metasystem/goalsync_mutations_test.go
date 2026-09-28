@@ -544,7 +544,7 @@ func TestGoalApproveSweepWithIDsDropsSweepAndConfirmFromItsRemedy(t *testing.T) 
 		}, fixedFixtureGoalAuthority)
 	})
 	lines := strings.Split(strings.TrimSpace(stderr), "\n")
-	if code != 2 || len(lines) != 2 || !strings.Contains(lines[1], "run: metasystem internal goal approve") || !strings.Contains(lines[1], "--id standing-validation") ||
+	if code != 2 || len(lines) != 2 || !strings.Contains(lines[1], "run: metasystem goal approve") || !strings.Contains(lines[1], "--id standing-validation") ||
 		strings.Contains(lines[1], "--sweep") || strings.Contains(lines[1], "--confirm") {
 		t.Fatalf("the direct-ID approval remedy retained sweep-only flags: code=%d stderr=%q", code, stderr)
 	}
@@ -1779,7 +1779,7 @@ func TestGoalMigrateStillRefusesTemporaryHumanWord(t *testing.T) {
 	stderr, code := captureStderr(t, func() int {
 		return runGoalMigrate([]string{"--temporary-human-word", "Wido authorizes this migration"})
 	})
-	if code != 2 || !strings.Contains(stderr, "flag provided but not defined: -temporary-human-word") {
+	if code != 2 || !strings.Contains(stderr, "does not take --temporary-human-word") {
 		t.Fatalf("goal migrate unexpectedly accepted the relay flag: code=%d stderr=%q", code, stderr)
 	}
 }
@@ -1790,7 +1790,7 @@ func TestGoalSetObligationWithoutTemporaryWordStillProvesAncestry(t *testing.T) 
 	stderr, code := captureStderr(t, func() int {
 		return runGoalSetObligationWithAuthorityFacts(completeSetObligationArgs(root), humanauthority.ProveOrTemporaryGoalAuthority, facts)
 	})
-	if code != 1 || !strings.Contains(stderr, "could not prove enrolled human ancestry") {
+	if code != 1 || !strings.Contains(stderr, "only a person at the enrolled terminal may run this") {
 		t.Fatalf("ordinary set-obligation no longer failed closed on missing ancestry: code=%d stderr=%q", code, stderr)
 	}
 }
@@ -1804,7 +1804,7 @@ func TestGoalSetObligationAnnouncesTemporaryAuthority(t *testing.T) {
 		!strings.Contains(stdout, "re-approval due 2026-09-06 at an agent-free terminal") {
 		t.Fatalf("temporary set-obligation did not announce its status: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	if strings.Contains(stderr, "could not prove enrolled human ancestry") {
+	if strings.Contains(stderr, "only a person at the enrolled terminal may run this") {
 		t.Fatalf("temporary set-obligation still attempted enrolled ancestry: %q", stderr)
 	}
 	fixture.expectTransactions(1, 0)

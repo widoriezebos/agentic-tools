@@ -2,7 +2,7 @@ package main
 
 // Public homes for the machinery verbs people and agents are told to run by
 // hand (plans/designs/verbs-object-action.md, sections 3.1, 3.4 and 3.6;
-// U9a): test add, test merge, test baseline, settings set and system register.
+// U9a): test add, test baseline and settings set (U9b folded system register into system setup and left test merge to git's merge driver).
 // Each routes through the public router to the owner the retired internal
 // verb reached, and each has an idempotency row with its witness here.
 
@@ -22,10 +22,9 @@ import (
 
 func init() {
 	registerIdempotency("test add", idemStateful, "tests already in the group: success, the contract's bytes unchanged", witnessTestAddRepeat)
-	registerIdempotency("test merge", idemStateful, "the same three contracts merge to the same bytes; a repeat rewrites them unchanged", witnessTestMergeRepeat)
+	registerIdempotency("test remove", idemStateful, "tests already absent from the group: success, the contract's bytes unchanged", witnessTestRemoveRepeat)
 	registerIdempotency("test baseline", idemCreation, "--gate records that the gate passed at this moment, so the baseline's age restarts from each call; --check only reads", nil)
 	registerIdempotency("settings set", idemStateful, "a key already holding the value: success, the local configuration unchanged", witnessSettingsSetRepeat)
-	registerIdempotency("system register", idemStateful, "an installation already registered for the selection: success, nothing rewritten", witnessSystemRegisterRepeat)
 }
 
 // newHomesAddTestsFixture is a contract with one group over a package whose
@@ -84,63 +83,6 @@ func witnessTestAddRepeat(t *testing.T) {
 	}
 	if second, err := os.ReadFile(path); err != nil || !bytes.Equal(first, second) {
 		t.Fatalf("a repeated test add changed the contract: err=%v", err)
-	}
-}
-
-// newHomesMergeFixture writes a base contract and two edits of it that each
-// add one test to the first group, and returns the four paths the merge
-// takes.
-func newHomesMergeFixture(t *testing.T) []string {
-	t.Helper()
-	root := t.TempDir()
-	base := testingMergeFixture()
-	ours, theirs := testingMergeClone(t, base), testingMergeClone(t, base)
-	ours.Groups[0].Tests = json.RawMessage(`["TestBase","TestOurs"]`)
-	theirs.Groups[0].Tests = json.RawMessage(`["TestBase","TestTheirs"]`)
-	paths := []string{filepath.Join(root, "base.json"), filepath.Join(root, "ours.json"), filepath.Join(root, "theirs.json"), filepath.Join(root, "out.json")}
-	for i, contract := range []testpolicy.Contract{base, ours, theirs} {
-		data, err := contractmerge.Render(contract)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(paths[i], data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return paths
-}
-
-// TestTestMergeIsThePublicHomeOfTheContractMerge: the documented manual merge
-// of concurrent contract edits is test merge.
-func TestTestMergeIsThePublicHomeOfTheContractMerge(t *testing.T) {
-	paths := newHomesMergeFixture(t)
-	if code := dispatch([]string{"test", "merge", "--base", paths[0], "--ours", paths[1], "--theirs", paths[2], "--out", paths[3]}); code != 0 {
-		t.Fatalf("test merge exit = %d", code)
-	}
-	merged, err := testpolicy.Load(paths[3])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, names, _ := testpolicy.GoTests(merged.Groups[0]); !reflect.DeepEqual(names, []string{"TestBase", "TestOurs", "TestTheirs"}) {
-		t.Fatalf("test merge wrote tests %v", names)
-	}
-}
-
-func witnessTestMergeRepeat(t *testing.T) {
-	paths := newHomesMergeFixture(t)
-	args := []string{"test", "merge", "--base", paths[0], "--ours", paths[1], "--theirs", paths[2], "--out", paths[3]}
-	if code := dispatch(args); code != 0 {
-		t.Fatalf("first test merge exit = %d", code)
-	}
-	first, err := os.ReadFile(paths[3])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if code := dispatch(args); code != 0 {
-		t.Fatalf("repeated test merge exit = %d", code)
-	}
-	if second, err := os.ReadFile(paths[3]); err != nil || !bytes.Equal(first, second) {
-		t.Fatalf("a repeated test merge wrote different bytes: err=%v", err)
 	}
 }
 
@@ -237,33 +179,82 @@ func witnessSettingsSetRepeat(t *testing.T) {
 	}
 }
 
-// TestSystemRegisterIsThePublicHomeOfRuntimeSetup: the adaptation and
-// reconciliation guides tell a person to set up or check the runtime
-// registrations; system register routes to that owner.
-func TestSystemRegisterIsThePublicHomeOfRuntimeSetup(t *testing.T) {
-	command, ok := findIntentAction("system", "register")
-	if !ok || command.hidden || command.passthrough == nil {
-		t.Fatalf("system register is not a public passthrough: %+v", command)
+// TestTestRemoveTakesTestsOutOfAGroup: deleting a test leaves its name in the
+// contract until test remove takes it out; the name need not exist in the
+// packages any more, and a name the group does not list is refused.
+func TestTestRemoveTakesTestsOutOfAGroup(t *testing.T) {
+	path := newHomesAddTestsFixture(t)
+	if code := dispatch([]string{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestAdded"}); code != 0 {
+		t.Fatalf("test add exit = %d", code)
 	}
-	if code := dispatch([]string{"system", "register"}); code != 2 {
-		t.Fatalf("system register without --repo = %d, want the owner's usage refusal", code)
+	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "app-group", "--tests", "TestAdded"}); code != 0 {
+		t.Fatalf("test remove exit = %d", code)
+	}
+	loaded, err := testpolicy.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, names, _ := testpolicy.GoTests(loaded.Groups[0]); !reflect.DeepEqual(names, []string{"TestBase"}) {
+		t.Fatalf("test remove left tests %v", names)
+	}
+	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "no-such-group", "--tests", "TestBase"}); code == 0 {
+		t.Fatal("test remove of an unknown group succeeded")
 	}
 }
 
-func witnessSystemRegisterRepeat(t *testing.T) {
-	repo, _ := setupCLIFixture(t)
-	recorder := newRuntimeLayoutRecorder(t, repo)
-	args := []string{"--repo", repo, "--runtimes", "claude"}
-	recorder.expect(repo)
-	if _, code := captureStdout(t, func() int { return runRuntimeSetupWithResolver(args, recorder.resolve) }); code != 0 {
-		t.Fatalf("first setup exit = %d", code)
+func witnessTestRemoveRepeat(t *testing.T) {
+	path := newHomesAddTestsFixture(t)
+	if code := dispatch([]string{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestAdded"}); code != 0 {
+		t.Fatalf("test add exit = %d", code)
 	}
-	before := snapshotTree(t, repo)
-	recorder.expect(repo)
-	if _, code := captureStdout(t, func() int { return runRuntimeSetupWithResolver(args, recorder.resolve) }); code != 0 {
-		t.Fatalf("repeated setup exit = %d", code)
+	args := []string{"test", "remove", "--file", path, "--group", "app-group", "--tests", "TestAdded"}
+	if code := dispatch(args); code != 0 {
+		t.Fatalf("first test remove exit = %d", code)
 	}
-	if after := snapshotTree(t, repo); !reflect.DeepEqual(before, after) {
-		t.Fatalf("a repeated setup rewrote the installation:\nbefore %v\nafter  %v", before, after)
+	first, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := dispatch(args); code != 0 {
+		t.Fatalf("repeated test remove exit = %d", code)
+	}
+	if second, err := os.ReadFile(path); err != nil || !bytes.Equal(first, second) {
+		t.Fatalf("a repeated test remove changed the contract: err=%v", err)
+	}
+}
+
+// TestTestRemoveWithoutTestsTakesAWholeGroupOut: a group whose tests are all
+// gone leaves the contract, and every surface, the always lists, the unknown
+// list and the cadence stop naming it.
+func TestTestRemoveWithoutTestsTakesAWholeGroupOut(t *testing.T) {
+	contract := testingMergeFixture()
+	spare := contract.Groups[0]
+	spare.ID = "spare-group"
+	contract.Groups = append(contract.Groups, spare)
+	contract.Surfaces[0].Standard = append(contract.Surfaces[0].Standard, "spare-group")
+	contract.Always.Standard = []string{"spare-group"}
+	contract.Unknown = append(contract.Unknown, "spare-group")
+	contract.Cadence = []string{"spare-group"}
+	path := filepath.Join(t.TempDir(), "testing.json")
+	data, err := contractmerge.Render(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "spare-group"}); code != 0 {
+		t.Fatalf("test remove of a group exit = %d", code)
+	}
+	loaded, err := testpolicy.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(loaded)
+	if len(loaded.Groups) != 1 || strings.Contains(string(encoded), "spare-group") {
+		t.Fatalf("the removed group is still named: %s", encoded)
+	}
+	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "spare-group"}); code != 0 {
+		t.Fatalf("a repeated group removal exit = %d", code)
 	}
 }

@@ -53,7 +53,7 @@ func (s *session) claimLaunch(request claimRequest, preflight bool) (string, int
 	}
 	resumed := request.resumedSession
 	params := dispatch.ClaimLaunchParams{
-		Root: s.root, OpID: request.opID, OperationID: request.operationID,
+		LookupEnv: s.configLookup(), Root: s.root, OpID: request.opID, OperationID: request.operationID,
 		MainID: request.mainID, ClaimEpoch: request.claimEpoch, GoalID: request.goalID,
 		GoalRevision: request.goalRevision, GoalTier: request.goalTier, MachineID: request.machineID,
 		ApprovedRef: request.approvedRef, AdapterVerb: request.adapterVerb, GateWidth: request.gateWidth,

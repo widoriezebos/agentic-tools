@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -20,7 +19,7 @@ import (
 )
 
 func runLandingObserve(args []string) int {
-	flags := flag.NewFlagSet("landing observe", flag.ContinueOnError)
+	flags := newFlagSet("landing observe")
 	root := pathFlag(flags, "root", "", "project checkout root")
 	tree := flags.String("tree", "", "prospective project tree")
 	chain := flags.String("chain", "", "closed implementation chain root")
@@ -76,10 +75,10 @@ func runLandingObserve(args []string) int {
 }
 
 func runLandingWorkspace(args []string) int {
-	flags := flag.NewFlagSet("landing workspace", flag.ContinueOnError)
+	flags := newFlagSet("landing workspace")
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	tree := flags.String("tree", "", "whole-project tree")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *tree == "" {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "root", "tree") || flags.NArg() != 0 || *root == "" || *tree == "" {
 		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing workspace --root INSTALLATION --tree TREE")
 		return 2
 	}
@@ -169,8 +168,7 @@ func landingTestReceiptTo(stdout, stderr io.Writer, parent context.Context, reso
 	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
 	publish func(string, string, string, time.Time) (landing.TestReceipt, error),
 	terminal func(proofrun.CompletionContext, json.RawMessage) error) (status int) {
-	flags := flag.NewFlagSet("landing test-receipt", flag.ContinueOnError)
-	flags.SetOutput(stderr)
+	flags := newFlagSet("landing test-receipt", stderr)
 	root := pathFlag(flags, "root", "", "project checkout root")
 	tree := flags.String("tree", "", "candidate project tree")
 	command := flags.String("command", "", "test command to run from the isolated candidate workspace")

@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -1000,8 +1001,10 @@ func TestAdoptGitIntegrationVendoredWritersUseApplicationState(t *testing.T) {
 	}
 	run("receipt", "add", "--type", "implement", "--outcome", "shipped", "--skills", "none", "--verify", "clean",
 		"--corrections", "0", "--stop-loss", "no", "--note", "adopted state-root fixture", "--root", prefix)
-	if tick := run("internal", "steward", "tick", "--repo", target); strings.Contains(tick, `"verdict": "degraded"`) {
-		t.Fatalf("the adopted steward tick degraded: %s", tick)
+	// The steward's tick runs in its runner's process; its owner is called
+	// here for the adopted repository.
+	if tick, err := steward.RunTick(target, steward.TickConfig{}, steward.RuntimeWorkerCensus{MetasystemRoot: target}); err != nil || tick.Decision.Verdict == steward.VerdictDegraded {
+		t.Fatalf("the adopted steward tick degraded: %+v %v", tick, err)
 	}
 	if !exists(filepath.Join(target, "memory", "receipts.log")) || !exists(filepath.Join(target, "artifacts", "agents", "steward", "highwater.json")) {
 		t.Fatal("the vendored writers did not use the application's state trees")

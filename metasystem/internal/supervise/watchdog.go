@@ -20,7 +20,7 @@ import (
 // WatchdogReport derives the report lines for a checkout. The report is for
 // a human at the end of a session: at most one supervision line (every
 // symptom shares the one remedy), at most one untracked line (grouped pids,
-// no argv walls — `proc census` has the detail), and NO lines when
+// no argv walls), and NO lines when
 // everything is healthy. A page of repeated WATCHDOG lines gets
 // ignored by its audience, which is the one failure a report cannot
 // survive. now is injected so staleness is testable.
@@ -133,7 +133,7 @@ func WatchdogReport(repo string, now time.Time) []string {
 		lines = append(lines, "SUPERVISION DOWN ("+strings.Join(problems, "; ")+") — recover: metasystem session start --repo .")
 	}
 	if len(untracked) > 0 {
-		lines = append(lines, "UNTRACKED agents (not this checkout's work; detail: bin/metasystem internal proc census): "+strings.Join(untracked, "; "))
+		lines = append(lines, "UNTRACKED agents (not this checkout's work): "+strings.Join(untracked, "; "))
 	}
 	return lines
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -443,34 +442,4 @@ func productionForwardHandover(request batchJoinRequest, batchID string, source 
 	return batchOwnerCalls.handover(ownerCallFromThisProcess(source.Lineage), goalHandoverRequest{Root: request.SeatRoot,
 		GoalID: request.GoalID, TargetMachine: machine, TargetLineage: landingOwnerLineage,
 		TargetEpoch: holder.ClaimEpoch, Batch: batchID})
-}
-
-func runBatchJoin(args []string) int {
-	flags := flag.NewFlagSet("landing batch join", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "seat checkout root")
-	goalID := flags.String("goal", "", "claimed goal id")
-	chainID := flags.String("chain", "", "closed implementation chain root")
-	last := flags.Bool("last", false, "join the whole land-ready goal")
-	through := flags.String("through", "", "join through one land-ready goal commit")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *goalID == "" || ((*chainID != "") == (*last || *through != "")) || (*last && *through != "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch join --root ROOT --goal GOAL (--chain CHAIN | --last | --through COMMIT)")
-		return 2
-	}
-	now, err := batchJoinClock(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	settings, err := config.ResolveBatchLanding(filepath.Join(*root, "metasystem.conf"), *root, func() time.Time { return now })
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	record, err := executeBatchJoin(batchJoinRequest{SeatRoot: *root, LandingRoot: settings.Root, GoalID: *goalID, ChainID: *chainID, Last: *last, Through: *through, At: now}, batchJoinDependenciesForCommand())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	printJSON(map[string]any{"batchId": record.BatchID, "goalId": *goalID, "state": batch.UnitJoined})
-	return 0
 }

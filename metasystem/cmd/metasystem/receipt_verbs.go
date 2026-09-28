@@ -4,12 +4,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cliflags"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -24,15 +24,21 @@ var receiptLaunchStore = func() launch.Store { return launch.Store{} }
 // action. The FlagSet's own messages are discarded so a misuse prints
 // exactly the one-line usage its callers know.
 func runReceipt(args []string) int {
-	usage := func() {
-		fmt.Fprintln(os.Stderr, "usage: metasystem receipt add|correct|check|stats|retro [flags]")
-	}
 	if len(args) == 0 {
-		usage()
+		fmt.Fprintln(os.Stderr, "usage: metasystem receipt add|status|retro [options]")
 		return 2
 	}
 	action := args[0]
 	args = args[1:]
+	// The public action each owner action answers as.
+	public := map[string]string{"add": "add", "correct": "add", "stats": "status", "retro": "retro", "check": "status"}[action]
+	usage := func() {
+		if public == "" {
+			fmt.Fprintln(os.Stderr, "usage: metasystem receipt add|status|retro [options]")
+			return
+		}
+		fmt.Fprintf(os.Stderr, "metasystem receipt %s --help shows its forms and options\n", public)
+	}
 	opts := receipt.Options{
 		Root:   ".",
 		Skills: "none", Verify: "skipped", Corrections: "0", StopLoss: "no",
@@ -41,8 +47,7 @@ func runReceipt(args []string) int {
 		opts.Summary = args[0]
 		args = args[1:]
 	}
-	flags := flag.NewFlagSet("receipt "+action, flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
+	flags := newFlagSet("receipt " + public)
 	pathFlagVar(flags, &opts.Root, "root", opts.Root, "checkout root")
 	flags.StringVar(&opts.File, "file", opts.File, "receipt ledger file")
 	flags.StringVar(&opts.Type, "type", "", "receipt type")
@@ -79,13 +84,12 @@ func runReceipt(args []string) int {
 	flags.StringVar(&opts.MaxReceipts, "max-receipts", "", "cadence receipt ceiling")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			usage()
 			return 0
 		}
-		usage()
 		return 2
 	}
 	if flags.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "%s: takes no word %q; nothing was done\n", cliflags.Label(flags), flags.Arg(0))
 		usage()
 		return 2
 	}

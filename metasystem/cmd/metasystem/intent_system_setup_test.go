@@ -82,9 +82,9 @@ func newSystemSetupBed(t *testing.T) systemSetupBed {
 	return systemSetupBed{repo: repo, installation: installation, hook: hook}
 }
 
-func (b systemSetupBed) run(t *testing.T) (int, intentResult) {
+func (b systemSetupBed) run(t *testing.T, options ...string) (int, intentResult) {
 	t.Helper()
-	command, rest, ok := resolveIntentArgv([]string{"system", "setup", "--json"})
+	command, rest, ok := resolveIntentArgv(append([]string{"system", "setup", "--json"}, options...))
 	if !ok {
 		t.Fatal("system setup is not a public command")
 	}
@@ -131,11 +131,75 @@ func TestSystemSetupSwitchesAStubEraCheckoutToTheEngine(t *testing.T) {
 	if output, err := systemSetupGit(t, bed.repo, commit...); err != nil {
 		t.Fatalf("a commit after the switch was refused: %v %s", err, output)
 	}
-	// Only registered runtimes switch: no Codex or Devin settings appear.
-	for _, path := range []string{".codex/hooks.json", ".devin/config.json", ".claude/skills"} {
+	// Only the runtimes the installation enables (metasystem.runtimes=claude)
+	// are registered: Claude's skills, no Codex or Devin settings.
+	for _, path := range []string{".codex/hooks.json", ".devin/config.json"} {
 		if _, err := os.Lstat(filepath.Join(bed.repo, path)); !os.IsNotExist(err) {
-			t.Fatalf("the switch registered %s: %v", path, err)
+			t.Fatalf("setup registered %s: %v", path, err)
 		}
+	}
+	if info, err := os.Lstat(filepath.Join(bed.repo, ".claude", "skills", "demo")); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("setup did not register Claude's skills: %v", err)
+	}
+}
+
+// system setup is the one activation (U9b, B1): runtime registrations, the
+// hooks and commit fence, and the testing contract's merge driver, in one
+// idempotent act; --runtimes and --copy-skills choose what it registers.
+func TestSystemSetupRegistersRuntimesAndTheTestingMergeDriver(t *testing.T) {
+	t.Parallel()
+	bed := newSystemSetupBed(t)
+	code, result := bed.run(t, "--runtimes", "claude,codex", "--copy-skills")
+	if code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("setup = %d %+v", code, result)
+	}
+	if info, err := os.Lstat(filepath.Join(bed.repo, ".agents", "skills", "demo")); err != nil || !info.IsDir() {
+		t.Fatalf("--runtimes claude,codex --copy-skills did not copy Codex's skills: %v", err)
+	}
+	attributes, err := os.ReadFile(filepath.Join(bed.repo, ".gitattributes"))
+	if err != nil || !strings.Contains(string(attributes), "metasystem/testing.json merge=metasystem-testing\n") {
+		t.Fatalf(".gitattributes = %q, %v", attributes, err)
+	}
+	driver, err := systemSetupGit(t, bed.repo, "config", "--local", "--get", "merge.metasystem-testing.driver")
+	if err != nil || !strings.Contains(driver, filepath.Join(bed.installation, "bin", "metasystem")) || !strings.Contains(driver, "testing merge-driver %O %A %B") {
+		t.Fatalf("merge driver = %q, %v", driver, err)
+	}
+	if data := result.Data.(map[string]any); data["mergeDriver"] != "registered" {
+		t.Fatalf("setup data = %+v", data)
+	}
+	code, result = bed.run(t, "--runtimes", "claude,codex", "--copy-skills")
+	if code != 0 || result.Outcome != intentUnchanged || result.Data.(map[string]any)["mergeDriver"] != "unchanged" {
+		t.Fatalf("repeat = %d %+v", code, result)
+	}
+	if strings.Count(string(attributes), "merge=metasystem-testing") != 1 {
+		t.Fatalf(".gitattributes repeats the driver: %q", attributes)
+	}
+}
+
+// system register is folded into system setup, and --check is gone: system
+// check reports setup drift.
+func TestSystemRegisterIsFoldedIntoSetup(t *testing.T) {
+	t.Parallel()
+	if _, ok := findIntentAction("system", "register"); ok {
+		t.Fatal("system register is still a public action")
+	}
+	if _, problem := parseIntentArgs(mustIntentCommand(t, "system setup"), []string{"--check"}); problem == nil {
+		t.Fatal("system setup still takes --check")
+	}
+	bed := newSystemSetupBed(t)
+	layout, err := stateroot.ResolveLayout(bed.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drift := setupDrift(layout)
+	if len(drift) == 0 || !strings.Contains(strings.Join(drift, "\n"), "metasystem system setup") {
+		t.Fatalf("drift before setup = %q", drift)
+	}
+	if code, result := bed.run(t); code != 0 {
+		t.Fatalf("setup = %d %+v", code, result)
+	}
+	if drift := setupDrift(layout); len(drift) != 0 {
+		t.Fatalf("drift after setup = %q", drift)
 	}
 }
 

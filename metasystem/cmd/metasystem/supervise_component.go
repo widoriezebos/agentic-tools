@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -38,7 +37,7 @@ import (
 // component must not die on a bad scan or an unreadable record; the owner tears
 // it down deliberately by signal, or replaces it when its heartbeat goes stale.
 func runSuperviseComponent(args []string) (code int) {
-	flags := flag.NewFlagSet("supervise component", flag.ContinueOnError)
+	flags := newFlagSet("supervise component")
 	component := flags.String("component", "", "watcher | reaper | landing-owner")
 	repo := pathFlag(flags, "repo", "", "checkout root the component operates on")
 	metasystemRoot := flags.String("metasystem-root", "", "installation root containing config and runtime adapters")
@@ -57,7 +56,7 @@ func runSuperviseComponent(args []string) (code int) {
 	crashOnStart := flags.Bool("crash-on-start", false, "exit immediately without beating (fixture-only)")
 	ignoreTerm := flags.Bool("ignore-term", false, "ignore TERM (fixture-only)")
 	slowStop := flags.Int("slow-stop", 0, "delay orderly signal exit by this many seconds (fixture-only)")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "component", "tag", "heartbeat") {
 		return 2
 	}
 	if *component == "" || *tag == "" || *heartbeat == "" {
@@ -289,6 +288,12 @@ func setupLandingOwnerWithInputs(metasystemRoot, repo string, cadence *batchOwne
 		owner, err := batchOwnerConstruct(settings, *held, inputs, clock)
 		if err != nil {
 			return err
+		}
+		// A new owner sweeps the retained-verification worktrees a prior
+		// owner left; a failure is reported and never stops the owner.
+		if err := batchOwnerSweepSources(repo); err != nil {
+			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "sweep": "retained-sources", "error": err.Error()})
+			fmt.Fprintln(os.Stderr, string(line))
 		}
 		activePass = func() error {
 			if err := batchOwnerRequire(*held); err != nil {

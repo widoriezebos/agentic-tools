@@ -3,9 +3,6 @@ package main
 import (
 	"bytes"
 	"errors"
-	"flag"
-	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -43,65 +40,6 @@ func TestO12GoalReportFailureWarnsWithoutChangingDoneOutcome(t *testing.T) {
 }
 
 func TestO12BothGoalDoneRoutesRequestTheGoalReport(t *testing.T) {
-	t.Run("legacy mutation", func(t *testing.T) {
-		root := t.TempDir()
-		writeMetricsFixtureGuard(t, root)
-		store := &goal.Store{Root: root}
-		caller := goal.Caller{Class: "HUMAN"}
-		if _, err := store.Open(caller, "legacy-goal", "Conclude through the legacy command.", "Finish."); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := store.Open(caller, "legacy-next", "Succeed the concluded goal.", "Continue."); err != nil {
-			t.Fatal(err)
-		}
-		stageHumanTerminal(t, root, int64(os.Getppid()))
-		calls := 0
-		code := goalMutationWithInputs(
-			"done",
-			[]string{"--root", root, "--id", "legacy-goal", "--conclude", "Legacy route done."},
-			func(flags *flag.FlagSet) []*string {
-				return []*string{
-					flags.String("id", "", "goal id"),
-					flags.String("conclude", "", "conclusion"),
-				}
-			},
-			func(store *goal.Store, caller goal.Caller, values []string) (goal.Result, error) {
-				return store.Done(caller, values[0], values[1], "legacy-next", false)
-			},
-			trySyncMutation,
-			legacyMutationInputs{
-				repositoryTop: func(got string) (string, error) {
-					if got != root {
-						t.Fatalf("repository root = %q", got)
-					}
-					return root, nil
-				},
-				ensureGuard: func(got string) error { return checkMetricsFixtureGuard(root, got) },
-				reporter: func(opts metrics.Options) (metrics.Result, error) {
-					calls++
-					if opts.Root != root || opts.GoalID != "legacy-goal" {
-						t.Fatalf("report options = %+v", opts)
-					}
-					ledger, problems, err := store.ReadLedger()
-					if err != nil || len(problems) != 0 || !legacyGoalIsDone(ledger, "legacy-goal") {
-						t.Fatalf("report ran before Store.Done: %v %v", problems, err)
-					}
-					return metrics.Result{Target: metrics.GoalReportTarget(opts.Root, opts.GoalID)}, nil
-				},
-			},
-		)
-		if code != 0 {
-			t.Fatalf("legacy done returned %d", code)
-		}
-		ledger, problems, err := store.ReadLedger()
-		if err != nil || len(problems) != 0 || !legacyGoalIsDone(ledger, "legacy-goal") {
-			t.Fatalf("legacy goal did not conclude: ledger=%+v problems=%v err=%v", ledger, problems, err)
-		}
-		if calls != 1 {
-			t.Fatalf("legacy done requested %d reports, want 1", calls)
-		}
-	})
-
 	t.Run("synced mutation", func(t *testing.T) {
 		fixture := syncedDoneFixture(t)
 		calls := 0
@@ -194,23 +132,6 @@ func TestGoalDoneWithLocalBranchStillSweepsUnreadableRemote(t *testing.T) {
 	fixture.checkArchived(t)
 }
 
-func legacyGoalIsDone(ledger *goal.Ledger, id string) bool {
-	if ledger == nil {
-		return false
-	}
-	for _, item := range ledger.Done {
-		if item.Id == id {
-			return true
-		}
-	}
-	return false
-}
-
-func writeMetricsFixtureGuard(t *testing.T, root string) {
-	t.Helper()
-	plantFenceEngine(t, root)
-}
-
 type syncedDoneCommandFixture struct {
 	repository   *proofAdmissionRepository
 	dependencies syncRequestDependencies
@@ -267,21 +188,6 @@ func (f *syncedDoneCommandFixture) checkReport(t *testing.T, opts metrics.Option
 		t.Fatalf("report options = %+v", opts)
 	}
 	f.checkArchived(t)
-}
-
-func checkMetricsFixtureGuard(root, got string) error {
-	if got != root {
-		return fmt.Errorf("guard root = %q, want %q", got, root)
-	}
-	path := filepath.Join(root, "bin", "metasystem")
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
-		return fmt.Errorf("the guard's engine is not executable: %s", path)
-	}
-	return nil
 }
 
 func TestGoalBranchEndpointTipUnreadableRemoteCleansTemporaryRef(t *testing.T) {

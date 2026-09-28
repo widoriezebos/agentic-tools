@@ -237,7 +237,7 @@ func TestDetachedFixtureSurvivorKeepsTheLease(t *testing.T) {
 	}
 	assertKept(t, directory, path)
 	if len(*seams.lines) != 1 || !strings.Contains((*seams.lines)[0], reclaimLeaseName) ||
-		!strings.Contains((*seams.lines)[0], "pid 70001") || !strings.Contains((*seams.lines)[0], "fixture-survivors --owner") {
+		!strings.Contains((*seams.lines)[0], "pid 70001") || !strings.Contains((*seams.lines)[0], identity.FixtureOwnerEnv) || strings.Contains((*seams.lines)[0], "metasystem internal") {
 		t.Fatalf("survivor keep line is missing or incomplete: %q", *seams.lines)
 	}
 }
@@ -369,7 +369,7 @@ func TestInspectHostLeasesNamesUnknownRemedyAndLiveOwners(t *testing.T) {
 	unknown.censusErr = errors.New("process table unreadable")
 	reports, err := inspectHostLeasesIn(unknownDirectory, unknown.reclaimer())
 	if err != nil || len(reports) != 1 || reports[0].State != HostLeaseUnknown ||
-		!strings.Contains(reports[0].Remedy, "fixture-survivors --owner") || !strings.Contains(reports[0].Reason, "census failed") {
+		!strings.Contains(reports[0].Remedy, identity.FixtureOwnerEnv) || strings.Contains(reports[0].Remedy, "metasystem internal") || !strings.Contains(reports[0].Reason, "census failed") {
 		t.Fatalf("unknown lease report lacks its remedy: %+v err=%v", reports, err)
 	}
 	if _, statErr := os.Stat(unknownPath); statErr != nil {

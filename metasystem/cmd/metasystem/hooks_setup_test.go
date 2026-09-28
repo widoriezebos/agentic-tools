@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -34,7 +36,7 @@ func TestHooksCheckSupportsEveryHost(t *testing.T) {
 	repo, installation := setupCLIFixture(t)
 	recorder := newRuntimeLayoutRecorder(t, repo)
 	recorder.expect(repo)
-	if _, code := captureStdout(t, func() int { return runRuntimeSetupWithResolver([]string{"--repo", repo}, recorder.resolve) }); code != 0 {
+	if _, code := captureStdout(t, func() int { return runHostSetupForTest(repo, recorder.resolve) }); code != 0 {
 		t.Fatalf("setup exit = %d", code)
 	}
 	paths := map[string][2]string{
@@ -68,7 +70,7 @@ func TestHooksCheckRequiresSynchronousLifecycleAndAllCodexStartSources(t *testin
 	repo, installation := setupCLIFixture(t)
 	recorder := newRuntimeLayoutRecorder(t, repo)
 	recorder.expect(repo)
-	if _, code := captureStdout(t, func() int { return runRuntimeSetupWithResolver([]string{"--repo", repo}, recorder.resolve) }); code != 0 {
+	if _, code := captureStdout(t, func() int { return runHostSetupForTest(repo, recorder.resolve) }); code != 0 {
 		t.Fatalf("setup exit = %d", code)
 	}
 
@@ -140,4 +142,14 @@ func TestHooksCheckRequiresSynchronousLifecycleAndAllCodexStartSources(t *testin
 	if err := checkLiveHooks("claude", claudePath, shipped, recorder.resolve); err != nil {
 		t.Fatalf("explicit synchronous Claude Stop check: %v", err)
 	}
+}
+
+// runHostSetupForTest registers every adoptable runtime in repo through the
+// registration owner, as system setup does.
+func runHostSetupForTest(repo string, resolve func(string) (stateroot.Layout, error)) int {
+	if _, err := hostsetup.SetupWithResolver(hostsetup.Options{RepositoryPath: repo}, resolve); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
 }

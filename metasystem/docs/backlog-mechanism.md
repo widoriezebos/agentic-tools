@@ -280,13 +280,9 @@ an omitted-goal count and the command for saving the records.
 `metasystem goal list --json` and `metasystem goal show <id> --json` answer in the
 intent result envelope (`schemaVersion`, `verb`, `targets`, `outcome`,
 `summary`, with the goal projection under `data`); do not read that as the
-legacy shape. The legacy readers keep their existing JSON for scripts:
-`metasystem internal goal list --json > file` supplies the detail with the existing JSON keys;
-every goal's `History` is an empty list. `--json --history > file` includes
-all ledger history, and `--json --pretty` indents the JSON. The JSON `open`
-array continues to contain all live goals, also listed in their state arrays;
-the text summary prints each goal once. `--label` remains repeatable with
-AND matching, and `--fetch` validates and advances the accepted backlog.
+legacy shape. Every goal's `History` is left out unless `--history` asks
+for it. The text summary prints each goal once. `--label` remains repeatable
+with AND matching, and `--fetch` validates and advances the accepted backlog.
 
 Labels are zero or more tokens matching `^[a-z][a-z0-9-]{0,31}$` (their own
 grammar, not the goal-id grammar), written as `- Labels: a, b` and left out
@@ -296,13 +292,10 @@ reconcile can see it and republish it in canonical form. One edit computes
 (current ∪ adds) ∖ removes, and the same token in both refuses. Two
 concurrent edits are last-publish-wins over the whole field, the same as
 Blocked. A lost additive edit is re-run by its author, and there is no
-set-merge. `--label` on `goal next` narrows only the recommendation
+set-merge. `--label` on `goal list --ready` and on a `goal claim` without a goal narrows only the recommendation
 candidates. It never changes the claim quota, blocker gating, arc order or
 the rule that a held claim answers first. An empty filtered set reports
 "no goal matches --label <x>", never the empty-backlog wording.
-
-`metasystem internal goal show --id <id>` keeps the JSON page envelope and goal fields, with an
-empty `History` list by default. Add `--history` for the complete record.
 
 ## Ordering the backlog
 

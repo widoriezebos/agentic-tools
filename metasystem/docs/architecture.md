@@ -33,7 +33,8 @@ engine from the Go package that reads it (go:embed), and the
 installation carries no `scripts/` tree.
 The delegate-job choreography that once lived in `dispatch.sh` is Go now
 (`internal/delegation`, verbs-object-action U6b): a composition package
-above the owners, reached through `metasystem internal delegate`.
+above the owners, which the public work, design and review actions call in
+process and the delegate entrypoint serves for the runtimes' callbacks.
 
 ## Runtime agnosticism
 

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
@@ -11,7 +10,7 @@ import (
 // runTestReport summarizes an existing result without selecting or running
 // any checks. The caller supplies the observed-cost threshold for its cohort.
 func runTestReport(args []string) int {
-	flags := flag.NewFlagSet("test report", flag.ContinueOnError)
+	flags := newFlagSet("test status")
 	resultPath := flags.String("result", "", "retained TestResult JSON path")
 	expensiveMS := flags.Int64("expensive-ms", 0, "positive observed group-duration threshold in milliseconds")
 	if flags.Parse(args) != nil || *resultPath == "" || *expensiveMS <= 0 || flags.NArg() != 0 {

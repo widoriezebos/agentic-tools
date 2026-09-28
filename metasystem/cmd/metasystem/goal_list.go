@@ -1,9 +1,7 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"unicode"
@@ -12,10 +10,6 @@ import (
 )
 
 const goalListSummaryMaxBytes = 64 * 1024
-
-type goalListOutput struct {
-	JSON, History, Done, Pretty bool
-}
 
 func goalDisplayRecord(file *goal.GoalFile, history bool) *goal.GoalFile {
 	if history {
@@ -27,23 +21,10 @@ func goalDisplayRecord(file *goal.GoalFile, history bool) *goal.GoalFile {
 	return &copy
 }
 
-func printGoalListJSON(value any, pretty bool) int {
-	encoder := json.NewEncoder(os.Stdout)
-	if pretty {
-		encoder.SetIndent("", "  ")
-	}
-	if err := encoder.Encode(value); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
 // syncedListStates are the buckets a synced ledger has, in the order the
 // summary lists them; the legacy ledger has its current goal instead of
 // claimed and approved. "open" is not a state of either.
 var syncedListStates = []string{goal.StateClaimed, goal.StateApproved, goal.StateQueued, goal.StateParked}
-var legacyListStates = []string{"current", goal.StateQueued, goal.StateParked}
 
 func goalListSummary(grouped map[string][]*goal.GoalFile, states []string, tip string, notices []string, includeDone bool, horizon goal.ApprovalHorizon, trunkRed ...goal.TrunkRedEntry) string {
 	if includeDone {
@@ -191,23 +172,4 @@ func goalCutRunes(text string, limit int) string {
 		return text
 	}
 	return string(runes[:limit-3]) + "..."
-}
-
-func legacyGoalGroups(ledger *goal.Ledger) map[string][]*goal.GoalFile {
-	grouped := map[string][]*goal.GoalFile{}
-	if ledger == nil {
-		return grouped
-	}
-	legacy := map[string][]goal.Goal{
-		goal.StateQueued: ledger.Queued, goal.StateParked: ledger.Parked, goal.StateDone: ledger.Done,
-	}
-	if ledger.Current != nil {
-		legacy["current"] = []goal.Goal{*ledger.Current}
-	}
-	for state, files := range legacy {
-		for _, file := range files {
-			grouped[state] = append(grouped[state], &goal.GoalFile{Id: file.Id, State: state, NextStep: file.NextStep})
-		}
-	}
-	return grouped
 }

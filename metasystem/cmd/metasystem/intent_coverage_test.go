@@ -21,16 +21,16 @@ var publicPairs = []string{
 	"goal unblock", "goal unapprove", "goal split", "goal group", "goal ungroup", "goal notes", "goal sync", "goal allow", "goal disallow",
 	"grant add", "grant revoke", "grant list",
 	"decision list", "decision show",
-	"design write", "design show", "design list", "design review", "design stop",
+	"design write", "design show", "design list", "design check", "design review", "design stop",
 	"work brief", "work build", "work wait", "work review", "work revise", "work land", "work finish", "work status", "work stop",
-	"test run", "test wait", "test plan", "test add", "test merge", "test baseline", "test list", "test status",
+	"test run", "test wait", "test declare-moves", "test plan", "test add", "test remove", "test baseline", "test list", "test status",
 	"question ask", "question retry", "question withdraw", "question answer", "question show", "question list", "question wait",
 	"incident list", "incident claim", "incident close",
 	"status",
 	"helm take", "helm return",
-	"session start", "session stop", "session status", "session handoff", "session isolate",
-	"mission start", "mission status", "mission resume", "mission repair",
-	"system start", "system stop", "system restart", "system status", "system check", "system enroll", "system setup", "system register", "system adopt",
+	"session start", "session stop", "session status", "session handoff", "session isolate", "session wait",
+	"mission start", "mission status", "mission resume", "mission seal", "mission repair",
+	"system start", "system stop", "system restart", "system status", "system check", "system enroll", "system setup", "system adopt",
 	"machine list", "machine start",
 	"app start", "app stop", "app restart", "app status", "app log", "app reset", "app check",
 	"ui start", "ui stop", "ui restart", "ui status",
@@ -138,18 +138,8 @@ func TestIntentPublicCoverage(t *testing.T) {
 		// internal. kind is a word the target's usage must carry.
 		type disposition struct{ action, flag, kind, internal string }
 		acts := map[string]disposition{
-			"branch":    {action: "work build", internal: "diagnostics stay internal; build, review and land own the branch"},
-			"open":      {action: "goal open"},
-			"carry":     {action: "goal abandon", flag: "successor"},
-			"done":      {action: "goal done"},
-			"claim":     {action: "goal claim"},
-			"approve":   {action: "goal approve"},
-			"list":      {action: "goal list"},
-			"show":      {action: "goal show"},
-			"next":      {action: "goal list", flag: "ready", internal: "seat launch entry"},
-			"reconcile": {action: "goal sync", flag: "publish", internal: "reviewed recovery"},
-			"migrate":   {internal: "installation cutover"},
-			"fetch":     {action: "goal list", flag: "fetch", internal: "seat launch entry"},
+			"next":  {action: "goal list", flag: "ready", internal: "seat launch entry"},
+			"fetch": {action: "goal list", flag: "fetch", internal: "seat launch entry"},
 		}
 		var goalFamily *family
 		for index := range registered {

@@ -19,7 +19,7 @@ import (
 // against the Markdown dispositions table on finding id. Exit 0 closed;
 // 1 open or unjoinable; 2 usage.
 func runValidateCritiqueClosed(args []string) int {
-	flags := flag.NewFlagSet("validate critique-closed", flag.ContinueOnError)
+	flags := newFlagSet("validate critique-closed")
 	findings := flags.String("findings", "", "critic return JSON")
 	dispositions := flags.String("dispositions", "", "Markdown file holding the dispositions table")
 	repo := pathFlag(flags, "repo", "", "checkout root whose register is updated")
@@ -55,12 +55,12 @@ func runValidateCritiqueClosed(args []string) int {
 // and prints the new checkout's harness root. Exit 0 isolated; 1 an
 // unsafe manifest path or a failed audit; 2 usage.
 func runValidateSessionIsolation(args []string) int {
-	flags := flag.NewFlagSet("validate session-isolation", flag.ContinueOnError)
+	flags := newFlagSet("validate session-isolation")
 	sourceRoot := flags.String("source-root", "", "primary checkout the configuration copies from")
 	destinationRoot := flags.String("destination-root", "", "new second-session worktree")
 	manifest := flags.String("manifest", "", "file listing the adapter-declared relative paths")
 	harnessRoot := flags.String("harness-root", "", "harness root inside the primary checkout")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "source-root", "destination-root", "manifest", "harness-root") {
 		return 2
 	}
 	if *sourceRoot == "" || *destinationRoot == "" || *manifest == "" || *harnessRoot == "" {
@@ -74,72 +74,6 @@ func runValidateSessionIsolation(args []string) int {
 	}
 	fmt.Println(newHarness)
 	return 0
-}
-
-// runValidateDesignObligations checks design-obligation matrices with the
-// calling convention of metasystem internal validate design-obligations: repeated
-// --file arguments, an optional --runtime-required, and --root for
-// resolving a relative path unreadable from the working directory. Exit 0
-// passed; 1 failed; 2 usage.
-func runValidateDesignObligations(args []string) int {
-	usage := func() {
-		fmt.Fprint(os.Stderr, `Usage:
-  metasystem internal validate design-obligations --file <plan.md> [--file <plan.md>...]
-  metasystem internal validate design-obligations --runtime-required --file <plan.md>...
-
-Checks the structure and declared state of design-obligation matrices.
-
-Required table header:
-| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
-
-By default, CRITICAL/HIGH obligations must be DONE or READY_FOR_RUNTIME.
-With --runtime-required, CRITICAL/HIGH obligations must be DONE.
-
-Proof cells on CRITICAL/HIGH rows must be concrete: a backticked token, a
-path-shaped token (a slash, or a filename with a letter-bearing stem and an
-extension of two or more characters, plus .c/.h/.m/.r), or "Not applicable"
-followed by a reason. Bare "Not applicable" fails, and so does keyword-only
-prose ("needs testing"): a status is only as trustworthy as the proof behind
-it. Owner cells on CRITICAL/HIGH rows need a backticked, dotted, slashed,
-double-colon, or CamelCase code token; plain prose fails.
-
-Matrix rows inside fenced code blocks are ignored, so documentation that shows
-the template does not satisfy the gate. Table cells must not contain literal
-pipe characters; the column parser cannot see an escaped pipe as content.
-`)
-	}
-	flags := flag.NewFlagSet("validate design-obligations", flag.ContinueOnError)
-	flags.Usage = usage
-	root := pathFlag(flags, "root", ".", "root for resolving relative plan paths")
-	files := []string{}
-	flags.Func("file", "design-obligation matrix (repeatable)", func(value string) error {
-		files = append(files, value)
-		return nil
-	})
-	runtimeRequired := flags.Bool("runtime-required", false, "CRITICAL/HIGH obligations must be DONE")
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return 0
-		}
-		return 2
-	}
-	if flags.NArg() > 0 {
-		usage()
-		return 2
-	}
-	if len(files) == 0 {
-		fmt.Fprintln(os.Stderr, "at least one --file is required")
-		usage()
-		return 2
-	}
-	out, errs, code := validate.DesignObligations(*root, files, *runtimeRequired)
-	for _, line := range out {
-		fmt.Println(line)
-	}
-	for _, line := range errs {
-		fmt.Fprintln(os.Stderr, line)
-	}
-	return code
 }
 
 // runValidateConformance relays the retired conformance wrapper's
@@ -166,7 +100,7 @@ the exact proof produced for the same implementer job.
 Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 `)
 	}
-	flags := flag.NewFlagSet("validate conformance", flag.ContinueOnError)
+	flags := newFlagSet("validate conformance")
 	flags.Usage = usage
 	root := pathFlag(flags, "root", ".", "merge-target checkout root")
 	stage, job := "", ""
@@ -250,9 +184,8 @@ Run it before contracting a new cycle.
 Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 `)
 	}
-	flags := flag.NewFlagSet("validate stop-loss", flag.ContinueOnError)
-	flags.Usage = usage
-	file := flags.String("file", "", "investigation ledger")
+	flags := newFlagSet("experiment check")
+	file := flags.String("file", "", "the investigation ledger")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -264,7 +197,11 @@ Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 		return 2
 	}
 	if *file == "" {
-		fmt.Fprintln(os.Stderr, "missing --file ledger")
+		fmt.Fprintln(os.Stderr, "metasystem experiment check: needs the ledger: metasystem experiment check --file LEDGER; nothing was checked")
+		return 2
+	}
+	if _, err := os.Stat(*file); err != nil {
+		fmt.Fprintf(os.Stderr, "metasystem experiment check: no ledger at %s; nothing was checked\n", *file)
 		return 2
 	}
 	out, errs, code := validate.StopLoss(*file)
@@ -342,14 +279,16 @@ Exit codes: 0 safe; 1 blocked; 2 usage or environment error.`)
 	}
 	var p validate.RefactorBaselineParams
 	p.Command = args[0]
-	flags := flag.NewFlagSet("test baseline", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
+	flags := newFlagSet("test baseline")
 	flags.StringVar(&p.File, "file", "plans/refactor-baseline", "baseline file path")
 	flags.StringVar(&p.Gate, "gate", "", "record: the acceptance gate command that passed")
 	maxAge := flags.String("max-age-minutes", "", "check: maximum baseline age")
 	maxCommits := flags.String("max-commits", "", "check: maximum commits since the baseline")
 	root := pathFlag(flags, "root", "", "installation whose metasystem.conf supplies the cadence (default: this engine's)")
-	if flags.Parse(args[1:]) != nil || flags.NArg() != 0 {
+	if flags.Parse(args[1:]) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
 		return usage()
 	}
 	set := map[string]bool{}
@@ -402,42 +341,6 @@ func resolveRefactorCadence(p *validate.RefactorBaselineParams, set map[string]b
 			return 2
 		}
 		*cadence.target = number
-	}
-	return 0
-}
-
-// runValidateSkills validates skills: every skill under the root's skills and
-// optional-skills (validate.SkillInventory), or only the named skill
-// directories: `validate skills [--root R] [DIR ...]`.
-func runValidateSkills(args []string) int {
-	flags := flag.NewFlagSet("validate skills", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout whose skills and optional-skills are validated")
-	if flags.Parse(args) != nil {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate skills [--root CHECKOUT] [DIR ...]")
-		return 2
-	}
-	if flags.NArg() > 0 {
-		for _, dir := range flags.Args() {
-			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-				fmt.Fprintf(os.Stderr, "skill directory is not a directory: %s\n", dir)
-				return 2
-			}
-			name, err := validate.Skill(dir)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return 1
-			}
-			fmt.Printf("%s is valid\n", name)
-		}
-		return 0
-	}
-	if info, err := os.Stat(*root); err != nil || !info.IsDir() {
-		fmt.Fprintf(os.Stderr, "skill inventory root is not a directory: %s\n", *root)
-		return 2
-	}
-	if err := validate.SkillInventory(*root, os.Stdout); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
 	}
 	return 0
 }

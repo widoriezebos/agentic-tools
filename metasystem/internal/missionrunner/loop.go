@@ -537,7 +537,7 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 		return "", "", nil, err
 	}
 	if stateBorn(statePath) {
-		return "", "", nil, failf(3, "mission state already exists; use resume")
+		return "", "", nil, failf(3, "mission state already exists; metasystem mission resume %s continues it", e.Mission)
 	}
 	if err := e.startAmbiguityRefusal(ledger); err != nil {
 		return "", "", nil, err

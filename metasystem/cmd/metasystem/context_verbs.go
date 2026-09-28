@@ -69,7 +69,7 @@ var classifyContextHandoffCaller, currentContextHandoffHolder, hookContextHandof
 var contextHandoffNow = func() time.Time { return time.Now().UTC() }
 
 func runContextStatus(args []string) int {
-	flags := flag.NewFlagSet("context status", flag.ContinueOnError)
+	flags := newFlagSet("session handoff")
 	root := pathFlag(flags, "root", "", "installation or containing template root")
 	runtimeName := flags.String("runtime", "", "explicit runtime")
 	session := flags.String("session", "", "explicit session")
@@ -202,7 +202,7 @@ type contextHandoffInputs struct {
 }
 
 func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs) int {
-	flags := flag.NewFlagSet("context handoff", flag.ContinueOnError)
+	flags := newFlagSet("session handoff")
 	root := pathFlag(flags, "root", "", "installation or containing template root")
 	cancel := flags.String("cancel", "", "live handoff nonce to cancel")
 	by := flags.String("by", "", "name of the attending human")
@@ -504,7 +504,7 @@ func parseContextScratch(values []string) ([]steward.ScratchArg, error) {
 }
 
 func runContextVerify(args []string) int {
-	flags := flag.NewFlagSet("context verify", flag.ContinueOnError)
+	flags := newFlagSet("session handoff")
 	root := pathFlag(flags, "root", "", "installation or containing template root")
 	nonce := flags.String("nonce", "", "handoff nonce")
 	if flags.Parse(args) != nil {

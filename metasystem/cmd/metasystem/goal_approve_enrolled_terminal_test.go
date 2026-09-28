@@ -45,7 +45,7 @@ func TestGoalApproveAtTheEnrolledTerminalProvesThroughTheRuntimeRegistry(t *test
 
 	other := reader
 	other.terminalID = "ttys:another-shell"
-	if code, stdout, stderr := approve(proveAt(other)); code == 0 || !strings.Contains(stdout+stderr, humanauthority.OutcomeTerminalMissing) {
+	if code, stdout, stderr := approve(proveAt(other)); code == 0 || !strings.Contains(stdout+stderr, "does not descend from the terminal enrolled on this machine") {
 		t.Fatalf("an approval from another shell was not refused by the terminal proof: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	if refused, _ := filepath.Glob(filepath.Join(root, "artifacts", "agents", "authority", "proofs", "*.json")); len(refused) != 0 {

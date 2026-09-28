@@ -272,6 +272,9 @@ func (a capAuthority) resolutionField() map[string]any {
 // from. File-valued fields are read here so the record shape and its inputs
 // stay in one place.
 type BuildRecordParams struct {
+	// LookupEnv is the invocation's configuration environment; nil is the
+	// process environment.
+	LookupEnv         func(string) (string, bool)
 	Output            string
 	Job               string
 	Role              string
@@ -551,7 +554,7 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 	if err != nil {
 		return err
 	}
-	if err := ValidateRuntimeHazardConfiguration(p.Root, p.Runtime, p.Model, p.DestructiveReach); err != nil {
+	if err := ValidateRuntimeHazardConfigurationWith(p.LookupEnv, p.Root, p.Runtime, p.Model, p.DestructiveReach); err != nil {
 		return err
 	}
 	if p.ReasoningEffort != configuration.BuilderReasoningEffort {
@@ -715,6 +718,9 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 
 // BuildFollowRecordParams carries the inputs for a follow-up round record.
 type BuildFollowRecordParams struct {
+	// LookupEnv is the invocation's configuration environment; nil is the
+	// process environment.
+	LookupEnv       func(string) (string, bool)
 	Output          string
 	Parent          string // parent (latest) record file
 	Job             string
@@ -912,7 +918,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	if err != nil {
 		return err
 	}
-	if err := ValidateRuntimeHazardConfiguration(p.Root, runtimeName, model, p.DestructiveReach); err != nil {
+	if err := ValidateRuntimeHazardConfigurationWith(p.LookupEnv, p.Root, runtimeName, model, p.DestructiveReach); err != nil {
 		return err
 	}
 	capMinutes, ok := numInt(authority.capMin)

@@ -49,7 +49,7 @@ func RequestWithdrawal(store Store, goalID, machine, lineage, seatRoot, actor st
 		if selected.record.State != StateOpen {
 			switch selected.record.State {
 			case StateSealed, StateProving, StateDiagnosing, StateLanding:
-				return refuseBatch("BATCH_SEALED", fmt.Sprintf("batch %s is %s; use landing batch wait --goal %s, then requeue follow-up work after it finishes", selected.record.BatchID, selected.record.State, goalID))
+				return refuseBatch("BATCH_SEALED", fmt.Sprintf("batch %s is %s; wait for it with metasystem work wait %s --for landing, then requeue follow-up work after it finishes", selected.record.BatchID, selected.record.State, goalID))
 			default:
 				return refuseBatch("BATCH_WITHDRAW_REFUSED", fmt.Sprintf("goal %s cannot withdraw while batch %s is %s", goalID, selected.record.BatchID, selected.record.State))
 			}

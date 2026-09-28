@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -13,10 +12,9 @@ import (
 // guard body (landpath.Guard) for the installation at --root, judging the
 // commit git is making in the current work tree.
 func runPreCommitEntry(args []string, stdout, stderr io.Writer) int {
-	flags := flag.NewFlagSet("pre-commit", flag.ContinueOnError)
-	flags.SetOutput(stderr)
+	flags := newFlagSet("pre-commit", stderr)
 	root := pathFlag(flags, "root", "", "metasystem installation root")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" {
+	if flags.Parse(args) != nil || !requireFlags(flags, stderr, "root") || flags.NArg() != 0 || *root == "" {
 		fmt.Fprintln(stderr, "usage: metasystem internal pre-commit --root INSTALLATION")
 		return 2
 	}

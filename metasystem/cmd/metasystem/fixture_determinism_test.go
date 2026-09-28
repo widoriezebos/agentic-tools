@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -594,81 +592,6 @@ for pid in $pids; do wait "$pid"; done
 	data, err := os.ReadFile(result)
 	if err != nil || json.Unmarshal(data, &launch) != nil || launch.Disposition != proofrun.DispositionExecuted || launch.ExitStatus != 0 {
 		t.Fatalf("nested public launch result=%+v data=%q err=%v", launch, data, err)
-	}
-}
-
-func TestChannelFakeServePublicCommandListensUnderSyntheticFixtureAuthority(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	state := filepath.Join(root, "state")
-	leashPath := filepath.Join(root, "leash")
-	makeFixtureFIFO(t, leashPath)
-	leash, err := os.OpenFile(leashPath, os.O_RDWR, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = leash.Close() })
-	readyRead, readyWrite, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	readyEvents := startFixtureLineReader(readyRead, 1)
-	t.Cleanup(readyEvents.closeAndWait)
-	owner := syntheticFixtureOwnerKey(t, "channel-fake-server")
-	ctx, cancel := context.WithCancel(t.Context())
-	command := exec.CommandContext(ctx, commandTestExecutable(t), "channel", "fake", "serve", "--dir", state, "--ready-fd", "3")
-	command.Env = fixtureCommandEnvironment(t,
-		identity.FixtureOwnerEnv+"="+owner,
-		fixtureLeashEnvironment+"="+leashPath,
-	)
-	command.ExtraFiles = []*os.File{readyWrite}
-	process, err := launchFixtureProcess(command, cancel)
-	if err != nil {
-		_ = readyWrite.Close()
-		t.Fatal(err)
-	}
-	if err := readyWrite.Close(); err != nil {
-		process.stopAndWait()
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = leash.Close()
-		process.stopAndWait()
-	})
-	published, err := waitFixtureLine(t.Context(), readyEvents, process)
-	if err != nil {
-		output, _ := process.stopAndWait()
-		t.Fatalf("public channel fake server exited before listener readiness: %v\n%s", err, output)
-	}
-	baseURLPath := filepath.Join(state, "base-url")
-	baseURL, err := os.ReadFile(baseURLPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if published != strings.TrimSpace(string(baseURL)) {
-		t.Fatalf("inherited readiness address %q differs from public base-url %q", published, baseURL)
-	}
-	parsed, err := url.Parse(strings.TrimSpace(string(baseURL)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	connection, err := (&net.Dialer{}).DialContext(t.Context(), "tcp", parsed.Host)
-	if err != nil {
-		t.Fatalf("published channel listener %q did not accept a connection: %v", parsed.Host, err)
-	}
-	_ = connection.Close()
-	if err := leash.Close(); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-process.done:
-		output, err := process.wait()
-		if err != nil {
-			t.Fatalf("channel fake server did not stop with its owner leash: %v\n%s", err, output)
-		}
-	case <-t.Context().Done():
-		output, err := process.stopAndWait()
-		t.Fatalf("channel fake server outlived its owner leash: %v\n%s", err, output)
 	}
 }
 

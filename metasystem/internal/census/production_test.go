@@ -1,11 +1,9 @@
 package census
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
@@ -47,7 +45,7 @@ func TestRunProductionCensusEnvelope(t *testing.T) {
 	}
 }
 
-func TestFixtureSurvivorSourceNamesLiveUnreadableProcess(t *testing.T) {
+func TestProductionInventoryDropsUnreadableProcesses(t *testing.T) {
 	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", "")
 	base := int64(os.Getpid()) + 100_000
 	livePID, deadPID := base+1, base+2
@@ -78,25 +76,5 @@ func TestFixtureSurvivorSourceNamesLiveUnreadableProcess(t *testing.T) {
 	}
 	if len(inventory) != 0 {
 		t.Fatalf("ordinary process inventory retained empty argv rows: %#v", inventory)
-	}
-
-	prober, processes, configured, err := fixtureSurvivorSource(t.TempDir(), source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if configured {
-		t.Fatal("injected production source was reported as a configured fixture")
-	}
-	if len(processes) != 1 || processes[0].Pid != livePID || !processes[0].Unreadable || processes[0].Argv != "" {
-		t.Fatalf("production survivor rows = %#v, want only live unreadable pid %d", processes, livePID)
-	}
-
-	lines, certain, err := FixtureSurvivorLines(prober, processes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := fmt.Sprintf("fixture-survivor? pid=%d", livePID)
-	if certain || len(lines) != 1 || !strings.Contains(lines[0], want) {
-		t.Fatalf("fixture-survivor failure lines = %q, certain=%t; want one line containing %q", lines, certain, want)
 	}
 }

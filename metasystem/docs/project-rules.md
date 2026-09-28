@@ -14,13 +14,13 @@ Replace this file when adopting the metasystem. Keep facts concrete and reposito
 
 ## Commands
 
-- Testing contract: `testing.json`, selected through `testing.contract=testing.json` in `metasystem.conf`. `bin/metasystem test list --root .` describes it, `settings check` validates it with the settings without compiling, `test plan --goal <goal> --mode auto` resolves the actual risk-selected groups, `test run` executes the selected stages, and `test status --tree <tree>` reads sufficient retained evidence without rerunning it. `metasystem test merge --base <file> --ours <file> --theirs <file> --out <file>` merges concurrent contract edits by surface, group, and list identity; `testing merge-driver` prints the Git driver setup and accepts Git's `%O %A %B` order; `metasystem test add --file <file> --group <id> --tests <name,...>` verifies and adds named Go tests.
+- Testing contract: `testing.json`, selected through `testing.contract=testing.json` in `metasystem.conf`. `bin/metasystem test list --root .` describes it, `settings check` validates it with the settings without compiling, `test plan --goal <goal> --mode auto` resolves the actual risk-selected groups, `test run` executes the selected stages, and `test status --tree <tree>` reads sufficient retained evidence without rerunning it. Concurrent contract edits merge by surface, group, and list identity through the git merge driver `metasystem system setup` registers; `metasystem test add --file <file> --group <id> --tests <name,...>` verifies and adds named Go tests.
 
   Application-language-neutral schema 2 fields and a command/JUnit example are in [the testing contract guide](testing-contract.md).
 
 - Launch contract: `launch.json`, selected through `launch.contract=launch.json` in `metasystem.conf`. It is how the engine starts, probes, tracks, signals and reads this project's own application. Schema 1 holds one application: a `start` command, and optionally `stop`, `prepare`, `build`, `ready` (an http url, a tcp address, a log pattern, or none), `address` and `portRange`, `log`, `readyMs`, `stopMs`, `check` (the id of a testing group) and `tools`. Everything but `start` may be left out and the contract still works. `${address}`, `${host}` and `${port}` are substituted in the commands and in the probe, and those three facts plus the run's state root (a directory of the run's own under `artifacts/agents/app/runs/`, never the installation) and log reach every command as `METASYSTEM_APP_*` environment. Declared tools are the start's preflight: a missing one is named before anything is prepared, built or started, and each found one is written on the run record with its version line. `metasystem app start|stop|restart|status|log|reset|check` read only this committed path, each taking `--at REF` or `--goal G` to run a candidate from its own worktree on its own port beside the standing run; `settings check` validates the contract and its declared tools without starting anything. A project with no such key has no `app` verbs.
 
-Batch composition and landing, goal branch commit and land preparation (including endpoint sync), and the landing's rebase onto origin (`metasystem work land`) merge `testing.json` by surface without checkout setup. These verbs supply temporary Git configuration for the checked-in attribute and refuse with `TESTING_MERGE_DRIVER_UNRESOLVED` when the metasystem executable cannot be resolved. For hand merges, local setup remains optional: `git config merge.metasystem-testing.name 'metasystem testing.json merge by surface'` and `git config merge.metasystem-testing.driver 'metasystem internal testing merge-driver %O %A %B'` enable the same behavior.
+Batch composition and landing, goal branch commit and land preparation (including endpoint sync), and the landing's rebase onto origin (`metasystem work land`) merge `testing.json` by surface without checkout setup. These verbs supply temporary Git configuration for the checked-in attribute and refuse with `TESTING_MERGE_DRIVER_UNRESOLVED` when the metasystem executable cannot be resolved. For merges a person makes with git itself, `metasystem system setup` registers the same driver in the checkout's local git configuration.
 - Fast focused test: `<command>`
 - Full unit suite: `<command>`
 - Integration/end-to-end suite: `<command>`
@@ -66,9 +66,8 @@ List only rules that cannot be inferred from code or tooling and apply broadly i
 - A Codex job on a seat machine starts through the metasystem, never through the plugin's slash commands or the codex-rescue agent. A unit runs through `metasystem work build G [--work NAME] --brief FILE --check COMMAND...`, which drives the existing unit-run sequence to awaiting judgement; its read is preliminary feedback, and `metasystem work review run:RUN` requests the committed review landing consumes. An independent read runs inside `build`, or through `metasystem work review j2:J`, `review run RUN` or `review commit SHA --goal G`, never as an in-process agent. Hand-written work is submitted with `metasystem work review G --changes|--patch PATCH --brief FILE`, and a read of a bare diff or of current changes is `metasystem work review --patch PATCH --brief FILE` or `review changes --brief FILE`. A design run is `metasystem design write G --brief FILE`, a critique `metasystem design review FILE` (a later round adds `--dispositions FILE`), and a maintainer's read of a bare diff `metasystem work review --patch PATCH --brief FILE`. Each launch process stays independent of the seat that started it.
 - `metasystem settings show` explains effective limits with their sources, and `metasystem work status --history` summarizes launch outcomes and refusals.
 - The shipped Claude settings carry the seat context window, and `metasystem settings show` reports drift from the configured value.
-- A joining seat may withdraw its own queued unit with `metasystem internal landing batch
-  withdraw --goal G` only before seal; the owner remains the only process that
-  returns or releases the handed-over claim.
+- The landing owner remains the only process that returns or releases a
+  claim handed over to a landing batch.
 
 ## Decisions Reserved for Humans
 
@@ -135,7 +134,7 @@ on it.
   Debian-family package — adoption runs it before any target mutation and
   supervision arming runs it at entry. perl and python3 are suite-host
   concerns only (fixture drivers), never production dependencies; hashing
-  runs through `metasystem internal util sha256`.
+  runs in the engine (Go), never through shasum.
 - **Link versus operation**: CGO_ENABLED=0 makes the binary run anywhere
   compatible, but the SYSTEM also execs git, bash, ps, and repository
   scripts and reads standard procfs — a scratch or distroless container is

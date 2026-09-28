@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -654,16 +655,25 @@ func runIntentRevise(inv *intentInvocation) int {
 		}
 		after = value
 	}
-	brief, err := os.ReadFile(inv.callerPath(inv.input.text("brief")))
-	if err != nil || len(bytes.TrimSpace(brief)) == 0 {
-		summary := "the brief is empty"
-		if err != nil {
-			summary = "cannot read the brief: " + err.Error()
-		}
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: summary + "; nothing was done"})
-	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
+	}
+	// The goal is checked before the brief is read.
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	if file, _ := goalRecord(projection, id); file == nil {
+		return unknownGoal(inv, id)
+	}
+	briefPath := inv.callerPath(inv.input.text("brief"))
+	brief, err := os.ReadFile(briefPath)
+	if err != nil || len(bytes.TrimSpace(brief)) == 0 {
+		summary := "the brief at " + briefPath + " is empty"
+		if err != nil {
+			summary = fileProblem("brief", briefPath, err)
+		}
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: summary + "; nothing was done"})
 	}
 	work, problem := inv.goalWork(id)
 	if problem != nil {

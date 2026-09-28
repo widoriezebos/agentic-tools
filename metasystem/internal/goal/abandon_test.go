@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -881,7 +880,7 @@ func runAbandonLockScenario(t *testing.T, endpoint, competitor Endpoint, compete
 			if parseErr != nil {
 				return parseErr
 			}
-			if admissionErr := runGoalRevisionAdmissionCLI(competitor.Root, "lock-dependent", claim.Revision, admissionNow); admissionErr != nil {
+			if admissionErr := GoalRevisionAdmissionForTest(competitor.Root, "lock-dependent", claim.Revision, admissionNow); admissionErr != nil {
 				return admissionErr
 			}
 		}
@@ -918,25 +917,4 @@ func publishMustConfirm(operation string, result PublishResult, err error) error
 		return fmt.Errorf("%s: %+v %v", operation, result, err)
 	}
 	return nil
-}
-
-func runGoalRevisionAdmissionCLI(root, id string, revision uint64, now time.Time) error {
-	output, err := goalRevisionAdmissionCLI(root, id, revision, now)
-	if err != nil {
-		return fmt.Errorf("EvaluateGoalRevisionAdmission refused revision %d: %w: %s", revision, err, output)
-	}
-	return nil
-}
-
-func goalRevisionAdmissionCLI(root, id string, revision uint64, now time.Time) (string, error) {
-	sourceRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		return "", err
-	}
-	command := exec.Command("go", "run", "./cmd/metasystem", "job", "goal-revision-admission",
-		"--root", root, "--goal", id, "--revision", fmt.Sprint(revision), "--proposed-cap", "1", "--destructive-reach", "MECHANICAL")
-	command.Dir = sourceRoot
-	command.Env = append(os.Environ(), "METASYSTEM_GOAL_NOW="+now.UTC().Format(time.RFC3339))
-	output, err := command.CombinedOutput()
-	return string(output), err
 }

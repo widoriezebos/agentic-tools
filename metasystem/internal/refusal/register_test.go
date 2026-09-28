@@ -672,7 +672,7 @@ func TestHCL03NoPendingAfterSlice2(t *testing.T) {
 		return string(data)
 	}
 	checks := []struct{ name, path, needle string }{
-		{"goal carry", "cmd/metasystem/main.go", `{"carry",`},
+		{"carry question", "cmd/metasystem/intent_process.go", `if kind == "carry" && !goal.ValidCarryToken(in.Wants)`},
 		{"carry reservation owner", "cmd/metasystem/landing_path.go", `GoalCarrying:    landingPathCarrying,`},
 		{"carried landing record owner", "cmd/metasystem/landing_path.go", `GoalCarried:     landingPathCarried,`},
 		{"carry status owner", "cmd/metasystem/landing_path.go", `CarryStatus:     landingPathCarryStatus,`},

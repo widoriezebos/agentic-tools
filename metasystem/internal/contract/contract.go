@@ -856,7 +856,7 @@ func (d *contractDoc) contractExpandPaths(repo, projectRoot, ref string, globs [
 	}
 	rel, err := filepath.Rel(realpath.Resolve(repo), realpath.Resolve(projectRoot))
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return nil, stateErr("metasystem project root is outside its git repository")
+		return nil, stateErr("the project root is outside its git repository")
 	}
 	prefix := ""
 	if rel != "." {
@@ -1219,7 +1219,7 @@ func contractPatienceKeys(values map[string]string) []string {
 // already approved, since the seal must precede the signature it protects.
 func (d *contractDoc) seal(repo, projectRoot string) (string, error) {
 	if len(d.sealed) > 0 {
-		return "", stateErr("contract is already sealed")
+		return "", ErrAlreadySealed
 	}
 	if d.approval != nil {
 		return "", stateErr("seal must run before approval is added")

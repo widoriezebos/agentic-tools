@@ -43,30 +43,6 @@ func defaultSweepDependencies() sweepDependencies {
 	}
 }
 
-type DeleteLandingRequest struct {
-	Repo, Remote, GoalID string
-	CheckClaim           func() error
-	PushTransport        PushTransport
-}
-
-func DeleteLanding(req DeleteLandingRequest) error {
-	if req.PushTransport == nil {
-		req.PushTransport = GitPushTransport{}
-	}
-	if !validName(req.GoalID) || req.Repo == "" || req.Remote == "" {
-		return fmt.Errorf("landing branch delete needs a repository, remote, and goal")
-	}
-	if err := checkClaim(req.CheckClaim); err != nil {
-		return err
-	}
-	ref := landingBranchRef(req.GoalID)
-	tip, present, err := req.PushTransport.RemoteTip(req.Repo, req.Remote, ref)
-	if err != nil || !present {
-		return err
-	}
-	return deleteRemoteRef(req.PushTransport, req.Repo, req.Remote, ref, tip, LandBranchMovedCode)
-}
-
 func sourceCommitsWith(repo, base, endpointTip string, read func(string, ...string) ([]byte, error)) (map[string]bool, error) {
 	out, err := read(repo, "log", "--format=%(trailers:key=Goal-Source,valueonly)", base+".."+endpointTip)
 	if err != nil {

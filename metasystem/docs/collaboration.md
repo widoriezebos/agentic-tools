@@ -44,22 +44,11 @@ whole-package coverage groups and the big process sections run at cadence
 only. The goal's four risk answers scale the landing's behavior-surface weight
 instead (the landing weighs itself with the highest answer as the factor), so a
 riskier goal brings the deep cadence run sooner. When the configured threshold is due,
-the standing validator's custodian runs the deep cadence selection through the
-governed run boundary and joins its testing worker to that one reservation:
-
-```sh
-bin/metasystem internal run launch --root "$PWD" --id "direct-validation-<id>" \
-  --kind suite --display "weight-triggered direct validation" \
-  --log "artifacts/agents/runs/direct-validation-<id>.log" \
-  --goal "<standing-validator-goal>" --obligation-revision "<revision>" \
-  --standing-shared-process -- bin/metasystem test run --root "$PWD" \
-  --goal "<standing-validator-goal>" --mode deep --purpose cadence
-```
-
-Watch that exact run with the command printed by `run launch`. A green run may
-discharge weight only through `gate weight-discharge` with the same goal,
-obligation revision, run id, exact weight generation, and sufficient retained
-testing evidence for every catch class. Direct shell diagnostics and focused
+the landing owner's deep validation cadence runs the deep selection on trunk
+through the governed run boundary, joined to one testing reservation, and a
+green run discharges the weight with the goal, obligation revision, run id and
+exact weight generation the cadence claimed, and sufficient retained testing
+evidence for every catch class. Direct shell diagnostics and focused
 standard results cannot discharge cadence weight or another obligation.
 
 The retirement observation window is the next two weight-triggered direct

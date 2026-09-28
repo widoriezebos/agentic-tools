@@ -23,8 +23,8 @@ func TestIntentSwitchedRemediesReachTheFamilyOwner(t *testing.T) {
 		// rest is the argument vector the handler receives.
 		rest []string
 	}{
-		{printed: "metasystem session status --id r-7f3a", family: "metasystem report stop-status --id r-7f3a",
-			object: "session", action: "status", handler: runReportStopStatus, rest: []string{"--id", "r-7f3a"}},
+		{printed: "metasystem session status --id 7f3a", family: "metasystem report stop-status --id 7f3a",
+			object: "session", action: "status", handler: runReportStopStatus, rest: []string{"--id", "7f3a"}},
 		// session handoff runs runContextHandoff, or runContextStatus for
 		// --status and runContextVerify for --verify NONCE; runSessionHandoff
 		// is that split (TestIntentSessionHandoffSplit).
@@ -68,7 +68,7 @@ func TestIntentSwitchedRemediesReachTheFamilyOwner(t *testing.T) {
 			}
 			continue
 		}
-		if command.passthrough == nil || reflect.ValueOf(command.passthrough).Pointer() != reflect.ValueOf(test.handler).Pointer() {
+		if command.passthrough == nil || command.owner == nil || reflect.ValueOf(command.owner).Pointer() != reflect.ValueOf(test.handler).Pointer() {
 			t.Errorf("%s does not run the family handler of %s", test.printed, test.family)
 		}
 		if !slices.Equal(rest, test.rest) {

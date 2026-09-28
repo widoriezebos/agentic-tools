@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,13 +39,24 @@ func (inv *intentInvocation) missionAsk(mission, id string) (map[string]any, boo
 	return ask, true
 }
 
+// noChannelQuestion is the refusal for a channel question that does not
+// exist, or cannot be read.
+func (inv *intentInvocation) noChannelQuestion(targets []intentTarget, id string, err error) *intentResult {
+	summary := fmt.Sprintf("no channel question %s; nothing was done", shellCommand([]string{id}))
+	if !errors.Is(err, fs.ErrNotExist) {
+		summary = fmt.Sprintf("channel question %s cannot be read: %v; nothing was done", shellCommand([]string{id}), err)
+	}
+	return &intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: summary,
+		next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"}
+}
+
 // resolveQuestion finds the one question a reference names.
 func (inv *intentInvocation) resolveQuestion(ref string) (questionRef, *intentResult) {
 	targets := []intentTarget{{Kind: "question", ID: ref}}
 	if id, explicit := strings.CutPrefix(ref, "channel:"); explicit {
 		q, err := inv.owners.processes.question(inv.stateRoot, id)
 		if err != nil {
-			return questionRef{}, &intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("no channel question %s: %v; nothing was done", shellCommand([]string{id}), err)}
+			return questionRef{}, inv.noChannelQuestion(targets, id, err)
 		}
 		return questionRef{kind: "channel", id: id, channel: q}, nil
 	}
@@ -130,7 +142,8 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 
 func runIntentShowQuestion(inv *intentInvocation, args []string) int {
 	if len(args) != 1 || inv.input.has("history") || inv.input.has("id") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "show question takes one question id (or M/Q) and nothing else; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question show takes one question id (or M/Q) and nothing else; nothing was done",
+			next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"})
 	}
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
@@ -202,6 +215,8 @@ func runIntentAskRetry(inv *intentInvocation, id string) int {
 	switch {
 	case errors.Is(err, channel.ErrChannelBusy):
 		return inv.render(intentResult{Outcome: intentInProgress, Targets: targets, Summary: err.Error(), next: inv.sameCommand(), nextReason: "the same retry runs once the poll finishes"})
+	case errors.Is(err, fs.ErrNotExist):
+		return inv.render(*inv.noChannelQuestion(targets, id, err))
 	case err != nil:
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "question " + id + " was not retried: " + err.Error(),
 			next: inv.publicArgv("settings", "show"), nextReason: "check the channel settings"})
@@ -230,7 +245,7 @@ func runIntentAskWithdraw(inv *intentInvocation, id string) int {
 	targets := []intentTarget{{Kind: "question", ID: id}}
 	before, err := inv.owners.processes.question(inv.stateRoot, id)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("no channel question %s: %v; nothing was done", shellCommand([]string{id}), err)})
+		return inv.render(*inv.noChannelQuestion(targets, id, err))
 	}
 	if before.State == "closed" {
 		// Already closed (R-129-ui): success, and nothing is posted or

@@ -64,11 +64,11 @@ var StartOutcomeNotices = map[string]startNotice{
 	"context-contract":        {startNoticeTemplate("read the runtime context contract", "Rebuild the engine with go run ./cmd/devgate build and restore the installed runtime declarations."), 0},
 	"custody-unreadable":      {startNoticeTemplate("authenticate delegate custody", "Restore the recorded delegate custody and restart through its launcher."), 1},
 	"process-identity":        {startNoticeTemplate("identify the owning runtime process", "Restart through the installed runtime launcher."), 0},
-	"brain-boot":              {`{"systemMessage":"Metasystem brain boot failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem internal brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}`, 0},
-	"brain-timeout":           {`{"systemMessage":"Metasystem brain boot failed (timeout): this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem internal brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}`, 0},
+	"brain-boot":              {`{"systemMessage":"Metasystem brain boot failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild the engine with go run ./cmd/devgate build, then start a new session."}`, 0},
+	"brain-timeout":           {`{"systemMessage":"Metasystem brain boot failed (timeout): this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild the engine with go run ./cmd/devgate build, then start a new session."}`, 0},
 	"arming":                  {`{"systemMessage":"Metasystem supervision arming failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem session start there. Then start a new session."}`, 0},
 	"wait-recovery":           {startNoticeTemplate("read durable wait recovery rows", "Repair supervision from the owning installation and run metasystem session start there."), 0},
-	"temporary-cleanup":       {startNoticeTemplate("remove its temporary files", "Restore temporary-directory access and remove leftover metasystem hook temporary files."), 0},
+	"temporary-cleanup":       {startNoticeTemplate("remove its temporary files", "Restore temporary-directory access and remove the hooks' leftover temporary files."), 0},
 	"interrupted":             {`{"systemMessage":"Metasystem SessionStart could not finish because it was interrupted: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore the runtime session. Then start a new session."}`, 143},
 }
 

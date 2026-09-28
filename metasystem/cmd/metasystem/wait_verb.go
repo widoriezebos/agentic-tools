@@ -22,7 +22,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
-	usagecore "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 var waitCallerPID = func() int64 { return int64(os.Getppid()) }
@@ -92,74 +91,6 @@ func waitInstallation(root string) string {
 	return root
 }
 
-func runWait(args []string) int {
-	if len(args) > 0 && args[0] == "register" {
-		return runWaitRegister(args[1:])
-	}
-	if len(args) > 0 && args[0] == "end" {
-		return runWaitEnd(args[1:])
-	}
-	if len(args) > 0 && args[0] == "notify" {
-		return runWaitNotify(args[1:])
-	}
-	if len(args) > 0 && args[0] == "measure" {
-		return runWaitMeasure(args[1:])
-	}
-	return runWaitWithPoll(args, nil)
-}
-
-func runWaitMeasure(args []string) int {
-	flags := flag.NewFlagSet("wait measure", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout or installation state root")
-	sinceText := flags.String("since", "", "include registrations at or after this RFC3339 stamp")
-	untilText := flags.String("until", "", "read records no later than this RFC3339 stamp")
-	runtimeName := flags.String("runtime", "", "include only this runtime")
-	jsonOutput := flags.Bool("json", false, "print the typed report as JSON")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		return metarun.ExitInvalidWait
-	}
-	parseBound := func(name, value string) (time.Time, bool) {
-		if value == "" {
-			return time.Time{}, true
-		}
-		parsed, err := time.Parse(time.RFC3339, value)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "wait measure --%s must be RFC3339\n", name)
-			return time.Time{}, false
-		}
-		return parsed, true
-	}
-	since, sinceOK := parseBound("since", *sinceText)
-	until, untilOK := parseBound("until", *untilText)
-	if !sinceOK || !untilOK || (!since.IsZero() && !until.IsZero() && until.Before(since)) {
-		if sinceOK && untilOK {
-			fmt.Fprintln(os.Stderr, "wait measure --until must not precede --since")
-		}
-		return metarun.ExitInvalidWait
-	}
-	stateRoot, err := goal.ResolveStateRoot(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return metarun.ExitWaiterIO
-	}
-	measurement, err := usagecore.MeasureWaits(stateRoot, usagecore.WaitMeasureOptions{Since: since, Until: until, Runtime: *runtimeName})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return metarun.ExitWaiterIO
-	}
-	if *jsonOutput {
-		encoded, _ := json.Marshal(measurement)
-		fmt.Println(string(encoded))
-	} else {
-		fmt.Print(usagecore.FormatWaitMeasurement(measurement))
-	}
-	return usagecore.WaitMeasurementExit(measurement)
-}
-
-func runWaitWithPoll(args []string, poll func(context.Context) error) int {
-	return runWaitCommand(args, poll, waitCallerPID(), printWaitResult)
-}
-
 func runWaitCommand(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool)) int {
 	return runWaitCommandOnClock(args, poll, callerPID, printResult, nil)
 }
@@ -169,7 +100,7 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 // WithTimeout together, so every deadline the wait derives is measured and
 // enforced on that one clock; production passes nil and keeps the kernel's.
 func runWaitCommandOnClock(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool), clock func(*metarun.WaitOptions)) int {
-	flags := flag.NewFlagSet("wait", flag.ContinueOnError)
+	flags := newFlagSet("wait")
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	job := flags.String("job", "", "delegate job identifier")
 	runID := flags.String("run", "", "tracked run identifier")
@@ -243,15 +174,20 @@ func runWaitCommandOnClock(args []string, poll func(context.Context) error, call
 			return metarun.ExitInvalidWait
 		}
 	}
+	// A refusal before the wait starts is its result, so the caller reads
+	// the reason where it reads every outcome.
+	refused := func(code int, outcome string, err error) int {
+		printResult(metarun.WaitResult{SchemaVersion: 2, WaitID: *resume, ExitCode: code, Reason: err.Error(), SourceOutcome: outcome,
+			ReturnedAt: time.Now().UTC().Format(time.RFC3339Nano)}, *jsonOutput)
+		return code
+	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return metarun.ExitWaiterIO
+		return refused(metarun.ExitWaiterIO, "unreadable-root", err)
 	}
 	resolved, code, err := resolveWaitCaller(stateRoot, callerPID)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return code
+		return refused(code, "not-the-main-session", err)
 	}
 	view, owner, runtimeSession := resolved.view, resolved.owner, resolved.runtimeSession
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -336,51 +272,6 @@ func runWaitCommandOnClock(args []string, poll func(context.Context) error, call
 	}
 	printResult(result, *jsonOutput)
 	return result.ExitCode
-}
-
-func runWaitNotify(args []string) int {
-	flags := flag.NewFlagSet("wait notify", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout or installation state root")
-	job := flags.String("job", "", "delegate job identifier")
-	attempt := flags.String("attempt", "", "proof attempt identifier")
-	goalID := flags.String("goal", "", "goal identifier")
-	beganBootNanos := flags.Int64("began-boot-nanos", 0, "owner boot-clock sample before the durable write")
-	bootID := flags.String("boot-id", "", "boot identity for the pre-write sample")
-	publicationID := flags.String("publication-id", "", "durable publication join identity")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		return metarun.ExitInvalidWait
-	}
-	if *beganBootNanos < 0 || (*beganBootNanos > 0) != (*bootID != "") {
-		fmt.Fprintln(os.Stderr, "wait notify needs a positive --began-boot-nanos together with --boot-id, or neither")
-		return metarun.ExitInvalidWait
-	}
-	selector := metarun.WaitHint{}
-	for _, candidate := range []struct{ kind, value string }{{"job", *job}, {"attempt", *attempt}, {"goal", *goalID}} {
-		if candidate.value == "" {
-			continue
-		}
-		if selector.Kind != "" {
-			fmt.Fprintln(os.Stderr, "wait notify requires exactly one of --job, --attempt, or --goal")
-			return metarun.ExitInvalidWait
-		}
-		selector = metarun.WaitHint{Kind: candidate.kind, TargetID: candidate.value, BeganBootNanos: *beganBootNanos, BeganBootID: *bootID, PublicationID: *publicationID}
-	}
-	if selector.Kind == "" {
-		fmt.Fprintln(os.Stderr, "wait notify requires exactly one of --job, --attempt, or --goal")
-		return metarun.ExitInvalidWait
-	}
-	stateRoot, err := goal.ResolveStateRoot(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return metarun.ExitWaiterIO
-	}
-	delivery, err := metarun.NotifyWaiters(stateRoot, selector)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return metarun.ExitInvalidWait
-	}
-	fmt.Printf("wait hints matched=%d delivered=%d\n", delivery.Matched, delivery.Delivered)
-	return 0
 }
 
 func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Caller, runtimeName string, poll func(context.Context) error) (metarun.WaitOptions, error) {
@@ -476,10 +367,6 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 		},
 		Actionable: actionable,
 	}, nil
-}
-
-func printWaitResult(result metarun.WaitResult, jsonOutput bool) {
-	writeWaitResult(os.Stdout, result, jsonOutput)
 }
 
 // writeWaitResult renders a wait result as the wait verb prints it.

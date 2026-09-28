@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -514,7 +513,7 @@ func (r appRun) launchSupervisor() (string, error) {
 // application for its life. It is internal because a person never types it;
 // `app start` launches it the way `ui start` launches the interface.
 func runAppServe(args []string) int {
-	flags := flag.NewFlagSet("app serve", flag.ContinueOnError)
+	flags := newFlagSet("app serve")
 	repo := pathFlag(flags, "repo", "", "checkout path (default: the checkout that contains the installation)")
 	root := flags.String("metasystem-root", "", "metasystem installation")
 	key := flags.String("key", applaunch.StandingKey, "the run's key")

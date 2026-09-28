@@ -653,9 +653,9 @@ func (b *carriedDeliveryBed) answerCarry(workspace, ulid string) string {
 func (b *carriedDeliveryBed) raiseFormatThroughAnExpiredExercise() {
 	b.t.Helper()
 	tree := goalSyncMutationGit(b.t, b.f.mainRoot, "rev-parse", "refs/remotes/origin/main^{tree}")
-	carry := exec.Command(b.engine, "goal", "carry", "--root", b.f.mainRoot, "--id", "standing-validation", "--by", "Wido", "--tree", tree,
+	carry := exec.Command(commandTestExecutable(b.t), goalCarryHelperCommand, "--root", b.f.mainRoot, "--id", "standing-validation", "--by", "Wido", "--tree", tree,
 		"--past", "missing-declaration", "--why", "an earlier exception", "--expires", "1h", "--raise-format", "--fixture-human-authority", "--lineage", "m1")
-	carry.Env = append(os.Environ(), "METASYSTEM_GOAL_NOW="+time.Now().UTC().Add(-2*time.Hour).Format(time.RFC3339))
+	carry.Env = fixtureCommandEnvironment(b.t, "METASYSTEM_GOAL_NOW="+time.Now().UTC().Add(-2*time.Hour).Format(time.RFC3339))
 	if output, err := carry.CombinedOutput(); err != nil {
 		b.t.Fatalf("raise the ledger format through an earlier exception: %v\n%s", err, output)
 	}
