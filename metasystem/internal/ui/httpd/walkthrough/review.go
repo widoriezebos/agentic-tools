@@ -197,6 +197,11 @@ func (fixtureGit) PathDiff(from, to, path string) ([]byte, error) {
 
 func (fixtureGit) CommitsCarrying(string, string) ([]string, error) { return nil, nil }
 
+// LineCommits is never asked: the fixture's goals are reviewed at a tip.
+func (fixtureGit) LineCommits(string, string) ([]string, error) {
+	return nil, fmt.Errorf("the fixture has no blame")
+}
+
 func pathsOf(from, to string) []string {
 	seen := map[string]bool{}
 	paths := []string{}

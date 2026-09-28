@@ -1,4 +1,5 @@
-import { ACCEPTED, FIX, followUp, LEFT_OPEN, type Entry } from "../partner/sitting";
+import type { Subject } from "../partner/api";
+import { ACCEPTED, entriesIn, FIX, followUp, LEFT_OPEN, type Entry } from "../partner/sitting";
 
 /**
  * The review room's own rules (g1-s65 §3, D5, D9, D10).
@@ -261,21 +262,64 @@ function examinedAs(item: DeskItem): string {
 
 /**
  * The Outcome's words with the verdict as its first line and what was examined
- * after it, so a nod cannot pass as a review. A draft that already opens with
- * the verdict line keeps the one it has.
+ * after it, so a nod cannot pass as a review. The first line is exactly
+ * `Verdict: <the chosen verdict>` and an `Examined:` line follows it before any
+ * other words; a draft missing either gets it, once. A draft that opens with
+ * another verdict line is refused in words rather than rewritten (Sol SOL-A-07).
  */
-export function outcomeWithVerdict(verdict: string, text: string, examined: string): string {
-  const said = text.replace(/^\s+/u, "");
+export function outcomeWithVerdict(verdict: string, text: string, examined: string): { text: string } | { refusal: string } {
   const line = `Verdict: ${verdict}`;
-  if (said.startsWith(line)) {
-    return said;
+  let said = text.replace(/^\s+/u, "");
+  const first = said.split("\n", 1)[0].trim();
+  if (/^verdict\s*:/iu.test(first)) {
+    if (first !== line) {
+      return {
+        refusal: `This Outcome opens with "${first}", but the verdict you chose is ${verdict}. Make its first line "${line}", or remove it, and press Record it again.`,
+      };
+    }
+    said = said.slice(said.indexOf(first) + first.length).replace(/^\s+/u, "");
   }
   const parts = [line];
-  if (examined.trim() !== "") {
-    parts.push(examined);
+  if (!/^examined\s*:/iu.test(said)) {
+    parts.push(examined.trim() === "" ? examinedLine([]) : examined);
   }
-  parts.push(said);
-  return parts.join("\n\n");
+  if (said !== "") {
+    parts.push(said);
+  }
+  return { text: parts.join("\n\n") };
+}
+
+/**
+ * The review's Outcome as the recorder composes it, over the reading as it
+ * stands when the press runs: Clear to land is refused while that reading's
+ * Findings carry an unanswered finding, named, and the verdict and Examined
+ * lines are held (Sol SOL-A-02, SOL-A-07). The End sheet's refusal is the
+ * first line of defence; this one holds after a conflict's reread.
+ */
+export function reviewOutcome(verdict: string, examined: string): (source: string, entry: Entry) => Entry | { refusal: string } {
+  return (source, entry) => {
+    if (verdict === "clear to land") {
+      const open = unansweredIn(entriesIn(source));
+      if (open.length > 0) {
+        return { refusal: `${CLEAR_REFUSED} ${open.map((finding) => finding.text).join("; ")}` };
+      }
+    }
+    const composed = outcomeWithVerdict(verdict, entry.text, examined);
+    return "refusal" in composed ? composed : { ...entry, text: composed.text };
+  };
+}
+
+/* ------------------------------------------------------------- the door -- */
+
+/**
+ * What Review it asks for: the goal, or — once a press was refused after the
+ * server had made the record — that record, so the next press opens the sitting
+ * on it rather than making another (Sol SOL-A-05).
+ */
+export function reviewStart(goal: string, made: string): { purpose: string; subject: Subject } {
+  return made === ""
+    ? { purpose: "review", subject: { kind: "goal", id: goal, title: goal } }
+    : { purpose: "review", subject: { kind: "record", id: made, title: `Review of ${goal}` } };
 }
 
 /* ------------------------------------------------------------ a moved tip -- */
@@ -368,6 +412,38 @@ export function keepDue(lastKeptAt: number, now: number): boolean {
   return lastKeptAt === 0 || now - lastKeptAt >= 1000;
 }
 
+/** What Step out says when the room's working state could not be kept (Sol SOL-A-01). */
+export const KEEP_REFUSED = "Your unfinished words could not be kept; try Step out again in a moment.";
+
+/** What one press of Step out comes to: say it stops the answer first, stay and say why, or leave. */
+export type StepOut = { kind: "warn" } | { kind: "stay"; said: string } | { kind: "leave" };
+
+/**
+ * One press of Step out (D9, D16). During an answer the first press only says
+ * that stepping out stops it; the next stops it and waits for the answer to
+ * settle, and an answer that has not settled keeps the human in the room with
+ * the service's words (Sol SOL-A-06). Then the room is kept, and a keep that did
+ * not land keeps them in the room too, because leaving would lose the words
+ * (Sol SOL-A-01). `stop` answers a refusal or ""; `keep` whether the keep landed.
+ */
+export async function steppingOut(
+  answering: boolean,
+  warned: boolean,
+  stop: () => Promise<string>,
+  keep: () => Promise<boolean>,
+): Promise<StepOut> {
+  if (answering && !warned) {
+    return { kind: "warn" };
+  }
+  if (answering) {
+    const refused = await stop();
+    if (refused !== "") {
+      return { kind: "stay", said: refused };
+    }
+  }
+  return (await keep()) ? { kind: "leave" } : { kind: "stay", said: KEEP_REFUSED };
+}
+
 /* ------------------------------------------------------------------ walks -- */
 
 /** The five walks, in the order the conversation's presses show them (D6). */
@@ -447,6 +523,17 @@ function headLines(source: string): { lines: string[]; end: number } {
   const lines = source.split("\n");
   const end = lines.findIndex((line) => line.startsWith("## "));
   return { lines, end: end < 0 ? lines.length : end };
+}
+
+/**
+ * What one desk read is of: the item, at the commit the record says was
+ * reviewed. After Review the new tip the same item is another read, so the desk
+ * reads it again rather than showing the old tip under the new one's header
+ * (Sol SOL-A-03). The strip's items keep `deskKey`, their identity.
+ */
+export function deskReadKey(item: DeskItem, reviewed: Reviewed): string {
+  const at = reviewed.tip !== "" ? reviewed.tip : reviewed.landed.join(" ");
+  return `${at}|${deskKey(item)}`;
 }
 
 export function reviewedOf(source: string): Reviewed {

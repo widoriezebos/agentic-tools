@@ -35,6 +35,7 @@ type Git interface {
 	FileCounts(from, to string) ([]gittree.FileCount, error)
 	PathDiff(from, to, path string) ([]byte, error)
 	CommitsCarrying(ref, line string) ([]string, error)
+	LineCommits(rev, path string) ([]string, error)
 }
 
 // Owner reads one checkout's candidates.
@@ -516,6 +517,9 @@ type Source struct {
 	To     int          `json:"to"`
 	Total  int          `json:"total"`
 	Lines  []SourceLine `json:"lines"`
+	// Unmarked says the touched lines could not be established and none are
+	// marked; "" where the marks stand.
+	Unmarked string `json:"unmarked,omitempty"`
 }
 
 // Source reads one file of the reviewed tree from line from to line to, both
@@ -564,25 +568,49 @@ func (o Owner) Source(reviewed Reviewed, file string, from, to int) (Source, err
 	if to > total {
 		to = total
 	}
-	touched := o.touched(pairs, at, clean)
-	read := Source{Path: clean, Commit: at, From: from, To: to, Total: total, Lines: make([]SourceLine, 0, to-from+1)}
+	touched, unmarked := o.touched(reviewed, pairs, at, clean)
+	read := Source{Path: clean, Commit: at, From: from, To: to, Total: total, Unmarked: unmarked,
+		Lines: make([]SourceLine, 0, to-from+1)}
 	for number := from; number <= to; number++ {
 		read.Lines = append(read.Lines, SourceLine{Number: number, Text: lines[number-1], Touched: touched[number]})
 	}
 	return read, nil
 }
 
-// touched is the lines of the source commit's file that the change added,
-// read from one comparison: the first comparison's base against the commit the
-// source is read at. A file the change did not touch has none.
-func (o Owner) touched(pairs []Comparison, at, file string) map[int]bool {
+// Unmarked is what a source read says where its touched lines could not be
+// established.
+const Unmarked = "touched lines not marked"
+
+// touched is the lines of the source commit's file that the change wrote. A
+// goal waiting to land is its merge base against its tip. A done goal's commits
+// may have another goal's between them, so its marks come from its own commits
+// only (Sol SOL-A-04): a line is marked where the commit that last touched it at
+// the last landed commit is one of the goal's. Where that cannot be read,
+// nothing is marked and the read says so.
+func (o Owner) touched(reviewed Reviewed, pairs []Comparison, at, file string) (map[int]bool, string) {
 	marked := map[int]bool{}
+	if len(reviewed.Landed) > 0 {
+		blamed, err := o.Git.LineCommits(at, file)
+		if err != nil {
+			return marked, Unmarked
+		}
+		own := map[string]bool{}
+		for _, landed := range reviewed.Landed {
+			own[landed] = true
+		}
+		for index, commit := range blamed {
+			if own[commit] {
+				marked[index+1] = true
+			}
+		}
+		return marked, ""
+	}
 	if len(pairs) == 0 {
-		return marked
+		return marked, ""
 	}
 	patch, err := o.Git.PathDiff(pairs[0].From, at, file)
 	if err != nil {
-		return marked
+		return marked, ""
 	}
 	for _, hunk := range hunksOf(string(patch)) {
 		for _, line := range hunk.Lines {
@@ -591,7 +619,7 @@ func (o Owner) touched(pairs []Comparison, at, file string) map[int]bool {
 			}
 		}
 	}
-	return marked
+	return marked, ""
 }
 
 // inside is a path of the reviewed tree, or the refusal that names it as not

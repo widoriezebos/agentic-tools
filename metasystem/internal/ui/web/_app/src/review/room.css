@@ -129,6 +129,31 @@
   border-bottom: 1px solid var(--ms-border);
 }
 
+/* The conversation's scroller sits in a frame of its own, so the "Latest" pill
+   is placed on the frame's bottom edge — the composer's top edge — and never
+   floats over a card's text inside the scroller. */
+.ms-room-talk {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  /* The strip the pill's upper half sits in, below the scroller's last line. */
+  padding-bottom: 14px;
+}
+
+.ms-room-talk .ms-partner-transcript {
+  position: static;
+}
+
+.ms-room-talk .ms-partner-latest {
+  position: absolute;
+  right: 16px;
+  bottom: 0;
+  z-index: 1;
+  transform: translateY(50%);
+}
+
 .ms-room-transcript {
   flex: 1 1 auto;
   min-height: 0;
@@ -540,6 +565,16 @@
   .ms-room-desk,
   .ms-room-conversation {
     flex: 1 1 50% !important;
+  }
+
+  /* An empty desk is its one line, and the conversation takes the space. The
+     panel's size is on the library's outer element, around the class. */
+  [data-panel]:has(> .ms-room-desk--empty) {
+    flex: 0 0 auto !important;
+  }
+
+  .ms-room-desk--empty .ms-desk-item {
+    display: none;
   }
 
   .ms-room-grip {

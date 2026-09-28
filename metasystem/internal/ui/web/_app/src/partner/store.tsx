@@ -135,7 +135,7 @@ import {
   answerLine,
   EMPTY_DESK,
   examinedLine,
-  outcomeWithVerdict,
+  reviewOutcome,
   retipped,
   keepDue,
   onDesk,
@@ -187,7 +187,8 @@ type Partner = {
    */
   send: (text?: string) => void;
   /** Stop the running turn. */
-  stop: () => void;
+  /** Stop the running answer; answers a refusal in words, or "" once it has settled. */
+  stop: () => Promise<string>;
   /** True while a send is in flight, so Send cannot be pressed twice. */
   sending: boolean;
 
@@ -391,7 +392,8 @@ type Partner = {
   /** Flip the desk pane to the board or back. */
   setFace: (face: Face) => void;
   /** Keep the room now, whatever the second says: leaving a field, stepping out, leaving the page. */
-  keepRoomNow: (leaving?: boolean) => Promise<void>;
+  /** Keep the room on its mark; answers whether the keep landed. */
+  keepRoomNow: (leaving?: boolean) => Promise<boolean>;
   /** One of the five walks, asked by the interface in the human's name (D6). */
   walk: (part: string) => Promise<void>;
   /** The turn whose presenting the human stopped, or "". */
@@ -585,7 +587,7 @@ const nothing: Partner = {
   draft: "",
   setDraft: () => {},
   send: () => {},
-  stop: () => {},
+  stop: async () => "",
   sending: false,
   attachments: [],
   detach: () => {},
@@ -629,7 +631,7 @@ const nothing: Partner = {
   putOnDesk: () => {},
   showOnDesk: () => {},
   setFace: () => {},
-  keepRoomNow: async () => {},
+  keepRoomNow: async () => true,
   walk: async () => {},
   stoppedPresenting: "",
   stopPresenting: () => {},
@@ -1002,17 +1004,18 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   }, [draft, running, sending, capture, attachments, compose, refreshed, where]);
 
   const turn = store.live.turn;
-  const stop = useCallback(() => {
+  const stop = useCallback(async (): Promise<string> => {
     if (turn === "") {
-      return;
+      return "";
     }
-    stopTurn(turn, where)
-      .then((snapshot) => {
-        setStore((held) => loaded(held, snapshot));
-      })
-      .catch((error: unknown) => {
-        setStore((held) => refused(held, reasonOf(error), ""));
-      });
+    try {
+      const snapshot = await stopTurn(turn, where);
+      setStore((held) => loaded(held, snapshot));
+      return "";
+    } catch (error: unknown) {
+      setStore((held) => refused(held, reasonOf(error), ""));
+      return reasonOf(error);
+    }
   }, [turn, where]);
 
   /**
@@ -1615,11 +1618,13 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       changeMark(id, (mark) => ({ ...mark, recording: true, refusal: "" }));
       const entry = entryOf(card, nameOf(store.human), stampOf(new Date()), records);
       // A review's Outcome opens with the verdict the human chose, and names
-      // what they examined, so a nod cannot pass as a review (g1-s65 D10).
-      if (card.kind === "outcome" && sitting?.purpose === "review" && verdict !== "") {
-        entry.text = outcomeWithVerdict(verdict, entry.text, examinedLine(desk.items));
-      }
-      void held.press(entry, records?.kind ?? card.kind, into).then((outcome) => {
+      // what they examined, so a nod cannot pass as a review (g1-s65 D10). It is
+      // composed inside the recorder's queue, over the record as it then reads,
+      // so a Clear meets every finding recorded since the sheet opened.
+      const shape = card.kind === "outcome" && sitting?.purpose === "review" && verdict !== ""
+        ? reviewOutcome(verdict, examinedLine(desk.items))
+        : undefined;
+      void held.press(entry, records?.kind ?? card.kind, into, shape).then((outcome) => {
         if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
           setReading(outcome.reading);
         }
@@ -1777,23 +1782,34 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    * the keystroke before leaving is never the one that is lost. This build sets
    * no timer, so the second is measured between changes rather than waited out.
    */
-  const keepRoomNow = useCallback(async (leaving = false) => {
+  const keepRoomNow = useCallback(async (leaving = false): Promise<boolean> => {
     const record = whereNow.current;
     const kept = JSON.stringify(roomNow.current);
-    if (record === "" || roomRecord === "" || kept === lastKept.current || sittingNow.current === null) {
-      return;
+    if (record === "" || roomRecord === "" || sittingNow.current === null) {
+      return true;
+    }
+    // These very words are being kept, or were: the answer is that keep's.
+    if (kept === lastKept.current) {
+      return keeping.current;
     }
     lastKept.current = kept;
     keptAt.current = Date.now();
-    try {
-      await keepRoom(record, JSON.parse(kept) as RoomState, leaving);
-    } catch {
-      // The next change keeps it again: a keep that could not be made is words
-      // still on the screen, and nothing about them is lost here.
-      lastKept.current = "";
-    }
+    const landed = keepRoom(record, JSON.parse(kept) as RoomState, leaving).then(
+      () => true,
+      () => {
+        // The next change keeps it again, and Step out stays in the room and
+        // says so: a keep that could not be made is words still on the screen.
+        if (lastKept.current === kept) {
+          lastKept.current = "";
+        }
+        return false;
+      },
+    );
+    keeping.current = landed;
+    return landed;
   }, [roomRecord]);
 
+  const keeping = useRef<Promise<boolean>>(Promise.resolve(true));
   const roomNow = useRef<RoomState>(room);
   roomNow.current = room;
   const sittingNow = useRef<Sitting | null>(null);

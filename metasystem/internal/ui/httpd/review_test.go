@@ -1,6 +1,7 @@
 package httpd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -69,6 +70,8 @@ func (deskGit) PathDiff(string, string, string) ([]byte, error) {
 
 func (deskGit) CommitsCarrying(string, string) ([]string, error) { return nil, errors.New("none") }
 
+func (deskGit) LineCommits(string, string) ([]string, error) { return nil, errors.New("no blame") }
+
 // withALanding is the board with one goal built and waiting to land.
 func withALanding() snapshot.Observation {
 	observed := readObservation()
@@ -94,10 +97,15 @@ type servedReview struct {
 
 func serveReview(t *testing.T, script fakeacp.Script) *servedReview {
 	t.Helper()
+	script.Models = []string{"fake-1"}
+	return serveReviewOn(t, fakeacp.Open(script))
+}
+
+func serveReviewOn(t *testing.T, opener func(context.Context) (partner.Endpoint, error)) *servedReview {
+	t.Helper()
 	root := t.TempDir()
 	runtime := partner.Runtime{Name: "fake", Model: "fake-1", ReadOnly: "a fake server reads nothing"}
-	script.Models = []string{"fake-1"}
-	host := partner.NewHostOn(runtime, root, fakeacp.Open(script))
+	host := partner.NewHostOn(runtime, root, opener)
 	t.Cleanup(host.Close)
 	document := func(id string) (project.Document, error) {
 		switch id {
@@ -384,4 +392,40 @@ func TestTheStopRouteAnswersTheRoomsConversation(t *testing.T) {
 	stopped := post(t, served.handler, partnerTurnsPre+"no-such-turn"+stopSuffix, `{"conversation":"`+reviewed+`"}`, nil)
 	testutil.Require(t, "a stop for a turn that ended is no error", stopped.Code, http.StatusOK)
 	testutil.Expect(t, "it answers the room", partnerSnapshot(t, stopped).Conversation, reviewed)
+}
+
+// Sol SOL-A-05: a Start whose sitting failed to open left its record, and the
+// next press is about that record rather than a second one.
+func TestAStartThatFailedToOpenIsRetriedOnItsOwnRecord(t *testing.T) {
+	t.Parallel()
+	// The drawer's conversation holds the first session; the runtime fails the
+	// one open of the review's own session, then answers again.
+	opens := 0
+	opener := fakeacp.Open(fakeacp.Script{Chunks: []string{"Asked: ..."}, Models: []string{"fake-1"}})
+	served := serveReviewOn(t, func(ctx context.Context) (partner.Endpoint, error) {
+		opens++
+		if opens == 2 {
+			return partner.Endpoint{}, errors.New("the runtime could not start")
+		}
+		return opener(ctx)
+	})
+	events, stop := served.service.Subscribe()
+	defer stop()
+	asked := post(t, served.handler, partnerTurnsPath, `{"key":"k1","text":"a question","about":{}}`, nil)
+	testutil.Require(t, "the drawer's question", asked.Code, http.StatusAccepted)
+	drain(t, events)
+
+	refused := post(t, served.handler, partnerSittingPath, reviewLanding, nil)
+	testutil.Require(t, "the first open is refused", refused.Code != http.StatusOK, true)
+	var body struct {
+		Draft string `json:"draft"`
+	}
+	testutil.Require(t, "the refusal", json.Unmarshal(refused.Body.Bytes(), &body), nil)
+	testutil.Expect(t, "it names the record it made", body.Draft, reviewed)
+
+	again := post(t, served.handler, partnerSittingPath, reviewLanding, nil)
+	testutil.Require(t, "the second press opens the sitting", again.Code, http.StatusOK)
+	drain(t, events)
+	testutil.Expect(t, "one record", len(served.created), 1)
+	testutil.Expect(t, "on that record", partnerSnapshot(t, again).Conversation, reviewed)
 }

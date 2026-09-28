@@ -157,7 +157,7 @@ export function Composer({
         {busy ? (
           <Button
             onClick={() => {
-              stop();
+              void stop();
             }}
           >
             <Square size={14} strokeWidth={1.75} aria-hidden="true" />

@@ -106,3 +106,28 @@ func TestCommitsCarryingRefusesAMalformedLog(t *testing.T) {
 		}
 	}
 }
+
+func TestLineCommitsReadsWhichCommitLastTouchedEachLine(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	one, two := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	porcelain := one + " 1 1 2\nauthor A\nprevious " + two + " x.go\nfilename x.go\n\tfirst\n" +
+		one + " 2 2\n\tsecond\n" +
+		two + " 5 3 1\nauthor B\nfilename x.go\n\tthird\n"
+	w := Workspace{Dir: dir, RawSource: rawPortScript(t, dir,
+		rawPortStep{args: []string{"blame", "--porcelain", "tip", "--", "x.go"}, result: RawResult{Stdout: []byte(porcelain)}},
+		rawPortStep{result: RawResult{Stdout: []byte(one + " 1 2 1\n\tout of order\n")}},
+		rawPortStep{result: RawResult{Stderr: []byte("no such path\n"), ExitCode: 128}},
+	)}
+
+	got, err := w.LineCommits("tip", "x.go")
+
+	if err != nil || strings.Join(got, " ") != strings.Join([]string{one, one, two}, " ") {
+		t.Fatalf("line commits = %v, %v", got, err)
+	}
+	for _, want := range []string{"not in line order", "no such path"} {
+		if _, err := w.LineCommits("tip", "x.go"); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("line commits error = %v, want %q", err, want)
+		}
+	}
+}

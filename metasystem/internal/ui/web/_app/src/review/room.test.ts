@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   ANSWERS,
+  reviewStart,
+  deskKey,
+  deskReadKey,
+  KEEP_REFUSED,
+  steppingOut,
+  CLEAR_REFUSED,
+  reviewOutcome,
   answerLine,
   retipped,
   reviewedOf,
@@ -25,7 +32,8 @@ import {
   type Desk,
   type DeskItem,
 } from "./room";
-import type { Entry } from "../partner/sitting";
+import { appended, type Entry } from "../partner/sitting";
+import { recorder, type Written } from "../partner/recording";
 
 /**
  * The review room's own rules (g1-s65 §3), each one a rule a human would notice
@@ -114,13 +122,63 @@ describe("ending", () => {
       { kind: "diff", path: "a.go", since: true }])).toBe(
       "Examined: what changed since the reviewed tip in a.go; the change index; a.go, as changed; what changed since the reviewed tip",
     );
-    expect(outcomeWithVerdict("clear to land", "The lock is held.", examined)).toBe(
-      "Verdict: clear to land\n\nExamined: the change index; owner.go:41-88\n\nThe lock is held.",
-    );
-    // A draft that already opens with the line keeps one.
-    expect(outcomeWithVerdict("send back", "Verdict: send back\n\nFix the press.", "")).toBe(
-      "Verdict: send back\n\nFix the press.",
-    );
+    expect(outcomeWithVerdict("clear to land", "The lock is held.", examined)).toEqual({
+      text: "Verdict: clear to land\n\nExamined: the change index; owner.go:41-88\n\nThe lock is held.",
+    });
+    // A draft that already opens with both lines keeps them, once each.
+    expect(outcomeWithVerdict("send back", "Verdict: send back\n\nExamined: a.go:1-2\n\nFix the press.", examined)).toEqual({
+      text: "Verdict: send back\n\nExamined: a.go:1-2\n\nFix the press.",
+    });
+  });
+
+  it("holds the verdict line exactly and never lets the Examined line go missing (Sol SOL-A-07)", () => {
+    const examined = "Examined: the change index";
+    // A draft that opens with the verdict line but says nothing examined gets it.
+    expect(outcomeWithVerdict("clear to land", "Verdict: clear to land\n\nThe lock is held.", examined)).toEqual({
+      text: "Verdict: clear to land\n\nExamined: the change index\n\nThe lock is held.",
+    });
+    expect(outcomeWithVerdict("clear to land", "Verdict: clear to land", examined)).toEqual({
+      text: "Verdict: clear to land\n\nExamined: the change index",
+    });
+    // A verdict line that only starts like the chosen one is another verdict, refused in words.
+    const prefix = outcomeWithVerdict("clear to land", "Verdict: clear to landing\n\nFine.", examined);
+    expect(prefix).toEqual({ refusal: expect.stringContaining("Verdict: clear to landing") });
+    expect("refusal" in prefix && prefix.refusal).toContain("clear to land");
+    expect(outcomeWithVerdict("clear to land", "Verdict: send back\n\nFine.", examined)).toHaveProperty("refusal");
+    // No desk items still says so, rather than leaving the line out.
+    expect(outcomeWithVerdict("no verdict", "Ended.", "")).toEqual({
+      text: "Verdict: no verdict\n\nExamined: nothing was put on the desk\n\nEnded.",
+    });
+  });
+
+  it("refuses a Clear Outcome inside the recorder while the record it now reads has an unanswered finding (Sol SOL-A-02)", async () => {
+    const empty = "# Review of g\n\n## Findings\n\n## Outcome\n";
+    const found = appended(empty, {
+      when: "2026-09-28", who: "Wido", text: "the lock is never released", clause: "owner.go:60-72",
+      consequence: "a dead press holds the lock", section: "Findings", mark: "deposit:t9#0",
+    }, "finding");
+    const saves: string[] = [];
+    // Another tab records the finding: the first write meets the moved record.
+    const save = (_id: string, source: string): Promise<Written> => {
+      saves.push(source);
+      return Promise.reject(new Error("stale"));
+    };
+    const record = recorder({ id: "r.md", revision: "1", source: empty }, save,
+      () => Promise.resolve({ revision: "2", source: found }), () => true);
+    const outcome: Entry = { when: "2026-09-28", who: "Wido", text: "Fine.", clause: "", section: "Outcome", mark: "deposit:t3#0" };
+    const shape = reviewOutcome("clear to land", "Examined: the change index");
+
+    expect((await record.press(outcome, "outcome", "r.md", shape)).kind).toBe("conflict");
+    expect(saves).toHaveLength(1);
+    const again = await record.press(outcome, "outcome", "r.md", shape);
+    expect(again).toEqual({ kind: "failed", reason: expect.stringContaining("the lock is never released") });
+    expect("reason" in again && again.reason).toContain(CLEAR_REFUSED);
+    // Nothing was written the second time.
+    expect(saves).toHaveLength(1);
+    // Send back is not refused for it.
+    const back = await record.press(outcome, "outcome", "r.md", reviewOutcome("send back", "Examined: x"));
+    expect(back.kind).toBe("conflict");
+    expect(saves[1]).toContain("Verdict: send back\n\nExamined: x\n\nFine.");
   });
 
   it("says a nod plainly when the piles are empty", () => {
@@ -203,5 +261,64 @@ describe("the record's head", () => {
     // Everything below the head is untouched.
     expect(again.slice(again.indexOf("## Findings"))).toBe("## Findings\n");
     expect(retipped("# no head\n", now)).toBeNull();
+  });
+
+  it("keys every desk read by the reviewed commit as well as the item, so a retip reads it again (Sol SOL-A-03)", () => {
+    const now = "f".repeat(40);
+    const item: DeskItem = { kind: "source", path: "owner.go", from: 1, to: 40 };
+    const before = deskReadKey(item, reviewedOf(head));
+    const after = deskReadKey(item, reviewedOf(retipped(head, now) ?? ""));
+    expect(before).toContain(tip);
+    expect(after).toContain(now);
+    expect(after).not.toBe(before);
+    for (const other of [{ kind: "changes" }, { kind: "diff", path: "a.go" }, { kind: "section", record: "r.md", section: "D1" }] as DeskItem[]) {
+      expect(deskReadKey(other, reviewedOf(retipped(head, now) ?? ""))).not.toBe(deskReadKey(other, reviewedOf(head)));
+    }
+    // The strip's items keep their identity across the retip.
+    expect(deskKey(item)).toBe(deskKey({ ...item }));
+    // A done goal's reads are keyed by its landed commits.
+    const landed = reviewedOf("- Goals: g1-s50\n- Reviewed: " + "1".repeat(40) + " (landed with Goal-Item: g1-s50)\n");
+    expect(deskReadKey(item, landed)).toContain("1".repeat(40));
+  });
+});
+
+describe("stepping out (Sol SOL-A-01, SOL-A-06)", () => {
+  const UNSETTLED = "the previous room's answer has not settled; try again in a moment";
+
+  it("stays in the room when the room could not be kept, and leaves once it is", async () => {
+    let kept = false;
+    const keep = () => Promise.resolve(kept);
+    const stop = () => Promise.resolve("");
+    expect(await steppingOut(false, false, stop, keep)).toEqual({ kind: "stay", said: KEEP_REFUSED });
+    expect(KEEP_REFUSED).toBe("Your unfinished words could not be kept; try Step out again in a moment.");
+    kept = true;
+    expect(await steppingOut(false, false, stop, keep)).toEqual({ kind: "leave" });
+  });
+
+  it("during an answer, says so first, then stays while the answer has not settled, and leaves once it has", async () => {
+    const keeps: string[] = [];
+    const keep = () => {
+      keeps.push("kept");
+      return Promise.resolve(true);
+    };
+    let settled = false;
+    const stop = () => Promise.resolve(settled ? "" : UNSETTLED);
+    expect(await steppingOut(true, false, stop, keep)).toEqual({ kind: "warn" });
+    expect(await steppingOut(true, true, stop, keep)).toEqual({ kind: "stay", said: UNSETTLED });
+    // Nothing is kept or left while the answer runs on.
+    expect(keeps).toEqual([]);
+    settled = true;
+    expect(await steppingOut(true, true, stop, keep)).toEqual({ kind: "leave" });
+    expect(keeps).toEqual(["kept"]);
+  });
+});
+
+describe("Review it after a refused open (Sol SOL-A-05)", () => {
+  it("asks for the goal until a refused open names its record, then for that record", () => {
+    expect(reviewStart("g1-s64", "")).toEqual({ purpose: "review", subject: { kind: "goal", id: "g1-s64", title: "g1-s64" } });
+    expect(reviewStart("g1-s64", "metasystem/plans/reviews/review-of-g1-s64.md")).toEqual({
+      purpose: "review",
+      subject: { kind: "record", id: "metasystem/plans/reviews/review-of-g1-s64.md", title: "Review of g1-s64" },
+    });
   });
 });

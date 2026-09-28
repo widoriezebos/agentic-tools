@@ -3,6 +3,7 @@ package partner
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 )
@@ -119,6 +120,29 @@ func (s *Service) KeepRoom(human, record string, room Room) error {
 		return err
 	}
 	return conversation.Keep(room, s.now())
+}
+
+// Unopened says whether one human's sitting on a record was begun and never
+// opened: its mark was written and taken off again by a refused opening turn,
+// and nothing was said in it (Sol SOL-A-05). Start reuses such a record rather
+// than creating a second one. A record this human never sat on is not theirs,
+// and is not unopened: nothing of theirs was ever written beside it.
+func (s *Service) Unopened(human, record string) bool {
+	own, err := s.conversationOf(human, "")
+	if err != nil {
+		return false
+	}
+	_, state := sittingFiles(own.directory, human, record)
+	if _, err := os.Stat(state); err != nil {
+		return false
+	}
+	conversation, err := s.conversationOf(human, record)
+	if err != nil {
+		return false
+	}
+	conversation.mu.Lock()
+	defer conversation.mu.Unlock()
+	return conversation.sitting == nil && len(conversation.messages) == 0
 }
 
 // Standing is every sitting that stands on one human's conversations, their own

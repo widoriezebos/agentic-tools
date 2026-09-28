@@ -100,3 +100,26 @@ func (w Workspace) CommitsCarrying(ref, line string) ([]string, error) {
 	}
 	return commits, nil
 }
+
+// LineCommits answers, for each line of one path at rev, the commit that last
+// touched it, read from git blame: index zero is line one. A review of a done
+// goal marks a line as its own where that commit is one of the goal's.
+func (w Workspace) LineCommits(rev, path string) ([]string, error) {
+	raw, err := w.git(nil, "blame", "--porcelain", rev, "--", path)
+	if err != nil {
+		return nil, fmt.Errorf("gittree line commits: %w", err)
+	}
+	commits := []string{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		fields := strings.Fields(line)
+		if strings.HasPrefix(line, "\t") || len(fields) < 3 || len(fields) > 4 || !treeID.MatchString(fields[0]) {
+			continue
+		}
+		final, err := nonnegativeDecimal([]byte(fields[2]))
+		if err != nil || final != int64(len(commits)+1) {
+			return nil, fmt.Errorf("gittree line commits: blame of %s at %s is not in line order", path, rev)
+		}
+		commits = append(commits, fields[0])
+	}
+	return commits, nil
+}

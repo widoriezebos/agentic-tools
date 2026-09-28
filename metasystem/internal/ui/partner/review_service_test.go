@@ -249,6 +249,35 @@ func TestAnUnsettledTurnRefusesTheSwitchInWords(t *testing.T) {
 	drain(t, events)
 }
 
+// Sol SOL-A-06: Stop answers whether the turn settled. A runtime that holds its
+// answer past the settle wait is ErrUnsettled, in the design's words, so Step
+// out can stay in the room; once it settles, Stop is no refusal.
+func TestStopAnswersWhetherTheTurnSettled(t *testing.T) {
+	t.Parallel()
+	hold := make(chan struct{})
+	prompted := make(chan string, 8)
+	held := reviewService(t, fakeacp.Script{Chunks: []string{"An answer."}, Hold: hold, Prompted: prompted})
+	partner.SettleWithin(held.service, 0)
+	events, stop := held.service.Subscribe()
+	defer stop()
+	ctx := context.Background()
+
+	_, err := held.service.Sit(ctx, "Wido", reviewOf(reviewA), partner.PurposeReview, inTheRoom(reviewA))
+	testutil.Require(t, "the review opened", err, nil)
+	<-prompted
+	read, err := held.service.SnapshotIn("Wido", reviewA, 100)
+	testutil.Require(t, "the room's conversation", err, nil)
+	testutil.Require(t, "an answer is running", read.Turn != "", true)
+
+	err = held.service.Stop(ctx, read.Turn)
+	testutil.Expect(t, "an unsettled stop says so", err, partner.ErrUnsettled)
+
+	close(hold)
+	drain(t, events)
+	testutil.Expect(t, "it settles as stopped when it can", lastOutcome(t, held.service, reviewA), partner.OutcomeStopped)
+	testutil.Expect(t, "a stop of a settled turn is no refusal", held.service.Stop(ctx, read.Turn), nil)
+}
+
 // D3: the review's session is fresh, and it stays so on recovery. Neither the
 // ordinary conversation's history nor the proposals block composed from its
 // transcript reaches a review's prompt.

@@ -1479,7 +1479,8 @@ func (s *Service) publish(event Event) {
 
 // Stop cancels the running turn, if the id names it. A stop for a turn that
 // has already ended is not an error: the page and the server raced, and the
-// page is about to be told the turn ended.
+// page is about to be told the turn ended. A turn the runtime does not write
+// down within the settle wait answers ErrUnsettled.
 func (s *Service) Stop(ctx context.Context, id string) error {
 	s.mu.Lock()
 	running := s.current
@@ -1489,13 +1490,14 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	}
 	running.stopping = true
 	s.mu.Unlock()
-	if err := s.host.Stop(ctx); err != nil {
-		return err
-	}
 	// The route answers with the snapshot, so the turn has to be written down
 	// before it does; otherwise the page is handed a running turn whose
-	// terminal beat it has already seen.
-	s.settled(ctx, running)
+	// terminal beat it has already seen. A turn not written down within the one
+	// settle wait is said, never a success: Step out stays in the room on it
+	// rather than leaving an answer running behind the human (Sol SOL-A-06).
+	if !s.stopAndSettle(ctx, running) {
+		return ErrUnsettled
+	}
 	return nil
 }
 

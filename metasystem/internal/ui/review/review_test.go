@@ -21,6 +21,7 @@ type fakeGit struct {
 	counts   map[string][]gittree.FileCount
 	diffs    map[string]string
 	carrying map[string][]string
+	blame    map[string][]string
 }
 
 func commit(letter string) string { return strings.Repeat(letter, 40) }
@@ -59,6 +60,13 @@ func (f fakeGit) CommitsCarrying(ref, line string) ([]string, error) {
 		return found, nil
 	}
 	return nil, fmt.Errorf("unknown revision %s", ref)
+}
+
+func (f fakeGit) LineCommits(rev, path string) ([]string, error) {
+	if found, known := f.blame[rev+" "+path]; known {
+		return found, nil
+	}
+	return nil, fmt.Errorf("no blame for %s at %s", path, rev)
 }
 
 // A goal waiting to land: goal/g1-s64 at origin, its merge base with main, one
@@ -310,6 +318,44 @@ func TestADoneGoalsSourceIsItsLastCommitsTree(t *testing.T) {
 
 	testutil.Require(t, "the source", err, nil)
 	testutil.Expect(t, "the last commit", read.Commit, commit("2"))
+}
+
+// Sol SOL-A-04: a done goal's marks come from its own commits only. Another
+// goal's commit landed between the two of this goal's, and the lines it wrote
+// are not this goal's; where blame cannot be read nothing is marked, and the
+// read says so.
+func TestADoneGoalsMarksAreItsOwnCommitsLinesOnly(t *testing.T) {
+	t.Parallel()
+	first, foreign, second := commit("1"), commit("f"), commit("2")
+	git := done()
+	git.refs[second+"^1"] = foreign
+	git.files[second]["a.go"] = "package a\n\nfunc mine() {}\nfunc theirs() {}\nfunc also() {}\n"
+	// The old reading: the first commit's parent against the last commit, which
+	// counts the foreign commit's line as added.
+	git.diffs = map[string]string{commit("0") + ".." + second + " a.go": "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n" +
+		"@@ -1 +1,5 @@\n package a\n+\n+func mine() {}\n+func theirs() {}\n+func also() {}\n"}
+	git.blame = map[string][]string{second + " a.go": {commit("0"), first, first, foreign, second}}
+	reviewed := Reviewed{Goal: "g1-s50", Landed: []string{first, second}}
+
+	read, err := Owner{Git: git}.Source(reviewed, "a.go", 1, 5)
+
+	testutil.Require(t, "the source", err, nil)
+	marked := []int{}
+	for _, line := range read.Lines {
+		if line.Touched {
+			marked = append(marked, line.Number)
+		}
+	}
+	testutil.Expect(t, "the goal's own lines are marked, the foreign one is not", marked, []int{2, 3, 5})
+	testutil.Expect(t, "nothing said about marks", read.Unmarked, "")
+
+	delete(git.blame, second+" a.go")
+	read, err = Owner{Git: git}.Source(reviewed, "a.go", 1, 5)
+	testutil.Require(t, "the source without blame", err, nil)
+	for _, line := range read.Lines {
+		testutil.Expect(t, fmt.Sprintf("line %d is not marked", line.Number), line.Touched, false)
+	}
+	testutil.Expect(t, "the read says so", read.Unmarked, "touched lines not marked")
 }
 
 // A read refused on what it asked for is a Refusal, told apart from a read Git

@@ -18,6 +18,7 @@ import {
   WALKS,
   type DeskItem,
   reviewedOf,
+  steppingOut,
   type Verdict,
 } from "./room";
 import { NotificationsBell } from "../notifications/Bell";
@@ -48,6 +49,7 @@ export function Room({ record }: { record: string }) {
   const navigate = useNavigate();
   const [ending, setEnding] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [stayed, setStayed] = useState("");
   const [moved, setMoved] = useState<{ current: string; changed: string[] } | null>(null);
   const [retipRefusal, setRetipRefusal] = useState("");
   const reviewed = reviewedOf(table.source);
@@ -129,14 +131,16 @@ export function Room({ record }: { record: string }) {
   }, [sitting, here, navigate, reviewed.goal]);
 
   const stepOut = async () => {
-    if (busy && !leaving) {
+    setStayed("");
+    const step = await steppingOut(busy, leaving, stop, () => keepRoomNow());
+    if (step.kind === "warn") {
       setLeaving(true);
       return;
     }
-    if (busy) {
-      stop();
+    if (step.kind === "stay") {
+      setStayed(step.said);
+      return;
     }
-    await keepRoomNow();
     void navigate(backlogPath(reviewed.goal));
   };
 
@@ -196,6 +200,11 @@ export function Room({ record }: { record: string }) {
           </Button>
         </p>
       )}
+      {stayed !== "" && (
+        <p className="ms-room-banner" role="status">
+          {stayed}
+        </p>
+      )}
       {moved !== null && reviewed.tip !== "" && (
         <p className="ms-room-banner ms-room-banner--moved" role="status">
           {movedLine(reviewed.tip, moved.current)} Findings anchored in files that changed are marked "may have
@@ -229,7 +238,12 @@ export function Room({ record }: { record: string }) {
         </p>
       )}
       <Group id="ms-room" className="ms-room-panes" orientation="horizontal">
-        <Panel id="desk" className="ms-room-desk" defaultSize="60%" minSize="30%">
+        <Panel
+          id="desk"
+          className={`ms-room-desk${room.face === "desk" && room.desk.items.length === 0 ? " ms-room-desk--empty" : ""}`}
+          defaultSize="60%"
+          minSize="30%"
+        >
           {room.face === "desk" ? (
             <Desk record={record} />
           ) : (
@@ -257,15 +271,17 @@ export function Room({ record }: { record: string }) {
                 <Button onClick={partner.stopPresenting}>Stop presenting</Button>
               )}
             </div>
-            <div className="ms-room-transcript ms-dock-statement">
-              <Transcript />
-              {shownLocal.length > 0 && (
-                <section className="ms-room-mine" aria-label="Findings you made">
-                  {shownLocal.map((card) => (
-                    <DepositCard key={card.id} id={card.id} />
-                  ))}
-                </section>
-              )}
+            <div className="ms-room-talk">
+              <div className="ms-room-transcript ms-dock-statement">
+                <Transcript />
+                {shownLocal.length > 0 && (
+                  <section className="ms-room-mine" aria-label="Findings you made">
+                    {shownLocal.map((card) => (
+                      <DepositCard key={card.id} id={card.id} />
+                    ))}
+                  </section>
+                )}
+              </div>
             </div>
             <Composer />
           </DeskAnchors.Provider>

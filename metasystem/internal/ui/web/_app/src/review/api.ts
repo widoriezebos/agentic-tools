@@ -16,8 +16,13 @@ const CHANGES = "/changes";
 /** One line of a source read, marked where the change touched it. */
 export type SourceLine = { number: number; text: string; touched?: boolean };
 
-/** One text file of the reviewed tree at a range of lines. */
-export type Source = { path: string; commit: string; from: number; to: number; total: number; lines: SourceLine[] };
+/**
+ * One text file of the reviewed tree at a range of lines. `unmarked` says the
+ * touched lines could not be established, so none are marked.
+ */
+export type Source = {
+  path: string; commit: string; from: number; to: number; total: number; lines: SourceLine[]; unmarked?: string;
+};
 
 /** One file of the change, with its counts. */
 export type ChangedFile = { path: string; added: number; deleted: number; binary?: boolean };

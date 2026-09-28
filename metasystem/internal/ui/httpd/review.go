@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -137,6 +138,13 @@ func (h *handler) startReview(w http.ResponseWriter, r *http.Request, body sitti
 		h.answerPartnerIn(w, r, standing)
 		return
 	}
+	// A Start of this human's whose sitting failed to open left its record:
+	// the next press opens the sitting on that one rather than making a second
+	// (Sol SOL-A-05).
+	if unopened := h.unopenedReviewOf(human, goal); unopened != "" {
+		h.sitOnReview(w, r, human, body, unopened, "Review of "+goal)
+		return
+	}
 	written, err := h.info.CreateReview(project.NewReview{
 		Goal: goal, Reviewed: h.info.Review.ReviewedLine(goal, h.standingOf(goal)),
 	})
@@ -149,12 +157,39 @@ func (h *handler) startReview(w http.ResponseWriter, r *http.Request, body sitti
 		writeFailure(w, err.Error())
 		return
 	}
-	subject := partner.Subject{Kind: partner.SubjectRecord, ID: written.Path, Title: written.Record.Title}
+	h.sitOnReview(w, r, human, body, written.Path, written.Record.Title)
+}
+
+// sitOnReview opens the review sitting on one record, answering its path as
+// the draft where the opening is refused, so the next press is about it.
+func (h *handler) sitOnReview(w http.ResponseWriter, r *http.Request, human string, body sittingBody, record, title string) {
+	subject := partner.Subject{Kind: partner.SubjectRecord, ID: record, Title: title}
 	if _, err := h.info.Partner.Sit(r.Context(), human, subject, partner.PurposeReview, body.About); err != nil {
-		h.refuseTurn(w, err, written.Path)
+		h.refuseTurn(w, err, record)
 		return
 	}
-	h.answerPartnerIn(w, r, written.Path)
+	h.answerPartnerIn(w, r, record)
+}
+
+// unopenedReviewOf is a review record of one goal whose sitting this human
+// began and never opened, or "".
+func (h *handler) unopenedReviewOf(human, goal string) string {
+	if h.info.Project == nil {
+		return ""
+	}
+	pane, err := h.info.Project()
+	if err != nil {
+		return ""
+	}
+	for _, record := range pane.Records {
+		if record.Kind != "review" || !slices.Contains(record.Goals, goal) {
+			continue
+		}
+		if h.info.Partner.Unopened(human, record.Path) {
+			return record.Path
+		}
+	}
+	return ""
 }
 
 // standingOf is where a goal stands on the board: waiting to land, done, or
