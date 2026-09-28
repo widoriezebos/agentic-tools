@@ -30,7 +30,7 @@ const (
 	// The launch contract raised it by one: `app serve` is the supervisor that
 	// owns one run of the project's application for its life, in the shape of
 	// `ui serve`, and like it it is a process entrypoint a person never types.
-	verbRatchetInternalVerbCeiling = 291
+	verbRatchetInternalVerbCeiling = 290
 	// R4: shell lines that reference the engine.
 	verbRatchetShellEngineCeiling = 134
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
