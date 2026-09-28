@@ -324,6 +324,9 @@ func (waits registeredWaits) lines() []string {
 			continue
 		}
 		target := wait.row.Kind + " " + wait.row.TargetID
+		if wait.row.Kind == "path" {
+			target = "path " + wait.row.Selector.Path + " until " + wait.row.Selector.Until
+		}
 		if wait.landing {
 			target = "landing for goal " + wait.goalID
 		} else if wait.humanAct {
@@ -848,6 +851,10 @@ func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineag
 		delivery, targetRequired = "harness", false
 	} else if row.Kind == "human" {
 		delivery, targetRequired = "human", false
+	} else if row.Kind == "path" {
+		// A path has no incarnation to pin (run.waitSelectorHasIncarnation):
+		// its target is the path itself, named by the selector.
+		targetRequired = false
 	}
 	if row.SchemaVersion != 2 || row.State != "pending" || row.Delivery != delivery || row.Result != nil ||
 		!run.ValidWaitID(row.WaitID) || !run.ValidWaitID(row.Nonce) || row.MainId != mainID ||
@@ -940,6 +947,25 @@ func (s *Store) registeredWaitSource(work ClaimableBudgetedWork, claimed map[str
 		return wait, true
 	case "human":
 		wait.humanAct = true
+		wait.detached = true
+		return wait, true
+	case "path":
+		// The documented way for a seat to register work the engine cannot
+		// see (in-process sub-agents, external jobs): a live, pending
+		// `work wait --path FILE --until present` of this seat's session and
+		// lineage. It counts until its condition holds, checked here as well
+		// as by the waiting process, so a finished condition never keeps the
+		// seat exempt between the waiter's polls.
+		_, statErr := os.Stat(row.Selector.Path)
+		present := statErr == nil
+		if statErr != nil && !os.IsNotExist(statErr) {
+			*reason = waitDrop("source", "kind", row.Kind, "check", "path", "path", row.Selector.Path, "err", statErr)
+			return registeredWait{}, false
+		}
+		if present == (row.Selector.Until == "present") {
+			*reason = waitDrop("source", "kind", row.Kind, "check", "path-condition-met", "path", row.Selector.Path, "until", row.Selector.Until)
+			return registeredWait{}, false
+		}
 		wait.detached = true
 		return wait, true
 	case "job":
@@ -1260,11 +1286,16 @@ func (s *Store) enforceIdleBacklogWithWaits(verdict *Verdict, work *ClaimableBud
 	verdict.ShouldBlock = true
 	source := "idle-backlog"
 	verdict.BlockSource = &source
-	countText := fmt.Sprintf("refusal %d of 3 for this unchanged backlog; at 3 request steward continuation and allow Stop unless another branch blocks", session.IdleBlocks)
+	countText := fmt.Sprintf("refusal %d of 3 in this idle interval (no new claim, job or wait from this seat); at 3 request steward continuation and allow Stop unless another branch blocks", session.IdleBlocks)
 	verdict.Display = strings.TrimSpace(verdict.Display + "\n" + fmt.Sprintf(
-		"IDLE WITH BACKLOG: %d claimable goals await a live claim or job: %s; %s; stop_hook_active=%t; an attended human may run `metasystem session stop --by <name>`",
-		len(work.Claimable), idleBacklogNames(*work), countText, options.StopHookActive))
+		"IDLE WITH BACKLOG: %d claimable goals await a live claim or job: %s; %s; stop_hook_active=%t; an attended human may run `metasystem session stop --by <name>`; %s",
+		len(work.Claimable), idleBacklogNames(*work), countText, options.StopHookActive, idleOutsideWorkRemedy))
 }
+
+// idleOutsideWorkRemedy names the one sanctioned way for a seat to declare
+// work the engine cannot see. Only a pending wait counts: a wait that reached
+// its deadline, or whose file already exists, stops counting.
+const idleOutsideWorkRemedy = "if this seat waits on work the engine cannot see (sub-agents, external jobs), register it with a pending wait run in the background: `metasystem work wait --path FILE --until present --timeout 24h` (the work writes FILE when done); it counts only while it is pending, so a wait that timed out or whose FILE exists no longer counts"
 
 func idleBacklogContinuation(work ClaimableBudgetedWork) (string, bool, string) {
 	if len(work.Claimed) > 0 {
@@ -1274,12 +1305,24 @@ func idleBacklogContinuation(work ClaimableBudgetedWork) (string, bool, string) 
 		}
 		return id, false, ""
 	}
-	for _, id := range work.Claimable {
-		if !NextStepNamesAPendingHumanWord(work.GoalFacts[id].NextStep) {
-			return id, true, ""
-		}
+	if id, ok := preferredClaimable(work); ok {
+		return id, true, ""
 	}
 	return "", false, "every ready goal waits on a human word"
+}
+
+// preferredClaimable names the ready goal a seat without a working claim
+// should take next: the first in the human's priority order whose next step
+// does not wait on a person. Pins filter the frontier (Next admits a pinned
+// goal only on its own machine) and never change rank, by the accepted
+// backlog-ordered-by-priority design.
+func preferredClaimable(work ClaimableBudgetedWork) (string, bool) {
+	for _, id := range work.Claimable {
+		if !NextStepNamesAPendingHumanWord(work.GoalFacts[id].NextStep) {
+			return id, true
+		}
+	}
+	return "", false
 }
 
 func idleBacklogNames(work ClaimableBudgetedWork) string {
@@ -1292,16 +1335,30 @@ func idleBacklogNames(work ClaimableBudgetedWork) string {
 	return display
 }
 
+// idleBacklogDigest names this seat's own activity state: its claims (held,
+// landing and breach-stopped) and the checkout's non-terminal job records.
+// The claimable set is deliberately absent. Other seats and people open,
+// approve and claim goals all day on a busy ledger; when that reset the count,
+// the three-refusal bound was almost never reached and an idle-looking seat
+// fought its Stop hook for hours. The count now spans one idle interval of
+// this seat and resets only when the seat itself shows activity: a claim
+// change, a job, or a registered wait (the last two end the refusal outright).
 func idleBacklogDigest(work ClaimableBudgetedWork) string {
-	claimable := append([]string(nil), work.Claimable...)
 	claimed := append([]string(nil), work.Claimed...)
+	landing := append([]string(nil), work.Landing...)
+	fenced := make([]string, 0, len(work.fencedClaims))
+	for _, file := range work.fencedClaims {
+		fenced = append(fenced, file.Id)
+	}
 	jobs := append([]string(nil), work.NonTerminalJobs...)
-	sort.Strings(claimable)
 	sort.Strings(claimed)
+	sort.Strings(landing)
+	sort.Strings(fenced)
 	sort.Strings(jobs)
 	parts := []string{
-		"claimable\n" + strings.Join(claimable, "\n"),
 		"claimed\n" + strings.Join(claimed, "\n"),
+		"landing\n" + strings.Join(landing, "\n"),
+		"fenced\n" + strings.Join(fenced, "\n"),
 		"non-terminal-jobs\n" + strings.Join(jobs, "\n"),
 	}
 	return sha256Hex([]byte(strings.Join(parts, "\n--\n")))
@@ -1386,7 +1443,7 @@ func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, ses
 	} else {
 		verdict.IdleRefusal = false
 	}
-	detail := fmt.Sprintf("IDLE WITH BACKLOG: refusal %d reached the bound of 3 for this unchanged backlog; ", session.IdleBlocks)
+	detail := fmt.Sprintf("IDLE WITH BACKLOG: refusal %d reached the bound of 3 in this idle interval; ", session.IdleBlocks)
 	if event.IntentPrepared && claimNeeded {
 		detail += fmt.Sprintf("selected goal %s and deferred its claim as %s to the steward tick; ", goalID, options.SeatActor.historyActor())
 	} else if event.IntentPrepared {
