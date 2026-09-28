@@ -43,7 +43,6 @@ func TestSystemCheckReadsTheCovenantShape(t *testing.T) {
 	}
 }
 
-
 const evidenceBedCovenant = `{
   "schemaVersion": 1,
   "identity": {"name": "bed-app", "entryPoint": "bash gate.sh", "sourcePaths": ["src/"]},
