@@ -212,7 +212,8 @@ func TestFrontierUsageErrors(t *testing.T) {
 	if _, ferr := FrontierChallenge(FrontierOptions{File: filepath.Join(repo, "absent"), Env: noEnv, Score: "80"}); ferr == nil || ferr.Code != 1 {
 		t.Fatalf("absent frontier challenged: %v", ferr)
 	}
-	lines, _ := FrontierStatus(FrontierOptions{File: filepath.Join(repo, "absent")})
+	lines, _ := frontierStatusWithGit(FrontierOptions{File: filepath.Join(repo, "absent"), Repo: repo},
+		frontierGitScript(t, []frontierGitStep{{repo, []string{"rev-parse", "--is-inside-work-tree"}, "true", nil}}))
 	if !strings.Contains(lines[0], "no frontier recorded") {
 		t.Fatalf("absent status wrong: %v", lines)
 	}

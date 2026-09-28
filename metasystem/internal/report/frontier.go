@@ -165,6 +165,18 @@ func frontierGit(repo string, args ...string) (string, error) {
 	return strings.TrimSpace(stdout.String()), err
 }
 
+// frontierScoreProblem refuses a missing --score with its command's
+// example, and a score that is not a number by the value given (EM-33).
+func frontierScoreProblem(score, missing, example, act string) *FrontierError {
+	switch {
+	case score == "":
+		return frontierFail(2, "%s", missing)
+	case !frontierNumericRe.MatchString(score):
+		return frontierFail(2, "--score %s is not a number, e.g. --score %s; nothing was %s", score, example, act)
+	}
+	return nil
+}
+
 // FrontierRecord implements `frontier record`. Returned lines print to
 // stdout; a *FrontierError carries the exit code and stderr text.
 func FrontierRecord(opts FrontierOptions) ([]string, *FrontierError) {
@@ -172,8 +184,8 @@ func FrontierRecord(opts FrontierOptions) ([]string, *FrontierError) {
 }
 
 func frontierRecordWithGit(opts FrontierOptions, gitRead func(repo string, args ...string) (string, error)) ([]string, *FrontierError) {
-	if !frontierNumericRe.MatchString(opts.Score) {
-		return nil, frontierFail(2, "record requires a numeric --score")
+	if ferr := frontierScoreProblem(opts.Score, "experiment record needs --score, the evaluation's number, e.g. metasystem experiment record --score 0.82 --eval COMMAND --artifact PATH; nothing was recorded", "0.82", "recorded"); ferr != nil {
+		return nil, ferr
 	}
 	if opts.Eval == "" {
 		return nil, frontierFail(2, "record requires --eval with the evaluation command that produced the score")
@@ -309,8 +321,8 @@ func frontierAlreadyRecorded(opts FrontierOptions, gitRead func(repo string, arg
 
 // FrontierChallenge implements `frontier challenge`.
 func FrontierChallenge(opts FrontierOptions) ([]string, *FrontierError) {
-	if !frontierNumericRe.MatchString(opts.Score) {
-		return nil, frontierFail(2, "challenge requires a numeric --score")
+	if ferr := frontierScoreProblem(opts.Score, "experiment challenge needs --score, the candidate's number, e.g. metasystem experiment challenge --score 0.85 --eval COMMAND --artifact PATH; nothing was compared", "0.85", "compared"); ferr != nil {
+		return nil, ferr
 	}
 	if opts.Direction != "" {
 		return nil, frontierFail(2, "challenge uses only the persisted direction; change it with record --force, never at comparison time")
@@ -363,8 +375,20 @@ func FrontierChallenge(opts FrontierOptions) ([]string, *FrontierError) {
 
 // FrontierStatus implements `frontier status`.
 func FrontierStatus(opts FrontierOptions) ([]string, *FrontierError) {
+	return frontierStatusWithGit(opts, frontierGit)
+}
+
+func frontierStatusWithGit(opts FrontierOptions, gitRead func(repo string, args ...string) (string, error)) ([]string, *FrontierError) {
 	data, err := os.ReadFile(opts.File)
 	if err != nil {
+		// Only a repository can have recorded one (EM-20).
+		if _, gitErr := gitRead(opts.Repo, "rev-parse", "--is-inside-work-tree"); gitErr != nil {
+			where := opts.Repo
+			if absolute, absErr := filepath.Abs(where); absErr == nil {
+				where = absolute
+			}
+			return nil, frontierFail(2, "%s is not inside a Git repository, so there is no frontier to read; run this inside the repository; nothing was read", where)
+		}
 		return []string{fmt.Sprintf("no frontier recorded at %s", opts.File)}, nil
 	}
 	lines := []string{strings.TrimRight(string(data), "\n")}
