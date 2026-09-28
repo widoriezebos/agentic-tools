@@ -133,8 +133,8 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
     and validation says so where it can (the command exits before the
     probe answers). Where the app must be stopped its own way (a
     compose stack, a service manager), the `stop` command does it, and
-    the proof of stopping is the probe going dark and the recorded tree
-    gone.
+    the proof of stopping is the recorded processes dead and, for the
+    http and tcp forms, the probe dark.
   - **Stdout and stderr are captured to the log** unless the contract
     names the application's own log file, in which case that file is
     the log.
@@ -153,16 +153,27 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   `ui serve`: `app start` launches it detached the way `ui start`
   launches the interface (its own session, the log, a readiness pipe),
   and returns when the pipe reports ready or failed, or at `readyMs`.
-  The supervisor runs the contract's start command as its child in its
-  own process group, writes the run record before it reports ready
-  (name, native identity refs for itself and the child, the group,
-  started at, the commit of the tree it runs, address, log, contract
-  digest, goal if any) under `artifacts/agents/app/`, waits for
-  readiness, then waits on the child for the run's life; its exit
-  removes the record. That is the durable ownership handoff: an engine
-  that dies before the supervisor wrote the record has left no run, and
-  a supervisor alive without readiness is a run still starting, which
-  the next verb reads as such (Astra ALC-02). Status reads liveness
+  The supervisor writes the run record first, before it spawns
+  anything: its own native identity ref, the group it leads, the
+  contract digest, the commit of the tree, the address, the log and the
+  goal if any, under `artifacts/agents/app/`. Then it spawns the
+  contract's start command as its child, in the supervisor's own group,
+  and writes the child's native ref into the record as the very next
+  act, before any readiness wait. Only then does it wait for readiness
+  and report ready, and it waits on the child for the run's life; its
+  orderly exit removes the record. That ordering is the ownership
+  handoff (Astra ALC-02, held at round 2): an engine that dies before
+  the supervisor started has left no run; a supervisor that dies leaves
+  a record whose supervisor ref is dead, and status reads it as
+  "orphaned: the application may still run" and stop ends the child by
+  its recorded ref, re-proven; a readiness timeout ends the child by its
+  ref, never only the supervisor. The one window left is the instant
+  between the spawn and the child's ref write; a supervisor killed
+  inside it leaves a record naming its group and no child, and status
+  says so, "supervisor gone, group G, child not recorded", listing what
+  the inspection finds in that group by identity, never signalling by
+  number. That window is a fixture obligation of the build, not a
+  mechanism of this design. Status reads liveness
   from the record's refs, the six states the interface's lifecycle
   reads, and readiness from the probe, and says them separately: running
   and answering; running and not answering since a time; starting;
@@ -219,8 +230,8 @@ free with the verbs; its browser half waits for the interface's slice.
 
 Contract: validation refuses a missing start, an http or tcp probe
 without an address, a candidate range that overlaps the standing
-address, an unknown placeholder, and a declared tool that is absent or
-answers a wrong version, and names each fault; `settings check` reports
+address, an unknown placeholder, and a declared tool that is absent,
+and names each fault; `settings check` reports
 it beside the testing contract. Each readiness form is proven with the
 fixture: http, tcp, a log line, and none; a start command that exits
 before readiness is reported as such and not as running. Verbs, against a fixture application (a small Go server in
@@ -274,3 +285,21 @@ owner the design had missed, `internal/ui/lifecycle`.
 | ALC-05 | the testing merge driver decodes the testing schema and cannot merge a launch contract | deferred: D1 says plain git merge in step 1 |
 | ALC-06 | tool declarations check availability, not version policy | deferred: D1 says availability and a printed version line; constraints later |
 | ALC-07 | a build and a health answer do not run the bundle test | deferred as non-material: §6 says freshness is the bundle test run against the candidate tree before its build |
+
+**Round 2, the declared failsafe (2026-09-28, same chain, at
+`9eb7cf433`):** ALC-01, ALC-03 and ALC-04 confirmed answered; ALC-02
+held, because the supervisor still spawned the application before
+publishing its identity, so a supervisor killed in that interval (the
+copied launcher's readiness timeout kills only its immediate child)
+left an untracked application and a false "stopped". Folded in D2: the
+record is written before the spawn with the supervisor's ref and its
+group; the child's ref is written as the very next act after the spawn;
+a supervisor gone with a child recorded reads as orphaned and stop ends
+the child by its re-proven ref; a readiness timeout ends the child by
+its ref, never only the supervisor. The one instant left, between the
+spawn and the child's write, is the round's fixture obligation, as
+Astra named it: interrupt the supervisor there and assert the
+application is dead or discoverable and stoppable by identity through
+the recorded group, never signalled by number. Two wording residues
+fixed (an unconditional "probe going dark", a "wrong version" in
+validation). The loop is closed at round 2 on one fixture obligation.

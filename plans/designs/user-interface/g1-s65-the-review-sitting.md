@@ -454,3 +454,10 @@ alone would not satisfy D3: the service restores the conversation's
 history into a fresh session and composes a proposals block from the
 whole transcript, and both must be excluded in a review session,
 including on recovery.
+
+**Round 2, the declared failsafe (2026-09-28, at `9eb7cf433`):** S65-01,
+S65-02 and S65-03 confirmed answered; no new finding; "VERDICT: 0
+material findings". The loop is closed at round 2 with zero material
+findings. One mechanical check for the build, not a mechanism: the
+drafts' one-second debounce must flush on Step out and on unload, so
+the last keystroke before leaving is not the one that is lost.

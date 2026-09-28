@@ -82,3 +82,39 @@ VERDICT: 3 material findings (fail test 2): S65-01, S65-02, S65-03
 
 Codex session ID: 01a0e6b3-840d-70c2-be8b-da2e9d0ad23f
 Resume in Codex: codex resume 01a0e6b3-840d-70c2-be8b-da2e9d0ad23f
+
+
+---
+
+# Round 2, the declared failsafe (2026-09-28, fresh session with round 1 quoted in its brief, since the companion resumes only its latest thread), against the folded design at `9eb7cf433`. Verbatim.
+
+VERDICT: 0 material findings (fail test 2): none
+
+Reviewed commit: `9eb7cf433e1f081c0788b806b6bea185db6f94cb`. Round 2, the declared failsafe. Scope: slice A, step 1. Evidence below was **read**; behavior conclusions are static inferences.
+
+**S65-01 — Unanswered findings: confirmed.**
+
+D8 now records a finding with `Answer: unanswered` before any answer, then rewrites that same entry by its deposit mark; D9’s counts and D10’s refusal therefore have an authoritative record source. Unrecorded cards are explicitly excluded. This resolves the finding without requiring round 1’s suggested private-state owner.
+
+**Evidence:** [Design D8–D10](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s65-the-review-sitting.md:262) and [§6](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s65-the-review-sitting.md:372) specify the creation and answer compositions. The existing [table](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/store.tsx:1475) and [sittings projection](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/project/sittings.go:128) read record contents; [deposit marks](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/sitting.ts:295) identify recorded entries, and the [recorder](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/recording.ts:120) supplies serialization and revision-checked writes.
+
+**S65-02 — Completed-goal comparison: confirmed.**
+
+D4 and §6 now compare each completed goal’s trailer-linked commit against its first parent, in order, and use the last commit’s tree for source reads. An ordinary changed commit C already on main is therefore compared with its parent, eliminating the former C-to-C empty comparison.
+
+**Evidence:** [Design D4](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s65-the-review-sitting.md:235) and [§6](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s65-the-review-sitting.md:366). [held.go:307](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/landing/held.go:307) establishes the `Goal-Item` association; [held.go:269](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/landing/held.go:269) reads ordered commit/parent pairs. The fold explicitly supplies the comparison rule that the trailer itself does not provide.
+
+**S65-03 — Unfinished human text: confirmed.**
+
+D9 now places unrecorded card text and clauses, plus open Decide-sheet fields, in persisted private sitting drafts and restores them on return; the original omission of unfinished words is answered.
+
+**Evidence:** [Design D9](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s65-the-review-sitting.md:282) and its [restoration checks](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s65-the-review-sitting.md:408) cover the currently transient state in [store.tsx:678](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/store.tsx:678) and [Deposit.tsx:371](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/Deposit.tsx:371). The existing [sitting mark](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/conversation.go:544) and [persistence method](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/conversation.go:1215) are the named extension point. Debounce handling at departure remains a mechanical implementation check arising from the fold, deferred under the brief.
+
+No new finding meets the step 1 works-and-safe threshold. D3 also explicitly excludes both [restored conversation history](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:633) and the separate [proposal-history block](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:690), including recovery. S65-04 remains non-material. The critique closes at round 2.
+
+**Limitations:** Static design review only. I read the complete folded design, dispositions, round 1 report, and relevant functions in all eight named code files; the reviewed files matched the pinned commit. No tests, browser walkthrough, provider sessions, or endpoint execution were performed. Confirmation concerns the design corrections, not implemented behavior. No subagents, edits, secret configuration, or files under `artifacts/` were used.
+
+Proposed receipt, unwritten: “g1-s65 round 2 reviewed at `9eb7cf433`; S65-01–03 confirmed; zero material findings; static evidence only.”
+
+Codex session ID: 01a0e6be-3e14-7fa2-834d-28d0773b543f
+Resume in Codex: codex resume 01a0e6be-3e14-7fa2-834d-28d0773b543f

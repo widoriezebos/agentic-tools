@@ -122,3 +122,101 @@ VERDICT: 4 material findings (fail test 2): ALC-01, ALC-02, ALC-03, ALC-04
 
 Codex session ID: 01a0e6b3-8d93-73c1-8fb2-803da02f272e
 Resume in Codex: codex resume 01a0e6b3-8d93-73c1-8fb2-803da02f272e
+
+
+---
+
+# Round 2, the declared failsafe (2026-09-28, same chain, `--resume-last`), against the folded design at `9eb7cf433`. Verbatim.
+
+**One material finding remains: ALC-02. ALC-01, ALC-03 and ALC-04 are confirmed answered. No new material findings.**
+
+Reviewed the complete folded design and dispositions at commit `9eb7cf433e1f081c0788b806b6bea185db6f94cb`. This is round 2, the declared failsafe, on the same chain. Scope remains Step 1: D1, D2, D3, D5 and D6.
+
+All references below are repository-relative at that commit. Evidence was read; failure traces are static deductions, not executed reproductions.
+
+## Round-1 dispositions
+
+### ALC-01 — Confirmed — High originally — material: no remaining gap
+
+**Claim:** The fold replaces cancellation by saved numeric group identifier with native process references and identity verification before every signal.
+
+**Evidence read:** `plans/designs/app-launch-contract.md:158–176,270`; `metasystem/internal/identity/ref.go:131–150`; `metasystem/internal/identity/identity.go:193–222`; `metasystem/internal/ui/lifecycle/stop.go:26–71`.
+
+**Failure addressed:** When another process occupies a recorded PID, `AliveRef` identifies the original process as gone, and `SignalExact` returns without signaling the replacement. The disposition expressly applies this requirement to escalation too.
+
+**Design change:** None required for this finding.
+
+**Test 1 — DIFFERENT/WRONG:** no further change required.  
+**Test 2 — WORKS/SAFE without further correction:** passes both.
+
+### ALC-02 — Held — Medium — material: yes
+
+**Claim:** Introducing `app serve` supplies a persistent owner but does not close the interval in which that owner has spawned the application and has not yet recorded it.
+
+**Evidence read:** `plans/designs/app-launch-contract.md:152–165,233–235,271`; `metasystem/internal/ui/lifecycle/launch.go:45–70,95–111,136–139`; `metasystem/internal/ui/lifecycle/serve.go:118–178`; `metasystem/internal/ui/lifecycle/state.go:133–156`.
+
+**What the fold answers:** The serving application no longer inherits `boundedexec.Run`’s command deadline. A surviving detached supervisor can own it independently of the initiating CLI.
+
+**Exact remaining gap:** D2 still starts the application before publishing its identity. The copied UI lifecycle owns the server process itself; the proposed lifecycle owns a supervisor whose child is the application. Killing the former directly ends the server. Killing the latter does not establish that its application child died.
+
+**Concrete failure:**
+
+1. `app start` launches supervisor S.
+2. S launches foreground fixture application C in its own process group.
+3. S dies after spawning C but before publishing the run record. Alternatively, the copied launcher’s readiness timeout kills S in that interval: `execChild.Kill` kills only its immediate process.
+4. C survives. S’s lock is released, and no app record exists.
+5. The copied inactive-state reader reports stopped, while C still runs; `app stop` has no recorded identity for C.
+
+Consequently, “a run without a record is no run” is not established by the named owner. This is the original ALC-02 ownership gap.
+
+**Design change:** Require recoverable ownership before the application can survive its launching owner, with startup failure and timeout retaining ownership information until child/group death is proven. Distinguish initiating-CLI failure from supervisor failure: a surviving supervisor may legitimately remain starting, while stopped requires evidence that the application is gone.
+
+**Fixture obligation:** Interrupt the supervisor immediately after application creation and before record publication; assert that the application is either dead or remains discoverable and stoppable through recorded ownership.
+
+**Test 1 — DIFFERENT/WRONG:** yes; changes startup ownership, failure cleanup and record publication/removal conditions.  
+**Test 2 — WORKS/SAFE without it:** fails **WORKS** and **SAFE**; the first interrupted startup can leave an untracked application and a silently false stopped answer.
+
+### ALC-03 — Confirmed — Medium originally — material: no remaining gap
+
+**Claim:** The fold separates process liveness from readiness and explicitly represents starting and running-but-not-answering.
+
+**Evidence read:** `plans/designs/app-launch-contract.md:165–171,228–232,272`; `metasystem/internal/ui/lifecycle/state.go:85–94,119–156`.
+
+**Failure addressed:** A live fixture during its initial health delay now has a truthful starting/not-answering result. A second start rejoins the supervisor and must still wait for readiness.
+
+**Design change:** None required for this finding.
+
+**Test 1 — DIFFERENT/WRONG:** no further change required.  
+**Test 2 — WORKS/SAFE without further correction:** passes both.
+
+### ALC-04 — Confirmed — Medium originally — material: no remaining gap
+
+**Claim:** The fold makes log readiness a run-scoped startup observation and limits probe-darkness requirements to HTTP/TCP.
+
+**Evidence read:** `plans/designs/app-launch-contract.md:119–129,176–178,235–236,273`.
+
+**Failure addressed:** After the application exits, a retained `READY` log line no longer prevents successful stop. The log can remain available for D6’s evidence copy.
+
+**Design change:** None required for this finding.
+
+**Test 1 — DIFFERENT/WRONG:** no further change required.  
+**Test 2 — WORKS/SAFE without further correction:** passes both.
+
+## Deferred and non-material
+
+No new finding meets the materiality threshold; no ALC-08 onward is opened.
+
+The remaining unconditional “probe going dark” wording at design lines 135–137 and “wrong version” validation wording at lines 220–223 are mechanical fold residue. The explicit rules at lines 124–129, 147–149 and 176–178 resolve their intended implementation. They remain deferred, without additional mechanism. **Test 1: no; Test 2: passes WORKS and SAFE.**
+
+ALC-05 through ALC-07 retain their non-material disposition. D4’s browser half, D7 and §6 remain outside the material count.
+
+## What verified holds and limitations
+
+The named lifecycle code provides detached launching, a readiness pipe, lock-owned record publication, native process identity and identity-checked stopping. Its inactive-state reader distinguishes a held lock from an absent or stale run. These are suitable precedents, subject to ALC-02’s distinction between owning the application itself and owning its supervisor.
+
+I read the full folded design, all dispositions, all four requested lifecycle files and `identity/ref.go`, plus the identity comparison and launcher tests. No tests, builds or process experiments ran. No files were changed, no subagents were used, and no private configuration or artifact contents were read. Proposed receipt, unwritten: “App-launch design round 2: ALC-01/03/04 confirmed; ALC-02 held; no new material findings; static review.”
+
+VERDICT: 1 material findings (fail test 2): ALC-02
+
+Codex session ID: 01a0e6b3-8d93-73c1-8fb2-803da02f272e
+Resume in Codex: codex resume 01a0e6b3-8d93-73c1-8fb2-803da02f272e
