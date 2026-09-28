@@ -194,8 +194,8 @@
    (no set -e/quoting/torn-string bug classes; exact kernel process start
    times shrink the REG-6 whole-second residual); protocol design stays
    language-independent and keeps the design loop. First component:
-   supervision (the ruling is recorded in records/supervision/supervision-lifecycle.md,
-   Implementation order). Candidates after that, only as they come up for
+   supervision (the ruling is recorded in memory/rulings.md R-136-m1e,
+   the Go engineering standard). Candidates after that, only as they come up for
    rewrite: dispatch's record/CAS layer, the census, the registry tooling.
    THE CUT, refined 2026-08-09 (the human): the end state is TWO languages
    — Go and shell — with NO Python or other scripting languages. The

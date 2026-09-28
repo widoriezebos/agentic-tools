@@ -57,7 +57,7 @@ not paths.
   assertion. Mission level: the gate metric beating its best. Chain
   level: an accepted certification in the durable turn log — the one
   observable satellite 4 settled after rejecting per-activity proxies
-  (`docs/patience.md`, `records/patience/patience-satellite-4.md`).
+  (`docs/patience.md`, S4).
 - **Patience** — how much observation without progress is tolerated
   before a verdict, set per role and (runtime, model) pair: slower
   progress is still progress. A last defense, never a pacing target
@@ -66,8 +66,8 @@ not paths.
 - **Stall** — the verdict when patience is exhausted with nothing else
   to blame. Mission level: the fuse parks vocally and a human resets
   via a ledger-recorded answer. Chain level: vocal only — annotation
-  and prompt line, never a park (`docs/patience.md`,
-  `records/patience/patience-satellite-4.md`, `docs/design/stop-loss-core.md`).
+  and prompt line, never a park (`docs/patience.md`, S4,
+  `docs/design/stop-loss-core.md`).
 - **Sweep** — the takeover's cleanup: every non-terminal job stamped with
   an older epoch is failed with `stale-claim-epoch`, so an abandoned
   session's children cannot keep mutating a checkout that changed hands.
@@ -313,9 +313,6 @@ the engine's `metasystem goal` family (`internal/goal`).
   the rerun protocol (`docs/flake-registry.md`): a listed leg earns one
   solo rerun, an unlisted failure is diagnosed first, three sightings
   in thirty days force a fix goal.
-- **Journey** — the plain-English story of the program
-  (`docs/journey.md`). Concluding a goal appends its paragraph in the
-  same landing.
 - **Landing batch** — an ordered set of reviewed goal units whose claims have
   been handed to the dedicated landing owner. The owner seals their selected
   test union, proves one tip, creates exact prefix receipts, builds every unit

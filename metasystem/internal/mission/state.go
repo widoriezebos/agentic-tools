@@ -227,7 +227,7 @@ func validateShape(state map[string]any) error {
 	}
 	if raw, present := state["lastDrainStall"]; present {
 		// Written by the drain-stalled unpark, consumed by the resume heal
-		// (records/patience/patience-mission-reap-drain.md): the cycle the stall parked
+		// (docs/patience.md, S2): the cycle the stall parked
 		// and the survivor ids the park ask snapshotted.
 		if err := validateLastDrainStall(raw); err != nil {
 			return err
