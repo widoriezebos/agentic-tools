@@ -87,6 +87,9 @@ var engineBindingStandardTests = []string{
 	"TestBatchPrefixTestingControlRootRetainsAttemptOutsideExecution",
 	"TestLinkedWorktreeMainInstallationPreservesInstallationSubdirectory",
 	"TestTestRunKeepsProofRecordsUnderTheControlRoot",
+	"TestScratchEnvironmentPolicyFollowsTheWorkerCapabilities",
+	"TestScratchEnvironmentV1WireAndReaderSupport",
+	"TestScratchEnvironmentPolicyAgainstABuiltWorker",
 }
 
 func TestGoalLandingGoManifestSelectionCoversCurrentPackages(t *testing.T) {

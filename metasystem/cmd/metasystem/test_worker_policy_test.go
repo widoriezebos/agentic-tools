@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -196,7 +197,7 @@ func TestWorkerCapabilitiesCommandReportsExactProtocol(t *testing.T) {
 	var stdout strings.Builder
 	err := writeTestingWorkerCapabilities(&stdout)
 	var got testingWorkerCapabilities
-	if decodeErr := json.Unmarshal([]byte(stdout.String()), &got); err != nil || decodeErr != nil || got != currentTestingWorkerCapabilities() {
+	if decodeErr := json.Unmarshal([]byte(stdout.String()), &got); err != nil || decodeErr != nil || !reflect.DeepEqual(got, currentTestingWorkerCapabilities()) {
 		t.Fatalf("worker capabilities stdout=%q got=%+v write=%v decode=%v", stdout.String(), got, err, decodeErr)
 	}
 }
@@ -289,7 +290,7 @@ func TestRunPreflightsStrictRetainedBaselineBeforePreparationOrReservation(t *te
 		t.Fatal(err)
 	}
 
-	err := requireTestingWorkerCapabilities(t.Context(), engine, []string{"PATH=/usr/bin:/bin"})
+	_, err := requireTestingWorkerCapabilities(t.Context(), engine, []string{"PATH=/usr/bin:/bin"})
 	if !errors.Is(err, errTestingWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "stage, prove, and install the backend compatibility release") {
 		t.Fatalf("unsupported trusted worker refusal=%v", err)
 	}
@@ -314,12 +315,12 @@ func TestWorkerCapabilitiesRefusePreviousProtocolBeforeLaunch(t *testing.T) {
 		}
 		return engine
 	}
-	if err := requireTestingWorkerCapabilities(t.Context(), capabilitiesEngine(proofrun.TestWorkerProtocolVersion), []string{"PATH=/usr/bin:/bin"}); err != nil {
+	if _, err := requireTestingWorkerCapabilities(t.Context(), capabilitiesEngine(proofrun.TestWorkerProtocolVersion), []string{"PATH=/usr/bin:/bin"}); err != nil {
 		t.Fatalf("current worker capabilities refused: %v", err)
 	}
 	// The landed worker speaks protocol 1 and strict-decodes the
 	// Scratch request fields as unknown, so it must be refused before preparation.
-	err := requireTestingWorkerCapabilities(t.Context(), capabilitiesEngine(1), []string{"PATH=/usr/bin:/bin"})
+	_, err := requireTestingWorkerCapabilities(t.Context(), capabilitiesEngine(1), []string{"PATH=/usr/bin:/bin"})
 	if !errors.Is(err, errTestingWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "install the matching backend compatibility release") {
 		t.Fatalf("previous worker protocol refusal=%v", err)
 	}

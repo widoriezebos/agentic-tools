@@ -56,6 +56,7 @@ type testingPreparation struct {
 	AllGroups                                                bool
 	Workers, AdmissionMaximum                                int
 	WorkerCapabilitiesChecked                                bool
+	WorkerScratchPolicies                                    []string
 	UnmatchedInputs                                          []testingUnmatchedInput
 }
 
@@ -89,6 +90,9 @@ type testingWorkerCapabilities struct {
 	TestResultSchemaVersion       int    `json:"testResultSchemaVersion"`
 	GroupExecutionIdentityVersion int    `json:"groupExecutionIdentityVersion"`
 	WorkerPolicyVersion           int    `json:"workerPolicyVersion"`
+	// ScratchEnvironmentPolicies are the descriptor policies the worker reads;
+	// absent means v1 only.
+	ScratchEnvironmentPolicies []string `json:"scratchEnvironmentPolicies,omitempty"`
 }
 
 func currentTestingWorkerCapabilities() testingWorkerCapabilities {
@@ -113,29 +117,32 @@ func writeTestingWorkerCapabilities(writer io.Writer) error {
 	return json.NewEncoder(writer).Encode(currentTestingWorkerCapabilities())
 }
 
-func requireTestingWorkerCapabilities(ctx context.Context, engine string, environment []string) error {
+// requireTestingWorkerCapabilities refuses a worker whose six known
+// capabilities differ from this frontend's and answers what it reports. A
+// field this frontend does not know is tolerated, so a newer worker may
+// advertise more (scratch environment policies) without being refused.
+func requireTestingWorkerCapabilities(ctx context.Context, engine string, environment []string) (testingWorkerCapabilities, error) {
 	command := exec.CommandContext(ctx, engine, "test", "worker-capabilities")
 	command.Env = testingEnvironment(environment)
 	data, err := command.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%w: trusted destination engine %q does not support test worker protocol %d (%v: %s); stage, prove, and install the backend compatibility release matching this frontend first", errTestingWorkerPolicyUnsupported,
+		return testingWorkerCapabilities{}, fmt.Errorf("%w: trusted destination engine %q does not support test worker protocol %d (%v: %s); stage, prove, and install the backend compatibility release matching this frontend first", errTestingWorkerPolicyUnsupported,
 			engine, proofrun.TestWorkerProtocolVersion, err, strings.TrimSpace(string(data)))
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
 	var capabilities testingWorkerCapabilities
 	if err := decoder.Decode(&capabilities); err != nil {
-		return fmt.Errorf("%w: trusted destination engine %q returned malformed worker capabilities: %v; stage, prove, and install the backend compatibility release first", errTestingWorkerPolicyUnsupported, engine, err)
+		return testingWorkerCapabilities{}, fmt.Errorf("%w: trusted destination engine %q returned malformed worker capabilities: %v; stage, prove, and install the backend compatibility release first", errTestingWorkerPolicyUnsupported, engine, err)
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return fmt.Errorf("%w: trusted destination engine %q returned trailing worker capability data; stage, prove, and install the backend compatibility release first", errTestingWorkerPolicyUnsupported, engine)
+		return testingWorkerCapabilities{}, fmt.Errorf("%w: trusted destination engine %q returned trailing worker capability data; stage, prove, and install the backend compatibility release first", errTestingWorkerPolicyUnsupported, engine)
 	}
 	want := currentTestingWorkerCapabilities()
-	if capabilities != want {
-		return fmt.Errorf("%w: trusted destination engine %q reports incompatible worker capabilities %+v, require %+v; stage, prove, and install the matching backend compatibility release first",
+	if !sameKnownTestingWorkerCapabilities(capabilities, want) {
+		return testingWorkerCapabilities{}, fmt.Errorf("%w: trusted destination engine %q reports incompatible worker capabilities %+v, require %+v; stage, prove, and install the matching backend compatibility release first",
 			errTestingWorkerPolicyUnsupported, engine, capabilities, want)
 	}
-	return nil
+	return capabilities, nil
 }
 
 func (prepared testingPreparation) proofControlRoot() string {
@@ -640,10 +647,11 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 	if err != nil {
 		return testingPreparation{}, err
 	}
-	workerCapabilitiesChecked := false
+	workerCapabilitiesChecked, workerCapabilities := false, testingWorkerCapabilities{}
 	if request.RequireWorkerCapabilities {
 		capabilityContext, cancelCapabilities := context.WithCancel(context.Background())
-		capabilityErr := requireTestingWorkerCapabilities(capabilityContext, policyEngine, testingEnvironment(os.Environ()))
+		var capabilityErr error
+		workerCapabilities, capabilityErr = requireTestingWorkerCapabilities(capabilityContext, policyEngine, testingEnvironment(os.Environ()))
 		cancelCapabilities()
 		if capabilityErr != nil {
 			return testingPreparation{}, capabilityErr
@@ -748,6 +756,7 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		JudgeKey:                  proofrun.ComputeJudgeKey(context.Background(), projectRoot, policyBaseCommit, strings.TrimSuffix(prefix, "/")),
 		EngineRearm:               engineRearm,
 		WorkerCapabilitiesChecked: workerCapabilitiesChecked,
+		WorkerScratchPolicies:     workerCapabilities.ScratchEnvironmentPolicies,
 		UnmatchedInputs:           unmatchedInputs,
 		FirstTestingTransition:    !basePresent,
 		BehaviorPolicyDigest:      bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: selectionEnvironment,
@@ -1808,12 +1817,13 @@ func runTestRun(args []string) (exit int) {
 	}
 	if !prepared.WorkerCapabilitiesChecked {
 		capabilityContext, cancelCapabilities := context.WithCancel(context.Background())
-		capabilityErr := requireTestingWorkerCapabilities(capabilityContext, workerEngine, prepared.Environment)
+		workerCapabilities, capabilityErr := readTestingWorkerCapabilities(capabilityContext, prepared, engine)
 		cancelCapabilities()
 		if capabilityErr != nil {
 			fmt.Fprintln(os.Stderr, "metasystem test run:", capabilityErr)
 			return proofrun.ExitAdmissionRefused
 		}
+		prepared.WorkerCapabilitiesChecked, prepared.WorkerScratchPolicies = true, workerCapabilities.ScratchEnvironmentPolicies
 	}
 	unmark, markErr := proofrun.MarkManagedProofProcess()
 	if markErr != nil {
@@ -1843,7 +1853,7 @@ func runTestRun(args []string) (exit int) {
 		return proofrun.ExitAdmissionRefused
 	}
 	preRequest := testingRunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
-	if err := bindTestingScratch(&preRequest, scratch, nil, nil); err != nil {
+	if err := prepareTestingScratch(context.Background(), &preRequest, scratch, prepared); err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run: scratch environment:", err)
 		return proofrun.ExitAdmissionRefused
 	}
@@ -2534,8 +2544,7 @@ func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared tes
 	runRequest.WithCandidateOpener(dependencies.openCandidate)
 	metadataBase := context.Background()
 	if dependencies.scratch != nil {
-		runRequest.BindScratch(dependencies.scratch, nil)
-		if err := proofrun.PrepareScratchEnvironment(&runRequest, dependencies.scratch); err != nil {
+		if err := prepareTestingScratch(context.Background(), &runRequest, dependencies.scratch, prepared); err != nil {
 			return proofrun.TestResult{}, err
 		}
 		metadataBase = proofrun.WithScratchRun(metadataBase, dependencies.scratch)
