@@ -28,6 +28,7 @@ import {
   type Card,
 } from "./sitting";
 import { Copy } from "./Suggestion";
+import { AnchorPress, FindingAnswers } from "../review/Answers";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
@@ -148,6 +149,12 @@ export function DepositCard({ id }: { id: string }) {
     return <CaseCard card={card} />;
   }
 
+  // A finding is a review's (g1-s65 D8): an entry with its anchor and its
+  // consequence until it is recorded, and a question with four answers after.
+  if (card.kind === "finding") {
+    return <FindingCard card={card} />;
+  }
+
   const recorded = card.standing === "recorded";
   const clause = clauseOf(card.kind);
   const needs = missing(card.kind, card.mark);
@@ -253,6 +260,125 @@ export function DepositCard({ id }: { id: string }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A finding, on the deposit card's own states (g1-s65 D8).
+ *
+ * Until it is recorded it is a card like any other: the words and the anchor are
+ * the human's to change, Record it is their press, and Dismiss folds it. Record
+ * it writes the finding into the Findings pile with its anchor and `Answer:
+ * unanswered`, so the door and End can count it from the record (Astra S65-01);
+ * an unrecorded card is counted nowhere. Recorded, it offers the four answers,
+ * each with its consequence, and each rewrites that one line.
+ */
+function FindingCard({ card }: { card: Card }) {
+  const { editDeposit, editClause, recordDeposit, dismissDeposit, table, keepRoomNow } = usePartner();
+  const entryField = useId();
+  const anchorField = useId();
+  const recorded = card.standing === "recorded";
+  const needs = missing(card.kind, card.mark);
+  const frozen = !editable(card.standing);
+  const entry = table.entries.find((one) => one.mark === card.id);
+  return (
+    <div className="ms-deposit ms-deposit--finding" data-deposit={card.id} data-kind={card.kind}>
+      <p className="ms-deposit-head">
+        <span>{cardHead(card.kind)}</span>
+        <Help id="the-finding" />
+        <span className="ms-deposit-where">{recorded ? card.mark.recorded : sectionOf(card.kind)}</span>
+      </p>
+      {recorded ? (
+        <>
+          <p className="ms-deposit-text">{card.mark.text}</p>
+          {card.mark.clause.trim() !== "" && (
+            <p className="ms-deposit-clause">
+              <span className="ms-deposit-label">Anchor</span>
+              <AnchorPress anchor={card.mark.clause} />
+            </p>
+          )}
+          {(entry?.consequence ?? card.consequence ?? "").trim() !== "" && (
+            <p className="ms-deposit-clause">
+              <span className="ms-deposit-label">Consequence</span>
+              {entry?.consequence ?? card.consequence}
+            </p>
+          )}
+          <FindingAnswers mark={card.id} text={card.mark.text} answer={entry?.answer ?? ""} moved={false} />
+        </>
+      ) : (
+        <>
+          <label className="ms-visually-hidden" htmlFor={entryField}>
+            The finding, in your words
+          </label>
+          <textarea
+            id={entryField}
+            className="ms-deposit-field"
+            rows={3}
+            value={card.mark.text}
+            placeholder="What you found, in your words"
+            readOnly={frozen}
+            onChange={(event) => {
+              editDeposit(card.id, event.target.value);
+            }}
+            onBlur={() => {
+              void keepRoomNow();
+            }}
+          />
+          <label className="ms-deposit-label" htmlFor={anchorField}>
+            Anchor
+          </label>
+          <input
+            id={anchorField}
+            className="ms-deposit-clause-field"
+            type="text"
+            value={card.mark.clause}
+            placeholder="where it sits: a file and its lines"
+            readOnly={frozen}
+            onChange={(event) => {
+              editClause(card.id, event.target.value);
+            }}
+            onBlur={() => {
+              void keepRoomNow();
+            }}
+          />
+          {(card.consequence ?? "").trim() !== "" && (
+            <p className="ms-deposit-clause">
+              <span className="ms-deposit-label">Consequence</span>
+              {card.consequence}
+            </p>
+          )}
+          {needs !== "" && (
+            <p className="ms-deposit-needs" role="status">
+              {needs}
+            </p>
+          )}
+          {card.mark.refusal !== "" && (
+            <p className="ms-deposit-refusal" role="status">
+              {card.mark.refusal}
+            </p>
+          )}
+          <div className="ms-deposit-foot">
+            <Button
+              primary
+              disabled={needs !== "" || card.mark.recording}
+              onClick={() => {
+                recordDeposit(card.id);
+              }}
+            >
+              {card.mark.recording ? RECORDING : RECORD_IT}
+            </Button>
+            <Button
+              disabled={card.mark.recording}
+              onClick={() => {
+                dismissDeposit(card.id);
+              }}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

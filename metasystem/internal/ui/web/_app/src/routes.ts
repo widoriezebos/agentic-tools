@@ -254,6 +254,20 @@ export function reviewIdFromPath(pathname: string): string {
     .join("/");
 }
 
+/**
+ * What of the shell an address is shown in: the review room is a screen of its
+ * own with no rail and no drawer (g1-s65 D2); the Partner's own page has no
+ * drawer; everything else has both.
+ */
+export type Chrome = "room" | "focused" | "shell";
+
+export function chromeOf(pathname: string): Chrome {
+  if (inTheRoom(pathname)) {
+    return "room";
+  }
+  return activeSection(pathname)?.id === "brain" ? "focused" : "shell";
+}
+
 /** Whether an address is a review room. */
 export function inTheRoom(pathname: string): boolean {
   return reviewIdFromPath(pathname) !== "";

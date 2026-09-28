@@ -82,6 +82,12 @@ export type Recorder = {
    * nothing for another record.
    */
   answer: (mark: string, answer: string, into: string) => Promise<Outcome>;
+  /**
+   * Any other composition of the whole source, queued like a press: the review
+   * room's move to a branch's new tip is one (g1-s65 D9). A composition that
+   * answers null writes nothing and says so.
+   */
+  rewrite: (into: string, compose: (source: string) => string | null, refused: string) => Promise<Outcome>;
 };
 
 /** What an answer to a finding the record does not carry is told. */
@@ -133,12 +139,20 @@ export function recorder(
   const answer = (mark: string, said: string, into: string): Promise<Outcome> =>
     queued(into, "Findings", (source) => answered(source, mark, said));
 
+  const rewrite = (into: string, compose: (source: string) => string | null, refused: string): Promise<Outcome> =>
+    queued(into, "", compose, refused);
+
   /**
    * One write through the queue: the composition runs on the reading as it
    * stands when the write runs, and a composition that finds nothing to write
    * writes nothing.
    */
-  const queued = (into: string, section: string, compose: (source: string) => string | null): Promise<Outcome> => {
+  const queued = (
+    into: string,
+    section: string,
+    compose: (source: string) => string | null,
+    refused = NOT_A_FINDING,
+  ): Promise<Outcome> => {
     // The entry is composed from the reading as it stands WHEN THIS RUNS, which
     // is the whole of why the composition is inside the queued task and not
     // outside it: the press before this one has already moved the reading.
@@ -148,7 +162,7 @@ export function recorder(
       }
       const composed = compose(held.source);
       if (composed === null) {
-        return { kind: "failed", reason: NOT_A_FINDING };
+        return { kind: "failed", reason: refused };
       }
       try {
         const answered = await save(held.id, composed, held.revision);
@@ -172,7 +186,7 @@ export function recorder(
     return next;
   };
 
-  return { reading: () => held, reread, press, answer };
+  return { reading: () => held, reread, press, answer, rewrite };
 }
 
 /**

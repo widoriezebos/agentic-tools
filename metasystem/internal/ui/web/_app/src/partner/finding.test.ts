@@ -14,6 +14,8 @@ import {
   lineOf,
   missing,
   pilesOf,
+  interfaceLine,
+  THE_INTERFACES,
   sectionOf,
   UNANSWERED,
   type Entry,
@@ -159,5 +161,18 @@ describe("the recorder's second composition", () => {
     ]);
     expect((await record.answer("deposit:nowhere#1", FIX, "r.md")).kind).toBe("failed");
     expect((await record.answer("deposit:t1#0", FIX, "another.md")).kind).toBe("elsewhere");
+  });
+});
+
+describe("the interface's own questions in a review", () => {
+  it("say which question the interface asked, from the message itself (g1-s65 D6)", () => {
+    expect(interfaceLine("Open this review of the work recorded in r.md.")).toBe("asked by the interface, to open this review");
+    expect(interfaceLine("Walk me through Built for the review in r.md: what was built")).toBe(
+      "asked by the interface: the Built walk",
+    );
+    expect(interfaceLine("Close this review in r.md. Draft its Outcome")).toBe(
+      "asked by the interface, to close this review with your verdict",
+    );
+    expect(interfaceLine("Open this sitting on d.md")).toBe(THE_INTERFACES);
   });
 });

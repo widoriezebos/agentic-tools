@@ -1169,9 +1169,11 @@ export function listedIn(briefing: Briefing, tab: string): string[] {
  * this sitting.
  */
 export function pilesLine(counts: SittingRow["counts"]): string {
+  const findings = counts.findings ?? 0;
   const said = [
     counted(counts.facts, "fact"),
     counted(counts.proposals, "proposal"),
+    findings === 0 ? "" : `${counted(findings, "finding")}, ${String(counts.unanswered ?? 0)} unanswered`,
     counted(counts.decisions, "decision"),
     counted(counts.questions, "open question"),
   ].filter((one) => one !== "");
@@ -1194,13 +1196,19 @@ export const STANDS_NOW = "a sitting stands on this now";
  * its outcome. So such a press only opens the conversation, and the row says so
  * rather than promising a start it will not make.
  */
-export function opensLine(row: SittingRow, stands: boolean): string {
+export function opensLine(row: SittingRow, _stands: boolean): string {
+  // A review's row is its door (g1-s65 D9): the room where it stands, and the
+  // record it left behind where it does not.
+  if (row.record.kind === "review") {
+    return row.standing
+      ? `Go back into the review room on ${row.record.path}`
+      : `Read the review recorded in ${row.record.path}`;
+  }
   if (row.standing) {
     return `Open the conversation on ${row.record.path}`;
   }
-  if (stands) {
-    return "Open the conversation. A sitting stands on another record, so this starts nothing";
-  }
+  // A sitting is a conversation of its own (g1-s65 D16), so one standing on
+  // another record is not ended by starting this one.
   return `Open the conversation on ${row.record.path} and start a sitting on it`;
 }
 

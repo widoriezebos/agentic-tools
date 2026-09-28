@@ -6,6 +6,7 @@ import {
   goalPath,
   documentIdFromPath,
   inTheRoom,
+  chromeOf,
   reviewIdFromPath,
   reviewPath,
   documentPath,
@@ -253,8 +254,11 @@ describe("the review room's address (g1-s65 D2)", () => {
     expect(reviewIdFromPath("/backlog")).toBe("");
   });
 
-  it("is a room and not a section: the rail lights nothing", () => {
+  it("is a room and not a section: the rail lights nothing, and the shell shows none of itself", () => {
     expect(activeSection("/review/plans/reviews/r.md")).toBeNull();
+    expect(chromeOf("/review/plans/reviews/r.md")).toBe("room");
+    expect(chromeOf("/backlog")).toBe("shell");
+    expect(chromeOf("/brain")).toBe("focused");
     expect(inTheRoom("/review/plans/reviews/r.md")).toBe(true);
     expect(inTheRoom("/backlog")).toBe(false);
   });

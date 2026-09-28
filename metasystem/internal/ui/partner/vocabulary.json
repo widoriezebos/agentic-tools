@@ -430,6 +430,36 @@
     "text": "The closing draft your Project Partner writes when you end a sitting: the outcome as you decided it, the constraints, the open questions with their consequences, and what the table holds. Nothing is weighed and nothing new is settled — it is drafted from the record's own sections and from this conversation. You read it, edit it, and press Record it: it becomes the record's Outcome section, replacing any Outcome the record already had, and the sitting ends then. Ending without recording it is allowed, and it says so: what you recorded during the sitting stays, and the outcome is not written."
   },
   {
+    "id": "reviews",
+    "term": "Reviews",
+    "text": "A human's review of one goal's built work, kept as a record of its own beside the designs: which goal, which commits were examined, the findings with the answer given to each, and the verdict the review ended with. The interface creates it when you press Review it; what is in it is what you recorded."
+  },
+  {
+    "id": "review-room",
+    "term": "The review room",
+    "text": "Where you examine one goal's work before it lands, with your Project Partner beside it. The desk on the left shows one thing at a time — a file of the candidate, the change, a section of a record — and the conversation stays on the right. The Partner was not in the room that shaped this work, and it never says whether to accept it: it brings what the records hold, points at the code, and names what nobody tried. Step out whenever you like; the room keeps the desk, the conversation and your unfinished words, and the goal's card becomes the door back."
+  },
+  {
+    "id": "the-desk",
+    "term": "The desk",
+    "text": "The candidate's own code, not this checkout's: a file at the lines under discussion with the changed ones marked, the change as a whole with each file's counts, one file's diff, or a record's section. The strip above it lists everything that has been on the desk, newest first, and pressing one brings it back. Select lines to Ask about them or to make a Finding anchored where they are."
+  },
+  {
+    "id": "the-finding",
+    "term": "A finding",
+    "text": "Something the examination did not try, an assumption the checks share, or a case at the edge, anchored where it sits. It is a card until you press Record it; recorded, it is an entry of the review's Findings, unanswered until you answer it. Four answers, each saying what follows: Fix in this goal sends it back to the builder with the candidate; Follow-up goal opens a new goal and lets this one land; Accept records the risk with your reason; Leave open keeps the question for whoever reads the record next."
+  },
+  {
+    "id": "the-walks",
+    "term": "The walks",
+    "text": "Five questions the interface asks your Partner in your name, one per part of the report: what was Asked, what was Built, how it was Examined, how it was Proven, how it Behaves. During a walk the Partner puts what it is explaining on the desk as it goes; Stop presenting keeps the desk as it is."
+  },
+  {
+    "id": "the-verdict",
+    "term": "The verdict",
+    "text": "How this review ends, recorded as the first line of its Outcome: Clear to land, Send back, or End without a verdict. Clear to land waits until every finding is answered. In this build the verdict is your recorded word only — nothing lands or returns because of it yet."
+  },
+  {
     "id": "the-table",
     "term": "The table",
     "text": "The four kinds of working material this sitting has put into its record: Facts, Proposals, Decisions and Open questions. It is not a second store — it is those four sections of the record itself, so everything here is something you recorded and anything you did not record is not here. The counts beside your Project Partner are the same four."

@@ -27,10 +27,26 @@ export const ASK_REVISION = "data-ask-revision";
 /** How much of one selection travels. A passage, not a document. */
 const MAX_PASSAGE = 4000;
 
-type Standing = { text: string; source: string; revision: string; anchor: string; x: number; y: number };
+type Standing = {
+  text: string;
+  source: string;
+  revision: string;
+  anchor: string;
+  x: number;
+  y: number;
+  /**
+   * Where a finding made of this selection is anchored, on the review room's
+   * desk, or "" anywhere else (g1-s65 D7): the file and the lines the selection
+   * covers, or the record and its section.
+   */
+  finding: string;
+};
+
+/** The surface a review room's desk marks itself with. */
+const DESK = "desk";
 
 export function AskSelection() {
-  const { askPassage } = usePartner();
+  const { askPassage, startFinding } = usePartner();
   const [standing, setStanding] = useState<Standing | null>(null);
 
   useEffect(() => {
@@ -54,13 +70,16 @@ export function AskSelection() {
   if (standing === null) {
     return null;
   }
-  return (
+  const desk = standing.finding !== "";
+  const ask = (
     <button
       type="button"
-      className="ms-ask-selection"
+      className={desk ? "ms-ask-selection-press" : "ms-ask-selection"}
       ref={(element) => {
-        element?.style.setProperty("--ms-ask-x", `${String(standing.x)}px`);
-        element?.style.setProperty("--ms-ask-y", `${String(standing.y)}px`);
+        if (!desk) {
+          element?.style.setProperty("--ms-ask-x", `${String(standing.x)}px`);
+          element?.style.setProperty("--ms-ask-y", `${String(standing.y)}px`);
+        }
       }}
       onMouseDown={(event) => {
         // The press must not clear the selection before this reads it.
@@ -73,6 +92,38 @@ export function AskSelection() {
     >
       Ask
     </button>
+  );
+  if (!desk) {
+    return ask;
+  }
+  // On the review room's desk, selected lines offer a Finding beside Ask: a card
+  // with the anchor filled and the words left for the human's own (g1-s65 D7).
+  // Remark comes with the board, in the next slice.
+  return (
+    <div
+      className="ms-ask-selection ms-ask-selection--desk"
+      role="group"
+      aria-label="The selection"
+      ref={(element) => {
+        element?.style.setProperty("--ms-ask-x", `${String(standing.x)}px`);
+        element?.style.setProperty("--ms-ask-y", `${String(standing.y)}px`);
+      }}
+    >
+      {ask}
+      <button
+        type="button"
+        className="ms-ask-selection-press"
+        onMouseDown={(event) => {
+          event.preventDefault();
+        }}
+        onClick={() => {
+          startFinding(standing.finding);
+          setStanding(null);
+        }}
+      >
+        Finding
+      </button>
+    </div>
   );
 }
 
@@ -113,10 +164,13 @@ function selected(): Standing | null {
   if (surface === null) {
     return null;
   }
-  const box = selection.getRangeAt(0).getBoundingClientRect();
+  const range = selection.getRangeAt(0);
+  const box = range.getBoundingClientRect();
+  const source = surface.getAttribute(ASK_SOURCE) ?? "";
   return {
+    finding: surface.getAttribute(ASK_SURFACE) === DESK ? deskAnchor(surface, range, source) : "",
     text: text.length > MAX_PASSAGE ? `${text.slice(0, MAX_PASSAGE)}…` : text,
-    source: surface.getAttribute(ASK_SOURCE) ?? "",
+    source,
     revision: surface.getAttribute(ASK_REVISION) ?? "",
     anchor: headingOver(selection.anchorNode),
     x: box.left + box.width / 2,
@@ -148,4 +202,25 @@ function headingOver(node: Node | null): string {
     at = at.parentElement;
   }
   return "";
+}
+
+/**
+ * Where selected desk lines are: the file and the first and last line the
+ * selection touches, or the record and its section for a section on the desk.
+ */
+export function deskAnchor(surface: Element, range: Range, source: string): string {
+  const named = surface.getAttribute("data-ask-anchor");
+  if (named !== null && named !== "") {
+    return named;
+  }
+  const lines = [...surface.querySelectorAll("[data-line]")]
+    .filter((line) => range.intersectsNode(line))
+    .map((line) => Number(line.getAttribute("data-line") ?? "0"))
+    .filter((number) => number > 0);
+  if (lines.length === 0) {
+    return source;
+  }
+  const from = Math.min(...lines);
+  const to = Math.max(...lines);
+  return from === to ? `${source}:${String(from)}` : `${source}:${String(from)}-${String(to)}`;
 }

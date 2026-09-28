@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   ANSWERS,
   answerLine,
+  retipped,
+  reviewedOf,
   anchorOf,
   anchorsIn,
   doorLine,
@@ -173,5 +175,28 @@ describe("the four answers' own refusals", () => {
     for (const one of ANSWERS) {
       expect(one.consequence).not.toBe("");
     }
+  });
+});
+
+describe("the record's head", () => {
+  const tip = "e".repeat(40);
+  const head = `# Review of g1-s64\n\n- Kind: review\n- Goals: g1-s64\n- Reviewed: ${tip} (the tip of goal/g1-s64)\n\n## Findings\n`;
+
+  it("names the goal and the tip it was reviewed at", () => {
+    expect(reviewedOf(head)).toEqual({ goal: "g1-s64", tip, landed: [], previously: [] });
+    expect(reviewedOf("- Goals: g1-s50\n- Reviewed: " + "1".repeat(40) + " (landed with Goal-Item: g1-s50)\n").landed)
+      .toEqual(["1".repeat(40)]);
+  });
+
+  it("moves to the new tip only on the human's press, keeping the old one as Previously", () => {
+    const now = "f".repeat(40);
+    const moved = retipped(head, now) ?? "";
+    expect(moved).toContain(`- Reviewed: ${now} (the tip of goal/g1-s64)\n- Previously: ${tip}\n`);
+    expect(reviewedOf(moved)).toEqual({ goal: "g1-s64", tip: now, landed: [], previously: [tip] });
+    const again = retipped(moved, "a".repeat(40)) ?? "";
+    expect(reviewedOf(again).previously).toEqual([tip, now]);
+    // Everything below the head is untouched.
+    expect(again.slice(again.indexOf("## Findings"))).toBe("## Findings\n");
+    expect(retipped("# no head\n", now)).toBeNull();
   });
 });

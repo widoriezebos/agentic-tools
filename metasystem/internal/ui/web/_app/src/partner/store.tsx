@@ -134,6 +134,9 @@ import { readDrawerSitting, writeDrawerSitting } from "../storage";
 import {
   answerLine,
   EMPTY_DESK,
+  examinedLine,
+  outcomeWithVerdict,
+  retipped,
   keepDue,
   onDesk,
   roomOf,
@@ -410,6 +413,13 @@ type Partner = {
   noteAccepting: (id: string, reason: string | null) => void;
   /** The unfinished words the room keeps, by card. */
   drafts: Drafts;
+  /**
+   * Review the new tip: the record's Reviewed line moves to the branch now and
+   * the old tip is kept as Previously (D9). It answers "" or the refusal.
+   */
+  reviewNewTip: (current: string) => Promise<string>;
+  /** The verdict the End sheet chose, which the Outcome opens with (D10), or "". */
+  verdict: string;
 
   /**
    * The sitting this conversation is, or null. It is the server's answer, read
@@ -628,6 +638,8 @@ const nothing: Partner = {
   accepting: {},
   noteAccepting: () => {},
   drafts: {},
+  reviewNewTip: async () => "",
+  verdict: "",
   sitting: null,
   startSitting: async () => "",
   closeSitting: async () => {},
@@ -770,6 +782,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const [locals, setLocals] = useState<Readonly<Record<string, Draft>>>({});
   const [accepting, setAccepting] = useState<Readonly<Record<string, string>>>({});
   const [stoppedPresenting, setStoppedPresenting] = useState("");
+  const [verdict, setVerdict] = useState("");
   const roomTaken = useRef("");
   const lastKept = useRef("");
   const keptAt = useRef(0);
@@ -1411,6 +1424,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    * without it.
    */
   const close = useCallback(async (verdict = "") => {
+    setVerdict(verdict);
     setSittingBusy(true);
     setSittingRefusal("");
     setSittingEnded("");
@@ -1600,6 +1614,11 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       }
       changeMark(id, (mark) => ({ ...mark, recording: true, refusal: "" }));
       const entry = entryOf(card, nameOf(store.human), stampOf(new Date()), records);
+      // A review's Outcome opens with the verdict the human chose, and names
+      // what they examined, so a nod cannot pass as a review (g1-s65 D10).
+      if (card.kind === "outcome" && sitting?.purpose === "review" && verdict !== "") {
+        entry.text = outcomeWithVerdict(verdict, entry.text, examinedLine(desk.items));
+      }
       void held.press(entry, records?.kind ?? card.kind, into).then((outcome) => {
         if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
           setReading(outcome.reading);
@@ -1623,7 +1642,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         }
       });
     },
-    [deposits, changeMark, store.human, end],
+    [deposits, changeMark, store.human, end, sitting, verdict, desk],
   );
 
   /**
@@ -1820,6 +1839,20 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const startFinding = useCallback((anchor: string) => {
     const id = `${LOCAL}${mintLocal()}`;
     setLocals((held) => ({ ...held, [id]: { text: "", clause: anchor, kind: "finding" } }));
+  }, []);
+
+  const reviewNewTip = useCallback(async (current: string): Promise<string> => {
+    const held = recording.current;
+    const into = sittingNow.current?.subject.id ?? "";
+    if (held === null || held.reading().id !== into) {
+      return NOT_READ_YET;
+    }
+    const outcome = await held.rewrite(into, (source) => retipped(source, current),
+      "This review names no branch tip to move.");
+    if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
+      setReading(outcome.reading);
+    }
+    return outcome.kind === "recorded" ? "" : outcome.reason;
   }, []);
 
   const answerFinding = useCallback(async (mark: string, answer: AnswerKind, detail: string): Promise<string> => {
@@ -2205,6 +2238,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       wanted, returnFocus,
       conversation: where, showSitting, leaveSitting, room, putOnDesk, showOnDesk, setFace, keepRoomNow, walk,
       stoppedPresenting, stopPresenting, startFinding, answerFinding, accepting, noteAccepting, drafts,
+      reviewNewTip, verdict,
       sitting, startSitting: begin, closeSitting: close, endSitting: end,
       endWithoutRecording: endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
@@ -2222,6 +2256,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus,
       where, showSitting, leaveSitting, room, putOnDesk, showOnDesk, setFace, keepRoomNow, walk,
       stoppedPresenting, stopPresenting, startFinding, answerFinding, accepting, noteAccepting, drafts,
+      reviewNewTip, verdict,
       sitting, begin, close, end, endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
       proposals, tickProposal, selectProposals, applyProposals, continueProposals, tryProposal,

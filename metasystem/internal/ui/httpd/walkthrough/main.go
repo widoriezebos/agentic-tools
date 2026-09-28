@@ -37,6 +37,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/review"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
@@ -291,6 +292,14 @@ func main() {
 		CreateRecord: func(asked project.NewRecord) (project.Written, error) {
 			return project.CreateRecord(roots, asked, time.Now().UTC())
 		},
+		// The review room (g1-s65): the record creator the engine wires, over
+		// this fixture, and the shipped review owner over a candidate of this
+		// fixture's own — two goals waiting to land, and a branch a walkthrough
+		// can move by writing the file beside the checkout.
+		CreateReview: func(asked project.NewReview) (project.Written, error) {
+			return project.CreateReview(roots, asked, time.Now().UTC())
+		},
+		Review: &review.Owner{Git: fixtureGit{branches: branchesFile(checkout)}},
 		// The two writes a design's own page makes, over the fixture checkout
 		// and through the same package the engine wires: marking a design done
 		// rewrites its Status line, and naming a goal on it rewrites its Goals
@@ -537,6 +546,10 @@ func fixtureCheckout(calm bool, register string) string {
 		// work, so the resolver validates the two designs below against the
 		// same two homes the pane reads them out of.
 		{"plans/goals/g1-s13.md", "# g1-s13\n\n- State: queued\n- Intent: The goal page reads the whole record\n"},
+		// The two goals waiting to land, which a review record names: the
+		// record creator refuses a goal its ledger does not carry.
+		{"plans/goals/g1-s21.md", "# g1-s21\n\n- State: claimed\n- Intent: The Overview reads what needs a human\n"},
+		{"plans/goals/g1-s26.md", "# g1-s26\n\n- State: claimed\n- Intent: The owner holds one lock across publish and reconcile\n"},
 		{"records/goals/g1-s9.md", "# g1-s9\n\n- State: done\n- Intent: The application shell, the rail and the header\n"},
 		{"records/goals/g1-s10.md", "# g1-s10\n\n- State: done\n- Intent: The backlog's data path and the list\n"},
 		{walkthroughBook, walkthroughBookText},
@@ -627,6 +640,11 @@ func newLedger(calm bool) *ledger {
 	landing := add(ranked(walkthroughGoal("g1-s21", goal.StateClaimed, "The Overview reads what needs a human"), 2, 10))
 	landing.Claimed = &goal.ClaimRecord{Machine: "m1e", Lineage: "coordinator", At: stampedAgo(7 * time.Hour)}
 	landing.Landing = &goal.LandingRecord{At: stampedAgo(35 * time.Minute)}
+	// A second goal waiting to land, so a human can start a review, step out,
+	// start another on this one, and go back to the first through its door.
+	landed2 := add(ranked(walkthroughGoal("g1-s26", goal.StateClaimed, "The owner holds one lock across publish and reconcile"), 2, 13))
+	landed2.Claimed = &goal.ClaimRecord{Machine: "m2a", Lineage: "implementer", At: stampedAgo(3 * time.Hour)}
+	landed2.Landing = &goal.LandingRecord{At: stampedAgo(20 * time.Minute)}
 
 	parked := add(ranked(walkthroughGoal("g1-s22", goal.StateParked, "The Fleet section reads the census"), 2, 11))
 	parked.Parked = &goal.ParkRecord{

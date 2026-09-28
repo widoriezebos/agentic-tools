@@ -413,3 +413,79 @@ export function answerLine(answer: AnswerKind, detail: string): { line: string }
         : { line: ACCEPTED(detail) };
   }
 }
+
+/* ---------------------------------------------------------------- the head -- */
+
+/** A review record's head, as the room reads it: the goal, the tip or the landed commits, and earlier tips. */
+export type Reviewed = { goal: string; tip: string; landed: string[]; previously: string[] };
+
+const COMMIT = /^[0-9a-f]{40,64}$/u;
+
+function commitsIn(said: string): string[] {
+  return said.split(/\s+/u).filter((word) => COMMIT.test(word));
+}
+
+/** The head is the list before the first section; a line of the same shape inside a section is somebody's words. */
+function headLines(source: string): { lines: string[]; end: number } {
+  const lines = source.split("\n");
+  const end = lines.findIndex((line) => line.startsWith("## "));
+  return { lines, end: end < 0 ? lines.length : end };
+}
+
+export function reviewedOf(source: string): Reviewed {
+  const { lines, end } = headLines(source);
+  const read: Reviewed = { goal: "", tip: "", landed: [], previously: [] };
+  for (const line of lines.slice(0, end)) {
+    const field = /^- (\w+):\s*(.*)$/u.exec(line);
+    if (field === null) {
+      continue;
+    }
+    const value = field[2];
+    switch (field[1].toLowerCase()) {
+      case "goals":
+        read.goal = value.split(/\s+/u)[0] ?? "";
+        break;
+      case "reviewed": {
+        const commits = commitsIn(value);
+        if (value.includes("(the tip of")) {
+          read.tip = commits[0] ?? "";
+        } else {
+          read.landed = commits;
+        }
+        break;
+      }
+      case "previously":
+        read.previously = commitsIn(value);
+        break;
+    }
+  }
+  return read;
+}
+
+/**
+ * The record with its Reviewed line moved to the branch's new tip and the old
+ * tip appended to Previously (g1-s65 D9). It is the human's press, "Review the
+ * new tip", and nothing else writes it; a record with no tip on its head
+ * answers null.
+ */
+export function retipped(source: string, current: string): string | null {
+  const { lines, end } = headLines(source);
+  const at = lines.slice(0, end).findIndex((line) => /^- Reviewed:/u.test(line));
+  if (at < 0) {
+    return null;
+  }
+  const was = reviewedOf(source);
+  if (was.tip === "") {
+    return null;
+  }
+  const next = [...lines];
+  next[at] = `- Reviewed: ${current} (the tip of goal/${was.goal})`;
+  const previously = [...was.previously, was.tip].join(" ");
+  const held = lines.slice(0, end).findIndex((line) => /^- Previously:/u.test(line));
+  if (held >= 0) {
+    next[held] = `- Previously: ${previously}`;
+    return next.join("\n");
+  }
+  next.splice(at + 1, 0, `- Previously: ${previously}`);
+  return next.join("\n");
+}

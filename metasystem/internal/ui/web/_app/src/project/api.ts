@@ -103,10 +103,20 @@ export type DocumentFile = { path: string; title: string };
  */
 export type SittingRow = {
   record: { kind: string; id: string; path: string; title: string };
-  counts: { facts: number; proposals: number; decisions: number; questions: number };
+  counts: {
+    facts: number;
+    proposals: number;
+    decisions: number;
+    questions: number;
+    /** A review's findings, and the ones still unanswered, read from the record (g1-s65 D9). */
+    findings?: number;
+    unanswered?: number;
+  };
   /** The date of the last entry recorded, as the entry itself carries it, or "". */
   lastAt: string;
   standing: boolean;
+  /** When the room of a standing sitting was last kept: the door's "you stepped out" (g1-s65 D9). */
+  steppedOutAt?: string;
 };
 
 export type Pane = {

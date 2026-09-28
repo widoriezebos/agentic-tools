@@ -1142,6 +1142,26 @@ export function draftMadeLine(path: string): string {
  */
 export const THE_INTERFACES = "asked by the interface, to open this sitting";
 
+/**
+ * What the transcript says above one question the interface asked, read from
+ * the question's own fixed words: a review's opening, one of its five walks, or
+ * its close (g1-s65 D6) — each named, because a human reading back weeks later
+ * must be able to tell which one the interface asked in their name.
+ */
+export function interfaceLine(text: string): string {
+  if (text.startsWith("Open this review")) {
+    return "asked by the interface, to open this review";
+  }
+  const walk = /^Walk me through (\w+) for the review/u.exec(text);
+  if (walk !== null) {
+    return `asked by the interface: the ${walk[1]} walk`;
+  }
+  if (text.startsWith("Close this review")) {
+    return "asked by the interface, to close this review with your verdict";
+  }
+  return THE_INTERFACES;
+}
+
 /** What the table is called, and what its empty state says. */
 export const TABLE = "The table";
 export const TABLE_EMPTY = "Nothing has been recorded in this sitting yet.";
