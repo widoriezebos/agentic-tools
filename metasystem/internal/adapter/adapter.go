@@ -13,8 +13,6 @@ package adapter
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"os"
 	"path/filepath"
 	"time"
@@ -62,30 +60,6 @@ func decodeJSONBytes(data []byte) (any, error) {
 		return nil, err
 	}
 	return value, nil
-}
-
-// encodeJSON renders a value the way every on-disk artifact in this
-// system is rendered — 2-space indent, sorted keys, HTML unescaped,
-// trailing newline — through the wire-document owner; byte equivalence
-// is pinned by the package's own bytecheck test.
-func encodeJSON(value any) ([]byte, error) {
-	return wiredoc.RenderValue(value)
-}
-
-// atomicWriteJSON writes value to path so a reader sees the old bytes or the
-// new bytes and never a half-written file: render, write a temp file in the
-// target directory, fsync it, rename it into place, then fsync the directory.
-func atomicWriteJSON(path string, value any) error {
-	encoded, err := encodeJSON(value)
-	if err != nil {
-		return err
-	}
-	// Through the durable-write owner; the empty anchor syncs only the
-	// target's own directory, and the durable outcome is dropped,
-	// because this writer's callers have not adopted the two-outcome
-	// contract.
-	_, writeErr := atomicfile.WriteText(path, string(encoded), "")
-	return writeErr
 }
 
 func syncDir(directory string) {

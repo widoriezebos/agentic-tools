@@ -1,6 +1,8 @@
 package wiredoc
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -176,5 +178,21 @@ func TestRenderValueCanon(t *testing.T) {
 func TestRenderValueRefusesUnmarshalable(t *testing.T) {
 	if _, err := RenderValue(func() {}); err == nil {
 		t.Fatal("an unmarshalable value must refuse")
+	}
+}
+
+// WriteFile publishes RenderValue's bytes atomically at path.
+func TestWriteFilePublishesTheCanonicalRendering(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "doc.json")
+	value := map[string]any{"b": "x<y>&z", "a": 1}
+	if err := WriteFile(path, value); err != nil {
+		t.Fatal(err)
+	}
+	want, err := RenderValue(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != string(want) {
+		t.Fatalf("published %q (%v), want %q", got, err, want)
 	}
 }

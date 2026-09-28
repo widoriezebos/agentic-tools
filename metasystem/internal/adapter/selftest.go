@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // The self-test helpers back the full-contract adapter self-test: asserting a
@@ -148,7 +150,7 @@ func WriteSelftestRecord(outputPath, runtime, job, usage string, probeLabels []s
 	default:
 		value["usageNote"] = "no per-turn usage was reported"
 	}
-	return atomicWriteJSON(outputPath, value)
+	return wiredoc.WriteFile(outputPath, value)
 }
 
 // enforcementEvidence names what a field's attempt proved. A notEnforced

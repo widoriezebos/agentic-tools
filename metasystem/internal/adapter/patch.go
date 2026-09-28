@@ -3,6 +3,8 @@ package adapter
 import (
 	"fmt"
 	"os"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // These writers emit the small JSON patch files the record lifecycle applies
@@ -16,7 +18,7 @@ func WriteModelPatch(outputPath, model string) error {
 	if model == "" {
 		return fmt.Errorf("effective model is required")
 	}
-	return atomicWriteJSON(outputPath, map[string]any{"effectiveModel": model})
+	return wiredoc.WriteFile(outputPath, map[string]any{"effectiveModel": model})
 }
 
 // WriteTransportPatch pins the job's transport into its record —
@@ -26,14 +28,14 @@ func WriteTransportPatch(outputPath, transport string) error {
 	if transport != "acp" && transport != "legacy" {
 		return fmt.Errorf("transport must be acp or legacy")
 	}
-	return atomicWriteJSON(outputPath, map[string]any{"transport": transport})
+	return wiredoc.WriteFile(outputPath, map[string]any{"transport": transport})
 }
 
 // WriteRepairsPatch writes a patch that records how many return-repair turns a
 // round needed, so a chain that got its return right only after a repair never
 // reads as one that got it right the first time.
 func WriteRepairsPatch(outputPath string, count int) error {
-	return atomicWriteJSON(outputPath, map[string]any{"returnRepairs": count})
+	return wiredoc.WriteFile(outputPath, map[string]any{"returnRepairs": count})
 }
 
 // WriteResultPatch writes the terminal patch for a round: the failure code (or
@@ -55,7 +57,7 @@ func WriteResultPatch(outputPath, failure, phase, usagePath string) error {
 			patch["usage"] = usage
 		}
 	}
-	return atomicWriteJSON(outputPath, patch)
+	return wiredoc.WriteFile(outputPath, patch)
 }
 
 // errorValue maps the literal "null" to a JSON null and any other string to

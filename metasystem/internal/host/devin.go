@@ -8,6 +8,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // DevinConfig writes the Devin CLI config for a turn. It starts from the user's
@@ -29,7 +30,7 @@ func DevinConfig(root, outputPath string) error {
 		"ask":  []any{},
 		"deny": []any{"mcp__*"},
 	}
-	if err := atomicWriteJSON(outputPath, value); err != nil {
+	if err := wiredoc.WriteFile(outputPath, value); err != nil {
 		return fmt.Errorf("write devin config: %w", err)
 	}
 	return nil
@@ -73,7 +74,7 @@ func DevinReturn(rawPath, outputPath string) error {
 	if !ok {
 		return nil
 	}
-	if err := atomicWriteJSON(outputPath, object); err != nil {
+	if err := wiredoc.WriteFile(outputPath, object); err != nil {
 		return fmt.Errorf("write devin return: %w", err)
 	}
 	return nil

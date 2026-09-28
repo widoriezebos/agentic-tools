@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // BuildClaudeSettings writes the settings file a Claude delegate launches
@@ -132,7 +133,7 @@ func BuildClaudeSettings(recordPath, outputPath, metasystemBin, scratch string) 
 			}},
 		},
 	}
-	if err := atomicWriteJSON(outputPath, settings); err != nil {
+	if err := wiredoc.WriteFile(outputPath, settings); err != nil {
 		return fmt.Errorf("write claude settings: %w", err)
 	}
 	return nil
@@ -190,7 +191,7 @@ func ClaudeUsage(resultPath, outputPath string) error {
 	if cost := document["total_cost_usd"]; isNumber(cost) {
 		value["cost"] = map[string]any{"amount": cost, "currency": "USD"}
 	}
-	if err := atomicWriteJSON(outputPath, value); err != nil {
+	if err := wiredoc.WriteFile(outputPath, value); err != nil {
 		return fmt.Errorf("write claude usage: %w", err)
 	}
 	return nil
@@ -286,7 +287,7 @@ func ClaudeSessionSignal(r io.Reader, signalPath, eventsPath string) (string, er
 		"model":      payload["model"],
 		"source":     payload["source"],
 	}
-	if err := atomicWriteJSON(signalPath, signal); err != nil {
+	if err := wiredoc.WriteFile(signalPath, signal); err != nil {
 		return "", fmt.Errorf("write session signal: %w", err)
 	}
 	event := map[string]any{

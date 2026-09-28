@@ -1,6 +1,10 @@
 package host
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
+)
 
 // ClaudeResult reads a Claude CLI result document and splits it into the turn's
 // return object and its typed usage. The return is the structured output when
@@ -15,7 +19,7 @@ func ClaudeResult(providerPath, returnPath, usagePath string) error {
 	document, _ := value.(map[string]any)
 
 	if candidate := returnObject(document); candidate != nil {
-		if err := atomicWriteJSON(returnPath, candidate); err != nil {
+		if err := wiredoc.WriteFile(returnPath, candidate); err != nil {
 			return fmt.Errorf("write claude return: %w", err)
 		}
 	}
@@ -33,7 +37,7 @@ func ClaudeResult(providerPath, returnPath, usagePath string) error {
 	if cost := document["total_cost_usd"]; isNumber(cost) {
 		usage["cost"] = map[string]any{"amount": cost, "currency": "USD"}
 	}
-	if err := atomicWriteJSON(usagePath, usage); err != nil {
+	if err := wiredoc.WriteFile(usagePath, usage); err != nil {
 		return fmt.Errorf("write claude usage: %w", err)
 	}
 	return nil

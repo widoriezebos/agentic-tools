@@ -3,6 +3,8 @@ package adapter
 import (
 	"fmt"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // MaterializeEffective writes the job's requested permission envelope out as
@@ -14,7 +16,7 @@ func MaterializeEffective(recordPath, effectivePath string) error {
 	if err != nil {
 		return err
 	}
-	return atomicWriteJSON(effectivePath, requested)
+	return wiredoc.WriteFile(effectivePath, requested)
 }
 
 // RewriteWriteScope pins the effective file's writeRoots to the resolved
@@ -34,7 +36,7 @@ func RewriteWriteScope(effectivePath, workspace string) error {
 	if roots, ok := effective["writeRoots"].([]any); ok && len(roots) > 0 {
 		effective["writeRoots"] = []any{resolve(workspace)}
 	}
-	return atomicWriteJSON(effectivePath, effective)
+	return wiredoc.WriteFile(effectivePath, effective)
 }
 
 // ComparePermissions reports the permission fields where the effective grant is
