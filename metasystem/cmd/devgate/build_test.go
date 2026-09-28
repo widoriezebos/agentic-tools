@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -150,7 +151,9 @@ func stampOf(args []string) string {
 	if index < 0 || index+1 >= len(args) {
 		return ""
 	}
-	return strings.TrimPrefix(args[index+1], buildStampFlag)
+	_, record, _ := strings.Cut(args[index+1], enginebuild.StampRecordVariable+"=")
+	stamp, _ := enginebuild.ParseStampRecord(record)
+	return stamp
 }
 
 func TestBuildCleanTreeInstallsEngineStampedWithHead(t *testing.T) {
@@ -162,7 +165,7 @@ func TestBuildCleanTreeInstallsEngineStampedWithHead(t *testing.T) {
 	}
 	call := f.onlyGoCall()
 	staging := filepath.Join("bin", ".metasystem.build."+itoa(f.selfPid))
-	want := []string{"build", "-p=3", "-buildvcs=false", "-ldflags", buildStampFlag + fixtureCommit, "-o", staging, "./cmd/metasystem"}
+	want := []string{"build", "-p=3", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(fixtureCommit), "-o", staging, "./cmd/metasystem"}
 	if !slices.Equal(call.args, want) {
 		t.Fatalf("go args = %q, want %q", call.args, want)
 	}
@@ -250,7 +253,7 @@ func TestBuildOutLeavesTheInstalledEngineAndSkipsTheFence(t *testing.T) {
 		if trimpath {
 			want = append(want, "-trimpath")
 		}
-		want = append(want, "-ldflags", buildStampFlag+fixtureCommit, "-o", out, "./cmd/metasystem")
+		want = append(want, "-ldflags", enginebuild.StampLinkerFlags(fixtureCommit), "-o", out, "./cmd/metasystem")
 		if got := f.onlyGoCall().args; !slices.Equal(got, want) {
 			t.Fatalf("trimpath=%v go args = %q, want %q", trimpath, got, want)
 		}
@@ -393,3 +396,15 @@ func TestUnknownActionIsAUsageError(t *testing.T) {
 }
 
 func itoa(value int64) string { return strconv.FormatInt(value, 10) }
+
+func TestBuildRefusesAStampNoReaderCouldReadBack(t *testing.T) {
+	t.Parallel()
+	f := newBuildFixture(t)
+	f.env["METASYSTEM_BUILD_STAMP"] = "not a stamp;"
+	if code := f.run("--out", "proof"); code != 1 || len(f.goCalls) != 0 {
+		t.Fatalf("exit %d after go calls %+v, want 1 and no build", code, f.goCalls)
+	}
+	if !strings.Contains(f.stderr.String(), "is not [A-Za-z0-9-]{1,64}") {
+		t.Fatalf("stderr = %q", f.stderr.String())
+	}
+}

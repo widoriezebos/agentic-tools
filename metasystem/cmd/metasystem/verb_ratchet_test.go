@@ -27,7 +27,10 @@ import (
 
 const (
 	// R1/R3 residue: (family, verb) pairs plus dispatchInternal's top-level forms.
-	verbRatchetInternalVerbCeiling = 407
+	// 408: disk-lifetimes A1 adds `util engine-stamp`, the one shell-callable
+	// stamp reader (rule A3) replacing three `go version -m` parsers; it goes
+	// when those scripts are ported to Go.
+	verbRatchetInternalVerbCeiling = 408
 	// R4: shell lines that reference the engine.
 	verbRatchetShellEngineCeiling = 2505
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.

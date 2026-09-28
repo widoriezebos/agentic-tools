@@ -390,24 +390,13 @@ harness_fixture_bed_child_scenario() { # bed name, optional private child argume
 }
 
 harness_fixture_engine_build_descriptor() { # immutable engine
-	local engine=$1 metadata descriptors descriptor
-	if metadata=$(go version -m "$engine"); then
-		:
+	local engine=$1 descriptor
+	if descriptor=$("${METASYSTEM_BIN:-$fixture_bed_root/bin/metasystem}" util engine-stamp --file "$engine"); then
+		printf '%s\n' "$descriptor"
 	else
-		printf 'fixture harness: go version -m failed for immutable engine %s\n' "$engine" >&2
+		printf 'fixture harness: no build descriptor in immutable engine %s\n' "$engine" >&2
 		return 1
 	fi
-	if descriptors=$(sed -n 's/.*supervise.BuildStamp=\([^[:space:]]*\).*/\1/p' <<<"$metadata"); then
-		:
-	else
-		printf 'fixture harness: build descriptor extraction failed for immutable engine %s\n' "$engine" >&2
-		return 1
-	fi
-	IFS= read -r descriptor <<<"$descriptors" || {
-		printf 'fixture harness: build descriptor output was unreadable for immutable engine %s\n' "$engine" >&2
-		return 1
-	}
-	printf '%s\n' "$descriptor"
 }
 
 harness_dispatch_fixture_bed_child_scenario() { # bed name, optional private child arguments

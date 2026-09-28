@@ -14,8 +14,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 )
 
-const buildStampFlag = "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="
-
 var positiveInteger = regexp.MustCompile(`^[1-9][0-9]*$`)
 
 type buildOptions struct {
@@ -88,8 +86,16 @@ func runBuild(ctx context.Context, args []string, root string, d deps) int {
 		return 1
 	}
 
+	if !enginebuild.ValidStamp(stamp) {
+		fmt.Fprintf(d.stderr, "go-build: build stamp %q is not [A-Za-z0-9-]{1,64}; no reader could read it back\n", stamp)
+		return 1
+	}
+
 	env := append(d.environ(), "GOMAXPROCS="+workers, "CGO_ENABLED=0")
-	ldflags := buildStampFlag + stamp
+	// The stamp is linked twice: as a record in the file's data, which
+	// survives -trimpath, and as the legacy variable older readers find in
+	// the -ldflags build setting of this untrimmed build.
+	ldflags := enginebuild.StampLinkerFlags(stamp)
 	if options.out != "" {
 		goArgs := []string{"build", "-p=" + workers, "-buildvcs=false"}
 		if options.trimpath {

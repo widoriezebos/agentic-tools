@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
@@ -77,7 +78,7 @@ func TestDispatcherSharedEngineCapabilityRejectsTamperAndForeignBed(t *testing.T
 	owner := t.TempDir()
 	engine := filepath.Join(owner, "fixture-engine")
 	build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=fixture-shared-build", "-o", engine, ".")
+		enginebuild.StampLinkerFlags("fixture-shared-build"), "-o", engine, ".")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build shared capability fixture engine: %v\n%s", err, output)
 	}

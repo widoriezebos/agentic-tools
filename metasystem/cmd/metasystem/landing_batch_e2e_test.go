@@ -19,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -569,7 +570,7 @@ func (fixture *batchE2EFixture) buildPolicyEngine(commit, engine string) {
 		fixture.t.Fatal("locate metasystem source")
 	}
 	sourceRoot := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
-	linker := "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=" + commit
+	linker := enginebuild.StampLinkerFlags(commit)
 	command := exec.Command("go", "build", "-buildvcs=false", "-ldflags", linker, "-o", engine, "./cmd/metasystem")
 	command.Dir = sourceRoot
 	command.Env = os.Environ()

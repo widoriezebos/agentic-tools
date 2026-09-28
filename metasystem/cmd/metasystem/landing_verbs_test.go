@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -678,7 +679,7 @@ git commit "${commit_args[@]}" --trailer "Landing-Provenance: $provenance" \
 	// not by the candidate source loaded into this test process. Rebuild the
 	// fixture executable with T's source stamp and enroll those exact bytes.
 	build = exec.Command("go", "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+target, "-o", filepath.Join(root, "bin", "metasystem"), ".")
+		enginebuild.StampLinkerFlags(target), "-o", filepath.Join(root, "bin", "metasystem"), ".")
 	build.Env = gittree.ScrubbedEnviron()
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build source-bound recertification engine: %v\n%s", err, out)
@@ -1754,7 +1755,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	runReceiptGit(t, root, "update-ref", goal.AcceptedRef, head)
 	tree := runReceiptGit(t, root, "write-tree")
 	build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+head, "-o", engine, ".")
+		enginebuild.StampLinkerFlags(head), "-o", engine, ".")
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
 		t.Fatalf("build shared testing receipt engine: %v\n%s", buildErr, output)
 	}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
@@ -154,7 +155,7 @@ func TestGitProjectionAdapterPreservesArchivedKindsModesAndSymlinks(t *testing.T
 func buildFakeRunner(t *testing.T, output, stamp string) {
 	t.Helper()
 	cmd := exec.Command("go", "build", "-buildvcs=false",
-		"-ldflags", "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+stamp,
+		"-ldflags", enginebuild.StampLinkerFlags(stamp),
 		"-o", output, "./testdata/fakerunner")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

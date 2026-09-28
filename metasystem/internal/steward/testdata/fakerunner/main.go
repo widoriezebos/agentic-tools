@@ -19,7 +19,7 @@ type runnerRecord struct {
 }
 
 func main() {
-	_ = supervise.BuildStamp
+	_ = supervise.BuildStampRecord
 	// The arming caller hands the runner its lineage as an argument, so the
 	// fake accepts the handoff exactly as the real runner does.
 	if len(os.Args) < 5 || os.Args[1] != "steward" || os.Args[2] != "run" || os.Args[3] != "--repo" {

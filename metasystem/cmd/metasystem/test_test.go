@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -2291,7 +2292,7 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 	}
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	build := exec.Command(goPath, "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+head, "-o", engine, ".")
+		enginebuild.StampLinkerFlags(head), "-o", engine, ".")
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
 		t.Fatalf("build public-v1 probe candidate: %v\n%s", buildErr, output)
 	}
@@ -2562,7 +2563,7 @@ func prepareFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout
 func buildFrozenPublicVersionOneCorpusEngine(t *testing.T, input frozenCorpusWorkerInput, engine string, executions *frozenCorpusExecutions) {
 	t.Helper()
 	build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+input.candidateCommit, "-o", engine, ".")
+		enginebuild.StampLinkerFlags(input.candidateCommit), "-o", engine, ".")
 	build.Dir = filepath.Join(input.root, "cmd", "metasystem")
 	build.Env = gittree.ScrubbedEnviron()
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
@@ -2844,7 +2845,7 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	}
 	currentEngine := filepath.Join(t.TempDir(), "metasystem")
 	build := exec.Command(goPath, "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+head, "-o", currentEngine, ".")
+		enginebuild.StampLinkerFlags(head), "-o", currentEngine, ".")
 	build.Env = append(os.Environ(), "PATH="+os.Getenv("PATH"))
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
 		t.Fatalf("build source-bound policy engine: %v\n%s", buildErr, output)

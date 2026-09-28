@@ -665,7 +665,7 @@ go_engine_gate_section() {
   if (( delivery_contract )); then
     # The delivery smoke (D33): the freshly stamped binary answers a
     # decision verb, and when the outer run's witness matches this tree
-    # the binary's ldflags stamp must carry that digest — binary
+    # the binary's linked stamp must carry that digest — binary
     # identity is part of the equivalence, not an assumption.
     [[ "$(bin/metasystem internal json get --value '{"ok":1}' --field ok)" == 1 ]] \
       || { echo "delivery contract: the rebuilt binary did not answer" >&2; exit 1; }
@@ -673,7 +673,7 @@ go_engine_gate_section() {
       && METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=DELIVERY \
         go run ./cmd/devgate gate --witness-check-only >/dev/null 2>&1; then
       delivery_reuse=1
-      delivery_stamp=$(go version -m bin/metasystem | sed -n 's/.*BuildStamp=\(witness-[a-f0-9]*\).*/\1/p' | head -1)
+      delivery_stamp=$(bin/metasystem util engine-stamp --file bin/metasystem) || delivery_stamp=
       delivery_recorded=$(sed -n 's/.*"engineDigest":"\([a-f0-9]*\)".*/\1/p' "$METASYSTEM_GATE_WITNESS")
       [[ -n "$delivery_stamp" && "$delivery_stamp" == "witness-${delivery_recorded:0:12}" ]] \
         || { echo "delivery contract: binary stamp ${delivery_stamp:-absent} does not match the witness digest" >&2; exit 1; }

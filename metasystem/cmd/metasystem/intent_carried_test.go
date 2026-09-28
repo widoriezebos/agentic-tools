@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -372,7 +373,7 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 	// The testing owner runs only an enrolled engine built from this
 	// history: the batch e2e bed's stamped build and fixture enrollment.
 	stamp := goalSyncMutationGit(t, clone, "rev-parse", "HEAD")
-	stamped := exec.Command("go", "build", "-buildvcs=false", "-ldflags", "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+stamp, "-o", engine, ".")
+	stamped := exec.Command("go", "build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(stamp), "-o", engine, ".")
 	if output, err := stamped.CombinedOutput(); err != nil {
 		t.Fatalf("build stamped fixture engine: %v: %s", err, output)
 	}

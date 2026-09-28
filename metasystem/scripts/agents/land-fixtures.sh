@@ -330,24 +330,13 @@ extract_fixture_git_archive() { # repository, destination, archive file, git arc
 }
 
 fixture_engine_build_stamp() { # engine
-  local engine=$1 metadata stamps stamp
-  if metadata=$(go version -m "$engine"); then
-    :
+  local engine=$1 stamp
+  if stamp=$("$root/bin/metasystem" util engine-stamp --file "$engine"); then
+    printf '%s\n' "$stamp"
   else
-    echo "land $fixture_scenario fixture: go version -m failed for $engine" >&2
+    echo "land $fixture_scenario fixture: no build stamp in $engine" >&2
     return 1
   fi
-  if stamps=$(sed -n 's/.*BuildStamp=\([a-z0-9-]*\).*/\1/p' <<<"$metadata"); then
-    :
-  else
-    echo "land $fixture_scenario fixture: build stamp extraction failed for $engine" >&2
-    return 1
-  fi
-  IFS= read -r stamp <<<"$stamps" || {
-    echo "land $fixture_scenario fixture: build stamp output was unreadable for $engine" >&2
-    return 1
-  }
-  printf '%s\n' "$stamp"
 }
 
 fixture_first_fixed_line_number() { # pattern, file
