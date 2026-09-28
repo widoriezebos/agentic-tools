@@ -153,7 +153,7 @@ func TestIntentRouterTransitionalFallthrough(t *testing.T) {
 	}
 	// The ceiling ratchets down as scripts are ported and verbs deleted; it
 	// reaches zero when the family registry goes.
-	const fallthroughCeiling = 228
+	const fallthroughCeiling = 224
 	t.Logf("family pairs falling through: measured %d, ceiling %d", fallthroughPairs, fallthroughCeiling)
 	if fallthroughPairs > fallthroughCeiling {
 		t.Errorf("%d family pairs fall through without internal; the ceiling is %d", fallthroughPairs, fallthroughCeiling)

@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -380,10 +379,7 @@ func testInstalledGoalWaits(t *testing.T, binary string) {
 		t.Fatalf("current process identity=%+v state=%s err=%v", exact, state, err)
 	}
 	const lineage = "installed-ledger-lineage"
-	announce := exec.Command(binary, "lease", "announce", "--root", waiterClone, "--session", "installed-ledger-session", "--pid", strconv.FormatInt(self, 10), "--start", strconv.FormatInt(exact.StartedAt.Unix(), 10), "--start-ticks", strconv.FormatInt(exact.StartTicks, 10), "--boot-id", exact.BootID, "--tag", "installed-ledger-test", "--runtime", "fake", "--owner-lineage", lineage)
-	if output, announceErr := announce.CombinedOutput(); announceErr != nil {
-		t.Fatalf("announce installed ledger holder: %v %s", announceErr, output)
-	}
+	announceTestHolder(t, waiterClone, "installed-ledger-session", self, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "installed-ledger-test", "fake", lineage)
 	syncCursor := func(tip string) {
 		t.Helper()
 		mustGit(t, waiterClone, "fetch", "-q", "origin")

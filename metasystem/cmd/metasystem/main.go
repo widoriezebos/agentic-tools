@@ -111,7 +111,6 @@ func families() []family {
 			summary: "process identity and census: who is running, provably",
 			verbs: []verb{
 				{"fixture-survivors", "name or reap fixture children that outlived their owner", runFixtureSurvivors},
-				{"started-at", "print a pid's start time in epoch seconds", runIdentityStartedAt},
 				{"exists", "exit 0 if the pid exists (permission denial proves existence)", runIdentityExists},
 				{"group-exists", "exit 0 if the process group exists", runIdentityGroupExists},
 				{"group-owned", "exit 0 only when a group member carries a tag in a shipped argv position", runIdentityGroupOwned},
@@ -474,12 +473,9 @@ func families() []family {
 		},
 		{
 			name:    "lease",
-			summary: "checkout write-authority: announce/classify/hold/renew",
+			summary: "checkout write-authority (internal/lease)",
 			verbs: []verb{
-				{"announce", "record this process as a main and claim the checkout lease", runLeaseAnnounce},
-				{"retire", "remove this process's announcement", runLeaseRetire},
 				{"classify", "classify a caller and report holdership as JSON", runLeaseClassify},
-				{"require-holder", "gate a write on the caller being the authenticated holder", runLeaseRequireHolder},
 				{"run-held", "run a command while holding the lease lock (gated on holdership)", runLeaseRunHeld},
 				{"commit-token", "atomically write the live commit wrapper token", runLeaseCommitToken},
 			},

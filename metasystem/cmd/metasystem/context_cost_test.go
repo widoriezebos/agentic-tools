@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
@@ -666,13 +667,10 @@ func (bed *contextCostBed) environment(wrapper bool) []string {
 
 func (bed *contextCostBed) announceHolder() {
 	bed.t.Helper()
-	output := runContextCostSetupCommand(bed.t, bed.outer, bed.environment(false), bed.engine,
-		"lease", "announce", "--root", bed.installation, "--session", bed.session,
-		"--pid", fmt.Sprint(os.Getpid()), "--start", fmt.Sprint(bed.startedAt),
-		"--tag", "context-cost-holder", "--runtime", bed.runtime)
-	announcement := strings.TrimSpace(output)
-	if announcement == "" {
-		bed.t.Fatalf("%s holder announcement was unreadable: %s", bed.runtime, output)
+	announcement, err := lease.AnnounceWithPair(bed.installation, bed.session, int64(os.Getpid()), bed.startedAt,
+		0, "", "context-cost-holder", bed.runtime, "")
+	if err != nil || announcement == "" {
+		bed.t.Fatalf("%s holder announcement %q: %v", bed.runtime, announcement, err)
 	}
 	if _, err := os.Stat(announcement); err != nil {
 		bed.t.Fatalf("%s holder announcement path %q: %v", bed.runtime, announcement, err)
