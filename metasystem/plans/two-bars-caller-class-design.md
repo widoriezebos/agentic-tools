@@ -20,13 +20,13 @@
   as …-r2, round 3 as …-r3), design mode, for dispatch delegate
   m1b+main-1788333346-60696-6a3256
 - Revision 2 changelog: folds the three accepted round-1 findings of
-  critic chain two-bars-cc-crit-3 (plans/two-bars-caller-class-dispositions.md):
+  critic chain two-bars-cc-crit-3 (records/misc/two-bars-caller-class-dispositions.md):
   TBCC-R1-LAWFUL-DELEGATE-COMMIT-PATH (a fourth verdict path, `worker`,
   sections 1-4, 6, 7, 10), TBCC-R1-FIXTURE-STUB-CONTRACT (the bed's stub
   contract, section 7), TBCC-R1-NEGATIVE-BRANCH-PROOFS (three negative
   legs, section 7).
 - Revision 3 changelog (the declared failsafe round): folds the three
-  accepted round-2 findings (plans/two-bars-caller-class-dispositions-r2.md):
+  accepted round-2 findings (records/misc/two-bars-caller-class-dispositions-r2.md):
   TBCC-R2-LAND-SIDE-DOOR (land.sh refuses inside a job worktree through
   a new geometry verb; sections 1, 3, 4, 7, 8), TBCC-R2-NONRUNNING-WORKER
   (the worker rule requires the `running` literal; sections 1, 3, 7),
