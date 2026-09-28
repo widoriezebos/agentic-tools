@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"golang.org/x/sys/unix"
 )
 
@@ -141,15 +142,15 @@ func lockBranchRead(path string) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	held, err := lock.File(path+".lock", 0o600, lock.TryExclusive)
+	var lockErr *lock.LockError
+	if errors.As(err, &lockErr) {
+		return nil, operationRefusal(ReadDispatchPendingCode, "another read of this unit is in progress")
+	}
 	if err != nil {
 		return nil, err
 	}
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		lock.Close()
-		return nil, operationRefusal(ReadDispatchPendingCode, "another read of this unit is in progress")
-	}
-	return lock, nil
+	return held.File(), nil
 }
 
 func resolveReadGate(request ReadGateRequest, common, recordPath string, record branchReadRecord, subject AttestationSubject) (branchReadRecord, GateObservation, error) {

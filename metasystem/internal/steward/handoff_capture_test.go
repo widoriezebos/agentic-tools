@@ -1447,8 +1447,13 @@ func TestCancelHandoffReportsItsExactPartialOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(cancelledDir(root), result.Nonce+".json.tmp")
+	// A non-empty directory at the tombstone's own name obstructs its
+	// publication whatever temporary name the writer uses.
+	target := filepath.Join(cancelledDir(root), result.Nonce+".json")
 	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "obstruction"), []byte("keep"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := CancelHandoff(root, result.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); err == nil || !strings.Contains(err.Error(), "is no longer live") {

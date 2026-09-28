@@ -8,33 +8,9 @@ package host
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"os"
 	"sort"
 )
-
-// canonicalJSON renders a value in this family's wire dialect — the
-// unescaped canon — through the wire-document owner; the corpus
-// equivalence test proves the bytes identical to the encoder this replaces.
-func canonicalJSON(value any) ([]byte, error) {
-	return wiredoc.RenderValue(value)
-}
-
-// atomicWriteJSON writes value to path so a reader sees either the old bytes or
-// the new bytes and never a half-written file: render, write a temp file in the
-// target directory, fsync it, rename it into place, then fsync the directory.
-func atomicWriteJSON(path string, value any) error {
-	encoded, err := canonicalJSON(value)
-	if err != nil {
-		return err
-	}
-	// Through the durable-write owner; the
-	// empty anchor keeps this writer's non-fsync behavior
-	// until its caller is converted to the two-outcome contract.
-	_, writeErr := atomicfile.WriteText(path, string(encoded), "")
-	return writeErr
-}
 
 // decodeJSONNumber parses JSON with numbers preserved as json.Number so integer
 // counts survive a round trip and are never rounded to a float.

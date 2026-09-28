@@ -35,8 +35,12 @@ func TestSuiteProgressBedBoundedPreserveNamesTheTruncatedSource(t *testing.T) {
 	if code != 0 || !strings.Contains(stdout, "DROPPED "+evidence) {
 		t.Fatalf("bounded evidence result code=%d did not name the dropped source %s:\n%s", code, evidence, stdout)
 	}
+	if !strings.Contains(stdout, proofrun.TruncationMarker(4)) {
+		t.Fatalf("bounded evidence result did not carry the truncation marker:\n%s", stdout)
+	}
 	note, err := os.ReadFile(filepath.Join(result, "copy-note.txt"))
-	if err != nil || !strings.Contains(string(note), "DROPPED "+evidence) || !strings.Contains(string(note), "copied-bytes=4\n") {
+	if err != nil || !strings.Contains(string(note), "DROPPED "+evidence) || !strings.Contains(string(note), "copied-bytes=4\n") ||
+		!strings.Contains(string(note), proofrun.TruncationMarker(4)) {
 		t.Fatalf("bounded evidence note did not name the dropped source or the retained bytes: %q, %v", note, err)
 	}
 }
@@ -61,11 +65,11 @@ func TestSuiteProgressBedHeartbeatAndWatcherRelayTheDeepestSection(t *testing.T)
 		}
 	}
 
-	code, heartbeat, _ := captureCommandOutput(t, true, false, func() int {
-		return runProofRunHeartbeat([]string{"--root", workspace})
-	})
-	if code != 0 || !regexp.MustCompile(`^inner:child since [0-9]+min\n$`).MatchString(heartbeat) {
-		t.Fatalf("deepest live heartbeat was not selected: code=%d output=%q", code, heartbeat)
+	// The deepest live section is the heartbeat's owner (the internal
+	// proof-run heartbeat printed exactly this line).
+	heartbeat, found := deepestSuiteHeartbeat(workspace, time.Now())
+	if !found || !regexp.MustCompile(`^inner:child since [0-9]+min$`).MatchString(heartbeat) {
+		t.Fatalf("deepest live heartbeat was not selected: found=%v heartbeat=%q", found, heartbeat)
 	}
 
 	installation := t.TempDir()

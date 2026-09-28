@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"testing"
@@ -8,14 +9,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
-
-func TestGoalRepairRequiresAcceptRemoteAndNamesItInUsage(t *testing.T) {
-	stderr, code := captureStderr(t, func() int { return runGoalRepair(nil) })
-	if code != 2 || !strings.Contains(stderr,
-		"usage: metasystem goal sync --accept-remote-history --by <human> [--repo <checkout>]") {
-		t.Fatalf("bare goal repair did not print usage naming --accept-remote: code=%d stderr=%q", code, stderr)
-	}
-}
 
 func TestGoalRepairReachesAcceptRemoteAndRequiresBy(t *testing.T) {
 	repository := newProofAdmissionRepositoryFixture(t, time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC), false)
@@ -66,9 +59,13 @@ func TestGoalRepairReachesAcceptRemoteAndRequiresBy(t *testing.T) {
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("initial repair journal: entries=%+v err=%v", entries, err)
 	}
-	stdout, stderr, code := captureRelay(t, func() int {
-		return runGoalRepairWithInputs([]string{"--root", root, "--accept-remote"}, facts, resolveEndpoint)
-	})
+	// The owner goal sync --accept-remote-history calls in process.
+	repair := func(by string) (string, string, int) {
+		var stdout, stderr bytes.Buffer
+		code := goalRepairAcceptRemoteTo(&stdout, &stderr, root, by, facts, resolveEndpoint)
+		return stdout.String(), stderr.String(), code
+	}
+	stdout, stderr, code := repair("")
 	if code != 1 || stdout != "" || !strings.Contains(stderr, "repair --accept-remote is a human-reserved act") ||
 		!strings.Contains(stderr, "--by") {
 		t.Fatalf("goal repair did not relay RepairAcceptRemote's human attribution refusal: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -78,9 +75,7 @@ func TestGoalRepairReachesAcceptRemoteAndRequiresBy(t *testing.T) {
 		t.Fatalf("missing --by changed repair state: entries=%+v err=%v accepted=%s canonical=%s", entries, err, repository.accepted, repository.canonical)
 	}
 
-	stdout, stderr, code = captureRelay(t, func() int {
-		return runGoalRepairWithInputs([]string{"--root", root, "--accept-remote", "--by", "Wido"}, facts, resolveEndpoint)
-	})
+	stdout, stderr, code = repair("Wido")
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "advanced=true tip=") ||
 		!strings.Contains(stdout, "repair by Wido accepted") {
 		t.Fatalf("goal repair did not print the accepted AdvanceResult: code=%d stdout=%q stderr=%q", code, stdout, stderr)

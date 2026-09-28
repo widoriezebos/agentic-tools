@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"golang.org/x/sys/unix"
 )
 
 const Schema = 1
@@ -64,32 +64,21 @@ func receiptPath(repoRoot string) string {
 	return filepath.Join(repoRoot, stateDirectory(stateroot.Receipts), "receipts.log")
 }
 
-type debtLock struct{ file *os.File }
+type debtLock struct{ held *lock.FileLock }
 
 func acquire(repoRoot string) (*debtLock, error) {
 	if err := os.MkdirAll(filepath.Dir(lockPath(repoRoot)), 0o755); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(lockPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
+	held, err := lock.File(lockPath(repoRoot), 0o644, lock.Exclusive)
 	if err != nil {
 		return nil, err
 	}
-	for {
-		err = unix.Flock(int(file.Fd()), unix.LOCK_EX)
-		if err != unix.EINTR {
-			break
-		}
-	}
-	if err != nil {
-		file.Close()
-		return nil, err
-	}
-	return &debtLock{file: file}, nil
+	return &debtLock{held: held}, nil
 }
 
 func (l *debtLock) release() {
-	_ = unix.Flock(int(l.file.Fd()), unix.LOCK_UN)
-	_ = l.file.Close()
+	_ = l.held.Release()
 }
 
 func load(repoRoot string) (State, error) {

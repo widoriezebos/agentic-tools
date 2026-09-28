@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 )
 
 // CommitRequest is one pass through the commit boundary: the landing's
@@ -252,7 +253,7 @@ func (b *boundary) unboundInputs() ([]string, error) {
 
 func (b *boundary) listPaths(paths []string) {
 	for _, path := range paths {
-		fmt.Fprintf(b.stderr, "  %s\n", shellQuote(path))
+		fmt.Fprintf(b.stderr, "  %s\n", shellquote.Token(path))
 	}
 }
 

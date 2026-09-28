@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 func putFile(t *testing.T, path, body string) {
@@ -51,7 +53,7 @@ func oneGitResult(t *testing.T, expected gitRequest, output []byte, resultErr er
 }
 
 func expectedBatchGit(root string) gitRequest {
-	return gitRequest{Directory: ResolvePath(root), Args: []string{"rev-parse", "--show-toplevel"}, Environment: []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}}
+	return gitRequest{Directory: realpath.Resolve(root), Args: []string{"rev-parse", "--show-toplevel"}, Environment: []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}}
 }
 
 func noGitCalls(t *testing.T) gitRunner {
@@ -83,7 +85,7 @@ func TestResolveBatchLandingConfiguration(t *testing.T) {
 	putFile(t, conf, BatchRootKey+"="+landing+"\n")
 	now := time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)
 	settings, err := resolveBatchLandingWithRunner(conf, seat, func() time.Time { return now }, oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil))
-	if err != nil || settings.Root != ResolvePath(landing) || settings.MaxWait != DefaultBatchMaxWait {
+	if err != nil || settings.Root != realpath.Resolve(landing) || settings.MaxWait != DefaultBatchMaxWait {
 		t.Fatalf("default batch settings: settings=%+v err=%v", settings, err)
 	}
 	for _, wait := range []string{"0s", "-1m", "30s", "6h1s"} {
@@ -126,7 +128,7 @@ func TestResolveBatchLandingConfiguration(t *testing.T) {
 	t.Setenv("GIT_DIR", filepath.Join(seat, ".git"))
 	t.Setenv("GIT_WORK_TREE", seat)
 	putFile(t, conf, BatchRootKey+"="+landing+"\n")
-	if settings, err := resolveBatchLandingWithRunner(conf, seat, func() time.Time { return now }, oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil)); err != nil || settings.Root != ResolvePath(landing) {
+	if settings, err := resolveBatchLandingWithRunner(conf, seat, func() time.Time { return now }, oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil)); err != nil || settings.Root != realpath.Resolve(landing) {
 		t.Fatalf("git steering escaped into batch root resolution: settings=%+v err=%v", settings, err)
 	}
 	putFile(t, filepath.Join(landing, "artifacts", "agents", "brain.json"), "{}\n")
@@ -164,7 +166,7 @@ func TestResolveExplicitBatchLandingWithRunner(t *testing.T) {
 	now := func() time.Time { return time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC) }
 	settings, err := resolveExplicitBatchLandingWithRunner(landing, seat, time.Minute, now,
 		oneGitResult(t, expectedBatchGit(landing), []byte("  "+landing+"\n"), nil))
-	if err != nil || settings.Root != ResolvePath(landing) || settings.MaxWait != time.Minute {
+	if err != nil || settings.Root != realpath.Resolve(landing) || settings.MaxWait != time.Minute {
 		t.Fatalf("explicit landing = %+v, %v", settings, err)
 	}
 	for _, test := range []struct {
@@ -222,7 +224,7 @@ func TestResolveExplicitBatchLandingWithRawRunner(t *testing.T) {
 	settings, err := ResolveExplicitBatchLandingWithRunner(landing, seat, time.Minute, now, func(directory string, args, environment []string) ([]byte, error) {
 		return runner(gitRequest{Directory: directory, Args: args, Environment: environment})
 	})
-	if err != nil || settings.Root != ResolvePath(landing) || settings.MaxWait != time.Minute {
+	if err != nil || settings.Root != realpath.Resolve(landing) || settings.MaxWait != time.Minute {
 		t.Fatalf("raw runner landing = %+v, %v", settings, err)
 	}
 }

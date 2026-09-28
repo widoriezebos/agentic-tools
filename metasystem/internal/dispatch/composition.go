@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 const rolePacketTablePath = "scripts/agents/role-packets.json"
@@ -342,7 +343,7 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 		appendBody(continuation.Slot, "engine:"+continuation.Slot, purpose, content)
 	}
 
-	canonicalRoot := resolvePath(p.Root)
+	canonicalRoot := realpath.Resolve(p.Root)
 	canonicalStage := ""
 	canonicalReference := ""
 	referencePathsReady := false
@@ -353,12 +354,12 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 		if p.StageDir == "" || p.ReferenceDir == "" {
 			return &CompositionRefusal{Code: "REFUSED-REFERENCE-PATH", Source: slot, Detail: "body requires staging and no stage or final reference directory was provided"}
 		}
-		canonicalStage = resolvePath(p.StageDir)
-		if !pathWithin(canonicalStage, canonicalRoot) || canonicalStage == canonicalRoot {
+		canonicalStage = realpath.Resolve(p.StageDir)
+		if !realpath.Within(canonicalStage, canonicalRoot) || canonicalStage == canonicalRoot {
 			return &CompositionRefusal{Code: "REFUSED-REFERENCE-PATH", Source: p.StageDir, Detail: "reference stage directory must be inside the control root"}
 		}
-		canonicalReference = resolvePath(p.ReferenceDir)
-		if !pathWithin(canonicalReference, canonicalRoot) || canonicalReference == canonicalRoot {
+		canonicalReference = realpath.Resolve(p.ReferenceDir)
+		if !realpath.Within(canonicalReference, canonicalRoot) || canonicalReference == canonicalRoot {
 			return &CompositionRefusal{Code: "REFUSED-REFERENCE-PATH", Source: p.ReferenceDir, Detail: "final reference directory must be inside the control root"}
 		}
 		referencePathsReady = true
@@ -557,9 +558,9 @@ func readRolePacketTable(root string) ([]byte, rolePacketTable, error) {
 
 func readRecipeSource(root string, source rolePacketSource) ([]byte, error) {
 	path := filepath.Join(root, filepath.FromSlash(source.Path))
-	canonicalRoot := resolvePath(root)
-	canonicalPath := resolvePath(path)
-	if !pathWithin(canonicalPath, canonicalRoot) || canonicalPath == canonicalRoot {
+	canonicalRoot := realpath.Resolve(root)
+	canonicalPath := realpath.Resolve(path)
+	if !realpath.Within(canonicalPath, canonicalRoot) || canonicalPath == canonicalRoot {
 		return nil, &CompositionRefusal{Code: "REFUSED-CONTEXT-SOURCE", Source: source.Path, Detail: fmt.Sprintf("role packet source %q escapes the metasystem root", source.Path)}
 	}
 	info, err := os.Stat(canonicalPath)

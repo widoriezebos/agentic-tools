@@ -734,25 +734,12 @@ func writeRecord(recordPath string, record map[string]any) error {
 // WITNESSED as doubt rather than silently trusted. Transient hand-off
 // files (build staging, envelopes) keep the empty anchor.
 func atomicWriteText(path string, data []byte) (durable bool, err error) {
-	anchor := artifactsAnchor(path)
+	anchor := atomicfile.AnchorForArtifacts(path)
 	durable, err = atomicfile.WriteText(path, string(data), anchor)
 	if err == nil && !durable && anchor != "" {
 		fmt.Fprintf(os.Stderr, "durability doubt: %s published without directory sync\n", path)
 	}
 	return durable, err
-}
-
-// artifactsAnchor derives the durable-chain anchor for a path under a
-// checkout's artifacts/ tree: the checkout root, which pre-exists by
-// construction. Paths outside an artifacts tree anchor nowhere.
-func artifactsAnchor(path string) string {
-	clean := filepath.ToSlash(filepath.Clean(path))
-	marker := "/artifacts/"
-	index := strings.LastIndex(clean, marker)
-	if index <= 0 {
-		return ""
-	}
-	return filepath.FromSlash(clean[:index])
 }
 
 // --- value helpers ---

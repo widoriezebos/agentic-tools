@@ -1,7 +1,5 @@
 metasystem/metasystem.conf.local
-__pycache__/
 /evidence
-benchmark/trials-root.local
 artifacts/
 .obsidian/
-metasystem/docs/paper/rendered/
+paper/rendered/

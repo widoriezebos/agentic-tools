@@ -754,7 +754,7 @@ func publicationLanded(res goal.PublishResult) bool {
 
 func (d syncRequestDependencies) showOutcome(res goal.PublishResult) {
 	if d.report == nil {
-		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		writeJSONLine(d.outStream(), d.errStream(), map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
 		return
 	}
 	d.report.result = &res
@@ -762,7 +762,7 @@ func (d syncRequestDependencies) showOutcome(res goal.PublishResult) {
 
 func (d syncRequestDependencies) fail(code int, err error) int {
 	if d.report == nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(d.errStream(), err)
 		return code
 	}
 	d.report.failure = err
@@ -774,9 +774,9 @@ func (d syncRequestDependencies) note(stdout bool, line string) {
 	case d.report != nil:
 		d.report.notes = append(d.report.notes, line)
 	case stdout:
-		fmt.Println(line)
+		fmt.Fprintln(d.outStream(), line)
 	default:
-		fmt.Fprintln(os.Stderr, line)
+		fmt.Fprintln(d.errStream(), line)
 	}
 }
 

@@ -19,7 +19,7 @@ The record is found before anything is read. The coordinator starts a design cri
 metasystem design review <design file>
 ```
 
-It first resolves the file as the goal's design record, the same resolution `metasystem internal project design-of --root <checkout> --goal <goal id>` performs, and only then freezes the design, prepares the review inputs and dispatches the configured design-review lane. A critic dispatched by that command never runs it again: it reads the frozen design its brief names and returns findings. A critic working outside the command (a human, or a session handed a design directly) runs that resolver itself as its first act. A design the resolver cannot find is not ready to be attacked: the command refuses, or the outside critic returns that refusal as its single finding and stops, and the designer writes the head and moves the file into the home before the loop starts (`docs/design/design-obligation-gate.md`, "A design is a record"). A design about the project as a whole names no goal and says so in the brief; everything below runs once the record is found.
+It first resolves the file as the goal's design record, the same resolution `metasystem design list --goal <goal id>` performs, and only then freezes the design, prepares the review inputs and dispatches the configured design-review lane. A critic dispatched by that command never runs it again: it reads the frozen design its brief names and returns findings. A critic working outside the command (a human, or a session handed a design directly) runs that resolver itself as its first act. A design the resolver cannot find is not ready to be attacked: the command refuses, or the outside critic returns that refusal as its single finding and stops, and the designer writes the head and moves the file into the home before the loop starts (`docs/design/design-obligation-gate.md`, "A design is a record"). A design about the project as a whole names no goal and says so in the brief; everything below runs once the record is found.
 
 ## Step 1 Before Anything
 
@@ -133,7 +133,9 @@ Keep the adjudication trail (finding, disposition, reasoning) with the design or
 
 ## Recorded Precedent: the Loop Protecting Its Own Redesign
 
-2026-08-11, the stop-loss redesign (`records/stop-loss/stop-loss-last-defense.md`).
+2026-08-11, the stop-loss redesign (outcome in `docs/patience.md` and
+`docs/design/stop-loss-core.md`, Decisions; the design record
+`records/stop-loss/stop-loss-last-defense.md` is in the tag `records-archive-2026-09-28`).
 Three rounds at xhigh produced 13, 14, and 14 material findings — 41
 accepted, zero refuted — including a hidden second fuse the author had
 missed, an oscillation hole in the author's own fix, and a whole half of
@@ -162,7 +164,8 @@ which is exactly what the parent could not do. And satellites are ordered
 by dependency on truth: the ones that make a signal honest precede the
 mechanisms that consume the signal, all standing on whatever shared
 ground-truth mapping the split named as a precondition. Reference case:
-the stop-loss split (`records/stop-loss/stop-loss-satellites.md`), where the parent's
+the stop-loss split (`docs/patience.md`, "The satellite contracts"; the split record
+`records/stop-loss/stop-loss-satellites.md` is in the tag `records-archive-2026-09-28`), where the parent's
 41 accepted findings route to one shipped core and four satellites.
 
 ## Ground the Facts Before the First Round

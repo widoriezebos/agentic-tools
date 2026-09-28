@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
@@ -203,21 +204,15 @@ func runIntentGoalSync(inv *intentInvocation) int {
 			Summary: fmt.Sprintf("recovered %d stranded journal entr(ies) across this whole installation; live owners were left alone", len(reports))})
 	case "publish":
 		goals := inv.input.values["goal"]
-		args := []string{"goal", "reconcile", "--root", inv.stateRoot, "--by", inv.input.text("by")}
+		args := []string{"--root", inv.stateRoot, "--by", inv.input.text("by")}
 		for _, id := range goals {
 			args = append(args, "--id", id)
 		}
-		ran, problem := inv.engineVerb(args...)
-		if problem != nil {
-			return inv.render(*problem)
-		}
+		ran := inv.goalOwnerCall(inv.ownerCalls().goalReconcile, args...)
 		scope["goals"] = goals
 		return inv.render(ownerVerbResult(ran, targets, fmt.Sprintf("the reviewed edits of %s were reconciled against their base and republished", strings.Join(goals, ", ")), scope))
 	case "refresh":
-		ran, problem := inv.engineVerb("goal", "reconcile", "--root", inv.stateRoot, "--refresh-only")
-		if problem != nil {
-			return inv.render(*problem)
-		}
+		ran := inv.goalOwnerCall(inv.ownerCalls().goalReconcile, "--root", inv.stateRoot, "--refresh-only")
 		return inv.render(ownerVerbResult(ran, targets, "the published view's interrupted refresh was completed; no edit was read as new authority", scope))
 	case "accept-remote-history":
 		caller, by := currentProcessIdentity(), inv.input.text("by")
@@ -250,7 +245,7 @@ func runIntentRepairUpgrade(inv *intentInvocation, targets []intentTarget, scope
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: scope,
 			Summary: fmt.Sprintf("the reviewed digest %s is not the file's current digest %s; the file changed after review; nothing was done", digest, current)})
 	}
-	args := []string{"goal", "migrate", "--root", inv.stateRoot, "--source-digest", current, "--by", inv.input.text("by")}
+	args := []string{"--root", inv.stateRoot, "--source-digest", current, "--by", inv.input.text("by")}
 	if inv.input.has("amendments") {
 		args = append(args, "--manifest", inv.flagPath("amendments"))
 	}
@@ -259,10 +254,7 @@ func runIntentRepairUpgrade(inv *intentInvocation, targets []intentTarget, scope
 			args = append(args, pair[1], inv.input.text(pair[0]))
 		}
 	}
-	ran, problem := inv.engineVerb(args...)
-	if problem != nil {
-		return inv.render(*problem)
-	}
+	ran := inv.goalOwnerCall(inv.ownerCalls().goalMigrate, args...)
 	return inv.render(ownerVerbResult(ran, targets, "the legacy goals file was upgraded to the synced ledger", scope))
 }
 
@@ -303,22 +295,20 @@ func runIntentRepairMission(inv *intentInvocation, mission string) int {
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the installation's state root is unavailable: " + err.Error()})
 	}
-	args := []string{"mission", "resolve-taint", "--root", root, "--mission", mission, "--taint", inv.input.text("problem")}
+	taint, _ := strconv.ParseInt(inv.input.text("problem"), 10, 64)
+	request := missionResolveRequest{root: root, mission: mission, taint: taint, variant: "restore", tree: inv.input.text("confirm-restored"),
+		by: inv.input.text("by"), reason: inv.input.text("reason")}
 	done := fmt.Sprintf("mission %s: problem %s is resolved as confirmed restored; files were not changed by this command", mission, inv.input.text("problem"))
-	if choice == "confirm-restored" {
-		args = append(args, "--restore", inv.input.text("confirm-restored"))
-	} else {
-		args = append(args, "--adopt")
-		for _, claim := range inv.input.values["waive"] {
-			args = append(args, "--waives", claim)
-		}
+	if choice != "confirm-restored" {
+		request.variant, request.tree, request.waived = "adopt-disputed-tree", "", inv.input.values["waive"]
 		done = fmt.Sprintf("mission %s: the observed workspace is accepted for problem %s with the named claims waived", mission, inv.input.text("problem"))
 	}
-	args = append(args, "--by", inv.input.text("by"), "--reason", inv.input.text("reason"))
-	ran, problem := inv.engineVerb(args...)
-	if problem != nil {
-		return inv.render(*problem)
-	}
+	// The runner's human-reserved gate classifies this process, the parent
+	// the former child classified (design 6.2).
+	caller := currentProcessIdentity()
+	ran := ownerCall(func(stdout, stderr io.Writer) int {
+		return inv.ownerCalls().missionResolveTaint(caller, stdout, stderr, request)
+	})
 	result := ownerVerbResult(ran, []intentTarget{{Kind: "mission", ID: mission}}, done, nil)
 	if result.Outcome == intentConfirmed {
 		for _, line := range nonEmptyLines(string(ran.stdout)) {

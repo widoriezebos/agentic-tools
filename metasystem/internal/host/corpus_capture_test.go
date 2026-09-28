@@ -39,7 +39,7 @@ func corpusFile(name string) string {
 func TestHostResultCorpus(t *testing.T) {
 	for _, entry := range hostResultCorpus {
 		target := filepath.Join(t.TempDir(), "result.json")
-		if err := atomicWriteJSON(target, entry.doc); err != nil {
+		if err := wiredoc.WriteFile(target, entry.doc); err != nil {
 			t.Fatalf("%s: %v", entry.name, err)
 		}
 		produced, _ := os.ReadFile(target)

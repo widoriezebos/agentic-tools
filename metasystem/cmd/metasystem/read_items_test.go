@@ -122,7 +122,7 @@ func TestGoalShowAndNextPrintOpenReadItemFixUnit(t *testing.T) {
 func TestGoalReadItemsListJSONShape(t *testing.T) {
 	fixture := newReadItemCommandFixture(t)
 	code, output, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalReadItemsWithInputs([]string{"list", "--root", fixture.repository.root, "--open", "--json"}, fixture.repository.commandNow(fixture.now), fixture.dependencies, fixture.resolveCodeCommit)
+		return runGoalReadItemsListWithInputs([]string{"--root", fixture.repository.root, "--open", "--json"}, fixture.repository.commandNow(fixture.now), fixture.dependencies.endpoint)
 	})
 	var envelope struct {
 		Tip   string              `json:"tip"`
@@ -159,9 +159,9 @@ func TestDoneReadItemRefusalRemedyExecutes(t *testing.T) {
 	if len(fields) != 8 || fields[1] != "goal" || fields[2] != "notes" || fields[4] != "--close" {
 		t.Fatalf("printed remedy is not the public goal notes form: %q", command)
 	}
-	closeArgs := []string{"close", "--id", fields[3], "--item", fields[5], fields[6], fields[7], "--root", fixture.repository.root, "--lineage", "m1"}
+	closeArgs := []string{"--id", fields[3], "--item", fields[5], fields[6], fields[7], "--root", fixture.repository.root, "--lineage", "m1"}
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalReadItemsWithInputs(closeArgs, fixture.repository.commandNow(fixture.now), fixture.dependencies, fixture.resolveCodeCommit)
+		return runGoalReadItemsCloseWithInputs(closeArgs, fixture.repository.commandNow(fixture.now), fixture.dependencies, fixture.resolveCodeCommit)
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("printed fixed remedy failed: command=%q code=%d stdout=%q stderr=%q", command, code, stdout, stderr)

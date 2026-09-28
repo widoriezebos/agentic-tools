@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 type ReferenceMismatch struct {
@@ -26,8 +28,8 @@ func ReadVerifiedReference(root string, reference CompositionReference) ([]byte,
 	mismatch := &ReferenceMismatch{
 		Path: reference.Path, OpenPath: reference.OpenPath, Expected: expected,
 	}
-	canonicalRoot := resolvePath(root)
-	if !filepath.IsAbs(reference.OpenPath) || !pathWithin(resolvePath(reference.OpenPath), canonicalRoot) {
+	canonicalRoot := realpath.Resolve(root)
+	if !filepath.IsAbs(reference.OpenPath) || !realpath.Within(realpath.Resolve(reference.OpenPath), canonicalRoot) {
 		mismatch.Found = "escapes-root"
 		return nil, mismatch
 	}

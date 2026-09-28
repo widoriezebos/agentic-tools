@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
-	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -235,15 +235,11 @@ func (s Store) AppendRefusal(refusal Refusal) error {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(filepath.Join(root, ".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	held, err := lock.File(filepath.Join(root, ".lock"), 0o600, lock.Exclusive)
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
-		return err
-	}
-	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	defer held.Release()
 	path := filepath.Join(root, "refusals.jsonl")
 	content, readErr := os.ReadFile(path)
 	if readErr != nil && !os.IsNotExist(readErr) {
@@ -297,15 +293,11 @@ func (s Store) withLock(id string, fn func() error) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(filepath.Join(dir, ".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	held, err := lock.File(filepath.Join(dir, ".lock"), 0o600, lock.Exclusive)
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
-		return err
-	}
-	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	defer held.Release()
 	return fn()
 }
 func newID(now time.Time) (string, error) {

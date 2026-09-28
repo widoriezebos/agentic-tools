@@ -633,7 +633,7 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 		return waitResult.ExitCode
 	}
 	var parsed testingSelectionRequest
-	owners.work.subprocess = func(dir string, argv []string, stderr io.Writer) ([]byte, int, error) {
+	owners.work.testRun = func(dir string, argv []string, stderr io.Writer) ([]byte, int, error) {
 		// The real test-run parser reads what the public command passes to
 		// the engine's internal test run.
 		if len(argv) < 3 || argv[0] != "internal" || argv[1] != "test" || argv[2] != "run" {

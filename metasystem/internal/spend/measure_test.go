@@ -34,7 +34,7 @@ func newSpendBed(t *testing.T) spendBed {
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	slug := claudeCodeProjectFolder(root)
 	transcripts := filepath.Join(home, ".claude", "projects", slug)
 	rewrite := func(data []byte) []byte { return []byte(strings.ReplaceAll(string(data), "@REPO@", root)) }
 	copyFixtureTree(t, filepath.Join("testdata", "bed-20260902", "transcripts"), transcripts, rewrite)
@@ -220,7 +220,7 @@ func TestSeatSlugIsGitToplevelNotRepoRoot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	projects := filepath.Join(home, ".claude", "projects")
-	toplevelSlug := strings.ReplaceAll(filepath.Clean(toplevel), string(filepath.Separator), "-")
+	toplevelSlug := claudeCodeProjectFolder(toplevel)
 	writeSeatTranscript(t, filepath.Join(projects, toplevelSlug, "toplevel.jsonl"), "seat-top", toplevel, "top-request", 10, 20)
 	writeSeatTranscript(t, filepath.Join(projects, toplevelSlug+"-"+filepath.Base(repoRoot), "nested.jsonl"), "seat-nested", toplevel, "nested-request", 30, 40)
 	writeSeatTranscript(t, filepath.Join(projects, "-other-project", "foreign.jsonl"), "seat-foreign", toplevel, "foreign-request", 1000, 2000)
@@ -372,7 +372,7 @@ func TestSeatTranscriptSkipsForeignCheckoutAfterFirstCWDLine(t *testing.T) {
 	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	slug := claudeCodeProjectFolder(root)
 	foreignRoot := filepath.Join(filepath.Dir(root), "another-checkout")
 	foreignPath := filepath.Join(home, ".claude", "projects", slug+"-other-checkout", "foreign.jsonl")
 	first := seatTranscriptLine(t, "foreign-session", foreignRoot, "foreign-request", 1000, 2000)
@@ -444,7 +444,7 @@ func TestCursorV2MatchesAFullParseAndRebuildsV1(t *testing.T) {
 	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	slug := claudeCodeProjectFolder(root)
 	path := filepath.Join(home, ".claude", "projects", slug, "seat.jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -581,7 +581,7 @@ func TestCacheWriteFailureKeepsTheFullMeasurement(t *testing.T) {
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	slug := claudeCodeProjectFolder(root)
 	writeSeatTranscript(t, filepath.Join(home, ".claude", "projects", slug, "seat.jsonl"), "seat", root, "request", 10, 2)
 
 	cacheDirectory := spendCacheDir(root)
@@ -679,7 +679,7 @@ func TestDeletedTranscriptCursorIsPruned(t *testing.T) {
 	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	slug := claudeCodeProjectFolder(root)
 	transcript := filepath.Join(home, ".claude", "projects", slug, "deleted.jsonl")
 	writeSeatTranscript(t, transcript, "seat", root, "request", 10, 2)
 	if _, err := Measure(root, "bed-m1", bedNow); err != nil {
@@ -715,7 +715,7 @@ func TestTranscriptCursorPreservesDelegateFilteringBeforeRequestReplacement(t *t
 	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	slug := claudeCodeProjectFolder(root)
 	path := filepath.Join(home, ".claude", "projects", slug, "seat.jsonl")
 	content := append(seatTranscriptLine(t, "seat-session", root, "same-request", 10, 1),
 		seatTranscriptLine(t, "delegate-session", root, "same-request", 100, 100)...)
@@ -772,7 +772,7 @@ func TestWarmMeasureReadsNoTranscriptBytesOrTerminalJobRecord(t *testing.T) {
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	slug := claudeCodeProjectFolder(root)
 	transcriptPath := filepath.Join(home, ".claude", "projects", slug, "seat.jsonl")
 	writeSeatTranscript(t, transcriptPath, "seat", root, "request", 10, 2)
 

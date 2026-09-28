@@ -57,7 +57,7 @@ func TestStopVerdictWaitingLinesFromGateOnly(t *testing.T) {
 		t.Fatalf("refused Stop inherited recovery orientation: code=%d stderr=%q output=%q display=%q", code, problem, output, refused.Display)
 	}
 	for name, invoke := range map[string]func() int{
-		"session start": func() int { return runSessionStart([]string{"--root", refusedRoot, "--session", refusedSession}) },
+		"session start": func() int { return sessionStartRecovery(refusedRoot, refusedSession, os.Stdout, os.Stderr) },
 		"goal next":     func() int { return runGoalNext([]string{"--root", refusedRoot}) },
 	} {
 		orientationCode, orientation, orientationProblem := captureChannelOutput(t, invoke)

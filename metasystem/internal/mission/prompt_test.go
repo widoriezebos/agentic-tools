@@ -380,7 +380,7 @@ func TestPromptConfigValueResolutionOrder(t *testing.T) {
 	}
 }
 
-// Patience prompt projection (records/patience/patience-satellite-4.md):
+// Patience prompt projection (docs/patience.md, S4):
 // lines derive from the final cycle block's
 // annotations; detail lines filter against current chain-closed flags;
 // overflow and excluded lines are exempt.

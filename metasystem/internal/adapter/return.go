@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // Return normalization: a runtime's final output rarely arrives as one clean
@@ -60,7 +62,7 @@ func NormalizeReturn(candidatePath, transcriptPath, recordPath, outputPath, mark
 	result := maps.Clone(best)
 	reconcileIdentity(result, record, sessionID)
 
-	if err := atomicWriteJSON(outputPath, result); err != nil {
+	if err := wiredoc.WriteFile(outputPath, result); err != nil {
 		return err
 	}
 	return os.WriteFile(markdownPath, []byte("# Agent return\n\nCanonical JSON: return.json\n"), 0o644)

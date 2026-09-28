@@ -382,7 +382,7 @@ func (s *Store) secret() (string, error) {
 // sets it the same way.
 const unconfigured = "this seat has no one-time-code secret: set " + SecretKey +
 	" in metasystem.conf.local, or in its environment variable, with the same base32 secret the channel's setup writes there" +
-	" (bin/metasystem channel fake-code --secret <secret> prints the code it produces)"
+	" (bin/metasystem internal channel fake code --secret <secret> prints the code it produces)"
 
 // handle decides the name this sign-in acts under. A seat that knows its human
 // never takes one from a browser; a seat that does not asks once and keeps the

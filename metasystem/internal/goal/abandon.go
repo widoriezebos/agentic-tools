@@ -422,7 +422,7 @@ func abandonCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id stri
 			if err != nil {
 				return err
 			}
-			return fmt.Errorf("carry reservation %s on goal %s is in flight on %s; use goal carrying --abandon %s on that seat or wait for its expiry; then retry abandon", reservation.History.Opid, id, seat, reservation.History.Opid)
+			return fmt.Errorf("carry reservation %s on goal %s is in flight on %s; it ends when that seat's landing finishes or abandons it, or at its expiry; then retry abandon", reservation.History.Opid, id, seat)
 		}
 		delete(refs, word.History.Opid)
 		if now.Before(word.Expires) && (consumption.Kind == "none" || consumption.Kind == "missing-anchor") {
@@ -438,7 +438,7 @@ func abandonCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id stri
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("carry reservation %s on goal %s is in flight on %s; use goal carrying --abandon %s on that seat or wait for its expiry; then retry abandon", reservation.History.Opid, id, seat, reservation.History.Opid)
+		return fmt.Errorf("carry reservation %s on goal %s is in flight on %s; it ends when that seat's landing finishes or abandons it, or at its expiry; then retry abandon", reservation.History.Opid, id, seat)
 	}
 	return nil
 }

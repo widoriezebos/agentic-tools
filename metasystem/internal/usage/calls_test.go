@@ -491,8 +491,8 @@ func TestMissingTranscriptAnswersUnknownWithThePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path1 := filepath.Join(home, ".claude", "projects", claudeSlug(toplevel), session+".jsonl")
-	path2 := filepath.Join(home, ".claude", "projects", claudeSlug(installation), session+".jsonl")
+	path1 := filepath.Join(home, ".claude", "projects", ClaudeProjectFolder(toplevel), session+".jsonl")
+	path2 := filepath.Join(home, ".claude", "projects", ClaudeProjectFolder(installation), session+".jsonl")
 	want := "unknown (no transcript at " + path1 + " or " + path2 + ")"
 	if reading.Reason != want {
 		t.Fatalf("reason = %q, want %q", reading.Reason, want)
@@ -531,7 +531,7 @@ func TestMemoryDirectoryResolvesTheProjectDirectory(t *testing.T) {
 	home := t.TempDir()
 	toplevel := filepath.Join(t.TempDir(), "checkout")
 	installation := filepath.Join(toplevel, "metasystem")
-	want := filepath.Join(home, ".claude", "projects", claudeSlug(toplevel), "memory")
+	want := filepath.Join(home, ".claude", "projects", ClaudeProjectFolder(toplevel), "memory")
 	if err := os.MkdirAll(want, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -555,19 +555,19 @@ func TestMemoryDirectoryRefusesEscapes(t *testing.T) {
 	})
 	t.Run("another project slug", func(t *testing.T) {
 		home := t.TempDir()
-		other := filepath.Join(home, ".claude", "projects", claudeSlug("/other/project"), "memory")
+		other := filepath.Join(home, ".claude", "projects", ClaudeProjectFolder("/other/project"), "memory")
 		if err := os.MkdirAll(other, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		got, reason := MemoryDirectory(ReadOptions{Home: home, Toplevel: "/expected/project"})
-		if got != "" || !strings.Contains(reason, claudeSlug("/expected/project")) {
+		if got != "" || !strings.Contains(reason, ClaudeProjectFolder("/expected/project")) {
 			t.Fatalf("other slug selected memory directory %q reason=%q", got, reason)
 		}
 	})
 	t.Run("symlinked memory directory", func(t *testing.T) {
 		home := t.TempDir()
 		project := "/expected/project"
-		memory := filepath.Join(home, ".claude", "projects", claudeSlug(project), "memory")
+		memory := filepath.Join(home, ".claude", "projects", ClaudeProjectFolder(project), "memory")
 		if err := os.MkdirAll(filepath.Dir(memory), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -619,7 +619,7 @@ func TestCallsFiltersBySinceAndRegistersSessionsOnce(t *testing.T) {
 }
 
 func TestCallPathRulesAndRuntimeValidation(t *testing.T) {
-	if got, want := claudeSlug("/Users/wido/LocalStorage/GitHub/agentic-tools-m1e"), "-Users-wido-LocalStorage-GitHub-agentic-tools-m1e"; got != want {
+	if got, want := ClaudeProjectFolder("/Users/wido/LocalStorage/GitHub/agentic-tools-m1e"), "-Users-wido-LocalStorage-GitHub-agentic-tools-m1e"; got != want {
 		t.Fatalf("claude slug = %q, want %q", got, want)
 	}
 	if got := SessionSlug("safe.Session-1"); got != "safe.Session-1" {
@@ -765,7 +765,7 @@ func TestCallResolutionTreatsSessionAsLiteralText(t *testing.T) {
 	stateRoot := t.TempDir()
 	home := t.TempDir()
 	toplevel := t.TempDir()
-	directory := filepath.Join(home, ".claude", "projects", claudeSlug(toplevel))
+	directory := filepath.Join(home, ".claude", "projects", ClaudeProjectFolder(toplevel))
 	writeCallRows(t, filepath.Join(home, ".claude", "projects", "escaped.jsonl"), claudeAssistant("wrong", 99, 0, 0, false, "2026-09-13T20:00:00Z"))
 	reading, err := LatestCall(stateRoot, "claude", "../escaped", ReadOptions{Capability: PerCall, Home: home, Toplevel: toplevel})
 	if err != nil {
@@ -966,7 +966,7 @@ func TestRegisterSessionSeparatesATruncatedTail(t *testing.T) {
 
 func writeClaudeCallTranscript(t *testing.T, home, cwd, session string, rows ...string) string {
 	t.Helper()
-	path := filepath.Join(home, ".claude", "projects", claudeSlug(cwd), session+".jsonl")
+	path := filepath.Join(home, ".claude", "projects", ClaudeProjectFolder(cwd), session+".jsonl")
 	writeCallRows(t, path, rows...)
 	return path
 }

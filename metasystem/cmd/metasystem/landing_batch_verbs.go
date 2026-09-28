@@ -23,5 +23,3 @@ func runLandingBatch(args []string) int {
 	}
 	return run(args[1:])
 }
-
-func runGoalHandover(args []string) int { return runGoalHandoverMutation(args) }

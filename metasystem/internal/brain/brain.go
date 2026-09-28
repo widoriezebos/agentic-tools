@@ -268,7 +268,7 @@ func Declare(options DeclareOptions) (Record, error) {
 	}
 	current := Read(checkout, options.LedgerIdentity)
 	if current.State == Declared {
-		return Record{}, fmt.Errorf("this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem internal brain withdraw --root %s --by <name>", current.Record.Ledger, current.Record.DeclaredBy, current.Record.DeclaredAt, checkout)
+		return Record{}, fmt.Errorf("this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem settings coordinator --withdraw --by <name> --repo %s", current.Record.Ledger, current.Record.DeclaredBy, current.Record.DeclaredAt, checkout)
 	}
 	if current.State == Corrupt {
 		return Record{}, errors.New(RemedialRefusal(current.Reason, checkout))
@@ -431,7 +431,7 @@ func standingInstruction(packet []byte) string {
 }
 
 func RemedialRefusal(reason, checkout string) string {
-	return fmt.Sprintf("this checkout's brain declaration is unreadable (%s); until a human repairs it nothing here dispatches, lands, claims, cancels, closes, reaps, or carries a human's word: metasystem internal brain withdraw --root %s --by <name>, then metasystem internal brain declare --root %s --by <name> if this seat is the brain", reason, checkout, checkout)
+	return fmt.Sprintf("this checkout's brain declaration is unreadable (%s); until a human repairs it nothing here dispatches, lands, claims, cancels, closes, reaps, or carries a human's word: metasystem settings coordinator --withdraw --by <name> --repo %s, then metasystem settings coordinator --declare --by <name> --repo %s if this seat is the brain", reason, checkout, checkout)
 }
 
 func Fence(stateRoot, act, ledgerIdentity string) string {

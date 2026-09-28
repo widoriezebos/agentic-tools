@@ -434,7 +434,7 @@ func checkForbiddenNames(t *testing.T, path string, forbidden []string) {
 func TestProjectRulesNameTheLaunchVerbs(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(moduleRoot(t), "docs", "project-rules.md"))
 	text := string(data)
-	for _, phrase := range []string{"--kind design", "--kind read", "--kind critique", "metasystem internal launch round-task"} {
+	for _, phrase := range []string{"metasystem design write G --brief FILE", "metasystem design review FILE", "--dispositions FILE", "metasystem work review --patch PATCH --brief FILE"} {
 		if err != nil || !strings.Contains(text, phrase) {
 			t.Fatalf("project rules missing %q: %v", phrase, err)
 		}

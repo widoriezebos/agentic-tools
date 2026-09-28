@@ -49,37 +49,3 @@ func TestPageSizeIsRecordedAndReported(t *testing.T) {
 		t.Fatalf("missing measurement=%+v report=%q err=%v", measurement, launchReport(record), err)
 	}
 }
-
-func TestRoundTaskRefusals(t *testing.T) {
-	previous := filepath.Join(t.TempDir(), "previous")
-	os.WriteFile(previous, []byte("anything\n"), 0o600)
-	for _, row := range []struct {
-		name string
-		args []string
-	}{
-		{"unsupported", []string{"--tag", "demo", "--round", "4", "--previous", previous}},
-		{"unknown-option", []string{"--tag", "demo", "--round", "2", "--previous", previous, "--bad", "7"}},
-		{"missing-value", []string{"--tag", "demo", "--round", "2", "--previous", previous, "--constraints"}},
-		{"missing-argument", []string{"--tag", "demo", "--round", "2", "--previous", previous}},
-	} {
-		t.Run(row.name, func(t *testing.T) {
-			out := filepath.Join(t.TempDir(), "out")
-			args := append(append([]string{}, row.args...), "--out", out)
-			if row.name == "missing-argument" {
-				args = row.args
-			}
-			if got := runLaunchRoundTask(args); got != 2 {
-				t.Fatalf("exit=%d args=%v", got, args)
-			}
-			if _, err := os.Stat(out); !os.IsNotExist(err) {
-				t.Fatalf("refusal created %s: %v", out, err)
-			}
-		})
-	}
-}
-
-func TestLaunchStartRejectsRemovedPoll(t *testing.T) {
-	if got := runLaunchStart([]string{"--kind", "design", "--brief", "brief", "--poll", "0"}); got != 2 {
-		t.Fatalf("exit=%d", got)
-	}
-}

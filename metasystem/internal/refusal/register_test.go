@@ -256,6 +256,9 @@ func TestHCL03EngineCausesEachCarryARemedy(t *testing.T) {
 func TestHCL03EveryRowReal(t *testing.T) {
 	root := moduleRoot(t)
 	goalVerbs := collectGoalVerbs(t, filepath.Join(root, "cmd", "metasystem", "main.go"))
+	for action := range collectPublicGoalActions(t, filepath.Join(root, "cmd", "metasystem")) {
+		goalVerbs[action] = struct{}{}
+	}
 	for _, row := range Rows {
 		if row.Pending == "human-carried-landing" || row.Override == "" {
 			continue
@@ -266,7 +269,7 @@ func TestHCL03EveryRowReal(t *testing.T) {
 				t.Errorf("row %q has incomplete goal override %q", row.Code, row.Override)
 				continue
 			}
-			if _, ok := goalVerbs[words[1]]; !ok {
+			if _, ok := goalVerbs[strings.TrimRight(words[1], ",")]; !ok {
 				t.Errorf("row %q names unknown goal verb %q in override %q", row.Code, words[1], row.Override)
 			}
 		}
@@ -287,10 +290,10 @@ func TestHCL03GoalDoneReadItemsOpenRow(t *testing.T) {
 
 func TestHCL03ProofAdmissionRowsNameEmissions(t *testing.T) {
 	wants := map[string]Row{
-		"CANDIDATE_GOAL_REFUSED":           {Owner: "cmd/metasystem", Site: "proof_run.go:738", Shape: Question},
-		"CANDIDATE_GOAL_MOVED":             {Owner: "cmd/metasystem", Site: "proof_run.go:695", Shape: Question},
-		"PROOF_AUTHORITY_REQUIRED":         {Owner: "cmd/metasystem", Site: "proof_run.go:780", Shape: Question},
-		"PROOF_AUTHORITY_ARC_MATE_REFUSED": {Owner: "cmd/metasystem", Site: "proof_run.go:863", Shape: Question},
+		"CANDIDATE_GOAL_REFUSED":           {Owner: "cmd/metasystem", Site: "proof_run.go:748", Shape: Question},
+		"CANDIDATE_GOAL_MOVED":             {Owner: "cmd/metasystem", Site: "proof_run.go:705", Shape: Question},
+		"PROOF_AUTHORITY_REQUIRED":         {Owner: "cmd/metasystem", Site: "proof_run.go:790", Shape: Question},
+		"PROOF_AUTHORITY_ARC_MATE_REFUSED": {Owner: "cmd/metasystem", Site: "proof_run.go:873", Shape: Question},
 		"CANDIDATE_EXTENSION_REFUSED":      {Owner: "internal/dispatch", Site: "admission.go:428", Shape: Question},
 		"RETRY_PRIOR_OUTSIDE_TREE":         {Owner: "internal/proofrun", Site: "attempt.go:1236", Shape: Question},
 		"SET_BUDGET_FENCED_SAME_TUPLE":     {Owner: "internal/goal", Site: "verbs.go:1709", Shape: Question},
@@ -547,6 +550,37 @@ func exclusionMatchesCode(pattern, code string) bool {
 	return pattern == code
 }
 
+// publicGoalActionRE reads a public goal action's registration from the
+// command table's source.
+var publicGoalActionRE = regexp.MustCompile(`object: "goal", action: "([a-z][a-z-]*)"`)
+
+// collectPublicGoalActions returns the public goal actions the command table
+// registers, so an override may name the public form a person runs.
+func collectPublicGoalActions(t *testing.T, dir string) map[string]struct{} {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := make(map[string]struct{})
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "intent") || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, match := range publicGoalActionRE.FindAllStringSubmatch(string(data), -1) {
+			actions[match[1]] = struct{}{}
+		}
+	}
+	if len(actions) == 0 {
+		t.Fatal("found no public goal action in the command table's source")
+	}
+	return actions
+}
+
 func collectGoalVerbs(t *testing.T, path string) map[string]struct{} {
 	t.Helper()
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
@@ -639,8 +673,8 @@ func TestHCL03NoPendingAfterSlice2(t *testing.T) {
 	}
 	checks := []struct{ name, path, needle string }{
 		{"goal carry", "cmd/metasystem/main.go", `{"carry",`},
-		{"goal carrying", "cmd/metasystem/main.go", `{"carrying",`},
-		{"goal carried", "cmd/metasystem/main.go", `{"carried",`},
+		{"carry reservation owner", "cmd/metasystem/landing_path.go", `GoalCarrying:    landingPathCarrying,`},
+		{"carried landing record owner", "cmd/metasystem/landing_path.go", `GoalCarried:     landingPathCarried,`},
 		{"carry status owner", "cmd/metasystem/landing_path.go", `CarryStatus:     landingPathCarryStatus,`},
 		{"work land exception option", "cmd/metasystem/intent_delivery.go", `{name: "exception", value: "CODE"`},
 		{"work land using-exception option", "cmd/metasystem/intent_delivery.go", `{name: "using-exception", value: "ID"`},

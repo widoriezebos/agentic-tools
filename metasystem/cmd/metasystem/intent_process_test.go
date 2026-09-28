@@ -140,11 +140,11 @@ func (b *processBed) owners() intentOwners {
 	// Engine verbs (the mission runner's resume after an answer) run against
 	// a stand-in engine that records them; the test binary is never run as
 	// the engine.
-	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+	owners.delivery = processBackedDelivery(&intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
 		process: func(process intentProcess) intentProcessResult {
 			b.engineCalls = append(b.engineCalls, process.argv)
 			return intentProcessResult{stdout: []byte(`{"outcome":"resumed"}`)}
-		}}
+		}})
 	return owners
 }
 
@@ -389,11 +389,11 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		// An answered question resumes the mission through the runner; the
 		// bed's runner confirms without starting a process.
 		var resumed [][]string
-		owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+		owners.delivery = processBackedDelivery(&intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
 			process: func(process intentProcess) intentProcessResult {
 				resumed = append(resumed, process.argv)
 				return intentProcessResult{stdout: []byte(`{"outcome":"resumed"}`)}
-			}}
+			}})
 		owners.processes.mission = func(root, id string) (*missionrunner.Engine, error) {
 			engine := missionrunner.NewEngine(root, id)
 			engine.AnchorEffect = func(string, string, string) error { return errors.New("anchor refused in the bed") }

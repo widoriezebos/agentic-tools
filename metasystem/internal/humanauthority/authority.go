@@ -481,7 +481,7 @@ func sameRef(left, right ProcessRef) bool {
 	return left.PIDStartedAt == right.PIDStartedAt
 }
 
-const enrollmentAncestryWorkaround = "run goal enroll-terminal from a shell whose ancestry up to its session leader is owned by you, for example a shell inside a tmux session you started from Terminal"
+const enrollmentAncestryWorkaround = "run metasystem system enroll --name <your name> from a shell whose ancestry up to its session leader is owned by you, for example a shell inside a tmux session you started from Terminal"
 
 type processReadRefusal struct {
 	outcome         string

@@ -57,7 +57,7 @@ var (
 )
 
 // CoverageDeltaUsage is the one-line usage of the coverage delta.
-const CoverageDeltaUsage = "usage: metasystem internal proof-run coverage-delta [--base REF | --staged | PACKAGE ...] [--ratchet PATH] [--root INSTALLATION]"
+const CoverageDeltaUsage = "usage: coverage delta [--base REF | --staged | PACKAGE ...] [--ratchet PATH] [--root INSTALLATION]"
 
 // CoverageDelta runs the check and returns its exit status: 0 passed or
 // skipped, 1 refused or failed, 2 usage.

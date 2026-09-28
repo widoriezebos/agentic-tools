@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"golang.org/x/sys/unix"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // ErrChannelBusy is returned when a poll or another targeted operation
@@ -20,18 +20,14 @@ func withPollLock(repo string, operation func() error) error {
 	if err := os.MkdirAll(channelRoot(repo), 0o755); err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(filepath.Join(channelRoot(repo), "lock"), os.O_CREATE|os.O_RDWR, 0o644)
+	held, err := lock.File(filepath.Join(channelRoot(repo), "lock"), 0o644, lock.TryExclusive)
 	if err != nil {
-		return err
-	}
-	defer lock.Close()
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		if err == unix.EWOULDBLOCK {
+		if lock.Busy(err) {
 			return ErrChannelBusy
 		}
 		return err
 	}
-	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	defer held.Release()
 	return operation()
 }
 

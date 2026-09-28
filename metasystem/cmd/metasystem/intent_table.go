@@ -235,6 +235,30 @@ func practiceIntentCommands() []intentCommand {
 			[]string{"metasystem test plan --root INSTALLATION [--goal G] --json"},
 			[]intentFlag{documented("root", "INSTALLATION", "the installation"), documented("goal", "G", "the goal owning the delivery")},
 			[]string{"metasystem test plan --root . --json"}, runTestPlan),
+		passthroughAction("test", "add", "agent", "add verified Go tests to a group of the testing contract",
+			[]string{"metasystem test add --file FILE --group ID --tests NAME,NAME"},
+			[]intentFlag{documented("file", "FILE", "the testing contract"), documented("group", "ID", "the group the tests join"),
+				documented("tests", "NAME,NAME", "Go test names, each verified in the group's packages")},
+			[]string{"metasystem test add --file testing.json --group verb-ratchet --tests TestVerbRatchetInternalVerbCount"}, runTestingAddTests),
+		passthroughAction("test", "merge", "both", "merge two concurrent edits of the testing contract",
+			[]string{"metasystem test merge --base FILE --ours FILE --theirs FILE --out FILE"},
+			[]intentFlag{documented("base", "FILE", "the common ancestor"), documented("ours", "FILE", "one edit"),
+				documented("theirs", "FILE", "the other edit"), documented("out", "FILE", "where the merged contract is written")},
+			[]string{"metasystem test merge --base base.json --ours ours.json --theirs theirs.json --out testing.json"}, runTestingMerge),
+		passthroughAction("test", "baseline", "agent", "record or check the trusted baseline a refactor proceeds from",
+			[]string{"metasystem test baseline --gate COMMAND [--file FILE] [--root INSTALLATION]",
+				"metasystem test baseline --check [--file FILE] [--max-age-minutes N] [--max-commits N] [--root INSTALLATION]"},
+			[]intentFlag{documented("gate", "COMMAND", "the acceptance gate that passed at this clean HEAD; records it as the trusted baseline"),
+				{name: "check", usage: "may another edit batch start: clean worktree, the baseline an ancestor, the cadence not exceeded"},
+				documented("file", "FILE", "the baseline file (default plans/refactor-baseline)"),
+				documented("max-age-minutes", "N", "with --check: the cadence's age limit"), documented("max-commits", "N", "with --check: the cadence's commit limit"),
+				documented("root", "INSTALLATION", "the installation whose metasystem.conf supplies the cadence")},
+			[]string{"metasystem test baseline --gate 'go test ./...'", "metasystem test baseline --check"}, runTestBaseline),
+		passthroughAction("system", "register", "both", "install or check this installation's agent-runtime registrations",
+			[]string{"metasystem system register --repo PATH [--runtimes CSV] [--copy-skills] [--check]"},
+			[]intentFlag{documented("runtimes", "CSV", "the runtimes to register, or none (default: every adoptable runtime)"),
+				{name: "copy-skills", usage: "copy skill trees instead of linking them"}, {name: "check", usage: "validate the registrations without writing"}},
+			[]string{"metasystem system register --repo . --check", "metasystem system register --repo . --runtimes claude,codex"}, runRuntimeSetup),
 		passthroughAction("test", "list", "both", "every group in the committed testing contract",
 			[]string{"metasystem test list [--root INSTALLATION] [--json]"}, []intentFlag{documented("root", "INSTALLATION", "the installation")},
 			[]string{"metasystem test list --root ."}, runTestList),
@@ -418,4 +442,32 @@ func runIntentTopStatus(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: status G --work NAME; nothing was done"})
 	}
 	return runIntentCheckoutStatus(inv)
+}
+
+// runTestBaseline is test baseline: --gate records the trusted refactor
+// baseline, --check asks whether another edit batch may start; both reach
+// the refactor baseline owner.
+func runTestBaseline(args []string) int {
+	words, err := testBaselineArgs(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test baseline:", err)
+		return 2
+	}
+	return runValidateRefactorBaseline(words)
+}
+
+// testBaselineArgs maps test baseline's options onto the owner's record and
+// check modes.
+func testBaselineArgs(args []string) ([]string, error) {
+	_, check, rest := takeIntentFlag(args, "check", false)
+	_, gate, _ := takeIntentFlag(rest, "gate", true)
+	switch {
+	case check && gate:
+		return nil, fmt.Errorf("--check reads the baseline and --gate records one; give one")
+	case check:
+		return append([]string{"check"}, rest...), nil
+	case gate:
+		return append([]string{"record"}, rest...), nil
+	}
+	return nil, fmt.Errorf("record the baseline with --gate COMMAND, or check it with --check")
 }

@@ -35,17 +35,17 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// Human-reserved (the design's words): an agent classifying as MAIN,
 	// DELEGATE, supervision, or adapter never resolves taint — the whole
 	// point of the taint is that the machines stop until a human rules.
-	if view, err := lease.Classify(e.Root, int64(os.Getpid())); err != nil {
-		fmt.Fprintf(os.Stderr, "resolve refused: caller classification failed: %v\n", err)
+	if view, err := lease.Classify(e.Root, e.callerPid()); err != nil {
+		fmt.Fprintf(e.answerErrors(), "resolve refused: caller classification failed: %v\n", err)
 		return 3
 	} else if view.Class != lease.ClassHuman {
-		fmt.Fprintf(os.Stderr, "resolve refused: taint resolution is a human-reserved act; this caller classifies %s\n", view.Class)
+		fmt.Fprintf(e.answerErrors(), "resolve refused: taint resolution is a human-reserved act; this caller classifies %s\n", view.Class)
 		return 3
 	}
 	resolvedBy = strings.TrimSpace(resolvedBy)
 	reason = strings.TrimSpace(reason)
 	if mission.BlankString(resolvedBy) || mission.BlankString(reason) {
-		fmt.Fprintln(os.Stderr, "resolve refused: --by and --reason are required; the resolution records who ruled and why")
+		fmt.Fprintln(e.answerErrors(), "resolve refused: --by and --reason are required; the resolution records who ruled and why")
 		return 2
 	}
 	// EVERY argument-shape refusal fires before the first state read:
@@ -55,36 +55,36 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// arguments (waivers on restore, a tree on adoption), a nonpositive
 	// taint id, and a malformed tree id all refuse here too.
 	if taintID < 1 {
-		fmt.Fprintln(os.Stderr, "resolve refused: the taint id must be a positive integer")
+		fmt.Fprintln(e.answerErrors(), "resolve refused: the taint id must be a positive integer")
 		return 2
 	}
 	switch variant {
 	case "restore":
 		if !resolveTreeRe.MatchString(tree) {
-			fmt.Fprintln(os.Stderr, "resolve refused: restore names the recorded safe tree id (--restore <treeId>, 40-64 hex)")
+			fmt.Fprintln(e.answerErrors(), "resolve refused: restore names the recorded safe tree id (--restore <treeId>, 40-64 hex)")
 			return 2
 		}
 		if len(waived) > 0 {
-			fmt.Fprintln(os.Stderr, "resolve refused: restore waives nothing; --waives belongs to adoption")
+			fmt.Fprintln(e.answerErrors(), "resolve refused: restore waives nothing; --waives belongs to adoption")
 			return 2
 		}
 	case "adopt-disputed-tree":
 		if tree != "" {
-			fmt.Fprintln(os.Stderr, "resolve refused: adoption binds the OBSERVED tree; a named tree belongs to restore")
+			fmt.Fprintln(e.answerErrors(), "resolve refused: adoption binds the OBSERVED tree; a named tree belongs to restore")
 			return 2
 		}
 		if len(waived) == 0 {
-			fmt.Fprintln(os.Stderr, "resolve refused: adoption names the exact attribution claims being waived (--waives, repeatable)")
+			fmt.Fprintln(e.answerErrors(), "resolve refused: adoption names the exact attribution claims being waived (--waives, repeatable)")
 			return 2
 		}
 		for _, claim := range waived {
 			if mission.BlankString(claim) {
-				fmt.Fprintln(os.Stderr, "resolve refused: waived claims must be non-blank")
+				fmt.Fprintln(e.answerErrors(), "resolve refused: waived claims must be non-blank")
 				return 2
 			}
 		}
 	default:
-		fmt.Fprintln(os.Stderr, "resolve refused: variant must be restore or adopt-disputed-tree")
+		fmt.Fprintln(e.answerErrors(), "resolve refused: variant must be restore or adopt-disputed-tree")
 		return 2
 	}
 
@@ -98,7 +98,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// holds. The repair is byte-restoration from the anchor ref, then
 	// this verb; the one-step lag-heal bridges the deferred anchor.
 	if _, _, _, lerr := mission.ParseLedger(ledgerPath); lerr != nil {
-		fmt.Fprintf(os.Stderr, "resolve refused: the mission ledger is unparsable (%v); restore its bytes from the anchor ref (git show <anchor>:%s), then re-run\n", lerr, missionLedgerRel(e.Mission))
+		fmt.Fprintf(e.answerErrors(), "resolve refused: the mission ledger is unparsable (%v); restore its bytes from the anchor ref (git show <anchor>:%s), then re-run\n", lerr, missionLedgerRel(e.Mission))
 		return 3
 	}
 	// The starting state must be ANCHOR-VERIFIED: a
@@ -115,24 +115,24 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 			// surface it, not the generic
 			// verification failure it explains.
 			if rerr != nil {
-				fmt.Fprintln(os.Stderr, rerr)
+				fmt.Fprintln(e.answerErrors(), rerr)
 				return exitFor(rerr)
 			}
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(e.answerErrors(), err)
 			return exitFor(err)
 		}
 		if _, verifiedHash, err = e.continuity().VerifyStateWithAnchor(statePath, e.Root, ledgerPath); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(e.answerErrors(), err)
 			return exitFor(err)
 		}
 	}
 	state, err := readDocLabeled(statePath, "mission state", 7)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return exitFor(err)
 	}
 	if integrity, _ := state["integrity"].(map[string]any); integrity == nil || integrity["hash"] != verifiedHash {
-		fmt.Fprintln(os.Stderr, "resolve refused: the mission state changed during verification; re-run")
+		fmt.Fprintln(e.answerErrors(), "resolve refused: the mission state changed during verification; re-run")
 		return 3
 	}
 	taint, _ := state["workspaceTaint"].(map[string]any)
@@ -149,7 +149,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		}
 	}
 	if entry == nil {
-		fmt.Fprintf(os.Stderr, "resolve refused: mission %s has no taint entry %d\n", e.Mission, taintID)
+		fmt.Fprintf(e.answerErrors(), "resolve refused: mission %s has no taint entry %d\n", e.Mission, taintID)
 		return 3
 	}
 	if recorded, _ := entry["resolution"].(map[string]any); recorded != nil {
@@ -162,15 +162,15 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 			// (R-129-ui): success, and nothing is written or anchored.
 			// Another resolution of a resolved taint stays refused.
 			if sameTaintResolution(recorded, variant, tree, waived) {
-				fmt.Printf("mission=%s taint=%d %s(%s by %s); nothing was recorded\n",
+				fmt.Fprintf(e.answerOutput(), "mission=%s taint=%d %s(%s by %s); nothing was recorded\n",
 					e.Mission, taintID, TaintAlreadyResolved, recorded["variant"], recorded["resolvedBy"])
 				return 0
 			}
-			fmt.Fprintf(os.Stderr, "resolve refused: taint %d is already resolved differently (%s by %s)\n", taintID, recorded["variant"], recorded["resolvedBy"])
+			fmt.Fprintf(e.answerErrors(), "resolve refused: taint %d is already resolved differently (%s by %s)\n", taintID, recorded["variant"], recorded["resolvedBy"])
 			return 3
 		}
 		if err := e.answerWallViolationAsks(taintID, recorded); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(e.answerErrors(), err)
 			return exitFor(err)
 		}
 		// The recorded waiting list re-derives after the late answers —
@@ -182,7 +182,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		// instead of legally clearing a marker it never saw.
 		tailFinal, err := e.writeStateWith(statePath, repaired, verifiedHash, mission.WriteState)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(e.answerErrors(), err)
 			return exitFor(err)
 		}
 		tailIntegrity, _ := tailFinal["integrity"].(map[string]any)
@@ -199,14 +199,14 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		// would self-select moved bytes.
 		anchoredSHA, err := e.verifiedLedgerPin()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(e.answerErrors(), err)
 			return exitFor(err)
 		}
 		if err := e.anchorStatePinned(statePath, ledgerPath, resolvedBy, tailHash, anchoredSHA); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(e.answerErrors(), err)
 			return exitFor(err)
 		}
-		fmt.Printf("mission=%s taint=%d resolution tail completed (recorded %s by %s)\n",
+		fmt.Fprintf(e.answerOutput(), "mission=%s taint=%d resolution tail completed (recorded %s by %s)\n",
 			e.Mission, taintID, recorded["variant"], recorded["resolvedBy"])
 		return 0
 	}
@@ -216,7 +216,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	workspace := e.wallWorkspace(e.Root)
 	observed, err := wallSnapshotWithWorkspace(workspace, e.Mission)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "resolve refused: cannot snapshot the workspace: %v\n", err)
+		fmt.Fprintf(e.answerErrors(), "resolve refused: cannot snapshot the workspace: %v\n", err)
 		return 3
 	}
 
@@ -233,7 +233,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		// disputed file. Adoption — with its named waivers and its
 		// re-baselined anchored truth — is the one lawful closure.
 		if reason, _ := entry["reason"].(string); strings.HasPrefix(reason, ledgerViolationPrefix) {
-			fmt.Fprintf(os.Stderr, "resolve refused: taint %d disputes the mission ledger, which sits outside the restorable tree projection; use adopt-disputed-tree\n", taintID)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: taint %d disputes the mission ledger, which sits outside the restorable tree projection; use adopt-disputed-tree\n", taintID)
 			return 3
 		}
 		// The named tree must BE a recorded SAFE tree
@@ -242,13 +242,13 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		// its named waivers). Safe = the violated turn's pre-tree, an
 		// accepted expected-tree point, or an earlier resolution's tree.
 		if !e.recordedSafeTree(state, entry, tree) {
-			fmt.Fprintf(os.Stderr, "resolve refused: %s is not a recorded safe tree for taint %d (the violated pre-tree, an accepted point, or an earlier resolution); to keep the disputed tree use adopt-disputed-tree\n", tree, taintID)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: %s is not a recorded safe tree for taint %d (the violated pre-tree, an accepted point, or an earlier resolution); to keep the disputed tree use adopt-disputed-tree\n", tree, taintID)
 			return 3
 		}
 		// Exact equality, verified — never trusted: the human restores
 		// the workspace first, then the runner proves it.
 		if observed != tree {
-			fmt.Fprintf(os.Stderr, "resolve refused: the workspace (%s) does not equal the named safe tree (%s); restore the files first\n", observed, tree)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: the workspace (%s) does not equal the named safe tree (%s); restore the files first\n", observed, tree)
 			return 3
 		}
 		resolution["variant"] = "restore"
@@ -270,12 +270,12 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	integrity, _ := state["integrity"].(map[string]any)
 	chainSequence, ok := jsonInt(integrity["sequence"])
 	if !ok {
-		fmt.Fprintln(os.Stderr, "resolve refused: cannot read the state chain sequence")
+		fmt.Fprintln(e.answerErrors(), "resolve refused: cannot read the state chain sequence")
 		return 3
 	}
 	segment, ok := jsonInt(taint["segment"])
 	if !ok {
-		fmt.Fprintln(os.Stderr, "resolve refused: cannot read the taint segment")
+		fmt.Fprintln(e.answerErrors(), "resolve refused: cannot read the taint segment")
 		return 3
 	}
 	previousTree := ""
@@ -294,7 +294,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		}
 	}
 	if previousTree == "" {
-		fmt.Fprintln(os.Stderr, "resolve refused: cannot determine the pre-resolution expected tree")
+		fmt.Fprintln(e.answerErrors(), "resolve refused: cannot determine the pre-resolution expected tree")
 		return 3
 	}
 	resolution["previousTree"] = previousTree
@@ -303,7 +303,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// The resolution tree is E(next): anchor it for the mission's life.
 	resolvedTree, _ := resolution["treeId"].(string)
 	if err := workspace.Anchor(e.Mission, resolvedTree); err != nil {
-		fmt.Fprintf(os.Stderr, "resolve refused: cannot anchor the resolution tree: %v\n", err)
+		fmt.Fprintf(e.answerErrors(), "resolve refused: cannot anchor the resolution tree: %v\n", err)
 		return 3
 	}
 
@@ -328,7 +328,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// operation on a parked mission.
 	recheck, err := wallSnapshotWithWorkspace(workspace, e.Mission)
 	if err != nil || recheck != observed {
-		fmt.Fprintf(os.Stderr, "resolve refused: the workspace changed during resolution (%s -> %s); re-run\n", observed, recheck)
+		fmt.Fprintf(e.answerErrors(), "resolve refused: the workspace changed during resolution (%s -> %s); re-run\n", observed, recheck)
 		return 3
 	}
 	// THE RESOLUTION POSTURE EXTENDS TO EVERY CARRIER: the entry records
@@ -340,23 +340,23 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// wholesale under the named waived claims.
 	capture, cerr := e.captureWallPostureStable(observed, nil)
 	if cerr != nil {
-		fmt.Fprintf(os.Stderr, "resolve refused: cannot capture the carrier posture: %v\n", cerr)
+		fmt.Fprintf(e.answerErrors(), "resolve refused: cannot capture the carrier posture: %v\n", cerr)
 		return 3
 	}
 	// The ruled tree and the recorded posture come from ONE capture: the
 	// worktree projection inside the capture must BE the observed tree,
 	// or the ruling would pair a stale treeId with a different posture.
 	if capture.Post != observed {
-		fmt.Fprintf(os.Stderr, "resolve refused: the workspace changed during resolution (%s -> %s); re-run\n", observed, capture.Post)
+		fmt.Fprintf(e.answerErrors(), "resolve refused: the workspace changed during resolution (%s -> %s); re-run\n", observed, capture.Post)
 		return 3
 	}
 	if variant == "restore" {
 		if capture.StagedConflict != "" {
-			fmt.Fprintf(os.Stderr, "resolve refused: the workspace index is conflicted (%s); reset it before restore\n", capture.StagedConflict)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: the workspace index is conflicted (%s); reset it before restore\n", capture.StagedConflict)
 			return 3
 		}
 		if capture.StagedTree != tree {
-			fmt.Fprintf(os.Stderr, "resolve refused: the staged projection (%s) does not equal the named safe tree (%s); restore the index too\n", capture.StagedTree, tree)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: the staged projection (%s) does not equal the named safe tree (%s); restore the index too\n", capture.StagedTree, tree)
 			return 3
 		}
 		restoreOrigin := lastAcceptancePosture(state)
@@ -364,22 +364,22 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 			restoreOrigin = scopeOriginFromOpenTurn(openTurn, state)
 		}
 		if restoreOrigin == nil {
-			fmt.Fprintln(os.Stderr, "resolve refused: the mission records no accounting origin for restore")
+			fmt.Fprintln(e.answerErrors(), "resolve refused: the mission records no accounting origin for restore")
 			return 3
 		}
 		acct, aerr := e.newWallAccountant(previousTree, state, nil, nil)
 		if aerr != nil {
-			fmt.Fprintf(os.Stderr, "resolve refused: %v\n", aerr)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: %v\n", aerr)
 			return 3
 		}
 		acct.noteExpected(tree)
 		carrierViolation, jerr := e.judgeScope(restoreOrigin, capture, acct, state)
 		if jerr != nil {
-			fmt.Fprintf(os.Stderr, "resolve refused: %v\n", jerr)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: %v\n", jerr)
 			return 3
 		}
 		if carrierViolation != "" {
-			fmt.Fprintf(os.Stderr, "restore refused: a carrier still fails accounting (%s); adopt the disputed tree or repair the carrier by hand first\n", carrierViolation)
+			fmt.Fprintf(e.answerErrors(), "restore refused: a carrier still fails accounting (%s); adopt the disputed tree or repair the carrier by hand first\n", carrierViolation)
 			return 3
 		}
 	}
@@ -394,19 +394,19 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	if variant == "adopt-disputed-tree" && ledgerDomain {
 		adoptedBytes, rerr := os.ReadFile(ledgerPath)
 		if rerr != nil {
-			fmt.Fprintf(os.Stderr, "resolve refused: cannot read the mission ledger: %v\n", rerr)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: cannot read the mission ledger: %v\n", rerr)
 			return 3
 		}
 		ledgerSHA = sha256Hex(string(adoptedBytes))
 	} else {
 		anchored, currentLedger, lerr := e.wallReads().LedgerTruth(e.Root, state, ledgerPath)
 		if lerr != nil && !errors.Is(lerr, mission.ErrNoAnchor) {
-			fmt.Fprintf(os.Stderr, "resolve refused: cannot verify the mission ledger: %v\n", lerr)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: cannot verify the mission ledger: %v\n", lerr)
 			return 3
 		}
 		if lerr == nil {
 			if anchored != currentLedger {
-				fmt.Fprintln(os.Stderr, "resolve refused: the mission ledger changed during resolution; reconcile and re-run")
+				fmt.Fprintln(e.answerErrors(), "resolve refused: the mission ledger changed during resolution; reconcile and re-run")
 				return 3
 			}
 			ledgerSHA = sha256Hex(currentLedger)
@@ -418,11 +418,11 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// captured refuses rather than becoming the next origin.
 	finalCheck, cerr := e.captureWallPostureStable(observed, nil)
 	if cerr != nil {
-		fmt.Fprintf(os.Stderr, "resolve refused: cannot re-capture the carrier posture: %v\n", cerr)
+		fmt.Fprintf(e.answerErrors(), "resolve refused: cannot re-capture the carrier posture: %v\n", cerr)
 		return 3
 	}
 	if !finalCheck.equalTo(capture) {
-		fmt.Fprintln(os.Stderr, "resolve refused: a carrier moved during resolution; re-run")
+		fmt.Fprintln(e.answerErrors(), "resolve refused: a carrier moved during resolution; re-run")
 		return 3
 	}
 	resolveAnchor := ""
@@ -431,10 +431,10 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	}
 	if violation, jerr := e.judgeCaptureIntegrity(finalCheck, resolveAnchor, state); jerr != nil || violation != "" {
 		if jerr != nil {
-			fmt.Fprintf(os.Stderr, "resolve refused: %v\n", jerr)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: %v\n", jerr)
 			return 3
 		}
-		fmt.Fprintf(os.Stderr, "resolve refused: %s; repair the carrier by hand first\n", violation)
+		fmt.Fprintf(e.answerErrors(), "resolve refused: %s; repair the carrier by hand first\n", violation)
 		return 3
 	}
 	proposed := deepCopyDoc(state)
@@ -468,7 +468,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	proposed["waitingList"] = e.openAskIDsExcludingTaint(taintID)
 	written, err := e.writeStateResolution(statePath, proposed, verifiedHash)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return exitFor(err)
 	}
 	if remaining == 0 {
@@ -481,18 +481,18 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// the state hash this resolution wrote and the ledger bytes its
 	// recheck examined — anything that moved in between refuses.
 	if err := e.anchorStatePinned(statePath, ledgerPath, resolvedBy, writtenHash, ledgerSHA); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return exitFor(err)
 	}
 	if err := e.answerWallViolationAsks(taintID, resolution); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return exitFor(err)
 	}
 	e.emit("taint-resolved", fmt.Sprintf("taint %d %s", taintID, variant), map[string]string{
 		"missionId": e.Mission, "taintId": fmt.Sprintf("%d", taintID),
 		"variant": variant, "resolvedBy": resolvedBy,
 	})
-	fmt.Printf("mission=%s taint=%d resolved=%s segment=%d tree=%s remaining=%d\n",
+	fmt.Fprintf(e.answerOutput(), "mission=%s taint=%d resolved=%s segment=%d tree=%s remaining=%d\n",
 		e.Mission, taintID, variant, segment+1, resolvedTree, remaining)
 	return 0
 }

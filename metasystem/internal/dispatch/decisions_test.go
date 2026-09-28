@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // writeJSONFile marshals a value into dir/name and returns the path.
@@ -297,7 +298,7 @@ func TestExpandPermissions(t *testing.T) {
 	}
 	gitDir := filepath.Join(repo, ".git", "worktrees", "wt")
 	commonDir := filepath.Join(repo, ".git")
-	metadata := worktreeFacts(t, resolvePath(workspace), gitDir, filepath.Join("..", ".git"), "agent/expand-test")
+	metadata := worktreeFacts(t, realpath.Resolve(workspace), gitDir, filepath.Join("..", ".git"), "agent/expand-test")
 	envelope := writeJSONFile(t, dir, "envelope.json", map[string]any{
 		"readRoots": []any{".", "docs"}, "writeRoots": []any{"<worktree>"},
 		"network": "allow", "approvals": "deny", "tools": "read-only",
@@ -311,16 +312,16 @@ func TestExpandPermissions(t *testing.T) {
 		t.Fatalf("expanded = %v", expanded)
 	}
 	reads := expanded["readRoots"].([]any)
-	if reads[0] != resolvePath(repo) || reads[1] != resolvePath(filepath.Join(repo, "docs")) {
+	if reads[0] != realpath.Resolve(repo) || reads[1] != realpath.Resolve(filepath.Join(repo, "docs")) {
 		t.Fatalf("readRoots = %v", reads)
 	}
-	if expanded["writeRoots"].([]any)[0] != resolvePath(workspace) {
+	if expanded["writeRoots"].([]any)[0] != realpath.Resolve(workspace) {
 		t.Fatalf("writeRoots = %v", expanded["writeRoots"])
 	}
 	writes := expanded["writeRoots"].([]any)
-	if len(writes) != 4 || writes[1] != resolvePath(gitDir) ||
-		writes[2] != resolvePath(filepath.Join(commonDir, "refs", "heads", "agent")) ||
-		writes[3] != resolvePath(filepath.Join(commonDir, "logs", "refs", "heads", "agent")) {
+	if len(writes) != 4 || writes[1] != realpath.Resolve(gitDir) ||
+		writes[2] != realpath.Resolve(filepath.Join(commonDir, "refs", "heads", "agent")) ||
+		writes[3] != realpath.Resolve(filepath.Join(commonDir, "logs", "refs", "heads", "agent")) {
 		t.Fatalf("derived writeRoots = %v", writes)
 	}
 

@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
@@ -491,7 +492,7 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 	}
 	productRoots := append([]string(nil), p.ProductRoots...)
 	if len(productRoots) == 0 {
-		productRoots = []string{resolvePath(p.Workspace)}
+		productRoots = []string{realpath.Resolve(p.Workspace)}
 	}
 	base, err := facts.Head(p.Workspace)
 	if err != nil {
@@ -626,7 +627,7 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 		"error":                    nil,
 		"mainId":                   nullableString(p.MainID),
 		"claimEpoch":               epoch,
-		"workspaceRoot":            resolvePath(p.Workspace),
+		"workspaceRoot":            realpath.Resolve(p.Workspace),
 		"baseSha":                  base,
 		"branch":                   branch,
 		"permissions": map[string]any{
@@ -643,7 +644,7 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 		"custodyProcesses":             []any{},
 		"launchMode":                   p.LaunchMode,
 		"productRoots":                 stringValues(productRoots),
-		"outputStream":                 resolvePath(p.OutputStream),
+		"outputStream":                 realpath.Resolve(p.OutputStream),
 		"sessionId":                    nil,
 		"turnId":                       nullableString(p.MissionTurn),
 		"requestedModel":               p.Model,
@@ -975,7 +976,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"pgid":                         nil,
 		"custodyProcesses":             []any{},
 		"launchMode":                   p.LaunchMode,
-		"outputStream":                 resolvePath(p.OutputStream),
+		"outputStream":                 realpath.Resolve(p.OutputStream),
 		"sessionId":                    session,
 		"turnId":                       nullableString(p.MissionTurn),
 		"capMin":                       authority.capMin,
@@ -1011,7 +1012,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		record["productRoots"] = value
 	}
 	if productRootsEmpty(record["productRoots"]) {
-		record["productRoots"] = []any{resolvePath(asString(parent["workspaceRoot"]))}
+		record["productRoots"] = []any{realpath.Resolve(asString(parent["workspaceRoot"]))}
 	}
 	return writeRecord(p.Output, record)
 }
@@ -1211,7 +1212,7 @@ func TestingRequirement(goalID, gateWidth string) (string, error) {
 	if goalID == "" || (gateWidth != "area" && gateWidth != "full") {
 		return "", fmt.Errorf("testing requirement needs an accepted goal and gate width")
 	}
-	return fmt.Sprintf("\n# Required testing contract\n\nUse the committed shared testing contract for goal %s (recorded gate width %s). The proof of your round is made by the orchestrator, not inside your sandbox: when you return, the orchestrator's enrolled engine runs the risk-selected public `metasystem test` plan on your worktree as you left it, HEAD plus every change in the working tree, the same snapshot conformance reviews (`metasystem internal job prove-round`), a diagnostic run that collects every failed group, and the chain lands only when the landing's own delivery receipt, which reuses that run's passed groups by execution identity, is sufficient. Retained proof is reused across rounds and attempts by execution identity, so a round that changed no group's inputs proves in seconds and the landing reuses the last round's attempt. Your worktree carries no enrolled engine: do not run `metasystem test run`, `test plan` or `test status` there. %s Leave every change in the worktree and do not commit (the dispatcher and the proof read the worktree); report the commands you ran. A failed group comes back to you as a follow-up with its evidence. The build cache is provided for the whole chain (GOCACHE, GOTMPDIR and STATICCHECK_CACHE are set): never set, unset or strip them, and never run a gate under env -u or env -i.\n", goalID, gateWidth, ImpactedTestsRule), nil
+	return fmt.Sprintf("\n# Required testing contract\n\nUse the committed shared testing contract for goal %s (recorded gate width %s). The proof of your round is made by the orchestrator, not inside your sandbox: when you return, the orchestrator's enrolled engine runs the risk-selected public `metasystem test` plan on your worktree as you left it, HEAD plus every change in the working tree, the same snapshot conformance reviews, a diagnostic run that collects every failed group, and the chain lands only when the landing's own delivery receipt, which reuses that run's passed groups by execution identity, is sufficient. Retained proof is reused across rounds and attempts by execution identity, so a round that changed no group's inputs proves in seconds and the landing reuses the last round's attempt. Your worktree carries no enrolled engine: do not run `metasystem test run`, `test plan` or `test status` there. %s Leave every change in the worktree and do not commit (the dispatcher and the proof read the worktree); report the commands you ran. A failed group comes back to you as a follow-up with its evidence. The build cache is provided for the whole chain (GOCACHE, GOTMPDIR and STATICCHECK_CACHE are set): never set, unset or strip them, and never run a gate under env -u or env -i.\n", goalID, gateWidth, ImpactedTestsRule), nil
 }
 
 // validateAfterCapParent is the record owner's own check of a continuation

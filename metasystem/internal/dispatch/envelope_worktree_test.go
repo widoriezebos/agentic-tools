@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // Issue #5 (quarantine design): a worktree envelope gains EXACTLY three
@@ -64,10 +66,10 @@ func TestWorktreeEnvelopeGrantsGitRoots(t *testing.T) {
 		got = append(got, r.(string))
 	}
 	want := []string{
-		resolvePath(worktree),
-		resolvePath(filepath.Join(repo, ".git", "worktrees", "wt")),
-		resolvePath(filepath.Join(repo, ".git", "refs", "heads", "agent")),
-		resolvePath(filepath.Join(repo, ".git", "logs", "refs", "heads", "agent")),
+		realpath.Resolve(worktree),
+		realpath.Resolve(filepath.Join(repo, ".git", "worktrees", "wt")),
+		realpath.Resolve(filepath.Join(repo, ".git", "refs", "heads", "agent")),
+		realpath.Resolve(filepath.Join(repo, ".git", "logs", "refs", "heads", "agent")),
 	}
 	sort.Strings(got)
 	sort.Strings(want)
@@ -137,7 +139,7 @@ func gitStateInventory(t *testing.T, repo string) map[string]string {
 		if err != nil || info.IsDir() {
 			return nil
 		}
-		inventory[resolvePath(path)] = info.ModTime().String() + "|" + string(rune(info.Size()))
+		inventory[realpath.Resolve(path)] = info.ModTime().String() + "|" + string(rune(info.Size()))
 		return nil
 	})
 	return inventory

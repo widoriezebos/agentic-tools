@@ -610,3 +610,18 @@ the word in argv.
 12. Witness 18: +40, about 170.
 
 Units 4, 7 and 8: unchanged.
+
+## Decisions (units 5e-5g and amendments 5-6, as built)
+
+Distilled 2026-09-28 from the unit-5d decisions, the custodian seat rulings
+and amendments 5 (witness 9) and 6 (revision 6), removed that day (tag
+`records-archive-2026-09-28`). The macOS kernel lessons of amendment 6 are in
+`docs/doctrine/failure-modes.md`.
+
+- **Start is unconditional, in `testenv.Main`.** Every binary whose TestMain calls `testenv.Main` starts a custodian before `m.Run()`; `Fixture(t)` never starts one and fails without one. No opt-out variable. Rejected: a lazy start from `Fixture` (it would re-execute a binary whose TestMain lacks the custodian branch, running its whole test list as the "custodian"); an opt-out (removes the safety with no record).
+- **Ready handshake on descriptor 4, no read deadline.** The custodian writes `ready` after its checks; EOF without it means it exited during the checks and the owner exits 2 quoting the log. Rejected: probe-after-Start (an unwaited custodian that exits is a zombie that probes Alive) and a 5 s read deadline (a bound load alone can break, a flaky gate for 82 packages; a hang is bounded by `go test -timeout`).
+- **`METASYSTEM_RUN_OWNER` is read with `os.Getenv` and so joins Go's test-cache key.** Hiding it via `os.Environ()` was rejected as hiding an input from Go on purpose; exporting it costs cache hits, not proof. The proof-key exclusion in `internal/proofrun` stands (pinned in `judge_test.go`).
+- **Retention: per-owner log `<registry>.custodian-<pid>.log`; quiet is decided by re-reading the whole log at `action=complete`** (the log is also the custodian's stderr, so a tracked flag misses race reports and panics). Only a `testenv.Main` custodian removes its log; `proc custodian` (beds) keeps it. Aged logs and ref files (> 7 days) are swept at the next binary's start. Retention landed before the start was turned on, so no landing left one log per binary.
+- **Rule 7, finished vs held (amendment 5).** A child the test brings to exit that teardown finds running fails the test by pid, exe and argv; only a child declared with `Hold` is reaped silently. Ownership proof decides whether a signal is sent, never whether the failure is reported. Found after 13 orphaned `steward run` children were reaped by hand on m1b. Code: `testutil.ProcessFixture.Hold`/`Record`; test `internal/testutil/fixture_test.go` ("finished child found running at teardown").
+- **Group/session tie means "led by", not "shares"** (amendment 6): a process is tied to a certain survivor only when that survivor, alive in the same scan, leads its pgid or sid; sharing a group would pull in parallel tests' children and the login session.
+- **Record walk (amendment 6):** the census reads `fixture-owner` walking up from the executable to the root, because the per-test directory sits under `GOTMPDIR` only when it is set (Claude adapter, chain cache) and under `TMPDIR` otherwise (terminal, VM, proofs).

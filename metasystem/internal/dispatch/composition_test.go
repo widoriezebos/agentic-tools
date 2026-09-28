@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 func compositionRepoRoot(t *testing.T) string {
@@ -183,9 +185,9 @@ func assertPacketFitProvenance(t *testing.T, p ComposeRolePacketParams, record C
 		references[reference.Slot] = reference
 	}
 	wantReferenceOrder := make([]string, 0, len(record.References))
-	canonicalRoot := resolvePath(p.Root)
-	canonicalReference := resolvePath(p.ReferenceDir)
-	canonicalStage := resolvePath(p.StageDir)
+	canonicalRoot := realpath.Resolve(p.Root)
+	canonicalReference := realpath.Resolve(p.ReferenceDir)
+	canonicalStage := realpath.Resolve(p.StageDir)
 	for index, want := range expected {
 		purpose := map[string]string{
 			"task-direction": "brief", "prior-brief": "brief", "prior-return": "return",
@@ -749,7 +751,7 @@ func TestComposeRolePacketRefusesWhenFixedPartsCannotFit(t *testing.T) {
 			StageDir: filepath.Join(root, "record-locks", "impossible"), ReferenceDir: referenceDir,
 			Continuations: []CompositionContinuation{{Slot: "prior-return", Path: continuation}},
 		}
-		canonicalReferenceDir := resolvePath(referenceDir)
+		canonicalReferenceDir := realpath.Resolve(referenceDir)
 		configuration, err := ResolveHazardConfiguration(root, HazardMechanical, 0)
 		if err != nil {
 			t.Fatal(err)
@@ -897,7 +899,7 @@ func TestComposeRolePacketRefusesWhenFixedPartsCannotFit(t *testing.T) {
 					}
 				}
 				if params.StageDir != "" {
-					if _, statErr := os.Stat(filepath.Join(resolvePath(params.StageDir), "task-direction.md")); !os.IsNotExist(statErr) {
+					if _, statErr := os.Stat(filepath.Join(realpath.Resolve(params.StageDir), "task-direction.md")); !os.IsNotExist(statErr) {
 						t.Fatalf("bad reference path staged task direction through %s", params.StageDir)
 					}
 				}

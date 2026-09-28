@@ -447,15 +447,15 @@ func auditGoalSystem(root string) []string {
 	// not hand-maintained universes.
 	pointerDocs := map[string]string{
 		"docs/project-adaptation.md": "runtime registration",
-		"docs/orchestration.md":      "runtime\nlist",
-		"docs/glossary.md":           "runtime list",
+		"docs/orchestration.md":      "`internal/runtimes`",
+		"docs/glossary.md":           "`internal/runtimes`",
 	}
 	// README ships only with the TEMPLATE (adoption's payload excludes
 	// it — an adopted project's README is the project's own and owes
 	// the metasystem nothing). Same marker the registration presence
 	// checks ride.
 	if fileExists(filepath.Join(root, "development", "metasystem-design.md")) {
-		pointerDocs["README.md"] = "runtime list"
+		pointerDocs["README.md"] = "`internal/runtimes`"
 	}
 	for doc, marker := range pointerDocs {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(doc)))

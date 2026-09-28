@@ -459,3 +459,16 @@ func TestGoalCLIAuthorityProofGrades(t *testing.T) {
 		}
 	})
 }
+
+// runGoalReleaseWithDependencies drives the release owners (goal.Release and
+// goal.ReleaseArc) through the synced-ledger request builder a test supplies,
+// the composition the retired internal goal release ran; the public goal
+// release reaches the same owners through its sync owner.
+func runGoalReleaseWithDependencies(args []string, requestBuilder func(string, string, string, string) (goal.VerbRequest, error), dependencies syncRequestDependencies) int {
+	return runSyncOnlyWithDependencies("release", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		if f.arc != "" {
+			return goal.ReleaseArc(req, f.id)
+		}
+		return goal.Release(req, f.id)
+	}, requestBuilder, dependencies, "id")(args)
+}

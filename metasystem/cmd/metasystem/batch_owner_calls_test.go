@@ -85,7 +85,47 @@ func recordingOwnerCalls(prefix []string, record func([]string)) *intentOwnerCal
 			record(words(append([]string{"delegate"}, request.args...)...))
 			return real.delegate(request, stdout, stderr)
 		},
+		goalReconcile: func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
+			record(words(append([]string{"goal", "reconcile"}, args...)...))
+			return real.goalReconcile(dependencies, stdout, stderr, dir, args)
+		},
+		goalMigrate: func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
+			record(words(append([]string{"goal", "migrate"}, args...)...))
+			return real.goalMigrate(dependencies, stdout, stderr, dir, args)
+		},
+		goalCarry: func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
+			record(words(append([]string{"goal", "carry"}, args...)...))
+			return real.goalCarry(dependencies, stdout, stderr, dir, args)
+		},
+		landingTestReceipt: func(caller processIdentity, stdout, stderr io.Writer, dir string, args []string) int {
+			record(words(append([]string{"landing", "test-receipt"}, args...)...))
+			return real.landingTestReceipt(caller, stdout, stderr, dir, args)
+		},
+		channelWait: func(caller processIdentity, lineage string, stdout, stderr io.Writer, args []string) int {
+			record(words(append([]string{"channel", "wait"}, args...)...))
+			return real.channelWait(caller, lineage, stdout, stderr, args)
+		},
+		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
+			record(words("mission", "status", "--root", root, "--mission", mission))
+			return real.missionStatus(stdout, stderr, root, mission)
+		},
+		missionLaunch: func(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string) int {
+			record(words("mission", mode, "--root", root, "--mission", mission))
+			return real.missionLaunch(caller, stdout, stderr, root, mission, mode)
+		},
+		missionResolveTaint: func(caller processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int {
+			record(words(request.words()...))
+			return real.missionResolveTaint(caller, stdout, stderr, request)
+		},
 	}
+}
+
+// processBackedDelivery gives a delivery stand-in whose fake engine answers
+// by argv the owner calls too: each in-process owner call reaches the fake as
+// the argv its former child carried.
+func processBackedDelivery(delivery *intentDeliveryOwners) *intentDeliveryOwners {
+	delivery.calls = processBackedOwnerCalls(delivery.executable, delivery.process)
+	return delivery
 }
 
 // processBackedOwnerCalls route each owner call to a test's fake owner
@@ -129,5 +169,59 @@ func processBackedOwnerCalls(executable func() (string, error), process func(int
 		delegate: func(request delegateRequest, stdout, stderr io.Writer) int {
 			return run(request.dir, stdout, stderr, append([]string{"delegate"}, request.args...)...)
 		},
+		goalReconcile: func(_ syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
+			return run(dir, stdout, stderr, append([]string{"goal", "reconcile"}, args...)...)
+		},
+		goalMigrate: func(_ syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
+			return run(dir, stdout, stderr, append([]string{"goal", "migrate"}, args...)...)
+		},
+		goalCarry: func(_ syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
+			return run(dir, stdout, stderr, append([]string{"goal", "carry"}, args...)...)
+		},
+		landingTestReceipt: func(_ processIdentity, stdout, stderr io.Writer, dir string, args []string) int {
+			return receiptProcess(executable, process, stdout, stderr, dir, args)
+		},
+		channelWait: func(_ processIdentity, _ string, stdout, stderr io.Writer, args []string) int {
+			return run(flagValue(args, "--root"), stdout, stderr, append([]string{"channel", "wait"}, args...)...)
+		},
+		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
+			return run(root, stdout, stderr, "mission", "status", "--root", root, "--mission", mission)
+		},
+		missionLaunch: func(_ processIdentity, stdout, stderr io.Writer, root, mission, mode string) int {
+			return run(root, stdout, stderr, "mission", mode, "--root", root, "--mission", mission)
+		},
+		missionResolveTaint: func(_ processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int {
+			return run(request.root, stdout, stderr, request.words()...)
+		},
 	}
+}
+
+// receiptProcess reaches a test's fake engine with the argv the former
+// landing test-receipt child carried (the engine's top-level landing form).
+func receiptProcess(executable func() (string, error), process func(intentProcess) intentProcessResult, stdout, stderr io.Writer, dir string, args []string) int {
+	binary, err := executable()
+	if err != nil {
+		io.WriteString(stderr, err.Error())
+		return 1
+	}
+	ran := process(intentProcess{argv: append([]string{binary, "landing", "test-receipt"}, args...), dir: dir})
+	stdout.Write(ran.stdout)
+	stderr.Write(ran.stderr)
+	if ran.err != nil && ran.code == 0 {
+		return 1
+	}
+	return ran.code
+}
+
+// processBackedReceipt keeps a delivery's production owner calls and routes
+// only the landing proof to its fake engine, as the argv the former child
+// carried.
+func processBackedReceipt(delivery *intentDeliveryOwners) *intentDeliveryOwners {
+	if delivery.calls == nil {
+		delivery.calls = defaultIntentOwnerCalls()
+	}
+	delivery.calls.landingTestReceipt = func(_ processIdentity, stdout, stderr io.Writer, dir string, args []string) int {
+		return receiptProcess(delivery.executable, delivery.process, stdout, stderr, dir, args)
+	}
+	return delivery
 }

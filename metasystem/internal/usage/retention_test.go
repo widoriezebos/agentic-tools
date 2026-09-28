@@ -471,7 +471,7 @@ func TestCallRetirementPreservesDamageAndLockInodes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		beforeInfo, err := lock.Stat()
+		beforeInfo, err := lock.File().Stat()
 		if err != nil {
 			t.Fatal(err)
 		}

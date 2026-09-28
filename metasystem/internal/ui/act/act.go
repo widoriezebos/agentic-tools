@@ -875,7 +875,7 @@ func proofReason(proof humanauthority.Proof, err error) string {
 	case humanauthority.OutcomeAgent:
 		return "the interface was started by an agent process (" + agentRuntime(proof) + ")"
 	case humanauthority.OutcomeNotEnrolled:
-		return "this checkout has no enrolled terminal (run: bin/metasystem internal goal enroll-terminal --by <your name>)"
+		return "this checkout has no enrolled terminal (run: bin/metasystem system enroll --name <your name>)"
 	case humanauthority.OutcomeTerminalMissing:
 		return "the process that started the interface does not descend from the enrolled terminal"
 	case humanauthority.OutcomeChanged, humanauthority.OutcomeReused:

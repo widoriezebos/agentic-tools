@@ -28,7 +28,6 @@ func TestBatchVerbsUnavailableWithoutFilesystemWrites(t *testing.T) {
 		{"owner", []string{"landing", "batch", "owner", "--root", root, "unexpected"}, "landing batch owner"},
 		{"tick", []string{"landing", "batch", "tick", "--root", root}, "landing batch tick"},
 		{"wait", []string{"landing", "batch", "wait", "--root", root}, "landing batch wait"},
-		{"handover", []string{"goal", "handover", "--root", root}, "goal handover needs"},
 	}
 	for _, command := range commands {
 		t.Run(command.name, func(t *testing.T) {
@@ -54,7 +53,7 @@ func TestBatchTaggedCapabilityWitnessExecutesInProof(t *testing.T) {
 		"TestBatchJoinSpawnsOneOwner", "TestBatchOwnerHoldsTheLease", "TestBatchOwnerWiringBound",
 		"TestBatchOwnerInspectionUsesInjectedProberAndKeepsReadErrorsUnknown", "TestBatchProductionReturnTargetClassifiesCustody",
 		"TestBatchProofCoversTheUnion", "TestBatchProofAcceptsReusableSuccess", "TestBatchProofRearmsBaseBeforePlanningEvenWhenTreeMatches",
-		"TestBatchSupervisorTakeoverRebindsJoinedClaims", "TestGoalHandoverTargetRootFlagFlows", "TestLandingBatchJoinVerbPublishesOutsideFlock",
+		"TestBatchSupervisorTakeoverRebindsJoinedClaims", "TestLandingBatchJoinVerbPublishesOutsideFlock",
 		"TestBatchProductionReturnAndForwardHandoverArguments", "TestBatchTrunkRedLedgerOwnerCapability",
 		"TestBatchProofUnionUsesRealMemberRiskSelection", "TestBatchProofDurableUnionRefusalSkipsSecondRearm",
 		"TestBatchProofRefusalTransitions",

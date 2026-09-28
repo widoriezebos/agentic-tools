@@ -5,4 +5,3 @@ memory/flake-registry.md merge=union
 memory/known-issues.md merge=union
 memory/instruction-ledger.md merge=union
 memory/backlog-notes.md merge=union
-docs/journey.md merge=union

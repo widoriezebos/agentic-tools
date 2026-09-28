@@ -1,6 +1,6 @@
 package main
 
-// goal allow and goal disallow (verbs-match-intent, Wido 2026-09-29): a
+// goal allow and goal disallow (verbs-match-intent, Wido 2026-09-28): a
 // person allows a goal stop-test changes, which the sealed record keeps as
 // "- StopSurface: moves" and the Stop decision surface audit reads; anyone
 // disallows it. Rule H1: the agent's refusal and the audit's refusal both name

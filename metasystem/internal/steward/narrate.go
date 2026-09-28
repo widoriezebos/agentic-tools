@@ -4,9 +4,8 @@ package steward
 // it is doing — one sentence per tick, written for a person, kept
 // beside the machine records it summarizes. It is strictly read-only
 // observation: a narration failure never fails a tick, narration never
-// decides anything, and the records remain the authority. The journey
-// tells the story of what concluded; the narration tells the story of
-// now.
+// decides anything, and the records remain the authority. The narration
+// tells the story of now.
 
 import (
 	"fmt"

@@ -197,6 +197,11 @@ type legacyMutationInputs struct {
 	repositoryTop func(string) (string, error)
 	ensureGuard   func(string) error
 	reporter      func(metrics.Options) (metrics.Result, error)
+	// stdout and stderr are where the verb reports; nil is the process's
+	// own. caller, when set, is the supplied identity classification starts
+	// from (owner_invocation.go) where no --caller-pid names one.
+	stdout, stderr io.Writer
+	caller         processIdentity
 }
 
 func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet) []*string,
@@ -220,6 +225,13 @@ func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet
 	if inputs.reporter == nil {
 		inputs.reporter = generateMetricsReport
 	}
+	stdout, stderr := io.Writer(os.Stdout), io.Writer(os.Stderr)
+	if inputs.stdout != nil {
+		stdout = inputs.stdout
+	}
+	if inputs.stderr != nil {
+		stderr = inputs.stderr
+	}
 	if code, handled := trySync(name, args); handled {
 		return code
 	}
@@ -233,9 +245,12 @@ func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	if *callerPid == 0 {
+		*callerPid = inputs.caller.pid
+	}
 	caller, err := goalCallerWithRepositoryTop(*root, *callerPid, name, inputs.repositoryTop)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	// Enrollment runs AFTER authorization: it executes the target's
@@ -243,7 +258,7 @@ func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet
 	// caller must not be able to trigger foreign hook code through a
 	// refused mutation.
 	if err := inputs.ensureGuard(*root); err != nil {
-		fmt.Fprintln(os.Stderr, "goal "+name+": "+err.Error())
+		fmt.Fprintln(stderr, "goal "+name+": "+err.Error())
 		return 1
 	}
 	values := make([]string, len(extras))
@@ -253,15 +268,15 @@ func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet
 	store := &goal.Store{Root: *root}
 	result, err := run(store, caller, values)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	fmt.Println(result.Message)
+	fmt.Fprintln(stdout, result.Message)
 	for _, dropped := range result.Dropped {
-		fmt.Println("dropped: " + dropped)
+		fmt.Fprintln(stdout, "dropped: "+dropped)
 	}
 	if name == "done" && len(values) > 0 {
-		return reportAfterConfirmedDoneWithReporter(0, *root, values[0], os.Stderr, inputs.reporter)
+		return reportAfterConfirmedDoneWithReporter(0, *root, values[0], stderr, inputs.reporter)
 	}
 	return 0
 }
@@ -276,51 +291,6 @@ func runGoalOpen(args []string) int {
 	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
 		return s.Open(c, v[0], v[1], v[2])
 	})
-}
-
-func runGoalSetNext(args []string) int {
-	return goalMutation("set-next", args, func(f *flag.FlagSet) []*string {
-		return []*string{f.String("next", "", "the rewritten step")}
-	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-		return s.SetNext(c, v[0])
-	})
-}
-
-func runGoalPromote(args []string) int {
-	return goalMutation("promote", args, func(f *flag.FlagSet) []*string {
-		return []*string{f.String("id", "", "queued goal id")}
-	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-		return s.Promote(c, v[0])
-	})
-}
-
-func runGoalPark(args []string) int {
-	return runGoalParkWithSync(args, trySyncMutation)
-}
-
-func runGoalParkWithSync(args []string, trySync func(string, []string) (int, bool)) int {
-	return goalMutationWithSync("park", args, func(f *flag.FlagSet) []*string {
-		return []*string{
-			f.String("id", "", "goal id"),
-			f.String("because", "", "why it parks"),
-			f.String("then", "", "queued id to promote in the same write"),
-			boolAsString(f, "and-none"),
-		}
-	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-		return s.Park(c, v[0], v[1], v[2], v[3] == "true")
-	}, trySync)
-}
-
-func runGoalUnpark(args []string) int {
-	return runGoalUnparkWithSync(args, trySyncMutation)
-}
-
-func runGoalUnparkWithSync(args []string, trySync func(string, []string) (int, bool)) int {
-	return goalMutationWithSync("unpark", args, func(f *flag.FlagSet) []*string {
-		return []*string{f.String("id", "", "parked goal id")}
-	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-		return s.Unpark(c, v[0])
-	}, trySync)
 }
 
 func runGoalDone(args []string) int {
@@ -340,36 +310,25 @@ func runGoalDoneWithSync(args []string, trySync func(string, []string) (int, boo
 	}, trySync)
 }
 
-func runGoalReopen(args []string) int {
-	return goalMutation("reopen", args, func(f *flag.FlagSet) []*string {
-		return []*string{
-			f.String("id", "", "done goal id"),
-			f.String("next", "", "the reopened next step"),
-		}
-	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-		return s.Reopen(c, v[0], v[1])
-	})
-}
-
-func runGoalDeclareFree(args []string) int {
-	return goalMutation("declare-free", args, nil,
-		func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-			return s.DeclareFree(c)
-		})
-}
-
-func runGoalPrune(args []string) int {
-	return goalMutation("prune", args, nil,
-		func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-			return s.Prune(c)
-		})
-}
-
 func runGoalReconcile(args []string) int {
-	return goalMutation("reconcile", args, nil,
-		func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
-			return s.Reconcile(c)
-		})
+	return goalMutation("reconcile", args, nil, goalReconcileLegacy)
+}
+
+func goalReconcileLegacy(s *goal.Store, c goal.Caller, _ []string) (goal.Result, error) {
+	return s.Reconcile(c)
+}
+
+// goalReconcileWith is goal reconcile under explicit request dependencies:
+// the synced reconcile's request and proof start from their supplied caller
+// and carry their lineage, the legacy one classifies from that caller, and
+// both report on the caller's streams.
+func goalReconcileWith(dependencies syncRequestDependencies, stdout, stderr io.Writer, args []string) int {
+	dependencies.stdout, dependencies.stderr = stdout, stderr
+	trySync := func(name string, args []string) (int, bool) {
+		return trySyncMutationWithDependencies(name, args, goalCommandNow, dependencies, goalParkBranchCheck)
+	}
+	return goalMutationWithInputs("reconcile", args, nil, goalReconcileLegacy, trySync,
+		legacyMutationInputs{stdout: stdout, stderr: stderr, caller: dependencies.authorityFacts.caller})
 }
 
 // boolAsString adapts a boolean flag into the shared string plumbing.
@@ -467,43 +426,6 @@ func converted(root string) bool {
 	}
 	_, err := os.Stat(filepath.Join(root, "plans", "goals", "backlog.md"))
 	return err == nil
-}
-
-// runGoalTierProbe prints the backlog's tier spread: recorded and derived
-// tiers over the open goals with a risk record, the tier-3 share of each,
-// and the goals whose recorded tier exceeds their derivation.
-func runGoalTierProbe(args []string) int {
-	flags := flag.NewFlagSet("goal tier-probe", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	pretty := flags.Bool("pretty", false, "print lines instead of JSON")
-	fetchFirst := flags.Bool("fetch", false, "fetch the canonical tip before reading")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	e, err := goal.ResolveEndpoint(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	p, err := goal.Project(e, *fetchFirst, time.Now())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	probe := goal.ProbeTiers(p.Tree)
-	recorded, derived := probe.Tier3Share()
-	if !*pretty {
-		printJSON(map[string]any{"open": probe.Open, "recorded": probe.Recorded, "derived": probe.Derived,
-			"tier3ShareRecorded": recorded, "tier3ShareDerived": derived, "lowerable": probe.Lowerable, "tip": p.Tip})
-		return 0
-	}
-	fmt.Printf("open goals with a risk record: %d\n", probe.Open)
-	fmt.Printf("recorded tiers: 1=%d 2=%d 3=%d (tier 3: %d%%)\n", probe.Recorded[1], probe.Recorded[2], probe.Recorded[3], recorded)
-	fmt.Printf("derived tiers:  1=%d 2=%d 3=%d (tier 3: %d%%)\n", probe.Derived[1], probe.Derived[2], probe.Derived[3], derived)
-	for _, lower := range probe.Lowerable {
-		fmt.Printf("lowerable: %s %s recorded=%d derived=%d\n", lower.ID, lower.State, lower.Recorded, lower.Derived)
-	}
-	return 0
 }
 
 func listSyncedWithResolver(root string, output goalListOutput, fetchFirst bool, resolve func(string) (goal.Endpoint, error), requiredLabels ...string) int {
@@ -819,45 +741,11 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 	case ledger.Free != nil:
 		fmt.Println("goal-free declared " + ledger.Free.Declared)
 	case len(ledger.Queued) > 0:
-		fmt.Printf("no current goal; the queue holds %s: `goal promote %s` or park it\n", ledger.Queued[0].Id, ledger.Queued[0].Id)
+		fmt.Printf("no current goal; the queue holds %s; this legacy ledger converts with `metasystem goal sync --upgrade`\n", ledger.Queued[0].Id)
 	default:
 		fmt.Println("no current goal")
 	}
 	return 0
-}
-
-// runReportTurnVerdict is the Stop hook's one verb: the scanner fills the
-// verdict's input contract and the decision returns as JSON on stdout.
-// Every representable state is exit 0; nonzero means I/O failure and the
-// hook's own fixed degraded message takes over.
-func runReportTurnVerdict(args []string) int {
-	return runReportTurnVerdictWithInputs(args, nil, nil)
-}
-
-func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.Endpoint, error), resolveMachine func(string) (string, error)) int {
-	return runReportTurnVerdictTo(args, os.Stdout, os.Stderr, resolve, resolveMachine)
-}
-
-func runReportTurnVerdictTo(args []string, stdout, stderr io.Writer, resolve func(string) (goal.Endpoint, error), resolveMachine func(string) (string, error)) int {
-	flags := flag.NewFlagSet("report turn-verdict", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	session := flags.String("session", "", "normalized session id")
-	watchdog := flags.String("watchdog-surfaced", "", "sha256 of this turn's watchdog report (empty clears)")
-	mainId := flags.String("main-id", "", "the caller main identity for the unwatched-work rule")
-	stopHookActive := flags.Bool("stop-hook-active", false, "the runtime is repeating a Stop hook that previously blocked")
-	sessionAbsent := flags.Bool("session-absent", false, "the Stop payload supplied no runtime session")
-	transcript := flags.String("transcript", "", "runtime transcript for the last main-thread call")
-	runtimeName := flags.String("runtime", "", "runtime that produced the transcript")
-	factsFile := flags.String("facts-file", "", "fresh absolute path for the frozen judgment facts")
-	completionFile := flags.String("completion-file", "", "fresh absolute path for the presentation-only completion observation")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	return reportTurnVerdict(hooks.TurnVerdictRequest{
-		Root: *root, Session: *session, Watchdog: *watchdog, MainID: *mainId, StopHookActive: *stopHookActive,
-		SessionAbsent: *sessionAbsent, Transcript: *transcript, Runtime: *runtimeName,
-		FactsFile: *factsFile, CompletionFile: *completionFile,
-	}, stdout, stderr, resolve, resolveMachine)
 }
 
 // reportTurnVerdict is the one structured turn-end decision: it scans the

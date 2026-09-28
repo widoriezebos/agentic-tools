@@ -16,13 +16,12 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
@@ -328,15 +327,11 @@ func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity
 	if err := os.MkdirAll(filepath.Dir(healthLockPath(repoRoot)), 0o755); err != nil {
 		return HealthVerdict{}, err
 	}
-	lockFile, err := os.OpenFile(healthLockPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
+	lockFile, err := lock.File(healthLockPath(repoRoot), 0o644, lock.Exclusive)
 	if err != nil {
 		return HealthVerdict{}, err
 	}
-	defer lockFile.Close()
-	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX); err != nil {
-		return HealthVerdict{}, err
-	}
-	defer unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)
+	defer lockFile.Release()
 
 	previous, err := loadHealthRecord(HealthRecordPath(repoRoot))
 	stateUnreadable := err != nil && !os.IsNotExist(err)
@@ -1365,14 +1360,14 @@ func checkStopCapabilityEpochFromProjection(repoRoot string, now time.Time, proj
 			role := roleDead(RoleStopCapabilityEpoch,
 				fmt.Sprintf("goal %s stop capability claim epoch %d differs from live lease claim epoch %d under owner lineage %s",
 					file.Id, capabilityEpoch, holder.ClaimEpoch, holder.OwnerLineage),
-				fmt.Sprintf("metasystem internal goal restamp --id %s, or re-arm with metasystem session start", file.Id))
+				"metasystem session start (it restamps the claim to the live epoch)")
 			role.RemedyFacts = []RemedyFact{{Cause: CauseEpochMismatch, Goal: file.Id}}
 			return role
 		}
 		role := roleDead(RoleStopCapabilityEpoch,
 			fmt.Sprintf("goal %s was claimed under owner lineage %s but the live lease belongs to owner lineage %s",
 				file.Id, file.Claimed.Lineage, holder.OwnerLineage),
-			"release the goal under the lineage that claimed it and claim it again, or hand it over with metasystem internal goal handover")
+			"release the goal under the lineage that claimed it and claim it again (metasystem goal release, then metasystem goal claim)")
 		role.NoAutomaticRemedy = true
 		role.RemedyFacts = []RemedyFact{{Cause: CauseForeignLineage, Goal: file.Id}}
 		return role
@@ -1446,7 +1441,7 @@ func malformedBudgetGoal(err error) (string, bool) {
 }
 
 func goalBudgetRemedy(id string) string {
-	return fmt.Sprintf("metasystem internal goal set-budget --root . --id %s --elapsed-limit DURATION --attempt-limit POSITIVE_INTEGER --reserved-job-minutes-limit POSITIVE_INTEGER --active-job-limit POSITIVE_INTEGER --review-round-limit NON_NEGATIVE_INTEGER", id)
+	return fmt.Sprintf("metasystem goal budget %s BOX (BOX is elapsed/attempts/reserved-minutes/active-jobs/review-rounds, for example 1d/10/720m/1/3)", id)
 }
 
 func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {

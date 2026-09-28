@@ -511,7 +511,7 @@ func TestIntentManualWorkLandsOnEndpoint(t *testing.T) {
 		}
 		return realProcess(process)
 	}
-	owners.delivery = delivery
+	owners.delivery = processBackedReceipt(delivery)
 	// The journey bed serves ledger acts from its fixture, so the goal's
 	// land-ready state is written on the ledger as the whole-owner landing
 	// fixture writes it; the landing itself is the owners' own.

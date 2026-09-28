@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // EvidenceRootKey is the configuration key of the durable, host-local
@@ -107,7 +109,7 @@ func judgeEvidenceRoot(raw, source, origin, checkout string) (EvidenceRoot, erro
 	if !filepath.IsAbs(value) {
 		return EvidenceRoot{}, fmt.Errorf("%s must be absolute (%s reads %q)", EvidenceRootKey, source, value)
 	}
-	if withinRepo(ResolvePath(value), ResolvePath(checkout)) {
+	if withinRepo(realpath.Resolve(value), realpath.Resolve(checkout)) {
 		return EvidenceRoot{}, fmt.Errorf("%s must be outside the repository (%s reads %q)", EvidenceRootKey, source, value)
 	}
 	return EvidenceRoot{Path: filepath.Clean(value), Origin: origin}, nil

@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -621,7 +622,7 @@ func RefuseBudgetCap(repo, missionID, job string, capResolution map[string]any, 
 }
 
 // The provenance a terminal job's aggregate entry carries
-// (records/patience/patience-orphan-usage.md): the adapter reported the usage, the
+// (docs/patience.md, S3): the adapter reported the usage, the
 // aggregator derived it from a provably dead round's event stream, the group
 // is not yet provably dead, or the usage is unrecoverable by proof.
 const (
@@ -1003,13 +1004,9 @@ func lockFileAt(lockPath string) (*fileLock, error) {
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	held, err := lock.File(lockPath, 0o644, lock.Exclusive)
 	if err != nil {
 		return nil, err
 	}
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
-		f.Close()
-		return nil, err
-	}
-	return &fileLock{f: f}, nil
+	return &fileLock{held: held}, nil
 }

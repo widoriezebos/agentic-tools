@@ -947,7 +947,9 @@ func TestFailedHandoffTombstoneReportsPartialCancellation(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	temporaryTarget := filepath.Join(cancelledDir(root), intent.Nonce+".json.tmp")
+	// A non-empty directory at the tombstone's own name obstructs its
+	// publication whatever temporary name the writer uses.
+	temporaryTarget := filepath.Join(cancelledDir(root), intent.Nonce+".json")
 	if err := os.MkdirAll(temporaryTarget, 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // evidenceFixture is an installation at <base>/repo/metasystem whose checkout
@@ -266,7 +268,7 @@ func TestResolvePathThroughALinkedParent(t *testing.T) {
 	if err := os.Symlink(real, filepath.Join(bed, "alias")); err != nil {
 		t.Fatal(err)
 	}
-	if got := ResolvePath(filepath.Join(bed, "alias", "new")); got != filepath.Join(real, "new") {
+	if got := realpath.Resolve(filepath.Join(bed, "alias", "new")); got != filepath.Join(real, "new") {
 		t.Fatalf("got %s", got)
 	}
 }

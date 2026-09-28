@@ -1,6 +1,6 @@
 # Backlog notes
 
-- Goal and current status: DETAIL NOTES for queued goals — the queue itself lives in plans/goals.md (the goal ledger) per the human's 2026-08-15 ruling: the goal queue IS the backlog. Items 15-20 below are migrated (their goals reference these notes); items 1-13 remain historical/queued matter pending their own migration or retirement.
+- Goal and current status: DETAIL NOTES for queued goals — the queue itself lives in the goal ledger (plans/goals/, one file per goal) per the human's 2026-08-15 ruling: the goal queue IS the backlog. Items 15-20 below are migrated (their goals reference these notes); items 1-13 remain historical/queued matter pending their own migration or retirement.
 - Next step: none
 - In flight right now: nothing
 - Waiting on: nothing — items here are deliberately queued
@@ -194,8 +194,8 @@
    (no set -e/quoting/torn-string bug classes; exact kernel process start
    times shrink the REG-6 whole-second residual); protocol design stays
    language-independent and keeps the design loop. First component:
-   supervision (the ruling is recorded in records/supervision/supervision-lifecycle.md,
-   Implementation order). Candidates after that, only as they come up for
+   supervision (the ruling is recorded in memory/rulings.md R-136-m1e,
+   the Go engineering standard). Candidates after that, only as they come up for
    rewrite: dispatch's record/CAS layer, the census, the registry tooling.
    THE CUT, refined 2026-08-09 (the human): the end state is TWO languages
    — Go and shell — with NO Python or other scripting languages. The
