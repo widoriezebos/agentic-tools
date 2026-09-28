@@ -11,7 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
 
-// The Landed Returns derivation (records/patience/patience-orphan-usage.md): the
+// The Landed Returns derivation (docs/patience.md, S3): the
 // delegate rounds whose return landed on disk but which no concluded turn's
 // host-authored record has acted on. The list is a pure function of the tree
 // and the turn log, derived fresh at every prompt assembly and once more at

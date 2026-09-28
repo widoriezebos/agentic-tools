@@ -77,7 +77,7 @@ func TestTestingMergeVerbRoutesAndPreservesOutputOnRefusal(t *testing.T) {
 	if err := os.WriteFile(out, marker, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	args := []string{"testing", "merge", "--base", paths[0], "--ours", paths[1], "--theirs", paths[2], "--out", out}
+	args := []string{"test", "merge", "--base", paths[0], "--ours", paths[1], "--theirs", paths[2], "--out", out}
 	if code := dispatch(args); code != 1 {
 		t.Fatalf("invalid merge dispatch exit = %d", code)
 	}

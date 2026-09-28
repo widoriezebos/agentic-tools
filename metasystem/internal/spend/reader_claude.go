@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 type transcriptRequest struct {
@@ -229,6 +230,12 @@ func claudeReader() reader {
 	}
 }
 func discoverClaudeTranscripts(repoRoot string) discoveryResult {
+	return discoverClaudeTranscriptsUnder(repoRoot, os.UserHomeDir)
+}
+
+// discoverClaudeTranscriptsUnder is discovery with the home directory
+// supplied, so a test can name one without changing the process's HOME.
+func discoverClaudeTranscriptsUnder(repoRoot string, userHome func() (string, error)) discoveryResult {
 	var result discoveryResult
 	recordUnreadable := func(path string, err error) {
 		displayPath := path
@@ -247,14 +254,14 @@ func discoverClaudeTranscripts(repoRoot string) discoveryResult {
 		result.fatal = true
 		return result
 	}
-	home, err := os.UserHomeDir()
+	home, err := userHome()
 	if err != nil {
 		recordUnreadable("~", fmt.Errorf("cannot resolve home directory: %w", err))
 		result.fatal = true
 		return result
 	}
-	slug := strings.ReplaceAll(result.toplevel, string(filepath.Separator), "-")
-	projects := filepath.Join(home, ".claude", "projects")
+	slug := usage.ClaudeProjectFolder(result.toplevel)
+	projects := usage.ClaudeProjectsRoot(home)
 	_ = filepath.WalkDir(projects, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if path != projects || !os.IsNotExist(walkErr) {

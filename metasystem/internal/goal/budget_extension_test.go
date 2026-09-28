@@ -94,7 +94,7 @@ func TestExtendBudgetRaisesOnlyConsumptionMembersAndWritesMarker(t *testing.T) {
 	}
 	human := second
 	human.Actor.Human = "Wido"
-	if _, err := ExtendBudget(human, "earned-raise", offer); err == nil || !strings.Contains(err.Error(), "person uses goal set-budget") {
+	if _, err := ExtendBudget(human, "earned-raise", offer); err == nil || !strings.Contains(err.Error(), "person uses metasystem goal budget") {
 		t.Fatalf("person was not refused: %v", err)
 	}
 }

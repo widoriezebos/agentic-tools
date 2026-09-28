@@ -38,7 +38,7 @@ not paths.
 
   A claimed goal's stop capability carries the lease epoch that authorized
   its claim. Re-arming (an agent's `metasystem session start`) restamps that capability when the
-  same holder's live epoch has advanced; the internal owner `metasystem internal goal restamp --id <goal>`
+  same holder's live epoch has advanced; `metasystem session start`
   performs the same repair directly.
 
 - **Lineage** (`ownerLineage`) — the identity of the *logical* writer,
@@ -57,7 +57,7 @@ not paths.
   assertion. Mission level: the gate metric beating its best. Chain
   level: an accepted certification in the durable turn log — the one
   observable satellite 4 settled after rejecting per-activity proxies
-  (`docs/patience.md`, `records/patience/patience-satellite-4.md`).
+  (`docs/patience.md`, S4).
 - **Patience** — how much observation without progress is tolerated
   before a verdict, set per role and (runtime, model) pair: slower
   progress is still progress. A last defense, never a pacing target
@@ -66,8 +66,8 @@ not paths.
 - **Stall** — the verdict when patience is exhausted with nothing else
   to blame. Mission level: the fuse parks vocally and a human resets
   via a ledger-recorded answer. Chain level: vocal only — annotation
-  and prompt line, never a park (`docs/patience.md`,
-  `records/patience/patience-satellite-4.md`, `docs/design/stop-loss-core.md`).
+  and prompt line, never a park (`docs/patience.md`, S4,
+  `docs/design/stop-loss-core.md`).
 - **Sweep** — the takeover's cleanup: every non-terminal job stamped with
   an older epoch is failed with `stale-claim-epoch`, so an abandoned
   session's children cannot keep mutating a checkout that changed hands.
@@ -132,10 +132,10 @@ not paths.
 - **Event registry** — `scripts/agents/event-registry.json`, the closed
   catalogue of event names, allowed emitters, required ids, and typed
   payloads. An event not in the registry is a bug, not a feature.
-- **Emitter** — the never-fail append helper (`internal/events`; scripts
-  reach it through `metasystem internal event emit`). An emit may silently lose its own
+- **Emitter** — the never-fail append helper (`internal/events`, called
+  in process; no script emits). An emit may silently lose its own
   event; it may never fail its caller.
-- **executionId** — the cohort id, exported by the benchmark driver to
+- **executionId** — the cohort id, exported by the (retired) benchmark driver to
   everything it spawns so one run's events can be joined across the
   harness and its targets. Supervision components never carry it.
 
@@ -176,35 +176,10 @@ not paths.
   with a reason and an **ask**; a human answers; `resume` continues it.
   "Running with no live runner but a cleanly concluded record" is the
   legitimate awaiting-resume state, distinct from a crashed runner.
-- **Benchmark case** — WHAT a benchmark builds and how it is judged: the
-  task specification, seed repository, held-out grader and probes,
-  instruments (gate, guards), metrics and noise floors, and what the task
-  itself needs of any environment. Immutable per version:
-  `benchmark/cases/<caseId>/<caseVersion>/`; identity `taskrun@0.1`. Any
-  change to spec, seed, grader, instruments or `case.json` is a new
-  version directory (`benchmark/README.md`).
-- **Benchmark configuration** — WHO builds a case and under WHAT limits:
-  the roster, the fences, host caps, network allowance, machine
-  constraint, exposure and **purpose** (`capability` measures;
-  `orchestration-health` probes and is never verdict-eligible). Immutable
-  per version: `benchmark/configurations/<configId>/<configVersion>.json`;
-  identity `cheap@1`. Reusable across cases.
-- **Benchmark run / trial** — one case version under one configuration
-  version ("run CASE under CONFIG"), repetition n, on one machine, at one
-  metasystem sha; pinned by the git object ids of both (`caseTree`,
-  `configTree`). "The benchmark taskrun@0.1 under cheap@1" is the pair
-  named in one breath; a bare id is never a benchmark.
-- **Cohort / repetition / target** — N **repetitions** of one pair, each in
-  its own freshly provisioned **target** repository, graded by a held-out
-  grader the mission must not read. Driven by `benchmark/run-cohort.sh`.
-- **Alias (benchmark)** — a retired spec id (`bm-1` … `bm-2d-og`) that
-  resolves, read-only, to a pair (`benchmark/aliases.json`); alias mode
-  keeps the legacy naming so pre-migration cohorts stay uniform.
-- **Roster** — the pinned assignment of runtimes and models in a
-  configuration: which model hosts, which model delegates (per role when
-  they differ), and whether the code critic's independence is
-  `session-only`. Changing it is a new configuration version and a human
-  ruling.
+- **Roster** — the pinned assignment of runtimes and models: which model
+  hosts, which model delegates (per role when they differ), and whether
+  the code critic's independence is `session-only`. Changing it is a
+  human ruling.
 
 ## Delegation plumbing
 
@@ -231,7 +206,7 @@ not paths.
   one runtime session: the runtime's operations
   (`internal/adapter/supervisor/<runtime>.go`) run by the engine's
   `delegate-supervisor` process — one per registered runtime
-  (`bin/metasystem internal runtime list`; today claude, codex, devin, and
+  (the runtime registry in `internal/runtimes`; today claude, codex, devin, and
   the fixture-only `fake`). The same operations with role host serve a
   mission's host turns (`internal/missionrunner/hostturn`). An external
   adapter (`<installation>/adapters/<name>`, `docs/agent-adapters.md`)
@@ -258,8 +233,8 @@ not paths.
 ## Verification
 
 - **Gates** — the checks that must pass, chained with the push in one
-  command: the metasystem **suite** (the testing contract, run by `metasystem test run`) and
-  the benchmark **kit gate** (`benchmark/validate-kit.sh`). A verdict is
+  command: the metasystem **suite** (the testing contract, run by
+  `metasystem test run`). A verdict is
   read from the verifying command's own exit code, captured — never
   from a log tail, and never from the exit of a composite or
   background invocation that wraps the command and reports its own
@@ -312,7 +287,7 @@ the engine's `metasystem goal` family (`internal/goal`).
   with an ordinary pull.
 - **Claim** — one machine's exclusive hold on one goal (one working claim
   per machine at a time; a breach-stopped claim and one claim waiting to
-  land after `goal land-ready` sit beside it). An **arc** groups related goals; every member remains
+  land after `metasystem work land G --queue-only` sit beside it). An **arc** groups related goals; every member remains
   independently claimable, and dependency edges — not arc membership — own
   ordering. Cascade verbs are explicit conveniences, never an invariant.
 - **Budget** — the complete four-field limit tuple supplied by a human
@@ -338,9 +313,6 @@ the engine's `metasystem goal` family (`internal/goal`).
   the rerun protocol (`docs/flake-registry.md`): a listed leg earns one
   solo rerun, an unlisted failure is diagnosed first, three sightings
   in thirty days force a fix goal.
-- **Journey** — the plain-English story of the program
-  (`docs/journey.md`). Concluding a goal appends its paragraph in the
-  same landing.
 - **Landing batch** — an ordered set of reviewed goal units whose claims have
   been handed to the dedicated landing owner. The owner seals their selected
   test union, proves one tip, creates exact prefix receipts, builds every unit

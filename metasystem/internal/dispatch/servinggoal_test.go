@@ -55,7 +55,7 @@ func TestResolveGoalRevisionUsesTheClaimBinding(t *testing.T) {
 	}
 
 	legacy := newGoalAdmissionBed(t, 0)
-	if _, _, err := legacy.revision("bounded"); err == nil || !strings.Contains(err.Error(), "goal set-budget") {
+	if _, _, err := legacy.revision("bounded"); err == nil || !strings.Contains(err.Error(), "metasystem goal budget bounded BOX") {
 		t.Fatalf("revisionless claim did not refuse toward set-budget: %v", err)
 	}
 

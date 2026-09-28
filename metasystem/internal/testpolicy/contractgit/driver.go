@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 )
 
 const (
@@ -42,7 +43,7 @@ func DriverArgs(executable func() (string, error)) ([]string, error) {
 	if err != nil {
 		return nil, unresolved(err)
 	}
-	command := shellQuote(path) + " testing merge-driver %O %A %B"
+	command := shellquote.Quote(path) + " testing merge-driver %O %A %B"
 	return []string{"-c", driverName, "-c", driverKey + command}, nil
 }
 
@@ -57,8 +58,4 @@ func unresolved(cause error) error {
 		detail += ": " + cause.Error()
 	}
 	return &Refusal{Code: DriverUnresolvedCode, Detail: detail}
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }

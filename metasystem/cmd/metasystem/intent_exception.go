@@ -94,7 +94,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 		tree := composed.Workspace
 		data["candidate"], data["tree"], data["endpoint"] = tree, tree, composed.Endpoint
 		if opid = inv.recordedException(goalID, tree); opid == "" {
-			args := []string{"goal", "carry", "--root", inv.stateRoot, "--id", goalID, "--by", inv.input.text("by"), "--tree", tree,
+			args := []string{"--root", inv.stateRoot, "--id", goalID, "--by", inv.input.text("by"), "--tree", tree,
 				"--past", inv.input.text("exception"), "--why", inv.input.text("reason"), "--expires", expires.String()}
 			if inv.input.has("replace-exception") {
 				args = append(args, "--supersede", inv.input.text("replace-exception"))
@@ -105,10 +105,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 			if inv.input.switched("upgrade-goals") {
 				args = append(args, "--raise-format")
 			}
-			ran, problem := inv.engineVerb(args...)
-			if problem != nil {
-				return *problem
-			}
+			ran := inv.goalOwnerCall(inv.ownerCalls().goalCarry, args...)
 			if recorded := ownerVerbResult(ran, targets, "", data); recorded.Outcome != intentConfirmed {
 				recorded.Summary = "the exception was not recorded: " + recorded.Summary
 				return recorded

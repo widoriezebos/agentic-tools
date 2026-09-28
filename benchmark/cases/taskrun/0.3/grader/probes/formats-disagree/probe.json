@@ -1,6 +1,0 @@
-{
-  "name": "formats-disagree",
-  "target": "format_agreement",
-  "mustNotDisturb": ["cache_correctness", "determinism", "failure_propagation"],
-  "flaw": "JSON reports the reverse order while text reports alphabetical order."
-}

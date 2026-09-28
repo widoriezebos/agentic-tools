@@ -32,13 +32,11 @@ func TestContextReportVerbPublishesTheWeek(t *testing.T) {
 	if err := usagepkg.RegisterSession(root, "claude", "report", 701, 7001); err != nil {
 		t.Fatal(err)
 	}
-	code, output, problem := captureChannelOutput(t, func() int {
-		return dispatch([]string{"context", "report", "--root", root, "--week", "2026-09-13"})
-	})
-	if code != 0 || problem != "" || !strings.Contains(output, "verdict=PASS") ||
-		!strings.Contains(output, filepath.Join(root, "artifacts", "reports", "coordinator-context", "2026-09-13", "calls.jsonl")) ||
-		!strings.Contains(output, filepath.Join(root, "artifacts", "reports", "coordinator-context", "2026-09-13", "report.md")) {
-		t.Fatalf("report command = code %d stdout %q stderr %q", code, output, problem)
+	callsPath, reportPath, report, err := contextWeekReport(t, root, "2026-09-13")
+	if err != nil || !report.Pass ||
+		callsPath != filepath.Join(root, "artifacts", "reports", "coordinator-context", "2026-09-13", "calls.jsonl") ||
+		reportPath != filepath.Join(root, "artifacts", "reports", "coordinator-context", "2026-09-13", "report.md") {
+		t.Fatalf("week report = calls %q report %q pass %v err %v", callsPath, reportPath, report.Pass, err)
 	}
 
 	file, err := os.OpenFile(transcript, os.O_APPEND|os.O_WRONLY, 0o600)
@@ -57,23 +55,20 @@ func TestContextReportVerbPublishesTheWeek(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	code, output, problem = captureChannelOutput(t, func() int {
-		return runContextReport([]string{"--root", root, "--week", "2026-09-13"})
-	})
-	if code != 0 || problem != "" || !strings.Contains(output, "verdict=FAIL") {
-		t.Fatalf("measured FAIL command = code %d stdout %q stderr %q", code, output, problem)
+	if _, _, report, err = contextWeekReport(t, root, "2026-09-13"); err != nil || report.Pass {
+		t.Fatalf("a call over the ceiling must fail the week: pass %v err %v", report.Pass, err)
 	}
+}
 
-	for _, args := range [][]string{
-		{"--root", root},
-		{"--root", root, "--week", "2026-9-13"},
-		{"--root", root, "--week", "2026-02-30"},
-	} {
-		code, _, problem = captureChannelOutput(t, func() int { return runContextReport(args) })
-		if code != 2 || problem == "" {
-			t.Fatalf("bad arguments %v = code %d stderr %q", args, code, problem)
-		}
-	}
+// contextWeekReport runs the weekly cohort owner (steward.WriteContextReport)
+// the internal context report printed, at the instant the week ends.
+func contextWeekReport(t *testing.T, root, week string) (string, string, steward.ContextReport, error) {
+	t.Helper()
+	start, err := time.Parse("2006-01-02", week)
+	contextMust(t, err)
+	stateRoot, err := goal.ResolveStateRoot(root)
+	contextMust(t, err)
+	return steward.WriteContextReport(stateRoot, start, start.AddDate(0, 0, 7))
 }
 
 func TestContextReportVerbRefusesRetiredEvidence(t *testing.T) {
@@ -97,11 +92,10 @@ func TestContextReportVerbRefusesRetiredEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	code, output, problem := captureChannelOutput(t, func() int {
-		return runContextReport([]string{"--root", root, "--week", "2026-09-13"})
-	})
-	if code != 9 || output != "" || problem != "CONTEXT_EVIDENCE_RETIRED requested=2026-09-13 retained-since=2026-09-14\n" {
-		t.Fatalf("retired report command = code %d stdout %q stderr %q", code, output, problem)
+	_, _, _, err := contextWeekReport(t, root, "2026-09-13")
+	var retired *steward.ContextEvidenceRetiredError
+	if !errors.As(err, &retired) || retired.Error() != "CONTEXT_EVIDENCE_RETIRED requested=2026-09-13 retained-since=2026-09-14" {
+		t.Fatalf("retired week report = %v", err)
 	}
 	for path, want := range map[string]string{callsPath: "prior calls\n", reportPath: "prior report\n"} {
 		if got, err := os.ReadFile(path); err != nil || string(got) != want {
@@ -121,10 +115,8 @@ func TestContextReportPropagatesRecoveryError(t *testing.T) {
 	if err := usagepkg.RegisterSession(root, "claude", "report-error", 702, 7002); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, problem := captureChannelOutput(t, func() int {
-		return runContextReport([]string{"--root", root, "--week", "2026-09-13"})
-	}); code != 0 || problem != "" {
-		t.Fatalf("seed report = code %d stderr %q", code, problem)
+	if _, _, _, err := contextWeekReport(t, root, "2026-09-13"); err != nil {
+		t.Fatalf("seed report: %v", err)
 	}
 	directory := filepath.Join(root, "artifacts", "reports", "coordinator-context", "2026-09-13")
 	callsPath := filepath.Join(directory, "calls.jsonl")
@@ -143,11 +135,8 @@ func TestContextReportPropagatesRecoveryError(t *testing.T) {
 	if err := os.WriteFile(cursorPath, corrupt, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, output, problem := captureChannelOutput(t, func() int {
-		return runContextReport([]string{"--root", root, "--week", "2026-09-13"})
-	})
-	if code != 1 || output != "" || !strings.Contains(problem, cursorPath) || !strings.Contains(problem, samplesPath) {
-		t.Fatalf("recovery command = code %d stdout %q stderr %q", code, output, problem)
+	if _, _, _, err := contextWeekReport(t, root, "2026-09-13"); err == nil || !strings.Contains(err.Error(), cursorPath) || !strings.Contains(err.Error(), samplesPath) {
+		t.Fatalf("recovery error = %v", err)
 	}
 	if got, err := os.ReadFile(callsPath); err != nil || !bytes.Equal(got, callsBefore) {
 		t.Fatalf("calls changed after recovery error: err=%v", err)
@@ -166,7 +155,7 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 	writeContextCommandHolder(t, root, "claude", "inferred")
 
 	code, text, problem := captureChannelOutput(t, func() int {
-		return dispatch([]string{"context", "status", "--root", root})
+		return dispatch([]string{"session", "handoff", "--status", "--root", root})
 	})
 	if code != 0 || problem != "" || !strings.HasPrefix(text, "context-budget=alive (150 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger:") {
 		t.Fatalf("inferred text status = code %d stdout %q stderr %q", code, text, problem)
@@ -317,7 +306,7 @@ func TestContextStatusPrintsTheBudgetLine(t *testing.T) {
 	writeDerivedContextCommandTranscript(t, root, "configured", 120000, 1, true)
 	writeContextCommandHolder(t, root, "claude", "configured")
 	code, output, problem := captureChannelOutput(t, func() int {
-		return dispatch([]string{"context", "status", "--root", root})
+		return dispatch([]string{"session", "handoff", "--status", "--root", root})
 	})
 	if code != 0 || problem != "" || !strings.Contains(output, "trigger 80, proof line 150, proof maximum 200, ceiling 200") {
 		t.Fatalf("configured status = code %d stdout %q stderr %q", code, output, problem)
@@ -681,7 +670,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 
 func TestContextHandoffVerb(t *testing.T) {
 	container, root := contextHandoffCommandRoot(t)
-	code, _, problem := captureContextVerb(t, dispatch, "context", "handoff", "--root", root, "--no-delegates")
+	code, _, problem := captureContextVerb(t, dispatch, "session", "handoff", "--root", root, "--no-delegates")
 	if code != 9 || problem != "HANDOFF_NOTE_MISSING\n" {
 		t.Fatalf("production handoff route = code %d stderr %q", code, problem)
 	}
@@ -690,7 +679,7 @@ func TestContextHandoffVerb(t *testing.T) {
 	container = link
 	useContextHandoffIdentity(t, filepath.Join(link, "metasystem"))
 	contextMust(t, os.WriteFile(filepath.Join(root, "proof.txt"), []byte("bounded proof\n"), 0o644))
-	code, output, problem := captureContextVerb(t, contextHandoffTestDispatch(t, root), "context", "handoff", "--root", container,
+	code, output, problem := captureContextVerb(t, contextHandoffTestRun(t, root), "--root", container,
 		"--note", contextHandoffNotePath(container), "--no-delegates",
 		"--scratch", "purpose=proof,path=proof.txt,required=true", "--scratch", "purpose=second,path=proof.txt,required=false")
 	if code != 0 || problem != "" || !strings.HasPrefix(output, "handoff recorded: ") || !strings.Contains(output, " state=") || !strings.Contains(output, " sha256=") {
@@ -984,7 +973,7 @@ func TestContextVerifyAndCancel(t *testing.T) {
 	container, root := contextHandoffCommandRoot(t)
 	useContextHandoffIdentity(t, root)
 	first := recordContextHandoff(t, container)
-	code, output, problem := captureContextVerb(t, dispatch, "context", "verify", "--root", container, "--nonce", first.nonce)
+	code, output, problem := captureContextVerb(t, dispatch, "session", "handoff", "--verify", first.nonce, "--root", container)
 	if code != 0 || output != "ok sha256="+first.digest+"\n" || problem != "" {
 		t.Fatalf("verify = code %d stdout %q stderr %q", code, output, problem)
 	}
@@ -1134,33 +1123,6 @@ func TestContextHandoffCancelByHuman(t *testing.T) {
 	})
 }
 
-func TestContextPruneVerb(t *testing.T) {
-	container, root := contextHandoffCommandRoot(t)
-	useContextHandoffIdentity(t, root)
-	record := recordContextHandoff(t, container)
-	if code, _, problem := captureContextVerb(t, contextHandoffTestRun(t, root), "--root", container, "--cancel", record.nonce); code != 0 || problem != "" {
-		t.Fatalf("cancel before prune = code %d stderr %q", code, problem)
-	}
-	contextMust(t, os.Chtimes(record.state, time.Now().Add(-15*24*time.Hour), time.Now().Add(-15*24*time.Hour)))
-	code, output, problem := captureContextVerb(t, dispatch, "context", "prune", "--root", container)
-	if code != 0 || problem != "" || output != "pruned call-sessions=0\npruned handoff="+filepath.Dir(record.state)+"\n" {
-		t.Fatalf("prune = code %d stdout %q stderr %q", code, output, problem)
-	}
-	code, output, problem = captureContextVerb(t, runContextPrune, "--root", container, "--older-than", "14d")
-	if code != 0 || output != "pruned call-sessions=0\n" || problem != "" {
-		t.Fatalf("day duration = code %d stdout %q stderr %q", code, output, problem)
-	}
-	code, output, problem = captureContextVerb(t, runContextPrune, "--root", container, "--older-than", "336h")
-	if code != 0 || output != "pruned call-sessions=0\n" || problem != "" {
-		t.Fatalf("Go duration = code %d stdout %q stderr %q", code, output, problem)
-	}
-	contextMust(t, os.MkdirAll(filepath.Join(root, "artifacts", "agents", "context", "handoffs", "malformed"), 0o755))
-	code, output, problem = captureContextVerb(t, runContextPrune, "--root", container, "--older-than", "14d")
-	if code != 1 || output != "pruned call-sessions=0\n" || !strings.Contains(problem, "malformed nonce") {
-		t.Fatalf("partial prune = code %d stdout %q stderr %q", code, output, problem)
-	}
-}
-
 func TestContextVerbUsage(t *testing.T) {
 	root := contextCommandRoot(t)
 	const handoffUsage = contextHandoffUsage + "\n"
@@ -1172,8 +1134,6 @@ func TestContextVerbUsage(t *testing.T) {
 		{runContextVerify, []string{"--nonce", "0000000000000000"}},
 		{runContextHandoff, nil},
 		{runContextHandoff, []string{"--root", root, "extra"}},
-		{runContextPrune, []string{"--root", root, "extra"}},
-		{runContextPrune, nil},
 		{runContextHandoff, []string{"--root", root, "--scratch", "purpose=p,path=x,foo=bar"}},
 		{runContextHandoff, []string{"--root", root, "--scratch", "purpose=p,path=x,required=1"}},
 		{runContextHandoff, []string{"--root", root, "--scratch", "purpose=p,path=x,required="}},
@@ -1186,10 +1146,6 @@ func TestContextVerbUsage(t *testing.T) {
 		{runContextHandoff, []string{"--root", root, "--by", "Wido"}},
 		{runContextHandoff, []string{"--root", root, "--cancel", "0000000000000000", "--by="}},
 		{runContextHandoff, []string{"--root", root, "--cancel", "0000000000000000", "--by", " "}},
-		{runContextPrune, []string{"--root", root, "--older-than", "0"}},
-		{runContextPrune, []string{"--root", root, "--older-than", "-1h"}},
-		{runContextPrune, []string{"--root", root, "--older-than", "106752d"}},
-		{runContextPrune, []string{"--root", root, "--older-than", "999999999999999999999d"}},
 	} {
 		code, _, problem := captureContextVerb(t, test.run, test.args...)
 		byCase := strings.Contains(strings.Join(test.args, "\x00"), "--by")
@@ -1246,23 +1202,6 @@ func contextHandoffTestRun(t *testing.T, path string) func([]string) int {
 			},
 		})
 	}
-}
-
-func contextHandoffTestDispatch(t *testing.T, root string) func([]string) int {
-	t.Helper()
-	registered := families()
-	for i := range registered {
-		if registered[i].name != "context" {
-			continue
-		}
-		registered[i].verbs = append([]verb(nil), registered[i].verbs...)
-		for j := range registered[i].verbs {
-			if registered[i].verbs[j].name == "handoff" {
-				registered[i].verbs[j].run = contextHandoffTestRun(t, root)
-			}
-		}
-	}
-	return func(args []string) int { return dispatchWithFamilies(args, os.Stdout, os.Stderr, registered) }
 }
 
 func captureContextVerb(t *testing.T, run func([]string) int, args ...string) (int, string, string) {

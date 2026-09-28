@@ -7,7 +7,7 @@
 
 Design for defect-analysis-gate, against repository commit 0acef6eb6. This page is the umbrella context for the three members in section 6.
 Drafted by a Codex design round for the m1b seat on 2026-09-13 (chain implementer-873925bde8faae7cf849fd18) on the seat's brief; the rostered Codex design read is the next act, then the members are opened and built on the roster lane.
-The contract is the intent and next step in `metasystem/plans/goals/defect-analysis-gate.md:6` and the ladder in `metasystem/docs/paper/12-learning-systems.md:17`.
+The contract is the intent and next step in `metasystem/plans/goals/defect-analysis-gate.md:6` and the ladder in `paper/12-learning-systems.md:17`.
 The chosen boundary is dispatch admission. A goal may hold an investigation before its analysis survives. It cannot authorize a fix dispatch until then.
 
 ## 1. What a defect-fix item is today and where one can enter
@@ -81,7 +81,7 @@ Source jobs use `delegate --purpose diagnosis`: the implementer role returns the
 A human can also submit a record through the existing verified-human path. An additional payload-producing job is retained when the coordinator combines authored material. Reviewers supplying findings are not payload authors. Author identities cannot be dropped during revision.
 All machine author jobs must be completed and have observable model and session identities. Missing source identity refuses sealing; it never becomes an invented model label.
 
-**One reproduction owner.** The two-bars contract is one assertion, red on the old tree and green on the new (`metasystem/plans/two-bars-for-changes-design.md:412`, `metasystem/records/two-bars/two-bars-design.md:163`).
+**One reproduction owner.** The two-bars contract is one assertion, red on the old tree and green on the new (`metasystem/plans/two-bars-for-changes-design.md:412`; the earlier r3 record is in the tag `records-archive-2026-09-28`).
 That Defect-Proof primitive is specified but absent from this tree. The current `TestReceipt` proves a candidate execution, not this relationship (`metasystem/internal/landing/receipt.go:35`, `metasystem/internal/landing/receipt.go:186`).
 Member A implements the shared primitive and its evidence validator in `metasystem/internal/proofrun`. Landing commands produce it and landing consumes it. Dispatch can then validate it without importing the landing package, which already depends on dispatch through validation.
 It does not add a competing reproduction field to TestReceipt or reinterpret a failed receipt as proof. Goal stores the attachment; the command layer coordinates goal, dispatch and proof owners without reversing their dependencies.

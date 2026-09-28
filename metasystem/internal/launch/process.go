@@ -140,7 +140,11 @@ func (s OSSupervisorStarter) StartSupervisor(id, stateDir string) (identity.Ref,
 	if err != nil {
 		return identity.Ref{}, err
 	}
-	command := exec.Command(executable, "proc", "setsid", "--", executable, "launch", "supervise", "--id", id)
+	// The supervisor leads a new session of its own, so the launch outlives
+	// the request's terminal session; it is started so directly, with no
+	// engine child between (verbs-object-action U9a).
+	command := exec.Command(executable, "launch", "supervise", "--id", id)
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	command.Stdout, command.Stderr = log, log
 	if err := command.Start(); err != nil {
 		log.Close()

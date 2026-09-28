@@ -48,7 +48,7 @@ A **book** is a directory with an `index.md` that is itself a record of the kind
 ## Chapters
 - 01K6… — Users
 - 01K7… — Billing
-- doc:metasystem/docs/paper/01-the-shift.md — 1. The Shift
+- doc:paper/01-the-shift.md — 1. The Shift
 ```
 
 `## Chapters` is reading order: a chapter is a record of the same kind by id, or an existing document by checkout-relative path, unchanged where it is — which is how the paper becomes the MetaSystem's intent and `architecture.md` its doctrine without moving a byte. A book of one page has an `index.md` and no chapters.

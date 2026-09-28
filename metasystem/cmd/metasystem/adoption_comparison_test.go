@@ -244,7 +244,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	// registrationCheck runs the adopted target's host registration check,
 	// the owner of its registration rules, and reports whether it passed.
 	registrationCheck := func(target, runtimes string, copySkills bool) (string, bool) {
-		argv := []string{filepath.Join(target, "bin", "metasystem"), "internal", "runtime", "setup", "--repo", target, "--runtimes", runtimes}
+		argv := []string{filepath.Join(target, "bin", "metasystem"), "system", "register", "--repo", target, "--runtimes", runtimes}
 		if copySkills {
 			argv = append(argv, "--copy-skills")
 		}
@@ -377,7 +377,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	copied := prepare("copied", "claude,codex", true)
 	isolateFixtureAdmission()
 	copiedEngine := filepath.Join(copied, "bin", "metasystem")
-	if setup := mustRun(copied, copiedEngine, "internal", "runtime", "setup", "--repo", copied, "--runtimes", "claude,codex", "--copy-skills", "--check"); !strings.Contains(setup, "TEST_CONTRACT_READY") {
+	if setup := mustRun(copied, copiedEngine, "system", "register", "--repo", copied, "--runtimes", "claude,codex", "--copy-skills", "--check"); !strings.Contains(setup, "TEST_CONTRACT_READY") {
 		t.Fatalf("copied registration setup passed without a ready testing contract:\n%s", setup)
 	}
 	surfacePolicy, err := behaviorsurface.Load()

@@ -276,6 +276,18 @@ func gcliForgivingClaimRevision(t *testing.T, record string) uint64 {
 // ReconcileStopBatch completes it (the bed has no jobs of the goal).
 func gcliForgivingBreachStop(t *testing.T, bed *goalCLIBed, id, ulid string) {
 	t.Helper()
+	stopID := gcliForgivingOpenStop(t, bed, id, ulid)
+	batch, err := dispatchcore.ReconcileStopBatch(bed.root, stopID, bed.clock())
+	if err != nil || batch.State != goal.StopBatchComplete {
+		t.Fatalf("stop batch %s did not complete: %+v %v", stopID, batch, err)
+	}
+}
+
+// gcliForgivingOpenStop is the stop custodian's job breach-stop alone: the
+// fence is closed and the stop batch recorded OPEN, not yet reconciled. It
+// returns the stop id.
+func gcliForgivingOpenStop(t *testing.T, bed *goalCLIBed, id, ulid string) string {
+	t.Helper()
 	file := gcliForgivingParse(t, bed.goalRecord(id))
 	if file.State != goal.StateClaimed || file.Claimed == nil || file.StopCapability == nil {
 		t.Fatalf("goal %s has no claimed revision for its breach-stop: %+v", id, file)
@@ -313,10 +325,7 @@ func gcliForgivingBreachStop(t *testing.T, bed *goalCLIBed, id, ulid string) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	batch, err := dispatchcore.ReconcileStopBatch(bed.root, stopID, now)
-	if err != nil || batch.State != goal.StopBatchComplete {
-		t.Fatalf("stop batch %s did not complete: %+v %v", stopID, batch, err)
-	}
+	return stopID
 }
 
 func gcliForgivingReleaseIfClaimed(t *testing.T, bed *goalCLIBed, id string) {
@@ -797,8 +806,8 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	// The family accept-risk prints the public command (U-idem) without the word;
 	// running it accepts the real fixture finding.
 	code, report = gcliForgivingFamily(bed, func(dependencies syncRequestDependencies) int {
-		return runGoalAcceptRiskWithInputs([]string{"--root", bed.root, "--id", "ship-widget", "--finding", "RISK-1", "--chain", "fixture-risk", "--why", "fixture pair",
-			"--by", "Wido", gcliForgivingFixture, "--temporary-human-word", "Wido authorizes this relay"}, bed.prove, bed.commandNow, dependencies)
+		return runGoalAcceptRiskWithFacts([]string{"--root", bed.root, "--id", "ship-widget", "--finding", "RISK-1", "--chain", "fixture-risk", "--why", "fixture pair",
+			"--by", "Wido", gcliForgivingFixture, "--temporary-human-word", "Wido authorizes this relay"}, bed.prove, bed.commandNow, dependencies, nil)
 	})
 	if code == 0 || report.refusal == nil || !strings.HasPrefix(report.refusal.remedy.command, "metasystem goal accept-risk ") ||
 		strings.Contains(report.refusal.remedy.command, "--temporary-human-word") {
@@ -806,7 +815,7 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	}
 	accept := shellWords(report.refusal.remedy.command)
 	if code, report := gcliForgivingFamily(bed, func(dependencies syncRequestDependencies) int {
-		return runGoalAcceptRiskWithInputs(accept[3:], bed.prove, bed.commandNow, dependencies)
+		return runGoalAcceptRiskWithFacts(accept[3:], bed.prove, bed.commandNow, dependencies, nil)
 	}); code != 0 || report.refusal != nil {
 		t.Fatalf("accept-risk's printed remedy did not complete: code=%d refusal=%+v failure=%v", code, report.refusal, report.failure)
 	}

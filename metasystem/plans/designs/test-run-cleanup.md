@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3BPVZBZEAHF3KR7QC7B20ZG
-- Status: draft
+- Status: done
 - Goals: finish-test-repairs-and-integrate
 
 Revision 3 on Main 32d1b143d, source read only, folding the six accepted final-review findings (R2-D2-1, R2-D3-1, R2-D5-1, R2-D6-1, R2-D6-2, R2-D7-1) into revision 2 (D1–D8). None is accepted risk. This page is the build contract: code proves every obligation through §5 under independent code critique. The queued janitor goal is context; no goal record is claimed.

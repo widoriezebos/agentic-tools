@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // Proves the converted writer's bytes are what the canonical encoder
@@ -12,7 +14,7 @@ import (
 func TestConvertedWriterBytes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "r.json")
 	value := map[string]any{"html": "a<b>&c", "n": 1}
-	if err := atomicWriteJSON(path, value); err != nil {
+	if err := wiredoc.WriteFile(path, value); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(path)

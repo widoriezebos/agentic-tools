@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -129,7 +130,7 @@ func plan(layout stateroot.Layout, selected []string, copySkills, hooksOnly bool
 	var actions []action
 	if layout.Template && len(selected) > 0 && !hooksOnly {
 		for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
-			item, needed, err := instructionAction(filepath.Join(layout.RepositoryRoot, name), managedPointers())
+			item, needed, err := instructionAction(filepath.Join(layout.RepositoryRoot, name), managedPointers(layout.RepositoryRoot))
 			if err != nil {
 				return nil, err
 			}
@@ -221,10 +222,17 @@ func plan(layout stateroot.Layout, selected []string, copySkills, hooksOnly bool
 	return actions, nil
 }
 
-func managedPointers() string {
-	return pointerBegin + "\n" +
-		"MetaSystem's canonical agent contract is `metasystem/AGENTS.md`; use `metasystem/wow.md` to route to task-specific guidance.\n" +
-		"This repository's local development facts are in `development/project-rules-local.md`.\n" + pointerEnd
+// localRulesPath is the repository's own local development rules, named in
+// the pointer block only when the repository has that file.
+const localRulesPath = "development/project-rules-local.md"
+
+func managedPointers(repositoryRoot string) string {
+	block := pointerBegin + "\n" +
+		"MetaSystem's canonical agent contract is `metasystem/AGENTS.md`; use `metasystem/wow.md` to route to task-specific guidance.\n"
+	if info, err := os.Stat(filepath.Join(repositoryRoot, filepath.FromSlash(localRulesPath))); err == nil && info.Mode().IsRegular() {
+		block += "This repository's local development facts are in `" + localRulesPath + "`.\n"
+	}
+	return block + pointerEnd
 }
 
 func instructionAction(path, block string) (action, bool, error) {
@@ -512,35 +520,10 @@ func publish(_ string, item action) error {
 		}
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(item.path), 0o755); err != nil {
-		return err
-	}
-	temporary, err := os.CreateTemp(filepath.Dir(item.path), "."+filepath.Base(item.path)+".metasystem-file-")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	failed := func(operation string, operationErr error) error {
-		_ = temporary.Close()
-		return fmt.Errorf("host setup: %s %s: %w", operation, item.path, operationErr)
-	}
-	// Set the final mode on the staged inode before publication. A process
-	// interruption can therefore leave either the old complete file or the new
-	// complete file, never new bytes with a transient CreateTemp mode.
-	if err := temporary.Chmod(item.mode); err != nil {
-		return failed("stage mode for", err)
-	}
-	if _, err := temporary.Write(item.data); err != nil {
-		return failed("stage", err)
-	}
-	if err := temporary.Sync(); err != nil {
-		return failed("sync", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("host setup: close staged file %s: %w", item.path, err)
-	}
-	if err := os.Rename(temporaryPath, item.path); err != nil {
+	// The final mode is set on the staged inode before publication, so an
+	// interruption leaves either the old complete file or the new complete
+	// file, never new bytes with a transient CreateTemp mode.
+	if _, err := atomicfile.WriteFile(item.path, item.data, item.mode, ""); err != nil {
 		return fmt.Errorf("host setup: publish %s: %w", item.path, err)
 	}
 	return nil

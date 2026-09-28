@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
@@ -226,7 +228,7 @@ func TestGoalCLIBudgetEarnedExtension(t *testing.T) {
 		"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "DESIGN-BEARING", "--lineage", bed.lineage}
 	extend := func() int {
 		code, _, _ := bed.owner(func(dependencies syncRequestDependencies) int {
-			return runGoalExtendBudgetWithInputs(args, bed.commandNow, dependencies, reads)
+			return goalExtendBudgetTo(args, bed.commandNow, dependencies, reads, dependencies.outStream(), dependencies.errStream())
 		})
 		return code
 	}
@@ -566,4 +568,96 @@ func TestGoalCLIBudgetPowerOfAttorney(t *testing.T) {
 
 	bed.setNow(time.Date(2026, 8, 26, 9, 0, 0, 0, time.UTC))
 	gcliBudgetRefused(t, bed, "expired 2026-08-25", "goal", "approve", "poa-late", "--under", entry)
+}
+
+// The long set-budget form (retired with internal goal set-budget; a person
+// runs goal budget G BOX), kept for these tests as a composition of the budget
+// owners the public goal budget and goal resume call.
+
+func runGoalSetBudgetWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
+	values := newHumanVerbValues("set-budget", args)
+	values.bindDependencies(dependencies)
+	f, ok := parseHumanSyncFlags(values, "set-budget", args)
+	if !ok {
+		return 2
+	}
+	if f.under != "" {
+		if !converted(f.root) || f.id == "" {
+			fmt.Fprintln(dependencies.errStream(), "goal set-budget --under needs a synced backlog plus --id")
+			return 2
+		}
+		return runGoalUnderAttorneyWithInputs("set-budget", f, commandNow, dependencies)
+	}
+	box := ""
+	if parsed, err := f.budgetTuple(true); err == nil {
+		box = goalbudget.FormatBox(*parsed)
+	}
+	fmt.Fprintln(dependencies.errStream(), "hint:", values.budgetCommand(box))
+	if box != "" && stoppedGoalForSetBudgetWithInputs(f, commandNow, dependencies.endpoint) {
+		return runGoalStoppedSetBudgetWithInputs(values, f, prove, commandNow, dependencies, binding)
+	}
+	return runGoalBudgetPreparedWithInputs(values, f, "", prove, commandNow, dependencies, binding)
+}
+
+func stoppedGoalForSetBudgetWithInputs(flags *syncFlags, commandNow func(string) (time.Time, error), resolveEndpoint func(string) (goal.Endpoint, error)) bool {
+	if !converted(flags.root) || flags.id == "" {
+		return false
+	}
+	if resolveEndpoint == nil || commandNow == nil {
+		return false
+	}
+	endpoint, err := resolveEndpoint(flags.root)
+	if err != nil {
+		return false
+	}
+	now, err := commandNow(flags.root)
+	if err != nil {
+		return false
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		return false
+	}
+	file := projection.Tree.Live[flags.id]
+	return file != nil && file.StopFence != nil
+}
+
+func runGoalStoppedSetBudgetWithInputs(values *humanVerbValues, flags *syncFlags, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
+	budget, err := flags.budgetTuple(true)
+	if err != nil {
+		return runGoalBudgetPreparedWithInputs(values, flags, "", prove, commandNow, dependencies, binding)
+	}
+	values.box = budget
+	classification, err := classifyGoalAuthorityFirstWithFacts("set-budget", flags, dependencies.authorityFacts)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the goal authority classification before retrying"})
+	}
+	proof, err := proveGoalHumanAuthorityAt("set-budget", flags, prove, commandNow)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, flags.fixtureHumanAuthority, flags.temporaryWord, flags.reviewBy))
+	}
+	if err := resolveGoalHuman(flags, proof); err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
+	}
+	values.by = flags.by
+	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(flags.root, flags.by, flags.lineage, &proof, classification, false, commandNow, dependencies)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
+	}
+	req.ApprovedRef = flags.approvedRef
+	result, err := goal.SetBudgetApproved(req, flags.id, *budget, &proof)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
+	}
+	if result.Outcome != goal.OutcomeConfirmed {
+		writeJSONLine(dependencies.outStream(), dependencies.errStream(), map[string]any{"outcome": result.Outcome, "tip": result.Tip, "detail": result.Detail})
+		return refuseHumanVerb(values, 1, result.Detail, humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
+	}
+	if err := recordGoalApprovalProof(flags.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal set-budget", proof); err != nil {
+		return refuseHumanVerb(values, 1, "the act landed at tip "+result.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
+	}
+	if proof.TemporaryResumeFor(flags.root) {
+		fmt.Fprintf(dependencies.outStream(), "goal set-budget: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", flags.reviewBy)
+	}
+	return writeSyncResult(dependencies.outStream(), dependencies.errStream(), result, nil)
 }

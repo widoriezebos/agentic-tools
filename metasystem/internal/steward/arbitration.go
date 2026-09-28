@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"golang.org/x/sys/unix"
 )
 
@@ -82,9 +83,6 @@ func BumpEnrollmentFence(repoRoot string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(fmt.Sprintf("%d\n", n+1)), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	_, err = atomicfile.WriteFile(path, []byte(fmt.Sprintf("%d\n", n+1)), 0o644, "")
+	return err
 }

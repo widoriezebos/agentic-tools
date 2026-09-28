@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,10 +13,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
 )
 
@@ -141,31 +139,22 @@ func componentDurabilityPendingPath(repoRoot, component string) string {
 	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "components", component+".durability-pending")
 }
 
-func lockComponentEvidence(repoRoot, component string, operation int) (*os.File, error) {
+func lockComponentEvidence(repoRoot, component string, mode lock.Mode) (*lock.FileLock, error) {
 	path := componentEvidenceLockPath(repoRoot, component)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	if err := unix.Flock(int(file.Fd()), operation); err != nil {
-		file.Close()
-		return nil, err
-	}
-	return file, nil
+	return lock.File(path, 0o644, mode)
 }
 
-func unlockComponentEvidence(file *os.File) {
-	_ = unix.Flock(int(file.Fd()), unix.LOCK_UN)
-	_ = file.Close()
+func unlockComponentEvidence(held *lock.FileLock) {
+	_ = held.Release()
 }
 
 // beginComponentAttempt persists the next attempt before the producer does
 // any work. A new generation starts with no inherited completion or success.
 func beginComponentAttempt(repoRoot, component string, generation int, process identity.Ref, now time.Time) (ComponentEvidence, error) {
-	lock, err := lockComponentEvidence(repoRoot, component, unix.LOCK_EX)
+	lock, err := lockComponentEvidence(repoRoot, component, lock.Exclusive)
 	if err != nil {
 		return ComponentEvidence{}, err
 	}
@@ -209,7 +198,7 @@ func BeginHookAttempt(repoRoot string, process identity.Ref, turnKey string, now
 	if process.Pid < 1 || process.StartedAtSec < 1 {
 		return ComponentEvidence{}, fmt.Errorf("hook attempt needs an exact process identity")
 	}
-	lock, err := lockComponentEvidence(repoRoot, "supervision-hook", unix.LOCK_EX)
+	lock, err := lockComponentEvidence(repoRoot, "supervision-hook", lock.Exclusive)
 	if err != nil {
 		return ComponentEvidence{}, err
 	}
@@ -272,7 +261,7 @@ func ExpireHookAttempt(repoRoot string, stopElapsedSec int64, now time.Time) (Co
 	if stopElapsedSec < 0 {
 		return ComponentEvidence{}, fmt.Errorf("hook expiry stop elapsed seconds must be non-negative")
 	}
-	lock, err := lockComponentEvidence(repoRoot, "supervision-hook", unix.LOCK_EX)
+	lock, err := lockComponentEvidence(repoRoot, "supervision-hook", lock.Exclusive)
 	if err != nil {
 		return ComponentEvidence{}, err
 	}
@@ -321,7 +310,7 @@ func completeComponentAttempt(repoRoot, component string, generation int, attemp
 	if stopElapsedSec != nil && *stopElapsedSec < 0 {
 		return ComponentEvidence{}, fmt.Errorf("component %s completion stop elapsed seconds must be non-negative", component)
 	}
-	lock, err := lockComponentEvidence(repoRoot, component, unix.LOCK_EX)
+	lock, err := lockComponentEvidence(repoRoot, component, lock.Exclusive)
 	if err != nil {
 		return ComponentEvidence{}, err
 	}
@@ -574,14 +563,14 @@ func loadComponentEvidenceForHealth(repoRoot, component string) (ComponentEviden
 	const waitLimit = 200 * time.Millisecond
 	const retryInterval = 10 * time.Millisecond
 	deadline := componentEvidenceHealthClock.Now().Add(waitLimit)
-	var lock *os.File
+	var held *lock.FileLock
 	for {
 		var err error
-		lock, err = lockComponentEvidence(repoRoot, component, unix.LOCK_SH|unix.LOCK_NB)
+		held, err = lockComponentEvidence(repoRoot, component, lock.TryShared)
 		if err == nil {
 			break
 		}
-		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
+		if !lock.Busy(err) {
 			return ComponentEvidence{}, false, err
 		}
 		remaining := deadline.Sub(componentEvidenceHealthClock.Now())
@@ -594,7 +583,7 @@ func loadComponentEvidenceForHealth(repoRoot, component string) (ComponentEviden
 			componentEvidenceHealthClock.Sleep(retryInterval)
 		}
 	}
-	defer unlockComponentEvidence(lock)
+	defer unlockComponentEvidence(held)
 	record, err := loadComponentEvidence(ComponentEvidencePath(repoRoot, component))
 	if err != nil {
 		return ComponentEvidence{}, false, err

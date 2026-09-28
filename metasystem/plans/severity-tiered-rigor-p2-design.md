@@ -15,7 +15,7 @@ risk scoring 'Risk is four separate questions, never the shape of the
 change' because without it is is a stupid deterministic rule at best."
 Revisions 2 and 3 pick the tier from the shape of the change (R-54-m1's
 three lines). This revision makes the tier DERIVED from four recorded
-answers (docs/paper/06-proof-over-trust.md line 51 and
+answers (paper/06-proof-over-trust.md line 51 and
 11-economy.md line 23, verbatim questions) and keeps everything else:
 the tier stays the enforcement key that part one builds; the ladder,
 the boxes and the refusals read it unchanged. Built as the first slice

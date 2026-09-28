@@ -7,15 +7,15 @@
 
 - Goal: two-bars-for-changes (plans/goals/two-bars-for-changes.md, revision 4)
 - Status: design, round 3 — every ACCEPTED finding of the Sol round-2
-  critique (records/two-bars/two-bars-lp-critique-r2.md, TB-LP-R2B-01
+  critique (two-bars-lp-critique-r2, TB-LP-R2B-01
   through -14) folded; the round-1 disposition rows the round-2 critique
   proved overstated are corrected in §10.2. Finding trajectory:
   25 (round 1) → 14 (round 2) → this revision aims at zero.
 - Mode: design only; no code in this change
 - Carries: the D90 human ruling (accidental threat model) and the surviving
-  decisions of the earlier r3 design record (records/two-bars/two-bars-design.md);
-  every carried, restored, revised, or superseded decision is dispositioned
-  in §10, per R-25b-m1.
+  decisions of the earlier r3 design record (two-bars-design, tag records-archive-2026-09-28);
+  every carried, restored, revised, or superseded decision is in §10, per R-25b-m1.
+  AS BUILT: the joint round's Decisions at the end supersede §§0-8 where they differ.
 
 ## 0. The whole mechanism in one page (R-11)
 
@@ -1327,3 +1327,50 @@ recorded separate goal (§9.2).
   second governance open item remedied in the same slice rather than
   reserved (§12); or if he wants the adversarial tier now rather than
   as the recorded separate goal.
+
+## Decisions of the joint round, as built (supersede §§0-8 where they differ)
+
+The R-35-m0 joint round replaced the round-3 contract below; the observe
+evaluator in `internal/landing/observe.go` implements this section, not §§0-8.
+Distilled 2026-09-28 from the joint-round design (r4), its critiques and the
+allowlist addendum, removed that day (tag `records-archive-2026-09-28`).
+
+- **No `mechanical-defect` class.** Its untyped before/after state assertion
+  could classify any byte replacement as a "fix". Deleted with it: reusable
+  red/green proof blobs, the per-defect growth fuse, and the four-machine
+  promotion registry. The direct classes are finite and mechanically decisive:
+  `register-carriage` and `exact-revert` (the complete tree-shaped inverse of
+  one single-parent commit whose postimage `HEAD` still carries, no extra
+  path, no floor path). A bug fix that is not an exact inverse takes the loop.
+- **Bar (a) binds the certified delta, not the chain record and not the whole
+  tree.** Rejected: checking only the chain record's shape (critique F-A: the
+  landed change was related to nothing) and whole-tree equality with the
+  reviewed tree (F2-3: honest landings bundle rulings, digest and goal records,
+  and the base moves between review and commit). Built: apply the chain's
+  conformance `diff.patch` to the landing `HEAD`, require the result to equal
+  `reviewedTree` on every certified path, and compare the certified-path
+  digest (`certified-change=`); every other path must pass as declared
+  carriage. Proof: `TestObserveChainBoundLandingEvaluatesBarA`.
+- **Design revisions have no bare bar.** A design revision lands with the
+  implementer chain of the fold round that incorporates it; a design-critic
+  chain is never a landing credential.
+- **Universal enforcement would be a GitHub required check, never local
+  hooks.** An unarmed or post-`git init` clone runs no local code, so hooks
+  only explain early. The remote check would run the evaluator from the
+  protected base branch, so a candidate cannot weaken the check it is passing
+  (this is why no policy-version handshake was built), and would recompute
+  every stamped verdict rather than trust it. Not built; enabling it is
+  Wido's act (the parked goal integration-branch holds the interplay with
+  branch protection).
+- **Floor is broad roots at every depth, not an enumerated list.** Instruction
+  and build-owner files plus directory names (`internal/`, `scripts/`, `bin/`,
+  `docs/`, `memory/`, `plans/`, ...) at any nesting depth; `bin/` because on an
+  adopted checkout the committed engine is the policy owner, so an exact-revert
+  of an engine update would roll the policy back (F-C). Now expressed as
+  path classes (plans/path-class-manifest-design.md).
+- **Carriage list, as ruled by the design lane.** `memory/receipts.log` rides
+  carriage append-only: AGENTS.md forces a receipt onto every shipping landing
+  and a receipt cannot pre-exist the reviewed tree, so leaving it off would
+  make every honest landing a false would-refuse and void the observe window.
+  `memory/findings.md` was struck (no writer, no law: a dormant free-text
+  lane). Superseded since by the path-class manifest's `record` class.

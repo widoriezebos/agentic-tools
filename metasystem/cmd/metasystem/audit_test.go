@@ -4,43 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 )
-
-func TestAuditDependencyRatchetRelayReportsPathLineAndExit(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "scripts", "fixture.sh")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("node -v\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	stdout, stderr, code := captureRelay(t, func() int {
-		return runAuditDependencyRatchet([]string{"--root", root})
-	})
-	if code != 1 || stdout != "" || !strings.Contains(stderr, "scripts/fixture.sh:1") {
-		t.Fatalf("dependency audit relay = code %d, stdout %q, stderr %q", code, stdout, stderr)
-	}
-	if _, _, code = captureRelay(t, func() int {
-		return runAuditDependencyRatchet([]string{"--root", root, "extra"})
-	}); code != 2 {
-		t.Fatalf("dependency audit relay accepted an extra argument with code %d", code)
-	}
-	if err := os.WriteFile(path, []byte("printf '%s' node\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	stdout, stderr, code = captureRelay(t, func() int {
-		return runAuditDependencyRatchet([]string{"--root", root})
-	})
-	if code != 0 || stdout != "dependency ratchet passed\n" || stderr != "" {
-		t.Fatalf("clean dependency audit relay = code %d, stdout %q, stderr %q", code, stdout, stderr)
-	}
-}
 
 func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 	t.Parallel()
@@ -59,6 +27,7 @@ func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 			File: "a_test.go", Line: "base := Verdict{ShouldBlock: true}",
 		}},
 	}
+	added.Reworded = []audit.StopSurfaceReword{{File: "a_test.go", From: "old := Verdict{BlockSource: \"a\"}", To: "old := Verdict{BlockSource: \"b\"}"}}
 	auditResponses := []struct {
 		result audit.StopSurfaceResult
 		err    error
@@ -91,7 +60,8 @@ func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 
 	code, stdout, stderr := invoke(args...)
 	if code != 0 || stderr != "" || auditCalls != 1 || declareCalls != 0 || !strings.Contains(stdout, "added: a_test.go: added := Verdict{BlockSource: source}") ||
-		!strings.Contains(stdout, "stop decision surface: base selected-base; added 1, moved 0, removed 0") {
+		!strings.Contains(stdout, `reworded: a_test.go: old := Verdict{BlockSource: "a"} -> old := Verdict{BlockSource: "b"}`) ||
+		!strings.Contains(stdout, "stop decision surface: base selected-base; added 1, moved 0, removed 0; reworded 1") {
 		t.Fatalf("additive verb = code %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 
@@ -103,7 +73,7 @@ func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
 		t.Fatalf("decode JSON output %q: %v", stdout, err)
 	}
-	for _, field := range []string{"base", "added", "moved", "removed", "problems"} {
+	for _, field := range []string{"base", "added", "moved", "removed", "reworded", "problems"} {
 		if _, ok := document[field]; !ok {
 			t.Errorf("JSON output lacks %q: %s", field, stdout)
 		}

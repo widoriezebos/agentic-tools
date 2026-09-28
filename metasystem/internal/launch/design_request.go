@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"golang.org/x/sys/unix"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // A design request asks the design-author lane for one draft of one project
@@ -106,18 +106,14 @@ func (m *Manager) designLock(destination string) (*os.File, error) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(filepath.Join(directory, "lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	held, err := lock.File(filepath.Join(directory, "lock"), 0o600, lock.TryExclusive)
 	if err != nil {
-		return nil, err
-	}
-	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		file.Close()
-		if lockWouldBlock(err) {
+		if isLockFailure(err) && lock.Busy(err) {
 			return nil, fmt.Errorf("DESIGN_BUSY destination=%s: another caller is acting on this document; repeat the same command", destination)
 		}
 		return nil, err
 	}
-	return file, nil
+	return held.File(), nil
 }
 
 func (m *Manager) readDesignEntry(destination string) (designEntry, bool, error) {

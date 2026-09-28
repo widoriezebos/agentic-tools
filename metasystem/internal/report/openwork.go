@@ -3,6 +3,7 @@ package report
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,7 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"golang.org/x/sys/unix"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // OpenWork reports plans that name an unblocked next step while nothing is
@@ -282,15 +283,15 @@ func MarkOpenWorkSeen(root string, items []goal.Item, at time.Time) ([]goal.Item
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, "", fmt.Errorf("prepare open-work seen directory: %w", err)
 	}
-	lockFile, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	held, err := lock.File(path+".lock", 0o600, lock.Exclusive)
+	var lockErr *lock.LockError
+	if errors.As(err, &lockErr) {
+		return nil, "", fmt.Errorf("lock open-work seen record: %w", err)
+	}
 	if err != nil {
 		return nil, "", fmt.Errorf("open open-work seen lock: %w", err)
 	}
-	defer lockFile.Close()
-	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX); err != nil {
-		return nil, "", fmt.Errorf("lock open-work seen record: %w", err)
-	}
-	defer func() { _ = unix.Flock(int(lockFile.Fd()), unix.LOCK_UN) }()
+	defer held.Release()
 
 	record, warning := readOpenWorkSeen(path)
 

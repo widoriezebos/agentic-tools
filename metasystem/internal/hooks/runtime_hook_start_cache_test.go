@@ -54,7 +54,7 @@ func TestHookStartToolEngineCache(t *testing.T) {
 	if second.status != 2 || os.SameFile(before, after) {
 		t.Fatalf("the cache was not replaced by rename: status %d same inode %t", second.status, os.SameFile(before, after))
 	}
-	if leftovers, _ := filepath.Glob(filepath.Join(installation.root, "artifacts", "agents", "context", ".engine-path.*")); len(leftovers) != 0 {
+	if leftovers, _ := filepath.Glob(filepath.Join(installation.root, "artifacts", "agents", "context", "engine-path.*")); len(leftovers) != 0 {
 		t.Fatalf("rename left temporary files: %v", leftovers)
 	}
 

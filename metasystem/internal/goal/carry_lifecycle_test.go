@@ -470,7 +470,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		declareWordHistory(t, endpoint, ref, "")
 		request := carryVerb(human, "01J5X00000000000000000D031", 3)
 		result, err = Abandon(request, "g", AbandonSpec{Because: "the work is obsolete"}, goalHumanProof(t, root, request.Now))
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "carry reservation "+row+" on goal g is in flight on mac-a") || !strings.Contains(result.Detail, "goal carrying --abandon "+row) {
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "carry reservation "+row+" on goal g is in flight on mac-a") || !strings.Contains(result.Detail, "ends when that seat's landing finishes or abandons it") {
 			t.Fatalf("reservation refusal: %+v %v", result, err)
 		}
 		closeRequest := carryVerb(seat, "01J5X00000000000000000D032", 4)

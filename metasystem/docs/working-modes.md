@@ -59,7 +59,7 @@ Never mix refactor and improve in the same change. Refactor promises the score s
 
 **How it works.**
 
-- *Trusted baseline*: the last version that passed the project's full behavior-preservation proof (the acceptance gate: full suite, benchmark, or golden run). Everything after it is unproven until the gate passes again. `metasystem internal validate refactor-baseline check` blocks new work when you have drifted too far from proven ground (default 24 hours or 40 commits; projects tune these, and the script's answer wins over the numbers printed here).
+- *Trusted baseline*: the last version that passed the project's full behavior-preservation proof (the acceptance gate: full suite, benchmark, or golden run). Everything after it is unproven until the gate passes again. `metasystem test baseline --check` blocks new work when you have drifted too far from proven ground (default 24 hours or 40 commits; projects tune these, and the script's answer wins over the numbers printed here).
 - *Tests before restructuring*: if a unit carries real behavior and weak tests, write the tests first, then refactor against them. If a test must change for your refactor to pass, it is no longer a refactor. Stop and escalate.
 - *Batch sizing*: work in clusters big enough to matter and small enough to diagnose. Several related classes or one coherent package. Avoid single-class rituals and avoid "everything at once". Each unit is one commit that can be replayed alone.
 - *Spend proof wisely*: run focused tests often, compile when signatures change, and save the full gate for cluster boundaries or real risk.

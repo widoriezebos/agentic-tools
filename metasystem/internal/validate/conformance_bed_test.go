@@ -115,7 +115,7 @@ func TestConformanceBedContextTestingContract(t *testing.T) {
 		"TestContextPruneReportsRemovalBeforeSyncFailure", "TestContextPruneRetainsDamageAndRefusesBadBounds",
 		"TestHandoffAndDiagnosticsHaveSeparateLifetimes", "TestTurnVerdictAllowsTheStopUnderARecordedHandoff",
 		"TestHandoffAllowanceCarriesFrozenFacts", "TestContextHandoffVerb", "TestContextVerifyAndCancel",
-		"TestContextPruneVerb", "TestContextVerbUsage",
+		"TestContextVerbUsage",
 	} {
 		if !slices.Contains(tests, name) {
 			t.Errorf("context-standard tests omit %s", name)

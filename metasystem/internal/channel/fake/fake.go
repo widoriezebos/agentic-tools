@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/slack"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/telegram"
@@ -211,22 +212,8 @@ func ServeWithHooks(ctx context.Context, dir string, hooks ServeHooks) error {
 }
 
 func writeRename(path string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".channel-*")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	if _, err = tmp.Write(data); err == nil {
-		err = tmp.Sync()
-	}
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	return os.Rename(name, path)
+	_, err := atomicfile.WriteFile(path, data, 0o600, "")
+	return err
 }
 
 func (s *server) nextID() int64 { s.counter++; return int64(s.counter) }

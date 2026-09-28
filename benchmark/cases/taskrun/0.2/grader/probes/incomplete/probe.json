@@ -1,6 +1,0 @@
-{
-  "name": "incomplete",
-  "target": null,
-  "condition": "acceptance strictly between 0 and 1",
-  "flaw": "A deliberately partial runner omits caching, JSON output, and dependency blocking."
-}

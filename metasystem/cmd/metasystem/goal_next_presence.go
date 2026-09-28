@@ -101,7 +101,7 @@ func silentHolders(
 // remedyFor names the act that exists for this goal, and only that one.
 func remedyFor(file *goal.GoalFile) string {
 	if file.IsFencedClaim() {
-		return "a human lifts the fence with goal resume"
+		return "a human lifts the fence with metasystem goal resume " + file.Id
 	}
-	return "a human reassigns it with goal steal"
+	return "a human reassigns it with metasystem goal claim " + file.Id + " --take-over --reason TEXT"
 }

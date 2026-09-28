@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // Process identity for the runner's liveness and ownership decisions. All
@@ -133,14 +134,11 @@ func publishFakeIdentity(pid int, started int64, pgid int, tag string, grant fix
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+	held, err := lock.File(path+".lock", 0o644, lock.Exclusive)
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
-		return err
-	}
+	defer held.Release()
 	doc, err := readJSONDoc(path)
 	if err != nil {
 		doc = map[string]any{}

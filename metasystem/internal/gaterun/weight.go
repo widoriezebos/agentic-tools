@@ -11,13 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
@@ -84,32 +83,21 @@ func WeightLockPath(root string) string {
 	return filepath.Join(root, "artifacts", "agents", "validation-weight.flock")
 }
 
-type weightLock struct{ file *os.File }
+type weightLock struct{ held *lock.FileLock }
 
 func acquireWeightLock(root string) (*weightLock, error) {
 	if err := os.MkdirAll(filepath.Dir(WeightLockPath(root)), 0o755); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(WeightLockPath(root), os.O_CREATE|os.O_RDWR, 0o644)
+	held, err := lock.File(WeightLockPath(root), 0o644, lock.Exclusive)
 	if err != nil {
 		return nil, err
 	}
-	for {
-		err = unix.Flock(int(file.Fd()), unix.LOCK_EX)
-		if err != unix.EINTR {
-			break
-		}
-	}
-	if err != nil {
-		file.Close()
-		return nil, err
-	}
-	return &weightLock{file: file}, nil
+	return &weightLock{held: held}, nil
 }
 
 func (lock *weightLock) release() {
-	_ = unix.Flock(int(lock.file.Fd()), unix.LOCK_UN)
-	_ = lock.file.Close()
+	_ = lock.held.Release()
 }
 
 var weightNow = func() time.Time { return time.Now().UTC() }

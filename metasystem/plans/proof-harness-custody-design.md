@@ -54,7 +54,7 @@ welcome and independent.
 | Production enumeration is native (no `ps`): pid list, kernel prober for start and argv, `getpgid`; cwd is resolved natively per pid | `internal/census/production.go:43-72`, `78-94`; `internal/identity/enumerate_darwin.go:23,58`, `enumerate_linux.go:15,38` |
 | An unreadable argv is absence of evidence and never authorizes anything | `internal/identity/identity.go:39-46` |
 | The kill proof already exists in one place: a positioned tag in a known argv shape, joined with pid and start (`Killable`); group ownership is tri-state and an empty scan is INDETERMINATE (dab1dbdd) | `internal/janitor/killproof.go:15-63`, `129-171`, `206-222` |
-| The D-4 janitor's target selection is built and pure, but no verb executes it and `reap-orphans.sh` does not exist | `internal/janitor/targets.go:70-129`; `records/supervision/supervision-lifecycle.md:576-620`; `ls scripts/agents/reap-orphans.sh` fails |
+| The D-4 janitor's target selection is built and pure, but no verb executes it and `reap-orphans.sh` does not exist | `internal/janitor/targets.go:70-129`; `docs/design/supervision-lifecycle.md` D-4, "THE JANITOR"; `ls scripts/agents/reap-orphans.sh` fails |
 | The janitor family today has one verb, `headroom` | `cmd/metasystem/main.go:339-344`, `cmd/metasystem/janitor_verbs.go:19` |
 | The proc family: `exists`, `group-exists`, `group-owned` (three-state, backed by `janitor.GroupOwnership`), `group-members` (refuses an undercount), `census`, `alive`, `classify`, `find-ancestor`, `acknowledge` | `main.go:44-60`, `cmd/metasystem/identity_probes.go:58-99`, `106-140` |
 | The delegate cure for the same disease: a supervisor's kill domain is its own process group minus itself, enumerated by `proc group-members`, TERM then KILL, a death proof or a refusal | `scripts/agents/adapters/runtime-common.sh:232-250`; `scripts/agents/dispatch.sh:339-354` |
@@ -322,7 +322,7 @@ immediately before acting:
    (`identity.Liveness`, three-way). An open claim with a live owner:
    refused, reason `registry-live`. A corrupt registry: nothing is
    killed in that run and the verb exits 3, D-4's rule
-   (`supervision-lifecycle.md:620-622`).
+   (`docs/design/supervision-lifecycle.md` D-4, "THE JANITOR KILLS ONLY WHAT IT CAN PROVE").
 4. Re-proven at the kill. `janitor.Killable` (`killproof.go:206-222`) is
    applied to a fresh probe: same pid, same start second, argv readable
    and still matching its shape with the bed path still in it. A pid that
@@ -341,7 +341,7 @@ roots.
 
 ### 3.4 Kill order and bed removal
 
-Within one bed, D-4's order (`supervision-lifecycle.md:593-603`,
+Within one bed, D-4's order (`docs/design/supervision-lifecycle.md` D-4, "THE JANITOR";
 `targets.go:125-129`): supervision OWNERS first, then their components,
 then the steward runner, then load groups, holds and adapter loops. Each
 victim: TERM by exact pid, up to 2 s of 50 ms polls of
@@ -404,7 +404,7 @@ the steward, not the watcher, not a scheduler entry. Reasons:
   live bed, so no bound short of hours is safe for a cadence, and a
   bound of hours is what a human already does by hand.
 - D-4 already chose by hand and at suite start
-  (`supervision-lifecycle.md:576-578`). This design keeps the by-hand
+  (`docs/design/supervision-lifecycle.md` D-4, "THE JANITOR"). This design keeps the by-hand
   half. The suite-start half is report-only and is not in this slice:
   the suite has its own custody design (`plans/suite-custody-design.md`)
   and a report line at start belongs to it.

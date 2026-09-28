@@ -90,12 +90,12 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 	}
 	if len(unowned) > 0 {
 		return roleDead(RoleTrunkRed, "open trunk red without an owner: "+strings.Join(unowned, ", "),
-			"metasystem internal goal trunk-red own --id "+unowned[0]+" --goal <goal>")
+			"metasystem incident claim "+unowned[0]+" --goal <goal>")
 	}
 	if len(staleBatches) > 0 {
 		first := staleBatches[0]
 		return roleDead(RoleTrunkRed, "held trunk red was not recorded: "+strings.Join(staleBatches, ", "),
-			"metasystem internal landing batch tick; then metasystem internal goal trunk-red own --id <id> --goal <goal> (first held batch "+first+")")
+			"metasystem internal landing batch tick; then metasystem incident claim <id> --goal <goal> (first held batch "+first+")")
 	}
 	defects := ""
 	if tracked > 0 {

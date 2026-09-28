@@ -188,45 +188,6 @@ func windowLine(window contextWindowView) string {
 	return line
 }
 
-func runContextReport(args []string) int {
-	flags := flag.NewFlagSet("context report", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "installation or containing template root")
-	week := flags.String("week", "", "first UTC date in YYYY-MM-DD form")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" || *week == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal context report --root ROOT --week YYYY-MM-DD")
-		return 2
-	}
-	weekStart, err := time.Parse("2006-01-02", *week)
-	if err != nil || weekStart.Format("2006-01-02") != *week {
-		fmt.Fprintln(os.Stderr, "metasystem internal context report: --week must be YYYY-MM-DD")
-		return 2
-	}
-	stateRoot, err := goal.ResolveStateRoot(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem internal context report:", err)
-		return 1
-	}
-	callsPath, reportPath, report, err := steward.WriteContextReport(stateRoot, weekStart, time.Now().UTC())
-	if err != nil {
-		var retired *steward.ContextEvidenceRetiredError
-		if errors.As(err, &retired) {
-			fmt.Fprintln(os.Stderr, retired.Error())
-			return 9
-		}
-		fmt.Fprintln(os.Stderr, "metasystem internal context report:", err)
-		return 1
-	}
-	verdict := "fail"
-	if report.Pass {
-		verdict = "pass"
-	}
-	fmt.Printf("calls=%s report=%s verdict=%s\n", callsPath, reportPath, strings.ToUpper(verdict))
-	return 0
-}
-
 func runContextHandoff(args []string) int {
 	return runContextHandoffWithInputs(args, contextHandoffInputs{goal.ResolveMachine, goal.ReadClaimableBudgetedWork})
 }
@@ -559,48 +520,6 @@ func runContextVerify(args []string) int {
 	}
 	fmt.Printf("ok sha256=%s\n", digest)
 	return 0
-}
-
-func runContextPrune(args []string) int {
-	flags := flag.NewFlagSet("context prune", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "installation or containing template root")
-	olderThanValue := flags.String("older-than", "14d", "positive duration or integer day count")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	olderThan, err := parseContextDuration(*olderThanValue)
-	if *root == "" || flags.NArg() != 0 || err != nil {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal context prune --root ROOT [--older-than 14d]")
-		return 2
-	}
-	stateRoot, err := goal.ResolveStateRoot(*root)
-	if err != nil {
-		return contextVerbError("prune", err)
-	}
-	result, pruneErr := steward.PruneContext(stateRoot, olderThan, time.Now().UTC())
-	fmt.Printf("pruned call-sessions=%d\n", result.CallSessions)
-	for _, path := range result.Handoffs {
-		fmt.Printf("pruned handoff=%s\n", path)
-	}
-	if pruneErr != nil {
-		return contextVerbError("prune", pruneErr)
-	}
-	return 0
-}
-
-func parseContextDuration(value string) (time.Duration, error) {
-	if duration, err := time.ParseDuration(value); err == nil && duration > 0 {
-		return duration, nil
-	}
-	if len(value) < 2 || value[len(value)-1] != 'd' {
-		return 0, fmt.Errorf("duration must be positive")
-	}
-	days, err := strconv.ParseUint(value[:len(value)-1], 10, 64)
-	maxDays := uint64((time.Duration(1<<63 - 1)) / (24 * time.Hour))
-	if err != nil || days == 0 || days > maxDays {
-		return 0, fmt.Errorf("duration must be positive")
-	}
-	return time.Duration(days) * 24 * time.Hour, nil
 }
 
 func contextVerbError(verb string, err error) int {

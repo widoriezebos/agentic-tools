@@ -215,7 +215,7 @@ func multiFilePackageDiff() string {
 
 func TestIndependentReadStartsThroughLaunchVerbs(t *testing.T) {
 	t.Parallel()
-	phrases := []string{"`metasystem work review j2:J`", "--kind read --diff-file", "never as an in-process agent"}
+	phrases := []string{"`metasystem work review j2:J`", "`metasystem work review --patch PATCH --brief FILE`", "never as an in-process agent"}
 	root := moduleRoot(t)
 	for _, path := range []string{
 		filepath.Join(root, "docs", "project-rules.md"),

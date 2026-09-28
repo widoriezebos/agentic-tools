@@ -21,7 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"golang.org/x/sys/unix"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // Classifications are the verdicts a cycle may carry.
@@ -56,7 +56,7 @@ var (
 	// (docs/design/stop-loss-core.md): the only automatic stagnation reset besides a
 	// new best, and it always names the human-answered ask it echoes.
 	resetLineRe = regexp.MustCompile(`^Stop-loss reset: ask=([a-z0-9][a-z0-9-]*); reason=([^\n]*)$`)
-	// Annotation lines inside a cycle block (records/patience/patience-turn-identity.md):
+	// Annotation lines inside a cycle block (docs/patience.md, S1):
 	// facts recorded beside — never inside — the classification line. They are
 	// audit trail: parsers tolerate and expose them, the prompt's ledger tail
 	// ignores them, and the stop-loss replay never reads them as fuse input.
@@ -65,7 +65,7 @@ var (
 	// runner writes: the fault that rejected a turn's return, a fired cap,
 	// the survivor count of a drain-stalled cycle healed on resume, and the
 	// landed-unconsumed rows a completed mission's terminal delivery appends
-	// (records/patience/patience-orphan-usage.md): chain root, round number or the
+	// (docs/patience.md, S3): chain root, round number or the
 	// invalid/unreadable marker (the overflow row carries the remaining
 	// count), and a whitespace-free return path or the literal none.
 	annotationWriteRe = regexp.MustCompile(`^(Return: rejected:.+|Outcome: capped|Drain: stalled:(?:0|[1-9][0-9]*)` +
@@ -93,7 +93,7 @@ const resetReasonMaxLen = 500
 const CappedAnnotation = "Outcome: capped"
 
 // DrainStalledObserved is the observed token a healed drain-stalled cycle
-// carries (records/patience/patience-mission-reap-drain.md): distinguishable from every
+// carries (docs/patience.md, S2): distinguishable from every
 // other no-progress cause, so starvation is recorded exactly once and
 // unambiguously.
 const DrainStalledObserved = "unmeasurable:drain-stalled"
@@ -109,7 +109,7 @@ func DrainStalledAnnotation(survivors int) string {
 }
 
 // LandedUnconsumedAnnotation composes the terminal-delivery annotation for one
-// Landed Returns row (records/patience/patience-orphan-usage.md): the row's three fields
+// Landed Returns row (docs/patience.md, S3): the row's three fields
 // as chain/round/path tokens, one bounded ledger line per row. Audit trail
 // beside the final classification line, never a classification and never fuse
 // input.
@@ -118,7 +118,7 @@ func LandedUnconsumedAnnotation(chainRoot, round, path string) string {
 }
 
 // PatienceChainAnnotation composes the vocal floor-breach annotation for one
-// well-formed chain (records/patience/patience-satellite-4.md): audit trail beside the
+// well-formed chain (docs/patience.md, S4): audit trail beside the
 // classification line, never fuse input.
 func PatienceChainAnnotation(root string, rounds, floor int) string {
 	return fmt.Sprintf("Patience: chain=%s rounds=%d floor=%d", root, rounds, floor)
@@ -321,7 +321,7 @@ func stampLedgerPending(file string, cycle int, content string) error {
 // AppendAnnotations appends annotation lines to an existing cycle's block —
 // the terminal delivery for facts that exist only after that cycle's own line
 // landed, such as the completion conclude's Landed Returns list
-// (records/patience/patience-orphan-usage.md). Only the FINAL cycle accepts the append:
+// (docs/patience.md, S3). Only the FINAL cycle accepts the append:
 // any earlier block is closed history, and history is never rewritten. The
 // annotations must match the strict write grammar, and the append is one
 // atomic write under the ledger lock. It returns the sha256 of the
@@ -512,30 +512,18 @@ func oneLine(value, label string) (string, error) {
 	return value, nil
 }
 
-type fileLock struct{ f *os.File }
+type fileLock struct{ held *lock.FileLock }
 
+// lockFile takes the exclusive lock on file's sibling ".lock".
 func lockFile(file string) (*fileLock, error) {
-	lockPath := file + ".lock"
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
-		return nil, err
-	}
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
-		f.Close()
-		return nil, err
-	}
-	return &fileLock{f: f}, nil
+	return lockFileAt(file + ".lock")
 }
 
 func (l *fileLock) release() {
-	if l == nil || l.f == nil {
+	if l == nil {
 		return
 	}
-	_ = unix.Flock(int(l.f.Fd()), unix.LOCK_UN)
-	_ = l.f.Close()
+	_ = l.held.Release()
 }
 
 func atomicWriteText(path, text string) error {

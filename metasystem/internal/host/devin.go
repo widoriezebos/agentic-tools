@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // DevinConfig writes the Devin CLI config for a turn. It starts from the user's
@@ -16,7 +18,7 @@ import (
 // organisation's policy refuses, and pins the workspace-scoped permission set
 // the host runs write-capable under.
 func DevinConfig(root, outputPath string) error {
-	workspace := resolvePath(root)
+	workspace := realpath.ResolveExisting(root)
 	value := userDevinConfig()
 	delete(value, "sandbox")
 	value["permissions"] = map[string]any{
@@ -28,7 +30,7 @@ func DevinConfig(root, outputPath string) error {
 		"ask":  []any{},
 		"deny": []any{"mcp__*"},
 	}
-	if err := atomicWriteJSON(outputPath, value); err != nil {
+	if err := wiredoc.WriteFile(outputPath, value); err != nil {
 		return fmt.Errorf("write devin config: %w", err)
 	}
 	return nil
@@ -72,22 +74,10 @@ func DevinReturn(rawPath, outputPath string) error {
 	if !ok {
 		return nil
 	}
-	if err := atomicWriteJSON(outputPath, object); err != nil {
+	if err := wiredoc.WriteFile(outputPath, object); err != nil {
 		return fmt.Errorf("write devin return: %w", err)
 	}
 	return nil
-}
-
-// resolvePath returns the absolute, symlink-free form of a path, matching the
-// canonical form the workspace write boundary is expressed in.
-func resolvePath(path string) string {
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
-	}
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		return real
-	}
-	return path
 }
 
 // The devin delivery recollection, registered seam-locally so the

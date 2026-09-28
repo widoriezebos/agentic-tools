@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/adapterfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -34,7 +35,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	if readErr != nil {
 		return false, nil, fmt.Errorf("cannot read metasystem configuration: %s: %w", confPath, readErr)
 	}
-	repo := resolvePath(repoRoot)
+	repo := realpath.Resolve(repoRoot)
 
 	var errs []string
 	add := func(format string, args ...any) { errs = append(errs, fmt.Sprintf(format, args...)) }
@@ -478,8 +479,8 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			if model, present := resolved("role.default.model."+runtime, mode); !present {
 				add("%s resolves to %s but has no model.%s value", roleLabel("default", mode, true), runtime, runtime)
 			} else if templateValue.MatchString(model) {
-				add("%s resolves to %s:%s, a template placeholder from role.default.model.%s; set it with: metasystem internal config tailor --conf %s.local --set role.default.model.%s=<the %s model this seat runs>",
-					roleLabel("default", mode, true), runtime, model, runtime, confPath, runtime, runtime)
+				add("%s resolves to %s:%s, a template placeholder from role.default.model.%s; set it with: metasystem settings set role.default.model.%s <the %s model this seat runs>, which writes %s.local",
+					roleLabel("default", mode, true), runtime, model, runtime, runtime, runtime, confPath)
 			}
 		}
 	}
@@ -503,8 +504,8 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			} else if templateValue.MatchString(model) {
 				// A placeholder left from the shipped file launches with the
 				// literal text and dies at the API; the seat's .local names it.
-				add("%s resolves to %s:%s, a template placeholder from %s; set it with: metasystem internal config tailor --conf %s.local --set %s=<the %s model this seat runs>",
-					roleLabel(role, mode, false), runtime, model, modelKey, confPath, modelKey, runtime)
+				add("%s resolves to %s:%s, a template placeholder from %s; set it with: metasystem settings set %s <the %s model this seat runs>, which writes %s.local",
+					roleLabel(role, mode, false), runtime, model, modelKey, modelKey, runtime, confPath)
 			}
 		}
 	}
@@ -660,7 +661,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	case !filepath.IsAbs(evidence):
 		add("evidence.root must be absolute")
 	default:
-		if withinRepo(resolvePath(evidence), repo) {
+		if withinRepo(realpath.Resolve(evidence), repo) {
 			add("evidence.root must be outside the repository")
 		}
 	}
@@ -811,33 +812,6 @@ func atoi(s string) int {
 func isDir(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
-}
-
-// resolvePath makes path absolute and follows symlinks. Parts that do not exist
-// yet cannot be resolved, so it follows symlinks on the deepest existing
-// ancestor and re-attaches the remaining tail lexically — the same way the
-// evidence-root check must compare a not-yet-created directory against the repo.
-func resolvePath(path string) string {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		abs = filepath.Clean(path)
-	}
-	remainder := ""
-	current := abs
-	for {
-		if resolved, err := filepath.EvalSymlinks(current); err == nil {
-			if remainder == "" {
-				return resolved
-			}
-			return filepath.Join(resolved, remainder)
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return abs
-		}
-		remainder = filepath.Join(filepath.Base(current), remainder)
-		current = parent
-	}
 }
 
 // withinRepo reports whether path is the repository root or lives beneath it.

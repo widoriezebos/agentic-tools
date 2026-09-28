@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -159,7 +158,19 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
 	publish func(string, string, string, time.Time) (landing.TestReceipt, error),
 	terminal func(proofrun.CompletionContext, json.RawMessage) error) (status int) {
+	return landingTestReceiptTo(os.Stdout, os.Stderr, parent, resolveClock, raw, testRun, args, prepare, admit, publish, terminal)
+}
+
+// landingTestReceiptTo is landing test-receipt with its report streams
+// explicit, so a command that runs it in its own process (design 6.2)
+// receives the receipt and the refusals as the former child's pipes did.
+func landingTestReceiptTo(stdout, stderr io.Writer, parent context.Context, resolveClock func(string) (func() time.Time, bool, error), raw func(gittree.RawRequest) gittree.RawResult, testRun func([]string) int, args []string,
+	prepare func(string, string, string) (*landing.ReceiptPreparation, error),
+	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
+	publish func(string, string, string, time.Time) (landing.TestReceipt, error),
+	terminal func(proofrun.CompletionContext, json.RawMessage) error) (status int) {
 	flags := flag.NewFlagSet("landing test-receipt", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", "", "project checkout root")
 	tree := flags.String("tree", "", "candidate project tree")
 	command := flags.String("command", "", "test command to run from the isolated candidate workspace")
@@ -174,30 +185,30 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 		return 2
 	}
 	if (*expectedGoalRevision == 0) != (*expectedAccountingRevision == 0) {
-		fmt.Fprintln(os.Stderr, "landing test-receipt expected goal and accounting revisions must be supplied together")
+		fmt.Fprintln(stderr, "landing test-receipt expected goal and accounting revisions must be supplied together")
 		return 2
 	}
 	if (*mode == "") == (*command == "") {
-		fmt.Fprintln(os.Stderr, "landing test-receipt requires exactly one of --mode or legacy --command")
+		fmt.Fprintln(stderr, "landing test-receipt requires exactly one of --mode or legacy --command")
 		return 2
 	}
 	controlRoot, err := canonicalProofRoot(*root)
 	if err != nil {
-		return recordExit(err)
+		return recordExitTo(stderr, err)
 	}
 	commandClock, fixtureClock, err := resolveClock(controlRoot)
 	if err != nil {
-		return recordExit(err)
+		return recordExitTo(stderr, err)
 	}
 	if *mode != "" {
 		if *mode != "auto" && *mode != "standard" && *mode != "deep" {
-			fmt.Fprintln(os.Stderr, "landing test-receipt --mode must be auto, standard, or deep")
+			fmt.Fprintln(stderr, "landing test-receipt --mode must be auto, standard, or deep")
 			return 2
 		}
 		controlWorkspace := gittree.Workspace{Dir: controlRoot, RawSource: raw}
 		projectRoot, err := controlWorkspace.TopLevel()
 		if err != nil {
-			return recordExit(err)
+			return recordExitTo(stderr, err)
 		}
 		workspace := gittree.Workspace{Dir: projectRoot, RawSource: raw}
 		acceptedIndexTree := *tree
@@ -207,7 +218,7 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 			acceptedIndexTree, err = workspace.ResolveTree(acceptedIndexTree)
 		}
 		if err != nil {
-			return recordExit(err)
+			return recordExitTo(stderr, err)
 		}
 		resultPath := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "delivery", "testing-result-"+*tree+".json")
 		testArgs := []string{"--root", controlRoot, "--tree", acceptedIndexTree, "--mode", *mode, "--purpose", "delivery", "--result", resultPath}
@@ -230,7 +241,7 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 		}
 		var result proofrun.TestResult
 		if err := readStrictJSON(resultPath, &result); err != nil {
-			return recordExit(fmt.Errorf("read shared testing result: %w", err))
+			return recordExitTo(stderr, fmt.Errorf("read shared testing result: %w", err))
 		}
 		var receipt landing.TestReceipt
 		if result.AttemptID != "" {
@@ -242,18 +253,18 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 			receipt, err = landing.CreateTestingReceiptAt(controlRoot, result.CandidateTree, result, commandClock())
 		}
 		if err != nil {
-			return recordExit(err)
+			return recordExitTo(stderr, err)
 		}
-		printJSON(receipt)
+		writeJSONLine(stdout, stderr, receipt)
 		return 0
 	}
 	preparation, err := prepare(controlRoot, *tree, *command)
 	if err != nil {
-		return recordExit(err)
+		return recordExitTo(stderr, err)
 	}
 	defer func() {
 		if closeErr := preparation.Close(); closeErr != nil {
-			fmt.Fprintln(os.Stderr, "landing test-receipt: preserve detached suite-failure evidence:", closeErr)
+			fmt.Fprintln(stderr, "landing test-receipt: preserve detached suite-failure evidence:", closeErr)
 			if status == 0 {
 				status = 1
 			}
@@ -263,18 +274,18 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 	executionEnvironment := []string(nil)
 	if *command == landing.CanonicalValidatorCommand {
 		if proofRunAlternateGoInputs() {
-			return recordExit(fmt.Errorf("canonical validator refuses GOFLAGS containing -modfile or -overlay"))
+			return recordExitTo(stderr, fmt.Errorf("canonical validator refuses GOFLAGS containing -modfile or -overlay"))
 		}
 		executionEnvironment = canonicalValidatorEnvironment()
 	}
 	limits, err := resolveProofRunLimits(confPath)
 	if err != nil {
-		return recordExit(err)
+		return recordExitTo(stderr, err)
 	}
 	executionEnvironment = resolvedTestWorkerEnvironment(executionEnvironment, limits.workers)
 	proofDir := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "delivery")
 	if err := os.MkdirAll(proofDir, 0o700); err != nil {
-		return recordExit(err)
+		return recordExitTo(stderr, err)
 	}
 	attempt, decision, joined, err := admit(proofLaunchAdmission{ControlRoot: controlRoot,
 		ExecutionRoot: preparation.ExecutionRoot(), ConfPath: confPath, GoalID: *goalID, CapMin: *capMin,
@@ -283,37 +294,37 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 		Environment: executionEnvironment, Now: commandClock()})
 	if err != nil {
 		decision = proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionAdmissionRefused, ExitStatus: proofrun.ExitAdmissionRefused}
-		_ = proofrun.EncodeResult(os.Stderr, *resultPath, decision)
-		fmt.Fprintln(os.Stderr, "landing test-receipt:", err)
+		_ = proofrun.EncodeResult(stderr, *resultPath, decision)
+		fmt.Fprintln(stderr, "landing test-receipt:", err)
 		return proofrun.ExitAdmissionRefused
 	}
 	if decision.Disposition != proofrun.DispositionExecuted {
 		if decision.Disposition == proofrun.DispositionReusableSuccess {
 			if _, err := publish(controlRoot, decision.AttemptID, preparation.AcceptedIndexTree(), commandClock()); err != nil {
-				return recordExit(err)
+				return recordExitTo(stderr, err)
 			}
 		}
-		if err := proofrun.EncodeResult(os.Stderr, *resultPath, decision); err != nil {
-			return recordExit(err)
+		if err := proofrun.EncodeResult(stderr, *resultPath, decision); err != nil {
+			return recordExitTo(stderr, err)
 		}
 		return decision.ExitStatus
 	}
 	deadline, deadlineCheck, err := proofDeadline(attempt.Deadline, commandClock)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "landing test-receipt: admit native proof:", err)
+		fmt.Fprintln(stderr, "landing test-receipt: admit native proof:", err)
 		status = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
 		decision.ExitStatus, decision.Disposition, decision.Reason = status, proofrun.DispositionAdmissionRefused, err.Error()
-		_ = proofrun.EncodeResult(os.Stderr, *resultPath, decision)
+		_ = proofrun.EncodeResult(stderr, *resultPath, decision)
 		return status
 	}
 	resourceContext, cancelResource := proofDeadlineContext(parent, deadline, fixtureClock)
 	defer cancelResource()
 	lease, release, leaseErr := acquireManagedProofLaunchWithWaitCheck(resourceContext, controlRoot, confPath, deadlineCheck)
 	if leaseErr != nil {
-		fmt.Fprintln(os.Stderr, "landing test-receipt: admit native proof:", leaseErr)
+		fmt.Fprintln(stderr, "landing test-receipt: admit native proof:", leaseErr)
 		status = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
 		decision.ExitStatus, decision.Disposition, decision.Reason = status, proofrun.DispositionAdmissionRefused, leaseErr.Error()
-		_ = proofrun.EncodeResult(os.Stderr, *resultPath, decision)
+		_ = proofrun.EncodeResult(stderr, *resultPath, decision)
 		return status
 	}
 	defer release()
@@ -323,7 +334,7 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 		Banner:  "EXPENSIVE SUITE landing-receipt: one admitted execution; retained result controls repeats",
 		Silence: limits.silence, SectionCap: limits.sectionCap,
 		EvidenceTimeout: limits.evidenceTimeout, EvidenceMax: limits.evidenceMax, Poll: time.Second,
-		TermGrace: 5 * time.Second, KillGrace: time.Second, Command: []string{"bash", "-c", *command}, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
+		TermGrace: 5 * time.Second, KillGrace: time.Second, Command: []string{"bash", "-c", *command}, HostResourceFiles: lease.Files(), RequireCustody: true, Output: stdout, ErrorOutput: stderr,
 		Environment: executionEnvironment, Now: commandClock,
 		PrepareSuccess: func(completion proofrun.CompletionContext) (json.RawMessage, error) {
 			current, err := proofrun.ReadAttempt(controlRoot, attempt.AttemptID)
@@ -346,16 +357,16 @@ func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(s
 	} else {
 		receipt, publishErr := publish(controlRoot, attempt.AttemptID, preparation.AcceptedIndexTree(), commandClock())
 		if publishErr != nil {
-			fmt.Fprintln(os.Stderr, publishErr)
+			fmt.Fprintln(stderr, publishErr)
 			status = 1
 			decision.ExitStatus = status
 			decision.Disposition = proofrun.DispositionFailed
 		} else {
-			printJSON(receipt)
+			writeJSONLine(stdout, stderr, receipt)
 		}
 	}
-	if err := proofrun.EncodeResult(os.Stderr, *resultPath, decision); err != nil {
-		return recordExit(err)
+	if err := proofrun.EncodeResult(stderr, *resultPath, decision); err != nil {
+		return recordExitTo(stderr, err)
 	}
 	return status
 }
@@ -381,65 +392,4 @@ func canonicalValidatorEnvironmentFrom(inherited []string) []string {
 	// GOFLAGS must equal cmd/devgate's ownedGoFlags: the gate's frozen-tree
 	// check accepts exactly that value (disk-lifetimes A4).
 	return append(environment, "GOFLAGS=-mod=readonly -trimpath", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1")
-}
-
-func runLandingAdoptionRulings(args []string) int {
-	flags := flag.NewFlagSet("landing adoption-rulings", flag.ContinueOnError)
-	source := flags.String("source", "", "staged template installation")
-	target := flags.String("target", "", "application installation")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *source == "" || *target == "" {
-		return 2
-	}
-	data, err := landing.AdoptionRulings(*source, *target)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if _, err := os.Stdout.Write(data); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-// runLandingPark durably records one stopped recertified landing attempt
-// (`landing park`); the landing path parks through the same owner.
-func runLandingPark(args []string) int {
-	flags := flag.NewFlagSet("landing park", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "integration project root")
-	chain := flags.String("chain", "", "root implementation chain")
-	target := flags.String("target", "", "frozen target commit")
-	reason := flags.String("reason", "", "original landing refusal code")
-	detail := flags.String("detail", "", "specific refusal explanation")
-	recertification := flags.String("recertification", "", "diagnostic recertification record path")
-	candidate := flags.String("candidate-commit", "", "retained local landing commit")
-	var refs landingRepeatedStrings
-	flags.Var(&refs, "recovery-ref", "retained source/result anchor ref (repeatable)")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		return 2
-	}
-	result, err := landing.Park(landing.ParkParams{
-		Root: *root, Chain: *chain, TargetCommit: *target, Reason: *reason, Detail: *detail,
-		Recertification: *recertification, CandidateCommit: *candidate, RecoveryRefs: refs,
-		CallerPID: int64(os.Getppid()),
-	})
-	if err != nil {
-		var failure *landing.ParkFailure
-		if errors.As(err, &failure) {
-			fmt.Fprintf(os.Stderr, "reason=chain-recertification-park-failed cause=%s error=%v\n", failure.Cause, failure.Err)
-		} else {
-			fmt.Fprintln(os.Stderr, err)
-		}
-		return 1
-	}
-	fmt.Printf("state=%s\nreason=%s\nparkRecord=%s\n", result.State, result.Reason, result.ParkRecord)
-	return 0
-}
-
-type landingRepeatedStrings []string
-
-func (values *landingRepeatedStrings) String() string { return fmt.Sprint([]string(*values)) }
-func (values *landingRepeatedStrings) Set(value string) error {
-	*values = append(*values, value)
-	return nil
 }

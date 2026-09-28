@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"golang.org/x/sys/unix"
 )
 
@@ -841,24 +842,23 @@ func (runner *UnitRunner) lock(id string) (*os.File, error) {
 	if err := os.MkdirAll(runner.runDir(id), 0o700); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(filepath.Join(runner.runDir(id), ".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	held, err := lock.File(filepath.Join(runner.runDir(id), ".lock"), 0o600, lock.TryExclusive)
 	if err != nil {
-		return nil, err
-	}
-	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		file.Close()
-		if !lockWouldBlock(err) {
+		if !isLockFailure(err) {
+			return nil, err
+		}
+		if !lock.Busy(err) {
 			return nil, fmt.Errorf("UNIT_LOCK_FAILED run=%s: %w", id, err)
 		}
 		return nil, fmt.Errorf("UNIT_RUN_BUSY")
 	}
-	return file, nil
+	return held.File(), nil
 }
 
-// lockWouldBlock is the one flock refusal that means another holder has
-// the lock; any other error is reported as itself.
-func lockWouldBlock(err error) bool {
-	return errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN)
+// isLockFailure tells a flock refusal from a failure to open the lock file.
+func isLockFailure(err error) bool {
+	var lockErr *lock.LockError
+	return errors.As(err, &lockErr)
 }
 
 // releaseUnitLock ends a unit's named or run lock explicitly, then closes

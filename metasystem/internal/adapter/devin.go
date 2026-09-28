@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // BuildDevinConfig writes a Devin delegate's job config and its provenance. The
@@ -65,7 +66,7 @@ func BuildDevinConfig(recordPath, outputPath, provenancePath string) error {
 	}
 	sort.Strings(inherited)
 
-	if err := atomicWriteJSON(outputPath, value); err != nil {
+	if err := wiredoc.WriteFile(outputPath, value); err != nil {
 		return fmt.Errorf("write devin config: %w", err)
 	}
 	provenance := map[string]any{
@@ -73,7 +74,7 @@ func BuildDevinConfig(recordPath, outputPath, provenancePath string) error {
 		"replacedMembers":  stringSlice(replaced),
 		"inheritedMembers": stringSlice(inherited),
 	}
-	if err := atomicWriteJSON(provenancePath, provenance); err != nil {
+	if err := wiredoc.WriteFile(provenancePath, provenance); err != nil {
 		return fmt.Errorf("write devin config provenance: %w", err)
 	}
 	return nil
@@ -216,7 +217,7 @@ func WriteUnavailableUsage(outputPath string) error {
 		"cost":              nil,
 		"providerUnits":     nil,
 	}
-	if err := atomicWriteJSON(outputPath, value); err != nil {
+	if err := wiredoc.WriteFile(outputPath, value); err != nil {
 		return fmt.Errorf("write unavailable usage: %w", err)
 	}
 	return nil

@@ -7,7 +7,8 @@
 
 Author m0 (Fable lane, job hae-design-r1c), 2026-09-03; revision 2 by the
 fold job hae-fold the same day, folding all eight material findings of
-the one review (records/human-approval/hae-review.md, HAE-R1-*). Tier 3
+the one review (HAE-R1-*; folded into this revision, record removed
+2026-09-28, tag records-archive-2026-09-28). Tier 3
 under R-54-m1: this design, one review, one fold, one closing review,
 then build and one code review; R-60-m1's material stop criterion
 governs the reviews, and disputed-but-non-material points become named

@@ -8,6 +8,7 @@ import (
 	"go/ast"
 	"go/format"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"os"
 	"os/exec"
@@ -65,14 +66,25 @@ type StopSurfaceMove struct {
 	Goal string `json:"goal"`
 }
 
+// StopSurfaceReword is a changed assertion whose Stop-decision content is
+// unchanged: From and To differ only in string literals that carry no
+// decision vocabulary, so it needs no declaration.
+type StopSurfaceReword struct {
+	File string `json:"file"`
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
 // StopSurfaceResult describes the complete comparison and every declaration
-// problem. Removed contains only assertion occurrences that were not admitted.
+// problem. Removed contains only assertion occurrences that were not admitted;
+// a reworded line is in neither Added nor Removed.
 type StopSurfaceResult struct {
-	Base     string            `json:"base"`
-	Added    []StopSurfaceLine `json:"added"`
-	Moved    []StopSurfaceMove `json:"moved"`
-	Removed  []StopSurfaceLine `json:"removed"`
-	Problems []string          `json:"problems"`
+	Base     string              `json:"base"`
+	Added    []StopSurfaceLine   `json:"added"`
+	Moved    []StopSurfaceMove   `json:"moved"`
+	Removed  []StopSurfaceLine   `json:"removed"`
+	Reworded []StopSurfaceReword `json:"reworded"`
+	Problems []string            `json:"problems"`
 }
 
 // Refused reports whether the candidate changes the protected surface without
@@ -83,8 +95,12 @@ func (r StopSurfaceResult) Refused() bool {
 
 // Summary is the stable one-line result consumed by the fast gate.
 func (r StopSurfaceResult) Summary() string {
-	return fmt.Sprintf("stop decision surface: base %s; added %d, moved %d, removed %d",
+	summary := fmt.Sprintf("stop decision surface: base %s; added %d, moved %d, removed %d",
 		r.Base, len(r.Added), len(r.Moved), len(r.Removed))
+	if len(r.Reworded) != 0 {
+		summary += fmt.Sprintf("; reworded %d", len(r.Reworded))
+	}
+	return summary
 }
 
 type stopSurfaceFile struct {
@@ -103,6 +119,7 @@ type stopSurfaceInspection struct {
 	baseTree  string
 	added     []StopSurfaceLine
 	removed   []StopSurfaceLine
+	reworded  []StopSurfaceReword
 }
 
 type stopSurfaceWorkspace interface {
@@ -150,6 +167,7 @@ func auditStopDecisionSurface(root string, options StopSurfaceOptions, dependenc
 		Added:    inspection.added,
 		Moved:    []StopSurfaceMove{},
 		Removed:  []StopSurfaceLine{},
+		Reworded: inspection.reworded,
 		Problems: []string{},
 	}
 	declarations, problems, err := newStopMoveDeclarations(root, inspection.workspace, inspection.baseTree, options.GoalRecord)
@@ -274,12 +292,14 @@ func inspectStopDecisionSurfaceWithDependencies(root string, options StopSurface
 		return stopSurfaceInspection{}, fmt.Errorf("candidate stop decision surface: %w", err)
 	}
 	added, removed := stopSurfaceDifference(baseSurface, candidateSurface)
+	reworded, added, removed := pairStopSurfaceRewords(added, removed)
 	return stopSurfaceInspection{
 		workspace: workspace,
 		base:      base,
 		baseTree:  baseTree,
 		added:     added,
 		removed:   removed,
+		reworded:  reworded,
 	}, nil
 }
 
@@ -784,4 +804,92 @@ func lineCounts(lines []StopSurfaceLine) map[stopSurfaceKey]int {
 		counts[stopSurfaceKey(line)]++
 	}
 	return counts
+}
+
+// stopDecisionVocabulary is what makes a string literal decision content: a
+// literal naming block, allow, the decision key, a refusal or a spent count
+// (the words inside ShouldBlock, BlockSource, IdleRefusal and CountSpent).
+var stopDecisionVocabulary = []string{"block", "allow", "decision", "refus", "spent"}
+
+// pairStopSurfaceRewords pairs each removed Go assertion with one added line
+// of the same file whose decision skeleton is identical, one for one, and
+// returns the pairs with what stays added and removed. Anything the skeleton
+// cannot prove the same stays a move: fixture beds, lines that do not
+// tokenize, and any change to a token that is not a plain string literal
+// free of decision vocabulary.
+func pairStopSurfaceRewords(added, removed []StopSurfaceLine) ([]StopSurfaceReword, []StopSurfaceLine, []StopSurfaceLine) {
+	reworded := []StopSurfaceReword{}
+	used := make([]bool, len(added))
+	var keptRemoved []StopSurfaceLine
+	for _, gone := range removed {
+		paired := false
+		if kind, _ := stopSurfaceFileKind(gone.File); kind == "go" {
+			if skeleton, ok := stopRewordSkeleton(gone.Line); ok {
+				for index, candidate := range added {
+					if used[index] || candidate.File != gone.File {
+						continue
+					}
+					if other, otherOK := stopRewordSkeleton(candidate.Line); otherOK && other == skeleton {
+						used[index] = true
+						reworded = append(reworded, StopSurfaceReword{File: gone.File, From: gone.Line, To: candidate.Line})
+						paired = true
+						break
+					}
+				}
+			}
+		}
+		if !paired {
+			keptRemoved = append(keptRemoved, gone)
+		}
+	}
+	var keptAdded []StopSurfaceLine
+	for index, line := range added {
+		if !used[index] {
+			keptAdded = append(keptAdded, line)
+		}
+	}
+	return reworded, keptAdded, keptRemoved
+}
+
+// stopRewordSkeleton is a line's Go token sequence with every string or rune
+// literal that carries no decision vocabulary replaced by one placeholder.
+// Operators, identifiers, numbers and decision literals stay verbatim, so two
+// lines share a skeleton only when their decision content and the
+// comparisons around it are the same. A line the scanner rejects has none.
+func stopRewordSkeleton(line string) (string, bool) {
+	source := []byte(line)
+	files := token.NewFileSet()
+	file := files.AddFile("", files.Base(), len(source))
+	failures := 0
+	var lexer scanner.Scanner
+	lexer.Init(file, source, func(token.Position, string) { failures++ }, 0)
+	var parts []string
+	for {
+		_, kind, literal := lexer.Scan()
+		if kind == token.EOF {
+			break
+		}
+		if kind == token.SEMICOLON && literal == "\n" {
+			continue
+		}
+		if (kind == token.STRING || kind == token.CHAR) && !stopDecisionText(literal) {
+			parts = append(parts, "literal")
+			continue
+		}
+		parts = append(parts, kind.String()+" "+literal)
+	}
+	return strings.Join(parts, "\x00"), failures == 0 && len(parts) != 0
+}
+
+func stopDecisionText(literal string) bool {
+	if stopGoPattern.MatchString(literal) || stopWirePattern.MatchString(literal) || stopBedPattern.MatchString(literal) {
+		return true
+	}
+	text := strings.ToLower(literal + "\x00" + unquotedString(literal))
+	for _, word := range stopDecisionVocabulary {
+		if strings.Contains(text, word) {
+			return true
+		}
+	}
+	return false
 }

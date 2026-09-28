@@ -48,25 +48,6 @@ func runReportStopStatus(args []string) int {
 	return 0
 }
 
-// runReportRunningWork relays `report running-work`: the turn-end active
-// clause from report.RunningWorkClause — live
-// jobs, missions running elsewhere, gate runs; nothing prints when idle.
-func runReportRunningWork(args []string) int {
-	flags := flag.NewFlagSet("report running-work", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "report running-work: --repo is required")
-		return 2
-	}
-	if clause := report.RunningWorkClause(*repo); clause != "" {
-		fmt.Println(clause)
-	}
-	return 0
-}
-
 // runReportWatchJobs runs the background-job watcher (report.WatchJobs):
 // `report watch-jobs --dir D [--dir D]... [--scope P] [--scope-field F]
 // [--state FILE] [--stale-min N] [--cap-min N] [--interval SEC]
@@ -221,24 +202,6 @@ func watchJobsFingerprint() string {
 	}
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:])[:12]
-}
-
-// runReportOpenWork prints STALE-PLAN and OPEN-WORK lines for a checkout's
-// plans.
-func runReportOpenWork(args []string) int {
-	flags := flag.NewFlagSet("report open-work", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "metasystem root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal report open-work --repo R")
-		return 2
-	}
-	for _, line := range report.OpenWork(*repo) {
-		fmt.Println(line)
-	}
-	return 0
 }
 
 // renderStopBlock renders one Stop refusal: an unrecorded block (bounded idle

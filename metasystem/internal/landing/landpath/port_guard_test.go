@@ -22,16 +22,21 @@ const guardTree = "0123456789abcdef0123456789abcdef01234567"
 // guardBed is one guard invocation: a staged set (path to A or M), an
 // optional unborn HEAD, and owners that record what the guard asked.
 type guardBed struct {
-	t            *testing.T
-	root         string
-	git          *fakeGit
-	staged       [][2]string
-	unborn       bool
-	owners       GuardOwners
-	observations []string
-	tokenChecks  int
-	stdout       bytes.Buffer
-	stderr       bytes.Buffer
+	t      *testing.T
+	root   string
+	git    *fakeGit
+	staged [][2]string
+	unborn bool
+	// syncBranch is goal.sync-branch ("" unset), syncConfigCode a config
+	// read failure other than unset; commonDir is git's common directory.
+	syncBranch     string
+	syncConfigCode int
+	commonDir      string
+	owners         GuardOwners
+	observations   []string
+	tokenChecks    int
+	stdout         bytes.Buffer
+	stderr         bytes.Buffer
 }
 
 func newGuardBed(t *testing.T) *guardBed {
@@ -39,6 +44,23 @@ func newGuardBed(t *testing.T) *guardBed {
 	root := t.TempDir()
 	g := &guardBed{t: t, root: root, git: newFakeGit(t, root)}
 	g.git.tree = guardTree
+	g.commonDir = filepath.Join(root, ".git")
+	g.git.on("symbolic-ref --quiet HEAD", func(GitCall) GitResult {
+		if g.git.branch == "" {
+			return failed(1, "")
+		}
+		return ok("refs/heads/" + g.git.branch + "\n")
+	})
+	g.git.on("config --get goal.sync-branch", func(GitCall) GitResult {
+		if g.syncConfigCode != 0 {
+			return failed(g.syncConfigCode, "error: bad config\n")
+		}
+		if g.syncBranch == "" {
+			return failed(1, "")
+		}
+		return ok(g.syncBranch + "\n")
+	})
+	g.git.on("rev-parse --path-format=absolute --git-common-dir", func(GitCall) GitResult { return ok(g.commonDir + "\n") })
 	g.git.on("diff --cached --name-only", func(GitCall) GitResult { return ok(g.names("")) })
 	g.git.on("diff --cached --name-only --diff-filter=AM", func(GitCall) GitResult { return ok(g.names("AM")) })
 	g.git.on("diff --cached --name-status --diff-filter=A", func(GitCall) GitResult {
@@ -343,4 +365,89 @@ func TestGuardAcceptsTheTokenCommitWrites(t *testing.T) {
 			}
 		})
 	}
+}
+
+// agentOn is a guard bed for a DELEGATE commit on branch ("" is a detached
+// HEAD) of a checkout no seat holds, whose token proof always fails.
+func agentOn(t *testing.T, branch string) *guardBed {
+	t.Helper()
+	g := newGuardBed(t)
+	g.git.branch = branch
+	g.owners.Classify = func(string, int64) (string, error) { return "DELEGATE", nil }
+	g.stage("A", "ordinary.txt")
+	return g
+}
+
+// TestGuardWrapperFenceCoversOnlyWhatItProtects: the wrapper token (D-6 of
+// "One writer, safe readers", d2d33e9fb) protects the write role a seat holds
+// on its checkout and the published line the ledger and the landing path
+// write to. An agent commit on a feature branch of a clone no seat holds
+// (an integration or builder clone) damages neither, so it needs no token;
+// the published branch, the ledger branch, a detached or unreadable HEAD, a
+// seat checkout and a linked worktree of one stay fenced.
+func TestGuardWrapperFenceCoversOnlyWhatItProtects(t *testing.T) {
+	t.Parallel()
+	g := agentOn(t, "mfix2")
+	g.expect(g.run(), 0)
+	if g.tokenChecks != 0 || g.stderr.Len() != 0 {
+		t.Fatalf("a feature-branch commit in an unheld clone was fenced: checks %d stderr %q", g.tokenChecks, g.stderr.String())
+	}
+
+	// The configured sync branch replaces the default: main is then an
+	// ordinary branch, the configured one is the published line.
+	g = agentOn(t, "main")
+	g.syncBranch = "refs/heads/trunk"
+	g.expect(g.run(), 0)
+
+	for _, c := range []struct {
+		name   string
+		branch string
+		setup  func(*guardBed)
+		reason string
+	}{
+		{"default published branch", "main", nil, "refs/heads/main is the published line"},
+		{"configured published branch", "trunk", func(g *guardBed) { g.syncBranch = "refs/heads/trunk" }, "refs/heads/trunk is the published line"},
+		{"ledger branch", "metasystem/goals", nil, "refs/heads/metasystem/goals is the published line"},
+		{"detached HEAD", "", nil, "HEAD names no branch"},
+		{"unreadable sync branch", "feature", func(g *guardBed) { g.syncConfigCode = 3 }, "goal.sync-branch cannot be read"},
+		{"unqualified sync branch", "feature", func(g *guardBed) { g.syncBranch = "feature" }, "goal.sync-branch cannot be read"},
+		{"seat checkout", "feature", func(g *guardBed) {
+			if err := os.MkdirAll(filepath.Join(g.root, "artifacts", "agents", "mains"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}, "a seat holds this checkout"},
+		{"linked worktree of a seat checkout", "feature", func(g *guardBed) {
+			primary := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(primary, "artifacts", "agents", "mains"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			g.commonDir = filepath.Join(primary, ".git")
+		}, "a seat holds this checkout"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			g := agentOn(t, c.branch)
+			if c.setup != nil {
+				c.setup(g)
+			}
+			g.expect(g.run(), 1, "the live wrapper ancestry token is missing", c.reason, "metasystem work land")
+			if g.tokenChecks != 1 {
+				t.Fatalf("token checks %d, want 1", g.tokenChecks)
+			}
+		})
+	}
+}
+
+// TestGuardUnheldCloneKeepsTheOtherFences: relaxing the wrapper fence on a
+// feature branch leaves the ledger, patch-backup and new-plan refusals whole.
+func TestGuardUnheldCloneKeepsTheOtherFences(t *testing.T) {
+	t.Parallel()
+	g := agentOn(t, "feature")
+	g.stage("A", "plans/goals/smuggled.md")
+	g.expect(g.run(), 1, "goal files change only through goal verbs")
+	g = agentOn(t, "feature")
+	g.stage("A", "scratch.orig")
+	g.expect(g.run(), 1, "patch backups are never tracked")
+	g = agentOn(t, "feature")
+	g.stage("A", "plans/new.md")
+	g.expect(g.run(), 1, "refusing to commit NEW plan file(s)")
 }

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"golang.org/x/sys/unix"
 )
 
@@ -266,7 +267,7 @@ func randomRun() int {
 // sourced wrapper once performed in its caller.
 func (s *armState) write() bool {
 	var out strings.Builder
-	fmt.Fprintf(&out, "witness_state=%s\n", shellQuote(s.witnessState))
+	fmt.Fprintf(&out, "witness_state=%s\n", shellquote.Quote(s.witnessState))
 	reused := "0"
 	if s.engineReused {
 		reused = "1"
@@ -278,7 +279,7 @@ func (s *armState) write() bool {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		fmt.Fprintf(&out, "export %s=%s\n", name, shellQuote(s.exports[name]))
+		fmt.Fprintf(&out, "export %s=%s\n", name, shellquote.Quote(s.exports[name]))
 	}
 	if len(s.unsets) > 0 {
 		fmt.Fprintf(&out, "unset %s\n", strings.Join(s.unsets, " "))
@@ -289,8 +290,4 @@ func (s *armState) write() bool {
 	}
 	s.written = true
 	return true
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }

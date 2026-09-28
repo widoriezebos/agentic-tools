@@ -2,10 +2,8 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -31,43 +29,6 @@ var (
 		return proof, nil
 	}
 )
-
-// runSessionStop is the normal path for minting a quiet-stop authorization.
-// It refuses every agent-classified caller before the persistence layer runs.
-// Same-user raw-byte forgery remains outside this boundary, as it does for
-// every repository-stored human-authority verb; ledger authentication owns
-// that separate trust problem.
-func runSessionStop(args []string) int {
-	flags := flag.NewFlagSet("session stop", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	by := flags.String("by", "", "name of the attending human")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if flags.NArg() != 0 || strings.TrimSpace(*by) == "" {
-		fmt.Fprintln(os.Stderr, "session stop: --by <human> is required and positional arguments are not accepted")
-		return 2
-	}
-
-	stateRoot, err := goal.ResolveStateRoot(*root)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "session stop refused: the state root cannot be resolved: %v\n", err)
-		return 1
-	}
-	marker, refusal, code := authorizeSessionStop(stateRoot, *by)
-	if code != 0 {
-		fmt.Fprintln(os.Stderr, refusal)
-		return code
-	}
-	if refusal != "" {
-		// The authorization already held (R-129-ui); the sentence says so.
-		fmt.Println(refusal)
-		return 0
-	}
-	fmt.Printf("session stop authorized once for %s at holder %s epoch %d by %s\n",
-		marker.SessionId, marker.HolderMainId, marker.ClaimEpoch, marker.By)
-	return 0
-}
 
 // authorizeSessionStop mints one quiet-stop authorization for the current
 // announced main session at a proven human terminal. A refusal returns its

@@ -31,7 +31,7 @@ func TestFenceLandTexts(t *testing.T) {
 	}
 	got := Fence(root, "land", testLedger)
 	for _, want := range []string{"this checkout's brain declaration is unreadable", "nothing here dispatches, lands",
-		"metasystem internal brain withdraw --root " + root} {
+		"metasystem settings coordinator --withdraw --by <name> --repo " + root} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("corrupt land fence = %q, want %q", got, want)
 		}

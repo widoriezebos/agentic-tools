@@ -3,8 +3,10 @@
 Captured 2026-08-23 from the bm-2d rep-1 review with Wido, the first
 live run of a Devin-hosted mission under the wall. Companion doctrine:
 the native-versus-metasystem subagent boundary in
-`docs/orchestration.md`; the working design is
-`records/acp/acp-transport-design.md` while it ships.
+`docs/orchestration.md`. The decisions behind the transport are D80-D83
+and D91-D93 of the 2026-08-13 decisions log; that log and the working
+design were removed on 2026-09-28 (tag `records-archive-2026-09-28`).
+The wire facts and the legacy delivery ladder are below.
 
 ## Why the ACP shape
 
@@ -141,7 +143,9 @@ motion Wido asked about is real.
 
 **The scope finding that reframes both reps.** The flipped key is
 `dispatch.transport.devin`: it governs DELEGATE dispatch only.
-`scripts/agents/hosts/devin.sh` — the host-turn launcher — has no
+`scripts/agents/hosts/devin.sh` — the host-turn launcher then, since
+replaced by the engine's host-turn operations
+(`internal/missionrunner/hostturn`) — had no
 transport selector and still runs legacy `devin -p
 --permission-mode dangerous` with workspace-wide write permission.
 Both reps' hosts therefore ran ungraded; ACP prevention has never
@@ -172,6 +176,67 @@ seam-shaped: grade the host turn, give graded implementers a lawful
 build-and-verify channel (delegate-exec-channel), and register a
 config whose roster matches its name.
 
+## Wire facts the dialect rests on
+
+Captured by the P1 wire probe against devin 3000.4.25 (protocol 1) on
+2026-08-16. The mode mapping in `internal/adapter/devinacp.go`, the
+watermark in `internal/acp/assemble.go` (pinned by
+`TestWatermarkDefeatsReplay`) and the per-turn usage owner in
+`internal/usage/acp.go` rest on them.
+
+- **The permission request never fires.** In `ask`, `accept-edits`
+  and `smart` modes Devin sent zero `session/request_permission`
+  requests. `ask` removes write and exec tools server-side, and the
+  denied turn still ends `end_turn` with a useful answer.
+  `accept-edits` auto-approves and executes locally. `smart` wrote a
+  file outside the session cwd without asking. So the envelope's only
+  ACP lever is the tools grade, applied as the session mode at setup.
+  `Decide` governs only requests that actually arrive. No mode
+  enforces paths, so Devin's readRoots and writeRoots stay
+  `notEnforced`: admission, not containment.
+- **Advertising no client capabilities contains nothing.** The CLI
+  executes its own tools. The client's missing fs/terminal
+  capabilities refuse only client-side operations.
+- **Mode and model are session config, not argv.** `session/new`
+  returns them as config options, and `session/set_mode` sets the
+  mode. Setting a non-default model over the wire was never captured,
+  so a requested model is not evidence of the effective one.
+- **`session/load` replays history before its response** as
+  live-looking `user_message_chunk` and `agent_message_chunk` frames.
+  An assembler without the watermark adopts the old answer.
+- **Teardown: stdin EOF is ignored.** The server outlived a 60 s
+  grace. SIGTERM is honored, SIGKILL is the backstop, and late frames
+  arrive after the PromptResponse.
+- **Never probed:** the effect of `session/cancel` on the process,
+  session bridges between legacy and ACP, ATIF export in ACP mode, and
+  setting a non-default model. Devin use is exceptional (D83, D93) and
+  nothing consumes the answers.
+
+## The legacy delivery ladder (D64), and why it is shaped this way
+
+- Evidence: swe-1-7 finishes by WRITING a file, not by printing. Under graded
+  permissions the final write was confirmation-blocked and the session died
+  undelivered (D57). Under dangerous mode the file landed, schema-perfect,
+  with stdout empty (D62). Five jobs' work was lost in evidence already held.
+- One engine function (`adapter.DevinCollect`) owns the walk (stdout, the
+  named file, then the transcript). It reports facts only. Repair
+  eligibility is adjudication's, and the caller only routes. Rejected: a
+  shell ladder, and "first non-empty candidate wins". Junk on stdout must not
+  shadow a valid named file, so each candidate is normalized, then
+  canonically validated. The presence bars are pinned by
+  `TestCollectPresenceBars`.
+- Threat model for transcript mining: it selects among the delegate's OWN
+  writes and can grant nothing stdout could not. The guards stop drafts,
+  poisoned repo content and pre-repair material, not a hostile delegate.
+  Only a write whose basename is the attempt's named file qualifies (final
+  intent), and it delivers only if the file exists with a matching sha256.
+  ATIF tool results carry no success field, so the filesystem is the oracle.
+- One paid repair ever. It is claimed by CAS before launch (absent
+  `returnRepairs` means zero), because recording it after the provider call
+  let a crash buy a second one.
+- Under ACP the typed outcome is the EXCLUSIVE channel, with no fall-through
+  to scraping. Evidence never crosses transports.
+
 ## Standing decisions this rationale rests on
 
 - D61 (the dangerous-mode waiver), D81/D82 (the transport selector
@@ -182,3 +247,6 @@ config whose roster matches its name.
   model-tier naming leniency via a declared, generic equivalence
   mechanism (Devin's `swe-1-7` IS its "SWE-1.7 Max" tier; the
   spelling wobble is a known platform behavior, not substitution).
+- The D-numbers above are entries of the 2026-08-13 decisions log
+  (`docs/reviews/2026-08-13-delegated-decisions.md`, removed 2026-09-28;
+  tag `records-archive-2026-09-28`).

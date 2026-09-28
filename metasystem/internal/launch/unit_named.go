@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"golang.org/x/sys/unix"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // A named unit is the same unit run reached again by its name. The entry
@@ -399,13 +399,12 @@ func (runner *UnitRunner) namedLock(key string, plan UnitPlan) (*os.File, error)
 	if err := os.MkdirAll(filepath.Dir(runner.namedPath(key, "")), 0o700); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(runner.namedPath(key, ".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	held, err := lock.File(runner.namedPath(key, ".lock"), 0o600, lock.TryExclusive)
 	if err != nil {
-		return nil, err
-	}
-	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		file.Close()
-		if !lockWouldBlock(err) {
+		if !isLockFailure(err) {
+			return nil, err
+		}
+		if !lock.Busy(err) {
 			return nil, fmt.Errorf("UNIT_LOCK_FAILED unit=%s goal=%s lock=%s: %w", plan.Unit, plan.Goal, runner.namedPath(key, ".lock"), err)
 		}
 		run := "reserving"
@@ -414,7 +413,7 @@ func (runner *UnitRunner) namedLock(key string, plan UnitPlan) (*os.File, error)
 		}
 		return nil, fmt.Errorf("UNIT_RUN_BUSY unit=%s goal=%s run=%s: another caller is advancing this unit; repeat the same command to continue", plan.Unit, plan.Goal, run)
 	}
-	return file, nil
+	return held.File(), nil
 }
 
 func (runner *UnitRunner) readNamed(key string) (namedUnitEntry, bool, error) {

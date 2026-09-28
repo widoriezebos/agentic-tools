@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
-// Rule H1: job breach-stop admits a person, and the stop it publishes is
-// ordered by the enrolled person's name, proven as the sibling human verbs
-// prove it; a --by must match it. The machinery custodians keep recording
+// Rule H1: a breach stop admits a person, and the stop the delegation
+// lifecycle publishes for one (engineHost.BreachStopOrderingHuman) is ordered
+// by the enrolled person's name, proven as the sibling human verbs prove it;
+// a --by must match it. The machinery custodians keep recording
 // the custodian lineage and cannot put a person's name on their act.
 func TestBreachStopAdmitsThePersonAndNamesThem(t *testing.T) {
 	t.Parallel()
@@ -56,11 +56,5 @@ func TestBreachStopAdmitsThePersonAndNamesThem(t *testing.T) {
 	if nameRead {
 		t.Fatal("a custodian's stop read the human proof")
 	}
-	// The production wrapper proves through the prover it is given.
-	failing := func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error) {
-		return humanauthority.Proof{}, errors.New("TERMINAL_NOT_ENROLLED")
-	}
-	if _, err := breachStopOrderingHuman(root, human, "Wido", now, failing); err == nil || !strings.Contains(err.Error(), "TERMINAL_NOT_ENROLLED") {
-		t.Fatalf("an unproven --by was accepted: %v", err)
-	}
+
 }

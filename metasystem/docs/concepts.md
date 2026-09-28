@@ -181,13 +181,11 @@ and transfer streams of work.
 ## Cross-references
 
 `docs/glossary.md` (terms), `docs/patience.md` (the patience program),
-`docs/design/mission-cycle-sequence.md` (the runner's ground truth),
+`internal/missionrunner` (package doc; the runner's ground truth),
 `docs/orchestration.md` (delegation and modes),
 `skills/design-critique/SKILL.md` (the loop's rules, the exhaustion
 precedent, satellites), `docs/design/stop-loss-core.md` (the shipped fuse).
 
-TODO: the benchmark kit's concepts (cohorts, repetitions, held-out
-graders, seal boundaries, trial fences and their calibration rule).
 TODO: the flight recorder and evidence lifecycle (events, mirrors,
 manifests, collection) as one story.
 TODO: gated metasystem self-repair during missions (ruled 2026-08-11:

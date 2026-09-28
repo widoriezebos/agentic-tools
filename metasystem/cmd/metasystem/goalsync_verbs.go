@@ -27,15 +27,21 @@ func ensureGuardEnrolled(root string) error { return ledgerfence.Ensure(root) }
 
 func environWithoutGitSteeringCLI() []string { return ledgerfence.EnvironWithoutGitSteering() }
 
-func goalActor(root string, human string) (goal.Actor, error) {
-	machine, err := goal.ResolveMachine(root)
+// goalActorFromDependencies is the actor from request dependencies: their
+// machine reader and the lineage they carry.
+func goalActorFromDependencies(dependencies syncRequestDependencies, root, human string) (goal.Actor, error) {
+	lineage := ""
+	if dependencies.ownerLineage != nil {
+		lineage = dependencies.ownerLineage()
+	}
+	return goalActorWith(dependencies.machine, root, human, lineage)
+}
+
+func goalActorWith(resolveMachine func(string) (string, error), root, human, lineage string) (goal.Actor, error) {
+	machine, err := resolveMachine(root)
 	if err != nil {
 		return goal.Actor{}, err
 	}
-	// METASYSTEM_OWNER_LINEAGE is the runner's real export (the same
-	// variable arming and succession read); a second spelling here
-	// collapsed every real session to the literal "session".
-	lineage := os.Getenv("METASYSTEM_OWNER_LINEAGE")
 	if lineage == "" {
 		lineage = "session"
 	}
@@ -49,7 +55,15 @@ func goalUlid() (string, error) {
 // runGoalMigrate is the cutover: one commit, one opid, the reviewed
 // source digest gating everything.
 func runGoalMigrate(args []string) int {
+	return goalMigrateWith(defaultSyncRequestDependencies(), os.Stdout, os.Stderr, args)
+}
+
+// goalMigrateWith is the cutover under explicit request dependencies: the
+// human word classifies from their supplied caller, the actor carries their
+// lineage and machine, and the report goes to the caller's streams.
+func goalMigrateWith(dependencies syncRequestDependencies, stdout, stderr io.Writer, args []string) int {
 	flags := flag.NewFlagSet("goal migrate", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", "", "checkout root")
 	sourceDigest := flags.String("source-digest", "", "the reviewed goals.md sha256 literal")
 	manifest := flags.String("manifest", "", "amendment manifest path (omit for a bare migration)")
@@ -60,12 +74,12 @@ func runGoalMigrate(args []string) int {
 		return 2
 	}
 	if *root == "" || *sourceDigest == "" || *by == "" {
-		fmt.Fprintln(os.Stderr, "goal migrate: --root, --source-digest, and --by are required — the cutover is a human act on reviewed bytes")
+		fmt.Fprintln(stderr, "goal migrate: --root, --source-digest, and --by are required — the cutover is a human act on reviewed bytes")
 		return 2
 	}
-	classification, classErr := brainHumanWordClassification("migrate", *root, *by, nil)
+	classification, classErr := brainHumanWordClassificationWithFacts("migrate", *root, *by, nil, dependencies.authorityFacts)
 	if classErr != nil {
-		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", classErr)
+		fmt.Fprintf(stderr, "goal migrate: %v\n", classErr)
 		return 1
 	}
 	adoption := *identity
@@ -77,29 +91,29 @@ func runGoalMigrate(args []string) int {
 		} else {
 			minted, err := goalUlid()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+				fmt.Fprintf(stderr, "goal migrate: %v\n", err)
 				return 1
 			}
 			adoption = minted
 		}
 	}
-	if err := ensureGuardEnrolled(*root); err != nil {
-		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+	if err := dependencies.ensureGuard(*root); err != nil {
+		fmt.Fprintf(stderr, "goal migrate: %v\n", err)
 		return 1
 	}
-	actor, err := goalActor(*root, *by)
+	actor, err := goalActorFromDependencies(dependencies, *root, *by)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+		fmt.Fprintf(stderr, "goal migrate: %v\n", err)
 		return 1
 	}
 	ulid, err := goalUlid()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+		fmt.Fprintf(stderr, "goal migrate: %v\n", err)
 		return 1
 	}
-	endpoint, err := goal.ResolveEndpoint(*root)
+	endpoint, err := dependencies.endpoint(*root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+		fmt.Fprintf(stderr, "goal migrate: %v\n", err)
 		return 1
 	}
 	configureCarriedCounselor(&endpoint)
@@ -110,13 +124,13 @@ func runGoalMigrate(args []string) int {
 		Identity: adoption, SyncMode: *syncMode,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+		fmt.Fprintf(stderr, "goal migrate: %v\n", err)
 		return 1
 	}
 	out, _ := json.MarshalIndent(map[string]any{
 		"outcome": res.Outcome, "tip": res.Tip, "identity": adoption, "detail": res.Detail,
 	}, "", "  ")
-	fmt.Println(string(out))
+	fmt.Fprintln(stdout, string(out))
 	if res.Outcome != goal.OutcomeConfirmed {
 		return 1
 	}
@@ -158,32 +172,6 @@ func goalFetchTo(stdout, stderr io.Writer, root string, resolve func(string) (go
 	return 0
 }
 
-// runGoalRepair deliberately accepts the current canonical tip after
-// the ordinary read-side advance has refused a rewind.
-func runGoalRepair(args []string) int {
-	return runGoalRepairWithInputs(args, defaultGoalAuthorityReadFacts(), goal.ResolveEndpoint)
-}
-
-func runGoalRepairWithInputs(args []string, facts goalAuthorityReadFacts, resolveEndpoint func(string) (goal.Endpoint, error)) int {
-	flags := flag.NewFlagSet("goal repair", flag.ContinueOnError)
-	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "usage: metasystem goal sync --accept-remote-history --by <human> [--repo <checkout>]")
-		flags.PrintDefaults()
-	}
-	acceptRemote := flags.Bool("accept-remote", false, "accept the current remote tip despite a rewind")
-	by := flags.String("by", "", "human authorizing the repair")
-	root := pathFlag(flags, "root", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if !*acceptRemote {
-		fmt.Fprintln(os.Stderr, "goal repair: --accept-remote is required")
-		flags.Usage()
-		return 2
-	}
-	return goalRepairAcceptRemoteTo(os.Stdout, os.Stderr, *root, *by, facts, resolveEndpoint)
-}
-
 // goalRepairAcceptRemoteTo is the accept-remote repair owner on the caller's
 // streams; facts carry the supplied caller identity the brain's human-word
 // gate classifies.
@@ -210,27 +198,6 @@ func goalRepairAcceptRemoteTo(stdout, stderr io.Writer, root, by string, facts g
 	return 0
 }
 
-// hexDigestOf helps the rehearsal scripts compute the reviewed
-// literal without a python detour.
-func runGoalSourceDigest(args []string) int {
-	flags := flag.NewFlagSet("goal source-digest", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" {
-		fmt.Fprintln(os.Stderr, "goal source-digest: --root is required")
-		return 2
-	}
-	data, err := os.ReadFile(*root + "/plans/goals.md")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal source-digest: %v\n", err)
-		return 1
-	}
-	fmt.Println(goal.SourceDigestOf(data))
-	return 0
-}
-
 // recoverGoalJournal runs the one recovery rule over the journal and returns
 // what it did to each stranded entry.
 func recoverGoalJournal(root string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) ([]goal.RecoveryReport, error) {
@@ -247,31 +214,4 @@ func recoverGoalJournal(root string, commandNow func(string) (time.Time, error),
 		return nil, err
 	}
 	return goal.RecoverWithPolicy(endpoint, goalRecoveryPolicy{GoalRecoveryPolicy: dispatchcore.GoalRecoveryPolicy{Now: now}, root: root})
-}
-
-// runGoalRecover executes the one recovery rule over the journal —
-// the verb a stranded clone runs to move again.
-func runGoalRecover(args []string) int {
-	flags := flag.NewFlagSet("goal recover", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" {
-		fmt.Fprintln(os.Stderr, "goal recover: --root is required")
-		return 2
-	}
-	reports, err := recoverGoalJournal(*root, goalCommandNow, defaultSyncRequestDependencies())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
-		return 1
-	}
-	if len(reports) == 0 {
-		fmt.Println("the journal is clean; nothing to recover")
-		return 0
-	}
-	for _, rep := range reports {
-		fmt.Printf("%s: %s — %s\n", rep.Opid, rep.Action, rep.Detail)
-	}
-	return 0
 }

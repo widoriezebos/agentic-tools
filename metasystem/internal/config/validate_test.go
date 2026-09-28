@@ -284,12 +284,12 @@ func TestValidateRejections(t *testing.T) {
 		{
 			name:   "template placeholder as the default model",
 			conf:   "metasystem.runtimes=fake\nevidence.root=@EVIDENCE@\nrole.default.runtime=fake\nrole.default.model.fake=<model>\n",
-			expect: "resolves to fake:<model>, a template placeholder from role.default.model.fake; set it with: metasystem internal config tailor --conf ",
+			expect: "resolves to fake:<model>, a template placeholder from role.default.model.fake; set it with: metasystem settings set role.default.model.fake <the fake model this seat runs>, which writes ",
 		},
 		{
 			name:   "template placeholder as a launching role's model",
 			conf:   "metasystem.runtimes=fake\nevidence.root=@EVIDENCE@\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\nrole.implementer.runtime=fake\nrole.implementer.model.fake=<model>\n",
-			expect: "a template placeholder from role.implementer.model.fake; set it with: metasystem internal config tailor --conf ",
+			expect: "a template placeholder from role.implementer.model.fake; set it with: metasystem settings set role.implementer.model.fake <the fake model this seat runs>, which writes ",
 		},
 		{
 			name:   "malformed tier key",

@@ -18,8 +18,8 @@ slowness into failure.
   TestTerminateGroupKillsThroughATermImmuneOwnedGroup fails at HEAD on
   this guest; the family flaps between tests with the same
   identity-proof-refusal shape.
-- The doctrine: metasystem/records/patience/patience-attempts.md (in your
-  worktree) — condition-based waits with progress-resetting failsafes,
+- The doctrine: metasystem/docs/patience.md, "Waits in tests: attempts,
+  not wall-clock" (in your worktree) — condition-based waits with progress-resetting failsafes,
   never fixed windows; and the two landed ports as precedent: the steward
   tick test (this seat's landing 65c36111: close-the-channel plus cleanup
   handshake plus progress-based deadline) and the R-35 law that failing
