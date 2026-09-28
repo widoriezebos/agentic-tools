@@ -133,7 +133,6 @@ func families() []family {
 			summary: "configuration and identity helpers",
 			verbs: []verb{
 				{"canonical-model", "print the canonical model key for a name", runConfigCanonicalModel},
-				{"identity", "print an adapter's canonical configuration identity", runConfigIdentity},
 				{"get", "resolve a config key with flag/env/local/mode/conf/default precedence", runConfigGet},
 				{"validate", "validate the whole metasystem.conf domain", runConfigValidate},
 				{"keys", "enumerate config keys, optionally by prefix", runConfigKeys},
