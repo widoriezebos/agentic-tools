@@ -183,7 +183,24 @@ func Read(stateRoot, key string, contract Contract, o ReadOptions) (Status, erro
 		status.Since = record.ReadyAt
 	}
 	if record.Ended != nil {
-		status.State, status.Readiness = Finished, NoProbe
+		// An ended marker is trusted only over a group with nothing left in
+		// it: a member still there is a process of this run, never finished.
+		var groupErr error
+		status.Members, groupErr = o.group()(record.Group)
+		members := status.Members
+		if supervisor, refErr := record.SupervisorRef(); refErr == nil {
+			members = livingBesides(members, supervisor.Pid)
+		}
+		switch {
+		case groupErr != nil:
+			status.State, status.Readiness = ChildEnded, NoProbe
+			status.Problem = fmt.Sprintf("ended record; group %d could not be inspected: %v", record.Group, groupErr)
+		case len(members) > 0:
+			status.State, status.Readiness = ChildEnded, NoProbe
+			status.Problem = fmt.Sprintf("ended record, descendants alive: %d member(s) of group %d", len(members), record.Group)
+		default:
+			status.State, status.Readiness = Finished, NoProbe
+		}
 		return status, nil
 	}
 	supervisor, refErr := record.SupervisorRef()

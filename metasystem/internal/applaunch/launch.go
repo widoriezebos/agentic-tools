@@ -46,8 +46,10 @@ func ServeArgs(repo, installation, key, ref, goal, address string) []string {
 // LaunchSupervisor starts one run's supervisor detached and returns when it
 // reports ready or failed, or when the wait runs out. A supervisor that has
 // not reported by then is ended, because a run nobody waited for is a run
-// nobody owns.
-func LaunchSupervisor(spec LaunchSpec, spawn Spawn, wait time.Duration) (string, int, error) {
+// nobody owns. A supervisor that reported failure is given settle to end its
+// application and leave, and is reaped if it does; one still there after it
+// stays the owner of descendants its application left, and is left to them.
+func LaunchSupervisor(spec LaunchSpec, spawn Spawn, wait, settle time.Duration) (string, int, error) {
 	if spawn == nil {
 		spawn = ExecSpawn
 	}
@@ -70,7 +72,7 @@ func LaunchSupervisor(spec LaunchSpec, spawn Spawn, wait time.Duration) (string,
 		}
 		if message, ok := strings.CutPrefix(line, "failed "); ok {
 			_ = child.Release()
-			Reap(pid)
+			reapWithin(pid, settle)
 			return "", 0, errors.New(message)
 		}
 	}
@@ -87,11 +89,16 @@ func LaunchSupervisor(spec LaunchSpec, spawn Spawn, wait time.Duration) (string,
 // that outlives its supervisor keeps a zombie out of the process table: a
 // zombie is signalable and readable, so an identity check would read it as a
 // living owner.
-func Reap(pid int) {
+func Reap(pid int) { reapWithin(pid, 2*time.Minute) }
+
+func reapWithin(pid int, wait time.Duration) {
 	if pid <= 0 {
 		return
 	}
-	deadline := time.Now().Add(2 * time.Minute)
+	if wait <= 0 {
+		wait = 2 * time.Minute
+	}
+	deadline := time.Now().Add(wait)
 	for time.Now().Before(deadline) {
 		var status syscall.WaitStatus
 		reaped, err := syscall.Wait4(pid, &status, syscall.WNOHANG, nil)

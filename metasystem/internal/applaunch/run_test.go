@@ -112,7 +112,8 @@ func (b *bed) startWith(key string, args []string) (string, int, error) {
 	b.t.Helper()
 	spec := LaunchSpec{Executable: b.super, Args: args, Dir: b.root,
 		LogPath: filepath.Join(Dir(b.stateRoot), key+".launch.log")}
-	address, pid, err := LaunchSupervisor(spec, ExecSpawn, 20*time.Second)
+	address, pid, err := LaunchSupervisor(spec, ExecSpawn, 20*time.Second,
+		time.Duration(b.contract.StopWaitMS())*time.Millisecond+5*time.Second)
 	if pid > 0 {
 		// The engine's own start exits at once, so a supervisor it launched
 		// is reparented and reaped by init. A test process outlives its
@@ -754,7 +755,7 @@ func TestAnEngineKilledBeforeTheSupervisorStartedLeavesNoRun(t *testing.T) {
 	b := newBed(t, httpContract(mustApp(t), address))
 	spec := LaunchSpec{Executable: filepath.Join(b.root, "no-such-engine"), Args: nil,
 		LogPath: filepath.Join(Dir(b.stateRoot), "standing.launch.log")}
-	if _, _, err := LaunchSupervisor(spec, ExecSpawn, time.Second); err == nil {
+	if _, _, err := LaunchSupervisor(spec, ExecSpawn, time.Second, 0); err == nil {
 		t.Fatal("a supervisor that cannot be started is a refusal")
 	}
 	if status := b.status(StandingKey); status.State != Stopped {
@@ -847,5 +848,60 @@ func TestLogTailAndFollow(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A start command that leaves a descendant and exits before readiness ends
+// under no ended record while that descendant lives: the supervisor stays
+// the owner, status says descendants alive, and the record ends only once a
+// stop has had the supervisor end its own group.
+func TestADescendantLeftBeforeReadinessKeepsTheRunUnended(t *testing.T) {
+	t.Parallel()
+	live := filepath.Join(t.TempDir(), "wrapper")
+	b := newBed(t, map[string]any{
+		"start": map[string]any{"argv": []string{mustApp(t), "--no-listen", "--spawn-descendant",
+			"--exit-after", "300ms", "--live-file", live}},
+		"ready":   map[string]any{"kind": "log", "pattern": "^NEVER$"},
+		"readyMs": 15000, "stopMs": 500})
+	if _, _, err := b.start(StandingKey); err == nil {
+		t.Fatal("a start command that exits before readiness is refused")
+	}
+	// A refused launch names no pid, and this supervisor rightly stays; the
+	// engine's start exits and init reaps it, so the test reaps it itself.
+	if ref, err := b.record(StandingKey).SupervisorRef(); err == nil {
+		go reap(int(ref.Pid))
+	}
+	descendant := live + ".descendant"
+	eventually(t, "the descendant to be running", 10*time.Second, func() bool {
+		_, err := os.Stat(descendant)
+		return err == nil
+	})
+	// Past both of the supervisor's stopMs waits, the old finish had written
+	// an ended record; the supervisor now says the state instead.
+	eventually(t, "the supervisor to say the state or end the record", 15*time.Second, func() bool {
+		log, _ := os.ReadFile(b.record(StandingKey).Log)
+		return strings.Contains(string(log), "descendants alive") || b.record(StandingKey).Ended != nil
+	})
+	if ended := b.record(StandingKey).Ended; ended != nil {
+		t.Fatalf("no ended record while a descendant lives: %+v", ended)
+	}
+	if status := b.status(StandingKey); status.State != ChildEnded || !strings.Contains(status.Problem, "descendants alive") {
+		t.Fatalf("status says descendants alive, got %s: %s", status.State, status.Problem)
+	}
+	record := b.record(StandingKey)
+	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Wait: 25 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Join(result.Lines, "\n")
+	if result.Outcome != StoppedNow || !strings.Contains(lines, "asked the supervisor to end its own group") {
+		log, _ := os.ReadFile(record.Log)
+		t.Fatalf("the descendant is ended by the supervisor's own group signal, got %s\n%s\nlog:\n%s", result.Outcome, lines, log)
+	}
+	if members, err := KernelGroup(record.Group); err != nil || len(members) != 0 {
+		t.Fatalf("the group must have no member left: %v %v", members, err)
+	}
+	if b.record(StandingKey).Ended == nil {
+		t.Fatal("once the descendant is ended, the record ends")
 	}
 }

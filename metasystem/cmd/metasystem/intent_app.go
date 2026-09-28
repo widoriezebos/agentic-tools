@@ -104,7 +104,8 @@ func appIntentCommands() []intentCommand {
 
 // appRef reads the run a verb names: the standing run, a commit, or a goal's
 // branch tip. --at and --goal are two spellings of one thing, so naming both
-// is refused rather than guessed.
+// is refused rather than guessed, and --at goal/G names goal G as --goal G
+// does.
 func (inv *intentInvocation) appRef() (string, string, *intentResult) {
 	at, goal := strings.TrimSpace(inv.input.text("at")), strings.TrimSpace(inv.input.text("goal"))
 	if inv.input.has("at") && inv.input.has("goal") {
@@ -113,6 +114,9 @@ func (inv *intentInvocation) appRef() (string, string, *intentResult) {
 	}
 	if goal != "" {
 		return "goal/" + goal, goal, nil
+	}
+	if named, ok := strings.CutPrefix(at, "goal/"); ok && named != "" {
+		return at, named, nil
 	}
 	return at, "", nil
 }

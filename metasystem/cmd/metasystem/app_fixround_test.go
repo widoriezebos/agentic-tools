@@ -51,6 +51,30 @@ func TestAppStopThroughTheAtSpellingCopiesTheGoalRunsEvidence(t *testing.T) {
 	}
 }
 
+// A run started through --at goal/G records the goal as --goal G does, so a
+// stop through the same spelling copies the goal run's evidence.
+func TestAppStartThroughTheAtSpellingRecordsTheGoal(t *testing.T) {
+	address := appFreePort(t)
+	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
+	evidence := bed.withEvidenceRoot()
+	bed.git("branch", "goal/g1")
+	t.Cleanup(func() { bed.run("app", "stop", "--goal", "g1", "--clean") })
+	if code, out := bed.run("app", "start", "--at", "goal/g1"); code != 0 {
+		t.Fatalf("app start --at goal/g1: %d\n%s", code, out)
+	}
+	record, err := applaunch.ReadRecord(bed.installation, applaunch.KeyFor("goal/g1"))
+	if err != nil || record.Goal != "g1" {
+		t.Fatalf("a start through --at goal/g1 records the goal: %+v %v", record, err)
+	}
+	code, out := bed.run("app", "stop", "--at", "goal/g1")
+	if code != 0 || !strings.Contains(out, "copied to") {
+		t.Fatalf("a stop through --at goal/g1 copies the goal run's evidence: %d\n%s", code, out)
+	}
+	if copies := evidenceCopies(evidence, "g1", "goal/g1"); len(copies) != 1 {
+		t.Fatalf("one evidence copy under the goal, got %v\n%s", copies, out)
+	}
+}
+
 // A goal run whose evidence cannot be copied is not closed: without an
 // evidence root the process is ended, the record survives, and the next stop
 // with the root configured closes it.

@@ -256,7 +256,7 @@ func Supervise(o SuperviseOptions) error {
 		// never only the supervisor: the run must not outlive the engine's
 		// belief that it never started.
 		o.endChild(record, exited)
-		o.finish(record, exitStatus, exited, groupReadSayer(log, record.Group))
+		o.finish(ctx, record, exitStatus, exited, log, groupReadSayer(log, record.Group), false)
 		return errors.New(message)
 	}
 	record.ReadyAt = o.now().UTC().Format(time.RFC3339)
@@ -278,10 +278,12 @@ func Supervise(o SuperviseOptions) error {
 	// signal that group, because only its living identity as the group's
 	// leader proves the group is ours and not a reused id.
 	say := groupReadSayer(log, record.Group)
+	groupEnded := false
 	if !o.awaitGroupEmpty(ctx, record, say) {
 		o.endGroup(record)
+		groupEnded = true
 	}
-	o.finish(record, exitStatus, exited, say)
+	o.finish(ctx, record, exitStatus, exited, log, say, groupEnded)
 	return nil
 }
 
@@ -295,6 +297,19 @@ func groupReadSayer(log *os.File, group int64) func(error) {
 		}
 		last = err.Error()
 		_, _ = fmt.Fprintf(log, "application supervisor: group %d could not be inspected (%v); it is not taken as empty, still waiting\n", group, err)
+	}
+}
+
+// stateSayer writes into the run's log the state a supervisor past its wait
+// is in, once per distinct state.
+func stateSayer(log *os.File) func(string) {
+	last := ""
+	return func(state string) {
+		if state == last {
+			return
+		}
+		last = state
+		_, _ = fmt.Fprintf(log, "application supervisor: %s; the supervisor stays the owner, still waiting\n", state)
 	}
 }
 
@@ -319,20 +334,35 @@ func (o SuperviseOptions) awaitGroupEmpty(ctx context.Context, record Record, sa
 }
 
 // finish waits out the run's descendants and writes the ended record. The
-// supervisor never leaves while a process of its own group remains, so
-// ownership is never given up while something it started still runs.
-func (o SuperviseOptions) finish(record Record, exitStatus atomic.Value, exited <-chan struct{}, say func(error)) {
+// supervisor never leaves while a process of its own group remains, and a
+// group it cannot inspect is never taken as empty: past its wait it says the
+// state as it is and keeps waiting, so no ended record is ever written over
+// something it started that still runs. A signal to it while it waits ends
+// its group, once, by the leader's own signal.
+func (o SuperviseOptions) finish(ctx context.Context, record Record, exitStatus atomic.Value, exited <-chan struct{}, log *os.File, say func(error), groupEnded bool) {
 	select {
 	case <-exited:
 	case <-time.After(time.Duration(o.Contract.StopWaitMS()) * time.Millisecond):
 	}
+	sayState := stateSayer(log)
 	deadline := time.Now().Add(time.Duration(o.Contract.StopWaitMS()) * time.Millisecond)
-	for time.Now().Before(deadline) {
+	for {
 		members, err := o.ownedMembers(record)
-		if err != nil {
-			say(err)
-		} else if len(members) == 0 {
+		if err == nil && len(members) == 0 {
 			break
+		}
+		if !time.Now().Before(deadline) {
+			if err != nil {
+				say(err)
+				sayState(fmt.Sprintf("group not inspectable: %v", err))
+			} else {
+				sayState(fmt.Sprintf("child ended, descendants alive: %d member(s)", len(members)))
+			}
+		}
+		if !groupEnded && ctx.Err() != nil {
+			o.endGroup(record)
+			groupEnded = true
+			continue
 		}
 		time.Sleep(200 * time.Millisecond)
 	}

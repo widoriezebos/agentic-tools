@@ -504,7 +504,8 @@ func (r appRun) launchSupervisor() (string, error) {
 		LogPath:    filepath.Join(applaunch.Dir(r.roots.StateRoot), r.key+".launch.log"),
 	}
 	address, _, err := applaunch.LaunchSupervisor(spec, applaunch.ExecSpawn,
-		time.Duration(r.contract.ReadyWaitMS())*time.Millisecond+10*time.Second)
+		time.Duration(r.contract.ReadyWaitMS())*time.Millisecond+10*time.Second,
+		time.Duration(r.contract.StopWaitMS())*time.Millisecond+5*time.Second)
 	return address, err
 }
 
