@@ -457,15 +457,11 @@ func digestArchivedTree(ctx context.Context, toplevel, tree string, policy behav
 	if err := os.Mkdir(extract, 0o700); err != nil {
 		return "", err
 	}
-	var extractOutput bytes.Buffer
 	extractErr := RunRearmStep(ctx, clock, time.Duration(seconds)*time.Second, "extract-witness-tree", func(stepContext context.Context, progress func()) error {
-		cmd := exec.CommandContext(stepContext, "tar", "-xvf", archivePath, "-C", extract)
-		cmd.Stdout = RearmProgressWriter(&extractOutput, progress)
-		cmd.Stderr = RearmProgressWriter(&extractOutput, progress)
-		return cmd.Run()
+		return extractArchivedTree(stepContext, archivePath, extract, progress)
 	})
 	if extractErr != nil {
-		return "", fmt.Errorf("extract archived tree: %w (%s)", extractErr, strings.TrimSpace(extractOutput.String()))
+		return "", fmt.Errorf("extract archived tree: %w", extractErr)
 	}
 	return policy.Digest(extract, behaviorsurface.Engine)
 }

@@ -2,26 +2,11 @@ package missionrunner
 
 import (
 	"os"
-	"path/filepath"
+	"os/exec"
+	"syscall"
 	"testing"
 	"time"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
-
-func TestParsePSCPUTime(t *testing.T) {
-	for value, want := range map[string]float64{"0:00.12": 0.12, "1:02.50": 62.5, "1:01:01": 3661, "2-01:00:00": 176400} {
-		got, err := parsePSCPUTime(value)
-		if err != nil || got != want {
-			t.Fatalf("%s: got %v err=%v want %v", value, got, err, want)
-		}
-	}
-	for _, value := range []string{"", "12", "a:b", "1:-2"} {
-		if _, err := parsePSCPUTime(value); err == nil {
-			t.Fatalf("%q parsed", value)
-		}
-	}
-}
 
 // TestTreeCPUProgressOnAScriptedSampler drives the progress tracker with a
 // scripted CPU reader and an artificial clock: the first-sample rule, the
@@ -84,38 +69,38 @@ func TestTreeCPUProgressOnAScriptedSampler(t *testing.T) {
 	}
 }
 
-// TestProcessTreeCPUSecondsCountsDescendants is the reader's wiring proof:
-// the real ps command path, parser, and tree traversal see a child whose CPU
-// grows while the root stays unchanged, so descendant time must be summed.
-func TestProcessTreeCPUSecondsCountsDescendants(t *testing.T) {
-	bin := t.TempDir()
-	calls := filepath.Join(bin, "ps-calls")
-	ps := `#!/usr/bin/env bash
-set -euo pipefail
-[[ "$*" == "-axo pid=,ppid=,cputime=" ]] || exit 97
-count=0
-if [[ -f "${PS_FIXTURE_CALLS:?}" ]]; then
-  read -r count <"$PS_FIXTURE_CALLS"
-fi
-count=$((count + 1))
-printf '%d\n' "$count" >"$PS_FIXTURE_CALLS"
-child_cpu=0:00
-[[ "$count" -eq 1 ]] || child_cpu=0:01
-printf '4242 1 0:02\n4243 4242 %s\n9000 1 9:59\n' "$child_cpu"
-`
-	if err := testexec.WriteFile(filepath.Join(bin, "ps"), []byte(ps), 0o700); err != nil {
+// TestProcessTreeCPUSecondsReadsTheKernelNotAProgram is the reader's wiring
+// proof (R-138-m1e, Go decides natively): with no program reachable on PATH,
+// a tree whose root sits idle while its grandchild computes still reports
+// the grandchild's CPU, so the reading comes from the kernel and descendant
+// time is summed. An absent root reports no sample.
+func TestProcessTreeCPUSecondsReadsTheKernelNotAProgram(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	command := exec.Command("/bin/sh", "-c", "/bin/sh -c 'while :; do :; done' & wait")
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PS_FIXTURE_CALLS", calls)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	first, ok := processTreeCPUSeconds(4242)
-	if !ok || first != 2 {
-		t.Fatalf("first scripted process-tree sample = %v, %v; want 2, true", first, ok)
-	}
-	second, ok := processTreeCPUSeconds(4242)
-	if !ok || second != 3 {
-		t.Fatalf("second scripted process-tree sample = %v, %v; want 3, true", second, ok)
+	t.Cleanup(func() {
+		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		_ = command.Process.Kill()
+		_ = command.Wait()
+	})
+	// The ceiling bounds a broken reader, not the machine's speed: the loop
+	// ends on the first reading past the threshold.
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		cpu, ok := processTreeCPUSeconds(command.Process.Pid)
+		if !ok {
+			t.Fatal("a live tree reported no sample")
+		}
+		if cpu >= 0.2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("idle root with a computing grandchild read %v, %v; want at least 0.2s, true", cpu, ok)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	if _, ok := processTreeCPUSeconds(os.Getpid() + 1_000_000); ok {
 		t.Fatal("an absent process must report no sample")
