@@ -52,7 +52,7 @@ var (
 	// declaring residue must link the open backlog item that schedules it.
 	auditResidueMarkerRe = regexp.MustCompile(`(?m)^\s*RESIDUE:`)
 	auditResidueLinkRe   = regexp.MustCompile(`goal:([a-z0-9][a-z0-9-]*)`)
-	auditPlaceholderRe   = regexp.MustCompile(`<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>`)
+	auditPlaceholderRe   = regexp.MustCompile(`<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<cheapest model class>|<middle model class>|<costliest model class>|<model>`)
 )
 
 // AuditResult carries the audit's verdict: refusals, and the informational
@@ -447,15 +447,15 @@ func auditGoalSystem(root string) []string {
 	// not hand-maintained universes.
 	pointerDocs := map[string]string{
 		"docs/project-adaptation.md": "runtime registration",
-		"docs/orchestration.md":      "runtime\nlist",
-		"docs/glossary.md":           "runtime list",
+		"docs/orchestration.md":      "`internal/runtimes`",
+		"docs/glossary.md":           "`internal/runtimes`",
 	}
 	// README ships only with the TEMPLATE (adoption's payload excludes
 	// it — an adopted project's README is the project's own and owes
 	// the metasystem nothing). Same marker the registration presence
 	// checks ride.
 	if fileExists(filepath.Join(root, "development", "metasystem-design.md")) {
-		pointerDocs["README.md"] = "runtime list"
+		pointerDocs["README.md"] = "`internal/runtimes`"
 	}
 	for doc, marker := range pointerDocs {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(doc)))

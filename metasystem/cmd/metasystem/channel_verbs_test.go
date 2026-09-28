@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,8 +64,9 @@ func TestConfigurationIndependentChannelVerbs(t *testing.T) {
 	if err := channel.Close(root, q.ID, "test", nil, channel.DestinationConfig{}); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, problem := captureChannelOutput(t, func() int { return runChannelShow([]string{"--root", root, "--question", q.ID}) }); code != 0 {
-		t.Fatal(problem)
+	// The owner question show reads through.
+	if _, err := channel.ReadQuestion(root, q.ID); err != nil {
+		t.Fatal(err)
 	}
 	if code, _, problem := captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", root, "--question", q.ID}) }); code != 67 || !strings.Contains(problem, "no ledgerCursor") {
 		t.Fatalf("legacy cursor-less question was not refused: code=%d stderr=%q", code, problem)
@@ -148,7 +150,7 @@ func TestWaitChannelAnswer(t *testing.T) {
 	original := channelWaitCommand
 	defer func() { channelWaitCommand = original }()
 	var received []string
-	channelWaitCommand = func(args []string, poll func(context.Context) error) int {
+	channelWaitCommand = func(args []string, poll func(context.Context) error, _ int64, _ io.Writer) int {
 		if poll == nil {
 			t.Fatal("channel wait did not carry its provider poll into the wait cycle")
 		}
@@ -189,7 +191,7 @@ func TestWaitChannelAnswer(t *testing.T) {
 	if code != 23 || problem != "" || !strings.Contains(strings.Join(received, "\x00"), "--after\x00"+strings.Repeat("c", 40)) {
 		t.Fatalf("explicit legacy cursor was not translated: code=%d args=%v stderr=%q", code, received, problem)
 	}
-	channelWaitCommand = func(args []string, poll func(context.Context) error) int {
+	channelWaitCommand = func(args []string, poll func(context.Context) error, _ int64, _ io.Writer) int {
 		answered, readErr := channel.ReadQuestion(root, questionA.ID)
 		if readErr != nil {
 			t.Fatal(readErr)
@@ -225,7 +227,7 @@ func TestWaitChannelAnswer(t *testing.T) {
 	if err := os.WriteFile(metarun.WaiterPath(root, channelRow.Kind, channelRow.TargetID, channelRow.OwnerDigest), rowBody, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	channelWaitCommand = func(args []string, poll func(context.Context) error) int {
+	channelWaitCommand = func(args []string, poll func(context.Context) error, _ int64, _ io.Writer) int {
 		if poll == nil || !strings.Contains(strings.Join(args, "\x00"), "--resume\x00"+waitID) {
 			t.Fatalf("channel resume did not restore its provider poll and durable selector: args=%v poll-present=%t", args, poll != nil)
 		}
@@ -244,7 +246,7 @@ func TestWaitChannelAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	called := false
-	channelWaitCommand = func([]string, func(context.Context) error) int { called = true; return 0 }
+	channelWaitCommand = func([]string, func(context.Context) error, int64, io.Writer) int { called = true; return 0 }
 	code, _, problem = captureChannelOutput(t, func() int {
 		return runChannelWaitWithMachine([]string{"--root", unconfigured, "--question", questionC.ID}, resolveMachine)
 	})

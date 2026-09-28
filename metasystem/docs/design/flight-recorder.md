@@ -298,7 +298,8 @@ first draft itself violated, kept here as permanent warnings:
 - LIVE: `tail -F artifacts/agents/events.jsonl` is the human's window. The
   status surface described in adapter-streaming D-5 is a FORMATTER over
   this stream plus the state files.
-- BUNDLE: `scripts/agents/collect-observability.sh --out <archive>` walks a
+- BUNDLE (designed, never built; no script or verb collects it today): a
+  collector `--out <archive>` walks a
   checkout (and, for a cohort, its targets, joined by `executionId`) and
   ships: every events.jsonl (current + rotated within retention), the state
   files, and the artifact tree per D-5's corollary — with a MANIFEST

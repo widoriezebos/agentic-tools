@@ -403,6 +403,22 @@ func (owner *Owner) release(id string) error {
 	return nil
 }
 
+// retire forgets an ended batch: its lock is released, its own empty queue
+// directory removed and its lock map entry dropped, so neither the queue root
+// nor the owner's memory grows with every batch. A run still in flight keeps
+// both until its completion is applied.
+func (owner *Owner) retire(id string) error {
+	if owner.inflight[id] != nil {
+		return nil
+	}
+	lock := owner.locks[id]
+	if lock == nil {
+		lock = owner.lock(id)
+	}
+	delete(owner.locks, id)
+	return lock.retire()
+}
+
 func joinedFacts(record Record) (int, time.Time) {
 	joined := map[string]bool{}
 	count := 0
@@ -526,6 +542,9 @@ func (owner *Owner) Resume() {
 		}
 		_, clearComplete := greenTipClearStatus(record)
 		if record.State == StateDissolved || record.State == StateLanded && clearComplete {
+			if err := owner.retire(id); err != nil {
+				owner.report(id, fmt.Errorf("retire ended batch lock: %w", err))
+			}
 			continue
 		}
 		if seat, held := owner.helmSeat(record); held {

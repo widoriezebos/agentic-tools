@@ -18,7 +18,7 @@ func runRuntimeSetup(args []string) int {
 }
 
 func runRuntimeSetupWithResolver(args []string, resolve func(string) (stateroot.Layout, error)) int {
-	flags := flag.NewFlagSet("runtime setup", flag.ContinueOnError)
+	flags := flag.NewFlagSet("system register", flag.ContinueOnError)
 	repo := pathFlag(flags, "repo", "", "repository root or a path inside the target installation")
 	runtimeCSV := flags.String("runtimes", "", "comma-separated adoptable hosts (default: all)")
 	copySkills := flags.Bool("copy-skills", false, "copy skill trees instead of creating relative links")
@@ -27,7 +27,7 @@ func runRuntimeSetupWithResolver(args []string, resolve func(string) (stateroot.
 		return 2
 	}
 	if *repo == "" || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal runtime setup --repo PATH [--runtimes CSV] [--copy-skills] [--check]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem system register --repo PATH [--runtimes CSV] [--copy-skills] [--check]")
 		return 2
 	}
 	var selected []string
@@ -39,7 +39,7 @@ func runRuntimeSetupWithResolver(args []string, resolve func(string) (stateroot.
 	})
 	if provided {
 		if *runtimeCSV == "" {
-			fmt.Fprintln(os.Stderr, "runtime setup: --runtimes cannot be empty")
+			fmt.Fprintln(os.Stderr, "system register: --runtimes cannot be empty")
 			return 2
 		}
 		selected = strings.Split(*runtimeCSV, ",")

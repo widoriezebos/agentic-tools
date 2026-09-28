@@ -19,7 +19,7 @@ import { LaunchCard } from "./LaunchCard";
 const now = new Date("2026-09-25T11:00:00Z");
 
 const fence =
-  "go-build: refused: the gate fence holds this checkout; run scripts/agents/go-gate.sh --fast and land the red it names before building here";
+  "go-build: refused: the gate fence holds this checkout; run go run ./cmd/devgate static and land the red it names before building here";
 
 function launch(over: Partial<Launch> = {}): Launch {
   return {
@@ -100,7 +100,7 @@ describe("a launch that stopped", () => {
     const markup = rendered(stopped);
     expect(markup).toContain("Launching m1f stopped");
     expect(markup).toContain("go-build: refused: the gate fence holds this checkout");
-    expect(markup).toContain("go-gate.sh --fast");
+    expect(markup).toContain("go run ./cmd/devgate static");
   });
 
   it("offers Retry, and asks for the authorization again", () => {

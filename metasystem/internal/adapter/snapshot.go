@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 var (
@@ -137,7 +139,7 @@ func parseBlob(raw, name string) (any, error) {
 // sequence fails instead of overwriting, then fsyncs the file and its directory
 // so the snapshot survives a crash exactly as written or not at all.
 func exclusiveWriteJSON(path string, value any) error {
-	data, err := encodeJSON(value)
+	data, err := wiredoc.RenderValue(value)
 	if err != nil {
 		return err
 	}

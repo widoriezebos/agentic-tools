@@ -100,10 +100,7 @@ func CancelIntent(repoRoot, nonce, reason string) error {
 		return err
 	}
 	target := filepath.Join(cancelledDir(repoRoot), nonce+".json")
-	tombstoneErr := os.WriteFile(target+".tmp", out, 0o644)
-	if tombstoneErr == nil {
-		tombstoneErr = os.Rename(target+".tmp", target)
-	}
+	_, tombstoneErr := atomicfile.WriteFile(target, out, 0o644, "")
 	var noticeErr error
 	if it.Handoff != nil {
 		noticeErr = clearPendingNotification(repoRoot, handoffNoticeNonce(nonce))
@@ -141,11 +138,8 @@ func MintIntent(repoRoot string, it Intent) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	_, err = atomicfile.WriteFile(path, data, 0o644, "")
+	return err
 }
 
 // UpdateIntent rewrites a live intent's mutable fields (notified,
@@ -159,11 +153,8 @@ func UpdateIntent(repoRoot string, it Intent) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	_, err = atomicfile.WriteFile(path, data, 0o644, "")
+	return err
 }
 
 // ConsumeIntent authorizes exactly one launch: the atomic move to
@@ -230,11 +221,8 @@ func StampLaunch(repoRoot, nonce string) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	_, err = atomicfile.WriteFile(path, data, 0o644, "")
+	return err
 }
 
 // ConsumedActive lists consumed intents not yet reaped — the window

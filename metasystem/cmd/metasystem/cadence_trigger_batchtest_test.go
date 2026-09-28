@@ -163,7 +163,7 @@ exit 1
 	// publishes presence into these clones, so goal next flags that holder on
 	// standard error. The flag is the only standard-error line a seat may
 	// print, and it names no clock: an unpublished holder has no since.
-	wantStderr := "goal standing-validation is held by mac-cli, which has published no presence; a human reassigns it with goal steal\n"
+	wantStderr := "goal standing-validation is held by mac-cli, which has published no presence; a human reassigns it with metasystem goal claim standing-validation --take-over --reason TEXT\n"
 	for _, seat := range seatRoots {
 		goalSyncMutationGit(t, seat, "fetch", "-q", landingRoot, projection.Tip)
 		goalSyncMutationGit(t, seat, "update-ref", goal.AcceptedRef, "FETCH_HEAD")

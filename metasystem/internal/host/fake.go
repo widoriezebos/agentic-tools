@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // FakeReturn builds the fake host's return object for a behavior marker,
@@ -94,7 +96,7 @@ func FakeReturn(turnPath, statePath, outputPath, behavior, root string) error {
 			"runnerClosed":       false,
 		}
 		recordPath := filepath.Join(root, "artifacts", "agents", "jobs", jobID+".json")
-		if err := atomicWriteJSON(recordPath, record); err != nil {
+		if err := wiredoc.WriteFile(recordPath, record); err != nil {
 			return fmt.Errorf("write fake job record: %w", err)
 		}
 		value["dispatched"] = []any{map[string]any{
@@ -133,7 +135,7 @@ func FakeReturn(turnPath, statePath, outputPath, behavior, root string) error {
 		}}
 	}
 
-	if err := atomicWriteJSON(outputPath, value); err != nil {
+	if err := wiredoc.WriteFile(outputPath, value); err != nil {
 		return fmt.Errorf("write fake return: %w", err)
 	}
 	return nil

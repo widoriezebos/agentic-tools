@@ -78,7 +78,7 @@ Each failure class has a named answer, and where the rule is binary, a script th
 | --- | --- | --- |
 | Context bloat | A small always-loaded contract (`AGENTS.md`) with a single routing index (`wow.md`). Everything else loads at the phase where it helps, and new rules must pass the change gate | The engine's structural audit (`metasystem internal audit metasystem`) fails when the always-loaded word count exceeds its cap; the retro removes rules that cannot show their value |
 | Rabbit holes | The take-a-step-back skill: every attempt gets a written contract with a budget, every result gets classified, and the stop-loss triggers end an investigation that stopped producing facts | `metasystem experiment check` blocks new cycles once the ledger records a dead end, two no-progress cycles, or an exhausted cycle budget |
-| Silent behavior drift | The refactor skill: a trusted baseline, tests before restructuring, replayable batches, and the project's acceptance gate as the only proof that behavior was preserved | `metasystem internal validate refactor-baseline` blocks new batches on a dirty worktree, diverged history, or an overdue gate run |
+| Silent behavior drift | The refactor skill: a trusted baseline, tests before restructuring, replayable batches, and the project's acceptance gate as the only proof that behavior was preserved | `metasystem test baseline --check` blocks new batches on a dirty worktree, diverged history, or an overdue gate run |
 | False completion | The verify skill (drive the change end to end and report the observed output) and the five-question completion check, with the obligation matrix for risky changes | `metasystem internal validate design-obligations` refuses completion while critical obligations lack proof. A report that says "should work" is treated as a defect |
 | Forgotten lessons | Correction capture (a correction updates the instructions in their one owning document) and handoff notes that carry unfinished work across sessions | Receipts record every correction, the retro reviews the pattern, and the instruction ledger holds every rule change with a testable expected effect |
 | Unreviewable output | The collaboration rules: one intent per commit, mechanical churn separated from behavior change, and reports that start with the riskiest part | The human sends unreviewable diffs back; splitting them is the agent's job, and repeated offenses become retro findings |
@@ -166,7 +166,7 @@ collaboration loop the roles play out — design, critique to agreement,
 build, critique to agreement, merge — is specified in
 [`docs/orchestration.md`](docs/orchestration.md).
 
-Runtime portability is handled by separating intent from mechanism: skills and docs are runtime-neutral, and each skill ships per-runtime subagent profile templates under `skills/<name>/agents/` (for the currently registered runtimes — e.g. `claude-profile.md`, `devin/AGENT.md`, `openai.yaml`) that adopting projects copy into their runtime's profile location; the currently ADOPTABLE set comes from `bin/metasystem internal runtime list --adoptable` (the full registry includes the fixture-only fake runtime, which ships no profiles).
+Runtime portability is handled by separating intent from mechanism: skills and docs are runtime-neutral, and each skill ships per-runtime subagent profile templates under `skills/<name>/agents/` (for the currently registered runtimes — e.g. `claude-profile.md`, `devin/AGENT.md`, `openai.yaml`) that adopting projects copy into their runtime's profile location; the currently ADOPTABLE set is the runtime registry's adoptable rows (`internal/runtimes`; the full registry includes the fixture-only fake runtime, which ships no profiles).
 
 ### Layout
 
@@ -190,9 +190,10 @@ docs/
   examples/          worked examples (filled matrix, filled ledger)
 skills/              triggered workflows: verify, design-critique, refactor, improve, retro, take-a-step-back
 optional-skills/     opt-in specialists (debug-java), enabled per project
-scripts/             deterministic checks and shipped enforcement configs
+scripts/             engine data files and shipped enforcement configs
 plans/               live intent: goals, goal drafts, designs, handoff notes
 memory/              living registers: rulings, issues, flakes, receipts, notes
+records/             concluded history: finished goals, critique rounds, finished designs
 ```
 
 Template maintenance notes and rationale live one level above this
@@ -207,7 +208,7 @@ to adopting projects.
 | `metasystem internal audit metasystem` | Required files, no outside references in metasystem files, placeholder leakage, always-loaded word cap |
 | `metasystem internal validate skills` | Skill frontmatter and naming rules |
 | `metasystem internal validate design-obligations` | Structure and declared state of an obligation matrix |
-| `metasystem internal validate refactor-baseline` | Trusted-baseline record and check for refactor mode: clean worktree, ancestry, cadence backstop |
+| `metasystem test baseline` | Trusted-baseline record and check for refactor mode: clean worktree, ancestry, cadence backstop |
 | `metasystem experiment` | Best-known-state ledger for improvement mode. `record` refuses frontier regressions, `challenge` enforces the noise floor, and both refuse comparisons against a frontier older than its declared measurement window |
 | `metasystem experiment check` | Blocks new investigation cycles once the ledger records a dead end, two no-progress cycles, or an exhausted cycle budget |
 | `scripts/enforcement/` | Shipped CI workflow and Claude Code hooks so the checks run without anyone remembering them |
@@ -218,7 +219,7 @@ Scripts check structure and declared state. They cannot prove that a named test 
 
 The canonical steps live in [`docs/project-adaptation.md`](docs/project-adaptation.md). The short version is three steps:
 
-1. From the template checkout, run `bin/metasystem system adopt <target> [--runtimes <names>] [--enable debug-java]` (`metasystem system adopt --help` lists the adoptable runtimes). It exports the payload from the template's tracked HEAD, registers skills and subagent profiles for the selected runtimes, installs the shipped CI workflow and Claude Code hook, creates the gitignored `artifacts/` directory, and records the template SHA for future migrations. It refuses targets that already carry instruction assets; those follow the reconciliation manual below.
+1. From the template checkout, run `bin/metasystem system adopt <target> [--runtimes <names>] [--enable debug-java]` (`metasystem system adopt --help` lists the adoptable runtimes). It exports the payload from the template's tracked HEAD, registers skills and subagent profiles for the selected runtimes, installs the shipped CI workflow and the selected runtimes' hooks, creates the gitignored `artifacts/` directory, and records the template SHA for future migrations. It refuses targets that already carry instruction assets; those follow the reconciliation manual below.
 2. Fill `docs/project-rules.md` with verified facts: commands, invariants, reserved decisions, budgets, the refactor acceptance gate, delegation facts.
 3. Run `metasystem system check` and `metasystem test run` in the target; both must pass. Then work normally: each repo-changing task ends with the completion check, verification when runnable, and a receipt. Run the first retro after a handful of tasks instead of waiting for the cadence. Early routing errors are the cheapest to fix.
 
@@ -246,4 +247,4 @@ PROJECT-STATE, or RUNTIME with the deciding rule for each.
 
 ## Status
 
-The structure is validated end to end, and the loop has now run for real: the template repository develops itself under its own rules (its hooks, supervision, and receipts are live, not aspirational), a deterministic mission runner has completed unattended missions, and the measuring kit beside this template has graded an unattended build against a held-out battery. The receipts loop remains how each rule earns its keep or gets removed. The metasystem was distilled from production engineering repositories, agent-evaluation work, and runtime-debugging practice, and it has been reviewed against three independent external critiques. Sources and decisions are traceable in `development/source-analysis.md` (template repository only).
+The structure is validated end to end, and the loop has now run for real: the template repository develops itself under its own rules (its hooks, supervision, and receipts are live, not aspirational), a deterministic mission runner has completed unattended missions, and a measuring kit built beside this template graded an unattended build against a held-out battery. The receipts loop remains how each rule earns its keep or gets removed. The metasystem was distilled from production engineering repositories, agent-evaluation work, and runtime-debugging practice, and it has been reviewed against three independent external critiques. Sources and decisions are traceable in `development/source-analysis.md` (template repository only).

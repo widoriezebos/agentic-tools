@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,6 +73,17 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 	delivery := defaultIntentDeliveryOwners()
 	delivery.executable = func() (string, error) { return b.engine, nil }
 	delivery.calls = recordingOwnerCalls([]string{b.engine, "internal"}, func(argv []string) { b.calls = append(b.calls, argv) })
+	// The carry owner runs in this process (design 6.2): the bed records the
+	// adapter's own argv, then gives the owner the existing fixture
+	// enrolled-human flag and a lineage, as it did the former child.
+	realCarry := defaultIntentOwnerCalls().goalCarry
+	delivery.calls.goalCarry = func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
+		b.calls = append(b.calls, append([]string{b.engine, "internal", "goal", "carry"}, args...))
+		if !b.unproven {
+			args = append(append([]string(nil), args...), "--fixture-human-authority", "--lineage", "m1")
+		}
+		return realCarry(dependencies, stdout, stderr, dir, args)
+	}
 	delivery.process = func(process intentProcess) intentProcessResult {
 		b.calls = append(b.calls, append([]string(nil), process.argv...))
 		if len(process.argv) > 3 && process.argv[2] == "goal" && process.argv[3] == "carry" && !b.unproven {
@@ -813,5 +825,34 @@ func TestIntentCarriedChannelWordAdoptionStopsWhenBindingFails(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(subjects, "exception-"+opid+".json")); err == nil {
 		t.Fatalf("a composition was bound although persisting it failed: %v", err)
+	}
+}
+
+// TestIntentExceptionCarryRunsInThisProcess is the U9a witness that land G
+// --exception records the person's carry word through the goal carry owner
+// in this process (design 6.2): no engine child runs `goal carry`, and the
+// owner's classification and enrolled-human proof start from this process,
+// the parent the child classified.
+func TestIntentExceptionCarryRunsInThisProcess(t *testing.T) {
+	b := newCarriedDeliveryBed(t)
+	process := b.owners.delivery.process
+	b.owners.delivery.process = func(ran intentProcess) intentProcessResult {
+		if len(ran.argv) > 3 && ran.argv[2] == "goal" && ran.argv[3] == "carry" {
+			t.Errorf("the carry owner ran as an engine child: %v", ran.argv)
+		}
+		return process(ran)
+	}
+	var supplied []processIdentity
+	carry := b.owners.delivery.calls.goalCarry
+	b.owners.delivery.calls.goalCarry = func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
+		supplied = append(supplied, dependencies.authorityFacts.caller)
+		return carry(dependencies, stdout, stderr, dir, args)
+	}
+	code, result := b.land("standing-validation", "--exception", "missing-declaration", "--reason", "flaky host", "--by", "Wido", "--upgrade-goals")
+	if data, _ := result.Data.(map[string]any); data == nil || data["exception"] == nil || data["exception"] == "" {
+		t.Fatalf("the exception was not recorded: %d %+v", code, result)
+	}
+	if len(supplied) != 1 || supplied[0].pid != int64(os.Getpid()) {
+		t.Fatalf("the carry owner was supplied %+v, want this process %d once", supplied, os.Getpid())
 	}
 }

@@ -193,7 +193,7 @@ commit message claims the whole command package green under the gate's
 environment; that run was started before the bed edits the landing carried
 and verified an earlier tree, and the dispatcher-bed literal test it missed
 was red on main for about fifty minutes until 9a10d20e. A verification is
-of the tree that lands. Dispositions of the round: dispositions/deep-battery-code-critique-r1.md.
+of the tree that lands. Dispositions of the round: records/dispositions/deep-battery-code-critique-r1.md.
 
 What remains of the walls is the dispatcher bed's `dispatch` scenario: one
 bed, 81 legs, 43 dispatched jobs, 574 s under the pooled battery. A phase

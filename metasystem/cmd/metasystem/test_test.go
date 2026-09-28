@@ -474,13 +474,13 @@ func TestTestRunKeepsProofRecordsUnderTheControlRoot(t *testing.T) {
 	var body *ast.BlockStmt
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if ok && function.Name.Name == "runTestRun" {
+		if ok && function.Name.Name == "runTestRunWith" {
 			body = function.Body
 			break
 		}
 	}
 	if body == nil {
-		t.Fatal("runTestRun was not found")
+		t.Fatal("runTestRunWith was not found")
 	}
 	expressionText := func(expression ast.Expr) string {
 		start, end := fset.Position(expression.Pos()).Offset, fset.Position(expression.End()).Offset
@@ -505,10 +505,11 @@ func TestTestRunKeepsProofRecordsUnderTheControlRoot(t *testing.T) {
 		return ""
 	}
 	found := map[string]int{}
-	wantFirstArgument := map[string]bool{
-		"proofrun.ReadAttempts":        true,
-		"publishTestingResult":         true,
-		"retainIncompleteProofAttempt": true,
+	// The call and the position of its control-root argument.
+	wantFirstArgument := map[string]int{
+		"proofrun.ReadAttempts":        0,
+		"publishTestingResultTo":       1,
+		"retainIncompleteProofAttempt": 0,
 	}
 	ast.Inspect(body, func(node ast.Node) bool {
 		switch typed := node.(type) {
@@ -575,16 +576,17 @@ func TestTestRunKeepsProofRecordsUnderTheControlRoot(t *testing.T) {
 			}
 		case *ast.CallExpr:
 			name := callName(typed)
-			if !wantFirstArgument[name] {
+			position, wanted := wantFirstArgument[name]
+			if !wanted {
 				break
 			}
 			found[name]++
-			if len(typed.Args) == 0 || !isIdentifier(typed.Args[0], "controlRoot") {
+			if len(typed.Args) <= position || !isIdentifier(typed.Args[position], "controlRoot") {
 				argument := "no argument"
-				if len(typed.Args) != 0 {
-					argument = expressionText(typed.Args[0])
+				if len(typed.Args) > position {
+					argument = expressionText(typed.Args[position])
 				}
-				t.Errorf("%s takes %s first instead of controlRoot", name, argument)
+				t.Errorf("%s takes %s instead of controlRoot", name, argument)
 			}
 		}
 		return true
@@ -593,14 +595,14 @@ func TestTestRunKeepsProofRecordsUnderTheControlRoot(t *testing.T) {
 		"controlRoot assignment",
 		"proofLaunchAdmission.ControlRoot",
 		"proofrun.ReadAttempts",
-		"publishTestingResult",
+		"publishTestingResultTo",
 		"retainIncompleteProofAttempt",
 		"pathsRoot filepath.Join",
 		"proofrun.LaunchOptions.ControlRoot",
 		"proofrun.LaunchOptions.CommitTerminal",
 	} {
 		if found[site] == 0 {
-			t.Errorf("runTestRun has no %s site", site)
+			t.Errorf("runTestRunWith has no %s site", site)
 		}
 	}
 	proofSource, err := os.ReadFile("proof_run.go")
@@ -1536,7 +1538,6 @@ func TestEngineGoArgvCarriesTrimpath(t *testing.T) {
 		"candidate engine build": {candidateEngineBuildArgv("/out/metasystem"),
 			{"go", "run", "-trimpath", "./cmd/devgate", "build", "--trimpath", "--out", "/out/metasystem"}},
 		"bootstrap and landed rebuild": {devgateBootstrapBuildArgv(), {"go", "run", "-trimpath", "./cmd/devgate", "build"}},
-		"coverage delta":               {coverageDeltaGoTestArgv("./internal/x"), {"go", "test", "-trimpath", "-cover", "-timeout", "30m", "./internal/x"}},
 		"goal branch static":           {goalBranchStaticArgv("/proof"), {"go", "run", "-trimpath", "./cmd/devgate", "static", "--proof-out", "/proof"}},
 		"witness probe":                {proofRunWitnessProbe(root).Args, {"go", "run", "-trimpath", "./cmd/devgate", "gate", "--witness-check-only"}},
 	} {
@@ -3222,8 +3223,9 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	if status := runTestList([]string{"--root", root, "--json"}); status != 0 {
 		t.Fatalf("test list status = %d", status)
 	}
-	if status := runTestCheck([]string{"--root", root, "--json"}); status != 0 {
-		t.Fatalf("test check status = %d", status)
+	// The contract check settings check runs (formerly internal test check).
+	if _, _, err := testingContractReady(root, true); err != nil {
+		t.Fatalf("testing contract not ready: %v", err)
 	}
 	if status := runTestPlan([]string{"--root", root, "--tree", tree, "--purpose", "diagnostic", "--json"}); status != 0 {
 		t.Fatalf("test plan status = %d", status)

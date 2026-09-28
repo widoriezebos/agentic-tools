@@ -1,10 +1,8 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -76,17 +74,6 @@ func brainHumanAct(caller processIdentity, root, verb string, fixture bool, clas
 	return nil
 }
 
-func runBrainDeclare(args []string) int {
-	flags := flag.NewFlagSet("brain declare", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout state root")
-	by := flags.String("by", "", "human making the declaration")
-	fixture := flags.Bool("fixture-human-authority", false, "fixture-only authority under an exact fake-runtime root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	return brainDeclare(entryCallerIdentity(), os.Stdout, os.Stderr, *root, *by, *fixture)
-}
-
 // brainDeclare is the declaration owner: the human gate classifies the
 // supplied caller identity (owner_invocation.go), and the outcome goes to the
 // caller's streams.
@@ -129,7 +116,7 @@ func brainDeclareWith(caller processIdentity, stdout, stderr io.Writer, root, by
 	}
 	state := brain.Read(root, ledgerIdentity)
 	if state.State == brain.Declared {
-		fmt.Fprintf(stderr, "this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem internal brain withdraw --root %s --by <name>\n", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, root)
+		fmt.Fprintf(stderr, "this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem settings coordinator --withdraw --by <name> --repo %s\n", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, root)
 		return 2
 	}
 	if state.State == brain.Corrupt {
@@ -185,7 +172,7 @@ func brainDeclarationObstacles(root, machine string, deps brainActDependencies) 
 		case "job":
 			obstacles = append(obstacles, fmt.Sprintf("job %s is in flight; stop it first: metasystem work stop j2:%s", item.Id, item.Id))
 		case "run":
-			obstacles = append(obstacles, fmt.Sprintf("run %s is live; wait for it or conclude it: metasystem internal run watch --root %s --id %s", item.Id, root, item.Id))
+			obstacles = append(obstacles, fmt.Sprintf("run %s is live; wait for it: metasystem work wait --run %s --exit-code --repo %s", item.Id, item.Id, root))
 		case "mission":
 			obstacles = append(obstacles, fmt.Sprintf("mission %s is active; wait for mission %s to finish or park; metasystem mission status --root %s --mission %s", item.Id, item.Id, root, item.Id))
 		}
@@ -200,44 +187,6 @@ func sortedGoalIDs(items map[string]*goal.GoalFile) []string {
 	}
 	sort.Strings(ids)
 	return ids
-}
-
-func runBrainShow(args []string) int {
-	flags := flag.NewFlagSet("brain show", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout state root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	result := brain.Read(*root, goal.ExistingLedgerIdentity(*root))
-	object := map[string]any{"state": result.State}
-	if result.Record != nil {
-		object["record"] = result.Record
-	}
-	if result.Reason != "" {
-		object["reason"] = result.Reason
-		object["remedy"] = brain.RemedialRefusal(result.Reason, *root)
-	}
-	printJSON(object)
-	switch result.State {
-	case brain.Declared:
-		return 0
-	case brain.Undeclared:
-		return 3
-	default:
-		fmt.Fprintln(os.Stderr, brain.RemedialRefusal(result.Reason, *root))
-		return 1
-	}
-}
-
-func runBrainWithdraw(args []string) int {
-	flags := flag.NewFlagSet("brain withdraw", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout state root")
-	by := flags.String("by", "", "human withdrawing the declaration")
-	fixture := flags.Bool("fixture-human-authority", false, "fixture-only authority under an exact fake-runtime root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	return brainWithdraw(entryCallerIdentity(), os.Stdout, os.Stderr, *root, *by, *fixture)
 }
 
 // brainWithdraw is the withdrawal owner under a supplied caller identity.
@@ -279,24 +228,6 @@ func brainWithdrawWith(caller processIdentity, stdout, stderr io.Writer, root, b
 		return 0
 	}
 	writeJSONLine(stdout, stderr, map[string]any{"state": brain.Undeclared})
-	return 0
-}
-
-func runBrainFence(args []string) int {
-	flags := flag.NewFlagSet("brain fence", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout state root")
-	act := flags.String("act", "", "guarded act")
-	if flags.Parse(args) != nil || *act == "" {
-		fmt.Fprintln(os.Stderr, "brain fence needs --act")
-		return 2
-	}
-	ledgerIdentity := goal.ExistingLedgerIdentity(*root)
-	state := brain.Read(*root, ledgerIdentity)
-	detail := brain.Fence(*root, *act, ledgerIdentity)
-	printJSON(map[string]any{"state": state.State, "fenced": detail != "", "detail": detail})
-	if detail != "" {
-		return 2
-	}
 	return 0
 }
 

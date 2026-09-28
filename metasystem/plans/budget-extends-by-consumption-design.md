@@ -246,7 +246,7 @@ history outcome `POWER_OF_ATTORNEY` (requires `authorityRuling`, forbids a
 review date and a word), and the approval authority `attorney` (by is the
 seat actor and must equal the bound history line's actor). Each is a
 parse-breaking change for an engine older than the landing, so the landing
-is noted on plans/delivery-efficiency-seats.md for the fleet to rebuild.
+is noted on records/misc/delivery-efficiency-seats.md for the fleet to rebuild.
 
 **Where it cannot run.** A checkout declared the brain refuses every human
 word carried by an agent (brainHumanWordClassification); an attorney act is

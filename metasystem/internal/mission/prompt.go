@@ -570,7 +570,7 @@ func AssemblePromptWithGoalSource(repo, mission, turnID, output string, goalSour
 		return err
 	}
 	// The Landed Returns list derives fresh from the tree and the turn log
-	// at every assembly (records/patience/patience-orphan-usage.md): landed work is
+	// at every assembly (docs/patience.md, S3): landed work is
 	// inherited through the prompt, never through recorded surfacing state.
 	turnLog, _ := state["turnLog"].([]any)
 	landedRecords := LandedReturns(repo, mission, turnLog)
@@ -596,7 +596,7 @@ func AssemblePromptWithGoalSource(repo, mission, turnID, output string, goalSour
 	).Replace(string(instructionData))
 	thisTurn = strings.TrimRight(thisTurn, "\n")
 	// Patience breaches project into This Turn from the ledger's final cycle
-	// block (records/patience/patience-satellite-4.md): the prompt is a pure function of
+	// block (docs/patience.md, S4): the prompt is a pure function of
 	// the ledger plus current chain-closed flags — restart-deterministic, no
 	// runner memory. Detail lines whose chain root is now closed are dropped;
 	// the overflow and excluded lines name no chains and are exempt.

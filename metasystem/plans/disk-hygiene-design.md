@@ -9,10 +9,10 @@
   Critiques r1 and r2 are folded into this text (12 and 15
   findings). The r3 verdict landed after the park: REVISE, 14
   findings (13 structural), preserved UNFOLDED at
-  records/delegate-delivery/dh-critique-r3.md — trajectory 12, 15, 14, budget one
+  records/delegate-delivery/dh-critique-r3.md (removed 2026-09-28; tag records-archive-2026-09-28) — trajectory 12, 15, 14, budget one
   exhausted without convergence.
 - Goal: disk-hygiene (parked; yielded to acp-transport under D81)
-- Next step (on resume): fold records/delegate-delivery/dh-critique-r3.md first. The
+- Next step (on resume): fold records/delegate-delivery/dh-critique-r3.md (removed 2026-09-28; tag records-archive-2026-09-28) first. The
   trajectory shows the same execution-heavy signature D81 rules
   on; on resume, weigh entering budget two against going straight
   to implementation-first with the r3 findings as the first
@@ -249,7 +249,7 @@ Only `released` (plus verification and minimum retention)
 authorizes deletion; `.evidence` removal requires an explicit
 ownership handoff from the evidence GC.
 
-## The worktree-reclaim proof (corrected by records/misc/wt-code-critique-r1.md)
+## The worktree-reclaim proof (corrected by the wt code critique, record removed 2026-09-28)
 
 The slice-2 attempt proved that "job terminal + custody dead" is
 NOT a sound proof that a dispatch worktree is disposable. A sound
@@ -297,7 +297,7 @@ reclaim of `artifacts/agents/worktrees/<job>` must hold ALL of:
    not procfs); a reclaimer must enforce/prove that, as supervision
    does.
 
-Additions the opus-window dh review (records/steward/opus-window-review-dh.md
+Additions the opus-window dh review (record removed 2026-09-28; findings folded here
 F9–F12) proved necessary beyond the original five:
 
 6. **Records must outlive the proof (F9).** Evidence GC prunes

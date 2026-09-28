@@ -555,21 +555,23 @@ func TestGoalCLILedgerAbandonedWithAReason(t *testing.T) {
 
 // The migration CLI takes its actor's lineage from the runner's real export
 // (F16: a second spelling once collapsed every session to the literal
-// "session"). goalActor reads the process environment, so the witness is its
-// source: the one environment read it makes is METASYSTEM_OWNER_LINEAGE.
+// "session"). The migration's actor takes the lineage its request
+// dependencies read, and the production dependencies read the process
+// environment, so the witness is their source: the one environment read they
+// make is METASYSTEM_OWNER_LINEAGE.
 // TestGoalCLILedgerMigrationRecovery (internal/goal) proves the owner half:
 // the synthesized claim carries the actor's lineage.
 func TestGoalCLILedgerMigrationActorReadsTheRunnersLineageExport(t *testing.T) {
 	t.Parallel()
 	fileSet := token.NewFileSet()
-	parsed, err := parser.ParseFile(fileSet, "goalsync_verbs.go", nil, 0)
+	parsed, err := parser.ParseFile(fileSet, "goalsync_mutations.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var reads []string
 	for _, declaration := range parsed.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Name.Name != "goalActor" {
+		if !ok || function.Name.Name != "defaultSyncRequestDependencies" {
 			continue
 		}
 		ast.Inspect(function, func(node ast.Node) bool {
@@ -586,6 +588,14 @@ func TestGoalCLILedgerMigrationActorReadsTheRunnersLineageExport(t *testing.T) {
 		})
 	}
 	if strings.Join(reads, ",") != `"METASYSTEM_OWNER_LINEAGE"` {
-		t.Fatalf("goalActor must read exactly the runner's METASYSTEM_OWNER_LINEAGE export, read %v", reads)
+		t.Fatalf("the production request dependencies must read exactly the runner's METASYSTEM_OWNER_LINEAGE export, read %v", reads)
+	}
+	// The migration's actor carries the lineage its dependencies read.
+	dependencies := syncRequestDependencies{
+		machine:      func(string) (string, error) { return "mac-a", nil },
+		ownerLineage: func() string { return "runner-lineage" },
+	}
+	if actor, err := goalActorFromDependencies(dependencies, t.TempDir(), "Wido"); err != nil || actor.Lineage != "runner-lineage" || actor.Machine != "mac-a" {
+		t.Fatalf("migration actor = %+v, %v", actor, err)
 	}
 }

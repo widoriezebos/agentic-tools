@@ -1,10 +1,8 @@
 package census
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -263,26 +261,12 @@ func Fingerprint(metasystemRoot, repo string) (string, error) {
 		"signatures":      signatures,
 		"config":          relevantConfig,
 	}
-	canonical, err := canonicalJSON(payload)
+	canonical, err := config.CanonicalConfigJSON(payload)
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256(canonical)
+	sum := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(sum[:]), nil
-}
-
-// canonicalJSON serializes v canonically: sorted keys, compact (no spaces
-// after separators), and — crucially — WITHOUT Go's default HTML escaping of
-// < > &. Inputs here are ASCII, so no non-ASCII escaping arises.
-func canonicalJSON(v any) ([]byte, error) {
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(v); err != nil {
-		return nil, err
-	}
-	// json.Encoder appends a newline; the canonical form has none.
-	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }
 
 func splitRuntimes(csv string) []string {

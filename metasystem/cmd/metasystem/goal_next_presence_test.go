@@ -64,7 +64,7 @@ func TestGoalNextFlagsASilentHolderAndNamesTheStealRemedy(t *testing.T) {
 	// prints the instant as it stands.
 	testutil.Expect(t, "one line per held goal", lines, []string{
 		"goal tests-parallel-and-deterministic is held by m1c, unreachable since " +
-			seat.FormatTime(presenceNow.Add(-5*time.Hour)) + "; a human reassigns it with goal steal",
+			seat.FormatTime(presenceNow.Add(-5*time.Hour)) + "; a human reassigns it with metasystem goal claim tests-parallel-and-deterministic --take-over --reason TEXT",
 	})
 }
 
@@ -79,7 +79,7 @@ func TestGoalNextSaysAMachineThatHasPublishedNothingDifferently(t *testing.T) {
 
 	testutil.Expect(t, "the words say what is actually known", lines, []string{
 		"goal fleet-channel-gateway is held by m0b, which has published no presence; " +
-			"a human reassigns it with goal steal",
+			"a human reassigns it with metasystem goal claim fleet-channel-gateway --take-over --reason TEXT",
 	})
 }
 
@@ -105,7 +105,7 @@ func TestGoalNextNamesResumeForAFencedClaim(t *testing.T) {
 
 	testutil.Expect(t, "a fenced claim is resumed and never stolen", lines, []string{
 		"goal fenced-work is held by m1c, unreachable since " +
-			seat.FormatTime(presenceNow.Add(-5*time.Hour)) + "; a human lifts the fence with goal resume",
+			seat.FormatTime(presenceNow.Add(-5*time.Hour)) + "; a human lifts the fence with metasystem goal resume fenced-work",
 	})
 }
 
@@ -139,12 +139,13 @@ func TestGoalNextNamesNoSinceOnACheckoutWithNoStandings(t *testing.T) {
 	lines := silentHolders(tree, "m1u", copied, map[string]seat.Observation{}, presenceNow, presenceWindow())
 
 	testutil.Expect(t, "the silence is named without a date it cannot vouch for", lines, []string{
-		"goal tests-parallel-and-deterministic is held by m1c, unreachable; a human reassigns it with goal steal",
+		"goal tests-parallel-and-deterministic is held by m1c, unreachable; a human reassigns it with metasystem goal claim tests-parallel-and-deterministic --take-over --reason TEXT",
 	})
 }
 
 // A malformed record and a clock too far ahead are reading problems, not
-// silences. Printing "a human reassigns it with goal steal" for one would
+// silences. Printing "a human reassigns it with metasystem goal claim G
+// --take-over" for one would
 // offer the wrong remedy for the wrong fault, so neither prints a line —
 // which is also exactly the set the Fleet page puts under Needs you.
 func TestGoalNextPrintsNothingForAReadingProblem(t *testing.T) {

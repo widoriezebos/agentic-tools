@@ -200,7 +200,7 @@ func TestBatchLandingPersistsRecoveryBranchOnSecondRefusal(t *testing.T) {
 	}
 	seams.Push = func(_, _ string) error { pushes++; return staleLeaseRefusal("first endpoint refusal: stale info") }
 	var recoveryTips []string
-	seams.RecoverPush = func(origin, _, tip string) (PushRecovery, error) {
+	seams.RecoverPush = func(origin, _, tip string, _ func() error) (PushRecovery, error) {
 		recoveries++
 		recoveryTips = append(recoveryTips, tip)
 		if recoveries == 1 {
@@ -264,7 +264,7 @@ func TestBatchLandingOpensAfterThreeRecoveryPushRounds(t *testing.T) {
 		refusals++
 		return staleLeaseRefusal("initial endpoint refusal: stale info")
 	}
-	seams.RecoverPush = func(origin, _, tip string) (PushRecovery, error) {
+	seams.RecoverPush = func(origin, _, tip string, _ func() error) (PushRecovery, error) {
 		refusals++
 		if tip != candidateRefTip {
 			return PushRecovery{}, fmt.Errorf("recovery candidate tip=%q does not match current ref tip=%q", tip, candidateRefTip)
@@ -295,7 +295,7 @@ func TestBatchLandingResumesPendingMovedOriginRecovery(t *testing.T) {
 	seams.SeriesOnOrigin = func(string, string) (bool, error) { return false, nil }
 	seams.Origin = func() (string, error) { return testCommit(2), nil }
 	seams.Push = func(_, _ string) error { pushes++; return errors.New("old series repeated") }
-	seams.RecoverPush = func(origin, _, _ string) (PushRecovery, error) {
+	seams.RecoverPush = func(origin, _, _ string, _ func() error) (PushRecovery, error) {
 		recoveries++
 		return PushRecovery{Origin: origin, Tip: "rebased-tip", Pushed: true}, nil
 	}
@@ -316,7 +316,7 @@ func TestBatchLandingMovedInputReturnsOpenOnNewBase(t *testing.T) {
 	abandons := 0
 	seams.Abandon = func(string, string) error { abandons++; return nil }
 	seams.Push = func(_, _ string) error { return staleLeaseRefusal("endpoint lease refused: stale info") }
-	seams.RecoverPush = func(origin, _, _ string) (PushRecovery, error) {
+	seams.RecoverPush = func(origin, _, _ string, _ func() error) (PushRecovery, error) {
 		return PushRecovery{Origin: origin, BaseTree: bed.moved, Reopen: true}, nil
 	}
 	if err := LandSeries(store, testBatchID, "owner", time.Unix(4, 0), seams); err != nil {
@@ -374,7 +374,7 @@ func TestBatchLandingHoldsNonLeaseRejectionUntilOriginMoves(t *testing.T) {
 	seams.SeriesOnOrigin = func(string, string) (bool, error) { return false, nil }
 	seams.Abandon = func(string, string) error { abandons++; return nil }
 	seams.Push = func(_, _ string) error { pushes++; return pushFailure }
-	seams.RecoverPush = func(origin, _, _ string) (PushRecovery, error) {
+	seams.RecoverPush = func(origin, _, _ string, _ func() error) (PushRecovery, error) {
 		recoveries++
 		return PushRecovery{Origin: origin, Tip: "retried-tip", Pushed: true}, nil
 	}
@@ -428,7 +428,7 @@ func TestBatchLandingCountsRecoveryFailureBeforeBranchPublication(t *testing.T) 
 	seams.SeriesOnOrigin = func(string, string) (bool, error) { return false, nil }
 	seams.Abandon = func(string, string) error { abandons++; return nil }
 	seams.Push = func(_, _ string) error { return staleLeaseRefusal("stale info") }
-	seams.RecoverPush = func(origin, _, _ string) (PushRecovery, error) {
+	seams.RecoverPush = func(origin, _, _ string, _ func() error) (PushRecovery, error) {
 		recoveries++
 		return PushRecovery{Origin: origin, BaseTree: bed.moved}, errors.New("publish preparation failed")
 	}

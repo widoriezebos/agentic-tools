@@ -166,7 +166,7 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		return "escalation required: " + detail, nil
 	}
 	if taken.Intent.Verb == "set-priority" {
-		detail := "human authority cannot be recovered from journal text; rerun goal set-priority from the enrolled terminal"
+		detail := "human authority cannot be recovered from journal text; rerun metasystem goal prioritize from the enrolled terminal"
 		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
 			return "", err
 		}
@@ -515,7 +515,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 			return unparkArcRequest(r, target), nil
 		}
 		if in.Args["under"] != "" {
-			return PublishRequest{}, fmt.Errorf("an unpark under power of attorney is judged live at the act and cannot be replayed from journal text; close this entry by hand and rerun goal unpark --under while the entry is live")
+			return PublishRequest{}, fmt.Errorf("an unpark under power of attorney is judged live at the act and cannot be replayed from journal text; close this entry by hand and rerun metasystem goal resume G --under GRANT --verified TEXT while the grant is live")
 		}
 		return unparkRequest(r, target, ""), nil
 	case "reopen":

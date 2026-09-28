@@ -67,10 +67,15 @@ type Engine struct {
 	// Now supplies this engine's artifact clock. Nil keeps wall-clock
 	// behavior; fixtures set it without changing time for another engine.
 	Now func() time.Time
-	// Output and Errors receive Answer's report and Status's line; nil keeps
-	// the process streams. A public command gives each engine its own.
+	// Output and Errors receive the reports of Answer, Status, Launch and
+	// ResolveTaint; nil keeps the process streams. A public command gives
+	// each engine its own.
 	Output io.Writer
 	Errors io.Writer
+	// Caller is the process a human-reserved act classifies from
+	// (plans/designs/verbs-object-action.md 6.2): the command that runs the
+	// act in its own process supplies itself. Zero is this process.
+	Caller int64
 	// AnchorEffect replaces the anchor commit for this engine only; nil
 	// anchors through mission.AnchorNamed. Fixtures without Git set it.
 	AnchorEffect func(statePath, ledgerPath, identityName string) error
@@ -209,6 +214,14 @@ func NewEngine(root, mission string) *Engine {
 		Mission: mission,
 		emitter: events.Emitter{Component: "runner", Pid: int64(os.Getpid())},
 	}
+}
+
+// callerPid is the process classification starts from.
+func (e *Engine) callerPid() int64 {
+	if e.Caller != 0 {
+		return e.Caller
+	}
+	return int64(os.Getpid())
 }
 
 // delegate runs one delegate lifecycle command through Delegate.

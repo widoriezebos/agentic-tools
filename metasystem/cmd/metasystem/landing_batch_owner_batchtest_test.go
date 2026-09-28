@@ -801,45 +801,6 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	}
 }
 
-func TestGoalHandoverTargetRootFlagFlows(t *testing.T) {
-	const batchID = "01j5x00000000000000000ba01"
-	root := syncedClaimedGoalFixture(t)
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "landing-machine")
-	amendSyncedGoalFixture(t, root, "hand standing validation to landing", func(file *goal.GoalFile) {
-		file.Claimed.Machine, file.Claimed.Lineage = "landing-machine", landingOwnerLineage
-		file.Claimed.HandedOver = goal.HandedOver{FromMachine: "seat-machine", FromLineage: "seat-lineage", FromEpoch: 1, Batch: batchID}
-		file.StopCapability = &goal.StopCapability{Generation: 1, Revision: file.Claimed.Revision, Machine: "landing-machine", ClaimEpoch: 1}
-	})
-	seat := t.TempDir()
-	goalSyncMutationGit(t, seat, "init", "-q", "-b", "main")
-	goalSyncMutationGit(t, seat, "config", "metasystem.goal.machine", "seat-machine")
-	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
-	if err != nil || state != identity.Alive {
-		t.Fatalf("probe hand-back caller: state=%s err=%v", state, err)
-	}
-	for _, fixture := range []struct{ checkout, session, lineage string }{
-		{root, "landing-fixture", landingOwnerLineage},
-		{seat, "seat-fixture", "seat-lineage"},
-	} {
-		if _, err := lease.AnnounceWithPair(fixture.checkout, fixture.session, parent.Pid, parent.StartedAt.Unix(), parent.StartTicks, parent.BootID, "fixture", "fake", fixture.lineage); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", landingOwnerLineage)
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T08:07:00Z")
-	code := runGoalHandoverMutation([]string{"--root", root, "--id", "standing-validation", "--lineage", landingOwnerLineage,
-		"--target-machine", "seat-machine", "--target-lineage", "seat-lineage", "--target-claim-epoch", "1", "--batch", batchID, "--target-root", seat})
-	if code != 0 {
-		t.Fatalf("real target-root return exited %d", code)
-	}
-	tip := goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef)
-	data := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
-	returned, problems := goal.ParseFile([]byte(data))
-	if len(problems) != 0 || returned.Claimed.Machine != "seat-machine" || returned.Claimed.Lineage != "seat-lineage" || returned.Claimed.HandedOver != (goal.HandedOver{}) {
-		t.Fatalf("target-root return claim=%+v problems=%v", returned.Claimed, problems)
-	}
-}
-
 func TestBatchProductionReturnAndForwardHandoverArguments(t *testing.T) {
 	const batchID = "01j5x00000000000000000ba01"
 	root, seat := t.TempDir(), filepath.Join(t.TempDir(), "seat")
@@ -1091,7 +1052,7 @@ func TestBatchOwnerProbesAPlannedProofFromTheProofStore(t *testing.T) {
 	}
 	var attempts []proofrun.Attempt
 	attempt := func(id string, pid int64, started time.Time, terminal bool) {
-		value := proofrun.Attempt{AttemptID: id, GoalID: "goal-b", StartedAt: started.Format(time.RFC3339Nano), Launcher: proofrun.ProcessIdentity{Pid: pid, PidStartedAt: pid}}
+		value := proofrun.Attempt{AttemptID: id, GoalID: "goal-b", CandidateTree: "tip", StartedAt: started.Format(time.RFC3339Nano), Launcher: proofrun.ProcessIdentity{Pid: pid, PidStartedAt: pid}}
 		if terminal {
 			value.Terminal = &proofrun.AttemptTerminal{Result: "passed", At: started.Format(time.RFC3339Nano)}
 		}

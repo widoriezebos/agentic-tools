@@ -923,7 +923,7 @@ func TestPriorityReconcileRefusesManualRankEdit(t *testing.T) {
 	})
 
 	_, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X000000000000000000R00"))
-	if err == nil || !strings.Contains(err.Error(), "Sequence") || !strings.Contains(err.Error(), "set-priority") {
+	if err == nil || !strings.Contains(err.Error(), "Sequence") || !strings.Contains(err.Error(), "metasystem goal prioritize") {
 		t.Fatalf("reconcile did not refuse a direct rank edit with its remedy: %v", err)
 	}
 }

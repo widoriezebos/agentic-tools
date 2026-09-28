@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 var fakeNetworkDialContext = (&net.Dialer{}).DialContext
@@ -25,7 +27,7 @@ var fakeNetworkDialContext = (&net.Dialer{}).DialContext
 // every turn. The values are arbitrary but stable, so fixtures can assert
 // usage aggregation against known numbers.
 func WriteFakeUsage(outputPath string) error {
-	return atomicWriteJSON(outputPath, map[string]any{
+	return wiredoc.WriteFile(outputPath, map[string]any{
 		"availability":      "native",
 		"inputTokens":       11,
 		"cachedInputTokens": 2,
@@ -134,7 +136,7 @@ func WriteFakeReturn(recordPath, promptPath, outputPath string) error {
 	default:
 		return fmt.Errorf("unsupported fake role: %s", role)
 	}
-	return atomicWriteJSON(outputPath, value)
+	return wiredoc.WriteFile(outputPath, value)
 }
 
 // workingMode reads the prompt's "Working Mode:" header. A referenced task
@@ -193,7 +195,7 @@ func SetEffectiveNetwork(effectivePath, network string) error {
 		return fmt.Errorf("effective permissions file %s is not a JSON object", effectivePath)
 	}
 	effective["network"] = network
-	return atomicWriteJSON(effectivePath, effective)
+	return wiredoc.WriteFile(effectivePath, effective)
 }
 
 // FakeGuardedWrite writes a probe line to target only when a writeRoots
@@ -327,7 +329,7 @@ func WriteFakeSelftestRecord(outputPath, jobID string) error {
 	if jobID == "" {
 		return fmt.Errorf("selftest job id is required")
 	}
-	return atomicWriteJSON(outputPath, map[string]any{
+	return wiredoc.WriteFile(outputPath, map[string]any{
 		"runtime":  "fake",
 		"job":      jobID,
 		"passedAt": timestampUTC(now()),

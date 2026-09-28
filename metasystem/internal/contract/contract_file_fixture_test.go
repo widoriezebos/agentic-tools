@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // newContractFiles keeps the validation inputs on disk without creating a Git repository.
@@ -13,7 +15,7 @@ func newContractFiles(t *testing.T, expectedRepositoryCalls int) (string, func(s
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	repo = resolvePath(repo)
+	repo = realpath.ResolveExisting(repo)
 	writeFileMode(t, filepath.Join(repo, "scripts", "gate.sh"),
 		"#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\n'\n", 0o755)
 	writeFileMode(t, filepath.Join(repo, "truth", "reference.txt"), "certified truth\n", 0o644)
@@ -22,7 +24,7 @@ func newContractFiles(t *testing.T, expectedRepositoryCalls int) (string, func(s
 		"#!/usr/bin/env bash\nexit 0\n", 0o755)
 	contractPath := filepath.Join(repo, "plans", "mission-alpha.contract.md")
 	writeFileMode(t, contractPath, sealableContract(), 0o644)
-	resolvedPath := resolvePath(contractPath)
+	resolvedPath := realpath.ResolveExisting(contractPath)
 	if filepath.Dir(filepath.Dir(resolvedPath)) != repo {
 		t.Fatalf("contract path %q is outside declared repository root %q", resolvedPath, repo)
 	}

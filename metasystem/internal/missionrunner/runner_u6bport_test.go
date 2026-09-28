@@ -2,6 +2,7 @@ package missionrunner
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -378,5 +380,84 @@ func TestU6bPortChainSweepGoesThroughTheDelegateSeam(t *testing.T) {
 	err := unwired.closeTerminalChains()
 	if err == nil || !strings.Contains(err.Error(), "chain: the mission runner has no delegate lifecycle wired") {
 		t.Fatalf("an unwired engine must refuse the close by name: %v", err)
+	}
+}
+
+// TestPromptCheckerRunsInTheRunnerNotTheCheckoutEngine is the U9a witness
+// that the runner holds each turn prompt to the checker in its own process
+// (design 6.2) instead of starting the checkout's engine for `validate
+// turn-prompt`: with that engine answering every prompt check with approval,
+// a prompt the checker refuses still fails the turn as prompt-refused before
+// any host launch.
+func TestPromptCheckerRunsInTheRunnerNotTheCheckoutEngine(t *testing.T) {
+	t.Parallel()
+	engine := u6bportHostCycle(t, "FAKEHOST:return-ok")
+	binary := filepath.Join(engine.Root, "bin", "metasystem")
+	real := binary + "-real"
+	if err := os.Rename(binary, real); err != nil {
+		t.Fatal(err)
+	}
+	approving := "#!/bin/sh\nif [ \"$1\" = validate ] && [ \"$2\" = turn-prompt ]; then exit 0; fi\nexec '" + real + "' \"$@\"\n"
+	if err := testexec.WriteFile(binary, []byte(approving), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	instruction := filepath.Join(engine.Root, "scripts", "agents", "templates", "host-turn-instruction.md")
+	data, err := os.ReadFile(instruction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(instruction, append(data, []byte("\n## Streams\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	signal := filepath.Join(t.TempDir(), "start.json")
+	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
+	turns := u6bportTurnDirs(t, engine)
+	if len(turns) != 1 {
+		t.Fatalf("the refused mission ran %d turns, want 1", len(turns))
+	}
+	turn := readTestDoc(t, filepath.Join(turns[0], "turn.json"))
+	if detail, _ := turn["detail"].(string); turn["error"] != "prompt-refused" || !strings.Contains(detail, "heading") {
+		t.Fatalf("the checker's refusal was not the runner's own: %v", turn)
+	}
+}
+
+// TestFenceAnswerPreflightRunsInTheRunnerNotTheCheckoutEngine is the U9a
+// witness that a fence answer preflights the amended contract in the
+// runner's own process (design 6.2) instead of starting the checkout's
+// engine for `mission contract-preflight`: with that engine approving every
+// preflight, a contract whose bytes no longer match their seal is still
+// refused as not preflight-ready.
+func TestFenceAnswerPreflightRunsInTheRunnerNotTheCheckoutEngine(t *testing.T) {
+	t.Parallel()
+	engine := u6bportHostCycle(t, "FAKEHOST:return-ok")
+	fences := readTestDoc(t, engine.fencesPath())
+	fences["cycles"] = 3
+	writeJSONFile(t, engine.fencesPath(), fences)
+	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", filepath.Join(t.TempDir(), "start.json"))
+	open := u6bportOpenAsks(t, engine, "fence")
+	if len(open) != 1 {
+		t.Fatalf("the fence park raised %d fence asks, want 1", len(open))
+	}
+	binary := filepath.Join(engine.Root, "bin", "metasystem")
+	real := binary + "-real"
+	if err := os.Rename(binary, real); err != nil {
+		t.Fatal(err)
+	}
+	approving := "#!/bin/sh\nif [ \"$1\" = mission ] && [ \"$2\" = contract-preflight ]; then exit 0; fi\nexec '" + real + "' \"$@\"\n"
+	if err := testexec.WriteFile(binary, []byte(approving), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	contractBytes, err := os.ReadFile(engine.contractPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(engine.contractPath(), append(contractBytes, []byte("\nunsealed amendment\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var errs bytes.Buffer
+	engine.Output, engine.Errors = io.Discard, &errs
+	askID, _ := open[0]["askId"].(string)
+	if code := engine.Answer(askID, "raise the fence"); code != 3 || !strings.Contains(errs.String(), "fence contract amendment is not preflight-ready") {
+		t.Fatalf("the unsealed amendment was not refused by the runner's own preflight: %d %q", code, errs.String())
 	}
 }

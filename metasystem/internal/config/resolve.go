@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // Resolution rules for the metasystem.conf settings file. A caller asks for one
@@ -60,7 +62,7 @@ func NewBatchLanding(root string, maxWait time.Duration, now func() time.Time) (
 	if maxWait < time.Minute || maxWait > 6*time.Hour {
 		return BatchLanding{}, fmt.Errorf("%s must be a duration from 1m through 6h", BatchMaxWaitKey)
 	}
-	return BatchLanding{Root: resolvePath(root), MaxWait: maxWait, now: now}, nil
+	return BatchLanding{Root: realpath.Resolve(root), MaxWait: maxWait, now: now}, nil
 }
 
 // ResolveExplicitBatchLanding validates an explicitly supplied landing root
@@ -118,15 +120,15 @@ func batchLandingRootWithRunner(raw, seatRoot string, runner gitRunner) (string,
 	if !filepath.IsAbs(raw) {
 		return "", fmt.Errorf("%s must be absolute, got %q", BatchRootKey, raw)
 	}
-	root := resolvePath(raw)
-	if root == resolvePath(seatRoot) {
+	root := realpath.Resolve(raw)
+	if root == realpath.Resolve(seatRoot) {
 		return "", fmt.Errorf("%s must name a dedicated non-seat checkout", BatchRootKey)
 	}
 	if runner == nil {
 		return "", fmt.Errorf("resolve %s: a Git runner is required", BatchRootKey)
 	}
 	top, err := runner(gitRequest{Directory: root, Args: []string{"rev-parse", "--show-toplevel"}, Environment: []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}})
-	if err != nil || resolvePath(strings.TrimSpace(string(top))) != root {
+	if err != nil || realpath.Resolve(strings.TrimSpace(string(top))) != root {
 		return "", fmt.Errorf("%s must name an existing checkout, got %q", BatchRootKey, raw)
 	}
 	if _, err := os.Lstat(filepath.Join(root, "artifacts", "agents", "brain.json")); err == nil {
@@ -180,6 +182,15 @@ func Get(p GetParams) (value string, code int, err error) {
 	}
 	if p.Mode != "" && !modePattern.MatchString(p.Mode) {
 		return "", 2, fmt.Errorf("invalid mode: %s", p.Mode)
+	}
+	// The evidence root has one owner and a compiled-in default; a general
+	// reader answers what the owner resolves, never "no value".
+	if p.Key == EvidenceRootKey && !p.FlagSet {
+		root, err := ResolveEvidenceRoot(EvidenceRootParams{ConfPath: p.ConfPath, LookupEnv: lookupEnv})
+		if err != nil {
+			return "", 1, err
+		}
+		return root.Path, 0, nil
 	}
 
 	if p.FlagSet {
@@ -311,6 +322,11 @@ func Keys(confPath, prefix string, environ []string) []string {
 			add(prefix + suffix)
 		}
 	}
+	// The evidence root always has a value (its compiled-in default), so it
+	// is always a configured key.
+	if strings.HasPrefix(EvidenceRootKey, prefix) {
+		add(EvidenceRootKey)
+	}
 	return keys
 }
 
@@ -344,6 +360,13 @@ func KeyOrigin(p GetParams) (string, error) {
 	}
 	if p.Mode != "" && !modePattern.MatchString(p.Mode) {
 		return "", fmt.Errorf("invalid mode: %s", p.Mode)
+	}
+	if p.Key == EvidenceRootKey {
+		root, err := ResolveEvidenceRoot(EvidenceRootParams{ConfPath: p.ConfPath, LookupEnv: lookupEnv})
+		if err != nil {
+			return "", err
+		}
+		return root.Origin, nil
 	}
 	if _, ok := lookupEnv(EnvName(p.Key)); ok {
 		return "env", nil

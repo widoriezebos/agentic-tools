@@ -11,9 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // AlertTransportResult is what the notifier can prove. A zero exit submits a
@@ -99,24 +98,15 @@ func alertLockPath(repoRoot string) string {
 	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "alerts.flock")
 }
 
-func lockAlerts(repoRoot string, operation int) (*os.File, error) {
+func lockAlerts(repoRoot string, mode lock.Mode) (*lock.FileLock, error) {
 	if err := os.MkdirAll(filepath.Dir(alertLockPath(repoRoot)), 0o755); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(alertLockPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	if err := unix.Flock(int(file.Fd()), operation); err != nil {
-		file.Close()
-		return nil, err
-	}
-	return file, nil
+	return lock.File(alertLockPath(repoRoot), 0o644, mode)
 }
 
-func unlockAlerts(file *os.File) {
-	_ = unix.Flock(int(file.Fd()), unix.LOCK_UN)
-	_ = file.Close()
+func unlockAlerts(held *lock.FileLock) {
+	_ = held.Release()
 }
 
 func alertPath(repoRoot, episodeID string) string {
@@ -203,7 +193,7 @@ func saveAlertEpisode(repoRoot string, episode AlertEpisode) error {
 
 // AlertEpisodes returns every retained episode in stable id order.
 func AlertEpisodes(repoRoot string) ([]AlertEpisode, error) {
-	lock, err := lockAlerts(repoRoot, unix.LOCK_SH)
+	lock, err := lockAlerts(repoRoot, lock.Shared)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +228,7 @@ func RecordSeatIdleIncident(repoRoot string, incident SeatIdleIncident, now time
 	key := strings.Join([]string{seatIdleAlertOwner, incident.SessionID, incident.BacklogDigest}, "\n")
 	sum := sha256.Sum256([]byte(key))
 	digest := hex.EncodeToString(sum[:])
-	lock, err := lockAlerts(repoRoot, unix.LOCK_EX)
+	lock, err := lockAlerts(repoRoot, lock.Exclusive)
 	if err != nil {
 		return AlertEpisode{}, err
 	}
@@ -286,7 +276,7 @@ func ClearSeatIdleIncidentForIntent(repoRoot, intentID string, now time.Time) er
 	if intentID == "" {
 		return nil
 	}
-	lock, err := lockAlerts(repoRoot, unix.LOCK_EX)
+	lock, err := lockAlerts(repoRoot, lock.Exclusive)
 	if err != nil {
 		return err
 	}
@@ -351,7 +341,7 @@ func UpdateAlertEpisodes(repoRoot string, health HealthVerdict, message string, 
 }
 
 func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message string, now time.Time, deliver func(string, string) error) (AlertEpisode, error) {
-	lock, err := lockAlerts(repoRoot, unix.LOCK_EX)
+	lock, err := lockAlerts(repoRoot, lock.Exclusive)
 	if err != nil {
 		return AlertEpisode{}, err
 	}
@@ -508,7 +498,7 @@ func updateSpendEpisodesWith(repoRoot string, observation SpendObservation, now 
 	if !observation.Valid {
 		return nil
 	}
-	lock, err := lockAlerts(repoRoot, unix.LOCK_EX)
+	lock, err := lockAlerts(repoRoot, lock.Exclusive)
 	if err != nil {
 		return err
 	}
@@ -601,7 +591,7 @@ func AcknowledgeAlert(repoRoot, episodeID string, invoker AlertInvoker, now time
 	if invoker.Pid < 1 || invoker.PidStartedAt < 1 {
 		return AlertEpisode{}, fmt.Errorf("alert acknowledgment needs an observed invoker identity")
 	}
-	lock, err := lockAlerts(repoRoot, unix.LOCK_EX)
+	lock, err := lockAlerts(repoRoot, lock.Exclusive)
 	if err != nil {
 		return AlertEpisode{}, err
 	}

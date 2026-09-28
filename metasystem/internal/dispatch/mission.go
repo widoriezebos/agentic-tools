@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // ValidateMission proves a mission has a live, matching lease before any job
@@ -22,9 +23,9 @@ func ValidateMission(root, mission, leasePath string) error {
 	if !validJobID.MatchString(mission) {
 		return fmt.Errorf("invalid mission id")
 	}
-	rootResolved := resolvePath(root)
-	expected := resolvePath(filepath.Join(rootResolved, "artifacts", "agents", "missions", mission, "lease.json"))
-	if resolvePath(leasePath) != expected {
+	rootResolved := realpath.Resolve(root)
+	expected := realpath.Resolve(filepath.Join(rootResolved, "artifacts", "agents", "missions", mission, "lease.json"))
+	if realpath.Resolve(leasePath) != expected {
 		return fmt.Errorf("mission lease path is ambiguous or non-canonical")
 	}
 	lease, err := readPlainObject(expected)

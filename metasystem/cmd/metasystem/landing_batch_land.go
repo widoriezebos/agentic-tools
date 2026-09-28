@@ -242,8 +242,8 @@ func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, ac
 		Abandon:        func(tip, detachAt string) error { return batchLandAbandon(root, id, tip, detachAt) },
 		SeriesOnOrigin: func(origin, tip string) (bool, error) { return batchSeriesOnEndpoint(root, origin, tip) },
 		LeaseBase:      baseCommit,
-		RecoverPush: func(origin, baseTree, tip string) (batch.PushRecovery, error) {
-			return batchLandRecoverPush(root, id, record, actor, baseCommit, origin, baseTree, tip)
+		RecoverPush: func(origin, baseTree, tip string, recheck func() error) (batch.PushRecovery, error) {
+			return batchLandRecoverPush(root, id, record, actor, baseCommit, origin, baseTree, tip, recheck)
 		},
 		Reset: func(_ string) error {
 			command := exec.Command("git", "-C", root, "reset", "--hard", baseCommit)
@@ -292,8 +292,10 @@ var batchRecoveryGoalNext = func(root, goalID string, at time.Time) (string, err
 	return "", fmt.Errorf("goal %s is absent from the current ledger", goalID)
 }
 
-func recoverMovedBatchPush(root, id string, record batch.Record, actor, expectedBase, originCommit, baseTree, tip string) (batch.PushRecovery, error) {
-	return recoverMovedBatchPushWithInputs(root, id, record, actor, expectedBase, originCommit, baseTree, tip, gitOutput, func(cmd *exec.Cmd) error { return cmd.Run() })
+func recoverMovedBatchPush(root, id string, record batch.Record, actor, expectedBase, originCommit, baseTree, tip string, recheck func() error) (batch.PushRecovery, error) {
+	edges := productionMovedBaseEdges(gitOutput, func(cmd *exec.Cmd) error { return cmd.Run() })
+	edges.recheck = recheck
+	return recoverMovedBatchPushWith(root, id, record, actor, expectedBase, originCommit, baseTree, tip, edges)
 }
 
 // movedBaseEdges are the Git and proof edges of the moved-base rebase at the
@@ -310,6 +312,9 @@ type movedBaseEdges struct {
 	publish    func(root, id, expected, tip string) error
 	push       func(root, id, base, tip string) error
 	fetch      func(string) (string, string, error)
+	// recheck is the lane's flake-allowance recheck, run immediately before
+	// the endpoint push; nil when the proof carried no known flake seam.
+	recheck func() error
 }
 
 func productionMovedBaseEdges(readGit func(string, ...string) (string, error), runGit func(*exec.Cmd) error) movedBaseEdges {
@@ -413,6 +418,11 @@ func recoverMovedBatchPushWith(root, id string, record batch.Record, actor, expe
 		return recovery, err
 	}
 	recovery.Tip = rebasedTip
+	if edges.recheck != nil {
+		if err := edges.recheck(); err != nil {
+			return recovery, err
+		}
+	}
 	if err := edges.push(root, id, originCommit, rebasedTip); err != nil {
 		latest, latestTree, fetchErr := edges.fetch(root)
 		if fetchErr == nil {

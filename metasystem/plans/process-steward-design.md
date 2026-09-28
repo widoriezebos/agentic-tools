@@ -6,9 +6,10 @@
 - Goals: process-steward
 
 - Status: PARKED (D87 as corrected by D94). Two critique rounds
-  (records/steward/ps-critique-r1.md, 7 findings; records/steward/ps-critique-r2.md, 8
+  (ps-critique-r1, 7 findings; ps-critique-r2, 8
   findings) plus the Opus-window special review
-  (records/steward/opus-window-review-steward.md, 3 findings) shaped this
+  (opus-window-review-steward, 3 findings; all three records removed
+  2026-09-28, tag records-archive-2026-09-28) shaped this
   record. The park stands; the original fold's contradictions are
   normalized out — this document is ONE voice: what is true today,
   why the goal waits, and the contracts a resumed design must

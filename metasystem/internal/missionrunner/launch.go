@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
@@ -456,14 +457,11 @@ func (e *Engine) pinVerifiedContract(mode string, snapshot []byte, approvedSHA s
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(filepath.Join(dir, "mission-fence.lock"), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+	held, err := lock.File(filepath.Join(dir, "mission-fence.lock"), 0o644, lock.Exclusive)
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
-		return err
-	}
+	defer held.Release()
 	fencesPath := e.fencesPath()
 	var fences map[string]any
 	if pathExists(fencesPath) {
@@ -607,12 +605,12 @@ func (e *Engine) armAndPreflight(mode string) error {
 func (e *Engine) Launch(mode string, foreground bool) int {
 	fence, err := e.readFence()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return exitFor(err)
 	}
 	if fence.State == stopfence.StateClosed {
 		err = fenceRefusal(e.Root, fence)
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return exitFor(err)
 	}
 	return e.LaunchAtGeneration(mode, foreground, fence.Generation)
@@ -625,10 +623,10 @@ func (e *Engine) LaunchAtGeneration(mode string, foreground bool, generation int
 	if err := e.launch(mode, foreground, generation); err != nil {
 		var running *alreadyRunning
 		if errors.As(err, &running) {
-			fmt.Println(running.Error())
+			fmt.Fprintln(e.answerOutput(), running.Error())
 			return 0
 		}
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return exitFor(err)
 	}
 	return 0
@@ -853,7 +851,7 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 				if foreground {
 					<-process.done
 				}
-				fmt.Printf("mission=%s started=yes turn=%s\n", e.Mission, valueString(signal["turnId"]))
+				fmt.Fprintf(e.answerOutput(), "mission=%s started=yes turn=%s\n", e.Mission, valueString(signal["turnId"]))
 				return nil
 			}
 			process.waitFor(graceWindow)

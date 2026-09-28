@@ -8,7 +8,6 @@ package validate
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -36,30 +35,6 @@ func equalStrings(left, right []string) bool {
 		}
 	}
 	return true
-}
-
-// resolvePath makes a path absolute and resolves symlinks when the path
-// exists; a path that cannot be resolved is returned cleaned, so
-// containment checks still operate on a normalized form.
-func resolvePath(path string) string {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return filepath.Clean(path)
-	}
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved
-	}
-	return abs
-}
-
-// pathWithin reports whether path is root itself or lies under it.
-// Both arguments must already be absolute and normalized.
-func pathWithin(root, path string) bool {
-	relative, err := filepath.Rel(root, path)
-	if err != nil {
-		return false
-	}
-	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 // readFileIfExists distinguishes a missing file from an unreadable one:

@@ -145,7 +145,6 @@ func TestReadOnlyVerbsReportTheSamePathForRelativeAndAbsoluteFlags(t *testing.T)
 		name, flagName string
 		command        []string
 	}{
-		{"supervise status", "repo", []string{"supervise", "status"}},
 		{"goal list", "root", []string{"internal", "goal", "list", "--json"}},
 		{"test list", "root", []string{"test", "list", "--json"}},
 	}

@@ -1,12 +1,15 @@
 package main
 
 import (
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 func setupCLIFixture(t *testing.T) (repo, installation string) {
@@ -160,8 +163,17 @@ func TestFreshAdoptionSeparatesRuntimeAndTestingReadiness(t *testing.T) {
 	if err := os.WriteFile(conf, []byte("metasystem.runtimes=claude\ntesting.contract=testing.json\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code := runConfigTailor([]string{"--conf", conf, "--runtimes", "none", "--testing-contract", contract}); code != 0 {
-		t.Fatalf("config tailor exit = %d", code)
+	// Adoption's owners: the configuration tailored to no runtime and the
+	// explicit incomplete first-adoption testing contract.
+	if err := validate.TailorConf(conf, []string{"none"}); err != nil {
+		t.Fatal(err)
+	}
+	template, err := testpolicy.IncompleteTemplate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(contract, template, 0o644); err != nil {
+		t.Fatal(err)
 	}
 	data, err := os.ReadFile(contract)
 	if err != nil || !strings.Contains(string(data), `"tailoringRequired": true`) {

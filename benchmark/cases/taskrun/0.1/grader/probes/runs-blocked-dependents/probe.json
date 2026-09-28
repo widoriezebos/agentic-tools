@@ -1,6 +1,0 @@
-{
-  "name": "runs-blocked-dependents",
-  "target": "failure_propagation",
-  "mustNotDisturb": ["cache_correctness", "determinism", "format_agreement"],
-  "flaw": "Tasks execute even after a direct or transitive dependency failed."
-}

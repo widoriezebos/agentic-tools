@@ -3,6 +3,8 @@ package host
 import (
 	"fmt"
 	"os"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // ResultWrite writes the turn's result envelope, the one artifact the mission
@@ -31,7 +33,7 @@ func resultWriteTransport(resultPath, session, outcome, usagePath, rawPath, retu
 	if transport != "" {
 		envelope["transport"] = transport
 	}
-	if err := atomicWriteJSON(resultPath, envelope); err != nil {
+	if err := wiredoc.WriteFile(resultPath, envelope); err != nil {
 		return fmt.Errorf("write result envelope: %w", err)
 	}
 	return nil
@@ -57,7 +59,7 @@ func FakeResult(resultPath, session, rawPath, returnPath, outcome string) error 
 		"rawPath":    rawPath,
 		"returnPath": nullIfEmpty(returnPath),
 	}
-	if err := atomicWriteJSON(resultPath, envelope); err != nil {
+	if err := wiredoc.WriteFile(resultPath, envelope); err != nil {
 		return fmt.Errorf("write fake result envelope: %w", err)
 	}
 	return nil

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // CodexEventField extracts a session or turn identifier from Codex's JSONL
@@ -39,7 +40,7 @@ func CodexEventField(eventsPath, field string) (string, bool) {
 // CodexUsage writes the typed usage for a Codex turn to its round artifact —
 // the adapter's own capture, the one writer of usage.json.
 func CodexUsage(eventsPath, outputPath string) error {
-	if err := atomicWriteJSON(outputPath, usage.CodexUsageValue(eventsPath)); err != nil {
+	if err := wiredoc.WriteFile(outputPath, usage.CodexUsageValue(eventsPath)); err != nil {
 		return fmt.Errorf("write codex usage: %w", err)
 	}
 	return nil

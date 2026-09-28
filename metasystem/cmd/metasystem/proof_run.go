@@ -564,6 +564,18 @@ type proofLaunchAdmission struct {
 	ForceGroups                                                                          bool
 	ManagedCapacity                                                                      bool
 	RequireDiagnosticHeadroom                                                            bool
+	// CallerPID is the supplied process the admission classifies and whose
+	// custody it authenticates (design 6.2); zero is this process's parent,
+	// the entry's own caller.
+	CallerPID int64
+}
+
+// callerPID is the supplied caller, or this process's parent at an entry.
+func (request proofLaunchAdmission) callerPID() int64 {
+	if request.CallerPID != 0 {
+		return request.CallerPID
+	}
+	return int64(os.Getppid())
 }
 
 // proofDeadline keeps the admitted absolute horizon in the command's clock
@@ -874,7 +886,7 @@ func admitProofLaunchWithReads(request proofLaunchAdmission, makeReads func() di
 
 func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeReads func() dispatchcore.ProofAdmissionReads,
 	classify func(string, int64) (lease.ClassifyResult, error)) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
-	classifiedCaller, err := classify(request.ControlRoot, int64(os.Getppid()))
+	classifiedCaller, err := classify(request.ControlRoot, request.callerPID())
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller classification failed: %w", err)
 	}
@@ -894,7 +906,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		if err != nil || canonicalParent != request.ControlRoot {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof parent control root does not match the requested root")
 		}
-		attempt, err := proofrun.AuthenticateContext(request.ControlRoot, parentAttempt, int64(os.Getppid()))
+		attempt, err := proofrun.AuthenticateContext(request.ControlRoot, parentAttempt, request.callerPID())
 		if err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}
@@ -917,7 +929,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, lockErr
 			}
 			defer heldProof.Release()
-			attempt, lockErr = proofrun.AuthenticateContext(request.ControlRoot, parentAttempt, int64(os.Getppid()))
+			attempt, lockErr = proofrun.AuthenticateContext(request.ControlRoot, parentAttempt, request.callerPID())
 			if lockErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, lockErr
 			}
@@ -964,7 +976,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		}
 		ancestor := proofrun.ProcessIdentity{Pid: *record.Pid, PidStartedAt: *record.PidStartedAt,
 			PidStartTicks: record.PidStartTicks, BootID: record.BootID}
-		if err := proofrun.AuthenticateAncestor(int64(os.Getppid()), ancestor); err != nil {
+		if err := proofrun.AuthenticateAncestor(request.callerPID(), ancestor); err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed proof custody: %w", err)
 		}
 		if err := enforceBoundProofGoals("governed run", record.GoalId, request.GoalID, request.AuthorityGoalID); err != nil {
@@ -988,7 +1000,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		if delegateState == "" || delegateInstallation == "" || delegateJob == "" {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("native delegate proof locator is incomplete")
 		}
-		verified, err := lease.HookDelegate(delegateState, delegateInstallation, delegateJob, int64(os.Getppid()))
+		verified, err := lease.HookDelegate(delegateState, delegateInstallation, delegateJob, request.callerPID())
 		if err != nil || !verified.Delegate || verified.JobID != delegateJob {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("native delegate proof locator is not authenticated")
 		}
@@ -1107,7 +1119,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 	if err := proofAdmissionMoved(admissionSnapshots, lockedSnapshots, request.GoalID, authorityGoalID); err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 	}
-	classifiedCaller, err = classify(request.ControlRoot, int64(os.Getppid()))
+	classifiedCaller, err = classify(request.ControlRoot, request.callerPID())
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller reclassification failed under admission lock: %w", err)
 	}
@@ -1125,11 +1137,11 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		}
 		ancestor := proofrun.ProcessIdentity{Pid: *runRecord.Pid, PidStartedAt: *runRecord.PidStartedAt,
 			PidStartTicks: runRecord.PidStartTicks, BootID: runRecord.BootID}
-		if err := proofrun.AuthenticateAncestor(int64(os.Getppid()), ancestor); err != nil {
+		if err := proofrun.AuthenticateAncestor(request.callerPID(), ancestor); err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed proof custody changed before reservation: %w", err)
 		}
 	} else if delegateJob != "" {
-		verified, verifyErr := lease.HookDelegate(delegateState, delegateInstallation, delegateJob, int64(os.Getppid()))
+		verified, verifyErr := lease.HookDelegate(delegateState, delegateInstallation, delegateJob, request.callerPID())
 		record, readErr := dispatchcore.ReadRecordObject(filepath.Join(delegateState, "artifacts", "agents", "jobs", delegateJob+".json"))
 		lens := dispatchcore.JobRecordOf(record)
 		revision, revisionOK := lens.GoalRevision()
@@ -1151,7 +1163,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 				holder, holderErr := lease.CurrentHolder(request.ControlRoot)
 				if holderErr == nil && holder.OwnerLineage == binding.File.Claimed.Lineage {
 					return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf(
-						"active coordinator does not own the claimed goal reservation: lease claim epoch %d differs from stop capability claim epoch %d; run metasystem internal goal restamp --id %s",
+						"active coordinator does not own the claimed goal reservation: lease claim epoch %d differs from stop capability claim epoch %d; run metasystem session start (it restamps goal %s)",
 						*classifiedCaller.ClaimEpoch, binding.Capability.ClaimEpoch, authorityGoalID)
 				}
 			}
@@ -2014,6 +2026,9 @@ func runProofRunPreserve(args []string) int {
 		return 1
 	}
 	fmt.Printf("copied %d bytes; dropped %d paths; copy errors %d\n", result.CopiedBytes, len(result.Dropped), len(result.Errors))
+	if result.Truncated {
+		fmt.Println(proofrun.TruncationMarker(*maxBytes))
+	}
 	for _, dropped := range result.Dropped {
 		fmt.Printf("DROPPED %s\n", dropped)
 	}
@@ -2021,44 +2036,6 @@ func runProofRunPreserve(args []string) int {
 		fmt.Printf("ERROR %s\n", copyError)
 	}
 	return 0
-}
-
-func runProofRunAssert(args []string) int {
-	flags := flag.NewFlagSet("proof-run assert", flag.ContinueOnError)
-	progress := flags.String("progress", "", "progress JSONL")
-	suite := flags.String("suite", "", "suite name")
-	selected := flags.String("selected", "", "single selected section")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		return 2
-	}
-	expected, repeated, err := selectedSections(*selected)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run assert:", err)
-		return 1
-	}
-	run, err := proofrun.ReadLatestProgressRun(*progress)
-	if err == nil {
-		err = proofrun.AssertSectionProgress(run, *suite, expected, repeated)
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run assert:", err)
-		return 1
-	}
-	return 0
-}
-
-// coverageReuseLines projects matching retained full coverage for packages,
-// one "coverage reuse" line per package.
-func coverageReuseLines(controlRoot, executionRoot, baseline string, packages, environment []string) ([]string, bool, error) {
-	evidence, found, err := proofrun.ReusableCoverageInEnvironment(controlRoot, executionRoot, baseline, packages, environment)
-	if err != nil || !found {
-		return nil, found, err
-	}
-	lines := make([]string, 0, len(packages))
-	for _, pkg := range packages {
-		lines = append(lines, fmt.Sprintf("coverage reuse: ./%s: %.1f%%", pkg, evidence.Measurements[pkg]))
-	}
-	return lines, true, nil
 }
 
 func runProofRunBanner(args []string) int {
@@ -2087,39 +2064,6 @@ func proofRunBannerText(suite, root, progress, logPath string) string {
 	}
 	return fmt.Sprintf("suite-cost suite=%s witness=%s duration=%s heartbeat=%s logs=%s",
 		suite, state, duration, proofRunDisplayPath(root, progress), proofRunDisplayPath(root, logPath))
-}
-
-func runProofRunHeartbeat(args []string) int {
-	flags := flag.NewFlagSet("proof-run heartbeat", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "watched root")
-	if flags.Parse(args) != nil || *root == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal proof-run heartbeat --root R")
-		return 2
-	}
-	heartbeat, ok := deepestSuiteHeartbeat(*root, time.Now())
-	if !ok {
-		return 1
-	}
-	fmt.Println(heartbeat)
-	return 0
-}
-
-func runProofRunFixtureSelection(args []string) int {
-	flags := flag.NewFlagSet("proof-run fixture-selection", flag.ContinueOnError)
-	family := flags.String("family", "", "fixture family")
-	selection := flags.String("selection", "", "all or comparison")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *family == "" || *selection == "" {
-		fmt.Fprintln(os.Stderr, "proof-run fixture-selection requires --family and --selection")
-		return 2
-	}
-	scenarios, err := proofrun.FixtureScenarios(*family, *selection)
-	if err != nil {
-		return recordExit(err)
-	}
-	for _, scenario := range scenarios {
-		fmt.Println(scenario)
-	}
-	return 0
 }
 
 func deepestSuiteHeartbeat(root string, now time.Time) (string, bool) {

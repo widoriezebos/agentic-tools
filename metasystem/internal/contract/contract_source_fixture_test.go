@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 const (
@@ -38,7 +40,7 @@ type contractFixtureSource struct {
 func newContractSource(t *testing.T, repositoryCalls int, audit bool) *contractFixtureSource {
 	t.Helper()
 	path, repository := newContractFiles(t, repositoryCalls)
-	repo := filepath.Dir(filepath.Dir(resolvePath(path)))
+	repo := filepath.Dir(filepath.Dir(realpath.ResolveExisting(path)))
 	script := fixtureGateScript
 	if audit {
 		script = fixtureAuditScript

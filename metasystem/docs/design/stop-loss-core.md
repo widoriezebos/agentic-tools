@@ -2,8 +2,9 @@
 
 The durable rules of the mission stop-loss fuse (C1..C3, its
 invariants, and its failure behavior), promoted from
-`records/stop-loss/stop-loss-core.md` (which keeps intent, tests, and migration
-history). `internal/mission`'s ledger and `internal/missionrunner`'s
+the stop-loss-core design record. Tests: `internal/missionrunner/stoploss_test.go`;
+design history in the tag `records-archive-2026-09-28` (records/stop-loss/,
+removed 2026-09-28). `internal/mission`'s ledger and `internal/missionrunner`'s
 stop-loss step implement it. A change here is a contract change, not a
 cleanup.
 
@@ -122,3 +123,20 @@ coherent and no crash window between "recorded" and "counted".
   baseline plus any parseable `observed=` values, and classification
   words alone drive the count. Unparseable measurement values fold as
   baseline. Derivation never writes anything.
+
+# Decisions
+
+- Closure credits rejected (2026-08-11). The parent design counted a cycle
+  as `loop-advanced`, freezing the fuse, when the runner minted a one-use
+  credit for a closed critique round, keyed (chain root, round) and capped
+  by a sealed credit budget. Three critique rounds (13, 14 and 14 material)
+  showed that this half was written against a runner that does not exist:
+  the host dispatches critique roots, not the runner; the ledger tail does
+  not carry the credit lines; and minting at conclude time misses
+  same-cycle classification. The human ruled a split: this fuse ships
+  alone, and chain-level progress became patience satellite 4's single
+  observable (`docs/patience.md`). Closures are a proxy that a drought
+  hides behind, so they never feed the fuse.
+- A seal means what was signed. No change here gives an old sealed
+  contract a new allowance or a new meaning; `ledgerSemantics` pins the
+  rules at mission init for that reason.

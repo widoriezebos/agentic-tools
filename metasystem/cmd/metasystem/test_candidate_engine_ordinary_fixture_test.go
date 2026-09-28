@@ -58,7 +58,7 @@ const (
 	ordinaryJudgeModuleBlob         = "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1"
 )
 
-var ordinaryProjectionPaths = []string{"cmd/**", "internal/**", "scripts/agents/**", "go.mod", "go.sum", "records/misc/goals-migration-manifest.md"}
+var ordinaryProjectionPaths = []string{"cmd/**", "internal/**", "scripts/agents/**", "go.mod", "go.sum"}
 var ordinaryWorkspacePins = []string{"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
 
 // The declared OIDs name fixture facts. The fixture never constructs Git objects

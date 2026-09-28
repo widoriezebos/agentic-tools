@@ -1,8 +1,9 @@
 # The supervision registry: the machine-wide custody contract
 
 The durable rules of the single machine-wide custody view for
-supervision owners, promoted from `records/supervision/supervision-registry.md`
-(which keeps the design history and critique chain). `internal/registry`
+supervision owners, promoted from the supervision-registry design record
+(design history and critique chain in the tag `records-archive-2026-09-28`,
+records/supervision/, removed 2026-09-28). `internal/registry`
 implements REG-1..3, `internal/lock` implements REG-4. A change to any
 REG rule is a contract change, not a cleanup.
 

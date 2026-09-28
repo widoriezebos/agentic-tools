@@ -34,6 +34,9 @@ var textSurfaceExceptions = []struct{ file, text, reason string }{
 	{"metasystem/internal/seat/launch/", "metasystem internal steward arm", "the destination step's recorded argv"},
 	{"metasystem/internal/adapter/toolgate.go", "metasystem ", "the tool gate recognizes the commands an agent runs, including family forms that still route"},
 	{"metasystem/cmd/metasystem/intent_worktree.go", "metasystem goal worktree", "Git's worktree lock reason, not a command"},
+	{"metasystem/cmd/metasystem/audit.go", "metasystem audit passed", "the audit's verdict line, not a command"},
+	{"metasystem/cmd/metasystem/delegate.go", "metasystem adapter self-test", "prose naming the self-test, not a command"},
+	{"metasystem/internal/contract/", "metasystem project root", "prose naming the project root, not a command"},
 }
 
 // textProseAfterObject are words prose puts after "metasystem OBJECT" that
@@ -47,6 +50,43 @@ var textProseAfterObject = map[string]bool{
 
 var textCommandPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.\-/])((?:bin/)?metasystem) ([a-z][a-z0-9-]*)(?: ([a-z][a-z0-9-]*|--[a-z][a-z-]*))?`)
 
+// textSurfaceExcepted reports whether a quoted command in file is one of the
+// textSurfaceExceptions.
+func textSurfaceExcepted(file, quoted string) bool {
+	for _, exception := range textSurfaceExceptions {
+		if strings.HasPrefix(file, exception.file) && strings.HasPrefix(strings.TrimPrefix(quoted, "bin/"), exception.text) {
+			return true
+		}
+	}
+	return false
+}
+
+// textInternalCommandPattern finds a machinery command in text:
+// `metasystem internal FAMILY VERB` or `metasystem FAMILY VERB`.
+var textInternalCommandPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.\-/])(?:bin/)?metasystem (internal )?([a-z][a-z0-9-]*) ([a-z][a-z0-9-]*)`)
+
+// textInternalCommandProblem judges one machinery command named in text
+// (H1, R14: a documented command or printed remedy never points at nothing).
+// A word of the internal vocabulary ever routed (ratchetFrozenFirstWords) in
+// first position, or any word after an explicit internal, must still route:
+// to a top-level internal form, a hidden entry, or a registered family verb.
+// A public object without internal is the public check's to judge.
+func textInternalCommandProblem(registered []family, topLevel map[string]bool, internal bool, first, second string) string {
+	if !internal && (isIntentObject(first) || first == "status" || first == "help" || !slices.Contains(ratchetFrozenFirstWords, first)) {
+		return ""
+	}
+	if topLevel[first] || textProseAfterObject[second] {
+		return ""
+	}
+	if command, ok := findIntentAction(first, second); ok && command.hidden {
+		return ""
+	}
+	if familyHasVerb(registered, first, second) {
+		return ""
+	}
+	return "a machinery command that does not exist"
+}
+
 // TestIntentTextNamesOnlyPublicForms is the witness that text shown to
 // people and agents names only public forms: every "metasystem W W" in a Go
 // string literal, a live document, a skill, a role packet, the agent
@@ -58,7 +98,18 @@ func TestIntentTextNamesOnlyPublicForms(t *testing.T) {
 	repository := filepath.Join("..", "..", "..")
 	registered := families()
 	var problems []string
+	topLevel := map[string]bool{}
+	for _, form := range dispatchInternalTopLevelForms(t) {
+		topLevel[form] = true
+	}
 	check := func(file string, line int, text string) {
+		for _, match := range textInternalCommandPattern.FindAllStringSubmatch(text, -1) {
+			problem := textInternalCommandProblem(registered, topLevel, match[1] != "", match[2], match[3])
+			quoted := strings.TrimLeft(strings.TrimSpace(match[0]), "`'\"(")
+			if problem != "" && !textSurfaceExcepted(file, quoted) {
+				problems = append(problems, file+":"+strconv.Itoa(line)+": "+quoted+" is "+problem)
+			}
+		}
 		for _, match := range textCommandPattern.FindAllStringSubmatch(text, -1) {
 			first, second := match[2], match[3]
 			quoted := strings.TrimSpace(strings.Join([]string{match[1], first, second}, " "))
@@ -85,13 +136,7 @@ func TestIntentTextNamesOnlyPublicForms(t *testing.T) {
 			if bad == "" {
 				continue
 			}
-			excepted := false
-			for _, exception := range textSurfaceExceptions {
-				if strings.HasPrefix(file, exception.file) && strings.HasPrefix(strings.TrimPrefix(quoted, "bin/"), exception.text) {
-					excepted = true
-				}
-			}
-			if !excepted {
+			if !textSurfaceExcepted(file, quoted) {
 				problems = append(problems, file+":"+strconv.Itoa(line)+": "+quoted+" is "+bad)
 			}
 		}

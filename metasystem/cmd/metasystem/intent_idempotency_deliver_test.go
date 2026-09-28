@@ -149,11 +149,11 @@ func witnessQuestionWithdraw(t *testing.T) {
 // alreadyRunningEngine is an engine stand-in that answers a mission resume
 // the way the runner does when the mission's runner is live.
 func alreadyRunningEngine(calls *[][]string) *intentDeliveryOwners {
-	return &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+	return processBackedDelivery(&intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
 		process: func(process intentProcess) intentProcessResult {
 			*calls = append(*calls, process.argv)
 			return intentProcessResult{stdout: []byte(missionrunner.AlreadyRunningPrefix + "demo (runner pid 42); nothing was started\n")}
-		}}
+		}})
 }
 
 func witnessQuestionAnswer(t *testing.T) {
@@ -316,11 +316,11 @@ func witnessMissionRepair(t *testing.T) {
 	b := newProcessBed(t)
 	owners := b.owners()
 	var calls [][]string
-	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+	owners.delivery = processBackedDelivery(&intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
 		process: func(process intentProcess) intentProcessResult {
 			calls = append(calls, process.argv)
 			return intentProcessResult{stdout: []byte("mission=demo taint=2 " + missionrunner.TaintAlreadyResolved + "(restore by Wido); nothing was recorded\n")}
-		}}
+		}})
 	before := snapshotTree(t, b.root())
 	tree := strings.Repeat("a", 40)
 	for run := 1; run <= 2; run++ {

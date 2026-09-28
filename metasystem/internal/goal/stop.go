@@ -410,8 +410,8 @@ func checkFenceLiftForRebudget(root string, t *TreeGoals, f *GoalFile, verb stri
 	}
 	fence := *f.StopFence
 	if err := VerifyStopBatchComplete(root, f.Id, *f.StopCapability, fence); err != nil {
-		return "", fmt.Errorf("goal %s %s cannot lift fence %s: %v; advance stop batch %s with metasystem job stop-batch",
-			verb, f.Id, fence.StopID, err, fence.StopID)
+		return "", fmt.Errorf("goal %s %s cannot lift fence %s: %v; finish stop %s with metasystem work stop %s",
+			verb, f.Id, fence.StopID, err, fence.StopID, f.Id)
 	}
 	machine := f.Claimed.Machine
 	for _, otherID := range OrderedOpenGoalIDs(t.Live) {
@@ -472,7 +472,7 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 				return nil, approvalErr
 			}
 			if approvedBudget != r.Budget {
-				return nil, fmt.Errorf("APPROVAL_REQUIRED: resume cannot change the human-approved budget; re-approve or use the proof-bearing goal set-budget before resuming")
+				return nil, fmt.Errorf("APPROVAL_REQUIRED: resume cannot change the human-approved budget; re-approve with the proof-bearing metasystem goal budget before resuming")
 			}
 			if err := refuseRelayedAfterFleetEnrollment(t, temporaryAuthority); err != nil {
 				return nil, err

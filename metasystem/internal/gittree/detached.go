@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
-	"golang.org/x/sys/unix"
 )
 
 // DetachedWorktree is a temporary linked worktree whose workspace subtree
@@ -430,7 +430,7 @@ func combinedProbeOutput(stderr, stdout string) string {
 // 2026-09-12). The lock is a file in the common git dir, so every engine
 // on the repository serializes its adds and removes, within one process
 // and across processes alike.
-type worktreeAdminLock struct{ file *os.File }
+type worktreeAdminLock struct{ held *lock.FileLock }
 
 func (w Workspace) lockWorktreeAdmin(blocking bool) (*worktreeAdminLock, error) {
 	common, err := w.gitPathLine(nil, "rev-parse", "--git-common-dir")
@@ -444,29 +444,28 @@ func (w Workspace) lockWorktreeAdmin(blocking bool) (*worktreeAdminLock, error) 
 }
 
 func lockWorktreeAdminAt(common string, blocking bool) (*worktreeAdminLock, error) {
-	file, err := os.OpenFile(filepath.Join(common, "metasystem-worktree-admin.lock"), os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
+	mode := lock.Exclusive
+	if !blocking {
+		mode = lock.TryExclusive
+	}
+	held, err := lock.File(filepath.Join(common, "metasystem-worktree-admin.lock"), 0o644, mode)
+	var lockErr *lock.LockError
+	if err != nil && !errors.As(err, &lockErr) {
 		return nil, fmt.Errorf("gittree worktree administration: %w", err)
 	}
-	how := unix.LOCK_EX
-	if !blocking {
-		how |= unix.LOCK_NB
-	}
-	if err := unix.Flock(int(file.Fd()), how); err != nil {
-		_ = file.Close()
+	if err != nil {
 		return nil, err
 	}
-	return &worktreeAdminLock{file: file}, nil
+	return &worktreeAdminLock{held: held}, nil
 }
 
 func (l *worktreeAdminLock) release() error {
-	if l == nil || l.file == nil {
+	if l == nil || l.held == nil {
 		return nil
 	}
-	err := unix.Flock(int(l.file.Fd()), unix.LOCK_UN)
-	closeErr := l.file.Close()
-	l.file = nil
-	return errors.Join(err, closeErr)
+	err := l.held.Release()
+	l.held = nil
+	return err
 }
 
 func (d *DetachedWorktree) graftSubtree(prefix, tree string) (string, error) {

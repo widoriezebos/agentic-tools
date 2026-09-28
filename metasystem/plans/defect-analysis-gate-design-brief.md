@@ -37,7 +37,7 @@ directory. Touch nothing else. Do not commit.
   (the analysis record and its reproduction join; the risk-scaled
   challenge gate; the intake or admission enforcement).
 - The reproduction bar: metasystem/plans/two-bars-for-changes-design.md
-  and metasystem/records/two-bars/two-bars-design.md (Defect-Proof); the
+  (the earlier r3 record's Defect-Proof is in the tag records-archive-2026-09-28); the
   goal intent forbids reinventing it.
 - The boundaries: goal intake in metasystem/cmd/metasystem/goal.go
   (runGoalOpen) and metasystem/internal/goal/verbs.go (Open); dispatch

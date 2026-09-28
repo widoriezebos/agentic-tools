@@ -8,7 +8,8 @@
 Goal: path-class-manifest (`plans/goals/path-class-manifest.md:4`, Wido's order verbatim;
 authority `memory/rulings.md:102` R-55-m1). One manifest, one verb, three consumers, three
 deletions, one refusal, fixtures. Revision 2 folds the thirteen material findings and four
-gaps of `records/misc/path-class-manifest-critique-r1.md`; section 9 maps each.
+gaps of the round-1 critique (path-class-manifest-critique-r1, removed 2026-09-28;
+tag `records-archive-2026-09-28`); section 9 maps each.
 
 ## 0. The tree as it is (facts the design stands on)
 
@@ -129,7 +130,15 @@ path <key> has no class in scripts/agents/path-classes.txt; no classified ancest
 
 **(a) The landing evaluator** (`internal/landing/observe.go`). Every changed path is
 classified once, over the whole set, before any class rule runs (floor precedence stays
-set-wide, `records/two-bars/floor-verdict-addendum.md:40-41`).
+set-wide). One shared code, `direct-fix-floor-refused`, names a floor hit for
+every class rather than a per-class split: the floor is one class-independent
+predicate, the class is already in the same commit's `Landing-Provenance`
+trailer, and the promotion record can then name the floor by exactly one
+string that provably catches no off-floor miss. For exact-revert the scan
+covers the union of the declared inverse's paths and the candidate's changed
+paths, so an extra floor path staged beside a clean revert is caught.
+(Distilled 2026-09-28 from the floor-verdict addendum, removed that day; tag
+`records-archive-2026-09-28`.)
 
 | class | `--chain` (observeChain `:106-153`) | `--direct-fix register-carriage` (`:449-489`) | `--direct-fix exact-revert` (`:721-790`) |
 |---|---|---|---|

@@ -954,8 +954,10 @@ exit "$status"`
 		t.Fatal("raced landing mutated chain accounting bytes")
 	}
 
-	// Only park publication is obstructed here. The real verb sees the same
-	// authenticated claim, candidate, proof and anchors, and no transport runs.
+	// Only park publication is obstructed here. The park owner sees the same
+	// authenticated claim, candidate, proof and anchors, and no transport
+	// runs. It is called in process with the announced holder as its supplied
+	// caller, as the internal landing park verb supplied its parent.
 	parkFamily := filepath.Join(root, "artifacts", "agents", "landing", "parks")
 	retained := filepath.Join(root, "artifacts", "agents", "landing", "retained-parks")
 	if err := os.Rename(parkFamily, retained); err != nil {
@@ -964,17 +966,33 @@ exit "$status"`
 	if err := os.WriteFile(parkFamily, []byte("obstruction\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	args := []string{
-		filepath.Join(root, "bin", "metasystem"), "landing", "park", "--root", root,
-		"--chain", "park-chain", "--target", target, "--reason", "chain-recertification-target-moved",
-		"--detail", "same captured push refusal", "--recertification", proof, "--candidate-commit", candidate,
-		"--recovery-ref", verified.Record.SourceAnchorRef, "--recovery-ref", verified.Record.MergedAnchorRef,
+	holderGate := filepath.Join(bed, "park-holder-gate")
+	holder := exec.Command("bash", "-c", `while [[ ! -e "$1" ]]; do sleep 0.01; done`, "holder", holderGate)
+	if err := holder.Start(); err != nil {
+		t.Fatal(err)
 	}
-	failedOutput, failedCode := runAsHolder(args, nil)
-	if failedCode == 0 || !strings.Contains(failedOutput, "chain-recertification-park-failed") ||
-		!strings.Contains(failedOutput, "cause=chain-recertification-target-moved") ||
-		strings.Contains(failedOutput, "state=parked") || strings.Contains(failedOutput, "parkRecord=") {
-		t.Fatalf("park recording failure was not discriminating: code=%d\n%s", failedCode, failedOutput)
+	holderPid := int64(holder.Process.Pid)
+	holderStarted, ok := lease.StartedAt(holderPid, nil)
+	if !ok {
+		_ = holder.Process.Kill()
+		t.Fatal("park holder start time is unreadable")
+	}
+	if _, err := lease.Announce(root, "landing-race", holderPid, holderStarted, "landing-race", "fake", "race-lineage"); err != nil {
+		_ = holder.Process.Kill()
+		t.Fatal(err)
+	}
+	parkResult, parkErr := landing.Park(landing.ParkParams{
+		Root: root, Chain: "park-chain", TargetCommit: target, Reason: "chain-recertification-target-moved",
+		Detail: "same captured push refusal", Recertification: proof, CandidateCommit: candidate,
+		RecoveryRefs: []string{verified.Record.SourceAnchorRef, verified.Record.MergedAnchorRef}, CallerPID: holderPid,
+	})
+	if err := os.WriteFile(holderGate, []byte("go\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = holder.Wait()
+	var parkFailure *landing.ParkFailure
+	if !errors.As(parkErr, &parkFailure) || parkFailure.Cause != "chain-recertification-target-moved" || parkResult.State == "parked" || parkResult.ParkRecord != "" {
+		t.Fatalf("park recording failure was not discriminating: result=%+v err=%v", parkResult, parkErr)
 	}
 	if got := runReceiptGit(t, top, "rev-parse", "HEAD"); got != candidate {
 		t.Fatalf("recording failure moved candidate: %s", got)

@@ -57,7 +57,6 @@ repo:.agents/ behavior
 repo:.claude/ behavior
 repo:.codex/ behavior
 repo:.devin/ behavior
-repo:benchmark/ behavior
 repo:environment/ behavior
 repo:development/README.md behavior
 repo:development/project-rules-local.md behavior
@@ -67,6 +66,7 @@ repo:development/devin-selftest.md behavior
 repo:development/ record
 repo:records/ record
 repo:plans/ record
+repo:paper/ record
 
 # Ownership rows are exact files beneath install:plans/ and are initially empty.
 

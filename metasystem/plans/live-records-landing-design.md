@@ -77,7 +77,7 @@ digest and seven other append-only registers (`.gitattributes:2`), and the
 append-only carriage evaluator classifies the registered paths at commit
 time (`internal/landing/observe.go:467`,
 `scripts/agents/register-carriage-paths.txt:1`,
-records/two-bars/digest-merge-addendum.md). Revision 1 called the
+the digest-merge rules in §4.1). Revision 1 called the
 cross-machine race "solved" by this; the critique disproved both halves of
 that claim. First, the evaluator's verdict is only written into a commit
 trailer — `commit.sh` keeps policy mismatches non-blocking in observation
@@ -285,7 +285,7 @@ pattern as `commit.sh`'s `__lease-held` re-exec). Behavior, in order:
    - anything else → refuse the whole landing, exit 2, printing the
      path, the HEAD byte length, and the first divergent byte offset.
      Never stage, never guess. A rewrite takes a bar by hand, exactly as
-     the digest-merge-addendum rules.
+     the digest-merge rules (§4.1) say.
 4. If any path is eligible, build the carry commit WITHOUT touching the
    shared index: with `GIT_INDEX_FILE` pointed at a private temporary
    index, `git read-tree HEAD`, update only the eligible registered
@@ -435,6 +435,19 @@ named as a code obligation in §8.
   commits add no new reordering — a carried tail keeps its local
   relative order, and remote lines join only through the same union
   merge that already carries the residual.
+- **Why union is safe, and the alternatives rejected (digest-union-merge,
+  2026-09-01).** Union is safe because an append-only refusal stands at the
+  origin commit and the push boundary: the union driver only inserts lines, so
+  a union merge shows pure additions against each parent and passes it.
+  Rejected: (b) relying on the Stop-hook emitted-prefix cursor — it is
+  machine-local and gitignored, so every other machine cannot see a rewritten
+  history, and it detects after the fact rather than refusing; (c) refusing
+  union to keep conflicts loud — the default three-way driver merges a
+  one-sided rewrite cleanly and conflicts only on both-sides appends, so it
+  taxes every honest landing and misses the dishonest one. A legitimate
+  rewrite (rotation, redaction) is not carriage and takes a bar. (Distilled
+  2026-09-28 from the digest-merge addendum, removed that day; tag
+  records-archive-2026-09-28.)
 
 ### 4.2 The conflict trail, explained honestly (LR-002)
 

@@ -817,11 +817,7 @@ func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t 
 		"metasystem/testing.json",
 		"development/project-rules-local.md", "metasystem/memory/instruction-ledger.md",
 		"metasystem/memory/receipts.log", "metasystem/plans/application-testing-contract-design.md",
-		"metasystem/plans/coordinator-loop-investigation.md", "metasystem/plans/coordinator-loop-prevention-design-r2-dispositions.md",
-		"metasystem/plans/coordinator-loop-prevention-design.md", "metasystem/plans/coordinator-loop-prevention-progress.md",
-		"metasystem/plans/coordinator-loop-prevention-testing-design-r1-dispositions.md",
-		"metasystem/plans/coordinator-loop-prevention-testing-design-r2-dispositions.md",
-		"metasystem/plans/coordinator-loop-prevention-testing-design-r3-dispositions.md",
+		"metasystem/plans/coordinator-loop-prevention-design.md",
 		"metasystem/plans/coordinator-loop-prevention-testing-design.md",
 	}
 	plan, err := Select(contract, SelectionRequest{ChangedPaths: boundary, GoalRisk: GoalRisk{Severity: 3, Novelty: 2, Exposure: 2, Accumulation: 3}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
