@@ -127,25 +127,20 @@ func TestArbitrationDuringASweepCompletesWithinOneNonce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-acquired:
-	case <-time.After(30 * time.Second):
-		t.Fatal("the queued acquisition never completed")
-	}
+	<-acquired
 	if len(report.Actions)+len(report.Pending) != len(nonces) || len(report.Actions) < 1 {
 		t.Fatalf("sweep acted on %d and left %d pending of %d", len(report.Actions), len(report.Pending), len(nonces))
 	}
 }
 
 // The stop-path composition (DL3B-04): a hook capturing a handoff (which
-// takes arbitration) against a sweep over two hundred old handoffs under a 2
-// s budget: the capture completes, serialized per nonce, and the sweep ends
-// within its budget.
+// takes arbitration) against a sweep over two hundred old handoffs: the
+// capture completes, serialized per nonce, and when the budget ends (the
+// cancel stands in for the pass deadline) the sweep returns.
 func TestHookCaptureCompletesDuringALargeHandoffSweep(t *testing.T) {
 	fixture, _ := oldHandoffs(t, 200)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	started := time.Now()
 	swept := make(chan diskstore.Report, 1)
 	go func() {
 		report, err := diskstore.RunPass(ctx, handoffPass(fixture.root, time.Now))
@@ -161,12 +156,21 @@ func TestHookCaptureCompletesDuringALargeHandoffSweep(t *testing.T) {
 	if _, err := os.Stat(captured.StatePath); err != nil {
 		t.Fatalf("the capture's state is missing: %v", err)
 	}
+	cancel()
 	report := <-swept
-	if elapsed := time.Since(started); elapsed > 20*time.Second {
-		t.Fatalf("the sweep took %s against a 2 s budget", elapsed)
+	if len(report.Actions) != 200 && len(report.Backlog) == 0 {
+		t.Fatalf("a cut-short sweep left no backlog: %d actions, pending %v", len(report.Actions), report.Pending)
 	}
-	if len(report.Actions) == 0 {
-		t.Fatalf("the sweep removed nothing: pending %d backlog %v", len(report.Pending), report.Backlog)
+	// The next pass resumes and finishes; the capture's fresh handoff stays.
+	next, err := diskstore.RunPass(context.Background(), handoffPass(fixture.root, time.Now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Actions)+len(next.Actions) != 200 {
+		t.Fatalf("two passes removed %d+%d of 200 old handoffs", len(report.Actions), len(next.Actions))
+	}
+	if _, err := os.Stat(captured.StatePath); err != nil {
+		t.Fatalf("the sweep removed the capture's fresh handoff: %v", err)
 	}
 }
 
@@ -175,7 +179,7 @@ func TestHookCaptureCompletesDuringALargeHandoffSweep(t *testing.T) {
 func TestDiskRoleFollowsTheLastReport(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	if role := checkDisk(root); role.Status != HealthAlive || !strings.Contains(role.Reason, "no disk pass") {
+	if role := checkDiskAt(root, filepath.Join(root, "home")); role.Status != HealthAlive || !strings.Contains(role.Reason, "no disk pass") {
 		t.Fatalf("no report = %+v", role)
 	}
 	path := diskstore.CheckoutReportPath(root)
@@ -191,17 +195,17 @@ func TestDiskRoleFollowsTheLastReport(t *testing.T) {
 		}
 	}
 	write(diskstore.Health{Status: diskstore.HealthOK, Reason: "above"})
-	if role := checkDisk(root); role.Status != HealthAlive {
+	if role := checkDiskAt(root, filepath.Join(root, "home")); role.Status != HealthAlive {
 		t.Fatalf("an ok report = %+v", role)
 	}
 	write(diskstore.Health{Status: diskstore.HealthAttention, Reason: "free space is below the floor", Remedy: "metasystem disk clean --preview"})
-	if role := checkDisk(root); role.Status != HealthDead || role.Remedy != "metasystem disk clean --preview" {
+	if role := checkDiskAt(root, filepath.Join(root, "home")); role.Status != HealthDead || role.Remedy != "metasystem disk clean --preview" {
 		t.Fatalf("a floor breach = %+v", role)
 	}
 	if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if role := checkDisk(root); role.Status != HealthUnknown || role.Remedy != "metasystem disk show" {
+	if role := checkDiskAt(root, filepath.Join(root, "home")); role.Status != HealthUnknown || role.Remedy != "metasystem disk show" {
 		t.Fatalf("an unreadable report = %+v", role)
 	}
 }

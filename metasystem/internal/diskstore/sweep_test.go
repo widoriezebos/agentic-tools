@@ -21,7 +21,10 @@ import (
 type fakeProof struct {
 	kind         OwnerKind
 	blockRemoval bool
-	applied      []string
+	// cancel ends the pass's budget when the removal stalls, the way the
+	// pass deadline would.
+	cancel  context.CancelFunc
+	applied []string
 }
 
 func (p *fakeProof) Kind() OwnerKind { return p.kind }
@@ -37,7 +40,10 @@ func (p *fakeProof) Observe(_ context.Context, record Record) Verdict {
 func (p *fakeProof) Apply(ctx context.Context, critical *Critical) error {
 	p.applied = append(p.applied, critical.Record().ID)
 	if p.blockRemoval {
-		return removeStore(ctx, critical.Record(), func(string) { <-ctx.Done() })
+		return removeStore(ctx, critical.Record(), func(string) {
+			p.cancel()
+			<-ctx.Done()
+		})
 	}
 	return RemoveStore(ctx, critical.Record())
 }
@@ -260,15 +266,17 @@ func TestSmallBudgetProgressesAcrossPassesAndNoClassStarves(t *testing.T) {
 }
 
 // stallingClass blocks its apply until the context ends: a stalled git or a
-// held lock inside an owner.
-type stallingClass struct{}
+// held lock inside an owner. The stall ends the budget (cancel stands in
+// for the pass deadline, so no test waits on wall time).
+type stallingClass struct{ cancel context.CancelFunc }
 
 func (stallingClass) Name() string { return "stalling" }
 func (stallingClass) Plan(context.Context, *Pass) ([]Item, error) {
 	return []Item{{Class: "stalling", Key: "s1", Path: "/fixture/s1", Verdict: Verdict{Decision: Release}},
 		{Class: "stalling", Key: "s2", Path: "/fixture/s2", Verdict: Verdict{Decision: Release}}}, nil
 }
-func (stallingClass) Apply(ctx context.Context, _ *Pass, _ Item) Verdict {
+func (c stallingClass) Apply(ctx context.Context, _ *Pass, _ Item) Verdict {
+	c.cancel()
 	<-ctx.Done()
 	return Verdict{Decision: Pending, Reason: "owner call stalled: " + ctx.Err().Error(), Command: "metasystem disk clean"}
 }
@@ -279,20 +287,11 @@ func TestStalledOwnerLeavesThePassWithinBudget(t *testing.T) {
 	t.Parallel()
 	root := realDir(t)
 	registry := Registry{Dir: filepath.Join(root, "stores")}
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	done := make(chan Report, 1)
-	go func() {
-		report, _ := RunPass(ctx, passOptions(registry, root, stallingClass{}))
-		done <- report
-	}()
-	select {
-	case report := <-done:
-		if len(report.Pending) != 1 || len(report.Backlog) == 0 {
-			t.Fatalf("a stalled pass reported pending %v backlog %v", report.Pending, report.Backlog)
-		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("the pass waited on a stalled owner past its budget")
+	report, _ := RunPass(ctx, passOptions(registry, root, stallingClass{cancel: cancel}))
+	if len(report.Pending) != 1 || len(report.Backlog) == 0 {
+		t.Fatalf("a stalled pass reported pending %v backlog %v", report.Pending, report.Backlog)
 	}
 }
 
@@ -303,10 +302,10 @@ func TestStalledRemovalIsFinishedByTheNextPass(t *testing.T) {
 	root := realDir(t)
 	registry := Registry{Dir: filepath.Join(root, "stores")}
 	dead := plainStore(t, registry, root, "dead", "dead")
-	proof := &fakeProof{kind: OwnerProcess, blockRemoval: true}
-	class := RegisteredStores{Registry: registry, Proofs: map[OwnerKind]OwnerProof{OwnerProcess: proof}}
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	proof := &fakeProof{kind: OwnerProcess, blockRemoval: true, cancel: cancel}
+	class := RegisteredStores{Registry: registry, Proofs: map[OwnerKind]OwnerProof{OwnerProcess: proof}}
 	report, err := RunPass(ctx, passOptions(registry, root, class))
 	if err != nil {
 		t.Fatal(err)

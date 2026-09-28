@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 )
 
 // planRig answers the plan's reads and fails on any mutating git verb, fetch
@@ -136,38 +135,29 @@ func TestSweepPlanObservesWithoutMutating(t *testing.T) {
 // the deadline and the sweep returns, never waiting on the stub (DL2-17).
 func TestSweepReturnsAtTheContextWithAStalledGit(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	rig := &planRig{t: t, remoteTips: map[string]string{}, localTip: sweepPolicyLocal}
 	deps := rig.dependencies()
 	stalled := 0
 	deps.gitOutput = func(repo string, args ...string) ([]byte, error) {
 		stalled++
+		cancel() // the budget ends while git is stalled
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
 	request := planRequest(rig)
 	request.Context = ctx
 	request.CheckClaim = func() error { return nil }
-	done := make(chan error, 1)
-	go func() {
-		_, err := sweepWithDependencies(request, deps)
-		done <- err
-	}()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("a stalled sweep returned %v, want the deadline", err)
-		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("the sweep waited on a stalled git past its deadline")
+	if _, err := sweepWithDependencies(request, deps); !errors.Is(err, context.Canceled) {
+		t.Fatalf("a stalled sweep returned %v, want the context's end", err)
 	}
 	if stalled != 1 {
 		t.Fatalf("the sweep went on to %d git calls after the deadline", stalled)
 	}
 	// A cancelled context stops the plan before any read.
 	plan, err := sweepPlanWithDependencies(request, rig.dependencies())
-	if !errors.Is(err, context.DeadlineExceeded) || plan.GoalID != "" {
+	if !errors.Is(err, context.Canceled) || plan.GoalID != "" {
 		t.Fatalf("a plan under an expired context = %+v, %v", plan, err)
 	}
 }

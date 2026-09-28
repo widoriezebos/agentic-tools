@@ -436,8 +436,13 @@ func existing(paths []string) []string {
 // free space below the floor or an unknown host policy raises it with the
 // report's remedy; an unreadable report is unknown; no report yet is alive.
 func checkDisk(repoRoot string) RoleVerdict {
+	home, _ := HomeStateRoot()
+	return checkDiskAt(repoRoot, home)
+}
+
+func checkDiskAt(repoRoot, home string) RoleVerdict {
 	paths := []string{diskstore.CheckoutReportPath(repoRoot)}
-	if home, err := HomeStateRoot(); err == nil {
+	if home != "" {
 		paths = append(paths, diskstore.MachineReportPath(home))
 	}
 	read := 0
