@@ -39,18 +39,3 @@ func TestBehaviorSurfaceSelectFailsOnFlushError(t *testing.T) {
 		t.Fatal("select returned success after its buffered output failed")
 	}
 }
-
-func TestBehaviorSurfaceDirectWritersFailOnOutputError(t *testing.T) {
-	root := t.TempDir()
-	for name, run := range map[string]func() int{
-		"digest": func() int {
-			return runBehaviorSurfaceDigest([]string{"--root", root, "--projection", "LANDING", "--endpoint", "test"})
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if code := withBehaviorSurfaceStreams(t, "", run); code == 0 {
-				t.Fatal("command returned success after direct output failed")
-			}
-		})
-	}
-}

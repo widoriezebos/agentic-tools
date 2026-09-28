@@ -209,7 +209,6 @@ func families() []family {
 			summary: "mechanical fences the gate bootstrap consults between steps",
 			verbs: []verb{
 				{"dependency-ratchet", "refuse undeclared executable interpreter dependencies in shell sources", runAuditDependencyRatchet},
-				{"parallel-ratchet", "refuse increases in each package's serial Go test count", runAuditParallelRatchet},
 				{"hook-start-exits", "refuse SessionStart paths around the outcome owner", runAuditHookStartExits},
 				{"metasystem", "instruction-asset audit: required files, outside references, placeholders, word budgets", runAuditMetasystem},
 				{"stop-decision-surface", "report additions and refuse undeclared moves of Stop assertions", runAuditStopDecisionSurface},
@@ -221,7 +220,6 @@ func families() []family {
 			summary: "versioned byte projections shared by witness, landing, adoption, and weight laws",
 			verbs: []verb{
 				{"select", "filter newline- or NUL-delimited paths through one projection", runBehaviorSurfaceSelect},
-				{"digest", "print a projection-scoped digest report naming its endpoint", runBehaviorSurfaceDigest},
 				{"skip-allowed", "exit 0 only for a family declared under the caller's witness or delivery scope", runBehaviorSurfaceSkipAllowed},
 			},
 		},

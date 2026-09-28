@@ -7,11 +7,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	goalpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/parallelratchet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
@@ -68,57 +66,6 @@ func runAuditDependencyRatchet(args []string) int {
 	}
 	fmt.Println("dependency ratchet passed")
 	return 0
-}
-
-func runAuditParallelRatchet(args []string) int {
-	flags := flag.NewFlagSet("audit parallel-ratchet", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "Go module root to audit")
-	update := flags.Bool("update", false, "lower recorded serial-test counts to their current values")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal audit parallel-ratchet [--root MODULE] [--update]")
-		return 2
-	}
-	baselinePath := filepath.Join(*root, "testing-parallel-ratchet.json")
-	baseline, err := parallelratchet.ReadParallelRatchet(baselinePath)
-	if err != nil {
-		return refuseParallelRatchet(err.Error())
-	}
-	inventory, err := parallelratchet.ScanParallelTests(*root)
-	if err != nil {
-		return refuseParallelRatchet(err.Error())
-	}
-	if *update {
-		lowered, drops, violations := parallelratchet.LowerParallelRatchet(baseline, inventory)
-		if reportParallelViolations(violations) != 0 {
-			return refuseParallelRatchet("serial Go test count increased; edit the baseline by hand to raise a count")
-		}
-		if err := parallelratchet.WriteParallelRatchet(baselinePath, *root, lowered); err != nil {
-			return refuseParallelRatchet(err.Error())
-		}
-		for _, drop := range drops {
-			fmt.Printf("parallel ratchet: package %s dropped from %d to %d serial tests\n", drop.Package, drop.From, drop.To)
-		}
-		fmt.Println("parallel ratchet updated")
-		return 0
-	}
-	_, violations := parallelratchet.CheckParallelRatchet(baseline, inventory)
-	if reportParallelViolations(violations) != 0 {
-		return refuseParallelRatchet("serial Go test count increased")
-	}
-	fmt.Println("parallel ratchet passed")
-	return 0
-}
-
-func reportParallelViolations(violations []parallelratchet.ParallelViolation) int {
-	for _, violation := range violations {
-		fmt.Fprintln(os.Stderr, "parallel ratchet: "+violation.String())
-	}
-	return len(violations)
-}
-
-func refuseParallelRatchet(reason string) int {
-	fmt.Fprintln(os.Stderr, "PARALLEL_RATCHET_REFUSED: "+reason)
-	return 1
 }
 
 func runAuditHookStartExits(args []string) int {

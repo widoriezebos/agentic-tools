@@ -190,7 +190,6 @@ case "${1:-}" in
   run)
     case " $* " in
       *" behavior-surface select "*) cat ;;
-      *" behavior-surface digest "*) printf '{"surfaceDigest":"0000000000000000000000000000000000000000000000000000000000000000","policyVersion":1}\n' ;;
       *" gate witness-freeze --root "*)
         export_root=${RECORDING_FREEZE_EXPORT:-$PWD}
         mkdir -p "$RECORDING_FREEZE_SNAPSHOT"
