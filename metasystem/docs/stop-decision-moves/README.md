@@ -2,7 +2,7 @@
 
 The Stop decision surface records test assertions and fixture literals that
 say whether work must stop. The audit discovers every Go `_test.go` file in
-the module and every `scripts/agents/**/*-fixtures.sh` fixture bed.
+the module.
 
 The audit compares the working tree with its landing base. New assertions are
 reported and allowed. Removed or changed assertions are refused because a

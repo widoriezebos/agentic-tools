@@ -84,7 +84,7 @@ Each failure class has a named answer, and where the rule is binary, a script th
 | Unreviewable output | The collaboration rules: one intent per commit, mechanical churn separated from behavior change, and reports that start with the riskiest part | The human sends unreviewable diffs back; splitting them is the agent's job, and repeated offenses become retro findings |
 | Unsupervised runs | The supervision rules in `docs/orchestration.md`: detached launches, a verified liveness signal, one watcher armed per session over every job the session can create, budgets that wind down instead of interrupting | The job watcher (`metasystem internal report watch-jobs`) reports terminal, stale, capped and vanished jobs from a runner's job directory; the `watch-jobs-standard` testing group exercises all four; remaining incidents land in receipts and `memory/known-issues.md` |
 | Runaway spend | Budgets as project facts, spend measured from the provider's own records, and overage or a costlier resource tier as human-reserved decisions | No script can read an external invoice: the fence lives in `docs/project-rules.md`, overage requires an explicit ask, and the retro compares spend against receipts |
-| Prose mistaken for enforcement | Binary rules become scripts, and the enforcement ships ready to wire in: a CI workflow and Claude Code hooks under `scripts/enforcement/` | The testing contract (`testing.json`, run by `metasystem test run`) runs positive and negative fixtures for the gates |
+| Prose mistaken for enforcement | Binary rules become scripts, and the enforcement ships ready to wire in: a CI workflow and runtime hook settings compiled into the engine and installed by adoption and `metasystem internal runtime setup` | The testing contract (`testing.json`, run by `metasystem test run`) runs positive and negative fixtures for the gates |
 
 ## What it does
 
@@ -190,7 +190,7 @@ docs/
   examples/          worked examples (filled matrix, filled ledger)
 skills/              triggered workflows: verify, design-critique, refactor, improve, retro, take-a-step-back
 optional-skills/     opt-in specialists (debug-java), enabled per project
-scripts/             deterministic checks and shipped enforcement configs
+cmd/, internal/      the engine source; its data (agent protocol, landing policy, hook settings) is compiled in
 plans/               live intent: goals, goal drafts, designs, handoff notes
 memory/              living registers: rulings, issues, flakes, receipts, notes
 ```
@@ -210,7 +210,7 @@ to adopting projects.
 | `metasystem internal validate refactor-baseline` | Trusted-baseline record and check for refactor mode: clean worktree, ancestry, cadence backstop |
 | `metasystem experiment` | Best-known-state ledger for improvement mode. `record` refuses frontier regressions, `challenge` enforces the noise floor, and both refuse comparisons against a frontier older than its declared measurement window |
 | `metasystem experiment check` | Blocks new investigation cycles once the ledger records a dead end, two no-progress cycles, or an exhausted cycle budget |
-| `scripts/enforcement/` | Shipped CI workflow and Claude Code hooks so the checks run without anyone remembering them |
+| `internal/runtimes/enforcement/`, `internal/adopt/github-actions-metasystem.yml` | Shipped Claude Code, Codex and Devin hooks and the CI workflow, compiled into the engine and installed so the checks run without anyone remembering them |
 
 Scripts check structure and declared state. They cannot prove that a named test or receipt is truthful. That gap is covered by the human veto at retro time and by git history as a cross-check.
 

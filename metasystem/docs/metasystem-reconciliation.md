@@ -80,8 +80,11 @@ checklist; no step is optional and none may be reordered:
    - **Project-owned, never overwrite:** `docs/project-rules.md`, everything
      under `plans/`, registered runtime profiles, and any file a local retro
      changed (the instruction ledger names them).
-   - **Template-owned, take upstream verbatim:** `scripts/`,
-     `docs/examples/`, and skills without local modifications.
+   - **Template-owned, take upstream verbatim:** the engine source (`cmd/`,
+     `internal/`, including the agent protocol, landing and path policy and
+     runtime hook settings compiled into the engine), `docs/examples/`, and
+     skills without local modifications. An installation carries no
+     `scripts/` tree; an old one is removed, not merged.
    - **Merge deliberately:** `AGENTS.md`, `wow.md`, and retro-modified docs.
      Re-apply the local changes on top of the new template text, never the
      reverse; a conflict between a local rule and a new template rule is
@@ -158,6 +161,6 @@ moved to the family whose staleness it detects:
 | census fingerprint | supervise fingerprint, deleted (no callers; verbs-object-action U7c) |
 | census classify, census authentication-identity | deleted (no callers; c72f662) |
 
-The disposition registry (scripts/agents/shell-dispositions.json) is
+The disposition registry (the former shell-dispositions.json) is
 deleted: nothing executable read it, and adoption's allowlist in
 internal/adopt remains the single export contract.

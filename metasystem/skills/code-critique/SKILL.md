@@ -73,7 +73,7 @@ higher carries `gateWidth: full`; the shared testing contract selects the
 required groups and landing consumes sufficient current evidence for them.
 The width does not authorize a second test selector or an unconditional
 full-suite run. Start every chain from
-`scripts/agents/templates/review-brief.md` — round budget, threat model,
+`internal/protocol/templates/review-brief.md` — round budget, threat model,
 appetite, and scope declared BEFORE round one; a true finding outside the
 declared threat model closes as out-of-scope citing the brief. Record the
 goal's budget in the brief before review:

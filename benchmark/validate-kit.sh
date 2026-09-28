@@ -86,22 +86,22 @@ for schema in "$kit"/schemas/evidence/*.schema.json; do
   name=$(basename "$schema")
   role=${name%.schema.json}
   if [[ "$derived_roles" == *" $role "* ]]; then
-    "$top/metasystem/bin/metasystem" schema materialize --root "$top/metasystem"       --role "$role" --version 2 --output "$tmp/derived-$name"
+    "$top/metasystem/bin/metasystem" schema materialize --role "$role" --version 2 --output "$tmp/derived-$name"
     cmp -s "$schema" "$tmp/derived-$name" || {
       echo "kit drift: schemas/evidence/$name differs from the engine's materialized v2 schema; regenerate it with 'metasystem internal schema materialize --version 2'" >&2
       exit 1
     }
     continue
   fi
-  engine_schema=$top/metasystem/scripts/agents/schemas/$name
+  engine_schema=$top/metasystem/internal/protocol/schemas/$name
   [[ -f "$engine_schema" ]] || continue
   cmp -s "$schema" "$engine_schema" || {
-    echo "kit drift: schemas/evidence/$name differs from the engine's shipped copy; sync it from scripts/agents/schemas/" >&2
+    echo "kit drift: schemas/evidence/$name differs from the engine's shipped copy; sync it from metasystem/internal/protocol/schemas/" >&2
     exit 1
   }
 done
 for evidence_name in owner.ndjson last-census.json state.json ledger.md; do
-  grep -rqF "$evidence_name" "$top/metasystem/internal" "$top/metasystem/scripts" || {
+  grep -rqF "$evidence_name" "$top/metasystem/internal" || {
     echo "kit drift: the extractor requires $evidence_name but the engine's sources never mention it" >&2
     exit 1
   }
