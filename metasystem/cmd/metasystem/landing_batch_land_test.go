@@ -531,7 +531,8 @@ func TestBatchRecoveredPushRechecksTheFlakeAllowanceImmediatelyBeforeItsPush(t *
 		t.Fatal(loadErr)
 	}
 	if err == nil || !strings.Contains(err.Error(), "BATCH_FLAKE_ALLOWANCE_REFUSED") || slices.Contains(calls, "push commit-2 rebased-tip") ||
-		returned.State != batch.StateDissolved || returned.Units[0].State != batch.UnitReturnPending {
-		t.Fatalf("an allowance that expired during recovery still published: err=%v calls=%q state=%s units=%+v", err, calls, returned.State, returned.Units)
+		returned.State != batch.StateDissolved || returned.Units[0].State != batch.UnitReturnPending || returned.Landing != nil {
+		t.Fatalf("an allowance that expired during recovery still published, or its landing progress overwrote the returned batch: err=%v calls=%q state=%s units=%+v landing=%+v",
+			err, calls, returned.State, returned.Units, returned.Landing)
 	}
 }
