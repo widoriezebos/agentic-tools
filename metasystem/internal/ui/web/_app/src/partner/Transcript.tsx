@@ -15,11 +15,12 @@ import { ring } from "./ringing";
 import { atEnd, opensAt, scrollerOf } from "./scrolling";
 import { usePartner } from "./store";
 import { SuggestionCard } from "./Suggestion";
-import { depositID, THE_INTERFACES } from "./sitting";
+import { depositID, interfaceLine } from "./sitting";
 import { idOf } from "./suggesting";
 import "./partner.css";
 import { previewDocument, type Block } from "../project/api";
 import { Markdown } from "../project/Markdown";
+import { Anchored, useDeskAnchors } from "../review/anchors";
 
 /**
  * The conversation, as a human reads it.
@@ -224,7 +225,7 @@ function Said({
             the message itself, so a reload cannot turn it into their own words
             (g1-s53 D3). */}
         <TurnHead who="human" name={asker} at={message.at}>
-          {message.interface === true && <span className="ms-turn-by">{THE_INTERFACES}</span>}
+          {message.interface === true && <span className="ms-turn-by">{interfaceLine(message.text)}</span>}
           {message.page !== undefined && <AskedFrom capture={message.page} />}
         </TurnHead>
         <div className="ms-turn-body">
@@ -467,6 +468,17 @@ function Answer({ text, names }: { text: string; names: Names }) {
  * thing and as words everywhere else.
  */
 function References({ words, names }: { words: string; names: Names }): ReactNode {
+  // In the review room a file and its lines is a chip that puts it on the desk
+  // (g1-s65 D5); the words between the anchors are read for names as always.
+  const put = useDeskAnchors();
+  if (put !== null) {
+    return <Anchored words={words} put={put} rest={(rest) => <NamedIn words={rest} names={names} />} />;
+  }
+  return <NamedIn words={words} names={names} />;
+}
+
+/** The names in a run of words, as links where they point at one thing. */
+function NamedIn({ words, names }: { words: string; names: Names }): ReactNode {
   const runs = useMemo(() => runsIn(words, names), [words, names]);
   return (
     <>

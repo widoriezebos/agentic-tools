@@ -286,6 +286,7 @@ var termForKind = map[string]string{
 	resolver.KindDoctrine: "doctrine",
 	resolver.KindDecision: "decisions",
 	resolver.KindDesign:   "designs",
+	resolver.KindReview:   "reviews",
 	resolver.KindQuestion: "questions",
 }
 

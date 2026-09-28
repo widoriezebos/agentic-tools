@@ -5,6 +5,10 @@ import {
   backlogPath,
   goalPath,
   documentIdFromPath,
+  inTheRoom,
+  chromeOf,
+  reviewIdFromPath,
+  reviewPath,
   documentPath,
   HOME_PATH,
   isReserved,
@@ -238,5 +242,24 @@ describe("routeFor", () => {
       expect(resolved).not.toBeNull();
       expect(isReserved(resolved as string)).toBe(false);
     }
+  });
+});
+
+describe("the review room's address (g1-s65 D2)", () => {
+  it("names one review record, and reads it back segment by segment", () => {
+    const record = "metasystem/plans/reviews/review-of-g1-s64.md";
+    expect(reviewPath(record)).toBe("/review/metasystem/plans/reviews/review-of-g1-s64.md");
+    expect(reviewIdFromPath(reviewPath(record))).toBe(record);
+    expect(reviewIdFromPath(reviewPath("plans/reviews/a b%.md"))).toBe("plans/reviews/a b%.md");
+    expect(reviewIdFromPath("/backlog")).toBe("");
+  });
+
+  it("is a room and not a section: the rail lights nothing, and the shell shows none of itself", () => {
+    expect(activeSection("/review/plans/reviews/r.md")).toBeNull();
+    expect(chromeOf("/review/plans/reviews/r.md")).toBe("room");
+    expect(chromeOf("/backlog")).toBe("shell");
+    expect(chromeOf("/brain")).toBe("focused");
+    expect(inTheRoom("/review/plans/reviews/r.md")).toBe(true);
+    expect(inTheRoom("/backlog")).toBe(false);
   });
 });

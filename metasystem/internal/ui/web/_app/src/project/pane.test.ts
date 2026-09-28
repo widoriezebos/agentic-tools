@@ -337,11 +337,18 @@ describe("what one Sittings row says", () => {
     expect(opensLine({ ...row, standing: true }, true)).toBe(
       "Open the conversation on plans/designs/sessions.md",
     );
-    // And a row nothing stands on, while a sitting stands on another record: one
-    // conversation holds one sitting, so this press cannot start a second — it
-    // would end the one a human is in the middle of. So it promises no start.
+    // And a row nothing stands on, while a sitting stands on another record: a
+    // sitting is a conversation of its own (g1-s65 D16), so a second one starts
+    // beside the first and ends nothing.
     expect(opensLine(row, true)).toBe(
-      "Open the conversation. A sitting stands on another record, so this starts nothing",
+      "Open the conversation on plans/designs/sessions.md and start a sitting on it",
+    );
+    // A review's row is its door where it stands, and its record where it does not.
+    const review = { ...row, record: { ...row.record, kind: "review", path: "plans/reviews/r.md" } };
+    expect(opensLine({ ...review, standing: true }, false)).toBe("Go back into the review room on plans/reviews/r.md");
+    expect(opensLine(review, false)).toBe("Read the review recorded in plans/reviews/r.md");
+    expect(pilesLine({ facts: 1, proposals: 0, decisions: 0, questions: 0, findings: 3, unanswered: 1 })).toBe(
+      "1 fact · 3 findings, 1 unanswered",
     );
     expect(STANDS_NOW).toBe("a sitting stands on this now");
   });

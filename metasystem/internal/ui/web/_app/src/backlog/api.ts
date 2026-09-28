@@ -226,6 +226,23 @@ export type Backlog = {
   draft: { statement: string };
   rows: Row[];
   closed: Row[];
+  /**
+   * Every review record naming a goal, with its door: the record's counts of
+   * findings and unanswered ones, and whether the human's review stands with
+   * when its room was last kept (g1-s65 D9). An act's answer may carry none.
+   */
+  reviews?: ReviewDoor[];
+};
+
+/** One review of one goal, as its card's door line reads it. */
+export type ReviewDoor = {
+  goal: string;
+  record: string;
+  title: string;
+  findings: number;
+  unanswered: number;
+  standing: boolean;
+  steppedOutAt?: string;
 };
 
 /**

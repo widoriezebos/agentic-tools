@@ -1,7 +1,9 @@
 package httpd
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -78,8 +80,13 @@ func TestStartingASittingAnswersTheConversationWithTheOpeningTurnInIt(t *testing
 
 	// The read route says the same thing afterwards, from the conversation
 	// rather than from this answer.
-	warm := partnerSnapshot(t, get(t, served, partnerPath, nil))
+	// A sitting is a conversation of its own (g1-s65 D16): the page reads it by
+	// its record, and the human's own conversation carries no mark.
+	warm := partnerSnapshot(t, get(t, served, partnerPath+"?conversation=plans/designs/sessions.md", nil))
 	testutil.Require(t, "the sitting is still there", warm.Sitting != nil, true)
+	testutil.Expect(t, "and it says which conversation it is", warm.Conversation, "plans/designs/sessions.md")
+	own := partnerSnapshot(t, get(t, served, partnerPath, nil))
+	testutil.Expect(t, "the human's own conversation carries no sitting", own.Sitting == nil, true)
 	testutil.Expect(t, "whole", warm.Sitting.Subject.Title, "Session limits")
 }
 
@@ -145,10 +152,10 @@ func TestASittingThisBuildDoesNotOfferIsRefusedAsABadRequest(t *testing.T) {
 	served, _, rec := servedSitting(t, fakeacp.Script{Chunks: []string{"never asked"}})
 
 	refused := post(t, served, partnerSittingPath,
-		`{"purpose":"review","subject":{"kind":"record","id":"plans/designs/sessions.md"},"about":{}}`, nil)
+		`{"purpose":"learning","subject":{"kind":"record","id":"plans/designs/sessions.md"},"about":{}}`, nil)
 	testutil.Expect(t, "it is a bad request", refused.Code, http.StatusBadRequest)
 	testutil.Expect(t, "saying which purposes this build has",
-		strings.Contains(refused.Body.String(), "review and learning sittings are not in this build"), true)
+		strings.Contains(refused.Body.String(), "learning sittings are not in this build"), true)
 	testutil.Expect(t, "and no record was created on the way", len(rec.records), 0)
 
 	cold := partnerSnapshot(t, get(t, served, partnerPath, nil))
@@ -167,11 +174,11 @@ func TestASittingThisBuildDoesNotOfferCreatesNoDraftForIt(t *testing.T) {
 	served, _, rec := servedSitting(t, fakeacp.Script{Chunks: []string{"never asked"}})
 
 	refused := post(t, served, partnerSittingPath,
-		`{"purpose":"review","title":"Session limits","about":{"section":"Project","path":"/project"}}`, nil)
+		`{"purpose":"learning","title":"Session limits","about":{"section":"Project","path":"/project"}}`, nil)
 
 	testutil.Expect(t, "it is a bad request", refused.Code, http.StatusBadRequest)
 	testutil.Expect(t, "saying which purposes this build has",
-		strings.Contains(refused.Body.String(), "review and learning sittings are not in this build"), true)
+		strings.Contains(refused.Body.String(), "learning sittings are not in this build"), true)
 	testutil.Expect(t, "and the project's writer was never reached", len(rec.records), 0)
 	testutil.Expect(t, "so there is no draft to offer again",
 		strings.Contains(refused.Body.String(), `"draft"`), false)
@@ -186,24 +193,41 @@ func TestASittingThisBuildDoesNotOfferCreatesNoDraftForIt(t *testing.T) {
 // The draft is a real record in the project now, so the page has to be able to
 // offer Start again on it: a second press for one wish must be a second attempt,
 // not a second record. What refuses here is the one refusal that can still come
-// after the admission — a turn started in between.
+// after the admission: the runtime, alive a moment ago for the drawer's
+// conversation, will not open the new sitting's own session (g1-s65 D16).
 func TestASittingRefusedAfterItsDraftWasCreatedAnswersWithTheDraftsPath(t *testing.T) {
 	t.Parallel()
-	served, service, rec := servedSitting(t, fakeacp.Script{
-		Chunks: []string{"a", "b", "c"}, Pause: 200 * time.Millisecond})
+	root := t.TempDir()
+	runtime := partner.Runtime{Name: "fake", Model: "fake-1", ReadOnly: "a fake server reads nothing"}
+	opens := fakeacp.Open(fakeacp.Script{Models: []string{"fake-1"}, Chunks: []string{"an answer"}})
+	opened := 0
+	host := partner.NewHostOn(runtime, root, func(ctx context.Context) (partner.Endpoint, error) {
+		opened++
+		if opened > 1 {
+			return partner.Endpoint{}, errors.New("the runtime went away")
+		}
+		return opens(ctx)
+	})
+	t.Cleanup(host.Close)
+	service := partner.NewService(runtime, host,
+		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
+		partner.Facts{}, func() time.Time { return time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC) })
+	rec := &recorder{}
+	info := rec.writing()
+	info.Observe, info.Authority, info.Partner, info.PartnerConfigured = readObservation, proven(), service, true
+	served := New(info, loopback(), testBundle())
 	events, stop := service.Subscribe()
 	defer stop()
 
-	// A turn is running: the first send is accepted, and the sitting's own
-	// opening turn cannot be admitted while it streams.
+	// The drawer's conversation holds the live session.
 	asked := post(t, served, partnerTurnsPath, `{"key":"k1","text":"a question","about":{}}`, nil)
 	testutil.Require(t, "the question was accepted", asked.Code, http.StatusAccepted)
-	waitForKind(t, events, partner.EventText)
+	drain(t, events)
 
 	refused := post(t, served, partnerSittingPath,
 		`{"purpose":"shape a design","title":"Session limits","about":{"section":"Project","path":"/project"}}`, nil)
 
-	testutil.Require(t, "the sitting was refused as busy", refused.Code, http.StatusConflict)
+	testutil.Require(t, "the sitting was refused", refused.Code == http.StatusOK, false)
 	testutil.Require(t, "the draft was created before the refusal", len(rec.records), 1)
 	var body struct {
 		Error string `json:"error"`
@@ -211,14 +235,12 @@ func TestASittingRefusedAfterItsDraftWasCreatedAnswersWithTheDraftsPath(t *testi
 		Draft string `json:"draft"`
 	}
 	testutil.Require(t, "reading the refusal", json.Unmarshal(refused.Body.Bytes(), &body), nil)
-	testutil.Expect(t, "it is the busy refusal", body.Code, "busy")
 	testutil.Expect(t, "and it names the draft it created", body.Draft, writtenRecord().Path)
-	drain(t, events)
 
 	// And nothing was opened: the record exists, the sitting does not, and the
 	// page has what it needs to press Start on that draft rather than make a
 	// second one.
-	cold := partnerSnapshot(t, get(t, served, partnerPath, nil))
+	cold := partnerSnapshot(t, get(t, served, partnerPath+"?conversation="+writtenRecord().Path, nil))
 	testutil.Expect(t, "no sitting was opened", cold.Sitting == nil, true)
 	testutil.Expect(t, "and only one record was ever written", len(rec.records), 1)
 }
@@ -234,7 +256,7 @@ func TestEndingTheSittingAnswersTheConversationWithoutIt(t *testing.T) {
 		post(t, served, partnerSittingPath, onARecord, nil).Code, http.StatusOK)
 	drain(t, events)
 
-	ended := post(t, served, partnerSittingEndPath, `{}`, nil)
+	ended := post(t, served, partnerSittingEndPath, `{"conversation":"plans/designs/sessions.md"}`, nil)
 	testutil.Require(t, "it ended", ended.Code, http.StatusOK)
 	answer := partnerSnapshot(t, ended)
 	testutil.Expect(t, "with no sitting on the conversation", answer.Sitting == nil, true)

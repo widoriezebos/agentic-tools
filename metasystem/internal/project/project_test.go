@@ -251,7 +251,7 @@ func TestHomesFollowTheLayout(t *testing.T) {
 			selfHosted: true,
 			homes: []string{
 				"metasystem/docs/intent", "metasystem/docs/doctrine", "metasystem/docs/decisions",
-				"metasystem/plans/designs", "plans/designs", "metasystem/plans",
+				"metasystem/plans/designs", "metasystem/plans/reviews", "plans/designs", "metasystem/plans",
 				"metasystem/memory/questions.md",
 			},
 		},
@@ -259,7 +259,7 @@ func TestHomesFollowTheLayout(t *testing.T) {
 			name: "adopted vendored beneath the application",
 			homes: []string{
 				"docs/intent", "docs/doctrine", "docs/decisions",
-				"plans/designs", "memory/questions.md",
+				"plans/designs", "plans/reviews", "memory/questions.md",
 			},
 		},
 	}
@@ -499,21 +499,21 @@ func TestTreeCountsByKindAndStatus(t *testing.T) {
 	// No goal counts a chapter of either book: those are the project's own, so
 	// they are counted in the project-wide bucket and nowhere else.
 	testutil.Expect(t, "ledger-sync by kind", goals[0].Counts.Kind,
-		map[string]int{KindIntent: 0, KindDoctrine: 0, KindDecision: 1, KindDesign: 2, KindQuestion: 1})
+		map[string]int{KindIntent: 0, KindDoctrine: 0, KindDecision: 1, KindDesign: 2, KindReview: 0, KindQuestion: 1})
 	testutil.Expect(t, "ledger-sync by status", goals[0].Counts.Status,
 		map[string]int{StatusDraft: 0, StatusAccepted: 1, StatusSuperseded: 1, StatusDone: 1,
 			QuestionOpen: 0, QuestionAnswered: 1, QuestionWithdrawn: 0})
 	testutil.Expect(t, "ledger-sync in all", goals[0].Counts.Total, 4)
 	testutil.Expect(t, "reading-pane by kind", goals[1].Counts.Kind,
-		map[string]int{KindIntent: 0, KindDoctrine: 0, KindDecision: 0, KindDesign: 1, KindQuestion: 1})
+		map[string]int{KindIntent: 0, KindDoctrine: 0, KindDecision: 0, KindDesign: 1, KindReview: 0, KindQuestion: 1})
 	testutil.Expect(t, "reading-pane by status", goals[1].Counts.Status,
 		map[string]int{StatusDraft: 1, StatusAccepted: 0, StatusSuperseded: 0, StatusDone: 0,
 			QuestionOpen: 0, QuestionAnswered: 0, QuestionWithdrawn: 1})
 	// A record naming two goals is counted under both, because it is about both.
 	testutil.Expect(t, "a concluded goal counts what names it", goals[2].Counts.Kind,
-		map[string]int{KindIntent: 0, KindDoctrine: 0, KindDecision: 0, KindDesign: 1, KindQuestion: 0})
+		map[string]int{KindIntent: 0, KindDoctrine: 0, KindDecision: 0, KindDesign: 1, KindReview: 0, KindQuestion: 0})
 	testutil.Expect(t, "the project-wide bucket by kind", whole.Kind,
-		map[string]int{KindIntent: 1, KindDoctrine: 3, KindDecision: 1, KindDesign: 0, KindQuestion: 1})
+		map[string]int{KindIntent: 1, KindDoctrine: 3, KindDecision: 1, KindDesign: 0, KindReview: 0, KindQuestion: 1})
 	testutil.Expect(t, "the project-wide bucket by status", whole.Status,
 		map[string]int{StatusDraft: 1, StatusAccepted: 4, StatusSuperseded: 0, StatusDone: 0,
 			QuestionOpen: 1, QuestionAnswered: 0, QuestionWithdrawn: 0})

@@ -258,3 +258,34 @@ func TestTheMarkAndTheHeadingsAreReadAsThisBuildWritesThem(t *testing.T) {
 	_, _, none := satOn([]string{"## Facts", "- 2026-09-26 · Wido · a line with [d: and no close"})
 	testutil.Expect(t, "an unclosed bracket is not a mark", none, false)
 }
+
+// A review's Findings are a pile of its own, and what the door and End read is
+// the record (Astra S65-01): every finding counted, and the ones whose Answer
+// line still says unanswered counted apart. A standing sitting carries the time
+// its room was last kept.
+func TestAReviewsFindingsAreCountedWithTheUnansweredApart(t *testing.T) {
+	t.Parallel()
+	roots := selfHostedFixture(t)
+	state := seed(t, roots)
+	plant(t, roots.Checkout, state+"plans/reviews/review-of-ledger-sync.md",
+		"# Review of ledger-sync\n\n- Kind: review\n- Id: review-ledger\n- Status: draft\n- Goals: ledger-sync\n"+
+			"- Reviewed: none found; write them here\n"+
+			"\n## Findings\n\n"+
+			entry("2026-09-28", "Wido", "the press dies between publish and reconcile", "local-1")+"\n"+
+			"  - Anchor: internal/owner.go:60\n  - Answer: unanswered\n"+
+			entry("2026-09-28", "Wido", "the reconcile retries forever", "local-2")+"\n"+
+			"  - Anchor: internal/owner.go:88\n  - Answer: accepted — the retry is bounded by the lease\n"+
+			entry("2026-09-28", "Wido", "no test kills the press", "deposit:t1#0")+"\n"+
+			"  - Answer: unanswered\n"+
+			"\n## Drawings\n\n- a drawing is not a finding\n")
+
+	pane, err := ReadPane(roots, readAt)
+	testutil.Require(t, "the pane was read", err, nil)
+	testutil.Require(t, "the review was sat on", len(pane.Sittings), 1)
+	testutil.Expect(t, "three findings, two unanswered", pane.Sittings[0].Counts,
+		PileCounts{Findings: 3, Unanswered: 2})
+
+	pane.MarkStandingAt(pane.Sittings[0].Record.Path, "2026-09-28T11:00:00Z")
+	testutil.Expect(t, "standing", pane.Sittings[0].Standing, true)
+	testutil.Expect(t, "with the room's time", pane.Sittings[0].SteppedOutAt, "2026-09-28T11:00:00Z")
+}

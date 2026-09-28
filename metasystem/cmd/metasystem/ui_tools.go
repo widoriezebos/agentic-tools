@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/review"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
@@ -106,7 +108,13 @@ func toolReaders(roots lifecycle.Roots, presenceRun, answers string) uitools.Rea
 		// them: the bundle this executable carries, the configuration this
 		// seat resolves, the resolver's homes, and the kit's own documents.
 		Interface: describeInterface(roots),
-		Kit:       uitools.Kit{Root: roots.Installation, Commands: commandCatalogue},
+		// The candidate a review reviews, read from this checkout's Git through
+		// the owner the review room's desk reads through, so the colleague and
+		// the human read one tree (g1-s65 D4).
+		Review: func() (uitools.Reviewing, error) {
+			return review.Owner{Git: gittree.Workspace{Dir: roots.Checkout}}, nil
+		},
+		Kit: uitools.Kit{Root: roots.Installation, Commands: commandCatalogue},
 		Document: func(id string) (project.Document, error) {
 			return project.Read(projectRoots(roots), id, now())
 		},

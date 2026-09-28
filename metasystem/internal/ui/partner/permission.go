@@ -112,6 +112,8 @@ func admitted(operation string) string {
 		return "Allowed the interface's own tools to prepare a suggestion: nothing was read and nothing was written"
 	case uitools.OpDeposit:
 		return "Allowed the interface's own tools to prepare a deposit: nothing was read and nothing was written"
+	case uitools.OpPresent:
+		return "Allowed the interface's own tools to prepare an item for the desk: nothing was read and nothing was written"
 	}
 	return "Allowed a read through the interface's own tools: " + operation
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/manifest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/review"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/stickies"
@@ -90,7 +91,13 @@ type Info struct {
 	// checkout on loopback. A project.Refusal carries the status the route
 	// answers with; anything else is a 500 carrying its reason. A nil field is
 	// an engine that cannot write, which the route says.
-	CreateRecord      func(project.NewRecord) (project.Written, error)
+	CreateRecord func(project.NewRecord) (project.Written, error)
+	// CreateReview writes the review record a review sitting starts on, with
+	// the head the server resolved (g1-s65 D1). Review is the owner of what the
+	// review room's desk reads: the candidate's own tree (D4). A nil field is a
+	// build that cannot review, which the routes say.
+	CreateReview      func(project.NewReview) (project.Written, error)
+	Review            *review.Owner
 	SetStatus         func(id, status string) (project.Written, error)
 	AskQuestion       func(project.NewQuestion) (project.Asked, error)
 	SetQuestionStatus func(id, status string) (project.Asked, error)
@@ -463,6 +470,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.document(w, id)
 		return
 	}
+	if rest, beneath := strings.CutPrefix(r.URL.Path, reviewPrefix); beneath && rest != "" {
+		h.reviewRead(w, r, rest)
+		return
+	}
 	h.route(w, r)
 }
 
@@ -576,8 +587,13 @@ func (h *handler) project(w http.ResponseWriter, r *http.Request) {
 		// A conversation this server cannot read is a sitting it cannot report,
 		// and not a reason to refuse the project: every other row of this
 		// payload is still what the checkout says.
-		if sitting, sittingErr := h.info.Partner.Sitting(h.partnerHuman(r)); sittingErr == nil && sitting != nil {
-			pane.MarkStanding(sitting.Subject.ID)
+		//
+		// Every standing sitting, the human's own conversation's and each
+		// sitting's own (g1-s65 D16), with the time its room was last kept.
+		if standing, sittingErr := h.info.Partner.Standing(h.partnerHuman(r)); sittingErr == nil {
+			for _, sitting := range standing {
+				pane.MarkStandingAt(sitting.Subject.ID, keptAt(sitting))
+			}
 		}
 	}
 	_ = json.NewEncoder(w).Encode(pane)

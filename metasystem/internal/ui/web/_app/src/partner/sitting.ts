@@ -49,7 +49,22 @@ import { documentPath } from "../routes";
 /** The four sections of a sitting's record, in the order the table shows them. */
 export const SECTIONS = ["Facts", "Proposals", "Decisions", "Open questions"] as const;
 
-export type Section = (typeof SECTIONS)[number];
+/**
+ * A review's four piles (g1-s65 D1): the findings take the proposals' place,
+ * because a review examines work already built rather than shaping what to build.
+ * The piles are a property of the record's kind (D8).
+ */
+export const REVIEW_SECTIONS = ["Facts", "Findings", "Decisions", "Open questions"] as const;
+
+export type Section = (typeof SECTIONS)[number] | "Findings";
+
+/** Every pile any sitting writes, which is what the record's reader looks for. */
+const ALL_SECTIONS: readonly string[] = [...SECTIONS, "Findings"];
+
+/** The piles one sitting's table shows, by what the sitting is for. */
+export function pilesOf(purpose: string): readonly Section[] {
+  return purpose === "review" ? REVIEW_SECTIONS : SECTIONS;
+}
 
 /**
  * The fifth section, which is not a pile: what the sitting came to, written when
@@ -72,6 +87,7 @@ const SECTION_OF: Readonly<Record<string, Written>> = {
   decision: "Decisions",
   question: "Open questions",
   outcome: OUTCOME,
+  finding: "Findings",
 };
 
 /**
@@ -86,9 +102,9 @@ export function sectionOf(kind: string): Written {
   return SECTION_OF[kind] ?? "Facts";
 }
 
-/** Whether one written section is one of the four piles the table shows. */
+/** Whether one written section is one of the piles the table shows. */
 export function isPile(section: Written): section is Section {
-  return (SECTIONS as readonly string[]).includes(section);
+  return ALL_SECTIONS.includes(section);
 }
 
 /** What each kind calls the clause beside its words, as the card labels it. */
@@ -105,6 +121,9 @@ const CLAUSE_OF: Readonly<Record<string, string>> = {
   // An outcome carries no clause. It is a whole section, and a labelled line
   // beside it would be a field with nothing to put in it.
   outcome: "",
+  // A finding is anchored where it sits, as a fact is where it can be checked
+  // (g1-s65 D8); its consequence rides on a line of its own.
+  finding: "Anchor",
 };
 
 export function clauseOf(kind: string): string {
@@ -129,6 +148,7 @@ const ANCHOR_OF: Readonly<Record<Section, string>> = {
   Proposals: "proposals",
   Decisions: "decisions",
   "Open questions": "open-questions",
+  Findings: "findings",
 };
 
 /**
@@ -175,6 +195,13 @@ export type Entry = {
    * a second time for an entry the record already carries.
    */
   mark: string;
+  /**
+   * On a finding (g1-s65 D8): the consequence of leaving it unanswered, on a
+   * line of its own under the anchor, and the answer the human gave, which is
+   * `unanswered` from the moment the finding is recorded (Astra S65-01).
+   */
+  consequence?: string;
+  answer?: string;
 };
 
 /** The separator between an entry's dated head and its words. */
@@ -206,6 +233,20 @@ export function lineOf(entry: Entry, kind: string): string {
   const mark = entry.mark.trim() === "" ? "" : markOf(entry.mark.trim());
   const head = `- ${entry.when}${DOT}${entry.who}${DOT}${oneLine(entry.text)}${mark}`;
   const clause = entry.clause.trim();
+  if (kind === "finding") {
+    // A finding's clause block: where it sits, what follows from leaving it,
+    // and the answer — unanswered until the human gives one (g1-s65 D8).
+    const lines = [head];
+    if (clause !== "") {
+      lines.push(`  - Anchor: ${oneLine(clause)}`);
+    }
+    const consequence = (entry.consequence ?? "").trim();
+    if (consequence !== "") {
+      lines.push(`  - Consequence: ${oneLine(consequence)}`);
+    }
+    lines.push(`  - Answer: ${oneLine(entry.answer ?? UNANSWERED)}`);
+    return `${lines.join("\n")}\n`;
+  }
   return clause === "" ? `${head}\n` : `${head}\n  - ${clauseOf(kind)}: ${oneLine(clause)}\n`;
 }
 
@@ -243,16 +284,28 @@ export function entriesIn(source: string): readonly Entry[] {
     const heading = /^#{1,6}\s+(.*)$/.exec(line);
     if (heading !== null) {
       const named = heading[1].trim();
-      section = (SECTIONS as readonly string[]).includes(named) ? (named as Section) : null;
+      section = ALL_SECTIONS.includes(named) ? (named as Section) : null;
       last = null;
       continue;
     }
     if (section === null) {
       continue;
     }
-    const clause = /^\s+[-*]\s+(?:Anchor|Reason|Consequence):\s*(.*)$/.exec(line);
+    const clause = /^\s+[-*]\s+(Anchor|Reason|Consequence|Answer):\s*(.*)$/.exec(line);
     if (clause !== null && last !== null) {
-      last.clause = clause[1].trim();
+      const said = clause[2].trim();
+      if (section === "Findings") {
+        // A finding's block carries three labelled lines, each its own field.
+        if (clause[1] === "Answer") {
+          last.answer = said;
+        } else if (clause[1] === "Consequence") {
+          last.consequence = said;
+        } else {
+          last.clause = said;
+        }
+      } else if (clause[1] !== "Answer") {
+        last.clause = said;
+      }
       continue;
     }
     const item = /^[-*]\s+(.*)$/.exec(line);
@@ -445,13 +498,73 @@ function oneOrMore(said: string): readonly string[] {
 export type Counts = Readonly<Record<Section, number>>;
 
 export function countsIn(source: string): Counts {
-  const counted: Record<Section, number> = { Facts: 0, Proposals: 0, Decisions: 0, "Open questions": 0 };
+  const counted: Record<Section, number> = { Facts: 0, Proposals: 0, Decisions: 0, "Open questions": 0, Findings: 0 };
   for (const entry of entriesIn(source)) {
     if (isPile(entry.section)) {
       counted[entry.section] += 1;
     }
   }
   return counted;
+}
+
+/* ------------------------------------------------------------ the answers -- */
+
+/** What a finding's Answer line says until the human answers it (Astra S65-01). */
+export const UNANSWERED = "unanswered";
+
+/**
+ * The four answers a recorded finding takes (g1-s65 D8), in the words the record
+ * keeps on its Answer line. Each says its consequence where it is pressed; these
+ * are what stays written.
+ */
+export const FIX = "fix — waits for Send back";
+export function followUp(goal: string): string {
+  return `follow-up — goal ${goal.trim()}`;
+}
+export function ACCEPTED(reason: string): string {
+  return `accepted — ${oneLine(reason)}`;
+}
+export const LEFT_OPEN = "left open";
+
+/** Which of the answers one Answer line says: its words before the dash. */
+export function answerOf(said: string): string {
+  return said.split(" — ")[0].trim();
+}
+
+/**
+ * The record's whole source with one finding's Answer line rewritten, found by
+ * the entry's deposit mark — the recorder's second composition beside
+ * `appended` (g1-s65 §6). Only that line changes; an entry that carries none is
+ * given one under its clauses. A mark the record does not carry answers null,
+ * because there is no finding here to answer.
+ */
+export function answered(source: string, mark: string, answer: string): string | null {
+  const lines = source.split("\n");
+  const markSaid = markOf(mark).trim();
+  let section: string | null = null;
+  for (let at = 0; at < lines.length; at += 1) {
+    const heading = /^#{1,6}\s+(.*)$/.exec(lines[at]);
+    if (heading !== null) {
+      section = heading[1].trim();
+      continue;
+    }
+    if (section !== "Findings" || !/^[-*]\s+/.test(lines[at]) || !lines[at].trimEnd().endsWith(markSaid)) {
+      continue;
+    }
+    // The entry's own block is the indented lines under it.
+    let end = at + 1;
+    while (end < lines.length && /^\s+[-*]\s+/.test(lines[end])) {
+      end += 1;
+    }
+    const written = `  - Answer: ${oneLine(answer)}`;
+    for (let clause = at + 1; clause < end; clause += 1) {
+      if (/^\s+[-*]\s+Answer:/.test(lines[clause])) {
+        return [...lines.slice(0, clause), written, ...lines.slice(clause + 1)].join("\n");
+      }
+    }
+    return [...lines.slice(0, end), written, ...lines.slice(end)].join("\n");
+  }
+  return null;
 }
 
 /**
@@ -583,6 +696,8 @@ export function marked(deposit: Deposit): Mark {
 /** The one clause the deposit carries, whichever of the three its kind uses. */
 export function clauseFrom(deposit: Deposit): string {
   switch (deposit.kind) {
+    case "finding":
+      return deposit.anchor ?? "";
     case "decision":
       return deposit.reason ?? "";
     case "question":
@@ -715,6 +830,9 @@ export function missing(kind: string, mark: Mark): string {
   if (kind === "fact" && mark.clause.trim() === "") {
     return "A fact is anchored where it can be checked. Write the anchor before recording it.";
   }
+  if (kind === "finding" && mark.clause.trim() === "") {
+    return "A finding is anchored where it sits. Write the anchor before recording it.";
+  }
   return "";
 }
 
@@ -789,7 +907,7 @@ export function recordsOf(card: Card): Records {
 /** The entry one press would write, marked with the card that offered it. */
 export function entryOf(card: Card, who: string, when: string, records?: Records): Entry {
   const said = records ?? recordsOf(card);
-  return {
+  const entry: Entry = {
     when,
     who,
     text: said.text,
@@ -797,6 +915,14 @@ export function entryOf(card: Card, who: string, when: string, records?: Records
     section: sectionOf(said.kind),
     mark: card.id,
   };
+  // A finding is recorded unanswered, with its consequence beside its anchor
+  // (g1-s65 D8): the door and End read the record, so the answer is a line of
+  // it from the moment the finding is (Astra S65-01).
+  if (said.kind === "finding") {
+    entry.consequence = card.consequence ?? "";
+    entry.answer = UNANSWERED;
+  }
+  return entry;
 }
 
 /* --------------------------------------------------------------- the words -- */
@@ -814,6 +940,8 @@ export function cardHead(kind: string): string {
       return "A case at the edge";
     case "outcome":
       return "What this sitting came to";
+    case "finding":
+      return "A finding";
     default:
       return "A fact";
   }
@@ -1013,6 +1141,26 @@ export function draftMadeLine(path: string): string {
  * from one they did is the interface putting words in their mouth.
  */
 export const THE_INTERFACES = "asked by the interface, to open this sitting";
+
+/**
+ * What the transcript says above one question the interface asked, read from
+ * the question's own fixed words: a review's opening, one of its five walks, or
+ * its close (g1-s65 D6) — each named, because a human reading back weeks later
+ * must be able to tell which one the interface asked in their name.
+ */
+export function interfaceLine(text: string): string {
+  if (text.startsWith("Open this review")) {
+    return "asked by the interface, to open this review";
+  }
+  const walk = /^Walk me through (\w+) for the review/u.exec(text);
+  if (walk !== null) {
+    return `asked by the interface: the ${walk[1]} walk`;
+  }
+  if (text.startsWith("Close this review")) {
+    return "asked by the interface, to close this review with your verdict";
+  }
+  return THE_INTERFACES;
+}
 
 /** What the table is called, and what its empty state says. */
 export const TABLE = "The table";

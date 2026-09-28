@@ -313,7 +313,7 @@ func (h *handler) approveGoal(w http.ResponseWriter, r *http.Request, id string)
 		h.refuseAct(w, &act.Refusal{Kind: act.KindRequest, Code: "budget", Message: err.Error()})
 		return
 	}
-	h.answerAct(w, h.info.Approve(signed, id, budget))
+	h.answerAct(w, r, h.info.Approve(signed, id, budget))
 }
 
 func (h *handler) withdrawGoal(w http.ResponseWriter, r *http.Request, id string) {
@@ -325,7 +325,7 @@ func (h *handler) withdrawGoal(w http.ResponseWriter, r *http.Request, id string
 	if !decode(w, r, &body) {
 		return
 	}
-	h.answerAct(w, h.info.Withdraw(signed, id, body.Reason))
+	h.answerAct(w, r, h.info.Withdraw(signed, id, body.Reason))
 }
 
 // parkGoal and unparkGoal are the Decisions queue's "Pause" and its undo.
@@ -341,7 +341,7 @@ func (h *handler) parkGoal(w http.ResponseWriter, r *http.Request, id string) {
 	if !decode(w, r, &body) {
 		return
 	}
-	h.answerAct(w, h.info.Park(signed, id, strings.TrimSpace(body.Because)))
+	h.answerAct(w, r, h.info.Park(signed, id, strings.TrimSpace(body.Because)))
 }
 
 func (h *handler) unparkGoal(w http.ResponseWriter, r *http.Request, id string) {
@@ -353,7 +353,7 @@ func (h *handler) unparkGoal(w http.ResponseWriter, r *http.Request, id string) 
 	if !decode(w, r, &body) {
 		return
 	}
-	h.answerAct(w, h.info.Unpark(signed, id))
+	h.answerAct(w, r, h.info.Unpark(signed, id))
 }
 
 // abandonGoal records that one goal will never be worked.
@@ -380,7 +380,7 @@ func (h *handler) abandonGoal(w http.ResponseWriter, r *http.Request, id string)
 	if !decode(w, r, &body) {
 		return
 	}
-	h.answerAct(w, h.info.Abandon(signed, id,
+	h.answerAct(w, r, h.info.Abandon(signed, id,
 		strings.TrimSpace(body.Because), strings.TrimSpace(body.Successor)))
 }
 
@@ -393,7 +393,7 @@ func (h *handler) setGoalPriority(w http.ResponseWriter, r *http.Request, id str
 	if !decode(w, r, &body) {
 		return
 	}
-	h.answerAct(w, h.info.SetPriority(signed, id, body.Priority, body.Sequence))
+	h.answerAct(w, r, h.info.SetPriority(signed, id, body.Priority, body.Sequence))
 }
 
 func (h *handler) openGoal(w http.ResponseWriter, r *http.Request) {
@@ -413,7 +413,7 @@ func (h *handler) openGoal(w http.ResponseWriter, r *http.Request) {
 		writeActRefusal(w, "one-line", oneLineRefusal)
 		return
 	}
-	h.answerAct(w, h.info.Open(signed, act.Opened{
+	h.answerAct(w, r, h.info.Open(signed, act.Opened{
 		ID: body.ID, Intent: body.Intent, NextStep: body.NextStep,
 		Tier: body.Tier, Why: body.Why, Blocks: body.Blocks, BlockedBy: body.BlockedBy,
 		Labels: body.Labels,
@@ -452,7 +452,7 @@ func (h *handler) editGoal(w http.ResponseWriter, r *http.Request, id string) {
 		writeActRefusal(w, "one-line", oneLineRefusal)
 		return
 	}
-	h.answerAct(w, h.info.Edit(signed, id, act.Edited{
+	h.answerAct(w, r, h.info.Edit(signed, id, act.Edited{
 		Intent: body.Intent, NextStep: body.NextStep, Labels: body.Labels,
 	}))
 }
@@ -476,7 +476,7 @@ func (h *handler) blockGoal(w http.ResponseWriter, r *http.Request, dependent st
 	if !decode(w, r, &body) {
 		return
 	}
-	h.answerAct(w, h.info.Block(signed, dependent, strings.TrimSpace(body.Blocker)))
+	h.answerAct(w, r, h.info.Block(signed, dependent, strings.TrimSpace(body.Blocker)))
 }
 
 func (h *handler) unblockGoal(w http.ResponseWriter, r *http.Request, dependent string) {
@@ -488,7 +488,7 @@ func (h *handler) unblockGoal(w http.ResponseWriter, r *http.Request, dependent 
 	if !decode(w, r, &body) {
 		return
 	}
-	h.answerAct(w, h.info.Unblock(signed, dependent, strings.TrimSpace(body.Blocker)))
+	h.answerAct(w, r, h.info.Unblock(signed, dependent, strings.TrimSpace(body.Blocker)))
 }
 
 // mayAct reports the hand this act publishes under, and refuses before a body
@@ -538,9 +538,9 @@ func (h *handler) mayAct(w http.ResponseWriter, r *http.Request) (*session.Sessi
 // answerAct says what the ledger did. A confirmed act answers with the
 // backlog as it stands after the accepted ref was carried forward, so the
 // board moves the card only because the ledger moved it.
-func (h *handler) answerAct(w http.ResponseWriter, err error) {
+func (h *handler) answerAct(w http.ResponseWriter, r *http.Request, err error) {
 	if err == nil {
-		_ = json.NewEncoder(w).Encode(h.backlogPayload())
+		_ = json.NewEncoder(w).Encode(h.backlogPayload(r))
 		return
 	}
 	var refusal *act.Refusal

@@ -197,7 +197,7 @@ export function SittingControl({
   /** True while the drawer is closed and its bar is carrying the composer. */
   compact?: boolean;
 }) {
-  const { sitting, sittingBusy, sittingEnded } = usePartner();
+  const { sitting, sittingBusy, sittingEnded, conversation, leaveSitting } = usePartner();
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
 
@@ -247,6 +247,19 @@ export function SittingControl({
       >
         {END}
       </button>
+      {/* A sitting is a conversation of its own (g1-s65 D16). Leaving it
+          keeps it standing — Project → Sittings is its door — and brings the
+          drawer back to the human's own conversation. */}
+      {conversation !== "" && (
+        <button
+          type="button"
+          className="ms-sitting-leave"
+          title="Leave this sitting standing and go back to your own conversation"
+          onClick={leaveSitting}
+        >
+          Your conversation
+        </button>
+      )}
       <EndSittingSheet open={ending} onOpenChange={setEnding} onOpenTable={onOpenTable} />
     </span>
   );

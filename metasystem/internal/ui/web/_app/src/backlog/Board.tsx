@@ -19,6 +19,7 @@ import { arcOn, isParent, membersOf, parentOf } from "./split";
 import { goalSubject, laneSubject } from "./subjects";
 import { GOAL_ATTRIBUTE } from "../partner/ringing";
 import { ProposedChip } from "../partner/ProposedChip";
+import { ReviewDoors, ReviewItOrDoor } from "../review/Door";
 import { usePartner } from "../partner/store";
 import { returnAddress } from "./returning";
 import { Help } from "../help/Help";
@@ -274,6 +275,7 @@ export function Board({
   };
 
   return (
+    <ReviewDoors.Provider value={backlog.reviews ?? []}>
     <div className="ms-board-frame">
       <div className="ms-board" role="list">
         {columns.map((column) => (
@@ -360,6 +362,7 @@ export function Board({
         />
       )}
     </div>
+    </ReviewDoors.Provider>
   );
 }
 
@@ -784,6 +787,19 @@ function Card({
         </p>
       )}
       {arc !== "" && <p className="ms-card-lineage">arc {arc}</p>}
+      {/* A goal waiting to land is a candidate a human can examine before it
+          does (g1-s65 D2): Review it, or — once a review stands — its door. The
+          card stops being a drag handle while the pointer is down on it. */}
+      {row.lane === "review" && (
+        <div
+          className="ms-card-review"
+          onMouseDown={() => {
+            setGrabbable(false);
+          }}
+        >
+          <ReviewItOrDoor goal={row.ref.id} />
+        </div>
+      )}
       <Slices plan={plan} onGrabbable={setGrabbable} />
       {standing !== "" && <p className="ms-card-standing">{standing}</p>}
       {menuAt !== null && (

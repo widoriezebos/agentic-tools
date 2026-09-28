@@ -572,3 +572,67 @@ service's, through its existing Stop with its bounded settlement wait,
 the first turn written down as stopped before the second session
 opens, and a refusal in words when the settlement does not come. Every
 cited line was re-read. Closed.
+
+## Built (2026-09-28), slice A
+
+Landed on ui-development and main. Built by Claude on Opus 5.5 in the
+worktree `agentic-tools-room` on branch `review-room-a` from
+`eaac2d388`: nine build commits, a fix round of six and a second of
+one, the branch's last commit `f1b7c6c5a`, merged with main cleanly on
+the landing branch. Read by Codex on Sol under
+R-124 (R-133-ui roster): seven material findings on the first read,
+all seven fixed in round 1 with failing tests first; Sol's re-read
+accepted four and both layout changes and held three, of which two
+shared one root cause fixed in round 2 (the chosen verdict was page
+state, so a rebuilt Outcome card after a reload recorded without the
+review's shape; now the verdict is a fact of the card the service
+wrote, and an `Examined:` line must carry content) and one is the
+recorded residual below. The reads are verbatim in
+`g1-s65-sol-read.md`; the builder's report, the briefs and the 88
+screenshots are under
+`~/LocalStorage/agentic-tools-evidence/review-room-20260928/` and its
+`g1-s65-a/`.
+
+What exists: the `review` record kind with a home beside the designs
+and a head the server writes (`Goals:`, `Reviewed:` from the goal
+branch's tip resolved origin-first or from `Goal-Item` commits for a
+done goal, `Evidence:` where a design names one), never written over;
+Review it on the Review lane's card and on a goal page in Review or
+done, which is also the door; the room at `/review/<record>` as its
+own screen with the desk and its strip, the conversation, the five
+walks, anchor chips that put a file on the desk, the Partner presenting
+what it explains through `present`; a sitting as a conversation of its
+own in the private store, one live session following the conversation
+on screen, the handoff through Stop with its bounded settlement and a
+refusal in words; a review session carrying nothing of the ordinary
+conversation, on first prompt and on recovery; three desk reads over
+the candidate's tree with their bounds and refusals, a done goal's
+changes per trailer commit against its parent and its marks by blame
+from the goal's own commits; selection on the desk to Ask and Finding;
+the finding card with Record it writing `Answer: unanswered` and four
+answers rewriting that one entry, follow-up only after the goal opened,
+accept refusing without a reason; the room's state kept on the sitting's
+mark with drafts, restored on return; the door line from the record's
+counts; the moved-tip banner with Show what changed and Review the new
+tip; End refusing Clear to land while the record carries an unanswered
+finding, inside the recorder as well as on the sheet, the nod line, and
+the Outcome opening with the exact verdict and a non-empty Examined
+line. Coverage: `internal/ui/review` at 88 with a floor of 86.0 in both
+ratchet files.
+
+Departures the reads accepted: the drafts are kept on each change (at
+most once a second), on blur, on Step out and on unload rather than a
+second after the last keystroke, because the cut guard forbids timers
+in the frontend; the drawer's own Stop now says when an answer has not
+settled; the live session of an idle room ends lazily at the next turn
+elsewhere; the document pane's own Start guard stays more conservative
+than D16.
+
+Later, when it hurts: words typed within a second of the last keep and
+then neither blurred, stepped out nor left, and a page exit whose
+keepalive request fails, stay unkept until a keep lands (a ruled
+exception to the cut guard's no-timer rule would close it; Wido's
+call); the phone layout stacks the desk over the conversation; slices
+B (the board, remarks, drawings, evidence on the desk), C (the verdict
+acts and the candidate through `app start --goal G`) and D (the
+landing gate on R-132-ui) are next.

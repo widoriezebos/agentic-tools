@@ -2,6 +2,8 @@ package partner
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -512,6 +514,12 @@ type Message struct {
 type Conversation struct {
 	transcript string
 	state      string
+	// directory is the store this conversation was opened in, and key the
+	// sitting's record it is kept under, or "" for the human's own
+	// conversation. A sitting's conversation lives beside the human's, in the
+	// same store (g1-s65 D16), and the service reaches the store through here.
+	directory string
+	key       string
 
 	mu       sync.Mutex
 	messages []Message
@@ -543,17 +551,47 @@ type Subject struct {
 // closed the browser comes back to the same sitting (g1-s53 D1).
 type Sitting struct {
 	Subject Subject `json:"subject"`
-	// Purpose is what this sitting is for, from the two step 1 admits.
+	// Purpose is what this sitting is for, from the three this build admits.
 	Purpose   string `json:"purpose"`
 	StartedAt string `json:"startedAt"`
+	// Room is the review room's working state, kept on the mark so a human who
+	// steps out comes back to the same desk, the same face and the same
+	// unfinished words (g1-s65 D9). It is private sitting material, like the
+	// transcript beside it, and it never touches the record.
+	Room *Room `json:"room,omitempty"`
 }
 
-// The two purposes this build admits. Review and learning sittings have moves
-// of their own — the narrator's report, the withheld diagnosis — and neither is
-// here, so neither is offered (g1-s53 §4).
+// Room is what the review room keeps between visits: the desk's strip and the
+// item on it, which face of the desk pane is up, and the human's unfinished
+// words — every unrecorded card's edited text and clause, and the fields of an
+// open Decide sheet, keyed by deposit id (Astra S65-03).
+//
+// The desk and the drafts are the page's own shapes, kept whole and bounded: the
+// server stores them and reads nothing out of them, because what an item on a
+// desk is belongs to the page that draws it.
+type Room struct {
+	Desk   json.RawMessage `json:"desk,omitempty"`
+	Face   string          `json:"face,omitempty"`
+	Drafts json.RawMessage `json:"drafts,omitempty"`
+	// At is when the room was last kept, which is when the human last touched
+	// it: the door line's "you stepped out 2h ago".
+	At string `json:"at,omitempty"`
+}
+
+// maxRoomBytes bounds what one room keeps. A desk strip and a handful of
+// unfinished cards are a few kilobytes; a room past this is a page sending
+// something that is not a room.
+const maxRoomBytes = 128 << 10
+
+// The purposes this build admits. The learning sitting has moves of its own —
+// the withheld diagnosis — and is not here, so it is not offered (g1-s53 §4).
+// The review is the paper's review sitting (g1-s65): the human examines a
+// goal's built work before it lands, with a colleague who was not in the room
+// that shaped it.
 const (
 	PurposeShapeIntent = "shape intent"
 	PurposeShapeDesign = "shape a design"
+	PurposeReview      = "review"
 )
 
 // SubjectRecord is the one kind of subject a sitting has today.
@@ -577,19 +615,49 @@ type stateFile struct {
 // The directory is the caller's: the server's is Directory(Home(), checkout),
 // and the walkthrough's is one beside its own fixture checkout, so no fixture
 // writes into a human's actual conversations.
-func OpenConversation(directory, human string) (*Conversation, error) {
+//
+// A sitting names its record as the key beside the human's (g1-s65 D16): the
+// sitting's conversation is opened instead of the human's own, in the same
+// store, under a file of its own.
+func OpenConversation(directory, human string, sitting ...string) (*Conversation, error) {
 	name := fileName(human)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	key := ""
+	if len(sitting) > 0 {
+		key = strings.TrimSpace(sitting[0])
+	}
+	transcript := filepath.Join(directory, name+".jsonl")
+	state := filepath.Join(directory, name+".json")
+	if key != "" {
+		transcript, state = sittingFiles(directory, human, key)
+	}
+	if err := os.MkdirAll(filepath.Dir(transcript), 0o700); err != nil {
 		return nil, fmt.Errorf("the Partner's conversation directory could not be made: %w", err)
 	}
-	conversation := &Conversation{
-		transcript: filepath.Join(directory, name+".jsonl"),
-		state:      filepath.Join(directory, name+".json"),
-	}
+	conversation := &Conversation{transcript: transcript, state: state, directory: directory, key: key}
 	if err := conversation.load(); err != nil {
 		return nil, err
 	}
 	return conversation, nil
+}
+
+// sittingsDirectory is where a store keeps its sittings' conversations: one
+// directory per human beneath it, so the human's own files stay what
+// housekeeping and the carry recognise at the top of the store.
+const sittingsDirectory = "sittings"
+
+// sittingFiles is the transcript and the state file of one human's
+// conversation about one record. The record's path is readable in the name and
+// a digest of it follows, because a path flattened into a file name can meet
+// another path flattened the same way, and two sittings must never share a file.
+func sittingFiles(directory, human, record string) (string, string) {
+	sum := sha256.Sum256([]byte(record))
+	readable := fileName(record)
+	if len(readable) > 80 {
+		readable = readable[len(readable)-80:]
+	}
+	name := readable + "-" + hex.EncodeToString(sum[:8])
+	under := filepath.Join(directory, sittingsDirectory, fileName(human))
+	return filepath.Join(under, name+".jsonl"), filepath.Join(under, name+".json")
 }
 
 // fileName is the one name a human maps to. Anything that is not a plain
@@ -1241,6 +1309,71 @@ func (c *Conversation) Rise(now time.Time) error {
 	}
 	return nil
 }
+
+// sittingsOn is every record one human has a standing sitting's conversation
+// about in this store, read from the marks on the state files beside the
+// transcripts. A file that cannot be read names nothing: it is a conversation
+// this process will open and report on its own when it is asked for.
+func sittingsOn(directory, human string) ([]string, error) {
+	under := filepath.Join(directory, sittingsDirectory, fileName(human))
+	held, err := os.ReadDir(under)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("the Partner's sittings at %s could not be read: %w", under, err)
+	}
+	records := []string{}
+	for _, entry := range held {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(under, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var state stateFile
+		if json.Unmarshal(body, &state) != nil || state.Sitting == nil {
+			continue
+		}
+		if record := strings.TrimSpace(state.Sitting.Subject.ID); record != "" {
+			records = append(records, record)
+		}
+	}
+	sort.Strings(records)
+	return records, nil
+}
+
+// Keep writes the room's working state onto the sitting mark (g1-s65 D9). It is
+// the mark's own write, whole, so the room and the session id are one file.
+func (c *Conversation) Keep(room Room, now time.Time) error {
+	if len(room.Desk)+len(room.Drafts)+len(room.Face) > maxRoomBytes {
+		return fmt.Errorf("the room carries more than %d bytes, and a room is a desk and some unfinished words",
+			maxRoomBytes)
+	}
+	c.mu.Lock()
+	if c.sitting == nil {
+		c.mu.Unlock()
+		return errors.New("no sitting is open on this conversation, so there is no room to keep")
+	}
+	previous := c.sitting
+	kept := *c.sitting
+	room.At = now.UTC().Format(time.RFC3339)
+	kept.Room = &room
+	c.sitting = &kept
+	c.mu.Unlock()
+	if err := c.writeState(now); err != nil {
+		c.mu.Lock()
+		c.sitting = previous
+		c.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
+// Key is the record this conversation is a sitting's about, or "" for a
+// human's own.
+func (c *Conversation) Key() string { return c.key }
 
 // writeState replaces the small file beside the transcript, whole, from the
 // state as it stands. It is whole rather than a field at a time because the two

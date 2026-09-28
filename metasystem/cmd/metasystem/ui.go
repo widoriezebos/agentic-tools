@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"io/fs"
 	"net"
 	"net/http"
@@ -33,6 +34,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/review"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/stickies"
@@ -486,6 +488,13 @@ func runUIServe(args []string) int {
 				CreateRecord: func(asked project.NewRecord) (project.Written, error) {
 					return project.CreateRecord(projectRoots(roots), asked, time.Now())
 				},
+				// The review record a review sitting starts on, created by the
+				// server with the head it resolved (g1-s65 D1), and the reads
+				// its desk makes over the candidate's own tree (D4).
+				CreateReview: func(asked project.NewReview) (project.Written, error) {
+					return project.CreateReview(projectRoots(roots), asked, time.Now())
+				},
+				Review: &review.Owner{Git: gittree.Workspace{Dir: roots.Checkout}},
 				SetStatus: func(id, status string) (project.Written, error) {
 					return project.SetStatus(projectRoots(roots), id, status)
 				},

@@ -258,6 +258,19 @@ func Catalogue() []Tool {
 			}, nil),
 		},
 		{
+			Name: OpChanges,
+			Description: "In a review sitting, what the reviewed work changed, read from the candidate's own tree and " +
+				"not this checkout: the change index with each file's counts, or one file's hunks. It reads the review " +
+				"record's Reviewed line — a waiting goal's branch tip against its merge base with the canonical branch, " +
+				"or a done goal's landed commits each against its first parent — so you and the human read one tree. " +
+				"With since, it reads what changed on the branch after the tip the review names.",
+			InputSchema: schema(map[string]any{
+				"record": map[string]any{"type": "string", "description": "The review record's checkout-relative path."},
+				"path":   map[string]any{"type": "string", "description": "One file of the change, for its hunks. Omit it for the index."},
+				"since":  map[string]any{"type": "string", "description": "true to read what changed since the reviewed tip."},
+			}, []string{"record"}),
+		},
+		{
 			Name: OpSuggest,
 			Description: "Offer the human text for one field of the editor they handed over: the editor's name as its " +
 				"head says it, the field's name as its label says it, and the field's whole new value. " +
@@ -287,13 +300,15 @@ func Catalogue() []Tool {
 				"comes up in the conversation, beside the answer you give in words. It writes nothing: the human sees " +
 				"a card, edits it if they like, and presses Record it, and only then does it enter the record. " +
 				"The outcome is the closing deposit, and it is offered when the interface asks you to close the " +
-				"sitting and not before. Weigh nothing — a fact is anchored, an option carries its " +
+				"sitting and not before. In a review sitting, a finding is a case the examination did not try or " +
+				"an assumption the checks share, with its anchor and the consequence of leaving it unanswered. " +
+				"Weigh nothing — a fact is anchored, an option carries its " +
 				"consequences, and the choice is the human's.",
 			InputSchema: schema(map[string]any{
 				"kind": map[string]any{
 					"type":        "string",
 					"enum":        DepositKinds,
-					"description": "Which of the five this is: fact, decision, question, case or outcome.",
+					"description": "Which of the six this is: fact, decision, question, case, outcome, or finding in a review.",
 				},
 				"text": map[string]any{
 					"type": "string",
@@ -302,7 +317,7 @@ func Catalogue() []Tool {
 				},
 				"anchor": map[string]any{
 					"type":        "string",
-					"description": "On a fact: where it can be checked, as a path with a line or a record's own id. At most 500 characters.",
+					"description": "On a fact or a finding: where it can be checked, as a path with a line or a record's own id. At most 500 characters.",
 				},
 				"reason": map[string]any{
 					"type":        "string",
@@ -310,7 +325,7 @@ func Catalogue() []Tool {
 				},
 				"consequence": map[string]any{
 					"type":        "string",
-					"description": "On a question, and on a case: what follows from leaving it open. At most 500 characters.",
+					"description": "On a question, a case or a finding: what follows from leaving it open. At most 500 characters.",
 				},
 				"clause": map[string]any{
 					"type":        "string",
@@ -322,6 +337,26 @@ func Catalogue() []Tool {
 			Name:        OpPropose,
 			Description: proposeDescription(),
 			InputSchema: proposeSchema(),
+		},
+		{
+			Name: OpPresent,
+			Description: "In a review sitting, put one thing on the human's desk while you explain it: a file of the " +
+				"reviewed tree at a range of lines, the change index, one file's diff, or a record's section. Call it " +
+				"as you come to each thing, in the order you explain them. It moves nothing else on their screen, " +
+				"and the human can stop a walk's presenting with one press.",
+			InputSchema: schema(map[string]any{
+				"kind": map[string]any{
+					"type": "string", "enum": presentKinds,
+					"description": "source, changes, diff or section.",
+				},
+				"path": map[string]any{
+					"type":        "string",
+					"description": "The file of the reviewed tree, or the record's checkout-relative path for a section.",
+				},
+				"from":    map[string]any{"type": "string", "description": "On a source: the first line, counted from one."},
+				"to":      map[string]any{"type": "string", "description": "On a source: the last line."},
+				"section": map[string]any{"type": "string", "description": "On a section: the heading, as the record writes it."},
+			}, []string{"kind"}),
 		},
 	}
 }
@@ -345,7 +380,8 @@ const Instructions = "These tools read this MetaSystem workspace exactly as its 
 	"when a result carries a cursor, call the same tool again with it to read the rest. " +
 	"Nothing here writes. The three tools that read nothing offer the human something to decide about: " +
 	"suggest offers words for a field of an editor they handed over, deposit offers one entry for the " +
-	"record of a sitting they are in, and propose offers one act on one goal for them to apply. " +
+	"record of a sitting they are in, and propose offers one act on one goal for them to apply; in a review, " +
+	"present puts one thing on the human's desk. " +
 	"None of them applies anything, and the human decides."
 
 /* ------------------------------------------------------------- the frames -- */

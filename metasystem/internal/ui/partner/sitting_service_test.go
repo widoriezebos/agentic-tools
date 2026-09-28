@@ -73,7 +73,9 @@ func TestStartingASittingMarksTheConversationAndAsksTheOpeningQuestion(t *testin
 	testutil.Expect(t, "stamped when it began", sitting.StartedAt, "2026-09-26T09:00:00Z")
 	drain(t, events)
 
-	read, err := service.Snapshot("Wido", 100)
+	// A sitting is a conversation of its own (g1-s65 D16): the mark and the
+	// opening turn are on the sitting's conversation, beside the human's.
+	read, err := service.SnapshotIn("Wido", subjectOf().ID, 100)
 	testutil.Require(t, "read back", err, nil)
 	testutil.Require(t, "the snapshot carries the sitting", read.Sitting != nil, true)
 	testutil.Expect(t, "with its subject", read.Sitting.Subject.ID, "plans/designs/sessions.md")
@@ -86,8 +88,8 @@ func TestStartingASittingMarksTheConversationAndAsksTheOpeningQuestion(t *testin
 	testutil.Expect(t, "which is the record's own", asked.Page.Subject, "plans/designs/sessions.md")
 
 	// Ending it takes the mark off and leaves the transcript where it is.
-	testutil.Require(t, "risen", service.Rise("Wido"), nil)
-	after, err := service.Snapshot("Wido", 100)
+	testutil.Require(t, "risen", service.RiseIn("Wido", subjectOf().ID), nil)
+	after, err := service.SnapshotIn("Wido", subjectOf().ID, 100)
 	testutil.Require(t, "read again", err, nil)
 	testutil.Expect(t, "no sitting", after.Sitting == nil, true)
 	testutil.Expect(t, "and the conversation is untouched", len(after.Messages), 2)
@@ -130,7 +132,7 @@ func TestADepositDuringASittingIsOfferedAgainstItsSubject(t *testing.T) {
 	// transcript and the table while the answer is still being written.
 	testutil.Expect(t, "before the turn ended", at < ended, true)
 
-	read, err := service.Snapshot("Wido", 100)
+	read, err := service.SnapshotIn("Wido", subjectOf().ID, 100)
 	testutil.Require(t, "read back", err, nil)
 	answered := read.Messages[len(read.Messages)-1]
 	testutil.Require(t, "the answer keeps it", len(answered.Deposits), 1)
@@ -187,8 +189,8 @@ func TestASittingThisBuildDoesNotOfferIsRefusedBeforeAnythingIsWritten(t *testin
 		purpose string
 		says    string
 	}{
-		{"a purpose this build has no moves for", subjectOf(), "review",
-			"review and learning sittings are not in this build"},
+		{"a purpose this build has no moves for", subjectOf(), "learning",
+			"learning sittings are not in this build"},
 		{"no purpose at all", subjectOf(), "  ", "a sitting is for"},
 		{"a subject that is not a record", partner.Subject{Kind: "goal", ID: "g1-s53"},
 			partner.PurposeShapeDesign, "about one record of this project"},
@@ -200,10 +202,23 @@ func TestASittingThisBuildDoesNotOfferIsRefusedBeforeAnythingIsWritten(t *testin
 		testutil.Expect(t, probe.what+" is refused", err != nil, true)
 		testutil.Expect(t, probe.what+" says why", strings.Contains(err.Error(), probe.says), true)
 
-		read, readErr := service.Snapshot("Wido", 100)
-		testutil.Require(t, "read back "+probe.what, readErr, nil)
-		testutil.Expect(t, probe.what+" leaves no sitting", read.Sitting == nil, true)
-		testutil.Expect(t, probe.what+" appends nothing", len(read.Messages), 0)
+		untouched(t, service, probe.subject.ID, probe.what)
+	}
+}
+
+// untouched says a refused sitting left nothing on the human's conversation nor
+// on the conversation the sitting would have had (g1-s65 D16).
+func untouched(t *testing.T, service *partner.Service, record, what string) {
+	t.Helper()
+	places := []string{""}
+	if strings.TrimSpace(record) != "" {
+		places = append(places, strings.TrimSpace(record))
+	}
+	for _, where := range places {
+		read, err := service.SnapshotIn("Wido", where, 100)
+		testutil.Require(t, "read back "+what+" at "+where, err, nil)
+		testutil.Expect(t, what+" leaves no sitting at "+where, read.Sitting == nil, true)
+		testutil.Expect(t, what+" appends nothing at "+where, len(read.Messages), 0)
 	}
 }
 
@@ -224,10 +239,7 @@ func TestASittingIsRefusedBeforeAnythingIsAppendedWhenTheRuntimeCannotStart(t *t
 	_, err := service.Sit(context.Background(), "Wido", subjectOf(), partner.PurposeShapeDesign, onTheRecord())
 	testutil.Expect(t, "the sitting is refused", err != nil, true)
 
-	read, readErr := service.Snapshot("Wido", 100)
-	testutil.Require(t, "read back", readErr, nil)
-	testutil.Expect(t, "nothing was appended", len(read.Messages), 0)
-	testutil.Expect(t, "and no sitting was left on the conversation", read.Sitting == nil, true)
+	untouched(t, service, subjectOf().ID, "a runtime that cannot start")
 }
 
 // serviceOverRecords is a Partner over a checkout that has exactly the records
@@ -287,7 +299,7 @@ func TestASittingIsOnlyAboutAnIntentOrADesignRecord(t *testing.T) {
 			testutil.Require(t, probe.what+" opens a sitting", err, nil)
 			drain(t, events)
 			stop()
-			read, readErr := service.Snapshot("Wido", 100)
+			read, readErr := service.SnapshotIn("Wido", probe.id, 100)
 			testutil.Require(t, "read back "+probe.what, readErr, nil)
 			testutil.Require(t, probe.what+" carries the sitting", read.Sitting != nil, true)
 			testutil.Expect(t, probe.what+" is the subject", read.Sitting.Subject.ID, probe.id)
@@ -298,10 +310,7 @@ func TestASittingIsOnlyAboutAnIntentOrADesignRecord(t *testing.T) {
 		testutil.Expect(t, probe.what+" says why, in the words a human reads", err.Error(), probe.says)
 
 		// And refused before anything: no mark on the conversation, no turn.
-		read, readErr := service.Snapshot("Wido", 100)
-		testutil.Require(t, "read back "+probe.what, readErr, nil)
-		testutil.Expect(t, probe.what+" leaves no sitting", read.Sitting == nil, true)
-		testutil.Expect(t, probe.what+" appends nothing", len(read.Messages), 0)
+		untouched(t, service, probe.id, probe.what)
 	}
 }
 
@@ -318,8 +327,5 @@ func TestASittingOnARecordThisCheckoutCannotReadIsRefused(t *testing.T) {
 	testutil.Expect(t, "naming the record it could not read",
 		strings.Contains(err.Error(), "cannot read plans/designs/gone.md"), true)
 
-	read, readErr := service.Snapshot("Wido", 100)
-	testutil.Require(t, "read back", readErr, nil)
-	testutil.Expect(t, "no sitting was opened", read.Sitting == nil, true)
-	testutil.Expect(t, "and nothing was appended", len(read.Messages), 0)
+	untouched(t, service, "plans/designs/gone.md", "a record this checkout cannot read")
 }

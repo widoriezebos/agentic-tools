@@ -1,0 +1,588 @@
+/* The review room (g1-s65 §3): one screen, two panes — the desk and the
+   conversation — under one header, with no rail and no drawer.
+
+   Every colour is a token of src/tokens.css, so every one has a light and a dark
+   value and the contrast tests see all of them. At phone width the two panes
+   stack: the desk above, the conversation below. */
+
+.ms-room-shell {
+  height: 100vh;
+  height: 100dvh;
+  background: var(--ms-bg);
+  color: var(--ms-text);
+}
+
+.ms-room {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------- the header -- */
+
+.ms-room-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+}
+
+.ms-room-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ms-room-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  color: var(--ms-text-2);
+  font-size: 13px;
+}
+
+.ms-room-facts > span + span::before {
+  content: "· ";
+  color: var(--ms-text-3);
+}
+
+.ms-room-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.ms-room-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--ms-border);
+  background: var(--ms-surface-2);
+  color: var(--ms-text);
+  font-size: 13px;
+}
+
+.ms-room-banner--moved {
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+}
+
+/* -------------------------------------------------------------- the panes -- */
+
+.ms-room-panes {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ms-room-desk,
+.ms-room-conversation {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.ms-room-conversation {
+  background: var(--ms-surface);
+}
+
+.ms-room-grip {
+  width: 5px;
+  background: var(--ms-border);
+  cursor: col-resize;
+}
+
+.ms-room-grip:hover,
+.ms-room-grip:focus-visible {
+  background: var(--ms-accent);
+}
+
+.ms-room-board {
+  overflow: auto;
+  padding: 12px 16px;
+}
+
+.ms-room-board .ms-table {
+  width: 100%;
+  max-width: none;
+  border: 0;
+}
+
+.ms-room-walks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ms-border);
+}
+
+/* The conversation's scroller sits in a frame of its own, so the "Latest" pill
+   is placed on the frame's bottom edge — the composer's top edge — and never
+   floats over a card's text inside the scroller. */
+.ms-room-talk {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  /* The strip the pill's upper half sits in, below the scroller's last line. */
+  padding-bottom: 14px;
+}
+
+.ms-room-talk .ms-partner-transcript {
+  position: static;
+}
+
+.ms-room-talk .ms-partner-latest {
+  position: absolute;
+  right: 16px;
+  bottom: 0;
+  z-index: 1;
+  transform: translateY(50%);
+}
+
+.ms-room-transcript {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.ms-room-mine {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+/* ---------------------------------------------------------------- the desk -- */
+
+.ms-desk {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.ms-desk-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+}
+
+.ms-desk-strip-empty {
+  color: var(--ms-text-3);
+  font-size: 12px;
+}
+
+.ms-desk-tab {
+  padding: 2px 10px;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  background: var(--ms-surface-2);
+  color: var(--ms-text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ms-desk-tab:hover {
+  border-color: var(--ms-border-strong);
+  color: var(--ms-text);
+}
+
+.ms-desk-tab--up {
+  border-color: var(--ms-accent);
+  color: var(--ms-text);
+  font-weight: 600;
+}
+
+.ms-desk-tab--changes {
+  margin-left: auto;
+}
+
+.ms-desk-item {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 16px 24px;
+}
+
+.ms-desk-empty,
+.ms-desk-loading {
+  color: var(--ms-text-2);
+  font-size: 14px;
+}
+
+.ms-desk-refused {
+  color: var(--ms-danger);
+  font-size: 14px;
+}
+
+.ms-desk-caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0 0 8px;
+  color: var(--ms-text-2);
+  font-size: 13px;
+}
+
+.ms-desk-caption .ms-mono {
+  color: var(--ms-text);
+  font-weight: 600;
+}
+
+.ms-desk-link,
+.ms-desk-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ms-accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ms-desk-more {
+  margin: 6px 0;
+}
+
+.ms-desk-bound {
+  color: var(--ms-text-3);
+  font-size: 12px;
+}
+
+/* A file at a range, or a hunk: numbered lines, the changed ones marked by a bar
+   and a tint. The code keeps its own spacing, and a long line scrolls. */
+.ms-desk-lines {
+  overflow-x: auto;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: var(--ms-surface);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.ms-desk-line {
+  display: flex;
+  min-width: max-content;
+  border-left: 3px solid transparent;
+}
+
+.ms-desk-line--touched,
+.ms-desk-line--added {
+  border-left-color: var(--ms-ok);
+  background: var(--ms-ok-bg);
+}
+
+.ms-desk-line--deleted {
+  border-left-color: var(--ms-danger);
+  background: var(--ms-surface-3);
+}
+
+.ms-desk-number {
+  flex: none;
+  width: 3.5em;
+  padding-right: 10px;
+  color: var(--ms-text-3);
+  text-align: right;
+  user-select: none;
+}
+
+.ms-desk-sign {
+  flex: none;
+  width: 1.2em;
+  color: var(--ms-text-3);
+  user-select: none;
+}
+
+.ms-desk-code {
+  padding-right: 16px;
+  white-space: pre;
+}
+
+.ms-desk-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-desk-file {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--ms-border);
+  background: none;
+  color: var(--ms-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ms-desk-file:hover {
+  background: var(--ms-surface-2);
+}
+
+.ms-desk-count {
+  flex: none;
+  color: var(--ms-text-2);
+  font-size: 12px;
+}
+
+.ms-desk-added {
+  color: var(--ms-ok-fg);
+}
+
+.ms-desk-deleted {
+  color: var(--ms-danger);
+}
+
+.ms-desk-hunk {
+  margin-bottom: 14px;
+}
+
+.ms-desk-hunk-head {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin: 0 0 4px;
+  color: var(--ms-text-2);
+  font-size: 12px;
+}
+
+/* ------------------------------------------------------ anchors and answers -- */
+
+.ms-anchor-chip {
+  display: inline;
+  padding: 0 5px;
+  border: 1px solid var(--ms-border);
+  border-radius: 4px;
+  background: var(--ms-surface-2);
+  color: var(--ms-accent);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: 0.92em;
+  cursor: pointer;
+}
+
+.ms-anchor-chip:hover {
+  border-color: var(--ms-accent);
+}
+
+.ms-finding-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ms-finding-answer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  margin: 0;
+  font-size: 13px;
+}
+
+.ms-finding-answer--unanswered {
+  color: var(--ms-marker-fg);
+}
+
+.ms-finding-moved {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+  font-size: 11px;
+}
+
+.ms-finding-presses {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-finding-press {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+}
+
+.ms-finding-consequence {
+  color: var(--ms-text-2);
+  font-size: 12px;
+}
+
+.ms-table-finding {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+}
+
+/* ------------------------------------------------------------ the selection -- */
+
+.ms-ask-selection--desk {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+}
+
+.ms-ask-selection-press {
+  padding: 3px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ms-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ms-ask-selection-press:hover {
+  background: var(--ms-surface-2);
+}
+
+/* --------------------------------------------------------------- the door -- */
+
+.ms-review-door {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0 0;
+}
+
+.ms-review-door-open {
+  padding: 3px 10px;
+  border: 1px solid var(--ms-accent);
+  border-radius: 999px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ms-review-door-open:hover {
+  background: var(--ms-surface-2);
+}
+
+/* --------------------------------------------------- End and Accept sheets -- */
+
+.ms-review-sheet {
+  padding: 12px 16px 20px;
+}
+
+.ms-end-ways {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-end-way {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.ms-end-refused {
+  color: var(--ms-marker-fg);
+  font-size: 13px;
+}
+
+.ms-end-refused p {
+  margin: 0;
+}
+
+.ms-end-nod {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+  font-size: 13px;
+}
+
+.ms-sitting-leave {
+  padding: 2px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  background: var(--ms-surface-2);
+  color: var(--ms-text-2);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------ phone width -- */
+
+@media (max-width: 640px) {
+  .ms-room-head {
+    padding: 8px 10px;
+  }
+
+  .ms-room-actions {
+    margin-left: 0;
+  }
+
+  .ms-room-panes {
+    flex-direction: column !important;
+  }
+
+  .ms-room-desk,
+  .ms-room-conversation {
+    flex: 1 1 50% !important;
+  }
+
+  /* An empty desk is its one line, and the conversation takes the space. The
+     panel's size is on the library's outer element, around the class. */
+  [data-panel]:has(> .ms-room-desk--empty) {
+    flex: 0 0 auto !important;
+  }
+
+  .ms-room-desk--empty .ms-desk-item {
+    display: none;
+  }
+
+  .ms-room-grip {
+    width: auto;
+    height: 5px;
+  }
+}
+
+.ms-table-finding .ms-anchor-chip {
+  align-self: flex-start;
+}

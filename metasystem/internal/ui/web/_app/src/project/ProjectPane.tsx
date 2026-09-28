@@ -76,7 +76,7 @@ import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
 import { useOffersRefresh } from "../shell/refresh";
 import { Tabs, tabShown, type Tab } from "../panes/Tabs";
-import { backlogPath, documentPath, goalPath, projectPath } from "../routes";
+import { backlogPath, documentPath, goalPath, projectPath, reviewPath } from "../routes";
 import { CardMenu } from "../backlog/CardMenu";
 import { opensMenu, type At } from "../backlog/menu";
 import { ProposedChip } from "../partner/ProposedChip";
@@ -84,6 +84,8 @@ import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
 import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
+import { ReviewItOrDoor } from "../review/Door";
+import { doorLine } from "../review/room";
 import { StickiesBlock } from "../stickies/Block";
 import { useSession } from "../shell/identity";
 import { failureMessage as actFailureMessage } from "../shell/workspace";
@@ -531,6 +533,11 @@ function Columns({
           {pane.problems.length > 0 && <Problems problems={pane.problems} />}
           {briefing.goal !== null && (
             <GoalBlock briefing={briefing} ledger={ledger} onEdited={onReload} onReread={onLedger} />
+          )}
+          {/* A goal waiting to land, or one that is done, can be examined in the
+              review room (g1-s65 D2); a review that stands is its door. */}
+          {goal !== null && ledger !== null && reviewable(ledger, goal) && (
+            <ReviewItOrDoor goal={goal} doors={ledger.reviews ?? []} />
           )}
           {goal !== null && <Dependencies goal={goal} ledger={ledger} onLedger={onLedger} />}
           {/* What the human wrote to themselves about this goal, under its
@@ -1564,14 +1571,24 @@ export function timeOf(stamp: string): string {
  * (DocumentPane.tsx); this is that rule where the rows are.
  */
 function Sittings({ rows, nothing }: { rows: readonly SittingRow[]; nothing: ReactNode }) {
-  const { startSitting } = usePartner();
+  const { startSitting, showSitting } = usePartner();
   const navigate = useNavigate();
   const stands = rows.some((row) => row.standing);
   const open = (row: SittingRow) => {
+    // A review's row is its door: the room where it stands (g1-s65 D9), and its
+    // record where it has ended.
+    if (row.record.kind === "review") {
+      void navigate(row.standing ? reviewPath(row.record.path) : documentPath(row.record.path));
+      return;
+    }
     const go = () => {
       void navigate("/brain");
     };
-    if (stands) {
+    // A sitting is a conversation of its own (g1-s65 D16): a standing one is
+    // opened in the drawer where it was left, and one that has ended is started
+    // again on its own conversation, beside every other.
+    if (row.standing) {
+      showSitting(row.record.path);
       go();
       return;
     }
@@ -1608,7 +1625,21 @@ function Sittings({ rows, nothing }: { rows: readonly SittingRow[]; nothing: Rea
               <span className="ms-project-row-note">{row.record.kind}</span>
               <span>{pilesLine(row.counts)}</span>
               {lastAtLine(row) !== "" && <span>{lastAtLine(row)}</span>}
-              {row.standing && <span className="ms-sitting-row-standing">{STANDS_NOW}</span>}
+              {row.standing &&
+                (row.record.kind === "review" ? (
+                  <span className="ms-sitting-row-standing">
+                    {doorLine(
+                      {
+                        findings: row.counts.findings ?? 0,
+                        unanswered: row.counts.unanswered ?? 0,
+                        steppedOutAt: row.steppedOutAt ?? "",
+                      },
+                      new Date(),
+                    )}
+                  </span>
+                ) : (
+                  <span className="ms-sitting-row-standing">{STANDS_NOW}</span>
+                ))}
             </p>
             <p className="ms-project-row-path" title={row.record.path}>
               {row.record.path}
@@ -1618,4 +1649,10 @@ function Sittings({ rows, nothing }: { rows: readonly SittingRow[]; nothing: Rea
       </ul>
     </Block>
   );
+}
+
+/** Whether a goal's page offers Review it: a goal waiting to land, or one that is done (g1-s65 D2). */
+export function reviewable(ledger: Backlog, goal: string): boolean {
+  const row = [...ledger.rows, ...ledger.closed].find((one) => one.ref.id === goal);
+  return row !== undefined && (row.lane === "review" || row.lane === "done");
 }

@@ -786,6 +786,12 @@ func (c *Conversation) RecordProposal(turn string, index, version int, state, wo
 // are asleep for exactly that reason. It is refused here rather than in the
 // route because whether a turn is running is this service's own fact.
 func (s *Service) Proposed(human, turn string, index, version int, state, words, attempt string) (Proposal, error) {
+	return s.ProposedIn(human, "", turn, index, version, state, words, attempt)
+}
+
+// ProposedIn is Proposed on one conversation: a sitting's, named by its record,
+// or the human's own where the record is "" (g1-s65 D16).
+func (s *Service) ProposedIn(human, where, turn string, index, version int, state, words, attempt string) (Proposal, error) {
 	s.mu.Lock()
 	running := s.current
 	s.mu.Unlock()
@@ -793,7 +799,7 @@ func (s *Service) Proposed(human, turn string, index, version int, state, words,
 		return Proposal{}, errors.New("the Partner is still answering this turn, so its actions cannot be " +
 			"applied yet; they wake when the answer ends")
 	}
-	conversation, err := s.conversation(human)
+	conversation, err := s.conversationOf(human, where)
 	if err != nil {
 		return Proposal{}, err
 	}

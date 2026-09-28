@@ -2,7 +2,9 @@ import { useState } from "react";
 import { NavLink } from "react-router";
 
 import { usePartner } from "./store";
-import { askedFromSitting, ASK_IT, entryPath, goalsIn, SECTIONS, TABLE, TABLE_EMPTY, type Entry } from "./sitting";
+import { askedFromSitting, ASK_IT, entryPath, goalsIn, pilesOf, TABLE, TABLE_EMPTY, type Entry } from "./sitting";
+import { AnchorPress, FindingAnswers } from "../review/Answers";
+import { mayHaveMoved } from "../review/room";
 import { Help } from "../help/Help";
 import { Sheet as WritingSheet } from "../project/Sheet";
 import "./sitting.css";
@@ -20,7 +22,7 @@ import "./sitting.css";
  * check, argue with or edit is checked, argued with and edited where it is
  * written, and the one press that gets there is the entry itself.
  */
-export function SittingTable() {
+export function SittingTable({ changed = [] }: { changed?: readonly string[] }) {
   const { sitting, table } = usePartner();
   // The open question the human pressed Ask it on, while its sheet is open.
   const [asking, setAsking] = useState<Entry | null>(null);
@@ -37,7 +39,7 @@ export function SittingTable() {
         {sitting.subject.title === "" ? sitting.subject.id : sitting.subject.title}
       </p>
       {table.entries.length === 0 && <p className="ms-table-empty">{TABLE_EMPTY}</p>}
-      {SECTIONS.map((section) => {
+      {pilesOf(sitting.purpose).map((section) => {
         const entries = table.entries.filter((entry) => entry.section === section);
         if (entries.length === 0) {
           return null;
@@ -51,6 +53,25 @@ export function SittingTable() {
             <ul className="ms-table-entries">
               {entries.map((entry, at) => (
                 <li key={`${section}-${String(at)}`} className="ms-table-entry">
+                  {/* A review's findings carry their answers here as on their
+                      cards (g1-s65 D8), and an anchor puts what it is about
+                      back on the desk. */}
+                  {section === "Findings" ? (
+                    <div className="ms-table-finding">
+                      <p className="ms-table-entry-text">{entry.text}</p>
+                      {entry.clause !== "" && <AnchorPress anchor={entry.clause} />}
+                      <p className="ms-table-entry-who">
+                        {entry.who === "" ? entry.when : `${entry.who} · ${entry.when}`}
+                      </p>
+                      <FindingAnswers
+                        mark={entry.mark}
+                        text={entry.text}
+                        answer={entry.answer ?? ""}
+                        moved={mayHaveMoved(entry, changed)}
+                      />
+                    </div>
+                  ) : (
+                  <>
                   <NavLink
                     className="ms-table-entry-link"
                     to={entryPath(sitting.subject.id, section)}
@@ -76,6 +97,8 @@ export function SittingTable() {
                     >
                       {ASK_IT}
                     </button>
+                  )}
+                  </>
                   )}
                 </li>
               ))}

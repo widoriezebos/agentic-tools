@@ -82,7 +82,7 @@ func TestCheckRefusesEachFault(t *testing.T) {
 					record("A policy", "policy", "decision-policy", "draft", ""))
 				return f.state + "docs/decisions/0003-policy.md", "- Kind:"
 			},
-			want: "the kind policy is not one of intent, doctrine, decision, design",
+			want: "the kind policy is not one of intent, doctrine, decision, design, review",
 		},
 		{
 			name: "an unknown status",

@@ -35,12 +35,12 @@ func TestClosingASittingAsksTheFixedRequestAndLeavesTheSittingStanding(t *testin
 	testutil.Require(t, "the sitting opened", err, nil)
 	drain(t, events)
 
-	closing, err := service.Closing(context.Background(), "Wido", onTheRecord())
+	closing, err := service.ClosingIn(context.Background(), "Wido", subjectOf().ID, "", onTheRecord())
 	testutil.Require(t, "the close was asked", err, nil)
 	testutil.Expect(t, "about the record the sitting is on", closing.Subject.ID, sitting.Subject.ID)
 	beats := drain(t, events)
 
-	read, err := service.Snapshot("Wido", 100)
+	read, err := service.SnapshotIn("Wido", subjectOf().ID, 100)
 	testutil.Require(t, "read back", err, nil)
 	testutil.Require(t, "the two turns and their answers", len(read.Messages), 4)
 	asked := read.Messages[2]
@@ -91,11 +91,11 @@ func TestTheClosingRequestAsksForOneOutcomeAndForbidsTheWeighing(t *testing.T) {
 func TestClosingWithNoSittingIsRefused(t *testing.T) {
 	t.Parallel()
 	service, _ := serviceDepositing(t, "outcome", "", outcomeSaid)
-	_, err := service.Closing(context.Background(), "Wido", onTheRecord())
+	_, err := service.ClosingIn(context.Background(), "Wido", subjectOf().ID, "", onTheRecord())
 	testutil.Require(t, "it is refused", err != nil, true)
 	testutil.Expect(t, "saying there is nothing to close",
 		strings.Contains(err.Error(), "nothing to close"), true)
-	read, err := service.Snapshot("Wido", 100)
+	read, err := service.SnapshotIn("Wido", subjectOf().ID, 100)
 	testutil.Require(t, "read back", err, nil)
 	testutil.Expect(t, "and nothing was asked", len(read.Messages), 0)
 }
@@ -115,19 +115,19 @@ func TestResumeAsksTheOpeningQuestionAgainWhenTheSessionHasEnded(t *testing.T) {
 	// The live session is alive, so a page reading the conversation asks nothing:
 	// the Partner remembers this sitting, and a second opening turn would be the
 	// interface asking a question nobody needs.
-	asked, err := service.Resume(context.Background(), "Wido")
+	asked, err := service.ResumeIn(context.Background(), "Wido", subjectOf().ID)
 	testutil.Require(t, "the live session was asked about", err, nil)
 	testutil.Expect(t, "a live session resumes nothing", asked, false)
 
 	// The session ends — the process was torn down, or this server restarted.
 	service.Close()
 
-	resumed, err := service.Resume(context.Background(), "Wido")
+	resumed, err := service.ResumeIn(context.Background(), "Wido", subjectOf().ID)
 	testutil.Require(t, "the resume was asked", err, nil)
 	testutil.Expect(t, "a fresh session resumes", resumed, true)
 	drain(t, events)
 
-	read, err := service.Snapshot("Wido", 100)
+	read, err := service.SnapshotIn("Wido", subjectOf().ID, 100)
 	testutil.Require(t, "read back", err, nil)
 	testutil.Require(t, "the opening turn, its answer, and the resuming turn with its own", len(read.Messages), 4)
 	again := read.Messages[2]
@@ -144,10 +144,10 @@ func TestResumeAsksTheOpeningQuestionAgainWhenTheSessionHasEnded(t *testing.T) {
 func TestResumeAsksNothingWhereNoSittingStands(t *testing.T) {
 	t.Parallel()
 	service, _ := serviceDepositing(t, "fact", uitools.DepositAnchor+"sessions.go:212\n", factSaid)
-	asked, err := service.Resume(context.Background(), "Wido")
+	asked, err := service.ResumeIn(context.Background(), "Wido", subjectOf().ID)
 	testutil.Require(t, "no failure", err, nil)
 	testutil.Expect(t, "nothing was asked", asked, false)
-	read, err := service.Snapshot("Wido", 100)
+	read, err := service.SnapshotIn("Wido", subjectOf().ID, 100)
 	testutil.Require(t, "read back", err, nil)
 	testutil.Expect(t, "and the transcript is empty", len(read.Messages), 0)
 }
@@ -161,7 +161,7 @@ func TestTheSittingOneHumanIsInIsReadableOnItsOwn(t *testing.T) {
 	events, stop := service.Subscribe()
 	defer stop()
 
-	none, err := service.Sitting("Wido")
+	none, err := service.SittingIn("Wido", subjectOf().ID)
 	testutil.Require(t, "reading it before one stands", err, nil)
 	testutil.Expect(t, "nobody is sitting", none == nil, true)
 
@@ -169,13 +169,13 @@ func TestTheSittingOneHumanIsInIsReadableOnItsOwn(t *testing.T) {
 	testutil.Require(t, "the sitting opened", err, nil)
 	drain(t, events)
 
-	standing, err := service.Sitting("Wido")
+	standing, err := service.SittingIn("Wido", subjectOf().ID)
 	testutil.Require(t, "reading it while one stands", err, nil)
 	testutil.Require(t, "a sitting stands", standing != nil, true)
 	testutil.Expect(t, "on the record", standing.Subject.ID, "plans/designs/sessions.md")
 
-	testutil.Require(t, "risen", service.Rise("Wido"), nil)
-	after, err := service.Sitting("Wido")
+	testutil.Require(t, "risen", service.RiseIn("Wido", subjectOf().ID), nil)
+	after, err := service.SittingIn("Wido", subjectOf().ID)
 	testutil.Require(t, "reading it after the rise", err, nil)
 	testutil.Expect(t, "and none stands afterwards", after == nil, true)
 }

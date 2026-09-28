@@ -86,30 +86,23 @@ describe("the goal page's two writers", () => {
  * guard is on.
  */
 describe("the Sittings row press", () => {
-  it("starts nothing while a sitting stands, this row's or another's", () => {
+  it("opens a standing sitting where it was left, and starts one only on a row nothing stands on", () => {
     const sittings = bodyOf("Sittings");
 
-    // The guard is on any standing sitting and not on this row's own. There is one
-    // sitting on one conversation, so a start from another row replaces the
-    // standing mark: the sitting a human is in the middle of ends there, without
-    // its outcome ever being written.
-    expect(sittings).toContain("const stands = rows.some((row) => row.standing);");
-    expect(sittings).toContain("if (stands) {\n      go();\n      return;\n    }");
-    expect(sittings).not.toContain("if (row.standing) {");
-    // One start in the whole of it, reached only past that guard.
+    // A sitting is a conversation of its own (g1-s65 D16), so a start from
+    // another row no longer replaces the mark a human is in the middle of: it
+    // starts beside it. What still must not happen is a second start on a row
+    // that stands — that row's own conversation is opened where it was left.
+    expect(sittings).toContain("if (row.standing) {\n      showSitting(row.record.path);\n      go();\n      return;\n    }");
+    // A review's row is its door and never starts anything.
+    expect(sittings).toContain("reviewPath(row.record.path)");
+    // One start in the whole of it, reached only past those two.
     expect(sittings.match(/startSitting\(/g)).toHaveLength(1);
     // And the row says which of the two the press will do before it is pressed.
     expect(sittings).toContain("title={opensLine(row, stands)}");
   });
 });
 
-/**
- * What the goal page's own header says about the Partner.
- *
- * A goal page is where a human comes to read one goal whole, so a proposal
- * waiting on it belongs in that reading — after the goal's own chip, before the
- * counts, and pressed it opens the conversation at the line (g1-s61 D2).
- */
 describe("the chip on a goal's header", () => {
   const briefing: Briefing = {
     goal: {

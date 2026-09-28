@@ -129,9 +129,10 @@ export async function writeOutcome(
   state: ProposalState,
   words: string,
   attempt = "",
+  conversation = "",
 ): Promise<Written> {
   try {
-    const answered = await recordProposal(turn, line.index, line.version, state, words, attempt);
+    const answered = await recordProposal(turn, line.index, line.version, state, words, attempt, conversation);
     return { kind: "written", proposal: answered.proposal };
   } catch (error: unknown) {
     return error instanceof ProposalConflict

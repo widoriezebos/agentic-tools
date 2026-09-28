@@ -25,6 +25,8 @@ const SITTING = "/api/partner/sitting";
 const SITTING_END = "/api/partner/sitting/end";
 /** Drafting the sitting's outcome, which ends nothing. */
 const SITTING_CLOSE = "/api/partner/sitting/close";
+/** One of a review's five walks, asked by the interface (g1-s65 D6). */
+const SITTING_WALK = "/api/partner/sitting/walk";
 /** Stopping the running turn: the turn's id, with this after it. */
 const STOP = "/stop";
 /** One proposed action of one turn, for the state a press writes onto it. */
@@ -212,7 +214,21 @@ export type Subject = { kind: string; id: string; title: string };
  * of that record are what the table reads. What this says is which record, what
  * the sitting is for, and when it began.
  */
-export type Sitting = { subject: Subject; purpose: string; startedAt: string };
+export type Sitting = { subject: Subject; purpose: string; startedAt: string; room?: KeptRoom | null };
+
+/**
+ * The review room's working state as the sitting's mark keeps it (g1-s65 D9):
+ * the desk and its strip, which face is up, and the unfinished words of every
+ * card, in the page's own shapes, with when it was last kept.
+ */
+export type KeptRoom = { desk?: unknown; face?: string; drafts?: unknown; at?: string };
+
+/**
+ * One thing the Partner put on a review's desk while it explained it (g1-s65
+ * D5): a file of the reviewed tree at a range, the change index, one file's
+ * diff, or a record's section.
+ */
+export type Present = { kind: string; path?: string; from?: number; to?: number; section?: string };
 
 /**
  * One entry the Partner offered the record of the sitting the human is in.
@@ -243,6 +259,12 @@ export type Deposit = {
    * record it is cannot be this browser's guess.
    */
   subject?: Subject;
+  /**
+   * The verdict a review's closing turn was asked with, stamped by the server
+   * on the Outcome it offers (g1-s65 D10). It is the card's, so a card rebuilt
+   * after a reload records under it.
+   */
+  verdict?: string;
   /** Whether the human was shown it as something to record. */
   offered: boolean;
   /**
@@ -433,6 +455,8 @@ export type Snapshot = {
   proposals: Proposal[] | null;
   /** The sitting this conversation is, read from the server and not remembered. */
   sitting: Sitting | null;
+  /** Which conversation this is: a sitting's record, or "" for the human's own. */
+  conversation?: string;
   /** The goals and records an answer's names can be resolved against. */
   index: Index | null;
   readOnly: string;
@@ -447,6 +471,7 @@ export type EventKind =
   | "suggestion"
   | "deposit"
   | "proposal"
+  | "present"
   | "done"
   | "error"
   | "stopped";
@@ -474,6 +499,10 @@ export type PartnerEvent = {
    * answer is still arriving.
    */
   proposal?: Proposal;
+  /** One thing for a review's desk, on a present beat and nowhere else. */
+  present?: Present;
+  /** Which conversation the beat belongs to: a sitting's record, or "". */
+  conversation?: string;
 };
 
 /**
@@ -527,10 +556,11 @@ type Refusal = { error?: string; install?: string; draft?: string; code?: string
  * The one request. A body makes it a write, and a write is a POST of JSON;
  * everything else is a read.
  */
-async function request<T>(resource: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+async function request<T>(resource: string, body?: unknown, signal?: AbortSignal, leaving = false): Promise<T> {
   const sending = body !== undefined;
   const response = await fetch(resource, {
     signal,
+    keepalive: leaving,
     method: sending ? "POST" : "GET",
     headers: sending
       ? { Accept: "application/json", "Content-Type": "application/json" }
@@ -566,17 +596,22 @@ async function reasonOf(response: Response): Promise<Refusal> {
   }
 }
 
-/** The conversation as it stands: read on load and on every reconnect. */
-export async function loadPartner(signal?: AbortSignal): Promise<Snapshot> {
-  return request<Snapshot>(PARTNER, undefined, signal);
+/**
+ * The conversation as it stands: read on load and on every reconnect. A sitting
+ * is a conversation of its own (g1-s65 D16), named by its record; "" is the
+ * human's own.
+ */
+export async function loadPartner(signal?: AbortSignal, conversation = ""): Promise<Snapshot> {
+  return request<Snapshot>(conversation === "" ? PARTNER : `${PARTNER}?conversation=${encodeURIComponent(conversation)}`,
+    undefined, signal);
 }
 
 /**
  * Ask one question. The key is the page's own, so the same send twice is the
  * same turn once and a retry after a lost answer never asks twice.
  */
-export async function sendTurn(key: string, text: string, about: Page): Promise<{ turn: string }> {
-  return request<{ turn: string }>(TURNS, { key, text, about });
+export async function sendTurn(key: string, text: string, about: Page, conversation = ""): Promise<{ turn: string }> {
+  return request<{ turn: string }>(TURNS, { key, text, about, conversation });
 }
 
 /**
@@ -617,18 +652,35 @@ export async function startSitting(asked: {
  * or has said they are leaving without it, because the card this turn offers is
  * admitted against the sitting's subject.
  */
-export async function closeSitting(about: Page): Promise<Snapshot> {
-  return request<Snapshot>(SITTING_CLOSE, { about });
+export async function closeSitting(about: Page, conversation = "", verdict = ""): Promise<Snapshot> {
+  return request<Snapshot>(SITTING_CLOSE, { about, conversation, verdict });
 }
 
 /** End the sitting. What was recorded stays in the record. */
-export async function endSitting(): Promise<Snapshot> {
-  return request<Snapshot>(SITTING_END, {});
+export async function endSitting(conversation = ""): Promise<Snapshot> {
+  return request<Snapshot>(SITTING_END, { conversation });
 }
 
 /** Stop the running turn, and read back what it settled as. */
-export async function stopTurn(turn: string): Promise<Snapshot> {
-  return request<Snapshot>(`${TURNS}/${encodeURIComponent(turn)}${STOP}`, {});
+export async function stopTurn(turn: string, conversation = ""): Promise<Snapshot> {
+  return request<Snapshot>(`${TURNS}/${encodeURIComponent(turn)}${STOP}`, { conversation });
+}
+
+/**
+ * Ask one of a review's five walks (g1-s65 D6): a fixed request the interface
+ * asks in the human's name, and read back the room's conversation with it in.
+ */
+export async function askWalk(conversation: string, part: string, about: Page): Promise<Snapshot> {
+  return request<Snapshot>(SITTING_WALK, { conversation, part, about });
+}
+
+/**
+ * Keep the room's working state on its sitting's mark (g1-s65 D9), through the
+ * sitting's own route. `leaving` is the keep made as the page goes away, which
+ * the browser is asked to finish after the page has gone.
+ */
+export async function keepRoom(conversation: string, room: KeptRoom, leaving = false): Promise<{ kept: string }> {
+  return request<{ kept: string }>(SITTING, { conversation, room }, undefined, leaving);
 }
 
 /**
@@ -672,10 +724,14 @@ export async function recordProposal(
   state: ProposalState,
   words: string,
   attempt: string,
+  conversation = "",
 ): Promise<{ proposal: Proposal } & Snapshot> {
   const resource = `${TURNS}/${encodeURIComponent(turn)}${PROPOSALS}${String(index)}`;
-  const body: { version: number; state: ProposalState; words: string; attempt?: string } =
+  const body: { version: number; state: ProposalState; words: string; attempt?: string; conversation?: string } =
     { version, state, words };
+  if (conversation !== "") {
+    body.conversation = conversation;
+  }
   // A dismissal carries none, and that is the difference the route reads: nothing
   // was applied, so no press owns the line, and the version alone decides who
   // writes it — exactly as it did before there were attempts at all.

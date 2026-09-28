@@ -27,7 +27,8 @@ import { NotFoundPane, SectionPane } from "../panes/sections";
 import { SettingsPane } from "../panes/Settings";
 import { DocumentPane } from "../project/DocumentPane";
 import { GoalPane, ProjectPane } from "../project/ProjectPane";
-import { activeSection, HOME_PATH, projectSections } from "../routes";
+import { activeSection, chromeOf, HOME_PATH, projectSections, reviewIdFromPath } from "../routes";
+import { Room } from "../review/ReviewRoom";
 import { StickiesPanel } from "../stickies/Panel";
 import {
   DEFAULT_DOCK_HEIGHT,
@@ -165,7 +166,11 @@ function Frame() {
 
   const section = activeSection(location.pathname);
   const focused = section?.id === "brain";
-  const sectionTitle = section?.title ?? "Not found";
+  // The review room is a screen of its own (g1-s65 D2): no rail, no drawer, the
+  // bell and nothing more of the shell, because its own pane is the sitting's
+  // conversation and nothing else on screen should pull at the human in it.
+  const reviewing = reviewIdFromPath(location.pathname);
+  const sectionTitle = reviewing !== "" ? "Review" : (section?.title ?? "Not found");
   const { workspace } = useWorkspaceState();
   // What the steward has said and nobody has read. It leads the tab title,
   // because a human with six workspaces open reads the title bar first and a
@@ -407,6 +412,21 @@ function Frame() {
       />
     </ErrorBoundary>
   );
+
+  if (chromeOf(location.pathname) === "room") {
+    return (
+      <WorkAreaProvider layer={null} under={null}>
+        <Rereading />
+        <main id="content" className="ms-room-shell" tabIndex={-1}>
+          <ErrorBoundary>
+            <Room record={reviewing} />
+          </ErrorBoundary>
+        </main>
+        <AskSelection />
+        <StickiesPanel />
+      </WorkAreaProvider>
+    );
+  }
 
   return (
     <WorkAreaProvider layer={focused ? null : layer} under={focused ? null : under}>

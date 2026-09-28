@@ -189,6 +189,7 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
       "/api/partner/sitting",
       "/api/partner/sitting/end",
       "/api/partner/sitting/close",
+      "/api/partner/sitting/walk",
       "/proposals/",
       "/stop",
     ],
@@ -220,6 +221,13 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // composed on the server, so there is one resource here and not four. The
   // page publishes nothing, so there is no act beside it either.
   ["application/api.ts", 1, ["/api/application"]],
+  // The review room's desk (g1-s65 D4). Three reads through one call site, each
+  // made when a human puts something on the desk and at no other time: a source
+  // file at a range, the change index, and one file's hunks, all over one review
+  // record and answered from the candidate's own tree. The two suffixes are
+  // listed on their own because the record's own path lies between the prefix
+  // and them. Nothing here polls: a moved tip is read once, on return.
+  ["review/api.ts", 1, ["/api/review/", "/source", "/changes"]],
 ];
 
 /**

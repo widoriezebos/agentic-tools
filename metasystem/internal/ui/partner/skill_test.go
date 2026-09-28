@@ -49,3 +49,23 @@ func TestTheSkillRoutesTheThreeTerritories(t *testing.T) {
 		testutil.Expect(t, "the skill names "+named, strings.Contains(Skill(), named), true)
 	}
 }
+
+// The review rules are in the Partner's instructions (g1-s65 D3), in the copy
+// the binary ships as well as the kit's own: the five parts, every claim
+// anchored, what was not tried, findings offered, the desk, and never whether
+// to accept.
+func TestTheInstructionsCarryTheReviewRules(t *testing.T) {
+	t.Parallel()
+	for _, rule := range []string{
+		"Asked, Built, Examined, Proven, Behaves",
+		"anchor every claim",
+		"Name what the examination did not try, what the tests assume and what is not recorded",
+		"as a `finding`",
+		"with `present`",
+		"`changes`, which reads the reviewed tree",
+		"Draw when words would be longer",
+		"Never say whether to accept",
+	} {
+		testutil.Expect(t, "the shipped skill carries: "+rule, strings.Contains(skillMarkdown, rule), true)
+	}
+}
