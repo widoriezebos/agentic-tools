@@ -5,8 +5,7 @@
     "internal/**",
     "scripts/agents/**",
     "go.mod",
-    "go.sum",
-    "records/misc/goals-migration-manifest.md"
+    "go.sum"
   ],
   "payloadRoots": [
     ".gitattributes",
