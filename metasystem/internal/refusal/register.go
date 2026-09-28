@@ -57,7 +57,7 @@ var Rows = []Row{
 	{Code: "LAUNCH_READ_UNSIZED", Owner: "internal/launch", Site: "admit.go:55", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_READ_UNSPLIT", Owner: "internal/launch", Site: "admit.go:142", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED", Owner: "internal/launch", Site: "unit_run.go:258", Shape: Question, H1: StandingInput},
-	{Code: "RECEIPT_USAGE_INCOMPLETE", Owner: "internal/receipt", Site: "receipt.go:408", Shape: Question, H1: StandingInput},
+	{Code: "RECEIPT_USAGE_INCOMPLETE", Owner: "internal/receipt", Site: "receipt.go:420", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_PLAN_INVALID", Owner: "internal/launch", Site: "unit_plan.go:227", Shape: Question, H1: StandingInput},
 	{Code: "READ_REQUEST_INVALID", Owner: "internal/launch", Site: "standalone_read.go:134", Shape: Question, H1: StandingInput},
 	{Code: "record-writer-refused", Owner: "cmd/metasystem", Site: "intent_delivery.go:1868", Shape: Agent, Override: "review --dispositions", Commands: 1},
