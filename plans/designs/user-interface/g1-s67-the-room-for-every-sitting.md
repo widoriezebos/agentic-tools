@@ -133,7 +133,17 @@ ends, as it does today. For an intent record the room is the same with
   at `/brain` and the drawer's Start and End controls go; `/brain` stays
   the focused ordinary conversation. The Start sheet keeps its two
   fields (purpose and subject) and opens the room. The Sittings tab
-  lists every standing sitting and opens its room.
+  lists every standing sitting and opens its room, including a sitting
+  marked on the human's ordinary conversation from before D16 (every
+  sitting since D16 is keyed by its record, `internal/ui/partner/
+  service.go:1048`, so that set is closed): when a room's address names
+  a record whose own conversation carries no mark and the ordinary
+  conversation's mark names that record, the room's conversation is the
+  ordinary one, the sitting's owner. Resume, the cards, End and End
+  without recording act on it as they did before D16; nothing is moved
+  or copied, and when it ends the ordinary conversation is ordinary
+  again. One rule where the service resolves a room's conversation, and
+  nowhere else (Astra S67-04).
 - D7. **Nothing else changes, and End is by purpose.** The record model,
   the recorder, the conversation store, the door line and Step out are
   the landed ones; a review sitting behaves exactly as it does today.
@@ -171,7 +181,11 @@ review" expectation and its activity line invert
 (`internal/ui/partner/review_service_test.go:444-451`), the finding
 refusal beside them stays. Routes: `/sitting/<record>` beside
 `/review/<record>`, both `inTheRoom`; the room's End sheet is chosen by
-the sitting's purpose (D7). The Start sheet, the record page's Start
+the sitting's purpose (D7). The service resolves a room address's
+conversation in one place: the record's own conversation, or the
+human's ordinary conversation when that one carries no mark and the
+ordinary one's mark names the record (D6); every request that names a
+room's record goes through it. The Start sheet, the record page's Start
 control and the Sittings tab navigate to the room; the drawer's
 `SittingControl`, `SittingCounts` and `SittingTable` are removed with
 their tests, `EndSittingSheet` moves into the room with its test, and
@@ -204,7 +218,12 @@ sections in the strip; anchors put lines on the desk as they stand;
 the four walks; selection offers Ask and Fact and the fact card carries
 the anchor; a case card's two presses; the board shows the piles; the
 door on the record page and the Sittings tab, including a sitting whose
-mark carries no room state; End in a shaping room offers End and End
+mark carries no room state; a fixture with a mark and a transcript on
+the ordinary conversation and no record-keyed files, on which the room
+opens with those words, a card records against that sitting, and End
+ends it, and afterwards the ordinary conversation is unmarked and a
+Start on the same record opens a record-keyed one; End in a shaping
+room offers End and End
 without recording and no verdict, End in a review room unchanged; the
 drawer shows no sitting and `/brain` no table; the cut guard's rows;
 the guards green. Walkthrough:
@@ -245,3 +264,27 @@ Astra also verified, and the design leans on, that the Outcome
 recorder refuses a missing verdict only for a review (`room.ts:328`)
 and the service writes a verdict only on a review's Outcome
 (`service.go:1293`), so a shaping Outcome records as it does today.
+
+**Round 2, the declared failsafe (2026-09-28, at `ead3a5cdb`):**
+S67-01, S67-02 and S67-03 confirmed answered. One new material
+finding, S67-04: a shaping sitting marked on the human's ordinary
+conversation from before D16 is listed by `Standing`
+(`partner/review.go:155`) and today ended from the drawer
+(`StartSitting.tsx:228`), but a room address opens the record-keyed
+files (`service.go:346`, `conversation.go:628`), which carry no mark,
+so once D6 retires the drawer's End that sitting can neither resume
+nor end. Every cited line re-read. Folded into D6, §6 and §8: the
+service resolves a room's conversation in one place, falling back to
+the ordinary conversation when its mark names the record; nothing
+moves; a fixture holds it. The set is closed, since every sitting
+since D16 is record-keyed (`service.go:1048`). In this checkout's
+store no such mark stands (checked 2026-09-28: the ordinary
+conversations are unmarked, one record-keyed review sitting stands),
+so the rule serves installed repositories whose humans sat before
+D16; it can go when no installation has such a mark. Astra also
+verified that D2's root-based open matters, since `Owner.Source`'s
+path check is lexical (`review.go:627`) and containment comes from
+the checkout root (`document.go:130`); §6 already says the read opens
+under that root. Closed at the failsafe round on one fold with its
+fixture obligation, with one scoped confirmation read on S67-04 alone
+(recorded below when it returns).

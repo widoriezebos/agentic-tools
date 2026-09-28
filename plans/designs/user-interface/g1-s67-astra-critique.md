@@ -61,3 +61,52 @@ Limitations: static design/code review only; no tests or application execution, 
 
 Codex session ID: 01a0e909-d5a3-7aa1-9cbf-5bfe1c0a8c4d
 Resume in Codex: codex resume 01a0e909-d5a3-7aa1-9cbf-5bfe1c0a8c4d
+
+## Round 2, the declared failsafe
+
+---
+
+All three prior findings are **CONFIRMED ANSWERED**. One additional material finding remains in the drawer retirement path. Evidence below is **read at `ead3a5cdb`**; the failure is inferred from the design and code, not reproduced.
+
+**Prior findings**
+
+- **S67-01 — CONFIRMED ANSWERED.** [D2, design:102](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s67-the-room-for-every-sitting.md:102) removes the committed/live-source mismatch: both reads now target the checkout, including uncommitted edits. The document reader opens `roots.Checkout` ([document.go:130](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/project/document.go:130)); native-read admission uses that checkout boundary ([permission.go:159](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/permission.go:159)). My earlier pinned-read proposal is unnecessary for this revised contract. **Test 1:** no further change required for the original failure. **Test 2:** passes; ordinary uncommitted edits no longer necessarily produce different evidence beside the answer.
+
+- **S67-02 — CONFIRMED ANSWERED.** [Design:108](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s67-the-room-for-every-sitting.md:108) eliminates the required `tree`, and [design:206](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s67-the-room-for-every-sitting.md:206) covers a mark without room state. Existing marks need no invented baseline; their optional room field is consistent with this ([conversation.go:552](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/conversation.go:552)). **Test 1:** no further tree initialization is required. **Test 2:** passes for the missing-tree failure. S67-04 below concerns a different issue: which conversation owns an older mark.
+
+- **S67-03 — CONFIRMED ANSWERED.** [D7, design:137](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s67-the-room-for-every-sitting.md:137) and [design:173](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s67-the-room-for-every-sitting.md:173) explicitly move the shaping sheet and retain its two actions. Those actions already call `closeSitting()` and `endWithoutRecording()` ([StartSitting.tsx:293](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/StartSitting.tsx:293)). **Test 1:** the necessary purpose-dependent sheet selection is specified. **Test 2:** passes for the lost closing contract.
+
+**S67-04 — Medium · material: yes — Retiring the drawer strands a standing sitting still owned by the ordinary conversation.**
+
+**Claim and evidence:** D6 promises that every standing sitting opens its room, while D7 leaves the conversation store unchanged ([design:132](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s67-the-room-for-every-sitting.md:132)). The current service explicitly includes a sitting marked on the ordinary conversation in `Standing` ([partner/review.go:155](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/review.go:155)); the project route publishes it under its subject’s record path ([httpd.go:591](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/httpd/httpd.go:591)).
+
+Opening that record’s conversation does **not** recover the ordinary conversation’s mark or transcript: `openOf` opens the separate record-keyed files ([service.go:346](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:346), [conversation.go:628](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/conversation.go:628)). Today the ordinary drawer can still display this older sitting and offer End ([store.tsx:850](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/store.tsx:850), [StartSitting.tsx:228](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/partner/StartSitting.tsx:228)).
+
+**Concrete failure:** Upgrade with a standing shaping mark and its conversation in the ordinary files, and no record-keyed conversation. Project → Sittings lists it as standing. Opening `/sitting/<record>` reads an empty, unmarked conversation, so resume cannot run and End cannot close the original sitting. D6 removes the remaining drawer controls. This is a supported pre-existing sitting becoming unusable on its first return; it does not require concurrent tabs or a failed write.
+
+**Change to the design:** Define how a room recovers a standing shaping sitting owned by the ordinary conversation before retiring its drawer controls. Preserve its words and original sitting; do not implement recovery by Start. Extend §8 with a fixture containing an ordinary-conversation mark and transcript but no record-keyed files: opening the room must recover that sitting, and End must act on it. The existing “no room state” fixture does not cover this ownership distinction.
+
+**Test 1 — DIFFERENT/WRONG:** **Yes.** The implementation needs an explicit recovery rule at the conversation-opening boundary; routing every row directly to separate record-keyed files builds the wrong behavior.
+
+**Test 2 — WORKS/SAFE:** **WORKS: no.** The promised existing sitting cannot resume or end. No destructive write is needed to demonstrate the failure.
+
+**Deferred and non-material**
+
+Anchor drift after a read, refresh while remaining in the room, stronger provenance for uncommitted bytes, and the landed review Partner’s native-read mismatch remain deferred. They do not establish another first-use failure under this revision’s explicit live-checkout contract. Structured intent items, drawings and further phone layout work remain outside step 1.
+
+**What I verified holds**
+
+- **D2 specifies the correct root boundary.** The document reader uses an anchored `os.OpenRoot`/`root.Open` ([document.go:130](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/project/document.go:130)). `Owner.Source`’s lexical path check alone would not provide filesystem containment ([review.go:627](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/review/review.go:627)); the design’s root-based open and escape-refusal obligation matter. Binary refusal and range limits already exist ([review.go:548](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/review/review.go:548)).
+- **Return reads are feasible without a mark commit.** Desk reads run on mounting through `useRead` ([Desk.tsx:87](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/review/Desk.tsx:87)). Removing shaping comparisons, diffs and the banner avoids falsely reporting commit movement as working-tree freshness.
+- **Presentation does not grant finding or verdict authority.** Finding admission remains independently review-only ([service.go:1284](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:1284)). Revision 2 explicitly changes the presentation test while retaining its finding refusal.
+- **Shaping Outcomes remain recordable without verdicts.** `outcomeShape` applies the refusal only to reviews ([room.ts:328](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/review/room.ts:328)); the service clears verdict metadata before conditionally attaching a review verdict ([service.go:1293](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:1293)).
+- **The shared-room premise fits the paper.** Its independence rule concerns participation in the shaping conversation ([paper:27](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/docs/paper/15-the-sitting.md:27)); it explicitly permits the same sitting form for human review ([paper:51](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/docs/paper/15-the-sitting.md:51)). Existing session switching closes the previous session and replays the selected conversation’s history ([service.go:704](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/partner/service.go:704)).
+
+VERDICT: 1 material finding (fail test 2): S67-04
+
+Commit reviewed: `ead3a5cdb5609d0642d8f7276e7766a600c5dc9e`.
+
+Limitations: static review only; no tests or application execution, edits, subagents, or prohibited-path reads. I did not inspect private persisted conversations, so I have not established whether this checkout currently contains the older mark described in S67-04. Proposed receipt, unwritten: “g1-s67 failsafe design critique: three prior findings answered; one material sitting-recovery finding.”
+
+Codex session ID: 01a0e916-3a00-7c71-8f72-46c41339b5a9
+Resume in Codex: codex resume 01a0e916-3a00-7c71-8f72-46c41339b5a9
