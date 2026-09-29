@@ -81,7 +81,9 @@ func newReturnBed(t *testing.T, branch string) *returnBed {
 		b.answers = b.answers[1:]
 		return answer, true
 	}
-	h.holder = func(string) (lease.CurrentHolderView, error) { return lease.CurrentHolderView{}, errors.New("no lease") }
+	h.holder = func(string) (lease.CurrentHolderView, error) {
+		return lease.CurrentHolderView{}, errors.New("no lease")
+	}
 	h.done = func(_ *intentInvocation, id, by, reason string, proof humanauthority.Proof) intentResult {
 		b.done = append(b.done, struct{ id, by, reason string }{id, by, reason})
 		b.proofs = append(b.proofs, proof)
