@@ -35,7 +35,27 @@ const MessageSchemaVersion = 1
 const (
 	KindAsk   = "ask"
 	KindReply = "reply"
+	// KindNote is MetaSystem's own word to an asker about its message: fixed
+	// text built from ids, never a peer's words (the read's F-2).
+	KindNote = "note"
 )
+
+// NoteSender is the sender of every note.
+const NoteSender = "metasystem"
+
+// NotePreface and NoteClosing frame a note; the note's whole text sits
+// inside the preface, and it is one of the fixed note texts.
+const (
+	NotePreface = "[metasystem note, id %s: %s]"
+	NoteClosing = "[end of metasystem note %s]"
+	// NoteNotDelivered is the note an asker gets when the goal it asked was
+	// concluded before anyone held it.
+	NoteNotDelivered = "your message %s to goal %s was not delivered: %s was concluded before anyone held it (%s)"
+)
+
+var noteText = regexp.MustCompile(`^your message [A-Za-z0-9._-]{1,64} to goal ([A-Za-z0-9._-]+) was not delivered: ([A-Za-z0-9._-]+) was concluded before anyone held it \((done|abandoned)( on [0-9]{4}-[0-9]{2}-[0-9]{2})?|concluded\)$`)
+
+var concludedFact = regexp.MustCompile(`^(done|abandoned)( on [0-9]{4}-[0-9]{2}-[0-9]{2})?$`)
 
 // The states of a thread: open until its root ask is replied or its
 // deadline passes. A deadline decides when the asker may act on ifSilent
@@ -45,6 +65,9 @@ const (
 	ThreadOpen    = "open"
 	ThreadReplied = "replied"
 	ThreadExpired = "expired"
+	// ThreadConcluded is a goal thread whose goal was concluded before it
+	// was answered.
+	ThreadConcluded = "concluded"
 )
 
 // GoalNamespace is the board directory that holds the goals' mailboxes,
@@ -136,9 +159,11 @@ type Message struct {
 
 	text string
 	// mailbox is the directory the message was read from; offeredTo are
-	// the machines whose markers it carries.
-	mailbox   string
-	offeredTo []string
+	// the machines whose markers it carries; concludedAt is when its goal
+	// was found concluded, for a goal message closed that way.
+	mailbox     string
+	offeredTo   []string
+	concludedAt *time.Time
 }
 
 // PeerText is the message's text: another agent's words, information and
@@ -321,6 +346,12 @@ func publish(home string, request Request, now time.Time, confirm func(path, anc
 // check refuses a request the mailbox cannot hold: the address, the names,
 // the id, and the text and complete envelope bounds (D14D-07).
 func (r Request) check(now time.Time) error {
+	if r.Kind == KindNote {
+		if r.From.Machine != NoteSender || r.To.Machine == "" || !SafeName(r.To.Machine) || !ValidID(r.Thread) || !noteText.MatchString(r.Text) {
+			return fmt.Errorf("a note is MetaSystem's fixed text to one seat")
+		}
+		return nil
+	}
 	switch {
 	case r.Kind != KindAsk && r.Kind != KindReply:
 		return fmt.Errorf("message kind %q is not ask or reply", r.Kind)
@@ -368,6 +399,9 @@ func (r Request) check(now time.Time) error {
 // Render is the delivered text: the fixed preface, the deadline line once
 // the deadline has passed, and the text.
 func Render(m Message, now time.Time, loc *time.Location) string {
+	if m.Kind == KindNote {
+		return fmt.Sprintf(NotePreface, m.ID, m.text) + "\n" + fmt.Sprintf(NoteClosing, m.ID)
+	}
 	kind, subject := "message", ""
 	switch {
 	case m.Kind == KindReply:
@@ -418,6 +452,10 @@ func validIfSilent(text string) bool {
 // wellFormed re-applies the accept rules to a message read from a file
 // (the read's N-5): a file written past Publish never reaches a fixed line.
 func (m Message) wellFormed(stem string) bool {
+	if m.Kind == KindNote {
+		return m.ID == stem && ValidID(m.ID) && ValidID(m.Thread) && m.From.Machine == NoteSender && m.To.Goal == "" &&
+			SafeName(m.To.Machine) && noteText.MatchString(m.text) && m.IfSilent == "" && m.DeadlineAt == nil
+	}
 	oneAddress := (m.To.Machine == "") != (m.To.Goal == "")
 	return m.ID == stem && ValidID(m.ID) && ValidID(m.Thread) && SafeName(m.From.Machine) && oneAddress &&
 		(m.To.Machine == "" || SafeName(m.To.Machine)) && (m.To.Goal == "" || SafeName(m.To.Goal)) &&
@@ -500,9 +538,58 @@ func listMailboxReporting(mailbox string) ([]Message, []string, error) {
 		}
 		message.mailbox = mailbox
 		message.offeredTo = markers(mailbox, stem)
+		message.concludedAt = concludedAt(mailbox, stem)
 		messages = append(messages, message)
 	}
 	return messages, malformed, nil
+}
+
+// conclusion is the record that a goal message's goal was concluded.
+type conclusion struct {
+	At   time.Time `json:"at"`
+	Goal string    `json:"goal"`
+	Fact string    `json:"fact"`
+}
+
+// concludedAt reads a goal message's conclusion; nil when it has none.
+func concludedAt(mailbox, id string) *time.Time {
+	data, err := os.ReadFile(filepath.Join(mailbox, "concluded", id+".json"))
+	if err != nil {
+		return nil
+	}
+	var record conclusion
+	if json.Unmarshal(data, &record) != nil || record.At.IsZero() {
+		return nil
+	}
+	return &record.At
+}
+
+// conclude closes a goal message whose goal the ledger says is concluded:
+// an asker whose message was never offered first gets its note, then the
+// conclusion is recorded, so a failed note is retried by the next read.
+func conclude(home string, message Message, fact string, now time.Time) {
+	if !concludedFact.MatchString(fact) {
+		fact = "concluded"
+	}
+	if len(message.offeredTo) == 0 && SafeName(message.From.Machine) && message.From.Machine != NoteSender {
+		text := fmt.Sprintf(NoteNotDelivered, message.ID, message.To.Goal, message.To.Goal, fact)
+		note := Request{Kind: KindNote, From: Sender{Machine: NoteSender}, To: Address{Machine: message.From.Machine}, Thread: message.ID, Text: text}
+		if _, err := Publish(home, note, now); err != nil {
+			return
+		}
+	}
+	dir := filepath.Join(message.mailbox, "concluded")
+	if err := privateDir(dir); err != nil {
+		return
+	}
+	file, err := os.OpenFile(filepath.Join(dir, message.ID+".json"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	data, _ := json.Marshal(conclusion{At: now.UTC(), Goal: message.To.Goal, Fact: fact})
+	_, _ = file.Write(append(data, '\n'))
+	_ = file.Sync()
+	_ = file.Close()
 }
 
 // markers are the machines a message was offered to.
@@ -614,7 +701,7 @@ func Pending(home, self string, claims func() (Ownership, error), now time.Time)
 		}
 		inbox.Malformed = append(inbox.Malformed, malformed...)
 		for _, message := range messages {
-			if message.offered(self) {
+			if message.offered(self) || message.concludedAt != nil {
 				continue
 			}
 			// Offered to another holder and closed: eligible for nobody,
@@ -631,13 +718,13 @@ func Pending(home, self string, claims func() (Ownership, error), now time.Time)
 		}
 	}
 	if len(candidates) > 0 {
-		inbox.addGoalMessages(home, self, candidates, claims)
+		inbox.addGoalMessages(home, self, candidates, claims, now)
 	}
 	sortMessages(inbox.Messages)
 	return inbox, nil
 }
 
-func (inbox *Inbox) addGoalMessages(home, self string, candidates map[string][]Message, claims func() (Ownership, error)) {
+func (inbox *Inbox) addGoalMessages(home, self string, candidates map[string][]Message, claims func() (Ownership, error), now time.Time) {
 	var locked []string
 	for _, goal := range sortedGoals(candidates) {
 		release, ok := lockGoal(home, goal, syscall.LOCK_SH|syscall.LOCK_NB)
@@ -660,6 +747,12 @@ func (inbox *Inbox) addGoalMessages(home, self string, candidates map[string][]M
 		return
 	}
 	for _, goal := range locked {
+		if fact, concluded := owners.Concluded[goal]; concluded {
+			for _, message := range candidates[goal] {
+				conclude(home, message, fact, now)
+			}
+			continue
+		}
 		if owners.Live[goal] == self {
 			inbox.Messages = append(inbox.Messages, candidates[goal]...)
 		}
@@ -873,6 +966,8 @@ func (t Thread) State(now time.Time) (string, time.Time) {
 		return ThreadReplied, t.Messages[len(t.Messages)-1].At
 	case firstReply != nil:
 		return ThreadReplied, *firstReply
+	case t.Root.concludedAt != nil:
+		return ThreadConcluded, *t.Root.concludedAt
 	case t.Root.DeadlineAt != nil && !now.Before(*t.Root.DeadlineAt):
 		return ThreadExpired, *t.Root.DeadlineAt
 	}
@@ -895,7 +990,7 @@ func (t Thread) Sweepable(now time.Time, keep time.Duration) bool {
 		if message.To.Machine != "" && !message.offered(message.To.Machine) {
 			return false
 		}
-		if message.To.Goal != "" && len(message.offeredTo) == 0 {
+		if message.To.Goal != "" && len(message.offeredTo) == 0 && message.concludedAt == nil {
 			return false
 		}
 	}
@@ -925,7 +1020,7 @@ func Count(home, self string, claims func() (Ownership, error), now time.Time) (
 	read := false
 	waiting := map[string]bool{}
 	for _, thread := range threads {
-		if thread.Root == nil {
+		if thread.Root == nil || thread.Root.concludedAt != nil {
 			continue
 		}
 		root := *thread.Root

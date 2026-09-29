@@ -369,6 +369,10 @@ func runAgentReply(inv *intentInvocation) int {
 	if err != nil {
 		return inv.render(*boardUnreadable(err))
 	}
+	if answered.Kind == board.KindNote {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+			Summary: fmt.Sprintf("%s is a metasystem note, which takes no reply; nothing was sent", answered.ID)})
+	}
 	request := board.Request{Kind: board.KindReply, From: board.Sender{Machine: seat.machine, Lineage: seat.lineage},
 		To: board.Address{Machine: answered.From.Machine}, Thread: answered.Thread, Text: inv.input.text("text")}
 	published, err := seat.owners.publish(seat.home, request, seat.now)

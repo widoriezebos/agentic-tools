@@ -242,6 +242,7 @@ func removeMessage(message Message) bool {
 		_ = os.Remove(filepath.Join(markers, machine+".json"))
 	}
 	_ = os.Remove(markers)
+	_ = os.Remove(filepath.Join(message.mailbox, "concluded", message.ID+".json"))
 	return os.Remove(filepath.Join(message.mailbox, "messages", message.ID+".json")) == nil
 }
 
@@ -252,6 +253,7 @@ func removeEmptyGoalMailbox(home, goal string) {
 	if entries, err := os.ReadDir(filepath.Join(mailbox, "messages")); err != nil || len(entries) > 0 {
 		return
 	}
+	_ = os.Remove(filepath.Join(mailbox, "concluded"))
 	for _, dir := range []string{filepath.Join(mailbox, "messages"), filepath.Join(mailbox, "delivered"), mailbox, filepath.Dir(mailbox)} {
 		if os.Remove(dir) != nil {
 			return

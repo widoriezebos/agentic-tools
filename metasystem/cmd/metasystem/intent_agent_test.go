@@ -516,3 +516,36 @@ func TestIntentAgentInboxMarksOnlyWhatItPrinted(t *testing.T) {
 		t.Fatalf("the next inbox = %q", stdout)
 	}
 }
+
+// TestIntentAgentConcludedGoalNotesTheAsker (R26; the read's F-2): an ask
+// queued for a goal nobody holds, whose goal is then done, is closed by the
+// next seat that reads the ownership; status stops counting it; the asker's
+// inbox shows MetaSystem's note, not the peer's text; a note takes no reply.
+func TestIntentAgentConcludedGoalNotesTheAsker(t *testing.T) {
+	t.Parallel()
+	b := newAgentBed(t, "m1a")
+	_, asked := b.runJSON("agent", "ask", "--goal", "goal-z", "--text", "SECRET-QUEUED")
+	id := agentData(t, asked)["id"].(string)
+	b.ledger = board.Ownership{Live: map[string]string{"goal-x": "m1b"}, Concluded: map[string]string{"goal-z": "done on 2026-09-30"}}
+	holder := b.as("m1b")
+	if _, stdout, _ := holder.run("agent", "inbox"); strings.Contains(stdout, "SECRET") {
+		t.Fatalf("a concluded goal's message was shown: %q", stdout)
+	}
+	inv := &intentInvocation{owners: holder.owners()}
+	if lines := strings.Join(inv.peerStatusLines(holder.root), "\n"); strings.Contains(lines, "waiting for a holder") {
+		t.Fatalf("status still counts the concluded goal's message: %q", lines)
+	}
+	code, stdout, _ := b.run("agent", "inbox")
+	want := "your message " + id + " to goal goal-z was not delivered: goal-z was concluded before anyone held it (done on 2026-09-30)]"
+	if code != 0 || !strings.Contains(stdout, "[metasystem note, id ") || !strings.Contains(stdout, want) || strings.Contains(stdout, "SECRET") {
+		t.Fatalf("the asker's inbox = %d %q", code, stdout)
+	}
+	entries, _ := os.ReadDir(filepath.Join(board.Dir(b.home), "m1a", "mailbox", "messages"))
+	if len(entries) != 1 {
+		t.Fatalf("the asker's mailbox holds %v", entries)
+	}
+	note := strings.TrimSuffix(entries[0].Name(), ".json")
+	if code, _, stderr := b.run("agent", "reply", note, "--text", "ok"); code != 2 || !strings.Contains(stderr, "takes no reply") {
+		t.Fatalf("a reply to a note = %d %q", code, stderr)
+	}
+}
