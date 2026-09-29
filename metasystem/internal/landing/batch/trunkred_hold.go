@@ -19,7 +19,13 @@ type TrunkRedHold struct {
 
 // HoldTrunkRed durably holds a trunk-red observation with the batch that saw it.
 func (store Store) HoldTrunkRed(id string, red TrunkRed, opid string, at time.Time, actor string) error {
-	return store.holdTrunkRed(id, "", red, opid, at, actor)
+	return store.holdTrunkRed(id, "", red, opid, at, actor, false)
+}
+
+// holdEarlyTrunkRed holds an open batch whose partial tip's red is red twice
+// on its base (D14, R27): the same hold as a tip proof's, learned earlier.
+func (store Store) holdEarlyTrunkRed(id string, red TrunkRed, opid string, at time.Time, actor string) error {
+	return store.holdTrunkRed(id, "", red, opid, at, actor, true)
 }
 
 // HoldRegisteredTrunkRed holds a landing batch on entries already published
@@ -70,10 +76,10 @@ func entryIDs(entries []EntryRef) []string {
 // reholdTrunkRed replaces an existing hold only while it still carries the
 // operation that the diagnostic observed.
 func (store Store) reholdTrunkRed(id, expectedOpid string, red TrunkRed, opid string, at time.Time, actor string) error {
-	return store.holdTrunkRed(id, expectedOpid, red, opid, at, actor)
+	return store.holdTrunkRed(id, expectedOpid, red, opid, at, actor, false)
 }
 
-func (store Store) holdTrunkRed(id, expectedOpid string, red TrunkRed, opid string, at time.Time, actor string) error {
+func (store Store) holdTrunkRed(id, expectedOpid string, red TrunkRed, opid string, at time.Time, actor string, open bool) error {
 	return store.Update(id, func(record *Record) error {
 		if record.State == StateHeldTrunkRed && record.TrunkRed != nil && record.TrunkRed.Opid == opid {
 			return nil
@@ -82,7 +88,7 @@ func (store Store) holdTrunkRed(id, expectedOpid string, red TrunkRed, opid stri
 			if record.State != StateHeldTrunkRed || record.TrunkRed == nil || record.TrunkRed.Opid != expectedOpid {
 				return fmt.Errorf("batch %s moved before the new base red was recorded", id)
 			}
-		} else if record.State != StateProving && record.State != StateDiagnosing {
+		} else if record.State != StateProving && record.State != StateDiagnosing && (!open || record.State != StateOpen) {
 			return fmt.Errorf("batch %s cannot hold trunk red from state %s", id, record.State)
 		}
 		if opid == "" {

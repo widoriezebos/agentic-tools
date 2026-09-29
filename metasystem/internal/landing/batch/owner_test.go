@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
 type ownerBed struct {
@@ -91,7 +92,10 @@ func newOwnerBed(t *testing.T, record Record, now time.Time) *ownerBed {
 			return nil
 		}, ProbeRun: func(string, Record) (RunProbe, error) { return RunProbe{State: RunLive}, nil }, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {},
 		// An empty readable board: nothing on any seat is underway.
-		Pipeline: &scriptedBoard{picture: BoardPicture{Readable: true}}})
+		Pipeline: &scriptedBoard{picture: BoardPicture{Readable: true}},
+		// The early acts do nothing unless a witness scripts them.
+		Early: EarlySeams{Cheap: func(Record) (EarlyResult, error) { return EarlyResult{}, nil },
+			Adapter: func(RedGroup) (adapter.Adapter, bool) { return nil, false }}})
 	must(t, err)
 	return bed
 }

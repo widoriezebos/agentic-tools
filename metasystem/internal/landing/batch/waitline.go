@@ -18,7 +18,11 @@ func WaitLine(record Record, now time.Time, location *time.Location) string {
 	}
 	switch {
 	case record.Wait != nil:
-		return "batch " + record.BatchID + " " + waitText(*record.Wait, now, location)
+		line := "batch " + record.BatchID + " " + waitText(*record.Wait, now, location)
+		if clause := earlyClause(record.Early); clause != "" {
+			line += "; meanwhile: " + clause
+		}
+		return line
 	case record.StartReason != "":
 		line := "batch " + record.BatchID + " started: " + record.StartReason
 		if lastHistory(record).Verb == "cap" {
