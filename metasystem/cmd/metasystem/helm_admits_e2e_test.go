@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,6 +69,12 @@ func helmLedgerRepo(t *testing.T, machine string) string {
 // tool beside the person does.
 func helmEngine(t *testing.T, dir string, args ...string) (int, string) {
 	t.Helper()
+	return helmEngineIn(t, dir, nil, args...)
+}
+
+// helmEngineIn is helmEngine with the engine's standard input.
+func helmEngineIn(t *testing.T, dir string, stdin io.Reader, args ...string) (int, string) {
+	t.Helper()
 	words := []string{shellQuote(intentTestEngine(t))}
 	for _, arg := range args {
 		words = append(words, shellQuote(arg))
@@ -82,6 +89,7 @@ func helmEngine(t *testing.T, dir string, args ...string) (int, string) {
 	}
 	command.Env = env
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	command.Stdin = stdin
 	out, err := command.CombinedOutput()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
@@ -196,4 +204,96 @@ func TestHelmPersonProofEndToEnd(t *testing.T) {
 		os.WriteFile(job, []byte(fmt.Sprintf(`{"jobId":"helm-e2e","pid":%d,"pidStartedAt":%d}`, os.Getpid(), start)), 0o644))
 	refused("a caller under an adapter supervisor (HB-01)", root, "goal", "done", "helm-machinery", "--reason", "x")
 	helmMust(t, os.Remove(job))
+}
+
+// helmCommitAt commits one file in root under a shell in its own session,
+// as GitHub Desktop's git runs the enrolled hook.
+func helmCommitAt(t *testing.T, root, file, subject string) {
+	t.Helper()
+	writeReceiptFixture(t, root, file, file+"\n")
+	runReceiptGit(t, root, "add", file)
+	command := exec.Command("git", "-C", root, "commit", "-qm", subject)
+	command.Env = testenv.WithoutInheritedControls(gittree.ScrubbedEnviron())
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if out, err := command.CombinedOutput(); err != nil || !strings.Contains(string(out), "HUMAN AT THE HELM (wido): the wrapper-fence yields") {
+		t.Fatalf("commit %s at the helm: %v\n%s", subject, err, out)
+	}
+}
+
+// TestHelmReturnEndToEnd: two commits admitted at the helm and pushed to a
+// local bare remote; helm return through the real engine with stdin a pipe
+// reads both back on origin/main, asks nothing, prints the two commands and
+// logs the return.
+func TestHelmReturnEndToEnd(t *testing.T) {
+	t.Parallel()
+	root := helmLedgerRepo(t, "return-machine")
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runReceiptGit(t, root, "init", "-q", "--bare", bare)
+	runReceiptGit(t, root, "remote", "add", "origin", bare)
+	helmMust(t, testexec.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"),
+		[]byte("#!/bin/sh\nexec \""+filepath.Join(root, "bin", "metasystem")+"\" internal pre-commit --root \""+root+"\"\n"), 0o755))
+	// A seat holds this checkout: an agent commit here is fenced.
+	helmMust(t, os.MkdirAll(filepath.Join(root, "artifacts", "agents", "mains"), 0o755))
+	seat, err := helm.Locate(root)
+	helmMust(t, err)
+	take := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	_, err = helm.Write(root, helm.Record{By: "wido", At: take.Format(time.RFC3339), Reason: "e2e", Checkout: seat.Checkout})
+	helmMust(t, err)
+	helmCommitAt(t, root, "one.txt", "first at the helm")
+	helmCommitAt(t, root, "two.txt", "second at the helm")
+	runReceiptGit(t, root, "push", "-q", "origin", "main")
+	first := runReceiptGit(t, root, "rev-parse", "HEAD~1")
+	second := runReceiptGit(t, root, "rev-parse", "HEAD")
+	// Without an engine at bin/metasystem supervision is not recovered from
+	// the test: the return says so in one line and still succeeds.
+	helmMust(t, os.Remove(filepath.Join(root, "bin", "metasystem")))
+
+	code, out := helmEngineIn(t, root, strings.NewReader(""), "helm", "return")
+	want := fmt.Sprintf("commits at the helm on main: %s first at the helm (on origin/main), %s second at the helm (on origin/main)", first[:7], second[:7])
+	if code != 0 || !strings.Contains(out, want) || !strings.Contains(out, "every goal stays open; to conclude one: metasystem goal done G --reason ") ||
+		!strings.Contains(out, "to ask independent readers for feedback: metasystem work review --patch ") ||
+		strings.Contains(out, "[y/N]") || !strings.HasSuffix(out, "the machinery is at the helm again\n") {
+		t.Fatalf("return: %d\n%s", code, out)
+	}
+	if helm.Active(root).Active {
+		t.Fatal("the return left the helm taken")
+	}
+	if log, err := os.ReadFile(seat.Log); err != nil || !strings.Contains(string(log), `"action":"return","by":"wido"`) {
+		t.Fatalf("helm.log: %v\n%s", err, log)
+	}
+}
+
+// TestHelmReturnConcludesThroughTheRealDoneOwner: after the signature is
+// removed, the answer yes runs the real goal done owner in this process with
+// the helm proof built from the removed record, no lineage and --by the
+// holder (HB-03).
+func TestHelmReturnConcludesThroughTheRealDoneOwner(t *testing.T) {
+	t.Parallel()
+	root := helmLedgerRepo(t, "conclude-machine")
+	helmOpenGoal(t, root, "helm-return")
+	seat, err := helm.Locate(root)
+	helmMust(t, err)
+	_, err = helm.Write(root, helm.Record{By: "wido", At: time.Now().UTC().Format(time.RFC3339), Reason: "e2e", Checkout: seat.Checkout})
+	helmMust(t, err)
+	owners := defaultIntentOwners()
+	owners.dependencies.ownerLineage = func() string { return "" }
+	answers := []string{"helm-return", "", "n"}
+	owners.helm = helmOwners{
+		stdinTerminal: func() bool { return true },
+		ask: func(string) (string, bool) {
+			answer := answers[0]
+			answers = answers[1:]
+			return answer, true
+		},
+		recover: func(processScope) string { return "supervision: recovered" },
+	}
+	command, rest, _ := resolveIntentArgv([]string{"helm", "return"})
+	var stdout, stderr bytes.Buffer
+	if code := runIntentIn(command, rest, &stdout, &stderr, root, owners); code != 0 || !strings.Contains(stdout.String(), "goal done helm-return: ") {
+		t.Fatalf("return: %d\n%s\n%s", code, stdout.String(), stderr.String())
+	}
+	if record := helmLedgerRecord(t, root, "records/goals/helm-return.md"); !strings.Contains(record, " done actor=human:wido ") ||
+		!strings.Contains(record, "landed at the helm by wido") {
+		t.Fatalf("the conclusion is not the holder's:\n%s\n%s", record, stdout.String())
+	}
 }
