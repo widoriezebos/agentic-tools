@@ -416,6 +416,12 @@ never set them.
   removed by the sweep at once. Anything unreadable HOLDS (a clear is never
   inferred from a failed read). Acknowledgment stops the nag but never
   clears.
+- **Use of the wait** (`docs/design/design-principles.md`, "Waits Are
+  Used"). A resume refused while the stop's cancellation batch completes
+  prints when that batch is expected to finish (the batch's own record) and
+  what the resume will do then; the person waits one tick, the machinery
+  prepares nothing, because the cancellation batch is the machinery's own
+  work in progress, not an idle wait.
 
 ## 4. Tick integration, read set, and today's delivery
 

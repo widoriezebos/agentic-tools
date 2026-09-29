@@ -248,6 +248,14 @@ be inspected. Author Fable. Every cite re-read at `f9385b1ca`.
   dead, the supervisor's among them, and the group has no member, and,
   for the http and tcp forms, the probe is dark; the record is kept
   until then. Restart is stop then start with what is on disk.
+  **Use of the wait** (`docs/design/design-principles.md`, "Waits Are
+  Used"). `app start` waits for readiness under a deadline. Meanwhile the
+  supervisor watches the child for a terminal cause (exit, port already in
+  use in its output, a liveness probe that fails) and ends the wait at once
+  with that cause instead of at the deadline, so `app start` does not wait
+  two minutes for a failed supervisor. Nothing is prepared beyond the
+  record of the cause; invalidated by the child becoming ready (the cause
+  is discarded); no capacity question.
 - D3. **`--at REF` runs the application at any commit; `--goal G` is
   sugar for the goal branch's tip.** The engine takes a worktree at the
   commit REF names under `artifacts/`, runs the contract's build

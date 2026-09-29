@@ -298,6 +298,14 @@ implementation may require explicit lineage when no proven session exists
 and must print the actual session-start remedy. No environment mutation is
 needed: pass the resolved identity into the existing request builder.
 
+**Use of the wait** (`docs/design/design-principles.md`, "Waits Are Used").
+A waiting verb is a person's or a job's wait, not the machinery's: it
+performs no speculative work of its own. What it prints while it waits is
+what the machinery is doing with the wait it observes: for a batch, the
+batch's wait line (`meanwhile: …`, batch-lane R23 and R27); for a job, the
+job's phase and the round it is in. A timeout reports the continuation and
+kills nothing, as the table says.
+
 ## 6. State and whole-workflow decisions
 
 **Goal acts.** Approve/budget reuse the current routing table. A queued or
