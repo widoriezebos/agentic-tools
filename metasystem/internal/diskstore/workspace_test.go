@@ -79,7 +79,7 @@ func (g *fakeWorkspaceGit) run(_ context.Context, dir string, args ...string) ([
 		if sha, ok := g.refs[ref]; ok {
 			return []byte(sha + "\n"), nil
 		}
-		return nil, errors.New("exit status 1")
+		return nil, gitNotFound{}
 	case len(args) == 4 && args[0] == "update-ref" && args[3] == "":
 		if _, exists := g.refs[args[1]]; exists {
 			return nil, errors.New("fatal: reference already exists")
@@ -94,7 +94,7 @@ func (g *fakeWorkspaceGit) run(_ context.Context, dir string, args ...string) ([
 		if args[2] == args[3] {
 			return nil, nil
 		}
-		return nil, errors.New("exit status 1")
+		return nil, gitNotFound{}
 	case len(args) >= 3 && args[0] == "rev-list" && args[1] == "--count":
 		return []byte(g.unique + "\n"), nil
 	}

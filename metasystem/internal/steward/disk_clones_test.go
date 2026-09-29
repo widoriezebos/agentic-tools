@@ -38,7 +38,7 @@ func TestUnownedClonesAreReportedNeverRemoved(t *testing.T) {
 		case args[0] == "cat-file" && (dir == filepath.Join(parent, "clone") || dir == filepath.Join(parent, "seat")):
 			return nil, nil
 		}
-		return nil, errors.New("exit status 1")
+		return nil, stewardGitNotFound{}
 	}
 	class := UnownedClones{GitRoot: checkout, Git: git, Armed: []string{filepath.Join(parent, "seat")}}
 	report, err := diskstore.RunPass(context.Background(), diskstore.PassOptions{Kind: "checkout", Name: checkout,

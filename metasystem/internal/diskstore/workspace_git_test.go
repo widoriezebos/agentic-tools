@@ -111,3 +111,13 @@ func TestCopyWorkspaceRealGitIsALinkedWorktreeWhoseArchiveKeepsItsCommit(t *test
 		t.Fatalf("git no longer lists the worktree: %s", list)
 	}
 }
+
+// Unwrap exposes the process's exit status, as the production runner does.
+func (e *gitError) Unwrap() error { return e.err }
+
+// gitNotFound is a fake git's exit code 1, what rev-parse --verify -q
+// answers for a ref that does not exist.
+type gitNotFound struct{}
+
+func (gitNotFound) Error() string { return "exit status 1" }
+func (gitNotFound) ExitCode() int { return 1 }

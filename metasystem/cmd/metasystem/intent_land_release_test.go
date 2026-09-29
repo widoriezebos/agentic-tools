@@ -26,7 +26,7 @@ func (g landReleaseGit) run(ctx context.Context, dir string, args ...string) ([]
 		if g.contained[args[2]] || args[2] == args[3] {
 			return nil, nil
 		}
-		return nil, errors.New("exit status 1")
+		return nil, cmdGitNotFound{}
 	}
 	return g.workspaceGit.run(ctx, dir, args...)
 }

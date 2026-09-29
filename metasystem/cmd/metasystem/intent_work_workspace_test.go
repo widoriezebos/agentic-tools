@@ -39,7 +39,7 @@ func (g *workspaceGit) run(_ context.Context, dir string, args ...string) ([]byt
 		if sha, ok := g.refs[ref]; ok {
 			return []byte(sha + "\n"), nil
 		}
-		return nil, errors.New("exit status 1")
+		return nil, cmdGitNotFound{}
 	case len(args) == 6 && args[0] == "worktree" && args[1] == "add":
 		path := args[4]
 		gitdir := filepath.Join(dir, ".git", "worktrees", filepath.Base(path))
@@ -68,7 +68,7 @@ func (g *workspaceGit) run(_ context.Context, dir string, args ...string) ([]byt
 		if args[2] == args[3] {
 			return nil, nil
 		}
-		return nil, errors.New("exit status 1")
+		return nil, cmdGitNotFound{}
 	case args[0] == "rev-list":
 		return []byte("0\n"), nil
 	case len(args) == 3 && args[0] == "branch" && args[1] == "-D":
@@ -251,3 +251,9 @@ func init() {
 			}
 		})
 }
+
+// cmdGitNotFound is a fake git's exit code 1 (a ref that does not exist).
+type cmdGitNotFound struct{}
+
+func (cmdGitNotFound) Error() string { return "exit status 1" }
+func (cmdGitNotFound) ExitCode() int { return 1 }

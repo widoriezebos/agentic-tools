@@ -37,7 +37,7 @@ func (g *releaseGit) run(_ context.Context, dir string, args ...string) ([]byte,
 		if sha, ok := g.refs[args[len(args)-1]]; ok {
 			return []byte(sha + "\n"), nil
 		}
-		return nil, errors.New("exit status 1")
+		return nil, stewardGitNotFound{}
 	case args[0] == "update-ref":
 		g.refs[args[1]] = args[2]
 		return nil, nil
@@ -111,3 +111,9 @@ func TestCheckoutPassFinishesAnUnfinishedLandingReleaseSet(t *testing.T) {
 		t.Fatalf("a finished set is not visited again: %+v", report)
 	}
 }
+
+// stewardGitNotFound is a fake git's exit code 1 (a ref that does not exist).
+type stewardGitNotFound struct{}
+
+func (stewardGitNotFound) Error() string { return "exit status 1" }
+func (stewardGitNotFound) ExitCode() int { return 1 }

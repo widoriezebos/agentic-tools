@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -112,7 +113,11 @@ func releaseInSection(ctx context.Context, critical *Critical, request Workspace
 			return keep(verdict)
 		}
 	}
-	if unreadable := unreadableIn(record.Path); unreadable != "" {
+	walked := []string{record.Path, WorkspaceTmp(record)}
+	if record.Layout == LayoutCopy && record.Identity.Gitdir != "" {
+		walked = append(walked, record.Identity.Gitdir)
+	}
+	if unreadable := unreadableIn(walked...); unreadable != "" {
 		return keep(Verdict{Decision: Keep, Reason: "the workspace holds what cannot be read, so its removal could stop halfway: " + unreadable,
 			Command: "metasystem disk show"})
 	}
@@ -255,13 +260,23 @@ func judgeUse(census *UseCensus, record Record) Verdict {
 // ignored, of any size) or any failure to read keeps it. A person's
 // discard for this invocation is the only way past.
 func judgeContent(ctx context.Context, git WorkspaceGit, record Record, discard bool) Verdict {
-	if record.Layout != LayoutCopy || discard {
+	if record.Layout != LayoutCopy {
 		return Verdict{Decision: Release}
 	}
 	name := filepath.Base(record.Path)
 	land := "metasystem work land " + record.Owner.Ref + " for the work, or "
 	if record.Owner.Kind != OwnerGoal {
 		land = "commit the work, or "
+	}
+	// A person's discard waives the uncommitted content alone (Round B3-4,
+	// F-3): committed history a reflog holds is never discarded, so an
+	// unreadable reflog keeps the copy even then.
+	if reason := unreadableReflog(record); reason != "" {
+		return Verdict{Decision: Keep, Reason: reason + "; commits it holds could not be archived, so the copy is kept even with a discard",
+			Command: "metasystem disk show, once the reflog is readable again"}
+	}
+	if discard {
+		return Verdict{Decision: Release}
 	}
 	status, err := git(ctx, record.Path, "status", "--porcelain=v1", "-z", "--ignored=matching", "--untracked-files=all")
 	if err != nil {
@@ -287,10 +302,11 @@ func judgeContent(ctx context.Context, git WorkspaceGit, record Record, discard 
 }
 
 // copyHidden names what a clean status does not show (Round B3-4): a
-// submodule (a .gitmodules file or a gitlink in the index), an index entry
-// marked assume-unchanged or skip-worktree (git ls-files -v tags it
-// lowercase or S), or a reflog of the worktree or its branch that cannot
-// be read. Empty when there is none.
+// submodule (a .gitmodules file, a gitlink in the index, or submodule
+// history in the worktree's git directory, git's own
+// validate_no_submodules rule), or an index entry marked assume-unchanged
+// or skip-worktree (git ls-files -v tags it lowercase or S). Empty when
+// there is none.
 func copyHidden(ctx context.Context, git WorkspaceGit, record Record) string {
 	if _, err := os.Lstat(filepath.Join(record.Path, ".gitmodules")); !errors.Is(err, os.ErrNotExist) {
 		return "it has submodules (a .gitmodules file)"
@@ -316,6 +332,15 @@ func copyHidden(ctx context.Context, git WorkspaceGit, record Record) string {
 			return "an index entry is marked assume-unchanged or skip-worktree: " + strings.TrimSpace(line[1:])
 		}
 	}
+	if _, err := os.Lstat(filepath.Join(record.Identity.Gitdir, "modules")); !errors.Is(err, os.ErrNotExist) {
+		return "its git directory holds submodule history (" + filepath.Join(record.Identity.Gitdir, "modules") + ")"
+	}
+	return ""
+}
+
+// unreadableReflog names a reflog of the copy's worktree or its branch
+// that cannot be read; empty when every one can.
+func unreadableReflog(record Record) string {
 	gitdir := record.Identity.Gitdir
 	if gitdir == "" {
 		return "its git directory is not recorded"
@@ -350,29 +375,41 @@ func copyHidden(ctx context.Context, git WorkspaceGit, record Record) string {
 	return ""
 }
 
-// unreadableIn names the first directory or file under path that cannot
-// be read: a removal is never started that could stop halfway on it.
-func unreadableIn(path string) string {
+// unreadableIn names the first directory or file under paths that cannot
+// be read, or a directory that cannot be written: a removal is never
+// started that could stop halfway on it.
+func unreadableIn(paths ...string) string {
 	found := ""
-	_ = filepath.WalkDir(path, func(entryPath string, entry os.DirEntry, err error) error {
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) && entryPath == path {
-				return filepath.SkipAll
-			}
-			found = entryPath + " (" + err.Error() + ")"
-			return filepath.SkipAll
-		}
-		if entry.Type().IsRegular() {
-			file, err := os.Open(entryPath)
+	for _, root := range paths {
+		_ = filepath.WalkDir(root, func(entryPath string, entry os.DirEntry, err error) error {
 			if err != nil {
+				if errors.Is(err, os.ErrNotExist) && entryPath == root {
+					return filepath.SkipAll
+				}
 				found = entryPath + " (" + err.Error() + ")"
 				return filepath.SkipAll
 			}
-			_ = file.Close()
+			switch {
+			case entry.IsDir():
+				if err := unix.Access(entryPath, unix.R_OK|unix.W_OK|unix.X_OK); err != nil {
+					found = entryPath + " (a directory that cannot be emptied: " + err.Error() + ")"
+					return filepath.SkipAll
+				}
+			case entry.Type().IsRegular():
+				file, err := os.Open(entryPath)
+				if err != nil {
+					found = entryPath + " (" + err.Error() + ")"
+					return filepath.SkipAll
+				}
+				_ = file.Close()
+			}
+			return nil
+		})
+		if found != "" {
+			return found
 		}
-		return nil
-	})
-	return found
+	}
+	return ""
 }
 
 func firstPaths(paths []string) string {

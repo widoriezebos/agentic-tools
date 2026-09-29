@@ -461,13 +461,15 @@ func gitdirOf(worktree string) string {
 	return identity.Gitdir
 }
 
-// revParseIn resolves ref in dir. A ref that does not exist (git exits 1
-// with nothing printed) is not found; any other failure is an error the
-// caller keeps the workspace for.
+// revParseIn resolves ref in dir. A ref that does not exist (git's exit
+// code 1, read from the process's exit status, never from error text, with
+// nothing printed) is not found; any other failure is an error the caller
+// keeps the workspace for.
 func revParseIn(ctx context.Context, git WorkspaceGit, dir, ref string) (string, bool, error) {
 	out, err := git(ctx, dir, "rev-parse", "--verify", "-q", ref)
 	if err != nil {
-		if strings.Contains(err.Error(), "exit status 1") && strings.TrimSpace(string(out)) == "" {
+		var exit interface{ ExitCode() int }
+		if errors.As(err, &exit) && exit.ExitCode() == 1 && strings.TrimSpace(string(out)) == "" {
 			return "", false, nil
 		}
 		return "", false, fmt.Errorf("rev-parse %s: %w", ref, err)

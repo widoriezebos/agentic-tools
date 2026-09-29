@@ -2,7 +2,6 @@ package diskstore
 
 import (
 	"context"
-	"errors"
 	"testing"
 )
 
@@ -16,7 +15,7 @@ func (g *fakeWorkspaceGit) withAncestry(pairs ...[2]string) WorkspaceGit {
 					return nil, nil
 				}
 			}
-			return nil, errors.New("exit status 1")
+			return nil, gitNotFound{}
 		}
 		return g.run(ctx, dir, args...)
 	}
