@@ -704,3 +704,44 @@ func TestAuditDiskSettingsAreSpelledOnce(t *testing.T) {
 		t.Fatalf("disk-lifetime keys spelled outside their table; use the config constants:\n%s", ratchetSiteList(sites))
 	}
 }
+
+// TestAuditDiskReceiptLedgerHasOneAppender is the static witness of design
+// engine-owns-disk-lifetimes 3.12 clause 2 (DL4D-03): no production
+// function outside internal/receiptlog both opens a file with O_APPEND and
+// names receipts.log, so every engine append to the receipt ledger holds
+// the bound lock shared through receiptlog.AppendLine.
+func TestAuditDiskReceiptLedgerHasOneAppender(t *testing.T) {
+	t.Parallel()
+	outside := func(rel string) bool { return !strings.HasPrefix(rel, "internal/receiptlog/") }
+	sites := auditDiskGoSites(t, outside, func(fileSet *token.FileSet, file *ast.File) []int {
+		osNames := auditDiskImportNames(file, "os")
+		var lines []int
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
+			}
+			appends, names := false, false
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				switch value := node.(type) {
+				case *ast.SelectorExpr:
+					if ident, ok := value.X.(*ast.Ident); ok && osNames[ident.Name] && value.Sel.Name == "O_APPEND" {
+						appends = true
+					}
+				case *ast.BasicLit:
+					if value.Kind == token.STRING && strings.Contains(value.Value, "receipts.log") {
+						names = true
+					}
+				}
+				return true
+			})
+			if appends && names {
+				lines = append(lines, fileSet.Position(function.Pos()).Line)
+			}
+		}
+		return lines
+	})
+	if len(sites) != 0 {
+		t.Fatalf("receipts.log is appended outside receiptlog.AppendLine, without the bound lock:\n%s", ratchetSiteList(sites))
+	}
+}

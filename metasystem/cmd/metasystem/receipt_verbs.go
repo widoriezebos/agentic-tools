@@ -31,7 +31,7 @@ func runReceipt(args []string) int {
 	action := args[0]
 	args = args[1:]
 	// The public action each owner action answers as.
-	public := map[string]string{"add": "add", "correct": "add", "stats": "status", "retro": "retro", "check": "status"}[action]
+	public := map[string]string{"add": "add", "correct": "add", "stats": "status", "retro": "retro", "check": "status", "uncovered": "status"}[action]
 	usage := func() {
 		if public == "" {
 			fmt.Fprintln(os.Stderr, "usage: metasystem receipt add|status|retro [options]")
@@ -80,6 +80,8 @@ func runReceipt(args []string) int {
 	flags.StringVar(&opts.NowValue, "now", "", "corrected field's new value")
 	flags.StringVar(&opts.Reason, "reason", "", "correction reason")
 	flags.BoolVar(&opts.All, "all", false, "count the whole ledger")
+	flags.StringVar(&opts.Covered, "covered", "", "the token of receipt status --uncovered this retro covers")
+	flags.BoolVar(&opts.JSON, "json", false, "print the uncovered read as JSON")
 	flags.StringVar(&opts.MaxAgeDays, "max-age-days", "", "cadence age ceiling")
 	flags.StringVar(&opts.MaxReceipts, "max-receipts", "", "cadence receipt ceiling")
 	if err := flags.Parse(args); err != nil {
@@ -133,6 +135,8 @@ func runReceipt(args []string) int {
 		result = receipt.Stats(opts)
 	case "retro":
 		result = receipt.Retro(opts)
+	case "uncovered":
+		result = receipt.Uncovered(opts)
 	default:
 		usage()
 		return 2
