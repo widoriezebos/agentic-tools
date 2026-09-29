@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:90cc1beca69e18dacda984c3cd085a9503b45031c12eadc0699d9b3e4634ed84",
+  "sourceDigest": "sha256:76d9f9bb76a53b93203f2b5acf4b4a984dafa528ff123a4bd5bf2a7871ac8a97",
   "source": [
     {
       "path": ".npmrc",
@@ -460,7 +460,7 @@
     },
     {
       "path": "src/notifications/Panel.test.tsx",
-      "sha256": "537c21d16b3ba9b7678d45c816b7cd2e7d902c18194e5a5524a3310605a5386a"
+      "sha256": "d71005d226f501a520d1045b4343335939b9ff19dd8f910cf5cdbe3b5db65d8f"
     },
     {
       "path": "src/notifications/Panel.tsx",
@@ -480,11 +480,11 @@
     },
     {
       "path": "src/notifications/notifications.test.ts",
-      "sha256": "3320157c66aaae157be2bac21569a8b8de82cd9ada4652341589138d9070fb68"
+      "sha256": "8c743fb270f849ef1e302b226cdf64045dc0f48cead8faf357ee0f8cd0425765"
     },
     {
       "path": "src/notifications/notifications.ts",
-      "sha256": "307589c21e215b511f77731c3316cb179c472d8382434d6bb6b87c89f7a4fe23"
+      "sha256": "0436a03f1efb106120231117852cbd768152b2f6c262cd729279d0275002704a"
     },
     {
       "path": "src/notifications/store.tsx",
@@ -772,7 +772,7 @@
     },
     {
       "path": "src/partner/store.tsx",
-      "sha256": "8894f4118e62db562d5acbc17ba61445e0745d5f0cb216b62c9c0ffa73257fe5"
+      "sha256": "ccfba3a634d4a62c31d3dae7650f3efb9541b950fc78562b2309a4f3f3b2037e"
     },
     {
       "path": "src/partner/subject.test.ts",
@@ -1060,7 +1060,7 @@
     },
     {
       "path": "src/shell/Trouble.tsx",
-      "sha256": "d7b7976c07bb01cd4a47b14544c5e545dfaaa6413eb6a3e86e54bc5073fb2f57"
+      "sha256": "d94a0d557a6a2d91b82debe731a1dde9686f5cdc716f5914ca6389c69db99a3f"
     },
     {
       "path": "src/shell/WorkspaceIdentity.tsx",
@@ -1116,7 +1116,7 @@
     },
     {
       "path": "src/shell/troubling.ts",
-      "sha256": "51222c88088c9ba6874b7fc1d5df15cbbb6c5f40c0101cfe57fe22fc68dd5abb"
+      "sha256": "ffc364da7c08076a23cc81ff6dc97096a26c2d4a02c5b17f548fb562ab95e104"
     },
     {
       "path": "src/shell/workmodal.test.ts",
@@ -1226,7 +1226,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "89090688ef6f8d6885946ec73fe248b580278431df3474f22b9a0c15cf8b3cbb"
+      "sha256": "b9f054dd5d0812b476db66bb4820f23889cb1385b35d39fc76017dd917be1ee6"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

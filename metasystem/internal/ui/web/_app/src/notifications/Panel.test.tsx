@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import type { TroubleWhere } from "../shell/troubling";
 import type { Notification } from "./notifications";
 import { Row } from "./Panel";
 
@@ -12,8 +13,14 @@ import { Row } from "./Panel";
  */
 
 vi.mock("../shell/Trouble", () => ({
-  Trouble: ({ text, at, subject }: { text: string; at?: string; subject?: { id: string; kind: string } }) => (
-    <p data-text={text} data-at={at ?? ""} data-subject={subject?.id ?? ""} data-kind={subject?.kind ?? ""} />
+  Trouble: ({ text, at, subject, where }: { text: string; at?: string; subject?: { id: string; kind: string }; where?: TroubleWhere }) => (
+    <p
+      data-text={text}
+      data-at={at ?? ""}
+      data-subject={where?.subject ?? subject?.id ?? ""}
+      data-kind={where?.kind ?? subject?.kind ?? ""}
+      data-section={where?.section ?? ""}
+    />
   ),
 }));
 
@@ -39,5 +46,12 @@ describe("a bell row's trouble", () => {
     expect(markup).toContain('data-text="not delivered to macOS: osascript refused"');
     expect(markup).toContain('data-at="2026-09-28T22:04:00Z"');
     expect(markup).toContain('data-subject="episode-7"');
+  });
+
+  it("names the notification by its source where it has no reference (Sol SOL-S68-06)", () => {
+    const markup = renderToStaticMarkup(
+      <Row notification={notification({ ref: "", delivered: false, error: "osascript refused" })} focused={false} onAsked={() => undefined} />,
+    );
+    expect(markup).toContain('data-subject="" data-kind="notification" data-section="alert notification"');
   });
 });

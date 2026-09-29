@@ -98,9 +98,11 @@ export function troubleOf(said: Trouble, secrets: readonly string[]): Trouble {
   };
   if (said.where.subject !== undefined && said.where.subject !== "") {
     trouble.where.subject = said.where.subject;
-    if (said.where.kind !== undefined && said.where.kind !== "") {
-      trouble.where.kind = said.where.kind;
-    }
+  }
+  // A kind with no subject still says what the trouble is of: a notification
+  // with no reference is a notification, not the page it was asked from.
+  if (said.where.kind !== undefined && said.where.kind !== "") {
+    trouble.where.kind = said.where.kind;
   }
   if (said.code !== undefined && said.code !== "") {
     trouble.code = scrub(said.code, secrets);
@@ -118,6 +120,26 @@ export function troubleOf(said: Trouble, secrets: readonly string[]): Trouble {
     trouble.signIn = true;
   }
   return trouble;
+}
+
+/**
+ * A trouble the line raised about nothing in particular is about what the page
+ * is about: the page's subject fills it. A trouble that says what it is of —
+ * a notification, with or without a reference — keeps its own where.
+ */
+export function onPage(trouble: Trouble, page: { subject?: string; kind?: string }): Trouble {
+  if (
+    trouble.where.subject !== undefined ||
+    trouble.where.kind !== undefined ||
+    page.subject === undefined ||
+    page.subject === ""
+  ) {
+    return trouble;
+  }
+  return {
+    ...trouble,
+    where: { ...trouble.where, subject: page.subject, ...(page.kind === undefined ? {} : { kind: page.kind }) },
+  };
 }
 
 /** The clock time a trouble happened at, in the browser's own zone. */

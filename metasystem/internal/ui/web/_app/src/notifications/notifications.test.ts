@@ -14,8 +14,10 @@ import {
   received,
   unreadCount,
   dismissed,
+  happened,
   type Notification,
 } from "./notifications";
+import { onPage, troubleOf } from "../shell/troubling";
 import {
   NOTIFICATIONS_SEEN_KEY,
   readNotificationsSeen,
@@ -249,5 +251,43 @@ describe("the store", () => {
   it("raises no toast for the history it opens with", () => {
     const held = loaded(emptyStore, [notification("B", local(2026, 9, 23, 9, 0)), notification("A", local(2026, 9, 22, 9, 0))], 200);
     expect(held.toasts).toEqual([]);
+  });
+});
+
+describe("a notification's trouble (Sol SOL-S68-06)", () => {
+  // A failed delivery the steward journalled with no reference, asked about
+  // from a goal page: the trouble line composes its where as Trouble does (the
+  // notification's own where, else the page's) and the store's Ask fills in
+  // the page's subject only where the trouble names nothing of its own.
+  const failed: Notification = {
+    id: "n1", at: "2026-09-29T07:12:00Z", message: "The steward is stuck", source: "alert", ref: "",
+    delivered: false, error: "osascript exited 1",
+  };
+  const goalPage = { section: "Backlog", path: "/backlog/ui-1" };
+
+  function asked(notification: Notification) {
+    const said = happened(notification);
+    const trouble = troubleOf(
+      { text: `not delivered to macOS: ${notification.error}`, where: said.where ?? goalPage, at: said.at },
+      [],
+    );
+    return onPage(trouble, { subject: "ui-1", kind: "goal" });
+  }
+
+  it("names the notification, never the goal on screen, where it has no reference", () => {
+    const trouble = asked(failed);
+    expect(trouble.where.subject).toBeUndefined();
+    expect(trouble.where).toEqual({ section: "alert notification", path: "", kind: "notification" });
+    expect(trouble.at).toBe(failed.at);
+  });
+
+  it("names its reference as a notification's where it has one", () => {
+    const trouble = asked({ ...failed, ref: "episode-7" });
+    expect(trouble.where).toEqual({ section: "alert notification", path: "", subject: "episode-7", kind: "notification" });
+  });
+
+  it("leaves a trouble the page raised to take the page's subject", () => {
+    const trouble = onPage(troubleOf({ text: "refused", where: goalPage, at: failed.at }, []), { subject: "ui-1", kind: "goal" });
+    expect(trouble.where).toEqual({ ...goalPage, subject: "ui-1", kind: "goal" });
   });
 });

@@ -12,6 +12,8 @@
  * has arrived, what is unread, or what is still on screen.
  */
 
+import type { TroubleWhere } from "../shell/troubling";
+
 /** One delivery attempt, exactly as the server answers with it. */
 export type Notification = {
   id: string;
@@ -33,13 +35,17 @@ export type Notification = {
 
 /**
  * What a notification's trouble knows of itself (Sol SOL-S68-05): when the
- * steward said it, and the alert episode or pending nonce it is about, rather
- * than when its line was drawn and whatever page is on screen at the press.
+ * steward said it, and where — the notification, by its source and the alert
+ * episode or pending nonce it is about — rather than when its line was drawn
+ * and whatever page is on screen at the press. It names no page, so a
+ * notification with no reference never takes the page's subject (SOL-S68-06).
  */
-export function happened(notification: Notification): { at: string; subject?: { id: string; kind: string } } {
-  return notification.ref === ""
-    ? { at: notification.at }
-    : { at: notification.at, subject: { id: notification.ref, kind: "notification" } };
+export function happened(notification: Notification): { at: string; where: TroubleWhere } {
+  const where: TroubleWhere = { section: `${notification.source} notification`, path: "", kind: "notification" };
+  if (notification.ref !== "") {
+    where.subject = notification.ref;
+  }
+  return { at: notification.at, where };
 }
 
 /** The four sources this build has words for. */

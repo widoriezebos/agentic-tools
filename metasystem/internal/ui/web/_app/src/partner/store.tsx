@@ -128,7 +128,7 @@ import { onPartnerEvent, onStreamOpen } from "../notifications/stream";
 import { useAboutLine, useSubject } from "../shell/about";
 import { useSession } from "../shell/identity";
 import { useTroubles, type TroubleAsk } from "../shell/troubles";
-import { pendingIn, sendChoice, TROUBLE_REQUEST, waitingLine as troubleWaits, type Pending } from "../shell/troubling";
+import { onPage, pendingIn, sendChoice, TROUBLE_REQUEST, waitingLine as troubleWaits, type Pending } from "../shell/troubling";
 import { editDocument, isStale, loadDocument } from "../project/api";
 import { captured } from "../stickies/stickies";
 import { useStickies } from "../stickies/store";
@@ -1150,11 +1150,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const askTrouble = useCallback<TroubleAsk>((trouble, origin) => {
     const conversation = whereNow.current;
     const filled = {
-      ...trouble,
-      where:
-        trouble.where.subject === undefined && subject.subject !== undefined && subject.subject !== ""
-          ? { ...trouble.where, subject: subject.subject, ...(subject.kind === undefined ? {} : { kind: subject.kind }) }
-          : trouble.where,
+      ...onPage(trouble, subject),
       ...(trouble.tip === undefined && capture.tip !== undefined && capture.tip !== "" ? { tip: capture.tip } : {}),
     };
     const entry: Pending = {

@@ -2,7 +2,7 @@ import { useId, useRef, type ReactNode } from "react";
 
 import { Button } from "./controls";
 import { useTroubles } from "./troubles";
-import { ASK_WHAT_HAPPENED, troubleOf, type TroubleAct } from "./troubling";
+import { ASK_WHAT_HAPPENED, troubleOf, type TroubleAct, type TroubleWhere } from "./troubling";
 import { activeSection, reviewIdFromPath, roomIdFromPath } from "../routes";
 
 /**
@@ -36,6 +36,7 @@ export function Trouble({
   code,
   act,
   subject,
+  where,
   at,
   signIn,
   onAsked,
@@ -54,6 +55,8 @@ export function Trouble({
   act?: TroubleAct;
   /** What the page is about, where the site knows better than the page. */
   subject?: { id: string; kind: string };
+  /** Where it happened, where that is not this page: a notification's own. */
+  where?: TroubleWhere;
   /** When it happened, where the site knows: a notification's own time, not when its row was drawn. */
   at?: string;
   signIn?: boolean;
@@ -89,7 +92,14 @@ export function Trouble({
       {
         text,
         code,
-        where: { section, path: pathname, subject: subject?.id, kind: subject?.kind },
+        // A kind travels with a subject only: the page's subject fills a line
+        // that named none, as it always has.
+        where: where ?? {
+          section,
+          path: pathname,
+          subject: subject?.id,
+          kind: subject === undefined || subject.id === "" ? undefined : subject.kind,
+        },
         act,
         at: seen.current.at,
         signIn,
