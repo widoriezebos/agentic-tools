@@ -105,7 +105,7 @@ func diskIntentCommands() []intentCommand {
 				"metasystem disk clean --go-cache",
 			},
 			details: []string{
-				"Runs the steward's pass now for this checkout and this machine: a store goes only when its owner is proven ended and nothing still uses it; everything else is kept or pending with the command that settles it. Then it trims the machine's Go and staticcheck caches to their caps (disk.go-cache-cap-gib, disk.delegate-go-cache-cap-gib, disk.staticcheck-cache-cap-gib), least recently used first, never an entry used within disk.go-cache-keep-hours. Run at a terminal it finishes the job: pass after pass of the steward's disk.cache-trim-budget-sec, telling each on stderr, until every cache is measured and trimmed or disk.cache-trim-person-budget-sec is spent. A repeat with nothing to do is success.",
+				"Runs the steward's pass now for this checkout and this machine: a store goes only when its owner is proven ended and nothing still uses it; everything else is kept or pending with the command that settles it. Then it trims the machine's Go and staticcheck caches to their caps (disk.go-cache-cap-gib, disk.delegate-go-cache-cap-gib, disk.staticcheck-cache-cap-gib), least recently used first: everything unused for disk.go-cache-keep-hours goes before anything used within it, and a cache still over its cap loses the rest oldest first, never an entry used within disk.cache-min-keep-minutes. Run at a terminal it finishes the job: pass after pass of the steward's disk.cache-trim-budget-sec, telling each on stderr, until every cache is measured and trimmed or disk.cache-trim-person-budget-sec is spent. A repeat with nothing to do is success.",
 				"It also forgets the host registry's registrations of checkouts whose directories no longer exist (one reaped record each, reason checkout-gone); a registration whose recorded process still runs is kept. The steward's own pass only counts them.",
 				"--go-cache runs only the cache trim.",
 				"--preview changes nothing and writes one plan file whose id it prints. --strays, --release and --discard are a person's acts at the enrolled terminal: --strays removes the engine-named leftovers a preview listed, --release ID removes one registered store whose only obstacle is a use check the machine could not complete, --discard records that a chain's uncaptured work may be dropped.",
@@ -562,7 +562,7 @@ func diskCacheName(cache string) string {
 // cache was measured whole and is within its cap. It never says more than
 // the lines under it: a cache cut short says it is still measuring or
 // trimming and how it resumes, a refused or held cache says so, and a cache
-// over its cap inside the keep window says what stays.
+// still over its cap after the keep window yielded says what stays.
 func diskTrimSummary(reports []gocache.TrimReport) (string, bool) {
 	removed, freed := 0, int64(0)
 	var resuming, problems, over []string
@@ -586,7 +586,7 @@ func diskTrimSummary(reports []gocache.TrimReport) (string, bool) {
 			problems = append(problems, name+" was not trimmed: "+report.Reason)
 		case "complete":
 			if report.BytesAfter > report.CapBytes {
-				over = append(over, fmt.Sprintf("%s stays over its %s cap: %s used within the keep window is never trimmed", name, diskBytes(report.CapBytes), diskBytes(report.KeepWindowBytes)))
+				over = append(over, fmt.Sprintf("%s stays over its %s cap: %s used within the last %s is never trimmed", name, diskBytes(report.CapBytes), diskBytes(report.MinKeepBytes), diskMinutes(report.MinKeepMinutes)))
 			}
 		}
 	}
@@ -655,16 +655,34 @@ func diskTrimLine(report gocache.TrimReport) string {
 		return line + ", not measured yet: the pass ended before it reached this cache; the next pass starts it"
 	}
 	if report.Phase == "measure" {
-		return line + fmt.Sprintf(", measuring (%s counted so far; the next pass resumes at shard %s)", diskBytes(report.Checkpoint.BytesSoFar), report.Checkpoint.Shard)
+		line += fmt.Sprintf(", measuring (%s counted so far; the next pass resumes at shard %s)", diskBytes(report.Checkpoint.BytesSoFar), report.Checkpoint.Shard)
+		if report.OverCap {
+			line += fmt.Sprintf(", %d removed (%s)%s", report.EntriesRemoved, diskBytes(report.BytesRemoved), diskOverCap(report))
+		}
+		return line
 	}
 	line += fmt.Sprintf(", %s of %s cap, %d removed (%s)", diskBytes(report.BytesAfter), diskBytes(report.CapBytes), report.EntriesRemoved, diskBytes(report.BytesRemoved))
+	if report.OverCap {
+		line += diskOverCap(report)
+	}
 	if report.BytesAfter > report.CapBytes && report.Phase == "idle" {
-		line += fmt.Sprintf("; %s used within the keep window stays", diskBytes(report.KeepWindowBytes))
+		line += fmt.Sprintf("; %s used within the last %s stays", diskBytes(report.MinKeepBytes), diskMinutes(report.MinKeepMinutes))
 	}
 	if report.UnknownCount > 0 {
 		line += fmt.Sprintf("; %d entries not Go's layout were left untouched", report.UnknownCount)
 	}
 	return line
+}
+
+// diskOverCap says plainly what a pass that found its cache over the cap
+// does: the keep window yields, oldest first, down to the floor.
+func diskOverCap(report gocache.TrimReport) string {
+	return "; over the cap: removing the oldest entries, keeping the last " + diskMinutes(report.MinKeepMinutes)
+}
+
+// diskMinutes is the floor in whole minutes.
+func diskMinutes(minutes float64) string {
+	return fmt.Sprintf("%d min", int64(minutes))
 }
 
 // diskTrimNotStarted: a measurement that has not stat'ed its first entry.

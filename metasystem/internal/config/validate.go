@@ -587,7 +587,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
 		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours", "dispatch.cap-max",
 		"steward.tick-patience-sec", "steward.stop-slow-sec", IntentReviewToolCallsKey, PipelineStallMinKey, PipelineHistoryNKey, BoardKeepHoursKey, BoardPollSecKey, BoardMailboxKeepDaysKey,
-		DiskGoCacheCapGiBKey, DiskDelegateGoCacheCapGiBKey, DiskStaticcheckCacheCapGiBKey, DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey, DiskCacheTrimPersonBudgetSecKey,
+		DiskGoCacheCapGiBKey, DiskDelegateGoCacheCapGiBKey, DiskStaticcheckCacheCapGiBKey, DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey, DiskCacheTrimPersonBudgetSecKey, DiskCacheMinKeepMinutesKey,
 	} {
 		if raw, present := values[knob]; present {
 			if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 {

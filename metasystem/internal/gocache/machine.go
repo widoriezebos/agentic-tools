@@ -50,11 +50,15 @@ type MachineTrim struct {
 	StateDir string
 	// The hard caps, in bytes.
 	EngineGoCapBytes, DelegateGoCapBytes, StaticcheckCapBytes int64
-	// Keep is the window inside which nothing is deleted.
-	Keep time.Duration
-	// Now is the pass's time; Clock reads time for the reports (nil is Now).
+	// Keep is the window inside which nothing is deleted while a cache is
+	// within its cap; MinKeep is the floor it yields to over the cap.
+	Keep, MinKeep time.Duration
+	// Now is the pass's time; Clock reads time for the reports and the
+	// measurement's share of the pass (nil is Now).
 	Now   time.Time
 	Clock func() time.Time
+	// Deadline is the end of the pass's budget on Clock; zero is none.
+	Deadline time.Time
 	// Stopped is asked between batches.
 	Stopped func() bool
 	// Only names the caches this pass trims; empty is all four.
@@ -84,8 +88,8 @@ func TrimMachine(ctx context.Context, machine MachineTrim) ([]TrimReport, error)
 		if len(machine.Only) > 0 && !slices.Contains(machine.Only, cache.name) {
 			continue
 		}
-		report, err := Trim(ctx, TrimConfig{Name: cache.name, Root: cache.root, CapBytes: cache.cap, Keep: machine.Keep,
-			StateDir: machine.StateDir, Now: machine.Now, Clock: machine.Clock, Stopped: machine.Stopped})
+		report, err := Trim(ctx, TrimConfig{Name: cache.name, Root: cache.root, CapBytes: cache.cap, Keep: machine.Keep, MinKeep: machine.MinKeep,
+			Deadline: machine.Deadline, StateDir: machine.StateDir, Now: machine.Now, Clock: machine.Clock, Stopped: machine.Stopped})
 		if err != nil {
 			return reports, err
 		}

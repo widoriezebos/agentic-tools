@@ -20,7 +20,10 @@ import (
 
 var trimNow = time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 
-const trimKeep = 12 * time.Hour
+const (
+	trimKeep    = 12 * time.Hour
+	trimMinKeep = 2 * time.Hour
+)
 
 // syntheticCache is a Go-layout cache under a temp dir: README and trim.txt
 // at the root, entries in two-hex-digit shards.
@@ -88,7 +91,7 @@ func (c *syntheticCache) exists(relative string) bool {
 }
 
 func (c *syntheticCache) config(capBytes int64) gocache.TrimConfig {
-	return gocache.TrimConfig{Name: "engine-go-build", Root: c.root, CapBytes: capBytes, Keep: trimKeep,
+	return gocache.TrimConfig{Name: "engine-go-build", Root: c.root, CapBytes: capBytes, Keep: trimKeep, MinKeep: trimMinKeep,
 		StateDir: c.state, Now: trimNow, Clock: func() time.Time { return trimNow }}
 }
 
@@ -152,15 +155,110 @@ func TestTrimEvictsOldestFirstToTheCapNeverInsideTheKeepWindow(t *testing.T) {
 		t.Fatalf("report = %+v", report)
 	}
 
-	// The keep window holds over any cap: a cap of zero leaves everything
-	// used within the window and says so.
+	// Over the cap the keep window yields down to the floor: a cap of one
+	// byte takes everything older than the floor, and what was used within
+	// the floor stays and is said.
 	c2 := newSyntheticCache(t)
 	c2.write("00/aaaa-d", 1000, trimKeep-time.Minute)
 	c2.write("01/bbbb-d", 1000, time.Minute)
 	report = c2.trim(c2.config(1))
-	requirePresent(t, c2, "00/aaaa-d", "01/bbbb-d")
-	if report.BytesAfter != 2000 || report.KeepWindowEntries != 2 || report.KeepWindowBytes != 2000 || report.EntriesRemoved != 0 {
-		t.Fatalf("keep-window report = %+v", report)
+	requireAbsent(t, c2, "00/aaaa-d")
+	requirePresent(t, c2, "01/bbbb-d")
+	if report.BytesAfter != 1000 || report.MinKeepEntries != 1 || report.MinKeepBytes != 1000 || report.EntriesRemoved != 1 || !report.OverCap {
+		t.Fatalf("floor report = %+v", report)
+	}
+}
+
+// A cache over its cap with everything used within the keep window is
+// trimmed to the cap anyway: the keep window yields, oldest first, and only
+// what was used within the floor (disk.cache-min-keep-minutes) is kept. The
+// floor's boundary: floor+1min goes, floor-1min stays.
+func TestTrimOverTheCapYieldsTheKeepWindowDownToTheFloor(t *testing.T) {
+	t.Parallel()
+	c := newSyntheticCache(t)
+	c.write("00/k11h-d", 1000, 11*time.Hour)
+	c.write("01/k8h-d", 1000, 8*time.Hour)
+	c.write("02/k5h-d", 1000, 5*time.Hour)
+	c.write("03/k3h-d", 1000, 3*time.Hour)
+	c.write("04/k121m-d", 1000, trimMinKeep+time.Minute)
+	c.write("05/k119m-d", 1000, trimMinKeep-time.Minute)
+	c.write("06/k1m-a", 1000, time.Minute)
+	report := c.trim(c.config(3500))
+	requireAbsent(t, c, "00/k11h-d", "01/k8h-d", "02/k5h-d", "03/k3h-d")
+	requirePresent(t, c, "04/k121m-d", "05/k119m-d", "06/k1m-a")
+	if report.BytesBefore != 7000 || report.BytesAfter != 3000 || report.EntriesRemoved != 4 || report.EndedBy != "complete" || !report.OverCap || report.MinKeepMinutes != 120 {
+		t.Fatalf("report = %+v", report)
+	}
+
+	report = c.trim(c.config(1))
+	requireAbsent(t, c, "04/k121m-d")
+	requirePresent(t, c, "05/k119m-d", "06/k1m-a")
+	if report.BytesAfter != 2000 || report.MinKeepBytes != 2000 || report.MinKeepEntries != 2 {
+		t.Fatalf("floor report = %+v", report)
+	}
+}
+
+// Under the cap nothing is touched, however old: no entry inside the keep
+// window and none outside it.
+func TestTrimUnderTheCapTouchesNothing(t *testing.T) {
+	t.Parallel()
+	c := newSyntheticCache(t)
+	c.write("00/old-d", 1000, 5*24*time.Hour)
+	c.write("01/k11h-d", 1000, 11*time.Hour)
+	c.write("02/k2h-d", 1000, 2*time.Hour)
+	c.write("03/k1m-a", 1000, time.Minute)
+	removals := 0
+	report := c.trim(gocache.WithTrimHooks(c.config(4000), gocache.TrimHooks{BeforeRemove: func(string, string) { removals++ }}))
+	requirePresent(t, c, "00/old-d", "01/k11h-d", "02/k2h-d", "03/k1m-a")
+	if removals != 0 || report.EntriesRemoved != 0 || report.OverCap || report.BytesAfter != 4000 || report.EndedBy != "complete" {
+		t.Fatalf("an under-cap pass = %+v (%d removals)", report, removals)
+	}
+}
+
+// A measurement the budget would cut does not wait for a full measure when
+// what it has counted already exceeds the cap: once its share of the pass
+// is spent, it evicts from the measured shards' oldest candidates in the
+// same pass, then measures on. The clock is the pass's own, advanced one
+// minute per stat; the pass's deadline is an hour on it, so the measure's
+// share is half an hour.
+func TestTrimAPartialMeasureOverTheCapStartsEvictingThatPass(t *testing.T) {
+	t.Parallel()
+	c := newSyntheticCache(t)
+	for shard := 0; shard < 16; shard++ {
+		for index := 0; index < 20; index++ {
+			c.write(fmt.Sprintf("%02x/%02x%02x-d", shard, shard, index), 100, time.Duration(2+shard*20+index)*time.Hour)
+		}
+	}
+	elapsed := time.Duration(0)
+	stats, firstRemovalAt := 0, -1
+	var removedFirst []string
+	cfg := gocache.WithTrimHooks(c.config(500), gocache.TrimHooks{
+		BeforeStat: func(string, string) { stats++; elapsed += time.Minute },
+		BeforeRemove: func(shard, name string) {
+			if firstRemovalAt < 0 {
+				firstRemovalAt = stats
+			}
+			if stats == firstRemovalAt {
+				removedFirst = append(removedFirst, shard)
+			}
+		},
+	})
+	cfg.Clock = func() time.Time { return trimNow.Add(elapsed) }
+	cfg.Deadline = trimNow.Add(time.Hour)
+	report, err := gocache.Trim(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstRemovalAt != 40 {
+		t.Fatalf("eviction started after %d of 320 stats, want 40 (the share spent after two shards)", firstRemovalAt)
+	}
+	for _, shard := range removedFirst {
+		if shard != "00" && shard != "01" {
+			t.Fatalf("the early eviction reached unmeasured shard %s", shard)
+		}
+	}
+	if report.EndedBy != "complete" || report.BytesAfter != 500 || !report.OverCap {
+		t.Fatalf("report = %+v", report)
 	}
 }
 
