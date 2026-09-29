@@ -85,6 +85,10 @@ type Identity struct {
 	Gitdir        string `json:"gitdir,omitempty"`
 	GitFileDevice uint64 `json:"gitFileDevice,omitempty"`
 	GitFileInode  uint64 `json:"gitFileInode,omitempty"`
+	// GitFileGeneration is the .git file's inode generation where the
+	// file system reports one (Linux: ext4, btrfs, xfs), which a file
+	// created at a freed inode number does not share; 0 where it does not.
+	GitFileGeneration uint64 `json:"gitFileGeneration,omitempty"`
 }
 
 // RebuildFrom is the commit and the command that rebuild a rebuildable

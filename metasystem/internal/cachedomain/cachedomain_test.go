@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,7 +33,7 @@ func (table processTable) seams(self int64) cachedomain.Seams {
 			if !found {
 				return identity.Exact{}, false
 			}
-			return identity.Exact{Pid: pid, StartedAt: entry.start}, true
+			return nativeExact(pid, entry.start), true
 		},
 		Parent: func(pid int64) (int64, bool) {
 			entry, found := table[pid]
@@ -46,9 +47,21 @@ func (table processTable) seams(self int64) cachedomain.Seams {
 	}
 }
 
+// nativeExact is the identity this host's kernel reports for a process
+// started at start: Linux identifies a process by its start ticks and boot
+// id, Darwin by its microsecond start, and a reference is encoded only in
+// the host's native shape.
+func nativeExact(pid int64, start time.Time) identity.Exact {
+	exact := identity.Exact{Pid: pid, StartedAt: start}
+	if runtime.GOOS == "linux" {
+		exact.StartTicks, exact.BootID = start.Unix(), "fixture-boot"
+	}
+	return exact
+}
+
 func ref(t *testing.T, pid int64, start time.Time) string {
 	t.Helper()
-	encoded, err := identity.EncodeRef(identity.Exact{Pid: pid, StartedAt: start}.Ref())
+	encoded, err := identity.EncodeRef(nativeExact(pid, start).Ref())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,8 +226,13 @@ func TestDelegateMarkersAuthenticateAgainstTheRecordedCustody(t *testing.T) {
 		}
 	}
 	record("ours", parent)
+	// Another process at the parent's pid: an earlier start in the host's
+	// native shape (start ticks on Linux, the start time on Darwin).
 	stranger := parent
 	stranger.StartedAt = stranger.StartedAt.Add(-time.Hour)
+	if stranger.StartTicks != 0 {
+		stranger.StartTicks--
+	}
 	record("theirs", stranger)
 	markers := func(job string) []string {
 		return []string{"METASYSTEM_HOOK_DELEGATE_STATE_ROOT=" + stateRoot, "METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT=" + stateRoot,

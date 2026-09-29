@@ -37,8 +37,11 @@ func NewID(now time.Time, entropy io.Reader) (string, error) {
 }
 
 // ReadGitIdentity reads a linked worktree's identity from its .git file
-// ("gitdir: <common>/worktrees/<name>") and that file's device and inode. It
-// runs no git and writes nothing, so registration never dirties the tree.
+// ("gitdir: <common>/worktrees/<name>") and that file's device, inode and,
+// where the file system has one, inode generation: Linux reuses a freed
+// inode number at once, so a .git file replaced at the same path can carry
+// the recorded inode, never the recorded generation. It runs no git and
+// writes nothing, so registration never dirties the tree.
 func ReadGitIdentity(worktree string) (Identity, error) {
 	path := filepath.Join(worktree, ".git")
 	info, err := os.Lstat(path)
@@ -48,7 +51,24 @@ func ReadGitIdentity(worktree string) (Identity, error) {
 	if !info.Mode().IsRegular() {
 		return Identity{}, fmt.Errorf("worktree %s: .git is not a file (a main checkout is never a registered store)", worktree)
 	}
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return Identity{}, err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil {
+		return Identity{}, err
+	}
+	device, inode, ok := fileID(info)
+	openedDevice, openedInode, openedOK := fileID(opened)
+	if !ok || !openedOK {
+		return Identity{}, fmt.Errorf("worktree %s: .git has no inode on this platform", worktree)
+	}
+	if openedDevice != device || openedInode != inode {
+		return Identity{}, fmt.Errorf("worktree %s: .git changed while it was read", worktree)
+	}
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return Identity{}, err
 	}
@@ -60,11 +80,8 @@ func ReadGitIdentity(worktree string) (Identity, error) {
 	if !filepath.IsAbs(gitdir) {
 		gitdir = filepath.Join(worktree, gitdir)
 	}
-	device, inode, ok := fileID(info)
-	if !ok {
-		return Identity{}, fmt.Errorf("worktree %s: .git has no inode on this platform", worktree)
-	}
-	return Identity{Gitdir: filepath.Clean(gitdir), GitFileDevice: device, GitFileInode: inode}, nil
+	return Identity{Gitdir: filepath.Clean(gitdir), GitFileDevice: device, GitFileInode: inode,
+		GitFileGeneration: fileGeneration(file)}, nil
 }
 
 func fileID(info os.FileInfo) (device, inode uint64, ok bool) {
@@ -102,8 +119,9 @@ func Revalidate(record Record) error {
 		return err
 	}
 	if current != record.Identity {
-		return fmt.Errorf("worktree %s is not the recorded one (gitdir %s inode %d, recorded %s inode %d)",
-			record.Path, current.Gitdir, current.GitFileInode, record.Identity.Gitdir, record.Identity.GitFileInode)
+		return fmt.Errorf("worktree %s is not the recorded one (gitdir %s inode %d generation %d, recorded %s inode %d generation %d)",
+			record.Path, current.Gitdir, current.GitFileInode, current.GitFileGeneration,
+			record.Identity.Gitdir, record.Identity.GitFileInode, record.Identity.GitFileGeneration)
 	}
 	return nil
 }
