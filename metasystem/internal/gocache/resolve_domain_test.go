@@ -162,19 +162,23 @@ func TestResolveDomainRefusesACacheUnderAnEvidenceRoot(t *testing.T) {
 		environment []string
 		evidence    fakeEvidence
 		want        string
+		source      string
 	}{
 		{name: "a proof record's cache", environment: []string{"METASYSTEM_PROOF_CONTROL_ROOT=/control", "METASYSTEM_PROOF_ATTEMPT=proof-1"},
-			evidence: fakeEvidence{proofFound: true, proofAuth: true, proofPaths: under, roots: []string{"/evidence/root"}}, want: "GOCACHE=/evidence/root/gocache-run"},
-		{name: "the machine cache itself", evidence: fakeEvidence{roots: []string{"/machine"}}, want: "GOCACHE=/machine/cache/go-build"},
+			evidence: fakeEvidence{proofFound: true, proofAuth: true, proofPaths: under, roots: []string{"/evidence/root"}}, want: "/evidence/root/gocache-run",
+			source: "the scratch record of the proof run METASYSTEM_PROOF_CONTROL_ROOT names"},
+		{name: "the machine cache itself", evidence: fakeEvidence{roots: []string{"/machine"}}, want: "/machine/cache/go-build",
+			source: "the user cache directory"},
 		{name: "an inherited module cache", environment: []string{"GOMODCACHE=/evidence/root/mod"}, evidence: fakeEvidence{roots: []string{"/evidence/root/"}},
-			want: "GOMODCACHE=/evidence/root/mod"},
+			want: "GOMODCACHE=/evidence/root/mod", source: "the environment's GOMODCACHE"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := gocache.ResolveDomain(c.environment, "", c.evidence.evidence())
 			var refusal gocache.Refusal
-			if !errors.As(err, &refusal) || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), "evidence root") ||
+			if !errors.As(err, &refusal) || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), "evidence root") || !strings.Contains(err.Error(), c.source) ||
+				strings.Contains(err.Error(), "unset GOCACHE") ||
 				!strings.Contains(err.Error(), enginePaths.GoCache) {
 				t.Fatalf("refused naming %q, the evidence root and the engine cache: %v", c.want, err)
 			}

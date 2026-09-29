@@ -151,15 +151,25 @@ func underEvidenceRoot(environment []string, resolution Resolution, evidence Evi
 	if err != nil {
 		return nil
 	}
-	candidates := [][2]string{{"GOCACHE", resolution.Paths.GoCache}, {"STATICCHECK_CACHE", resolution.Paths.StaticcheckCache}}
-	if modules := lookup(environment, "GOMODCACHE"); modules != "" {
-		candidates = append(candidates, [2]string{"GOMODCACHE", modules})
+	// Each path is named with what this resolver read it from; it never
+	// reads GOCACHE or STATICCHECK_CACHE from the environment.
+	source := "the user cache directory (os.UserCacheDir: XDG_CACHE_HOME, else HOME)"
+	switch resolution.Rule {
+	case "proof-record":
+		source = "the scratch record of the proof run " + proofControlRootEnv + " names"
+	case "context":
+		source = "the inherited " + ContextEnv
 	}
-	for _, candidate := range candidates {
+	type candidate struct{ name, path, source string }
+	candidates := []candidate{{"the Go build cache", resolution.Paths.GoCache, source}, {"the staticcheck cache", resolution.Paths.StaticcheckCache, source}}
+	if modules := lookup(environment, "GOMODCACHE"); modules != "" {
+		candidates = append(candidates, candidate{"GOMODCACHE=" + modules, modules, "the environment's GOMODCACHE"})
+	}
+	for _, c := range candidates {
 		for _, root := range roots {
-			if candidate[1] != "" && liesUnder(candidate[1], root) {
-				return Refusal{fmt.Sprintf("%s=%s lies under the evidence root %s, and a cache never lives under an evidence root; the engine cache is %s (GOCACHE=%s, STATICCHECK_CACHE=%s): unset %s or set it outside every evidence root",
-					candidate[0], candidate[1], root, engine.GoCache, engine.GoCache, engine.StaticcheckCache, candidate[0])}
+			if c.path != "" && liesUnder(c.path, root) {
+				return Refusal{fmt.Sprintf("%s %s, read from %s, lies under the evidence root %s, and a cache never lives under an evidence root; the engine cache is %s (staticcheck %s): change %s to a place outside every evidence root",
+					c.name, c.path, c.source, root, engine.GoCache, engine.StaticcheckCache, c.source)}
 			}
 		}
 	}
