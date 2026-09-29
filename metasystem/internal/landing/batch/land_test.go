@@ -911,7 +911,7 @@ func TestCommitWithWrapperUsesTempRepoTokenAndExplicitIdentity(t *testing.T) {
 		}
 		return "", 0
 	}
-	must(t, CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt.json", "land goal a\n", "Wido", "wido@example.com", "m1l+landing-m1l", "landing-m1l", boundary))
+	must(t, CommitWithWrapperWithRead(root, ChainDeclaration("chain-a"), "goal-a", "receipt.json", "land goal a\n", "Wido", "wido@example.com", "m1l+landing-m1l", "landing-m1l", boundary, landingGitOutput))
 	if seen.Chain != "chain-a" || seen.Goal != "goal-a" || !seen.GoalSet || seen.TestReceipt != "receipt.json" ||
 		seen.LandedBy != "m1l+landing-m1l" || seen.OwnerLineage != "landing-m1l" || string(message) != "land goal a\n" {
 		t.Fatalf("boundary request=%+v message=%q", seen, message)
@@ -923,7 +923,7 @@ func TestCommitWithWrapperUsesTempRepoTokenAndExplicitIdentity(t *testing.T) {
 	attested := AttestedDeclaration("c1", "s1", "b1")
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("three\n"), 0o644))
 	must(t, exec.Command("git", "-C", root, "add", "file").Run())
-	must(t, CommitWithWrapper(root, attested, "goal-a", "receipt.json", "land goal a\n", "Wido", "wido@example.com", "seat", "lineage", boundary))
+	must(t, CommitWithWrapperWithRead(root, attested, "goal-a", "receipt.json", "land goal a\n", "Wido", "wido@example.com", "seat", "lineage", boundary, landingGitOutput))
 	if seen.Attested != "c1" || seen.AttestedSnapshot != "s1" || seen.AttestedBase != "b1" || seen.Chain != "" {
 		t.Fatalf("attested request=%+v", seen)
 	}
@@ -938,19 +938,19 @@ func TestCommitWithWrapperRequiresExactlyOneNewCommitAndStrictPassVerdict(t *tes
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("candidate\n"), 0o644))
 	must(t, exec.Command("git", "-C", root, "add", "file").Run())
 	noop := func(landpath.CommitRequest) (string, int) { return "", 0 }
-	err := CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt", "message\n", "Wido", "wido@example.invalid", "seat", "lineage", noop)
+	err := CommitWithWrapperWithRead(root, ChainDeclaration("chain-a"), "goal-a", "receipt", "message\n", "Wido", "wido@example.invalid", "seat", "lineage", noop, landingGitOutput)
 	if err == nil || !strings.Contains(err.Error(), "exactly one commit") {
 		t.Fatalf("no-op boundary err=%v", err)
 	}
 	refused := func(landpath.CommitRequest) (string, int) { return "agent commit refused: x\n", 1 }
-	err = CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt", "message\n", "Wido", "wido@example.invalid", "seat", "lineage", refused)
+	err = CommitWithWrapperWithRead(root, ChainDeclaration("chain-a"), "goal-a", "receipt", "message\n", "Wido", "wido@example.invalid", "seat", "lineage", refused, landingGitOutput)
 	if err == nil || !strings.Contains(err.Error(), "exited 1: agent commit refused: x") {
 		t.Fatalf("refused boundary err=%v", err)
 	}
 	for _, verdict := range []string{"pass", "pass bar=e", "passive"} {
 		must(t, exec.Command("git", "-C", root, "commit", "--allow-empty", "-qm", "candidate\n\nLanding-Provenance-Verdict: "+verdict).Run())
 		commit := strings.TrimSpace(runGitOutput(t, root, "rev-parse", "HEAD"))
-		err := RequirePassingCommitVerdict(root, "goal-a", commit)
+		err := RequirePassingCommitVerdictWithRead(root, "goal-a", commit, landingGitOutput)
 		if verdict == "passive" && err == nil {
 			t.Fatal("passive verdict was accepted")
 		}
@@ -1032,7 +1032,7 @@ func TestCommitWithRealWrapperWritesBatchTrailersAndExplicitIdentity(t *testing.
 		status := landpath.Commit(owners, request, &output, &output)
 		return output.String(), status
 	}
-	must(t, CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt.json", "land goal a\n", "Wido Explicit", "wido@example.com", "m1l+landing-m1l", "landing-m1l", boundary))
+	must(t, CommitWithWrapperWithRead(root, ChainDeclaration("chain-a"), "goal-a", "receipt.json", "land goal a\n", "Wido Explicit", "wido@example.com", "m1l+landing-m1l", "landing-m1l", boundary, landingGitOutput))
 	if !tokenSeen {
 		t.Fatal("the boundary committed without its wrapper token in place")
 	}

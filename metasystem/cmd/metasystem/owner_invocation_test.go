@@ -14,6 +14,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -49,10 +51,10 @@ func TestOwnerCallCoordinatorHumanGateRefusesAnUnannouncedAgent(t *testing.T) {
 	ledger := goal.ExistingLedgerIdentity(root)
 	stageUnannouncedAgentParent(t, root)
 
-	var suppliedCallers []processIdentity
+	var suppliedCallers []ownercall.Process
 	calls := defaultIntentOwnerCalls()
 	realBrain := calls.brain
-	calls.brain = func(choice string, caller processIdentity, stdout, stderr io.Writer, root, by string) int {
+	calls.brain = func(choice string, caller ownercall.Process, stdout, stderr io.Writer, root, by string) int {
 		suppliedCallers = append(suppliedCallers, caller)
 		return realBrain(choice, caller, stdout, stderr, root, by)
 	}
@@ -69,7 +71,7 @@ func TestOwnerCallCoordinatorHumanGateRefusesAnUnannouncedAgent(t *testing.T) {
 	if code == 0 || result.Outcome != intentRefused || result.Summary != "brain declare is a human act; run it from an agent-free terminal" {
 		t.Fatalf("an unannounced agent's direct declaration was not refused by the human gate: code=%d result=%+v", code, result)
 	}
-	if len(suppliedCallers) != 1 || suppliedCallers[0].pid != int64(os.Getpid()) {
+	if len(suppliedCallers) != 1 || suppliedCallers[0].Pid != int64(os.Getpid()) {
 		t.Fatalf("the edge supplied %+v, want the current process %d", suppliedCallers, os.Getpid())
 	}
 	if state := brain.Read(root, ledger); state.State != brain.Undeclared {
@@ -79,7 +81,7 @@ func TestOwnerCallCoordinatorHumanGateRefusesAnUnannouncedAgent(t *testing.T) {
 	// Control: the same owner and fixture, supplied the public command's own
 	// caller (the agent), starts the signature walk above it and admits.
 	var controlOut, controlErr bytes.Buffer
-	if status := brainDeclare(entryCallerIdentity(), &controlOut, &controlErr, root, "Wido", false); status != 0 {
+	if status := brainDeclare(ownercall.EntryCaller(), &controlOut, &controlErr, root, "Wido", false); status != 0 {
 		t.Fatalf("control: the caller-of-caller identity did not admit, so the fixture does not discriminate: %d %s", status, controlErr.String())
 	}
 	if state := brain.Read(root, ledger); state.State != brain.Declared {
@@ -144,7 +146,7 @@ func TestOwnerCallRequestAuthorityParityWithTheChild(t *testing.T) {
 		for _, verb := range []string{"edit", "release", "handover"} {
 			child := exec.Command(os.Args[0], "-test.run=^TestOwnerSyncRequestChild$", "-test.count=1")
 			child.Env = append(os.Environ(), "GO_WANT_OWNER_SYNC_REQUEST_CHILD="+verb,
-				"OWNER_SYNC_REQUEST_ROOT="+root, "OWNER_SYNC_REQUEST_LINEAGE="+landingOwnerLineage)
+				"OWNER_SYNC_REQUEST_ROOT="+root, "OWNER_SYNC_REQUEST_LINEAGE="+batchowner.LandingOwnerLineage)
 			output, err := child.Output()
 			if err != nil {
 				t.Fatalf("%s %s child: %v: %s", label, verb, err, output)
@@ -157,23 +159,23 @@ func TestOwnerCallRequestAuthorityParityWithTheChild(t *testing.T) {
 			if err := json.Unmarshal([]byte(line), &fromChild); err != nil {
 				t.Fatalf("%s %s child output %q: %v", label, verb, output, err)
 			}
-			inProcess := authorityOf(landingOwnerInvocation().syncRequest(verb, root, verb == "release"))
+			inProcess := authorityOf(ownerSyncRequest(batchowner.LandingOwnerInvocation(), verb, root, verb == "release"))
 			if fromChild != inProcess {
 				t.Fatalf("%s %s: in-process authority %+v differs from the child's %+v", label, verb, inProcess, fromChild)
 			}
 			holder := inProcess.EpochAuthority == goal.EpochAuthorityHolder && inProcess.ClaimEpoch > 0
-			if holder != wantHolder || inProcess.Actor.Lineage != landingOwnerLineage || inProcess.Actor.Machine != "landing-machine" {
+			if holder != wantHolder || inProcess.Actor.Lineage != batchowner.LandingOwnerLineage || inProcess.Actor.Machine != "landing-machine" {
 				t.Fatalf("%s %s: authority %+v, want holder=%t under the landing lineage", label, verb, inProcess, wantHolder)
 			}
 		}
 	}
 	compare("before the lease", false)
-	held, err := acquireBatchOwner(root)
+	held, err := batchowner.AcquireBatchOwner(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := held.retire(); err != nil {
+		if err := held.Retire(); err != nil {
 			t.Errorf("retire owner: %v", err)
 		}
 	})
@@ -198,13 +200,13 @@ func TestBatchProofCancellationSparesTheResidentOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PROOF_STATE", state)
-	dependencies := batchExecutionDependencies{
-		executable: func() (string, error) { return proof, nil },
-		checkout: func(string, string) (string, func() error, error) {
+	dependencies := batchowner.BatchExecutionDependencies{
+		Executable: func() (string, error) { return proof, nil },
+		Checkout: func(string, string) (string, func() error, error) {
 			return t.TempDir(), func() error { return nil }, nil
 		},
-		topLevel: func(root string) (string, error) { return root, nil },
-		readGit:  func(string, ...string) (string, error) { return "", fmt.Errorf("no git in this witness") },
+		TopLevel: func(root string) (string, error) { return root, nil },
+		ReadGit:  func(string, ...string) (string, error) { return "", fmt.Errorf("no git in this witness") },
 	}
 	type outcome struct {
 		goal string
@@ -221,7 +223,7 @@ func TestBatchProofCancellationSparesTheResidentOwner(t *testing.T) {
 	for _, goalID := range []string{"cancelled", "completed"} {
 		goalID := goalID
 		go func() {
-			_, err := launchBatchTipProofWithDependencies(batchProofLaunch{Root: t.TempDir(), BatchID: "batch-" + goalID, GoalID: goalID,
+			_, err := batchowner.LaunchBatchTipProofWithDependencies(batchowner.BatchProofLaunch{Root: t.TempDir(), BatchID: "batch-" + goalID, GoalID: goalID,
 				Tree: strings.Repeat("a", 40), Mode: "auto", ResultPath: filepath.Join(state, goalID+".json")}, dependencies)
 			done <- outcome{goalID, err}
 		}()

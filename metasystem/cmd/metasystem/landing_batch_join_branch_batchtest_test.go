@@ -11,6 +11,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 )
 
 type batchBranchPatchBed struct {
@@ -93,9 +94,9 @@ func addBatchBranchPlan(t *testing.T, bed batchBranchPatchBed, path string) {
 	}
 }
 
-func assertBatchBranchPatchGate(t *testing.T, bed batchBranchPatchBed, request batchJoinRequest, forbiddenPackage string, forbiddenPaths ...string) batch.Unit {
+func assertBatchBranchPatchGate(t *testing.T, bed batchBranchPatchBed, request batchowner.BatchJoinRequest, forbiddenPackage string, forbiddenPaths ...string) batch.Unit {
 	t.Helper()
-	member, patch, err := productionBatchBranchMember(request)
+	member, patch, err := batchowner.ProductionBatchBranchMember(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +131,7 @@ func TestBatchThroughJoinIgnoresLaterPackage(t *testing.T) {
 	addBatchBranchUnit(t, bed, "later", "metasystem/later/value.go", "package later\n")
 	addBatchBranchPlan(t, bed, "metasystem/plans/later.md")
 	pushBatchGoalBranch(t, bed)
-	unit := assertBatchBranchPatchGate(t, bed, batchJoinRequest{SeatRoot: bed.root, GoalID: "goal-a", Through: through}, "./later",
+	unit := assertBatchBranchPatchGate(t, bed, batchowner.BatchJoinRequest{SeatRoot: bed.root, GoalID: "goal-a", Through: through}, "./later",
 		"metasystem/later/value.go", "metasystem/plans/later.md")
 	if len(unit.Builds) != 1 || unit.Builds[0].Commit != through {
 		t.Fatalf("through member=%+v", unit.Builds)
@@ -149,6 +150,6 @@ func TestBatchLaggingBranchExcludesEndpointChanges(t *testing.T) {
 	goalSyncMutationGit(t, bed.root, "add", "-A", "metasystem/trunkgone/value.go", "metasystem/trunk-only.txt")
 	goalSyncMutationGit(t, bed.root, "commit", "-qm", "move endpoint")
 	goalSyncMutationGit(t, bed.root, "push", "-q", "origin", "main")
-	assertBatchBranchPatchGate(t, bed, batchJoinRequest{SeatRoot: bed.root, GoalID: "goal-a", Last: true}, "./trunkgone",
+	assertBatchBranchPatchGate(t, bed, batchowner.BatchJoinRequest{SeatRoot: bed.root, GoalID: "goal-a", Last: true}, "./trunkgone",
 		"metasystem/trunkgone/value.go", "metasystem/trunk-only.txt")
 }

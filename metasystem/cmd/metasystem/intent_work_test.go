@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // workBed is an isolated goal ledger with a goal/G worktree, a private
@@ -616,7 +617,7 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 		print(waitResult, true)
 		return waitResult.ExitCode
 	}
-	var parsed testingSelectionRequest
+	var parsed testrun.SelectionRequest
 	owners.work.testRun = func(dir string, argv []string, stderr io.Writer) ([]byte, int, error) {
 		// The real test-run parser reads what the public command passes to
 		// the engine's internal test run.

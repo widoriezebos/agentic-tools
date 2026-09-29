@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 )
@@ -59,7 +60,7 @@ func (f *syncRequestFacts) checkRoot(root string) {
 func (f *syncRequestFacts) dependencies() syncRequestDependencies {
 	return syncRequestDependencies{
 		authorityFacts: goalAuthorityReadFacts{
-			caller: entryCallerIdentity(),
+			caller: ownercall.EntryCaller(),
 			repositoryTop: func(root string) (string, error) {
 				f.checkRoot(root)
 				f.topCalls++

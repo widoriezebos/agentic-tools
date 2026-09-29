@@ -23,6 +23,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 )
@@ -72,13 +73,13 @@ func (b *brainBed) deps() brainActDependencies {
 
 func (b *brainBed) declare(by string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
-	code := brainDeclareWith(processIdentity{pid: 1}, &stdout, &stderr, b.root, by, false, b.deps())
+	code := brainDeclareWith(ownercall.Process{Pid: 1}, &stdout, &stderr, b.root, by, false, b.deps())
 	return code, stdout.String(), stderr.String()
 }
 
 func (b *brainBed) withdraw(root string, deps brainActDependencies) (int, string, string) {
 	var stdout, stderr bytes.Buffer
-	code := brainWithdrawWith(processIdentity{pid: 1}, &stdout, &stderr, root, "Wido", false, deps)
+	code := brainWithdrawWith(ownercall.Process{Pid: 1}, &stdout, &stderr, root, "Wido", false, deps)
 	return code, stdout.String(), stderr.String()
 }
 

@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 import (
 	"errors"
@@ -40,7 +40,7 @@ func TestBatchPublicationReadsTheLandingGateAgainstTheFreshLedger(t *testing.T) 
 		Landing: &goal.LandingRecord{At: now.Add(-time.Hour).Format(time.RFC3339), Opid: landingOpid},
 	}
 	projection := goal.Projection{Tree: &goal.TreeGoals{Live: map[string]*goal.GoalFile{unit.GoalID: file}}}
-	if err := authorizeBatchMemberInProjection(root, now, record, unit, projection); err != nil {
+	if err := AuthorizeBatchMemberInProjection(root, now, record, unit, projection); err != nil {
 		t.Fatalf("a member cleared at its tip was refused: %v", err)
 	}
 
@@ -50,7 +50,7 @@ func TestBatchPublicationReadsTheLandingGateAgainstTheFreshLedger(t *testing.T) 
 		Reason: goal.SittingReason(true, "plans/reviews/review-of-goal-gated.md", "Wido")})
 	for attempt := 1; attempt <= 2; attempt++ {
 		var ejected *batch.PrefixRevisionRefusal
-		err := authorizeBatchMemberInProjection(root, now, record, unit, projection)
+		err := AuthorizeBatchMemberInProjection(root, now, record, unit, projection)
 		if !errors.As(err, &ejected) || !strings.Contains(err.Error(), goal.GateHeldBySitting) {
 			t.Fatalf("attempt %d: a hold published while proving did not stop the publication: %T %v", attempt, err, err)
 		}
@@ -59,23 +59,23 @@ func TestBatchPublicationReadsTheLandingGateAgainstTheFreshLedger(t *testing.T) 
 	// Released, but the member joined at another tip than the word's.
 	file.History = append(file.History, goal.HistoryLine{At: now.Format(time.RFC3339), Verb: "review", Actor: "human:Wido",
 		Reason: goal.SittingReason(false, "plans/reviews/review-of-goal-gated.md", "Wido")})
-	if err := authorizeBatchMemberInProjection(root, now, record, unit, projection); err != nil {
+	if err := AuthorizeBatchMemberInProjection(root, now, record, unit, projection); err != nil {
 		t.Fatalf("a released hold still stops the publication: %v", err)
 	}
 	moved := unit
 	moved.BranchTip = strings.Repeat("3", 40)
-	if err := authorizeBatchMemberInProjection(root, now, record, moved, projection); err == nil || !strings.Contains(err.Error(), goal.GateWaitsForHuman) {
+	if err := AuthorizeBatchMemberInProjection(root, now, record, moved, projection); err == nil || !strings.Contains(err.Error(), goal.GateWaitsForHuman) {
 		t.Fatalf("a member at another tip than the word passed: %v", err)
 	}
 	// A chain member's tip is the commit the chain publishes: a word at it
 	// passes, and a member whose head could not be read has none to bind to.
 	chain := unit
 	chain.Chain = "impl1"
-	if err := authorizeBatchMemberInProjection(root, now, record, chain, projection); err != nil {
+	if err := AuthorizeBatchMemberInProjection(root, now, record, chain, projection); err != nil {
 		t.Fatalf("a chain member cleared at its head was refused: %v", err)
 	}
 	chain.BranchTip = ""
-	if err := authorizeBatchMemberInProjection(root, now, record, chain, projection); err == nil || !strings.Contains(err.Error(), "names no branch tip") {
+	if err := AuthorizeBatchMemberInProjection(root, now, record, chain, projection); err == nil || !strings.Contains(err.Error(), "names no branch tip") {
 		t.Fatalf("a chain member with no head passed: %v", err)
 	}
 }

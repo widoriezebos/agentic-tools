@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 )
 
 type batchRawConfigFact struct {
@@ -76,8 +78,8 @@ func (facts *batchRawFacts) landingGit(root string, args, environment []string) 
 	return []byte(root + "\n"), nil
 }
 
-func (facts *batchRawFacts) source() *batchOwnerSource {
-	return &batchOwnerSource{commandNow: goalCommandNow, landingGit: facts.landingGit, goalConfig: facts.config}
+func (facts *batchRawFacts) source() *batchowner.BatchOwnerSource {
+	return &batchowner.BatchOwnerSource{CommandNow: goalCommandNow, LandingGit: facts.landingGit, GoalConfig: facts.config}
 }
 
 func (facts *batchRawFacts) assertConsumed(t *testing.T, landingGit bool) {

@@ -6,18 +6,21 @@ import (
 	"os/exec"
 	"strconv"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 )
 
 // stubBatchOwnerCalls replaces the landing path's in-process owner calls for
 // one test with run, which sees each call as the argv its former child
 // carried, so a test can keep asserting on the words of the call.
-func stubBatchOwnerCalls(t *testing.T, run func(invocation ownerInvocation, argv ...string) error) {
+func stubBatchOwnerCalls(t *testing.T, run func(invocation ownercall.Invocation, argv ...string) error) {
 	t.Helper()
-	original := batchOwnerCalls
-	t.Cleanup(func() { batchOwnerCalls = original })
-	batchOwnerCalls = batchOwnerCallSet{
-		handover: func(invocation ownerInvocation, request goalHandoverRequest) error {
-			argv := []string{"goal", "handover", "--root", request.Root, "--id", request.GoalID, "--lineage", invocation.lineage,
+	original := batchowner.BatchOwnerCalls
+	t.Cleanup(func() { batchowner.BatchOwnerCalls = original })
+	batchowner.BatchOwnerCalls = batchowner.BatchOwnerCallSet{
+		Handover: func(invocation ownercall.Invocation, request ownercall.HandoverRequest) error {
+			argv := []string{"goal", "handover", "--root", request.Root, "--id", request.GoalID, "--lineage", invocation.Lineage,
 				"--target-machine", request.TargetMachine, "--target-lineage", request.TargetLineage,
 				"--target-claim-epoch", strconv.FormatInt(request.TargetEpoch, 10), "--batch", request.Batch}
 			if request.TargetRoot != "" {
@@ -25,14 +28,14 @@ func stubBatchOwnerCalls(t *testing.T, run func(invocation ownerInvocation, argv
 			}
 			return run(invocation, argv...)
 		},
-		editNext: func(invocation ownerInvocation, root, goalID, next string) error {
-			return run(invocation, "internal", "goal", "edit", "--root", root, "--id", goalID, "--next", next, "--lineage", invocation.lineage)
+		EditNext: func(invocation ownercall.Invocation, root, goalID, next string) error {
+			return run(invocation, "internal", "goal", "edit", "--root", root, "--id", goalID, "--next", next, "--lineage", invocation.Lineage)
 		},
-		release: func(invocation ownerInvocation, root, goalID string) error {
-			return run(invocation, "internal", "goal", "release", "--root", root, "--id", goalID, "--lineage", invocation.lineage)
+		Release: func(invocation ownercall.Invocation, root, goalID string) error {
+			return run(invocation, "internal", "goal", "release", "--root", root, "--id", goalID, "--lineage", invocation.Lineage)
 		},
-		held: func(root, base, commit, remote, ref string) error {
-			return run(ownerInvocation{}, "landing", "held", "--root", root, "--base", base, "--commit", commit, "--remote", remote, "--ref", ref)
+		Held: func(root, base, commit, remote, ref string) error {
+			return run(ownercall.Invocation{}, "landing", "held", "--root", root, "--base", base, "--commit", commit, "--remote", remote, "--ref", ref)
 		},
 	}
 }
@@ -57,7 +60,7 @@ func recordingOwnerCalls(prefix []string, record func([]string)) *intentOwnerCal
 	real := defaultIntentOwnerCalls()
 	words := func(rest ...string) []string { return append(append([]string(nil), prefix...), rest...) }
 	return &intentOwnerCalls{
-		brain: func(choice string, caller processIdentity, stdout, stderr io.Writer, root, by string) int {
+		brain: func(choice string, caller ownercall.Process, stdout, stderr io.Writer, root, by string) int {
 			record(words("brain", choice, "--root", root, "--by", by))
 			return real.brain(choice, caller, stdout, stderr, root, by)
 		},
@@ -65,7 +68,7 @@ func recordingOwnerCalls(prefix []string, record func([]string)) *intentOwnerCal
 			record(words("goal", "fetch", "--root", root))
 			return real.goalFetch(stdout, stderr, root)
 		},
-		goalRepair: func(caller processIdentity, stdout, stderr io.Writer, root, by string) int {
+		goalRepair: func(caller ownercall.Process, stdout, stderr io.Writer, root, by string) int {
 			record(words("goal", "repair", "--accept-remote", "--by", by, "--root", root))
 			return real.goalRepair(caller, stdout, stderr, root, by)
 		},
@@ -97,11 +100,11 @@ func recordingOwnerCalls(prefix []string, record func([]string)) *intentOwnerCal
 			record(words(append([]string{"goal", "carry"}, args...)...))
 			return real.goalCarry(dependencies, stdout, stderr, dir, args)
 		},
-		landingTestReceipt: func(caller processIdentity, stdout, stderr io.Writer, dir string, args []string) int {
+		landingTestReceipt: func(caller ownercall.Process, stdout, stderr io.Writer, dir string, args []string) int {
 			record(words(append([]string{"landing", "test-receipt"}, args...)...))
 			return real.landingTestReceipt(caller, stdout, stderr, dir, args)
 		},
-		channelWait: func(caller processIdentity, lineage string, stdout, stderr io.Writer, args []string) int {
+		channelWait: func(caller ownercall.Process, lineage string, stdout, stderr io.Writer, args []string) int {
 			record(words(append([]string{"channel", "wait"}, args...)...))
 			return real.channelWait(caller, lineage, stdout, stderr, args)
 		},
@@ -109,11 +112,11 @@ func recordingOwnerCalls(prefix []string, record func([]string)) *intentOwnerCal
 			record(words("mission", "status", "--root", root, "--mission", mission))
 			return real.missionStatus(stdout, stderr, root, mission)
 		},
-		missionLaunch: func(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
+		missionLaunch: func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
 			record(words("mission", mode, "--root", root, "--mission", mission))
 			return real.missionLaunch(caller, stdout, stderr, root, mission, mode, wait)
 		},
-		missionResolveTaint: func(caller processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int {
+		missionResolveTaint: func(caller ownercall.Process, stdout, stderr io.Writer, request missionResolveRequest) int {
 			record(words(request.words()...))
 			return real.missionResolveTaint(caller, stdout, stderr, request)
 		},
@@ -147,13 +150,13 @@ func processBackedOwnerCalls(executable func() (string, error), process func(int
 		return ran.code
 	}
 	return &intentOwnerCalls{
-		brain: func(choice string, _ processIdentity, stdout, stderr io.Writer, root, by string) int {
+		brain: func(choice string, _ ownercall.Process, stdout, stderr io.Writer, root, by string) int {
 			return run(root, stdout, stderr, "brain", choice, "--root", root, "--by", by)
 		},
 		goalFetch: func(stdout, stderr io.Writer, root string) int {
 			return run(root, stdout, stderr, "goal", "fetch", "--root", root)
 		},
-		goalRepair: func(_ processIdentity, stdout, stderr io.Writer, root, by string) int {
+		goalRepair: func(_ ownercall.Process, stdout, stderr io.Writer, root, by string) int {
 			return run(root, stdout, stderr, "goal", "repair", "--accept-remote", "--by", by, "--root", root)
 		},
 		configKeys: func(stdout io.Writer, conf, matching string) int {
@@ -178,19 +181,19 @@ func processBackedOwnerCalls(executable func() (string, error), process func(int
 		goalCarry: func(_ syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
 			return run(dir, stdout, stderr, append([]string{"goal", "carry"}, args...)...)
 		},
-		landingTestReceipt: func(_ processIdentity, stdout, stderr io.Writer, dir string, args []string) int {
+		landingTestReceipt: func(_ ownercall.Process, stdout, stderr io.Writer, dir string, args []string) int {
 			return receiptProcess(executable, process, stdout, stderr, dir, args)
 		},
-		channelWait: func(_ processIdentity, _ string, stdout, stderr io.Writer, args []string) int {
+		channelWait: func(_ ownercall.Process, _ string, stdout, stderr io.Writer, args []string) int {
 			return run(flagValue(args, "--root"), stdout, stderr, append([]string{"channel", "wait"}, args...)...)
 		},
 		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
 			return run(root, stdout, stderr, "mission", "status", "--root", root, "--mission", mission)
 		},
-		missionLaunch: func(_ processIdentity, stdout, stderr io.Writer, root, mission, mode string, _ bool) int {
+		missionLaunch: func(_ ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, _ bool) int {
 			return run(root, stdout, stderr, "mission", mode, "--root", root, "--mission", mission)
 		},
-		missionResolveTaint: func(_ processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int {
+		missionResolveTaint: func(_ ownercall.Process, stdout, stderr io.Writer, request missionResolveRequest) int {
 			return run(request.root, stdout, stderr, request.words()...)
 		},
 	}
@@ -220,7 +223,7 @@ func processBackedReceipt(delivery *intentDeliveryOwners) *intentDeliveryOwners 
 	if delivery.calls == nil {
 		delivery.calls = defaultIntentOwnerCalls()
 	}
-	delivery.calls.landingTestReceipt = func(_ processIdentity, stdout, stderr io.Writer, dir string, args []string) int {
+	delivery.calls.landingTestReceipt = func(_ ownercall.Process, stdout, stderr io.Writer, dir string, args []string) int {
 		return receiptProcess(delivery.executable, delivery.process, stdout, stderr, dir, args)
 	}
 	return delivery

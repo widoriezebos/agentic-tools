@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -65,8 +66,8 @@ type batchE2EFixture struct {
 	engine          string
 	seats           map[string]string
 	now             time.Time
-	proofCalls      []batchProofLaunch
-	proof           func(batchProofLaunch, int) proofrun.TestResult
+	proofCalls      []batchowner.BatchProofLaunch
+	proof           func(batchowner.BatchProofLaunch, int) proofrun.TestResult
 	diagnostic      func(batch.DiagnosticRequest) batch.DiagnosticResult
 	planObserve     func()
 }
@@ -97,7 +98,7 @@ func runIsolatedBatchLandingLifecycle(t *testing.T, scenario string) {
 	if os.Getenv(selector) == scenario {
 		// This dedicated child process lands through the bed's planted
 		// commit script, as the shell commit boundary did.
-		batchCommitBoundary = plantedOrLandingCommit
+		batchowner.BatchCommitBoundary = plantedOrLandingCommit
 		runBatchLandingLifecycleScenario(t, scenario)
 		return
 	}
@@ -148,29 +149,29 @@ func runBatchLandingLifecycleScenario(t *testing.T, scenario string) {
 	// The real prefix runner bounds its native phase by the reserved attempt
 	// deadline. Seed the fixture from the same current clock used by that runner.
 	now := time.Now().UTC().Truncate(time.Second)
-	originalProof, originalDiagnostic := productionBatchProofDependencies, batchDiagnosticLauncher
-	originalOwnerConstruct := batchOwnerConstruct
-	batchOwnerConstruct = func(settings config.BatchLanding, held batchOwnerLease, inputs productionBatchOwnerInputs, clock func() time.Time) (*batch.Owner, error) {
-		inputs.sample = func() proofrun.LoadSample {
+	originalProof, originalDiagnostic := batchowner.ProductionBatchProofDependencies, batchowner.BatchDiagnosticLauncher
+	originalOwnerConstruct := batchowner.BatchOwnerConstruct
+	batchowner.BatchOwnerConstruct = func(settings config.BatchLanding, held batchowner.BatchOwnerLease, inputs batchowner.ProductionBatchOwnerInputs, clock func() time.Time) (*batch.Owner, error) {
+		inputs.Sample = func() proofrun.LoadSample {
 			return proofrun.LoadSample{Sample: hostload.Sample{At: clock().UTC().Format(time.RFC3339Nano), Available: true, Cores: 18}, OverlapKnown: true}
 		}
-		inputs.lockDir = filepath.Join(settings.Root, "artifacts", "agents", "landing-batches", "fixture-proof-lock")
-		inputs.queueDir = filepath.Join(settings.Root, "artifacts", "agents", "landing-batches", "fixture-proof-queue")
+		inputs.LockDir = filepath.Join(settings.Root, "artifacts", "agents", "landing-batches", "fixture-proof-lock")
+		inputs.QueueDir = filepath.Join(settings.Root, "artifacts", "agents", "landing-batches", "fixture-proof-queue")
 		return originalOwnerConstruct(settings, held, inputs, clock)
 	}
-	originalWait, originalStatus := batchWaitClock, batchStatusNow
-	originalPrefix := batchPrefixReceiptExecutable
-	originalPrefixVerify := batchVerifyPrefixEvidence
+	originalWait, originalStatus := batchowner.BatchWaitClock, batchowner.BatchStatusNow
+	originalPrefix := batchowner.BatchPrefixReceiptExecutable
+	originalPrefixVerify := batchowner.BatchVerifyPrefixEvidence
 	originalGoalNow, originalCommandHelper, originalLineage := os.Getenv("METASYSTEM_GOAL_NOW"), os.Getenv("GO_WANT_BATCH_E2E_COMMAND"), os.Getenv("METASYSTEM_OWNER_LINEAGE")
 	originalAdmissionDir, originalAdmissionRoot := os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR"), os.Getenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT")
-	productionBatchProofDependencies = originalProof
-	productionBatchProofDependencies.plan = func(root, goalID, tree string, mode testpolicy.Mode) (testpolicy.Plan, error) {
+	batchowner.ProductionBatchProofDependencies = originalProof
+	batchowner.ProductionBatchProofDependencies.Plan = func(root, goalID, tree string, mode testpolicy.Mode) (testpolicy.Plan, error) {
 		if fixture := harness.fixture(root); fixture != nil && fixture.planObserve != nil {
 			fixture.planObserve()
 		}
-		return originalProof.plan(root, goalID, tree, mode)
+		return originalProof.Plan(root, goalID, tree, mode)
 	}
-	productionBatchProofDependencies.launch = func(request batchProofLaunch) (proofrun.TestResult, error) {
+	batchowner.ProductionBatchProofDependencies.Launch = func(request batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
 		fixture := harness.fixture(request.Root)
 		fixture.proofCalls = append(fixture.proofCalls, request)
 		if fixture.proof != nil {
@@ -178,7 +179,7 @@ func runBatchLandingLifecycleScenario(t *testing.T, scenario string) {
 		}
 		return batchE2EProofResult(request, true, nil), nil
 	}
-	batchDiagnosticLauncher = func(root, _ string, request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
+	batchowner.BatchDiagnosticLauncher = func(root, _ string, request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
 		fixture := harness.fixture(root)
 		if fixture.diagnostic != nil {
 			return fixture.diagnostic(request), nil
@@ -186,18 +187,18 @@ func runBatchLandingLifecycleScenario(t *testing.T, scenario string) {
 		return batch.DiagnosticResult{AttemptID: "diagnostic-green"}, nil
 	}
 	waitNow := now
-	batchWaitClock = batch.WaitClock{Now: func() time.Time { return waitNow }, After: func(duration time.Duration) <-chan time.Time {
+	batchowner.BatchWaitClock = batch.WaitClock{Now: func() time.Time { return waitNow }, After: func(duration time.Duration) <-chan time.Time {
 		waitNow = waitNow.Add(duration)
 		ch := make(chan time.Time, 1)
 		ch <- waitNow
 		return ch
 	}}
-	batchStatusNow = func() time.Time { return now }
-	batchPrefixReceiptExecutable = func() (string, error) { return engine.path, nil }
-	batchVerifyPrefixEvidence = func(_ string, _ batch.Unit, _ string, _ batch.PrefixDecision) error { return nil }
+	batchowner.BatchStatusNow = func() time.Time { return now }
+	batchowner.BatchPrefixReceiptExecutable = func() (string, error) { return engine.path, nil }
+	batchowner.BatchVerifyPrefixEvidence = func(_ string, _ batch.Unit, _ string, _ batch.PrefixDecision) error { return nil }
 	// The fixture proof's result is synthetic, so the retained verifier is
 	// doubled like the prefix verification: every group's pass is the tip's.
-	productionBatchProofDependencies.sources = func(_ string, record batch.Record) (map[string]string, error) {
+	batchowner.ProductionBatchProofDependencies.Sources = func(_ string, record batch.Record) (map[string]string, error) {
 		sources := map[string]string{}
 		for _, group := range record.Proof.SelectedGroups {
 			sources[group] = record.Proof.AttemptID
@@ -209,9 +210,9 @@ func runBatchLandingLifecycleScenario(t *testing.T, scenario string) {
 	_ = os.Setenv("METASYSTEM_OWNER_LINEAGE", "lineage-goal-b")
 	signal.Ignore(syscall.SIGUSR1)
 	t.Cleanup(func() {
-		batchOwnerConstruct = originalOwnerConstruct
-		productionBatchProofDependencies, batchDiagnosticLauncher = originalProof, originalDiagnostic
-		batchWaitClock, batchStatusNow, batchPrefixReceiptExecutable, batchVerifyPrefixEvidence = originalWait, originalStatus, originalPrefix, originalPrefixVerify
+		batchowner.BatchOwnerConstruct = originalOwnerConstruct
+		batchowner.ProductionBatchProofDependencies, batchowner.BatchDiagnosticLauncher = originalProof, originalDiagnostic
+		batchowner.BatchWaitClock, batchowner.BatchStatusNow, batchowner.BatchPrefixReceiptExecutable, batchowner.BatchVerifyPrefixEvidence = originalWait, originalStatus, originalPrefix, originalPrefixVerify
 		_ = os.Setenv("METASYSTEM_GOAL_NOW", originalGoalNow)
 		_ = os.Setenv("GO_WANT_BATCH_E2E_COMMAND", originalCommandHelper)
 		_ = os.Setenv("METASYSTEM_OWNER_LINEAGE", originalLineage)
@@ -249,7 +250,7 @@ func runBatchLandingLifecycleTwoGreen(t *testing.T, harness *batchE2EHarness, en
 	}
 	observe(batch.StateOpen)
 	fixture.planObserve = func() { observe(batch.StateSealed) }
-	fixture.proof = func(request batchProofLaunch, _ int) proofrun.TestResult {
+	fixture.proof = func(request batchowner.BatchProofLaunch, _ int) proofrun.TestResult {
 		observe(batch.StateProving)
 		return batchE2EProofResult(request, true, nil)
 	}
@@ -277,7 +278,7 @@ func runBatchLandingLifecycleTwoGreen(t *testing.T, harness *batchE2EHarness, en
 
 func runBatchLandingLifecycleEjectRed(t *testing.T, harness *batchE2EHarness, engine *batchE2EEngine, now time.Time) {
 	fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b", "goal-c")
-	fixture.proof = func(request batchProofLaunch, call int) proofrun.TestResult {
+	fixture.proof = func(request batchowner.BatchProofLaunch, call int) proofrun.TestResult {
 		if call == 1 {
 			return batchE2EProofResult(request, false, []string{"units/goal-b.txt"})
 		}
@@ -320,7 +321,7 @@ func runBatchLandingLifecycleEjectRed(t *testing.T, harness *batchE2EHarness, en
 
 func runBatchLandingLifecycleTrunkMoved(t *testing.T, harness *batchE2EHarness, engine *batchE2EEngine, now time.Time) {
 	fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b")
-	fixture.proof = func(request batchProofLaunch, _ int) proofrun.TestResult {
+	fixture.proof = func(request batchowner.BatchProofLaunch, _ int) proofrun.TestResult {
 		return batchE2EProofResult(request, true, []string{"app/**"})
 	}
 	batchID := fixture.join("goal-a")
@@ -627,7 +628,7 @@ func (fixture *batchE2EFixture) announce(root, lineage string) {
 
 func (fixture *batchE2EFixture) holdLanding() {
 	fixture.t.Helper()
-	fixture.announce(fixture.landing, landingOwnerLineage)
+	fixture.announce(fixture.landing, batchowner.LandingOwnerLineage)
 	holder, err := lease.RequireHolder(fixture.landing, int64(os.Getpid()), nil)
 	if err != nil || !holder.Holder || holder.ClaimEpoch == nil {
 		fixture.t.Fatalf("hold landing checkout: holder=%+v err=%v", holder, err)
@@ -676,7 +677,7 @@ func (fixture *batchE2EFixture) writeJSON(path string, value any) {
 	}
 }
 
-func batchE2EProofResult(request batchProofLaunch, green bool, manifest []string) proofrun.TestResult {
+func batchE2EProofResult(request batchowner.BatchProofLaunch, green bool, manifest []string) proofrun.TestResult {
 	admissionMaximum := 0
 	status := "passed"
 	if !green {
@@ -771,7 +772,7 @@ func (fixture *batchE2EFixture) statusAndWait(batchID, want string) error {
 	if code != 0 {
 		return fmt.Errorf("status %s: %s", want, stderr)
 	}
-	var status batchStatusOutput
+	var status batchowner.BatchStatusOutput
 	if err := json.Unmarshal([]byte(stdout), &status); err != nil || len(status.Batches) != 1 || status.Batches[0].State != want {
 		return fmt.Errorf("status at %s = %q err=%v parsed=%+v", want, stdout, err, status)
 	}
@@ -779,7 +780,7 @@ func (fixture *batchE2EFixture) statusAndWait(batchID, want string) error {
 		return runLandingBatch([]string{"wait", "--root", root, "--batch", batchID, "--bound", "1s"}, stdout, stderr)
 	})
 	if want == batch.StateLanded {
-		var view batchStatusView
+		var view batchowner.BatchStatusView
 		if code != 0 || json.Unmarshal([]byte(stdout), &view) != nil || view.State != want {
 			return fmt.Errorf("terminal wait at %s code=%d stdout=%q stderr=%q", want, code, stdout, stderr)
 		}

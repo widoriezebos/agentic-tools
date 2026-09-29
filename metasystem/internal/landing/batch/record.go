@@ -1,8 +1,9 @@
 package batch
 
 import (
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )

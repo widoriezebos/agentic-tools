@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 )
@@ -217,7 +218,7 @@ func runIntentGoalSync(inv *intentInvocation) int {
 		ran := inv.goalOwnerCall(inv.ownerCalls().goalReconcile, "--root", inv.stateRoot, "--refresh-only")
 		return inv.render(ownerVerbResult(ran, targets, "the published view's interrupted refresh was completed; no edit was read as new authority", scope))
 	case "accept-remote-history":
-		caller, by := currentProcessIdentity(), inv.input.text("by")
+		caller, by := ownercall.CurrentProcess(), inv.input.text("by")
 		ran := ownerCall(func(stdout, stderr io.Writer) int {
 			return inv.ownerCalls().goalRepair(caller, stdout, stderr, inv.stateRoot, by)
 		})
@@ -307,7 +308,7 @@ func runIntentRepairMission(inv *intentInvocation, mission string) int {
 	}
 	// The runner's human-reserved gate classifies this process, the parent
 	// the former child classified (design 6.2).
-	caller := currentProcessIdentity()
+	caller := ownercall.CurrentProcess()
 	ran := ownerCall(func(stdout, stderr io.Writer) int {
 		return inv.ownerCalls().missionResolveTaint(caller, stdout, stderr, request)
 	})
@@ -344,7 +345,7 @@ func runIntentSettingsCoordinator(inv *intentInvocation) int {
 	if choice != "" {
 		// The human gate classifies this process, the parent the owner's
 		// child used to classify (design 6.2, VOA-02-R2).
-		caller, by := currentProcessIdentity(), inv.input.text("by")
+		caller, by := ownercall.CurrentProcess(), inv.input.text("by")
 		ran := ownerCall(func(stdout, stderr io.Writer) int {
 			return inv.ownerCalls().brain(choice, caller, stdout, stderr, inv.stateRoot, by)
 		})

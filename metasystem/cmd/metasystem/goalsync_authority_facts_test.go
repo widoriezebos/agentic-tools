@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 )
 
 // goalAuthorityRefusalRoot supplies only the files read before these commands
@@ -27,7 +28,7 @@ func goalAuthorityRefusalRoot(t *testing.T) (string, goalAuthorityReadFacts) {
 	}
 	ledgerReads := 0
 	facts := goalAuthorityReadFacts{
-		caller: entryCallerIdentity(),
+		caller: ownercall.EntryCaller(),
 		repositoryTop: func(got string) (string, error) {
 			if got != root {
 				t.Fatalf("repository top requested for %q, want %q", got, root)

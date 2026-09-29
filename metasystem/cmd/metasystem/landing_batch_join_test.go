@@ -15,26 +15,27 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-func prepublicationJoinBed(t *testing.T) (batchJoinRequest, batchJoinDependencies, *int) {
+func prepublicationJoinBed(t *testing.T) (batchowner.BatchJoinRequest, batchowner.BatchJoinDependencies, *int) {
 	t.Helper()
 	landing, admissionCalls := t.TempDir(), 0
-	request := batchJoinRequest{SeatRoot: t.TempDir(), LandingRoot: landing, GoalID: "goal-a", ChainID: "chain-a", At: time.Unix(1, 0)}
-	dependencies := batchJoinDependencies{
-		binding: func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
+	request := batchowner.BatchJoinRequest{SeatRoot: t.TempDir(), LandingRoot: landing, GoalID: "goal-a", ChainID: "chain-a", At: time.Unix(1, 0)}
+	dependencies := batchowner.BatchJoinDependencies{
+		Binding: func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
 			return dispatchcore.GoalBinding{Revision: 2, Machine: "seat", Lineage: "lineage", File: &goal.GoalFile{Claimed: &goal.ClaimRecord{AccountingRevision: 1}}, Capability: goal.StopCapability{ClaimEpoch: 1}}, nil
 		},
-		chain: func(string, string, string, uint64) (batch.CertifiedChain, error) {
+		Chain: func(string, string, string, uint64) (batch.CertifiedChain, error) {
 			return batch.CertifiedChain{ID: "chain-a", Patch: []byte("patch")}, nil
 		},
-		base:           func(string) (string, error) { return "base-tree", nil },
-		mint:           func() (string, error) { return "01j5x00000000000000000ba99", nil },
-		transport:      func(string, batch.CertifiedChain) error { return nil },
-		assemble:       func(string, string, []batch.Unit) ([]string, error) { return []string{"candidate-tree"}, nil },
-		protectedTests: func(string, string, string) error { return nil },
-		admissionRun: func(string, string, batch.Unit) (batch.JoinAdmission, error) {
+		Base:           func(string) (string, error) { return "base-tree", nil },
+		Mint:           func() (string, error) { return "01j5x00000000000000000ba99", nil },
+		Transport:      func(string, batch.CertifiedChain) error { return nil },
+		Assemble:       func(string, string, []batch.Unit) ([]string, error) { return []string{"candidate-tree"}, nil },
+		ProtectedTests: func(string, string, string) error { return nil },
+		AdmissionRun: func(string, string, batch.Unit) (batch.JoinAdmission, error) {
 			admissionCalls++
 			return batch.JoinAdmission{Tree: "candidate-tree", Status: "verified"}, nil
 		},
@@ -42,9 +43,9 @@ func prepublicationJoinBed(t *testing.T) (batchJoinRequest, batchJoinDependencie
 	return request, dependencies, &admissionCalls
 }
 
-func assertJoinRefusedBeforeQueue(t *testing.T, request batchJoinRequest, dependencies batchJoinDependencies, code string, admissionCalls *int, wantAdmissionCalls int) error {
+func assertJoinRefusedBeforeQueue(t *testing.T, request batchowner.BatchJoinRequest, dependencies batchowner.BatchJoinDependencies, code string, admissionCalls *int, wantAdmissionCalls int) error {
 	t.Helper()
-	_, err := executeBatchJoin(request, dependencies)
+	_, err := batchowner.ExecuteBatchJoin(request, dependencies)
 	if err == nil || !strings.Contains(err.Error(), code) || *admissionCalls != wantAdmissionCalls {
 		t.Fatalf("join refusal=%v admission calls=%d want code=%s calls=%d", err, *admissionCalls, code, wantAdmissionCalls)
 	}
@@ -58,10 +59,10 @@ func assertJoinRefusedBeforeQueue(t *testing.T, request batchJoinRequest, depend
 func TestLandingBatchJoinRefusesZeroAccountingRevision(t *testing.T) {
 	t.Parallel()
 	request, dependencies, admissionCalls := prepublicationJoinBed(t)
-	dependencies.binding = func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
+	dependencies.Binding = func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
 		return dispatchcore.GoalBinding{Revision: 2, Machine: "seat", Lineage: "lineage", File: &goal.GoalFile{Claimed: &goal.ClaimRecord{}}, Capability: goal.StopCapability{ClaimEpoch: 1}}, nil
 	}
-	dependencies.publishAdmission = func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun) error {
+	dependencies.PublishAdmission = func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun) error {
 		return errors.New("join reached publication without an accounting revision")
 	}
 	assertJoinRefusedBeforeQueue(t, request, dependencies, "BATCH_JOIN_REVISION_MOVED", admissionCalls, 0)
@@ -77,7 +78,7 @@ func TestBatchTreePlanCommandUsesNestedModuleRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	command := batchTreePlanCommand("metasystem", repository, "goal-a", "tree-a", testpolicy.ModeAuto)
+	command := batchowner.BatchTreePlanCommand("metasystem", repository, "goal-a", "tree-a", testpolicy.ModeAuto)
 	if command.Dir != module {
 		t.Fatalf("batch tree plan directory=%s, want nested module %s", command.Dir, module)
 	}
@@ -114,12 +115,12 @@ func TestDirectoryTreesOverlapRejectsAncestorsOnly(t *testing.T) {
 
 func TestLandingBatchJoinRefusesDroppedListedTest(t *testing.T) {
 	t.Parallel()
-	production := productionBatchJoinDependencies()
-	if reflect.ValueOf(production.protectedTests).Pointer() != reflect.ValueOf(productionBatchProtectedTests).Pointer() {
+	production := batchowner.ProductionBatchJoinDependencies()
+	if reflect.ValueOf(production.ProtectedTests).Pointer() != reflect.ValueOf(batchowner.ProductionBatchProtectedTests).Pointer() {
 		t.Fatal("production join does not use the protected-test gate")
 	}
 	request, dependencies, calls := prepublicationJoinBed(t)
-	dependencies.protectedTests = func(_, _, _ string) error {
+	dependencies.ProtectedTests = func(_, _, _ string) error {
 		return fmt.Errorf("BATCH_JOIN_TEST_DROPPED: group landing-command-standard package cmd/metasystem test TestProtectedJoin is absent from the candidate tree")
 	}
 	assertJoinRefusedBeforeQueue(t, request, dependencies, "BATCH_JOIN_TEST_DROPPED", calls, 0)
@@ -209,7 +210,7 @@ func TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD(t *testing
 		return gittree.RawResult{}
 	}
 	protected := func(root, baseTree, candidateTree string) error {
-		return productionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree, raw)
+		return batchowner.ProductionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree, raw)
 	}
 	if err := protected(installation, base, base); err != nil {
 		t.Fatalf("configured base contract and project cwd rejected: %v", err)
@@ -231,9 +232,9 @@ func TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD(t *testing
 	}
 	request, dependencies, admissionCalls := prepublicationJoinBed(t)
 	request.LandingRoot = project
-	dependencies.base = func(string) (string, error) { return base, nil }
-	dependencies.assemble = func(string, string, []batch.Unit) ([]string, error) { return []string{candidate}, nil }
-	dependencies.protectedTests = protected
+	dependencies.Base = func(string) (string, error) { return base, nil }
+	dependencies.Assemble = func(string, string, []batch.Unit) ([]string, error) { return []string{candidate}, nil }
+	dependencies.ProtectedTests = protected
 	assertJoinRefusedBeforeQueue(t, request, dependencies, "BATCH_JOIN_TEST_DROPPED", admissionCalls, 0)
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"),
 		[]byte("testing.contract=contracts/other.json\n"), 0o644); err != nil {
@@ -252,27 +253,27 @@ func TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD(t *testing
 
 // sideBySideJoinBed is the pre-publication bed with a publication that records
 // the member, an owner wake that does nothing, and one fresh batch id per join.
-func sideBySideJoinBed(t *testing.T, base *string) (batchJoinRequest, batchJoinDependencies, batch.Store) {
+func sideBySideJoinBed(t *testing.T, base *string) (batchowner.BatchJoinRequest, batchowner.BatchJoinDependencies, batch.Store) {
 	t.Helper()
 	request, dependencies, _ := prepublicationJoinBed(t)
 	store, minted := batch.NewStore(request.LandingRoot, nil), 0
-	dependencies.base = func(string) (string, error) { return *base, nil }
-	dependencies.mint = func() (string, error) { minted++; return fmt.Sprintf("01j5x00000000000000000bb%02d", minted), nil }
-	dependencies.publishAdmission = func(store batch.Store, id string, unit batch.Unit, _ string, _ time.Time, _ func(string, string, string) (testpolicy.Plan, error), _ func() error, _ batch.JoinAdmissionRun) error {
+	dependencies.Base = func(string) (string, error) { return *base, nil }
+	dependencies.Mint = func() (string, error) { minted++; return fmt.Sprintf("01j5x00000000000000000bb%02d", minted), nil }
+	dependencies.PublishAdmission = func(store batch.Store, id string, unit batch.Unit, _ string, _ time.Time, _ func(string, string, string) (testpolicy.Plan, error), _ func() error, _ batch.JoinAdmissionRun) error {
 		return store.Update(id, func(record *batch.Record) error {
 			unit.State = batch.UnitJoined
 			record.Units = append(record.Units, unit)
 			return nil
 		})
 	}
-	dependencies.ensure = func(string) error { return nil }
+	dependencies.Ensure = func(string) error { return nil }
 	return request, dependencies, store
 }
 
-func joinGoal(t *testing.T, request batchJoinRequest, dependencies batchJoinDependencies, goalID string) batch.Record {
+func joinGoal(t *testing.T, request batchowner.BatchJoinRequest, dependencies batchowner.BatchJoinDependencies, goalID string) batch.Record {
 	t.Helper()
 	request.GoalID, request.ChainID = goalID, "chain-"+goalID
-	record, err := executeBatchJoin(request, dependencies)
+	record, err := batchowner.ExecuteBatchJoin(request, dependencies)
 	if err != nil {
 		t.Fatalf("join %s: %v", goalID, err)
 	}
@@ -319,7 +320,7 @@ func TestJoinOnAMovedBaseReassemblesInsteadOfRefusing(t *testing.T) {
 		t.Fatal(err)
 	}
 	var assembled, protected []string
-	dependencies.assemble = func(_ string, onto string, _ []batch.Unit) ([]string, error) {
+	dependencies.Assemble = func(_ string, onto string, _ []batch.Unit) ([]string, error) {
 		assembled = append(assembled, onto)
 		// The addressed batch seals while the unit is prepared on its base.
 		return []string{"candidate-on-" + onto}, store.Update(stale, func(record *batch.Record) error {
@@ -327,7 +328,7 @@ func TestJoinOnAMovedBaseReassemblesInsteadOfRefusing(t *testing.T) {
 			return nil
 		})
 	}
-	dependencies.protectedTests = func(_, onto, candidate string) error {
+	dependencies.ProtectedTests = func(_, onto, candidate string) error {
 		protected = append(protected, onto+">"+candidate)
 		return nil
 	}
@@ -355,4 +356,17 @@ func TestAChainJoinsCarryingItsHeadForThePublicationGate(t *testing.T) {
 	if len(record.Units) != 1 || record.Units[0].BranchTip != request.ChainHead || len(record.Units[0].Builds) != 0 {
 		t.Fatalf("the chain member does not carry its head: %+v", record.Units)
 	}
+}
+
+// directoryTreesOverlap says whether one directory is the other or lies
+// beneath it, comparing whole path segments.
+func directoryTreesOverlap(left, right string) bool {
+	contains := func(parent, child string) bool {
+		relative, err := filepath.Rel(filepath.Clean(parent), filepath.Clean(child))
+		if err != nil {
+			return false
+		}
+		return relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	}
+	return contains(left, right) || contains(right, left)
 }

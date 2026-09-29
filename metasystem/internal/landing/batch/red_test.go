@@ -1200,3 +1200,13 @@ func TestKnownFlakeSightingFollowsTheLandingCAS(t *testing.T) {
 		t.Fatalf("lost CAS: err=%v sightings=%d, want the move refused and no sighting", err, len(ledger.pendings))
 	}
 }
+
+// ReopenHeld permits another proof only when the trunk supplies a distinct
+// base tree. The surviving units are reassembled from that new base.
+func ReopenHeld(store Store, id, newBaseTree, actor string, at time.Time) error {
+	prepared, err := prepareHeldReopen(store, id, newBaseTree)
+	if err != nil {
+		return err
+	}
+	return applyHeldReopen(store, id, newBaseTree, actor, at, prepared)
+}

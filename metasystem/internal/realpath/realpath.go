@@ -53,6 +53,16 @@ func ResolveExisting(path string) string {
 	return path
 }
 
+// Absolute is the absolute, cleaned form of a path as a path flag takes it
+// (filepath.Abs cleans), with no symlink resolved; an empty path stays
+// empty.
+func Absolute(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	return filepath.Abs(path)
+}
+
 // Canonical returns the absolute, cleaned, symlink-free form of an existing
 // path, or the error resolving it.
 func Canonical(path string) (string, error) {

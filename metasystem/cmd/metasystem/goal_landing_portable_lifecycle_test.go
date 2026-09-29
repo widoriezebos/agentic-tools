@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
@@ -189,12 +190,14 @@ chmod +x "${out:-bin/metasystem}"
 		portableGoalBranch(t, bed, seat, member.id, member.input)
 	}
 	portable.root = landing
-	originalPlanner, originalPrefix := batchTreePlanExecutable, batchPrefixReceiptExecutable
-	batchTreePlanExecutable = func() (string, error) { return portable.engine, nil }
-	batchPrefixReceiptExecutable = func() (string, error) { return portable.engine, nil }
-	t.Cleanup(func() { batchTreePlanExecutable, batchPrefixReceiptExecutable = originalPlanner, originalPrefix })
+	originalPlanner, originalPrefix := batchowner.BatchTreePlanExecutable, batchowner.BatchPrefixReceiptExecutable
+	batchowner.BatchTreePlanExecutable = func() (string, error) { return portable.engine, nil }
+	batchowner.BatchPrefixReceiptExecutable = func() (string, error) { return portable.engine, nil }
+	t.Cleanup(func() {
+		batchowner.BatchTreePlanExecutable, batchowner.BatchPrefixReceiptExecutable = originalPlanner, originalPrefix
+	})
 	for key, value := range map[string]string{
-		"GO_WANT_BATCH_E2E_COMMAND": "1", "METASYSTEM_OWNER_LINEAGE": landingOwnerLineage,
+		"GO_WANT_BATCH_E2E_COMMAND": "1", "METASYSTEM_OWNER_LINEAGE": batchowner.LandingOwnerLineage,
 		"METASYSTEM_PROOF_ADMISSION_TEST_DIR":     portable.admissionDir,
 		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT": landing,
 	} {
@@ -206,7 +209,7 @@ chmod +x "${out:-bin/metasystem}"
 	ownerCommand := landingBatchChild(portable.proofCommand, portable.commandEnvironment(), portable.engine,
 		"owner", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--interval", "1h")
 	ownerCommand.Dir = landing
-	ownerCommand.Env = append(ownerCommand.Env, "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
+	ownerCommand.Env = append(ownerCommand.Env, "METASYSTEM_OWNER_LINEAGE="+batchowner.LandingOwnerLineage)
 	if err := ownerCommand.Start(); err != nil {
 		t.Fatalf("start landing owner: %v", err)
 	}
@@ -252,7 +255,7 @@ chmod +x "${out:-bin/metasystem}"
 		if code != 0 {
 			t.Fatalf("batch status exited %d: %s", code, stderr)
 		}
-		var view batchStatusOutput
+		var view batchowner.BatchStatusOutput
 		if err := json.Unmarshal([]byte(stdout), &view); err != nil || len(view.Batches) != 1 || view.Batches[0].State != want {
 			t.Fatalf("batch status at %s: %q, parsed=%+v, err=%v", want, stdout, view, err)
 		}
@@ -307,7 +310,7 @@ chmod +x "${out:-bin/metasystem}"
 		command := landingBatchChild(portable.proofCommand, portable.commandEnvironment(), portable.engine,
 			"tick", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--batch", batchID)
 		command.Dir = landing
-		command.Env = append(command.Env, "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
+		command.Env = append(command.Env, "METASYSTEM_OWNER_LINEAGE="+batchowner.LandingOwnerLineage)
 		output, commandErr := command.CombinedOutput()
 		if commandErr != nil {
 			t.Fatalf("batch tick: %v: %s; state=%s", commandErr, output, bed.load(batchID).State)
@@ -529,7 +532,7 @@ chmod +x "${out:-bin/metasystem}"
 	}
 	portable.root = landing
 	for key, value := range map[string]string{
-		"GO_WANT_BATCH_E2E_COMMAND": "1", "METASYSTEM_OWNER_LINEAGE": landingOwnerLineage,
+		"GO_WANT_BATCH_E2E_COMMAND": "1", "METASYSTEM_OWNER_LINEAGE": batchowner.LandingOwnerLineage,
 		"METASYSTEM_PROOF_ADMISSION_TEST_DIR":     portable.admissionDir,
 		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT": landing,
 	} {
@@ -1131,11 +1134,11 @@ func init() {
 	testHelperCommands[landingBatchHelperCommand] = func(args []string) int {
 		if engine := os.Getenv(landingBatchHelperEngine); engine != "" {
 			executable := func() (string, error) { return engine, nil }
-			batchTreePlanExecutable, batchPrefixReceiptExecutable = executable, executable
+			batchowner.BatchTreePlanExecutable, batchowner.BatchPrefixReceiptExecutable = executable, executable
 		}
 		// The enrolled fixture engine is a plantedcommit build; the child
 		// commits each unit through the bed's planted commit script as it did.
-		batchCommitBoundary = plantedOrLandingCommit
+		batchowner.BatchCommitBoundary = plantedOrLandingCommit
 		return runLandingBatch(args, os.Stdout, os.Stderr)
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
@@ -478,9 +479,9 @@ func TestIntentQuestionWaitRunsTheChannelWaitInThisProcess(t *testing.T) {
 			return intentProcessResult{code: 1}
 		}}
 	calls := defaultIntentOwnerCalls()
-	var supplied []processIdentity
+	var supplied []ownercall.Process
 	var reached [][]string
-	calls.channelWait = func(caller processIdentity, lineage string, stdout, stderr io.Writer, args []string) int {
+	calls.channelWait = func(caller ownercall.Process, lineage string, stdout, stderr io.Writer, args []string) int {
 		supplied = append(supplied, caller)
 		reached = append(reached, args)
 		io.WriteString(stderr, "the question is not answered yet\n")
@@ -491,7 +492,7 @@ func TestIntentQuestionWaitRunsTheChannelWaitInThisProcess(t *testing.T) {
 	if want := [][]string{{"--root", root, "--question", "posted", "--timeout", "1"}}; !reflect.DeepEqual(reached, want) {
 		t.Fatalf("channel wait owner argv = %q, want %q; result %+v", reached, want, waited)
 	}
-	if len(supplied) != 1 || supplied[0].pid != int64(os.Getpid()) {
+	if len(supplied) != 1 || supplied[0].Pid != int64(os.Getpid()) {
 		t.Fatalf("the channel wait owner was supplied %+v, want this process %d", supplied, os.Getpid())
 	}
 	if waited.Next == nil || !slices.Equal(waited.Next.Argv, []string{"metasystem", "question", "wait", "channel:posted"}) {

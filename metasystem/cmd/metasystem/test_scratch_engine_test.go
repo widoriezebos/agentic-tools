@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -94,7 +95,7 @@ func TestVerifyIdentityProjectionUsesTheVerificationScratchRun(t *testing.T) {
 		t.Helper()
 		var index string
 		var command *exec.Cmd
-		io := candidateEngineIO{runGit: func(c *exec.Cmd) error {
+		io := candidateengine.IO{RunGit: func(c *exec.Cmd) error {
 			for _, entry := range c.Env {
 				if value, ok := strings.CutPrefix(entry, "GIT_INDEX_FILE="); ok {
 					index = value
@@ -104,7 +105,7 @@ func TestVerifyIdentityProjectionUsesTheVerificationScratchRun(t *testing.T) {
 			return interrupted
 		}}
 		_, err := testrun.VerifyPrepared(testrun.SelectionRequest{}, prepared, testrun.Verification{
-			Clock: time.Now, Workspace: gittree.Workspace{Dir: root}, CandidateIO: io.engine(), Scratch: scratch, WorkerPolicy: testingWorkerPolicy})
+			Clock: time.Now, Workspace: gittree.Workspace{Dir: root}, CandidateIO: io, Scratch: scratch, WorkerPolicy: testingWorkerPolicy})
 		if !errors.Is(err, interrupted) || command == nil {
 			t.Fatalf("verify did not reach the identity projection: %v", err)
 		}

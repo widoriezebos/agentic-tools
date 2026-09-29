@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -21,8 +22,8 @@ import (
 // its own launch, never the early one; a batch whose early red was on
 // another tree carries none.
 func TestBatchOwnerProofNamesTheEarlyRetryAndOwnsItsAttempt(t *testing.T) {
-	previous := batchTipRetryAttempts
-	t.Cleanup(func() { batchTipRetryAttempts = previous })
+	previous := batchowner.BatchTipRetryAttempts
+	t.Cleanup(func() { batchowner.BatchTipRetryAttempts = previous })
 	for _, sameTree := range []bool{true, false} {
 		root, id, _, record := batchProofRefusalBed(t)
 		store := batch.NewStore(root, nil)
@@ -30,23 +31,23 @@ func TestBatchOwnerProofNamesTheEarlyRetryAndOwnsItsAttempt(t *testing.T) {
 		if !sameTree {
 			earlyTree = record.PrefixTrees[0]
 		}
-		batchTipRetryAttempts = func(string) ([]proofrun.Attempt, error) {
+		batchowner.BatchTipRetryAttempts = func(string) ([]proofrun.Attempt, error) {
 			return []proofrun.Attempt{{AttemptID: "proof-early-1", SchemaVersion: proofrun.CandidateAttemptSchemaVersion, CandidateGoalID: "goal-b",
 				CandidateTree: earlyTree, TestAdmission: 3, Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalFailed},
 				TestResult: &proofrun.TestResult{Groups: []proofrun.GroupResult{{ID: "required", Status: "failed"}}}}}, nil
 		}
-		var launched batchProofLaunch
-		deps := batchProofDependencies{
-			rearm: func(string, string) error { return nil },
-			plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
+		var launched batchowner.BatchProofLaunch
+		deps := batchowner.BatchProofDependencies{
+			Rearm: func(string, string) error { return nil },
+			Plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
 				return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard, SelectedGroups: []string{"required"}}, nil
 			},
-			launch: func(request batchProofLaunch) (proofrun.TestResult, error) {
+			Launch: func(request batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
 				launched = request
 				return proofrun.TestResult{AttemptID: "proof-tip-1", CandidateTree: request.Tree, Delivery: proofrun.DeliveryJudgment{Sufficient: true}}, nil
 			},
 		}
-		if err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), deps); err != nil {
+		if err := batchowner.ExecuteBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), deps); err != nil {
 			t.Fatal(err)
 		}
 		finished, err := store.Load(id)

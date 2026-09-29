@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -42,25 +43,25 @@ type laneVerbOwners struct {
 func (inv *intentInvocation) landing() laneVerbOwners {
 	owners := inv.owners.landing
 	if owners.home == nil {
-		owners.home = landingLaneHome
+		owners.home = batchowner.LandingLaneHome
 	}
 	if owners.probe == nil {
-		owners.probe = landingLaneOwnerProbe
+		owners.probe = batchowner.LandingLaneOwnerProbe
 	}
 	if owners.start == nil {
-		owners.start = ensureBatchOwner
+		owners.start = batchowner.EnsureBatchOwner
 	}
 	if owners.validate == nil {
-		owners.validate = validateLandingCheckout
+		owners.validate = batchowner.ValidateLandingCheckout
 	}
 	if owners.by == nil {
-		owners.by = landingLaneRegistrant
+		owners.by = batchowner.LandingLaneRegistrant
 	}
 	if owners.now == nil {
 		owners.now = func() time.Time { return time.Now().UTC() }
 	}
 	if owners.end == nil {
-		owners.end = endLaneOwner
+		owners.end = batchowner.EndLaneOwner
 	}
 	if owners.person == nil {
 		owners.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, time.Now)
@@ -156,7 +157,7 @@ func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.V
 	if inv.input.switched("verbose") {
 		// The lane's spend is a full read of its proof store: only --verbose
 		// pays for it (N-5).
-		sources.Spend = laneSpend
+		sources.Spend = batchowner.LaneSpend
 	}
 	return lane.BuildView(sources)
 }

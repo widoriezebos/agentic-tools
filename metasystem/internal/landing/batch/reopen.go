@@ -5,16 +5,6 @@ import (
 	"time"
 )
 
-// ReopenHeld permits another proof only when the trunk supplies a distinct
-// base tree. The surviving units are reassembled from that new base.
-func ReopenHeld(store Store, id, newBaseTree, actor string, at time.Time) error {
-	prepared, err := prepareHeldReopen(store, id, newBaseTree)
-	if err != nil {
-		return err
-	}
-	return applyHeldReopen(store, id, newBaseTree, actor, at, prepared)
-}
-
 type heldReopen struct {
 	opid     string
 	prefixes []string

@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -1949,7 +1950,7 @@ func (inv *intentInvocation) resumeChannelWait(id string, row metarun.Waiter, ti
 	if timeout > 0 {
 		args = append(args, "--timeout", fmt.Sprint(max(int(timeout.Minutes()), 1)))
 	}
-	caller, lineage := currentProcessIdentity(), ""
+	caller, lineage := ownercall.CurrentProcess(), ""
 	if inv.owners.dependencies.ownerLineage != nil {
 		lineage = inv.owners.dependencies.ownerLineage()
 	}

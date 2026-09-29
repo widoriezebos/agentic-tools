@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 )
 
 // fakeBridgeServer answers one subscribe on the server end of a pipe with
@@ -48,8 +49,8 @@ func TestSuperviseComponentRunsTheOwnerOnABridgeEvent(t *testing.T) {
 	t.Parallel()
 	lines := make(chan string)
 	dials := 0
-	nudges := &bridgeNudges{
-		dial: func() (net.Conn, error) {
+	nudges := &batchowner.BridgeNudges{
+		Dial: func() (net.Conn, error) {
 			dials++
 			if dials > 1 {
 				return nil, syscall.ECONNREFUSED
@@ -58,11 +59,11 @@ func TestSuperviseComponentRunsTheOwnerOnABridgeEvent(t *testing.T) {
 			fakeBridgeServer(t, server, lines)
 			return client, nil
 		},
-		options: board.SubscribeOptions{Kinds: []string{board.KindCard, board.KindStall}, Heartbeat: time.Hour,
+		Options: board.SubscribeOptions{Kinds: []string{board.KindCard, board.KindStall}, Heartbeat: time.Hour,
 			After: func(time.Duration) <-chan time.Time { return nil }},
 	}
 	reports := make(chan string, 8)
-	nudges.report = func(line string) { reports <- line }
+	nudges.Report = func(line string) { reports <- line }
 	nudges.Ensure()
 	if line := <-reports; !strings.HasPrefix(line, "bridge live") {
 		t.Fatalf("first report %q", line)

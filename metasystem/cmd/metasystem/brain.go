@@ -10,6 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
@@ -50,7 +51,7 @@ func defaultBrainActDependencies() brainActDependencies {
 	}
 }
 
-func brainHumanAct(caller processIdentity, root, verb string, fixture bool, classify func(string, int64) (lease.ClassifyResult, error)) error {
+func brainHumanAct(caller ownercall.Process, root, verb string, fixture bool, classify func(string, int64) (lease.ClassifyResult, error)) error {
 	if fixture {
 		authorization, err := fixtureauth.New(root)
 		if err != nil {
@@ -60,7 +61,7 @@ func brainHumanAct(caller processIdentity, root, verb string, fixture bool, clas
 			return nil
 		}
 	}
-	callerPid, err := caller.classifiablePid(identity.KernelProber{})
+	callerPid, err := caller.ClassifiablePid(identity.KernelProber{})
 	if err != nil {
 		return fmt.Errorf("brain %s could not classify its caller: %w", verb, err)
 	}
@@ -77,11 +78,11 @@ func brainHumanAct(caller processIdentity, root, verb string, fixture bool, clas
 // brainDeclare is the declaration owner: the human gate classifies the
 // supplied caller identity (owner_invocation.go), and the outcome goes to the
 // caller's streams.
-func brainDeclare(caller processIdentity, stdout, stderr io.Writer, root, by string, fixture bool) int {
+func brainDeclare(caller ownercall.Process, stdout, stderr io.Writer, root, by string, fixture bool) int {
 	return brainDeclareWith(caller, stdout, stderr, root, by, fixture, defaultBrainActDependencies())
 }
 
-func brainDeclareWith(caller processIdentity, stdout, stderr io.Writer, root, by string, fixture bool, deps brainActDependencies) int {
+func brainDeclareWith(caller ownercall.Process, stdout, stderr io.Writer, root, by string, fixture bool, deps brainActDependencies) int {
 	if by == "" {
 		fmt.Fprintln(stderr, "brain declare needs --by")
 		return 2
@@ -190,11 +191,11 @@ func sortedGoalIDs(items map[string]*goal.GoalFile) []string {
 }
 
 // brainWithdraw is the withdrawal owner under a supplied caller identity.
-func brainWithdraw(caller processIdentity, stdout, stderr io.Writer, root, by string, fixture bool) int {
+func brainWithdraw(caller ownercall.Process, stdout, stderr io.Writer, root, by string, fixture bool) int {
 	return brainWithdrawWith(caller, stdout, stderr, root, by, fixture, defaultBrainActDependencies())
 }
 
-func brainWithdrawWith(caller processIdentity, stdout, stderr io.Writer, root, by string, fixture bool, deps brainActDependencies) int {
+func brainWithdrawWith(caller ownercall.Process, stdout, stderr io.Writer, root, by string, fixture bool, deps brainActDependencies) int {
 	if by == "" {
 		fmt.Fprintln(stderr, "brain withdraw needs --by")
 		return 2

@@ -155,6 +155,12 @@ var retiredWithDeletedLibrary = map[string]string{
 	// Commands print on their invocation's writers; the process-stream swap
 	// it tested is gone, held by TestNoTestSwapsTheProcessStreams.
 	"batch-buildcd-standard/TestCaptureCommandOutputAllowsNestedAndConcurrentDisjointStreams": "cmd/metasystem captureCommandOutput",
+	// C8a part 2: production-unreachable helpers left production with the
+	// tests of only them; the live paths keep their own tests.
+	"batch-buildb-standard/TestBatchDiagnosticRefusalHoldsUnclassified":                       "landing/batch HoldUnclassified",
+	"batch-buildcd-standard/TestReverseDependentsIncludeDirectTransitiveTestAndTaggedImports": "gopackages ReverseDependents",
+	"batch-buildcd-standard/TestBatchJoinGateStepsChangedThenSortedDependentsAndBatchTests":   "landing/batch/goadapter JoinGatePackageSteps",
+	"goal-decision-standard/TestGoalReadItemsListJSONShape":                                   "cmd/metasystem runGoalReadItemsListWithInputs",
 }
 
 var retiredWithDeletedBed = map[string]string{

@@ -14,8 +14,10 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -355,7 +357,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	publishedTip := connectionGit(t, c.root(), "--git-dir", c.origin, "rev-parse", "refs/heads/goal/"+c.id)
 	landOwners, counts := journeyLandOwners(t, j)
 	projected := func(root string, at time.Time) *goal.GoalFile {
-		endpoint, err := goalBranchEndpoint(root)
+		endpoint, err := branch.MainEndpoint(root)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -426,22 +428,22 @@ type journeyLandCounts struct{ handovers, admissions, ensures int }
 func journeyLandOwners(t *testing.T, j *journeyBed) (intentOwners, *journeyLandCounts) {
 	c, owners := j.c, j.owners
 	counts := &journeyLandCounts{}
-	deps := productionBatchJoinDependencies()
-	deps.costForecast = nil
-	deps.handover = func(batchJoinRequest, string, batch.Claim) error { counts.handovers++; return nil }
-	deps.admissionRun = func(_ string, _ string, unit batch.Unit) (batch.JoinAdmission, error) {
+	deps := batchowner.ProductionBatchJoinDependencies()
+	deps.CostForecast = nil
+	deps.Handover = func(batchowner.BatchJoinRequest, string, batch.Claim) error { counts.handovers++; return nil }
+	deps.AdmissionRun = func(_ string, _ string, unit batch.Unit) (batch.JoinAdmission, error) {
 		counts.admissions++
 		if unit.State != batch.UnitJoining || unit.Admission == nil || unit.Admission.Status != "handed-over" {
 			t.Fatalf("admission ran before handover: %+v", unit)
 		}
 		return batch.JoinAdmission{Tree: unit.Admission.Tree, Status: "verified", AttemptID: "connection-admission"}, nil
 	}
-	deps.plan = func(string, string, string) (testpolicy.Plan, error) {
+	deps.Plan = func(string, string, string) (testpolicy.Plan, error) {
 		return testpolicy.Plan{SelectedGroups: []string{"go-fixture"}, RequiredGroups: []string{"go-fixture"}}, nil
 	}
-	deps.ensure = func(string) error { counts.ensures++; return nil }
+	deps.Ensure = func(string) error { counts.ensures++; return nil }
 	projected := func(root string, at time.Time) *goal.GoalFile {
-		endpoint, err := goalBranchEndpoint(root)
+		endpoint, err := branch.MainEndpoint(root)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -451,7 +453,7 @@ func journeyLandOwners(t *testing.T, j *journeyBed) (intentOwners, *journeyLandC
 		}
 		return projection.Tree.Live[c.id]
 	}
-	deps.binding = func(root, goalID string, at time.Time) (dispatchcore.GoalBinding, error) {
+	deps.Binding = func(root, goalID string, at time.Time) (dispatchcore.GoalBinding, error) {
 		file := projected(root, at)
 		if file == nil || file.Claimed == nil {
 			t.Fatalf("the physical accepted goal %s is not claimed", goalID)
@@ -464,7 +466,9 @@ func journeyLandOwners(t *testing.T, j *journeyBed) (intentOwners, *journeyLandC
 	delivery := belowTheGate(defaultIntentDeliveryOwners())
 	delivery.branchRead, delivery.process = owners.delivery.branchRead, owners.delivery.process
 	delivery.batchRoot = func(string, time.Time) (string, bool, error) { return j.landingRoot, true, nil }
-	delivery.batchJoin = func(request batchJoinRequest) (batch.Record, error) { return executeBatchJoin(request, deps) }
+	delivery.batchJoin = func(request batchowner.BatchJoinRequest) (batch.Record, error) {
+		return batchowner.ExecuteBatchJoin(request, deps)
+	}
 	landOwners.delivery = delivery
 	return landOwners, counts
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -36,7 +37,7 @@ type goalCLIBed struct {
 	lineage string
 	remote  string
 	prove   goalAuthorityProver
-	caller  processIdentity
+	caller  ownercall.Process
 }
 
 // goalCLISeedNow is the clock the seed claim was taken at.
@@ -157,7 +158,7 @@ func newGoalCLIBed(t *testing.T, seed goalCLISeed) *goalCLIBed {
 	}
 	bed := &goalCLIBed{
 		t: t, root: root, now: goalCLISeedNow.Add(time.Minute), machine: "fixture-machine", lineage: "fixture-lineage",
-		remote: remote, prove: fixedFixtureGoalAuthority, caller: entryCallerIdentity(),
+		remote: remote, prove: fixedFixtureGoalAuthority, caller: ownercall.EntryCaller(),
 		repo: testgoal.New(files, goalCLISeedNow, "0000000000000000000000000000000000000001"),
 	}
 	return bed
@@ -176,7 +177,7 @@ func (b *goalCLIBed) announceHolder() {
 		"goal-cli-fixture", "fake", b.lineage); err != nil {
 		b.t.Fatal(err)
 	}
-	b.caller = processIdentity{pid: exact.Pid, startedAt: exact.StartedAt.Unix()}
+	b.caller = ownercall.Process{Pid: exact.Pid, StartedAt: exact.StartedAt.Unix()}
 }
 
 // setNow moves the bed's clock; every later command reads it.

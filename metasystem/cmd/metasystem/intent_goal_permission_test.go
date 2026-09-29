@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
 )
 
 func TestIntentGoalAllowAndDisallowStopTestChanges(t *testing.T) {
@@ -111,7 +112,7 @@ func TestStopSurfaceAuditAdmitsADeclarationAfterGoalAllow(t *testing.T) {
 	git := func(args ...string) {
 		t.Helper()
 		command := exec.Command("git", append([]string{"-C", root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false"}, args...)...)
-		command.Env = environWithoutGitSteeringCLI()
+		command.Env = ledgerfence.EnvironWithoutGitSteering()
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v: %s", args, err, output)
 		}

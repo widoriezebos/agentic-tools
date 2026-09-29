@@ -24,6 +24,7 @@ import (
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -384,7 +385,7 @@ func (run *batchRehearsalRun) choosePackage() batchRehearsalCandidate {
 			}
 		}
 		run.git(run.landing, "add", "--", files[0], files[1])
-		plan, planErr := productionBatchTreePlan(run.landing, "goal-rehearsal-a", tree, testpolicy.ModeAuto)
+		plan, planErr := batchowner.ProductionBatchTreePlan(run.landing, "goal-rehearsal-a", tree, testpolicy.ModeAuto)
 		if planErr != nil {
 			run.t.Fatalf("plan rehearsal candidate %s: %v", directory, planErr)
 		}
@@ -523,7 +524,7 @@ func (run *batchRehearsalRun) announce(root, lineage string) {
 }
 
 func (run *batchRehearsalRun) holdLanding() {
-	run.announce(run.landing, landingOwnerLineage)
+	run.announce(run.landing, batchowner.LandingOwnerLineage)
 	holder, err := lease.RequireHolder(run.landing, int64(os.Getpid()), nil)
 	if err != nil || !holder.Holder || holder.ClaimEpoch == nil {
 		run.t.Fatalf("hold rehearsal landing checkout: holder=%+v error=%v", holder, err)

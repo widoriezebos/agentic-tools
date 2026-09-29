@@ -47,7 +47,7 @@ func testColdCandidateBuildRefusalRunsBeforeNativeBuilder(t *testing.T) {
 	// namespace gains nothing (engine-owns-disk-lifetimes 3.5, DL2-11).
 	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildFive, environment, false)
 	if artifact, err := candidateengine.Prepare(context.Background(), controlRoot, fixture.workspace(), "metasystem", ordinaryProjectTree,
-		environment, func() error { t.Fatal("no cold build outside a scratch run"); return nil }, fixture.dependency().engine()); artifact != nil || err == nil ||
+		environment, func() error { t.Fatal("no cold build outside a scratch run"); return nil }, fixture.dependency()); artifact != nil || err == nil ||
 		!strings.Contains(err.Error(), "scratch") {
 		t.Fatalf("preparation outside a scratch run is refused: artifact=%+v err=%v", artifact, err)
 	}
@@ -57,7 +57,7 @@ func testColdCandidateBuildRefusalRunsBeforeNativeBuilder(t *testing.T) {
 	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildFive, environment, false)
 	artifact, err := candidateengine.Prepare(candidateScratchContext(t, context.Background(), controlRoot), controlRoot,
 		fixture.workspace(), "metasystem", ordinaryProjectTree,
-		environment, func() error { called++; return want }, fixture.dependency().engine())
+		environment, func() error { called++; return want }, fixture.dependency())
 	fixture.assertDrained()
 	var refusal *coldBuildBudgetRefusal
 	if artifact != nil || !errors.As(err, &refusal) || refusal != want || called != 1 {

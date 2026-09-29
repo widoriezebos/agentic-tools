@@ -97,10 +97,10 @@ func TestGLEPathMovedBaseReopensForDiscoveredLiteral(t *testing.T) {
 	t.Parallel()
 	literal := pathpattern.EncodeLiteral("src/[literal].go")
 	record := batch.Record{Proof: &batch.Proof{SelectedGroups: []string{"app"}, InputManifests: map[string][]string{"app": {literal}}}}
-	if !batchProofInputsMoved(record, []string{"src/[literal].go"}, "metasystem") {
+	if !batch.DecideMovedBase(record, []string{"src/[literal].go"}, "metasystem").Reopen {
 		t.Fatal("moved discovered literal did not reopen proof")
 	}
-	if batchProofInputsMoved(record, []string{"src/other.go"}, "metasystem") {
+	if batch.DecideMovedBase(record, []string{"src/other.go"}, "metasystem").Reopen {
 		t.Fatal("unrelated moved file reopened proof")
 	}
 }

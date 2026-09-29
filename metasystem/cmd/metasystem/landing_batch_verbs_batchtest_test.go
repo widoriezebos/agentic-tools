@@ -8,12 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 )
 
 func TestBatchTrunkRedLedgerOwnerCapability(t *testing.T) {
 	root := t.TempDir()
-	owner, err := productionTrunkRedLedgerOwner(root)
+	owner, err := batchowner.ProductionTrunkRedLedgerOwner(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +36,7 @@ func TestBatchTrunkRedLedgerOwnerCapability(t *testing.T) {
 
 func TestGoalHandoverRequiresCompleteInputs(t *testing.T) {
 	// The handover owner the batch owner calls in process.
-	if err := goalHandoverOwner(ownerInvocation{}, goalHandoverRequest{}); err == nil || !strings.Contains(err.Error(), "goal handover needs") {
+	if err := goalHandoverOwner(ownercall.Invocation{}, ownercall.HandoverRequest{}); err == nil || !strings.Contains(err.Error(), "goal handover needs") {
 		t.Fatalf("empty handover = %v", err)
 	}
 }
