@@ -48,7 +48,18 @@ rule; builds on g1-s45 (what a seat is doing) for the machines' half.
    (`stream.ts:92`, `partner/store.tsx:1008-1013`). The service tells
    the seat's record when a turn starts and ends (`service.go:589-609`,
    `cmd/metasystem/ui.go:358-363`), which `ui status` prints and the
-   browser never sees.
+   browser never sees. The 202 that accepts a question carries the
+   turn's id and nothing else (`httpd/partner.go:268-273`), and the
+   running turn holds no start (`service.go:202-235`, made at `:765`).
+   A completed call retires nothing: the host emits a doing beat when a
+   call starts (`host.go:1006`) and a look when it ends (`:1040`), and
+   neither the service (`service.go:1523-1526`) nor the reducer
+   (`conversation.ts:284-291`) clears the doing line, though the host's
+   own words say the line that announced a call goes when it becomes a
+   look (`host.go:99-106`). A question's first beats can arrive before
+   its 202, and `asked` keeps a turn that has already begun
+   (`conversation.ts:352-366`); a snapshot behind the beats is not
+   applied over them (`:175-184`).
 3. **The shell.** The rail has no Partner row, by Wido's word: the
    drawer is on every page (`shell/Rail.tsx:9-13`). Its bar is 48 px
    and always on screen (`Drawer.tsx:161-166`,
@@ -69,8 +80,16 @@ rule; builds on g1-s45 (what a seat is doing) for the machines' half.
    `running` is on the page too (`FleetPane.tsx:275`). The words are
    `runningWords` (`fleet/fleet.ts:88-104`, "idle" for none) and
    `jobWords` (`:232-252`). Presence arrives in minutes ("seen 6 min
-   ago"), never seconds. The fleet's dots say what a role is in: alive
-   `--ms-ok`, dead `--ms-danger`, unknown `--ms-marker`
+   ago"), never seconds. A job's start stamp is not its running:
+   dispatch stamps `startedAt` on a record it creates pending, so the
+   status and not the stamp says whether anything runs
+   (`internal/seat/publish.go:62-70`, `fleet/fleet.ts:214-229`). A
+   machine elsewhere carries the one chain its presence published as
+   its `working` list; this seat's row carries every job in flight from
+   the local records (`internal/ui/fleet/fleet.go:341-353`,
+   `fleet/api.ts:174-200`); `workingWords` says the first, "(and N more
+   in flight)" (`fleet.ts:206-216`). The fleet's dots say what a role is
+   in: alive `--ms-ok`, dead `--ms-danger`, unknown `--ms-marker`
    (`fleet/fleet.css:180-199`).
 5. **The house rules on motion and loading.** "Loading has a shape, not
    a spinner" (`shell/controls.tsx:64-67`, the skeleton `aria-hidden`);
@@ -83,7 +102,15 @@ rule; builds on g1-s45 (what a seat is doing) for the machines' half.
    colour is a token in both themes (`tokens.css:15-38`, `:41-65`;
    `tokens.test.ts`; `contrast.test.ts`: text 4.5:1, non-text 3:1).
    `role="status"` is for outcomes and refusals; `aria-live="polite"`
-   only on the toasts (`notifications/Toasts.tsx:39`).
+   only on the toasts (`notifications/Toasts.tsx:39`). The guard
+   asserts that no file names `setInterval` at all and counts only
+   `setTimeout` in an exception file (`cuts.test.ts:841-849`). The token
+   table must equal the registered set exactly (`tokens.test.ts:85-88`);
+   the contrast test parses six-digit colours only and allows exactly
+   three tokens to go unasserted, border, scrim and shadow
+   (`contrast.test.ts:76-80`, `:122-127`). The Looked line counts what
+   an answer saw with the page's own entry excluded and a failed read
+   named, never counted (`partner/Looked.tsx:23-45`).
 
 ## 2. What you want
 
@@ -113,11 +140,17 @@ reduced motion the dot stands still and the clock still counts.
 - D1. **The live line, one component.** A mark of four parts, rendered
   by one component wherever it appears: the dot, 8 px, `--ms-ok`, the
   fleet's own "alive"; the words, the turn's doing line as the stream
-  sends it, or "Thinking" when there is none; the tally, from
-  `live.looked`, "3 read", with ", 1 failed" or ", 2 partial" appended
-  in the marker colour when a look ended so, and nothing before the
-  first look; the clock, mm:ss since the turn began (h:mm:ss past an
-  hour), in the mono face with tabular digits. The words and the tally
+  sends it, or "Thinking" when there is none, and a completed call's
+  line is retired: when a call ends the host says, as a doing beat,
+  what is still in flight, the earliest started of the remaining calls
+  or nothing, so a read followed by a minute of thought shows
+  "Thinking" for that minute, on this page and after a reload alike;
+  the tally, from `live.looked`, counted as the Looked line counts, the
+  page's own entry excluded, a failed read never among the counted, a
+  partial read among them: "3 read", with ", 1 failed" appended in the
+  marker colour when a read failed, and nothing before the first look;
+  the clock, mm:ss since the turn began (h:mm:ss past an hour), in the
+  mono face with tabular digits. The words and the tally
   are one `role="status"` `aria-live="polite"` span, so a screen reader
   hears each change of doing and nothing else; the dot and the clock
   are `aria-hidden`. The first words of the answer replace the whole
@@ -144,26 +177,39 @@ reduced motion the dot stands still and the clock still counts.
   turn runs: `titleFor` takes the flag and both its callers pass it, so
   a section change while busy keeps the dot, and the dot goes when the
   answer is in.
-- D4. **The clock is honest across a reload.** The service records when
-  the running turn began and the snapshot carries it (`startedAt`, RFC
-  3339, empty when idle); `Live` carries it too, set from the accepted
-  send on this page and from the snapshot on a reload. One timer: the
-  live line mounts a 1 s `setInterval` only while a turn runs and clears
-  it when the turn ends or the line unmounts; it reads nothing and
-  reaches no network; the cut guard gains one exception row naming the
-  file and Wido's grant of 2026-09-29 ("Make it happen", on a proposal
-  that named the clock and its timer). The clock is text, so reduced
-  motion does not stop it.
+- D4. **The clock has one origin, the server's.** The service records
+  the instant it admits the turn, on the running turn; the 202 carries
+  it as `startedAt` beside the turn's id; the snapshot carries it while
+  the turn runs (RFC 3339, "" when idle). `Live.startedAt` is set by
+  `asked` from the 202 whether or not beats already arrived, keeping
+  everything they brought; `loaded` keeps a live state that is ahead of
+  the snapshot and fills its start from the snapshot when it is empty;
+  a turn this page learns of from a snapshot alone (an act's answer, a
+  walk, a trouble) takes the snapshot's. The page never uses its own
+  receipt time. One timer: the live line mounts a 1 s `setInterval`
+  only while a turn runs and clears it when the turn ends or the line
+  unmounts; it reads nothing and reaches no network. The cut guard's
+  rows gain the timer's name: a row says which timer a file may set and
+  how many times; the assertion that no file names `setInterval` is
+  replaced by one that only files whose row names it do; and the live
+  line's row grants one `setInterval`, which repeats by nature, by
+  Wido's grant of 2026-09-29 ("Make it happen", on a proposal that
+  named the clock and its timer). The clock is text, so reduced motion
+  does not stop it.
 - D5. **The rail's Fleet dot.** The shell reads `/api/fleet` on mount
   and again on each `fleet` beat and stream open, the three the Fleet
   page already uses, and holds the answer above the rail. A machine
-  counts as working when its standing is reachable and its `running`
-  has a `startedAt`; this seat counts the same way. When any does, the
-  Fleet row carries the dot as a badge on its icon, visible collapsed
-  and expanded, and the row's accessible name and its collapsed hint
-  gain the words, one machine per line, "m1e: build round 2 on
-  verbs-match-intent" (from `runningWords`). No clock: presence cannot
-  tick. On the Fleet page the Running column takes the same dot before
+  counts as working when its standing is reachable and one of its
+  `working` entries has a job whose status is `running`, the one word
+  dispatch keeps for work in hand; a reservation's start stamp proves
+  nothing, and a job with no status is not working. This seat's row
+  carries every local job, so a running job beside a newer reservation
+  counts. When any machine is working, the Fleet row carries the dot as
+  a badge on its icon, visible collapsed and expanded, and the row's
+  accessible name and its collapsed hint gain the words, one machine
+  per line, "m1e: build round 2 on verbs-match-intent", the Fleet
+  page's own words for that machine (`workingWords`). No clock:
+  presence cannot tick. On the Fleet page the Running column takes the same dot before
   its words for a working machine. Before the read lands, or after it
   fails, the rail says nothing.
 - D6. **Two feeds of one mark.** The Partner's turn and the machines
@@ -184,14 +230,21 @@ page.
 
 ## 6. Payload and routes
 
-No new route. `Snapshot` gains `startedAt` (RFC 3339, "" when idle).
-`Live` gains `startedAt`. `titleFor` gains a `working` flag.
-`tokens.css` gains `--ms-ok-halo` in both themes and its Tailwind
-mirror. The cut guard's `TIMER_EXCEPTIONS` gains one row for the live
-line's clock; the shell's fleet read is the existing call site in
-`fleet/api.ts` and adds no row. Copy: "Thinking" (no ellipsis), "N
-read", ", N failed", ", N partial"; the bar's Stop is the composer's
-"Stop"; the rail's words "<machine>: <runningWords>".
+No new route. The running turn holds its start; the question's 202
+carries `startedAt` beside `turn`; `Snapshot` gains `startedAt` (RFC
+3339, "" when idle); `Live` gains `startedAt`. The host emits a doing
+beat on a call's completion naming what is still in flight or "".
+`titleFor` gains a `working` flag. `tokens.css` gains `--ms-ok-halo` in
+both themes and its Tailwind mirror, registered in the token table's
+set, and named beside border, scrim and shadow among the tokens the
+contrast test does not assert, as translucent decoration; the solid
+dot's pair, `ok` on `surface-2`, stands, and `ok` on `surface` joins it
+for the transcript. The cut guard's `TIMER_EXCEPTIONS` rows carry the
+timer's name and count; the live line's row grants one `setInterval`;
+the shell's fleet read is the existing call site in `fleet/api.ts` and
+adds no row. Copy: "Thinking" (no ellipsis), "N read", ", N failed";
+the bar's Stop is the composer's "Stop"; the rail's words "<machine>:
+<workingWords>".
 
 ## 7. Not here, later
 
@@ -201,21 +254,29 @@ in seconds.
 
 ## 8. Verification and box
 
-Go: the snapshot carries the turn's start while a turn runs and "" when
-idle, and the start survives a re-read mid-turn. Frontend (vitest): the
-live line from a store with a running turn and no doing says "Thinking"
-with the clock; with a doing and two reads says the doing and "2 read";
-with a failed look says ", 1 failed" in the marker class; with the
-first text the line is gone; the words span is `role="status"` polite
+Go: the 202 and the snapshot carry the turn's start while a turn runs
+and the snapshot "" when idle, the same instant in both; a call's
+completion emits a doing beat of "" when no call remains and of the
+earliest remaining call's title when one does, and the snapshot's
+`doing` follows. Frontend (vitest): the live line from a store with a
+running turn and no doing says "Thinking" with the clock; with a doing
+and two reads says the doing and "2 read"; with a failed look says
+", 1 failed" in the marker class and does not count it; a page entry
+is not counted; one completed call followed by silence says "Thinking";
+a 202 arriving after the turn's first beats sets the start and keeps
+the beats; a snapshot behind the beats fills an empty start and
+replaces nothing else; with the first text the line is gone; the words span is `role="status"` polite
 and the clock and the dot are hidden; the closed bar shows the live
 line and Stop while busy and the field with the draft otherwise, the
 proposal bar and the handed chip in both; the drawer's title carries
 the dot only while busy; `titleFor` with the flag, the unread prefix
-kept; the rail's Fleet row from a page with one reachable running
-machine carries the dot and the words, and none from an unreachable
-machine, a reservation without a start, or no page; the cut guard's
-rows (one timer in the named file, no new network site); the tokens
-and contrast tests over the halo token; reduced motion turns the
+kept; the rail's Fleet row from a page with one reachable machine whose
+job is `running` carries the dot and the words, and none from an
+unreachable machine, a `pending` job with a start stamp, a job with no
+status, or no page, and this seat's row with a running job beside a
+newer reservation counts; the cut guard's rows (one `setInterval` in
+the named file and no other, no new network site); the tokens and
+contrast tests over the halo token; reduced motion turns the
 animation off, held by a static assertion over the stylesheet.
 Walkthrough: the three placements and the title with a turn in flight,
 staged through the walkthrough's fixture Partner or a staged snapshot,
@@ -228,10 +289,34 @@ fix round; 60 to 120 job-minutes.
 ## 9. Self-grade
 
 High on D1 to D3: the state already exists in the store and the places
-are the ones the shell already has. Medium on D4: the one timer is a
-deliberate exception to a cut Wido keeps tight, and the start time is a
-small server change. Medium on D5: presence granularity means the dot
-can outlive a job by minutes, and the words name the source. Weakest:
-the doing line's words are the runtime's tool titles, which the design
-does not rewrite; if they are terse the line leans on the tally and the
-clock.
+are the ones the shell already has; the one server change D1 needs, a
+doing beat on completion, is what the host's own comment already
+promises. Medium on D4: the one timer is a deliberate exception to a
+cut Wido keeps tight, and the start travels through three shapes.
+Medium on D5: presence granularity means the dot can outlive a job by
+minutes, and the words name the source. Weakest: the doing line's
+words are the runtime's tool titles, which the design does not
+rewrite; if they are terse the line leans on the tally and the clock.
+
+## Dispositions (Astra round 1, 2026-09-29, under R-121 and R-124)
+
+Read of revision 1 at `4b00ec866`, verbatim in
+`g1-s74-astra-critique.md`. Five material findings, all folded; every
+cited line re-read at whole-function depth before folding.
+
+| id | finding | fold |
+|---|---|---|
+| S74-01 | a start stamp does not say a fleet job runs: dispatch stamps `startedAt` on a record it creates pending (`internal/seat/publish.go:62-70`), the Fleet page reads status (`fleet.ts:214-229`), and this seat's row carries every local job (`fleet.go:341-353`) | D5: working = reachable and a `working` job whose status is `running`; a stamp proves nothing, no status is not working; this seat's every job counts; the words are `workingWords`; §8 fixtures for a stamped pending job and a local running job beside a newer reservation |
+| S74-02 | the doing line is never retired: a completion emits a look only (`host.go:1040`) and neither the service (`service.go:1523`) nor the reducer (`conversation.ts:286`) clears `doing`, so a finished read stays "now" through a minute of thought | D1: the host emits a doing beat on completion naming what is still in flight or nothing; §8 fixture: one completed call then silence says "Thinking" |
+| S74-03 | the clock had two origins: the 202 carries only the turn (`httpd/partner.go:268-273`), `asked` stamps the page's receipt time (`store.tsx:1100`) and keeps a turn whose beats came first (`conversation.ts:352`), and a snapshot behind the beats is not applied (`:183`) | D4: one origin, the server's admit instant, carried by the 202 and the snapshot; `asked` sets it keeping the beats; `loaded` fills it when empty; §8 fixtures for a late 202 and a snapshot behind the beats |
+| S74-04 | an exception row does not admit `setInterval`: the guard asserts no file names it and counts `setTimeout` only (`cuts.test.ts:841-849`) | D4 and §6: rows carry the timer's name and count; the no-`setInterval` assertion becomes "only where a row names it"; the live line's row grants one |
+| S74-05 | the halo token fails two guards: the token table must equal the registered set (`tokens.test.ts:85-88`) and the contrast test parses six-digit colours only, allowing exactly border, scrim and shadow unasserted (`contrast.test.ts:76-80`, `:122-127`) | §6: register the token; name it beside border, scrim and shadow as translucent decoration; the solid dot keeps its asserted pair and gains `ok` on `surface` |
+
+Non-material, taken anyway: S74-07, the tally counts as the Looked
+line counts (page excluded, a failed read named and never counted, a
+partial read counted; `Looked.tsx:23-45`), and ", N partial" is
+dropped. S74-06, one owner for the fleet read, stays in §5's later
+list. Astra also verified, and the design leans on, that the words and
+the clock are separate spans; that the bar swap's controls have owners
+that survive it; that both title setters are reached; and that
+`loadFleet` from the shell adds no call site.
