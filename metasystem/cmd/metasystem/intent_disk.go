@@ -57,15 +57,7 @@ func (o diskOwners) withDefaults() diskOwners {
 		o.now = time.Now
 	}
 	if o.person == nil {
-		o.person = func(root string) (string, error) {
-			if _, err := humanauthority.Prove(root, int64(os.Getppid()), humanauthority.KernelReader{}, time.Now().UTC()); err != nil {
-				return "", err
-			}
-			if enrollment, readErr := humanauthority.ReadEnrollment(root); readErr == nil && enrollment.Human != "" {
-				return enrollment.Human, nil
-			}
-			return "the enrolled person", nil
-		}
+		o.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, func() time.Time { return time.Now().UTC() })
 	}
 	if o.census == nil {
 		o.census = func() *diskstore.UseCensus {
@@ -360,14 +352,28 @@ func diskPlural(count int, one, many string) string {
 	return many
 }
 
+// provenPerson proves the person at the enrolled terminal from the shell pid
+// names and returns the enrolled name to record.
+func provenPerson(reader humanauthority.Reader, pid func() int64, now func() time.Time) func(root string) (string, error) {
+	return func(root string) (string, error) {
+		if _, err := humanauthority.Prove(root, pid(), reader, now()); err != nil {
+			return "", err
+		}
+		if enrollment, readErr := humanauthority.ReadEnrollment(root); readErr == nil && enrollment.Human != "" {
+			return enrollment.Human, nil
+		}
+		return "the enrolled person", nil
+	}
+}
+
 // diskPerson proves the person at the enrolled terminal for the acts only a
 // person makes; an agent is told who runs it and how.
 func diskPerson(inv *intentInvocation, owners diskOwners, top, act string) (string, *intentResult) {
 	by, err := owners.person(top)
 	if err != nil {
 		return "", &intentResult{Outcome: intentRefused, code: 3,
-			Summary:  "disk clean " + act + " is a person's act at the enrolled terminal, and this terminal could not be proven as one: " + err.Error() + "; nothing was done",
-			Decision: "a person runs metasystem disk clean " + act + " at their enrolled terminal; metasystem disk clean --preview shows what it would act on"}
+			Summary:  "disk clean " + act + " is a person's act, and this shell was not proven to be one: " + humanauthority.PlainReason(err) + "; nothing was done",
+			Decision: humanauthority.PersonActRemedy("metasystem disk clean "+act) + "; metasystem disk clean --preview shows what it would act on"}
 	}
 	return by, nil
 }

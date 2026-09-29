@@ -180,7 +180,7 @@ func goalIntentCommands() []intentCommand {
 			details: []string{
 				"Without --budget each goal is approved under its own tier's norm box, all goals in one act.",
 				"BOX is norm or the complete compact box, for example 1d/10/720m/1/3 (elapsed/attempts/job minutes/active jobs/review rounds).",
-				"Run it at the enrolled terminal; --under GRANT is a seat's act under a recorded power of attorney.",
+				"Run it at your enrolled terminal (metasystem system enroll --name NAME enrolls one); --under GRANT is a seat's act under a recorded power of attorney.",
 			},
 			flags: []intentFlag{
 				{name: "id", aliases: []string{"goal"}, value: "G", repeat: true, advanced: true, usage: "a goal to approve (repeatable)"},

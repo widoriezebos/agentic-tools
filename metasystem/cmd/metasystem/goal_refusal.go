@@ -8,6 +8,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 type humanVerbValues struct {
@@ -65,7 +66,7 @@ func humanProofRemedy(values *humanVerbValues, fixture bool, temporaryWord, revi
 	if temporaryWord != "" || reviewBy != "" {
 		return humanVerbRemedy{words: "supply a valid temporary human word and review date together"}
 	}
-	return humanVerbRemedy{words: "run this at the enrolled terminal"}
+	return humanVerbRemedy{words: humanauthority.PersonActRemedy("")}
 }
 
 func newHumanVerbValues(verb string, args []string) *humanVerbValues {

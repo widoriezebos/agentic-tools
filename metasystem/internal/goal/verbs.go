@@ -1868,7 +1868,7 @@ func Grant(r VerbRequest, proof *humanauthority.Proof, tiers []uint8, verbs []st
 		return PublishResult{}, err
 	}
 	if temporary {
-		return PublishResult{}, fmt.Errorf("a relayed word cannot grant a power of attorney; grant from the enrolled terminal or a verified channel answer")
+		return PublishResult{}, fmt.Errorf("a relayed word cannot grant a power of attorney; grant it by a verified channel answer, or: %s", humanauthority.PersonActRemedy("metasystem grant add"))
 	}
 	for _, tier := range tiers {
 		if tier != 1 && tier != 2 {
@@ -1944,7 +1944,7 @@ func Revoke(r VerbRequest, proof *humanauthority.Proof, id string) (PublishResul
 		return PublishResult{}, err
 	}
 	if temporary {
-		return PublishResult{}, fmt.Errorf("a relayed word cannot revoke a power of attorney; revoke from the enrolled terminal or a verified channel answer")
+		return PublishResult{}, fmt.Errorf("a relayed word cannot revoke a power of attorney; revoke it by a verified channel answer, or: %s", humanauthority.PersonActRemedy("metasystem grant revoke"))
 	}
 	return Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -3598,7 +3598,7 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 			// Allowing a permission is a person's act under the same proof a
 			// lowering takes; the refusal names the command the person runs.
 			if fields.Permission != nil && fields.Permission.Allowed && !permission.Holds(f) {
-				remedy := "a person runs " + AllowCommand(id, permission.Name) + " at the enrolled terminal"
+				remedy := humanauthority.PersonActRemedy(AllowCommand(id, permission.Name))
 				if r.Actor.Human == "" {
 					return nil, fmt.Errorf("allowing %s is a person's act; %s", permission.Words, remedy)
 				}

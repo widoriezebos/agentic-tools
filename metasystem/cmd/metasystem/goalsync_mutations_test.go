@@ -93,7 +93,7 @@ func TestSyncReqLineage(t *testing.T) {
 	const (
 		agentRefusal        = "mutations carry their coordinator's identity: export METASYSTEM_OWNER_LINEAGE or pass --lineage"
 		noEnrollmentRefusal = "a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem system enroll --name <your name> here once, or pass --lineage"
-		wrongShellRefusal   = "a human act derives its lineage only at the enrolled terminal: this shell does not descend from it (TERMINAL_NOT_REACHED); run the act at the terminal, or pass --lineage"
+		wrongShellRefusal   = "a human act derives its lineage only at the enrolled terminal: this shell does not descend from it (TERMINAL_NOT_REACHED); a person, at a terminal no agent started, enrolls it once with metasystem system enroll --name NAME, then runs the same command there, or passes --lineage"
 	)
 
 	t.Run("human act derives enrolled terminal lineage", func(t *testing.T) {
@@ -982,7 +982,7 @@ func TestGoalBudgetKeepsOverNormFixtureAuthorityOutsideTheTerminalFold(t *testin
 		return fixture.runBudget(args, fixedFixtureGoalAuthority)
 	})
 	if code != 1 || !strings.Contains(stdout, `"outcome":"rejected"`) || strings.Count(stderr, "\n") != 2 ||
-		!strings.Contains(stderr, "goal budget: GOAL_NORM_REFUSED") || !strings.Contains(stderr, "no command completes this: run the over-norm box at a real enrolled terminal") {
+		!strings.Contains(stderr, "goal budget: GOAL_NORM_REFUSED") || !strings.Contains(stderr, "no command completes this: a person, at a terminal no agent started, enrolls it once with metasystem system enroll --name NAME, then runs the over-norm box there") {
 		t.Fatalf("fixture proof reached the enrolled-terminal fold: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	fixture.expectBindings(0)
@@ -1791,7 +1791,7 @@ func TestGoalSetObligationWithoutTemporaryWordStillProvesAncestry(t *testing.T) 
 	stderr, code := captureStderr(t, func() int {
 		return runGoalSetObligationWithAuthorityFacts(completeSetObligationArgs(root), humanauthority.ProveOrTemporaryGoalAuthority, facts)
 	})
-	if code != 1 || !strings.Contains(stderr, "only a person at the enrolled terminal may run this") {
+	if code != 1 || !strings.Contains(stderr, personOnlyPrefix) {
 		t.Fatalf("ordinary set-obligation no longer failed closed on missing ancestry: code=%d stderr=%q", code, stderr)
 	}
 }
@@ -1805,7 +1805,7 @@ func TestGoalSetObligationAnnouncesTemporaryAuthority(t *testing.T) {
 		!strings.Contains(stdout, "re-approval due 2026-09-06 at an agent-free terminal") {
 		t.Fatalf("temporary set-obligation did not announce its status: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	if strings.Contains(stderr, "only a person at the enrolled terminal may run this") {
+	if strings.Contains(stderr, personOnlyPrefix) {
 		t.Fatalf("temporary set-obligation still attempted enrolled ancestry: %q", stderr)
 	}
 	fixture.expectTransactions(1, 0)

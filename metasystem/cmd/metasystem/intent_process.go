@@ -661,7 +661,7 @@ func (inv *intentInvocation) stopSession() int {
 	if by == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "session", ID: ""}},
 			Summary: "stop session needs the attending person: --by NAME; nothing was done",
-			next:    inv.publicArgv("session", "stop", "--by", "NAME"), nextReason: "at the enrolled terminal, with your name"})
+			next:    inv.publicArgv("session", "stop", "--by", "NAME"), nextReason: "with your name, at a terminal enrolled with " + humanauthority.EnrollCommand})
 	}
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
@@ -669,7 +669,7 @@ func (inv *intentInvocation) stopSession() int {
 	marker, refusal, code := inv.owners.processes.sessionStop(inv.stateRoot, by)
 	if code != 0 {
 		return inv.render(intentResult{Outcome: intentRefused, code: code, Targets: []intentTarget{{Kind: "session", ID: ""}}, Summary: refusal,
-			Decision: "a person authorizes this at the enrolled terminal; the checkout keeps running either way"})
+			Decision: "the refusal names what to do first; the checkout keeps running either way"})
 	}
 	if refusal != "" {
 		// The same person's authorization already holds (R-129-ui).

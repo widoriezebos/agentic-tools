@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"path"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // MappedVerb is one lawful row delta the hand edit decomposed
@@ -91,7 +93,7 @@ func mapDeltasFor(e Endpoint, baseCommit string, snap *Snapshot) ([]MappedVerb, 
 				return nil, fmt.Errorf("%s: file name and Id disagree (%s)", d.Path, edited.Id)
 			}
 			if edited.Priority != 0 || edited.Sequence != 0 || rankDiagnosticPresent(problems) {
-				return nil, fmt.Errorf("%s: Priority and Sequence are written by metasystem goal prioritize at the enrolled terminal; a hand-created rank has no reconcile grammar", d.Path)
+				return nil, fmt.Errorf("%s: Priority and Sequence are written by a person's metasystem goal prioritize (%s); a hand-created rank has no reconcile grammar", d.Path, humanauthority.PersonActRemedy("metasystem goal prioritize"))
 			}
 			if edited.State != "" && edited.State != StateQueued {
 				return nil, fmt.Errorf("%s: a hand-created goal opens queued; %s is unmappable", d.Path, edited.State)
@@ -130,7 +132,7 @@ func mapDeltasFor(e Endpoint, baseCommit string, snap *Snapshot) ([]MappedVerb, 
 				return nil, fmt.Errorf("%s: the edited file does not parse", d.Path)
 			}
 			if edited.Priority != baseFile.Priority || edited.Sequence != baseFile.Sequence || rankDiagnosticPresent(problems) {
-				return nil, fmt.Errorf("%s: Priority and Sequence are written by metasystem goal prioritize at the enrolled terminal; a hand-edited rank has no reconcile grammar", d.Path)
+				return nil, fmt.Errorf("%s: Priority and Sequence are written by a person's metasystem goal prioritize (%s); a hand-edited rank has no reconcile grammar", d.Path, humanauthority.PersonActRemedy("metasystem goal prioritize"))
 			}
 			// Integrity diagnostics are the hand edit's OWN signature
 			// — the human changed bytes under a machine digest, and
@@ -323,7 +325,7 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 		return nil, fmt.Errorf("%s: Pinned is written by the set-pin verb; a hand-edited pin has no reconcile grammar", p)
 	}
 	if edited.Priority != base.Priority || edited.Sequence != base.Sequence {
-		return nil, fmt.Errorf("%s: Priority and Sequence are written by metasystem goal prioritize at the enrolled terminal; a hand-edited rank has no reconcile grammar", p)
+		return nil, fmt.Errorf("%s: Priority and Sequence are written by a person's metasystem goal prioritize (%s); a hand-edited rank has no reconcile grammar", p, humanauthority.PersonActRemedy("metasystem goal prioritize"))
 	}
 	if (edited.Budget == nil) != (base.Budget == nil) ||
 		(edited.Budget != nil && *edited.Budget != *base.Budget) {

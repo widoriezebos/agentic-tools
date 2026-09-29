@@ -163,7 +163,7 @@ func (inv *intentInvocation) actorArgs(id string, names ...string) ([]string, *i
 	refused := func(err error) *intentResult {
 		return &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
 			Summary:  "cannot tell who runs metasystem " + inv.command.name + ": " + humanauthority.PlainReason(err) + ", and no agent session is named; nothing was done",
-			Decision: "a person runs it at the terminal enrolled on this machine; an agent runs it from the session its launcher started, which names itself in METASYSTEM_OWNER_LINEAGE, or passes --lineage LINEAGE"}
+			Decision: humanauthority.PersonActRemedy("metasystem "+inv.command.name+" "+id) + "; an agent runs it from the session its launcher started, which names itself in METASYSTEM_OWNER_LINEAGE, or passes --lineage LINEAGE"}
 	}
 	if dependencies.proveHuman == nil {
 		return nil, refused(fmt.Errorf("no human proof reader is available"))
@@ -503,7 +503,7 @@ func (inv *intentInvocation) budgetUnderAttorney(file *goal.GoalFile, box, under
 	if file.IsFencedClaim() {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(file.Id),
 			Summary:  "a power of attorney does not cover a goal stopped by its budget; nothing was done",
-			Decision: "a person resumes it at the enrolled terminal: " + shellCommand(inv.publicArgv("goal", "resume", file.Id))})
+			Decision: humanauthority.PersonActRemedy(shellCommand(inv.publicArgv("goal", "resume", file.Id)))})
 	}
 	budget, problem := inv.completeBox(box, file)
 	if problem != nil {
@@ -752,7 +752,7 @@ func runIntentResume(inv *intentInvocation) int {
 			// never carried into, or silently dropped from, an unpark.
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
 				Summary:  "--temporary-human-word and --review-by resume a goal stopped by its budget; a parked goal's unpark takes neither; nothing was done",
-				Decision: "a person resumes a parked goal at the enrolled terminal, or a seat unparks it under a power of attorney with --under GRANT --verified TEXT"})
+				Decision: humanauthority.PersonActRemedy(shellCommand(inv.publicArgv("goal", "resume", id))) + ", or a seat unparks it under a power of attorney with --under GRANT --verified TEXT"})
 		}
 		var args []string
 		if inv.input.has("under") || inv.input.has("verified") {
@@ -774,7 +774,7 @@ func runIntentResume(inv *intentInvocation) int {
 		if inv.input.has("under") || inv.input.has("verified") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
 				Summary:  "a power of attorney covers unparking a parked goal, not resuming a goal stopped by its budget; nothing was done",
-				Decision: "a person resumes it at the enrolled terminal: " + shellCommand(inv.publicArgv("goal", "resume", id))})
+				Decision: humanauthority.PersonActRemedy(shellCommand(inv.publicArgv("goal", "resume", id)))})
 		}
 		if file.Budget == nil {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),

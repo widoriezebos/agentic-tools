@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // goal allow G PERMISSION and goal disallow G PERMISSION record and withdraw
@@ -48,7 +49,7 @@ func runIntentAllow(inv *intentInvocation) int {
 	personAct := func(detail string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
 			Summary:  fmt.Sprintf("allowing %s is a person's act%s; nothing was done", permission.Words, detail),
-			Decision: "a person runs " + command + " at the enrolled terminal (naming themself with --by NAME where the shell carries a session lineage)"})
+			Decision: humanauthority.PersonActRemedy(command) + " (naming themself with --by NAME where the shell carries a session lineage)"})
 	}
 	// An agent session names itself by its lineage; it cannot allow, and
 	// the refusal names the command the person runs.

@@ -782,7 +782,7 @@ func TestPriorityRecovery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := requestForEntry(endpoint, entry); err == nil || !strings.Contains(err.Error(), "enrolled terminal") {
+		if _, err := requestForEntry(endpoint, entry); err == nil || !strings.Contains(err.Error(), "system enroll") {
 			t.Fatalf("stored human name reconstructed rank authority: %v", err)
 		}
 		reports, err := Recover(endpoint)
