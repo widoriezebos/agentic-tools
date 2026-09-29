@@ -31,9 +31,10 @@ import (
 //     human act after it, and does not run while a hold stands (D3).
 //
 // The holder lands; nothing here lands anything. The seat that holds the claim
-// reads LandingDue on its turn and runs the ordinary landing, which calls Gate
-// again against the fresh ledger, and once the publication is confirmed it
-// writes the landed line naming what let it land.
+// reads LandingDue on its Stop and takes the ordinary landing through the
+// public command (Store.TakeHolderStep), which calls Gate again against the
+// fresh ledger, and once the publication is confirmed it writes the landed
+// line naming what let it land.
 
 const (
 	// LandWithoutSittingVerb is the human's decision to land without a sitting.
@@ -333,34 +334,33 @@ func ReadGate(f *GoalFile, s GateSettings, now time.Time) GateReading {
 	return read
 }
 
-// LandingDue says the holder should land this goal on its turn now, and why:
-// a goal waiting to land, not held, not sent back and not landed yet, that is
-// eligible by the clock below the tier, or at or above it carries the human's
-// word to land. The landing itself evaluates Gate against the fresh ledger and
-// the branch tip; this only says it is worth trying. Key names the fact the
-// due landing rests on, so a turn that has already been told of it is not told
-// again.
-func LandingDue(f *GoalFile, s GateSettings, now time.Time) (due bool, why, key string) {
+// LandingDue says the holder should take this goal's landing on its Stop now,
+// and why: a goal waiting to land, not sent back and not landed yet, that is
+// eligible by the clock below the tier (which does not run under a hold), or
+// at or above it carries the human's word to land. The landing itself
+// evaluates Gate against the fresh ledger and the branch tip; this only says
+// it is worth taking, so a word that a standing sitting or a moved tip keeps
+// from landing is taken and its refusal shown, for the human to resolve.
+func LandingDue(f *GoalFile, s GateSettings, now time.Time) (due bool, why string) {
 	if f == nil || !f.IsLandingClaim() {
-		return false, "", ""
+		return false, ""
 	}
 	read := ReadGate(f, s, now)
-	if read.Landed || len(read.HeldBy) > 0 || read.Word == VerdictSendBack {
-		return false, "", ""
+	if read.Landed || read.Word == VerdictSendBack {
+		return false, ""
 	}
 	if !read.WaitsForHuman {
 		if !read.Eligible {
-			return false, "", ""
+			return false, ""
 		}
-		return true, fmt.Sprintf("eligible under landing.review.auto-after=%s, tier %d below human-from-tier=%d", s.AutoAfterText, read.Tier, s.HumanFromTier),
-			f.Id + "@" + read.ClockFrom.UTC().Format(time.RFC3339)
+		return true, fmt.Sprintf("eligible under landing.review.auto-after=%s, tier %d below human-from-tier=%d", s.AutoAfterText, read.Tier, s.HumanFromTier)
 	}
 	if read.Word == "" {
-		return false, "", ""
+		return false, ""
 	}
 	said := newestWord(f)
 	words := map[string]string{VerdictClearToLand: "cleared to land by " + said.by, LandWithoutSittingVerb: "to land without a sitting, by " + said.by}
-	return true, words[said.kind] + " at " + short(said.tip), f.Id + "@" + said.opid
+	return true, words[said.kind] + " at " + short(said.tip)
 }
 
 // LandWithoutSitting records one human's decision to land a goal at or above
@@ -594,41 +594,62 @@ func ResolveGateSettings(confPath string) (GateSettings, error) {
 	return GateSettings{HumanFromTier: resolved.HumanFromTier, AutoAfter: resolved.AutoAfter, AutoAfterText: resolved.After.Value}, nil
 }
 
-// HolderStepLines are the holder's own steps over the claims it holds, as its
-// turn reads them (g1-s70 D3, g1-s69 SOL-S69-01): a landing that is due, and a
-// send-back that waits for its revision. Each names the public command the
-// holder runs under its own identity, and the key its turn remembers so the
-// same fact is said once. The landing evaluates the gate again when it runs,
-// and a claim that changed hands is not this seat's to read here.
-func HolderStepLines(files []*GoalFile, s GateSettings, now time.Time) (lines, keys []string) {
-	for _, file := range files {
-		if review, standing := SentBackOf(file); standing {
-			lines = append(lines, fmt.Sprintf("SENT BACK %s by %s at %s: revise it from the published brief now: metasystem work revise %s", file.Id, review.By, short(review.Tip), file.Id))
-			keys = append(keys, "sent-back:"+file.Id+"@"+review.Opid)
-			continue
-		}
-		if due, why, key := LandingDue(file, s, now); due {
-			lines = append(lines, fmt.Sprintf("LANDING DUE %s, %s: land it now: metasystem work land %s", file.Id, why, file.Id))
-			keys = append(keys, "landing-due:"+key)
-		}
-	}
-	return lines, keys
+// HolderStep is one step the seat that holds a claim takes on its Stop path
+// (g1-s70 D3): a due landing, or the revision of a sent-back goal.
+type HolderStep struct {
+	Goal string
+	// Revise is a send-back's revision; otherwise the step is a due landing.
+	Revise bool
+	// Why is what makes the step due, as the Stop says it.
+	Why string
 }
 
-// holderSteps reads the gate's settings from the installation the verdict's
-// ledger belongs to and answers the holder's due steps; unreadable settings
-// say so on the turn and prompt nothing.
-func (s *Store) holderSteps(files []*GoalFile) ([]string, []string) {
+// HolderStepsDue are the holder's own steps over the claims it holds, as its
+// Stop reads them (g1-s70 D3, g1-s69 SOL-S69-01): a send-back that waits for
+// its revision, and a landing that is due. The step is taken through the
+// public command, which evaluates the gate again then; a claim that changed
+// hands is not this seat's to read here. A send-back stops being due once its
+// revision is answered on the goal, so it is taken once.
+func HolderStepsDue(files []*GoalFile, s GateSettings, now time.Time) []HolderStep {
+	var steps []HolderStep
+	for _, file := range files {
+		if review, standing := SentBackOf(file); standing {
+			steps = append(steps, HolderStep{Goal: file.Id, Revise: true, Why: fmt.Sprintf("sent back by %s at %s", review.By, short(review.Tip))})
+			continue
+		}
+		if due, why := LandingDue(file, s, now); due {
+			steps = append(steps, HolderStep{Goal: file.Id, Why: why})
+		}
+	}
+	return steps
+}
+
+// takeHolderSteps takes the holder's due steps on its Stop and answers what
+// the Stop shows: each step's outcome, or, with no taker wired, the step and
+// the public command that takes it. Unreadable settings say so and take
+// nothing.
+func (s *Store) takeHolderSteps(files []*GoalFile) []string {
 	if len(files) == 0 {
-		return nil, nil
+		return nil
 	}
 	endpoint, err := s.projectionEndpoint()
 	if err != nil {
-		return []string{"the landing gate's settings cannot be read: " + err.Error()}, []string{""}
+		return []string{"the landing gate's settings cannot be read: " + err.Error()}
 	}
 	settings, err := ResolveGateSettings(filepath.Join(endpoint.Root, "metasystem.conf"))
 	if err != nil {
-		return []string{"the landing gate's settings cannot be read: " + err.Error()}, []string{""}
+		return []string{"the landing gate's settings cannot be read: " + err.Error()}
 	}
-	return HolderStepLines(files, settings, s.now())
+	var lines []string
+	for _, step := range HolderStepsDue(files, settings, s.now()) {
+		switch {
+		case s.TakeHolderStep != nil:
+			lines = append(lines, s.TakeHolderStep(step))
+		case step.Revise:
+			lines = append(lines, fmt.Sprintf("SENT BACK %s, %s: metasystem work revise %s", step.Goal, step.Why, step.Goal))
+		default:
+			lines = append(lines, fmt.Sprintf("LANDING DUE %s, %s: metasystem work land %s", step.Goal, step.Why, step.Goal))
+		}
+	}
+	return lines
 }

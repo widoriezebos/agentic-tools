@@ -186,13 +186,10 @@ type sessionState struct {
 	LastTouched          string   `json:"lastTouched"`
 	OpenWorkSignature    string   `json:"openWorkSignature"`
 	BlockedGoalRevisions []string `json:"blockedGoalRevisions"`
-	// HolderSteps are the holder's due steps this session was already told
-	// of (g1-s70 D3): a due landing, a send-back to revise.
-	HolderSteps         []string `json:"holderSteps,omitempty"`
-	BlockedFreeDigests  []string `json:"blockedFreeDigests"`
-	BlockedQueueDigests []string `json:"blockedQueueDigests,omitempty"`
-	ObservedQueueDigest string   `json:"observedQueueDigest,omitempty"`
-	WatchdogSurfaced    *string  `json:"watchdogSurfaced"`
+	BlockedFreeDigests   []string `json:"blockedFreeDigests"`
+	BlockedQueueDigests  []string `json:"blockedQueueDigests,omitempty"`
+	ObservedQueueDigest  string   `json:"observedQueueDigest,omitempty"`
+	WatchdogSurfaced     *string  `json:"watchdogSurfaced"`
 	// The monitor facility's two additive slots: the
 	// unwatched-work block-once digests and the green cursor riding the
 	// terminal sequence's total order.
@@ -1734,20 +1731,14 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 		verdict.BlockSource = &source
 		display = append(display, reason)
 	}
-	// landingClaims says what this machine holds waiting to land, and the
-	// holder's due steps over it: each blocks the turn once, naming the
-	// command the holder runs under its own identity (g1-s70 D3).
+	// landingClaims says what this machine holds waiting to land, and takes
+	// the holder's due steps over it under the session's own identity (g1-s70
+	// D3). A taken step never blocks: what stops one (a hold, a moved tip, a
+	// missing word) is the human's to resolve, and its refusal is shown at
+	// every Stop while it stands.
 	landingClaims := func() {
 		display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
-		lines, keys := s.holderSteps(work.landingClaims)
-		for index, line := range lines {
-			if keys[index] == "" || contains(session.HolderSteps, keys[index]) {
-				display = append(display, line)
-				continue
-			}
-			session.HolderSteps = appendCapped(session.HolderSteps, keys[index], maxGoalRevisions)
-			blockGoal(line)
-		}
+		display = append(display, s.takeHolderSteps(work.landingClaims)...)
 	}
 
 	switch {

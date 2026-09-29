@@ -172,39 +172,47 @@ func TestTheClockStartsAtTheLandingAndRestartsAtEveryHumanAct(t *testing.T) {
 	}
 }
 
-func TestLandingIsDueToTheHolderOnlyWhenTheGateWouldLetItThrough(t *testing.T) {
+// A landing is due to its holder when the clock or the human's word says it is
+// worth taking; the gate the landing meets then decides whether it lands, so a
+// held goal with a word is taken and refused, its refusal shown (SOL-S70-02).
+func TestLandingIsDueToTheHolderWhenTheClockOrTheWordSaysSo(t *testing.T) {
 	t.Parallel()
 	landedAt := time.Date(2026, 8, 20, 10, 6, 0, 0, time.UTC)
 	f := tiered("g", 1)
-	if due, _, _ := LandingDue(f, gateSettings, landedAt.Add(time.Hour)); due {
+	if due, _ := LandingDue(f, gateSettings, landedAt.Add(time.Hour)); due {
 		t.Fatal("due before the grace time")
 	}
-	due, why, key := LandingDue(f, gateSettings, landedAt.Add(4*time.Hour))
-	if !due || why != "eligible under landing.review.auto-after=4h, tier 1 below human-from-tier=2" || key != "g@2026-08-20T10:06:00Z" {
-		t.Fatalf("due after the grace time: %v %q %q", due, why, key)
+	due, why := LandingDue(f, gateSettings, landedAt.Add(4*time.Hour))
+	if !due || why != "eligible under landing.review.auto-after=4h, tier 1 below human-from-tier=2" {
+		t.Fatalf("due after the grace time: %v %q", due, why)
 	}
 	f.History = append(f.History, HistoryLine{At: "2026-08-20T15:00:00Z", Opid: "01J5X0000000000000000000D1-mac-a-1a2b3c4d", Verb: LandedVerb, Actor: "mac-a+lin-1",
 		Targets: []string{"g"}, Keep: -1, Reason: "landed under " + why})
-	if due, _, _ := LandingDue(f, gateSettings, landedAt.Add(8*time.Hour)); due {
+	if due, _ := LandingDue(f, gateSettings, landedAt.Add(8*time.Hour)); due {
 		t.Fatal("a landed goal is due again")
 	}
 
 	above := tiered("g", 2)
-	if due, _, _ := LandingDue(above, gateSettings, landedAt.Add(100*time.Hour)); due {
+	if due, _ := LandingDue(above, gateSettings, landedAt.Add(100*time.Hour)); due {
 		t.Fatal("a goal at the tier with no word is due")
 	}
 	humanLine(above, "2026-08-20T11:00:00Z", "01J5X0000000000000000000D2-mac-ui-1a2b3c4d", "review",
 		"reviewed verdict=clear-to-land tip="+reviewedTip+" record="+reviewPath+" by=Wido")
-	if due, why, _ := LandingDue(above, gateSettings, landedAt); !due || !strings.Contains(why, "cleared to land by Wido") {
+	if due, why := LandingDue(above, gateSettings, landedAt); !due || !strings.Contains(why, "cleared to land by Wido") {
 		t.Fatalf("a cleared goal is not due: %v %q", due, why)
 	}
 	humanLine(above, "2026-08-20T11:10:00Z", "01J5X0000000000000000000D3-mac-ui-1a2b3c4d", "review", SittingReason(true, reviewPath, "Wido"))
-	if due, _, _ := LandingDue(above, gateSettings, landedAt); due {
-		t.Fatal("a held goal is due")
+	if due, _ := LandingDue(above, gateSettings, landedAt); !due {
+		t.Fatal("a held goal with the word is not taken, so its refusal is never shown")
+	}
+	held := tiered("g", 1)
+	humanLine(held, "2026-08-20T11:10:00Z", "01J5X0000000000000000000D4-mac-ui-1a2b3c4d", "review", SittingReason(true, reviewPath, "Wido"))
+	if due, _ := LandingDue(held, gateSettings, landedAt.Add(100*time.Hour)); due {
+		t.Fatal("the clock ran under a hold below the tier")
 	}
 	notLanding := vGoal("h", StateClaimed)
 	notLanding.Tier = 1
-	if due, _, _ := LandingDue(notLanding, gateSettings, landedAt.Add(100*time.Hour)); due {
+	if due, _ := LandingDue(notLanding, gateSettings, landedAt.Add(100*time.Hour)); due {
 		t.Fatal("a claim with no Landing record is due")
 	}
 }
