@@ -1,0 +1,13 @@
+{
+  "presenceSchema": 1,
+  "machine": "wr-m1",
+  "repoIdentity": "/Users/N389256/LocalGithub/agentic-tools/metasystem",
+  "generation": 2,
+  "engine": "4f4c5101ec4d91f24e75d0e88e6c4380b7ce5bff",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": null,
+  "working": null,
+  "tickAt": "2026-09-29T14:29:53Z",
+  "diskFreeBytes": 78737068032
+}
