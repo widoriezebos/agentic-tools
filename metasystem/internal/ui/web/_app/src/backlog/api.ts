@@ -60,6 +60,8 @@ const ABANDON = "/abandon";
 const EDIT = "/edit";
 // The review's verdict (g1-s69 D1): the same collection, the same call site.
 const REVIEW = "/review";
+// The landing gate's decision (g1-s70 D4): the same collection, the same call site.
+const LAND_WITHOUT_SITTING = "/land-without-sitting";
 
 /** What could be read of the accepted ledger. */
 export type LedgerState = "read" | "absent" | "no-ledger" | "broken" | "unreadable" | "refused";
@@ -156,6 +158,12 @@ export type Row = {
   fence?: Fence;
   /** The newest human verdict since the goal's Landing, read from its history (g1-s69 D1, D2). */
   verdict?: Verdict;
+  /**
+   * The landing gate's reading of a goal in the Review lane (g1-s70 §6),
+   * computed by the server from the goal's history and the layered settings.
+   * The page never runs the clock: it says the instant it was handed.
+   */
+  gate?: Gate;
   sliced: boolean;
   decomposed: boolean;
   openedAt: string;
@@ -256,6 +264,35 @@ export type Verdict = {
   attempt?: number;
   candidates?: string[];
 };
+
+/**
+ * The landing gate's reading of one goal waiting to land (g1-s70 §6): its tier
+ * against the threshold, whether it waits for a person, below the tier when the
+ * grace time started and when the goal becomes eligible to land by itself, the
+ * sittings that hold it, the newest human word on the landing, and whether the
+ * holder recorded the landing.
+ */
+export type Gate = {
+  tier: number;
+  humanFromTier: number;
+  autoAfter: string;
+  waitsForHuman: boolean;
+  clockFrom?: string;
+  autoLandsAt?: string;
+  eligible: boolean;
+  heldBy?: GateHold[];
+  reviewed?: GateWord;
+  landed: boolean;
+};
+
+export type GateHold = { by: string; record: string; since: string };
+
+/**
+ * The newest word: clear-to-land, send-back or land-without-sitting, whose, and
+ * at which tip; `moved` says the goal branch has left that tip since, so the
+ * word needs giving again, and `branchTip` is where the branch is now.
+ */
+export type GateWord = { kind: string; by: string; tip: string; moved?: boolean; branchTip?: string };
 
 /** The history line goal review wrote, as the route answers it. */
 export type Recorded = {
@@ -486,4 +523,13 @@ export async function editGoal(id: string, edit: GoalEdit): Promise<Backlog> {
 export async function reviewGoal(id: string, asked: Reviewing): Promise<{ recorded: Recorded; backlog: Backlog }> {
   const answered = (await request(`${GOALS}${encodeURIComponent(id)}${REVIEW}`, asked)) as unknown;
   return answered as { recorded: Recorded; backlog: Backlog };
+}
+
+/**
+ * goal land-without-sitting, for one goal at or above the landing gate's tier
+ * (g1-s70 D4): the reason the human wrote in the Decide sheet. The server binds
+ * it to the tip the goal's branch has now; the reason is never invented here.
+ */
+export async function landWithoutSitting(id: string, reason: string): Promise<Backlog> {
+  return request(`${GOALS}${encodeURIComponent(id)}${LAND_WITHOUT_SITTING}`, { reason });
 }

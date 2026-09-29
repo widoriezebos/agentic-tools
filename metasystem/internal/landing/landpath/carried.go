@@ -354,6 +354,7 @@ func (d *driver) finishCarriedPublication(commit string) {
 	d.createCarriedIntent(commit)
 	d.printCarriedAdvisory(commit)
 	d.seam("before-push")
+	d.requiredStep("landing gate before push", d.gateBeforePush)
 	d.sampleBoot()
 	if status := d.runStep("push carried commit to origin (single attempt)", d.pushOrigin); status != 0 {
 		if d.movingOriginRejection() {

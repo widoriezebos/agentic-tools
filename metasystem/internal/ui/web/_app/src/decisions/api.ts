@@ -32,7 +32,7 @@ export type Where = { kind: string; id: string };
  * signed-in browser under R-125-m1u: park is "Pause", and unpark returns a
  * paused goal to the queue.
  */
-export type Act = "approve" | "withdraw" | "park" | "unpark" | "apply" | "";
+export type Act = "approve" | "withdraw" | "park" | "unpark" | "apply" | "land-without-sitting" | "";
 
 /**
  * One act the Project Partner proposed, as a row of this page carries it.

@@ -26,6 +26,7 @@ export type GroupId =
   | "asks"
   | "alerts"
   | "renewals"
+  | "landings"
   | "stopped"
   | "parked"
   | "reviews"
@@ -53,6 +54,9 @@ const GROUPS: readonly { id: GroupId; kind: string; title: string; standing: str
   { id: "asks", kind: "ask", title: "Asks from a seat", standing: "" },
   { id: "alerts", kind: "alert", title: "Alerts", standing: "" },
   { id: "renewals", kind: "renewal", title: "Approvals to renew", standing: "" },
+  // Goals at or above the landing gate's tier that land only on your word
+  // (g1-s70 D5): a sitting, or Land without a sitting with your reason.
+  { id: "landings", kind: "landing", title: "Waiting for your review", standing: "" },
   { id: "stopped", kind: "stopped", title: "Stopped goals", standing: "" },
   { id: "parked", kind: "parked", title: "Parked by a seat", standing: "" },
   // The one quiet group: a ruling past its review date stays in force exactly

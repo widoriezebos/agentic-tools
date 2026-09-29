@@ -61,6 +61,9 @@ const (
 	// proposal names it.
 	ActionReview = "review"
 	ActionStart  = "start"
+	// ActionLandWithoutSitting is the landing gate's decision (g1-s70 D4):
+	// the Partner may propose it with the reason the human wrote.
+	ActionLandWithoutSitting = "land-without-sitting"
 	// ObjectApp is the object ActionStart belongs to.
 	ObjectApp = "app"
 	// ObjectDesign is the object of the design's critique, design review
@@ -90,6 +93,8 @@ const (
 	ProposeAbandon  = "abandon-goal"
 	ProposeReview   = "review-goal"
 	ProposeAppStart = "app-start"
+	// ProposeLandWithoutSitting is the landing gate's decision (g1-s70 §6).
+	ProposeLandWithoutSitting = "land-without-sitting"
 	// ProposeDesignReview is the design page's Send to critique and Answer the
 	// round, one route for the verb's two forms.
 	ProposeDesignReview = "design-review"
@@ -341,6 +346,9 @@ var ProposedActs = []ProposedAct{
 		Action: ActionReview, Route: ProposeReview, Word: "Review",
 		Needs: []string{FlagRecord, FlagVerdict}, Takes: []string{FlagWork},
 	},
+	// Land without a sitting (g1-s70 D4): the reason the human wrote, bound
+	// by the route to the tip the goal's branch has when it is applied.
+	{Action: ActionLandWithoutSitting, Route: ProposeLandWithoutSitting, Word: "Land without a sitting", Needs: []string{FlagReason}},
 	// Run the goal's candidate (D3): app start --goal G, the goal alone.
 	{Object: ObjectApp, Action: ActionStart, Route: ProposeAppStart, Word: "Run"},
 	// The design's critique (g1-s66 D1), in the verb's two forms: design
@@ -1129,6 +1137,8 @@ func needs(action, flag string) string {
 			return "a pause without a why is a stall in disguise"
 		case ActionAbandon:
 			return "a goal that will never be worked is recorded with why, and the why is read for years"
+		case ActionLandWithoutSitting:
+			return "landing without a sitting carries the reason the human wrote"
 		}
 		return "taking an approval back is recorded with the reason the human gave"
 	case FlagOn:
@@ -1324,7 +1334,8 @@ func proposeSchema() map[string]any {
 		FlagBlocks:    namesProperty("On " + ActionOpen + ": the goals that will wait for this one."),
 		FlagReason: map[string]any{"type": "string",
 			"description": "On " + ActionUnapprove + ": why the approval is taken back. On " + ActionPause +
-				": why the goal is paused. On " + ActionAbandon + ": why the goal will never be worked."},
+				": why the goal is paused. On " + ActionAbandon + ": why the goal will never be worked. On " +
+				ActionLandWithoutSitting + ": the reason the human wrote for landing it without a sitting."},
 		FlagSuccessor: map[string]any{"type": "string",
 			"description": "On " + ActionAbandon + ": the live goal carrying this one's work. " +
 				"Omit it where nothing carries it; a goal other goals wait for is then refused by the engine " +

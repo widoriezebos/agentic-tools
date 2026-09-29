@@ -66,6 +66,11 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 	if len(validateOnly) > 0 && validateOnly[0] {
 		return intentResult{}
 	}
+	// An exception carries a landing past an agent refusal; it is not the
+	// human's current-tip word, and the landing gate still binds (g1-s70 D2).
+	if refused := inv.admitLanding(targets, goalID, inv.intentBranchTip(goalID)); refused != nil {
+		return *refused
+	}
 	root := inv.layout.InstallationRoot
 	opid := using
 	data := map[string]any{"goal": goalID}
@@ -225,7 +230,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 	// The carried transaction runs in this process (landpath.Land); the
 	// seat's lineage is read once here, at the entry, and named on it.
 	ran := inv.delivery().landCarried(landpath.LandRequest{Root: primary, MessageFile: message, Goal: goalID, GoalSet: true,
-		Carried: opid, StagedOnly: true, AllowNewPlan: acknowledgePlans, OwnerLineage: os.Getenv("METASYSTEM_OWNER_LINEAGE")})
+		Carried: opid, StagedOnly: true, AllowNewPlan: acknowledgePlans, OwnerLineage: os.Getenv("METASYSTEM_OWNER_LINEAGE")}, inv.pushGate())
 	result := ownerVerbResult(ran, targets, fmt.Sprintf("goal %s landed under exception %s", goalID, opid), data)
 	if result.Outcome != intentConfirmed {
 		stopped := inv.carriedStopped(goalID, opid, targets, result.Data.(map[string]any), "the carried landing did not complete: "+result.Summary)

@@ -90,6 +90,8 @@ type Record struct {
 	ReadFile            string                     `json:"readFile,omitempty"`
 	ChangedLines        int64                      `json:"changedLines,omitempty"`
 	VerdictCounts       *bool                      `json:"verdictCounts,omitempty"`
+	Round               int                        `json:"round,omitempty"`
+	MaxRounds           int                        `json:"maxRounds,omitempty"`
 }
 
 func (record *Record) UnmarshalJSON(data []byte) error {

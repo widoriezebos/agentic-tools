@@ -122,6 +122,8 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
       // The review's verdict (g1-s69 D1): the same collection, the same call
       // site, the goal's id between the prefix and its own suffix.
       "/review",
+      // The landing gate's decision (g1-s70 §6), the same way.
+      "/land-without-sitting",
     ],
   ],
   // The Project section's writes join its two reads at the one call site it

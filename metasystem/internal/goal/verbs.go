@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -1324,7 +1325,7 @@ func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 	if len(budgets) != 0 || r.ApprovedRef != "" {
 		return PublishResult{}, fmt.Errorf("the budget and any norm approval were bound by the human's approval; goal claim carries no tuple or --approved-ref")
 	}
-	return Publish(r.Endpoint, claimRequest(r, id, nil))
+	return publishedCard(Publish(r.Endpoint, claimRequest(r, id, nil)))(func() { writeOwnCard(r, id, board.StageClaimedIdle) })
 }
 
 func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id string) string {
@@ -1357,7 +1358,7 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 	}
 	args := map[string]string{"targetMachine": targetMachine, "targetLineage": targetLineage,
 		"targetClaimEpoch": strconv.FormatInt(targetClaimEpoch, 10), "batch": batch}
-	return Publish(r.Endpoint, PublishRequest{
+	return publishedCard(Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "handover", Targets: []string{id}, Args: claimIntentArgs(r, args)}, Message: "goal handover " + id,
 		Mutate: func(tip string) ([]Change, error) {
@@ -1425,7 +1426,7 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
-	})
+	}))(func() { writeHandoverCards(r, id, targetMachine) })
 }
 
 // claimRequest builds the verb's complete transaction request — the
@@ -2063,7 +2064,7 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 
 // Release returns the actor's claimed goal to its approved or queued resting state.
 func Release(r VerbRequest, id string) (PublishResult, error) {
-	return Publish(r.Endpoint, releaseRequest(r, id))
+	return publishedCard(Publish(r.Endpoint, releaseRequest(r, id)))(func() { writeReleasedCard(r, id) })
 }
 
 // ReleaseWithReason releases the claim and records why on the goal's history
@@ -2072,7 +2073,7 @@ func ReleaseWithReason(r VerbRequest, id, reason string) (PublishResult, error) 
 	if err := validHistoryReason(reason); err != nil {
 		return PublishResult{}, err
 	}
-	return Publish(r.Endpoint, releaseRequestWithReason(r, id, reason))
+	return publishedCard(Publish(r.Endpoint, releaseRequestWithReason(r, id, reason)))(func() { writeReleasedCard(r, id) })
 }
 
 // releaseRequest builds the verb's complete transaction request — the
@@ -2135,7 +2136,7 @@ func LandReady(r VerbRequest, id string) (PublishResult, error) {
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("land-ready is the claim holder's own act; it takes no --by")
 	}
-	return Publish(r.Endpoint, landReadyRequest(r, id))
+	return publishedCard(Publish(r.Endpoint, landReadyRequest(r, id)))(func() { writeOwnCard(r, id, board.StageLandReady) })
 }
 
 // landReadyRequest builds the verb's complete transaction request — the
@@ -2214,6 +2215,7 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 	if err != nil || (result.Outcome != OutcomeConfirmed && result.Outcome != OutcomeConfirmedLate) {
 		return result, err
 	}
+	writeReleasedCard(r, id)
 	var retroErr error
 	var archived *GoalFile
 	tree, treeErr := loadTreeFor(r.Endpoint, result.Tip)
@@ -2724,7 +2726,7 @@ func Park(r VerbRequest, id, because string) (PublishResult, error) {
 	if strings.TrimSpace(because) == "" {
 		return PublishResult{}, fmt.Errorf("park needs its reason — a pause without a why is a stall in disguise")
 	}
-	return Publish(r.Endpoint, parkRequest(r, id, because))
+	return publishedCard(Publish(r.Endpoint, parkRequest(r, id, because)))(func() { writeReleasedCard(r, id) })
 }
 
 func parkNextStep(next, goalID, summary string) string {
@@ -6120,4 +6122,85 @@ func carryDebtGoal(debt CarryDebt) string {
 		return "G"
 	}
 	return debt.Goal
+}
+
+// publishedCard runs a record-bound card write after a confirmed
+// publication (batch-lane D14, R24): the ledger is the record and the card
+// its projection, written the moment the record stands. A refused or
+// undecided publication writes no card.
+func publishedCard(result PublishResult, err error) func(func()) (PublishResult, error) {
+	return func(write func()) (PublishResult, error) {
+		if err == nil && (result.Outcome == OutcomeConfirmed || result.Outcome == OutcomeConfirmedLate) {
+			write()
+		}
+		return result, err
+	}
+}
+
+// writeOwnCard publishes goal's card on the acting seat: the actor's
+// machine and the installation that holds this engine.
+func writeOwnCard(r VerbRequest, id string, stage board.Stage) {
+	if r.Actor.Machine == "" {
+		return
+	}
+	installation, err := board.EngineInstallation()
+	if err != nil {
+		reportCard(id, err)
+		return
+	}
+	writeCard(board.Card{Seat: board.Seat{Machine: r.Actor.Machine, Installation: installation}, Goal: id, Stage: stage}, r)
+}
+
+// writeReleasedCard ends goal's live card, on whichever seat of this host
+// holds it: a release, a park or a done ends the claim's life on the board.
+func writeReleasedCard(r VerbRequest, id string) {
+	home, err := board.Home()
+	if err != nil {
+		return
+	}
+	live, ok := board.LiveCard(home, id)
+	if !ok {
+		return
+	}
+	writeCard(board.Card{Seat: live.Seat, Goal: id, Stage: board.StageReleased, Round: live.Round}, r)
+}
+
+// writeHandoverCards moves goal's card with its claim, in the one act that
+// moved the claim: released on the source seat, claimed-idle on the target.
+// The target is on this host by construction; it is named as its own cards
+// name it, or as this seat when the nickname is this seat's.
+func writeHandoverCards(r VerbRequest, id, targetMachine string) {
+	home, err := board.Home()
+	if err != nil {
+		return
+	}
+	own, err := board.EngineInstallation()
+	if err != nil {
+		reportCard(id, err)
+		return
+	}
+	source := board.Seat{Machine: r.Actor.Machine, Installation: own}
+	if live, ok := board.LiveCard(home, id); ok && live.Seat.Machine == r.Actor.Machine {
+		source = live.Seat
+	}
+	target := board.Seat{Machine: targetMachine, Installation: own}
+	if targetMachine != r.Actor.Machine {
+		target.Installation, _ = board.SeatInstallation(home, targetMachine)
+	}
+	if source.Machine != "" && source.Machine != target.Machine {
+		writeCard(board.Card{Seat: source, Goal: id, Stage: board.StageReleased}, r)
+	}
+	writeCard(board.Card{Seat: target, Goal: id, Stage: board.StageClaimedIdle}, r)
+}
+
+func writeCard(card board.Card, r VerbRequest) {
+	card.Writer = board.Writer{Component: "goal", At: r.Now}
+	if err := board.Write(card); err != nil {
+		reportCard(card.Goal, err)
+	}
+}
+
+// reportCard says a card was not written; the verb's record stands.
+func reportCard(id string, err error) {
+	fmt.Fprintf(os.Stderr, "goal %s: the board card was not written: %v\n", id, err)
 }

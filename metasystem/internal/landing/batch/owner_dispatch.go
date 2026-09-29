@@ -164,7 +164,22 @@ func (owner *Owner) complete(done Completion) error {
 		return errors.Join(done.Err, fmt.Errorf("BATCH_PROOF_STALE_COMPLETION: batch %s has no run for this completion; discarded", done.ID))
 	}
 	delete(owner.inflight, done.ID)
-	return errors.Join(done.Err, run.lock.release())
+	return errors.Join(done.Err, owner.stampRunner(done.ID, done.Token, run.runner), run.lock.release())
+}
+
+// stampRunner records on the batch's proof the runner that ran it, once,
+// when the proof belongs to the completed run.
+func (owner *Owner) stampRunner(id, token, runner string) error {
+	record, err := owner.store.Load(id)
+	if err != nil || record.Proof == nil || record.Proof.Token != token || record.Proof.Runner != "" || runner == "" {
+		return nil
+	}
+	return owner.store.Update(id, func(current *Record) error {
+		if current.Proof != nil && current.Proof.Token == token && current.Proof.Runner == "" {
+			current.Proof.Runner = runner
+		}
+		return nil
+	})
 }
 
 func (owner *Owner) drain() {

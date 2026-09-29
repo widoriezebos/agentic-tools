@@ -1731,6 +1731,19 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 		verdict.BlockSource = &source
 		display = append(display, reason)
 	}
+	// The holder takes its due steps over the claims it holds on every Stop,
+	// under the session's own identity, before and whatever the scan says
+	// (g1-s70 D3): a machine holding a landing claim works on another goal. A
+	// taken step never blocks and leaves the scan's verdict as it is: what
+	// stops one (a hold, a moved tip, a missing word) is the human's to
+	// resolve, and its refusal is shown at every Stop while it stands.
+	if work != nil {
+		display = append(display, s.takeHolderSteps(work.landingClaims)...)
+	}
+	// landingClaims says what this machine holds waiting to land.
+	landingClaims := func() {
+		display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
+	}
 
 	switch {
 	case len(scan.Busy) > 0:
@@ -1811,7 +1824,7 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 			}
 			if work != nil {
 				display = append(display, FencedClaimLines(work.fencedClaims)...)
-				display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
+				landingClaims()
 			}
 		case "queued-only":
 			first, _ := s.queuedFrontier()
@@ -1819,14 +1832,14 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 				display = append(display, "no goal is claimed here and the queue is empty; a person opens the next goal (`goal open --origin human`); a seat opens only the blocker of its claimed goal (`--blocks`, R-93-m1e)")
 				if work != nil {
 					display = append(display, FencedClaimLines(work.fencedClaims)...)
-					display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
+					landingClaims()
 				}
 				break
 			}
 			display = append(display, "no current goal; the queue holds "+first)
 			if work != nil {
 				display = append(display, FencedClaimLines(work.fencedClaims)...)
-				display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
+				landingClaims()
 			}
 		case "goal-free":
 			fresh, digest, declared := s.freeState()

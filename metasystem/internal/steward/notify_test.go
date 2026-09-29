@@ -1,9 +1,11 @@
 package steward
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -457,5 +459,34 @@ func TestSeatIdleIncidentIsAStatusEpisodeNotAHumanAlarm(t *testing.T) {
 	}
 	if pending, pendingErr := PendingNotifications(root); pendingErr != nil || len(pending) != 0 {
 		t.Fatalf("the status incident also raised a human alarm: %+v %v", pending, pendingErr)
+	}
+}
+
+func TestTestRunRepositoryNeverReachesThePlatformNotifier(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), testRegistryPrefix+"1", "repo")
+	if !ownedByTestRun(root) {
+		t.Fatalf("a repository under a test registry home was not recognised: %s", root)
+	}
+	deps := notificationDependencies{
+		configuredCommand: func(string) ([]byte, error) { return nil, errors.New("unset") },
+		platform:          "darwin",
+		commandContext: func(ctx context.Context, name string, args ...string) *exec.Cmd {
+			t.Fatalf("a test repository invoked %s", name)
+			return nil
+		},
+		underTest: ownedByTestRun,
+	}
+	if _, kind := resolveNotifyWithDependencies(root, deps); kind != notifyFixtureLog {
+		t.Fatalf("test repository resolved to kind %d, want the fixture log", kind)
+	}
+	if err := deliverWithDependencies(root, "HEALTH unhealthy", deps); err != nil {
+		t.Fatal(err)
+	}
+	if ownedByTestRunUnder("/Users/someone/project", "") {
+		t.Fatal("a live repository was taken for a test's")
+	}
+	if !ownedByTestRunUnder("/Users/someone/project", "/private/tmp/"+testRegistryPrefix+"9") {
+		t.Fatal("a process inside a test registry home may reach the operator")
 	}
 }

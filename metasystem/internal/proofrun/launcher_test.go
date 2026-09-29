@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -1160,5 +1161,79 @@ printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n
 		if !strings.Contains(errors.String(), "suite watchdog: the verdict written last\n") || !strings.Contains(errors.String(), "watchdog ended: exit status 1") {
 			t.Fatalf("round %d lost the watchdog's last line: errors = %q", round, errors.String())
 		}
+	}
+}
+
+// TestSectionProgressCardCountsDistinctSections (R24, U10a-2, proof-run
+// launcher): the goal's live card turns unit-proof with the launcher as
+// owner; done is the number of distinct planned sections that ended, so a
+// section that ends every minute for thirty minutes counts once and leaves
+// the card's last progress stamp at its first end; a new section is
+// progress; the launch's end leaves the claim idle.
+func TestSectionProgressCardCountsDistinctSections(t *testing.T) {
+	t.Parallel()
+	home := filepath.Join(t.TempDir(), ".metasystem")
+	seat := board.Seat{Machine: "m1-proof-card", Installation: "/checkouts/m1-proof-card/metasystem"}
+	start := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+	if err := board.WriteAt(home, board.Card{Seat: seat, Goal: "goal-proof", Stage: board.StageClaimedIdle, Writer: board.Writer{At: start}}); err != nil {
+		t.Fatal(err)
+	}
+	expected := make([]string, 189)
+	for index := range expected {
+		expected[index] = fmt.Sprintf("group-%03d", index)
+	}
+	progress := filepath.Join(t.TempDir(), "progress.jsonl")
+	if err := AppendProgressHeader(progress, ProgressHeader{LogPaths: []string{"log"}}); err != nil {
+		t.Fatal(err)
+	}
+	owner := identity.Exact{Pid: 4242, StartedAt: time.Unix(1790000000, 0)}
+	follow := proofCardFollow{home: home, goal: "goal-proof", attempt: "attempt-1", suite: "testing",
+		expected: expected, progress: progress, owner: owner, now: func() time.Time { return start }}
+	follower, ok := newProofCardFollower(follow)
+	if !ok {
+		t.Fatal("no follower for a goal with a live card")
+	}
+	read := func() board.Card {
+		t.Helper()
+		card, ok := board.LiveCard(home, "goal-proof")
+		if !ok {
+			t.Fatal("no live card")
+		}
+		return card
+	}
+	follower.write(board.StageUnitProof, start)
+	first := read()
+	if first.Stage != board.StageUnitProof || first.Owner == nil || first.Owner.Pid != 4242 || first.Proof == nil || first.Proof.Done != 0 || first.Proof.Planned != 189 {
+		t.Fatalf("first card = %+v", first)
+	}
+	now := start
+	for minute := 1; minute <= 30; minute++ {
+		now = start.Add(time.Duration(minute) * time.Minute)
+		if err := AppendSectionEvent(progress, SectionEvent{Suite: "testing", Section: "group-000", Event: "end", At: now.Format(time.RFC3339Nano)}); err != nil {
+			t.Fatal(err)
+		}
+		follower.write(board.StageUnitProof, now)
+	}
+	stuck := read()
+	if stuck.Proof.Done != 1 || !stuck.LastProgressAt.Equal(start.Add(time.Minute)) {
+		t.Fatalf("a repeated end moved the card: done %d, last progress %v", stuck.Proof.Done, stuck.LastProgressAt)
+	}
+	now = now.Add(time.Minute)
+	if err := AppendSectionEvent(progress, SectionEvent{Suite: "testing", Section: "group-001", Event: "end", At: now.Format(time.RFC3339Nano)}); err != nil {
+		t.Fatal(err)
+	}
+	follower.write(board.StageUnitProof, now)
+	if moved := read(); moved.Proof.Done != 2 || !moved.LastProgressAt.Equal(now) {
+		t.Fatalf("a new section is progress: %+v at %v, want %v", moved.Proof, moved.LastProgressAt, now)
+	}
+
+	// The follower's own loop: a tick writes, and stop leaves the claim idle.
+	tick := make(chan time.Time)
+	stop := followProofCard(follow, tick)
+	tick <- now
+	stop()
+	card, ok := board.LiveCard(home, "goal-proof")
+	if !ok || card.Stage != board.StageClaimedIdle || card.Owner != nil {
+		t.Fatalf("after the launch = %+v", card)
 	}
 }

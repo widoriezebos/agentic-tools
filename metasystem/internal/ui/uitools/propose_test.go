@@ -73,15 +73,15 @@ func goalCatalogue() []uitools.CommandFamily {
 // critique (g1-s66 D1).
 func TestTheProposalCatalogueIsTheTenPublicActionsWithTheirFlags(t *testing.T) {
 	t.Parallel()
-	testutil.Expect(t, "thirteen acts", len(uitools.ProposedActs), 13)
+	testutil.Expect(t, "fourteen acts", len(uitools.ProposedActs), 14)
 	testutil.Expect(t, "named by their public actions", uitools.ProposeActions(), []string{
 		"open", "approve", "unapprove", "prioritize",
-		"block", "unblock", "pause", "resume", "edit", "abandon", "review", "app start", "design review",
+		"block", "unblock", "pause", "resume", "edit", "abandon", "review", "land-without-sitting", "app start", "design review",
 	})
 	testutil.Expect(t, "each dispatching to the interface's own route", uitools.ProposeRoutes(), []string{
 		"open-goal", "approve-goal", "withdraw-goal", "set-goal-priority",
 		"block-goal", "unblock-goal", "park-goal", "unpark-goal", "edit-goal", "abandon-goal",
-		"review-goal", "app-start", "design-review",
+		"review-goal", "land-without-sitting", "app-start", "design-review",
 	})
 	words := map[string]string{}
 	flags := map[string][]string{}
@@ -105,6 +105,7 @@ func TestTheProposalCatalogueIsTheTenPublicActionsWithTheirFlags(t *testing.T) {
 		[]string{"reason", "successor"})
 	testutil.Expect(t, "review takes the record, the verdict and the work", flags["review"],
 		[]string{"record", "verdict", "work"})
+	testutil.Expect(t, "land without a sitting takes the reason", flags["land-without-sitting"], []string{"reason"})
 	testutil.Expect(t, "app start takes the goal alone", flags["app start"], []string{})
 	testutil.Expect(t, "design review takes the design, the budget and the answered round", flags["design review"],
 		[]string{"design", "tool-calls", "dispositions", "after"})
@@ -121,7 +122,7 @@ func TestTheProposalCatalogueIsTheTenPublicActionsWithTheirFlags(t *testing.T) {
 	testutil.Expect(t, "the words are the actions' names", words, map[string]string{
 		"open": "Open", "approve": "Approve", "unapprove": "Unapprove", "prioritize": "Prioritize",
 		"block": "Block", "unblock": "Unblock", "pause": "Pause", "resume": "Resume", "edit": "Edit",
-		"abandon": "Abandon", "review": "Review", "app start": "Run", "design review": "Send to critique",
+		"abandon": "Abandon", "review": "Review", "land-without-sitting": "Land without a sitting", "app start": "Run", "design review": "Send to critique",
 	})
 
 	described := map[string]uitools.Tool{}
@@ -280,7 +281,7 @@ func TestAGoalActionTheInterfaceHasNoActForIsRefusedWithItsUsageLine(t *testing.
 	t.Parallel()
 	words := refusedPropose(t, "an unknown act", uitools.Args{"verb": "retire", "goal": "g1-s42", "explanation": "x"})
 	testutil.Expect(t, "the ten are named", strings.Contains(words, "open, approve, unapprove"), true)
-	testutil.Expect(t, "abandon among them", strings.Contains(words, "abandon, review, app start and design review"), true)
+	testutil.Expect(t, "abandon among them", strings.Contains(words, "abandon, review, land-without-sitting, app start and design review"), true)
 	testutil.Expect(t, "and the unknown one is quoted", strings.Contains(words, `"retire"`), true)
 
 	readers := uitools.Readers{Kit: uitools.Kit{Commands: goalCatalogue}}
@@ -344,12 +345,13 @@ func TestAFlagAnotherActTakesIsRefusedByNamingThatAct(t *testing.T) {
 	testutil.Expect(t, "the successor is named as abandon's",
 		strings.Contains(successor, "successor is abandon's"), true)
 
-	// And one public word shared by three acts is admitted by all three: the
-	// reason is unapprove's, pause's and abandon's.
-	testutil.Expect(t, "the reason belongs to all three",
-		strings.Contains(refusedPropose(t, "a reason on an approve", uitools.Args{
-			"verb": "approve", "goal": "g", "reason": "x", "explanation": "x",
-		}), "reason is unapprove, pause and abandon's"), true)
+	// And one public word shared by four acts is admitted by all four: the
+	// reason is unapprove's, pause's, abandon's and land-without-sitting's.
+	reasoned := refusedPropose(t, "a reason on an approve", uitools.Args{
+		"verb": "approve", "goal": "g", "reason": "x", "explanation": "x",
+	})
+	testutil.Expect(t, "the reason belongs to all four "+reasoned,
+		strings.Contains(reasoned, "reason is unapprove, pause, abandon and land-without-sitting's"), true)
 }
 
 // Abandon travels in the frame the route reads: its public flags become the

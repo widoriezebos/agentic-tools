@@ -9,6 +9,7 @@ import {
   openGoal,
   parkGoal,
   rankGoal,
+  landWithoutSitting,
   reviewGoal,
   unblockGoal,
   unparkGoal,
@@ -109,6 +110,8 @@ async function actOf(line: Line): Promise<Backlog | null> {
       return openGoal(dispatch.goal);
     case "abandon":
       return abandonGoal(dispatch.id, dispatch.because, dispatch.successor);
+    case "land-without-sitting":
+      return landWithoutSitting(dispatch.id, dispatch.reason);
     case "review":
       return (await reviewGoal(dispatch.id, { record: dispatch.record, verdict: dispatch.verdict, brief: "", work: dispatch.work })).backlog;
     // Run answers where the candidate runs, not a backlog: the ledger did not

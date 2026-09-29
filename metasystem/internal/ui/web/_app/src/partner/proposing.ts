@@ -271,6 +271,8 @@ const WORD: Readonly<Record<string, string>> = {
   "abandon-goal": "Abandon",
   // The review's verdict and the goal's candidate (g1-s69 §6).
   "review-goal": "Review",
+  // The landing gate's decision (g1-s70 D4).
+  "land-without-sitting": "Land without a sitting",
   "app-start": "Run",
   // A design's critique (g1-s66 D1): design review, sent or answering a round.
   "design-review": "Send to critique",
@@ -347,6 +349,9 @@ export function argumentsOf(line: Line): readonly Argument[] {
     case "set-goal-priority":
       add("Priority", fields.priority);
       add("Position", fields.sequence);
+      break;
+    case "land-without-sitting":
+      add("Reason", fields.reason);
       break;
     case "review-goal":
       add("Record", fields.record);
@@ -1047,6 +1052,7 @@ export type Dispatch =
   | { act: "open"; goal: NewGoal }
   | { act: "abandon"; id: string; because: string; successor: string }
   | { act: "review"; id: string; record: string; verdict: string; work: string }
+  | { act: "land-without-sitting"; id: string; reason: string }
   | { act: "run"; goal: string }
   | { act: "critique"; design: string; goal: string; toolCalls: number; after: number };
 
@@ -1101,6 +1107,9 @@ export function dispatchOf(line: Line): Dispatch | null {
         act: "review", id: line.goal,
         record: fields.record ?? "", verdict: fields.verdict ?? "", work: fields.work ?? "",
       };
+    // The reason the human wrote; the route binds it to the branch's tip.
+    case "land-without-sitting":
+      return { act: "land-without-sitting", id: line.goal, reason: fields.reason ?? "" };
     case "app-start":
       return { act: "run", goal: line.goal };
     // The route derives the round's decisions file from the round answered,

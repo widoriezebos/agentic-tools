@@ -66,7 +66,9 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	standing := h.state(r)
-	board := backlogOf(h.info.Observe())
+	observed := h.info.Observe()
+	board := backlogOf(observed)
+	h.joinGates(observed, &board)
 	in := decisions.Inputs{
 		Project: pane,
 		Rows:    plainRows(board.Rows),

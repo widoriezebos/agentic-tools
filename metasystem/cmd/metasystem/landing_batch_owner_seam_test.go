@@ -116,6 +116,7 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 				Launch:    func(batch.Dispatch) error { return nil },
 				ProbeRun:  func(string, batch.Record) (batch.RunProbe, error) { return batch.RunProbe{}, nil },
 				After:     func(time.Duration) <-chan time.Time { return make(chan time.Time) },
+				Pipeline:  emptyHostBoard{},
 				Report:    func(string, error) {}, Glob: func(string) ([]string, error) {
 					calls++
 					if calls == 1 {

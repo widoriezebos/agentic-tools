@@ -219,7 +219,7 @@ exit 1
 		Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{Max: 1} },
 		Launch:    func(batch.Dispatch) error { landings++; return nil },
 		ProbeRun:  func(string, batch.Record) (batch.RunProbe, error) { return batch.RunProbe{}, nil }, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) },
-		Report: func(string, error) {}})
+		Report: func(string, error) {}, Pipeline: emptyHostBoard{}})
 	if err != nil {
 		t.Fatal(err)
 	}

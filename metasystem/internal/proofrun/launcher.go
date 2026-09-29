@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
@@ -192,6 +193,7 @@ func LaunchSuite(options LaunchOptions) int {
 		}
 	}
 	defer releaseLaunchMutation()
+	cardGoal := ""
 	if options.AttemptID != "" {
 		launchMutation, err = AcquireMutation(controlRoot)
 		if err != nil {
@@ -218,6 +220,7 @@ func LaunchSuite(options LaunchOptions) int {
 			}
 		}
 		launchInputIdentity = attempt.ProofIdentity.IdentityDigest
+		cardGoal = attempt.GoalID
 		if options.JoinedAttempt {
 			var context ExecutionContext
 			var identityErr error
@@ -594,11 +597,16 @@ func LaunchSuite(options LaunchOptions) int {
 		claimClosed = true
 	}
 
+	cardTicker := time.NewTicker(proofCardPoll(options.Poll))
+	stopCard := followProofCard(proofCardFollow{goal: cardGoal, attempt: options.AttemptID, suite: options.Suite,
+		expected: options.ExpectedSections, progress: options.ProgressPath, owner: launcherExact, now: now}, cardTicker.C)
 	if suiteDone == nil {
 		suiteWaitErr = suite.Wait()
 	} else {
 		<-suiteDone
 	}
+	cardTicker.Stop()
+	stopCard()
 	beforeLauncherDone(donePath)
 	doneErr := touchDone(donePath)
 	if doneErr != nil {
@@ -1059,4 +1067,120 @@ func ReadSelectorSections(path string) ([]string, error) {
 		sections = append(sections, id)
 	}
 	return sections, scanner.Err()
+}
+
+// proofCardFollow is what the launcher knows about a goal-bound proof: the
+// planned sections and the progress file the suite appends to.
+type proofCardFollow struct {
+	home, goal, attempt, suite string
+	expected                   []string
+	progress                   string
+	owner                      identity.Exact
+	now                        func() time.Time
+}
+
+// proofCardPoll is how often the launcher reads its progress file for the
+// board card: the launch's poll, at least a second.
+func proofCardPoll(poll time.Duration) time.Duration {
+	return max(poll, time.Second)
+}
+
+// followProofCard advances the goal's live board card to unit-proof with
+// this launcher as owner and, on every tick, with the number of distinct
+// planned sections that have ended (D14, R24): a repeated end event counts
+// once, so a stuck proof that re-ends one section leaves done, and the
+// card's last progress stamp, where they are. Each tick's time stamps the
+// write it causes. The returned stop writes the final count and leaves the
+// claim idle; the card is a projection, and a card that cannot be written is
+// reported while the proof runs on.
+func followProofCard(follow proofCardFollow, tick <-chan time.Time) func() {
+	follower, ok := newProofCardFollower(follow)
+	if !ok {
+		return func() {}
+	}
+	follower.write(board.StageUnitProof, follow.now())
+	stop, finished := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(finished)
+		for {
+			select {
+			case <-stop:
+				return
+			case at := <-tick:
+				follower.write(board.StageUnitProof, at)
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		<-finished
+		at := follow.now()
+		follower.write(board.StageUnitProof, at)
+		follower.write(board.StageClaimedIdle, at)
+	}
+}
+
+// proofCardFollower holds the live card a proof advances and the count it
+// last wrote.
+type proofCardFollower struct {
+	follow proofCardFollow
+	base   board.Card
+	done   int
+}
+
+// newProofCardFollower finds the goal's live card; false when the proof is
+// not goal-bound, has no plan, or its goal has no live card this launcher
+// may advance (a joined unit's batch proof, a hand landing).
+func newProofCardFollower(follow proofCardFollow) (*proofCardFollower, bool) {
+	if follow.goal == "" || len(follow.expected) == 0 {
+		return nil, false
+	}
+	if follow.home == "" {
+		home, err := board.Home()
+		if err != nil {
+			return nil, false
+		}
+		follow.home = home
+	}
+	base, ok := board.LiveCard(follow.home, follow.goal)
+	if !ok || base.Stage == board.StageJoined || base.Stage == board.StageLanding {
+		return nil, false
+	}
+	return &proofCardFollower{follow: follow, base: base, done: -1}, true
+}
+
+// write publishes the card at stage; within unit-proof only a changed count
+// is written.
+func (f *proofCardFollower) write(stage board.Stage, at time.Time) {
+	run, _ := ReadLatestProgressRun(f.follow.progress)
+	ended := distinctEndedSections(run, f.follow.suite, f.follow.expected)
+	if stage == board.StageUnitProof && ended == f.done {
+		return
+	}
+	f.done = ended
+	card := board.Card{Seat: f.base.Seat, Goal: f.follow.goal, Stage: stage, Round: f.base.Round, Job: f.base.Job,
+		Proof:  &board.Proof{Attempt: f.follow.attempt, Done: ended, Planned: len(f.follow.expected)},
+		Writer: board.Writer{Component: "proof-run", At: at}}
+	if stage == board.StageUnitProof {
+		card.Owner = &board.Owner{Pid: f.follow.owner.Pid, PidStartedAt: f.follow.owner.StartedAt.Unix()}
+	}
+	if err := board.WriteAt(f.follow.home, card); err != nil {
+		fmt.Fprintf(os.Stderr, "suite launcher: the board card was not written: %v\n", err)
+	}
+}
+
+// distinctEndedSections counts the planned sections of suite that have an
+// end event, each once, clamped to the plan.
+func distinctEndedSections(run ProgressRun, suite string, expected []string) int {
+	planned := make(map[string]bool, len(expected))
+	for _, section := range expected {
+		planned[section] = true
+	}
+	ended := map[string]bool{}
+	for _, event := range run.Events {
+		if event.Suite == suite && event.Event == "end" && planned[event.Section] {
+			ended[event.Section] = true
+		}
+	}
+	return min(len(ended), len(expected))
 }

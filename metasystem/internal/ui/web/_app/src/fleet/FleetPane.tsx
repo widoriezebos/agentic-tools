@@ -357,6 +357,7 @@ function TheFleet({
         <LaunchSheet
           machines={page.machines}
           launches={page.launches}
+          hidden={hidden}
           thisSeat={page.this.machine}
           where={page.launching}
           onClose={() => {

@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
@@ -48,6 +49,10 @@ type Unit struct {
 	// Closure is the member's changed and dependent units at its admitted
 	// tree, from the language adapter; red naming asks it for owner units.
 	Closure *adapter.Closure `json:"closure,omitempty"`
+	// Stages are the closed stage spans the host board held for the goal
+	// when it joined: the lane's history of how long each stage takes
+	// (D14, R22).
+	Stages []board.StageSpan `json:"stages,omitempty"`
 
 	unitRecordFields
 }
@@ -84,6 +89,10 @@ type Record struct {
 	Landing  *LandingProgress         `json:"landing,omitempty"`
 
 	CensusHold bool `json:"censusHold,omitempty"`
+	// Wait is why an open batch has not started (D14, R23); StartReason is
+	// why it started, copied into the proof it plans.
+	Wait        *WaitState `json:"wait,omitempty"`
+	StartReason string     `json:"startReason,omitempty"`
 	batchRecordFields
 }
 

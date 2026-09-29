@@ -602,6 +602,11 @@ func reportTurnVerdict(request hooks.TurnVerdictRequest, stdout, stderr io.Write
 		store.RecordIdleIncident = recordSeatIdleIncident(stateRoot, now)
 		store.RaiseIdleAlarm = raiseSeatIdleAlarm(stateRoot)
 		store.ResolveIdleSeat = resolveSeatIdleActorWithMachine(stateRoot, *mainId, resolveMachine)
+		// The holder takes its due landing or revision on this Stop through
+		// the public command, from the session's checkout (g1-s70 D3).
+		if checkout, absErr := filepath.Abs(*root); absErr == nil {
+			store.TakeHolderStep = holderStepTaker(checkout, defaultIntentOwners())
+		}
 	}
 	var verdict goal.Verdict
 	if resolve == nil {

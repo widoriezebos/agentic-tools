@@ -343,3 +343,16 @@ func TestJoinOnAMovedBaseReassemblesInsteadOfRefusing(t *testing.T) {
 		t.Fatalf("sealed batch=%+v err=%v, want it untouched", record, err)
 	}
 }
+
+// A certified chain joins carrying the commit it publishes as its member's
+// tip, the one the publication gate binds the human's word to (SOL-S70-03).
+func TestAChainJoinsCarryingItsHeadForThePublicationGate(t *testing.T) {
+	t.Parallel()
+	base := "base-tree"
+	request, dependencies, _ := sideBySideJoinBed(t, &base)
+	request.ChainHead = strings.Repeat("4", 40)
+	record := joinGoal(t, request, dependencies, "goal-h")
+	if len(record.Units) != 1 || record.Units[0].BranchTip != request.ChainHead || len(record.Units[0].Builds) != 0 {
+		t.Fatalf("the chain member does not carry its head: %+v", record.Units)
+	}
+}

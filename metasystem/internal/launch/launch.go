@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -45,23 +46,29 @@ type StartSpec struct {
 	Inputs, Outputs, Units                             []string
 	AdapterData                                        map[string]json.RawMessage
 	readMode                                           string
+	// Round and MaxRounds are the unit round this launch serves and the
+	// run's approved ceiling; the board card carries them (D14, R24).
+	Round, MaxRounds int
 }
 type Manager struct {
 	Store    Store
 	Adapters map[string]Adapter
 	// Templates holds the brief templates; nil is the engine's own.
-	Templates         fs.FS
-	Processes         ProcessSystem
-	Signaler          ProcessSignaler
-	Prober            identity.Prober
-	Supervisor        SupervisorStarter
-	Now               func() time.Time
-	Sleep             func(time.Duration)
-	Grace             time.Duration
-	Poll              time.Duration
-	StartCap          time.Duration
-	Settings          Settings
-	SettingsError     error
+	Templates     fs.FS
+	Processes     ProcessSystem
+	Signaler      ProcessSignaler
+	Prober        identity.Prober
+	Supervisor    SupervisorStarter
+	Now           func() time.Time
+	Sleep         func(time.Duration)
+	Grace         time.Duration
+	Poll          time.Duration
+	StartCap      time.Duration
+	Settings      Settings
+	SettingsError error
+	// Seat is this installation's seat on the host board; an empty
+	// machine writes no card.
+	Seat              board.Seat
 	supervisorClaimed func(Record)
 }
 
@@ -126,7 +133,7 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	}
 	record := Record{ID: id, Kind: spec.Kind, Adapter: adapterName, Goal: spec.Goal, Tag: spec.Tag,
 		WorkingDirectory: absDir, Inputs: inputs, State: Starting, StartedAt: m.Now().UTC().Format(time.RFC3339Nano),
-		Measured: true, AdapterData: spec.AdapterData}
+		Measured: true, AdapterData: spec.AdapterData, Round: spec.Round, MaxRounds: spec.MaxRounds}
 	if spec.Kind == "read" {
 		counts := true
 		record.VerdictCounts = &counts
@@ -183,7 +190,7 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 			return Record{}, err
 		}
 		setString(record.AdapterData, "readDiff", path)
-		record, err = m.Store.Update(id, func(current *Record) error { current.AdapterData = record.AdapterData; return nil })
+		record, err = m.update(id, func(current *Record) error { current.AdapterData = record.AdapterData; return nil })
 		if err != nil {
 			return Record{}, err
 		}
@@ -249,7 +256,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	record, err := m.Store.Update(id, func(record *Record) error {
+	record, err := m.update(id, func(record *Record) error {
 		if record.Supervisor != nil || record.State.Terminal() {
 			return fmt.Errorf("LAUNCH_ALREADY_SUPERVISED: launch %s already has a supervisor", id)
 		}
@@ -280,7 +287,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	if err != nil {
 		return m.failCause(id, "declared-outputs: "+err.Error(), nil)
 	}
-	record, err = m.Store.Update(id, func(current *Record) error {
+	record, err = m.update(id, func(current *Record) error {
 		if current.Reason == "cancel-requested" || current.State.Terminal() {
 			return errLaunchCancelledBeforeChild
 		}
@@ -299,7 +306,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		if childRef.Pid != 0 {
 			groupProvenDead = m.endGroup(childRef.Pid) == nil
 		}
-		failed, writeErr := m.Store.Update(id, func(current *Record) error {
+		failed, writeErr := m.update(id, func(current *Record) error {
 			current.OutputOwnerUnproven = len(paths) > 0 && !groupProvenDead
 			if childRef.Pid != 0 {
 				current.ProcessGroup = &childRef
@@ -323,7 +330,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		}
 		return failed, err
 	}
-	record, err = m.Store.Update(id, func(record *Record) error {
+	record, err = m.update(id, func(record *Record) error {
 		if record.State.Terminal() {
 			return fmt.Errorf("launch %s ended before its child was recorded", id)
 		}
@@ -335,7 +342,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	if err != nil {
 		_ = m.Processes.SignalGroup(childRef.Pid, syscall.SIGKILL)
 		cleanupErr := m.endGroup(childRef.Pid)
-		_, _ = m.Store.Update(id, func(current *Record) error {
+		_, _ = m.update(id, func(current *Record) error {
 			current.ProcessGroup = &childRef
 			if cleanupErr == nil {
 				current.OutputOwnerUnproven = false
@@ -366,7 +373,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		declared, copyErr = copyDeclaredOutputs(record, stateDir)
 		outputs = append(outputs, declared...)
 	}
-	record, err = m.Store.Update(id, func(record *Record) error {
+	record, err = m.update(id, func(record *Record) error {
 		record.OutputOwnerUnproven = false
 		if record.State.Terminal() {
 			return nil
@@ -413,7 +420,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	return record, nil
 }
 func (m *Manager) finishCancelledBeforeChild(id string, cause error) (Record, error) {
-	record, err := m.Store.Update(id, func(current *Record) error {
+	record, err := m.update(id, func(current *Record) error {
 		if current.State.Terminal() {
 			return nil
 		}
@@ -432,7 +439,7 @@ func (m *Manager) finishCancelledBeforeChild(id string, cause error) (Record, er
 	return record, cause
 }
 func (m *Manager) fail(id, reason string, exit *int) (Record, error) {
-	return m.Store.Update(id, func(record *Record) error {
+	return m.update(id, func(record *Record) error {
 		if record.State.Terminal() {
 			return nil
 		}
@@ -538,7 +545,7 @@ func (m *Manager) Cancel(id string) (Record, error) {
 	if current, err := m.Store.Read(id); err == nil && current.State.Terminal() {
 		return current, nil
 	}
-	record, err := m.Store.Update(id, func(record *Record) error {
+	record, err := m.update(id, func(record *Record) error {
 		if !record.State.Terminal() {
 			record.Reason = "cancel-requested"
 		}
@@ -569,7 +576,7 @@ func (m *Manager) Cancel(id string) (Record, error) {
 	if !m.provenDead(current) {
 		return current, fmt.Errorf("launch %s cancellation could not prove every recorded process dead", id)
 	}
-	return m.Store.Update(id, func(record *Record) error {
+	return m.update(id, func(record *Record) error {
 		record.State, record.Reason = Cancelled, "cancelled"
 		record.FinishedAt = m.Now().UTC().Format(time.RFC3339Nano)
 		return nil
@@ -690,4 +697,64 @@ func readInt64(values map[string]json.RawMessage, key string) int64 {
 	var value int64
 	_ = json.Unmarshal(values[key], &value)
 	return value
+}
+
+// update is every state write of the manager: the record first, then its
+// card on the host board in the same act (D14, R24).
+func (m *Manager) update(id string, change func(*Record) error) (Record, error) {
+	record, err := m.Store.Update(id, change)
+	if err == nil {
+		m.publishCard(record)
+	}
+	return record, err
+}
+
+// publishCard projects a supervised, goal-bound launch onto the board: the
+// stage from its kind and round, the retained supervisor as owner (it
+// outlives a caller that returned at its wait cap). A terminal launch ends
+// the stage: a completed read leaves the goal awaiting judgement, anything
+// else leaves the claim idle. A card that cannot be written is reported and
+// the launch stands.
+func (m *Manager) publishCard(record Record) {
+	if m.Seat.Machine == "" || record.Goal == "" || record.Supervisor == nil {
+		return
+	}
+	var stage board.Stage
+	switch record.Kind {
+	case "build":
+		stage = board.StageBuild
+		if record.Round > 1 {
+			stage = board.StageRevise
+		}
+	case "proof":
+		stage = board.StageUnitProof
+	case "read":
+		stage = board.StageReview
+	default:
+		return
+	}
+	card := board.Card{Seat: m.Seat, Goal: record.Goal, Stage: stage,
+		Job:    &board.Job{ID: record.ID, Kind: record.Kind, Phase: string(record.State)},
+		Writer: board.Writer{Component: "launch", At: m.Now()}}
+	if record.Round > 0 {
+		card.Round = &board.Round{N: record.Round}
+		if record.MaxRounds > 0 {
+			limit := record.MaxRounds
+			card.Round.Max = &limit
+		}
+	}
+	if record.State.Terminal() {
+		card.Stage = board.StageClaimedIdle
+		if stage == board.StageReview && record.State == Completed {
+			card.Stage = board.StageJudgement
+		}
+	} else {
+		if started, err := time.Parse(time.RFC3339Nano, record.StartedAt); err == nil {
+			card.Since = started
+		}
+		card.Owner = &board.Owner{Pid: record.Supervisor.Pid, PidStartedAt: record.Supervisor.StartedAtSec}
+	}
+	if err := board.Write(card); err != nil {
+		fmt.Fprintf(os.Stderr, "launch %s: the board card was not written: %v\n", record.ID, err)
+	}
 }

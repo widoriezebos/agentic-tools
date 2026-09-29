@@ -482,7 +482,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		return PublishRequest{}, fmt.Errorf("set-priority is proof-bearing and cannot be replayed from journal text; %s", humanauthority.PersonActRemedy("metasystem goal prioritize"))
 	case "engine-floor":
 		return PublishRequest{}, fmt.Errorf("engine-floor is retired and cannot be replayed from journal text")
-	case "abandon", "carry", reviewVerb:
+	case "abandon", "carry", reviewVerb, LandWithoutSittingVerb:
 		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; %s", in.Verb, humanauthority.PersonActRemedy(""))
 	case "split":
 		members, err := ParseMemberDraft([]byte(in.Args["members"]), target)
@@ -505,6 +505,8 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		return releaseRequestWithReason(r, target, in.Args["reason"]), nil
 	case "land-ready":
 		return landReadyRequest(r, target), nil
+	case LandedVerb:
+		return landedRequest(r, target, in.Args["reason"]), nil
 	case sendBackVerb:
 		answer, err := parseSendBackReason(in.Args["reason"])
 		if err != nil {

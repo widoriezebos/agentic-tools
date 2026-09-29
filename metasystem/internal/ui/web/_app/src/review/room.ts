@@ -311,7 +311,7 @@ export const VERDICTS = [
     verdict: "clear to land",
     label: "Clear to land",
     consequence:
-      "Records your verdict on the goal, bound to the tip you reviewed, and commits this record beside it. It is your recorded word: nothing lands because of it.",
+      "Records your verdict on the goal, bound to the tip you reviewed, and commits this record beside it. It is the word the landing gate waits for: the seat that holds the goal lands it on its next turn, at this tip.",
   },
   {
     verdict: "send back",
@@ -629,7 +629,7 @@ function counted(count: number, one: string, many: string): string {
 /** What the room says once the verdict is on the goal (g1-s69 §3). */
 export function recordedLine(recorded: Pick<Recorded, "verdict" | "tip" | "by">, fixes: number, goal: string): string {
   if (recorded.verdict === "send-back") {
-    return `Sent back with your ${counted(fixes, "finding", "findings")}; the goal has left Review, and the holder takes it with work revise ${goal}.`;
+    return `Sent back with your ${counted(fixes, "finding", "findings")}; the goal has left Review, and the seat that holds ${goal} revises from your brief on its next turn.`;
   }
   return `Recorded. The goal now carries your verdict: clear to land at ${recorded.tip.slice(0, 7)}, reviewed by ${recorded.by}.`;
 }
@@ -651,9 +651,9 @@ export function verdictLine(verdict: RowVerdict | undefined, goal: string): stri
   if ((verdict.attempt ?? 0) > 0) {
     return `attempt ${String(verdict.attempt)} started from your brief`;
   }
-  // Nothing takes the holder's step unprompted until slice D's holder
-  // activity, so the card says who takes it and with what (Sol SOL-S69-01).
-  return `sent back by ${verdict.by} · the holder takes it with work revise ${goal}`;
+  // The holder's turn takes the step unprompted (g1-s70 D3, Sol SOL-S69-01),
+  // so the card says who takes it and when.
+  return `sent back by ${verdict.by} · the seat that holds ${goal} revises on its next turn`;
 }
 
 function orList(names: readonly string[]): string {

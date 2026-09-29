@@ -263,6 +263,8 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.editGoal(w, r, route.id)
 	case routeReview:
 		h.reviewGoal(w, r, route.id)
+	case routeLandWithoutSitting:
+		h.landWithoutSitting(w, r, route.id)
 	case routeDesignReview:
 		h.designReview(w, r, route.id)
 	case routeDesignDecision:

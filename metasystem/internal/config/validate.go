@@ -73,6 +73,12 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		}
 	})
 
+	// The keys the file itself names, before the defaults fill the rest: a
+	// rule about what a person set must not fire on a compiled default.
+	named := make(map[string]bool, len(values))
+	for key := range values {
+		named[key] = true
+	}
 	// The committed layer is the file over the compiled defaults
 	// (defaults.go): a key the file does not name validates as its
 	// applicable default, exactly as the full shipped file did.
@@ -462,7 +468,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		if _, batchErr := resolveBatchLandingWithRunner(confPath, repoRoot, func() time.Time { return time.Time{} }, runner); batchErr != nil {
 			add("%v", batchErr)
 		}
-	} else if _, waitSet := values[BatchMaxWaitKey]; waitSet || batchWaitLocal || batchWaitEnv {
+	} else if named[BatchMaxWaitKey] || batchWaitLocal || batchWaitEnv {
 		add("%s requires %s", BatchMaxWaitKey, BatchRootKey)
 	}
 	resolved := func(key, mode string) (string, bool) {
@@ -530,7 +536,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		"channel.http-timeout-sec", "channel.long-poll-sec", "channel.poll-timeout-sec", "exec.local-timeout-sec", "exec.network-timeout-sec", "landing.receipt-bound-min",
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
 		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours", "dispatch.cap-max",
-		"steward.tick-patience-sec", "steward.stop-slow-sec", IntentReviewToolCallsKey,
+		"steward.tick-patience-sec", "steward.stop-slow-sec", IntentReviewToolCallsKey, PipelineStallMinKey, PipelineHistoryNKey,
 		DiskGoCacheCapGiBKey, DiskDelegateGoCacheCapGiBKey, DiskStaticcheckCacheCapGiBKey, DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey, DiskCacheTrimPersonBudgetSecKey,
 	} {
 		if raw, present := values[knob]; present {
@@ -539,8 +545,29 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			}
 		}
 	}
+	// The batch lane's pipeline durations and stage list (D14, R22).
+	if raw, present := values[PipelineProofCostKey]; present {
+		if parsed, parseErr := time.ParseDuration(raw); parseErr != nil || parsed <= 0 {
+			add("%s must be a positive duration, got %s", PipelineProofCostKey, pyRepr(raw))
+		}
+	}
+	if raw, present := values[PipelineStageDefaultsKey]; present {
+		if _, parseErr := ParseStageDefaults(raw); parseErr != nil {
+			add("%v", parseErr)
+		}
+	}
 	// The disk-lifetime settings of Part B 3.13, in every source.
 	errs = append(errs, validateDiskSettings(confPath, values, os.LookupEnv)...)
+	if raw, present := values[LandingHumanFromTierKey]; present {
+		if _, err := landingTier(raw); err != nil {
+			add("%s", err.Error())
+		}
+	}
+	if raw, present := values[LandingAutoAfterKey]; present {
+		if _, err := landingAutoAfter(raw); err != nil {
+			add("%s", err.Error())
+		}
+	}
 	if raw, present := values["dispatch.return-margin-min"]; present {
 		if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 0 {
 			add("dispatch.return-margin-min must be a non-negative integer, got %s", pyRepr(raw))
