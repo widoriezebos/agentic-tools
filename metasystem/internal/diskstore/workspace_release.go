@@ -37,6 +37,10 @@ type WorkspaceReleaseRequest struct {
 	// LandedTip, set by a landing's release set, is the tip every tip of
 	// the workspace must lie in at release time (Round B3-2 R8).
 	LandedTip string
+	// BeforeRemoval runs after every tip is archived and before releasing
+	// is written or anything is removed (a delegate's quarantine absorb,
+	// 3.7); an error keeps the store pending with nothing removed.
+	BeforeRemoval func(ctx context.Context, record Record) error
 }
 
 // WorkspaceRelease is a release's outcome: Done, Kept (its content keeps
@@ -141,6 +145,11 @@ func releaseInSection(ctx context.Context, critical *Critical, request Workspace
 	if err != nil {
 		return keep(Verdict{Decision: Pending, Reason: "the tips could not be archived (" + err.Error() + "); nothing was removed", Command: "metasystem disk clean"})
 	}
+	if request.BeforeRemoval != nil {
+		if err := request.BeforeRemoval(ctx, critical.Record()); err != nil {
+			return keep(Verdict{Decision: Pending, Reason: err.Error() + "; nothing was removed", Command: "metasystem disk clean"})
+		}
+	}
 	record = critical.Record()
 	if record.State != StateReleasing {
 		record.State = StateReleasing
@@ -181,7 +190,7 @@ func judgeLanded(ctx context.Context, gitRoot string, git WorkspaceGit, record R
 		return Verdict{Decision: Keep, Reason: "a plain workspace is never released by a landing", Command: "metasystem work workspace " + record.Owner.Ref + " --release --name " + name}
 	}
 	var commits []string
-	sha, found, err := revParseIn(ctx, git, gitRoot, "refs/heads/"+WorkspaceBranch(record.Owner, name))
+	sha, found, err := revParseIn(ctx, git, gitRoot, "refs/heads/"+linkedBranch(record))
 	if found {
 		commits = append(commits, sha)
 	}
@@ -268,6 +277,9 @@ func judgeContent(ctx context.Context, git WorkspaceGit, record Record, discard 
 	if record.Owner.Kind != OwnerGoal {
 		land = "commit the work, or "
 	}
+	if record.Class == DelegateClass {
+		land = "metasystem work review j2:" + record.Owner.Ref + " to capture the work, or "
+	}
 	// A person's discard waives the uncommitted content alone (Round B3-4,
 	// F-3): committed history a reflog holds is never discarded, so an
 	// unreadable reflog keeps the copy even then.
@@ -346,7 +358,7 @@ func unreadableReflog(record Record) string {
 		return "its git directory is not recorded"
 	}
 	common := filepath.Dir(filepath.Dir(gitdir))
-	logs := []string{filepath.Join(common, "logs", "refs", "heads", filepath.FromSlash(WorkspaceBranch(record.Owner, filepath.Base(record.Path))))}
+	logs := []string{filepath.Join(common, "logs", "refs", "heads", filepath.FromSlash(linkedBranch(record)))}
 	walkErr := filepath.WalkDir(filepath.Join(gitdir, "logs"), func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -420,6 +432,9 @@ func firstPaths(paths []string) string {
 }
 
 func discardCommand(owner Owner, name string) string {
+	if owner.Kind == OwnerDelegate {
+		return "a person's metasystem disk clean --discard j2:" + owner.Ref + " --reason TEXT"
+	}
 	if owner.Kind == OwnerGoal {
 		return "a person's metasystem work workspace " + owner.Ref + " --release --discard --name " + name + " --reason TEXT"
 	}
@@ -434,9 +449,8 @@ func discardCommand(owner Owner, name string) string {
 // overwritten (a new name is used). It counts the commits nothing else
 // contains.
 func archiveWorkspace(ctx context.Context, gitRoot string, git WorkspaceGit, record Record, now time.Time) ([]string, int, error) {
-	name := filepath.Base(record.Path)
-	branch := WorkspaceBranch(record.Owner, name)
-	base := WorkspaceArchiveRef(record.Owner, name)
+	branch := linkedBranch(record)
+	base := linkedArchiveRef(record)
 	type tip struct{ ref, sha string }
 	var tips []tip
 	sha, found, err := revParseIn(ctx, git, gitRoot, "refs/heads/"+branch)
@@ -583,7 +597,7 @@ func removeWorkspace(ctx context.Context, gitRoot string, git WorkspaceGit, reco
 				return err
 			}
 		}
-		branch := WorkspaceBranch(record.Owner, filepath.Base(record.Path))
+		branch := linkedBranch(record)
 		_, found, err := revParseIn(ctx, git, gitRoot, "refs/heads/"+branch)
 		if err != nil {
 			return err
@@ -677,4 +691,74 @@ func (p WorkspaceProof) Release(ctx context.Context, critical *Critical, census 
 		return Verdict{Decision: Keep, Reason: outcome.Reason, Command: outcome.Command}
 	}
 	return Verdict{Decision: Pending, Reason: outcome.Reason, Command: outcome.Command}
+}
+
+// DelegateClass is the class of a delegate chain's registered workspace:
+// the linked worktree artifacts/agents/worktrees/<chain> on agent/<chain>,
+// with its quarantine object store (3.1's delegate row, 3.7).
+const DelegateClass = "delegate workspace"
+
+// linkedBranch is a linked-worktree store's branch: agent/<chain> for a
+// delegate workspace, workspace/<owner>/<name> for a copy.
+func linkedBranch(record Record) string {
+	if record.Class == DelegateClass {
+		return "agent/" + record.Owner.Ref
+	}
+	return WorkspaceBranch(record.Owner, filepath.Base(record.Path))
+}
+
+// linkedArchiveRef is where a linked-worktree store's tips are archived.
+func linkedArchiveRef(record Record) string {
+	if record.Class == DelegateClass {
+		return "refs/archive/delegate-" + record.Owner.Ref + "/agent/" + record.Owner.Ref
+	}
+	return WorkspaceArchiveRef(record.Owner, filepath.Base(record.Path))
+}
+
+// ReleaseInSection is the one release sequence of a linked-worktree store
+// inside its critical section (a workspace's, or a delegate's with its
+// quarantine absorbed in BeforeRemoval).
+func ReleaseInSection(ctx context.Context, critical *Critical, request WorkspaceReleaseRequest) (WorkspaceRelease, error) {
+	return releaseInSection(ctx, critical, request)
+}
+
+// JudgeLinkedContent is the content rule of a linked-worktree store as
+// landed (Round B3-3 rule 2, Round B3-4): a status that prints nothing, no
+// submodules, no skip-worktree or assume-unchanged entry and readable
+// reflogs; a person's discard for this invocation waives the uncommitted
+// content alone.
+func JudgeLinkedContent(ctx context.Context, git WorkspaceGit, record Record, discard bool) Verdict {
+	return judgeContent(ctx, git, record, discard)
+}
+
+// QuarantineBorrowers names every alternates file that still lists
+// quarantine: the common store's and every linked worktree's quarantine
+// of the common directory. A store another repository borrows from is
+// never removed (3.7, R12).
+func QuarantineBorrowers(common, quarantine string) ([]string, error) {
+	files := []string{filepath.Join(common, "objects", "info", "alternates")}
+	worktrees, err := os.ReadDir(filepath.Join(common, "worktrees"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	for _, worktree := range worktrees {
+		files = append(files, filepath.Join(common, "worktrees", worktree.Name(), QuarantineName, "info", "alternates"))
+	}
+	var borrowers []string
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("alternates %s cannot be read: %w", file, err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if filepath.Clean(strings.TrimSpace(line)) == filepath.Clean(quarantine) {
+				borrowers = append(borrowers, file)
+				break
+			}
+		}
+	}
+	return borrowers, nil
 }

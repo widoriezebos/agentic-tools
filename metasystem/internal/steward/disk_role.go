@@ -244,6 +244,7 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			HandoffClass{Root: top, Keep: settings.Duration(config.DiskContextKeepKey)},
 			UsageClass{StateRoot: top, Limit: settings.Count(config.DiskSweepItemsPerLockKey)},
 			PinClass{Top: top},
+			DelegateWorktrees{Top: top},
 			LegacyCandidateEngines{Top: top},
 		}
 		checkoutOptions.Classes = append(checkoutOptions.Classes,
