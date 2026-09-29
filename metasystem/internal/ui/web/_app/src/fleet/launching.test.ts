@@ -89,6 +89,12 @@ describe("the nickname the sheet proposes", () => {
     expect(taken).toEqual(["m1b", "m1c"]);
     expect(proposedNickname("m1u", taken)).toBe("m1d");
   });
+
+  it("does not count a discarded launch's nickname as taken", () => {
+    const discarded = launch({ machine: "testbed", discardedAt: "2026-09-29T06:47:09Z", destinationPresent: false });
+    const kept = launch({ machine: "m1c", discardedAt: "2026-09-29T06:47:09Z", destinationPresent: true });
+    expect(nicknamesTaken([machineRow("m1b")], [discarded, kept])).toEqual(["m1b"]);
+  });
 });
 
 describe("the nickname the sheet refuses", () => {

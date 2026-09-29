@@ -68,11 +68,17 @@ export function proposedNickname(thisSeat: string, taken: readonly string[]): st
   return "";
 }
 
-/** Every nickname this page already knows about, machines and launches both. */
+/**
+ * Every nickname this page already knows about, machines and launches both.
+ *
+ * A discarded launch holds no nickname: the human put it away, and the engine,
+ * which never reads launch records, judges the name by presence, claims and
+ * the folder on disk (Wido, 2026-09-29).
+ */
 export function nicknamesTaken(machines: readonly Machine[], launches: readonly Launch[]): string[] {
   const names = machines.map((machine) => machine.machine);
   for (const launched of launches) {
-    if (launched.machine !== "" && !names.includes(launched.machine)) {
+    if (launched.discardedAt === null && launched.machine !== "" && !names.includes(launched.machine)) {
       names.push(launched.machine);
     }
   }
