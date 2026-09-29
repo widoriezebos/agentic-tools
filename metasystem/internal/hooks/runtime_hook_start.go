@@ -119,6 +119,11 @@ type startRun struct {
 	contextShapeReady bool
 	preparedContext   string
 
+	// peer is the offered peer message, held until the start finishes;
+	// peerOffered says its text joined the packet.
+	peer        *PeerOffer
+	peerOffered bool
+
 	brainFailure        string
 	brainDelivery       bool
 	brainDeclarationSHA string
@@ -142,6 +147,8 @@ type startRun struct {
 
 func runStart(inv Invocation, ops Ops) (status int) {
 	s := &startRun{inv: inv, ops: ops, contextKind: "none", contextBytes: 2048}
+	// The peer offer's claim locks are given back however the start ends.
+	defer func() { s.peer.Release() }()
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			if _, ok := recovered.(hookExit); ok {
@@ -370,6 +377,9 @@ func (s *startRun) finish(family, key string) {
 		exitHook(74)
 	}
 	s.published = true
+	if family == "intentional" && key == "context-ready" {
+		s.markPeer()
+	}
 
 	if family == "intentional" && s.brainDelivery {
 		cursor, prefix := "", ""
@@ -579,6 +589,7 @@ func (s *startRun) main() {
 	}
 	s.brainWait = time.Duration(s.brainDeadlineMS/1000+3) * time.Second
 	s.prepareBrain()
+	s.preparePeer()
 	s.prepareContextObject()
 
 	if s.deferredIdentityRead {

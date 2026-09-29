@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,7 +54,7 @@ func TestSTR3Tier1ReceiptProof06RefusesMismatchedIndex(t *testing.T) {
 		"--root", root,
 		"--tree", candidate,
 		"--command", "touch command-must-not-run",
-	}); code == 0 {
+	}, t.Output(), t.Output()); code == 0 {
 		t.Fatal("receipt creation accepted a supplied tree that differed from the real index")
 	}
 	if _, err := os.Stat(filepath.Join(root, "command-must-not-run")); !os.IsNotExist(err) {
@@ -152,7 +153,7 @@ func TestChainLandingRecertifiesAfterBaseMove(t *testing.T) {
 	writeFixtureJSON("artifacts/agents/impl/rounds/1/return.json", map[string]any{
 		"jobId": "impl", "round": 1, "diffBoundary": []string{"metasystem/internal/app/source.txt"},
 	})
-	if code := runValidateConformance([]string{"--root", project, "--stage", "review", "--job", "impl"}); code != 0 {
+	if code := runValidateConformance([]string{"--root", project, "--stage", "review", "--job", "impl"}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("review conformance exited %d", code)
 	}
 	reviewPath := filepath.Join(project, "artifacts", "agents", "impl", "rounds", "1", "review.json")
@@ -219,7 +220,7 @@ func TestChainLandingRecertifiesAfterBaseMove(t *testing.T) {
 		t.Fatal("missing command materialized the source worktree")
 	}
 	testCommand := "grep -q '^CHAIN$' internal/app/source.txt && grep -q '^MAIN$' internal/app/source.txt"
-	if code := runValidateConformance([]string{"--root", project, "--stage", "recertify", "--job", "impl", "--test-command", testCommand}); code != 0 {
+	if code := runValidateConformance([]string{"--root", project, "--stage", "recertify", "--job", "impl", "--test-command", testCommand}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("recertification exited %d", code)
 	}
 	records, err := filepath.Glob(filepath.Join(project, "artifacts", "agents", "landing", "recertifications", "impl", "*", "record.json"))
@@ -251,7 +252,7 @@ func TestChainLandingRecertifiesAfterBaseMove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code := runValidateConformance([]string{"--root", project, "--stage", "recertify", "--job", "impl", "--test-command", testCommand}); code != 0 {
+	if code := runValidateConformance([]string{"--root", project, "--stage", "recertify", "--job", "impl", "--test-command", testCommand}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("idempotent recertification retry exited %d", code)
 	}
 	recordsAfterRetry, err := filepath.Glob(filepath.Join(project, "artifacts", "agents", "landing", "recertifications", "impl", "*", "record.json"))
@@ -289,7 +290,7 @@ func TestChainLandingRecertifiesAfterBaseMove(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "artifacts", "agents", "jobs", "impl.json"), rootBefore, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code := runValidateConformance([]string{"--root", project, "--stage", "merge", "--job", "impl", "--recertification", recertification}); code != 0 {
+	if code := runValidateConformance([]string{"--root", project, "--stage", "merge", "--job", "impl", "--recertification", recertification}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("recertified merge conformance exited %d", code)
 	}
 
@@ -603,7 +604,7 @@ func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitT
 	writeFixtureJSON("artifacts/agents/park-chain/rounds/1/return.json", map[string]any{
 		"jobId": "park-chain", "round": 1, "diffBoundary": []string{sourcePath},
 	})
-	if code := runValidateConformance([]string{"--root", root, "--stage", "review", "--job", "park-chain"}); code != 0 {
+	if code := runValidateConformance([]string{"--root", root, "--stage", "review", "--job", "park-chain"}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("review conformance exited %d", code)
 	}
 	var review map[string]string
@@ -657,7 +658,7 @@ func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitT
 	runReceiptGit(t, peer, "config", "user.name", "race peer")
 	runReceiptGit(t, peer, "config", "user.email", "race-peer@example.invalid")
 
-	if code := runValidateConformance([]string{"--root", root, "--stage", "recertify", "--job", "park-chain"}); code != 0 {
+	if code := runValidateConformance([]string{"--root", root, "--stage", "recertify", "--job", "park-chain"}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("recertification exited %d", code)
 	}
 	records, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "landing", "recertifications", "park-chain", "*", "record.json"))
@@ -1021,7 +1022,7 @@ func TestLandingTestReceiptRefusesMismatchedWorkingTreeBeforeCommand(t *testing.
 		"--root", root,
 		"--tree", candidate,
 		"--command", "touch command-must-not-run",
-	}); code == 0 {
+	}, t.Output(), t.Output()); code == 0 {
 		t.Fatal("receipt creation accepted a working tree that differed from the supplied tree")
 	}
 	if got := runReceiptGit(t, root, "write-tree"); got != candidate {
@@ -1051,7 +1052,7 @@ func TestLandingTestReceiptRefusesPostCommandTreeDrift(t *testing.T) {
 		"--root", root,
 		"--tree", candidate,
 		"--command", "printf 'drift\\n' > payload.txt",
-	}); code == 0 {
+	}, t.Output(), t.Output()); code == 0 {
 		t.Fatal("receipt creation accepted a working tree changed by the command")
 	}
 	if _, err := os.Stat(landing.TestReceiptPath(root, candidate)); !os.IsNotExist(err) {
@@ -1161,9 +1162,9 @@ func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 			args := []string{"--root", root, "--tree", tree,
 				"--command", "printf 'launch\\n' >> " + strconv.Quote(launchCount),
 				"--goal", "standing-validation", "--cap-min", "1", "--result", resultPath}
-			code, _, problem := captureChannelOutput(t, func() int {
+			code, _, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
 				reads := repository.reads()
-				return runLandingTestReceiptWithInputs(parent, resolveClock, nil, landingReceiptTestRun, args,
+				return landingTestReceiptTo(stdout, stderr, parent, resolveClock, nil, landingReceiptTestRun, args,
 					func(receiptRoot, receiptTree, command string) (*landing.ReceiptPreparation, error) {
 						return landing.PrepareTestReceiptWithWorkspace(receiptRoot, receiptTree, command, fixture.workspace(),
 							func(freezeRoot, freezeTree string) (proofrun.FrozenExport, error) {
@@ -1628,11 +1629,11 @@ func TestLandingWorkspacePrintsSameIDAcrossLedgerOnlyTrees(t *testing.T) {
 	if firstTree == secondTree {
 		t.Fatal("ledger fixture did not produce distinct whole-project trees")
 	}
-	first, firstStatus := captureStdout(t, func() int {
-		return runLandingWorkspace([]string{"--root", root, "--tree", firstTree})
+	first, firstStatus := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runLandingWorkspace([]string{"--root", root, "--tree", firstTree}, stdout, stderr)
 	})
-	second, secondStatus := captureStdout(t, func() int {
-		return runLandingWorkspace([]string{"--root", root, "--tree", secondTree})
+	second, secondStatus := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runLandingWorkspace([]string{"--root", root, "--tree", secondTree}, stdout, stderr)
 	})
 	if firstStatus != 0 || secondStatus != 0 || strings.TrimSpace(first) == "" || strings.TrimSpace(first) != strings.TrimSpace(second) {
 		t.Fatalf("landing workspace did not ignore goal and counselor ledgers: first=%q/%d second=%q/%d", first, firstStatus, second, secondStatus)
@@ -2086,7 +2087,7 @@ func TestHCL55CarriedJudgeGrammar(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if code := runLandingObserve(test.args); code != 2 {
+			if code := runLandingObserve(test.args, t.Output(), t.Output()); code != 2 {
 				t.Fatalf("landing observe exited %d; want usage exit 2", code)
 			}
 		})
@@ -2260,7 +2261,11 @@ func TestCanonicalValidatorEnvironmentOwnsTheGateGoFlags(t *testing.T) {
 // child's, as the former entry's were.
 const landingTestReceiptHelperCommand = "test-helper-landing-test-receipt"
 
-func init() { testHelperCommands[landingTestReceiptHelperCommand] = runLandingTestReceipt }
+func init() {
+	testHelperCommands[landingTestReceiptHelperCommand] = func(args []string) int {
+		return runLandingTestReceipt(args, os.Stdout, os.Stderr)
+	}
+}
 
 func landingTestReceiptChild(fixture proofBinaryFixture, environment []string, args ...string) *exec.Cmd {
 	fixture.t.Helper()

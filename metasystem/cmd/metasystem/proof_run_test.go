@@ -274,7 +274,7 @@ func TestCandidateGoalSelectsThePlanRisk(t *testing.T) {
 	if has(lowPlan.SelectedGroups, "cross-cutting") || !has(highPlan.SelectedGroups, "cross-cutting") {
 		t.Fatalf("candidate risk did not select its cross-cutting plan: low=%+v high=%+v", lowPlan, highPlan)
 	}
-	request, _, code := parseTestingSelection("test run", []string{"--root", root, "--goal", candidate.Id, "--authority", "standing-validation"}, true)
+	request, _, code := parseTestingSelection("test run", []string{"--root", root, "--goal", candidate.Id, "--authority", "standing-validation"}, true, t.Output(), t.Output())
 	if code != 0 || request.GoalID != candidate.Id || request.AuthorityGoalID != "standing-validation" {
 		t.Fatalf("testing selection lost candidate or authority: request=%+v code=%d", request, code)
 	}
@@ -922,8 +922,8 @@ func workerAuthorizedAttemptFixtureWithProject(t *testing.T, populate func(strin
 
 func TestWorkerAuthorizedAcceptsTheAdmittedRoot(t *testing.T) {
 	_, root, _ := workerAuthorizedFileAttemptFixture(t)
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runProofRunWorkerAuthorized([]string{"--root", root})
+	code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runProofRunWorkerAuthorized([]string{"--root", root}, stdout, stderr)
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("admitted execution root was not authorized: code=%d stderr=%q", code, stderr)
@@ -975,8 +975,8 @@ func TestWorkerAuthorizedAcceptsOnlyAttemptBoundSectionWorktree(t *testing.T) {
 	defer detached.Close()
 	sectionRoot := filepath.Join(detached.Workspace().Dir, "application")
 	t.Chdir(sectionRoot)
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runProofRunWorkerAuthorized([]string{"--root", sectionRoot})
+	code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runProofRunWorkerAuthorized([]string{"--root", sectionRoot}, stdout, stderr)
 	})
 	if code != 3 {
 		t.Fatalf("section without its native process record was authorized: code=%d stderr=%q", code, stderr)
@@ -1006,8 +1006,8 @@ func TestWorkerAuthorizedAcceptsOnlyAttemptBoundSectionWorktree(t *testing.T) {
 		}
 	}
 	writeRecord()
-	code, _, stderr = captureCommandOutput(t, false, true, func() int {
-		return runProofRunWorkerAuthorized([]string{"--root", sectionRoot})
+	code, _, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runProofRunWorkerAuthorized([]string{"--root", sectionRoot}, stdout, stderr)
 	})
 	if code != 3 {
 		t.Fatalf("section record absent from retained attempt was authorized: code=%d stderr=%q", code, stderr)
@@ -1028,8 +1028,8 @@ func TestWorkerAuthorizedAcceptsOnlyAttemptBoundSectionWorktree(t *testing.T) {
 		}
 	}
 	writeAttempt()
-	code, _, stderr = captureCommandOutput(t, false, true, func() int {
-		return runProofRunWorkerAuthorized([]string{"--root", sectionRoot})
+	code, _, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runProofRunWorkerAuthorized([]string{"--root", sectionRoot}, stdout, stderr)
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("attempt-bound section worktree denied: code=%d stderr=%q", code, stderr)
@@ -1059,8 +1059,8 @@ func TestWorkerAuthorizedAcceptsOnlyAttemptBoundSectionWorktree(t *testing.T) {
 	writeRecord()
 	denied := func(name, root string) {
 		t.Helper()
-		status, _, detail := captureCommandOutput(t, false, true, func() int {
-			return runProofRunWorkerAuthorized([]string{"--root", root})
+		status, _, detail := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+			return runProofRunWorkerAuthorized([]string{"--root", root}, stdout, stderr)
 		})
 		if status != 3 {
 			t.Fatalf("%s section authorization = %d, want refusal; stderr=%q", name, status, detail)
@@ -1213,8 +1213,8 @@ func TestWorkerAuthorizedAcceptsAttemptWitnessSnapshot(t *testing.T) {
 	t.Chdir(snapshot)
 	t.Setenv(proofWitnessExecutionRootEnv, root)
 	t.Setenv("METASYSTEM_GATE_WITNESS_WRITE", filepath.Join(t.TempDir(), "witness.json"))
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runProofRunWorkerAuthorized([]string{"--root", snapshot})
+	code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runProofRunWorkerAuthorized([]string{"--root", snapshot}, stdout, stderr)
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("attempt witness snapshot was not authorized: code=%d stderr=%q", code, stderr)
@@ -1416,8 +1416,8 @@ printf '%s\n' "<testsuite><testcase classname=\"fixture\" name=\"$3\"/></testsui
 			if err != nil {
 				t.Fatal(err)
 			}
-			code, _, stderr := captureCommandOutput(t, false, true, func() int {
-				return runTestWorkerWithCandidateOpener([]string{"--packet", foreignPacket, "--packet-sha256", foreignDigest, "--result", foreignResult}, openCandidate)
+			code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+				return runTestWorkerWithCandidateOpener([]string{"--packet", foreignPacket, "--packet-sha256", foreignDigest, "--result", foreignResult}, openCandidate, stdout, stderr)
 			})
 			if code != 3 || !strings.Contains(stderr, "authenticated request roots") {
 				t.Fatalf("foreign %s refusal = code=%d stderr=%q", tamper.name, code, stderr)
@@ -1443,8 +1443,8 @@ printf '%s\n' "<testsuite><testcase classname=\"fixture\" name=\"$3\"/></testsui
 	}
 	candidate.queueBed(attempt.CandidateTree)
 	candidate.queueBed(attempt.CandidateTree)
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runTestWorkerWithCandidateOpener([]string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", resultPath}, openCandidate)
+	code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestWorkerWithCandidateOpener([]string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", resultPath}, openCandidate, stdout, stderr)
 	})
 	result, resultErr := readTestingWorkerResult(resultPath)
 	if code != 0 || resultErr != nil || !result.Delivery.Sufficient || len(result.Groups) != len(groupIDs) {
@@ -1461,8 +1461,8 @@ printf '%s\n' "<testsuite><testcase classname=\"fixture\" name=\"$3\"/></testsui
 
 func TestWorkerAuthorizedRefusesAForeignRoot(t *testing.T) {
 	foreign, root, attempt := workerAuthorizedFileAttemptFixture(t)
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runProofRunWorkerAuthorized([]string{"--root", foreign})
+	code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runProofRunWorkerAuthorized([]string{"--root", foreign}, stdout, stderr)
 	})
 	if code != 3 || !strings.Contains(stderr, foreign) || !strings.Contains(stderr, attempt.ExecutionRoot) {
 		t.Fatalf("foreign root refusal = code=%d stderr=%q; want both %q and %q", code, stderr, foreign, root)
@@ -2200,11 +2200,11 @@ func TestBatchRevisionBoundAdmissionRefusesBeforeRunnerOrCharge(t *testing.T) {
 
 func TestTestingSelectionExpectedRevisionsArePaired(t *testing.T) {
 	root := t.TempDir()
-	if _, _, code := parseTestingSelection("test run", []string{"--root", root, "--expected-goal-revision", "2"}, true); code != 2 {
+	if _, _, code := parseTestingSelection("test run", []string{"--root", root, "--expected-goal-revision", "2"}, true, t.Output(), t.Output()); code != 2 {
 		t.Fatalf("unpaired expected revision exited %d", code)
 	}
 	request, _, code := parseTestingSelection("test run", []string{"--root", root,
-		"--expected-goal-revision", "2", "--expected-accounting-revision", "1"}, true)
+		"--expected-goal-revision", "2", "--expected-accounting-revision", "1"}, true, t.Output(), t.Output())
 	if code != 0 || request.ExpectedGoalRevision != 2 || request.ExpectedAccountingRevision != 1 {
 		t.Fatalf("paired expected revisions request=%+v code=%d", request, code)
 	}
@@ -2666,7 +2666,7 @@ func TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase(t *testing.T) {
 		logPath := filepath.Join(closedRoot, "suite.log")
 		status := runProofRunLaunch([]string{"--suite", "closed", "--root", closedRoot, "--control-root", closedRoot,
 			"--conf", closedConf, "--progress", filepath.Join(closedRoot, "progress.jsonl"), "--log", logPath,
-			"--banner", "closed", "--result", resultPath, "--", "/bin/true"})
+			"--banner", "closed", "--result", resultPath, "--", "/bin/true"}, t.Output(), t.Output())
 		if status != 1 {
 			t.Fatalf("closed fence status = %d, want failed refusal 1", status)
 		}
@@ -2734,7 +2734,7 @@ func TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase(t *testing.T) {
 				logPath := resultPath + ".log"
 				status := runProofRunLaunch([]string{"--suite", "stale-epoch", "--root", root, "--control-root", root,
 					"--conf", conf, "--progress", resultPath + ".progress", "--log", logPath,
-					"--banner", "stale epoch", "--result", resultPath, "--", "/bin/true"})
+					"--banner", "stale epoch", "--result", resultPath, "--", "/bin/true"}, t.Output(), t.Output())
 				if status != 1 || reads != scenario.changeAt {
 					t.Fatalf("stale epoch status=%d fence reads=%d, want failed at read %d", status, reads, scenario.changeAt)
 				}
@@ -3430,8 +3430,8 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runTestWorkerWithCandidateOpener([]string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", resultPath}, openCandidate)
+	_, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestWorkerWithCandidateOpener([]string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", resultPath}, openCandidate, stdout, stderr)
 	})
 	result, err := readTestingWorkerResult(resultPath)
 	if err != nil {
@@ -3491,8 +3491,8 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	greenCode, _, greenStderr := captureCommandOutput(t, false, true, func() int {
-		return runTestWorkerWithCandidateOpener([]string{"--packet", greenPacketPath, "--packet-sha256", greenPacketDigest, "--result", greenResultPath}, openCandidate)
+	greenCode, _, greenStderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestWorkerWithCandidateOpener([]string{"--packet", greenPacketPath, "--packet-sha256", greenPacketDigest, "--result", greenResultPath}, openCandidate, stdout, stderr)
 	})
 	greenResult, err := readTestingWorkerResult(greenResultPath)
 	if err != nil {
@@ -3590,8 +3590,8 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 		t.Fatal(err)
 	}
 	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_PROOF_ATTEMPT", consumer.AttemptID)
-	legacyCode, _, legacyStderr := captureCommandOutput(t, false, true, func() int {
-		return runTestWorkerWithCandidateOpener([]string{"--packet", legacyPacketPath, "--packet-sha256", legacyPacketDigest, "--result", legacyResultPath}, openCandidate)
+	legacyCode, _, legacyStderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestWorkerWithCandidateOpener([]string{"--packet", legacyPacketPath, "--packet-sha256", legacyPacketDigest, "--result", legacyResultPath}, openCandidate, stdout, stderr)
 	})
 	legacyResult, err := readTestingWorkerResult(legacyResultPath)
 	if err != nil {

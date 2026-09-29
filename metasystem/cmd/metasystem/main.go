@@ -26,7 +26,7 @@ import (
 type verb struct {
 	name     string
 	summary  string
-	run      func(args []string) int
+	run      command
 	launcher string
 	evidence string
 	// required are the options the entrypoint refuses to run without.
@@ -54,7 +54,7 @@ func topLevelEntries() []topLevelEntry {
 	for i := range entries {
 		run := entries[i].run
 		entries[i].run = func(args []string, stdout, stderr io.Writer, repositoryTop func(string) (string, error)) int {
-			return helpAware(func(args []string) int { return run(args, stdout, stderr, repositoryTop) })(args)
+			return helpAware(func(args []string, stdout, stderr io.Writer) int { return run(args, stdout, stderr, repositoryTop) })(args, stdout, stderr)
 		}
 	}
 	return entries
@@ -64,12 +64,14 @@ func registeredTopLevelEntries() []topLevelEntry {
 	return []topLevelEntry{
 		{name: "up", usage: "up [--repo <checkout>] [--pid <pid> --start-time <epoch>] | up --print-scheduler-entry [--repo <checkout>]",
 			launcher: "cmd/metasystem/rearm_on_landed.go", evidence: `"up", "--repo"`,
-			run: func(args []string, _, _ io.Writer, repositoryTop func(string) (string, error)) int {
-				return runUpWith(args, repositoryTop)
+			run: func(args []string, stdout, stderr io.Writer, repositoryTop func(string) (string, error)) int {
+				return runUpWith(args, repositoryTop, stdout, stderr)
 			}},
 		{name: "hook", usage: "hook <runtime> <start|stop|end|receipt|tool>",
 			launcher: "internal/hooks/runtime_hook_worker.go", evidence: `"internal", "hook"`,
-			run: func(args []string, _, _ io.Writer, _ func(string) (string, error)) int { return runHookEntry(args) }},
+			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
+				return runHookEntry(args, stdout, stderr)
+			}},
 		{name: "pre-commit", usage: "pre-commit --root <installation>",
 			launcher: "internal/ledgerfence/fence.go", evidence: "internal pre-commit", required: []string{"root"},
 			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
@@ -77,12 +79,14 @@ func registeredTopLevelEntries() []topLevelEntry {
 			}},
 		{name: runtimes.SupervisorEntry, usage: runtimes.SupervisorEntry + " <runtime> <verb> --root <installation> [flags]",
 			launcher: "internal/delegation/owners.go", evidence: "runtimes.SupervisorArgs",
-			run: func(args []string, _, _ io.Writer, _ func(string) (string, error)) int {
-				return runDelegateSupervisor(args)
+			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
+				return runDelegateSupervisor(args, stdout, stderr)
 			}},
 		{name: "delegate", usage: "delegate --revive <intent> | delegate __run-member --root <installation> -- <command...> | delegate __<callback> ...",
 			launcher: "cmd/metasystem/steward_verbs.go", evidence: `"internal", "delegate", "--revive"`,
-			run: func(args []string, _, _ io.Writer, _ func(string) (string, error)) int { return runDelegate(args) }},
+			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
+				return runDelegate(args, stdout, stderr)
+			}},
 	}
 }
 
@@ -121,7 +125,9 @@ func registeredFamilies() []family {
 		{
 			name: "test", summary: "proof runs on another engine or as the landing owner's child",
 			verbs: []verb{
-				{name: "plan", summary: "compute a candidate's risk-selected groups for a pinned or candidate engine", run: func(args []string) int { return runTestPlanAs("internal test plan", args) }, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"plan\"", required: []string{"root"}},
+				{name: "plan", summary: "compute a candidate's risk-selected groups for a pinned or candidate engine", run: func(args []string, stdout, stderr io.Writer) int {
+					return runTestPlanAs("internal test plan", args, stdout, stderr)
+				}, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"plan\"", required: []string{"root"}},
 				{name: "run", summary: "run one proof as the landing owner's own child", run: runTestRun, launcher: "cmd/metasystem/landing_batch_prove.go", evidence: "\"internal\", \"test\", \"run\"", required: []string{"root"}},
 				{name: "verify", summary: "verify retained proof on the base engine a carried landing builds", run: runTestVerify, launcher: "cmd/metasystem/landing_path.go", evidence: "\"test\", \"verify\"", required: []string{"root"}},
 				{name: "worker-capabilities", summary: "report the testing worker protocol of a pinned engine", run: runTestWorkerCapabilities, launcher: "cmd/metasystem/test.go", evidence: "\"test\", \"worker-capabilities\""},
@@ -240,10 +246,6 @@ func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []
 	return dispatchWithFamiliesAndRepositoryTop(args, stdout, stderr, registered, stateroot.RepositoryTop)
 }
 
-func dispatchWithRepositoryTop(args []string, repositoryTop func(string) (string, error)) int {
-	return dispatchWithFamiliesAndRepositoryTop(args, os.Stdout, os.Stderr, families(), repositoryTop)
-}
-
 // dispatchWithFamiliesAndRepositoryTop routes one invocation: the public
 // (object, action) pairs first, then the hidden entries, then the explicit
 // internal form. A (word, verb) pair that is neither a public action nor an
@@ -318,7 +320,7 @@ func dispatchObject(args []string, stdout, stderr io.Writer, registered []family
 			return 0
 		}
 		if command.passthrough != nil {
-			return command.passthrough(args[2:])
+			return command.passthrough(args[2:], stdout, stderr)
 		}
 		return runIntent(command, args[2:], stdout, stderr, defaultIntentOwners())
 	}
@@ -366,7 +368,7 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 		if len(args) >= 2 {
 			for _, v := range fam.verbs {
 				if v.name == args[1] {
-					return v.run(args[2:])
+					return v.run(args[2:], stdout, stderr)
 				}
 			}
 			if isHelpWord(args[1]) {

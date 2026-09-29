@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,8 +86,8 @@ func TestProcessVerbsShareTheNamedSeparateInstallation(t *testing.T) {
 		return lease.Classification{Class: lease.ClassDelegate}, nil
 	}
 
-	stdout, stderr, code := captureRelay(t, func() int {
-		return runProcessStatusWith([]string{"--repo", repo, "--installation", installation}, repositoryTop)
+	stdout, stderr, code := captureRelay(t, func(stdout, stderr io.Writer) int {
+		return runProcessStatusWith([]string{"--repo", repo, "--installation", installation}, repositoryTop, stdout, stderr)
 	})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "checkout "+repo+"\nnothing is running") || strings.Contains(stdout, "--metasystem-root") {
 		t.Fatalf("separate-installation status = code %d stdout %q stderr %q", code, stdout, stderr)
@@ -94,14 +95,18 @@ func TestProcessVerbsShareTheNamedSeparateInstallation(t *testing.T) {
 
 	for _, verb := range []struct {
 		name string
-		run  func([]string) int
+		run  command
 	}{
-		{name: "stop", run: func(args []string) int { return runProcessStopWith(args, repositoryTop, classify) }},
-		{name: "arm", run: func(args []string) int { return runProcessArmWith(args, repositoryTop, classify) }},
+		{name: "stop", run: func(args []string, stdout, stderr io.Writer) int {
+			return runProcessStopWith(args, repositoryTop, classify, stdout, stderr)
+		}},
+		{name: "arm", run: func(args []string, stdout, stderr io.Writer) int {
+			return runProcessArmWith(args, repositoryTop, classify, stdout, stderr)
+		}},
 	} {
 		t.Run(verb.name, func(t *testing.T) {
-			stdout, stderr, code := captureRelay(t, func() int {
-				return verb.run([]string{"--repo", repo, "--installation", installation})
+			stdout, stderr, code := captureRelay(t, func(stdout, stderr io.Writer) int {
+				return verb.run([]string{"--repo", repo, "--installation", installation}, stdout, stderr)
 			})
 			public := publicProcessVerb(verb.name)
 			want := "metasystem " + public + ": " + public + " is a human act at a terminal; this caller is DELEGATE.\n" +
@@ -119,7 +124,7 @@ func TestProcessVerbsShareTheNamedSeparateInstallation(t *testing.T) {
 func TestArmAcceptsASeparateInstallationScope(t *testing.T) {
 	repo, installation := separateProcessScopeFixture(t)
 	repositoryTop := declaredRepositoryTop(t, repo, map[string]int{repo: 1})
-	scope, scale, code := parseProcessScopeWith("arm", []string{"--repo", repo, "--installation", installation}, repositoryTop)
+	scope, scale, code := parseProcessScopeWith(t.Output(), "arm", []string{"--repo", repo, "--installation", installation}, repositoryTop)
 	if code != 0 || scope.Checkout != repo || scope.Installation != installation || scope.Root != installation || scale < 1 {
 		t.Fatalf("arm scope = %#v scale=%d code=%d", scope, scale, code)
 	}
@@ -141,8 +146,8 @@ func TestArmAcceptsASeparateInstallationScope(t *testing.T) {
 func TestArmAllUsesTheProcessVerbRefusal(t *testing.T) {
 	repo, installation := separateProcessScopeFixture(t)
 	repositoryTop := declaredRepositoryTop(t, repo, map[string]int{repo: 1})
-	stderr, code := captureStderr(t, func() int {
-		return runProcessArmWith([]string{"--repo", repo, "--installation", installation, "--all"}, repositoryTop, lease.ClassifyAt)
+	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+		return runProcessArmWith([]string{"--repo", repo, "--installation", installation, "--all"}, repositoryTop, lease.ClassifyAt, stdout, stderr)
 	})
 	want := "metasystem system start: the fleet form is not built yet.\nrun: metasystem system start --repo " + repo + " --installation " + installation + "\n"
 	if code != 1 || stderr != want {
@@ -169,11 +174,11 @@ func TestArmTemporaryWordStillRequiresHumanCallerAndLeavesFenceUnchanged(t *test
 		return lease.Classification{Class: lease.ClassDelegate}, nil
 	}
 
-	stdout, stderr, code := captureRelay(t, func() int {
+	stdout, stderr, code := captureRelay(t, func(stdout, stderr io.Writer) int {
 		return runProcessArmWith([]string{
 			"--repo", repo, "--installation", installation,
 			"--temporary-human-word", "Wido authorizes this temporary arm", "--review-by", "2026-09-09",
-		}, repositoryTop, classify)
+		}, repositoryTop, classify, stdout, stderr)
 	})
 	want := "metasystem system start: system start is a human act at a terminal; this caller is DELEGATE.\n" +
 		"at an agent-free terminal, run: metasystem system start --repo " + repo + " --installation " + installation + "\n"
@@ -217,8 +222,8 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 		{verb: "arm"},
 	} {
 		t.Run(test.verb, func(t *testing.T) {
-			stderr, code := captureStderr(t, func() int {
-				_, authorized := requireHumanTerminalAtWith(installation, installation, "metasystem "+test.verb, repositoryTop, lease.ClassifyAt, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, test.verb))
+			stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+				_, authorized := requireHumanTerminalAtWith(stderr, installation, installation, "metasystem "+test.verb, repositoryTop, lease.ClassifyAt, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, test.verb))
 				if authorized {
 					return 0
 				}
@@ -236,8 +241,8 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 		})
 	}
 
-	stdout, stderr, code := captureRelay(t, func() int {
-		return runProcessStatusWith([]string{"--repo", repo, "--installation", installation}, repositoryTop)
+	stdout, stderr, code := captureRelay(t, func(stdout, stderr io.Writer) int {
+		return runProcessStatusWith([]string{"--repo", repo, "--installation", installation}, repositoryTop, stdout, stderr)
 	})
 	if code != 1 || stderr != "" || !strings.Contains(stdout, "inventory unreadable: job "+jobPath+":") || !strings.Contains(stdout, "unexpected EOF") ||
 		!strings.Contains(stdout, "repair the named read failures, then run: metasystem system status --repo "+repo) || strings.Contains(stdout, "agent-free terminal") {
@@ -247,8 +252,8 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 	if err := os.WriteFile(jobPath, []byte(`{"machineId":"fixture-remote","status":"running"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	stderr, code = captureStderr(t, func() int {
-		_, authorized := requireHumanTerminalAtWith(installation, installation, "metasystem system start", repositoryTop, lease.ClassifyAt, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, "arm"))
+	stderr, code = captureStderr(t, func(stdout, stderr io.Writer) int {
+		_, authorized := requireHumanTerminalAtWith(stderr, installation, installation, "metasystem system start", repositoryTop, lease.ClassifyAt, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, "arm"))
 		if authorized {
 			return 0
 		}
@@ -367,8 +372,8 @@ func TestTransitionRefusalsPreserveTheNamedInstallation(t *testing.T) {
 }
 
 func TestScopeRefusalRetainsTheInstallationOptionWithAWorkingRepairPlaceholder(t *testing.T) {
-	stderr, code := captureStderr(t, func() int {
-		return processScopeRefusal("stop", "/fixture/checkout", "/broken/engine", errors.New("/broken/engine carries no engine"))
+	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+		return processScopeRefusal(stderr, "stop", "/fixture/checkout", "/broken/engine", errors.New("/broken/engine carries no engine"))
 	})
 	want := "metasystem system stop: /broken/engine carries no engine.\n" +
 		"run: metasystem system stop --repo /fixture/checkout --installation <dir>, where <dir> holds this checkout's bin/metasystem\n"
@@ -381,8 +386,8 @@ func TestCrashStepRefusalPreservesTheNamedInstallation(t *testing.T) {
 	root := missionFenceFixture(t, false)
 	repositoryTop := declaredRepositoryTop(t, root, map[string]int{root: 1})
 	t.Setenv("METASYSTEM_STOP_CRASH_AFTER", "not-a-step")
-	stderr, code := captureStderr(t, func() int {
-		return runProcessStopWith([]string{"--repo", root, "--installation", root}, repositoryTop, lease.ClassifyAt)
+	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+		return runProcessStopWith([]string{"--repo", root, "--installation", root}, repositoryTop, lease.ClassifyAt, stdout, stderr)
 	})
 	want := "metasystem system stop: METASYSTEM_STOP_CRASH_AFTER must name a numbered section-4 step from 1 through 9.\n" +
 		"run: metasystem system stop --repo " + root + " --installation " + root + "\n"
@@ -395,9 +400,9 @@ func TestCrashStepRefusalPreservesTheNamedInstallation(t *testing.T) {
 // kept for these tests: it parses a process scope and prints what the
 // process owners the public system stop, status and start call return.
 
-func parseProcessScopeWith(verb string, args []string, repositoryTop func(string) (string, error), register ...func(*flag.FlagSet)) (processScope, int, int) {
+func parseProcessScopeWith(stderr io.Writer, verb string, args []string, repositoryTop func(string) (string, error), register ...func(*flag.FlagSet)) (processScope, int, int) {
 	flags := flag.NewFlagSet("metasystem "+verb, flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
+	flags.SetOutput(stderr)
 	repo := pathFlag(flags, "repo", ".", "repository or path inside it")
 	installation := flags.String("installation", "", "metasystem installation for this checkout")
 	all := flags.Bool("all", false, "every checkout on this host")
@@ -409,27 +414,27 @@ func parseProcessScopeWith(verb string, args []string, repositoryTop func(string
 	}
 	scope, err := resolveProcessScopeWith(*repo, *installation, repositoryTop)
 	if err != nil {
-		return processScope{}, 0, processScopeRefusal(verb, *repo, *installation, err)
+		return processScope{}, 0, processScopeRefusal(stderr, verb, *repo, *installation, err)
 	}
 	if *all {
-		return processScope{}, 0, refuseProcessVerb(verb, scope.Checkout, "the fleet form is not built yet", "run: "+processVerbRetryCommand(scope, verb))
+		return processScope{}, 0, refuseProcessVerbTo(stderr, verb, scope.Checkout, "the fleet form is not built yet", "run: "+processVerbRetryCommand(scope, verb))
 	}
 	scale := upWaitScale()
 	if scale < 1 {
-		fmt.Fprintf(os.Stderr, "metasystem %s: METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer\n", verb)
+		fmt.Fprintf(stderr, "metasystem %s: METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer\n", verb)
 		return processScope{}, 0, 2
 	}
 	return scope, scale, 0
 }
 
-func printProcessReport(report stoptransition.Report) int {
+func printProcessReport(stdout io.Writer, report stoptransition.Report) int {
 	for _, line := range report.Lines {
-		fmt.Println(line)
+		fmt.Fprintln(stdout, line)
 	}
 	return report.ExitCode
 }
 
-func processScopeRefusal(verb, repo, installation string, err error) int {
+func processScopeRefusal(stderr io.Writer, verb, repo, installation string, err error) int {
 	sentence := err.Error()
 	scope := processScope{Checkout: "<a path inside the checkout>", Installation: installation, InstallationExplicit: installation != ""}
 	if strings.Contains(sentence, "carries no metasystem installation") {
@@ -441,11 +446,11 @@ func processScopeRefusal(verb, repo, installation string, err error) int {
 		scope.Installation = "<dir>, where <dir> holds this checkout's bin/metasystem"
 		scope.InstallationExplicit = true
 	}
-	return refuseProcessVerb(verb, repo, sentence, "run: "+processVerbRetryCommand(scope, verb))
+	return refuseProcessVerbTo(stderr, verb, repo, sentence, "run: "+processVerbRetryCommand(scope, verb))
 }
 
-func runProcessStopWith(args []string, repositoryTop func(string) (string, error), classify processCallerClassifier) int {
-	scope, scale, code := parseProcessScopeWith("stop", args, repositoryTop)
+func runProcessStopWith(args []string, repositoryTop func(string) (string, error), classify processCallerClassifier, stdout, stderr io.Writer) int {
+	scope, scale, code := parseProcessScopeWith(stderr, "stop", args, repositoryTop)
 	if code != 0 {
 		return code
 	}
@@ -453,27 +458,27 @@ func runProcessStopWith(args []string, repositoryTop func(string) (string, error
 	owners.repositoryTop, owners.classify = repositoryTop, classify
 	report, refusal := owners.stop(scope, scale)
 	if refusal != nil {
-		return refusal.print()
+		return refusal.printTo(stderr)
 	}
-	return printProcessReport(report)
+	return printProcessReport(stdout, report)
 }
 
-func runProcessStatusWith(args []string, repositoryTop func(string) (string, error)) int {
-	scope, scale, code := parseProcessScopeWith("status", args, repositoryTop)
+func runProcessStatusWith(args []string, repositoryTop func(string) (string, error), stdout, stderr io.Writer) int {
+	scope, scale, code := parseProcessScopeWith(stderr, "status", args, repositoryTop)
 	if code != 0 {
 		return code
 	}
 	report, err := defaultProcessOwners().status(scope, scale)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "metasystem status: %v.\n", err)
+		fmt.Fprintf(stderr, "metasystem status: %v.\n", err)
 		return 1
 	}
-	return printProcessReport(report)
+	return printProcessReport(stdout, report)
 }
 
-func runProcessArmWith(args []string, repositoryTop func(string) (string, error), classify processCallerClassifier) int {
+func runProcessArmWith(args []string, repositoryTop func(string) (string, error), classify processCallerClassifier, stdout, stderr io.Writer) int {
 	var temporaryWord, reviewBy string
-	scope, scale, code := parseProcessScopeWith("arm", args, repositoryTop, func(flags *flag.FlagSet) {
+	scope, scale, code := parseProcessScopeWith(stderr, "arm", args, repositoryTop, func(flags *flag.FlagSet) {
 		flags.StringVar(&temporaryWord, "temporary-human-word", "", "verbatim remote human authorization")
 		flags.StringVar(&reviewBy, "review-by", "", "human re-approval date")
 	})
@@ -485,9 +490,9 @@ func runProcessArmWith(args []string, repositoryTop func(string) (string, error)
 	report, refusal := owners.arm(scope, scale, temporaryWord, reviewBy)
 	if refusal != nil {
 		for _, line := range report.Lines {
-			fmt.Println(line)
+			fmt.Fprintln(stdout, line)
 		}
-		return refusal.print()
+		return refusal.printTo(stderr)
 	}
-	return printProcessReport(report)
+	return printProcessReport(stdout, report)
 }

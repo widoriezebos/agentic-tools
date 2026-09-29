@@ -219,7 +219,9 @@ func describeHelp(selectors []string) (intentHelpDocument, error) {
 		topic = selectors[0]
 	}
 	switch {
-	case len(selectors) == 1 && isIntentObject(topic):
+	// The audience topic keeps the word agent: help agent is the agents'
+	// page, which lists the agent object's actions with every other.
+	case len(selectors) == 1 && isIntentObject(topic) && !intentTopic(topic):
 		for _, command := range objectActions(topic) {
 			doc.Commands = append(doc.Commands, helpEntry(command))
 		}
@@ -287,12 +289,12 @@ func runIntentHelp(args []string, stdout, stderr io.Writer) int {
 		writeIntentHelpForm(stdout, command, *doc.Form)
 		return 0
 	}
-	if len(selectors) == 1 && isIntentObject(selectors[0]) {
-		writeIntentObjectHelp(stdout, selectors[0])
-		return 0
-	}
 	if len(selectors) == 1 && intentTopic(selectors[0]) {
 		writeIntentTopicHelp(stdout, selectors[0])
+		return 0
+	}
+	if len(selectors) == 1 && isIntentObject(selectors[0]) {
+		writeIntentObjectHelp(stdout, selectors[0])
 		return 0
 	}
 	if len(selectors) >= 2 && isIntentObject(selectors[0]) {

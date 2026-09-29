@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"reflect"
 	"slices"
 	"strings"
@@ -215,6 +216,11 @@ func TestIntentHelpJSON(t *testing.T) {
 		}
 	}
 	for _, object := range intentObjects() {
+		// help agent is the agents' page, the whole catalogue (above); the
+		// agent object's own actions are each reachable as help agent ACTION.
+		if intentTopic(object) {
+			continue
+		}
 		_, page := readHelpJSON(t, object, "--json")
 		if len(page.Commands) != len(objectActions(object)) {
 			t.Errorf("help %s --json lists %d actions, want %d", object, len(page.Commands), len(objectActions(object)))
@@ -268,7 +274,7 @@ func TestIntentHelpRefusals(t *testing.T) {
 
 func TestIntentHelpNeverExecutes(t *testing.T) {
 	t.Parallel()
-	registered := []family{{name: "sentinel", summary: "read help safely", verbs: []verb{{name: "mutate", summary: "must not run", run: func([]string) int {
+	registered := []family{{name: "sentinel", summary: "read help safely", verbs: []verb{{name: "mutate", summary: "must not run", run: func([]string, io.Writer, io.Writer) int {
 		panic("help executed a command")
 	}}}}}
 	for _, args := range [][]string{

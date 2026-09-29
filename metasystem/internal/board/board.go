@@ -76,7 +76,7 @@ func Read(home string, seats []Seat, prober identity.Prober, now time.Time, stal
 	case err == nil:
 		for _, entry := range entries {
 			name := entry.Name()
-			if !entry.IsDir() || !SafeName(name) {
+			if !entry.IsDir() || !SafeName(name) || name == GoalNamespace {
 				continue
 			}
 			if _, armed := byMachine[name]; !armed {

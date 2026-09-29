@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"time"
@@ -30,8 +31,8 @@ func runStore(root string) *run.Store {
 	})
 }
 
-func runRunWrap(args []string) int {
-	flags := newFlagSet("run wrap")
+func runRunWrap(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("run wrap", stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "run id")
 	nonce := flags.String("nonce", "", "launch nonce (in argv by design: the third identity factor)")
@@ -41,19 +42,19 @@ func runRunWrap(args []string) int {
 	}
 	command := flags.Args()
 	if len(command) == 0 {
-		fmt.Fprintln(os.Stderr, "run wrap requires -- <command...>")
+		fmt.Fprintln(stderr, "run wrap requires -- <command...>")
 		return 2
 	}
 	store := runStore(*root)
 	self := int64(os.Getpid())
 	// A setsid leader's pgid is its own pid.
 	if err := store.Bind(*id, *nonce, self, self); err != nil {
-		fmt.Fprintln(os.Stderr, "bind failed:", err)
+		fmt.Fprintln(stderr, "bind failed:", err)
 		return 1
 	}
 	logFile, err := os.OpenFile(*logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "log unwritable:", err)
+		fmt.Fprintln(stderr, "log unwritable:", err)
 		_ = store.WriteSidecar(*id, 1, *nonce, 127)
 		return 1
 	}
@@ -62,7 +63,7 @@ func runRunWrap(args []string) int {
 	workload.Env = os.Environ()
 	bound, boundErr := store.Read(*id)
 	if boundErr != nil || bound == nil {
-		fmt.Fprintln(os.Stderr, "bound run record unreadable before workload launch")
+		fmt.Fprintln(stderr, "bound run record unreadable before workload launch")
 		_ = store.WriteSidecar(*id, 1, *nonce, 127)
 		return 1
 	}
@@ -88,14 +89,14 @@ func runRunWrap(args []string) int {
 	}
 	// The sidecar is the wrapper's LAST act.
 	if err := store.WriteSidecar(*id, generation, *nonce, exitCode); err != nil {
-		fmt.Fprintln(os.Stderr, "sidecar write failed:", err)
+		fmt.Fprintln(stderr, "sidecar write failed:", err)
 		return 1
 	}
 	return int(exitCode)
 }
 
-func runRunWatch(args []string) int {
-	flags := newFlagSet("run watch")
+func runRunWatch(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("run watch", stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "run id")
 	pollMs := flags.Int("poll-ms", 2000, "poll interval")
@@ -108,7 +109,7 @@ func runRunWatch(args []string) int {
 		return 2
 	}
 	if *id == "" {
-		fmt.Fprintln(os.Stdout, "run  no-record rc=4 log=")
+		fmt.Fprintln(stdout, "run  no-record rc=4 log=")
 		return run.ExitNoRecord
 	}
 	pid := *callerPid
@@ -134,13 +135,13 @@ func runRunWatch(args []string) int {
 		if record, readErr := runStore(*root).Read(*id); readErr == nil && record != nil {
 			logPath = record.Log
 		}
-		fmt.Fprintf(os.Stdout, "run %s %s rc=%d log=%s\n", *id, outcome, result.ExitCode, logPath)
+		fmt.Fprintf(stdout, "run %s %s rc=%d log=%s\n", *id, outcome, result.ExitCode, logPath)
 	}
-	return compatibilityWaitCommand([]string{"--root", *root, "--run", *id}, nil, pid, printer)
+	return compatibilityWaitCommand([]string{"--root", *root, "--run", *id}, nil, pid, printer, stdout, stderr)
 }
 
-func runJobWatchVerb(args []string) int {
-	flags := newFlagSet("job watch")
+func runJobWatchVerb(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("job watch", stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	job := flags.String("job", "", "job id")
 	pollMs := flags.Int("poll-ms", 2000, "poll interval")
@@ -159,13 +160,13 @@ func runJobWatchVerb(args []string) int {
 	if poll <= 0 {
 		poll = 2 * time.Second
 	}
-	stopProgress := startSuiteProgressPrinter(*progressRoot, poll, os.Stderr)
+	stopProgress := startSuiteProgressPrinter(*progressRoot, poll, stderr)
 	defer stopProgress()
 	pid := *callerPid
 	if pid == 0 {
 		pid = int64(os.Getppid())
 	}
-	return compatibilityWaitCommand([]string{"--root", *root, "--job", *job}, nil, pid, func(run.WaitResult, bool) {})
+	return compatibilityWaitCommand([]string{"--root", *root, "--job", *job}, nil, pid, func(run.WaitResult, bool) {}, stdout, stderr)
 }
 
 var compatibilityWaitCommand = runWaitCommand

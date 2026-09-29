@@ -33,12 +33,8 @@ const seatLaunchPresenceTicks = 3
 // own worst case on a cold module cache and not a guess at a fast one.
 const seatLaunchBuildBudget = 10 * time.Minute
 
-func runSeatLaunch(args []string) int {
-	return runSeatLaunchTo(args, os.Stdout)
-}
-
-func runSeatLaunchTo(args []string, stdout io.Writer) int {
-	flags := newFlagSet("seat launch")
+func runSeatLaunch(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("seat launch", stdout, stderr)
 	machine := flags.String("machine", "", "nickname the new machine carries and publishes presence under")
 	from := pathFlag(flags, "from", ".", "the checkout this machine is cloned from (default: the current directory)")
 	destination := pathFlag(flags, "destination", "", "where the clone lands (default: beside this checkout, named for the remote's repository and the nickname)")
@@ -51,7 +47,7 @@ func runSeatLaunchTo(args []string, stdout io.Writer) int {
 		return 2
 	}
 	if err := humanauthority.ValidateTemporaryWordPair(*word, *reviewBy); err != nil {
-		fmt.Fprintln(os.Stderr, "seat launch:", err)
+		fmt.Fprintln(stderr, "seat launch:", err)
 		return 2
 	}
 
@@ -79,7 +75,7 @@ func runSeatLaunchTo(args []string, stdout io.Writer) int {
 	}
 	record, path, err := seatLaunchRecord(request, *recordPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "seat launch:", err)
+		fmt.Fprintln(stderr, "seat launch:", err)
 		return 1
 	}
 	// A record a signed-in session enrolled is authoritative for its machine
@@ -87,7 +83,7 @@ func runSeatLaunchTo(args []string, stdout io.Writer) int {
 	// does not travel beside it (g1-s72 S72-01, D4). This is judged before
 	// the record is touched: a refusal here leaves it exactly as it was.
 	if err := launch.Admit(request, record); err != nil {
-		fmt.Fprintln(os.Stderr, "seat launch:", err)
+		fmt.Fprintln(stderr, "seat launch:", err)
 		return 1
 	}
 	// A resume takes the machine and the destination from the record it
@@ -103,13 +99,13 @@ func runSeatLaunchTo(args []string, stdout io.Writer) int {
 		}
 	}
 	if request.Machine == "" {
-		fmt.Fprintln(os.Stderr, "seat launch: --machine is required")
+		fmt.Fprintln(stderr, "seat launch: --machine is required")
 		return 2
 	}
 	if request.Destination == "" {
 		proposed, err := seatLaunchDestination(request.From, request.Machine)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "seat launch:", err)
+			fmt.Fprintln(stderr, "seat launch:", err)
 			return 1
 		}
 		request.Destination = proposed
@@ -122,7 +118,7 @@ func runSeatLaunchTo(args []string, stdout io.Writer) int {
 	// rather than the refusal it actually was.
 	record.Process = launch.Identify(os.Getpid())
 	stop := func(err error) int {
-		fmt.Fprintln(os.Stderr, "seat launch:", err)
+		fmt.Fprintln(stderr, "seat launch:", err)
 		record.Outcome = launch.OutcomeFailed
 		ended := time.Now().UTC().Format(time.RFC3339)
 		record.EndedAt = &ended
@@ -193,7 +189,7 @@ func runSeatLaunchTo(args []string, stdout io.Writer) int {
 		fmt.Fprint(stdout, seatLaunchReport(finished))
 	}
 	if runErr != nil {
-		fmt.Fprintln(os.Stderr, "seat launch:", runErr)
+		fmt.Fprintln(stderr, "seat launch:", runErr)
 		return 1
 	}
 	return 0

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -23,9 +23,9 @@ var receiptLaunchStore = func() launch.Store { return launch.Store{} }
 // retro summary may ride as the first positional argument after the
 // action. The FlagSet's own messages are discarded so a misuse prints
 // exactly the one-line usage its callers know.
-func runReceipt(args []string) int {
+func runReceipt(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem receipt add|status|retro [options]")
+		fmt.Fprintln(stderr, "usage: metasystem receipt add|status|retro [options]")
 		return 2
 	}
 	action := args[0]
@@ -34,10 +34,10 @@ func runReceipt(args []string) int {
 	public := map[string]string{"add": "add", "correct": "add", "stats": "status", "retro": "retro", "check": "status"}[action]
 	usage := func() {
 		if public == "" {
-			fmt.Fprintln(os.Stderr, "usage: metasystem receipt add|status|retro [options]")
+			fmt.Fprintln(stderr, "usage: metasystem receipt add|status|retro [options]")
 			return
 		}
-		fmt.Fprintf(os.Stderr, "metasystem receipt %s --help shows its forms and options\n", public)
+		fmt.Fprintf(stderr, "metasystem receipt %s --help shows its forms and options\n", public)
 	}
 	opts := receipt.Options{
 		Root:   ".",
@@ -47,7 +47,7 @@ func runReceipt(args []string) int {
 		opts.Summary = args[0]
 		args = args[1:]
 	}
-	flags := newFlagSet("receipt " + public)
+	flags := newFlagSet("receipt "+public, stdout, stderr)
 	pathFlagVar(flags, &opts.Root, "root", opts.Root, "checkout root")
 	flags.StringVar(&opts.File, "file", opts.File, "receipt ledger file")
 	flags.StringVar(&opts.Type, "type", "", "receipt type")
@@ -89,7 +89,7 @@ func runReceipt(args []string) int {
 		return 2
 	}
 	if flags.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "%s: takes no word %q; nothing was done\n", cliflags.Label(flags), flags.Arg(0))
+		fmt.Fprintf(stderr, "%s: takes no word %q; nothing was done\n", cliflags.Label(flags), flags.Arg(0))
 		usage()
 		return 2
 	}
@@ -104,7 +104,7 @@ func runReceipt(args []string) int {
 	if opts.File == "" {
 		root, err := stateroot.StateRoot(stateroot.Receipts)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "receipt:", err)
+			fmt.Fprintln(stderr, "receipt:", err)
 			return 1
 		}
 		opts.File = filepath.Join(root, "receipts.log")
@@ -112,11 +112,11 @@ func runReceipt(args []string) int {
 	if action == "add" && *launchID != "" {
 		record, err := receiptLaunchStore().Read(*launchID)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "receipt launch %s: %v\n", *launchID, err)
+			fmt.Fprintf(stderr, "receipt launch %s: %v\n", *launchID, err)
 			return 2
 		}
 		if !record.State.Terminal() {
-			fmt.Fprintf(os.Stderr, "receipt launch %s is not terminal\n", *launchID)
+			fmt.Fprintf(stderr, "receipt launch %s is not terminal\n", *launchID)
 			return 2
 		}
 		fillReceiptUsageFromLaunch(&opts, record)
@@ -138,10 +138,10 @@ func runReceipt(args []string) int {
 		return 2
 	}
 	for _, line := range result.Out {
-		fmt.Println(line)
+		fmt.Fprintln(stdout, line)
 	}
 	for _, line := range result.Err {
-		fmt.Fprintln(os.Stderr, line)
+		fmt.Fprintln(stderr, line)
 	}
 	return result.Code
 }

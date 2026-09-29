@@ -104,8 +104,8 @@ type contextCostBed struct {
 func TestTurnVerdictPrintsTheContextLine(t *testing.T) {
 	root := contextTurnVerdictRoot(t, "context.ceiling.tokens=240000\ncontext.handoff.margin.tokens=140000\n")
 	transcript := writeContextCommandTranscript(t, root, "context-line", 120500, 1, true)
-	code, output, problem := captureChannelOutput(t, func() int {
-		return runReportTurnVerdict([]string{"--root", root, "--session", "context-line", "--transcript", transcript, "--runtime", "claude"})
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runReportTurnVerdict([]string{"--root", root, "--session", "context-line", "--transcript", transcript, "--runtime", "claude"}, stdout, stderr)
 	})
 	var verdict struct {
 		Display string `json:"display"`
@@ -158,7 +158,7 @@ func TestTurnVerdictUnknownSampleNeverBlocks(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			root := contextTurnVerdictRoot(t, test.config)
-			code, output, problem := captureChannelOutput(t, func() int { return runReportTurnVerdict(test.args(t, root)) })
+			code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int { return runReportTurnVerdict(test.args(t, root), stdout, stderr) })
 			var verdict struct {
 				ShouldBlock bool    `json:"shouldBlock"`
 				BlockSource *string `json:"blockSource"`

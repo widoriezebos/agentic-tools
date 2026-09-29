@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -73,8 +74,8 @@ func TestU6bPortDelegateStopIsRefusedAndStatusIsReadOnly(t *testing.T) {
 		return lease.Classification{Class: lease.ClassDelegate}, nil
 	}
 
-	stdout, stderr, code := captureRelay(t, func() int {
-		return runProcessStopWith([]string{"--repo", repo}, repositoryTop, classify)
+	stdout, stderr, code := captureRelay(t, func(stdout, stderr io.Writer) int {
+		return runProcessStopWith([]string{"--repo", repo}, repositoryTop, classify, stdout, stderr)
 	})
 	want := "metasystem system stop: system stop is a human act at a terminal; this caller is DELEGATE.\n" +
 		"at an agent-free terminal, run: metasystem system stop --repo " + repo + "\n"
@@ -82,8 +83,8 @@ func TestU6bPortDelegateStopIsRefusedAndStatusIsReadOnly(t *testing.T) {
 		t.Fatalf("delegate stop = code %d stdout %q stderr %q, want exit 1 and %q", code, stdout, stderr, want)
 	}
 
-	stdout, stderr, code = captureRelay(t, func() int {
-		return runProcessStatusWith([]string{"--repo", repo}, repositoryTop)
+	stdout, stderr, code = captureRelay(t, func(stdout, stderr io.Writer) int {
+		return runProcessStatusWith([]string{"--repo", repo}, repositoryTop, stdout, stderr)
 	})
 	if code != 0 || stderr != "" || stdout != "checkout "+repo+"\nnothing is running\n" {
 		t.Fatalf("delegate status = code %d stdout %q stderr %q", code, stdout, stderr)

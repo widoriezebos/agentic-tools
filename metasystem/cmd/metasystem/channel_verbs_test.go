@@ -20,9 +20,9 @@ import (
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
-func captureChannelOutput(t *testing.T, run func() int) (int, string, string) {
+func captureChannelOutput(t *testing.T, run func(stdout, stderr io.Writer) int) (int, string, string) {
 	t.Helper()
-	return captureCommandOutput(t, true, true, run)
+	return runOnOwnStreams(run)
 }
 
 func TestHCL12KindCarryRequiresWants(t *testing.T) {
@@ -112,15 +112,15 @@ func TestWaitChannelAnswer(t *testing.T) {
 	original := channelWaitCommand
 	defer func() { channelWaitCommand = original }()
 	var received []string
-	channelWaitCommand = func(args []string, poll func(context.Context) error, _ int64, _ io.Writer) int {
+	channelWaitCommand = func(args []string, poll func(context.Context) error, _ int64, _, _ io.Writer) int {
 		if poll == nil {
 			t.Fatal("channel wait did not carry its provider poll into the wait cycle")
 		}
 		received = append([]string(nil), args...)
 		return 23
 	}
-	code, _, problem := captureChannelOutput(t, func() int {
-		return runChannelWaitWithMachine([]string{"--root", root, "--question", questionA.ID, "--timeout", "60", "--poll-seconds", "7"}, resolveMachine)
+	code, _, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runChannelWaitWithMachine([]string{"--root", root, "--question", questionA.ID, "--timeout", "60", "--poll-seconds", "7"}, resolveMachine, stdout, stderr)
 	})
 	if code != 23 || problem != "" {
 		t.Fatalf("translated wait code=%d stderr=%q", code, problem)
@@ -141,19 +141,19 @@ func TestWaitChannelAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, _, problem = captureChannelOutput(t, func() int {
-		return runChannelWaitWithMachine([]string{"--root", root, "--question", legacy.ID}, resolveMachine)
+	code, _, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runChannelWaitWithMachine([]string{"--root", root, "--question", legacy.ID}, resolveMachine, stdout, stderr)
 	})
 	if code != 67 || !strings.Contains(problem, "no ledgerCursor") {
 		t.Fatalf("legacy question code=%d stderr=%q", code, problem)
 	}
-	code, _, problem = captureChannelOutput(t, func() int {
-		return runChannelWaitWithMachine([]string{"--root", root, "--question", legacy.ID, "--after", strings.Repeat("c", 40)}, resolveMachine)
+	code, _, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runChannelWaitWithMachine([]string{"--root", root, "--question", legacy.ID, "--after", strings.Repeat("c", 40)}, resolveMachine, stdout, stderr)
 	})
 	if code != 23 || problem != "" || !strings.Contains(strings.Join(received, "\x00"), "--after\x00"+strings.Repeat("c", 40)) {
 		t.Fatalf("explicit legacy cursor was not translated: code=%d args=%v stderr=%q", code, received, problem)
 	}
-	channelWaitCommand = func(args []string, poll func(context.Context) error, _ int64, _ io.Writer) int {
+	channelWaitCommand = func(args []string, poll func(context.Context) error, _ int64, _, _ io.Writer) int {
 		answered, readErr := channel.ReadQuestion(root, questionA.ID)
 		if readErr != nil {
 			t.Fatal(readErr)
@@ -168,8 +168,8 @@ func TestWaitChannelAnswer(t *testing.T) {
 		}
 		return 0
 	}
-	code, out, problem := captureChannelOutput(t, func() int {
-		return runChannelWaitWithMachine([]string{"--root", root, "--question", questionA.ID}, resolveMachine)
+	code, out, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runChannelWaitWithMachine([]string{"--root", root, "--question", questionA.ID}, resolveMachine, stdout, stderr)
 	})
 	if code != 0 || problem != "" || !strings.Contains(out, "accepted answer text") {
 		t.Fatalf("accepted answer output code=%d stdout=%q stderr=%q", code, out, problem)
@@ -189,14 +189,14 @@ func TestWaitChannelAnswer(t *testing.T) {
 	if err := os.WriteFile(metarun.WaiterPath(root, channelRow.Kind, channelRow.TargetID, channelRow.OwnerDigest), rowBody, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	channelWaitCommand = func(args []string, poll func(context.Context) error, _ int64, _ io.Writer) int {
+	channelWaitCommand = func(args []string, poll func(context.Context) error, _ int64, _, _ io.Writer) int {
 		if poll == nil || !strings.Contains(strings.Join(args, "\x00"), "--resume\x00"+waitID) {
 			t.Fatalf("channel resume did not restore its provider poll and durable selector: args=%v poll-present=%t", args, poll != nil)
 		}
 		return 0
 	}
-	code, out, problem = captureChannelOutput(t, func() int {
-		return runChannelWaitWithMachine([]string{"--root", root, "--resume", waitID}, resolveMachine)
+	code, out, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runChannelWaitWithMachine([]string{"--root", root, "--resume", waitID}, resolveMachine, stdout, stderr)
 	})
 	if code != 0 || problem != "" || strings.TrimSpace(out) != "accepted answer text" {
 		t.Fatalf("channel resume code=%d stdout=%q stderr=%q", code, out, problem)
@@ -208,9 +208,9 @@ func TestWaitChannelAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	called := false
-	channelWaitCommand = func([]string, func(context.Context) error, int64, io.Writer) int { called = true; return 0 }
-	code, _, problem = captureChannelOutput(t, func() int {
-		return runChannelWaitWithMachine([]string{"--root", unconfigured, "--question", questionC.ID}, resolveMachine)
+	channelWaitCommand = func([]string, func(context.Context) error, int64, io.Writer, io.Writer) int { called = true; return 0 }
+	code, _, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runChannelWaitWithMachine([]string{"--root", unconfigured, "--question", questionC.ID}, resolveMachine, stdout, stderr)
 	})
 	if code != 1 || called || !strings.Contains(problem, "requires a configured channel provider") {
 		t.Fatalf("unconfigured provider code=%d called=%t stderr=%q", code, called, problem)
@@ -305,8 +305,8 @@ func TestChannelStatusPostSeedsAnUnbootedBrainStatus(t *testing.T) {
 		t.Fatalf("unbooted fixture unexpectedly had a status file: %v", err)
 	}
 
-	code, _, problem := captureChannelOutput(t, func() int {
-		return channelStatus(root, true, os.Stdout, os.Stderr, resolveMachine, resolveEndpoint, landingLog)
+	code, _, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return channelStatus(root, true, stdout, stderr, resolveMachine, resolveEndpoint, landingLog)
 	})
 	if code != 0 || problem != "" {
 		t.Fatalf("first status post failed: code=%d stderr=%q", code, problem)
@@ -386,6 +386,6 @@ func init() {
 
 // runChannelWaitWithMachine waits for a channel answer as a waiting command
 // does: the registered caller is this process's parent.
-func runChannelWaitWithMachine(args []string, resolveMachine func(string) (string, error)) int {
-	return channelWaitWith(waitCallerPID(), os.Getenv("METASYSTEM_OWNER_LINEAGE"), os.Stdout, os.Stderr, args, resolveMachine)
+func runChannelWaitWithMachine(args []string, resolveMachine func(string) (string, error), stdout, stderr io.Writer) int {
+	return channelWaitWith(waitCallerPID(), os.Getenv("METASYSTEM_OWNER_LINEAGE"), stdout, stderr, args, resolveMachine)
 }

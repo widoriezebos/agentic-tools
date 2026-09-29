@@ -41,8 +41,8 @@ type WatchdogOptions struct {
 	TermGrace        time.Duration
 	KillGrace        time.Duration
 	Executable       string
-	Output           *os.File
-	ErrorOutput      *os.File
+	Output           io.Writer
+	ErrorOutput      io.Writer
 	PreserveEvidence func(string, []string) string
 	Prober           identity.Prober
 	Signal           func(int, syscall.Signal) error

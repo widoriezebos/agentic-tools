@@ -18,7 +18,7 @@ func TestSuperviseOwnerRefusesRestrictedProcfs(t *testing.T) {
 	saved := procfsMounts
 	procfsMounts = mounts
 	defer func() { procfsMounts = saved }()
-	code := runSuperviseOwnerLoop([]string{"--repo", dir, "--tag", "b2-fixture"})
+	code := runSuperviseOwnerLoop([]string{"--repo", dir, "--tag", "b2-fixture"}, t.Output(), t.Output())
 	if code != 1 {
 		t.Fatalf("arming under hidepid=2 must refuse with 1, got %d", code)
 	}

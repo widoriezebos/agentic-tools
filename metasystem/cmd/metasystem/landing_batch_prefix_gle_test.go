@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"io"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -126,7 +127,7 @@ func TestGLEBatchRebasedPrefixTreesNamesEveryBoundary(t *testing.T) {
 
 func TestGLEBatchDeliverySupplementKeepsPolicyFloor(t *testing.T) {
 	t.Parallel()
-	parsed, _, status := parseTestingSelection("test verify", []string{"--root", "/synthetic", "--goal", "goal-a", "--tree", "tree-a", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", `{"groups":["admitted"]}`}, false)
+	parsed, _, status := parseTestingSelection("test verify", []string{"--root", "/synthetic", "--goal", "goal-a", "--tree", "tree-a", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", `{"groups":["admitted"]}`}, false, t.Output(), t.Output())
 	if status != 0 || !parsed.BatchPrefixReceipt || !slices.Equal(parsed.BatchRequirements, []string{"admitted"}) {
 		t.Fatalf("batch parse=%+v status=%d", parsed, status)
 	}
@@ -157,7 +158,7 @@ func TestGLEBatchRequirementsTransportIsStrict(t *testing.T) {
 	t.Parallel()
 	base := []string{"--root", "/synthetic", "--purpose", "delivery", "--batch-prefix"}
 	valid := append(slices.Clone(base), "--batch-requirements", `{"groups":["a","b"]}`)
-	request, _, code := parseTestingSelection("test plan", valid, false)
+	request, _, code := parseTestingSelection("test plan", valid, false, t.Output(), t.Output())
 	if code != 0 || !slices.Equal(request.BatchRequirements, []string{"a", "b"}) || len(request.Groups) != 0 {
 		t.Fatalf("typed requirements=%+v code=%d", request, code)
 	}
@@ -174,8 +175,8 @@ func TestGLEBatchRequirementsTransportIsStrict(t *testing.T) {
 		"mixed groups":     append(slices.Clone(valid), "--groups", "a"),
 	} {
 		t.Run(name, func(t *testing.T) {
-			code, _, stderr := captureCommandOutput(t, false, true, func() int {
-				_, _, status := parseTestingSelection("test plan", args, false)
+			code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+				_, _, status := parseTestingSelection("test plan", args, false, stdout, stderr)
 				return status
 			})
 			if code != 2 || stderr == "" {
@@ -183,7 +184,7 @@ func TestGLEBatchRequirementsTransportIsStrict(t *testing.T) {
 			}
 		})
 	}
-	if diagnostic, _, code := parseTestingSelection("test plan", []string{"--root", "/synthetic", "--mode", "canary", "--purpose", "diagnostic", "--groups", "a"}, false); code != 0 || !slices.Equal(diagnostic.Groups, []string{"a"}) {
+	if diagnostic, _, code := parseTestingSelection("test plan", []string{"--root", "/synthetic", "--mode", "canary", "--purpose", "diagnostic", "--groups", "a"}, false, t.Output(), t.Output()); code != 0 || !slices.Equal(diagnostic.Groups, []string{"a"}) {
 		t.Fatalf("diagnostic --groups no longer works: %+v code=%d", diagnostic, code)
 	}
 }

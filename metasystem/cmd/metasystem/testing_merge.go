@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -15,22 +16,22 @@ Git passes %O %A %B as BASE OURS THEIRS. The driver writes the merge to OURS.
 It is git's merge driver for the testing contract, not a command for people
 or agents: metasystem system setup registers it.`
 
-func runTestingMergeDriver(args []string) int {
+func runTestingMergeDriver(args []string, stdout, stderr io.Writer) int {
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "--") {
-			return refuseUnknownOption(nil, "testing merge-driver", arg, "it takes BASE OURS THEIRS, the three paths git passes")
+			return refuseUnknownOption(stdout, stderr, "testing merge-driver", arg, "it takes BASE OURS THEIRS, the three paths git passes")
 		}
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, testingMergeDriverUsage)
+		fmt.Fprintln(stderr, testingMergeDriverUsage)
 		return 2
 	}
 	if len(args) != 3 {
-		fmt.Fprintln(os.Stderr, testingMergeDriverUsage)
+		fmt.Fprintln(stderr, testingMergeDriverUsage)
 		return 2
 	}
 	if err := mergeTestingFiles(args[0], args[1], args[2], args[1]); err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem internal testing merge-driver:", err)
+		fmt.Fprintln(stderr, "metasystem internal testing merge-driver:", err)
 		return 1
 	}
 	return 0
@@ -52,20 +53,20 @@ func mergeTestingFiles(basePath, oursPath, theirsPath, outPath string) error {
 	return writeTestingContract(outPath, merged)
 }
 
-func runTestingAddTests(args []string) int {
+func runTestingAddTests(args []string, stdout, stderr io.Writer) int {
 	return editTestingContract("add", args, testingContractEdits{
 		tests: func(contract testpolicy.Contract, path, group string, tests []string) (testpolicy.Contract, error) {
 			return contractmerge.AddTests(contract, path, group, tests)
 		},
 		inputs: contractmerge.AddInputs,
 		paths:  contractmerge.AddSurfacePaths,
-	})
+	}, stdout, stderr)
 }
 
 // runTestingRemoveTests takes named tests, inputs or surface paths out of the
 // contract, or a whole group or surface: the follow-up of deleting or moving
 // what they name.
-func runTestingRemoveTests(args []string) int {
+func runTestingRemoveTests(args []string, stdout, stderr io.Writer) int {
 	return editTestingContract("remove", args, testingContractEdits{
 		tests: func(contract testpolicy.Contract, _ string, group string, tests []string) (testpolicy.Contract, error) {
 			return contractmerge.RemoveTests(contract, group, tests)
@@ -74,7 +75,7 @@ func runTestingRemoveTests(args []string) int {
 		inputs:  contractmerge.RemoveInputs,
 		paths:   contractmerge.RemoveSurfacePaths,
 		surface: contractmerge.RemoveSurface,
-	})
+	}, stdout, stderr)
 }
 
 // testingContractEdits are one action's edits, one per form; a nil edit is a
@@ -89,8 +90,8 @@ type testingContractEdits struct {
 
 // editTestingContract is test add and test remove: decode the contract, apply
 // one group or surface edit, render and write it back.
-func editTestingContract(action string, args []string, edits testingContractEdits) int {
-	flags := newFlagSet("test " + action)
+func editTestingContract(action string, args []string, edits testingContractEdits, stdout, stderr io.Writer) int {
+	flags := newFlagSet("test "+action, stdout, stderr)
 	path := flags.String("file", "", "testing contract to edit")
 	group := flags.String("group", "", "group id")
 	surface := flags.String("surface", "", "surface id")
@@ -125,12 +126,12 @@ func editTestingContract(action string, args []string, edits testingContractEdit
 		}
 	}
 	if edit == nil {
-		fmt.Fprintf(os.Stderr, "usage: metasystem test %s --file FILE --group ID --tests NAME,NAME | --group ID --inputs PATH,PATH | --surface ID --paths PATH,PATH\n", action)
+		fmt.Fprintf(stderr, "usage: metasystem test %s --file FILE --group ID --tests NAME,NAME | --group ID --inputs PATH,PATH | --surface ID --paths PATH,PATH\n", action)
 		return 2
 	}
 	data, err := os.ReadFile(*path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "metasystem test %s: %v\n", action, err)
+		fmt.Fprintf(stderr, "metasystem test %s: %v\n", action, err)
 		return 1
 	}
 	contract, err := testpolicy.Decode(data)
@@ -147,7 +148,7 @@ func editTestingContract(action string, args []string, edits testingContractEdit
 		err = writeTestingContract(*path, data)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "metasystem test %s: %v\n", action, err)
+		fmt.Fprintf(stderr, "metasystem test %s: %v\n", action, err)
 		return 1
 	}
 	return 0

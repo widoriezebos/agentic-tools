@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -154,8 +155,8 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 	writeDerivedContextCommandTranscript(t, root, "inferred", 150001, 1, true)
 	writeContextCommandHolder(t, root, "claude", "inferred")
 
-	code, text, problem := captureChannelOutput(t, func() int {
-		return dispatch([]string{"session", "handoff", "--status", "--root", root})
+	code, text, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return dispatchOn([]string{"session", "handoff", "--status", "--root", root}, stdout, stderr)
 	})
 	if code != 0 || problem != "" || !strings.HasPrefix(text, "context-budget=alive (150 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger:") {
 		t.Fatalf("inferred text status = code %d stdout %q stderr %q", code, text, problem)
@@ -164,8 +165,8 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 		t.Fatalf("inferred holder was not registered: %v", err)
 	}
 
-	code, structured, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", root, "--json"})
+	code, structured, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--json"}, stdout, stderr)
 	})
 	if code != 0 || problem != "" {
 		t.Fatalf("JSON status = code %d stdout %q stderr %q", code, structured, problem)
@@ -180,8 +181,8 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 
 	explicitRoot := contextCommandRoot(t)
 	explicitTranscript := writeContextCommandTranscript(t, explicitRoot, "explicit", 120000, 1, true)
-	code, explicit, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", explicitRoot, "--runtime", "claude", "--session", "explicit", "--transcript", explicitTranscript})
+	code, explicit, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", explicitRoot, "--runtime", "claude", "--session", "explicit", "--transcript", explicitTranscript}, stdout, stderr)
 	})
 	if code != 0 || problem != "" || !strings.HasPrefix(explicit, "context-budget=alive (diagnostic transcript override; 120 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger)\n") {
 		t.Fatalf("explicit status = code %d stdout %q stderr %q", code, explicit, problem)
@@ -193,14 +194,14 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 		t.Fatalf("explicit diagnostic left a live cursor: %v", err)
 	}
 
-	code, _, problem = captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", explicitRoot, "--runtime", "claude"})
+	code, _, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", explicitRoot, "--runtime", "claude"}, stdout, stderr)
 	})
 	if code != 2 || !strings.Contains(problem, "--runtime R --session S") {
 		t.Fatalf("unpaired identity = code %d stderr %q", code, problem)
 	}
-	code, _, problem = captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", explicitRoot, "--runtime", "unknown", "--session", "session"})
+	code, _, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", explicitRoot, "--runtime", "unknown", "--session", "session"}, stdout, stderr)
 	})
 	if code != 1 || !strings.Contains(problem, "unknown runtime: unknown") {
 		t.Fatalf("unregistered explicit runtime = code %d stderr %q", code, problem)
@@ -224,8 +225,8 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeDerivedContextCommandTranscript(t, templateRoot, "template", 125000, 1, true)
-	code, templateText, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", templateRoot, "--runtime", "claude", "--session", "template"})
+	code, templateText, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", templateRoot, "--runtime", "claude", "--session", "template"}, stdout, stderr)
 	})
 	if code != 0 || problem != "" || !strings.Contains(templateText, "125 thousand tokens") {
 		t.Fatalf("containing template root = code %d stdout %q stderr %q", code, templateText, problem)
@@ -242,11 +243,13 @@ func TestContextStatusNamesTheWindowAndItsSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeShippedSeatWindow(t, 210000, true)
-	code, output, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root}) })
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int { return runContextStatus([]string{"--root", root}, stdout, stderr) })
 	if code != 0 || problem != "" || !strings.Contains(output, "\nwindow: 210000 tokens (launch.seat.window.tokens, conf); ceiling: 250000 tokens (context.ceiling.tokens, conf); ceiling-above-window; shipped: 210000 (claude-code-hooks.json)\n") {
 		t.Fatalf("code=%d output=%q problem=%q", code, output, problem)
 	}
-	code, structured, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root, "--json"}) })
+	code, structured, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--json"}, stdout, stderr)
+	})
 	var decoded contextStatusOutput
 	if err := json.Unmarshal([]byte(structured), &decoded); err != nil {
 		t.Fatal(err)
@@ -255,11 +258,13 @@ func TestContextStatusNamesTheWindowAndItsSource(t *testing.T) {
 		t.Fatalf("decoded=%+v code=%d problem=%q", decoded.Window, code, problem)
 	}
 	writeShippedSeatWindow(t, 200000, true)
-	code, output, problem = captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root}) })
+	code, output, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int { return runContextStatus([]string{"--root", root}, stdout, stderr) })
 	if code != 0 || problem != "" || !strings.Contains(output, "; shipped: 200000 (claude-code-hooks.json) shipped-differs-from-conf\n") {
 		t.Fatalf("code=%d output=%q problem=%q", code, output, problem)
 	}
-	code, structured, problem = captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root, "--json"}) })
+	code, structured, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--json"}, stdout, stderr)
+	})
 	decoded = contextStatusOutput{}
 	if err := json.Unmarshal([]byte(structured), &decoded); err != nil {
 		t.Fatal(err)
@@ -279,12 +284,14 @@ func TestContextStatusSaysNoWindowIsImposed(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeShippedSeatWindow(t, 0, false)
-	code, output, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root}) })
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int { return runContextStatus([]string{"--root", root}, stdout, stderr) })
 	want := "\nwindow: none imposed, the runtime's own (launch.seat.window.tokens, conf); ceiling: 250000 tokens (context.ceiling.tokens, conf); shipped: none (claude-code-hooks.json)\n"
 	if code != 0 || problem != "" || !strings.Contains(output, want) {
 		t.Fatalf("code=%d output=%q problem=%q", code, output, problem)
 	}
-	code, structured, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root, "--json"}) })
+	code, structured, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--json"}, stdout, stderr)
+	})
 	var decoded contextStatusOutput
 	if err := json.Unmarshal([]byte(structured), &decoded); err != nil {
 		t.Fatal(err)
@@ -305,8 +312,8 @@ func TestContextStatusPrintsTheBudgetLine(t *testing.T) {
 	}
 	writeDerivedContextCommandTranscript(t, root, "configured", 120000, 1, true)
 	writeContextCommandHolder(t, root, "claude", "configured")
-	code, output, problem := captureChannelOutput(t, func() int {
-		return dispatch([]string{"session", "handoff", "--status", "--root", root})
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return dispatchOn([]string{"session", "handoff", "--status", "--root", root}, stdout, stderr)
 	})
 	if code != 0 || problem != "" || !strings.Contains(output, "trigger 80, proof line 150, proof maximum 200, ceiling 200") {
 		t.Fatalf("configured status = code %d stdout %q stderr %q", code, output, problem)
@@ -316,16 +323,16 @@ func TestContextStatusPrintsTheBudgetLine(t *testing.T) {
 func TestContextStatusExitCodesForReadableUnknownAndCeilingBreach(t *testing.T) {
 	root := contextCommandRoot(t)
 	missingSession := "missing-" + filepath.Base(root)
-	code, output, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", missingSession})
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", missingSession}, stdout, stderr)
 	})
 	if code != 0 || problem != "" || !strings.HasPrefix(output, "context-budget=unknown (unknown (no transcript at ") {
 		t.Fatalf("readable unknown = code %d stdout %q stderr %q", code, output, problem)
 	}
 
 	transcript := writeContextCommandTranscript(t, root, "ceiling", 200001, 1, true)
-	code, output, problem = captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "ceiling", "--transcript", transcript})
+	code, output, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "ceiling", "--transcript", transcript}, stdout, stderr)
 	})
 	if code != 0 || problem != "" || !strings.HasPrefix(output, "context-budget=dead (diagnostic transcript override; 200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum") {
 		t.Fatalf("ceiling breach = code %d stdout %q stderr %q", code, output, problem)
@@ -338,23 +345,23 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 	if err := os.WriteFile(empty, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, emptyText, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "empty", "--transcript", empty})
+	code, emptyText, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "empty", "--transcript", empty}, stdout, stderr)
 	})
 	if code != 0 || problem != "" || !strings.HasPrefix(emptyText, "context-budget=alive (diagnostic transcript override; unknown (no call recorded yet))\n") {
 		t.Fatalf("empty diagnostic = code %d stdout %q stderr %q", code, emptyText, problem)
 	}
 
 	overBound := writeContextCommandTranscript(t, root, "over-bound", 160000, 1, true)
-	code, overBoundText, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "over-bound", "--transcript", overBound})
+	code, overBoundText, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "over-bound", "--transcript", overBound}, stdout, stderr)
 	})
 	wantOverBound := "context-budget=alive (diagnostic transcript override; 160 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger)\n"
 	if code != 0 || problem != "" || !strings.HasPrefix(overBoundText, wantOverBound) || strings.Contains(overBoundText, "handoff") {
 		t.Fatalf("over-bound diagnostic = code %d stdout %q stderr %q", code, overBoundText, problem)
 	}
-	code, structured, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "over-bound", "--transcript", overBound, "--json"})
+	code, structured, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "over-bound", "--transcript", overBound, "--json"}, stdout, stderr)
 	})
 	var decoded contextStatusOutput
 	if err := json.Unmarshal([]byte(structured), &decoded); err != nil {
@@ -366,8 +373,8 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 	}
 
 	overCeiling := writeContextCommandTranscript(t, root, "over-ceiling", 200001, 1, true)
-	code, ceilingText, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "over-ceiling", "--transcript", overCeiling})
+	code, ceilingText, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "over-ceiling", "--transcript", overCeiling}, stdout, stderr)
 	})
 	if code != 0 || problem != "" || !strings.HasPrefix(ceilingText, "context-budget=dead (diagnostic transcript override; 200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum") ||
 		!strings.Contains(ceilingText, "; remedy: metasystem session handoff --status --root "+root+")") ||
@@ -383,8 +390,8 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 	if err := os.WriteFile(lease, []byte("null\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, earlyText, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", earlyRoot, "--transcript", overBound})
+	code, earlyText, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", earlyRoot, "--transcript", overBound}, stdout, stderr)
 	})
 	if code != 1 || !strings.HasPrefix(earlyText, "context-budget=unknown (diagnostic transcript override; ") || !strings.Contains(earlyText, lease) || !strings.Contains(problem, lease) {
 		t.Fatalf("early diagnostic error = code %d stdout %q stderr %q", code, earlyText, problem)
@@ -394,16 +401,16 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 	if err := os.Mkdir(nonregular, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	code, readErrorText, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "read-error", "--transcript", nonregular})
+	code, readErrorText, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "read-error", "--transcript", nonregular}, stdout, stderr)
 	})
 	if code != 1 || !strings.HasPrefix(readErrorText, "context-budget=unknown (diagnostic transcript override; ") ||
 		!strings.Contains(readErrorText, "not a regular file") || !strings.Contains(problem, "not a regular file") {
 		t.Fatalf("diagnostic read error = code %d stdout %q stderr %q", code, readErrorText, problem)
 	}
 
-	code, _, problem = captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", root, "--transcript", ""})
+	code, _, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--transcript", ""}, stdout, stderr)
 	})
 	if code != 2 || !strings.Contains(problem, "usage: metasystem session handoff --status") {
 		t.Fatalf("empty transcript flag = code %d stderr %q", code, problem)
@@ -425,8 +432,8 @@ func TestContextStatusJSONOmitsCursorHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	code, output, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "large", "--transcript", transcript, "--json"})
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "large", "--transcript", transcript, "--json"}, stdout, stderr)
 	})
 	if code != 0 || problem != "" {
 		t.Fatalf("large JSON status = code %d stderr %q", code, problem)
@@ -495,7 +502,7 @@ func TestContextStatusPropagatesEvidenceErrors(t *testing.T) {
 		if err := os.WriteFile(announcement, before, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		code, output, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root}) })
+		code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int { return runContextStatus([]string{"--root", root}, stdout, stderr) })
 		if code != 1 || !strings.Contains(output, "context-budget=unknown") || !strings.Contains(output, announcement) || !strings.Contains(problem, announcement) {
 			t.Fatalf("malformed announcement = code %d stdout %q stderr %q", code, output, problem)
 		}
@@ -513,8 +520,8 @@ func TestContextStatusPropagatesEvidenceErrors(t *testing.T) {
 			t.Fatal(err)
 		}
 		before, _ := os.ReadFile(transcript)
-		code, output, problem := captureChannelOutput(t, func() int {
-			return runContextStatus([]string{"--root", root})
+		code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+			return runContextStatus([]string{"--root", root}, stdout, stderr)
 		})
 		if code != 1 || !strings.Contains(output, "context-budget=unknown") || !strings.Contains(output, "sessions.jsonl.lock") || !strings.Contains(problem, "sessions.jsonl.lock") {
 			t.Fatalf("registry failure = code %d stdout %q stderr %q", code, output, problem)
@@ -670,7 +677,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 
 func TestContextHandoffVerb(t *testing.T) {
 	container, root := contextHandoffCommandRoot(t)
-	code, _, problem := captureContextVerb(t, dispatch, "session", "handoff", "--root", root, "--no-delegates")
+	code, _, problem := captureContextVerb(t, dispatchOn, "session", "handoff", "--root", root, "--no-delegates")
 	if code != 9 || problem != "HANDOFF_NOTE_MISSING\n" {
 		t.Fatalf("production handoff route = code %d stderr %q", code, problem)
 	}
@@ -973,7 +980,7 @@ func TestContextVerifyAndCancel(t *testing.T) {
 	container, root := contextHandoffCommandRoot(t)
 	useContextHandoffIdentity(t, root)
 	first := recordContextHandoff(t, container)
-	code, output, problem := captureContextVerb(t, dispatch, "session", "handoff", "--verify", first.nonce, "--root", container)
+	code, output, problem := captureContextVerb(t, dispatchOn, "session", "handoff", "--verify", first.nonce, "--root", container)
 	if code != 0 || output != "ok sha256="+first.digest+"\n" || problem != "" {
 		t.Fatalf("verify = code %d stdout %q stderr %q", code, output, problem)
 	}
@@ -1127,7 +1134,7 @@ func TestContextVerbUsage(t *testing.T) {
 	root := contextCommandRoot(t)
 	const handoffUsage = contextHandoffUsage + "\n"
 	for _, test := range []struct {
-		run  func([]string) int
+		run  command
 		args []string
 	}{
 		{runContextVerify, []string{"--root", root}},
@@ -1167,7 +1174,7 @@ func recordContextHandoff(t *testing.T, root string) contextHandoffRecord {
 	return contextHandoffRecord{fields[2], strings.TrimPrefix(fields[3], "state="), strings.TrimPrefix(fields[4], "sha256=")}
 }
 
-func contextHandoffTestRun(t *testing.T, path string) func([]string) int {
+func contextHandoffTestRun(t *testing.T, path string) command {
 	t.Helper()
 	root, err := goal.ResolveStateRoot(path)
 	contextMust(t, err)
@@ -1183,7 +1190,7 @@ func contextHandoffTestRun(t *testing.T, path string) func([]string) int {
 	if len(problems) != 0 {
 		t.Fatalf("handoff goal files did not parse: %v", problems)
 	}
-	return func(args []string) int {
+	return func(args []string, stdout, stderr io.Writer) int {
 		return runContextHandoffWithInputs(args, contextHandoffInputs{
 			resolveMachine: func(gotRoot string) (string, error) {
 				canonical, err := filepath.EvalSymlinks(gotRoot)
@@ -1200,13 +1207,13 @@ func contextHandoffTestRun(t *testing.T, path string) func([]string) int {
 					Root: root, Tree: tree, Horizon: goal.ApprovalHorizon{Now: at},
 				}, "m-test", identity.KernelProber{})
 			},
-		})
+		}, stdout, stderr)
 	}
 }
 
-func captureContextVerb(t *testing.T, run func([]string) int, args ...string) (int, string, string) {
+func captureContextVerb(t *testing.T, run command, args ...string) (int, string, string) {
 	t.Helper()
-	return captureChannelOutput(t, func() int { return run(args) })
+	return captureChannelOutput(t, func(stdout, stderr io.Writer) int { return run(args, stdout, stderr) })
 }
 
 func contextHandoffCommandRoot(t *testing.T) (string, string) {
@@ -1398,8 +1405,8 @@ func seedContextCommandReading(t *testing.T, session string) (string, string) {
 	t.Helper()
 	root := contextCommandRoot(t)
 	transcript := writeDerivedContextCommandTranscript(t, root, session, 120000, 1, true)
-	code, _, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", session})
+	code, _, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", session}, stdout, stderr)
 	})
 	if code != 0 || problem != "" {
 		t.Fatalf("seed status = code %d stderr %q", code, problem)
@@ -1409,8 +1416,8 @@ func seedContextCommandReading(t *testing.T, session string) (string, string) {
 
 func assertContextCommandError(t *testing.T, root, session, transcript, want string, evidencePath string, evidence []byte) {
 	t.Helper()
-	code, output, problem := captureChannelOutput(t, func() int {
-		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", session})
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", session}, stdout, stderr)
 	})
 	if code != 1 || !strings.Contains(output, "context-budget=unknown") || !strings.Contains(output, want) || !strings.Contains(problem, want) {
 		t.Fatalf("evidence failure = code %d stdout %q stderr %q", code, output, problem)

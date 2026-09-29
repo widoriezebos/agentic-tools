@@ -9,8 +9,9 @@ import (
 )
 
 // The steward's cache trimmer (disk-lifetimes A12) keeps each machine cache
-// to a hard cap by last use, never deleting an entry used inside the keep
-// window. Every number is a setting whose default is in the one compiled
+// to a hard cap by last use: within its cap nothing is deleted; over it the
+// oldest go first, the keep window yields, and only an entry used within
+// the floor (disk.cache-min-keep-minutes) is never deleted. Every number is a setting whose default is in the one compiled
 // table (defaults.go).
 const (
 	// DiskGoCacheCapGiBKey caps the engine's Go build cache: Go's default
@@ -22,9 +23,16 @@ const (
 	// DiskStaticcheckCacheCapGiBKey caps each staticcheck cache (the
 	// engine's and the delegates').
 	DiskStaticcheckCacheCapGiBKey = "disk.staticcheck-cache-cap-gib"
-	// DiskGoCacheKeepHoursKey is the keep window: no entry used within it
-	// is ever deleted, whatever the cap. It is never lowered by any floor.
+	// DiskGoCacheKeepHoursKey is the keep window: everything older goes
+	// before any entry used within it. Over the cap it yields, oldest
+	// first, down to disk.cache-min-keep-minutes; Part B's disk floor never
+	// lowers it.
 	DiskGoCacheKeepHoursKey = "disk.go-cache-keep-hours"
+	// DiskCacheMinKeepMinutesKey is the floor the keep window yields to
+	// over the cap: an entry used within it is never deleted, whatever the
+	// cap. Its default (120) is twice Go's one-hour use-refresh interval, so
+	// an entry a running build uses is never removed.
+	DiskCacheMinKeepMinutesKey = "disk.cache-min-keep-minutes"
 	// DiskCacheTrimBudgetSecKey bounds one trim pass over all caches; a
 	// pass cut short resumes at its checkpoint on the next.
 	DiskCacheTrimBudgetSecKey = "disk.cache-trim-budget-sec"
@@ -45,20 +53,21 @@ type CacheTrim struct {
 	DelegateGoCapBytes  int64
 	StaticcheckCapBytes int64
 	Keep                time.Duration
+	MinKeep             time.Duration
 	Budget              time.Duration
 	PersonBudget        time.Duration
 }
 
-// CacheTrimSettings resolves the six disk keys: the environment over the
+// CacheTrimSettings resolves the seven disk keys: the environment over the
 // file over the compiled-in default.
 func CacheTrimSettings(confPath string) (CacheTrim, error) {
 	return cacheTrimSettings(confPath, os.LookupEnv)
 }
 
 func cacheTrimSettings(confPath string, lookupEnv func(string) (string, bool)) (CacheTrim, error) {
-	var numbers [6]int64
+	var numbers [7]int64
 	for index, key := range []string{DiskGoCacheCapGiBKey, DiskDelegateGoCacheCapGiBKey, DiskStaticcheckCacheCapGiBKey,
-		DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey, DiskCacheTrimPersonBudgetSecKey} {
+		DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey, DiskCacheTrimPersonBudgetSecKey, DiskCacheMinKeepMinutesKey} {
 		value, _, err := Get(GetParams{Key: key, ConfPath: confPath, LookupEnv: lookupEnv})
 		if err != nil {
 			return CacheTrim{}, fmt.Errorf("resolve %s: %w", key, err)
@@ -73,6 +82,6 @@ func cacheTrimSettings(confPath string, lookupEnv func(string) (string, bool)) (
 	return CacheTrim{
 		EngineGoCapBytes: numbers[0] * gib, DelegateGoCapBytes: numbers[1] * gib, StaticcheckCapBytes: numbers[2] * gib,
 		Keep: time.Duration(numbers[3]) * time.Hour, Budget: time.Duration(numbers[4]) * time.Second,
-		PersonBudget: time.Duration(numbers[5]) * time.Second,
+		PersonBudget: time.Duration(numbers[5]) * time.Second, MinKeep: time.Duration(numbers[6]) * time.Minute,
 	}, nil
 }

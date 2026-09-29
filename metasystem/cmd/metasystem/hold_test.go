@@ -43,7 +43,7 @@ func fixtureLifetimeTestDependencies(environment map[string]string, after func(t
 }
 
 func TestRunUtilHoldRequiresTag(t *testing.T) {
-	if code := runUtilHold(nil); code != 2 {
+	if code := runUtilHold(nil, t.Output(), t.Output()); code != 2 {
 		t.Fatalf("a missing tag must be a usage error, got %d", code)
 	}
 }

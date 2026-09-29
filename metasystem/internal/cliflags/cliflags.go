@@ -25,15 +25,16 @@ func HelpAnswered() int64 { return helpAnswered.Load() }
 
 // New returns a flag set named name whose errors read as label's (the
 // command as a person types it) and are written to errs (standard error at
-// the time of the error when errs is nil).
-func New(name, label string, errs io.Writer) *flag.FlagSet {
-	return NewShown(name, label, errs, nil)
+// the time of the error when errs is nil); a help request's usage is written
+// to out (standard output at the time of the request when out is nil).
+func New(name, label string, out, errs io.Writer) *flag.FlagSet {
+	return NewShown(name, label, out, errs, nil)
 }
 
 // NewShown is New for a command whose help documents only some of the
 // options its parser takes: an error lists only the options shown reports
 // (every option when shown is nil); the others still parse.
-func NewShown(name, label string, errs io.Writer, shown func(option string) bool) *flag.FlagSet {
+func NewShown(name, label string, out, errs io.Writer, shown func(option string) bool) *flag.FlagSet {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	writer := &errorWriter{flags: flags, command: label, out: errs, shown: shown}
 	flags.SetOutput(writer)
@@ -44,8 +45,12 @@ func NewShown(name, label string, errs io.Writer, shown func(option string) bool
 		if writer.errored || flags.Output() != writer {
 			return
 		}
-		fmt.Fprintf(os.Stdout, "usage: %s [options]\n", label)
-		flags.SetOutput(os.Stdout)
+		usage := out
+		if usage == nil {
+			usage = os.Stdout
+		}
+		fmt.Fprintf(usage, "usage: %s [options]\n", label)
+		flags.SetOutput(usage)
 		flags.PrintDefaults()
 		flags.SetOutput(writer)
 		helpAnswered.Add(1)

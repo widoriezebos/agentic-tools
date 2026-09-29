@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 	"time"
 
@@ -55,13 +55,13 @@ func waitFlagWasSet(flags *flag.FlagSet, name string) bool {
 	return set
 }
 
-func printRegisteredWait(row metarun.Waiter, jsonOutput bool) {
+func printRegisteredWait(stdout io.Writer, row metarun.Waiter, jsonOutput bool) {
 	if jsonOutput {
 		encoded, _ := json.Marshal(row)
-		fmt.Println(string(encoded))
+		fmt.Fprintln(stdout, string(encoded))
 		return
 	}
-	fmt.Printf("registered %s wait %s until %s\n", row.Kind, row.WaitID, row.Deadline)
+	fmt.Fprintf(stdout, "registered %s wait %s until %s\n", row.Kind, row.WaitID, row.Deadline)
 }
 
 func waitRegisterOptions(root string) (metarun.WaitOptions, error) {
@@ -74,8 +74,8 @@ func waitRegisterOptions(root string) (metarun.WaitOptions, error) {
 	}}, nil
 }
 
-func runWaitRegister(args []string) int {
-	flags := newFlagSet("session wait")
+func runWaitRegister(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("session wait", stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	pid := flags.Int64("pid", 0, "tracked process identifier")
 	label := flags.String("label", "", "description of the tracked work")
@@ -89,52 +89,52 @@ func runWaitRegister(args []string) int {
 	}
 	timeoutExplicit := waitFlagWasSet(flags, "timeout")
 	if *timeout <= 0 || *timeout > metarun.MaxRegisteredWaitTimeout {
-		fmt.Fprintln(os.Stderr, "wait timeout must be positive and no longer than 24 hours")
+		fmt.Fprintln(stderr, "wait timeout must be positive and no longer than 24 hours")
 		return metarun.ExitInvalidWait
 	}
 	kind := "local"
 	if *human {
 		kind = "human"
 		if !timeoutExplicit {
-			fmt.Fprintln(os.Stderr, "human wait requires --timeout")
+			fmt.Fprintln(stderr, "human wait requires --timeout")
 			return metarun.ExitInvalidWait
 		}
 		if strings.TrimSpace(*question) == "" || *pid != 0 || *label != "" || *jobID != "" {
-			fmt.Fprintln(os.Stderr, "human wait requires --question and accepts no --pid, --label, or --job")
+			fmt.Fprintln(stderr, "human wait requires --question and accepts no --pid, --label, or --job")
 			return metarun.ExitInvalidWait
 		}
 	} else {
 		if *pid <= 0 || strings.TrimSpace(*label) == "" || *question != "" {
-			fmt.Fprintln(os.Stderr, "local wait requires --pid and --label and accepts no --question")
+			fmt.Fprintln(stderr, "local wait requires --pid and --label and accepts no --question")
 			return metarun.ExitInvalidWait
 		}
 		if *jobID != "" {
 			if err := metarun.ValidateWaitSelector(metarun.WaitSelector{Kind: "job", TargetID: *jobID}); err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				fmt.Fprintln(stderr, err)
 				return metarun.ExitInvalidWait
 			}
 		}
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return metarun.ExitWaiterIO
 	}
 	options, err := waitRegisterOptions(stateRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return metarun.ExitWaiterIO
 	}
 	resolved, code, err := resolveWaitCaller(stateRoot, waitCallerPID())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return code
 	}
 	scanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	openWorkSignature, err := waitOpenWorkSignature(scanCtx, stateRoot)
 	cancel()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "the open-work signature could not be read:", err)
+		fmt.Fprintln(stderr, "the open-work signature could not be read:", err)
 		return metarun.ExitWaiterIO
 	}
 	row, err := (&metarun.Store{Root: stateRoot, Prober: waitRegisterProber}).RegisterDetachedWait(metarun.RegisterWaitRequest{
@@ -143,50 +143,50 @@ func runWaitRegister(args []string) int {
 		Timeout: *timeout, OpenWorkSignature: openWorkSignature,
 	}, options)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return metarun.WaiterExitCode(err)
 	}
-	printRegisteredWait(row, *jsonOutput)
+	printRegisteredWait(stdout, row, *jsonOutput)
 	return 0
 }
 
-func runWaitEnd(args []string) int {
-	flags := newFlagSet("session wait")
+func runWaitEnd(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("session wait", stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	waitID := flags.String("wait-id", "", "registered wait identifier")
 	jsonOutput := flags.Bool("json", false, "print the ended row as JSON")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || !metarun.ValidWaitID(*waitID) {
 		if *waitID == "" || !metarun.ValidWaitID(*waitID) {
-			fmt.Fprintln(os.Stderr, "wait end requires a valid --wait-id")
+			fmt.Fprintln(stderr, "wait end requires a valid --wait-id")
 		}
 		return metarun.ExitInvalidWait
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return metarun.ExitWaiterIO
 	}
 	options, err := waitRegisterOptions(stateRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return metarun.ExitWaiterIO
 	}
 	resolved, code, err := resolveWaitCaller(stateRoot, waitCallerPID())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return code
 	}
 	row, err := (&metarun.Store{Root: stateRoot}).EndDetachedWait(*waitID, resolved.owner, resolved.runtimeSession,
 		options)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return metarun.WaiterExitCode(err)
 	}
 	if *jsonOutput {
 		encoded, _ := json.Marshal(row)
-		fmt.Println(string(encoded))
+		fmt.Fprintln(stdout, string(encoded))
 	} else {
-		fmt.Printf("ended %s wait %s by %s\n", row.Kind, row.WaitID, row.InterruptedBy)
+		fmt.Fprintf(stdout, "ended %s wait %s by %s\n", row.Kind, row.WaitID, row.InterruptedBy)
 	}
 	return 0
 }
@@ -196,26 +196,26 @@ func runWaitEnd(args []string) int {
 // (--question, --timeout), so its Stop gate lets it stop and names the wait;
 // --end ID says the wait is over. The caller the registration records is the
 // command's parent, the waiting session's own process.
-func runSessionWait(args []string) int {
+func runSessionWait(args []string, stdout, stderr io.Writer) int {
 	for index, arg := range args {
 		if arg == "--end" || strings.HasPrefix(arg, "--end=") {
 			rest := append(append([]string(nil), args[:index]...), args[index+1:]...)
 			id, ok := strings.CutPrefix(arg, "--end=")
 			if !ok {
 				if index+1 >= len(args) {
-					fmt.Fprintln(os.Stderr, "session wait --end needs the wait id")
+					fmt.Fprintln(stderr, "session wait --end needs the wait id")
 					return metarun.ExitInvalidWait
 				}
 				id = args[index+1]
 				rest = append(append([]string(nil), args[:index]...), args[index+2:]...)
 			}
-			return runWaitEnd(append([]string{"--wait-id", id}, rest...))
+			return runWaitEnd(append([]string{"--wait-id", id}, rest...), stdout, stderr)
 		}
 	}
 	for _, arg := range args {
 		if arg == "--question" || strings.HasPrefix(arg, "--question=") {
-			return runWaitRegister(append([]string{"--human"}, args...))
+			return runWaitRegister(append([]string{"--human"}, args...), stdout, stderr)
 		}
 	}
-	return runWaitRegister(args)
+	return runWaitRegister(args, stdout, stderr)
 }

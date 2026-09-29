@@ -33,13 +33,13 @@ type delegateOutcome struct {
 // runDelegate is the operator boundary and the delegate lifecycle's process
 // entry: operator forms answer typed JSON; the runtime adapters' "__"
 // callbacks and the guard member wrapper keep their process shape.
-func runDelegate(args []string) int {
+func runDelegate(args []string, stdout, stderr io.Writer) int {
 	// An operator form begins with one of its options; a lifecycle
 	// callback begins with its __ word and parses its own options.
 	if len(args) > 0 && strings.HasPrefix(args[0], "--") && !delegateFormOptions[strings.SplitN(args[0], "=", 2)[0]] {
-		return refuseUnknownOption(nil, "delegate", args[0], "it takes --revive, --cancel, --follow-up, --adapter-selftest, a dispatch's --role/--brief/--goal/--destructive-reach, or a lifecycle callback")
+		return refuseUnknownOption(stdout, stderr, "delegate", args[0], "it takes --revive, --cancel, --follow-up, --adapter-selftest, a dispatch's --role/--brief/--goal/--destructive-reach, or a lifecycle callback")
 	}
-	return runDelegateIn(args, "", os.Stdout, os.Stderr)
+	return runDelegateIn(args, "", stdout, stderr)
 }
 
 // delegateFormOptions are the options an operator form of the delegate entry

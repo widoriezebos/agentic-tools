@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -313,7 +314,7 @@ func TestStewardStatusSurfacesSeatIdleAlertEpisode(t *testing.T) {
 	if _, err := steward.RecordSeatIdleIncident(root, incident, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	out, code := captureStdout(t, func() int { return runStewardStatus([]string{"--repo", root}) })
+	out, code := captureStdout(t, func(stdout, stderr io.Writer) int { return runStewardStatus([]string{"--repo", root}, stdout, stderr) })
 	if code != 0 {
 		t.Fatalf("steward status returned %d: %s", code, out)
 	}

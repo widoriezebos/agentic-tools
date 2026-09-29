@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,14 +101,8 @@ func (f *goalBudgetResumeFixture) expectBindings(count int) {
 	}
 }
 
-func (f *goalBudgetResumeFixture) runBudget(args []string, prove goalAuthorityProver) int {
-	return runGoalBudgetWithInputs(args, prove, f.commandNow, f.dependencies(), f.binding)
-}
-
-// runBudgetTo and runResumeTo run the command on the caller's own streams.
-// A capture of the process's os.Stdout/os.Stderr also received every
-// parallel test's lines ("goal open does not take --blocker", "mission is
-// already running") in TestGoalBudgetRoutesQueuedBoxesAndDefaultsTheEnrolledName.
+// runBudgetTo and runResumeTo run the command on streams of their own, never
+// the process's, which every parallel test prints on.
 func (f *goalBudgetResumeFixture) runBudgetTo(args []string, prove goalAuthorityProver) (int, string, string) {
 	stdout, stderr := callerStreams()
 	dependencies := f.dependencies()
@@ -148,8 +143,8 @@ func TestGoalResumeMissingInjectedEndpointRefusesBeforeBinding(t *testing.T) {
 	dependencies := fixture.dependencies()
 	dependencies.endpoint = nil
 	args := append(completeResumeArgs(root), "--fixture-human-authority")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalResumeWithInputs(args, fixedFixtureGoalAuthority, fixture.commandNow, dependencies, fixture.binding)
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalResumeWithInputs(args, fixedFixtureGoalAuthority, fixture.commandNow, withStreams(dependencies, stdout, stderr), fixture.binding)
 	})
 	if code != 1 || stdout != "" || !strings.Contains(stderr, "goal resume: goal endpoint reader is missing.") {
 		t.Fatalf("missing endpoint did not refuse cleanly: code=%d stdout=%q stderr=%q", code, stdout, stderr)

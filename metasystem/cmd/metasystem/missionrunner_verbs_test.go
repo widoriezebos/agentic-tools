@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,10 +12,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
-func captureMissionStderr(t *testing.T, run func() int) (string, int) {
+func captureMissionStderr(t *testing.T, run func(stdout, stderr io.Writer) int) (string, int) {
 	t.Helper()
-	code, _, stderr := captureCommandOutput(t, false, true, run)
-	return stderr, code
+	return captureStderr(t, run)
 }
 
 func missionFenceFixture(t *testing.T, terminal bool) string {
@@ -56,7 +56,7 @@ func TestMissionLaunchHumanOpensClosedFenceBeforeArming(t *testing.T) {
 			if err := stopfence.Write(root, record); err != nil {
 				t.Fatal(err)
 			}
-			generation, code := missionFenceBeforeArmWith(root, mode, repositoryTop, lease.ClassifyAt)
+			generation, code := missionFenceBeforeArmWith(t.Output(), root, mode, repositoryTop, lease.ClassifyAt)
 			if code != 0 || generation != 10 {
 				t.Fatalf("human handover = generation %d code %d", generation, code)
 			}
@@ -79,8 +79,8 @@ func TestMissionLaunchNonHumanKeepsStoppedRefusalAheadOfArming(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	output, code := captureMissionStderr(t, func() int {
-		_, code := missionFenceBeforeArmWith(root, "resume", repositoryTop, lease.ClassifyAt)
+	output, code := captureMissionStderr(t, func(stdout, stderr io.Writer) int {
+		_, code := missionFenceBeforeArmWith(stderr, root, "resume", repositoryTop, lease.ClassifyAt)
 		return code
 	})
 	expected := "the metasystem is stopped for " + root + " since 2026-09-07T09:30:00Z, by stop pid 4321\n" +
@@ -120,8 +120,8 @@ func TestMissionLaunchClassificationDataFailureNamesRepairBeforeRetry(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	output, code := captureMissionStderr(t, func() int {
-		_, code := missionFenceBeforeArmWith(root, "resume", repositoryTop, lease.ClassifyAt)
+	output, code := captureMissionStderr(t, func(stdout, stderr io.Writer) int {
+		_, code := missionFenceBeforeArmWith(stderr, root, "resume", repositoryTop, lease.ClassifyAt)
 		return code
 	})
 	want := "metasystem mission resume: caller classification is blocked by job record " + printedJobPath + ": invalid JSON: unexpected end of JSON input.\n" +
@@ -173,7 +173,7 @@ func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(
 		gotRoot, gotInstallation = stateRoot, installed
 		return lease.ClassifyAt(stateRoot, installed, caller)
 	}
-	_, code := missionFenceBeforeArmWith(root, "start", repositoryTop, classify)
+	_, code := missionFenceBeforeArmWith(t.Output(), root, "start", repositoryTop, classify)
 	if code != 1 || gotRoot != root || gotInstallation != installation {
 		t.Fatalf("mission classifier root=%q installation=%q code=%d, want %q and %q", gotRoot, gotInstallation, code, root, installation)
 	}
@@ -189,6 +189,6 @@ func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(
 
 // missionFenceBeforeArmWith is the fence check as the launching command runs
 // it: this process is the caller, refusals go to this process's stderr.
-func missionFenceBeforeArmWith(root, mode string, repositoryTop func(string) (string, error), classify processCallerClassifier) (int64, int) {
-	return missionFenceBeforeArmFor(processIdentity{pid: int64(os.Getpid())}, os.Stderr, root, mode, repositoryTop, classify)
+func missionFenceBeforeArmWith(stderr io.Writer, root, mode string, repositoryTop func(string) (string, error), classify processCallerClassifier) (int64, int) {
+	return missionFenceBeforeArmFor(processIdentity{pid: int64(os.Getpid())}, stderr, root, mode, repositoryTop, classify)
 }

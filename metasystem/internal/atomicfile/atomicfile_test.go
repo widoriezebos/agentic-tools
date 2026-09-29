@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -312,5 +313,115 @@ func TestAnchorForArtifacts(t *testing.T) {
 	}
 	if got := AnchorForArtifacts("/a/artifacts/agents/x/artifacts/agents/jobs/j.json"); got != "/a/artifacts/agents/x" {
 		t.Fatalf("nested artifacts anchors at the DEEPEST checkout: %q", got)
+	}
+}
+
+// TestCreatePublishesUnderANewNameOnly (R26, D14C-04; the atomicfile half of
+// TestMessagePublicationNeverReplaces): Create on a fresh name publishes the
+// bytes with the named mode and reports durable; on an existing name it
+// returns an error that errors.Is(err, os.ErrExist), the existing bytes are
+// untouched and no temporary is left; a missing directory is an error, and
+// Create never creates it.
+func TestCreatePublishesUnderANewNameOnly(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, "I.json")
+	durable, err := Create(path, []byte("first\n"), 0o600, root)
+	if err != nil || !durable {
+		t.Fatalf("fresh name: durable=%v err=%v", durable, err)
+	}
+	if info, _ := os.Stat(path); info == nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("published mode = %v, want 0600", info)
+	}
+	durable, err = Create(path, []byte("second\n"), 0o600, root)
+	if !errors.Is(err, os.ErrExist) || durable {
+		t.Fatalf("existing name: durable=%v err=%v, want an os.ErrExist error", durable, err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != "first\n" {
+		t.Fatalf("the existing bytes changed: %q", data)
+	}
+	entries, _ := os.ReadDir(root)
+	if len(entries) != 1 {
+		t.Fatalf("residue beside the published name: %v", entries)
+	}
+	missing := filepath.Join(root, "absent", "I.json")
+	if _, err := Create(missing, []byte("x"), 0o600, root); err == nil {
+		t.Fatal("Create into a missing directory succeeded")
+	}
+	if _, err := os.Stat(filepath.Dir(missing)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Create made the directory it was not given: %v", err)
+	}
+}
+
+// TestCreatePostLinkSyncFailureIsCommittedWithDoubt: the name is published
+// and only its durability is in doubt, so the outcome is (false, nil).
+func TestCreatePostLinkSyncFailureIsCommittedWithDoubt(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, "I.json")
+	linked := false
+	seams := createSeams{afterLink: func(string) { linked = true }, sync: func(dir string) error {
+		if linked {
+			return errors.New("injected: parent sync failed")
+		}
+		return syncDir(dir)
+	}}
+	durable, err := create(path, []byte("x\n"), 0o600, root, seams)
+	if err != nil || durable {
+		t.Fatalf("post-link sync failure: durable=%v err=%v, want (false, nil)", durable, err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != "x\n" {
+		t.Fatalf("the published bytes = %q", data)
+	}
+}
+
+// TestConfirmMakesAMatchingRetryDurable (R26, D14D-02): a publication paused
+// between its link and its parent sync is visible to a retry, whose Create
+// meets os.ErrExist; the retry's Confirm performs the parent sync itself, so
+// its success never rests on the first publication's unfinished sync, and a
+// failed confirming sync is reported as not durable.
+func TestConfirmMakesAMatchingRetryDurable(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, "I.json")
+	paused, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := create(path, []byte("same\n"), 0o600, root, createSeams{sync: syncDir, afterLink: func(string) {
+			close(paused)
+			<-release
+		}})
+		done <- err
+	}()
+	<-paused
+	if _, err := Create(path, []byte("same\n"), 0o600, root); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("the retry's Create = %v, want os.ErrExist", err)
+	}
+	var mu sync.Mutex
+	var synced []string
+	recording := func(dir string) error {
+		mu.Lock()
+		synced = append(synced, dir)
+		mu.Unlock()
+		return syncDir(dir)
+	}
+	if !confirm(path, root, recording) {
+		t.Fatal("Confirm did not report the retry durable")
+	}
+	mu.Lock()
+	confirmedParent := false
+	for _, dir := range synced {
+		confirmedParent = confirmedParent || dir == filepath.Clean(root)
+	}
+	mu.Unlock()
+	if !confirmedParent {
+		t.Fatalf("Confirm did not sync the parent itself while the first publication was paused: %v", synced)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if confirm(path, root, func(string) error { return errors.New("injected: confirming sync failed") }) {
+		t.Fatal("a failed confirming sync was reported durable")
 	}
 }

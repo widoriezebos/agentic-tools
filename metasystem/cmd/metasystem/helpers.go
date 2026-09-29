@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -61,9 +60,8 @@ func pathFlagVar(flags *flag.FlagSet, target *string, name, value, usage string)
 	flags.Var(pathValue{target: target}, name, usage)
 }
 
-func printJSON(value any) { writeJSONLine(os.Stdout, os.Stderr, value) }
-
-// writeJSONLine is printJSON onto a caller's own streams.
+// writeJSONLine prints value as one JSON line on stdout; an encoding
+// failure is printed on stderr.
 func writeJSONLine(stdout, stderr io.Writer, value any) {
 	encoded, err := json.Marshal(value)
 	if err != nil {
@@ -90,22 +88,21 @@ func writeIdentityJSON(path string, value any) error {
 }
 
 // newFlagSet is the one constructor of the engine's flag sets (package
-// cliflags): a parse error is answered in the public style and a help
-// request prints the options. errs is where an error is written (default:
-// this process's standard error at the time of the error).
-func newFlagSet(name string, errs ...io.Writer) *flag.FlagSet {
-	var out io.Writer
-	if len(errs) > 0 {
-		out = errs[0]
-	}
+// cliflags): a parse error is answered in the public style on stderr and a
+// help request prints the options on stdout, the invocation's own streams.
+func newFlagSet(name string, stdout, stderr io.Writer) *flag.FlagSet {
 	if publicCommand != nil {
 		if command, ok := publicCommand(name); ok {
 			shown := publicOptions(command)
-			return cliflags.NewShown(name, "metasystem "+name, out, func(option string) bool { return shown[option] })
+			return cliflags.NewShown(name, "metasystem "+name, stdout, stderr, func(option string) bool { return shown[option] })
 		}
 	}
-	return cliflags.New(name, commandLabel(name), out)
+	return cliflags.New(name, commandLabel(name), stdout, stderr)
 }
+
+// command is an entrypoint's handler: its words and the invocation's own
+// standard output and error, which everything it prints is written to.
+type command func(args []string, stdout, stderr io.Writer) int
 
 // publicCommand finds the public action a flag set is named after; bound in
 // init, as internalEntrypoint is.
@@ -137,13 +134,13 @@ func publicOptions(command intentCommand) map[string]bool {
 
 // helpAware makes a lone --help or -h a successful request: a handler whose
 // parser answered it with its usage exits 0 rather than as a refusal.
-func helpAware(run func([]string) int) func([]string) int {
-	return func(args []string) int {
+func helpAware(run command) command {
+	return func(args []string, stdout, stderr io.Writer) int {
 		if len(args) != 1 || !isHelpWord(args[0]) {
-			return run(args)
+			return run(args, stdout, stderr)
 		}
 		before := cliflags.HelpAnswered()
-		code := run(args)
+		code := run(args, stdout, stderr)
 		if code == 2 && cliflags.HelpAnswered() > before {
 			return 0
 		}
@@ -195,16 +192,13 @@ func init() {
 	}
 }
 
-// requireFlags answers a missing required option by name before anything
-// is done; it reports whether every named option was given.
+// requireFlags answers a missing required option by name on errs before
+// anything is done; it reports whether every named option was given.
 func requireFlags(flags *flag.FlagSet, errs io.Writer, names ...string) bool {
 	given := map[string]bool{}
 	flags.Visit(func(f *flag.Flag) { given[f.Name] = true })
 	for _, name := range names {
 		if !given[name] {
-			if errs == nil {
-				errs = os.Stderr
-			}
 			fmt.Fprintf(errs, "%s: --%s is required; nothing was done\n", cliflags.Label(flags), name)
 			return false
 		}
@@ -213,15 +207,13 @@ func requireFlags(flags *flag.FlagSet, errs io.Writer, names ...string) bool {
 }
 
 // refuseUnknownOption answers an option an entrypoint with its own parser
-// does not take, in the same public style as newFlagSet.
-func refuseUnknownOption(errs io.Writer, name, option, takes string) int {
+// does not take, in the same public style as newFlagSet: a help request's
+// usage on stdout, a refusal on stderr.
+func refuseUnknownOption(stdout, stderr io.Writer, name, option, takes string) int {
 	if isHelpWord(option) {
-		fmt.Fprintf(os.Stdout, "usage: %s: %s\n", commandLabel(name), takes)
+		fmt.Fprintf(stdout, "usage: %s: %s\n", commandLabel(name), takes)
 		return 0
 	}
-	if errs == nil {
-		errs = os.Stderr
-	}
-	fmt.Fprintf(errs, "%s: does not take %s; %s; nothing was done\n", commandLabel(name), option, takes)
+	fmt.Fprintf(stderr, "%s: does not take %s; %s; nothing was done\n", commandLabel(name), option, takes)
 	return 2
 }

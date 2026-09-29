@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -58,11 +59,11 @@ func TestDelegateDesignCriticWithoutOutputsRefusesAtFrontDoor(t *testing.T) {
 	}
 	t.Setenv("METASYSTEM_DELEGATE_ROOT", root)
 	want := "design-critic dispatch requires --outputs <file> and --design <file>"
-	out, code := captureStdout(t, func() int {
+	out, code := captureStdout(t, func(stdout, stderr io.Writer) int {
 		return runDelegate([]string{
 			"--role", "design-critic", "--brief", "brief.md", "--goal", "goal-a",
 			"--destructive-reach", "DESIGN-BEARING", "--design", "metasystem/plans/design.md",
-		})
+		}, stdout, stderr)
 	})
 	var result map[string]any
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
@@ -89,10 +90,10 @@ func TestDelegateReviewsRefusesNonCriticRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_DELEGATE_ROOT", root)
-	out, code := captureStdout(t, func() int {
+	out, code := captureStdout(t, func(stdout, stderr io.Writer) int {
 		return runDelegate([]string{
 			"--role", "implementer", "--reviews", "implementer-a", "--brief", "brief.md", "--goal", "goal-a", "--destructive-reach", "MECHANICAL",
-		})
+		}, stdout, stderr)
 	})
 	if code != 2 || !strings.Contains(out, `"outcome":"REFUSED-REQUEST"`) || !strings.Contains(out, "--reviews is only valid for the code-critic, warden, and verifier roles") {
 		t.Fatalf("non-critic reviews exit=%d output=%q", code, out)
@@ -106,8 +107,8 @@ func TestDelegateAdapterSelftestRefusesADirectInvocation(t *testing.T) {
 	}
 	t.Setenv("METASYSTEM_DELEGATE_ROOT", root)
 	t.Setenv("METASYSTEM_DELEGATE_SELFTEST_INTERNAL", "")
-	out, code := captureStdout(t, func() int {
-		return runDelegate([]string{"--adapter-selftest", "fake", "--brief", "brief.md", "--workspace", root, "--op", "test-job"})
+	out, code := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runDelegate([]string{"--adapter-selftest", "fake", "--brief", "brief.md", "--workspace", root, "--op", "test-job"}, stdout, stderr)
 	})
 	if code != 2 || !strings.Contains(out, `"outcome":"REFUSED-REQUEST"`) || !strings.Contains(out, "reserved for the runtime adapters' own self-test") {
 		t.Fatalf("direct adapter self-test exit=%d output=%q", code, out)

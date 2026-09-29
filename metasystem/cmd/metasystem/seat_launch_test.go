@@ -53,7 +53,7 @@ func TestAFreshInvocationCannotRedirectASessionEnrolledRecord(t *testing.T) {
 	} {
 		path, before := sessionEnrolledRecordFor(t, from, "m1f", destinationA)
 		var stdout bytes.Buffer
-		code := runSeatLaunchTo(append([]string{"--from", from, "--record", path}, args...), &stdout)
+		code := runSeatLaunch(append([]string{"--from", from, "--record", path}, args...), &stdout, t.Output())
 		if code == 0 {
 			t.Fatalf("%s: the verb ran (%q)", what, stdout.String())
 		}

@@ -194,7 +194,7 @@ func printCarryMutationTo(stdout, stderr io.Writer, res goal.PublishResult, deta
 // start from their supplied caller and carry their lineage and machine, and
 // the report goes to the caller's streams.
 func goalCarryLandingWith(dependencies syncRequestDependencies, stdout, stderr io.Writer, args []string) int {
-	flags := newFlagSet("goal carry", stderr)
+	flags := newFlagSet("goal carry", stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	by := flags.String("by", "", "the directing human")
@@ -829,7 +829,7 @@ func readItemMutationRequestWithProof(verb, root, by, lineage string, observed *
 // runGoalReadItemsAddWithProof is read-items add with the person's observed
 // proof, when a caller has already proven it.
 func runGoalReadItemsAddWithProof(args []string, observed *humanauthority.Proof, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
-	flags := newFlagSet("goal read-items add")
+	flags := newFlagSet("goal read-items add", dependencies.outStream(), dependencies.errStream())
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	read := flags.String("read", "", "read label")
@@ -885,7 +885,7 @@ func runGoalReadItemsCloseWithInputs(args []string, commandNow func(string) (tim
 // runGoalReadItemsCloseWithProof is read-items close with the person's
 // observed proof, when a caller has already proven it.
 func runGoalReadItemsCloseWithProof(args []string, observed *humanauthority.Proof, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, resolveCodeCommit func(root, ref string) (string, error)) int {
-	flags := newFlagSet("goal read-items close")
+	flags := newFlagSet("goal read-items close", dependencies.outStream(), dependencies.errStream())
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	item := flags.String("item", "", "read item id")
@@ -929,8 +929,8 @@ type readItemsGoalJSON struct {
 	Items []goal.ReadItem `json:"items"`
 }
 
-func runGoalReadItemsListWithInputs(args []string, commandNow func(string) (time.Time, error), resolve func(string) (goal.Endpoint, error)) int {
-	flags := newFlagSet("goal read-items list")
+func runGoalReadItemsListWithInputs(args []string, commandNow func(string) (time.Time, error), resolve func(string) (goal.Endpoint, error), stdout, stderr io.Writer) int {
+	flags := newFlagSet("goal read-items list", stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "one goal id")
 	openOnly := flags.Bool("open", false, "only open items")
@@ -939,22 +939,22 @@ func runGoalReadItemsListWithInputs(args []string, commandNow func(string) (time
 		return 2
 	}
 	if !converted(*root) {
-		fmt.Fprintln(os.Stderr, "goal read-items list reads the synced backlog")
+		fmt.Fprintln(stderr, "goal read-items list reads the synced backlog")
 		return 1
 	}
 	endpoint, err := resolve(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	now, err := commandNow(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	all := map[string]*goal.GoalFile{}
@@ -970,7 +970,7 @@ func runGoalReadItemsListWithInputs(args []string, commandNow func(string) (time
 	ids := make([]string, 0, len(all))
 	if *id != "" {
 		if all[*id] == nil {
-			fmt.Fprintf(os.Stderr, "no goal %q on the accepted tree\n", *id)
+			fmt.Fprintf(stderr, "no goal %q on the accepted tree\n", *id)
 			return 1
 		}
 		ids = append(ids, *id)
@@ -994,16 +994,16 @@ func runGoalReadItemsListWithInputs(args []string, commandNow func(string) (time
 		rows = append(rows, readItemsGoalJSON{Goal: goalID, State: file.State, Items: items})
 	}
 	if *jsonOutput {
-		printJSON(map[string]any{"goals": rows, "tip": projection.Tip})
+		writeJSONLine(stdout, stderr, map[string]any{"goals": rows, "tip": projection.Tip})
 		return 0
 	}
 	for _, row := range rows {
 		for _, readItem := range row.Items {
-			fmt.Printf("goal=%s state=%s read=%s item=%s itemState=%s text=%s", row.Goal, row.State, readItem.Read, readItem.ID, readItem.State, strconv.Quote(readItem.Text))
+			fmt.Fprintf(stdout, "goal=%s state=%s read=%s item=%s itemState=%s text=%s", row.Goal, row.State, readItem.Read, readItem.ID, readItem.State, strconv.Quote(readItem.Text))
 			if readItem.ClosingReference != "" {
-				fmt.Printf(" closingReference=%s", strconv.Quote(readItem.ClosingReference))
+				fmt.Fprintf(stdout, " closingReference=%s", strconv.Quote(readItem.ClosingReference))
 			}
-			fmt.Println()
+			fmt.Fprintln(stdout)
 		}
 	}
 	return 0
@@ -1031,15 +1031,6 @@ func (v *repeatedStrings) String() string { return fmt.Sprint([]string(*v)) }
 func (v *repeatedStrings) Set(value string) error {
 	*v = append(*v, value)
 	return nil
-}
-
-func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
-	f, err := parseSyncFlagValues(name, args)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return nil, false
-	}
-	return f, true
 }
 
 func parseHumanSyncFlags(values *humanVerbValues, name string, args []string) (*syncFlags, bool) {
@@ -1073,12 +1064,15 @@ func humanFlagDrop(message string) []string {
 	return nil
 }
 
+// parseSyncFlagValues parses a goal verb's flags, returning a mistake
+// instead of printing it; a help request's usage goes to standard output,
+// as the flag package's did.
 func parseSyncFlagValues(name string, args []string) (*syncFlags, error) {
-	return parseSyncFlagValuesWithOutput(name, args, io.Discard)
+	return parseSyncFlagValuesWithOutput(name, args, nil, io.Discard)
 }
 
-func parseSyncFlagValuesWithOutput(name string, args []string, output io.Writer) (*syncFlags, error) {
-	fs := newFlagSet("goal "+name, output)
+func parseSyncFlagValuesWithOutput(name string, args []string, stdout, output io.Writer) (*syncFlags, error) {
+	fs := newFlagSet("goal "+name, stdout, output)
 	f := &syncFlags{}
 	pathFlagVar(fs, &f.root, "root", ".", "checkout root")
 	fs.StringVar(&f.by, "by", "", "the directing human (a human act carries its name)")
@@ -1195,8 +1189,10 @@ func parseSyncFlagValuesWithOutput(name string, args []string, output io.Writer)
 	return f, nil
 }
 
-func runGoalDischargeReviewObligationWithOwners(args []string, requestBuilder func(verb, root, by, lineage string) (goal.VerbRequest, error), discharge func(goal.VerbRequest, string, string, string, string, string, ...goal.DischargeEvidence) (goal.PublishResult, error)) int {
-	return runGoalDischargeReviewObligationWithDependencies(args, requestBuilder, discharge, defaultSyncRequestDependencies())
+func runGoalDischargeReviewObligationWithOwners(args []string, requestBuilder func(verb, root, by, lineage string) (goal.VerbRequest, error), discharge func(goal.VerbRequest, string, string, string, string, string, ...goal.DischargeEvidence) (goal.PublishResult, error), stdout, stderr io.Writer) int {
+	dependencies := defaultSyncRequestDependencies()
+	dependencies.stdout, dependencies.stderr = stdout, stderr
+	return runGoalDischargeReviewObligationWithDependencies(args, requestBuilder, discharge, dependencies)
 }
 
 func runGoalDischargeReviewObligationWithDependencies(args []string, requestBuilder func(verb, root, by, lineage string) (goal.VerbRequest, error), discharge func(goal.VerbRequest, string, string, string, string, string, ...goal.DischargeEvidence) (goal.PublishResult, error), dependencies syncRequestDependencies) int {
@@ -2042,10 +2038,6 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 	return 1, true
 }
 
-func runSyncOnlyWithRequest(name string, run func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error), requestBuilder func(string, string, string, string) (goal.VerbRequest, error), required ...string) func([]string) int {
-	return runSyncOnlyWithDependencies(name, run, requestBuilder, defaultSyncRequestDependencies(), required...)
-}
-
 func runSyncOnlyWithDependencies(name string, run func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error), requestBuilder func(string, string, string, string) (goal.VerbRequest, error), dependencies syncRequestDependencies, required ...string) func([]string) int {
 	return func(args []string) int {
 		f, ok := dependencies.parseSyncFlags(name, args)
@@ -2307,7 +2299,7 @@ func runGoalUnblockWithInputs(args []string, prove goalAuthorityProver, commandN
 }
 
 func runGoalAbandonWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
-	flags := newFlagSet("goal abandon")
+	flags := newFlagSet("goal abandon", dependencies.outStream(), dependencies.errStream())
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	by := flags.String("by", "", "the directing human")
@@ -2345,7 +2337,7 @@ func runGoalAbandonWithInputs(args []string, prove goalAuthorityProver, commandN
 }
 
 func runGoalCarryAbandonedWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
-	flags := newFlagSet("goal carry")
+	flags := newFlagSet("goal carry", dependencies.outStream(), dependencies.errStream())
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "abandoned goal id")
 	successor := flags.String("to", "", "live successor goal")
@@ -2379,7 +2371,7 @@ func runGoalCarryAbandonedWithInputs(args []string, prove goalAuthorityProver, c
 }
 
 func runGoalSetPriorityWithAuthorityAndInputs(args []string, prove goalAuthorityProver, dependencies syncRequestDependencies) int {
-	flags := newFlagSet("goal set-priority")
+	flags := newFlagSet("goal set-priority", dependencies.outStream(), dependencies.errStream())
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	by := flags.String("by", "", "the directing human")
@@ -2489,7 +2481,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 	values := newHumanVerbValues("classify-sweep", args)
 	values.bindDependencies(dependencies)
 	stdout, stderr := dependencies.outStream(), dependencies.errStream()
-	fs := newFlagSet("goal classify-sweep")
+	fs := newFlagSet("goal classify-sweep", dependencies.outStream(), dependencies.errStream())
 	fs.SetOutput(io.Discard)
 	root := pathFlag(fs, "root", ".", "checkout root")
 	draftPath := fs.String("draft", "", "classification draft file")
@@ -2769,7 +2761,7 @@ func runGoalUnapproveWithInputs(args []string, prove goalAuthorityProver, comman
 // delegation lifecycle calls it in-process with its own supplied caller in
 // dependencies (design 6.2).
 func goalExtendBudgetTo(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, reads dispatchcore.ProofAdmissionReads, stdout, stderr io.Writer) int {
-	flags := newFlagSet("goal extend-budget", stderr)
+	flags := newFlagSet("goal extend-budget", stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	revision := flags.Uint64("revision", 0, "exact accepted goal revision")
@@ -2978,9 +2970,10 @@ func runGoalRevokeWithInputs(args []string, prove goalAuthorityProver, commandNo
 	return dependencies.publish(res, nil)
 }
 
-func runGoalResumeWithAuthorityFacts(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), facts goalAuthorityReadFacts) int {
+func runGoalResumeWithAuthorityFacts(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), facts goalAuthorityReadFacts, stdout, stderr io.Writer) int {
 	dependencies := defaultSyncRequestDependencies()
 	dependencies.authorityFacts = facts
+	dependencies.stdout, dependencies.stderr = stdout, stderr
 	return runGoalResumeWithInputs(args, prove, commandNow, dependencies, dispatchcore.ResolveGoalBinding)
 }
 
@@ -3228,7 +3221,7 @@ type goalTerminalEnroller func(string, int64, humanauthority.Reader, string, tim
 func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnroller, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("enroll-terminal", args)
 	values.bindDependencies(dependencies)
-	flags := newFlagSet("goal enroll-terminal")
+	flags := newFlagSet("goal enroll-terminal", dependencies.outStream(), dependencies.errStream())
 	flags.SetOutput(io.Discard)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	by := flags.String("by", "", "the human enrolling this terminal")
@@ -3293,16 +3286,17 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 	return 0
 }
 
-func runGoalSetObligationWithAuthorityFacts(args []string, prove goalAuthorityProver, facts goalAuthorityReadFacts) int {
+func runGoalSetObligationWithAuthorityFacts(args []string, prove goalAuthorityProver, facts goalAuthorityReadFacts, stdout, stderr io.Writer) int {
 	dependencies := defaultSyncRequestDependencies()
 	dependencies.authorityFacts = facts
+	dependencies.stdout, dependencies.stderr = stdout, stderr
 	return runGoalSetObligationWithAuthorityFactsAtWithDependencies(args, prove, goalCommandNow, dependencies)
 }
 
 func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("set-obligation", args)
 	values.bindDependencies(dependencies)
-	flags := newFlagSet("goal set-obligation")
+	flags := newFlagSet("goal set-obligation", dependencies.outStream(), dependencies.errStream())
 	flags.SetOutput(io.Discard)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "claimed goal id")
@@ -3430,9 +3424,9 @@ func runGoalEditWithDependencies(args []string, commandNow func(string) (time.Ti
 	requestBuilder := func(verb, root, by, lineage string) (goal.VerbRequest, error) {
 		return syncReqWithProofAtWithDependencies(verb, root, by, lineage, nil, commandNow, dependencies)
 	}
-	run := runSyncOnlyWithRequest("edit", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+	run := runSyncOnlyWithDependencies("edit", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goalEditEffect(req, f, commandNow)
-	}, requestBuilder, "id")
+	}, requestBuilder, dependencies, "id")
 	return run(args)
 }
 

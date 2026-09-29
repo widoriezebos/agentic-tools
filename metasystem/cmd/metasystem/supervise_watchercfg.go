@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,7 +21,7 @@ import (
 // behavior the supervision fingerprint pins, so its tuning follows the
 // committed state the fingerprint covers, never per-process overrides that
 // would make two census writers disagree.
-func watcherConfig(metasystemRoot, stateRoot, scope, supervisionDir string, intervalSec int) supervise.WatcherConfig {
+func watcherConfig(stderr io.Writer, metasystemRoot, stateRoot, scope, supervisionDir string, intervalSec int) supervise.WatcherConfig {
 	intervalMS := intervalSec * 1000
 	if override := os.Getenv("METASYSTEM_CENSUS_INTERVAL_MS"); override != "" {
 		if parsed, err := strconv.Atoi(override); err == nil && parsed > 0 {
@@ -51,6 +52,6 @@ func watcherConfig(metasystemRoot, stateRoot, scope, supervisionDir string, inte
 			return census.RunProductionCensusAt(metasystemRoot, stateRoot, scope, fingerprint, intervalSec, now)
 		},
 		Now:  func() time.Time { return time.Now().UTC() },
-		Warn: func(message string) { fmt.Fprintln(os.Stderr, message) },
+		Warn: func(message string) { fmt.Fprintln(stderr, message) },
 	}
 }

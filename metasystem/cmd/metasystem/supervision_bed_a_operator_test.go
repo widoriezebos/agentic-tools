@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,8 +81,8 @@ func TestSupervisionBedAOperatorLayoutRefusesAnUnprovenSession(t *testing.T) {
 	scope, installation := supAOperatorLayout(t)
 	repositoryTop := declaredRepositoryTop(t, scope, map[string]int{installation: 1})
 
-	stdout, stderr, code := captureRelay(t, func() int {
-		return runUpWith([]string{"--metasystem-root", installation, "--repo", installation}, repositoryTop)
+	stdout, stderr, code := captureRelay(t, func(stdout, stderr io.Writer) int {
+		return runUpWith([]string{"--metasystem-root", installation, "--repo", installation}, repositoryTop, stdout, stderr)
 	})
 	if code == 0 {
 		t.Fatalf("nested operator identity inference unexpectedly succeeded: stdout=%s stderr=%s", stdout, stderr)

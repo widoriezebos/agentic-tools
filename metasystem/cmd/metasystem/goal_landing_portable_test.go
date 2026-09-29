@@ -1112,7 +1112,7 @@ func TestCommandApplicationFreshEpisodeResumesAndRenews(t *testing.T) {
 	episode := func(digit string) string { return strings.Repeat(digit, 64) }
 	args := []string{"--root", f.root, "--goal", "portable", "--tree", tree, "--mode", "auto", "--purpose", "delivery",
 		"--fresh-episode", episode("1"), "--fresh-expires-at", expires}
-	parsed, _, status := parseTestingSelection("test run", args, true)
+	parsed, _, status := parseTestingSelection("test run", args, true, t.Output(), t.Output())
 	if status != 0 || parsed.FreshEpisode != episode("1") || parsed.FreshExpiresAt != expires {
 		t.Fatalf("public freshness flags status=%d selection=%+v", status, parsed)
 	}

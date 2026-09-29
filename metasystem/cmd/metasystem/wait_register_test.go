@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,8 +89,8 @@ func TestWaitRegisterLocalRecordsTheTrackedProcess(t *testing.T) {
 		exact: identity.Exact{Pid: tracked, StartedAt: time.Unix(5000, 0), StartTicks: 77, BootID: "process-boot"},
 		state: identity.Alive,
 	}
-	code, output, problem := captureCommandOutput(t, true, true, func() int {
-		return runSessionWait([]string{"--root", root, "--pid", fmt.Sprint(tracked), "--label", "compile release", "--job", "job-a", "--json"})
+	code, output, problem := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runSessionWait([]string{"--root", root, "--pid", fmt.Sprint(tracked), "--label", "compile release", "--job", "job-a", "--json"}, stdout, stderr)
 	})
 	var row metarun.Waiter
 	if err := json.Unmarshal([]byte(output), &row); err != nil || code != 0 || problem != "" {
@@ -120,7 +121,7 @@ func TestWaitRegisterLocalRecordsTheTrackedProcess(t *testing.T) {
 			waitRegisterProber = test.prober
 			args := []string{"--root", root, "--pid", fmt.Sprint(tracked), "--label", "refused"}
 			args = append(args, test.args...)
-			code, _, problem := captureCommandOutput(t, true, true, func() int { return runSessionWait(args) })
+			code, _, problem := runOnOwnStreams(func(stdout, stderr io.Writer) int { return runSessionWait(args, stdout, stderr) })
 			if code == 0 || !strings.Contains(problem, test.want) || len(registeredRows(t, root)) != before {
 				t.Fatalf("code=%d stderr=%q rows=%d want rows=%d", code, problem, len(registeredRows(t, root)), before)
 			}
@@ -139,15 +140,15 @@ func TestWaitRegisterHumanNeedsAQuestionAndADeadline(t *testing.T) {
 		{name: "maximum", args: []string{"--human", "--question", "Proceed?", "--timeout", "25h"}, want: "no longer than 24 hours"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			code, _, problem := captureCommandOutput(t, true, true, func() int { return runSessionWait(test.args) })
+			code, _, problem := runOnOwnStreams(func(stdout, stderr io.Writer) int { return runSessionWait(test.args, stdout, stderr) })
 			if code != metarun.ExitInvalidWait || !strings.Contains(problem, test.want) {
 				t.Fatalf("code=%d stderr=%q", code, problem)
 			}
 		})
 	}
 	root, _, mainID, now := waitRegisterCommandFixture(t)
-	code, output, problem := captureCommandOutput(t, true, true, func() int {
-		return runSessionWait([]string{"--root", root, "--human", "--question", "Proceed with release?", "--timeout", "2h", "--json"})
+	code, output, problem := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runSessionWait([]string{"--root", root, "--human", "--question", "Proceed with release?", "--timeout", "2h", "--json"}, stdout, stderr)
 	})
 	var row metarun.Waiter
 	if err := json.Unmarshal([]byte(output), &row); err != nil || code != 0 || problem != "" ||

@@ -76,26 +76,26 @@ func (p *waitCommandProber) Probe(pid int64) (identity.Exact, identity.Liveness,
 }
 
 func TestWaitVerbArgumentsAndResult(t *testing.T) {
-	if code, _, problem := captureChannelOutput(t, func() int { return runWait(nil) }); code != metarun.ExitInvalidWait || !strings.Contains(problem, "exactly one") {
+	if code, _, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int { return runWait(nil, stdout, stderr) }); code != metarun.ExitInvalidWait || !strings.Contains(problem, "exactly one") {
 		t.Fatalf("missing selector code=%d stderr=%q", code, problem)
 	}
-	if code, _, problem := captureChannelOutput(t, func() int {
-		return runWait([]string{"--job", "j", "--run", "r"})
+	if code, _, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runWait([]string{"--job", "j", "--run", "r"}, stdout, stderr)
 	}); code != metarun.ExitInvalidWait || !strings.Contains(problem, "exactly one") {
 		t.Fatalf("duplicate selector code=%d stderr=%q", code, problem)
 	}
-	if code, _, problem := captureChannelOutput(t, func() int {
-		return runWait([]string{"--goal", "goal-a"})
+	if code, _, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runWait([]string{"--goal", "goal-a"}, stdout, stderr)
 	}); code != metarun.ExitInvalidWait || !strings.Contains(problem, "event must be") {
 		t.Fatalf("incomplete goal selector code=%d stderr=%q", code, problem)
 	}
-	if code, _, problem := captureChannelOutput(t, func() int {
-		return runWait([]string{"--resume", "not-a-wait-id"})
+	if code, _, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runWait([]string{"--resume", "not-a-wait-id"}, stdout, stderr)
 	}); code != metarun.ExitInvalidWait || !strings.Contains(problem, "identifier is invalid") {
 		t.Fatalf("invalid resume identifier code=%d stderr=%q", code, problem)
 	}
 	result := metarun.WaitResult{SchemaVersion: 2, WaitID: strings.Repeat("a", 32), Selector: metarun.WaitSelector{Kind: "run", TargetID: "run-a"}, TargetIncarnation: metarun.WaiterTarget{Generation: 2, LaunchNonce: "n"}, ExitCode: metarun.ExitGreen, Reason: "run completed green", SourceOutcome: "green", SourceEvidence: "run:run-a:g2:n"}
-	code, output, problem := captureChannelOutput(t, func() int { writeWaitResult(os.Stdout, result, true); return 0 })
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int { writeWaitResult(stdout, result, true); return 0 })
 	if code != 0 || problem != "" {
 		t.Fatalf("JSON result code=%d stderr=%q", code, problem)
 	}
@@ -103,7 +103,7 @@ func TestWaitVerbArgumentsAndResult(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &decoded); err != nil || decoded.WaitID != result.WaitID || decoded.TargetIncarnation.Generation != 2 {
 		t.Fatalf("JSON result=%q decoded=%+v err=%v", output, decoded, err)
 	}
-	_, plain, _ := captureChannelOutput(t, func() int { writeWaitResult(os.Stdout, result, false); return 0 })
+	_, plain, _ := captureChannelOutput(t, func(stdout, stderr io.Writer) int { writeWaitResult(stdout, result, false); return 0 })
 	if strings.Count(strings.TrimSpace(plain), "\n") != 0 || !strings.Contains(plain, "run-a") || !strings.Contains(plain, "run:run-a:g2:n") {
 		t.Fatalf("plain result is not one complete line: %q", plain)
 	}
@@ -127,7 +127,7 @@ func TestWaitPathSelectorIsValidated(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			code, _, problem := captureChannelOutput(t, func() int { return runWait(test.args) })
+			code, _, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int { return runWait(test.args, stdout, stderr) })
 			if code != metarun.ExitInvalidWait || !strings.Contains(problem, test.want) {
 				t.Fatalf("code=%d stderr=%q want=%q", code, problem, test.want)
 			}
@@ -190,7 +190,9 @@ func TestUnassociatedRegistrationRefusesNoRow(t *testing.T) {
 	t.Cleanup(func() { waitCallerPID, waitDeliveryRuntime = originalPID, originalAdapter })
 	// A refusal before the wait starts is the wait's result, printed where
 	// the caller reads every outcome.
-	code, output, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--job", "job-unassociated"}) })
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runWait([]string{"--root", root, "--job", "job-unassociated"}, stdout, stderr)
+	})
 	rows, _ := filepath.Glob(filepath.Join(metarun.WaitersDir(root), "*.json"))
 	if code != metarun.ExitWaiterBusy || !strings.Contains(output, "authenticated runtime session") || len(rows) != 0 {
 		t.Fatalf("unassociated registration code=%d stdout=%q stderr=%q rows=%v", code, output, problem, rows)
@@ -198,7 +200,9 @@ func TestUnassociatedRegistrationRefusesNoRow(t *testing.T) {
 	if err := lease.AssociateSession(root, mainID, "session-associated", "start", "clear"); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, problem = captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--job", "job-unassociated"}) }); code != 0 || problem != "" {
+	if code, _, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runWait([]string{"--root", root, "--job", "job-unassociated"}, stdout, stderr)
+	}); code != 0 || problem != "" {
 		t.Fatalf("associated registration code=%d stderr=%q", code, problem)
 	}
 }
@@ -347,7 +351,9 @@ func TestWaitPlainResumeRefusesChannelRegistration(t *testing.T) {
 	originalPID := waitCallerPID
 	waitCallerPID = func() int64 { return self }
 	t.Cleanup(func() { waitCallerPID = originalPID })
-	code, _, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--resume", waitID}) })
+	code, _, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runWait([]string{"--root", root, "--resume", waitID}, stdout, stderr)
+	})
 	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "metasystem work wait wait:"+waitID) {
 		t.Fatalf("plain channel resume code=%d stderr=%q", code, problem)
 	}
@@ -396,8 +402,8 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 	})
 	code, output, problem := 0, "", ""
 	{
-		code, output, problem = captureChannelOutput(t, func() int {
-			return runWait([]string{"--root", root, "--run", "run-command", "--timeout", "1m", "--json"})
+		code, output, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+			return runWait([]string{"--root", root, "--run", "run-command", "--timeout", "1m", "--json"}, stdout, stderr)
 		})
 	}
 	if code != metarun.ExitGreen || problem != "" {
@@ -470,8 +476,8 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 			t.Fatalf("installed proof wait output=%s err=%v", data, commandErr)
 		}
 	} else {
-		code, data, problem := captureChannelOutput(t, func() int {
-			return runWait([]string{"--root", root, "--job", "job-command", "--timeout", "1m", "--json"})
+		code, data, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+			return runWait([]string{"--root", root, "--job", "job-command", "--timeout", "1m", "--json"}, stdout, stderr)
 		})
 		if code != 0 || problem != "" || !strings.Contains(data, `"exitCode":0`) {
 			t.Fatalf("job wait code=%d output=%s problem=%s", code, data, problem)
@@ -506,18 +512,18 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(metarun.WaitersDir(root), "attempt-attempt-a-owner.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, output, problem := captureChannelOutput(t, func() int {
-		return sessionStartRecovery(root, "session-new", os.Stdout, os.Stderr)
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return sessionStartRecovery(root, "session-new", stdout, stderr)
 	})
 	want := "WAITING attempt attempt-a until 2026-09-14T12:00:00Z: metasystem work wait wait:" + strings.Repeat("a", 32)
 	if code != 0 || strings.TrimSpace(output) != want || problem != "" {
 		t.Fatalf("session start code=%d output=%q stderr=%q", code, output, problem)
 	}
-	if code, next, problem := captureChannelOutput(t, func() int { return runGoalNext([]string{"--root", root}) }); code != 0 || problem != "" || !strings.Contains(next, want) {
+	if code, next, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int { return runGoalNext([]string{"--root", root}, stdout, stderr) }); code != 0 || problem != "" || !strings.Contains(next, want) {
 		t.Fatalf("goal next code=%d output=%q stderr=%q", code, next, problem)
 	}
-	code, verdictOutput, problem := captureChannelOutput(t, func() int {
-		return runReportTurnVerdict([]string{"--root", root, "--session", "session-new", "--main-id", mainID})
+	code, verdictOutput, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runReportTurnVerdict([]string{"--root", root, "--session", "session-new", "--main-id", mainID}, stdout, stderr)
 	})
 	var verdict struct {
 		Display string `json:"display"`
@@ -602,11 +608,11 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(metarun.WaitersDir(root), "attempt-attempt-a-owner.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for name, invoke := range map[string]func() int{
-		"session start": func() int { return sessionStartRecovery(root, "session-new", os.Stdout, os.Stderr) },
-		"goal next":     func() int { return runGoalNext([]string{"--root", root}) },
-		"turn verdict": func() int {
-			return runReportTurnVerdict([]string{"--root", root, "--session", "session-new", "--main-id", mainID})
+	for name, invoke := range map[string]func(stdout, stderr io.Writer) int{
+		"session start": func(stdout, stderr io.Writer) int { return sessionStartRecovery(root, "session-new", stdout, stderr) },
+		"goal next":     func(stdout, stderr io.Writer) int { return runGoalNext([]string{"--root", root}, stdout, stderr) },
+		"turn verdict": func(stdout, stderr io.Writer) int {
+			return runReportTurnVerdict([]string{"--root", root, "--session", "session-new", "--main-id", mainID}, stdout, stderr)
 		},
 	} {
 		_, cleared, _ := captureChannelOutput(t, invoke)
@@ -614,16 +620,16 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 			t.Fatalf("%s advertised a cleared row: %q", name, cleared)
 		}
 	}
-	if code, _, _ := captureChannelOutput(t, func() int {
-		return sessionStartRecovery(root, "another-session", os.Stdout, os.Stderr)
+	if code, _, _ := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return sessionStartRecovery(root, "another-session", stdout, stderr)
 	}); code != metarun.ExitWaiterBusy {
 		t.Fatalf("another session received this holder's recovery rows: exit=%d", code)
 	}
 }
 
 func TestWaitSessionStartWithoutLeaseReturnsBusy(t *testing.T) {
-	code, output, problem := captureChannelOutput(t, func() int {
-		return sessionStartRecovery(t.TempDir(), "session-without-lease", os.Stdout, os.Stderr)
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return sessionStartRecovery(t.TempDir(), "session-without-lease", stdout, stderr)
 	})
 	if code != metarun.ExitWaiterBusy || output != "" || problem != "" {
 		t.Fatalf("session start without lease code=%d output=%q stderr=%q", code, output, problem)
@@ -1320,8 +1326,8 @@ func pendingWaitVerdict(t *testing.T, root, session, mainID string) struct {
 	Display     string  `json:"display"`
 } {
 	t.Helper()
-	code, output, problem := captureChannelOutput(t, func() int {
-		return runReportTurnVerdict([]string{"--root", root, "--session", session, "--main-id", mainID})
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runReportTurnVerdict([]string{"--root", root, "--session", session, "--main-id", mainID}, stdout, stderr)
 	})
 	var verdict struct {
 		ShouldBlock bool    `json:"shouldBlock"`
@@ -1462,8 +1468,8 @@ func assertPendingWaitVerdictOutput(t *testing.T, output []byte) {
 func TestPendingWaitInstalledVerdicts(t *testing.T) {
 	root := t.TempDir()
 	session, mainID := pendingWaitVerdictCommandFixture(t, root, "fake")
-	code, output, problem := captureChannelOutput(t, func() int {
-		return runReportTurnVerdict([]string{"--root", root, "--session", session, "--main-id", mainID})
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runReportTurnVerdict([]string{"--root", root, "--session", session, "--main-id", mainID}, stdout, stderr)
 	})
 	if code != 0 || problem != "" {
 		t.Fatalf("plain command handler code=%d stderr=%q output=%s", code, problem, output)
@@ -2066,7 +2072,9 @@ func TestWaitLeaseTakeoverRepairsAndResumes(t *testing.T) {
 	waitCallerPID = func() int64 { return self }
 	waitDeliveryRuntime = func(string, string) (string, error) { return "fake", nil }
 	t.Cleanup(func() { waitCallerPID, waitDeliveryRuntime = originalPID, originalAdapter })
-	code, output, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--resume", waitID, "--json"}) })
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runWait([]string{"--root", root, "--resume", waitID, "--json"}, stdout, stderr)
+	})
 	var result metarun.WaitResult
 	decodeErr := json.Unmarshal([]byte(output), &result)
 	if code != 0 || problem != "" || decodeErr != nil || result.WaitID == waitID || result.PointerRepaired {
@@ -2095,10 +2103,10 @@ func directHookCommand(hookEntry, installation string) *exec.Cmd {
 
 // runWait drives the wait owner work wait reaches, with the caller the
 // command registers and its result printed as the command prints it.
-func runWait(args []string) int {
+func runWait(args []string, stdout, stderr io.Writer) int {
 	return runWaitCommand(args, nil, waitCallerPID(), func(result metarun.WaitResult, jsonOutput bool) {
-		writeWaitResult(os.Stdout, result, jsonOutput)
-	})
+		writeWaitResult(stdout, result, jsonOutput)
+	}, stdout, stderr)
 }
 
 // waitHelperCommand and sessionWaitHelperCommand run the wait owner (the one
@@ -2110,6 +2118,8 @@ const (
 )
 
 func init() {
-	testHelperCommands[waitHelperCommand] = runWait
-	testHelperCommands[sessionWaitHelperCommand] = runSessionWait
+	// The helpers are processes of their own: they print on their own
+	// standard streams, which the bed reads through their pipes.
+	testHelperCommands[waitHelperCommand] = func(args []string) int { return runWait(args, os.Stdout, os.Stderr) }
+	testHelperCommands[sessionWaitHelperCommand] = func(args []string) int { return runSessionWait(args, os.Stdout, os.Stderr) }
 }

@@ -235,7 +235,8 @@ exec "${LEDGER_REAL_GIT:?}" "$@"
 			if writeErr := testexec.WriteFile(wrapper, []byte(wrapperSource), 0o755); writeErr != nil {
 				t.Fatal(writeErr)
 			}
-			cmd := exec.Command(binary, "wait", "--root", repo, "--goal", "goal-a", "--event", "human-act", "--verb", "deny", "--after", cursor, "--timeout", "30s", "--json")
+			markSyncedInstallation(t, repo)
+			cmd := exec.Command(binary, "work", "wait", "goal-a", "--repo", repo, "--for", "human-act", "--verb", "deny", "--since", cursor, "--timeout", "30s", "--json")
 			childEnvironment := environWithoutGitSteering()
 			pathValue := "PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH")
 			pathReplaced := false

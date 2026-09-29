@@ -63,7 +63,7 @@ func TestIntentGoalEventWait(t *testing.T) {
 	bed.lineage = "m1"
 	owners := bed.workOwners()
 	var waitArgs []string
-	owners.work.wait = func(args []string, print func(metarun.WaitResult, bool)) int {
+	owners.work.wait = func(args []string, print func(metarun.WaitResult, bool), _, _ io.Writer) int {
 		waitArgs = args
 		print(metarun.WaitResult{SchemaVersion: 2, WaitID: "wait-1", ExitCode: metarun.ExitGreen, SourceOutcome: "landed"}, true)
 		return metarun.ExitGreen
@@ -115,7 +115,7 @@ func TestIntentWaitObservers(t *testing.T) {
 	bed := newWorkBed(t)
 	owners := bed.workOwners()
 	var waitArgs []string
-	owners.work.wait = func(args []string, print func(metarun.WaitResult, bool)) int {
+	owners.work.wait = func(args []string, print func(metarun.WaitResult, bool), _, _ io.Writer) int {
 		waitArgs = args
 		print(metarun.WaitResult{SchemaVersion: 2, WaitID: "wait-9", ExitCode: metarun.ExitWaitDeadline, SourceOutcome: "wait-deadline"}, true)
 		return metarun.ExitWaitDeadline
@@ -262,7 +262,7 @@ func TestIntentProofReferenceFeedsWaitProof(t *testing.T) {
 		return []byte(`{"attemptId":"proof-20260926-a1","status":"running"}`), exit, nil
 	}
 	var waitArgs []string
-	owners.work.wait = func(args []string, print func(metarun.WaitResult, bool)) int {
+	owners.work.wait = func(args []string, print func(metarun.WaitResult, bool), _, _ io.Writer) int {
 		waitArgs = args
 		print(metarun.WaitResult{SchemaVersion: 2, ExitCode: metarun.ExitGreen, SourceOutcome: "green"}, true)
 		return metarun.ExitGreen
@@ -331,7 +331,7 @@ func TestIntentWaitJobKeepsTheSelectedOwner(t *testing.T) {
 	os.MkdirAll(jobs, 0o755)
 	os.WriteFile(filepath.Join(jobs, "pair-1.json"), []byte(`{"status":"running","job":"pair-1","role":"code-critic"}`), 0o644)
 	var dispatchWaits [][]string
-	owners.work.wait = func(args []string, print func(metarun.WaitResult, bool)) int {
+	owners.work.wait = func(args []string, print func(metarun.WaitResult, bool), _, _ io.Writer) int {
 		dispatchWaits = append(dispatchWaits, args)
 		print(metarun.WaitResult{SchemaVersion: 2, ExitCode: metarun.ExitGreen, SourceOutcome: "dispatch-completed"}, true)
 		return metarun.ExitGreen

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,7 +37,7 @@ func TestLandingOwnerComponentKeepsHeartbeatLoopOnSetupErrors(t *testing.T) {
 	if err := os.Mkdir(metasystemRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	release, pass, ok := setupLandingOwner(metasystemRoot, repo)
+	release, pass, ok := setupLandingOwner(t.Output(), metasystemRoot, repo)
 	if !ok {
 		t.Fatal("missing configuration stopped the component before its heartbeat loop")
 	}
@@ -391,7 +392,7 @@ func TestLandingOwnerComponentCadenceWiringBound(t *testing.T) {
 		ticks++
 		return errors.New("injected cadence failure")
 	}
-	batchOwnerCadenceReport = func(err error) {
+	batchOwnerCadenceReport = func(_ io.Writer, err error) {
 		if !strings.Contains(err.Error(), "injected cadence failure") {
 			t.Fatalf("cadence report=%v", err)
 		}
@@ -425,7 +426,7 @@ func TestLandingOwnerComponentReleaseJoinsCadenceTick(t *testing.T) {
 		afterRelease bool
 	}
 	reported := make(chan cadenceReport, 1)
-	batchOwnerCadenceReport = func(err error) {
+	batchOwnerCadenceReport = func(_ io.Writer, err error) {
 		reported <- cadenceReport{line: err.Error(), afterRelease: releaseReturned.Load()}
 	}
 
@@ -525,7 +526,7 @@ func TestLandingOwnerComponentReleaseLeavesNoCadenceChild(t *testing.T) {
 		close(tickDone)
 		return err
 	}
-	batchOwnerCadenceReport = func(error) {}
+	batchOwnerCadenceReport = func(io.Writer, error) {}
 
 	ownerFixture := newLandingOwnerOrdinaryCadenceFixture(t, "mac-cli")
 	pass, release, cadence := ownerFixture.pass, ownerFixture.release, ownerFixture.cadence
@@ -674,7 +675,7 @@ func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := runPassWithStore(root, identity.Ref{Pid: 71, StartedAtSec: 72}, concludingStore); err != nil {
+	if err := runPassWithStore(t.Output(), root, identity.Ref{Pid: 71, StartedAtSec: 72}, concludingStore); err != nil {
 		t.Fatal(err)
 	}
 	concluded, err := store.Read("governed-pass")
@@ -761,7 +762,7 @@ func TestLandingOwnerResolvesItsBatchRootFromTheCheckoutNotTheInstallation(t *te
 	// The steward launches every component with --repo naming the installation
 	// and --scope naming the toplevel; see supervise_owner.go where the owner
 	// passes its own three flags straight through to each component.
-	release, pass, ok := setupLandingOwner(installation, landingOwnerCheckoutRoot(installation, checkout))
+	release, pass, ok := setupLandingOwner(t.Output(), installation, landingOwnerCheckoutRoot(installation, checkout))
 	if !ok {
 		t.Fatal("landing owner setup stopped the component")
 	}

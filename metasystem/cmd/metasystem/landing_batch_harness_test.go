@@ -23,52 +23,53 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
-var landingBatchVerbs = map[string]func([]string) int{
+var landingBatchVerbs = map[string]command{
 	"join": runBatchJoin, "status": runBatchStatus,
 	"withdraw": runBatchWithdraw, "owner": runBatchOwner,
 	"tick": runBatchTick, "wait": runBatchWait,
 }
 
-func runLandingBatch(args []string) int {
+func runLandingBatch(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch <join|status|withdraw|owner|tick|wait>")
+		fmt.Fprintln(stderr, "usage: metasystem internal landing batch <join|status|withdraw|owner|tick|wait>")
 		return 2
 	}
 	run, ok := landingBatchVerbs[args[0]]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "metasystem internal landing batch: unknown verb %q\n", args[0])
+		fmt.Fprintf(stderr, "metasystem internal landing batch: unknown verb %q\n", args[0])
 		return 2
 	}
-	return run(args[1:])
+	return run(args[1:], stdout, stderr)
 }
 
-func runBatchJoin(args []string) int {
+func runBatchJoin(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("landing batch join", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	goalID := flags.String("goal", "", "claimed goal id")
 	chainID := flags.String("chain", "", "closed implementation chain root")
 	last := flags.Bool("last", false, "join the whole land-ready goal")
 	through := flags.String("through", "", "join through one land-ready goal commit")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *goalID == "" || ((*chainID != "") == (*last || *through != "")) || (*last && *through != "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch join --root ROOT --goal GOAL (--chain CHAIN | --last | --through COMMIT)")
+		fmt.Fprintln(stderr, "usage: metasystem internal landing batch join --root ROOT --goal GOAL (--chain CHAIN | --last | --through COMMIT)")
 		return 2
 	}
 	now, err := batchJoinClock(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	settings, err := config.ResolveBatchLanding(filepath.Join(*root, "metasystem.conf"), *root, func() time.Time { return now })
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	record, err := executeBatchJoin(batchJoinRequest{SeatRoot: *root, LandingRoot: settings.Root, GoalID: *goalID, ChainID: *chainID, Last: *last, Through: *through, At: now}, batchJoinDependenciesForCommand())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	printJSON(map[string]any{"batchId": record.BatchID, "goalId": *goalID, "state": batch.UnitJoined})
+	writeJSONLine(stdout, stderr, map[string]any{"batchId": record.BatchID, "goalId": *goalID, "state": batch.UnitJoined})
 	return 0
 }
 
@@ -100,17 +101,17 @@ func (source *batchOwnerSource) now(root string) (time.Time, error) {
 	return source.commandNow(root)
 }
 
-func loopBatchOwner(owner *batch.Owner, held batchOwnerLease, root string, clock func() time.Time, interval time.Duration, wake <-chan struct{}, stop <-chan struct{}) error {
-	return loopBatchOwnerWithCadence(owner, held, root, clock, interval, wake, stop, newBatchOwnerCadence())
+func loopBatchOwner(out io.Writer, owner *batch.Owner, held batchOwnerLease, root string, clock func() time.Time, interval time.Duration, wake <-chan struct{}, stop <-chan struct{}) error {
+	return loopBatchOwnerWithCadence(out, owner, held, root, clock, interval, wake, stop, newBatchOwnerCadence())
 }
 
-func loopBatchOwnerWithCadence(owner *batch.Owner, held batchOwnerLease, root string, clock func() time.Time, interval time.Duration, wake <-chan struct{}, stop <-chan struct{}, cadence *batchOwnerCadence) error {
+func loopBatchOwnerWithCadence(out io.Writer, owner *batch.Owner, held batchOwnerLease, root string, clock func() time.Time, interval time.Duration, wake <-chan struct{}, stop <-chan struct{}, cadence *batchOwnerCadence) error {
 	defer cadence.stop()
 	for {
 		if err := batchOwnerRequire(held); err != nil {
 			return err
 		}
-		runBatchOwnerPass(owner, held, root, clock, cadence)
+		runBatchOwnerPass(out, owner, held, root, clock, cadence)
 		// The harness's loop advances on events only: a wake, a completion
 		// or the stop; the interval's passing is never a test's clock (the
 		// production owner loop is the supervised component's).
@@ -126,6 +127,7 @@ func loopBatchOwnerWithCadence(owner *batch.Owner, held batchOwnerLease, root st
 
 func parseBatchOwnerWithSource(args []string, verb string, clock func() time.Time, source *batchOwnerSource) (config.BatchLanding, time.Duration, error) {
 	flags := flag.NewFlagSet("landing batch "+verb, flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")
 	maxWait := flags.Duration("max-wait", config.DefaultBatchMaxWait, "maximum wait for another unit")
@@ -163,92 +165,95 @@ func resolveBatchOwnerSettingsWithSource(seatRoot, landingRoot string, maxWait t
 	return config.ResolveBatchLanding(filepath.Join(seatRoot, "metasystem.conf"), seatRoot, now)
 }
 
-func runBatchOwner(args []string) (code int) {
-	return runBatchOwnerWithSource(args, nil)
+func runBatchOwner(args []string, stdout, stderr io.Writer) (code int) {
+	return runBatchOwnerWithSource(args, nil, stdout, stderr)
 }
 
-func runBatchOwnerWithSource(args []string, source *batchOwnerSource) (code int) {
+func runBatchOwnerWithSource(args []string, source *batchOwnerSource, stdout, stderr io.Writer) (code int) {
 	clock := cadenceProductionClock
 	settings, interval, err := parseBatchOwnerWithSource(args, "owner", clock, source)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 2
 	}
 	inputs, err := resolveProductionBatchOwnerInputsWithSource(settings.Root, source)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	inputs.log = stderr
 	held, err := batchOwnerAcquire(settings.Root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	defer func() {
 		if retireErr := held.retire(); retireErr != nil {
-			fmt.Fprintln(os.Stderr, retireErr)
+			fmt.Fprintln(stderr, retireErr)
 			code = 1
 		}
 	}()
 	owner, err := batchOwnerConstruct(settings, held, inputs, clock)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	if err := batchOwnerSweepSources(settings.Root); err != nil {
 		line, _ := json.Marshal(map[string]any{"component": "landing-owner", "sweep": "retained-sources", "error": err.Error()})
-		fmt.Fprintln(os.Stderr, string(line))
+		fmt.Fprintln(stderr, string(line))
 	}
 	wake, stop, cleanup := batchOwnerSignals()
 	defer cleanup()
-	if err := loopBatchOwner(owner, held, settings.Root, clock, interval, wake, stop); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if err := loopBatchOwner(stderr, owner, held, settings.Root, clock, interval, wake, stop); err != nil {
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func runBatchTick(args []string) (code int) {
-	return runBatchTickWithSource(args, nil)
+func runBatchTick(args []string, stdout, stderr io.Writer) (code int) {
+	return runBatchTickWithSource(args, nil, stdout, stderr)
 }
 
-func runBatchTickWithSource(args []string, source *batchOwnerSource) (code int) {
+func runBatchTickWithSource(args []string, source *batchOwnerSource, stdout, stderr io.Writer) (code int) {
 	flags := flag.NewFlagSet("landing batch tick", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")
 	maxWait := flags.Duration("max-wait", config.DefaultBatchMaxWait, "maximum wait for another unit")
 	id := flags.String("batch", "", "batch id")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch tick --root ROOT --batch ULID")
+		fmt.Fprintln(stderr, "usage: metasystem internal landing batch tick --root ROOT --batch ULID")
 		return 2
 	}
 	if err := source.validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	now, err := source.now(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	settings, err := resolveBatchOwnerSettingsWithSource(*root, *landingRoot, *maxWait, func() time.Time { return now }, source)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	inputs, err := resolveProductionBatchOwnerInputsWithSource(settings.Root, source)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	inputs.log = stderr
 	held, err := batchOwnerAcquire(settings.Root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	defer func() {
 		if retireErr := held.retire(); retireErr != nil {
-			fmt.Fprintln(os.Stderr, retireErr)
+			fmt.Fprintln(stderr, retireErr)
 			code = 1
 		}
 	}()
@@ -260,7 +265,7 @@ func runBatchTickWithSource(args []string, source *batchOwnerSource) (code int) 
 		err = batchOwnerTick(owner, *id)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	return 0
@@ -353,12 +358,13 @@ func classifyBatchCadenceStatus(status *goal.CadenceStatus, now time.Time) (batc
 	return view, nil
 }
 
-func runBatchStatus(args []string) int {
-	return runBatchStatusWithSource(args, nil, goal.ResolveEndpoint)
+func runBatchStatus(args []string, stdout, stderr io.Writer) int {
+	return runBatchStatusWithSource(args, nil, goal.ResolveEndpoint, stdout, stderr)
 }
 
-func runBatchStatusWithOutput(args []string, source *batchOwnerSource, resolveEndpoint func(string) (goal.Endpoint, error), output io.Writer) int {
+func runBatchStatusWithOutput(args []string, source *batchOwnerSource, resolveEndpoint func(string) (goal.Endpoint, error), stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("landing batch status", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")
 	maxWait := flags.Duration("max-wait", config.DefaultBatchMaxWait, "maximum wait for another unit")
@@ -366,12 +372,12 @@ func runBatchStatusWithOutput(args []string, source *batchOwnerSource, resolveEn
 	id := flags.String("batch", "", "batch id")
 	goalID := flags.String("goal", "", "goal id")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id != "" && *goalID != "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch status --root ROOT [--batch ID|--goal GOAL]")
+		fmt.Fprintln(stderr, "usage: metasystem internal landing batch status --root ROOT [--batch ID|--goal GOAL]")
 		return 2
 	}
 	settings, err := resolveBatchOwnerSettingsWithSource(*root, *landingRoot, *maxWait, batchWaitClock.Now, source)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	store := batch.NewStore(settings.Root, identity.KernelProber{})
@@ -386,17 +392,17 @@ func runBatchStatusWithOutput(args []string, source *batchOwnerSource, resolveEn
 		records, err = store.Records()
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	endpoint, err := resolveEndpoint(batch.ModuleRoot(settings.Root))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	cadence, err := batchCadenceStatusWithEndpoint(endpoint, batchStatusNow().UTC())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	views := make([]batchStatusView, 0, len(records))
@@ -405,22 +411,23 @@ func runBatchStatusWithOutput(args []string, source *batchOwnerSource, resolveEn
 	}
 	encoded, err := json.Marshal(batchStatusOutput{Cadence: cadence, Batches: views})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	if _, err := fmt.Fprintln(output, string(encoded)); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if _, err := fmt.Fprintln(stdout, string(encoded)); err != nil {
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func runBatchStatusWithSource(args []string, source *batchOwnerSource, resolveEndpoint func(string) (goal.Endpoint, error)) int {
-	return runBatchStatusWithOutput(args, source, resolveEndpoint, os.Stdout)
+func runBatchStatusWithSource(args []string, source *batchOwnerSource, resolveEndpoint func(string) (goal.Endpoint, error), stdout, stderr io.Writer) int {
+	return runBatchStatusWithOutput(args, source, resolveEndpoint, stdout, stderr)
 }
 
-func runBatchWait(args []string) int {
+func runBatchWait(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("landing batch wait", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")
 	maxWait := flags.Duration("max-wait", config.DefaultBatchMaxWait, "maximum wait for another unit")
@@ -429,29 +436,29 @@ func runBatchWait(args []string) int {
 	id := flags.String("batch", "", "batch id")
 	goalID := flags.String("goal", "", "goal id")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || (*id == "") == (*goalID == "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch wait --root ROOT (--batch ID|--goal GOAL) [--bound DURATION]")
+		fmt.Fprintln(stderr, "usage: metasystem internal landing batch wait --root ROOT (--batch ID|--goal GOAL) [--bound DURATION]")
 		return 2
 	}
 	settings, err := batchReadSettings(*root, *landingRoot, *maxWait)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	store := batch.NewStore(settings.Root, identity.KernelProber{})
 	if *id == "" {
 		record, findErr := batch.FindByGoal(store, *goalID)
 		if findErr != nil {
-			fmt.Fprintln(os.Stderr, findErr)
+			fmt.Fprintln(stderr, findErr)
 			return 1
 		}
 		*id = record.BatchID
 	}
 	record, err := batch.Wait(store, *id, *bound, batchWaitClock)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	printJSON(batchRecordStatus(record, settings, *lockDir))
+	writeJSONLine(stdout, stderr, batchRecordStatus(record, settings, *lockDir))
 	return 0
 }
 
@@ -499,29 +506,30 @@ func executeBatchWithdraw(request batchWithdrawRequest, dependencies batchWithdr
 	return record, nil
 }
 
-func runBatchWithdraw(args []string) int {
+func runBatchWithdraw(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("landing batch withdraw", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	goalID := flags.String("goal", "", "joined goal id")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *goalID == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch withdraw --root ROOT --goal GOAL")
+		fmt.Fprintln(stderr, "usage: metasystem internal landing batch withdraw --root ROOT --goal GOAL")
 		return 2
 	}
 	now, err := batchWithdrawClock(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	settings, err := config.ResolveBatchLanding(filepath.Join(*root, "metasystem.conf"), *root, func() time.Time { return now })
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	record, err := executeBatchWithdraw(batchWithdrawRequest{SeatRoot: *root, LandingRoot: settings.Root, GoalID: *goalID, At: now}, batchWithdrawDependenciesForCommand())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	printJSON(map[string]any{"batchId": record.BatchID, "goalId": *goalID, "state": batch.UnitReturnPending, "outcome": batch.UnitWithdrawn})
+	writeJSONLine(stdout, stderr, map[string]any{"batchId": record.BatchID, "goalId": *goalID, "state": batch.UnitReturnPending, "outcome": batch.UnitWithdrawn})
 	return 0
 }

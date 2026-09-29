@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -202,8 +203,8 @@ func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
 	extendArgs := []string{"--root", root, "--id", "standing-validation", "--revision", "2", "--proposed-cap", "1",
 		"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
-	extended, extendCode := captureStdout(t, func() int {
-		return goalExtendBudgetTo(extendArgs, repository.commandNow(now), inputs, reads, inputs.outStream(), inputs.errStream())
+	extended, extendCode := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return goalExtendBudgetTo(extendArgs, repository.commandNow(now), withStreams(inputs, stdout, stderr), reads, stdout, stderr)
 	})
 	if extendCode != 0 || !strings.Contains(extended, `"outcome":"confirmed"`) {
 		t.Fatalf("extend-budget command did not replay and apply the offer: code=%d output=%s", extendCode, extended)
@@ -224,8 +225,8 @@ func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.
 		"jobId": "spent-again", "operationId": "spent-again", "goalId": "standing-validation", "goalRevision": 2,
 		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:30:00Z", "endedAt": "2026-08-30T08:31:00Z",
 	})
-	second, secondCode := captureStderr(t, func() int {
-		return goalExtendBudgetTo(extendArgs, repository.commandNow(now), inputs, reads, inputs.outStream(), inputs.errStream())
+	second, secondCode := captureStderr(t, func(stdout, stderr io.Writer) int {
+		return goalExtendBudgetTo(extendArgs, repository.commandNow(now), withStreams(inputs, stdout, stderr), reads, stdout, stderr)
 	})
 	if secondCode != 1 || !strings.Contains(second, "extended once at 2026-08-30T09:00:00Z") {
 		t.Fatalf("second extend-budget command did not name its marker: code=%d output=%s", secondCode, second)
@@ -252,10 +253,10 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 				args[index+1] = "0"
 			}
 		}
-		output, code := captureStderr(t, func() int {
+		output, code := captureStderr(t, func(stdout, stderr io.Writer) int {
 			return func() int {
 				dependencies := repository.extendBudgetInputs(t)
-				return goalExtendBudgetTo(args, repository.commandNow(now), dependencies, repository.reads(), dependencies.outStream(), dependencies.errStream())
+				return goalExtendBudgetTo(args, repository.commandNow(now), withStreams(dependencies, stdout, stderr), repository.reads(), stdout, stderr)
 			}()
 		})
 		if code != 2 || !strings.Contains(output, "positive --proposed-cap") {
@@ -269,8 +270,8 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 			file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
 		})
 		inputs := repository.extendBudgetInputs(t)
-		output, code := captureStderr(t, func() int {
-			return goalExtendBudgetTo(baseArgs(root), repository.commandNow(now), inputs, repository.reads(), inputs.outStream(), inputs.errStream())
+		output, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+			return goalExtendBudgetTo(baseArgs(root), repository.commandNow(now), withStreams(inputs, stdout, stderr), repository.reads(), stdout, stderr)
 		})
 		if code != 1 || !strings.Contains(output, "is admitted; there is no budget refusal to extend") {
 			t.Fatalf("admitted seam refusal: code=%d output=%s", code, output)
@@ -295,8 +296,8 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 			"capMin": 1, "status": "running",
 		})
 		inputs := repository.extendBudgetInputs(t)
-		output, code := captureStderr(t, func() int {
-			return goalExtendBudgetTo(baseArgs(root), repository.commandNow(now), inputs, repository.reads(), inputs.outStream(), inputs.errStream())
+		output, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+			return goalExtendBudgetTo(baseArgs(root), repository.commandNow(now), withStreams(inputs, stdout, stderr), repository.reads(), stdout, stderr)
 		})
 		if code != 1 || !strings.Contains(output, "activeJobLimit") || !strings.Contains(output, "no consumption-earned budget extension offer") {
 			t.Fatalf("active-job seam refusal: code=%d output=%s", code, output)
@@ -311,8 +312,8 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 		})
 		inputs := repository.extendBudgetInputs(t)
-		output, code := captureStderr(t, func() int {
-			return goalExtendBudgetTo(baseArgs(root), repository.commandNow(now.Add(time.Hour)), inputs, repository.reads(), inputs.outStream(), inputs.errStream())
+		output, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+			return goalExtendBudgetTo(baseArgs(root), repository.commandNow(now.Add(time.Hour)), withStreams(inputs, stdout, stderr), repository.reads(), stdout, stderr)
 		})
 		if code != 1 || !strings.Contains(output, "names a live stop, not an extendable exhaustion") {
 			t.Fatalf("live-stop seam refusal: code=%d output=%s", code, output)
@@ -350,11 +351,13 @@ func writeTemp(t *testing.T, dir, name string, value any) string {
 	return path
 }
 
-// captureStdout runs fn with stdout redirected and returns what it printed.
-func captureStdout(t *testing.T, fn func() int) (string, int) {
+// captureStdout runs fn on streams of its own and returns what it printed
+// on its standard output; its standard error goes to the test's output.
+func captureStdout(t *testing.T, fn func(stdout, stderr io.Writer) int) (string, int) {
 	t.Helper()
-	code, stdout, _ := captureCommandOutput(t, true, false, fn)
-	return stdout, code
+	var stdout streamBuffer
+	code := fn(&stdout, t.Output())
+	return stdout.String(), code
 }
 
 func TestCommandTaggedProcessScannerHonorsEmptyConfiguredUniverse(t *testing.T) {
@@ -455,8 +458,11 @@ func TestDispatchCritiqueRegisterCloseKeepsRegisterlessCompatibility(t *testing.
 	}
 }
 
-func captureStderr(t *testing.T, fn func() int) (string, int) {
+// captureStderr runs fn on streams of its own and returns what it printed
+// on its standard error; its standard output goes to the test's output.
+func captureStderr(t *testing.T, fn func(stdout, stderr io.Writer) int) (string, int) {
 	t.Helper()
-	code, _, stderr := captureCommandOutput(t, false, true, fn)
-	return stderr, code
+	var stderr streamBuffer
+	code := fn(t.Output(), &stderr)
+	return stderr.String(), code
 }

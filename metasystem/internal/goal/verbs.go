@@ -1362,6 +1362,16 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 	}
 	args := map[string]string{"targetMachine": targetMachine, "targetLineage": targetLineage,
 		"targetClaimEpoch": strconv.FormatInt(targetClaimEpoch, 10), "batch": batch}
+	// The claim moves under the goal's claim lock on this host's board, so a
+	// peer message offered by the source either finished its emission first
+	// or reads the moved claim and offers nothing (batch-lane D14D-01).
+	if home, err := board.Home(); err == nil {
+		release, err := board.LockGoalHandover(home, id)
+		if err != nil {
+			return PublishResult{}, err
+		}
+		defer release()
+	}
 	return publishedCard(Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "handover", Targets: []string{id}, Args: claimIntentArgs(r, args)}, Message: "goal handover " + id,
