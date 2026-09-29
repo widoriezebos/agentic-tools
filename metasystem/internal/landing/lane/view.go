@@ -71,8 +71,20 @@ type BatchView struct {
 	State      string    `json:"state"`
 	Members    []Member  `json:"members"`
 	WaitingFor []Waiting `json:"waiting_for"`
-	Since      string    `json:"since"`
-	Reason     string    `json:"reason"`
+	// Returned are the changes that left the batch, with why: a change holds
+	// no goal whose Next could carry it, so its asker reads it here (U11b).
+	Returned []Returned `json:"returned"`
+	Since    string     `json:"since"`
+	Reason   string     `json:"reason"`
+}
+
+// Returned is one change that left a batch: its id, the asker's seat, the
+// outcome and the reason.
+type Returned struct {
+	Goal    string `json:"goal"`
+	Seat    string `json:"seat"`
+	Outcome string `json:"outcome"`
+	Reason  string `json:"reason"`
 }
 
 // NextView is the batch collecting behind the current one.
@@ -180,9 +192,14 @@ func readRecords(sources ViewSources, root string) ([]batch.Record, error) {
 	store := batch.NewStore(root, nil)
 	var records []batch.Record
 	for _, path := range paths {
-		if record, loadErr := store.Load(strings.TrimSuffix(filepath.Base(path), ".json")); loadErr == nil {
-			records = append(records, record)
+		id := strings.TrimSuffix(filepath.Base(path), ".json")
+		record, loadErr := store.Load(id)
+		if loadErr != nil {
+			// Fail closed: a record the lane cannot read is said, never shown
+			// as a lane with fewer batches or members.
+			return nil, fmt.Errorf("batch %s: %w", id, loadErr)
 		}
+		records = append(records, record)
 	}
 	return records, nil
 }
@@ -233,8 +250,25 @@ func members(record batch.Record) []Member {
 	return list
 }
 
+// returned lists the changes that left the batch, with their outcome and
+// reason (U11b); a goal's return is on the goal's own Next.
+func returned(record batch.Record) []Returned {
+	list := []Returned{}
+	for _, unit := range record.Units {
+		if !unit.IsChange() || unit.State == batch.UnitJoined || unit.State == batch.UnitJoining || unit.State == batch.UnitLanded {
+			continue
+		}
+		outcome := unit.Outcome
+		if outcome == "" {
+			outcome = unit.State
+		}
+		list = append(list, Returned{Goal: unit.GoalID, Seat: unit.Claim.Machine, Outcome: outcome, Reason: unit.Failure})
+	}
+	return list
+}
+
 func batchView(record batch.Record) *BatchView {
-	view := &BatchView{ID: record.BatchID, Members: members(record), WaitingFor: []Waiting{}, Since: stateSince(record)}
+	view := &BatchView{ID: record.BatchID, Members: members(record), WaitingFor: []Waiting{}, Returned: returned(record), Since: stateSince(record)}
 	switch record.State {
 	case batch.StateLanding:
 		view.State, view.Reason = BatchPushing, "the batch proved green and is being pushed to main"

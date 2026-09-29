@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
@@ -271,5 +272,17 @@ func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
 	if _, err := executeChangeJoin(changeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: bare, At: time.Unix(11, 0)}, dependencies); err == nil ||
 		!strings.Contains(err.Error(), "BATCH_CHANGE_UNREADABLE") || !strings.Contains(err.Error(), "commit boundary") {
 		t.Fatalf("a commit without a Machine trailer joined: %v", err)
+	}
+}
+
+// TestLandingStatusVerbosePrintsReturnedChanges (U11b): landing status
+// --verbose prints a change that left the current batch, its outcome, the
+// asker's seat and the reason, next to the members.
+func TestLandingStatusVerbosePrintsReturnedChanges(t *testing.T) {
+	view := lane.View{Batch: &lane.BatchView{ID: "b1", State: lane.BatchCollecting, Members: []lane.Member{{Goal: "change:abcdef012345", Seat: "m1e"}},
+		Returned: []lane.Returned{{Goal: "change:1234567890ab", Seat: "ui", Outcome: batch.UnitEjected, Reason: "EJECTED from landing batch b1: TestNotes failed"}}}}
+	lines := strings.Join(landingViewDetail(view), "\n")
+	if !strings.Contains(lines, "  member change:abcdef012345 from m1e") || !strings.Contains(lines, "  ejected change:1234567890ab from ui: EJECTED from landing batch b1: TestNotes failed") {
+		t.Fatalf("verbose status:\n%s", lines)
 	}
 }

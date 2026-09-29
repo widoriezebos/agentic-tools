@@ -216,6 +216,9 @@ func landingViewDetail(view lane.View) []string {
 		for _, waited := range view.Batch.WaitingFor {
 			lines = append(lines, "  waits for "+waited.Goal+" on "+waited.Seat+", expected "+local(waited.Expected))
 		}
+		for _, change := range view.Batch.Returned {
+			lines = append(lines, "  "+change.Outcome+" "+change.Goal+" from "+change.Seat+": "+change.Reason)
+		}
 	}
 	if view.Next != nil {
 		lines = append(lines, "next batch "+view.Next.ID+" collecting:")
