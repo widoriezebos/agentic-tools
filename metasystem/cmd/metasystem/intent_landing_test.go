@@ -268,3 +268,21 @@ func TestLandingSetMoveIsAPersonsAct(t *testing.T) {
 		t.Fatalf("registered by %q; want the proven person", record.RegisteredBy)
 	}
 }
+
+// F-5: a corrupt lane record is replaced by landing set.
+func TestLandingSetReplacesACorruptRecord(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	if err := os.MkdirAll(lane.HostDir(bed.home), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lane.RecordPath(bed.home), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 || !strings.Contains(stdout, "is now "+bed.landingA) {
+		t.Fatalf("set over a corrupt record = %d %q %q", code, stdout, stderr)
+	}
+	if record, ok, err := lane.Read(bed.home); err != nil || !ok || record.Root != bed.landingA {
+		t.Fatalf("record after set = %+v %v %v", record, ok, err)
+	}
+}

@@ -114,7 +114,8 @@ func landingIntentCommands() []intentCommand {
 		{
 			object: "landing", action: "restart", audience: "both", summary: "stop and start the landing lane's owner",
 			usage: []string{"metasystem landing restart [--by NAME]"},
-			details: []string{"landing stop, then landing start: the pause is taken and released, the restart count cleared, and an owner that is not running is started.",
+			details: []string{"Pauses the lane, ends the running owner by its recorded identity and starts a fresh one: the pause and the restart count are cleared.",
+				"The relaunched owner runs the engine this seat's supervision is pinned to; metasystem system restart moves the seat to a new engine.",
 				"Refused like landing stop while a batch is pushing."},
 			flags:    []intentFlag{byFlag},
 			maxArgs:  0,
@@ -133,8 +134,14 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 		return owners, "", lane.Record{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the landing lane cannot be read: this computer has no home for it: " + err.Error()}
 	}
 	record, ok, err := lane.Read(home)
+	if err != nil && !needLane {
+		// An unreadable record is status's to report and landing set's to
+		// replace (Register replaces it).
+		return owners, home, lane.Record{}, nil
+	}
 	if err != nil {
-		return owners, home, record, &intentResult{Outcome: intentFailed, code: 1, Summary: err.Error()}
+		return owners, home, record, &intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(),
+			next: inv.publicArgv("landing", "set", "PATH"), nextReason: "a person registers the lane again, which replaces the unreadable record"}
 	}
 	if needLane && !ok {
 		return owners, home, record, &intentResult{Outcome: intentRefused, code: 1,

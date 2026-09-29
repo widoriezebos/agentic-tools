@@ -52,8 +52,9 @@ type BoardSource struct {
 type boardPayload struct {
 	board.View
 	Lines []boardLine `json:"lines"`
-	// Lane is the host's landing lane, the view landing status renders.
-	Lane lane.View `json:"lane"`
+	// Lane is the host's landing lane, the view landing status renders;
+	// null when no lane is registered on this host.
+	Lane *lane.View `json:"lane"`
 }
 
 type boardLine struct {
@@ -75,9 +76,11 @@ func (h *handler) board(w http.ResponseWriter) {
 
 func (h *handler) boardView(source *BoardSource) boardPayload {
 	now := h.now()
-	laneView := lane.View{Owner: lane.OwnerView{State: lane.OwnerNotStarted}, Summary: "this engine was built without a landing lane reader"}
+	var laneView *lane.View
 	if source.Lane != nil {
-		laneView = source.Lane(now)
+		if read := source.Lane(now); read.Root != nil {
+			laneView = &read
+		}
 	}
 	view := board.View{Bridge: board.BridgeState(source.Home), Seats: []board.SeatView{}}
 	seats, err := source.Seats()

@@ -2,6 +2,7 @@ package lane
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -133,5 +134,42 @@ func TestViewPausedAndGivenUp(t *testing.T) {
 	if view.Owner.State != OwnerGivenUp || view.Owner.Restarts != 4 || view.Owner.LastExit == nil || *view.Owner.LastExit != "up refused" ||
 		view.Owner.RetryHint == nil || !strings.Contains(view.Summary, "metasystem landing start") {
 		t.Fatalf("given-up view = %+v %q", view.Owner, view.Summary)
+	}
+}
+
+// F-6: a batch waiting for the proving flock shows "waiting" throughout the
+// wait, joins included, until its state changes.
+func TestViewShowsTheProvingWaitAcrossJoins(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
+		t.Fatal(err)
+	}
+	at := laneNow.Format(time.RFC3339Nano)
+	waiting := batch.Record{BatchID: "b2", State: batch.StateOpen, Units: []batch.Unit{joinedUnit("g3", "m1e"), joinedUnit("g4", "ui")},
+		History: []batch.HistoryEntry{
+			{At: at, Verb: batch.ProvingWaitVerb, From: batch.StateOpen, To: batch.StateOpen, Detail: "another batch proves on this host (pid 99); this batch starts when that proof ends"},
+			{At: at, Verb: "join", From: batch.StateOpen, To: batch.StateOpen, Detail: "g4 joined"},
+		}}
+	view := BuildView(viewSources(home, true, []batch.Record{waiting}))
+	if view.Batch == nil || view.Batch.State != BatchWaiting || !strings.Contains(view.Batch.Reason, "pid 99") {
+		t.Fatalf("a join ended the shown wait: %+v", view.Batch)
+	}
+}
+
+// F-4: a registered lane whose checkout is gone tells the page the command
+// that fixes it.
+func TestViewOfAGoneLaneNamesTheFix(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	view := BuildView(viewSources(home, false, nil))
+	if view.Root == nil || view.Owner.RetryHint == nil || !strings.Contains(*view.Owner.RetryHint, "metasystem landing set PATH") || !strings.Contains(view.Summary, "no longer exists") {
+		t.Fatalf("gone lane view = %+v %q", view.Owner, view.Summary)
 	}
 }

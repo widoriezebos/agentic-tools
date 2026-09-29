@@ -113,6 +113,7 @@ func BuildView(sources ViewSources) View {
 	if gone(record.Root) {
 		refusal := goneRefusal(record)
 		view.Summary = refusal.Message + "; " + refusal.Fix
+		view.Owner.RetryHint = text(refusal.Fix)
 		return view
 	}
 	view.Owner = ownerView(sources, record.Root)
@@ -257,18 +258,11 @@ func batchView(record batch.Record) *BatchView {
 				view.WaitingFor = append(view.WaitingFor, Waiting{Goal: waited.Goal, Seat: waited.Seat, Expected: expected})
 			}
 		}
-		if last := lastEntry(record); last.Verb == batch.ProvingWaitVerb {
-			view.State, view.Reason = BatchWaiting, last.Detail
+		if wait, waiting := batch.ProvingWait(record); waiting {
+			view.State, view.Reason = BatchWaiting, wait.Detail
 		}
 	}
 	return view
-}
-
-func lastEntry(record batch.Record) batch.HistoryEntry {
-	if len(record.History) == 0 {
-		return batch.HistoryEntry{}
-	}
-	return record.History[len(record.History)-1]
 }
 
 // stateSince is when the batch entered its state: the last history entry

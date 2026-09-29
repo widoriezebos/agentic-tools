@@ -141,33 +141,35 @@ func TestRegisterMovesUnchangedAndRefuses(t *testing.T) {
 	}
 }
 
-// One batch proves at a time on the host: the proving flock is exclusive,
-// even between two takes in one process, and names its holder.
-func TestProvingLockIsExclusiveAndNamesHolder(t *testing.T) {
+// One batch proves at a time on the host: a proof child holds the proving
+// flock for its life; a probe sees it busy and names the holder, and takes
+// nothing itself.
+func TestProvingLockIsHeldByTheProofAndProbedByTheOwner(t *testing.T) {
 	t.Parallel()
 	home, _, _ := laneDirs(t)
-	release, holder, err := TryProving(home)
-	if err != nil || release == nil || holder != "" {
-		t.Fatalf("first take = %v %q %v", release != nil, holder, err)
+	if holder, busy, err := ProbeProving(home); err != nil || busy || holder != "" {
+		t.Fatalf("free lock probe = %q %v %v", holder, busy, err)
 	}
-	again, holder, err := TryProving(home)
-	if err != nil || again != nil || holder != "pid "+itoa(os.Getpid()) {
-		t.Fatalf("second take = %v %q %v; want busy naming this pid", again != nil, holder, err)
+	if holder, busy, err := ProbeProving(home); err != nil || busy {
+		t.Fatalf("a probe kept the lock: %q %v %v", holder, busy, err)
+	}
+	release, err := HoldProving(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if holder, busy, err := ProbeProving(home); err != nil || !busy || holder != "pid "+itoa(os.Getpid()) {
+		t.Fatalf("held lock probe = %q %v %v; want busy naming this pid", holder, busy, err)
 	}
 	if err := release(); err != nil {
 		t.Fatal(err)
 	}
-	third, _, err := TryProving(home)
-	if err != nil || third == nil {
-		t.Fatalf("take after release = %v", err)
+	if _, busy, _ := ProbeProving(home); busy {
+		t.Fatalf("the lock stayed held after its release")
 	}
-	_ = third()
 }
 
-// The kernel releases the proving flock when its holder dies.
-func TestProvingLockReleasedWhenHolderDies(t *testing.T) {
-	t.Parallel()
-	home, _, _ := laneDirs(t)
+func startProvingHolder(t *testing.T, home string) *exec.Cmd {
+	t.Helper()
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -181,25 +183,62 @@ func TestProvingLockReleasedWhenHolderDies(t *testing.T) {
 	if err := child.Start(); err != nil {
 		t.Fatal(err)
 	}
-	pid := child.Process.Pid
 	line, err := bufio.NewReader(stdout).ReadString('\n')
 	if err != nil || strings.TrimSpace(line) != "held" {
 		_ = child.Process.Kill()
 		_ = child.Wait()
 		t.Fatalf("holder said %q, %v", line, err)
 	}
-	if release, holder, err := TryProving(home); err != nil || release != nil || holder != "pid "+itoa(pid) {
+	return child
+}
+
+// A proof child killed mid-proof releases the lock: the kernel drops the
+// flock with the process.
+func TestProvingLockReleasedWhenHolderDies(t *testing.T) {
+	t.Parallel()
+	home, _, _ := laneDirs(t)
+	child := startProvingHolder(t, home)
+	pid := child.Process.Pid
+	if holder, busy, err := ProbeProving(home); err != nil || !busy || holder != "pid "+itoa(pid) {
 		_ = child.Process.Kill()
 		_ = child.Wait()
-		t.Fatalf("while held: %v %q %v; want busy naming pid %d", release != nil, holder, err, pid)
+		t.Fatalf("while held: %q %v %v; want busy naming pid %d", holder, busy, err, pid)
 	}
 	if err := child.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
 	_ = child.Wait()
-	release, _, err := TryProving(home)
-	if err != nil || release == nil {
-		t.Fatalf("after the holder died: %v; want the lock free", err)
+	if _, busy, err := ProbeProving(home); err != nil || busy {
+		t.Fatalf("after the holder died: busy=%v %v; want the lock free", busy, err)
 	}
-	_ = release()
+}
+
+// F-1: the lock belongs to the proof, not to its lane's owner: pausing the
+// lane and moving it elsewhere leave the running proof holding it, and the
+// new lane can prove the moment that proof ends.
+func TestProvingLockOutlivesAPauseAndAMoveUntilTheProofEnds(t *testing.T) {
+	t.Parallel()
+	home, first, second := laneDirs(t)
+	if _, _, err := Register(home, first, "Wido", laneNow); err != nil {
+		t.Fatal(err)
+	}
+	child := startProvingHolder(t, home)
+	if _, err := SetPause(home, "Wido", laneNow); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Register(home, second, "Wido", laneNow); err != nil {
+		t.Fatal(err)
+	}
+	if _, busy, _ := ProbeProving(home); !busy {
+		_ = child.Process.Kill()
+		_ = child.Wait()
+		t.Fatalf("the moved lane's proof lost the lock while it runs")
+	}
+	if err := child.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = child.Wait()
+	if _, busy, _ := ProbeProving(home); busy {
+		t.Fatalf("the new lane cannot prove after the old proof ended")
+	}
 }

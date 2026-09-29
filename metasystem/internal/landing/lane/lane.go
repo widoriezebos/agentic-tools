@@ -224,29 +224,49 @@ func removeIfPresent(path string) error {
 	return nil
 }
 
-// TryProving takes the host's proving flock without waiting. It returns the
-// release when taken; when another holds it, a nil release and the holder
-// ("pid N"). The kernel releases the flock when its holder dies.
-func TryProving(home string) (release func() error, holder string, err error) {
+// HoldProving takes the host's proving flock for the life of the calling
+// process, waiting while another proof holds it: the process that runs a
+// batch's proof or diagnostic holds it, never the owner that launched it, so
+// an owner's pause, restart or lane move cannot strand it. The kernel
+// releases it when the process ends; release gives it back sooner.
+func HoldProving(home string) (release func() error, err error) {
 	if home == "" || !filepath.IsAbs(home) {
-		return nil, "", fmt.Errorf("the proving lock needs an absolute home, got %q", home)
+		return nil, fmt.Errorf("the proving lock needs an absolute home, got %q", home)
 	}
 	if err := os.MkdirAll(HostDir(home), 0o700); err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	held, err := lock.File(ProvingPath(home), 0o600, lock.TryExclusive)
+	held, err := lock.File(ProvingPath(home), 0o600, lock.Exclusive)
 	if err != nil {
-		if lock.Busy(err) {
-			return nil, ProvingHolder(home), nil
-		}
-		return nil, "", err
+		return nil, err
 	}
 	// The holder's pid, written into the lock file it keeps open: the file
 	// is never removed, so its inode stays the same across holders.
 	if file := held.File(); file.Truncate(0) == nil {
 		_, _ = file.WriteAt([]byte(strconv.Itoa(os.Getpid())+"\n"), 0)
 	}
-	return held.Release, "", nil
+	return held.Release, nil
+}
+
+// ProbeProving tests the host's proving flock without keeping it: busy names
+// the proof that holds it ("pid N"). The owner probes before it starts a
+// batch, so a batch keeps collecting while another proves; a probe that
+// races a start only makes the second proof wait for the first.
+func ProbeProving(home string) (holder string, busy bool, err error) {
+	if home == "" || !filepath.IsAbs(home) {
+		return "", false, fmt.Errorf("the proving lock needs an absolute home, got %q", home)
+	}
+	if err := os.MkdirAll(HostDir(home), 0o700); err != nil {
+		return "", false, err
+	}
+	held, err := lock.File(ProvingPath(home), 0o600, lock.TryExclusive)
+	if err != nil {
+		if lock.Busy(err) {
+			return ProvingHolder(home), true, nil
+		}
+		return "", false, err
+	}
+	return "", false, held.Release()
 }
 
 // ProvingHolder names the proving flock's last holder from the pid it wrote.

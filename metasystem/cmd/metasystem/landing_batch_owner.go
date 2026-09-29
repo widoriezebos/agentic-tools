@@ -137,6 +137,9 @@ func batchOwnerLaunchCommand(binary, repositoryRoot string) *exec.Cmd {
 }
 
 func ensureBatchOwner(root string) error {
+	if err := landingCheckoutPresent(root); err != nil {
+		return err
+	}
 	lockPath := filepath.Join(root, "artifacts", "agents", "locks", "landing-owner.ensure.lock")
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		return err

@@ -11,7 +11,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -144,14 +146,65 @@ func landingOwnerLaneRoot(home func() (string, error), metasystemRoot, repo stri
 	return found.Root, paused, nil
 }
 
-// landingLaneProving is the owner's proving seam: nil when this host keeps
-// no lane home, so nothing is gated.
-func landingLaneProving(home func() (string, error)) func() (func() error, string, error) {
+// landingCheckoutPresent refuses a landing checkout that is gone: its owner
+// is never started there and its directories are never created again.
+func landingCheckoutPresent(root string) error {
+	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+		return &lane.Refusal{Code: lane.CodeGone,
+			Message: fmt.Sprintf("the landing checkout %s no longer exists; its owner was not started and nothing was created there", root),
+			Fix:     "restore that checkout, or a person registers the lane that replaces it: metasystem landing set PATH"}
+	}
+	return nil
+}
+
+// landingLaneProving is the owner's probe of the proving flock: nil when
+// this host keeps no lane home, so nothing is gated.
+func landingLaneProving(home func() (string, error)) func() (string, bool, error) {
 	laneHome, err := home()
 	if err != nil {
 		return nil
 	}
-	return func() (func() error, string, error) { return lane.TryProving(laneHome) }
+	return func() (string, bool, error) { return lane.ProbeProving(laneHome) }
+}
+
+// holdHostProvingFlag asks an internal test run to hold the host's proving
+// flock for its whole life (U12).
+const holdHostProvingFlag = "--hold-host-proving"
+
+// batchProofCommand is the one launcher of a batch's proof children: the tip
+// proof, the red diagnosis and the held-trunk-red clearing. The child holds
+// the host's proving flock for its life, waiting while another proof holds
+// it, and the kernel releases it when the child ends, so one proof runs at a
+// time on the host whatever happens to the owner that launched it.
+func batchProofCommand(binary string, args []string, spare bool) *exec.Cmd {
+	argv := slices.Clone(args)
+	// spare: the early proof alone launches without the lock, because
+	// speculative work on spare capacity must never delay a real proof.
+	if !spare {
+		argv = append(argv, holdHostProvingFlag)
+	}
+	return exec.Command(binary, argv...)
+}
+
+// holdHostProvingFor is internal test run's side of the launcher: with the
+// flag it takes the proving flock (waiting while another proof holds it) and
+// returns the arguments without the flag; without a lane home it holds
+// nothing.
+func holdHostProvingFor(home func() (string, error), args []string) ([]string, func() error, error) {
+	rest := slices.DeleteFunc(slices.Clone(args), func(arg string) bool { return arg == holdHostProvingFlag })
+	nothing := func() error { return nil }
+	if len(rest) == len(args) {
+		return rest, nothing, nil
+	}
+	laneHome, err := home()
+	if err != nil {
+		return rest, nothing, nil
+	}
+	release, err := lane.HoldProving(laneHome)
+	if err != nil {
+		return rest, nothing, fmt.Errorf("the host's proving lock could not be taken: %w", err)
+	}
+	return rest, release, nil
 }
 
 // landingLaneKeeper is the steward's keeper step: nil without a lane home.

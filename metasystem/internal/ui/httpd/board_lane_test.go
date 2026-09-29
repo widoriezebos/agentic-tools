@@ -32,6 +32,7 @@ func TestBoardCarriesTheLandingLane(t *testing.T) {
 	testutil.Require(t, "decode", json.Unmarshal(request(t, served, http.MethodGet, boardPath, "127.0.0.1:7878", nil).Body.Bytes(), &payload), nil)
 	var got lane.View
 	testutil.Require(t, "lane", json.Unmarshal(payload["lane"], &got), nil)
+	testutil.Expect(t, "a registered lane is an object", string(payload["lane"]) != "null", true)
 	testutil.Expect(t, "lane summary", got.Summary, "landing lane /lanes/landing: owner running")
 	testutil.Expect(t, "lane read once per request", reads, 1)
 
@@ -39,8 +40,14 @@ func TestBoardCarriesTheLandingLane(t *testing.T) {
 		Board: &BoardSource{Home: home, Seats: seats, Prober: boardProber{}, Stall: 20 * time.Minute}}, loopback(), testBundle())
 	payload = nil
 	testutil.Require(t, "decode bare", json.Unmarshal(request(t, bare, http.MethodGet, boardPath, "127.0.0.1:7878", nil).Body.Bytes(), &payload), nil)
-	var none lane.View
-	testutil.Require(t, "bare lane", json.Unmarshal(payload["lane"], &none), nil)
-	testutil.Expect(t, "no lane reader: no root", none.Root == nil, true)
-	testutil.Expect(t, "no lane reader: owner state", none.Owner.State, lane.OwnerNotStarted)
+	testutil.Expect(t, "no lane reader: lane is null", string(payload["lane"]), "null")
+
+	unregistered := New(Info{Observe: silentHolder, Now: func() time.Time { return fleetNow },
+		Board: &BoardSource{Home: home, Seats: seats, Prober: boardProber{}, Stall: 20 * time.Minute,
+			Lane: func(time.Time) lane.View {
+				return lane.View{Owner: lane.OwnerView{State: lane.OwnerNotStarted}, Summary: "no landing lane is registered"}
+			}}}, loopback(), testBundle())
+	payload = nil
+	testutil.Require(t, "decode unregistered", json.Unmarshal(request(t, unregistered, http.MethodGet, boardPath, "127.0.0.1:7878", nil).Body.Bytes(), &payload), nil)
+	testutil.Expect(t, "no lane registered: lane is null", string(payload["lane"]), "null")
 }

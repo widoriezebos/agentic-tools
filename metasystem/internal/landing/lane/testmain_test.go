@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
@@ -21,13 +22,20 @@ func TestMain(m *testing.M) {
 }
 
 func runProvingHolder(home string) int {
-	release, holder, err := TryProving(home)
-	if err != nil || release == nil {
-		fmt.Println("busy", holder, err)
+	release, err := HoldProving(home)
+	if err != nil {
+		fmt.Println("not held", err)
 		return 1
 	}
+	// The release stays referenced: a collected lock file would close and
+	// drop the flock.
+	defer release()
 	fmt.Println("held")
-	select {}
+	for {
+		// A sleeping loop, not an empty select: the runtime ends a process
+		// whose goroutines all block forever.
+		time.Sleep(time.Hour)
+	}
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }

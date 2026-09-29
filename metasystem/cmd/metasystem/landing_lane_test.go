@@ -2,8 +2,10 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -201,5 +203,68 @@ func TestHelmHeldBatchesReadsTheHostLaneForAnUnsetSeat(t *testing.T) {
 	})
 	if err != nil || len(held) != 1 || held[0] != "b1 (proving)" {
 		t.Fatalf("unset seat's held batches = %v %v; want b1 from the host lane", held, err)
+	}
+}
+
+// The one launcher of a batch's proof and diagnostic children asks each
+// child to hold the host's proving flock for its life; only a spare launch
+// (the early proof) goes without it.
+func TestBatchProofLauncherAsksTheChildToHoldTheProvingLock(t *testing.T) {
+	t.Parallel()
+	args := []string{"internal", "test", "run", "--root", "/r"}
+	held := batchProofCommand("/bin/metasystem", args, false)
+	if !slices.Contains(held.Args, holdHostProvingFlag) {
+		t.Fatalf("a proof child launched without the proving lock: %v", held.Args)
+	}
+	spare := batchProofCommand("/bin/metasystem", args, true)
+	if slices.Contains(spare.Args, holdHostProvingFlag) {
+		t.Fatalf("a spare launch holds the proving lock: %v", spare.Args)
+	}
+	if len(args) != 5 {
+		t.Fatalf("the launcher changed its caller's arguments: %v", args)
+	}
+}
+
+// internal test run with the flag holds the host's proving flock until it
+// ends, waiting while another proof holds it; the flag never reaches the run.
+func TestTestRunHoldsTheProvingLockForItsLife(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	homeOf := func() (string, error) { return home, nil }
+	rest, release, err := holdHostProvingFor(homeOf, []string{"internal", "test", "run", holdHostProvingFlag, "--root", "/r"})
+	if err != nil || slices.Contains(rest, holdHostProvingFlag) || len(rest) != 5 {
+		t.Fatalf("hold = %v %v", rest, err)
+	}
+	if holder, busy, _ := lane.ProbeProving(home); !busy || holder != fmt.Sprintf("pid %d", os.Getpid()) {
+		t.Fatalf("while the run lives: busy=%v holder=%q", busy, holder)
+	}
+	if err := release(); err != nil {
+		t.Fatal(err)
+	}
+	if _, busy, _ := lane.ProbeProving(home); busy {
+		t.Fatalf("the lock outlived the run")
+	}
+	rest, release, err = holdHostProvingFor(homeOf, []string{"internal", "test", "run"})
+	if err != nil || len(rest) != 3 || release() != nil {
+		t.Fatalf("without the flag = %v %v", rest, err)
+	}
+	if _, busy, _ := lane.ProbeProving(home); busy {
+		t.Fatalf("a run without the flag took the lock")
+	}
+}
+
+// F-4: starting the owner of a landing checkout that is gone is refused
+// before anything is created or launched (ensureBatchOwner's first check;
+// the test never reaches a launch).
+func TestEnsureBatchOwnerRefusesAGoneLane(t *testing.T) {
+	t.Parallel()
+	gone := filepath.Join(t.TempDir(), "gone-landing")
+	err := landingCheckoutPresent(gone)
+	var refusal *lane.Refusal
+	if !errors.As(err, &refusal) || refusal.Code != lane.CodeGone || !strings.Contains(refusal.Fix, "metasystem landing set PATH") {
+		t.Fatalf("ensure a gone lane = %v", err)
+	}
+	if _, statErr := os.Stat(gone); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("the gone lane was recreated: %v", statErr)
 	}
 }

@@ -30,7 +30,7 @@ type ownerSeams struct {
 	probeRun            func(string, Record) (RunProbe, error)
 	runners             func(proofrun.LoadSample, proofrun.AdmissionCap) []RunnerCapacity
 	lock                func(string) *proofLock
-	proving             func() (func() error, string, error)
+	proving             func() (string, bool, error)
 	after               func(time.Duration) <-chan time.Time
 	report              func(string, error)
 	pipeline            PipelineSource
@@ -104,10 +104,10 @@ type OwnerOptions struct {
 	// BaseMove reads what moved main between two base trees; nil leaves a
 	// batch on the base it was sealed on until its landing decides.
 	BaseMove func(fromTree, toTree string) (BaseMove, error)
-	// Proving takes the host's proving flock without waiting (U12): its
-	// release, or nil and the holder when another batch proves; nil takes
-	// none.
-	Proving func() (release func() error, holder string, err error)
+	// Proving probes the host's proving flock (U12): busy, and the holder,
+	// while a proof child holds it. The owner never holds it; the child it
+	// launches does, for its life. nil probes nothing.
+	Proving func() (holder string, busy bool, err error)
 }
 
 type Owner struct {
@@ -235,15 +235,12 @@ func (owner *Owner) Tick(id string) error {
 			token = record.Proof.Token
 		}
 		// A diagnosis proves; a landing run pushes and never waits behind a proof.
-		var host func() error
 		if record.State == StateDiagnosing {
-			var waited bool
-			if host, waited, err = owner.takeProving(id, at); err != nil || waited {
+			if waited, err := owner.waitsForProving(id, at); err != nil || waited {
 				return errors.Join(err, lock.release())
 			}
 		}
 		owner.dispatch(lock, Dispatch{ID: id, Window: "resume", Token: token, Runner: "host"})
-		owner.inflight[id].host = host
 		return nil
 	}
 	if record.State == StateHeldTrunkRed && record.TrunkRed != nil && len(record.TrunkRed.Entries) == 0 {
@@ -262,6 +259,11 @@ func (owner *Owner) Tick(id string) error {
 	if record.State == StateHeldTrunkRed && record.TrunkRed != nil && len(record.TrunkRed.Entries) != 0 {
 		if tree == record.BaseTree || tree == record.TrunkRed.Red.BaseTree || tree == record.TrunkRed.CheckedTree {
 			return owner.release(id)
+		}
+		// The clearing diagnostic runs in this tick: it never starts beside
+		// another batch's proof.
+		if waited, err := owner.waitsForProving(id, at); err != nil || waited {
+			return errors.Join(err, owner.release(id))
 		}
 		baseCommit, err := owner.baseCommit(tree)
 		if err != nil {
@@ -303,16 +305,14 @@ func (owner *Owner) Tick(id string) error {
 	if !room {
 		return errors.Join(owner.recordCap(id, sample, admission, at), lock.release())
 	}
-	host, waited, err := owner.takeProving(id, at)
-	if err != nil || waited {
+	if waited, err := owner.waitsForProving(id, at); err != nil || waited {
 		return errors.Join(err, lock.release())
 	}
 	token, err := owner.mint()
 	if err != nil {
-		return errors.Join(err, lock.release(), releaseHost(host))
+		return errors.Join(err, lock.release())
 	}
 	owner.dispatch(lock, Dispatch{ID: id, Window: window, Token: token, Runner: runner, Sample: sample})
-	owner.inflight[id].host = host
 	return nil
 }
 

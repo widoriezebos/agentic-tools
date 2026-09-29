@@ -42,9 +42,6 @@ type proofRun struct {
 	started       time.Time
 	lock          *proofLock
 	attached      bool
-	// host releases the host's proving flock this run holds; nil when it
-	// holds none.
-	host func() error
 }
 
 // RunnerCapacity is one proof runner's own capacity: the CPUs it gives
@@ -167,7 +164,7 @@ func (owner *Owner) complete(done Completion) error {
 		return errors.Join(done.Err, fmt.Errorf("BATCH_PROOF_STALE_COMPLETION: batch %s has no run for this completion; discarded", done.ID))
 	}
 	delete(owner.inflight, done.ID)
-	return errors.Join(done.Err, owner.stampRunner(done.ID, done.Token, run.runner), run.lock.release(), releaseHost(run.host))
+	return errors.Join(done.Err, owner.stampRunner(done.ID, done.Token, run.runner), run.lock.release())
 }
 
 // stampRunner records on the batch's proof the runner that ran it, once,
@@ -210,7 +207,7 @@ func (owner *Owner) restart(id string) error {
 			return nil
 		}
 		delete(owner.inflight, id)
-		return errors.Join(run.lock.release(), releaseHost(run.host))
+		return run.lock.release()
 	}
 	probe, err := owner.probeRun(id, record)
 	if err != nil {
@@ -226,13 +223,7 @@ func (owner *Owner) restart(id string) error {
 		if polled, err := lock.poll(); err != nil || polled != lockAcquired {
 			return err
 		}
-		// A proof found running after a restart takes the host's proving
-		// flock when it is free; it runs on either way.
-		var host func() error
-		if owner.proving != nil {
-			host, _, _ = owner.proving()
-		}
-		owner.inflight[id] = &proofRun{token: token, runner: "host", started: at, lock: lock, attached: true, host: host}
+		owner.inflight[id] = &proofRun{token: token, runner: "host", started: at, lock: lock, attached: true}
 		return nil
 	case RunTerminal:
 		err = FinishProof(owner.store, id, owner.actor, token, probe.Result, probe.Err, at)
@@ -241,7 +232,7 @@ func (owner *Owner) restart(id string) error {
 	}
 	if run != nil {
 		delete(owner.inflight, id)
-		err = errors.Join(err, run.lock.release(), releaseHost(run.host))
+		err = errors.Join(err, run.lock.release())
 	}
 	return err
 }
