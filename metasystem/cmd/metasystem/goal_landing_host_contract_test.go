@@ -166,6 +166,9 @@ var retiredWithDeletedScript = map[string]string{
 	// the stopreport owner under their new names.
 	"wait-stop-standard/TestReportStopResponseResolvesUnderChangedWording": "TestStopResponseResolvesUnderChangedWording",
 	"wait-stop-standard/TestReportStopResponseRefusesAnUnreadableResponse": "TestStopResponseRefusesAnUnreadableResponse",
+	// C4: metasystem.conf holds overrides only, so no tracked file carries
+	// the launch keys; the launch defaults are rows of the compiled table.
+	"launch-standard/TestTrackedConfCarriesEveryLaunchKey": "TestLaunchDefaultsAreTheCompiledDefaults",
 }
 
 // providerTransitions names legacy groups whose command moved to a new
