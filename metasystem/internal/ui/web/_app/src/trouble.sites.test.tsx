@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import type { Backlog, Row } from "./backlog/api";
+import { LedgerStatement } from "./backlog/BacklogPane";
 import { EditSheet } from "./backlog/EditSheet";
 import { OpenSheet } from "./backlog/OpenSheet";
 import type { Proposal } from "./partner/api";
@@ -151,6 +152,28 @@ describe("a refusal the first build drew on its own", () => {
     };
     const markup = rendered(<ProposalCard id="t1" />, { proposals: cardsIn([{ turn: "t1", proposals: [proposal] }], {}, {}, []) });
     expect(markup).toContain("fleet-presence is not a goal the ledger carries");
+    expect(markup).toContain(ASK);
+  });
+});
+
+describe("the ledger that could not be read (Sol's re-read of SOL-S68-01)", () => {
+  function failed(over: Partial<Backlog["ledger"]>): Backlog {
+    const base = backlog();
+    return { ...base, ledger: { ...base.ledger, ...over } };
+  }
+
+  it("says each problem a ledger that does not validate carries as a trouble line", () => {
+    const markup = rendered(
+      <LedgerStatement backlog={failed({ state: "unreadable", problems: ["plans/goals/ui-1.md: no intent", "plans/goals/ui-2.md: no lane"] })} />,
+    );
+    expect(markup).toContain("plans/goals/ui-1.md: no intent");
+    expect(markup).toContain("plans/goals/ui-2.md: no lane");
+    expect(markup.split(ASK).length - 1).toBe(2);
+  });
+
+  it("says an accepted ref that cannot be read as a trouble line", () => {
+    const markup = rendered(<LedgerStatement backlog={failed({ state: "broken", message: "reference is not a commit" })} />);
+    expect(markup).toContain("reference is not a commit");
     expect(markup).toContain(ASK);
   });
 });

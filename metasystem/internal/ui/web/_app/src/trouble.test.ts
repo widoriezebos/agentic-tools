@@ -26,9 +26,12 @@ const COMPONENT = "shell/Trouble.tsx";
 /**
  * The shapes a trouble line used to be drawn in, one per site: a refusal, a
  * refuse and a refused line (Sol SOL-S68-01) as well as a problem, and a card's
- * refused state as much as a line of its own.
+ * refused state as much as a line of its own. A problem is refused in any
+ * shape, bare or prefixed, singular or plural, alone or leading a longer name:
+ * the ledger's list of problems was drawn as plain `ms-problems` (Sol's re-read).
  */
-const REFUSED = /ms-[a-z0-9-]*-(?:refusal|refused|refuse|problem)s?(?![a-z0-9-])|ms-partner-failed|ms-error-[a-z]/gu;
+const REFUSED =
+  /ms-[a-z0-9-]*-(?:refusal|refused|refuse)s?(?![a-z0-9-])|ms-(?:[a-z0-9-]*-)?problems?(?![a-z0-9])|ms-partner-failed|ms-error-[a-z]/gu;
 
 /** The sites this slice converted, by file, each of which renders `Trouble`. */
 const CONVERTED = [
