@@ -370,6 +370,33 @@ func ArmTemporaryWithLineage(repoRoot, binaryPath, humanWord, reviewBy, lineage 
 	return outcome.Message, err
 }
 
+// ArmSessionWithLineage arms under a signed-in browser session's verdict
+// (g1-s72 D2/D3): the caller has already bound the launch record's verdict
+// and classified itself. The generation is the human's own, permanently: no
+// word, no review date, the session named on the record. A live runner is
+// replaced, as on the temporary path, so a resume that must arm again after
+// the bytes changed does not leave the stale runner guarding.
+func ArmSessionWithLineage(repoRoot, binaryPath string, session EnrolledSession, lineage string) (string, error) {
+	outcome, err := armSessionWithDeps(repoRoot, binaryPath, session, lineage, defaultRearmResolverDeps())
+	return outcome.Message, err
+}
+
+func armSessionWithDeps(repoRoot, binaryPath string, session EnrolledSession, lineage string, deps rearmResolverDeps) (armOutcome, error) {
+	for _, field := range []struct{ name, value string }{{"provider", session.Provider}, {"human", session.Human}, {"reference", session.Reference}} {
+		if strings.TrimSpace(field.value) == "" {
+			return armOutcome{}, fmt.Errorf("human-session enrollment names no %s; nothing was armed", field.name)
+		}
+	}
+	decide := func(_ InstallIdentity, _ error, bytes enrolledBytes) (mintPlan, error) {
+		if bytes.Err != nil {
+			return mintPlan{}, bytes.Err
+		}
+		enrolled := session
+		return mintPlan{MintedBy: "human-session", EngineBuild: bytes.Stamp, Enrollment: EnrollmentHumanSession, Session: &enrolled}, nil
+	}
+	return armWithRearmDeps(repoRoot, binaryPath, true, false, false, lineage, decide, deps)
+}
+
 // ArmStage names the last enrollment transition that changed machine state.
 type ArmStage int
 
@@ -408,6 +435,7 @@ type mintPlan struct {
 	LandedCommit string
 	LandingRef   string
 	Enrollment   string
+	Session      *EnrolledSession
 }
 
 type armOutcome struct {
@@ -482,7 +510,7 @@ func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRo
 		return mintPlan{
 			MintedBy: "machine-rebuild", Word: prior.TemporaryHumanWord, ReviewBy: prior.ReviewBy,
 			Witnessed: witnessed, WitnessedAt: witnessedAt, EngineBuild: bytes.Stamp,
-			LandedCommit: landedCommit, LandingRef: landingRef, Enrollment: prior.Enrollment,
+			LandedCommit: landedCommit, LandingRef: landingRef, Enrollment: prior.Enrollment, Session: prior.Session,
 		}, nil
 	}
 	outcome, err := armWithRearmDeps(repoRoot, invokingBinary, true, true, false, "", decision, deps)
@@ -866,7 +894,7 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 		Enrollment:         plan.Enrollment,
 		TemporaryHumanWord: plan.Word, ReviewBy: plan.ReviewBy, MintedBy: plan.MintedBy,
 		HumanWitnessedGeneration: witnessed, HumanWitnessedAt: witnessedAt, EngineBuild: plan.EngineBuild,
-		LandedCommit: plan.LandedCommit, LandingRef: plan.LandingRef,
+		LandedCommit: plan.LandedCommit, LandingRef: plan.LandingRef, Session: plan.Session,
 	})
 	if err != nil {
 		return outcome, err
@@ -907,6 +935,10 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 	if replaceForHumanTerminalWitness {
 		outcome.Message = fmt.Sprintf("replaced live runner pid %d after the enrolled engine bytes changed; armed human-terminal generation %d with human witness %d (runner pid %d)%s",
 			outcome.StoppedRunnerPid, generation, witnessed, record.Pid, pending)
+		return outcome, nil
+	}
+	if plan.Session != nil {
+		outcome.Message = fmt.Sprintf("armed as %s from a signed-in browser session (runner pid %d)%s", plan.Session.Human, record.Pid, pending)
 		return outcome, nil
 	}
 	if plan.Word != "" {
@@ -1018,7 +1050,7 @@ func shortCommit(commit string) string {
 func EnrollmentProvenance(id InstallIdentity) string {
 	var result string
 	switch id.MintedBy {
-	case "human-terminal", "human-word":
+	case "human-terminal", "human-word", "human-session":
 		result = fmt.Sprintf("enrollment generation %d human-witnessed (engine %s)", id.Generation, id.EngineBuild)
 	case "machine-rebuild":
 		result = fmt.Sprintf("enrollment generation %d machine-minted (rebuild, engine %s, landed %s on %s)",
@@ -1030,6 +1062,9 @@ func EnrollmentProvenance(id InstallIdentity) string {
 		}
 	default:
 		result = fmt.Sprintf("enrollment generation %d LEGACY (minted before provenance stamping; no human witness recorded)", id.Generation)
+	}
+	if id.Session != nil {
+		result += fmt.Sprintf("; from a signed-in browser session of %s (session %s, launch %s)", id.Session.Human, id.Session.Reference, id.Session.Launch)
 	}
 	if id.TemporaryHumanWord != "" {
 		result += fmt.Sprintf("; TEMPORARY under a recorded remote human word, review by %s", id.ReviewBy)

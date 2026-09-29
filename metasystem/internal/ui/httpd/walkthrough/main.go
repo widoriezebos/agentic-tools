@@ -289,8 +289,8 @@ func run(ctx context.Context, args []string) error {
 		// already shows. What it proves in a browser is the sheet, its
 		// validation and the card — not the verb, which is the engine's own
 		// tests' to prove.
-		Launch: func(_ *session.Session, asked launch.Request) (launch.Record, error) {
-			return fixtureLaunchOf(asked, time.Now().UTC()), nil
+		Launch: func(signed *session.Session, asked launch.Request) (launch.Record, error) {
+			return fixtureLaunchOf(signed, asked, time.Now().UTC()), nil
 		},
 		// Discarding, invented: the mark is held in memory, so the card goes
 		// and stays gone for as long as this fixture runs.

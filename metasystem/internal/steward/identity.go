@@ -37,7 +37,21 @@ const (
 	EnrollmentHumanTerminal = "human-terminal"
 	EnrollmentTemporaryWord = "temporary-word"
 	EnrollmentFixture       = "fixture"
+	// EnrollmentHumanSession is a machine launched from the browser by a
+	// signed-in human (g1-s72): the session is the human's authority, as the
+	// terminal is.
+	EnrollmentHumanSession = "human-session"
 )
+
+// EnrolledSession names the signed-in browser session a human-session
+// enrollment was launched under (g1-s72 D3).
+type EnrolledSession struct {
+	Provider  string `json:"provider"`
+	Human     string `json:"human"`
+	Reference string `json:"reference"`
+	Launch    string `json:"launch"`
+	From      string `json:"from"`
+}
 
 // InstallIdentity is the minted record's content.
 type InstallIdentity struct {
@@ -76,6 +90,8 @@ type InstallIdentity struct {
 	// admitted the bytes. Human enrollments leave both empty.
 	LandedCommit string `json:"landedCommit,omitempty"`
 	LandingRef   string `json:"landingRef,omitempty"`
+	// Session is set only on a human-session enrollment (g1-s72 D3).
+	Session *EnrolledSession `json:"session,omitempty"`
 }
 
 func identityDurabilityPendingPath(path string) string { return path + ".durability-pending" }
@@ -153,7 +169,7 @@ func VerifyIdentity(path, wantRepoIdentity string) (InstallIdentity, error) {
 	switch id.Enrollment {
 	case "":
 		id.Enrollment = EnrollmentHumanTerminal
-	case EnrollmentHumanTerminal, EnrollmentTemporaryWord, EnrollmentFixture:
+	case EnrollmentHumanTerminal, EnrollmentTemporaryWord, EnrollmentFixture, EnrollmentHumanSession:
 	default:
 		return id, fmt.Errorf("steward identity carries unknown enrollment %q", id.Enrollment)
 	}

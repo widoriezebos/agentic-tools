@@ -33,7 +33,6 @@ function launch(over: Partial<Launch> = {}): Launch {
     startedAt: "2026-09-25T10:57:00Z",
     endedAt: null,
     outcome: "running",
-    reviewBy: "2026-10-02",
     created: { destination: true, nickname: false, evidenceRoot: true },
     steps: [
       { step: "clone", outcome: "done", at: "2026-09-25T10:57:10Z", words: "" },
@@ -105,11 +104,18 @@ describe("a launch that stopped", () => {
     expect(markup).toContain("go run ./cmd/devgate static");
   });
 
-  it("offers Retry, and asks for the authorization again", () => {
+  // g1-s72: signed in is enough, so Retry is one press with nothing to fill in.
+  it("offers Retry as one press, with nothing to fill in", () => {
     const markup = rendered(stopped);
-    expect(markup).toContain("Retry");
-    expect(markup).toContain("Your authorization, again");
-    expect(markup).toContain("The record never held your authorization");
+    const retry = /<button[^>]*>Retry<\/button>/u.exec(markup);
+    expect(retry).not.toBe(null);
+    expect(retry?.[0]).not.toContain("disabled");
+    const form = /<div class="ms-launch-retry">(.*)$/su.exec(markup)?.[1] ?? "";
+    expect(form).not.toBe("");
+    expect(form).not.toContain("<textarea");
+    expect(form).not.toContain("<input");
+    expect(markup).not.toContain("authorization");
+    expect(markup).not.toContain("Review by");
   });
 
   it("removes nothing, and names the clone while it is still on disk", () => {
@@ -166,7 +172,10 @@ describe("a machine that joined", () => {
   it("folds to one line once its row is in the table", () => {
     const markup = rendered(launch({ outcome: "done", endedAt: "2026-09-25T10:58:00Z" }), true);
     expect(markup).toContain("m1f joined 2 min ago");
-    expect(markup).toContain("temporary enrollment, review due");
+    // g1-s72: no review clause, and no claim about how it was enrolled.
+    expect(markup).toContain(">m1f joined 2 min ago</p>");
+    expect(markup).not.toContain("review due");
+    expect(markup).not.toContain("enroll");
     // The steps are the table row's business now, not the card's.
     expect(markup).not.toContain("ms-launch-steps");
     expect(markup).toContain(">Dismiss</button>");
@@ -180,4 +189,19 @@ describe("a machine that joined", () => {
     expect(markup).toContain("ms-launch-steps");
     expect(markup).not.toContain(">Dismiss</button>");
   });
+});
+
+// g1-s72 D5: no card, in any state, names a review or a temporary enrollment,
+// and none claims a session enrollment either: the card does not read one.
+describe("no card names a review", () => {
+  for (const outcome of ["starting", "running", "failed", "armed", "done"]) {
+    for (const joined of [false, true]) {
+      it(`${outcome}${joined ? ", joined" : ""}`, () => {
+        const markup = rendered(launch({ outcome, endedAt: "2026-09-25T10:58:00Z" }), joined);
+        expect(markup).not.toMatch(/review/iu);
+        expect(markup).not.toMatch(/temporary/iu);
+        expect(markup).not.toMatch(/signed-in browser session/iu);
+      });
+    }
+  }
 });

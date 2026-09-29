@@ -2,20 +2,13 @@ import { useRef, useState } from "react";
 
 import { discardLaunch, launchMachine, ResourceError, type Launch, type LaunchStep } from "./api";
 import {
-  clientToday,
-  earliestReviewBy,
   failedStep,
   foldedLine,
   healthCommand,
   IDLE_WARNING,
   launchHeadline,
   leftoverLine,
-  proposedReviewBy,
-  RETRY_ASKS_AGAIN,
-  reviewByRefusal,
-  reviewDay,
   stepTitle,
-  TEMPORARY_RULE,
 } from "./launching";
 import { Button, Hint } from "../shell/controls";
 import { useSession } from "../shell/identity";
@@ -131,9 +124,6 @@ function Full({
           Read its health: <span className="ms-mono">{healthCommand(record)}</span>
         </p>
       )}
-      {record.reviewBy !== "" && (
-        <p className="ms-launch-hint">Temporary enrollment, review due {reviewDay(record.reviewBy)}.</p>
-      )}
       {record.outcome !== "failed" && <Commands record={record} />}
       {stopped !== null && <Retry record={record} onStarted={onStarted} onDiscarded={onDiscarded} />}
     </section>
@@ -171,11 +161,12 @@ function Commands({ record }: { record: Launch }) {
 /**
  * Retry: this launch again, by its id.
  *
- * It asks for the word and the date again whenever the launch still has to
- * enroll, because the record never held them — that is what keeps an
- * authorization out of a file this page can read. Everything else the resume
- * verifies for itself: each done step's postcondition, and what this launch
- * created.
+ * One press, nothing to fill in: the signed-in session is the human's own
+ * enrollment (g1-s72), and the server re-stamps the record's enrollment under
+ * the session this press is made under. A launch recorded without one is
+ * refused by name at its arming step, and Discard launch beside this is the
+ * remedy it names. Everything else the resume verifies for itself: each done
+ * step's postcondition, and what this launch created.
  *
  * Beside it, quietly, Discard launch: for the human who will not retry. It
  * puts the card away and deletes nothing, which is why the clone's own line
@@ -190,9 +181,6 @@ function Retry({
   onStarted: (started: Launch) => void;
   onDiscarded: (discarded: Launch) => void;
 }) {
-  const now = useRef(new Date()).current;
-  const [word, setWord] = useState("");
-  const [reviewBy, setReviewBy] = useState(() => (record.reviewBy === "" ? proposedReviewBy(now) : record.reviewBy));
   const [sending, setSending] = useState(false);
   const [refusal, setRefusal] = useState("");
   // The code the retry was refused under, as the sheet carries its own.
@@ -201,14 +189,12 @@ function Retry({
   const discarding = useDiscard(record, onDiscarded);
   const leftover = leftoverLine(record);
   const retried = useRef(false);
-  const dateRefused = reviewByRefusal(reviewBy, now);
-  const blocked = word.trim() === "" || reviewBy.trim() === "" || dateRefused !== "";
 
   const send = () => {
     setSending(true);
     setRefusal("");
     setRefusalCode("");
-    launchMachine({ resume: record.launch, word, reviewBy, today: clientToday(new Date()) })
+    launchMachine({ resume: record.launch })
       .then((started) => {
         setSending(false);
         onStarted(started);
@@ -228,39 +214,12 @@ function Retry({
   return (
     <div className="ms-launch-retry">
       {leftover !== "" && <p className="ms-launch-hint">{leftover}</p>}
-      <div className="ms-launch-field">
-        <label htmlFor="ms-retry-word">Your authorization, again</label>
-        <textarea
-          id="ms-retry-word"
-          rows={2}
-          value={word}
-          onChange={(event) => {
-            setWord(event.target.value);
-          }}
-        />
-        <p className="ms-launch-hint">
-          {RETRY_ASKS_AGAIN} {TEMPORARY_RULE}
-        </p>
-      </div>
-      <div className="ms-launch-field">
-        <label htmlFor="ms-retry-review">Review by</label>
-        <input
-          id="ms-retry-review"
-          type="date"
-          min={earliestReviewBy(now)}
-          value={reviewBy}
-          onChange={(event) => {
-            setReviewBy(event.target.value);
-          }}
-        />
-        {dateRefused !== "" && <Trouble text={dateRefused} variant="small" />}
-      </div>
       {refusal !== "" && <Trouble text={refusal} code={refusalCode} variant="small" />}
       {discarding.refusal.text !== "" && (
         <Trouble text={discarding.refusal.text} code={discarding.refusal.code} variant="small" />
       )}
       <div className="ms-launch-actions">
-        <Button primary disabled={blocked || sending} onClick={send}>
+        <Button primary disabled={sending} onClick={send}>
           Retry
         </Button>
         <Button onClick={discarding.discard}>Discard launch</Button>
