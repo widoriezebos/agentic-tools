@@ -27,6 +27,9 @@ const (
 	reviewPrefix  = "/api/review/"
 	sourceSuffix  = "/source"
 	changesSuffix = "/changes"
+	// evidenceSuffix reads a review's evidence (g1-s71 D4): the listing, or
+	// with ?path= one file of it.
+	evidenceSuffix = "/evidence"
 	// partnerWalkPath asks one of the five walks in a review's conversation.
 	partnerWalkPath  = "/api/partner/sitting/walk"
 	routePartnerWalk = "partner-sitting-walk"
@@ -36,6 +39,10 @@ const (
 // the path before the read's own suffix, because a record's id is a path with
 // slashes in it.
 func (h *handler) reviewRead(w http.ResponseWriter, r *http.Request, rest string) {
+	if record, evidence := strings.CutSuffix(rest, evidenceSuffix); evidence && record != "" {
+		h.evidenceRead(w, r, record)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	record, source := strings.CutSuffix(rest, sourceSuffix)
 	changes := false
@@ -354,4 +361,96 @@ func keptAt(sitting partner.Sitting) string {
 		return ""
 	}
 	return sitting.Room.At
+}
+
+// evidenceRead answers the evidence read of one review (g1-s71 D4, §6): the
+// listing of what its record's Evidence path holds, or one file of it by its
+// evidence-relative path — an image as itself, text as its lines. A record a
+// sitting shapes has no evidence read: the Evidence path a review names is the
+// one the Behaves walk asks about.
+func (h *handler) evidenceRead(w http.ResponseWriter, r *http.Request, record string) {
+	w.Header().Set("Content-Type", "application/json")
+	if h.info.Review == nil || h.info.Document == nil {
+		writeFailure(w, "this engine was built without a review reader")
+		return
+	}
+	named, ok := h.evidenceOf(w, record)
+	if !ok {
+		return
+	}
+	var answer any
+	var err error
+	file := r.URL.Query().Get("path")
+	if !r.URL.Query().Has("path") {
+		answer, err = h.info.Review.EvidenceList(named)
+	} else {
+		var read review.EvidenceFile
+		read, err = h.info.Review.EvidenceFile(named, file)
+		if err == nil && read.Kind == review.EvidenceImage {
+			w.Header().Set("Content-Type", read.Type)
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			_, _ = w.Write(read.Body)
+			return
+		}
+		answer = read
+	}
+	if err != nil {
+		var refusal *review.Refusal
+		if errors.As(err, &refusal) {
+			w.WriteHeader(http.StatusBadRequest)
+			writeError(w, err.Error())
+			return
+		}
+		writeFailure(w, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(answer)
+}
+
+// evidenceOf is the Evidence path a review record's head names, answering the
+// refusal where the record is not there or is not a review's.
+func (h *handler) evidenceOf(w http.ResponseWriter, record string) (string, bool) {
+	_, kind, ok := h.reviewedOf(w, record)
+	if !ok {
+		return "", false
+	}
+	if kind != "review" {
+		w.WriteHeader(http.StatusBadRequest)
+		writeError(w, "a review's record names its evidence, and "+record+" is "+article(kind)+"'s")
+		return "", false
+	}
+	document, err := h.info.Document(record)
+	if err != nil {
+		writeFailure(w, err.Error())
+		return "", false
+	}
+	return review.EvidenceIn(document.Source), true
+}
+
+// evidenceFor is the listing the Behaves walk is handed (g1-s71 D4): what the
+// review's Evidence path holds, each entry as the Partner reads it, or the
+// words its read was refused with.
+func (h *handler) evidenceFor(source string) *partner.Evidence {
+	named := review.EvidenceIn(source)
+	listing, err := h.info.Review.EvidenceList(named)
+	if err != nil {
+		return &partner.Evidence{Path: named, Refusal: err.Error()}
+	}
+	entries := make([]string, 0, len(listing.Entries))
+	for _, entry := range listing.Entries {
+		entries = append(entries, entry.Path+" ("+entry.Kind+", "+sizeWords(entry.Size)+")")
+	}
+	return &partner.Evidence{Path: named, Entries: entries, Supplied: listing.Supplied, Total: listing.Total}
+}
+
+// sizeWords is a file's size as a person reads it.
+func sizeWords(size int64) string {
+	switch {
+	case size < 1024:
+		return strconv.FormatInt(size, 10) + " B"
+	case size < 1024*1024:
+		return strconv.FormatInt((size+512)/1024, 10) + " KB"
+	default:
+		return strconv.FormatFloat(float64(size)/(1024*1024), 'f', 1, 64) + " MB"
+	}
 }

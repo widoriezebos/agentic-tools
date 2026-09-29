@@ -41,7 +41,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -61,7 +63,19 @@ const SchemaVersion = 1
 const (
 	KindGoal   = "goal"
 	KindRecord = "record"
+	// KindSource and KindSection are a remark's (g1-s71 D1): lines of a file
+	// as a room's desk read them, at the commit it read them at, and a record's
+	// section. Each is named by its record, which is the sitting's.
+	KindSource  = "source"
+	KindSection = "section"
 )
+
+// MaxLines bounds the text of the lines a remark keeps: the desk's own four
+// hundred lines of ordinary code, and not a file.
+const MaxLines = 64 << 10
+
+// commitName is what a remark's commit may be: a commit id, whole or short.
+var commitName = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
 
 // The two bounds. They are here rather than in the route because they are
 // facts about the notepad and not about HTTP: the same bounds hold whoever
@@ -99,6 +113,17 @@ type Sticky struct {
 type About struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id"`
+	// A remark's subject (g1-s71 D1). Source names the record, the file, the
+	// lines, the commit the desk read them at — provenance only in a shaping
+	// room — and, in a shaping room, the text of the lines; Section names the
+	// record and the section. None of these is said about a goal or a record.
+	Record  string `json:"record,omitempty"`
+	Path    string `json:"path,omitempty"`
+	From    int    `json:"from,omitempty"`
+	To      int    `json:"to,omitempty"`
+	Commit  string `json:"commit,omitempty"`
+	Lines   string `json:"lines,omitempty"`
+	Section string `json:"section,omitempty"`
 }
 
 // Counts is what the header's badge and the panel's disclosure read.
@@ -344,16 +369,10 @@ func admissibleAbout(about []About) ([]About, *Refusal) {
 	named := make([]About, 0, len(about))
 	seen := map[About]bool{}
 	for _, one := range about {
-		kind := strings.TrimSpace(one.Kind)
-		id := strings.TrimSpace(one.ID)
-		if kind != KindGoal && kind != KindRecord {
-			return nil, refuse(RefusalBad,
-				"a sticky is about a goal or a record, not a "+quoteOrNothing(one.Kind))
+		one, refusal := admissibleOne(one)
+		if refusal != nil {
+			return nil, refusal
 		}
-		if id == "" {
-			return nil, refuse(RefusalBad, "a sticky about a "+kind+" says which one")
-		}
-		one = About{Kind: kind, ID: id}
 		// The same thing named twice is one chip, not two: a human who pressed
 		// the page's chip and then picked the same goal meant one of them.
 		if seen[one] {
@@ -363,6 +382,46 @@ func admissibleAbout(about []About) ([]About, *Refusal) {
 		named = append(named, one)
 	}
 	return named, nil
+}
+
+// admissibleOne is one about as it is kept, or why it may not be.
+func admissibleOne(one About) (About, *Refusal) {
+	kind := strings.TrimSpace(one.Kind)
+	switch kind {
+	case KindGoal, KindRecord:
+		id := strings.TrimSpace(one.ID)
+		if id == "" {
+			return About{}, refuse(RefusalBad, "a sticky about a "+kind+" says which one")
+		}
+		return About{Kind: kind, ID: id}, nil
+	case KindSource:
+		record, file := strings.TrimSpace(one.Record), strings.TrimSpace(one.Path)
+		if record == "" || file == "" {
+			return About{}, refuse(RefusalBad, "a remark on lines names the record and the file")
+		}
+		if one.From < 1 || one.To < one.From {
+			return About{}, refuse(RefusalBad, fmt.Sprintf(
+				"a remark is on a range of lines that runs forwards; line %d to line %d is not one", one.From, one.To))
+		}
+		commit := strings.TrimSpace(one.Commit)
+		if commit != "" && !commitName.MatchString(commit) {
+			return About{}, refuse(RefusalBad, strconv.Quote(commit)+" is not a commit a remark can name")
+		}
+		if len(one.Lines) > MaxLines {
+			return About{}, refuse(RefusalBounds, fmt.Sprintf(
+				"a remark keeps at most %d bytes of the lines it was made on", MaxLines))
+		}
+		return About{Kind: kind, ID: record, Record: record, Path: file, From: one.From, To: one.To,
+			Commit: commit, Lines: one.Lines}, nil
+	case KindSection:
+		record, section := strings.TrimSpace(one.Record), strings.TrimSpace(one.Section)
+		if record == "" || section == "" {
+			return About{}, refuse(RefusalBad, "a remark on a section names the record and the section")
+		}
+		return About{Kind: kind, ID: record, Record: record, Section: section}, nil
+	}
+	return About{}, refuse(RefusalBad,
+		"a sticky is about a goal, a record, lines of a file or a record's section, not a "+quoteOrNothing(one.Kind))
 }
 
 func quoteOrNothing(kind string) string {

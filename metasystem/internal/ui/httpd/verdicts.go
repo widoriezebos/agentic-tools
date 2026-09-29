@@ -216,6 +216,9 @@ func (h *handler) candidateFor(record, part string) *partner.Candidate {
 		return nil
 	}
 	candidate := &partner.Candidate{Reviewed: reviewed.Tip}
+	if h.info.Review != nil {
+		candidate.Evidence = h.evidenceFor(document.Source)
+	}
 	if h.info.Candidate != nil {
 		if run, err := h.info.Candidate(reviewed.Goal, "status"); err == nil && run.State == "running" && run.Address != "" {
 			candidate.Address, candidate.Running = run.Address, run.Commit

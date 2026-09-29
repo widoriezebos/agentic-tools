@@ -143,6 +143,40 @@ type Candidate struct {
 	Address  string
 	Running  string
 	Reviewed string
+	// Evidence is what the review's Evidence path holds (g1-s71 D4), or nil
+	// where nothing was read: the listing the Partner presents from.
+	Evidence *Evidence
+}
+
+// Evidence is the listing the Behaves walk is handed: the path the record
+// names, each entry as "path (kind, size)", bounded and saying the whole, or
+// the words a read of it was refused with.
+type Evidence struct {
+	Path     string
+	Entries  []string
+	Supplied int
+	Total    int
+	Refusal  string
+}
+
+// EvidenceNote is what the Behaves walk's request says about the evidence: what
+// is there, by the one path convention the present tool and the desk share, or
+// why there is nothing to present.
+func EvidenceNote(evidence Evidence) string {
+	if strings.TrimSpace(evidence.Refusal) != "" {
+		return "The evidence of this review could not be listed: " + evidence.Refusal + ". Say so, and present none."
+	}
+	if len(evidence.Entries) == 0 {
+		return "The evidence path " + evidence.Path + " holds no image or text; say that nothing is recorded there."
+	}
+	said := "The evidence recorded under " + evidence.Path + " holds these files"
+	if evidence.Supplied < evidence.Total {
+		said += fmt.Sprintf(", %d of %d listed", evidence.Supplied, evidence.Total)
+	}
+	said += ":\n- " + strings.Join(evidence.Entries, "\n- ") + "\n\n" +
+		"Present a file with the present tool with kind evidence and its path relative to the evidence, exactly " +
+		"as listed; present only what is listed."
+	return said
 }
 
 // CandidateNote is what the Behaves walk's request says about the candidate:
@@ -192,6 +226,9 @@ func (s *Service) WalkWith(ctx context.Context, human, record, part string, page
 	request := WalkRequest(part, *sitting)
 	if part == "behaves" && sitting.Purpose == PurposeReview && candidate != nil {
 		request += "\n\n" + CandidateNote(*candidate)
+		if candidate.Evidence != nil {
+			request += "\n\n" + EvidenceNote(*candidate.Evidence)
+		}
 	}
 	return s.submit(ctx, human, record, "", request, page, true)
 }
