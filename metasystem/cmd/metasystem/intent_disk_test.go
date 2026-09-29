@@ -442,3 +442,33 @@ func diskNamesCommand(expr ast.Expr) bool {
 	})
 	return found
 }
+
+// disk clean forgets the registrations of removed checkouts and says so; a
+// preview never forgets; a machine pass that acted on nothing because the
+// host settings are unknown is not told as "every store is kept".
+func TestDiskCleanSummaryTellsForgottenAndUnknown(t *testing.T) {
+	t.Parallel()
+	bed := newDiskBed(t)
+	var forget []bool
+	var result steward.DiskPassResult
+	bed.owners.disk.pass = func(_ context.Context, _ string, pass steward.DiskPass) (steward.DiskPassResult, error) {
+		forget = append(forget, pass.ForgetRemoved)
+		return result, nil
+	}
+	result.Forgotten = []string{"/private/var/folders/T/tmp.a/repo", "/private/var/folders/T/tmp.b/repo"}
+	code, out := bed.run("disk", "clean")
+	if code != 0 || !strings.Contains(out, "forgot 2 stale registrations of removed checkouts") {
+		t.Fatalf("disk clean = %d:\n%s", code, out)
+	}
+	if code, out := bed.run("disk", "clean", "--preview"); code != 0 || strings.Contains(out, "forgot") {
+		t.Fatalf("preview = %d:\n%s", code, out)
+	}
+	if !slices.Equal(forget, []bool{true, false}) {
+		t.Fatalf("ForgetRemoved per pass = %v; want disk clean true, preview false", forget)
+	}
+	result = steward.DiskPassResult{Machine: diskstore.Report{HostUnknown: []string{"host settings unknown: /m1b unreadable: denied; run metasystem settings check there"}}}
+	code, out = bed.run("disk", "clean")
+	if code != 0 || strings.Contains(out, "every store is kept") || !strings.Contains(out, "the machine pass acted on nothing: the host settings are unknown") {
+		t.Fatalf("an unknown host = %d:\n%s", code, out)
+	}
+}

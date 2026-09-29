@@ -42,6 +42,8 @@ type diskOwners struct {
 	// registry.
 	userCacheDir func() (string, error)
 	stateDir     string
+	// trimPass replaces one trim pass (fixtures); nil is the steward's.
+	trimPass steward.CacheTrimPass
 }
 
 func (o diskOwners) withDefaults() diskOwners {
@@ -93,7 +95,7 @@ func diskIntentCommands() []intentCommand {
 			object: "disk", action: "show", audience: "both", summary: "what MetaSystem keeps on this computer's disk, changing nothing",
 			usage: []string{"metasystem disk show"},
 			details: []string{
-				"Prints the last report of this checkout's pass and of the machine pass: free space per volume, each kind of store, what was released, what is kept or pending and the command that settles each, strays, and the evidence roots of this host.",
+				"Prints the last report of this checkout's pass and of the machine pass: free space per volume, each kind of store, what was released, what is kept or pending and the command that settles each, strays, the machine caches as the last trim pass left them, and the evidence roots of this host. A finding repeated for many paths is one line with its count and three of them.",
 				"The steward writes both reports every cycle; metasystem disk clean writes them now. This command only reads.",
 			},
 			flags:    []intentFlag{},
@@ -111,7 +113,8 @@ func diskIntentCommands() []intentCommand {
 				"metasystem disk clean --go-cache",
 			},
 			details: []string{
-				"Runs the steward's pass now for this checkout and this machine: a store goes only when its owner is proven ended and nothing still uses it; everything else is kept or pending with the command that settles it. Then it trims the machine's Go and staticcheck caches to their caps (disk.go-cache-cap-gib, disk.delegate-go-cache-cap-gib, disk.staticcheck-cache-cap-gib), least recently used first, never an entry used within disk.go-cache-keep-hours. A repeat with nothing to do is success.",
+				"Runs the steward's pass now for this checkout and this machine: a store goes only when its owner is proven ended and nothing still uses it; everything else is kept or pending with the command that settles it. Then it trims the machine's Go and staticcheck caches to their caps (disk.go-cache-cap-gib, disk.delegate-go-cache-cap-gib, disk.staticcheck-cache-cap-gib), least recently used first, never an entry used within disk.go-cache-keep-hours. Run at a terminal it finishes the job: pass after pass of the steward's disk.cache-trim-budget-sec, telling each on stderr, until every cache is measured and trimmed or disk.cache-trim-person-budget-sec is spent. A repeat with nothing to do is success.",
+				"It also forgets the host registry's registrations of checkouts whose directories no longer exist (one reaped record each, reason checkout-gone); a registration whose recorded process still runs is kept. The steward's own pass only counts them.",
 				"--go-cache runs only the cache trim.",
 				"--preview changes nothing and writes one plan file whose id it prints. --strays, --release and --discard are a person's acts at the enrolled terminal: --strays removes the engine-named leftovers a preview listed, --release ID removes one registered store whose only obstacle is a use check the machine could not complete, --discard records that a chain's uncaptured work may be dropped.",
 				"Nothing unregistered is ever removed by the pass itself; nothing a live process uses is removed by anyone.",
@@ -166,9 +169,39 @@ func runIntentDiskShow(inv *intentInvocation) int {
 			data[source.name] = report
 		}
 	}
+	cacheLines, caches := diskCacheLines(owners)
+	lines = append(lines, cacheLines...)
+	if caches != nil {
+		data["caches"] = caches
+	}
 	lines = append(lines, diskEvidenceRootLines(inv.layout.InstallationRoot, home)...)
 	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "what MetaSystem keeps on this computer's disk", text: lines, Data: data,
 		Targets: []intentTarget{{Kind: "checkout", ID: top}}})
+}
+
+// diskCacheLines are the machine caches as the last trim pass left them,
+// read from the trimmer's state and changing nothing.
+func diskCacheLines(owners diskOwners) ([]string, []gocache.TrimReport) {
+	stateDir := owners.stateDir
+	if stateDir == "" {
+		var err error
+		if stateDir, err = steward.CacheTrimStateDir(); err != nil {
+			return []string{"caches: the trimmer's state cannot be found: " + err.Error()}, nil
+		}
+	}
+	reports, err := gocache.LastTrimReports(stateDir)
+	switch {
+	case err != nil:
+		return []string{"caches: " + err.Error() + "; metasystem disk clean --go-cache writes fresh reports"}, nil
+	case len(reports) == 0:
+		return []string{"caches: no trim pass has run yet; metasystem disk clean --go-cache trims them now"}, nil
+	}
+	summary, _ := diskTrimSummary(reports)
+	lines := []string{"caches, as the last trim pass left them: " + summary}
+	for _, report := range reports {
+		lines = append(lines, "  "+diskTrimLine(report))
+	}
+	return lines, reports
 }
 
 // diskEvidenceRootLines names this checkout's evidence root and the other
@@ -234,9 +267,9 @@ func runIntentDiskClean(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
 			Summary: "--plan ID names the preview --strays acts on; alone it does nothing: metasystem disk clean --strays --plan ID; nothing was done"})
 	}
-	pass := steward.DiskPass{Mode: diskstore.ModeApply, Now: owners.now().UTC(), Clock: owners.now}
+	pass := steward.DiskPass{Mode: diskstore.ModeApply, Now: owners.now().UTC(), Clock: owners.now, ForgetRemoved: true}
 	if inv.input.switched("preview") {
-		pass.Mode = diskstore.ModePreview
+		pass.Mode, pass.ForgetRemoved = diskstore.ModePreview, false
 	}
 	if inv.input.has("floor") {
 		floor, err := strconv.ParseInt(inv.input.text("floor"), 10, 64)
@@ -277,19 +310,52 @@ func runIntentDiskClean(inv *intentInvocation) int {
 		trimProblem.Data = data
 		return inv.render(*trimProblem)
 	}
+	summary := diskCleanStoresSummary(result, released)
+	if len(result.Forgotten) > 0 {
+		data["forgotten"] = result.Forgotten
+		summary += fmt.Sprintf("; forgot %d stale %s of removed checkouts", len(result.Forgotten), diskPlural(len(result.Forgotten), "registration", "registrations"))
+	}
+	trimSummary, _ := diskTrimSummary(trimData)
+	summary += "; " + trimSummary
+	if released == 0 && trimmed == 0 && len(result.Forgotten) == 0 {
+		return inv.render(intentResult{Outcome: intentUnchanged, Summary: summary, text: lines, Data: data})
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: data})
+}
+
+// diskCleanStoresSummary tells what the passes did with the stores, never
+// more than they did: a pass whose settings are unknown acted on nothing,
+// and a machine pass another steward is running is not this one's.
+func diskCleanStoresSummary(result steward.DiskPassResult, released int) string {
 	summary := fmt.Sprintf("released %d store(s)", released)
 	if released == 0 {
 		summary = "nothing to release; every store is kept, pending or in use"
 	}
-	if trimmed > 0 {
-		summary += fmt.Sprintf("; trimmed %d cache entries", trimmed)
-	} else {
-		summary += "; the caches are within their caps"
+	var unknown []string
+	if len(result.Checkout.HostUnknown) > 0 {
+		unknown = append(unknown, "the checkout pass acted on nothing: this checkout's settings are unknown")
 	}
-	if released == 0 && trimmed == 0 {
-		return inv.render(intentResult{Outcome: intentUnchanged, Summary: summary, text: lines, Data: data})
+	if len(result.Machine.HostUnknown) > 0 {
+		unknown = append(unknown, "the machine pass acted on nothing: the host settings are unknown")
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: data})
+	if len(unknown) > 0 {
+		lead := fmt.Sprintf("released %d store(s); ", released)
+		if released == 0 {
+			lead = ""
+		}
+		return lead + strings.Join(unknown, "; ") + " (the lines below name why; metasystem settings check names the fix)"
+	}
+	if result.Machine.Running {
+		summary += "; the machine pass is running in another steward now"
+	}
+	return summary
+}
+
+func diskPlural(count int, one, many string) string {
+	if count == 1 {
+		return one
+	}
+	return many
 }
 
 // diskPerson proves the person at the enrolled terminal for the acts only a
@@ -445,26 +511,90 @@ func runDiskDiscard(inv *intentInvocation, owners diskOwners, top string) int {
 }
 
 func runDiskGoCache(inv *intentInvocation, owners diskOwners) int {
-	removed, lines, reports, problem := diskTrim(inv, owners)
+	_, lines, reports, problem := diskTrim(inv, owners)
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	var freed int64
-	for _, report := range reports {
-		freed += report.BytesRemoved
-	}
-	summary := fmt.Sprintf("trimmed the machine caches: %d entries, %s freed", removed, diskBytes(freed))
-	if removed == 0 {
-		summary = "the machine caches are within their caps: nothing removed"
-	}
+	summary, _ := diskTrimSummary(reports)
 	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: map[string]any{"caches": reports}})
 }
 
-// diskTrim runs the steward's cache trim now (disk-lifetimes Part A, A12)
-// with the settings of this checkout's installation.
+// diskCacheNames are the machine caches as a person names them.
+var diskCacheNames = map[string]string{
+	"engine-go-build": "the engine Go cache", "engine-staticcheck": "the engine staticcheck cache",
+	"delegate-go-build": "the delegate Go cache", "delegate-staticcheck": "the delegate staticcheck cache",
+}
+
+func diskCacheName(cache string) string {
+	if name, ok := diskCacheNames[cache]; ok {
+		return name
+	}
+	return cache
+}
+
+// diskTrimSummary is the headline of the cache reports, and whether every
+// cache was measured whole and is within its cap. It never says more than
+// the lines under it: a cache cut short says it is still measuring or
+// trimming and how it resumes, a refused or held cache says so, and a cache
+// over its cap inside the keep window says what stays.
+func diskTrimSummary(reports []gocache.TrimReport) (string, bool) {
+	removed, freed := 0, int64(0)
+	var resuming, problems, over []string
+	for _, report := range reports {
+		removed += report.EntriesRemoved
+		freed += report.BytesRemoved
+		name := diskCacheName(report.Cache)
+		switch report.EndedBy {
+		case "budget", "cancelled":
+			if report.Phase == "measure" {
+				resuming = append(resuming, fmt.Sprintf("still measuring %s (%s counted so far)", name, diskBytes(report.Checkpoint.BytesSoFar)))
+			} else {
+				resuming = append(resuming, fmt.Sprintf("still trimming %s to its %s cap", name, diskBytes(report.CapBytes)))
+			}
+		case "lock-held":
+			problems = append(problems, "another steward is trimming "+name+" now")
+		case "refused":
+			problems = append(problems, name+" was not trimmed: "+report.Reason)
+		case "complete":
+			if report.BytesAfter > report.CapBytes {
+				over = append(over, fmt.Sprintf("%s stays over its %s cap: %s used within the keep window is never trimmed", name, diskBytes(report.CapBytes), diskBytes(report.KeepWindowBytes)))
+			}
+		}
+	}
+	var parts []string
+	if removed > 0 {
+		parts = append(parts, fmt.Sprintf("trimmed the machine caches: %d entries, %s freed", removed, diskBytes(freed)))
+	}
+	if len(resuming) > 0 {
+		parts = append(parts, strings.Join(resuming, "; ")+"; "+diskPlural(len(resuming), "it resumes", "they resume")+
+			" on the next pass: run metasystem disk clean --go-cache again or let the steward continue")
+	}
+	parts = append(parts, problems...)
+	parts = append(parts, over...)
+	done := len(resuming) == 0 && len(problems) == 0 && len(over) == 0
+	switch {
+	case done && removed > 0:
+		parts = append(parts, "every cache is within its cap")
+	case done:
+		parts = append(parts, "the machine caches are within their caps: nothing removed")
+	}
+	return strings.Join(parts, "; "), done
+}
+
+// diskTrim runs the cache trim now (disk-lifetimes Part A, A12) with the
+// settings of this checkout's installation. A person at a terminal expects
+// it to finish the job: it continues pass after pass until every cache is
+// done or disk.cache-trim-person-budget-sec is spent, telling each pass
+// that left a cache unfinished on stderr.
 func diskTrim(inv *intentInvocation, owners diskOwners) (int, []string, []gocache.TrimReport, *intentResult) {
-	started := owners.now()
-	reports, err := steward.TrimMachineCaches(context.Background(), inv.layout.InstallationRoot, owners.userCacheDir, owners.stateDir, started, owners.now, nil)
+	run := steward.CacheTrimRun{Top: inv.layout.InstallationRoot, UserCacheDir: owners.userCacheDir, StateDir: owners.stateDir, Clock: owners.now, Pass: owners.trimPass}
+	reports, err := steward.TrimMachineCachesForPerson(context.Background(), run, func(pass int, reports []gocache.TrimReport) {
+		for _, report := range reports {
+			if report.EndedBy == "budget" {
+				fmt.Fprintf(inv.stderr, "disk clean: pass %d: %s\n", pass, diskTrimLine(report))
+			}
+		}
+	})
 	if err != nil {
 		summary := "disk clean: " + err.Error()
 		if strings.Contains(err.Error(), "disk.") {

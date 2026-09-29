@@ -154,6 +154,8 @@ var coreSettings = []Setting{
 		Meaning: "hours within which a used cache entry is never trimmed, whatever the cap"},
 	{Key: DiskCacheTrimBudgetSecKey, Default: "10", ProofInput: false,
 		Meaning: "seconds one trim pass over all caches may take; a cut pass resumes where it ended"},
+	{Key: DiskCacheTrimPersonBudgetSecKey, Default: "300", ProofInput: false,
+		Meaning: "seconds metasystem disk clean, run at a terminal, keeps trimming pass after pass until every cache is measured and within its cap; the steward's own pass keeps disk.cache-trim-budget-sec"},
 	{Key: ContextCeilingTokensKey, Default: "250000", ProofInput: true,
 		Meaning: "the context ceiling in tokens; the handoff trigger is the ceiling minus the margin (trigger 105000), and construction refuses a trigger above 106638"},
 	{Key: ContextHandoffMarginTokensKey, Default: "145000", ProofInput: true,
