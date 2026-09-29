@@ -278,29 +278,29 @@ func stewardRevive(repo string, stdout, stderr io.Writer) int {
 
 // runStewardRun is the runner's body — normally spawned by arm,
 // callable directly by any external ticker the operator provides.
-func runStewardRun(args []string) int {
-	flags := newFlagSet("steward run")
+func runStewardRun(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("steward run", stdout, stderr)
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	// The arming caller's handoff. The runner keeps the value in memory and
 	// reports it on this machine's presence record; nothing persists it.
 	lineage := flags.String("lineage", "", "the session lineage this runner was armed under (\"no-lease\" when there was none)")
-	if flags.Parse(args) != nil || !requireFlags(flags, nil, "repo") {
+	if flags.Parse(args) != nil || !requireFlags(flags, stderr, "repo") {
 		return 2
 	}
 	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "steward run: --repo is required")
+		fmt.Fprintln(stderr, "steward run: --repo is required")
 		return 2
 	}
 	if os.Getenv("METASYSTEM_STEWARD_RUNNER_IGNORE_TERM") != "" {
 		if !fixtureauth.FixtureModeRoot(*repo) {
-			fmt.Fprintln(os.Stderr, "steward run: METASYSTEM_STEWARD_RUNNER_IGNORE_TERM is fixture-only")
+			fmt.Fprintln(stderr, "steward run: METASYSTEM_STEWARD_RUNNER_IGNORE_TERM is fixture-only")
 			return 2
 		}
 		signal.Ignore(syscall.SIGTERM)
 	}
 	tickConfig, clockErr := stewardFixtureTickConfig(*repo, stewardRunClockRoot(*repo))
 	if clockErr != nil {
-		fmt.Fprintln(os.Stderr, "steward run: fixture clock:", clockErr)
+		fmt.Fprintln(stderr, "steward run: fixture clock:", clockErr)
 		return 2
 	}
 	tickConfig.ArmedLineage = *lineage
@@ -317,10 +317,10 @@ func runStewardRun(args []string) int {
 	if err != nil {
 		var stopped *steward.StoppedError
 		if errors.As(err, &stopped) {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(stderr, err)
 			return 1
 		}
-		fmt.Fprintf(os.Stderr, "steward run: %v\n", err)
+		fmt.Fprintf(stderr, "steward run: %v\n", err)
 		return 1
 	}
 	return 0
@@ -334,39 +334,39 @@ type stewardArmDeps struct {
 	armSession    func(repoRoot, binaryPath string, session steward.EnrolledSession, lineage string) (string, error)
 }
 
-func runStewardArm(args []string) int {
+func runStewardArm(args []string, stdout, stderr io.Writer) int {
 	return runStewardArmWith(args, stewardArmDeps{
 		repositoryTop: stateroot.RepositoryTop,
 		landingRefGit: realStewardLandingRefGit{},
 		armSession:    steward.ArmSessionWithLineage,
-	})
+	}, stdout, stderr)
 }
 
-func runStewardArmWith(args []string, deps stewardArmDeps) int {
-	flags := newFlagSet("steward arm")
+func runStewardArmWith(args []string, deps stewardArmDeps, stdout, stderr io.Writer) int {
+	flags := newFlagSet("steward arm", stdout, stderr)
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	temporaryWord := flags.String("temporary-human-word", "", "verbatim remote human authorization; enrolls TEMPORARILY with the word recorded on the identity until a terminal re-arm")
 	reviewBy := flags.String("review-by", "", "the human's own re-approval date (required with --temporary-human-word)")
 	launchRecord := pathFlag(flags, "launch-record", "", "a launch record the interface stamped with a signed-in browser session's enrollment; enrolls as that human (g1-s72)")
-	if flags.Parse(args) != nil || !requireFlags(flags, nil, "repo") {
+	if flags.Parse(args) != nil || !requireFlags(flags, stderr, "repo") {
 		return 2
 	}
 	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "steward arm: --repo is required")
+		fmt.Fprintln(stderr, "steward arm: --repo is required")
 		return 2
 	}
 	if *launchRecord != "" && (*temporaryWord != "" || *reviewBy != "") {
-		fmt.Fprintln(os.Stderr, "steward arm: --launch-record cannot be combined with --temporary-human-word or --review-by: a session-enrolled launch carries its human's verdict, not a word")
+		fmt.Fprintln(stderr, "steward arm: --launch-record cannot be combined with --temporary-human-word or --review-by: a session-enrolled launch carries its human's verdict, not a word")
 		return 2
 	}
-	if refused, err := refuseStewardIfStopped(*repo); err != nil {
-		fmt.Fprintln(os.Stderr, "steward arm:", err)
+	if refused, err := refuseStewardIfStopped(*repo, stdout, stderr); err != nil {
+		fmt.Fprintln(stderr, "steward arm:", err)
 		return 1
 	} else if refused {
 		return 1
 	}
 	if err := humanauthority.ValidateTemporaryWordPair(*temporaryWord, *reviewBy); err != nil {
-		fmt.Fprintln(os.Stderr, "steward arm:", err)
+		fmt.Fprintln(stderr, "steward arm:", err)
 		return 2
 	}
 	fixtureEnrollment := false
@@ -374,21 +374,21 @@ func runStewardArmWith(args []string, deps stewardArmDeps) int {
 	if *launchRecord != "" {
 		var err error
 		if session, err = sessionEnrollmentFromRecord(*repo, *launchRecord, deps.repositoryTop); err != nil {
-			fmt.Fprintln(os.Stderr, "steward arm:", err)
+			fmt.Fprintln(stderr, "steward arm:", err)
 			return 1
 		}
 		metasystemRoot, err := upMetasystemRoot("")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "steward arm: cannot resolve the installed engine: %v\n", err)
+			fmt.Fprintf(stderr, "steward arm: cannot resolve the installed engine: %v\n", err)
 			return 1
 		}
 		if err := sessionCallerCheck(*repo, metasystemRoot, lease.ClassifyAt); err != nil {
-			fmt.Fprintln(os.Stderr, "steward arm:", err)
+			fmt.Fprintln(stderr, "steward arm:", err)
 			return 1
 		}
 	} else if *temporaryWord == "" {
 		var authorized bool
-		fixtureEnrollment, authorized = requireHumanTerminal(*repo, "steward arm")
+		fixtureEnrollment, authorized = requireHumanTerminal(stderr, *repo, "steward arm")
 		if !authorized {
 			return 1
 		}
@@ -398,19 +398,19 @@ func runStewardArmWith(args []string, deps stewardArmDeps) int {
 		// temporary enrollment in their own words, which ride the
 		// identity record until they re-arm at a terminal. Loud by
 		// construction — the word and the review date are durable.
-		fmt.Fprintf(os.Stderr, "steward arm: TEMPORARY enrollment under a recorded remote human word; re-approval due %s at an agent-free terminal\n", *reviewBy)
+		fmt.Fprintf(stderr, "steward arm: TEMPORARY enrollment under a recorded remote human word; re-approval due %s at an agent-free terminal\n", *reviewBy)
 	}
 	if seed, err := seedStewardLandingRefWithGit(*repo, deps.landingRefGit); err != nil {
-		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
+		fmt.Fprintf(stderr, "steward arm: %v\n", err)
 		return 1
 	} else if seed.Ref != "" {
-		fmt.Fprintf(os.Stderr, "steward arm: seeded metasystem.steward.landing-ref=%s from the checked-out branch's upstream\n", seed.Ref)
+		fmt.Fprintf(stderr, "steward arm: seeded metasystem.steward.landing-ref=%s from the checked-out branch's upstream\n", seed.Ref)
 	} else if seed.NotSeeded != "" {
-		fmt.Fprintf(os.Stderr, "steward arm: landing ref was not seeded: %s\n", seed.NotSeeded)
+		fmt.Fprintf(stderr, "steward arm: landing ref was not seeded: %s\n", seed.NotSeeded)
 	}
 	bin, err := os.Executable()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
+		fmt.Fprintf(stderr, "steward arm: %v\n", err)
 		return 1
 	}
 	var msg string
@@ -427,13 +427,13 @@ func runStewardArmWith(args []string, deps stewardArmDeps) int {
 	if err != nil {
 		var stopped *steward.StoppedError
 		if errors.As(err, &stopped) {
-			printStewardStopped(stopped.Checkout, stopped.Record)
+			printStewardStopped(stopped.Checkout, stopped.Record, stdout, stderr)
 			return 1
 		}
-		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
+		fmt.Fprintf(stderr, "steward arm: %v\n", err)
 		return 1
 	}
-	fmt.Println(msg)
+	fmt.Fprintln(stdout, msg)
 	return 0
 }
 
@@ -486,7 +486,7 @@ func seedStewardLandingRefWithGit(repo string, git stewardLandingRefGit) (stewar
 	return stewardLandingRefSeed{Ref: landingRef}, nil
 }
 
-func refuseStewardIfStopped(repo string) (bool, error) {
+func refuseStewardIfStopped(repo string, stdout, stderr io.Writer) (bool, error) {
 	top, err := canonicalPath(repo)
 	if err != nil {
 		return false, err
@@ -498,19 +498,19 @@ func refuseStewardIfStopped(repo string) (bool, error) {
 	if !closed {
 		return false, nil
 	}
-	printStewardStopped(top, record)
+	printStewardStopped(top, record, stdout, stderr)
 	return true, nil
 }
 
-func printStewardStopped(checkout string, record stopfence.Record) {
+func printStewardStopped(checkout string, record stopfence.Record, stdout, stderr io.Writer) {
 	description, descriptionErr := stopfence.ClosedDescription(record, checkout)
 	command, commandErr := stopfence.ClosedCommand(record, checkout)
 	if descriptionErr != nil || commandErr != nil {
-		fmt.Fprintln(os.Stderr, "steward: cannot render stopped refusal:", errors.Join(descriptionErr, commandErr))
+		fmt.Fprintln(stderr, "steward: cannot render stopped refusal:", errors.Join(descriptionErr, commandErr))
 		return
 	}
-	fmt.Fprintln(os.Stderr, description)
-	fmt.Fprintln(os.Stderr, "run: "+command)
+	fmt.Fprintln(stderr, description)
+	fmt.Fprintln(stderr, "run: "+command)
 }
 
 // runStewardPending prints one line naming undelivered incidents —
@@ -518,14 +518,14 @@ func printStewardStopped(checkout string, record stopfence.Record) {
 // runStewardStatus is the operator's view: the last evidence state,
 // live intents, and pending notifications — the second visibility
 // channel the design pins.
-func runStewardStatus(args []string) int {
-	flags := newFlagSet("steward status")
+func runStewardStatus(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("steward status", stdout, stderr)
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "steward status: --repo is required")
+		fmt.Fprintln(stderr, "steward status: --repo is required")
 		return 2
 	}
 	evidence, evErr := steward.LoadEvidence(steward.EvidencePath(*repo))
@@ -543,7 +543,7 @@ func runStewardStatus(args []string) int {
 		report["problems"] = problems
 	}
 	out, _ := json.MarshalIndent(report, "", "  ")
-	fmt.Println(string(out))
+	fmt.Fprintln(stdout, string(out))
 	if len(problems) > 0 {
 		return 1
 	}

@@ -425,9 +425,9 @@ func runLandingReceiptPublicSemanticClockCase(t *testing.T, testCase receiptCloc
 	args := []string{"--root", root, "--tree", tree,
 		"--command", "printf 'launch\\n' >> " + strconv.Quote(launchCount),
 		"--goal", "standing-validation", "--cap-min", strconv.Itoa(testCase.capMinutes), "--result", resultPath}
-	code, _, problem := captureChannelOutput(t, func() int {
+	code, _, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
 		reads := repository.reads()
-		return runLandingTestReceiptWithInputs(parent, resolveClock, nil, landingReceiptTestRun, args,
+		return landingTestReceiptTo(stdout, stderr, parent, resolveClock, nil, landingReceiptTestRun, args,
 			func(receiptRoot, receiptTree, command string) (*landing.ReceiptPreparation, error) {
 				return landing.PrepareTestReceiptWithWorkspace(receiptRoot, receiptTree, command, fixture.workspace(),
 					func(freezeRoot, freezeTree string) (proofrun.FrozenExport, error) {

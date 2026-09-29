@@ -37,14 +37,14 @@ import (
 
 var legacyProofFenceRead = stopfence.Read
 
-func runProofRunLaunch(args []string) int {
-	return runProofRunLaunchWithInputs(args, admitProofLaunch, commitProofTerminalWithTestResult)
+func runProofRunLaunch(args []string, stdout, stderr io.Writer) int {
+	return runProofRunLaunchWithInputs(args, admitProofLaunch, commitProofTerminalWithTestResult, stdout, stderr)
 }
 
 func runProofRunLaunchWithInputs(args []string,
 	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
-	terminal func(proofrun.CompletionContext, json.RawMessage, *proofrun.TestResult) error) int {
-	flags := newFlagSet("proof-run launch")
+	terminal func(proofrun.CompletionContext, json.RawMessage, *proofrun.TestResult) error, stdout, stderr io.Writer) int {
+	flags := newFlagSet("proof-run launch", stdout, stderr)
 	suite := flags.String("suite", "", "suite name")
 	root := pathFlag(flags, "root", "", "metasystem root")
 	controlRootFlag := flags.String("control-root", "", "canonical proof control root")
@@ -71,17 +71,17 @@ func runProofRunLaunchWithInputs(args []string,
 	pollMS := flags.Int64("poll-ms", 1000, "watchdog poll milliseconds")
 	termGraceMS := flags.Int64("term-grace-ms", 5000, "TERM grace milliseconds")
 	killGraceMS := flags.Int64("kill-grace-ms", 1000, "KILL observation milliseconds")
-	if flags.Parse(args) != nil || !requireFlags(flags, nil, "root", "conf") {
+	if flags.Parse(args) != nil || !requireFlags(flags, stderr, "root", "conf") {
 		return 2
 	}
 	command := flags.Args()
 	if len(command) == 0 || *root == "" || *conf == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal proof-run launch --suite S --root R --conf F --progress P --log L --banner B [--selected SECTION] -- COMMAND...")
+		fmt.Fprintln(stderr, "usage: metasystem internal proof-run launch --suite S --root R --conf F --progress P --log L --banner B [--selected SECTION] -- COMMAND...")
 		return 2
 	}
 	executionRoot, err := canonicalProofRoot(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run launch:", err)
+		fmt.Fprintln(stderr, "proof-run launch:", err)
 		return 2
 	}
 	controlRoot := *controlRootFlag
@@ -98,12 +98,12 @@ func runProofRunLaunchWithInputs(args []string,
 	}
 	controlRoot, err = canonicalProofRoot(controlRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run launch:", err)
+		fmt.Fprintln(stderr, "proof-run launch:", err)
 		return 2
 	}
 	commandClock, fixtureClock, err := goalCommandClock(controlRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run launch:", err)
+		fmt.Fprintln(stderr, "proof-run launch:", err)
 		return 1
 	}
 	if *commandClass == "" {
@@ -111,7 +111,7 @@ func runProofRunLaunchWithInputs(args []string,
 	}
 	limits, err := resolveProofRunLimits(*conf)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run launch:", err)
+		fmt.Fprintln(stderr, "proof-run launch:", err)
 		return 1
 	}
 	launchEnvironment := resolvedTestWorkerEnvironment(nil, limits.workers)
@@ -129,7 +129,7 @@ func runProofRunLaunchWithInputs(args []string,
 	}
 	expected, repeated, err := selectedSections(*selected)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run launch:", err)
+		fmt.Fprintln(stderr, "proof-run launch:", err)
 		return 1
 	}
 	if *goalID == "" && noProofLocatorEnvironment() && legacyProofLaunchAllowed(controlRoot) {
@@ -159,33 +159,33 @@ func runProofRunLaunchWithInputs(args []string,
 		}
 		refuseFence := func() int {
 			if fenceReadErr != nil {
-				fmt.Fprintln(os.Stderr, "suite launcher: read stop fence:", fenceReadErr)
+				fmt.Fprintln(stderr, "suite launcher: read stop fence:", fenceReadErr)
 			} else if fenceStaleErr != nil {
-				fmt.Fprintln(os.Stderr, "suite launcher:", fenceStaleErr)
+				fmt.Fprintln(stderr, "suite launcher:", fenceStaleErr)
 			} else {
 				description, descriptionErr := stopfence.ClosedDescription(fence, controlRoot)
 				command, commandErr := stopfence.ClosedCommand(fence, controlRoot)
 				if descriptionErr != nil || commandErr != nil {
-					fmt.Fprintf(os.Stderr, "suite launcher: cannot render stopped refusal: %v %v\n", descriptionErr, commandErr)
+					fmt.Fprintf(stderr, "suite launcher: cannot render stopped refusal: %v %v\n", descriptionErr, commandErr)
 				} else {
-					fmt.Fprintln(os.Stderr, description)
-					fmt.Fprintln(os.Stderr, "at an agent-free terminal, run: "+command)
+					fmt.Fprintln(stderr, description)
+					fmt.Fprintln(stderr, "at an agent-free terminal, run: "+command)
 				}
 			}
-			_ = proofrun.EncodeResult(os.Stderr, *resultPath, proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionFailed, ExitStatus: 1})
+			_ = proofrun.EncodeResult(stderr, *resultPath, proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionFailed, ExitStatus: 1})
 			return 1
 		}
 		if err := checkFence(); err != nil {
 			return refuseFence()
 		}
-		lease, release, leaseErr := acquireManagedProofLaunchWithWaitCheck(context.Background(), controlRoot, *conf, checkFence)
+		lease, release, leaseErr := acquireManagedProofLaunchWithWaitCheck(stderr, context.Background(), controlRoot, *conf, checkFence)
 		if leaseErr != nil {
 			if errors.Is(leaseErr, fenceClosed) || fenceReadErr != nil || fenceStaleErr != nil {
 				return refuseFence()
 			}
-			fmt.Fprintln(os.Stderr, "proof-run launch: admit native proof:", leaseErr)
+			fmt.Fprintln(stderr, "proof-run launch: admit native proof:", leaseErr)
 			refusal := proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionAdmissionRefused, ExitStatus: proofrun.ExitAdmissionRefused}
-			_ = proofrun.EncodeResult(os.Stderr, *resultPath, refusal)
+			_ = proofrun.EncodeResult(stderr, *resultPath, refusal)
 			return proofrun.ExitAdmissionRefused
 		}
 		defer release()
@@ -194,7 +194,7 @@ func runProofRunLaunchWithInputs(args []string,
 			ExpectedSections: expected, TwiceConsulted: repeated, Silence: limits.silence, SectionCap: limits.sectionCap,
 			EvidenceTimeout: limits.evidenceTimeout, EvidenceMax: limits.evidenceMax, Poll: time.Duration(*pollMS) * time.Millisecond,
 			TermGrace: time.Duration(*termGraceMS) * time.Millisecond, KillGrace: time.Duration(*killGraceMS) * time.Millisecond,
-			Command: command, Environment: launchEnvironment, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
+			Command: command, Environment: launchEnvironment, HostResourceFiles: lease.Files(), RequireCustody: true, Output: stdout, ErrorOutput: stderr,
 			FenceReader: func(string) (stopfence.Record, error) {
 				err := checkFence()
 				if errors.Is(err, fenceClosed) {
@@ -207,7 +207,7 @@ func runProofRunLaunchWithInputs(args []string,
 		if status != 0 {
 			result.Disposition = proofrun.DispositionFailed
 		}
-		if err := proofrun.EncodeResult(os.Stderr, *resultPath, result); err != nil {
+		if err := proofrun.EncodeResult(stderr, *resultPath, result); err != nil {
 			return 1
 		}
 		return status
@@ -219,36 +219,36 @@ func runProofRunLaunchWithInputs(args []string,
 	})
 	if err != nil {
 		refusal := proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionAdmissionRefused, ExitStatus: proofrun.ExitAdmissionRefused}
-		_ = proofrun.EncodeResult(os.Stderr, *resultPath, refusal)
-		fmt.Fprintln(os.Stderr, "proof-run launch:", err)
+		_ = proofrun.EncodeResult(stderr, *resultPath, refusal)
+		fmt.Fprintln(stderr, "proof-run launch:", err)
 		return proofrun.ExitAdmissionRefused
 	}
 	if decision.Disposition != proofrun.DispositionExecuted {
 		if decision.Reason != "" {
-			fmt.Fprintln(os.Stderr, decision.Reason)
+			fmt.Fprintln(stderr, decision.Reason)
 		}
-		if err := proofrun.EncodeResult(os.Stderr, *resultPath, decision); err != nil {
-			fmt.Fprintln(os.Stderr, "proof-run launch: publish launch result:", err)
+		if err := proofrun.EncodeResult(stderr, *resultPath, decision); err != nil {
+			fmt.Fprintln(stderr, "proof-run launch: publish launch result:", err)
 			return 1
 		}
 		return decision.ExitStatus
 	}
 	deadline, deadlineCheck, err := proofDeadline(attempt.Deadline, commandClock)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run launch: admit native proof:", err)
-		status := retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
+		fmt.Fprintln(stderr, "proof-run launch: admit native proof:", err)
+		status := retainIncompleteProofAttempt(stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
 		decision.ExitStatus, decision.Disposition = status, proofrun.DispositionAdmissionRefused
-		_ = proofrun.EncodeResult(os.Stderr, *resultPath, decision)
+		_ = proofrun.EncodeResult(stderr, *resultPath, decision)
 		return status
 	}
 	resourceContext, cancelResource := proofDeadlineContext(context.Background(), deadline, fixtureClock)
 	defer cancelResource()
-	lease, release, leaseErr := acquireManagedProofLaunchWithWaitCheck(resourceContext, controlRoot, *conf, deadlineCheck)
+	lease, release, leaseErr := acquireManagedProofLaunchWithWaitCheck(stderr, resourceContext, controlRoot, *conf, deadlineCheck)
 	if leaseErr != nil {
-		fmt.Fprintln(os.Stderr, "proof-run launch: admit native proof:", leaseErr)
-		status := retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
+		fmt.Fprintln(stderr, "proof-run launch: admit native proof:", leaseErr)
+		status := retainIncompleteProofAttempt(stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
 		decision.ExitStatus, decision.Disposition = status, proofrun.DispositionAdmissionRefused
-		_ = proofrun.EncodeResult(os.Stderr, *resultPath, decision)
+		_ = proofrun.EncodeResult(stderr, *resultPath, decision)
 		return status
 	}
 	defer release()
@@ -262,7 +262,7 @@ func runProofRunLaunchWithInputs(args []string,
 		Poll:      time.Duration(*pollMS) * time.Millisecond,
 		TermGrace: time.Duration(*termGraceMS) * time.Millisecond,
 		KillGrace: time.Duration(*killGraceMS) * time.Millisecond,
-		Command:   command, Environment: launchEnvironment, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
+		Command:   command, Environment: launchEnvironment, HostResourceFiles: lease.Files(), RequireCustody: true, Output: stdout, ErrorOutput: stderr,
 		Now: commandClock,
 		PrepareSuccess: func(completion proofrun.CompletionContext) (json.RawMessage, error) {
 			if joined {
@@ -284,25 +284,25 @@ func runProofRunLaunchWithInputs(args []string,
 			return terminal(completion, receipt, outerTesting)
 		},
 	})
-	launchStatus = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, launchStatus)
+	launchStatus = retainIncompleteProofAttempt(stderr, controlRoot, attempt.AttemptID, joined, launchStatus)
 	decision.ExitStatus = launchStatus
 	if launchStatus != 0 {
 		decision.Disposition = proofrun.DispositionFailed
 	}
-	if err := proofrun.EncodeResult(os.Stderr, *resultPath, decision); err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run launch: publish launch result:", err)
+	if err := proofrun.EncodeResult(stderr, *resultPath, decision); err != nil {
+		fmt.Fprintln(stderr, "proof-run launch: publish launch result:", err)
 		return 1
 	}
 	return launchStatus
 }
 
-func acquireManagedProofLaunchWithWaitCheck(ctx context.Context, controlRoot, confPath string, check func() error) (*proofrun.HostResourceLease, func(), error) {
+func acquireManagedProofLaunchWithWaitCheck(stderr io.Writer, ctx context.Context, controlRoot, confPath string, check func() error) (*proofrun.HostResourceLease, func(), error) {
 	unmark, err := proofrun.MarkManagedProofProcess()
 	if err != nil {
 		return nil, nil, fmt.Errorf("mark host proof launcher managed: %w", err)
 	}
 	ctx = proofrun.WithHostResourceWaitObserver(ctx, func() {
-		fmt.Fprintln(os.Stderr, proofCapacityWaitLine)
+		fmt.Fprintln(stderr, proofCapacityWaitLine)
 	})
 	lease, err := proofrun.AcquireHostResourcesWithWaitCheck(ctx, controlRoot, confPath, "heavy", nil, check)
 	if err != nil {
@@ -314,15 +314,15 @@ func acquireManagedProofLaunchWithWaitCheck(ctx context.Context, controlRoot, co
 
 const proofCapacityWaitLine = "proof-run launch: waiting for host proof capacity"
 
-func runProofRunWorkerAuthorized(args []string) int {
-	flags := newFlagSet("proof-run worker-authorized")
+func runProofRunWorkerAuthorized(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("proof-run worker-authorized", stdout, stderr)
 	executionRoot := pathFlag(flags, "root", "", "suite execution root")
-	if flags.Parse(args) != nil || !requireFlags(flags, nil, "root") || flags.NArg() != 0 || *executionRoot == "" {
+	if flags.Parse(args) != nil || !requireFlags(flags, stderr, "root") || flags.NArg() != 0 || *executionRoot == "" {
 		return 2
 	}
 	code, err := authorizeProofWorker(*executionRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run worker-authorized:", err)
+		fmt.Fprintln(stderr, "proof-run worker-authorized:", err)
 	}
 	return code
 }
@@ -498,13 +498,13 @@ func authorizedWitnessSnapshot(snapshotRoot, authorizedRoot string) bool {
 	return err == nil && workingRoot == snapshotRoot
 }
 
-func retainIncompleteProofAttempt(root, attemptID string, joined bool, status int) int {
+func retainIncompleteProofAttempt(stderr io.Writer, root, attemptID string, joined bool, status int) int {
 	if joined {
 		return status
 	}
 	attempt, err := proofrun.ReadAttempt(root, attemptID)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run launch: read incomplete attempt:", err)
+		fmt.Fprintln(stderr, "proof-run launch: read incomplete attempt:", err)
 		return 1
 	}
 	if attempt.Terminal != nil {
@@ -515,12 +515,12 @@ func retainIncompleteProofAttempt(root, attemptID string, joined bool, status in
 	}
 	now, nowErr := goalCommandNow(root)
 	if nowErr != nil {
-		fmt.Fprintln(os.Stderr, "proof-run launch: read terminal clock:", nowErr)
+		fmt.Fprintln(stderr, "proof-run launch: read terminal clock:", nowErr)
 		return 1
 	}
 	if _, err := proofrun.FinalizeAttempt(root, attemptID, proofrun.TerminalUnknown, status,
 		"proof launcher ended before its ordered terminal commit", nil, now); err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run launch: retain unknown terminal outcome:", err)
+		fmt.Fprintln(stderr, "proof-run launch: retain unknown terminal outcome:", err)
 		return 1
 	}
 	return status
@@ -1878,8 +1878,8 @@ func selectedSections(selected string) ([]string, map[string]bool, error) {
 	return nil, map[string]bool{}, nil
 }
 
-func runProofRunWatchdog(args []string) int {
-	flags := newFlagSet("proof-run watchdog")
+func runProofRunWatchdog(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("proof-run watchdog", stdout, stderr)
 	suite := flags.String("suite", "", "suite name")
 	root := pathFlag(flags, "root", "", "metasystem root")
 	conf := flags.String("conf", "", "metasystem configuration")
@@ -1926,7 +1926,7 @@ func runProofRunWatchdog(args []string) int {
 	// them.
 	if !*resourceCustody {
 		if err := closeInheritedDescriptorsAbove(2); err != nil {
-			fmt.Fprintln(os.Stderr, "proof-run watchdog:", err)
+			fmt.Fprintln(stderr, "proof-run watchdog:", err)
 			return 1
 		}
 	}
@@ -1937,20 +1937,20 @@ func runProofRunWatchdog(args []string) int {
 	// passed values after this effective-value validation.
 	if *conf != "" {
 		if err := validateProofRunLimits(*conf); err != nil {
-			fmt.Fprintln(os.Stderr, "proof-run watchdog:", err)
+			fmt.Fprintln(stderr, "proof-run watchdog:", err)
 			return 1
 		}
 	}
 	executable, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run watchdog:", err)
+		fmt.Fprintln(stderr, "proof-run watchdog:", err)
 		return 1
 	}
 	var deadline time.Time
 	if *deadlineRaw != "" {
 		deadline, err = time.Parse(time.RFC3339Nano, *deadlineRaw)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "proof-run watchdog: invalid absolute deadline:", err)
+			fmt.Fprintln(stderr, "proof-run watchdog: invalid absolute deadline:", err)
 			return 2
 		}
 	}
@@ -1966,7 +1966,7 @@ func runProofRunWatchdog(args []string) int {
 		EvidenceMax:     *evidenceMax, Poll: time.Duration(*pollMS) * time.Millisecond,
 		TermGrace:  time.Duration(*termGraceMS) * time.Millisecond,
 		KillGrace:  time.Duration(*killGraceMS) * time.Millisecond,
-		Executable: executable, Output: os.Stdout, ErrorOutput: os.Stderr,
+		Executable: executable, Output: stdout, ErrorOutput: stderr,
 	}
 	if *resourceCustody {
 		err = proofrun.RunResourceCustodian(proofrun.ResourceCustodyOptions{Watchdog: options,
@@ -1978,14 +1978,14 @@ func runProofRunWatchdog(args []string) int {
 		err = proofrun.RunWatchdog(options)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "suite watchdog:", err)
+		fmt.Fprintln(stderr, "suite watchdog:", err)
 		return 1
 	}
 	return 0
 }
 
-func runProofRunCustodyExec(args []string) int {
-	flags := newFlagSet("proof-run custody-exec")
+func runProofRunCustodyExec(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("proof-run custody-exec", stdout, stderr)
 	readyFD := flags.Int("ready-fd", 0, "readiness descriptor")
 	releaseFD := flags.Int("release-fd", 0, "start barrier descriptor")
 	path := flags.String("path", "", "selected executable path")
@@ -2004,14 +2004,14 @@ func runProofRunCustodyExec(args []string) int {
 	}
 	_ = release.Close()
 	if err := syscall.Exec(*path, flags.Args(), os.Environ()); err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run custody-exec:", err)
+		fmt.Fprintln(stderr, "proof-run custody-exec:", err)
 		return 1
 	}
 	return 0
 }
 
-func runProofRunPreserve(args []string) int {
-	flags := newFlagSet("proof-run preserve")
+func runProofRunPreserve(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("proof-run preserve", stdout, stderr)
 	destination := flags.String("destination", "", "evidence destination")
 	maxBytes := flags.Int64("max-bytes", 0, "evidence byte cap")
 	var sources repeatedFlag
@@ -2021,36 +2021,36 @@ func runProofRunPreserve(args []string) int {
 	}
 	result, err := proofrun.PreserveEvidence(*destination, sources, *maxBytes)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run preserve:", err)
+		fmt.Fprintln(stderr, "proof-run preserve:", err)
 		return 1
 	}
-	fmt.Printf("copied %d bytes; dropped %d paths; copy errors %d\n", result.CopiedBytes, len(result.Dropped), len(result.Errors))
+	fmt.Fprintf(stdout, "copied %d bytes; dropped %d paths; copy errors %d\n", result.CopiedBytes, len(result.Dropped), len(result.Errors))
 	if result.Truncated {
-		fmt.Println(proofrun.TruncationMarker(*maxBytes))
+		fmt.Fprintln(stdout, proofrun.TruncationMarker(*maxBytes))
 	}
 	for _, dropped := range result.Dropped {
-		fmt.Printf("DROPPED %s\n", dropped)
+		fmt.Fprintf(stdout, "DROPPED %s\n", dropped)
 	}
 	for _, copyError := range result.Errors {
-		fmt.Printf("ERROR %s\n", copyError)
+		fmt.Fprintf(stdout, "ERROR %s\n", copyError)
 	}
 	return 0
 }
 
-func runProofRunBanner(args []string) int {
-	flags := newFlagSet("proof-run banner")
+func runProofRunBanner(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("proof-run banner", stdout, stderr)
 	suite := flags.String("suite", "", "suite name")
 	root := pathFlag(flags, "root", "", "metasystem root")
 	progress := flags.String("progress", "", "progress JSONL path")
 	logPath := flags.String("log", "", "suite log path")
-	if flags.Parse(args) != nil || !requireFlags(flags, nil, "suite", "root", "progress", "log") {
+	if flags.Parse(args) != nil || !requireFlags(flags, stderr, "suite", "root", "progress", "log") {
 		return 2
 	}
 	if *suite == "" || *root == "" || *progress == "" || *logPath == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal proof-run banner --suite S --root R --progress P --log L")
+		fmt.Fprintln(stderr, "usage: metasystem internal proof-run banner --suite S --root R --progress P --log L")
 		return 2
 	}
-	fmt.Println(proofRunBannerText(*suite, *root, *progress, *logPath))
+	fmt.Fprintln(stdout, proofRunBannerText(*suite, *root, *progress, *logPath))
 	return 0
 }
 

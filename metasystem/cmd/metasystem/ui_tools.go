@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -31,8 +32,8 @@ import (
 // It writes nothing, reads only what the published operations read, and holds
 // no state between calls beyond the readers themselves.
 
-func runUITools(args []string) int {
-	flags := newFlagSet("ui tools")
+func runUITools(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("ui tools", stdout, stderr)
 	root := pathFlag(flags, "root", "", "checkout the tools read (default: the checkout that contains the installation)")
 	installation := flags.String("metasystem-root", "", "metasystem installation")
 	// Which interface server run started this tool server. The fleet tool
@@ -45,17 +46,17 @@ func runUITools(args []string) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "invalid arguments for ui tools")
+		fmt.Fprintln(stderr, "invalid arguments for ui tools")
 		return 2
 	}
 	metasystemRoot, err := upMetasystemRoot(*installation)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		fmt.Fprintln(stderr, err.Error())
 		return 1
 	}
 	roots, err := lifecycle.ResolveRoots(*root, metasystemRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		fmt.Fprintln(stderr, err.Error())
 		return 1
 	}
 	// Which answer the Partner is composing, from the file the interface server
@@ -65,8 +66,8 @@ func runUITools(args []string) int {
 	// and the fifty-first proposal of an answer would be prepared like any other
 	// (Astra F-06). A seat that named no file leaves the count to admission.
 	answers := os.Getenv(uitools.AnswerFile)
-	if err := uitools.Serve(os.Stdin, os.Stdout, toolReaders(roots, *presenceRun, answers)); err != nil {
-		fmt.Fprintln(os.Stderr, "the interface's tool server stopped reading: "+err.Error())
+	if err := uitools.Serve(os.Stdin, stdout, toolReaders(roots, *presenceRun, answers)); err != nil {
+		fmt.Fprintln(stderr, "the interface's tool server stopped reading: "+err.Error())
 		return 1
 	}
 	return 0

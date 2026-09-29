@@ -140,7 +140,7 @@ func TestGoalCLIAuthorityWrongTerminal(t *testing.T) {
 	t.Parallel()
 	checkout := gcliAuthorityProcessCheckout(t)
 	top := func(string) (string, error) { return checkout, nil }
-	scope, scale, code := parseProcessScopeWith("stop", []string{"--repo", checkout}, top)
+	scope, scale, code := parseProcessScopeWith(t.Output(), "stop", []string{"--repo", checkout}, top)
 	if code != 0 {
 		t.Fatalf("stop scope = %d", code)
 	}

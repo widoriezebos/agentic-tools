@@ -69,10 +69,10 @@ type intentCommand struct {
 	// passthrough hands the words after the action, unchanged, to a handler
 	// with its own parser, output and exit codes: a machinery verb given a
 	// public home, or a process entrypoint.
-	passthrough func([]string) int
+	passthrough command
 	// owner is the handler a passthrough runs, once its public options
 	// (--repo, the installation found) are applied.
-	owner func([]string) int
+	owner command
 	// hidden rows are process entrypoints: routed, never listed in public
 	// help; launcher names the code that starts them.
 	hidden   bool
@@ -394,7 +394,7 @@ func parseIntentArgs(command intentCommand, raw []string) (intentInput, *intentI
 		return input, nil
 	}
 	// Go's own flag parsing checks each value against its option's kind.
-	set := newFlagSet(command.name)
+	set := newFlagSet(command.name, io.Discard, io.Discard)
 	set.SetOutput(io.Discard)
 	for _, definition := range command.allFlags() {
 		if definition.value == "" {
@@ -599,6 +599,14 @@ func runIntent(command intentCommand, raw []string, stdout, stderr io.Writer, ow
 }
 
 func runIntentIn(command intentCommand, raw []string, stdout, stderr io.Writer, cwd string, owners intentOwners) int {
+	// An owner that prints does so on this invocation's streams, unless the
+	// caller gave the owners streams of their own.
+	if owners.dependencies.stdout == nil {
+		owners.dependencies.stdout = stdout
+	}
+	if owners.dependencies.stderr == nil {
+		owners.dependencies.stderr = stderr
+	}
 	inv := &intentInvocation{command: command, raw: raw, stdout: stdout, stderr: stderr, cwd: cwd, owners: owners}
 	input, inputErr := parseIntentArgs(command, raw)
 	inv.input = input

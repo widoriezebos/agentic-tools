@@ -47,7 +47,7 @@ func TestReaperTickReconcilesAnAttemptWhoseLauncherIsGone(t *testing.T) {
 	if err != nil || result.Disposition != proofrun.DispositionExecuted {
 		t.Fatalf("reserve = %+v, %+v, %v", attempt, result, err)
 	}
-	setupReaper(repo, root)()
+	setupReaper(t.Output(), repo, root)()
 	after, err := proofrun.ReadAttempt(root, attempt.AttemptID)
 	if err != nil || after.Terminal == nil || after.Terminal.Result != proofrun.TerminalFailed {
 		t.Fatalf("attempt after the reaper tick = %+v, %v", after.Terminal, err)

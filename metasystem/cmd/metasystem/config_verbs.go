@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -24,14 +23,14 @@ func (r *repeatedFlag) Set(value string) error {
 
 // runConfigValidate validates the whole metasystem.conf domain against the
 // repository, printing each problem and exiting non-zero when any is found.
-func runConfigValidate(args []string) int {
-	flags := newFlagSet("config validate")
+func runConfigValidate(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("config validate", stdout, stderr)
 	conf := flags.String("conf", "metasystem.conf", "path to metasystem.conf")
 	repo := pathFlag(flags, "repo", "", "repository root the configuration is validated against (default: the Git toplevel holding --conf, else its directory)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	return configValidateTo(os.Stdout, os.Stderr, *conf, *repo)
+	return configValidateTo(stdout, stderr, *conf, *repo)
 }
 
 // configValidateTo validates the configuration domain on the caller's

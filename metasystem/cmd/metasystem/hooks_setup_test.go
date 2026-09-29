@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -36,7 +37,7 @@ func TestHooksCheckSupportsEveryHost(t *testing.T) {
 	repo, installation := setupCLIFixture(t)
 	recorder := newRuntimeLayoutRecorder(t, repo)
 	recorder.expect(repo)
-	if _, code := captureStdout(t, func() int { return runHostSetupForTest(repo, recorder.resolve) }); code != 0 {
+	if _, code := captureStdout(t, func(stdout, stderr io.Writer) int { return runHostSetupForTest(repo, recorder.resolve, stderr) }); code != 0 {
 		t.Fatalf("setup exit = %d", code)
 	}
 	paths := map[string][2]string{
@@ -70,7 +71,7 @@ func TestHooksCheckRequiresSynchronousLifecycleAndAllCodexStartSources(t *testin
 	repo, installation := setupCLIFixture(t)
 	recorder := newRuntimeLayoutRecorder(t, repo)
 	recorder.expect(repo)
-	if _, code := captureStdout(t, func() int { return runHostSetupForTest(repo, recorder.resolve) }); code != 0 {
+	if _, code := captureStdout(t, func(stdout, stderr io.Writer) int { return runHostSetupForTest(repo, recorder.resolve, stderr) }); code != 0 {
 		t.Fatalf("setup exit = %d", code)
 	}
 
@@ -146,9 +147,9 @@ func TestHooksCheckRequiresSynchronousLifecycleAndAllCodexStartSources(t *testin
 
 // runHostSetupForTest registers every adoptable runtime in repo through the
 // registration owner, as system setup does.
-func runHostSetupForTest(repo string, resolve func(string) (stateroot.Layout, error)) int {
+func runHostSetupForTest(repo string, resolve func(string) (stateroot.Layout, error), stderr io.Writer) int {
 	if _, err := hostsetup.SetupWithResolver(hostsetup.Options{RepositoryPath: repo}, resolve); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	return 0

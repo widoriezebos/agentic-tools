@@ -2,7 +2,7 @@ package main
 
 import (
 	"errors"
-	"os"
+	"io"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -73,8 +73,8 @@ func TestAnActorRefusalSaysWhoMayActInPublicWords(t *testing.T) {
 // does, from the test's directory inside this repository.
 func runPublic(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
-	return captureCommandOutput(t, true, true, func() int {
-		return dispatchWithFamilies(args, os.Stdout, os.Stderr, families())
+	return runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return dispatchWithFamilies(args, stdout, stderr, families())
 	})
 }
 

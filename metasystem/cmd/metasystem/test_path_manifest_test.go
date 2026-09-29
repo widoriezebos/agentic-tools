@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -71,8 +72,8 @@ func TestGLEPathRootGoPackageExpansionPlansWithCompleteInputs(t *testing.T) {
 	prepareTestingForCommand = func(testingSelectionRequest) (testingPreparation, error) {
 		return testingPreparation{ProjectRoot: root, CandidateTree: candidate, EffectiveContract: contract, Plan: plan}, nil
 	}
-	status, stdout, _ := captureCommandOutput(t, true, true, func() int {
-		return runTestPlan([]string{"--root", root, "--purpose", "diagnostic", "--json"})
+	status, stdout, _ := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestPlan([]string{"--root", root, "--purpose", "diagnostic", "--json"}, stdout, stderr)
 	})
 	var output testingPlanOutput
 	if err := json.Unmarshal([]byte(stdout), &output); status != 0 || err != nil ||
@@ -135,8 +136,8 @@ func TestGLEPathPlanReportsOptionalNoMatch(t *testing.T) {
 	prepareTestingForCommand = func(testingSelectionRequest) (testingPreparation, error) {
 		return testingPreparation{ProjectRoot: root, CandidateTree: tree, EffectiveContract: contract, Plan: plan, UnmatchedInputs: unmatched}, nil
 	}
-	status, stdout, _ := captureCommandOutput(t, true, true, func() int {
-		return runTestPlan([]string{"--root", root, "--purpose", "diagnostic", "--json"})
+	status, stdout, _ := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestPlan([]string{"--root", root, "--purpose", "diagnostic", "--json"}, stdout, stderr)
 	})
 	if status != 0 {
 		t.Fatalf("public plan status = %d", status)
@@ -145,8 +146,8 @@ func TestGLEPathPlanReportsOptionalNoMatch(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &output); err != nil || len(output.UnmatchedInputs) != 1 || output.UnmatchedInputs[0] != unmatched[0] {
 		t.Fatalf("public no-match JSON = %q, %v", stdout, err)
 	}
-	status, _, stderr := captureCommandOutput(t, true, true, func() int {
-		return runTestPlan([]string{"--root", root, "--purpose", "diagnostic"})
+	status, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestPlan([]string{"--root", root, "--purpose", "diagnostic"}, stdout, stderr)
 	})
 	if status != 0 || !strings.Contains(stderr, "TEST-INPUT-NO-MATCH") || !strings.Contains(stderr, "futrue?.go") {
 		t.Fatalf("public text no-match = %d, %q", status, stderr)
@@ -177,8 +178,8 @@ func TestGLEPathPublicDeliveryPlanRejectsDirtyWildcardInput(t *testing.T) {
 	prepareTestingForCommand = func(testingSelectionRequest) (testingPreparation, error) {
 		return testingPreparation{}, checkDeliveryInputParityWith(candidate, "", "testing.json", contract, plan, matching.snapshot)
 	}
-	status, _, stderr := captureCommandOutput(t, true, true, func() int {
-		return runTestPlan([]string{"--root", root, "--purpose", "delivery"})
+	status, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestPlan([]string{"--root", root, "--purpose", "delivery"}, stdout, stderr)
 	})
 	matching.assertConsumed()
 	if status != 1 || !strings.Contains(stderr, "delivery candidate differs from relevant working-tree inputs") {
@@ -217,8 +218,8 @@ func TestGLEPathPublicDeliveryPlanRejectsUnstagedSelectedGoPackageSource(t *test
 	prepareTestingForCommand = func(testingSelectionRequest) (testingPreparation, error) {
 		return testingPreparation{}, checkDeliveryInputParityWith(candidate, "metasystem/", "testing.json", complete, plan, completeFact.snapshot)
 	}
-	status, _, stderr := captureCommandOutput(t, true, true, func() int {
-		return runTestPlan([]string{"--root", root, "--purpose", "delivery"})
+	status, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestPlan([]string{"--root", root, "--purpose", "delivery"}, stdout, stderr)
 	})
 	completeFact.assertConsumed()
 	if status != 1 || !strings.Contains(stderr, "delivery candidate differs from relevant working-tree inputs") {

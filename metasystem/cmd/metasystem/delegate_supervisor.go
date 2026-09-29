@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -24,9 +25,9 @@ import (
 // attempt words (METASYSTEM_FIXTURE_OWNER=..., METASYSTEM_FIXTURE_ATTEMPT=...)
 // so a survivor scan finds the process by its argv; they must equal the
 // environment the process inherited.
-func runDelegateSupervisor(args []string) int {
+func runDelegateSupervisor(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
-		return refuseUnknownOption(nil, runtimes.SupervisorEntry, args[0], "it takes RUNTIME VERB --root ROOT [flags]")
+		return refuseUnknownOption(stdout, stderr, runtimes.SupervisorEntry, args[0], "it takes RUNTIME VERB --root ROOT [flags]")
 	}
 	for len(args) > 0 {
 		name, value, found := strings.Cut(args[0], "=")
@@ -34,7 +35,7 @@ func runDelegateSupervisor(args []string) int {
 			break
 		}
 		if os.Getenv(name) != value {
-			fmt.Fprintf(os.Stderr, "metasystem %s: the %s argv carrier does not match the environment\n", runtimes.SupervisorEntry, name)
+			fmt.Fprintf(stderr, "metasystem %s: the %s argv carrier does not match the environment\n", runtimes.SupervisorEntry, name)
 			return 2
 		}
 		args = args[1:]

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -167,7 +168,7 @@ exit 1
 	for _, seat := range seatRoots {
 		goalSyncMutationGit(t, seat, "fetch", "-q", landingRoot, projection.Tip)
 		goalSyncMutationGit(t, seat, "update-ref", goal.AcceptedRef, "FETCH_HEAD")
-		code, stdout, stderr := captureCommandOutput(t, true, true, func() int { return runGoalNext([]string{"--root", seat}) })
+		code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int { return runGoalNext([]string{"--root", seat}, stdout, stderr) })
 		if code != 0 || stderr != wantStderr || !strings.Contains(stdout, "owned by nobody") {
 			t.Fatalf("seat %s next code=%d stdout=%q stderr=%q", filepath.Base(seat), code, stdout, stderr)
 		}

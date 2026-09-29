@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"reflect"
 	"slices"
 	"strings"
@@ -268,7 +269,7 @@ func TestIntentHelpRefusals(t *testing.T) {
 
 func TestIntentHelpNeverExecutes(t *testing.T) {
 	t.Parallel()
-	registered := []family{{name: "sentinel", summary: "read help safely", verbs: []verb{{name: "mutate", summary: "must not run", run: func([]string) int {
+	registered := []family{{name: "sentinel", summary: "read help safely", verbs: []verb{{name: "mutate", summary: "must not run", run: func([]string, io.Writer, io.Writer) int {
 		panic("help executed a command")
 	}}}}}
 	for _, args := range [][]string{

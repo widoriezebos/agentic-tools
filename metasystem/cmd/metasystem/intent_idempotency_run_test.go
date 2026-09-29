@@ -192,7 +192,7 @@ func witnessMachineStartRepeat(t *testing.T) {
 	run := func(args ...string) (int, map[string]any) {
 		t.Helper()
 		var stdout bytes.Buffer
-		code := runSeatLaunchTo(append([]string{"--from", root, "--json"}, args...), &stdout)
+		code := runSeatLaunch(append([]string{"--from", root, "--json"}, args...), &stdout, t.Output())
 		var printed map[string]any
 		if err := json.Unmarshal(stdout.Bytes(), &printed); err != nil {
 			t.Fatalf("%v printed no record: %v %q", args, err, stdout.String())

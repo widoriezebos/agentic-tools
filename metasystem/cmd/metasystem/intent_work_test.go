@@ -611,7 +611,7 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 	owners := bed.workOwners()
 	var waitArgs []string
 	waitResult := metarun.WaitResult{SchemaVersion: 2, WaitID: "wait-1", ExitCode: metarun.ExitWaitDeadline, SourceOutcome: "wait-deadline", Reason: "still running"}
-	owners.work.wait = func(args []string, print func(metarun.WaitResult, bool)) int {
+	owners.work.wait = func(args []string, print func(metarun.WaitResult, bool), _, _ io.Writer) int {
 		waitArgs = args
 		print(waitResult, true)
 		return waitResult.ExitCode
@@ -623,7 +623,7 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 		if len(argv) < 3 || argv[0] != "internal" || argv[1] != "test" || argv[2] != "run" {
 			t.Fatalf("the public test run did not call the internal test run: %v", argv)
 		}
-		request, _, code := parseTestingSelection(argv[1]+" "+argv[2], argv[3:], true)
+		request, _, code := parseTestingSelection(argv[1]+" "+argv[2], argv[3:], true, t.Output(), t.Output())
 		parsed = request
 		if code != 0 {
 			return nil, code, nil
@@ -683,7 +683,9 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 	if code, result := run("work", "wait", "job-1", "--event", "landing"); code != 2 || result.Outcome != intentRefused {
 		t.Fatalf("goal selector on a job wait: code=%d %+v", code, result)
 	}
-	owners.work.wait = func([]string, func(metarun.WaitResult, bool)) int { return metarun.ExitInvalidWait }
+	owners.work.wait = func([]string, func(metarun.WaitResult, bool), io.Writer, io.Writer) int {
+		return metarun.ExitInvalidWait
+	}
 	if code, result := run("work", "wait", "job-1"); code != metarun.ExitInvalidWait || result.Outcome != intentFailed {
 		t.Fatalf("wait without a result: code=%d %+v", code, result)
 	}

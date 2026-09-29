@@ -588,7 +588,7 @@ func runIntentSystemStart(inv *intentInvocation) int {
 		if problem != nil {
 			return inv.render(*problem)
 		}
-		return runUpWith([]string{"--metasystem-root", scope.Installation, "--repo", scope.Checkout, "--recover-only", "--if-down"}, inv.owners.processes.process.repositoryTop)
+		return runUpWith([]string{"--metasystem-root", scope.Installation, "--repo", scope.Checkout, "--recover-only", "--if-down"}, inv.owners.processes.process.repositoryTop, inv.stdout, inv.stderr)
 	}
 	scope, scale, problem := inv.selectProcessScope()
 	if problem != nil {
@@ -913,7 +913,7 @@ func runIntentSystemStatus(inv *intentInvocation) int {
 	if inv.input.switched("json") {
 		args = append(args, "--json")
 	}
-	return runStewardStatus(args)
+	return runStewardStatus(args, inv.stdout, inv.stderr)
 }
 
 // runIntentWorkStatus lists running work, or reads the one goal, job, run
@@ -1424,7 +1424,7 @@ func runIntentWorkHistory(inv *intentInvocation) int {
 	if inv.input.switched("json") {
 		args = append(args, "--json")
 	}
-	return runLaunchReport(args)
+	return runLaunchReport(args, inv.stdout, inv.stderr)
 }
 
 // checkCovenantShape checks the app covenant's shape when the checkout has

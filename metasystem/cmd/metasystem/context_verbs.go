@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -68,8 +69,8 @@ type contextHandoffOutput struct {
 var classifyContextHandoffCaller, currentContextHandoffHolder, hookContextHandoffDelegate = lease.ClassifyAt, lease.CurrentHolder, lease.HookDelegate
 var contextHandoffNow = func() time.Time { return time.Now().UTC() }
 
-func runContextStatus(args []string) int {
-	flags := newFlagSet("session handoff")
+func runContextStatus(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("session handoff", stdout, stderr)
 	root := pathFlag(flags, "root", "", "installation or containing template root")
 	runtimeName := flags.String("runtime", "", "explicit runtime")
 	session := flags.String("session", "", "explicit session")
@@ -85,18 +86,18 @@ func runContextStatus(args []string) int {
 		}
 	})
 	if *root == "" || flags.NArg() != 0 || (*runtimeName == "") != (*session == "") || (transcriptSupplied && *transcript == "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem session handoff --status --root ROOT [--runtime R --session S] [--transcript PATH] [--json]")
+		fmt.Fprintln(stderr, "usage: metasystem session handoff --status --root ROOT [--runtime R --session S] [--transcript PATH] [--json]")
 		return 2
 	}
 	if *runtimeName != "" {
 		if _, ok := runtimes.Lookup(*runtimeName); !ok {
-			fmt.Fprintf(os.Stderr, "metasystem session handoff --status: unknown runtime: %s\n", *runtimeName)
+			fmt.Fprintf(stderr, "metasystem session handoff --status: unknown runtime: %s\n", *runtimeName)
 			return 1
 		}
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem session handoff --status:", err)
+		fmt.Fprintln(stderr, "metasystem session handoff --status:", err)
 		return 1
 	}
 	role, reading, readErr := steward.ContextBudgetLine(stateRoot, stateRoot, time.Now().UTC(), steward.ContextOptions{
@@ -104,19 +105,19 @@ func runContextStatus(args []string) int {
 	})
 	window, windowErr := contextWindow(stateRoot)
 	if *asJSON {
-		printJSON(contextStatusOutput{Diagnostic: transcriptSupplied, Role: role, Reading: projectContextReading(reading), Window: window})
+		writeJSONLine(stdout, stderr, contextStatusOutput{Diagnostic: transcriptSupplied, Role: role, Reading: projectContextReading(reading), Window: window})
 	} else {
-		fmt.Println(role.Line())
+		fmt.Fprintln(stdout, role.Line())
 		if windowErr == nil {
-			fmt.Println(windowLine(window))
+			fmt.Fprintln(stdout, windowLine(window))
 		}
 	}
 	if windowErr != nil {
-		fmt.Fprintln(os.Stderr, "metasystem session handoff --status:", windowErr)
+		fmt.Fprintln(stderr, "metasystem session handoff --status:", windowErr)
 		return 1
 	}
 	if readErr != nil {
-		fmt.Fprintln(os.Stderr, "metasystem session handoff --status:", readErr)
+		fmt.Fprintln(stderr, "metasystem session handoff --status:", readErr)
 		return 1
 	}
 	return 0
@@ -192,8 +193,8 @@ func windowLine(window contextWindowView) string {
 	return line
 }
 
-func runContextHandoff(args []string) int {
-	return runContextHandoffWithInputs(args, contextHandoffInputs{goal.ResolveMachine, goal.ReadClaimableBudgetedWork})
+func runContextHandoff(args []string, stdout, stderr io.Writer) int {
+	return runContextHandoffWithInputs(args, contextHandoffInputs{goal.ResolveMachine, goal.ReadClaimableBudgetedWork}, stdout, stderr)
 }
 
 type contextHandoffInputs struct {
@@ -201,8 +202,8 @@ type contextHandoffInputs struct {
 	readWork       func(string, time.Time) (goal.ClaimableBudgetedWork, error)
 }
 
-func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs) int {
-	flags := newFlagSet("session handoff")
+func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, stdout, stderr io.Writer) int {
+	flags := newFlagSet("session handoff", stdout, stderr)
 	root := pathFlag(flags, "root", "", "installation or containing template root")
 	cancel := flags.String("cancel", "", "live handoff nonce to cancel")
 	by := flags.String("by", "", "name of the attending human")
@@ -231,17 +232,17 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs) int
 	})
 	if *root == "" || flags.NArg() != 0 || (cancelSupplied && (*cancel == "" || len(scratchValues) != 0 || len(delegateValues) != 0 || noteSupplied || noDelegatesSupplied)) ||
 		(bySupplied && (!cancelSupplied || strings.TrimSpace(*by) == "")) {
-		fmt.Fprintln(os.Stderr, contextHandoffUsage)
+		fmt.Fprintln(stderr, contextHandoffUsage)
 		return 2
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		return contextVerbError("handoff", err)
+		return contextVerbError(stderr, "handoff", err)
 	}
 	if cancelSupplied {
 		caller, err := contextHandoffCallerWithMachine(stateRoot, inputs.resolveMachine)
 		if err != nil {
-			return contextVerbError("handoff", err)
+			return contextVerbError(stderr, "handoff", err)
 		}
 		canceller := steward.HandoffCanceller{Caller: caller}
 		if bySupplied {
@@ -251,7 +252,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs) int
 				act.Proof, _ = proveSessionStopHuman(stateRoot, int64(os.Getppid()), time.Now().UTC())
 				holder, err := currentContextHandoffHolder(stateRoot)
 				if err != nil {
-					return contextVerbError("handoff", err)
+					return contextVerbError(stderr, "handoff", err)
 				}
 				act.HolderMainId, act.HolderSession, act.ClaimEpoch = holder.MainId, holder.SessionId, holder.ClaimEpoch
 			}
@@ -260,18 +261,18 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs) int
 		var already *steward.HandoffAlreadyCancelled
 		if errors.As(err, &already) {
 			// The cancellation already held (R-129-ui).
-			fmt.Printf("handoff already cancelled: %s\n", *cancel)
+			fmt.Fprintf(stdout, "handoff already cancelled: %s\n", *cancel)
 			return 0
 		}
 		if err != nil {
-			return contextVerbError("handoff", err)
+			return contextVerbError(stderr, "handoff", err)
 		}
-		fmt.Printf("handoff cancelled: %s\n", *cancel)
+		fmt.Fprintf(stdout, "handoff cancelled: %s\n", *cancel)
 		return 0
 	}
 	scratch, err := parseContextScratch(scratchValues)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem session handoff:", err)
+		fmt.Fprintln(stderr, "metasystem session handoff:", err)
 		return 2
 	}
 	declarations, err := parseContextDelegates(delegateValues)
@@ -279,19 +280,19 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs) int
 		if err == nil {
 			err = fmt.Errorf("--delegate and --no-delegates cannot be combined")
 		}
-		fmt.Fprintln(os.Stderr, "metasystem session handoff:", err)
+		fmt.Fprintln(stderr, "metasystem session handoff:", err)
 		return 2
 	}
 	if *note == "" {
-		return contextVerbError("handoff", &steward.HandoffRefusal{Code: "HANDOFF_NOTE_MISSING"})
+		return contextVerbError(stderr, "handoff", &steward.HandoffRefusal{Code: "HANDOFF_NOTE_MISSING"})
 	}
 	caller, err := contextHandoffCallerWithMachine(stateRoot, inputs.resolveMachine)
 	if err != nil {
-		return contextVerbError("handoff", err)
+		return contextVerbError(stderr, "handoff", err)
 	}
 	caller, err = steward.ResolveHandoffCaller(stateRoot, caller)
 	if err != nil {
-		return contextVerbError("handoff", err)
+		return contextVerbError(stderr, "handoff", err)
 	}
 	toplevel := contextHandoffToplevel(stateRoot)
 	readOptions := usagepkg.ReadOptions{Toplevel: toplevel, Installation: stateRoot}
@@ -307,31 +308,31 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs) int
 	}
 	tasks, notices, err := usagepkg.InFlightTasks(transcript, readOptions)
 	if err != nil {
-		return contextVerbError("handoff", err)
+		return contextVerbError(stderr, "handoff", err)
 	}
 	for _, notice := range notices {
-		fmt.Fprintln(os.Stderr, notice.Text)
+		fmt.Fprintln(stderr, notice.Text)
 	}
 	now := contextHandoffNow()
 	delegates, err := contextHandoffDelegates(declarations, *noDelegates, transcriptResolved, tasks, now)
 	if err != nil {
-		return contextVerbError("handoff", err)
+		return contextVerbError(stderr, "handoff", err)
 	}
 	noteDirectory, err := config.ContextHandoffNoteDirectory(stateRoot, caller.Runtime, claudeMemory)
 	if err != nil {
-		return contextVerbError("handoff", err)
+		return contextVerbError(stderr, "handoff", err)
 	}
 	result, err := steward.HandoffWithWorkReader(stateRoot, caller, steward.HandoffRecord{
 		Scratch: scratch, Delegates: delegates, NotePath: *note, NoteDirectory: noteDirectory,
 	}, now, filepath.Join(stateRoot, "memory", "receipts.log"), inputs.readWork)
 	if err != nil {
-		return contextVerbError("handoff", err)
+		return contextVerbError(stderr, "handoff", err)
 	}
 	if *asJSON {
-		printJSON(contextHandoffOutput{Nonce: result.Nonce, StatePath: result.StatePath, Digest: result.StateDigest,
+		writeJSONLine(stdout, stderr, contextHandoffOutput{Nonce: result.Nonce, StatePath: result.StatePath, Digest: result.StateDigest,
 			IntentPath: result.IntentPath})
 	} else {
-		fmt.Printf("handoff recorded: %s state=%s sha256=%s\n", result.Nonce, result.StatePath, result.StateDigest)
+		fmt.Fprintf(stdout, "handoff recorded: %s state=%s sha256=%s\n", result.Nonce, result.StatePath, result.StateDigest)
 	}
 	return 0
 }
@@ -503,36 +504,36 @@ func parseContextScratch(values []string) ([]steward.ScratchArg, error) {
 	return result, nil
 }
 
-func runContextVerify(args []string) int {
-	flags := newFlagSet("session handoff")
+func runContextVerify(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("session handoff", stdout, stderr)
 	root := pathFlag(flags, "root", "", "installation or containing template root")
 	nonce := flags.String("nonce", "", "handoff nonce")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *root == "" || *nonce == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem session handoff --verify NONCE --root ROOT")
+		fmt.Fprintln(stderr, "usage: metasystem session handoff --verify NONCE --root ROOT")
 		return 2
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		return contextVerbError("verify", err)
+		return contextVerbError(stderr, "verify", err)
 	}
 	digest, err := steward.VerifyHandoffState(stateRoot, *nonce)
 	if err != nil {
-		return contextVerbError("verify", err)
+		return contextVerbError(stderr, "verify", err)
 	}
-	fmt.Printf("ok sha256=%s\n", digest)
+	fmt.Fprintf(stdout, "ok sha256=%s\n", digest)
 	return 0
 }
 
-func contextVerbError(verb string, err error) int {
+func contextVerbError(stderr io.Writer, verb string, err error) int {
 	var refusal *steward.HandoffRefusal
 	if errors.As(err, &refusal) {
-		fmt.Fprintln(os.Stderr, strings.NewReplacer("\r", " ", "\n", " ").Replace(refusal.Error()))
+		fmt.Fprintln(stderr, strings.NewReplacer("\r", " ", "\n", " ").Replace(refusal.Error()))
 		return 9
 	}
-	fmt.Fprintf(os.Stderr, "metasystem %s: %v\n", contextPublicName(verb), err)
+	fmt.Fprintf(stderr, "metasystem %s: %v\n", contextPublicName(verb), err)
 	return 1
 }
 

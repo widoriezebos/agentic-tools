@@ -18,8 +18,8 @@ import (
 // runValidateCritiqueClosed joins a critic return's findings array
 // against the Markdown dispositions table on finding id. Exit 0 closed;
 // 1 open or unjoinable; 2 usage.
-func runValidateCritiqueClosed(args []string) int {
-	flags := newFlagSet("validate critique-closed")
+func runValidateCritiqueClosed(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("validate critique-closed", stdout, stderr)
 	findings := flags.String("findings", "", "critic return JSON")
 	dispositions := flags.String("dispositions", "", "Markdown file holding the dispositions table")
 	repo := pathFlag(flags, "repo", "", "checkout root whose register is updated")
@@ -28,11 +28,11 @@ func runValidateCritiqueClosed(args []string) int {
 		return 2
 	}
 	if *findings == "" || *dispositions == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem work review [j2:ROOT] --check-only --findings F --dispositions F")
+		fmt.Fprintln(stderr, "usage: metasystem work review [j2:ROOT] --check-only --findings F --dispositions F")
 		return 2
 	}
 	if (*repo == "") != (*rootJob == "") {
-		fmt.Fprintln(os.Stderr, "validate critique-closed: --repo and --root-job must be supplied together")
+		fmt.Fprintln(stderr, "validate critique-closed: --repo and --root-job must be supplied together")
 		return 2
 	}
 	var violations []string
@@ -42,7 +42,7 @@ func runValidateCritiqueClosed(args []string) int {
 		violations = validate.CritiqueClosed(*findings, *dispositions)
 	}
 	for _, item := range violations {
-		fmt.Fprintf(os.Stderr, "violation: %s\n", item)
+		fmt.Fprintf(stderr, "violation: %s\n", item)
 	}
 	if len(violations) > 0 {
 		return 1
@@ -54,25 +54,25 @@ func runValidateCritiqueClosed(args []string) int {
 // configuration into a second-session worktree, audits the isolation,
 // and prints the new checkout's harness root. Exit 0 isolated; 1 an
 // unsafe manifest path or a failed audit; 2 usage.
-func runValidateSessionIsolation(args []string) int {
-	flags := newFlagSet("validate session-isolation")
+func runValidateSessionIsolation(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("validate session-isolation", stdout, stderr)
 	sourceRoot := flags.String("source-root", "", "primary checkout the configuration copies from")
 	destinationRoot := flags.String("destination-root", "", "new second-session worktree")
 	manifest := flags.String("manifest", "", "file listing the adapter-declared relative paths")
 	harnessRoot := flags.String("harness-root", "", "harness root inside the primary checkout")
-	if flags.Parse(args) != nil || !requireFlags(flags, nil, "source-root", "destination-root", "manifest", "harness-root") {
+	if flags.Parse(args) != nil || !requireFlags(flags, stderr, "source-root", "destination-root", "manifest", "harness-root") {
 		return 2
 	}
 	if *sourceRoot == "" || *destinationRoot == "" || *manifest == "" || *harnessRoot == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate session-isolation --source-root A --destination-root B --manifest F --harness-root H")
+		fmt.Fprintln(stderr, "usage: metasystem internal validate session-isolation --source-root A --destination-root B --manifest F --harness-root H")
 		return 2
 	}
 	newHarness, err := validate.SessionIsolation(*sourceRoot, *destinationRoot, *manifest, *harnessRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	fmt.Println(newHarness)
+	fmt.Fprintln(stdout, newHarness)
 	return 0
 }
 
@@ -80,9 +80,9 @@ func runValidateSessionIsolation(args []string) int {
 // calling convention: --stage review|recertify|merge and --job, with --root naming
 // the merge-target checkout. Exit 0 conforming; 1 conformance failure; 2
 // usage.
-func runValidateConformance(args []string) int {
+func runValidateConformance(args []string, stdout, stderr io.Writer) int {
 	usage := func() {
-		fmt.Fprint(os.Stderr, `Usage: metasystem work review j2:<job-id> --check-only --stage review|recertify|merge [--test-command <command>] [--recertification <record>]
+		fmt.Fprint(stderr, `Usage: metasystem work review j2:<job-id> --check-only --stage review|recertify|merge [--test-command <command>] [--recertification <record>]
 
 The review stage computes the implementer worktree's exact review object. A
 temporary index contains every tracked file plus every untracked, unignored
@@ -100,7 +100,7 @@ the exact proof produced for the same implementer job.
 Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 `)
 	}
-	flags := newFlagSet("validate conformance")
+	flags := newFlagSet("validate conformance", stdout, stderr)
 	flags.Usage = usage
 	root := pathFlag(flags, "root", ".", "merge-target checkout root")
 	stage, job := "", ""
@@ -147,10 +147,10 @@ Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 		Recertification: recertification, TestCommand: testCommand,
 	})
 	for _, line := range out {
-		fmt.Println(line)
+		fmt.Fprintln(stdout, line)
 	}
 	for _, line := range errs {
-		fmt.Fprintln(os.Stderr, line)
+		fmt.Fprintln(stderr, line)
 	}
 	return code
 }
@@ -158,9 +158,9 @@ Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 // runValidateStopLoss owns the stop-loss check's calling
 // convention: --file names the investigation ledger. Exit 0 more cycles
 // allowed; 1 stop-loss triggered; 2 usage error.
-func runValidateStopLoss(args []string) int {
+func runValidateStopLoss(args []string, stdout, stderr io.Writer) int {
 	usage := func() {
-		fmt.Fprint(os.Stderr, `Usage:
+		fmt.Fprint(stderr, `Usage:
   metasystem experiment check --file <investigation-ledger.md>
 
 Reads the cycle classifications from an investigation ledger and blocks
@@ -184,7 +184,7 @@ Run it before contracting a new cycle.
 Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 `)
 	}
-	flags := newFlagSet("experiment check")
+	flags := newFlagSet("experiment check", stdout, stderr)
 	file := flags.String("file", "", "the investigation ledger")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -197,19 +197,19 @@ Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 		return 2
 	}
 	if *file == "" {
-		fmt.Fprintln(os.Stderr, "metasystem experiment check: needs the ledger: metasystem experiment check --file LEDGER; nothing was checked")
+		fmt.Fprintln(stderr, "metasystem experiment check: needs the ledger: metasystem experiment check --file LEDGER; nothing was checked")
 		return 2
 	}
 	if _, err := os.Stat(*file); err != nil {
-		fmt.Fprintf(os.Stderr, "metasystem experiment check: no ledger at %s; nothing was checked\n", *file)
+		fmt.Fprintf(stderr, "metasystem experiment check: no ledger at %s; nothing was checked\n", *file)
 		return 2
 	}
 	out, errs, code := validate.StopLoss(*file)
 	for _, line := range out {
-		fmt.Println(line)
+		fmt.Fprintln(stdout, line)
 	}
 	for _, line := range errs {
-		fmt.Fprintln(os.Stderr, line)
+		fmt.Fprintln(stderr, line)
 	}
 	return code
 }
@@ -256,9 +256,9 @@ func movedEffectsReport(page []byte, repositoryRoot string) ([]string, int) {
 // record a trusted baseline after the acceptance gate, or check whether a
 // new refactor edit batch may start. Exit 0 safe, 1 blocked, 2 usage or
 // environment error — the contract its callers script against.
-func runValidateRefactorBaseline(args []string) int {
+func runValidateRefactorBaseline(args []string, stdout, stderr io.Writer) int {
 	usage := func() int {
-		fmt.Fprintln(os.Stderr, `usage: metasystem test baseline --gate CMD [--file F] [--root INSTALLATION]
+		fmt.Fprintln(stderr, `usage: metasystem test baseline --gate CMD [--file F] [--root INSTALLATION]
        metasystem test baseline --check [--file F] [--max-age-minutes N] [--max-commits N] [--root INSTALLATION]
 
 --gate: store the current clean, committed HEAD as the trusted refactor
@@ -279,7 +279,7 @@ Exit codes: 0 safe; 1 blocked; 2 usage or environment error.`)
 	}
 	var p validate.RefactorBaselineParams
 	p.Command = args[0]
-	flags := newFlagSet("test baseline")
+	flags := newFlagSet("test baseline", stdout, stderr)
 	flags.StringVar(&p.File, "file", "plans/refactor-baseline", "baseline file path")
 	flags.StringVar(&p.Gate, "gate", "", "record: the acceptance gate command that passed")
 	maxAge := flags.String("max-age-minutes", "", "check: maximum baseline age")
@@ -300,16 +300,16 @@ Exit codes: 0 safe; 1 blocked; 2 usage or environment error.`)
 		}
 	}
 	confPath := filepath.Join(installation, "metasystem.conf")
-	if code := resolveRefactorCadence(&p, set, *maxAge, *maxCommits, confPath, os.Stderr); code != 0 {
+	if code := resolveRefactorCadence(&p, set, *maxAge, *maxCommits, confPath, stderr); code != 0 {
 		return code
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 2
 	}
 	p.Cwd = cwd
-	return validate.RefactorBaseline(p, os.Stdout, os.Stderr)
+	return validate.RefactorBaseline(p, stdout, stderr)
 }
 
 // resolveRefactorCadence resolves the refactor gate's cadence backstops: the

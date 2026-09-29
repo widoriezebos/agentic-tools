@@ -19,7 +19,7 @@ func TestIntentSwitchedRemediesReachTheFamilyOwner(t *testing.T) {
 		printed, family string
 		object, action  string
 		// handler is the family handler a passthrough action must run.
-		handler func([]string) int
+		handler command
 		// rest is the argument vector the handler receives.
 		rest []string
 	}{

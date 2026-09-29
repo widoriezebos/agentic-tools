@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -23,7 +24,7 @@ func (s *sentinelFamilies) registry() []family {
 		copied := family{name: fam.name, summary: fam.summary}
 		for _, v := range fam.verbs {
 			name, verbName := fam.name, v.name
-			copied.verbs = append(copied.verbs, verb{name: v.name, summary: v.summary, run: func(args []string) int {
+			copied.verbs = append(copied.verbs, verb{name: v.name, summary: v.summary, run: func(args []string, _, _ io.Writer) int {
 				s.mu.Lock()
 				defer s.mu.Unlock()
 				s.calls = append(s.calls, strings.TrimSpace(name+" "+verbName+" "+strings.Join(args, " ")))

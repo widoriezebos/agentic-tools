@@ -28,7 +28,7 @@ import (
 
 // passthroughAction is a public action whose words go, unchanged, to an
 // existing handler with its own parser, output and exit codes.
-func passthroughAction(object, action, audience, summary string, usage []string, flags []intentFlag, examples []string, run func([]string) int) intentCommand {
+func passthroughAction(object, action, audience, summary string, usage []string, flags []intentFlag, examples []string, run command) intentCommand {
 	// An owner's --root is the repository every public command takes as
 	// --repo (its --root spelling still parses): the help says so, and the
 	// installation is found from the current directory when neither is given.
@@ -51,7 +51,9 @@ func passthroughAction(object, action, audience, summary string, usage []string,
 	}
 	command := intentCommand{object: object, action: action, audience: audience, summary: summary, usage: lines,
 		flags: shown, examples: shownExamples, maxArgs: -1, owner: run}
-	command.passthrough = func(args []string) int { return runPassthrough(command, run, args, os.Stderr) }
+	command.passthrough = func(args []string, stdout, stderr io.Writer) int {
+		return runPassthrough(command, run, args, stdout, stderr)
+	}
 	return command
 }
 
@@ -60,7 +62,7 @@ func passthroughAction(object, action, audience, summary string, usage []string,
 // when its help shows --root as optional (its owner takes it as --root; a
 // receipt action also takes the ledger it writes). What the owner answers
 // is its own.
-func runPassthrough(command intentCommand, run func([]string) int, args []string, stderr io.Writer) int {
+func runPassthrough(command intentCommand, run command, args []string, stdout, stderr io.Writer) int {
 	label := "metasystem " + command.object + " " + command.action
 	repo, repoGiven, rest := takeIntentFlag(args, "repo", true)
 	if repoGiven && repo == "" {
@@ -76,7 +78,7 @@ func runPassthrough(command intentCommand, run func([]string) int, args []string
 	}
 	receipts := command.object == "receipt" && !fileGiven
 	if !documentsRoot || rootGiven && !receipts {
-		return run(rest)
+		return run(rest, stdout, stderr)
 	}
 	path := repo
 	if path == "" {
@@ -93,7 +95,7 @@ func runPassthrough(command intentCommand, run func([]string) int, args []string
 			return 2
 		}
 		// Outside a repository the owner answers for its own --root.
-		return run(rest)
+		return run(rest, stdout, stderr)
 	}
 	var extra []string
 	if !rootGiven {
@@ -122,12 +124,14 @@ func runPassthrough(command intentCommand, run func([]string) int, args []string
 	for at < len(rest) && at < leading && !strings.HasPrefix(rest[at], "-") {
 		at++
 	}
-	return run(slices.Concat(rest[:at], extra, rest[at:]))
+	return run(slices.Concat(rest[:at], extra, rest[at:]), stdout, stderr)
 }
 
 // withLead gives a handler that takes its action word first the same words.
-func withLead(lead string, run func([]string) int) func([]string) int {
-	return func(args []string) int { return run(append([]string{lead}, args...)) }
+func withLead(lead string, run command) command {
+	return func(args []string, stdout, stderr io.Writer) int {
+		return run(append([]string{lead}, args...), stdout, stderr)
+	}
 }
 
 func documented(name, value, usage string) intentFlag {
@@ -434,13 +438,13 @@ func takeIntentFlag(args []string, name string, takesValue bool) (string, bool, 
 
 // runReceiptAdd appends a receipt, or with --corrects EPOCH:SHA1 a
 // correction of the receipt line with that epoch and SHA-1.
-func runReceiptAdd(args []string) int {
+func runReceiptAdd(args []string, stdout, stderr io.Writer) int {
 	words, problem := receiptAddWords(args)
 	if problem != "" {
-		fmt.Fprintln(os.Stderr, "metasystem receipt add: "+problem)
+		fmt.Fprintln(stderr, "metasystem receipt add: "+problem)
 		return 2
 	}
-	return runReceipt(words)
+	return runReceipt(words, stdout, stderr)
 }
 
 // receiptAddWords are the receipt owner's words for a receipt add: an add,
@@ -459,18 +463,18 @@ func receiptAddWords(args []string) ([]string, string) {
 
 // runReceiptStatus says whether a retro is due and prints the period's
 // numbers; its exit code is the due check's (1 when a retro is due).
-func runReceiptStatus(args []string) int {
+func runReceiptStatus(args []string, stdout, stderr io.Writer) int {
 	all, _, checkArgs := takeIntentFlag(args, "all", false)
 	if _, named, _ := takeIntentFlag(checkArgs, "file", true); !named {
 		// Both reads use the one ledger, resolved once.
 		root, err := stateroot.StateRoot(stateroot.Receipts)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "receipt:", err)
+			fmt.Fprintln(stderr, "receipt:", err)
 			return 1
 		}
 		checkArgs = append(slices.Clone(checkArgs), "--file", filepath.Join(root, "receipts.log"))
 	}
-	due := runReceipt(append([]string{"check"}, checkArgs...))
+	due := runReceipt(append([]string{"check"}, checkArgs...), stdout, stderr)
 	if due > 1 {
 		return due
 	}
@@ -478,7 +482,7 @@ func runReceiptStatus(args []string) int {
 	if all == "true" {
 		statsArgs = append(slices.Clone(checkArgs), "--all")
 	}
-	if stats := runReceipt(append([]string{"stats"}, statsArgs...)); stats != 0 {
+	if stats := runReceipt(append([]string{"stats"}, statsArgs...), stdout, stderr); stats != 0 {
 		return stats
 	}
 	return due
@@ -486,14 +490,14 @@ func runReceiptStatus(args []string) int {
 
 // runSessionHandoff hands off, cancels, reads the context budget (--status)
 // or verifies a handoff (--verify NONCE) through the context owners.
-func runSessionHandoff(args []string) int {
+func runSessionHandoff(args []string, stdout, stderr io.Writer) int {
 	handler, rest := sessionHandoffRoute(args)
-	return handler(rest)
+	return handler(rest, stdout, stderr)
 }
 
 // sessionHandoffRoute is the context owner a session handoff's words reach,
 // with the words that owner takes.
-func sessionHandoffRoute(args []string) (func([]string) int, []string) {
+func sessionHandoffRoute(args []string) (command, []string) {
 	if _, status, rest := takeIntentFlag(args, "status", false); status {
 		return runContextStatus, rest
 	}
@@ -505,20 +509,20 @@ func sessionHandoffRoute(args []string) (func([]string) int, []string) {
 
 // runTestStatus reads whether retained proof covers an exact tree, or with
 // --result the measured cost of one recorded result; neither runs a test.
-func runTestStatus(args []string) int {
+func runTestStatus(args []string, stdout, stderr io.Writer) int {
 	route := testStatusRoute(args)
 	if _, result, _ := takeIntentFlag(args, "result", true); result {
 		// A recorded result is read on its own; the installation found for
 		// it is not an option the report takes.
 		_, _, args = takeIntentFlag(args, "root", true)
-		return route(args)
+		return route(args, stdout, stderr)
 	}
-	return runTestVerifyAs("test status", args)
+	return runTestVerifyAs("test status", args, stdout, stderr)
 }
 
 // testStatusRoute is the owner a test status's words reach: the result
 // report for --result, else the retained-proof verifier.
-func testStatusRoute(args []string) func([]string) int {
+func testStatusRoute(args []string) command {
 	if _, result, _ := takeIntentFlag(args, "result", true); result {
 		return runTestReport
 	}
@@ -655,9 +659,9 @@ func batchStatusLine(record batch.Record, now time.Time) string {
 // runTestBaseline is test baseline: --gate records the trusted refactor
 // baseline, --check asks whether another edit batch may start; both reach
 // the refactor baseline owner.
-func runTestBaseline(args []string) int {
+func runTestBaseline(args []string, stdout, stderr io.Writer) int {
 	// Its options are judged first, in the public style.
-	options := newFlagSet("test baseline")
+	options := newFlagSet("test baseline", stdout, stderr)
 	options.Bool("check", false, "")
 	options.String("gate", "", "the gate command that passed, e.g. metasystem test baseline --gate 'go test ./...'")
 	for _, name := range []string{"file", "max-age-minutes", "max-commits", "root"} {
@@ -671,10 +675,10 @@ func runTestBaseline(args []string) int {
 	}
 	words, err := testBaselineArgs(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test baseline:", err)
+		fmt.Fprintln(stderr, "metasystem test baseline:", err)
 		return 2
 	}
-	return runValidateRefactorBaseline(words)
+	return runValidateRefactorBaseline(words, stdout, stderr)
 }
 
 // testBaselineArgs maps test baseline's options onto the owner's record and

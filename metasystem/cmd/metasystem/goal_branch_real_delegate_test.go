@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -75,7 +76,7 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 			// METASYSTEM_BIN names the worktree's engine for the probe only.
 			previousBin, hadBin := os.LookupEnv("METASYSTEM_BIN")
 			t.Setenv("METASYSTEM_BIN", filepath.Join(worktree, "bin", "metasystem"))
-			if code := runDelegateSupervisor([]string{"claude", "probe", "--root", worktree}); code != 0 {
+			if code := runDelegateSupervisor([]string{"claude", "probe", "--root", worktree}, t.Output(), t.Output()); code != 0 {
 				t.Fatalf("claude adapter probe exited %d", code)
 			}
 			if hadBin {
@@ -93,11 +94,11 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 			brief := filepath.Join(t.TempDir(), "brief.md")
 			writeTestingFixtureFile(t, brief, []byte(c.brief), 0o644)
 
-			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+			code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 				return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit,
 					"--brief", brief, "--selected-installation", selected}, goalBranchReadDependencies{
 					Gate: func(string) (string, error) { return "green", nil },
-				})
+				}, stdout, stderr)
 			})
 			t.Logf("branch read: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 			if code != 0 || !strings.Contains(stdout, "state=dispatched") {
@@ -280,15 +281,15 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 	}
 	writeTestingFixtureFile(t, filepath.Join(worktree, "metasystem", "code.go"), []byte("package fixture\n"), 0o644)
 	goalSyncMutationGit(t, worktree, "add", "metasystem/code.go")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", worktree})
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", worktree}, stdout, stderr)
 	})
 	unit := strings.TrimSpace(stdout)
 	if code != 0 || len(unit) != 40 {
 		t.Fatalf("unit commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "real-delegate-push"})
+	code, _, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "real-delegate-push"}, stdout, stderr)
 	})
 	if code != 0 {
 		t.Fatalf("goal push: code=%d stderr=%q", code, stderr)

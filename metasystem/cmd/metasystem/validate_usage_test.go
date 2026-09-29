@@ -8,7 +8,7 @@ import "testing"
 func TestProtocolCheckersRefuseMissingArgumentsAsUsage(t *testing.T) {
 	t.Parallel()
 	for name, run := range map[string]func() int{
-		"critique-closed without its inputs": func() int { return runValidateCritiqueClosed(nil) },
+		"critique-closed without its inputs": func() int { return runValidateCritiqueClosed(nil, t.Output(), t.Output()) },
 	} {
 		if code := run(); code != 2 {
 			t.Errorf("%s exited %d, want 2 for usage", name, code)

@@ -388,7 +388,9 @@ func TestReportTurnVerdictHeldClaimWritesRealSeatIdleIntent(t *testing.T) {
 		if stop == 3 {
 			args = append(args, "--stop-hook-active")
 		}
-		stdout, code := captureStdout(t, func() int { return runReportTurnVerdictWithInputs(args, resolve, machine) })
+		stdout, code := captureStdout(t, func(stdout, stderr io.Writer) int {
+			return runReportTurnVerdictWithInputs(args, resolve, machine, stdout, stderr)
+		})
 		if code != 0 {
 			t.Fatalf("turn-verdict stop %d exited %d: %s", stop, code, stdout)
 		}
@@ -422,13 +424,8 @@ func TestReportTurnVerdictFactsWriteFailurePreservesCompletedVerdict(t *testing.
 
 	invoke := func(root, session, factsPath string, repository goal.Repository) (string, string, int) {
 		resolve, machine := sessionStopRawInputs(t, root, repository)
-		var stdout string
-		stderr, code := captureStderr(t, func() int {
-			var inner int
-			stdout, inner = captureStdout(t, func() int {
-				return runReportTurnVerdictWithInputs([]string{"--root", root, "--session", session, "--facts-file", factsPath}, resolve, machine)
-			})
-			return inner
+		code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+			return runReportTurnVerdictWithInputs([]string{"--root", root, "--session", session, "--facts-file", factsPath}, resolve, machine, stdout, stderr)
 		})
 		return stdout, stderr, code
 	}
@@ -479,8 +476,8 @@ func TestReportTurnVerdictFactsWriteFailurePreservesCompletedVerdict(t *testing.
 	allowRepository := &sessionStopAcceptedRepository{tip: "session-stop-accepted-tip", files: allowFiles}
 	allowResolve, allowMachine := sessionStopRawInputs(t, allowRoot, allowRepository)
 	for attempt := 1; attempt < 3; attempt++ {
-		if output, runCode := captureStdout(t, func() int {
-			return runReportTurnVerdictWithInputs([]string{"--root", allowRoot, "--session", "facts-writer-allow"}, allowResolve, allowMachine)
+		if output, runCode := captureStdout(t, func(stdout, stderr io.Writer) int {
+			return runReportTurnVerdictWithInputs([]string{"--root", allowRoot, "--session", "facts-writer-allow"}, allowResolve, allowMachine, stdout, stderr)
 		}); runCode != 0 {
 			t.Fatalf("allowance setup attempt %d exited %d: %s", attempt, runCode, output)
 		}
@@ -516,7 +513,9 @@ func TestReportTurnVerdictCompletionCapturePreservesVerdict(t *testing.T) {
 	completionPath := filepath.Join(t.TempDir(), "completion.json")
 	factsPath := filepath.Join(t.TempDir(), "facts.json")
 	args := []string{"--root", root, "--session", "completion-capture", "--main-id", "main-completion", "--facts-file", factsPath, "--completion-file", completionPath}
-	stdout, code := captureStdout(t, func() int { return runReportTurnVerdictWithInputs(args, resolve, machine) })
+	stdout, code := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runReportTurnVerdictWithInputs(args, resolve, machine, stdout, stderr)
+	})
 	if code != 0 {
 		t.Fatalf("completion capture exited %d: %s", code, stdout)
 	}
@@ -566,12 +565,8 @@ func TestReportTurnVerdictCompletionCapturePreservesVerdict(t *testing.T) {
 		atWriter = snapshot()
 		return false, errors.New("injected completion failure")
 	}
-	var failedStdout string
-	stderr, failedCode := captureStderr(t, func() int {
-		failedStdout, code = captureStdout(t, func() int {
-			return runReportTurnVerdictWithInputs([]string{"--root", root, "--session", "completion-capture", "--main-id", "main-completion", "--facts-file", failedFactsPath, "--completion-file", failedPath}, resolve, machine)
-		})
-		return code
+	failedCode, failedStdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runReportTurnVerdictWithInputs([]string{"--root", root, "--session", "completion-capture", "--main-id", "main-completion", "--facts-file", failedFactsPath, "--completion-file", failedPath}, resolve, machine, stdout, stderr)
 	})
 	failedFactsBytes, factsErr := os.ReadFile(failedFactsPath)
 	var failedFacts goal.TurnVerdictFacts
@@ -621,14 +616,14 @@ func runReportTurnVerdictTo(args []string, stdout, stderr io.Writer, resolve fun
 	}, stdout, stderr, resolve, resolveMachine)
 }
 
-func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.Endpoint, error), resolveMachine func(string) (string, error)) int {
-	return runReportTurnVerdictTo(args, os.Stdout, os.Stderr, resolve, resolveMachine)
+func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.Endpoint, error), resolveMachine func(string) (string, error), stdout, stderr io.Writer) int {
+	return runReportTurnVerdictTo(args, stdout, stderr, resolve, resolveMachine)
 }
 
 // runReportTurnVerdict is the Stop hook's one verb: the scanner fills the
 // verdict's input contract and the decision returns as JSON on stdout.
 // Every representable state is exit 0; nonzero means I/O failure and the
 // hook's own fixed degraded message takes over.
-func runReportTurnVerdict(args []string) int {
-	return runReportTurnVerdictWithInputs(args, nil, nil)
+func runReportTurnVerdict(args []string, stdout, stderr io.Writer) int {
+	return runReportTurnVerdictWithInputs(args, nil, nil, stdout, stderr)
 }

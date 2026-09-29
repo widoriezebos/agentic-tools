@@ -2,329 +2,107 @@ package main
 
 import (
 	"bytes"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 )
 
-type capturedStream struct {
-	data []byte
-	err  error
+// streamBuffer is one captured stream: a command may print from more than
+// one goroutine (a progress printer, a cadence tick), so writes are
+// serialised as the kernel serialised them on the pipe this replaced.
+type streamBuffer struct {
+	mu   sync.Mutex
+	data bytes.Buffer
 }
 
-// captureStreams acquires every requested stream at once. Holding one stream
-// while waiting for another would deadlock with disjoint captures.
-type captureStreams struct {
-	mu                     sync.Mutex
-	cond                   *sync.Cond
-	stdoutHeld, stderrHeld bool
-	waiters                int
+func (b *streamBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.Write(p)
 }
 
-func (streams *captureStreams) conditionLocked() *sync.Cond {
-	if streams.cond == nil {
-		streams.cond = sync.NewCond(&streams.mu)
-	}
-	return streams.cond
+func (b *streamBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.String()
 }
 
-func (streams *captureStreams) acquire(stdout, stderr bool) {
-	streams.mu.Lock()
-	defer streams.mu.Unlock()
-	condition := streams.conditionLocked()
-	waiting := false
-	for stdout && streams.stdoutHeld || stderr && streams.stderrHeld {
-		if !waiting {
-			streams.waiters++
-			waiting = true
-			condition.Broadcast()
-		}
-		condition.Wait()
-	}
-	if waiting {
-		streams.waiters--
-		condition.Broadcast()
-	}
-	if stdout {
-		streams.stdoutHeld = true
-	}
-	if stderr {
-		streams.stderrHeld = true
-	}
+// runOnOwnStreams runs one command on standard output and error of its own,
+// never the process's, and returns its exit code and what it printed on
+// each. A parallel test's output can never reach them, and this command's
+// output never reaches another test.
+func runOnOwnStreams(run func(stdout, stderr io.Writer) int) (int, string, string) {
+	var stdout, stderr streamBuffer
+	code := run(&stdout, &stderr)
+	return code, stdout.String(), stderr.String()
 }
 
-func (streams *captureStreams) release(stdout, stderr bool) {
-	streams.mu.Lock()
-	defer streams.mu.Unlock()
-	if stdout {
-		streams.stdoutHeld = false
-	}
-	if stderr {
-		streams.stderrHeld = false
-	}
-	streams.conditionLocked().Broadcast()
-}
-
-var commandCaptureStreams captureStreams
-
-// captureCommandOutput drains both capture pipes while the command runs.
-// Callers select which standard streams to redirect so one-stream captures
-// can be nested without intercepting the stream owned by an outer capture.
-func captureCommandOutput(t *testing.T, captureStdout, captureStderr bool, run func() int) (int, string, string) {
-	t.Helper()
-	commandCaptureStreams.acquire(captureStdout, captureStderr)
-	defer commandCaptureStreams.release(captureStdout, captureStderr)
-	outRead, outWrite, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("create the standard output capture pipe: %v", err)
-	}
-	errRead, errWrite, err := os.Pipe()
-	if err != nil {
-		_ = outRead.Close()
-		_ = outWrite.Close()
-		t.Fatalf("create the standard error capture pipe: %v", err)
-	}
-
-	drain := func(reader *os.File) <-chan capturedStream {
-		result := make(chan capturedStream, 1)
-		go func() {
-			data, readErr := io.ReadAll(reader)
-			result <- capturedStream{data: data, err: readErr}
-		}()
-		return result
-	}
-	outResult := drain(outRead)
-	errResult := drain(errRead)
-
-	var originalOut, originalErr *os.File
-	var code int
-	func() {
-		if captureStdout {
-			originalOut = os.Stdout
-			os.Stdout = outWrite
-		}
-		if captureStderr {
-			originalErr = os.Stderr
-			os.Stderr = errWrite
-		}
-		defer func() {
-			if captureStdout {
-				os.Stdout = originalOut
-			}
-			if captureStderr {
-				os.Stderr = originalErr
-			}
-			_ = outWrite.Close()
-			_ = errWrite.Close()
-		}()
-		code = run()
-	}()
-
-	stdout := <-outResult
-	stderr := <-errResult
-	_ = outRead.Close()
-	_ = errRead.Close()
-	if stdout.err != nil {
-		t.Fatalf("read captured standard output: %v", stdout.err)
-	}
-	if stderr.err != nil {
-		t.Fatalf("read captured standard error: %v", stderr.err)
-	}
-	return code, string(stdout.data), string(stderr.data)
-}
-
-func TestCaptureStreamsWaitWithoutHoldingAStream(t *testing.T) {
+// TestRunOnOwnStreamsKeepsConcurrentCommandsApart: two commands printing at
+// once each read only their own lines, however their writes interleave.
+func TestRunOnOwnStreamsKeepsConcurrentCommandsApart(t *testing.T) {
 	t.Parallel()
-	var streams captureStreams
-	streams.acquire(false, true)
-	done := make(chan struct{})
-	go func() {
-		streams.acquire(true, true)
-		streams.release(true, true)
-		close(done)
-	}()
-
-	streams.mu.Lock()
-	condition := streams.conditionLocked()
-	for streams.waiters != 1 {
-		condition.Wait()
-	}
-	stdoutHeld := streams.stdoutHeld
-	streams.mu.Unlock()
-	if stdoutHeld {
-		t.Fatal("stdout is held while a capture waits for stderr")
-	}
-
-	streams.acquire(true, false)
-	streams.release(true, false)
-	streams.release(false, true)
-	<-done
-}
-
-func TestCaptureCommandOutputAllowsNestedAndConcurrentDisjointStreams(t *testing.T) {
-	t.Parallel()
-	code, stdout, stderr := captureCommandOutput(t, true, false, func() int {
-		_, _ = os.Stdout.WriteString("outer-before\n")
-		innerCode, innerStdout, innerStderr := captureCommandOutput(t, false, true, func() int {
-			_, _ = os.Stderr.WriteString("inner\n")
-			return 17
-		})
-		if innerCode != 17 || innerStdout != "" || innerStderr != "inner\n" {
-			t.Errorf("nested capture = code %d, stdout %q, stderr %q", innerCode, innerStdout, innerStderr)
-		}
-		_, _ = os.Stdout.WriteString("outer-after\n")
-		return 23
-	})
-	if code != 23 || stdout != "outer-before\nouter-after\n" || stderr != "" {
-		t.Fatalf("outer capture = code %d, stdout %q, stderr %q", code, stdout, stderr)
-	}
-
-	type captureResult struct {
-		code, stream   int
+	type captured struct {
+		code           int
 		stdout, stderr string
 	}
 	ready := make(chan struct{}, 2)
 	release := make(chan struct{})
-	results := make(chan captureResult, 2)
-	go func() {
-		code, stdout, stderr := captureCommandOutput(t, true, false, func() int {
-			ready <- struct{}{}
-			<-release
-			_, _ = os.Stdout.WriteString("stdout\n")
-			return 31
-		})
-		results <- captureResult{code: code, stream: 1, stdout: stdout, stderr: stderr}
-	}()
-	go func() {
-		code, stdout, stderr := captureCommandOutput(t, false, true, func() int {
-			ready <- struct{}{}
-			<-release
-			_, _ = os.Stderr.WriteString("stderr\n")
-			return 37
-		})
-		results <- captureResult{code: code, stream: 2, stdout: stdout, stderr: stderr}
-	}()
+	results := make(chan captured, 2)
+	for _, name := range []string{"first", "second"} {
+		go func() {
+			code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+				ready <- struct{}{}
+				<-release
+				for range 100 {
+					_, _ = io.WriteString(stdout, name+"\n")
+					_, _ = io.WriteString(stderr, name+"!\n")
+				}
+				return len(name)
+			})
+			results <- captured{code, stdout, stderr}
+		}()
+	}
 	<-ready
 	<-ready
 	close(release)
 	for range 2 {
 		result := <-results
-		if result.stream == 1 && (result.code != 31 || result.stdout != "stdout\n" || result.stderr != "") {
-			t.Errorf("concurrent stdout capture = %#v", result)
-		}
-		if result.stream == 2 && (result.code != 37 || result.stdout != "" || result.stderr != "stderr\n") {
-			t.Errorf("concurrent stderr capture = %#v", result)
+		name := map[int]string{5: "first", 6: "second"}[result.code]
+		if name == "" || result.stdout != string(bytes.Repeat([]byte(name+"\n"), 100)) || result.stderr != string(bytes.Repeat([]byte(name+"!\n"), 100)) {
+			t.Fatalf("a command read another's output: %+v", result)
 		}
 	}
 }
 
-func TestCaptureCommandOutputDrainsLargeStreams(t *testing.T) {
-	stdoutWant := bytes.Repeat([]byte("standard output payload\n"), 50_000)
-	stderrWant := bytes.Repeat([]byte("standard error payload\n"), 50_000)
-	if len(stdoutWant) <= 1<<20 || len(stderrWant) <= 1<<20 {
-		t.Fatal("the capture fixture must exceed one megabyte on each stream")
-	}
-
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		if _, err := os.Stdout.Write(stdoutWant); err != nil {
-			t.Fatalf("write the standard output fixture: %v", err)
-		}
-		if _, err := os.Stderr.Write(stderrWant); err != nil {
-			t.Fatalf("write the standard error fixture: %v", err)
-		}
-		return 23
-	})
-
-	if code != 23 {
-		t.Fatalf("captured command exit code = %d, want 23", code)
-	}
-	if !bytes.Equal([]byte(stdout), stdoutWant) {
-		t.Fatalf("captured standard output has %d bytes, want %d", len(stdout), len(stdoutWant))
-	}
-	if !bytes.Equal([]byte(stderr), stderrWant) {
-		t.Fatalf("captured standard error has %d bytes, want %d", len(stderr), len(stderrWant))
-	}
-}
-
-func TestStandardStreamPipesUseSharedCapture(t *testing.T) {
-	files, err := filepath.Glob("*_test.go")
-	if err != nil {
-		t.Fatalf("list command package tests: %v", err)
-	}
-	for _, path := range files {
-		fileSet := token.NewFileSet()
-		parsed, err := parser.ParseFile(fileSet, path, nil, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", path, err)
-		}
-		for _, declaration := range parsed.Decls {
-			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Body == nil || function.Name.Name == "captureCommandOutput" {
-				continue
+// TestStreamBufferTakesConcurrentWrites: one command's goroutines may print
+// on the same stream at once; every write arrives whole.
+func TestStreamBufferTakesConcurrentWrites(t *testing.T) {
+	t.Parallel()
+	var buffer streamBuffer
+	var group sync.WaitGroup
+	for range 8 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			for range 1000 {
+				_, _ = buffer.Write([]byte("line\n"))
 			}
-			pipeValues := pipeResultNames(function.Body)
-			ast.Inspect(function.Body, func(node ast.Node) bool {
-				assignment, ok := node.(*ast.AssignStmt)
-				if !ok {
-					return true
-				}
-				for index, left := range assignment.Lhs {
-					if !isStandardOutputOrError(left) || index >= len(assignment.Rhs) {
-						continue
-					}
-					right, ok := assignment.Rhs[index].(*ast.Ident)
-					if !ok || !pipeValues[right.Name] {
-						continue
-					}
-					position := fileSet.Position(left.Pos())
-					t.Errorf("%s:%d redirects a standard stream to a pipe outside captureCommandOutput", position.Filename, position.Line)
-				}
-				return true
-			})
-		}
+		}()
+	}
+	group.Wait()
+	if got := buffer.String(); got != string(bytes.Repeat([]byte("line\n"), 8000)) {
+		t.Fatalf("concurrent writes were lost or torn: %d bytes", len(got))
 	}
 }
 
-func pipeResultNames(body *ast.BlockStmt) map[string]bool {
-	result := make(map[string]bool)
-	ast.Inspect(body, func(node ast.Node) bool {
-		assignment, ok := node.(*ast.AssignStmt)
-		if !ok || len(assignment.Rhs) != 1 || !isOSPipeCall(assignment.Rhs[0]) {
-			return true
-		}
-		for _, left := range assignment.Lhs {
-			if identifier, ok := left.(*ast.Ident); ok && identifier.Name != "_" {
-				result[identifier.Name] = true
-			}
-		}
-		return true
-	})
-	return result
+// dispatchOn runs one command line as the binary does, on the caller's
+// streams.
+func dispatchOn(args []string, stdout, stderr io.Writer) int {
+	return dispatchWithFamilies(args, stdout, stderr, families())
 }
 
-func isOSPipeCall(expression ast.Expr) bool {
-	call, ok := expression.(*ast.CallExpr)
-	if !ok {
-		return false
-	}
-	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || selector.Sel.Name != "Pipe" {
-		return false
-	}
-	packageName, ok := selector.X.(*ast.Ident)
-	return ok && packageName.Name == "os"
-}
-
-func isStandardOutputOrError(expression ast.Expr) bool {
-	selector, ok := expression.(*ast.SelectorExpr)
-	if !ok || (selector.Sel.Name != "Stdout" && selector.Sel.Name != "Stderr") {
-		return false
-	}
-	packageName, ok := selector.X.(*ast.Ident)
-	return ok && packageName.Name == "os"
+// withStreams is dependencies printing on the caller's streams.
+func withStreams(dependencies syncRequestDependencies, stdout, stderr io.Writer) syncRequestDependencies {
+	dependencies.stdout, dependencies.stderr = stdout, stderr
+	return dependencies
 }

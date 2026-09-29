@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"reflect"
 	"slices"
 	"strings"
@@ -12,7 +13,7 @@ import (
 // that need them. These tests pin each fold's route to the owner the removed
 // action ran; the owners themselves are tested where they live.
 
-func sameHandler(left, right func([]string) int) bool {
+func sameHandler(left, right command) bool {
 	return reflect.ValueOf(left).Pointer() == reflect.ValueOf(right).Pointer()
 }
 
@@ -23,7 +24,7 @@ func TestIntentSessionHandoffSplit(t *testing.T) {
 	t.Parallel()
 	for _, row := range []struct {
 		args    []string
-		handler func([]string) int
+		handler command
 		rest    []string
 	}{
 		{[]string{"--root", "/i", "--note", "n.md"}, runContextHandoff, []string{"--root", "/i", "--note", "n.md"}},
@@ -73,8 +74,14 @@ func TestIntentWaitExitCodeRoutes(t *testing.T) {
 	t.Parallel()
 	var calls [][]string
 	owners := intentOwners{work: intentWorkOwners{
-		jobWatch: func(args []string) int { calls = append(calls, append([]string{"job"}, args...)); return 7 },
-		runWatch: func(args []string) int { calls = append(calls, append([]string{"run"}, args...)); return 5 },
+		jobWatch: func(args []string, _, _ io.Writer) int {
+			calls = append(calls, append([]string{"job"}, args...))
+			return 7
+		},
+		runWatch: func(args []string, _, _ io.Writer) int {
+			calls = append(calls, append([]string{"run"}, args...))
+			return 5
+		},
 	}}
 	command, _ := findIntentAction("work", "wait")
 	run := func(args ...string) (int, string) {

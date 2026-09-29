@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -26,7 +27,7 @@ func (engineHost) WaitJob(_ context.Context, root, job string, callerPid int64) 
 	var output strings.Builder
 	code := compatibilityWaitCommand([]string{"--root", root, "--job", job}, nil, callerPid, func(result metarun.WaitResult, jsonOutput bool) {
 		writeWaitResult(&output, result, jsonOutput)
-	})
+	}, io.Discard, os.Stderr)
 	return delegation.WaitOutcome{Code: code, Output: output.String()}
 }
 
@@ -35,7 +36,7 @@ func (engineHost) WaitJob(_ context.Context, root, job string, callerPid int64) 
 func (engineHost) WatchJob(_ context.Context, root, job string, callerPid int64, progressRoot string) int {
 	stopProgress := startSuiteProgressPrinter(progressRoot, 2*time.Second, os.Stderr)
 	defer stopProgress()
-	return compatibilityWaitCommand([]string{"--root", root, "--job", job}, nil, callerPid, func(metarun.WaitResult, bool) {})
+	return compatibilityWaitCommand([]string{"--root", root, "--job", job}, nil, callerPid, func(metarun.WaitResult, bool) {}, io.Discard, os.Stderr)
 }
 
 // BreachStopOrderingHuman is job breach-stop's person (rule H1) for the

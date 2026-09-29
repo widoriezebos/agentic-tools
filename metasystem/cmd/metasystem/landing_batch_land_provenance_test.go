@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -187,8 +188,8 @@ func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
 			}
 			return landBatchProvenanceBed(t, bed)
 		}
-		code, _, stderr := captureCommandOutput(t, false, true, func() int {
-			return runBatchTick([]string{"--root", seat, "--landing-root", bed.root, "--max-wait", "1m", "--batch", batchProvenanceTestID})
+		code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+			return runBatchTick([]string{"--root", seat, "--landing-root", bed.root, "--max-wait", "1m", "--batch", batchProvenanceTestID}, stdout, stderr)
 		})
 		if code != 1 || !strings.Contains(stderr, "goal goal-a") || !strings.Contains(stderr, "BATCH_LAND_UNPROVENANCED") ||
 			!strings.Contains(stderr, "re-prove before the next landing") {
@@ -836,15 +837,15 @@ func TestBatchLastBranchLandingSweepsGoalBranch(t *testing.T) {
 			batchProvenanceGit(t, "-C", root, "remote", "add", "origin", upstream)
 			batchProvenanceWrite(t, filepath.Join(root, "metasystem", "batch-last.go"), "package fixture\n", 0o644)
 			batchProvenanceGit(t, "-C", root, "add", "metasystem/batch-last.go")
-			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-				return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "last", "--root", root})
+			code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+				return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "last", "--root", root}, stdout, stderr)
 			})
 			unit := strings.TrimSpace(stdout)
 			if code != 0 || stderr != "" || len(unit) != 40 {
 				t.Fatalf("unit commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 			}
-			code, _, stderr = captureCommandOutput(t, true, true, func() int {
-				return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "batch-last-push"})
+			code, _, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+				return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "batch-last-push"}, stdout, stderr)
 			})
 			if code != 0 || stderr != "" {
 				t.Fatalf("goal push: code=%d stderr=%q", code, stderr)

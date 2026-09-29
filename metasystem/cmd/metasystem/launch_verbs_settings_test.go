@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -33,7 +34,9 @@ func TestReportForOneLaunch(t *testing.T) {
 	old := launchManager
 	launchManager = func() *launch.Manager { return manager }
 	t.Cleanup(func() { launchManager = old })
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int { return runLaunchReport([]string{"--id", record.ID}) })
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runLaunchReport([]string{"--id", record.ID}, stdout, stderr)
+	})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "declared-lines=42 read-mode=package") || !strings.Contains(stdout, "verdict-counts=false") || !strings.Contains(stdout, "rerun-split") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}

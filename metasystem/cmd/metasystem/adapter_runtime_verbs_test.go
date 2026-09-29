@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,8 +70,8 @@ func TestAdapterClaudeToolGateVerb(t *testing.T) {
 			var code int
 			var stdout, stderr string
 			withStdin(t, string(payload), func() {
-				code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-					return runAdapterClaudeToolGate([]string{"--root", root})
+				code, stdout, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+					return runAdapterClaudeToolGate([]string{"--root", root}, stdout, stderr)
 				})
 			})
 			if code != 0 || stderr != "" {

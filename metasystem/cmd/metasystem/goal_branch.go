@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -202,9 +203,12 @@ func readFollowUp(delegate delegateCaller, root, rootJob, brief string, environm
 }
 
 // goalBranchReadRun is the branch read owner with its typed result; the
-// exit code accompanies any error.
+// exit code accompanies any error. It prints nothing: a mistake in the
+// words its caller built is the returned error.
 func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (branch.BranchReadResult, int, error) {
-	flags := newFlagSet("goal branch read")
+	// A mistake in the words is returned, never printed.
+	var parseProblem strings.Builder
+	flags := newFlagSet("goal branch read", io.Discard, &parseProblem)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	unit := flags.String("unit", "", "Goal-Unit commit")
@@ -215,7 +219,11 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	collect := flags.Bool("collect", false, "collect a closed critic root into an attestation")
 	retry := flags.Int64("retry", 0, "examine the critic chain's failed round N once more, in the same chain")
 	selected := flags.String("selected-installation", "", "installation whose configured code-critic roster the critic dispatch resolves (a generated goal worktree's selected installation)")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *goalID == "" || *unit == "" {
+	parseErr := flags.Parse(args)
+	if parseErr != nil && parseProblem.Len() > 0 {
+		return branch.BranchReadResult{}, 2, errors.New(strings.TrimSpace(parseProblem.String()))
+	}
+	if parseErr != nil || flags.NArg() != 0 || *goalID == "" || *unit == "" {
 		return branch.BranchReadResult{}, 2, fmt.Errorf("goal branch read needs --goal and --unit")
 	}
 	endpoint, err := dependencies.Raw.endpoint(*root)
@@ -291,11 +299,17 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 // goalBranchLandPushRun pushes one prepared landing and sweeps a goal's last
 // landing, returning the pushed landing and the endpoint branch it moved.
 func goalBranchLandPushRun(args []string) (branch.PreparedLanding, string, int, error) {
-	flags := newFlagSet("goal branch land-push")
+	// A mistake in the words is returned, never printed.
+	var parseProblem strings.Builder
+	flags := newFlagSet("goal branch land-push", io.Discard, &parseProblem)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	prepared := flags.String("prepared", "", "land-prep artifact directory")
-	if flags.Parse(args) != nil || *goalID == "" || *prepared == "" || flags.NArg() != 0 {
+	parseErr := flags.Parse(args)
+	if parseErr != nil && parseProblem.Len() > 0 {
+		return branch.PreparedLanding{}, "", 2, errors.New(strings.TrimSpace(parseProblem.String()))
+	}
+	if parseErr != nil || *goalID == "" || *prepared == "" || flags.NArg() != 0 {
 		return branch.PreparedLanding{}, "", 2, fmt.Errorf("goal branch land-push needs --goal and --prepared")
 	}
 	endpoint, err := goalBranchEndpoint(*root)
@@ -337,14 +351,20 @@ type goalBranchLandPrepOutcome struct {
 // goalBranchLandPrepRun prepares one hand landing through its owner and
 // returns the typed outcome; the exit code accompanies any error.
 func goalBranchLandPrepRun(args []string, dependencies goalBranchLandPrepDependencies) (goalBranchLandPrepOutcome, int, error) {
-	flags := newFlagSet("goal branch land-prep")
+	// A mistake in the words is returned, never printed.
+	var parseProblem strings.Builder
+	flags := newFlagSet("goal branch land-prep", io.Discard, &parseProblem)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	out := flags.String("out", "", "new artifact directory")
 	receipt := flags.String("test-receipt", "", "schema-3 landing test receipt")
 	last := flags.Bool("last", false, "the holder's word that this is the goal's complete unit set")
 	through := flags.String("through", "", "last unit commit of a human-approved partial prefix")
-	if flags.Parse(args) != nil || *goalID == "" || !dependencies.CandidateOnly && (*out == "" || *receipt == "") || *last == (*through != "") || flags.NArg() != 0 {
+	parseErr := flags.Parse(args)
+	if parseErr != nil && parseProblem.Len() > 0 {
+		return goalBranchLandPrepOutcome{}, 2, errors.New(strings.TrimSpace(parseProblem.String()))
+	}
+	if parseErr != nil || *goalID == "" || !dependencies.CandidateOnly && (*out == "" || *receipt == "") || *last == (*through != "") || flags.NArg() != 0 {
 		return goalBranchLandPrepOutcome{}, 2, fmt.Errorf("goal branch land-prep needs --goal, --out, --test-receipt, and exactly one of --last or --through")
 	}
 	endpoint, err := goalBranchEndpoint(*root)
