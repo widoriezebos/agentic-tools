@@ -27,6 +27,10 @@ type (
 // ExecSpawn is the engine's detached spawn.
 var ExecSpawn Spawn = lifecycle.ExecSpawn
 
+// WaitForReport as LaunchSupervisor's wait sets no clock: the launcher waits
+// for the supervisor's one answer or its exit. Production passes a bound.
+const WaitForReport = lifecycle.WaitForReport
+
 // ServeArgs is the argument vector that makes an engine the supervisor of
 // one run.
 func ServeArgs(repo, installation, key, ref, goal, address string) []string {
@@ -49,11 +53,12 @@ func ServeArgs(repo, installation, key, ref, goal, address string) []string {
 // nobody owns. A supervisor that reported failure is given settle to end its
 // application and leave, and is reaped if it does; one still there after it
 // stays the owner of descendants its application left, and is left to them.
+// A zero wait is the default; WaitForReport is no bound at all.
 func LaunchSupervisor(spec LaunchSpec, spawn Spawn, wait, settle time.Duration) (string, int, error) {
 	if spawn == nil {
 		spawn = ExecSpawn
 	}
-	if wait <= 0 {
+	if wait == 0 || wait < 0 && wait != WaitForReport {
 		wait = time.Duration(DefaultReadyMS) * time.Millisecond
 	}
 	if err := os.MkdirAll(directoryOf(spec.LogPath), 0o755); err != nil {

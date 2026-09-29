@@ -1,9 +1,12 @@
 package proofrun
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -53,6 +56,9 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	if code, handled := resourceCustodyTestEntrypoint(); handled {
+		os.Exit(code)
+	}
+	if code, refused := refuseUnclaimedEngineInvocation(os.Args, os.Stderr); refused {
 		os.Exit(code)
 	}
 	installDeterministicTestLoadReaders()
@@ -191,6 +197,75 @@ func resourceCustodyTestEntrypoint() (int, bool) {
 		return 0, true
 	default:
 		return 0, false
+	}
+}
+
+// refuseUnclaimedEngineInvocation ends a test binary that was run as the
+// engine with a verb no entrypoint above claimed. go test and every helper
+// start this binary with -test.* flags first; a leading positional argument
+// means production code ran it as options.Executable (the watchdog's bounded
+// "proof-run preserve", for one). Flag parsing stops at that argument, so
+// without this the binary ran its whole package as a nested run, and the
+// caller's bound then SIGKILLed it mid-test: no Cleanup ran, and a real-process
+// test's launcher, custodian, worker and grandchild outlived it holding every
+// descriptor they had inherited (batch 24, 2026-09-29: the VM suite lock for
+// about 20 minutes).
+const engineVerbWitnessChild = "METASYSTEM_PROOFRUN_ENGINE_VERB_WITNESS_CHILD"
+
+func refuseUnclaimedEngineInvocation(args []string, stderr io.Writer) (int, bool) {
+	if len(args) < 2 || strings.HasPrefix(args[1], "-") {
+		return 0, false
+	}
+	fmt.Fprintf(stderr, "proofrun test binary: %q is an engine invocation no test entrypoint claims; the package's tests do not run for it\n", args[1:])
+	return 2, true
+}
+
+func TestUnclaimedEngineInvocationIsRefusedNotRunAsThePackage(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		args    []string
+		refused bool
+	}{
+		{"watchdog evidence copy", []string{"proofrun.test", "proof-run", "preserve", "--destination", "d", "--max-bytes", "1", "--source", "log"}, true},
+		{"any other verb", []string{"proofrun.test", "status"}, true},
+		{"go test", []string{"proofrun.test", "-test.paniconexit0", "-test.timeout=10m0s"}, false},
+		{"helper", []string{"proofrun.test", "-test.run=^TestSupervisorProcessHelper$", "--", "setsid-child"}, false},
+		{"no arguments", []string{"proofrun.test"}, false},
+	} {
+		var stderr bytes.Buffer
+		code, refused := refuseUnclaimedEngineInvocation(test.args, &stderr)
+		if refused != test.refused || refused && (code != 2 || !strings.Contains(stderr.String(), "no test entrypoint claims")) {
+			t.Errorf("%s: code=%d refused=%t stderr=%q, want refused=%t", test.name, code, refused, stderr.String(), test.refused)
+		}
+	}
+}
+
+// TestTheWatchdogsEvidenceCopyDoesNotRunThePackage drives the real binary the
+// way TestRecycledSuiteIdentityAuthorizesNoKillAction's watchdog does. It
+// waits for the exit with no deadline: the refusal is immediate, and a
+// nested package run would end in the package's own verdict, never in the
+// refusal, so the assertion below fails rather than hangs.
+// If the refusal regresses, the nested package run contains this test again;
+// the child marker ends that copy at once, so a regression costs one nested
+// run, never a chain of them.
+func TestTheWatchdogsEvidenceCopyDoesNotRunThePackage(t *testing.T) {
+	if os.Getenv(engineVerbWitnessChild) == "1" {
+		return
+	}
+	t.Parallel()
+	destination := filepath.Join(t.TempDir(), "evidence")
+	command := exec.Command(os.Args[0], "proof-run", "preserve", "--destination", destination, "--max-bytes", "1", "--source", "log")
+	command.Env = append(os.Environ(), engineVerbWitnessChild+"=1")
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	err := command.Run()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 2 || !strings.Contains(output.String(), "no test entrypoint claims") {
+		t.Fatalf("test binary as the evidence-copy engine: err=%v output=%q; want exit 2 and the refusal", err, output.String())
+	}
+	if strings.Contains(output.String(), "PASS") || strings.Contains(output.String(), "FAIL") {
+		t.Fatalf("the test binary ran its package for an engine verb: %q", output.String())
 	}
 }
 

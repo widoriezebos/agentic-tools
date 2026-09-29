@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
 )
 
 // The launch contract's verbs under R-129-ui (acts are idempotent) and U-idem:
@@ -64,9 +66,21 @@ func witnessAppStartRepeat(t *testing.T) {
 // witnessAppStopRepeat: a stop of a stopped application, and a stop of a run
 // that a stop already ended, both exit 0 with nothing signalled and nothing
 // removed twice; the state directory is the same before and after.
+//
+// What is witnessed is the stop, so its start carries no clock: the contract
+// declares no readiness probe (the supervisor answers once its application
+// is spawned) and the start waits for that answer or the supervisor's exit.
+// Two wall-clock waits across two processes (a readiness wait of readyMs in
+// the supervisor, readyMs+10s in the start) otherwise decided this witness
+// under load. readyMs is 1 so that any readiness clock left on this path
+// fails the witness every time instead of on a loaded host.
 func witnessAppStopRepeat(t *testing.T) {
 	address := appFreePort(t)
-	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
+	contract := appHTTPContract(appFixtureApp(t), address)
+	contract["ready"] = map[string]any{"kind": applaunch.ReadyNone}
+	contract["readyMs"] = 1
+	bed := newAppBed(t, contract)
+	bed.supervisorWait = applaunch.WaitForReport
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("start: %d\n%s", code, out)
 	}

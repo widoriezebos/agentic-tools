@@ -532,15 +532,19 @@ type intentOwners struct {
 	commandNow func(string) (time.Time, error)
 	// lookupEnv answers the environment app runs resolve their evidence
 	// root under; nil is os.LookupEnv.
-	lookupEnv       func(string) (string, bool)
-	dependencies    syncRequestDependencies
-	binding         goalBindingResolver
-	parkBranchCheck func(string, goal.Endpoint) func(string, string) (string, error)
-	completion      completionInputs
-	processes       processIntentOwners
-	work            intentWorkOwners
-	delivery        *intentDeliveryOwners
-	connection      intentConnectionOwners
+	lookupEnv func(string) (string, bool)
+	// appSupervisorWait is how long an app start waits for its supervisor's
+	// answer; zero is production's contract wait plus ten seconds, and
+	// applaunch.WaitForReport waits for the answer or the supervisor's exit.
+	appSupervisorWait time.Duration
+	dependencies      syncRequestDependencies
+	binding           goalBindingResolver
+	parkBranchCheck   func(string, goal.Endpoint) func(string, string) (string, error)
+	completion        completionInputs
+	processes         processIntentOwners
+	work              intentWorkOwners
+	delivery          *intentDeliveryOwners
+	connection        intentConnectionOwners
 	// adopt is the adoption owner system adopt calls; nil selects
 	// internal/adopt.
 	adopt func(adopt.Options) (adopt.Result, error)
