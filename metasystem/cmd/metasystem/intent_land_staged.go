@@ -92,11 +92,15 @@ func runIntentLandStaged(inv *intentInvocation) int {
 	if request.GoalSet && !inv.input.switched("local") {
 		// A hand-made change landed in a goal's name meets the goal's gate
 		// (g1-s70 D2); --local publishes nothing.
-		if problem := inv.selectRoot(); problem != nil {
-			return inv.render(*problem)
-		}
-		if refused := inv.admitLanding([]intentTarget{{Kind: "goal", ID: request.Goal}}, request.Goal, inv.intentBranchTip(request.Goal)); refused != nil {
-			return inv.render(*refused)
+		// The gate's facts are lines on the synced ledger; an installation
+		// with none lands through the landing path's own held check as it
+		// did before.
+		stateRoot, rootErr := inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
+		inv.layout, inv.stateRoot = layout, stateRoot
+		if rootErr == nil && converted(stateRoot) {
+			if refused := inv.admitLanding([]intentTarget{{Kind: "goal", ID: request.Goal}}, request.Goal, inv.intentBranchTip(request.Goal)); refused != nil {
+				return inv.render(*refused)
+			}
 		}
 	}
 	stdout, stderr := inv.stdout, inv.stderr
