@@ -476,6 +476,43 @@ func ClassifyAt(root, metasystemRoot string, caller int64) (Classification, erro
 	return Classification{Class: ClassUntrusted}, nil
 }
 
+// MachineryAncestor reports whether any ancestor of caller, over the whole
+// chain rather than up to the first recognised one, is a supervision or
+// adapter-supervisor process in the custody records or the installed
+// steward's own plumbing: the walk ClassifyAt makes over ParentPid and
+// StartedAt. A job launched into the shared checkout has such an ancestor; a
+// person's own shell and agent do not. An error means it cannot be told.
+func MachineryAncestor(root string, caller int64) (bool, error) {
+	if absolute, err := filepath.Abs(root); err == nil {
+		root = filepath.Clean(absolute)
+	}
+	probe, err := fixtureProbe(root)
+	if err != nil {
+		return false, classificationDataFailure("fixture classification configuration", filepath.Join(root, "metasystem.conf"), err)
+	}
+	supervision, adapters, err := custodyIdentities(root)
+	if err != nil {
+		return false, err
+	}
+	stewardBinaries := verifiedStewardBinaries(root)
+	seen := map[int64]bool{caller: true}
+	current, ok := ParentPid(caller)
+	for ok && current > 0 && !seen[current] {
+		seen[current] = true
+		if command, cok := ProcessCommand(current, probe); cok && stewardPlumbing(command, stewardBinaries) {
+			return true, nil
+		}
+		if start, sok := StartedAt(current, probe); sok {
+			key := procKey{current, start}
+			if _, adapter := adapters[key]; adapter || supervision[key] {
+				return true, nil
+			}
+		}
+		current, ok = ParentPid(current)
+	}
+	return false, nil
+}
+
 // probeFixtureTerminal reads a pid's staged terminal fact, fixture
 // only — never the kernel.
 func probeFixtureTerminal(pid int64, probe identity.FixtureProbe) (bool, bool) {
