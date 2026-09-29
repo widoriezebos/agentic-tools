@@ -8,7 +8,8 @@ import (
 // The names below are how the files C8a part 2 moves (landing_batch_*.go,
 // landing_path.go, intent_delivery.go, goal_branch.go) still reach the
 // testing selection that moved to internal/testrun. Part 2 ports those
-// files to the package and deletes this file; nothing else uses these names.
+// files to the package and deletes this file. readStrictJSON is also read
+// by test.go and landing_verbs.go, which part 2 points at strictjson.Read.
 
 type (
 	testingPreparation      = testrun.Preparation

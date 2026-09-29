@@ -740,6 +740,38 @@ func TestTestingSelectionStartsAFreshPreparationState(t *testing.T) {
 	}
 }
 
+// TestTestPlanJSONKeepsItsFieldNames: test plan --json is a wire other
+// engines and the policy child's parent read, so its field names are read
+// exactly as spelled, case and all, including the unmatched inputs.
+func TestTestPlanJSONKeepsItsFieldNames(t *testing.T) {
+	previous := prepareTestingForCommand
+	defer func() { prepareTestingForCommand = previous }()
+	prepareTestingForCommand = func(testrun.SelectionRequest) (testrun.Preparation, error) {
+		return testrun.Preparation{CandidateTree: "candidate", PolicyBaseCommit: "base",
+			UnmatchedInputs: []testrun.UnmatchedInput{{Group: "app", Pattern: "missing/**"}}}, nil
+	}
+	status, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestPlan([]string{"--root", t.TempDir(), "--purpose", "diagnostic", "--json", "--policy-child"}, stdout, stderr)
+	})
+	var fields map[string]any
+	if status != 0 || json.Unmarshal([]byte(stdout), &fields) != nil {
+		t.Fatalf("test plan --json: status=%d stdout=%q stderr=%q", status, stdout, stderr)
+	}
+	for _, key := range []string{"schemaVersion", "projectRoot", "installationPrefix", "baseCommit", "policyBaseCommit",
+		"candidateTree", "contractDigest", "baseContractDigest", "plan", "groups", "unmatchedInputs"} {
+		if _, ok := fields[key]; !ok {
+			t.Errorf("test plan --json lost the field %q: %s", key, stdout)
+		}
+	}
+	unmatched, _ := fields["unmatchedInputs"].([]any)
+	if len(unmatched) != 1 {
+		t.Fatalf("unmatchedInputs = %v", fields["unmatchedInputs"])
+	}
+	if entry, _ := unmatched[0].(map[string]any); entry["group"] != "app" || entry["pattern"] != "missing/**" {
+		t.Fatalf("unmatched input entry = %v", unmatched[0])
+	}
+}
+
 func TestPolicyChildNeverFetchesOrReArms(t *testing.T) {
 	previous := prepareTestingForCommand
 	defer func() { prepareTestingForCommand = previous }()

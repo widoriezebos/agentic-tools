@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 var engineBindingStandardTests = []string{
@@ -73,6 +74,8 @@ var engineBindingStandardTests = []string{
 	"TestTestRunRearmsOnALandedEngine",
 	"TestTestingPlanAdoptsCandidateFallbackOnlyWhenBaseHasNone",
 	"TestTestingSelectionStartsAFreshPreparationState",
+	"TestTestPlanJSONKeepsItsFieldNames",
+	"TestProofRunChangeSelectsTheEngineBindingGroup",
 	"TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback",
 	"TestTestingSelectionCarriesDeliveryAllGroupsOnlyForExecution",
 	"TestTestWorkerBuildIdentityCompatibilityDoorIsPolicyProbeOnly",
@@ -258,6 +261,32 @@ func TestEngineBindingWitnessInventory(t *testing.T) {
 	for name := range declared {
 		if !actual[name] {
 			t.Errorf("engine-binding-standard declares missing test %s", name)
+		}
+	}
+}
+
+// TestProofRunChangeSelectsTheEngineBindingGroup: the landed re-arm's
+// rebuild test (internal/testrun) builds this engine and drives
+// proof_run.go's resource custody, so a change to proof_run.go alone must
+// select the group that holds it and move that group's input identity, so
+// its retained green is never reused across the change.
+func TestProofRunChangeSelectsTheEngineBindingGroup(t *testing.T) {
+	t.Parallel()
+	contract, err := testpolicy.Load(filepath.Join("..", "..", "testing.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := testpolicy.Select(contract, testpolicy.SelectionRequest{ChangedPaths: []string{"metasystem/cmd/metasystem/proof_run.go"},
+		RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(plan.SelectedGroups, "engine-binding-standard") {
+		t.Fatalf("a proof_run.go change selects %v, without engine-binding-standard", plan.SelectedGroups)
+	}
+	for _, group := range contract.Groups {
+		if group.ID == "engine-binding-standard" && !slices.Contains(group.Inputs, "metasystem/cmd/metasystem/proof_run.go") {
+			t.Fatalf("engine-binding-standard inputs do not name proof_run.go: %v", group.Inputs)
 		}
 	}
 }

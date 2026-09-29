@@ -79,7 +79,7 @@ type PlanOutput struct {
 	BaseContractDigest string             `json:"baseContractDigest"`
 	Plan               testpolicy.Plan    `json:"plan"`
 	Groups             []testpolicy.Group `json:"groups"`
-	UnmatchedInputs    []UnmatchedInput   `json:"UnmatchedInputs,omitempty"`
+	UnmatchedInputs    []UnmatchedInput   `json:"unmatchedInputs,omitempty"`
 }
 
 func (prepared Preparation) ProofControlRoot() string {
