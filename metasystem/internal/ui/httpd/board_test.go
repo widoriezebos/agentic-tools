@@ -1,8 +1,11 @@
 package httpd
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
+	"io"
+	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -10,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
 
@@ -85,4 +89,61 @@ func TestBoardRouteServesTheClassifiedPicture(t *testing.T) {
 
 	none := New(Info{Now: func() time.Time { return fleetNow }}, loopback(), testBundle())
 	testutil.Expect(t, "no reader", request(t, none, http.MethodGet, boardPath, "127.0.0.1:7878", nil).Code, http.StatusInternalServerError)
+}
+
+// TestTheInterfaceFollowsTheBridgeWhileAStreamIsOpen (R25, U10c-2): the
+// server subscribes to the bridge once, only while a notification stream is
+// open, and re-announces every bridge event on the fleet watch, which the
+// page re-reads /api/board on; the last stream leaving ends the
+// subscription; without the bridge nothing waits and the page reads the
+// board directly on request.
+func TestTheInterfaceFollowsTheBridgeWhileAStreamIsOpen(t *testing.T) {
+	t.Parallel()
+	dials := make(chan struct{}, 4)
+	events := make(chan string)
+	ended := make(chan struct{})
+	source := &BoardSource{Home: t.TempDir(), Seats: func() ([]board.Seat, error) { return nil, nil }, Prober: boardProber{}, Stall: time.Minute,
+		Dial: func() (net.Conn, error) {
+			dials <- struct{}{}
+			server, client := net.Pipe()
+			go func() {
+				defer close(ended)
+				reader := bufio.NewReader(server)
+				if _, err := reader.ReadString('\n'); err != nil {
+					return
+				}
+				io.WriteString(server, `{"snapshot":[]}`+"\n")
+				for line := range events {
+					io.WriteString(server, line+"\n")
+				}
+				// The subscription ends: the client closes its end.
+				reader.ReadString('\n')
+			}()
+			return client, nil
+		},
+		Retry:  func() (<-chan time.Time, func()) { return nil, func() {} },
+		Silent: func(time.Duration) <-chan time.Time { return nil },
+	}
+	watch := fleet.NewWatch()
+	h := newHandler(Info{Board: source, Watch: watch, Now: func() time.Time { return fleetNow }}, loopback(), testBundle(), randomNonce)
+	signals, leaveWatch := watch.Join()
+	defer leaveWatch()
+	select {
+	case <-dials:
+		t.Fatal("the server dialled the bridge with no stream open")
+	default:
+	}
+	leave := h.followBridge()
+	<-dials
+	<-signals // the connection itself: changes may have been missed
+	events <- `{"event":"card"}`
+	<-signals
+	close(events)
+	leave()
+	<-ended
+	select {
+	case <-dials:
+		t.Fatal("the subscription was dialled twice")
+	default:
+	}
 }

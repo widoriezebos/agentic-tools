@@ -335,6 +335,10 @@ type handler struct {
 	// per handler so that a test's faster clock is its own server's alone.
 	streamTick      time.Duration
 	streamHeartbeat time.Duration
+	// bridge is the one subscription to the host board's bridge, alive
+	// while a notification stream is open; nil without a board reader or a
+	// fleet watch to announce on.
+	bridge *bridgeFollower
 }
 
 func New(info Info, bound net.Addr, bundle fs.FS) http.Handler {
@@ -360,6 +364,9 @@ func newHandler(info Info, bound net.Addr, bundle fs.FS, nonce func() string) *h
 
 		streamTick:      notificationTick,
 		streamHeartbeat: notificationHeartbeat,
+	}
+	if info.Board != nil && info.Watch != nil {
+		handler.bridge = &bridgeFollower{source: info.Board, watch: info.Watch}
 	}
 	// The Partner is told what the landing page shows from this server's own
 	// composition of it, which needs the journal and the seat's standing as

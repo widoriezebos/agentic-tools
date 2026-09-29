@@ -12,11 +12,14 @@ package httpd
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
 
@@ -32,6 +35,12 @@ type BoardSource struct {
 	Seats  func() ([]board.Seat, error)
 	Prober identity.Prober
 	Stall  time.Duration
+	// Dial connects to the bridge; nil dials its socket under Home. Retry is
+	// the cadence a lost bridge is tried again at, and Silent the clock of
+	// the two-heartbeat silence bound; nil for either is the wall clock.
+	Dial   func() (net.Conn, error)
+	Retry  func() (<-chan time.Time, func())
+	Silent func(time.Duration) <-chan time.Time
 }
 
 // boardPayload is the classified board, and each seat's line as a person
@@ -97,4 +106,113 @@ func (h *handler) boardClaims() (map[string]string, bool) {
 		}
 	}
 	return claims, true
+}
+
+// bridgeFollower is this server's one subscription to the host board's
+// bridge (batch-lane design D14-r2, U10c-2), alive while at least one
+// notification stream is open: every bridge event, and every
+// (re)connection, which may have missed changes, is announced on the fleet
+// watch, and the page re-reads /api/board, which reads and classifies the
+// board afresh. The subscription carries nothing the server trusts. Without
+// the bridge the page reads the board directly on request; the follower
+// tries the bridge again at its retry cadence and never waits for it.
+type bridgeFollower struct {
+	source *BoardSource
+	watch  *fleet.Watch
+
+	mu      sync.Mutex
+	streams int
+	stop    chan struct{}
+	done    chan struct{}
+}
+
+// followBridge counts one open stream, starting the subscription on the
+// first; the returned function counts it closed, ending the subscription
+// with the last.
+func (h *handler) followBridge() func() {
+	follower := h.bridge
+	if follower == nil {
+		return func() {}
+	}
+	follower.mu.Lock()
+	follower.streams++
+	if follower.streams == 1 {
+		follower.stop, follower.done = make(chan struct{}), make(chan struct{})
+		go follower.follow(follower.stop, follower.done)
+	}
+	follower.mu.Unlock()
+	return func() {
+		follower.mu.Lock()
+		follower.streams--
+		var stop, done chan struct{}
+		if follower.streams == 0 {
+			stop, done = follower.stop, follower.done
+		}
+		follower.mu.Unlock()
+		if stop != nil {
+			close(stop)
+			<-done
+		}
+	}
+}
+
+func (f *bridgeFollower) follow(stop, done chan struct{}) {
+	defer close(done)
+	retry, stopRetry := f.retry()
+	defer stopRetry()
+	for {
+		if sub := f.connect(); sub != nil {
+			f.watch.Announce()
+			if f.relay(sub, stop) {
+				return
+			}
+		}
+		select {
+		case <-stop:
+			return
+		case <-retry:
+		}
+	}
+}
+
+// relay announces every event until the subscription ends; true when the
+// last stream left.
+func (f *bridgeFollower) relay(sub *board.Subscription, stop chan struct{}) bool {
+	defer sub.Close()
+	for {
+		select {
+		case <-stop:
+			return true
+		case _, open := <-sub.Events:
+			if !open {
+				return false
+			}
+			f.watch.Announce()
+		}
+	}
+}
+
+func (f *bridgeFollower) connect() *board.Subscription {
+	dial := f.source.Dial
+	if dial == nil {
+		dial = func() (net.Conn, error) { return board.Dial(f.source.Home) }
+	}
+	conn, err := dial()
+	if err != nil {
+		return nil
+	}
+	sub, err := board.Subscribe(conn, board.SubscribeOptions{Kinds: []string{board.KindCard, board.KindStall},
+		Heartbeat: board.DefaultHeartbeat, After: f.source.Silent})
+	if err != nil {
+		return nil
+	}
+	return sub
+}
+
+func (f *bridgeFollower) retry() (<-chan time.Time, func()) {
+	if f.source.Retry != nil {
+		return f.source.Retry()
+	}
+	ticker := time.NewTicker(board.DefaultHeartbeat)
+	return ticker.C, ticker.Stop
 }
