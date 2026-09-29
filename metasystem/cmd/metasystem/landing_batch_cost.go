@@ -85,21 +85,29 @@ func forecastBatchCostWith(root string, candidate batch.Record, incoming *batch.
 		Currency: "snapshot-not-revalidated", Binding: batch.CostBinding(candidate, units, candidate.PrefixTrees),
 		HeavyCapacity: capacity.Max, MetadataReads: "retained-policy, engine/tool identity, input, and attempt metadata; no native build or test"}
 	var requests []costSelection
+	// A change takes no prefix proof and has no budget: the tip is charged
+	// to the last goal member, as the tip proof is (U11b).
+	charge, ok := batch.ChargeMember(units)
+	if !ok {
+		return batch.CostForecast{}, fmt.Errorf("BATCH_COST_INPUT_MOVED: the series has no goal member to charge its proof to")
+	}
 	order := []int{len(units) - 1}
 	for index := 0; index < len(units)-1; index++ {
-		order = append(order, index)
+		if !units[index].IsChange() {
+			order = append(order, index)
+		}
 	}
 	for _, index := range order {
 		unit := units[index]
-		kind, id := "prefix", "prefix:"+unit.GoalID
+		kind, id, chargeGoal := "prefix", "prefix:"+unit.GoalID, unit.GoalID
 		if index == len(units)-1 {
-			kind, id = "tip", "tip:"+unit.GoalID
+			kind, id, chargeGoal = "tip", "tip:"+unit.GoalID, charge.GoalID
 		}
 		planned, err := decision(root, units[:index+1], candidate.PrefixTrees[index])
 		if err != nil {
 			return batch.CostForecast{}, err
 		}
-		selection := costSelectionForPrefix(id, kind, candidate.PrefixTrees[index], unit.GoalID, planned.Groups)
+		selection := costSelectionForPrefix(id, kind, candidate.PrefixTrees[index], chargeGoal, planned.Groups)
 		if episode, ok := candidate.PrefixEpisodes[unit.GoalID]; ok && planned.FreshRequired {
 			decisionID, idErr := batch.PrefixDecisionID(candidate.BaseTree, selection.Tree, units[:index+1], candidate.Seal, planned)
 			if idErr != nil {
@@ -188,6 +196,9 @@ func forecastBatchCostWith(root string, candidate batch.Record, incoming *batch.
 	}
 	sort.Strings(forecast.ExclusiveResourceConflicts)
 	for _, unit := range units {
+		if unit.IsChange() {
+			continue
+		}
 		budgetView, err := budget(root, unit, incoming, at)
 		if err != nil {
 			return batch.CostForecast{}, err

@@ -44,14 +44,9 @@ type batchAdmissionRun func(root, batchID, baseTree, goalID string, claim batch.
 // charged to the head member like the tip proof, and a fresh group gets an
 // episode of its own that nothing retains.
 func earlyCheapPhase(root string, record batch.Record, run batchAdmissionRun) (batch.EarlyResult, error) {
-	var head batch.Unit
-	for _, unit := range record.Units {
-		if unit.State == batch.UnitJoined {
-			head = unit
-		}
-	}
-	if head.GoalID == "" {
-		return batch.EarlyResult{}, fmt.Errorf("batch %s has no joined member", record.BatchID)
+	head, _, err := earlyHead(record)
+	if err != nil {
+		return batch.EarlyResult{}, err
 	}
 	result, proof, _, err := run(root, record.BatchID, record.BaseTree, head.GoalID, head.Claim, record.TipTree, "early-cheap",
 		func(decision batch.JoinAdmission, maxAgeMS int64) (batch.JoinAdmission, error) {
@@ -79,10 +74,13 @@ func earlyCheapPhase(root string, record batch.Record, run batchAdmissionRun) (b
 
 func earlyHead(record batch.Record) (batch.Unit, []batch.Unit, error) {
 	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
-	if len(joined) == 0 {
-		return batch.Unit{}, nil, fmt.Errorf("batch %s has no joined member", record.BatchID)
+	// The early acts are charged to the last goal member, as the tip proof
+	// is; a change has no goal to charge (U11b).
+	charge, ok := batch.ChargeMember(joined)
+	if !ok {
+		return batch.Unit{}, nil, fmt.Errorf("batch %s has no joined goal member", record.BatchID)
 	}
-	return joined[len(joined)-1], joined, nil
+	return charge, joined, nil
 }
 
 // earlyProof is one delivery attempt on the waiting batch's recorded tip,

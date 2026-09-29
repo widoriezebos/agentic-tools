@@ -82,9 +82,13 @@ func batchRetainedSources(root string, record batch.Record) (map[string]string, 
 	}
 	defer detached.Close()
 	head := joined[len(joined)-1]
+	charge, ok := batch.ChargeMember(joined)
+	if !ok {
+		return nil, fmt.Errorf("batch %s has no goal member its proof is charged to", record.BatchID)
+	}
 	episode := record.PrefixEpisodes[head.GoalID]
 	result, err := verifyRetainedTesting(testingSelectionRequest{Root: batch.ModuleRoot(detached.Workspace().Dir), ControlRoot: batch.ModuleRoot(root),
-		GoalID: head.GoalID, Tree: record.TipTree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
+		GoalID: charge.GoalID, Tree: record.TipTree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
 		BatchRequirements: slices.Clone(record.Proof.SelectedGroups), BatchPrefixReceipt: true, FreshEpisode: episode.Token, FreshExpiresAt: episode.ExpiresAt})
 	return batchSourcesFromVerification(result), err
 }
@@ -306,7 +310,14 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 			return err
 		}
 	}
+	// The tip's keys are its last member's; its proof is charged to the last
+	// goal member, since every proof is accounted to a goal and a change has
+	// none (U11b).
 	head := joined[len(joined)-1]
+	charge, ok := batch.ChargeMember(joined)
+	if !ok {
+		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s has no goal member its proof is charged to", id)
+	}
 	plan, err := planBatchMemberUnion(root, record.TipTree, joined, testpolicy.ModeAuto, dependencies.plan)
 	if err != nil {
 		return err
@@ -329,10 +340,10 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 		return err
 	}
 	resultPath := batchProofResultPath(controlRoot, id)
-	sealed := admitted.Seal[head.GoalID]
-	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: head.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath, Token: token,
+	sealed := admitted.Seal[charge.GoalID]
+	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: charge.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath, Token: token,
 		Mode: plan.ExecutedMode, Groups: slices.Clone(plan.SelectedGroups), GoalRevision: sealed.Revision, AccountingRevision: sealed.AccountingRevision}
-	if request.RetryDecision, err = tipRetryDecision(controlRoot, admitted, head, batchTipRetryAttempts); err != nil {
+	if request.RetryDecision, err = tipRetryDecision(controlRoot, admitted, charge, batchTipRetryAttempts); err != nil {
 		return err
 	}
 	if dependencies.freshDecision != nil {
@@ -366,10 +377,10 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 	if errors.As(launchErr, &refused) {
 		switch refused.kind {
 		case "budget":
-			return batch.WithdrawBudgetMember(store, id, head.GoalID, actor, refused.Error(), at)
+			return batch.WithdrawBudgetMember(store, id, charge.GoalID, actor, refused.Error(), at)
 		case "revision", "fenced":
 			return batch.ReassembleSurvivorsWithReturns(store, id, actor, at,
-				[]batch.ReturnDecision{{GoalID: head.GoalID, Outcome: batch.UnitEjected, Reason: refused.Error()}})
+				[]batch.ReturnDecision{{GoalID: charge.GoalID, Outcome: batch.UnitEjected, Reason: refused.Error()}})
 		default:
 			return batch.RefuseProofAdmission(store, id, actor, token, "admission-refused", refused.Error(), at)
 		}
@@ -386,6 +397,11 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 func planBatchMemberUnion(root, tree string, units []batch.Unit, mode testpolicy.Mode, plan func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error)) (testpolicy.Plan, error) {
 	union := testpolicy.Plan{RequestedMode: mode, ExecutedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard}
 	for _, unit := range units {
+		if unit.IsChange() {
+			// A change is planned by no goal: the goal members' plans on the
+			// tip tree hold its paths.
+			continue
+		}
 		member, err := plan(root, unit.GoalID, tree, mode)
 		if err != nil {
 			return testpolicy.Plan{}, err

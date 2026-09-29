@@ -625,7 +625,11 @@ func probeBatchProofRun(controlRoot, id string, record batch.Record, prober iden
 	if len(joined) == 0 || record.Proof == nil {
 		return batch.RunProbe{State: batch.RunDead, Detail: "no joined head goal"}, nil
 	}
-	head := joined[len(joined)-1].GoalID
+	charge, ok := batch.ChargeMember(joined)
+	if !ok {
+		return batch.RunProbe{State: batch.RunDead, Detail: "no joined goal member"}, nil
+	}
+	head := charge.GoalID
 	attempts, err := readAttempts(controlRoot)
 	if err != nil {
 		return batch.RunProbe{}, err
