@@ -589,7 +589,31 @@ func createProcessNamespace(mkdirTemp func(string, string) (string, error), root
 			return fail(fmt.Errorf("set %s: %w", name, err))
 		}
 	}
+	if err := disableGoTelemetry(); err != nil {
+		return fail(err)
+	}
 	return namespace, nil
+}
+
+// disableGoTelemetry records Go telemetry as off in the namespace's config
+// dir. A go command run under a telemetry mode other than off may start a
+// detached sidecar that outlives the command and writes under the config
+// dir; no test owns that process, and its writes raced the namespace's
+// removal. The mode file lives under the namespace (os.UserConfigDir reads
+// the HOME and XDG_CONFIG_HOME just set), never the person's own.
+func disableGoTelemetry() error {
+	config, err := os.UserConfigDir()
+	if err != nil {
+		return fmt.Errorf("resolve the namespace config dir: %w", err)
+	}
+	directory := filepath.Join(config, "go", "telemetry")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return fmt.Errorf("turn go telemetry off: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "mode"), []byte("off"), 0o600); err != nil {
+		return fmt.Errorf("turn go telemetry off: %w", err)
+	}
+	return nil
 }
 
 func sharedGoCacheEnvironment() map[string]string {
