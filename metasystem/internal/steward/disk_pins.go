@@ -148,13 +148,13 @@ func judgePin(path string, keep pinKeep, census *diskstore.UseCensus, now time.T
 			Command: "metasystem disk clean, after the grace"}
 	case keep.generation[generation] != "":
 		return diskstore.Verdict{Decision: diskstore.Keep, Reason: fmt.Sprintf("component %s runs generation %d", keep.generation[generation], generation),
-			Command: "metasystem machine stop, or the component's next re-arm"}
+			Command: "metasystem system stop, or the component's next re-arm"}
 	case census == nil || !census.Taken || !census.Complete():
 		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "use census not complete; no pin is removed this pass", Command: "metasystem disk show"}
 	}
 	if holders := census.Holders(path); len(holders) != 0 {
 		return diskstore.Verdict{Decision: diskstore.Keep, Reason: fmt.Sprintf("pid %d (%s) runs this engine", holders[0].Pid, holders[0].Command),
-			Command: "metasystem machine stop"}
+			Command: "metasystem system stop"}
 	}
 	held, err := probePin(path)
 	switch {

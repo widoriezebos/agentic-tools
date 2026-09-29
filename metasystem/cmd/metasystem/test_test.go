@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -224,7 +225,7 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 				t.Fatalf("projection index environment differs from scrubbed environment plus one index: %q", request.Env)
 			}
 			actual := strings.TrimPrefix(request.Env[len(wantEnv)], "GIT_INDEX_FILE=")
-			if !filepath.IsAbs(actual) || filepath.Base(actual) != "index" || filepath.Dir(filepath.Dir(actual)) != os.TempDir() || !strings.HasPrefix(filepath.Base(filepath.Dir(actual)), "metasystem-gittree.") {
+			if !filepath.IsAbs(actual) || filepath.Base(actual) != "index" || !inProcessScratch(t, filepath.Dir(actual)) || !strings.HasPrefix(filepath.Base(filepath.Dir(actual)), "metasystem-gittree.") {
 				t.Fatalf("projection index path is not task-private: %q", actual)
 			}
 			if step.args[0] == "read-tree" {
@@ -2781,4 +2782,17 @@ func candidateScratchContext(t *testing.T, ctx context.Context, controlRoot stri
 		t.Fatal(err)
 	}
 	return proofrun.WithScratchRun(ctx, scratch)
+}
+
+// inProcessScratch reports whether dir is a directory made directly in this
+// test process's scratch root: a workspace without a materialization temp
+// directory takes its throwaway index there (disk Part B U1b-1), not in the
+// process temp directory.
+func inProcessScratch(t testing.TB, dir string) bool {
+	t.Helper()
+	root, err := diskstore.ProcessScratch()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Dir(dir) == root
 }
