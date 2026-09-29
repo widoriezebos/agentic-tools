@@ -454,12 +454,10 @@ func blocking(judgement Judgement) string {
 }
 
 // PersonsOpenDisposal is the line for a person's removal that was cut
-// short: the person's next dispose or show settles it (rolled back before
-// its commit point, its set-aside copy removed after it; Round B2-3, rule
-// 2) and the person previews again.
-func PersonsOpenDisposal(item string, tombstone diskstore.Tombstone) string {
-	return fmt.Sprintf("%s: a removal by %s (receipt %s) was cut short; metasystem evidence show settles it (rolled back unless its receipt was written), then metasystem evidence dispose %s --preview",
-		item, tombstone.By, tombstone.Receipt, item)
+// short: show only reports it; evidence dispose, in any form, settles it
+// first (Round B2-3, rule 2, as amended: show shows).
+func PersonsOpenDisposal(item string, _ diskstore.Tombstone) string {
+	return "an interrupted removal of " + item + " is open: metasystem evidence dispose settles it (rolls it back), then preview again"
 }
 
 // OpenPersonDisposals lists every removal in the segment that was cut

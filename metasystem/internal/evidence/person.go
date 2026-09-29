@@ -720,9 +720,21 @@ func (e Env) settleOpen(ctx context.Context, item, ledger string) (string, bool)
 	return item + ": its removal that was cut short was rolled back, the item is back; run --preview again", true
 }
 
+// OpenDisposals reports every removal of this host's segments that was
+// cut short; it reads only (evidence show).
+func (e Env) OpenDisposals() []string {
+	var lines []string
+	for _, root := range e.Roots() {
+		for _, segment := range root.Segments {
+			lines = append(lines, segment.OpenPersonDisposals()...)
+		}
+	}
+	return lines
+}
+
 // SettleOpen settles every removal of this host's segments that was cut
-// short (evidence show; Round B2-3, rule 2), under the bound lock without
-// waiting; held, it settles nothing and says so.
+// short (evidence dispose, any form, before anything else; Round B2-3,
+// rule 2), under the bound lock.
 func (e Env) SettleOpen(ctx context.Context) []string {
 	var open []string
 	for _, root := range e.Roots() {
@@ -737,9 +749,9 @@ func (e Env) SettleOpen(ctx context.Context) []string {
 	if len(open) == 0 {
 		return nil
 	}
-	lock, err := diskstore.TryBoundExclusive(diskstore.BoundLockPath(e.HomeStateRoot))
+	lock, err := diskstore.BoundExclusive(diskstore.BoundLockPath(e.HomeStateRoot))
 	if err != nil {
-		return []string{fmt.Sprintf("%d removal(s) cut short are settled once the bound lock is free (a disposal is in its step)", len(open))}
+		return []string{fmt.Sprintf("%d removal(s) cut short could not be settled, the bound lock cannot be taken: %v", len(open), err)}
 	}
 	defer lock.Release()
 	var lines []string
@@ -953,9 +965,6 @@ type SegmentView struct {
 	Items    []ItemView                `json:"items"`
 	Ledger   string                    `json:"ledger"`
 	Unknown  string                    `json:"unknown,omitempty"`
-	// Settled are the removals cut short that this show settled (Round
-	// B2-3, rule 2).
-	Settled []string `json:"settled,omitempty"`
 	// NotManaged are the root's entries outside every segment.
 	NotManaged []ItemView `json:"notManaged,omitempty"`
 }
@@ -963,12 +972,11 @@ type SegmentView struct {
 // Show reads this checkout's segment: its total against its cap, every
 // item's state, whether --over-bound may select it and the exclusion that
 // holds it (judged on the accepted ledger as it stands), the over-the-bound
-// line with the command pair, and the root's entries that are not managed.
-// Its one write is settling a removal that was cut short (Round B2-3, rule
-// 2).
+// line with the command pair, the root's entries that are not managed, and
+// every removal cut short, for evidence dispose to settle. It writes
+// nothing.
 func (e Env) Show(ctx context.Context) SegmentView {
 	view := SegmentView{Checkout: e.This.Facts.GitRoot, Ledger: "goal state unknown: no accepted ledger"}
-	view.Settled = e.SettleOpen(ctx)
 	var segment Segment
 	var root Root
 	for _, candidate := range e.Roots() {
@@ -1032,9 +1040,6 @@ func (e Env) Show(ctx context.Context) SegmentView {
 // with --verbose.
 func (v SegmentView) Lines(verbose bool) []string {
 	var lines []string
-	for _, line := range v.Settled {
-		lines = append(lines, "settled: "+line)
-	}
 	if v.Root == "" {
 		return append(lines, "evidence of "+v.Checkout+": "+v.Unknown)
 	}
@@ -1055,7 +1060,7 @@ func (v SegmentView) Lines(verbose bool) []string {
 		lines = append(lines, "  Unknown to the bound: "+v.Unknown)
 	}
 	for _, line := range position.Pending {
-		lines = append(lines, "  unfinished: "+line)
+		lines = append(lines, "  "+line)
 	}
 	if position.Over {
 		lines = append(lines, position.Lines(verbose)...)

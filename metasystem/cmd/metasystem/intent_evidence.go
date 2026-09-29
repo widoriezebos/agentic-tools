@@ -24,11 +24,11 @@ import (
 func evidenceIntentCommands() []intentCommand {
 	return []intentCommand{
 		{
-			object: "evidence", action: "show", audience: "both", summary: "this checkout's durable evidence against its bound, or where one path's evidence went",
+			object: "evidence", action: "show", audience: "both", summary: "this checkout's durable evidence against its bound, or where one path's evidence went, changing nothing",
 			usage: []string{"metasystem evidence show [--all]", "metasystem evidence show PATH|ITEM"},
 			details: []string{
 				"With no word: this checkout's evidence segment against evidence.segment-cap-gib, how many items are past the age floor and which an exclusion holds (an open goal, a receipt no retro covered, a citation by path), and, when the segment is over its bound, by how much with the ready command pair. Machinery never removes evidence. Judged on the accepted goal ledger as it stands; nothing is fetched.",
-				"Entries of the root outside every segment are listed as not managed: remove them by hand if unneeded; dispose never takes them. A removal that was cut short is settled here first: rolled back unless its receipt was written, else its set-aside copy is removed; nothing else is changed.",
+				"Entries of the root outside every segment are listed as not managed: remove them by hand if unneeded; dispose never takes them. A removal that was cut short is reported; metasystem evidence dispose settles it.",
 				"--all names every evidence root of this host with its owner. With a path or an item name: what that path is now — a live file, or a file of a removed item answered from its tombstone (size, sha256, date, rule, receipt, and the archive when it was exported).",
 				"Output is a short summary; --verbose prints every item; --json carries everything.",
 			},
@@ -56,9 +56,9 @@ func evidenceIntentCommands() []intentCommand {
 				"metasystem evidence dispose [--plan ID] [--override] [--reason TEXT]",
 			},
 			details: []string{
-				"--preview writes one plan and changes nothing else: each item with its step, file count and bytes, and held or clear by every exclusion, judged on the accepted goal ledger as it stands (nothing is fetched); the plan says how old that ledger is. Agents may preview.",
+				"--preview writes one plan and changes nothing else (beyond settling a removal cut short, as every form does first): each item with its step, file count and bytes, and held or clear by every exclusion, judged on the accepted goal ledger as it stands (nothing is fetched); the plan says how old that ledger is. Agents may preview.",
 				"Executing a plan (--plan ID, or this terminal session's newest preview younger than a day) is a person's act, proven at the terminal a person enrolled with metasystem system enroll --name NAME: it observes the ledger afresh, re-judges every item, skips an item changed since the preview, and removes the rest with an inventory, a tombstone and a receipt. A held item is skipped unless --override, and every override is recorded. With --export DIR each item is exported and verified first and removed only when its export verified.",
-				"Only an item of a segment is removed; an entry that is not managed is refused (remove it by hand if unneeded). A removal that was cut short is never continued: it is rolled back unless its receipt was written (else only its set-aside copy is removed), and the item is previewed again.",
+				"Only an item of a segment is removed; an entry that is not managed is refused (remove it by hand if unneeded). Every form first settles a removal that was cut short: it is never continued, it is rolled back unless its receipt was written (else only its set-aside copy is removed), and the item is previewed again.",
 				"--over-bound selects, per segment over its bound, its items past the age floor, oldest first, until the segment would be under its cap, and says what it cannot select.",
 			},
 			flags: []intentFlag{
@@ -122,9 +122,7 @@ func runIntentEvidenceShow(inv *intentInvocation) int {
 	if inv.input.switched("all") {
 		var lines []string
 		var data []map[string]any
-		for _, line := range env.SettleOpen(ctx) {
-			lines = append(lines, "settled: "+line)
-		}
+		lines = append(lines, env.OpenDisposals()...)
 		for _, root := range env.Roots() {
 			bytes, _, _ := diskstore.Measure(ctx, root.Path)
 			line := fmt.Sprintf("%s: %s, %s", root.Path, root.Owner, evidenceBytes(bytes))
@@ -272,56 +270,70 @@ func runIntentEvidenceDispose(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	// Every form first settles a removal that was cut short (Round B2-3,
+	// rule 2): rolled back, never continued; the lines lead the output.
+	settleEnv, problem := evidenceEnv(inv, top, "")
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	var settled []string
+	for _, line := range settleEnv.SettleOpen(context.Background()) {
+		settled = append(settled, "  settled first: "+line)
+	}
+	render := func(result intentResult) int {
+		result.text = append(append([]string(nil), settled...), result.text...)
+		return inv.render(result)
+	}
 	owners := inv.owners.disk.withDefaults()
 	if inv.input.switched("preview") {
 		env, problem := evidenceEnv(inv, top, "")
 		if problem != nil {
-			return inv.render(*problem)
+			return render(*problem)
 		}
 		exportDir := ""
 		if inv.input.has("export") {
 			var refusal string
 			if exportDir, refusal = env.ExportDirFor(inv.input.text("export"), registeredStorePaths(top)); refusal != "" {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: refusal})
+				return render(intentResult{Outcome: intentRefused, code: 2, Summary: refusal})
 			}
 		}
 		targets, stillOver, problem := evidenceTargets(inv, env, false)
 		if problem != nil {
-			return inv.render(*problem)
+			return render(*problem)
 		}
 		plan, err := env.Preview(context.Background(), targets, stillOver, exportDir)
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the plan could not be written: " + err.Error()})
+			return render(intentResult{Outcome: intentFailed, code: 1, Summary: "the plan could not be written: " + err.Error()})
 		}
-		return inv.render(evidencePlanResult(inv, plan))
+		return render(evidencePlanResult(inv, plan))
 	}
 	if len(inv.input.args) > 0 || inv.input.switched("over-bound") || inv.input.has("export") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+		return render(intentResult{Outcome: intentRefused, code: 2,
 			Summary: "a disposal runs from a previewed plan: add --preview to plan these items, then run metasystem evidence dispose --plan ID; nothing was done",
 			next:    inv.publicArgv(append(append([]string{"evidence", "dispose"}, inv.raw...), "--preview")...), nextReason: "plan it first"})
 	}
 	by, err := owners.person(top)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 3,
+		return render(intentResult{Outcome: intentRefused, code: 3,
 			Summary:  "executing an evidence disposal is a person's act, and this shell was not proven to be one; nothing was done",
 			Decision: humanauthority.PersonActRemedy("metasystem evidence dispose --plan ID") + "; metasystem evidence dispose ... --preview shows what it would do"})
 	}
 	env, problem := evidenceEnv(inv, top, by)
 	if problem != nil {
-		return inv.render(*problem)
+		return render(*problem)
 	}
 	id := inv.input.text("plan")
 	if id == "" {
 		id = evidence.NewestDisposePlan(env.HomeStateRoot, env.Session, env.Now)
 	}
 	if id == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+		return render(intentResult{Outcome: intentRefused, code: 2,
 			Summary: "this terminal session has previewed no evidence disposal in the last day; preview one here with --preview, or name a plan with --plan ID; nothing was done",
 			next:    inv.publicArgv("evidence", "dispose", "--over-bound", "--preview"), nextReason: "plan one first"})
 	}
 	plan, err := evidence.ReadDisposePlan(env.HomeStateRoot, id)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error()})
+		return render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error()})
 	}
 	outcomes := env.Execute(context.Background(), plan, evidence.ExecuteOptions{Override: inv.input.switched("override"), Reason: inv.input.text("reason")})
 	done, freed, lines := evidenceOutcomeLines(outcomes, inv.input.switched("verbose"))
@@ -342,7 +354,7 @@ func runIntentEvidenceDispose(inv *intentInvocation) int {
 	if done == already {
 		result = intentUnchanged
 	}
-	return inv.render(intentResult{Outcome: result, Summary: summary, text: lines, Data: outcomes})
+	return render(intentResult{Outcome: result, Summary: summary, text: lines, Data: outcomes})
 }
 
 func evidencePlanResult(inv *intentInvocation, plan evidence.DisposePlan) intentResult {

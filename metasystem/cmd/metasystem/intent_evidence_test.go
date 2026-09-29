@@ -246,10 +246,9 @@ func TestEvidenceShowAllVerboseListsTheItemsDisposeAccepts(t *testing.T) {
 	}
 }
 
-// witnessEvidenceShowSettlesOnce (Round B2-3, rule 2): a person's removal
-// cut short after its set-aside is rolled back by the first show, which
-// says so; a repeat show changes nothing.
-func witnessEvidenceShowSettlesOnce(t *testing.T, bed *evidenceVerbBed) {
+// openEvidenceDisposal leaves a person's removal of the bed's chain as a
+// crash after its set-aside leaves it.
+func openEvidenceDisposal(t *testing.T, bed *evidenceVerbBed) {
 	t.Helper()
 	files, err := diskstore.Inventory(context.Background(), bed.chain)
 	if err != nil {
@@ -260,26 +259,39 @@ func witnessEvidenceShowSettlesOnce(t *testing.T, bed *evidenceVerbBed) {
 		Rule: diskstore.RulePerson, By: "Wido", At: diskNow, Receipt: "01RECEIPTSHOW", State: diskstore.StateBegun, Disposing: "old-chain.disposing-01S"}
 	data, _ := json.Marshal(tombstone)
 	helmMust(t, os.WriteFile(diskstore.RemovedTombstonePath(bed.chain), data, 0o644), os.Rename(bed.chain, bed.chain+".disposing-01S"))
-	code, out := bed.run("evidence", "show")
-	if code != 0 || !strings.Contains(out, "settled: ") || !strings.Contains(out, "rolled back, the item is back") {
-		t.Fatalf("the first show settles = %d:\n%s", code, out)
+}
+
+// Round B2-3 amendment: show shows. On a tree with an open disposal, show
+// and show --all change no byte and name the verb that settles it.
+func TestEvidenceShowReportsAnOpenDisposalAndChangesNothing(t *testing.T) {
+	t.Parallel()
+	bed := newEvidenceVerbBed(t)
+	openEvidenceDisposal(t, bed)
+	before := evidenceSnapshot(t, bed.root)
+	for _, args := range [][]string{{"evidence", "show"}, {"evidence", "show", "--all"}} {
+		code, out := bed.run(args...)
+		if code != 0 || !strings.Contains(out, "an interrupted removal of "+bed.chain+" is open: metasystem evidence dispose settles it (rolls it back), then preview again") {
+			t.Fatalf("%v reports the open disposal = %d:\n%s", args, code, out)
+		}
+		if after := evidenceSnapshot(t, bed.root); after != before {
+			t.Fatalf("%v changes no byte", args)
+		}
+	}
+}
+
+// Round B2-3 amendment: evidence dispose, in any form, settles an open
+// disposal before anything else: a preview rolls it back, then plans.
+func TestEvidenceDisposeSettlesAnOpenDisposalFirst(t *testing.T) {
+	t.Parallel()
+	bed := newEvidenceVerbBed(t)
+	openEvidenceDisposal(t, bed)
+	code, out := bed.run("evidence", "dispose", "old-chain", "--preview")
+	if code != 0 || !strings.Contains(out, "rolled back, the item is back") || !strings.Contains(out, "1 clear") {
+		t.Fatalf("the preview settles first, then plans = %d:\n%s", code, out)
 	}
 	if _, err := os.Stat(filepath.Join(bed.chain, "jobs", "old-chain.log")); err != nil {
 		t.Fatalf("the item is back: %v", err)
 	}
-	before := evidenceSnapshot(t, bed.root)
-	code, out = bed.run("evidence", "show")
-	if code != 0 || strings.Contains(out, "settled: ") {
-		t.Fatalf("a repeat show settles nothing = %d:\n%s", code, out)
-	}
-	if after := evidenceSnapshot(t, bed.root); after != before {
-		t.Fatal("a repeat show changes nothing")
-	}
-}
-
-func TestEvidenceShowRollsBackARemovalCutShortOnce(t *testing.T) {
-	t.Parallel()
-	witnessEvidenceShowSettlesOnce(t, newEvidenceVerbBed(t))
 }
 
 // Round B2-3, rule 3: an entry of the root outside every segment is listed

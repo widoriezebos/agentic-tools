@@ -59,7 +59,7 @@ func TestTheMachinePassNeverFinishesAPersonsRemoval(t *testing.T) {
 	if gone(item) || len(lines) != 0 {
 		t.Fatalf("MACHINE REMOVAL: the pass touched a person's removal of %s: %+v", item, lines)
 	}
-	if !strings.Contains(strings.Join(position.Pending, "\n"), "metasystem evidence dispose "+item+" --preview") {
+	if !strings.Contains(strings.Join(position.Pending, "\n"), "an interrupted removal of "+item+" is open: metasystem evidence dispose settles it (rolls it back), then preview again") {
 		t.Fatalf("the report names the person's command: %+v", position.Pending)
 	}
 }
