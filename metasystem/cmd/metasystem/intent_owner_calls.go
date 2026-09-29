@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
@@ -28,12 +29,12 @@ import (
 type intentOwnerCalls struct {
 	// brain declares or withdraws the coordinator; its human gate
 	// classifies caller.
-	brain func(choice string, caller processIdentity, stdout, stderr io.Writer, root, by string) int
+	brain func(choice string, caller ownercall.Process, stdout, stderr io.Writer, root, by string) int
 	// goalFetch is the read-side advance of the goal ledger.
 	goalFetch func(stdout, stderr io.Writer, root string) int
 	// goalRepair accepts fetched remote history; the brain's human-word
 	// gate classifies caller.
-	goalRepair func(caller processIdentity, stdout, stderr io.Writer, root, by string) int
+	goalRepair func(caller ownercall.Process, stdout, stderr io.Writer, root, by string) int
 	// configKeys enumerates configured keys.
 	configKeys func(stdout io.Writer, conf, matching string) int
 	// configValidate validates the configuration domain.
@@ -50,24 +51,24 @@ type intentOwnerCalls struct {
 	goalCarry func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int
 	// landingTestReceipt runs the landing proof on one candidate tree and
 	// prints its receipt; caller is what its proof admission classifies.
-	landingTestReceipt func(caller processIdentity, stdout, stderr io.Writer, dir string, args []string) int
+	landingTestReceipt func(caller ownercall.Process, stdout, stderr io.Writer, dir string, args []string) int
 	// channelWait waits for one channel question's answer; caller is the
 	// waiting process the durable wait registers, lineage the channel ledger
 	// identity's.
-	channelWait func(caller processIdentity, lineage string, stdout, stderr io.Writer, args []string) int
+	channelWait func(caller ownercall.Process, lineage string, stdout, stderr io.Writer, args []string) int
 	// missionStatus prints a mission's runner status line.
 	missionStatus func(stdout, stderr io.Writer, root, mission string) int
 	// missionLaunch starts or resumes a mission's detached run loop, or with
 	// wait runs the whole mission in this process; a closed fence's human
 	// reopening classifies caller.
-	missionLaunch func(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string, wait bool) int
+	missionLaunch func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int
 	// missionSeal checks one authored mission contract and seals it,
 	// returning the digest its approval line signs and the sizing warnings;
 	// a sealed contract answers contract.ErrAlreadySealed.
 	missionSeal func(path string) (string, []string, error)
 	// missionResolveTaint applies a person's typed resolution; the
 	// human-reserved gate classifies caller.
-	missionResolveTaint func(caller processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int
+	missionResolveTaint func(caller ownercall.Process, stdout, stderr io.Writer, request missionResolveRequest) int
 }
 
 // missionResolveRequest is one typed taint resolution: restore to a recorded
@@ -96,7 +97,7 @@ func (r missionResolveRequest) words() []string {
 
 func defaultIntentOwnerCalls() *intentOwnerCalls {
 	return &intentOwnerCalls{
-		brain: func(choice string, caller processIdentity, stdout, stderr io.Writer, root, by string) int {
+		brain: func(choice string, caller ownercall.Process, stdout, stderr io.Writer, root, by string) int {
 			if choice == "withdraw" {
 				return brainWithdraw(caller, stdout, stderr, cleanOwnerRoot(root), by, false)
 			}
@@ -105,7 +106,7 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 		goalFetch: func(stdout, stderr io.Writer, root string) int {
 			return goalFetchTo(stdout, stderr, cleanOwnerRoot(root), goal.ResolveEndpoint)
 		},
-		goalRepair: func(caller processIdentity, stdout, stderr io.Writer, root, by string) int {
+		goalRepair: func(caller ownercall.Process, stdout, stderr io.Writer, root, by string) int {
 			facts := defaultGoalAuthorityReadFacts()
 			facts.caller = caller
 			return goalRepairAcceptRemoteTo(stdout, stderr, cleanOwnerRoot(root), by, facts, goal.ResolveEndpoint)
@@ -135,8 +136,8 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 			return digest, warnings, nil
 		},
 		landingTestReceipt: landingTestReceiptFor,
-		channelWait: func(caller processIdentity, lineage string, stdout, stderr io.Writer, args []string) int {
-			return channelWaitWith(caller.pid, lineage, stdout, stderr, args, nil)
+		channelWait: func(caller ownercall.Process, lineage string, stdout, stderr io.Writer, args []string) int {
+			return channelWaitWith(caller.Pid, lineage, stdout, stderr, args, nil)
 		},
 		goalReconcile: func(dependencies syncRequestDependencies, stdout, stderr io.Writer, _ string, args []string) int {
 			return goalReconcileWith(dependencies, stdout, stderr, args)
@@ -147,9 +148,9 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 		goalCarry: func(dependencies syncRequestDependencies, stdout, stderr io.Writer, _ string, args []string) int {
 			return goalCarryLandingWith(dependencies, stdout, stderr, args)
 		},
-		missionResolveTaint: func(caller processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int {
+		missionResolveTaint: func(caller ownercall.Process, stdout, stderr io.Writer, request missionResolveRequest) int {
 			engine := missionrunner.NewEngine(cleanOwnerRoot(request.root), request.mission)
-			engine.Output, engine.Errors, engine.Caller = stdout, stderr, caller.pid
+			engine.Output, engine.Errors, engine.Caller = stdout, stderr, caller.Pid
 			return engine.ResolveTaint(request.taint, request.variant, request.tree, request.by, request.reason, request.waived)
 		},
 	}
@@ -159,7 +160,7 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 // fence check (a closed fence reopens only for a person, classified from
 // caller), then the runner's launch at the fence's generation, detached or,
 // with wait, in this process until the mission ends.
-func missionLaunchTo(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
+func missionLaunchTo(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
 	root = cleanOwnerRoot(root)
 	generation, code := missionFenceBeforeArmFor(caller, stderr, root, mode, stateroot.RepositoryTop, lease.ClassifyAt)
 	if code != 0 {
@@ -170,7 +171,7 @@ func missionLaunchTo(caller processIdentity, stdout, stderr io.Writer, root, mis
 		fmt.Fprintln(stderr, "mission "+mode+":", err)
 		return 1
 	}
-	engine.Output, engine.Errors, engine.Caller = stdout, stderr, caller.pid
+	engine.Output, engine.Errors, engine.Caller = stdout, stderr, caller.Pid
 	return engine.LaunchAtGeneration(mode, wait, generation)
 }
 
@@ -190,7 +191,7 @@ func (inv *intentInvocation) ownerCalls() *intentOwnerCalls {
 func (inv *intentInvocation) goalOwnerCall(owner func(syncRequestDependencies, io.Writer, io.Writer, string, []string) int, args ...string) intentProcessResult {
 	dependencies, dir := inv.owners.dependencies, inv.layout.InstallationRoot
 	dependencies.report = nil
-	dependencies.authorityFacts.caller = currentProcessIdentity()
+	dependencies.authorityFacts.caller = ownercall.CurrentProcess()
 	return ownerCall(func(stdout, stderr io.Writer) int { return owner(dependencies, stdout, stderr, dir, args) })
 }
 
@@ -206,10 +207,10 @@ func ownerCall(run func(stdout, stderr io.Writer) int) intentProcessResult {
 // landingTestReceiptFor is landing test-receipt under an explicit caller: its
 // testing run and its proof admission classify and authenticate from the
 // caller, and the receipt and refusals go to the caller's streams.
-func landingTestReceiptFor(caller processIdentity, stdout, stderr io.Writer, _ string, args []string) int {
-	invocation := testRunInvocation{callerPID: caller.pid, stdout: stdout, stderr: stderr}
+func landingTestReceiptFor(caller ownercall.Process, stdout, stderr io.Writer, _ string, args []string) int {
+	invocation := testRunInvocation{callerPID: caller.Pid, stdout: stdout, stderr: stderr}
 	admit := func(request proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
-		request.CallerPID = caller.pid
+		request.CallerPID = caller.Pid
 		return admitProofLaunch(request)
 	}
 	return landingTestReceiptTo(stdout, stderr, context.Background(), goalCommandClock, nil,

@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 import (
 	"crypto/sha256"
@@ -12,10 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 var batchJoinAdmissionExecutable = os.Executable
@@ -28,7 +31,7 @@ func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinA
 	if err != nil {
 		return batch.JoinAdmission{}, err
 	}
-	if err := authorizeBatchMember(root, batch.Record{BatchID: batchID, Seal: map[string]batch.Claim{unit.GoalID: unit.Claim}}, unit); err != nil {
+	if err := AuthorizeBatchMember(root, batch.Record{BatchID: batchID, Seal: map[string]batch.Claim{unit.GoalID: unit.Claim}}, unit); err != nil {
 		return batch.JoinAdmission{}, err
 	}
 	if unit.Admission == nil || unit.Admission.Tree == "" {
@@ -41,7 +44,7 @@ func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinA
 	if err != nil || !ran {
 		return result, err
 	}
-	if err := authorizeBatchMember(root, batch.Record{BatchID: batchID, Seal: map[string]batch.Claim{unit.GoalID: unit.Claim}}, unit); err != nil {
+	if err := AuthorizeBatchMember(root, batch.Record{BatchID: batchID, Seal: map[string]batch.Claim{unit.GoalID: unit.Claim}}, unit); err != nil {
 		return batch.JoinAdmission{}, err
 	}
 	return result, nil
@@ -135,25 +138,25 @@ func runBatchAdmissionOnTree(root, batchID, baseTree, goalID string, claim batch
 		args = append(args, "--fresh-episode", result.FreshEpisode, "--fresh-expires-at", result.FreshExpiresAt)
 	}
 	command := exec.Command(binary, args...)
-	command.Dir, command.Env = executionRoot, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
+	command.Dir, command.Env = executionRoot, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+LandingOwnerLineage)
 	output, runErr := command.CombinedOutput()
 	if runErr != nil && command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitAdmissionRefused {
-		return batch.JoinAdmission{}, proofrun.TestResult{}, false, joinAdmissionRefusal(strings.TrimSpace(string(output)))
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, JoinAdmissionRefusal(strings.TrimSpace(string(output)))
 	}
 	var proof proofrun.TestResult
-	if err := readStrictJSON(result.ResultPath, &proof); err != nil {
+	if err := strictjson.Read(result.ResultPath, &proof); err != nil {
 		return batch.JoinAdmission{}, proofrun.TestResult{}, false, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: read admission result: %w; output=%s", err, strings.TrimSpace(string(output)))
 	}
-	if runErr != nil && (command.ProcessState == nil || !batchProofExitAccepted(command.ProcessState.ExitCode(), proof)) {
+	if runErr != nil && (command.ProcessState == nil || !BatchProofExitAccepted(command.ProcessState.ExitCode(), proof)) {
 		if len(proof.Delivery.FailingGroups) != 0 {
 			return batch.JoinAdmission{}, proof, true, &batch.JoinAdmissionRed{Reason: "BATCH_JOIN_ADMISSION_RED: " + strings.Join(proof.Delivery.FailingGroups, ",")}
 		}
 		return batch.JoinAdmission{}, proof, true, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: %s: %w", strings.TrimSpace(string(output)), runErr)
 	}
-	request := testingSelectionRequest{Root: executionRoot, ControlRoot: controlRoot, GoalID: goalID, Tree: tree,
+	request := testrun.SelectionRequest{Root: executionRoot, ControlRoot: controlRoot, GoalID: goalID, Tree: tree,
 		Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchAdmission: true,
 		FreshEpisode: result.FreshEpisode, FreshExpiresAt: result.FreshExpiresAt, ExecutedWorkers: proof.Workers}
-	verified, err := verifyRetainedTesting(request)
+	verified, err := Engine.VerifyRetainedTesting(request)
 	if err != nil || !verified.Delivery.Sufficient {
 		return batch.JoinAdmission{}, proof, true, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: retained admission is incomplete: %w; missing=%v", err, verified.Delivery.MissingGroups)
 	}
@@ -161,7 +164,7 @@ func runBatchAdmissionOnTree(root, batchID, baseTree, goalID string, claim batch
 	return result, proof, true, nil
 }
 
-func joinAdmissionRefusal(reason string) error {
+func JoinAdmissionRefusal(reason string) error {
 	code := batchAdmissionRefusalCode(reason)
 	switch code {
 	case "GOAL_REVISION_MOVED":
@@ -177,7 +180,7 @@ func joinAdmissionRefusal(reason string) error {
 }
 
 func retainJoinEpisode(root string, store batch.Store, batchID string, unit batch.Unit, decision batch.JoinAdmission, maxAgeMS int64) (batch.JoinAdmission, error) {
-	now, err := goalCommandNow(batch.ModuleRoot(root))
+	now, err := fixtureauth.GoalNow(batch.ModuleRoot(root))
 	if err != nil {
 		return batch.JoinAdmission{}, err
 	}
@@ -196,7 +199,7 @@ func retainJoinEpisode(root string, store batch.Store, batchID string, unit batc
 					return nil
 				}
 			}
-			token, tokenErr := newTestingFreshEpisode()
+			token, tokenErr := testrun.NewFreshEpisode()
 			if tokenErr != nil {
 				return tokenErr
 			}

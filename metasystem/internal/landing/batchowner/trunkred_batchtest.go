@@ -1,6 +1,6 @@
 //go:build batchtest
 
-package main
+package batchowner
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	productionTrunkRedLedgerOwner = func(root string) (batch.LedgerOwner, error) {
+	ProductionTrunkRedLedgerOwner = func(root string) (batch.LedgerOwner, error) {
 		return newBatchTestFileLedgerOwner(root), nil
 	}
 }

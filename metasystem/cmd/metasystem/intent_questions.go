@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 )
 
 // A question is named by its id. A channel question lives with the channel
@@ -184,7 +185,7 @@ func (inv *intentInvocation) waitQuestion(ref string) intentResult {
 	}
 	// The wait runs in this process (design 6.2): this process is the waiting
 	// caller the child registered, and the lineage is this invocation's.
-	caller, lineage := currentProcessIdentity(), ""
+	caller, lineage := ownercall.CurrentProcess(), ""
 	if inv.owners.dependencies.ownerLineage != nil {
 		lineage = inv.owners.dependencies.ownerLineage()
 	}

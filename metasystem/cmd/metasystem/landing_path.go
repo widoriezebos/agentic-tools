@@ -28,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -425,8 +426,8 @@ func landingPathCarryStatus(root, carried, goalID, ledgerTip string) (landing.Ca
 // landingPathCarrying and landingPathCarried call the ledger owners with this
 // process as the supplied identity and the landing's lineage named.
 func landingPathCarrying(request landpath.CarryingRequest) (string, int) {
-	invocation := ownerCallFromThisProcess(request.Lineage)
-	req, err := invocation.syncRequest("carrying", request.Root, false)
+	invocation := ownercall.FromThisProcess(request.Lineage)
+	req, err := ownerSyncRequest(invocation, "carrying", request.Root, false)
 	var combined bytes.Buffer
 	status := goalCarryingTo(&combined, &combined, request.Root, req, err, goalCarryingRequest{
 		Goal: request.Goal, Ref: request.Ref, Carrying: request.Carrying, Commit: request.Commit, Tree: request.Tree,
@@ -437,8 +438,8 @@ func landingPathCarrying(request landpath.CarryingRequest) (string, int) {
 }
 
 func landingPathCarried(request landpath.CarriedRequest) (string, int) {
-	invocation := ownerCallFromThisProcess(request.Lineage)
-	req, err := invocation.syncRequest("carried", request.Root, false)
+	invocation := ownercall.FromThisProcess(request.Lineage)
+	req, err := ownerSyncRequest(invocation, "carried", request.Root, false)
 	var combined bytes.Buffer
 	status := goalCarriedTo(&combined, &combined, request.Root, req, err, goalCarriedRequest{
 		Entry: request.Entry, Rebuild: request.RebuildFromCommit, Ref: request.Ref, Goal: request.Goal, Repair: request.RepairCounselor})

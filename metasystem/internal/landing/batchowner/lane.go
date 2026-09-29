@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 // The host's one landing lane (batch-lane design U12): every seat of this
 // host resolves the landing checkout through the host's record under
@@ -28,63 +28,63 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
-// landingLaneHome is the home the host lane lives under (the board's). An
+// LandingLaneHome is the home the host lane lives under (the board's). An
 // error leaves this host on each seat's own landing.batch-root, as before
 // U12.
-var landingLaneHome = board.Home
+var LandingLaneHome = board.Home
 
-// landingLaneSeams are the reads a lane resolution makes beyond the lane
+// LandingLaneSeams are the reads a lane resolution makes beyond the lane
 // itself: who registers, and whether a root is a landing checkout.
-type landingLaneSeams struct {
-	home func() (string, error)
-	// by names the seat that registers the lane.
-	by func(installation string) string
-	// validate admits a root as a dedicated landing checkout for the seat
+type LandingLaneSeams struct {
+	Home func() (string, error)
+	// By names the seat that registers the lane.
+	By func(installation string) string
+	// Validate admits a root as a dedicated landing checkout for the seat
 	// and returns its canonical form.
-	validate func(root, seatRoot string, now time.Time) (string, error)
+	Validate func(root, seatRoot string, now time.Time) (string, error)
 }
 
-func productionLandingLaneSeams() landingLaneSeams {
-	return landingLaneSeams{home: landingLaneHome, by: landingLaneRegistrant, validate: validateLandingCheckout}
+func ProductionLandingLaneSeams() LandingLaneSeams {
+	return LandingLaneSeams{Home: LandingLaneHome, By: LandingLaneRegistrant, Validate: ValidateLandingCheckout}
 }
 
-// landingLaneRegistrant names a seat by its enrolled nickname, else its path.
-func landingLaneRegistrant(installation string) string {
+// LandingLaneRegistrant names a seat by its enrolled nickname, else its path.
+func LandingLaneRegistrant(installation string) string {
 	if machine, err := goal.ResolveMachine(installation); err == nil && strings.TrimSpace(machine) != "" {
 		return strings.TrimSpace(machine)
 	}
 	return installation
 }
 
-func validateLandingCheckout(root, seatRoot string, now time.Time) (string, error) {
+func ValidateLandingCheckout(root, seatRoot string, now time.Time) (string, error) {
 	settings, err := config.ResolveExplicitBatchLanding(root, seatRoot, config.DefaultBatchMaxWait, func() time.Time { return now })
 	return settings.Root, err
 }
 
-// batchRoot resolves the lane an installation lands through: its own
+// BatchRoot resolves the lane an installation lands through: its own
 // landing.batch-root against the host's record (lane.Resolve's table). The
 // root is admitted as a landing checkout before this seat registers it, so
 // no seat registers a checkout that cannot land.
-func (seams landingLaneSeams) batchRoot(installation string, now time.Time) (string, bool, error) {
-	return seams.resolve(installation, now, true)
+func (seams LandingLaneSeams) BatchRoot(installation string, now time.Time) (string, bool, error) {
+	return seams.Resolve(installation, now, true)
 }
 
-// landingLaneRoot is the same resolution for a reader: it never registers.
+// LandingLaneRoot is the same resolution for a reader: it never registers.
 // helm's report and the steward's trunk-red check read the lane through it.
-func landingLaneRoot(installation string, now time.Time) (string, bool, error) {
-	return productionLandingLaneSeams().resolve(installation, now, false)
+func LandingLaneRoot(installation string, now time.Time) (string, bool, error) {
+	return ProductionLandingLaneSeams().Resolve(installation, now, false)
 }
 
-func init() { steward.LandingLaneRoot = landingLaneRoot }
+func init() { steward.LandingLaneRoot = LandingLaneRoot }
 
-func (seams landingLaneSeams) resolve(installation string, now time.Time, register bool) (string, bool, error) {
+func (seams LandingLaneSeams) Resolve(installation string, now time.Time, register bool) (string, bool, error) {
 	confPath := filepath.Join(installation, "metasystem.conf")
 	raw, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: confPath, Default: "", DefaultSet: true})
 	if err != nil {
 		return "", false, err
 	}
 	raw = strings.TrimSpace(raw)
-	home, homeErr := seams.home()
+	home, homeErr := seams.Home()
 	if homeErr != nil {
 		if raw == "" {
 			return "", false, nil
@@ -95,7 +95,7 @@ func (seams landingLaneSeams) resolve(installation string, now time.Time, regist
 		}
 		return settings.Root, true, nil
 	}
-	by := seams.by(installation)
+	by := seams.By(installation)
 	found, err := lane.Resolve(home, raw, by, now, false)
 	if err != nil {
 		return "", true, err
@@ -103,7 +103,7 @@ func (seams landingLaneSeams) resolve(installation string, now time.Time, regist
 	if found.Root == "" {
 		return "", false, nil
 	}
-	root, err := seams.validate(found.Root, installation, now)
+	root, err := seams.Validate(found.Root, installation, now)
 	if err != nil {
 		return "", true, err
 	}
@@ -115,13 +115,13 @@ func (seams landingLaneSeams) resolve(installation string, now time.Time, regist
 	return root, true, nil
 }
 
-// landingOwnerLaneRoot is the lane the owner of repo would serve: its own
+// LandingOwnerLaneRoot is the lane the owner of repo would serve: its own
 // setting against the host's record, "" when there is none. A checkout that
 // names itself registers itself when the host has no lane; a setting that
 // names another checkout than the host's lane is refused, so the owner of a
 // checkout that is not the lane never runs. paused says a person paused the
 // lane (landing stop).
-func landingOwnerLaneRoot(home func() (string, error), metasystemRoot, repo string, now time.Time) (root string, paused bool, err error) {
+func LandingOwnerLaneRoot(home func() (string, error), metasystemRoot, repo string, now time.Time) (root string, paused bool, err error) {
 	raw, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(metasystemRoot, "metasystem.conf"), Default: "", DefaultSet: true})
 	if errors.Is(err, os.ErrNotExist) {
 		// No installation here, so no owner.
@@ -130,7 +130,7 @@ func landingOwnerLaneRoot(home func() (string, error), metasystemRoot, repo stri
 	if err != nil {
 		return "", false, err
 	}
-	raw, err = resolvePathFlag(strings.TrimSpace(raw))
+	raw, err = realpath.Absolute(strings.TrimSpace(raw))
 	if err != nil {
 		return "", false, err
 	}
@@ -146,9 +146,9 @@ func landingOwnerLaneRoot(home func() (string, error), metasystemRoot, repo stri
 	return found.Root, paused, nil
 }
 
-// landingCheckoutPresent refuses a landing checkout that is gone: its owner
+// LandingCheckoutPresent refuses a landing checkout that is gone: its owner
 // is never started there and its directories are never created again.
-func landingCheckoutPresent(root string) error {
+func LandingCheckoutPresent(root string) error {
 	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
 		return &lane.Refusal{Code: lane.CodeGone,
 			Message: fmt.Sprintf("the landing checkout %s no longer exists; its owner was not started and nothing was created there", root),
@@ -157,9 +157,9 @@ func landingCheckoutPresent(root string) error {
 	return nil
 }
 
-// landingLaneProving is the owner's probe of the proving flock: nil when
+// LandingLaneProving is the owner's probe of the proving flock: nil when
 // this host keeps no lane home, so nothing is gated.
-func landingLaneProving(home func() (string, error)) func() (string, bool, error) {
+func LandingLaneProving(home func() (string, error)) func() (string, bool, error) {
 	laneHome, err := home()
 	if err != nil {
 		return nil
@@ -167,31 +167,31 @@ func landingLaneProving(home func() (string, error)) func() (string, bool, error
 	return func() (string, bool, error) { return lane.ProbeProving(laneHome) }
 }
 
-// holdHostProvingFlag asks an internal test run to hold the host's proving
+// HoldHostProvingFlag asks an internal test run to hold the host's proving
 // flock for its whole life (U12).
-const holdHostProvingFlag = "--hold-host-proving"
+const HoldHostProvingFlag = "--hold-host-proving"
 
-// batchProofCommand is the one launcher of a batch's proof children: the tip
+// BatchProofCommand is the one launcher of a batch's proof children: the tip
 // proof, the red diagnosis and the held-trunk-red clearing. The child holds
 // the host's proving flock for its life, waiting while another proof holds
 // it, and the kernel releases it when the child ends, so one proof runs at a
 // time on the host whatever happens to the owner that launched it.
-func batchProofCommand(binary string, args []string, spare bool) *exec.Cmd {
+func BatchProofCommand(binary string, args []string, spare bool) *exec.Cmd {
 	argv := slices.Clone(args)
 	// spare: the early proof alone launches without the lock, because
 	// speculative work on spare capacity must never delay a real proof.
 	if !spare {
-		argv = append(argv, holdHostProvingFlag)
+		argv = append(argv, HoldHostProvingFlag)
 	}
 	return exec.Command(binary, argv...)
 }
 
-// holdHostProvingFor is internal test run's side of the launcher: with the
+// HoldHostProvingFor is internal test run's side of the launcher: with the
 // flag it takes the proving flock (waiting while another proof holds it) and
 // returns the arguments without the flag; without a lane home it holds
 // nothing.
-func holdHostProvingFor(home func() (string, error), args []string) ([]string, func() error, error) {
-	rest := slices.DeleteFunc(slices.Clone(args), func(arg string) bool { return arg == holdHostProvingFlag })
+func HoldHostProvingFor(home func() (string, error), args []string) ([]string, func() error, error) {
+	rest := slices.DeleteFunc(slices.Clone(args), func(arg string) bool { return arg == HoldHostProvingFlag })
 	nothing := func() error { return nil }
 	if len(rest) == len(args) {
 		return rest, nothing, nil
@@ -207,24 +207,24 @@ func holdHostProvingFor(home func() (string, error), args []string) ([]string, f
 	return rest, release, nil
 }
 
-// landingLaneKeeper is the steward's keeper step: nil without a lane home.
-func landingLaneKeeper(home func() (string, error)) func() string {
+// LandingLaneKeeper is the steward's keeper step: nil without a lane home.
+func LandingLaneKeeper(home func() (string, error)) func() string {
 	laneHome, err := home()
 	if err != nil {
 		return nil
 	}
 	keeper := lane.Keeper{Home: laneHome, Now: func() time.Time { return time.Now().UTC() },
 		Inspect: func(root string) (bool, error) {
-			probe, err := landingLaneOwnerProbe(root)
+			probe, err := LandingLaneOwnerProbe(root)
 			return probe.Alive, err
 		},
-		Start: ensureBatchOwner}
+		Start: EnsureBatchOwner}
 	return keeper.Step
 }
 
-// landingLaneOwnerProbe reads whether the lane's owner runs, and since when.
-func landingLaneOwnerProbe(root string) (lane.OwnerProbe, error) {
-	pid, state, err := batchOwnerEnsure.inspect(root)
+// LandingLaneOwnerProbe reads whether the lane's owner runs, and since when.
+func LandingLaneOwnerProbe(root string) (lane.OwnerProbe, error) {
+	pid, state, err := BatchOwnerEnsure.Inspect(root)
 	switch state {
 	case identity.Alive:
 		probe := lane.OwnerProbe{Alive: true, PID: pid}
@@ -248,17 +248,17 @@ func landingLaneView(home func() (string, error), now time.Time) lane.View {
 	if err != nil {
 		return lane.View{Owner: lane.OwnerView{State: lane.OwnerNotStarted}, Summary: "the landing lane cannot be read: this host has no home for it (" + err.Error() + ")"}
 	}
-	return lane.BuildView(lane.ViewSources{Home: laneHome, Now: now, Owner: landingLaneOwnerProbe})
+	return lane.BuildView(lane.ViewSources{Home: laneHome, Now: now, Owner: LandingLaneOwnerProbe})
 }
 
-// endLaneOwner ends the lane's running owner for a restart: the process the
+// EndLaneOwner ends the lane's running owner for a restart: the process the
 // checkout lease's holder recorded, proven by its exact identity (pid, start
 // time and boot) immediately before a SIGTERM, never found by name. The
 // owner releases its lease on TERM and its supervision launches a fresh
 // one from the supervision owner's executable path. It returns the ended
 // pid, 0 when no owner held the lane, and waits up to 15 seconds for the
 // process to be gone.
-func endLaneOwner(root string) (int64, error) {
+func EndLaneOwner(root string) (int64, error) {
 	holder, err := lease.CurrentHolder(root)
 	if errors.Is(err, lease.ErrLeaseAbsent) {
 		return 0, nil
@@ -266,7 +266,7 @@ func endLaneOwner(root string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if holder.OwnerLineage != landingOwnerLineage {
+	if holder.OwnerLineage != LandingOwnerLineage {
 		return 0, fmt.Errorf("the landing checkout is held by lineage %s, not its landing owner; nothing was ended", holder.OwnerLineage)
 	}
 	prober := identity.KernelProber{}

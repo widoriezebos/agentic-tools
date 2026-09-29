@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -313,7 +314,7 @@ func testingWorkerPolicy(confPath string) (testrun.WorkerPolicy, error) {
 
 func runTestRun(args []string, stdout, stderr io.Writer) (exit int) {
 	// A batch's proof child holds the host's proving flock for its life (U12).
-	args, release, err := holdHostProvingFor(landingLaneHome, args)
+	args, release, err := batchowner.HoldHostProvingFor(batchowner.LandingLaneHome, args)
 	if err != nil {
 		fmt.Fprintln(stderr, "metasystem internal test run:", err)
 		return 1

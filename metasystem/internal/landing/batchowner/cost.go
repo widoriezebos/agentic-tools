@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 import (
 	"fmt"
@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func prepareProspectiveBatchCost(root string, record batch.Record, incoming batch.Unit, at time.Time,
@@ -47,9 +48,9 @@ func prepareProspectiveBatchCost(root string, record batch.Record, incoming batc
 	return incoming, forecast, err
 }
 
-type batchCostSelectionRun func(string, costSelection, uint64) (costSelectionEvidence, error)
+type batchCostSelectionRun func(string, testrun.CostSelection, uint64) (testrun.CostEvidence, error)
 
-type batchCostBudgetProjection struct {
+type BatchCostBudgetProjection struct {
 	Budget       dispatchcore.BudgetProjection
 	LandingClaim bool
 }
@@ -58,12 +59,12 @@ type batchCostBudgetProjection struct {
 // prefixes. The pending join admission is a separate earlier-in-time proof
 // request; it is conservatively counted even if the later tip shares inputs.
 func forecastBatchCost(root string, candidate batch.Record, incoming *batch.Unit, at time.Time) (batch.CostForecast, error) {
-	return forecastBatchCostWith(root, candidate, incoming, at, productionPrefixDecision, forecastTestingSelection, batchBudgetProjection)
+	return ForecastBatchCostWith(root, candidate, incoming, at, ProductionPrefixDecision, Engine.ForecastTestingSelection, batchBudgetProjection)
 }
 
-func forecastBatchCostWith(root string, candidate batch.Record, incoming *batch.Unit, at time.Time,
+func ForecastBatchCostWith(root string, candidate batch.Record, incoming *batch.Unit, at time.Time,
 	decision func(string, []batch.Unit, string) (batch.PrefixDecision, error),
-	run batchCostSelectionRun, budget func(string, batch.Unit, *batch.Unit, time.Time) (batchCostBudgetProjection, error)) (batch.CostForecast, error) {
+	run batchCostSelectionRun, budget func(string, batch.Unit, *batch.Unit, time.Time) (BatchCostBudgetProjection, error)) (batch.CostForecast, error) {
 	units := make([]batch.Unit, 0, len(candidate.Units))
 	for _, unit := range candidate.Units {
 		if unit.State == batch.UnitJoined || unit.State == batch.UnitJoining {
@@ -73,7 +74,7 @@ func forecastBatchCostWith(root string, candidate batch.Record, incoming *batch.
 	if len(units) == 0 || len(candidate.PrefixTrees) != len(units) || candidate.TipTree != candidate.PrefixTrees[len(units)-1] {
 		return batch.CostForecast{}, fmt.Errorf("BATCH_COST_INPUT_MOVED: incomplete cumulative prefix series")
 	}
-	capMinutes, err := proofCostCap(root)
+	capMinutes, err := testrun.ProofCostCap(root)
 	if err != nil {
 		return batch.CostForecast{}, err
 	}
@@ -84,7 +85,7 @@ func forecastBatchCostWith(root string, candidate batch.Record, incoming *batch.
 	forecast := batch.CostForecast{SchemaVersion: 1, ObservedAt: at.UTC().Format(time.RFC3339Nano),
 		Currency: "snapshot-not-revalidated", Binding: batch.CostBinding(candidate, units, candidate.PrefixTrees),
 		HeavyCapacity: capacity.Max, MetadataReads: "retained-policy, engine/tool identity, input, and attempt metadata; no native build or test"}
-	var requests []costSelection
+	var requests []testrun.CostSelection
 	// A change takes no prefix proof and has no budget: the tip is charged
 	// to the last goal member, as the tip proof is (U11b).
 	charge, err := batchChargeID(root, batch.ChargeUnit(units), nil)
@@ -107,7 +108,7 @@ func forecastBatchCostWith(root string, candidate batch.Record, incoming *batch.
 		if err != nil {
 			return batch.CostForecast{}, err
 		}
-		selection := costSelectionForPrefix(id, kind, candidate.PrefixTrees[index], chargeGoal, planned.Groups)
+		selection := testrun.PrefixCostSelection(id, kind, candidate.PrefixTrees[index], chargeGoal, planned.Groups)
 		if episode, ok := candidate.PrefixEpisodes[unit.GoalID]; ok && planned.FreshRequired {
 			decisionID, idErr := batch.PrefixDecisionID(candidate.BaseTree, selection.Tree, units[:index+1], candidate.Seal, planned)
 			if idErr != nil {
@@ -120,7 +121,7 @@ func forecastBatchCostWith(root string, candidate batch.Record, incoming *batch.
 		requests = append(requests, selection)
 	}
 	if incoming != nil && incoming.Admission != nil && incoming.Admission.Tree != "" {
-		requests = append(requests, costSelection{ID: "join-admission:" + incoming.GoalID, Kind: "join-admission",
+		requests = append(requests, testrun.CostSelection{ID: "join-admission:" + incoming.GoalID, Kind: "join-admission",
 			Tree: incoming.Admission.Tree, GoalID: incoming.GoalID, Admission: true,
 			FreshEpisode: incoming.Admission.FreshEpisode, FreshExpiresAt: incoming.Admission.FreshExpiresAt})
 	}
@@ -241,39 +242,39 @@ func saturatingLeft(limit, used uint64) uint64 {
 	return limit - used
 }
 
-func batchBudgetProjection(root string, unit batch.Unit, incoming *batch.Unit, at time.Time) (batchCostBudgetProjection, error) {
+func batchBudgetProjection(root string, unit batch.Unit, incoming *batch.Unit, at time.Time) (BatchCostBudgetProjection, error) {
 	if incoming != nil && unit.GoalID == incoming.GoalID {
 		binding, err := dispatchcore.ResolveGoalBinding(incoming.SeatRoot, incoming.GoalID, at)
 		if err != nil {
-			return batchCostBudgetProjection{}, err
+			return BatchCostBudgetProjection{}, err
 		}
 		if binding.Revision != incoming.Claim.Revision || binding.File == nil || binding.File.Claimed == nil ||
 			binding.File.Claimed.AccountingRevision != incoming.Claim.AccountingRevision {
-			return batchCostBudgetProjection{}, fmt.Errorf("BATCH_COST_INPUT_MOVED: incoming claim changed before handover")
+			return BatchCostBudgetProjection{}, fmt.Errorf("BATCH_COST_INPUT_MOVED: incoming claim changed before handover")
 		}
-		return batchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(incoming.SeatRoot, binding.File, at), LandingClaim: binding.File.IsLandingClaim()}, nil
+		return BatchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(incoming.SeatRoot, binding.File, at), LandingClaim: binding.File.IsLandingClaim()}, nil
 	}
 	controlRoot := batch.ModuleRoot(root)
 	endpoint, err := goal.ResolveEndpoint(controlRoot)
 	if err != nil {
-		return batchCostBudgetProjection{}, err
+		return BatchCostBudgetProjection{}, err
 	}
 	projection, err := goal.Project(endpoint, true, at)
 	if err != nil {
-		return batchCostBudgetProjection{}, err
+		return BatchCostBudgetProjection{}, err
 	}
 	if projection.Tree == nil || projection.Tree.Live[unit.GoalID] == nil {
-		return batchCostBudgetProjection{}, fmt.Errorf("BATCH_COST_AUTHORITY_REFUSED: member %s is absent from accepted ledger", unit.GoalID)
+		return BatchCostBudgetProjection{}, fmt.Errorf("BATCH_COST_AUTHORITY_REFUSED: member %s is absent from accepted ledger", unit.GoalID)
 	}
 	file := projection.Tree.Live[unit.GoalID]
 	if file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Revision != unit.Claim.Revision ||
 		file.Claimed.AccountingRevision != unit.Claim.AccountingRevision || file.IsFencedClaim() {
-		return batchCostBudgetProjection{}, fmt.Errorf("BATCH_COST_AUTHORITY_REFUSED: member %s claim changed or fenced", unit.GoalID)
+		return BatchCostBudgetProjection{}, fmt.Errorf("BATCH_COST_AUTHORITY_REFUSED: member %s claim changed or fenced", unit.GoalID)
 	}
-	return batchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(controlRoot, file, at), LandingClaim: file.IsLandingClaim()}, nil
+	return BatchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(controlRoot, file, at), LandingClaim: file.IsLandingClaim()}, nil
 }
 
-func forecastCostRefusal(forecast batch.CostForecast) error {
+func ForecastCostRefusal(forecast batch.CostForecast) error {
 	var reasons []string
 	for _, budget := range forecast.Budgets {
 		if !budget.Fits {

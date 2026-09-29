@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
@@ -15,7 +16,7 @@ type landingOwnerOrdinaryFixture struct {
 	root     string
 	pass     func() error
 	release  func() error
-	cadence  *batchOwnerCadence
+	cadence  *batchowner.BatchOwnerCadence
 	machine  string
 	expected []string
 	calls    int
@@ -24,23 +25,23 @@ type landingOwnerOrdinaryFixture struct {
 func newLandingOwnerOrdinaryFixture(t *testing.T, expected ...string) *landingOwnerOrdinaryFixture {
 	t.Helper()
 	fixture := newLandingOwnerOrdinaryCadenceFixture(t, expected...)
-	originalTick := batchOwnerCadenceTick
+	originalTick := batchowner.BatchOwnerCadenceTick
 	tickDone := make(chan struct{}, 1)
-	batchOwnerCadenceTick = func(root string, held batchOwnerLease, _ func() time.Time) error {
+	batchowner.BatchOwnerCadenceTick = func(root string, held batchowner.BatchOwnerLease, _ func() time.Time) error {
 		defer func() { tickDone <- struct{}{} }()
-		if root != fixture.root || held.root != fixture.root || held.pid != int64(os.Getpid()) ||
-			held.session != fmt.Sprintf("landing-owner-%d", os.Getpid()) || held.started <= 0 ||
-			held.epoch <= 0 || !held.announced {
+		if root != fixture.root || held.Root != fixture.root || held.Pid != int64(os.Getpid()) ||
+			held.Session != fmt.Sprintf("landing-owner-%d", os.Getpid()) || held.Started <= 0 ||
+			held.Epoch <= 0 || !held.Announced {
 			t.Errorf("cadence received root %q and lease %+v, want held lease for %q", root, held, fixture.root)
 			return nil
 		}
-		if err := held.require(); err != nil {
+		if err := held.Require(); err != nil {
 			t.Errorf("cadence lease is no longer held: %v", err)
 			return nil
 		}
 		holder, err := lease.CurrentHolder(root)
-		if err != nil || holder.Pid != held.pid || holder.ClaimEpoch != held.epoch || holder.SessionId != held.session {
-			t.Errorf("cadence holder=%+v error=%v, want pid=%d epoch=%d session=%q", holder, err, held.pid, held.epoch, held.session)
+		if err != nil || holder.Pid != held.Pid || holder.ClaimEpoch != held.Epoch || holder.SessionId != held.Session {
+			t.Errorf("cadence holder=%+v error=%v, want pid=%d epoch=%d session=%q", holder, err, held.Pid, held.Epoch, held.Session)
 		}
 		return nil
 	}
@@ -56,7 +57,7 @@ func newLandingOwnerOrdinaryFixture(t *testing.T, expected ...string) *landingOw
 		if err := fixture.release(); err != nil {
 			t.Errorf("release landing-owner fixture: %v", err)
 		}
-		batchOwnerCadenceTick = originalTick
+		batchowner.BatchOwnerCadenceTick = originalTick
 	})
 	return fixture
 }
@@ -80,7 +81,7 @@ func newLandingOwnerOrdinaryCadenceFixture(t *testing.T, expected ...string) *la
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	fixture := &landingOwnerOrdinaryFixture{root: root, expected: expected, cadence: newBatchOwnerCadence()}
+	fixture := &landingOwnerOrdinaryFixture{root: root, expected: expected, cadence: batchowner.NewBatchOwnerCadence()}
 	var ok bool
 	fixture.release, fixture.pass, ok = setupLandingOwnerWithInputs(t.Output(), root, root, fixture.cadence, fixture.resolve)
 	if !ok {
@@ -98,30 +99,30 @@ func (fixture *landingOwnerOrdinaryFixture) enroll(machine string) {
 	fixture.machine = machine
 }
 
-func (fixture *landingOwnerOrdinaryFixture) resolve(root string) (productionBatchOwnerInputs, error) {
+func (fixture *landingOwnerOrdinaryFixture) resolve(root string) (batchowner.ProductionBatchOwnerInputs, error) {
 	fixture.calls++
 	if root != fixture.root {
-		return productionBatchOwnerInputs{}, fmt.Errorf("landing-owner input root %q, want canonical root %q", root, fixture.root)
+		return batchowner.ProductionBatchOwnerInputs{}, fmt.Errorf("landing-owner input root %q, want canonical root %q", root, fixture.root)
 	}
 	if fixture.calls > len(fixture.expected) {
-		return productionBatchOwnerInputs{}, fmt.Errorf("unexpected landing-owner input resolution %d", fixture.calls)
+		return batchowner.ProductionBatchOwnerInputs{}, fmt.Errorf("unexpected landing-owner input resolution %d", fixture.calls)
 	}
 	if want := fixture.expected[fixture.calls-1]; fixture.machine != want {
-		return productionBatchOwnerInputs{}, fmt.Errorf("landing-owner enrollment on resolution %d is %q, want %q", fixture.calls, fixture.machine, want)
+		return batchowner.ProductionBatchOwnerInputs{}, fmt.Errorf("landing-owner enrollment on resolution %d is %q, want %q", fixture.calls, fixture.machine, want)
 	}
 	if fixture.machine == "" {
-		return productionBatchOwnerInputs{}, fmt.Errorf("no machine nickname is enrolled on this machine; name it once with: git config metasystem.goal.machine NAME")
+		return batchowner.ProductionBatchOwnerInputs{}, fmt.Errorf("no machine nickname is enrolled on this machine; name it once with: git config metasystem.goal.machine NAME")
 	}
-	lockDir, queueDir, err := batchOwnerFixtureProofLockDirectories(root)
+	lockDir, queueDir, err := batchowner.BatchOwnerFixtureProofLockDirectories(root)
 	if err != nil {
-		return productionBatchOwnerInputs{}, err
+		return batchowner.ProductionBatchOwnerInputs{}, err
 	}
-	owner := &ledgerTrunkRedOwner{
-		endpoint: goal.Endpoint{Root: root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: landingOwnerUnexpectedRepository{}},
-		actor:    goal.Actor{Machine: fixture.machine, Lineage: landingOwnerLineage},
-		now:      time.Now,
+	owner := &batchowner.LedgerTrunkRedOwner{
+		Endpoint: goal.Endpoint{Root: root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: landingOwnerUnexpectedRepository{}},
+		Actor:    goal.Actor{Machine: fixture.machine, Lineage: batchowner.LandingOwnerLineage},
+		Now:      time.Now,
 	}
-	return productionBatchOwnerInputs{ledgerOwner: owner, machine: fixture.machine, lockDir: lockDir, queueDir: queueDir}, nil
+	return batchowner.ProductionBatchOwnerInputs{LedgerOwner: owner, Machine: fixture.machine, LockDir: lockDir, QueueDir: queueDir}, nil
 }
 
 // A component pass without a batch never reads or writes the goal ledger.

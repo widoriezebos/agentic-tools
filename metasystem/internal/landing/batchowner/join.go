@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 import (
 	"bytes"
@@ -14,17 +14,21 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
-type batchJoinRequest struct {
+type BatchJoinRequest struct {
 	SeatRoot, LandingRoot, GoalID, ChainID, Through string
 	// ChainHead is the commit a certified chain publishes, the head of its
 	// candidate branch: the tip the human's word on the chain is bound to,
@@ -34,63 +38,63 @@ type batchJoinRequest struct {
 	At        time.Time
 }
 
-type batchJoinDependencies struct {
-	binding          func(string, string, time.Time) (dispatchcore.GoalBinding, error)
-	chain            func(string, string, string, uint64) (batch.CertifiedChain, error)
-	base             func(string) (string, error)
-	mint             func() (string, error)
-	transport        func(string, batch.CertifiedChain) error
-	member           func(batchJoinRequest) (batch.BranchMember, []byte, error)
-	transportMember  func(batchJoinRequest, batch.BranchMember) error
-	assemble         func(string, string, []batch.Unit) ([]string, error)
-	protectedTests   func(string, string, string) error
-	admissionRun     func(string, string, batch.Unit) (batch.JoinAdmission, error)
-	plan             func(string, string, string) (testpolicy.Plan, error)
-	publishAdmission func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun) error
-	costForecast     func(string, batch.Record, batch.Unit, time.Time, func(string, string, string) (testpolicy.Plan, error), func(string, string, []batch.Unit) ([]string, error)) (batch.Unit, batch.CostForecast, error)
-	publishForecast  func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun, batch.CostForecast) error
-	handover         func(batchJoinRequest, string, batch.Claim) error
-	ensure           func(string) error
-	author           func(string, *goal.GoalFile) (string, string, string, error)
-	prober           identity.Prober
+type BatchJoinDependencies struct {
+	Binding          func(string, string, time.Time) (dispatchcore.GoalBinding, error)
+	Chain            func(string, string, string, uint64) (batch.CertifiedChain, error)
+	Base             func(string) (string, error)
+	Mint             func() (string, error)
+	Transport        func(string, batch.CertifiedChain) error
+	member           func(BatchJoinRequest) (batch.BranchMember, []byte, error)
+	transportMember  func(BatchJoinRequest, batch.BranchMember) error
+	Assemble         func(string, string, []batch.Unit) ([]string, error)
+	ProtectedTests   func(string, string, string) error
+	AdmissionRun     func(string, string, batch.Unit) (batch.JoinAdmission, error)
+	Plan             func(string, string, string) (testpolicy.Plan, error)
+	PublishAdmission func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun) error
+	CostForecast     func(string, batch.Record, batch.Unit, time.Time, func(string, string, string) (testpolicy.Plan, error), func(string, string, []batch.Unit) ([]string, error)) (batch.Unit, batch.CostForecast, error)
+	PublishForecast  func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun, batch.CostForecast) error
+	Handover         func(BatchJoinRequest, string, batch.Claim) error
+	Ensure           func(string) error
+	Author           func(string, *goal.GoalFile) (string, string, string, error)
+	Prober           identity.Prober
 }
 
-var batchJoinDependenciesForCommand = productionBatchJoinDependencies
-var batchJoinClock = goalCommandNow
-var batchTreePlanExecutable = os.Executable
+var BatchJoinDependenciesForCommand = ProductionBatchJoinDependencies
+var BatchJoinClock = fixtureauth.GoalNow
+var BatchTreePlanExecutable = os.Executable
 
-func productionBatchJoinDependencies() batchJoinDependencies {
-	return batchJoinDependencies{
-		binding: dispatchcore.ResolveGoalBinding,
-		chain:   batch.ReadCertifiedChain,
-		base:    fetchLandingBaseTree,
-		mint: func() (string, error) {
+func ProductionBatchJoinDependencies() BatchJoinDependencies {
+	return BatchJoinDependencies{
+		Binding: dispatchcore.ResolveGoalBinding,
+		Chain:   batch.ReadCertifiedChain,
+		Base:    fetchLandingBaseTree,
+		Mint: func() (string, error) {
 			id, err := goal.NewOperationULID()
 			return strings.ToLower(id), err
 		},
-		transport: batch.TransportChain,
-		member:    productionBatchBranchMember, transportMember: transportBatchBranchMember,
-		assemble:       batch.AssembleUnits,
-		protectedTests: productionBatchProtectedTests,
-		admissionRun:   productionJoinAdmission,
-		plan:           productionJoinPlan, publishAdmission: batch.PublishJoinWithAdmission,
-		costForecast: prepareProspectiveBatchCost, publishForecast: batch.PublishJoinWithAdmissionForecast,
-		handover: productionForwardHandover, ensure: ensureBatchOwner, author: productionBatchAuthor, prober: identity.KernelProber{},
+		Transport: batch.TransportChain,
+		member:    ProductionBatchBranchMember, transportMember: transportBatchBranchMember,
+		Assemble:       batch.AssembleUnits,
+		ProtectedTests: ProductionBatchProtectedTests,
+		AdmissionRun:   productionJoinAdmission,
+		Plan:           productionJoinPlan, PublishAdmission: batch.PublishJoinWithAdmission,
+		CostForecast: prepareProspectiveBatchCost, PublishForecast: batch.PublishJoinWithAdmissionForecast,
+		Handover: productionForwardHandover, Ensure: EnsureBatchOwner, Author: ProductionBatchAuthor, Prober: identity.KernelProber{},
 	}
 }
 
-func productionBatchBranchMember(request batchJoinRequest) (batch.BranchMember, []byte, error) {
-	if _, err := goalBranchGit(request.SeatRoot, "fetch", "--quiet", "origin", "main"); err != nil {
+func ProductionBatchBranchMember(request BatchJoinRequest) (batch.BranchMember, []byte, error) {
+	if _, err := branch.ScrubbedGit(request.SeatRoot, "fetch", "--quiet", "origin", "main"); err != nil {
 		return batch.BranchMember{}, nil, err
 	}
-	endpoint, err := goalBranchGit(request.SeatRoot, "rev-parse", "FETCH_HEAD")
+	endpoint, err := branch.ScrubbedGit(request.SeatRoot, "rev-parse", "FETCH_HEAD")
 	if err != nil {
 		return batch.BranchMember{}, nil, err
 	}
-	if _, err := goalBranchGit(request.SeatRoot, "fetch", "--quiet", "origin", "refs/heads/goal/"+request.GoalID); err != nil {
+	if _, err := branch.ScrubbedGit(request.SeatRoot, "fetch", "--quiet", "origin", "refs/heads/goal/"+request.GoalID); err != nil {
 		return batch.BranchMember{}, nil, err
 	}
-	tip, err := goalBranchGit(request.SeatRoot, "rev-parse", "FETCH_HEAD")
+	tip, err := branch.ScrubbedGit(request.SeatRoot, "rev-parse", "FETCH_HEAD")
 	if err != nil {
 		return batch.BranchMember{}, nil, err
 	}
@@ -102,7 +106,7 @@ func productionBatchBranchMember(request batchJoinRequest) (batch.BranchMember, 
 	return member, patch, err
 }
 
-func transportBatchBranchMember(request batchJoinRequest, _ batch.BranchMember) error {
+func transportBatchBranchMember(request BatchJoinRequest, _ batch.BranchMember) error {
 	command := exec.Command("git", "-C", request.LandingRoot, "fetch", "--quiet", "origin", "refs/heads/goal/"+request.GoalID)
 	command.Env = gittree.ScrubbedEnviron()
 	if output, err := command.CombinedOutput(); err != nil {
@@ -111,7 +115,7 @@ func transportBatchBranchMember(request batchJoinRequest, _ batch.BranchMember) 
 	return nil
 }
 
-func productionBatchAuthor(root string, file *goal.GoalFile) (string, string, string, error) {
+func ProductionBatchAuthor(root string, file *goal.GoalFile) (string, string, string, error) {
 	if file == nil || file.Approved == nil || !strings.HasPrefix(file.Approved.By, "human:") {
 		return "", "", "", fmt.Errorf("BATCH_JOIN_AUTHOR_UNBOUND: goal has no human approver")
 	}
@@ -129,8 +133,8 @@ func productionBatchAuthor(root string, file *goal.GoalFile) (string, string, st
 	return approver, name, email, nil
 }
 
-func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependencies) (batch.Record, error) {
-	binding, err := dependencies.binding(request.SeatRoot, request.GoalID, request.At)
+func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependencies) (batch.Record, error) {
+	binding, err := dependencies.Binding(request.SeatRoot, request.GoalID, request.At)
 	if err != nil {
 		return batch.Record{}, err
 	}
@@ -143,22 +147,22 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 		}
 		member, patch, err = dependencies.member(request)
 	} else {
-		chain, err = dependencies.chain(request.SeatRoot, request.GoalID, request.ChainID, binding.Revision)
+		chain, err = dependencies.Chain(request.SeatRoot, request.GoalID, request.ChainID, binding.Revision)
 		patch = chain.Patch
 	}
 	if err != nil {
 		return batch.Record{}, err
 	}
-	baseTree, err := dependencies.base(request.LandingRoot)
+	baseTree, err := dependencies.Base(request.LandingRoot)
 	if err != nil {
 		return batch.Record{}, err
 	}
-	id, err := dependencies.mint()
+	id, err := dependencies.Mint()
 	if err != nil {
 		return batch.Record{}, err
 	}
 	actor := binding.Machine + "+" + binding.Lineage
-	store := batch.NewStore(request.LandingRoot, dependencies.prober)
+	store := batch.NewStore(request.LandingRoot, dependencies.Prober)
 	record := batch.Record{BatchID: id, BaseTree: baseTree, TipTree: baseTree, State: batch.StateOpen}
 	// A join addresses an open batch (the newest on the current base, else the
 	// newest on any base), else a new batch on the current base; new joins open
@@ -178,7 +182,7 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 		}
 		err = dependencies.transportMember(request, member)
 	} else {
-		err = dependencies.transport(request.LandingRoot, chain)
+		err = dependencies.Transport(request.LandingRoot, chain)
 	}
 	if err != nil {
 		return batch.Record{}, err
@@ -190,8 +194,8 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	unit := batch.Unit{GoalID: request.GoalID, Chain: chainID, SeatRoot: request.SeatRoot, State: batch.UnitJoining,
 		Claim: batch.Claim{Machine: binding.Machine, Lineage: binding.Lineage, Epoch: uint64(binding.Capability.ClaimEpoch),
 			Revision: binding.Revision, AccountingRevision: binding.File.Claimed.AccountingRevision}}
-	if dependencies.author != nil {
-		unit.Approver, unit.AuthorName, unit.AuthorEmail, err = dependencies.author(request.SeatRoot, binding.File)
+	if dependencies.Author != nil {
+		unit.Approver, unit.AuthorName, unit.AuthorEmail, err = dependencies.Author(request.SeatRoot, binding.File)
 		if err != nil {
 			return batch.Record{}, err
 		}
@@ -229,30 +233,30 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 			return batch.Record{}, err
 		}
 	}
-	handover := func() error { return dependencies.handover(request, record.BatchID, unit.Claim) }
-	if dependencies.publishAdmission == nil || dependencies.admissionRun == nil {
+	handover := func() error { return dependencies.Handover(request, record.BatchID, unit.Claim) }
+	if dependencies.PublishAdmission == nil || dependencies.AdmissionRun == nil {
 		return batch.Record{}, fmt.Errorf("BATCH_JOIN_ADMISSION_UNAVAILABLE: shared admission owner is unavailable")
 	}
 	var cost *batch.CostForecast
-	if dependencies.costForecast != nil {
-		costNow, nowErr := goalCommandNow(batch.ModuleRoot(request.LandingRoot))
+	if dependencies.CostForecast != nil {
+		costNow, nowErr := fixtureauth.GoalNow(batch.ModuleRoot(request.LandingRoot))
 		if nowErr != nil {
 			return batch.Record{}, nowErr
 		}
 		var forecast batch.CostForecast
 		var forecastErr error
-		unit, forecast, forecastErr = dependencies.costForecast(request.LandingRoot, record, unit, costNow, dependencies.plan, dependencies.assemble)
+		unit, forecast, forecastErr = dependencies.CostForecast(request.LandingRoot, record, unit, costNow, dependencies.Plan, dependencies.Assemble)
 		if forecastErr != nil {
 			return batch.Record{}, forecastErr
 		}
 		cost = &forecast
-		if refused := forecastCostRefusal(forecast); refused != nil {
+		if refused := ForecastCostRefusal(forecast); refused != nil {
 			if len(record.Units) != 0 {
 				if err := batch.CloseAdmissionForCost(store, record.BatchID, actor, costNow, forecast); err != nil {
 					return batch.Record{}, err
 				}
-				if dependencies.ensure != nil {
-					refused = errors.Join(refused, dependencies.ensure(request.LandingRoot))
+				if dependencies.Ensure != nil {
+					refused = errors.Join(refused, dependencies.Ensure(request.LandingRoot))
 				}
 			}
 			return batch.Record{}, refused
@@ -267,26 +271,26 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 		}
 	}
 	runAdmission := func(batchID string, joined batch.Unit) (batch.JoinAdmission, error) {
-		return dependencies.admissionRun(request.LandingRoot, batchID, joined)
+		return dependencies.AdmissionRun(request.LandingRoot, batchID, joined)
 	}
 	var publishErr error
 	if cost != nil {
-		if dependencies.publishForecast == nil {
+		if dependencies.PublishForecast == nil {
 			return batch.Record{}, fmt.Errorf("BATCH_JOIN_ADMISSION_UNAVAILABLE: cost-bound publication is unavailable")
 		}
-		publishErr = dependencies.publishForecast(store, record.BatchID, unit, actor, request.At, dependencies.plan, handover, runAdmission, *cost)
+		publishErr = dependencies.PublishForecast(store, record.BatchID, unit, actor, request.At, dependencies.Plan, handover, runAdmission, *cost)
 	} else {
-		publishErr = dependencies.publishAdmission(store, record.BatchID, unit, actor, request.At, dependencies.plan, handover, runAdmission)
+		publishErr = dependencies.PublishAdmission(store, record.BatchID, unit, actor, request.At, dependencies.Plan, handover, runAdmission)
 	}
 	if publishErr != nil {
 		// A failed admission may already have handed over the goal and
 		// requested its return. The durable owner must still settle custody.
-		if dependencies.ensure != nil {
-			publishErr = errors.Join(publishErr, dependencies.ensure(request.LandingRoot))
+		if dependencies.Ensure != nil {
+			publishErr = errors.Join(publishErr, dependencies.Ensure(request.LandingRoot))
 		}
 		return batch.Record{}, publishErr
 	}
-	if err := dependencies.ensure(request.LandingRoot); err != nil {
+	if err := dependencies.Ensure(request.LandingRoot); err != nil {
 		return batch.Record{}, err
 	}
 	return store.Load(record.BatchID)
@@ -294,15 +298,15 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 
 // prepareJoinUnit assembles the unit alone on base and checks that the
 // candidate keeps every protected test.
-func prepareJoinUnit(root, base string, unit batch.Unit, dependencies batchJoinDependencies) error {
-	prefixes, err := dependencies.assemble(root, base, []batch.Unit{unit})
+func prepareJoinUnit(root, base string, unit batch.Unit, dependencies BatchJoinDependencies) error {
+	prefixes, err := dependencies.Assemble(root, base, []batch.Unit{unit})
 	if err != nil || len(prefixes) != 1 {
 		return fmt.Errorf("prepare join unit tree: prefixes=%d: %w", len(prefixes), err)
 	}
-	if dependencies.protectedTests == nil {
+	if dependencies.ProtectedTests == nil {
 		return fmt.Errorf("BATCH_JOIN_TEST_DROPPED: protected test gate is unavailable")
 	}
-	return dependencies.protectedTests(root, base, prefixes[0])
+	return dependencies.ProtectedTests(root, base, prefixes[0])
 }
 
 func fetchLandingBaseTree(root string) (string, error) {
@@ -314,7 +318,7 @@ func fetchLandingBaseTree(root string) (string, error) {
 	return (gittree.Workspace{Dir: root}).TreeOf("FETCH_HEAD")
 }
 
-func directoryTreesOverlap(left, right string) bool {
+func DirectoryTreesOverlap(left, right string) bool {
 	contains := func(parent, child string) bool {
 		relative, err := filepath.Rel(filepath.Clean(parent), filepath.Clean(child))
 		if err != nil {
@@ -325,14 +329,14 @@ func directoryTreesOverlap(left, right string) bool {
 	return contains(left, right) || contains(right, left)
 }
 
-// productionBatchProtectedTests asks the testing owner to check base-listed
+// ProductionBatchProtectedTests asks the testing owner to check base-listed
 // Go tests before join hands the member to the batch owner. The installed
 // contract path and each group's cwd are independent of the repository root.
-func productionBatchProtectedTests(root, baseTree, candidateTree string) error {
-	return productionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree, nil)
+func ProductionBatchProtectedTests(root, baseTree, candidateTree string) error {
+	return ProductionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree, nil)
 }
 
-func productionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree string, raw func(gittree.RawRequest) gittree.RawResult) error {
+func ProductionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree string, raw func(gittree.RawRequest) gittree.RawResult) error {
 	installationRoot := batch.ModuleRoot(root)
 	installation := gittree.Workspace{Dir: installationRoot, RawSource: raw}
 	projectRoot, err := installation.TopLevel()
@@ -390,45 +394,45 @@ func productionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree st
 }
 
 func productionJoinPlan(root, goalID, tree string) (testpolicy.Plan, error) {
-	return productionBatchTreePlan(root, goalID, tree, testpolicy.ModeAuto)
+	return ProductionBatchTreePlan(root, goalID, tree, testpolicy.ModeAuto)
 }
 
-func productionBatchTreePlan(root, goalID, tree string, mode testpolicy.Mode) (_ testpolicy.Plan, err error) {
+func ProductionBatchTreePlan(root, goalID, tree string, mode testpolicy.Mode) (_ testpolicy.Plan, err error) {
 	planned, err := productionBatchTreePlanOutput(root, goalID, tree, mode)
 	return planned.Plan, err
 }
 
-func productionBatchTreePlanOutput(root, goalID, tree string, mode testpolicy.Mode) (_ testingPlanOutput, err error) {
+func productionBatchTreePlanOutput(root, goalID, tree string, mode testpolicy.Mode) (_ testrun.PlanOutput, err error) {
 	return productionBatchTreePlanOutputWithGroups(root, goalID, tree, mode, nil)
 }
 
-func productionBatchTreePlanOutputWithGroups(root, goalID, tree string, mode testpolicy.Mode, groups []string) (_ testingPlanOutput, err error) {
+func productionBatchTreePlanOutputWithGroups(root, goalID, tree string, mode testpolicy.Mode, groups []string) (_ testrun.PlanOutput, err error) {
 	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(tree)
 	if err != nil {
-		return testingPlanOutput{}, fmt.Errorf("plan batch tree: %w", err)
+		return testrun.PlanOutput{}, fmt.Errorf("plan batch tree: %w", err)
 	}
 	defer func() { err = errors.Join(err, detached.Close()) }()
 	planningRoot := detached.Workspace().Dir
-	binary, err := batchTreePlanExecutable()
+	binary, err := BatchTreePlanExecutable()
 	if err != nil {
-		return testingPlanOutput{}, err
+		return testrun.PlanOutput{}, err
 	}
-	command := batchTreePlanCommand(binary, planningRoot, goalID, tree, mode)
+	command := BatchTreePlanCommand(binary, planningRoot, goalID, tree, mode)
 	if len(groups) != 0 {
-		command.Args = append(command.Args, "--batch-prefix", "--batch-requirements", batchRequirementsArgument(groups))
+		command.Args = append(command.Args, "--batch-prefix", "--batch-requirements", testrun.BatchRequirementsArgument(groups))
 	}
 	output, err := command.CombinedOutput()
 	if err != nil {
-		return testingPlanOutput{}, fmt.Errorf("plan joined unit: %s: %w", strings.TrimSpace(string(output)), err)
+		return testrun.PlanOutput{}, fmt.Errorf("plan joined unit: %s: %w", strings.TrimSpace(string(output)), err)
 	}
-	var planned testingPlanOutput
+	var planned testrun.PlanOutput
 	if err := json.Unmarshal(output, &planned); err != nil {
-		return testingPlanOutput{}, err
+		return testrun.PlanOutput{}, err
 	}
 	return planned, nil
 }
 
-func batchTreePlanCommand(binary, planningRoot, goalID, tree string, mode testpolicy.Mode) *exec.Cmd {
+func BatchTreePlanCommand(binary, planningRoot, goalID, tree string, mode testpolicy.Mode) *exec.Cmd {
 	controlRoot := batch.ModuleRoot(planningRoot)
 	account := []string{"test", "plan", "--root", controlRoot, "--goal", goalID}
 	if lane.IsAccount(goalID) {
@@ -440,12 +444,12 @@ func batchTreePlanCommand(binary, planningRoot, goalID, tree string, mode testpo
 	return command
 }
 
-func productionForwardHandover(request batchJoinRequest, batchID string, source batch.Claim) error {
+func productionForwardHandover(request BatchJoinRequest, batchID string, source batch.Claim) error {
 	holder, err := lease.CurrentHolder(request.LandingRoot)
 	if err != nil {
 		return fmt.Errorf("landing owner is not a proven holder: %w", err)
 	}
-	if holder.OwnerLineage != landingOwnerLineage || holder.ClaimEpoch < 1 {
+	if holder.OwnerLineage != LandingOwnerLineage || holder.ClaimEpoch < 1 {
 		return fmt.Errorf("landing owner is not a proven holder: lineage=%s epoch=%d", holder.OwnerLineage, holder.ClaimEpoch)
 	}
 	machine, err := goal.ResolveMachine(request.LandingRoot)
@@ -454,7 +458,7 @@ func productionForwardHandover(request batchJoinRequest, batchID string, source 
 	}
 	// The joining seat's own process is the supplied identity, as the
 	// handover child's parent was, and the request carries the seat's lineage.
-	return batchOwnerCalls.handover(ownerCallFromThisProcess(source.Lineage), goalHandoverRequest{Root: request.SeatRoot,
-		GoalID: request.GoalID, TargetMachine: machine, TargetLineage: landingOwnerLineage,
+	return BatchOwnerCalls.Handover(ownercall.FromThisProcess(source.Lineage), ownercall.HandoverRequest{Root: request.SeatRoot,
+		GoalID: request.GoalID, TargetMachine: machine, TargetLineage: LandingOwnerLineage,
 		TargetEpoch: holder.ClaimEpoch, Batch: batchID})
 }

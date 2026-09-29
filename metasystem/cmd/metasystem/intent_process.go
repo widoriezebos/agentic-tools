@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidencetable"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
@@ -1913,7 +1914,7 @@ func (inv *intentInvocation) missionStatusWithoutState(mission string) intentRes
 // this process (design 6.2); this process is the caller a closed fence's
 // reopening classifies.
 func (inv *intentInvocation) missionOwnerLaunch(mission, mode string) intentProcessResult {
-	caller, root, wait := currentProcessIdentity(), inv.stateRoot, inv.input.switched("wait")
+	caller, root, wait := ownercall.CurrentProcess(), inv.stateRoot, inv.input.switched("wait")
 	return ownerCall(func(stdout, stderr io.Writer) int {
 		return inv.ownerCalls().missionLaunch(caller, stdout, stderr, root, mission, mode, wait)
 	})

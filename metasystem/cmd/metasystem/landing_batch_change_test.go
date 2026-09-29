@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -50,20 +51,20 @@ func TestBatchChangeProofIsChargedToTheGoalMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	var planned []string
-	var launched []batchProofLaunch
-	dependencies := batchProofDependencies{
-		rearm:    func(string, string) error { return nil },
-		attempts: func(string) ([]proofrun.Attempt, error) { return nil, nil },
-		plan: func(_, goalID, tree string, _ testpolicy.Mode) (testpolicy.Plan, error) {
+	var launched []batchowner.BatchProofLaunch
+	dependencies := batchowner.BatchProofDependencies{
+		Rearm:    func(string, string) error { return nil },
+		Attempts: func(string) ([]proofrun.Attempt, error) { return nil, nil },
+		Plan: func(_, goalID, tree string, _ testpolicy.Mode) (testpolicy.Plan, error) {
 			planned = append(planned, goalID+"@"+tree)
 			return testpolicy.Plan{SelectedGroups: []string{"app-a"}, ExecutedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard}, nil
 		},
-		launch: func(request batchProofLaunch) (proofrun.TestResult, error) {
+		Launch: func(request batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
 			launched = append(launched, request)
 			return proofrun.TestResult{AttemptID: "tip-attempt", CandidateTree: request.Tree, Delivery: proofrun.DeliveryJudgment{Sufficient: true}}, nil
 		},
 	}
-	if err := executeBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies); err != nil {
+	if err := batchowner.ExecuteBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(planned, []string{"goal-a@tip-tree"}) || len(launched) != 1 {
@@ -91,7 +92,7 @@ func TestBatchChangeForecastChargesTheGoalMember(t *testing.T) {
 	candidate := batch.Record{Schema: 1, BatchID: "01j5x00000000000000000ba78", State: batch.StateOpen, BaseTree: "base-tree", TipTree: "tip-tree",
 		PrefixTrees: []string{"goal-tree", "tip-tree"}, Units: []batch.Unit{laneGoalUnit(), change}}
 	var decided, charged, budgets []string
-	forecast, err := forecastBatchCostWith(root, candidate, nil, time.Unix(10, 0),
+	forecast, err := batchowner.ForecastBatchCostWith(root, candidate, nil, time.Unix(10, 0),
 		func(_ string, units []batch.Unit, tree string) (batch.PrefixDecision, error) {
 			decided = append(decided, units[len(units)-1].GoalID+"@"+tree)
 			return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
@@ -100,9 +101,9 @@ func TestBatchChangeForecastChargesTheGoalMember(t *testing.T) {
 			charged = append(charged, selection.ID+"="+selection.GoalID)
 			return costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind, Tree: selection.Tree, ChargeGoal: selection.GoalID}}, nil
 		},
-		func(_ string, unit batch.Unit, _ *batch.Unit, _ time.Time) (batchCostBudgetProjection, error) {
+		func(_ string, unit batch.Unit, _ *batch.Unit, _ time.Time) (batchowner.BatchCostBudgetProjection, error) {
 			budgets = append(budgets, unit.GoalID)
-			return batchCostBudgetProjection{}, errors.New("budget read for " + unit.GoalID)
+			return batchowner.BatchCostBudgetProjection{}, errors.New("budget read for " + unit.GoalID)
 		})
 	if err == nil || err.Error() != "budget read for goal-a" {
 		t.Fatalf("forecast err=%v", err)
@@ -121,7 +122,7 @@ func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
 	t.Parallel()
 	change := laneChangeUnit()
 	var plans []string
-	decision, err := planPrefixDecisionWith("", []batch.Unit{laneGoalUnit(), change}, "tip-tree",
+	decision, err := batchowner.PlanPrefixDecisionWith("", []batch.Unit{laneGoalUnit(), change}, "tip-tree",
 		func(_, goalID, tree string, _ testpolicy.Mode, _ []string) (testingPlanOutput, error) {
 			plans = append(plans, goalID)
 			return testingPlanOutput{CandidateTree: tree, ContractDigest: "c", PolicyBaseCommit: "p",
@@ -132,7 +133,7 @@ func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
 	}
 	// A prefix of changes alone is planned on the lane's account; a lane that
 	// cannot be named plans nothing (fail closed).
-	if _, err := planPrefixDecisionWith(t.TempDir(), []batch.Unit{change}, "tip-tree", nil); err == nil || !strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+	if _, err := batchowner.PlanPrefixDecisionWith(t.TempDir(), []batch.Unit{change}, "tip-tree", nil); err == nil || !strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
 		t.Fatalf("a change-only prefix without a lane: %v", err)
 	}
 	record := batch.Record{BatchID: "01j5x00000000000000000ba79", BaseTree: "base-tree", TipTree: "tip-tree", SelectedGroups: []string{"app-a"},
@@ -158,7 +159,7 @@ func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
 	receipt := record.Receipts["goal-a"]
 	receipt.DecisionID = id
 	record.Receipts["goal-a"] = receipt
-	if err := verifyBatchSeriesWith("", record, []string{"change-tree", "goal-tree", "tip-tree"}, decide, verify); err != nil {
+	if err := batchowner.VerifyBatchSeriesWith("", record, []string{"change-tree", "goal-tree", "tip-tree"}, decide, verify); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(verified, []string{"goal-a@goal-tree", "goal-a@tip-tree"}) {
@@ -173,19 +174,19 @@ func TestBatchChangeAuthorityRechecksItsGoal(t *testing.T) {
 	t.Parallel()
 	change := laneChangeUnit()
 	record := batch.Record{BatchID: "01j5x00000000000000000ba80"}
-	if err := authorizeBatchMemberInProjection("", time.Unix(10, 0), record, change, goal.Projection{}); err != nil {
+	if err := batchowner.AuthorizeBatchMemberInProjection("", time.Unix(10, 0), record, change, goal.Projection{}); err != nil {
 		t.Fatalf("goal-less change: %v", err)
 	}
 	named := change
 	named.Change = &batch.ChangeMember{Commit: laneChangeCommit, AskedBy: "m1e+seat", Goal: "goal-g", GoalRevision: 4}
 	moved := goal.Projection{Tree: &goal.TreeGoals{Live: map[string]*goal.GoalFile{"goal-g": {Id: "goal-g", State: goal.StateClaimed,
 		Claimed: &goal.ClaimRecord{Machine: "m1b", Lineage: "other", Revision: 5}}}}}
-	err := authorizeBatchMemberInProjection("", time.Unix(10, 0), record, named, moved)
+	err := batchowner.AuthorizeBatchMemberInProjection("", time.Unix(10, 0), record, named, moved)
 	var revision *batch.PrefixRevisionRefusal
 	if !errors.As(err, &revision) || !strings.Contains(err.Error(), "goal-g") {
 		t.Fatalf("moved claim: %v", err)
 	}
-	if err := authorizeBatchMemberInProjection("", time.Unix(10, 0), record, named, goal.Projection{}); err == nil {
+	if err := batchowner.AuthorizeBatchMemberInProjection("", time.Unix(10, 0), record, named, goal.Projection{}); err == nil {
 		t.Fatal("an unreadable ledger authorized a change in a goal's name")
 	}
 	// A person's change in G's name holds no claim of G (held only warns on
@@ -197,11 +198,11 @@ func TestBatchChangeAuthorityRechecksItsGoal(t *testing.T) {
 	person := named
 	person.Change = &batch.ChangeMember{Commit: laneChangeCommit, AskedBy: "m1e+human", Goal: "goal-g"}
 	moved.Tree.Live["goal-g"].Tier = 1
-	if err := authorizeChangeWith(root, person, moved, noBranchTip); err != nil {
+	if err := batchowner.AuthorizeChangeWith(root, person, moved, noBranchTip); err != nil {
 		t.Fatalf("a person's change in a goal's name below the human tier: %v", err)
 	}
 	moved.Tree.Live["goal-g"].Tier = 4
-	if err := authorizeChangeWith(root, person, moved, noBranchTip); !errors.As(err, &revision) || !strings.Contains(err.Error(), "waits for a person") {
+	if err := batchowner.AuthorizeChangeWith(root, person, moved, noBranchTip); !errors.As(err, &revision) || !strings.Contains(err.Error(), "waits for a person") {
 		t.Fatalf("a person's change past its goal's gate: %v", err)
 	}
 }
@@ -212,12 +213,12 @@ func TestBatchChangeAuthorityRechecksItsGoal(t *testing.T) {
 func TestBatchChangeLandingSeamsReplayAndFindTheTrailer(t *testing.T) {
 	t.Parallel()
 	change := laneChangeUnit()
-	seams := batchLandSeamsWithRead(t.TempDir(), "01j5x00000000000000000ba81", batch.Record{}, "base", "landing+owner", gitOutput, batchCommitBoundary)
+	seams := batchowner.BatchLandSeamsWithRead(t.TempDir(), "01j5x00000000000000000ba81", batch.Record{}, "base", "landing+owner", batchowner.GitOutput, batchowner.BatchCommitBoundary)
 	if seams.ReplayChange == nil {
 		t.Fatal("the landing seams replay no change")
 	}
 	log := "c0ffee\x00land goal-a\n\nGoal-Source: x\n\x00beef\x00record: notes\n\nMachine: m1e+human\nLanding-Change: " + change.GoalID + "\n\x00"
-	recovery := batchRecoverySeamsWithGit(t.TempDir(), batch.NewStore(t.TempDir(), nil), "01j5x00000000000000000ba81", time.Unix(10, 0),
+	recovery := batchowner.BatchRecoverySeamsWithGit(t.TempDir(), batch.NewStore(t.TempDir(), nil), "01j5x00000000000000000ba81", time.Unix(10, 0),
 		func(string, ...string) (string, error) { return log, nil })
 	commit, found, err := recovery.OriginChange(change)
 	if err != nil || !found || commit != "beef" {
@@ -259,16 +260,16 @@ func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
 	}
 	run(seat, "commit", "-qam", "record: notes\n\nMachine: m1e+human\nLanding-Provenance-Verdict: would-refuse code=missing-declaration")
 	commit := run(seat, "rev-parse", "HEAD")
-	run(seat, "update-ref", changePinRef(commit), commit)
+	run(seat, "update-ref", batchowner.ChangePinRef(commit), commit)
 	ensured := 0
-	dependencies := productionChangeJoinDependencies()
-	dependencies.base = func(root string) (string, error) { return run(root, "rev-parse", "HEAD^{tree}"), nil }
-	dependencies.mint = func() (string, error) { return "01j5x00000000000000000ba82", nil }
-	dependencies.protectedTests = func(string, string, string) error { return nil }
-	dependencies.closure = func(string, string, string) *adapter.Closure { return nil }
-	dependencies.ensure = func(string) error { ensured++; return nil }
-	request := changeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: commit, At: time.Unix(10, 0)}
-	record, err := executeChangeJoin(request, dependencies)
+	dependencies := batchowner.ProductionChangeJoinDependencies()
+	dependencies.Base = func(root string) (string, error) { return run(root, "rev-parse", "HEAD^{tree}"), nil }
+	dependencies.Mint = func() (string, error) { return "01j5x00000000000000000ba82", nil }
+	dependencies.ProtectedTests = func(string, string, string) error { return nil }
+	dependencies.Closure = func(string, string, string) *adapter.Closure { return nil }
+	dependencies.Ensure = func(string) error { ensured++; return nil }
+	request := batchowner.ChangeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: commit, At: time.Unix(10, 0)}
+	record, err := batchowner.ExecuteChangeJoin(request, dependencies)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,10 +281,10 @@ func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
 		unit.Change.AskedBy != "m1e+human" || unit.Change.Subject != "record: notes" || unit.Change.Parent != base || !slices.Equal(unit.ChangedPaths, []string{"notes.md"}) {
 		t.Fatalf("change unit=%+v change=%+v", unit, unit.Change)
 	}
-	if fetched := run(lane, "rev-parse", changePinRef(commit)); fetched != commit {
+	if fetched := run(lane, "rev-parse", batchowner.ChangePinRef(commit)); fetched != commit {
 		t.Fatalf("lane pin=%s", fetched)
 	}
-	again, err := executeChangeJoin(request, dependencies)
+	again, err := batchowner.ExecuteChangeJoin(request, dependencies)
 	if err != nil || len(again.History) != len(record.History) {
 		t.Fatalf("repeat err=%v history %d -> %d", err, len(record.History), len(again.History))
 	}
@@ -294,8 +295,8 @@ func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
 	}
 	run(seat, "commit", "-qam", "record: more notes\n\nMachine: m1e+human")
 	stacked := run(seat, "rev-parse", "HEAD")
-	run(seat, "update-ref", changePinRef(stacked), stacked)
-	if _, err := executeChangeJoin(changeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: stacked, At: time.Unix(12, 0)}, dependencies); err != nil {
+	run(seat, "update-ref", batchowner.ChangePinRef(stacked), stacked)
+	if _, err := batchowner.ExecuteChangeJoin(batchowner.ChangeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: stacked, At: time.Unix(12, 0)}, dependencies); err != nil {
 		t.Fatalf("a change on a live change: %v", err)
 	}
 	run(seat, "checkout", "-q", "-b", "stray", base)
@@ -303,16 +304,16 @@ func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
 	stray := run(seat, "rev-parse", "HEAD")
 	run(seat, "commit", "-q", "--allow-empty", "-m", "record: on a stray parent\n\nMachine: m1e+human")
 	orphan := run(seat, "rev-parse", "HEAD")
-	run(seat, "update-ref", changePinRef(orphan), orphan)
-	if _, err := executeChangeJoin(changeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: orphan, At: time.Unix(13, 0)}, dependencies); err == nil ||
+	run(seat, "update-ref", batchowner.ChangePinRef(orphan), orphan)
+	if _, err := batchowner.ExecuteChangeJoin(batchowner.ChangeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: orphan, At: time.Unix(13, 0)}, dependencies); err == nil ||
 		!strings.Contains(err.Error(), "BATCH_CHANGE_PARENT_UNKNOWN") || !strings.Contains(err.Error(), stray) {
 		t.Fatalf("a change on a stray parent: %v", err)
 	}
 	run(seat, "checkout", "-q", "main")
 	run(seat, "commit", "-q", "--allow-empty", "-m", "made by hand")
 	bare := run(seat, "rev-parse", "HEAD")
-	run(seat, "update-ref", changePinRef(bare), bare)
-	if _, err := executeChangeJoin(changeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: bare, At: time.Unix(11, 0)}, dependencies); err == nil ||
+	run(seat, "update-ref", batchowner.ChangePinRef(bare), bare)
+	if _, err := batchowner.ExecuteChangeJoin(batchowner.ChangeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: bare, At: time.Unix(11, 0)}, dependencies); err == nil ||
 		!strings.Contains(err.Error(), "BATCH_CHANGE_UNREADABLE") || !strings.Contains(err.Error(), "commit boundary") {
 		t.Fatalf("a commit without a Machine trailer joined: %v", err)
 	}
@@ -354,26 +355,26 @@ func TestBatchChangeOnlyProofIsChargedToTheLane(t *testing.T) {
 			t.Fatal(err)
 		}
 		var planned []string
-		var launched []batchProofLaunch
-		dependencies := batchProofDependencies{
-			rearm:    func(string, string) error { return nil },
-			attempts: func(string) ([]proofrun.Attempt, error) { return nil, nil },
-			laneAccount: func(string) (string, error) {
+		var launched []batchowner.BatchProofLaunch
+		dependencies := batchowner.BatchProofDependencies{
+			Rearm:    func(string, string) error { return nil },
+			Attempts: func(string) ([]proofrun.Attempt, error) { return nil, nil },
+			LaneAccount: func(string) (string, error) {
 				if !resolvable {
 					return "", errors.New("LANE_ACCOUNT_UNRESOLVED: no landing lane is registered on this host")
 				}
 				return account, nil
 			},
-			plan: func(_, goalID, tree string, _ testpolicy.Mode) (testpolicy.Plan, error) {
+			Plan: func(_, goalID, tree string, _ testpolicy.Mode) (testpolicy.Plan, error) {
 				planned = append(planned, goalID+"@"+tree)
 				return testpolicy.Plan{SelectedGroups: []string{"docs-static"}, ExecutedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard}, nil
 			},
-			launch: func(request batchProofLaunch) (proofrun.TestResult, error) {
+			Launch: func(request batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
 				launched = append(launched, request)
 				return proofrun.TestResult{AttemptID: "lane-attempt", CandidateTree: request.Tree, Delivery: proofrun.DeliveryJudgment{Sufficient: true}}, nil
 			},
 		}
-		err := executeBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies)
+		err := batchowner.ExecuteBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies)
 		after, loadErr := store.Load(id)
 		if loadErr != nil {
 			t.Fatal(loadErr)
@@ -391,7 +392,7 @@ func TestBatchChangeOnlyProofIsChargedToTheLane(t *testing.T) {
 		if got := launched[0]; got.GoalID != account || got.GoalRevision != 0 || got.AccountingRevision != 0 {
 			t.Fatalf("launch=%+v", got)
 		}
-		args := batchTipProofArgs(launched[0], "/exec")
+		args := batchowner.BatchTipProofArgs(launched[0], "/exec")
 		joined := strings.Join(args, " ")
 		if !strings.Contains(joined, "--lane "+account) || strings.Contains(joined, "--goal") || strings.Contains(joined, "--expected-") || strings.Contains(joined, "--require-diagnostic-headroom") {
 			t.Fatalf("lane tip argv=%v", args)
@@ -416,12 +417,12 @@ func TestLaneHoldIsVisibleOnTheBatch(t *testing.T) {
 			t.Fatal(err)
 		}
 		reason := "LANE_ACCOUNT_UNRESOLVED: no landing lane is registered on this host"
-		dependencies := batchProofDependencies{
-			base:        func(string) (string, error) { return "base-tree", nil },
-			rearm:       func(string, string) error { return nil },
-			attempts:    func(string) ([]proofrun.Attempt, error) { return nil, nil },
-			laneAccount: func(string) (string, error) { return "lane:0123456789ab", nil },
-			seal: func(root, id, actor, base string, at time.Time) error {
+		dependencies := batchowner.BatchProofDependencies{
+			Base:        func(string) (string, error) { return "base-tree", nil },
+			Rearm:       func(string, string) error { return nil },
+			Attempts:    func(string) ([]proofrun.Attempt, error) { return nil, nil },
+			LaneAccount: func(string) (string, error) { return "lane:0123456789ab", nil },
+			Seal: func(root, id, actor, base string, at time.Time) error {
 				if step == "seal" {
 					return errors.New(reason)
 				}
@@ -431,15 +432,15 @@ func TestLaneHoldIsVisibleOnTheBatch(t *testing.T) {
 					return nil
 				})
 			},
-			plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
+			Plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
 				return testpolicy.Plan{}, errors.New("LANE_ENGINE_TOO_OLD: the pinned policy engine predates --lane; run: metasystem landing restart")
 			},
-			launch: func(batchProofLaunch) (proofrun.TestResult, error) {
+			Launch: func(batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
 				t.Fatal("a held batch launched")
 				return proofrun.TestResult{}, nil
 			},
 		}
-		_ = executeBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies)
+		_ = batchowner.ExecuteBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies)
 		after, err := store.Load(id)
 		if err != nil {
 			t.Fatal(err)
@@ -469,11 +470,11 @@ func TestChangeGateRecheckRereadsTheGoalBranchTip(t *testing.T) {
 	person.Change = &batch.ChangeMember{Commit: laneChangeCommit, AskedBy: "m1e+human", Goal: "goal-g", GateTip: "1111111111111111111111111111111111111111"}
 	var asked []string
 	tip := func(_, goalID string) (string, error) { asked = append(asked, goalID); return current, nil }
-	if err := authorizeChangeWith(root, person, projection, tip); err != nil || len(asked) != 1 {
+	if err := batchowner.AuthorizeChangeWith(root, person, projection, tip); err != nil || len(asked) != 1 {
 		t.Fatalf("gate at the re-read tip: err=%v asked=%v", err, asked)
 	}
 	unreadable := func(string, string) (string, error) { return "", errors.New("fetch goal/goal-g: network down") }
-	if err := authorizeChangeWith(root, person, projection, unreadable); err == nil {
+	if err := batchowner.AuthorizeChangeWith(root, person, projection, unreadable); err == nil {
 		t.Fatal("an unreadable goal branch tip authorized the change")
 	}
 }

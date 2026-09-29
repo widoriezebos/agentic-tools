@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -19,20 +20,35 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
+// ChangeJoinRequest is one change a seat committed, joining the landing lane
+// (U11b): the seat's installation, the lane checkout, the commit, and the tip
+// the goal's landing gate was read at when the change was made in a goal's
+// name.
+type ChangeJoinRequest struct {
+	SeatRoot, LandingRoot, Commit, GateTip string
+	At                                     time.Time
+}
+
+// ChangePinRef is where a seat pins a change bound for the lane: the lane
+// checkout fetches it from there, and the seat's repeat finds it there.
+func ChangePinRef(commit string) string {
+	return "refs/metasystem/changes/" + strings.TrimPrefix(batch.ChangeID(commit), "change:")
+}
+
 // changeJoinDependencies are the effects of a change's join (U11b).
 type changeJoinDependencies struct {
 	git            func(dir string, args ...string) (string, error)
-	base           func(string) (string, error)
-	mint           func() (string, error)
+	Base           func(string) (string, error)
+	Mint           func() (string, error)
 	assemble       func(string, string, []batch.Unit) ([]string, error)
-	protectedTests func(string, string, string) error
-	closure        func(root, baseTree, tree string) *adapter.Closure
+	ProtectedTests func(string, string, string) error
+	Closure        func(root, baseTree, tree string) *adapter.Closure
 	onMain         func(lane, commit string) (bool, error)
-	ensure         func(string) error
+	Ensure         func(string) error
 	prober         identity.Prober
 }
 
-func productionChangeJoinDependencies() changeJoinDependencies {
+func ProductionChangeJoinDependencies() changeJoinDependencies {
 	return changeJoinDependencies{
 		git: func(dir string, args ...string) (string, error) {
 			command := exec.Command("git", append([]string{"-C", dir}, args...)...)
@@ -43,13 +59,13 @@ func productionChangeJoinDependencies() changeJoinDependencies {
 			}
 			return strings.TrimSpace(string(output)), nil
 		},
-		base: fetchLandingBaseTree,
-		mint: func() (string, error) {
+		Base: fetchLandingBaseTree,
+		Mint: func() (string, error) {
 			id, err := goal.NewOperationULID()
 			return strings.ToLower(id), err
 		},
-		assemble: batch.AssembleUnits, protectedTests: productionBatchProtectedTests, closure: batch.UnitClosure,
-		ensure: ensureBatchOwner, prober: identity.KernelProber{},
+		assemble: batch.AssembleUnits, ProtectedTests: ProductionBatchProtectedTests, Closure: batch.UnitClosure,
+		Ensure: EnsureBatchOwner, prober: identity.KernelProber{},
 		onMain: func(lane, commit string) (bool, error) {
 			return batchSeriesOnEndpoint(lane, "refs/remotes/origin/main", commit)
 		},
@@ -92,13 +108,13 @@ func changeParentStack(store batch.Store, lane, parent string, onMain func(strin
 	}
 }
 
-// executeChangeJoin joins one change the seat committed and pinned: the lane
+// ExecuteChangeJoin joins one change the seat committed and pinned: the lane
 // checkout fetches the pin from the seat (the same host), reads the commit's
 // facts and trailers, checks the change alone on the current base (it
 // applies, and it keeps every protected test), and joins it under the store
 // lock. No plan, admission run, forecast or handover: a change holds no goal.
-func executeChangeJoin(request changeJoinRequest, dependencies changeJoinDependencies) (batch.Record, error) {
-	id, ref, lane := batch.ChangeID(request.Commit), changePinRef(request.Commit), request.LandingRoot
+func ExecuteChangeJoin(request ChangeJoinRequest, dependencies changeJoinDependencies) (batch.Record, error) {
+	id, ref, lane := batch.ChangeID(request.Commit), ChangePinRef(request.Commit), request.LandingRoot
 	unreadable := func(what string, err error) error {
 		return fmt.Errorf("BATCH_CHANGE_UNREADABLE: change %s: %s: %w", id, what, err)
 	}
@@ -148,7 +164,7 @@ func executeChangeJoin(request changeJoinRequest, dependencies changeJoinDepende
 	}
 	slices.Sort(paths)
 	unit := batch.NewChangeUnit(change, request.SeatRoot, machine, lineage, paths, nil)
-	baseTree, err := dependencies.base(lane)
+	baseTree, err := dependencies.Base(lane)
 	if err != nil {
 		return batch.Record{}, err
 	}
@@ -165,11 +181,11 @@ func executeChangeJoin(request changeJoinRequest, dependencies changeJoinDepende
 		return batch.Record{}, fmt.Errorf("prepare change %s on the lane's base: prefixes=%d: %w", id, len(prefixes), err)
 	}
 	tree := prefixes[len(prefixes)-1]
-	if err := dependencies.protectedTests(lane, baseTree, tree); err != nil {
+	if err := dependencies.ProtectedTests(lane, baseTree, tree); err != nil {
 		return batch.Record{}, err
 	}
-	unit.Closure = dependencies.closure(lane, baseTree, tree)
-	newID, err := dependencies.mint()
+	unit.Closure = dependencies.Closure(lane, baseTree, tree)
+	newID, err := dependencies.Mint()
 	if err != nil {
 		return batch.Record{}, err
 	}
@@ -178,22 +194,22 @@ func executeChangeJoin(request changeJoinRequest, dependencies changeJoinDepende
 	if err != nil {
 		return batch.Record{}, err
 	}
-	if err := dependencies.ensure(lane); err != nil {
+	if err := dependencies.Ensure(lane); err != nil {
 		// The change is the lane's now; only its owner did not start (N-a).
-		return record, &changeOwnerStartError{Record: record, Cause: err}
+		return record, &ChangeOwnerStartError{Record: record, Cause: err}
 	}
 	return record, nil
 }
 
-// changeOwnerStartError is a join that wrote the member but could not start
+// ChangeOwnerStartError is a join that wrote the member but could not start
 // the lane's owner: the change is joined and nothing is given back.
-type changeOwnerStartError struct {
+type ChangeOwnerStartError struct {
 	Record batch.Record
 	Cause  error
 }
 
-func (err *changeOwnerStartError) Error() string { return err.Cause.Error() }
-func (err *changeOwnerStartError) Unwrap() error { return err.Cause }
+func (err *ChangeOwnerStartError) Error() string { return err.Cause.Error() }
+func (err *ChangeOwnerStartError) Unwrap() error { return err.Cause }
 
 // batchLaneAccount resolves the accounting identity of the host lane whose
 // checkout is root: what a batch of changes is charged to (U11b). An
@@ -236,9 +252,9 @@ func accountRevisions(id string, claim batch.Claim) []string {
 	return []string{"--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision)}
 }
 
-// laneSpend is what the lane at root charged to its own account: every
+// LaneSpend is what the lane at root charged to its own account: every
 // retained attempt accounted to it (U11b).
-func laneSpend(root, account string) (lane.Spend, error) {
+func LaneSpend(root, account string) (lane.Spend, error) {
 	attempts, err := proofrun.ReadAttempts(batch.ModuleRoot(root))
 	if err != nil {
 		return lane.Spend{}, err

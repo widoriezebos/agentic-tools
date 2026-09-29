@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -97,10 +98,10 @@ func TestGLEPathMovedBaseReopensForDiscoveredLiteral(t *testing.T) {
 	t.Parallel()
 	literal := pathpattern.EncodeLiteral("src/[literal].go")
 	record := batch.Record{Proof: &batch.Proof{SelectedGroups: []string{"app"}, InputManifests: map[string][]string{"app": {literal}}}}
-	if !batchProofInputsMoved(record, []string{"src/[literal].go"}, "metasystem") {
+	if !batchowner.BatchProofInputsMoved(record, []string{"src/[literal].go"}, "metasystem") {
 		t.Fatal("moved discovered literal did not reopen proof")
 	}
-	if batchProofInputsMoved(record, []string{"src/other.go"}, "metasystem") {
+	if batchowner.BatchProofInputsMoved(record, []string{"src/other.go"}, "metasystem") {
 		t.Fatal("unrelated moved file reopened proof")
 	}
 }

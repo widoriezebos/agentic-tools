@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 import (
 	"encoding/json"
@@ -10,9 +10,11 @@ import (
 	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // productionEarlySeams are the owner's early acts on the lane at root (D14,
@@ -21,29 +23,29 @@ import (
 func productionEarlySeams(root string) batch.EarlySeams {
 	return batch.EarlySeams{
 		Cheap: func(record batch.Record) (batch.EarlyResult, error) {
-			return earlyCheapPhase(root, record, runBatchAdmissionOnTree)
+			return EarlyCheapPhase(root, record, runBatchAdmissionOnTree)
 		},
 		Prove: func(record batch.Record) (batch.EarlyResult, error) {
-			return earlyProof(root, record, productionBatchPlan, launchBatchTipProof)
+			return EarlyProof(root, record, productionBatchPlan, LaunchBatchTipProof)
 		},
 		Budget: func(record batch.Record) (bool, string) {
-			now, err := goalCommandNow(batch.ModuleRoot(root))
+			now, err := fixtureauth.GoalNow(batch.ModuleRoot(root))
 			if err != nil {
 				return false, "no early proof: the clock is unreadable (" + err.Error() + ")"
 			}
-			return earlyBudget(root, record, now, batchBudgetProjection, proofCostCap)
+			return EarlyBudget(root, record, now, batchBudgetProjection, testrun.ProofCostCap)
 		},
 	}
 }
 
-type batchAdmissionRun func(root, batchID, baseTree, goalID string, claim batch.Claim, tree, label string,
+type BatchAdmissionRun func(root, batchID, baseTree, goalID string, claim batch.Claim, tree, label string,
 	episode func(batch.JoinAdmission, int64) (batch.JoinAdmission, error)) (batch.JoinAdmission, proofrun.TestResult, bool, error)
 
-// earlyCheapPhase runs the join's cheap phase once over the tip the joins
+// EarlyCheapPhase runs the join's cheap phase once over the tip the joins
 // recorded, which no join ran: each join proves its unit's tree alone. It is
 // charged to the head member like the tip proof, and a fresh group gets an
 // episode of its own that nothing retains.
-func earlyCheapPhase(root string, record batch.Record, run batchAdmissionRun) (batch.EarlyResult, error) {
+func EarlyCheapPhase(root string, record batch.Record, run BatchAdmissionRun) (batch.EarlyResult, error) {
 	head, _, err := earlyHead(record)
 	if err != nil {
 		return batch.EarlyResult{}, err
@@ -54,11 +56,11 @@ func earlyCheapPhase(root string, record batch.Record, run batchAdmissionRun) (b
 	}
 	result, proof, _, err := run(root, record.BatchID, record.BaseTree, charge, head.Claim, record.TipTree, "early-cheap",
 		func(decision batch.JoinAdmission, maxAgeMS int64) (batch.JoinAdmission, error) {
-			token, err := newTestingFreshEpisode()
+			token, err := testrun.NewFreshEpisode()
 			if err != nil {
 				return batch.JoinAdmission{}, err
 			}
-			now, err := goalCommandNow(batch.ModuleRoot(root))
+			now, err := fixtureauth.GoalNow(batch.ModuleRoot(root))
 			if err != nil {
 				return batch.JoinAdmission{}, err
 			}
@@ -86,13 +88,13 @@ func earlyHead(record batch.Record) (batch.Unit, []batch.Unit, error) {
 	return batch.ChargeUnit(joined), joined, nil
 }
 
-// earlyProof is one delivery attempt on the waiting batch's recorded tip,
+// EarlyProof is one delivery attempt on the waiting batch's recorded tip,
 // launched exactly as the tip proof is (its own detached checkout, the head
 // member's claim revisions, the members' union plan) with no diagnostic
 // headroom reserved, since it is nobody's tip. No seal, no proof record, no
 // token: the batch proof takes from it only what identity-exact reuse takes.
-func earlyProof(root string, record batch.Record, plan func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error),
-	launch func(batchProofLaunch) (proofrun.TestResult, error)) (batch.EarlyResult, error) {
+func EarlyProof(root string, record batch.Record, plan func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error),
+	launch func(BatchProofLaunch) (proofrun.TestResult, error)) (batch.EarlyResult, error) {
 	head, joined, err := earlyHead(record)
 	if err != nil {
 		return batch.EarlyResult{}, err
@@ -101,9 +103,9 @@ func earlyProof(root string, record batch.Record, plan func(string, string, stri
 	if err != nil {
 		return batch.EarlyResult{}, err
 	}
-	union, err := planBatchMemberUnion(root, record.TipTree, joined, charge, testpolicy.ModeAuto, plan)
+	union, err := PlanBatchMemberUnion(root, record.TipTree, joined, charge, testpolicy.ModeAuto, plan)
 	if err == nil && union.RequiredMode == testpolicy.ModeDeep {
-		union, err = planBatchMemberUnion(root, record.TipTree, joined, charge, testpolicy.ModeDeep, plan)
+		union, err = PlanBatchMemberUnion(root, record.TipTree, joined, charge, testpolicy.ModeDeep, plan)
 	}
 	if err != nil {
 		return batch.EarlyResult{}, err
@@ -116,7 +118,7 @@ func earlyProof(root string, record batch.Record, plan func(string, string, stri
 	if err := os.Remove(resultPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return batch.EarlyResult{}, err
 	}
-	result, launchErr := launch(batchProofLaunch{Root: controlRoot, BatchID: record.BatchID, GoalID: charge, Tree: record.TipTree,
+	result, launchErr := launch(BatchProofLaunch{Root: controlRoot, BatchID: record.BatchID, GoalID: charge, Tree: record.TipTree,
 		ResultPath: resultPath, Mode: union.ExecutedMode, Groups: slices.Clone(union.SelectedGroups),
 		GoalRevision: head.Claim.Revision, AccountingRevision: head.Claim.AccountingRevision, Early: true})
 	early := batch.EarlyResult{Attempt: result.AttemptID, Failing: batchRedAdapters(root, batch.ResultToRedGroups(result))}
@@ -126,12 +128,12 @@ func earlyProof(root string, record batch.Record, plan func(string, string, stri
 	return early, nil
 }
 
-// earlyBudget admits an early act (the cheap phase or the early proof) only
+// EarlyBudget admits an early act (the cheap phase or the early proof) only
 // when the head member's budget, the one every early act is charged to,
 // still leaves the batch proof its two attempts and its reserved minutes of
 // diagnostic headroom after one more attempt (U3-01; the tip proof's own
 // admission needs two); otherwise the act is skipped and the line says why.
-func earlyBudget(root string, record batch.Record, at time.Time, project func(string, batch.Unit, *batch.Unit, time.Time) (batchCostBudgetProjection, error),
+func EarlyBudget(root string, record batch.Record, at time.Time, project func(string, batch.Unit, *batch.Unit, time.Time) (BatchCostBudgetProjection, error),
 	capMinutes func(string) (uint64, error)) (bool, string) {
 	head, _, err := earlyHead(record)
 	if err != nil {
@@ -164,18 +166,18 @@ func earlyBudget(root string, record batch.Record, at time.Time, project func(st
 	return true, ""
 }
 
-// batchTipRetryAttempts reads the retained proof store the tip proof's retry
+// BatchTipRetryAttempts reads the retained proof store the tip proof's retry
 // decision is looked up in.
-var batchTipRetryAttempts = proofrun.ReadAttempts
+var BatchTipRetryAttempts = proofrun.ReadAttempts
 
-// tipRetryDecision writes the accountable retry decision for a batch proof
+// TipRetryDecision writes the accountable retry decision for a batch proof
 // whose tree an earlier attempt of its head member already failed, the
 // batch's early proof above all (U3-03): the shared-component admission then
 // re-executes that failed producer's group instead of refusing, and never
 // reuses the red. It is read from the retained proof store, the newest such
 // attempt, so it holds whatever the batch record kept (a red that ended after
 // the start, an owner restart). Empty when no attempt on the tree failed.
-func tipRetryDecision(controlRoot string, record batch.Record, charge string, readAttempts func(string) ([]proofrun.Attempt, error)) (string, error) {
+func TipRetryDecision(controlRoot string, record batch.Record, charge string, readAttempts func(string) ([]proofrun.Attempt, error)) (string, error) {
 	attempts, err := readAttempts(controlRoot)
 	if err != nil {
 		return "", err

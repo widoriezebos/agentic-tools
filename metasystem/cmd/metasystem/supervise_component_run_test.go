@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
@@ -161,9 +162,9 @@ func TestLandingOwnerComponentAnnounceErrorReleasesOnStop(t *testing.T) {
 	fixture := newLandingOwnerOrdinaryFixture(t, "mac-cli")
 	root, pass, release := fixture.root, fixture.pass, fixture.release
 	fixture.enroll("mac-cli")
-	original := batchOwnerAnnounce
-	t.Cleanup(func() { batchOwnerAnnounce = original })
-	batchOwnerAnnounce = func(root, session string, pid, start, startTicks int64, bootID, tag, runtime, lineage string) (string, error) {
+	original := batchowner.BatchOwnerAnnounce
+	t.Cleanup(func() { batchowner.BatchOwnerAnnounce = original })
+	batchowner.BatchOwnerAnnounce = func(root, session string, pid, start, startTicks int64, bootID, tag, runtime, lineage string) (string, error) {
 		if _, err := original(root, session, pid, start, startTicks, bootID, tag, runtime, lineage); err != nil {
 			return "", err
 		}
@@ -254,10 +255,10 @@ func TestLandingOwnerComponentRecoversFromEnvironmentFailure(t *testing.T) {
 	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
 	fixture.enroll("mac-cli")
-	original := batchOwnerSetenv
-	t.Cleanup(func() { batchOwnerSetenv = original })
+	original := batchowner.BatchOwnerSetenv
+	t.Cleanup(func() { batchowner.BatchOwnerSetenv = original })
 	failed := false
-	batchOwnerSetenv = func(key, value string) error {
+	batchowner.BatchOwnerSetenv = func(key, value string) error {
 		if !failed {
 			failed = true
 			return errors.New("injected environment failure")
@@ -278,11 +279,11 @@ func TestLandingOwnerComponentRetriesConstructionWithFreshInputs(t *testing.T) {
 	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
 	fixture.enroll("machine-one")
-	original := batchOwnerConstruct
-	t.Cleanup(func() { batchOwnerConstruct = original })
+	original := batchowner.BatchOwnerConstruct
+	t.Cleanup(func() { batchowner.BatchOwnerConstruct = original })
 	var machines []string
-	batchOwnerConstruct = func(settings config.BatchLanding, held batchOwnerLease, inputs productionBatchOwnerInputs, now func() time.Time) (*batch.Owner, error) {
-		machines = append(machines, inputs.machine)
+	batchowner.BatchOwnerConstruct = func(settings config.BatchLanding, held batchowner.BatchOwnerLease, inputs batchowner.ProductionBatchOwnerInputs, now func() time.Time) (*batch.Owner, error) {
+		machines = append(machines, inputs.Machine)
 		if len(machines) == 1 {
 			return nil, errors.New("injected construction failure")
 		}
@@ -309,15 +310,15 @@ func TestLandingOwnerComponentSweepsRetainedSourcesOnceAndAFailureNeverStopsIt(t
 	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
 	fixture.enroll("mac-cli")
-	originalSweep, originalResume := batchOwnerSweepSources, batchOwnerResume
-	t.Cleanup(func() { batchOwnerSweepSources, batchOwnerResume = originalSweep, originalResume })
+	originalSweep, originalResume := batchowner.BatchOwnerSweepSources, batchowner.BatchOwnerResume
+	t.Cleanup(func() { batchowner.BatchOwnerSweepSources, batchowner.BatchOwnerResume = originalSweep, originalResume })
 	var swept []string
-	batchOwnerSweepSources = func(repo string) error {
+	batchowner.BatchOwnerSweepSources = func(repo string) error {
 		swept = append(swept, repo)
 		return errors.New("injected sweep failure")
 	}
 	resumes := 0
-	batchOwnerResume = func(*batch.Owner) { resumes++ }
+	batchowner.BatchOwnerResume = func(*batch.Owner) { resumes++ }
 	if err := pass(); err != nil || resumes != 1 {
 		t.Fatalf("first pass resumes=%d error=%v; a failed sweep must not stop the owner", resumes, err)
 	}
@@ -337,10 +338,10 @@ func TestLandingOwnerComponentStopsActingAfterLeaseLoss(t *testing.T) {
 	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
 	fixture.enroll("mac-cli")
-	originalResume := batchOwnerResume
-	t.Cleanup(func() { batchOwnerResume = originalResume })
+	originalResume := batchowner.BatchOwnerResume
+	t.Cleanup(func() { batchowner.BatchOwnerResume = originalResume })
 	resumes := 0
-	batchOwnerResume = func(*batch.Owner) { resumes++ }
+	batchowner.BatchOwnerResume = func(*batch.Owner) { resumes++ }
 	if err := pass(); err != nil || resumes != 1 {
 		t.Fatalf("initial pass resumes=%d error=%v", resumes, err)
 	}
@@ -376,24 +377,24 @@ func TestLandingOwnerComponentStopsActingAfterLeaseLoss(t *testing.T) {
 }
 
 func TestLandingOwnerComponentCadenceWiringBound(t *testing.T) {
-	originalStart, originalTick, originalReport := batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport
+	originalStart, originalTick, originalReport := batchowner.BatchOwnerCadenceStart, batchowner.BatchOwnerCadenceTick, batchowner.BatchOwnerCadenceReport
 	t.Cleanup(func() {
-		batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport = originalStart, originalTick, originalReport
+		batchowner.BatchOwnerCadenceStart, batchowner.BatchOwnerCadenceTick, batchowner.BatchOwnerCadenceReport = originalStart, originalTick, originalReport
 	})
 	fixture := newLandingOwnerOrdinaryCadenceFixture(t, "mac-cli")
 	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
 	fixture.enroll("mac-cli")
 	starts, ticks, reports := 0, 0, 0
-	batchOwnerCadenceStart = func(tick func()) { starts++; tick() }
-	batchOwnerCadenceTick = func(gotRoot string, _ batchOwnerLease, _ func() time.Time) error {
+	batchowner.BatchOwnerCadenceStart = func(tick func()) { starts++; tick() }
+	batchowner.BatchOwnerCadenceTick = func(gotRoot string, _ batchowner.BatchOwnerLease, _ func() time.Time) error {
 		if gotRoot != root {
 			t.Fatalf("cadence root=%q want %q", gotRoot, root)
 		}
 		ticks++
 		return errors.New("injected cadence failure")
 	}
-	batchOwnerCadenceReport = func(_ io.Writer, err error) {
+	batchowner.BatchOwnerCadenceReport = func(_ io.Writer, err error) {
 		if !strings.Contains(err.Error(), "injected cadence failure") {
 			t.Fatalf("cadence report=%v", err)
 		}
@@ -408,14 +409,14 @@ func TestLandingOwnerComponentCadenceWiringBound(t *testing.T) {
 }
 
 func TestLandingOwnerComponentReleaseJoinsCadenceTick(t *testing.T) {
-	originalStart, originalTick, originalReport := batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport
+	originalStart, originalTick, originalReport := batchowner.BatchOwnerCadenceStart, batchowner.BatchOwnerCadenceTick, batchowner.BatchOwnerCadenceReport
 	t.Cleanup(func() {
-		batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport = originalStart, originalTick, originalReport
+		batchowner.BatchOwnerCadenceStart, batchowner.BatchOwnerCadenceTick, batchowner.BatchOwnerCadenceReport = originalStart, originalTick, originalReport
 	})
 
 	started, finish, tickDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	batchOwnerCadenceStart = func(tick func()) { go tick() }
-	batchOwnerCadenceTick = func(string, batchOwnerLease, func() time.Time) error {
+	batchowner.BatchOwnerCadenceStart = func(tick func()) { go tick() }
+	batchowner.BatchOwnerCadenceTick = func(string, batchowner.BatchOwnerLease, func() time.Time) error {
 		close(started)
 		<-finish
 		close(tickDone)
@@ -427,7 +428,7 @@ func TestLandingOwnerComponentReleaseJoinsCadenceTick(t *testing.T) {
 		afterRelease bool
 	}
 	reported := make(chan cadenceReport, 1)
-	batchOwnerCadenceReport = func(_ io.Writer, err error) {
+	batchowner.BatchOwnerCadenceReport = func(_ io.Writer, err error) {
 		reported <- cadenceReport{line: err.Error(), afterRelease: releaseReturned.Load()}
 	}
 
@@ -445,7 +446,7 @@ func TestLandingOwnerComponentReleaseJoinsCadenceTick(t *testing.T) {
 		released <- err
 	}()
 	select {
-	case <-cadence.stopping:
+	case <-cadence.Stopping:
 	case err := <-released:
 		t.Fatalf("landing-owner release returned before cadence stopping began: %v", err)
 	}
@@ -469,7 +470,7 @@ func TestLandingOwnerComponentReleaseJoinsCadenceTick(t *testing.T) {
 	<-tickDone
 	report := <-reported
 	select {
-	case <-cadence.done:
+	case <-cadence.Done:
 	default:
 		t.Error("fixture release returned without completing its cadence stop")
 	}
@@ -482,9 +483,9 @@ func TestLandingOwnerComponentReleaseJoinsCadenceTick(t *testing.T) {
 }
 
 func TestLandingOwnerComponentReleaseLeavesNoCadenceChild(t *testing.T) {
-	originalStart, originalTick, originalReport := batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport
+	originalStart, originalTick, originalReport := batchowner.BatchOwnerCadenceStart, batchowner.BatchOwnerCadenceTick, batchowner.BatchOwnerCadenceReport
 	t.Cleanup(func() {
-		batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport = originalStart, originalTick, originalReport
+		batchowner.BatchOwnerCadenceStart, batchowner.BatchOwnerCadenceTick, batchowner.BatchOwnerCadenceReport = originalStart, originalTick, originalReport
 	})
 
 	var fixture *testutil.ProcessFixture
@@ -520,14 +521,14 @@ func TestLandingOwnerComponentReleaseLeavesNoCadenceChild(t *testing.T) {
 	}
 
 	started, tickDone := make(chan struct{}), make(chan struct{})
-	batchOwnerCadenceStart = func(tick func()) { go tick() }
-	batchOwnerCadenceTick = func(string, batchOwnerLease, func() time.Time) error {
+	batchowner.BatchOwnerCadenceStart = func(tick func()) { go tick() }
+	batchowner.BatchOwnerCadenceTick = func(string, batchowner.BatchOwnerLease, func() time.Time) error {
 		close(started)
 		err := waitChild()
 		close(tickDone)
 		return err
 	}
-	batchOwnerCadenceReport = func(io.Writer, error) {}
+	batchowner.BatchOwnerCadenceReport = func(io.Writer, error) {}
 
 	ownerFixture := newLandingOwnerOrdinaryCadenceFixture(t, "mac-cli")
 	pass, release, cadence := ownerFixture.pass, ownerFixture.release, ownerFixture.cadence
@@ -539,7 +540,7 @@ func TestLandingOwnerComponentReleaseLeavesNoCadenceChild(t *testing.T) {
 	released := make(chan error, 1)
 	go func() { released <- release() }()
 	select {
-	case <-cadence.stopping:
+	case <-cadence.Stopping:
 	case err := <-released:
 		t.Fatalf("landing-owner release returned before cadence stopping began: %v", err)
 	}
@@ -564,7 +565,7 @@ func TestLandingOwnerComponentReleaseLeavesNoCadenceChild(t *testing.T) {
 	}
 	<-tickDone
 	select {
-	case <-cadence.done:
+	case <-cadence.Done:
 	default:
 		t.Error("fixture release returned without completing its cadence stop")
 	}

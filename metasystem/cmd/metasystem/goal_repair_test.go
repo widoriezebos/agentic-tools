@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 )
 
 func TestGoalRepairReachesAcceptRemoteAndRequiresBy(t *testing.T) {
@@ -19,7 +20,7 @@ func TestGoalRepairReachesAcceptRemoteAndRequiresBy(t *testing.T) {
 	repository.canonical = canonical
 	repository.mu.Unlock()
 	facts := goalAuthorityReadFacts{
-		caller:        entryCallerIdentity(),
+		caller:        ownercall.EntryCaller(),
 		repositoryTop: repository.receiptTop,
 		ledgerIdentity: func(got string) string {
 			if got != root {

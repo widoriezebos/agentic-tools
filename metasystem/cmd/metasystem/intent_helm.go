@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
@@ -350,7 +351,7 @@ func (inv *intentInvocation) helmReport(seat helm.Seat, since time.Time) []strin
 		}
 	}
 	lines = append(lines, fmt.Sprintf("running dispatch jobs: %d (metasystem work status lists them; the helm stops none)", running))
-	held, err := helmHeldBatches(layout.InstallationRoot, seat, landingLaneRoot)
+	held, err := helmHeldBatches(layout.InstallationRoot, seat, batchowner.LandingLaneRoot)
 	if err != nil {
 		return append(lines, "landing batches: unavailable: "+err.Error())
 	}

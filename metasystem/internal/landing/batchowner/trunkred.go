@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 import (
 	"cmp"
@@ -8,23 +8,25 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
-type ledgerTrunkRedOwner struct {
-	endpoint               goal.Endpoint
-	actor                  goal.Actor
-	now                    func() time.Time
-	gitRead                func(root string, args ...string) (string, error)
-	beforeClearTransaction func() error
+type LedgerTrunkRedOwner struct {
+	Endpoint               goal.Endpoint
+	Actor                  goal.Actor
+	Now                    func() time.Time
+	GitRead                func(root string, args ...string) (string, error)
+	BeforeClearTransaction func() error
 }
 
-func newLedgerTrunkRedOwner(root, machine, lineage string) (batch.LedgerOwner, error) {
-	return newLedgerTrunkRedOwnerWithConfig(root, machine, lineage, nil)
+func NewLedgerTrunkRedOwner(root, machine, lineage string) (batch.LedgerOwner, error) {
+	return NewLedgerTrunkRedOwnerWithConfig(root, machine, lineage, nil)
 }
 
-func newLedgerTrunkRedOwnerWithConfig(root, machine, lineage string, lookup func(string, string) (string, error)) (batch.LedgerOwner, error) {
+func NewLedgerTrunkRedOwnerWithConfig(root, machine, lineage string, lookup func(string, string) (string, error)) (batch.LedgerOwner, error) {
 	resolve := goal.ResolveEndpoint
 	if lookup != nil {
 		resolve = func(root string) (goal.Endpoint, error) { return goal.ResolveEndpointWithConfig(root, lookup) }
@@ -33,15 +35,15 @@ func newLedgerTrunkRedOwnerWithConfig(root, machine, lineage string, lookup func
 	if err != nil {
 		return nil, err
 	}
-	return &ledgerTrunkRedOwner{endpoint: endpoint, actor: goal.Actor{Machine: machine, Lineage: lineage}, now: time.Now}, nil
+	return &LedgerTrunkRedOwner{Endpoint: endpoint, Actor: goal.Actor{Machine: machine, Lineage: lineage}, Now: time.Now}, nil
 }
 
 // productionBatchLedgerOwner uses the landing identity that mints trunk-red operation identifiers.
 func productionBatchLedgerOwner(root string) (batch.LedgerOwner, error) {
-	return productionBatchLedgerOwnerWithConfig(root, nil)
+	return ProductionBatchLedgerOwnerWithConfig(root, nil)
 }
 
-func productionBatchLedgerOwnerWithConfig(root string, lookup func(string, string) (string, error)) (batch.LedgerOwner, error) {
+func ProductionBatchLedgerOwnerWithConfig(root string, lookup func(string, string) (string, error)) (batch.LedgerOwner, error) {
 	resolve := goal.ResolveMachine
 	if lookup != nil {
 		resolve = func(root string) (string, error) { return goal.ResolveMachineWithConfig(root, lookup) }
@@ -50,30 +52,30 @@ func productionBatchLedgerOwnerWithConfig(root string, lookup func(string, strin
 	if err != nil {
 		return nil, err
 	}
-	return newLedgerTrunkRedOwnerWithConfig(root, machine, landingOwnerLineage, lookup)
+	return NewLedgerTrunkRedOwnerWithConfig(root, machine, LandingOwnerLineage, lookup)
 }
 
-func isLedgerTrunkRedOwner(owner batch.LedgerOwner) bool {
-	if _, ok := owner.(*ledgerTrunkRedOwner); ok {
+func IsLedgerTrunkRedOwner(owner batch.LedgerOwner) bool {
+	if _, ok := owner.(*LedgerTrunkRedOwner); ok {
 		return true
 	}
-	_, ok := owner.(ledgerTrunkRedOwner)
+	_, ok := owner.(LedgerTrunkRedOwner)
 	return ok
 }
 
-func (owner ledgerTrunkRedOwner) request(opid string) (goal.VerbRequest, error) {
-	if len(opid) < 26 || opid != goal.Opid(opid[:26], owner.actor.Machine, owner.actor.Lineage) {
+func (owner LedgerTrunkRedOwner) Request(opid string) (goal.VerbRequest, error) {
+	if len(opid) < 26 || opid != goal.Opid(opid[:26], owner.Actor.Machine, owner.Actor.Lineage) {
 		return goal.VerbRequest{}, fmt.Errorf("trunk-red opid %q does not derive from the landing owner", opid)
 	}
 	now := time.Now
-	if owner.now != nil {
-		now = owner.now
+	if owner.Now != nil {
+		now = owner.Now
 	}
-	return goal.VerbRequest{Endpoint: owner.endpoint, Actor: owner.actor, Ulid: opid[:26], Now: now().UTC()}, nil
+	return goal.VerbRequest{Endpoint: owner.Endpoint, Actor: owner.Actor, Ulid: opid[:26], Now: now().UTC()}, nil
 }
 
-func (owner ledgerTrunkRedOwner) Record(opid string, red batch.TrunkRed) ([]batch.EntryRef, error) {
-	request, err := owner.request(opid)
+func (owner LedgerTrunkRedOwner) Record(opid string, red batch.TrunkRed) ([]batch.EntryRef, error) {
+	request, err := owner.Request(opid)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +86,7 @@ func (owner ledgerTrunkRedOwner) Record(opid string, red batch.TrunkRed) ([]batc
 	if err != nil {
 		return nil, err
 	}
-	projection, err := goal.ProjectAtEndpoint(owner.endpoint, result.Tip, request.Now)
+	projection, err := goal.ProjectAtEndpoint(owner.Endpoint, result.Tip, request.Now)
 	if err != nil {
 		return nil, err
 	}
@@ -96,18 +98,18 @@ func (owner ledgerTrunkRedOwner) Record(opid string, red batch.TrunkRed) ([]batc
 	return convertedRefs, nil
 }
 
-func (owner ledgerTrunkRedOwner) Clear(opid string, ref batch.EntryRef, green batch.Green) error {
-	request, err := owner.request(opid)
+func (owner LedgerTrunkRedOwner) Clear(opid string, ref batch.EntryRef, green batch.Green) error {
+	request, err := owner.Request(opid)
 	if err != nil {
 		return err
 	}
-	projection, err := goal.Project(owner.endpoint, false, request.Now)
+	projection, err := goal.Project(owner.Endpoint, false, request.Now)
 	if err != nil {
 		return err
 	}
-	gitRead := owner.gitRead
+	gitRead := owner.GitRead
 	if gitRead == nil {
-		gitRead = goalBranchGit
+		gitRead = branch.ScrubbedGit
 	}
 	branchMerged := false
 	expectedEntry := goal.TrunkRedEntry{}
@@ -119,18 +121,18 @@ func (owner ledgerTrunkRedOwner) Clear(opid string, ref batch.EntryRef, green ba
 		if entry.FixBranch.Commit == "" {
 			break
 		}
-		_, objectErr := gitRead(owner.endpoint.Root, "cat-file", "-e", entry.FixBranch.Commit)
+		_, objectErr := gitRead(owner.Endpoint.Root, "cat-file", "-e", entry.FixBranch.Commit)
 		if objectErr != nil {
 			var exit *exec.ExitError
 			if errors.As(objectErr, &exit) && exit.ExitCode() == 1 {
-				if _, historyErr := gitRead(owner.endpoint.Root, "-c", "core.commitGraph=false", "rev-list", "--quiet", green.BaseCommit); historyErr != nil {
+				if _, historyErr := gitRead(owner.Endpoint.Root, "-c", "core.commitGraph=false", "rev-list", "--quiet", green.BaseCommit); historyErr != nil {
 					return historyErr
 				}
 				break
 			}
 			return objectErr
 		}
-		_, ancestryErr := gitRead(owner.endpoint.Root, "merge-base", "--is-ancestor", entry.FixBranch.Commit, green.BaseCommit)
+		_, ancestryErr := gitRead(owner.Endpoint.Root, "merge-base", "--is-ancestor", entry.FixBranch.Commit, green.BaseCommit)
 		if ancestryErr == nil {
 			branchMerged = true
 			break
@@ -141,8 +143,8 @@ func (owner ledgerTrunkRedOwner) Clear(opid string, ref batch.EntryRef, green ba
 		}
 		break
 	}
-	if owner.beforeClearTransaction != nil {
-		if err := owner.beforeClearTransaction(); err != nil {
+	if owner.BeforeClearTransaction != nil {
+		if err := owner.BeforeClearTransaction(); err != nil {
 			return err
 		}
 	}
@@ -154,12 +156,12 @@ func (owner ledgerTrunkRedOwner) Clear(opid string, ref batch.EntryRef, green ba
 	return err
 }
 
-func (owner ledgerTrunkRedOwner) Open() ([]batch.OpenEntry, error) {
+func (owner LedgerTrunkRedOwner) Open() ([]batch.OpenEntry, error) {
 	now := time.Now
-	if owner.now != nil {
-		now = owner.now
+	if owner.Now != nil {
+		now = owner.Now
 	}
-	projection, err := goal.Project(owner.endpoint, false, now().UTC())
+	projection, err := goal.Project(owner.Endpoint, false, now().UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -180,8 +182,8 @@ func (owner ledgerTrunkRedOwner) Open() ([]batch.OpenEntry, error) {
 	return open, nil
 }
 
-func (owner ledgerTrunkRedOwner) runJournaled(opid string, publish func() (goal.PublishResult, error)) (goal.PublishResult, error) {
-	entry, err := goal.ReadEntry(owner.endpoint.Root, opid)
+func (owner LedgerTrunkRedOwner) runJournaled(opid string, publish func() (goal.PublishResult, error)) (goal.PublishResult, error) {
+	entry, err := goal.ReadEntry(owner.Endpoint.Root, opid)
 	if err == nil {
 		if entry.Phase == goal.PhaseTerminal {
 			if entry.Outcome != goal.OutcomeConfirmed && entry.Outcome != goal.OutcomeConfirmedLate {
@@ -189,11 +191,11 @@ func (owner ledgerTrunkRedOwner) runJournaled(opid string, publish func() (goal.
 			}
 			return owner.publishAndClassify(opid, publish)
 		}
-		configureCarriedCounselor(&owner.endpoint)
-		if _, recoverErr := goal.Recover(owner.endpoint); recoverErr != nil {
+		owner.Endpoint.ConfigureCarriedCounselorAppend(counselor.AppendCarriedRow)
+		if _, recoverErr := goal.Recover(owner.Endpoint); recoverErr != nil {
 			return goal.PublishResult{}, recoverErr
 		}
-		entry, err = goal.ReadEntry(owner.endpoint.Root, opid)
+		entry, err = goal.ReadEntry(owner.Endpoint.Root, opid)
 		if err != nil {
 			return goal.PublishResult{}, err
 		}
@@ -211,10 +213,10 @@ func (owner ledgerTrunkRedOwner) runJournaled(opid string, publish func() (goal.
 	return owner.publishAndClassify(opid, publish)
 }
 
-func (owner ledgerTrunkRedOwner) publishAndClassify(opid string, publish func() (goal.PublishResult, error)) (goal.PublishResult, error) {
+func (owner LedgerTrunkRedOwner) publishAndClassify(opid string, publish func() (goal.PublishResult, error)) (goal.PublishResult, error) {
 	result, err := publish()
 	if err != nil {
-		if entry, readErr := goal.ReadEntry(owner.endpoint.Root, opid); readErr == nil {
+		if entry, readErr := goal.ReadEntry(owner.Endpoint.Root, opid); readErr == nil {
 			if entry.Phase != goal.PhaseTerminal {
 				return goal.PublishResult{}, batch.ErrTrunkRedRecordPending
 			}
@@ -225,7 +227,7 @@ func (owner ledgerTrunkRedOwner) publishAndClassify(opid string, publish func() 
 		return goal.PublishResult{}, err
 	}
 	if result.Outcome != goal.OutcomeConfirmed {
-		if entry, readErr := goal.ReadEntry(owner.endpoint.Root, opid); readErr == nil && entry.Phase == goal.PhaseTerminal {
+		if entry, readErr := goal.ReadEntry(owner.Endpoint.Root, opid); readErr == nil && entry.Phase == goal.PhaseTerminal {
 			return goal.PublishResult{}, trunkRedJournalFailure(entry)
 		}
 		return goal.PublishResult{}, batch.ErrTrunkRedRecordPending

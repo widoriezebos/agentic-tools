@@ -6,28 +6,13 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
-
-// changeJoinRequest is one change a seat committed, joining the landing lane
-// (U11b): the seat's installation, the lane checkout, the commit, and the tip
-// the goal's landing gate was read at when the change was made in a goal's
-// name.
-type changeJoinRequest struct {
-	SeatRoot, LandingRoot, Commit, GateTip string
-	At                                     time.Time
-}
-
-// changePinRef is where a seat pins a change bound for the lane: the lane
-// checkout fetches it from there, and the seat's repeat finds it there.
-func changePinRef(commit string) string {
-	return "refs/metasystem/changes/" + strings.TrimPrefix(batch.ChangeID(commit), "change:")
-}
 
 // seatGit runs git in the seat's installation and returns its trimmed output.
 func seatGit(root string, args ...string) (string, int) {
@@ -55,11 +40,11 @@ func (owners *intentDeliveryOwners) heldChange(root, base, commit, branch string
 	return strings.TrimSpace(output.String()), status
 }
 
-func (owners *intentDeliveryOwners) joinChange(request changeJoinRequest) (batch.Record, error) {
+func (owners *intentDeliveryOwners) joinChange(request batchowner.ChangeJoinRequest) (batch.Record, error) {
 	if owners.changeJoin != nil {
 		return owners.changeJoin(request)
 	}
-	return executeChangeJoin(request, productionChangeJoinDependencies())
+	return batchowner.ExecuteChangeJoin(request, batchowner.ProductionChangeJoinDependencies())
 }
 
 func (owners *intentDeliveryOwners) lookupChange(landingRoot, id string) (batch.Record, batch.Unit, bool, error) {
@@ -138,7 +123,7 @@ func (inv *intentInvocation) landChange(request landpath.LandRequest, path landp
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: map[string]any{"route": "lane", "change": id},
 			Summary: fmt.Sprintf("held refused change %s, so it cannot join the landing lane: %s; %s", id, text, back)}
 	}
-	if output, pinCode := seatGit(root, "update-ref", changePinRef(head), head); pinCode != 0 {
+	if output, pinCode := seatGit(root, "update-ref", batchowner.ChangePinRef(head), head); pinCode != 0 {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: map[string]any{"route": "lane", "change": id},
 			Summary: fmt.Sprintf("change %s was committed but could not be pinned for the landing lane: %s; run the same command again", id, output)}
 	}
@@ -166,7 +151,7 @@ func (inv *intentInvocation) continueChange(request landpath.LandRequest, landin
 		if err := inv.delivery().advanceSeat(root, branch); err != nil {
 			summary += "; this branch still carries the local commit, since it could not move onto origin: " + err.Error()
 		} else {
-			seatGit(root, "update-ref", "-d", changePinRef(head))
+			seatGit(root, "update-ref", "-d", batchowner.ChangePinRef(head))
 			summary += "; this branch is on origin again"
 		}
 		return intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: summary}
@@ -192,8 +177,8 @@ func (inv *intentInvocation) joinChangeToLane(request landpath.LandRequest, land
 		gateTip = inv.intentBranchTip(request.Goal)
 	}
 	owners := inv.delivery()
-	record, err := owners.joinChange(changeJoinRequest{SeatRoot: request.Root, LandingRoot: landingRoot, Commit: head, GateTip: gateTip, At: owners.now()})
-	var ownerless *changeOwnerStartError
+	record, err := owners.joinChange(batchowner.ChangeJoinRequest{SeatRoot: request.Root, LandingRoot: landingRoot, Commit: head, GateTip: gateTip, At: owners.now()})
+	var ownerless *batchowner.ChangeOwnerStartError
 	if errors.As(err, &ownerless) {
 		// Joined; only the lane's owner did not start: nothing is given back.
 		record = ownerless.Record
@@ -225,7 +210,7 @@ func (inv *intentInvocation) joinChangeToLane(request landpath.LandRequest, land
 
 // changePinned reports whether head is pinned as a change bound for the lane.
 func changePinned(root, head string) bool {
-	pinned, code := seatGit(root, "rev-parse", "--verify", "--quiet", changePinRef(head)+"^{commit}")
+	pinned, code := seatGit(root, "rev-parse", "--verify", "--quiet", batchowner.ChangePinRef(head)+"^{commit}")
 	return code == 0 && pinned == head
 }
 
@@ -257,6 +242,6 @@ func giveChangeBack(root, head string, request landpath.LandRequest) string {
 	if output, code := seatGit(root, "reset", "-q", mode, head+"^"); code != 0 {
 		return "the commit could not be undone (" + output + "); undo it with git reset " + mode + " HEAD^ and land again"
 	}
-	seatGit(root, "update-ref", "-d", changePinRef(head))
+	seatGit(root, "update-ref", "-d", batchowner.ChangePinRef(head))
 	return "the commit is undone and its changes are " + where + " again: fix them and run the same command"
 }

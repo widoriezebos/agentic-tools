@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -1442,7 +1443,7 @@ func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
 	if err != nil {
 		return err
 	}
-	if holder.OwnerLineage != landingOwnerLineage {
+	if holder.OwnerLineage != batchowner.LandingOwnerLineage {
 		return fmt.Errorf("the lane checkout is held by lineage %s, not its landing owner", holder.OwnerLineage)
 	}
 	for _, announcement := range lease.AnnouncementsFor(controlRoot, holder.Pid) {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
@@ -21,7 +22,7 @@ import (
 type changeLaneBed struct {
 	*deliveryBed
 	lands    []landpath.LandRequest
-	joins    []changeJoinRequest
+	joins    []batchowner.ChangeJoinRequest
 	member   *batch.Unit
 	lookup   error
 	advances int
@@ -55,7 +56,7 @@ func newChangeLaneBed(t *testing.T, configured bool) *changeLaneBed {
 		return 0
 	}
 	b.owners.changeHeld = func(string, string, string, string) (string, int) { return "held: ok", 0 }
-	b.owners.changeJoin = func(request changeJoinRequest) (batch.Record, error) {
+	b.owners.changeJoin = func(request batchowner.ChangeJoinRequest) (batch.Record, error) {
 		b.joins = append(b.joins, request)
 		unit := batch.NewChangeUnit(batch.ChangeMember{Commit: request.Commit, AskedBy: "m1e+human"}, request.SeatRoot, "m1e", "human", nil, nil)
 		unit.State = batch.UnitJoined
@@ -160,7 +161,7 @@ func TestWorkLandMessageJoinsTheLaneAsAChange(t *testing.T) {
 
 	// A refused join gives the commit back and says what to do (N-2).
 	refusing := newChangeLaneBed(t, true)
-	refusing.owners.changeJoin = func(changeJoinRequest) (batch.Record, error) {
+	refusing.owners.changeJoin = func(batchowner.ChangeJoinRequest) (batch.Record, error) {
 		return batch.Record{}, errors.New("BATCH_JOIN_CONFLICT: change does not apply: notes.md")
 	}
 	refusing.edit("one\nconflicting\n")
@@ -177,7 +178,7 @@ func TestWorkLandMessageJoinsTheLaneAsAChange(t *testing.T) {
 	// seat keeps both commits (B-1a); a join whose owner could not be started
 	// is joined, nothing given back (N-a).
 	stackedBed := newChangeLaneBed(t, true)
-	stackedBed.owners.changeJoin = func(request changeJoinRequest) (batch.Record, error) {
+	stackedBed.owners.changeJoin = func(request batchowner.ChangeJoinRequest) (batch.Record, error) {
 		return batch.Record{}, &batch.StackedChangeRefusal{Reason: "BATCH_CHANGE_STACKED_ELSEWHERE: change " + batch.ChangeID(request.Commit) +
 			" is stacked on change change:aaaaaaaaaaaa, which is in batch b-9 (proving); run the same command after change:aaaaaaaaaaaa lands"}
 	}
@@ -190,9 +191,9 @@ func TestWorkLandMessageJoinsTheLaneAsAChange(t *testing.T) {
 		t.Fatalf("stacked: result=%+v", result)
 	}
 	ownerless := newChangeLaneBed(t, true)
-	ownerless.owners.changeJoin = func(request changeJoinRequest) (batch.Record, error) {
+	ownerless.owners.changeJoin = func(request batchowner.ChangeJoinRequest) (batch.Record, error) {
 		record := batch.Record{BatchID: "b-3", State: batch.StateOpen}
-		return record, &changeOwnerStartError{Record: record, Cause: errors.New("BATCH_OWNER_INDETERMINATE: supervision refused")}
+		return record, &batchowner.ChangeOwnerStartError{Record: record, Cause: errors.New("BATCH_OWNER_INDETERMINATE: supervision refused")}
 	}
 	ownerless.edit("one\nownerless\n")
 	code, result = ownerless.land()

@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -193,24 +194,24 @@ exit 1
 	}
 
 	heldID := "01j5x00000000000000000ca02"
-	claim := batch.Claim{Machine: "mac-cli", Lineage: landingOwnerLineage, Epoch: 1, Revision: 2, AccountingRevision: 2}
+	claim := batch.Claim{Machine: "mac-cli", Lineage: batchowner.LandingOwnerLineage, Epoch: 1, Revision: 2, AccountingRevision: 2}
 	if err := store.Create(batch.Record{Schema: 1, BatchID: heldID, State: batch.StateLanding, BaseTree: newTrunk.Tree, TipTree: newTrunk.Tree,
 		Proof: &batch.Proof{Status: "green", AttemptID: "standard-green", BaseCommit: newTrunk.Commit, Passed: []string{"ordinary"}},
 		Units: []batch.Unit{{GoalID: cadence.AuthorityGoal, Chain: "chain", State: batch.UnitJoined,
 			Claim: claim}}}); err != nil {
 		t.Fatal(err)
 	}
-	ledgerOwner, err := newLedgerTrunkRedOwner(landingRoot, "mac-cli", landingOwnerLineage)
+	ledgerOwner, err := batchowner.NewLedgerTrunkRedOwner(landingRoot, "mac-cli", batchowner.LandingOwnerLineage)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ledgerOwner.(*ledgerTrunkRedOwner).now = clock
+	ledgerOwner.(*batchowner.LedgerTrunkRedOwner).Now = clock
 	settings, err := config.NewBatchLanding(landingRoot, time.Minute, clock)
 	if err != nil {
 		t.Fatal(err)
 	}
 	landings := 0
-	owner, err := batch.NewOwner(batch.OwnerOptions{Store: store.WithLedgerOwner(ledgerOwner), Settings: settings, Actor: landingOwnerLineage, PID: 7, Now: clock,
+	owner, err := batch.NewOwner(batch.OwnerOptions{Store: store.WithLedgerOwner(ledgerOwner), Settings: settings, Actor: batchowner.LandingOwnerLineage, PID: 7, Now: clock,
 		FetchTree: func() (string, error) { return newTrunk.Tree, nil }, ReadClaim: func(string, string, string, string) (batch.Claim, error) { return claim, nil },
 		Rebind: func(string, string) error { return nil }, Mint: func() (string, error) { return "cadence-existing-red-hold", nil },
 		LogRed: func(string, batch.TrunkRedRecordOutcome) {}, BaseCommit: func(string) (string, error) { return newTrunk.Commit, nil },

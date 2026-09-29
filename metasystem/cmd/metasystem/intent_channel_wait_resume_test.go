@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
@@ -41,7 +42,7 @@ func TestWorkWaitResumesAChannelWaitThroughTheChannelOwner(t *testing.T) {
 	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil }}
 	calls := defaultIntentOwnerCalls()
 	var resumed [][]string
-	calls.channelWait = func(caller processIdentity, _ string, stdout, _ io.Writer, args []string) int {
+	calls.channelWait = func(caller ownercall.Process, _ string, stdout, _ io.Writer, args []string) int {
 		resumed = append(resumed, args)
 		_, _ = io.WriteString(stdout, "accepted answer text\n")
 		return 0

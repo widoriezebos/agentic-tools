@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 )
 
 // TestGoalSyncOwnersRunInThisProcess is the U9a witness that goal sync's
@@ -20,7 +21,7 @@ func TestGoalSyncOwnersRunInThisProcess(t *testing.T) {
 	t.Parallel()
 	b := newDeliveryBed(t)
 	calls := defaultIntentOwnerCalls()
-	var supplied []processIdentity
+	var supplied []ownercall.Process
 	var reached [][]string
 	realReconcile := calls.goalReconcile
 	calls.goalReconcile = func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
@@ -69,7 +70,7 @@ func TestGoalSyncOwnersRunInThisProcess(t *testing.T) {
 		t.Fatalf("owner calls = %d, want refresh, publish and upgrade", len(supplied))
 	}
 	for _, caller := range supplied {
-		if caller.pid != int64(os.Getpid()) {
+		if caller.Pid != int64(os.Getpid()) {
 			t.Fatalf("an owner call supplied %+v, want this process %d", caller, os.Getpid())
 		}
 	}

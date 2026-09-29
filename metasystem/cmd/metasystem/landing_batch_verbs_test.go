@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 )
 
 func TestBatchVerbsUnavailableWithoutFilesystemWrites(t *testing.T) {
@@ -115,11 +116,11 @@ func TestBatchRuntimeInputsCannotRegisterCapability(t *testing.T) {
 }
 
 func TestBatchRolloutRequiresSealReceiptDiagnosisAndRecovery(t *testing.T) {
-	if productionBatchProofDependencies.seal == nil || productionBatchProofDependencies.launch == nil ||
-		batchDiagnosisSeams.diagnose == nil || batchLandRecoverPush == nil {
+	if batchowner.ProductionBatchProofDependencies.Seal == nil || batchowner.ProductionBatchProofDependencies.Launch == nil ||
+		batchowner.BatchDiagnosisSeams.Diagnose == nil || batchowner.BatchLandRecoverPush == nil {
 		t.Fatal("seal, proof, diagnosis, and moved-base recovery must be bound in every build")
 	}
-	seams := batchLandSeams("root", "batch", batch.Record{}, "base", "actor")
+	seams := batchowner.BatchLandSeams("root", "batch", batch.Record{}, "base", "actor")
 	if seams.Prepare == nil || seams.AppendReceipt == nil || seams.Commit == nil || seams.Held == nil ||
 		seams.PublishBranch == nil || seams.Push == nil || seams.RecoverPush == nil || seams.Cleanup == nil {
 		t.Fatal("receipt composition and atomic series landing must be bound in every build")
@@ -156,9 +157,9 @@ func TestBatchProductionRegistryComplete(t *testing.T) {
 	}
 	root := t.TempDir()
 	facts := batchConfigFacts(root, true, false)
-	productionOwner, err := productionBatchLedgerOwnerWithConfig(root, facts.config)
+	productionOwner, err := batchowner.ProductionBatchLedgerOwnerWithConfig(root, facts.config)
 	facts.assertConsumed(t, false)
-	if err != nil || !isLedgerTrunkRedOwner(productionOwner) {
+	if err != nil || !batchowner.IsLedgerTrunkRedOwner(productionOwner) {
 		t.Fatalf("production trunk-red owner type %T error=%v, want ledger adapter", productionOwner, err)
 	}
 }

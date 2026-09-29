@@ -77,3 +77,22 @@ func TestCanonicalRefusesWhatDoesNotExist(t *testing.T) {
 		t.Fatalf("Canonical of a missing path = %s, want its error", got)
 	}
 }
+
+// Absolute is a path flag's form: empty stays empty, a relative path is
+// joined to the working directory and cleaned, and no symlink is resolved.
+func TestAbsoluteCleansWithoutResolving(t *testing.T) {
+	t.Parallel()
+	if got, err := Absolute(""); err != nil || got != "" {
+		t.Fatalf("Absolute(\"\") = %q, %v", got, err)
+	}
+	working, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Absolute("a/../b/./c/"); err != nil || got != filepath.Join(working, "b", "c") {
+		t.Fatalf("Absolute(relative) = %q, %v", got, err)
+	}
+	if got, err := Absolute("/x/y/../z"); err != nil || got != "/x/z" {
+		t.Fatalf("Absolute(absolute) = %q, %v", got, err)
+	}
+}

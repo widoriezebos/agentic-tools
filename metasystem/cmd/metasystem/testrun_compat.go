@@ -23,12 +23,7 @@ type (
 
 var (
 	batchRequirementsArgument   = testrun.BatchRequirementsArgument
-	newTestingFreshEpisode      = testrun.NewFreshEpisode
 	loadPhysicalTestingContract = testrun.LoadContract
 	linkedWorktreeMainCheckout  = testrun.LinkedWorktreeMainCheckout
-	landedRearmRebuild          = testrun.RebuildLandedEngine
-	landedRearmUp               = testrun.UpLandedEngine
 	readStrictJSON              = strictjson.Read
-	costSelectionForPrefix      = testrun.PrefixCostSelection
-	proofCostCap                = testrun.ProofCostCap
 )

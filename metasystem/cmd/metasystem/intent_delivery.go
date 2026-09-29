@@ -23,9 +23,11 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
@@ -245,13 +247,13 @@ type intentDeliveryOwners struct {
 	sweep         func(root, goalID, landing string) error
 	// batchUnit finds the batch member a land request names; branchTip is the
 	// live goal branch, or empty once the branch is gone.
-	batchUnit   func(landingRoot string, request batchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error)
+	batchUnit   func(landingRoot string, request batchowner.BatchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error)
 	publishRead func(root, goalID, unit string) (branch.PublishReadResult, error)
 	batchRoot   func(root string, now time.Time) (string, bool, error)
 	// boardView reads the host board for a one-shot view of the checkout;
 	// nil reads the host this command runs on.
 	boardView func(checkout string, now time.Time) board.View
-	batchJoin func(batchJoinRequest) (batch.Record, error)
+	batchJoin func(batchowner.BatchJoinRequest) (batch.Record, error)
 	now       func() time.Time
 	// landingGate evaluates the landing gate for a goal at a branch tip
 	// against a fresh ledger (g1-s70 D2); nil selects the production gate.
@@ -280,7 +282,7 @@ type intentDeliveryOwners struct {
 	changeHeld func(root, base, commit, branch string) (string, int)
 	// changeJoin joins a change the seat committed to the landing lane; nil
 	// runs the production join.
-	changeJoin func(changeJoinRequest) (batch.Record, error)
+	changeJoin func(batchowner.ChangeJoinRequest) (batch.Record, error)
 	// changeUnit reads a change's membership in the lane's batches; nil reads
 	// the lane checkout's store, and any unreadable record is an error.
 	changeUnit func(landingRoot, id string) (batch.Record, batch.Unit, bool, error)
@@ -336,8 +338,8 @@ func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 		publishRead: goalBranchPublishRead,
 		landPush:    goalBranchLandPushRun,
 		batchRoot:   productionIntentBatchRoot,
-		batchJoin: func(request batchJoinRequest) (batch.Record, error) {
-			return executeBatchJoin(request, batchJoinDependenciesForCommand())
+		batchJoin: func(request batchowner.BatchJoinRequest) (batch.Record, error) {
+			return batchowner.ExecuteBatchJoin(request, batchowner.BatchJoinDependenciesForCommand())
 		},
 		now: func() time.Time { return time.Now().UTC() },
 	}
@@ -374,7 +376,7 @@ func runIntentOwnerProcess(process intentProcess) intentProcessResult {
 }
 
 func productionIntentBranchState(root, goalID string) (intentBranchState, error) {
-	endpoint, err := goalBranchEndpoint(root)
+	endpoint, err := branch.MainEndpoint(root)
 	if err != nil {
 		return intentBranchState{}, err
 	}
@@ -407,7 +409,7 @@ func productionIntentBranchState(root, goalID string) (intentBranchState, error)
 // productionIntentBatchUnit finds the batch member this land request names
 // in the landing checkout's store: a chain by id, a goal branch by its
 // recorded selection (the whole goal, or the prefix ending at --through).
-func productionIntentBatchUnit(landingRoot string, request batchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error) {
+func productionIntentBatchUnit(landingRoot string, request batchowner.BatchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error) {
 	store := batch.NewStore(landingRoot, identity.KernelProber{})
 	paths, err := filepath.Glob(filepath.Join(landingRoot, "artifacts", "agents", "landing-batches", "*.json"))
 	if err != nil {
@@ -440,7 +442,7 @@ func productionIntentBatchUnit(landingRoot string, request batchJoinRequest, bra
 // land request asks for. A goal-branch member records its builds (its chain
 // field is the branch tip it joined at) and its selection: the whole goal,
 // or the last unit commit of an approved prefix.
-func intentBatchMember(unit batch.Unit, request batchJoinRequest, branchTip string) bool {
+func intentBatchMember(unit batch.Unit, request batchowner.BatchJoinRequest, branchTip string) bool {
 	if unit.GoalID != request.GoalID {
 		return false
 	}
@@ -463,7 +465,7 @@ func intentBatchMember(unit batch.Unit, request batchJoinRequest, branchTip stri
 // a lane and, when it does, the checkout: its own landing.batch-root against
 // the host's one landing lane (U12, landing_lane.go).
 func productionIntentBatchRoot(root string, now time.Time) (string, bool, error) {
-	return productionLandingLaneSeams().batchRoot(root, now)
+	return batchowner.ProductionLandingLaneSeams().BatchRoot(root, now)
 }
 
 // ---- shared job-store reads
@@ -1580,7 +1582,7 @@ func (inv *intentInvocation) landJob(job string) intentResult {
 			Summary:  fmt.Sprintf("certified chain %s lands only through the landing batch, and landing.batch-root is not set", job),
 			Decision: "set landing.batch-root to a dedicated landing checkout"}
 	}
-	request := batchJoinRequest{SeatRoot: inv.layout.InstallationRoot, LandingRoot: landingRoot, GoalID: goalID, ChainID: job}
+	request := batchowner.BatchJoinRequest{SeatRoot: inv.layout.InstallationRoot, LandingRoot: landingRoot, GoalID: goalID, ChainID: job}
 	if _, _, member, err := inv.delivery().batchUnit(landingRoot, request, ""); err != nil || member {
 		return inv.noteLanded(goalID, inv.joinBatch(targets, request, ""))
 	}
@@ -1614,7 +1616,7 @@ func chainHead(record map[string]any) string {
 // is reported where the batch owner has it, and only a goal with no live
 // membership joins. The same land command is the continuation until the
 // batch records the landing.
-func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchJoinRequest, branchTip string) intentResult {
+func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchowner.BatchJoinRequest, branchTip string) intentResult {
 	owners := inv.delivery()
 	record, unit, member, err := owners.batchUnit(request.LandingRoot, request, branchTip)
 	if err != nil {
@@ -1694,7 +1696,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 		// The batch may already hold, or have landed and swept, exactly this
 		// selection at this branch tip; its record answers first, including
 		// once the branch is gone.
-		request := batchJoinRequest{SeatRoot: root, LandingRoot: landingRoot, GoalID: goalID, Through: through, Last: through == ""}
+		request := batchowner.BatchJoinRequest{SeatRoot: root, LandingRoot: landingRoot, GoalID: goalID, Through: through, Last: through == ""}
 		if _, _, member, err := owners.batchUnit(landingRoot, request, state.BranchTip); err != nil || member {
 			return inv.joinBatch(targets, request, state.BranchTip)
 		}
@@ -1721,7 +1723,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	// reader record lands by hand only as the fix of an open red on main.
 	unread := slices.IndexFunc(state.Sources[:count], func(source string) bool { return source != "critic-root" })
 	if unread < 0 {
-		return inv.joinBatch(targets, batchJoinRequest{SeatRoot: root, LandingRoot: landingRoot, GoalID: goalID, Through: through, Last: through == ""}, state.BranchTip)
+		return inv.joinBatch(targets, batchowner.BatchJoinRequest{SeatRoot: root, LandingRoot: landingRoot, GoalID: goalID, Through: through, Last: through == ""}, state.BranchTip)
 	}
 	entry, err := inv.redOnMainFixed(goalID)
 	if err != nil {
@@ -1975,7 +1977,7 @@ func (inv *intentInvocation) prepareReceipt(targets []intentTarget, data map[str
 	// The landing proof runs in this process (design 6.2): this process is
 	// the caller its admission classifies, the parent the former child
 	// classified.
-	caller, installation := currentProcessIdentity(), inv.layout.InstallationRoot
+	caller, installation := ownercall.CurrentProcess(), inv.layout.InstallationRoot
 	args := []string{"--root", installation, "--tree", subject, "--mode", "auto", "--goal", goalID}
 	ran := ownerCall(func(stdout, stderr io.Writer) int {
 		return inv.ownerCalls().landingTestReceipt(caller, stdout, stderr, installation, args)

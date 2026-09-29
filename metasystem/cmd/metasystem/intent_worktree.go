@@ -48,7 +48,7 @@ func goalWorktreeLockReason(goalID string) string {
 func (inv *intentInvocation) connection() intentConnectionOwners {
 	owners := inv.owners.connection
 	if owners.endpoint == nil {
-		owners.endpoint = goalBranchEndpoint
+		owners.endpoint = branch.MainEndpoint
 	}
 	if owners.endpointTip == nil {
 		owners.endpointTip = goalBranchEndpointTip

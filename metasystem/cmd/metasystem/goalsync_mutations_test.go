@@ -19,6 +19,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -214,7 +215,7 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 	reads := repository.reads()
 	dependencies := syncRequestDependencies{
 		authorityFacts: goalAuthorityReadFacts{
-			caller:        entryCallerIdentity(),
+			caller:        ownercall.EntryCaller(),
 			repositoryTop: repository.receiptTop,
 			ledgerIdentity: func(root string) string {
 				if root != repository.root {

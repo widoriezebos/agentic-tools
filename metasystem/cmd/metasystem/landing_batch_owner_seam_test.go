@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
@@ -33,7 +34,7 @@ func TestBatchOwnerLaunchUsesNestedControlRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	command := batchOwnerLaunchCommand("metasystem", repository)
+	command := batchowner.BatchOwnerLaunchCommand("metasystem", repository)
 	want := []string{"metasystem", "up", "--recover-only", "--if-down", "--repo", repository, "--metasystem-root", module}
 	if command.Dir != module || !slices.Equal(command.Args, want) {
 		t.Fatalf("owner launch dir=%s argv=%v, want dir=%s argv=%v", command.Dir, command.Args, module, want)
@@ -43,7 +44,7 @@ func TestBatchOwnerLaunchUsesNestedControlRoot(t *testing.T) {
 func TestBatchLedgerOwnerDefaultRefusesUnbound(t *testing.T) {
 	root := t.TempDir()
 	facts := batchConfigFacts(root, false, false)
-	owner, err := productionBatchLedgerOwnerWithConfig(root, facts.config)
+	owner, err := batchowner.ProductionBatchLedgerOwnerWithConfig(root, facts.config)
 	facts.assertConsumed(t, false)
 	if err == nil || owner != nil || !strings.Contains(err.Error(), "no machine nickname is enrolled") {
 		t.Fatalf("unbound batch ledger owner=(%T, %v), want missing machine enrollment refusal", owner, err)
@@ -53,20 +54,20 @@ func TestBatchLedgerOwnerDefaultRefusesUnbound(t *testing.T) {
 func TestBatchLedgerOwnerUsesLandingIdentity(t *testing.T) {
 	root := t.TempDir()
 	facts := batchConfigFacts(root, true, false)
-	owner, err := productionBatchLedgerOwnerWithConfig(root, facts.config)
+	owner, err := batchowner.ProductionBatchLedgerOwnerWithConfig(root, facts.config)
 	facts.assertConsumed(t, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ledgerOwner, ok := owner.(*ledgerTrunkRedOwner)
+	ledgerOwner, ok := owner.(*batchowner.LedgerTrunkRedOwner)
 	if !ok {
 		t.Fatalf("batch ledger owner type %T, want ledger adapter", owner)
 	}
-	if ledgerOwner.actor.Machine != "mac-cli" || ledgerOwner.actor.Lineage != landingOwnerLineage {
-		t.Fatalf("batch ledger owner actor=%+v, want mac-cli+%s", ledgerOwner.actor, landingOwnerLineage)
+	if ledgerOwner.Actor.Machine != "mac-cli" || ledgerOwner.Actor.Lineage != batchowner.LandingOwnerLineage {
+		t.Fatalf("batch ledger owner actor=%+v, want mac-cli+%s", ledgerOwner.Actor, batchowner.LandingOwnerLineage)
 	}
-	if ledgerOwner.endpoint.Root != root || ledgerOwner.endpoint.Remote != "local" || ledgerOwner.endpoint.Branch != "refs/heads/main" {
-		t.Fatalf("batch ledger owner endpoint=%+v, want landing local main endpoint", ledgerOwner.endpoint)
+	if ledgerOwner.Endpoint.Root != root || ledgerOwner.Endpoint.Remote != "local" || ledgerOwner.Endpoint.Branch != "refs/heads/main" {
+		t.Fatalf("batch ledger owner endpoint=%+v, want landing local main endpoint", ledgerOwner.Endpoint)
 	}
 }
 
@@ -95,15 +96,15 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 	if os.Getenv("GO_WANT_BATCH_OWNER_SIGNAL_HELPER") != "" {
 		root := os.Getenv("BATCH_OWNER_TEST_ROOT")
 		facts := batchConfigFacts(root, true, true)
-		batchOwnerCadenceTick = func(string, batchOwnerLease, func() time.Time) error { return nil }
-		batchOwnerAcquire = func(string) (batchOwnerLease, error) {
-			return batchOwnerLease{root: root, pid: int64(os.Getpid()), epoch: 1}, nil
+		batchowner.BatchOwnerCadenceTick = func(string, batchowner.BatchOwnerLease, func() time.Time) error { return nil }
+		batchowner.BatchOwnerAcquire = func(string) (batchowner.BatchOwnerLease, error) {
+			return batchowner.BatchOwnerLease{Root: root, Pid: int64(os.Getpid()), Epoch: 1}, nil
 		}
-		batchOwnerRequire = func(batchOwnerLease) error { return nil }
-		batchOwnerConstruct = func(settings config.BatchLanding, held batchOwnerLease, _ productionBatchOwnerInputs, now func() time.Time) (*batch.Owner, error) {
+		batchowner.BatchOwnerRequire = func(batchowner.BatchOwnerLease) error { return nil }
+		batchowner.BatchOwnerConstruct = func(settings config.BatchLanding, held batchowner.BatchOwnerLease, _ batchowner.ProductionBatchOwnerInputs, now func() time.Time) (*batch.Owner, error) {
 			calls := 0
 			return batch.NewOwner(batch.OwnerOptions{
-				Store: batch.NewStore(root, nil), Settings: settings, Actor: "fixture", PID: held.pid, Now: now,
+				Store: batch.NewStore(root, nil), Settings: settings, Actor: "fixture", PID: held.Pid, Now: now,
 				FetchTree: func() (string, error) { return "tree", nil },
 				ReadClaim: func(string, string, string, string) (batch.Claim, error) { return batch.Claim{}, nil },
 				Rebind:    func(string, string) error { return nil }, Mint: func() (string, error) { return "opid", nil },
@@ -171,11 +172,11 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 		boot := joined.Add(30 * time.Second)
 		t.Setenv("METASYSTEM_GOAL_NOW", boot.Format(time.RFC3339Nano))
 		current := boot
-		previous := cadenceProductionClock
-		cadenceProductionClock = func() time.Time { return current }
-		t.Cleanup(func() { cadenceProductionClock = previous })
+		previous := batchowner.CadenceProductionClock
+		batchowner.CadenceProductionClock = func() time.Time { return current }
+		t.Cleanup(func() { batchowner.CadenceProductionClock = previous })
 		settings, _, err := parseBatchOwnerWithSource([]string{"--root", seat, "--landing-root", landing,
-			"--max-wait", "1m", "--interval", "1m"}, "owner", cadenceProductionClock, facts.source())
+			"--max-wait", "1m", "--interval", "1m"}, "owner", batchowner.CadenceProductionClock, facts.source())
 		facts.assertConsumed(t, true)
 		if err != nil {
 			t.Fatal(err)
@@ -192,15 +193,15 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 
 func TestBatchOwnerManualAcquireCleansFailedAnnouncement(t *testing.T) {
 	root := t.TempDir()
-	original := batchOwnerAnnounce
-	t.Cleanup(func() { batchOwnerAnnounce = original })
-	batchOwnerAnnounce = func(root, session string, pid, start, startTicks int64, bootID, tag, runtime, lineage string) (string, error) {
+	original := batchowner.BatchOwnerAnnounce
+	t.Cleanup(func() { batchowner.BatchOwnerAnnounce = original })
+	batchowner.BatchOwnerAnnounce = func(root, session string, pid, start, startTicks int64, bootID, tag, runtime, lineage string) (string, error) {
 		if _, err := original(root, session, pid, start, startTicks, bootID, tag, runtime, lineage); err != nil {
 			return "", err
 		}
 		return "", errors.New("injected failure after announcement")
 	}
-	if _, err := acquireBatchOwner(root); err == nil || !strings.Contains(err.Error(), "injected failure after announcement") {
+	if _, err := batchowner.AcquireBatchOwner(root); err == nil || !strings.Contains(err.Error(), "injected failure after announcement") {
 		t.Fatalf("manual acquisition error=%v, want injected post-announcement failure", err)
 	}
 	if announcements := lease.AnnouncementsFor(root, int64(os.Getpid())); len(announcements) != 0 {
@@ -210,14 +211,14 @@ func TestBatchOwnerManualAcquireCleansFailedAnnouncement(t *testing.T) {
 
 func TestBatchOwnerReleaseDoesNotRecreateRemovedRoot(t *testing.T) {
 	root := t.TempDir()
-	held, err := acquireBatchOwner(root)
+	held, err := batchowner.AcquireBatchOwner(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.RemoveAll(root); err != nil {
 		t.Fatal(err)
 	}
-	if err := held.retire(); err != nil {
+	if err := held.Retire(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
@@ -228,19 +229,19 @@ func TestBatchOwnerReleaseDoesNotRecreateRemovedRoot(t *testing.T) {
 func TestBatchOwnerNextProcessRecoversReleasedAndKilledHolder(t *testing.T) {
 	if mode := os.Getenv("GO_WANT_BATCH_OWNER_RELEASE_HELPER"); mode != "" {
 		root := os.Getenv("BATCH_OWNER_TEST_ROOT")
-		held, err := acquireBatchOwner(root)
+		held, err := batchowner.AcquireBatchOwner(root)
 		if err != nil {
 			t.Fatal(err)
 		}
 		fmt.Println("READY")
 		switch mode {
 		case "once":
-			if err := held.retire(); err != nil {
+			if err := held.Retire(); err != nil {
 				t.Fatal(err)
 			}
 		case "hold-release":
 			_, _ = os.Stdin.Read(make([]byte, 1))
-			if err := held.retire(); err != nil {
+			if err := held.Retire(); err != nil {
 				t.Fatal(err)
 			}
 			fmt.Println("RETIRED")
@@ -334,18 +335,18 @@ func TestBatchOwnerRetirementErrorsReachEveryCaller(t *testing.T) {
 		{name: "manual owner", run: func(t *testing.T) (int, string) {
 			seat, root := batchFileOnlyRoots(t)
 			facts := batchConfigFacts(root, true, true)
-			originalAcquire, originalConstruct, originalRequire, originalRetire := batchOwnerAcquire, batchOwnerConstruct, batchOwnerRequire, batchOwnerRetire
+			originalAcquire, originalConstruct, originalRequire, originalRetire := batchowner.BatchOwnerAcquire, batchowner.BatchOwnerConstruct, batchowner.BatchOwnerRequire, batchowner.BatchOwnerRetire
 			t.Cleanup(func() {
-				batchOwnerAcquire, batchOwnerConstruct, batchOwnerRequire, batchOwnerRetire = originalAcquire, originalConstruct, originalRequire, originalRetire
+				batchowner.BatchOwnerAcquire, batchowner.BatchOwnerConstruct, batchowner.BatchOwnerRequire, batchowner.BatchOwnerRetire = originalAcquire, originalConstruct, originalRequire, originalRetire
 			})
-			batchOwnerAcquire = func(string) (batchOwnerLease, error) {
-				return batchOwnerLease{root: root, session: "fixture", pid: int64(os.Getpid()), started: 1, epoch: 1, announced: true}, nil
+			batchowner.BatchOwnerAcquire = func(string) (batchowner.BatchOwnerLease, error) {
+				return batchowner.BatchOwnerLease{Root: root, Session: "fixture", Pid: int64(os.Getpid()), Started: 1, Epoch: 1, Announced: true}, nil
 			}
-			batchOwnerConstruct = func(config.BatchLanding, batchOwnerLease, productionBatchOwnerInputs, func() time.Time) (*batch.Owner, error) {
+			batchowner.BatchOwnerConstruct = func(config.BatchLanding, batchowner.BatchOwnerLease, batchowner.ProductionBatchOwnerInputs, func() time.Time) (*batch.Owner, error) {
 				return &batch.Owner{}, nil
 			}
-			batchOwnerRequire = func(batchOwnerLease) error { return errors.New("stop owner loop") }
-			batchOwnerRetire = func(string, string, int64, int64) error { return retireErr }
+			batchowner.BatchOwnerRequire = func(batchowner.BatchOwnerLease) error { return errors.New("stop owner loop") }
+			batchowner.BatchOwnerRetire = func(string, string, int64, int64) error { return retireErr }
 			code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 				return runBatchOwnerWithSource([]string{"--root", seat, "--landing-root", root, "--max-wait", "1m", "--interval", "1m"}, facts.source(), stdout, stderr)
 			})
@@ -355,19 +356,19 @@ func TestBatchOwnerRetirementErrorsReachEveryCaller(t *testing.T) {
 		{name: "manual tick", run: func(t *testing.T) (int, string) {
 			seat, root := batchFileOnlyRoots(t)
 			facts := batchConfigFacts(root, true, true)
-			originalAcquire, originalConstruct, originalRequire, originalTick, originalRetire := batchOwnerAcquire, batchOwnerConstruct, batchOwnerRequire, batchOwnerTick, batchOwnerRetire
+			originalAcquire, originalConstruct, originalRequire, originalTick, originalRetire := batchowner.BatchOwnerAcquire, batchowner.BatchOwnerConstruct, batchowner.BatchOwnerRequire, batchowner.BatchOwnerTick, batchowner.BatchOwnerRetire
 			t.Cleanup(func() {
-				batchOwnerAcquire, batchOwnerConstruct, batchOwnerRequire, batchOwnerTick, batchOwnerRetire = originalAcquire, originalConstruct, originalRequire, originalTick, originalRetire
+				batchowner.BatchOwnerAcquire, batchowner.BatchOwnerConstruct, batchowner.BatchOwnerRequire, batchowner.BatchOwnerTick, batchowner.BatchOwnerRetire = originalAcquire, originalConstruct, originalRequire, originalTick, originalRetire
 			})
-			batchOwnerAcquire = func(string) (batchOwnerLease, error) {
-				return batchOwnerLease{root: root, session: "fixture", pid: int64(os.Getpid()), started: 1, epoch: 1, announced: true}, nil
+			batchowner.BatchOwnerAcquire = func(string) (batchowner.BatchOwnerLease, error) {
+				return batchowner.BatchOwnerLease{Root: root, Session: "fixture", Pid: int64(os.Getpid()), Started: 1, Epoch: 1, Announced: true}, nil
 			}
-			batchOwnerConstruct = func(config.BatchLanding, batchOwnerLease, productionBatchOwnerInputs, func() time.Time) (*batch.Owner, error) {
+			batchowner.BatchOwnerConstruct = func(config.BatchLanding, batchowner.BatchOwnerLease, batchowner.ProductionBatchOwnerInputs, func() time.Time) (*batch.Owner, error) {
 				return &batch.Owner{}, nil
 			}
-			batchOwnerRequire = func(batchOwnerLease) error { return nil }
-			batchOwnerTick = func(*batch.Owner, string) error { return nil }
-			batchOwnerRetire = func(string, string, int64, int64) error { return retireErr }
+			batchowner.BatchOwnerRequire = func(batchowner.BatchOwnerLease) error { return nil }
+			batchowner.BatchOwnerTick = func(*batch.Owner, string) error { return nil }
+			batchowner.BatchOwnerRetire = func(string, string, int64, int64) error { return retireErr }
 			code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 				return runBatchTickWithSource([]string{"--root", seat, "--landing-root", root, "--max-wait", "1m", "--batch", "01j5x00000000000000000ba98"}, facts.source(), stdout, stderr)
 			})
@@ -395,16 +396,16 @@ func TestBatchTickStopsBeforePassAfterLeaseLoss(t *testing.T) {
 	seatRoot, landingRoot := batchFileOnlyRoots(t)
 	facts := batchConfigFacts(landingRoot, true, true)
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-17T10:00:00Z")
-	originalAcquire, originalRequire, originalTick := batchOwnerAcquire, batchOwnerRequire, batchOwnerTick
+	originalAcquire, originalRequire, originalTick := batchowner.BatchOwnerAcquire, batchowner.BatchOwnerRequire, batchowner.BatchOwnerTick
 	t.Cleanup(func() {
-		batchOwnerAcquire, batchOwnerRequire, batchOwnerTick = originalAcquire, originalRequire, originalTick
+		batchowner.BatchOwnerAcquire, batchowner.BatchOwnerRequire, batchowner.BatchOwnerTick = originalAcquire, originalRequire, originalTick
 	})
-	batchOwnerAcquire = func(string) (batchOwnerLease, error) {
-		return batchOwnerLease{root: landingRoot, pid: int64(os.Getpid()), epoch: 1}, nil
+	batchowner.BatchOwnerAcquire = func(string) (batchowner.BatchOwnerLease, error) {
+		return batchowner.BatchOwnerLease{Root: landingRoot, Pid: int64(os.Getpid()), Epoch: 1}, nil
 	}
-	batchOwnerRequire = func(batchOwnerLease) error { return errors.New("injected lost lease") }
+	batchowner.BatchOwnerRequire = func(batchowner.BatchOwnerLease) error { return errors.New("injected lost lease") }
 	acted := false
-	batchOwnerTick = func(*batch.Owner, string) error {
+	batchowner.BatchOwnerTick = func(*batch.Owner, string) error {
 		acted = true
 		return nil
 	}
@@ -419,11 +420,11 @@ func TestBatchTickStopsBeforePassAfterLeaseLoss(t *testing.T) {
 }
 
 func TestBatchCommandsResolveInputsBeforeAnnouncement(t *testing.T) {
-	commands := map[string]func(string, string, *batchOwnerSource, io.Writer, io.Writer) int{
-		"owner": func(seat, landing string, source *batchOwnerSource, stdout, stderr io.Writer) int {
+	commands := map[string]func(string, string, *batchowner.BatchOwnerSource, io.Writer, io.Writer) int{
+		"owner": func(seat, landing string, source *batchowner.BatchOwnerSource, stdout, stderr io.Writer) int {
 			return runBatchOwnerWithSource([]string{"--root", seat, "--landing-root", landing, "--max-wait", "1m", "--interval", "1m"}, source, stdout, stderr)
 		},
-		"tick": func(seat, landing string, source *batchOwnerSource, stdout, stderr io.Writer) int {
+		"tick": func(seat, landing string, source *batchowner.BatchOwnerSource, stdout, stderr io.Writer) int {
 			return runBatchTickWithSource([]string{"--root", seat, "--landing-root", landing, "--max-wait", "1m", "--batch", "01j5x00000000000000000ba98"}, source, stdout, stderr)
 		},
 	}
@@ -457,7 +458,7 @@ func TestBatchOwnerManualProofAndEnvironmentFailuresReleaseAnnouncement(t *testi
 		if err := os.WriteFile(filepath.Join(mains, "zz-invalid-announcement.json"), []byte("{not json"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := acquireBatchOwner(root); err == nil || !strings.Contains(err.Error(), "holder proof failed") {
+		if _, err := batchowner.AcquireBatchOwner(root); err == nil || !strings.Contains(err.Error(), "holder proof failed") {
 			t.Fatalf("manual acquisition error=%v, want holder proof failure", err)
 		}
 		if announcements := lease.AnnouncementsFor(root, int64(os.Getpid())); len(announcements) != 0 {
@@ -467,10 +468,10 @@ func TestBatchOwnerManualProofAndEnvironmentFailuresReleaseAnnouncement(t *testi
 
 	t.Run("environment", func(t *testing.T) {
 		root := t.TempDir()
-		original := batchOwnerSetenv
-		t.Cleanup(func() { batchOwnerSetenv = original })
-		batchOwnerSetenv = func(string, string) error { return errors.New("injected environment failure") }
-		if _, err := acquireBatchOwner(root); err == nil || !strings.Contains(err.Error(), "injected environment failure") {
+		original := batchowner.BatchOwnerSetenv
+		t.Cleanup(func() { batchowner.BatchOwnerSetenv = original })
+		batchowner.BatchOwnerSetenv = func(string, string) error { return errors.New("injected environment failure") }
+		if _, err := batchowner.AcquireBatchOwner(root); err == nil || !strings.Contains(err.Error(), "injected environment failure") {
 			t.Fatalf("manual acquisition error=%v, want environment failure", err)
 		}
 		if announcements := lease.AnnouncementsFor(root, int64(os.Getpid())); len(announcements) != 0 {
@@ -480,22 +481,22 @@ func TestBatchOwnerManualProofAndEnvironmentFailuresReleaseAnnouncement(t *testi
 }
 
 func TestBatchCommandsReleaseAfterConstructionFailure(t *testing.T) {
-	original := batchOwnerConstruct
-	t.Cleanup(func() { batchOwnerConstruct = original })
+	original := batchowner.BatchOwnerConstruct
+	t.Cleanup(func() { batchowner.BatchOwnerConstruct = original })
 	constructions := 0
 	activeConstructions := 0
-	batchOwnerConstruct = func(settings config.BatchLanding, held batchOwnerLease, _ productionBatchOwnerInputs, _ func() time.Time) (*batch.Owner, error) {
+	batchowner.BatchOwnerConstruct = func(settings config.BatchLanding, held batchowner.BatchOwnerLease, _ batchowner.ProductionBatchOwnerInputs, _ func() time.Time) (*batch.Owner, error) {
 		constructions++
-		if len(lease.AnnouncementsFor(settings.Root, held.pid)) == 1 {
+		if len(lease.AnnouncementsFor(settings.Root, held.Pid)) == 1 {
 			activeConstructions++
 		}
 		return nil, errors.New("injected construction failure")
 	}
-	commands := map[string]func(string, string, *batchOwnerSource) int{
-		"owner": func(seat, landing string, source *batchOwnerSource) int {
+	commands := map[string]func(string, string, *batchowner.BatchOwnerSource) int{
+		"owner": func(seat, landing string, source *batchowner.BatchOwnerSource) int {
 			return runBatchOwnerWithSource([]string{"--root", seat, "--landing-root", landing, "--max-wait", "1m", "--interval", "1m"}, source, t.Output(), t.Output())
 		},
-		"tick": func(seat, landing string, source *batchOwnerSource) int {
+		"tick": func(seat, landing string, source *batchowner.BatchOwnerSource) int {
 			return runBatchTickWithSource([]string{"--root", seat, "--landing-root", landing, "--max-wait", "1m", "--batch", "01j5x00000000000000000ba97"}, source, t.Output(), t.Output())
 		},
 	}
@@ -525,12 +526,12 @@ func TestBatchCommandsReleaseAfterConstructionFailure(t *testing.T) {
 }
 
 func TestBatchOwnerLoopStopsBeforePassAfterLeaseLoss(t *testing.T) {
-	originalRequire, originalResume := batchOwnerRequire, batchOwnerResume
-	t.Cleanup(func() { batchOwnerRequire, batchOwnerResume = originalRequire, originalResume })
-	batchOwnerRequire = func(batchOwnerLease) error { return errors.New("injected lost lease") }
+	originalRequire, originalResume := batchowner.BatchOwnerRequire, batchowner.BatchOwnerResume
+	t.Cleanup(func() { batchowner.BatchOwnerRequire, batchowner.BatchOwnerResume = originalRequire, originalResume })
+	batchowner.BatchOwnerRequire = func(batchowner.BatchOwnerLease) error { return errors.New("injected lost lease") }
 	acted := false
-	batchOwnerResume = func(*batch.Owner) { acted = true }
-	err := loopBatchOwner(t.Output(), nil, batchOwnerLease{}, "root", func() time.Time { return time.Unix(1, 0) }, time.Minute, make(chan struct{}), make(chan struct{}))
+	batchowner.BatchOwnerResume = func(*batch.Owner) { acted = true }
+	err := loopBatchOwner(t.Output(), nil, batchowner.BatchOwnerLease{}, "root", func() time.Time { return time.Unix(1, 0) }, time.Minute, make(chan struct{}), make(chan struct{}))
 	if err == nil || !strings.Contains(err.Error(), "injected lost lease") {
 		t.Fatalf("owner loop error=%v, want lost lease refusal", err)
 	}
@@ -540,26 +541,26 @@ func TestBatchOwnerLoopStopsBeforePassAfterLeaseLoss(t *testing.T) {
 }
 
 func TestBatchOwnerCadenceWiringBound(t *testing.T) {
-	originalRequire, originalResume := batchOwnerRequire, batchOwnerResume
-	originalStart, originalTick, originalReport := batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport
+	originalRequire, originalResume := batchowner.BatchOwnerRequire, batchowner.BatchOwnerResume
+	originalStart, originalTick, originalReport := batchowner.BatchOwnerCadenceStart, batchowner.BatchOwnerCadenceTick, batchowner.BatchOwnerCadenceReport
 	t.Cleanup(func() {
-		batchOwnerRequire, batchOwnerResume = originalRequire, originalResume
-		batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport = originalStart, originalTick, originalReport
+		batchowner.BatchOwnerRequire, batchowner.BatchOwnerResume = originalRequire, originalResume
+		batchowner.BatchOwnerCadenceStart, batchowner.BatchOwnerCadenceTick, batchowner.BatchOwnerCadenceReport = originalStart, originalTick, originalReport
 	})
 	var order []string
-	batchOwnerRequire = func(batchOwnerLease) error { return nil }
-	batchOwnerResume = func(*batch.Owner) { order = append(order, "landing") }
+	batchowner.BatchOwnerRequire = func(batchowner.BatchOwnerLease) error { return nil }
+	batchowner.BatchOwnerResume = func(*batch.Owner) { order = append(order, "landing") }
 	var launched func()
-	batchOwnerCadenceStart = func(tick func()) {
+	batchowner.BatchOwnerCadenceStart = func(tick func()) {
 		launched = tick
 		tick()
 	}
-	batchOwnerCadenceTick = func(string, batchOwnerLease, func() time.Time) error {
+	batchowner.BatchOwnerCadenceTick = func(string, batchowner.BatchOwnerLease, func() time.Time) error {
 		order = append(order, "cadence")
 		return errors.New("injected cadence failure")
 	}
 	reports := 0
-	batchOwnerCadenceReport = func(_ io.Writer, err error) {
+	batchowner.BatchOwnerCadenceReport = func(_ io.Writer, err error) {
 		if !strings.Contains(err.Error(), "injected cadence failure") {
 			t.Fatalf("reported error=%v", err)
 		}
@@ -568,7 +569,7 @@ func TestBatchOwnerCadenceWiringBound(t *testing.T) {
 	stop := make(chan struct{})
 	close(stop)
 	clock := func() time.Time { return time.Unix(7, 0) }
-	if err := loopBatchOwner(t.Output(), nil, batchOwnerLease{epoch: 3}, "landing-root", clock, time.Minute, make(chan struct{}), stop); err != nil {
+	if err := loopBatchOwner(t.Output(), nil, batchowner.BatchOwnerLease{Epoch: 3}, "landing-root", clock, time.Minute, make(chan struct{}), stop); err != nil {
 		t.Fatal(err)
 	}
 	if launched == nil {
@@ -580,34 +581,34 @@ func TestBatchOwnerCadenceWiringBound(t *testing.T) {
 }
 
 func TestBatchOwnerLoopStopJoinsCadenceTick(t *testing.T) {
-	originalRequire, originalResume := batchOwnerRequire, batchOwnerResume
-	originalStart, originalTick, originalReport := batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport
+	originalRequire, originalResume := batchowner.BatchOwnerRequire, batchowner.BatchOwnerResume
+	originalStart, originalTick, originalReport := batchowner.BatchOwnerCadenceStart, batchowner.BatchOwnerCadenceTick, batchowner.BatchOwnerCadenceReport
 	t.Cleanup(func() {
-		batchOwnerRequire, batchOwnerResume = originalRequire, originalResume
-		batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport = originalStart, originalTick, originalReport
+		batchowner.BatchOwnerRequire, batchowner.BatchOwnerResume = originalRequire, originalResume
+		batchowner.BatchOwnerCadenceStart, batchowner.BatchOwnerCadenceTick, batchowner.BatchOwnerCadenceReport = originalStart, originalTick, originalReport
 	})
 
 	started, finish := make(chan struct{}), make(chan struct{})
 	starts := 0
-	batchOwnerRequire = func(batchOwnerLease) error { return nil }
-	batchOwnerResume = func(*batch.Owner) {}
-	batchOwnerCadenceStart = func(tick func()) {
+	batchowner.BatchOwnerRequire = func(batchowner.BatchOwnerLease) error { return nil }
+	batchowner.BatchOwnerResume = func(*batch.Owner) {}
+	batchowner.BatchOwnerCadenceStart = func(tick func()) {
 		starts++
 		go tick()
 	}
-	batchOwnerCadenceTick = func(string, batchOwnerLease, func() time.Time) error {
+	batchowner.BatchOwnerCadenceTick = func(string, batchowner.BatchOwnerLease, func() time.Time) error {
 		close(started)
 		<-finish
 		return nil
 	}
-	batchOwnerCadenceReport = func(io.Writer, error) {}
+	batchowner.BatchOwnerCadenceReport = func(io.Writer, error) {}
 
 	stop := make(chan struct{})
 	close(stop)
-	cadence := newBatchOwnerCadence()
+	cadence := batchowner.NewBatchOwnerCadence()
 	done := make(chan error, 1)
 	go func() {
-		done <- loopBatchOwnerWithCadence(t.Output(), nil, batchOwnerLease{}, "landing-root", time.Now, time.Minute, make(chan struct{}), stop, cadence)
+		done <- loopBatchOwnerWithCadence(t.Output(), nil, batchowner.BatchOwnerLease{}, "landing-root", time.Now, time.Minute, make(chan struct{}), stop, cadence)
 	}()
 	select {
 	case <-started:
@@ -615,7 +616,7 @@ func TestBatchOwnerLoopStopJoinsCadenceTick(t *testing.T) {
 		t.Fatalf("batch owner returned before its cadence tick started: %v", err)
 	}
 	select {
-	case <-cadence.stopping:
+	case <-cadence.Stopping:
 	case err := <-done:
 		t.Fatalf("batch owner returned before cadence stopping began: %v", err)
 	}
@@ -630,7 +631,7 @@ func TestBatchOwnerLoopStopJoinsCadenceTick(t *testing.T) {
 		}
 	default:
 	}
-	runBatchOwnerPass(t.Output(), nil, batchOwnerLease{}, "landing-root", time.Now, cadence)
+	batchowner.RunBatchOwnerPass(t.Output(), nil, batchowner.BatchOwnerLease{}, "landing-root", time.Now, cadence)
 	if starts != 1 {
 		t.Errorf("cadence starts after stop=%d, want one admitted tick", starts)
 	}
@@ -641,7 +642,7 @@ func TestBatchOwnerLoopStopJoinsCadenceTick(t *testing.T) {
 		}
 	}
 	select {
-	case <-cadence.done:
+	case <-cadence.Done:
 	default:
 		t.Error("owner loop returned without completing its cadence stop")
 	}
@@ -650,7 +651,7 @@ func TestBatchOwnerLoopStopJoinsCadenceTick(t *testing.T) {
 	}
 }
 
-func flakeLedgerFixture(t *testing.T, now time.Time) *ledgerTrunkRedOwner {
+func flakeLedgerFixture(t *testing.T, now time.Time) *batchowner.LedgerTrunkRedOwner {
 	t.Helper()
 	repository := newProofAdmissionRepositoryFixture(t, now.UTC(), false)
 	return proofLedgerTrunkRedOwner(t, repository, "mac-landing", "landing-lineage", now.UTC())
@@ -668,9 +669,9 @@ func flakeSighting(test, red, green, tipTree string, seen time.Time) batch.Flake
 		GreenSample: proofrun.LoadSample{Sample: hostload.Sample{Load1m: 4.25, Cores: 18}}, SeenAt: seen}
 }
 
-func flakeRegister(t *testing.T, owner *ledgerTrunkRedOwner, refs []batch.EntryRef) goal.TrunkRedEntry {
+func flakeRegister(t *testing.T, owner *batchowner.LedgerTrunkRedOwner, refs []batch.EntryRef) goal.TrunkRedEntry {
 	t.Helper()
-	projection, err := goal.Project(owner.endpoint, false, owner.now())
+	projection, err := goal.Project(owner.Endpoint, false, owner.Now())
 	if err != nil || len(refs) != 1 {
 		t.Fatalf("project register for %+v: %v", refs, err)
 	}

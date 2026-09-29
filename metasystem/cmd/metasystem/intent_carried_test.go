@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -843,7 +844,7 @@ func TestIntentExceptionCarryRunsInThisProcess(t *testing.T) {
 		}
 		return process(ran)
 	}
-	var supplied []processIdentity
+	var supplied []ownercall.Process
 	carry := b.owners.delivery.calls.goalCarry
 	b.owners.delivery.calls.goalCarry = func(dependencies syncRequestDependencies, stdout, stderr io.Writer, dir string, args []string) int {
 		supplied = append(supplied, dependencies.authorityFacts.caller)
@@ -853,7 +854,7 @@ func TestIntentExceptionCarryRunsInThisProcess(t *testing.T) {
 	if data, _ := result.Data.(map[string]any); data == nil || data["exception"] == nil || data["exception"] == "" {
 		t.Fatalf("the exception was not recorded: %d %+v", code, result)
 	}
-	if len(supplied) != 1 || supplied[0].pid != int64(os.Getpid()) {
+	if len(supplied) != 1 || supplied[0].Pid != int64(os.Getpid()) {
 		t.Fatalf("the carry owner was supplied %+v, want this process %d once", supplied, os.Getpid())
 	}
 }

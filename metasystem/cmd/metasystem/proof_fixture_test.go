@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -134,22 +135,22 @@ func TestProofAttemptBinaryFixturePinsAdmissionInputs(t *testing.T) {
 	}
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", "")
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", "")
-	if lock, queue, err := batchOwnerFixtureProofLockDirectories(root); err != nil || lock != "" || queue != "" {
+	if lock, queue, err := batchowner.BatchOwnerFixtureProofLockDirectories(root); err != nil || lock != "" || queue != "" {
 		t.Fatalf("ordinary owner lock directories = %q, %q, %v; want production defaults", lock, queue, err)
 	}
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
 	first := filepath.Join(t.TempDir(), "host-admission")
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", first)
-	lock, queue, err := batchOwnerFixtureProofLockDirectories(root)
+	lock, queue, err := batchowner.BatchOwnerFixtureProofLockDirectories(root)
 	if err != nil || lock != filepath.Join(first, "batch-proof-lock") || queue != filepath.Join(first, "batch-proof-queue") {
 		t.Fatalf("first private owner lock directories = %q, %q, %v", lock, queue, err)
 	}
-	if repeatLock, repeatQueue, repeatErr := batchOwnerFixtureProofLockDirectories(root); repeatErr != nil || repeatLock != lock || repeatQueue != queue {
+	if repeatLock, repeatQueue, repeatErr := batchowner.BatchOwnerFixtureProofLockDirectories(root); repeatErr != nil || repeatLock != lock || repeatQueue != queue {
 		t.Fatalf("same fixture changed owner lock directories = %q, %q, %v", repeatLock, repeatQueue, repeatErr)
 	}
 	second := filepath.Join(t.TempDir(), "host-admission")
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", second)
-	otherLock, otherQueue, err := batchOwnerFixtureProofLockDirectories(root)
+	otherLock, otherQueue, err := batchowner.BatchOwnerFixtureProofLockDirectories(root)
 	if err != nil || otherLock != filepath.Join(second, "batch-proof-lock") || otherQueue != filepath.Join(second, "batch-proof-queue") || otherLock == lock || otherQueue == queue {
 		t.Fatalf("independent private owner lock directories = %q, %q, %v", otherLock, otherQueue, err)
 	}
@@ -157,7 +158,7 @@ func TestProofAttemptBinaryFixturePinsAdmissionInputs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sibling, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if siblingLock, siblingQueue, siblingErr := batchOwnerFixtureProofLockDirectories(sibling); siblingErr != nil || siblingLock != otherLock || siblingQueue != otherQueue {
+	if siblingLock, siblingQueue, siblingErr := batchowner.BatchOwnerFixtureProofLockDirectories(sibling); siblingErr != nil || siblingLock != otherLock || siblingQueue != otherQueue {
 		t.Fatalf("sibling fake checkout did not share declared fixture namespace: %q, %q, %v", siblingLock, siblingQueue, siblingErr)
 	}
 	nonFake := t.TempDir()
@@ -165,15 +166,15 @@ func TestProofAttemptBinaryFixturePinsAdmissionInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", nonFake)
-	if lock, queue, err := batchOwnerFixtureProofLockDirectories(root); err == nil || lock != "" || queue != "" {
+	if lock, queue, err := batchowner.BatchOwnerFixtureProofLockDirectories(root); err == nil || lock != "" || queue != "" {
 		t.Fatalf("non-fake fixture root selected private directories: %q, %q, %v", lock, queue, err)
 	}
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
-	if lock, queue, err := batchOwnerFixtureProofLockDirectories(nonFake); err == nil || lock != "" || queue != "" {
+	if lock, queue, err := batchowner.BatchOwnerFixtureProofLockDirectories(nonFake); err == nil || lock != "" || queue != "" {
 		t.Fatalf("unrelated fake fixture root selected private directories: %q, %q, %v", lock, queue, err)
 	}
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", "/tmp/../")
-	if lock, queue, err := batchOwnerFixtureProofLockDirectories(root); err == nil || lock != "" || queue != "" {
+	if lock, queue, err := batchowner.BatchOwnerFixtureProofLockDirectories(root); err == nil || lock != "" || queue != "" {
 		t.Fatalf("invalid fixture selector fell back to production directories: %q, %q, %v", lock, queue, err)
 	}
 }

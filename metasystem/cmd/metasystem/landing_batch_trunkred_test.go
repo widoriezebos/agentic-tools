@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 )
 
 func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
@@ -23,7 +24,7 @@ func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
 	root := repository.root
 	const machine, lineage = "mac-landing", "landing-lineage"
 	owner := proofLedgerTrunkRedOwner(t, repository, machine, lineage, time.Date(2026, 9, 17, 11, 0, 0, 0, time.UTC))
-	if !isLedgerTrunkRedOwner(owner) {
+	if !batchowner.IsLedgerTrunkRedOwner(owner) {
 		t.Fatalf("construct owner: %T", owner)
 	}
 	red := batch.TrunkRed{BatchID: "batch-1", AttemptID: "attempt-1", BaseCommit: "base-1", BaseTree: "tree-1",
@@ -92,7 +93,7 @@ func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
 	}
 
 	ownOpid := goal.Opid("01J5X0000000000000000000V4", machine, lineage)
-	ownRequest, err := owner.request(ownOpid)
+	ownRequest, err := owner.Request(ownOpid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +121,7 @@ func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
 	if open, err := owner.Open(); err != nil || len(open) != 0 {
 		t.Fatalf("clear left open entries: %+v %v", open, err)
 	}
-	projection, err := goal.Project(owner.endpoint, false, owner.now())
+	projection, err := goal.Project(owner.Endpoint, false, owner.Now())
 	if err != nil || len(projection.Tree.TrunkRed) != 1 || projection.Tree.TrunkRed[0].Closed == nil || projection.Tree.TrunkRed[0].FixBranch.State != goal.TrunkRedBranchOpen {
 		t.Fatalf("clear with absent fix commit: entries=%+v error=%v", projection.Tree.TrunkRed, err)
 	}
@@ -145,12 +146,12 @@ func TestLedgerTrunkRedOwnerClearClassifiesFixCommit(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root := syncedClaimedGoalFixture(t)
 			const machine, lineage = "mac-landing", "landing-lineage"
-			ownerValue, err := newLedgerTrunkRedOwner(root, machine, lineage)
+			ownerValue, err := batchowner.NewLedgerTrunkRedOwner(root, machine, lineage)
 			if err != nil {
 				t.Fatal(err)
 			}
-			owner := ownerValue.(*ledgerTrunkRedOwner)
-			owner.now = func() time.Time { return time.Date(2026, 9, 17, 11, 0, 0, 0, time.UTC) }
+			owner := ownerValue.(*batchowner.LedgerTrunkRedOwner)
+			owner.Now = func() time.Time { return time.Date(2026, 9, 17, 11, 0, 0, 0, time.UTC) }
 
 			tree := goalSyncMutationGit(t, root, "rev-parse", "HEAD^{tree}")
 			fixCommit := goalSyncMutationGit(t, root, "commit-tree", tree, "-m", "fix commit")
@@ -169,7 +170,7 @@ func TestLedgerTrunkRedOwnerClearClassifiesFixCommit(t *testing.T) {
 				t.Fatalf("record: refs=%+v error=%v", refs, err)
 			}
 			ownOpid := goal.Opid("01J5X0000000000000000000X2", machine, lineage)
-			ownRequest, err := owner.request(ownOpid)
+			ownRequest, err := owner.Request(ownOpid)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -219,7 +220,7 @@ func TestLedgerTrunkRedOwnerClearClassifiesFixCommit(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			projection, err := goal.Project(owner.endpoint, false, owner.now())
+			projection, err := goal.Project(owner.Endpoint, false, owner.Now())
 			if err != nil || len(projection.Tree.TrunkRed) != 1 || projection.Tree.TrunkRed[0].Closed == nil || projection.Tree.TrunkRed[0].FixBranch.State != test.branchState {
 				t.Fatalf("clear: entries=%+v error=%v", projection.Tree.TrunkRed, err)
 			}
@@ -254,9 +255,9 @@ func assertLedgerTrunkRedClearRefusesChange(t *testing.T, description string,
 ) {
 	t.Helper()
 	owner, ref, green, replacementCommit := ledgerTrunkRedClearFixture(t)
-	owner.beforeClearTransaction = func() error {
-		changeOpid := goal.Opid("01J5X0000000000000000000Y3", owner.actor.Machine, owner.actor.Lineage)
-		request, err := owner.request(changeOpid)
+	owner.BeforeClearTransaction = func() error {
+		changeOpid := goal.Opid("01J5X0000000000000000000Y3", owner.Actor.Machine, owner.Actor.Lineage)
+		request, err := owner.Request(changeOpid)
 		if err != nil {
 			return err
 		}
@@ -267,12 +268,12 @@ func assertLedgerTrunkRedClearRefusesChange(t *testing.T, description string,
 		return err
 	}
 
-	clearOpid := goal.Opid("01J5X0000000000000000000Y4", owner.actor.Machine, owner.actor.Lineage)
+	clearOpid := goal.Opid("01J5X0000000000000000000Y4", owner.Actor.Machine, owner.Actor.Lineage)
 	err := owner.Clear(clearOpid, ref, green)
 	if err == nil || !strings.Contains(err.Error(), "TRUNK_RED_CHANGED") {
 		t.Fatalf("clear after %s change error=%v, want TRUNK_RED_CHANGED", description, err)
 	}
-	projection, projectErr := goal.Project(owner.endpoint, false, owner.now())
+	projection, projectErr := goal.Project(owner.Endpoint, false, owner.Now())
 	if projectErr != nil || len(projection.Tree.TrunkRed) != 1 {
 		t.Fatalf("read %s-mutated entry: entries=%+v error=%v", description, projection.Tree.TrunkRed, projectErr)
 	}
@@ -287,18 +288,18 @@ func assertLedgerTrunkRedClearRefusesChange(t *testing.T, description string,
 func TestLedgerTrunkRedOwnerClearAcceptsUnchangedProjection(t *testing.T) {
 	t.Parallel()
 	owner, ref, green, _ := ledgerTrunkRedClearFixture(t)
-	clearOpid := goal.Opid("01J5X0000000000000000000Y4", owner.actor.Machine, owner.actor.Lineage)
+	clearOpid := goal.Opid("01J5X0000000000000000000Y4", owner.Actor.Machine, owner.Actor.Lineage)
 	if err := owner.Clear(clearOpid, ref, green); err != nil {
 		t.Fatalf("unchanged clear: %v", err)
 	}
-	projection, err := goal.Project(owner.endpoint, false, owner.now())
+	projection, err := goal.Project(owner.Endpoint, false, owner.Now())
 	if err != nil || len(projection.Tree.TrunkRed) != 1 || projection.Tree.TrunkRed[0].Closed == nil ||
 		projection.Tree.TrunkRed[0].FixBranch.State != goal.TrunkRedBranchMerged {
 		t.Fatalf("unchanged clear result: entries=%+v error=%v", projection.Tree.TrunkRed, err)
 	}
 }
 
-func ledgerTrunkRedClearFixture(t *testing.T) (*ledgerTrunkRedOwner, batch.EntryRef, batch.Green, string) {
+func ledgerTrunkRedClearFixture(t *testing.T) (*batchowner.LedgerTrunkRedOwner, batch.EntryRef, batch.Green, string) {
 	t.Helper()
 	repository := newProofAdmissionRepositoryFixture(t, time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC), false)
 	const machine, lineage = "mac-landing", "landing-lineage"
@@ -316,7 +317,7 @@ func ledgerTrunkRedClearFixture(t *testing.T) (*ledgerTrunkRedOwner, batch.Entry
 		t.Fatalf("record clear fixture: refs=%+v error=%v", refs, err)
 	}
 	ownOpid := goal.Opid("01J5X0000000000000000000Y2", machine, lineage)
-	ownRequest, err := owner.request(ownOpid)
+	ownRequest, err := owner.Request(ownOpid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,10 +333,10 @@ func ledgerTrunkRedClearFixture(t *testing.T) (*ledgerTrunkRedOwner, batch.Entry
 	return owner, refs[0], green, replacementCommit
 }
 
-func proofLedgerTrunkRedOwner(t *testing.T, repository *proofAdmissionRepository, machine, lineage string, now time.Time) *ledgerTrunkRedOwner {
+func proofLedgerTrunkRedOwner(t *testing.T, repository *proofAdmissionRepository, machine, lineage string, now time.Time) *batchowner.LedgerTrunkRedOwner {
 	t.Helper()
 	reads := 0
-	ownerValue, err := newLedgerTrunkRedOwnerWithConfig(repository.root, machine, lineage, func(root, key string) (string, error) {
+	ownerValue, err := batchowner.NewLedgerTrunkRedOwnerWithConfig(repository.root, machine, lineage, func(root, key string) (string, error) {
 		if root != repository.root || reads >= 2 || key != []string{"goal.sync-remote", "goal.sync-branch"}[reads] {
 			t.Fatalf("owner config read %d: root=%q key=%q", reads, root, key)
 		}
@@ -343,12 +344,12 @@ func proofLedgerTrunkRedOwner(t *testing.T, repository *proofAdmissionRepository
 		reads++
 		return value, nil
 	})
-	if err != nil || !isLedgerTrunkRedOwner(ownerValue) || reads != 2 {
+	if err != nil || !batchowner.IsLedgerTrunkRedOwner(ownerValue) || reads != 2 {
 		t.Fatalf("construct proof owner: %T %v; config reads %d", ownerValue, err, reads)
 	}
-	owner := ownerValue.(*ledgerTrunkRedOwner)
-	owner.endpoint.Repository = repository
-	owner.now = func() time.Time { return now }
+	owner := ownerValue.(*batchowner.LedgerTrunkRedOwner)
+	owner.Endpoint.Repository = repository
+	owner.Now = func() time.Time { return now }
 	return owner
 }
 
@@ -364,13 +365,13 @@ type rawGitReadFact struct {
 	err    error
 }
 
-func assertRawGitReads(t *testing.T, owner *ledgerTrunkRedOwner, facts ...rawGitReadFact) {
+func assertRawGitReads(t *testing.T, owner *batchowner.LedgerTrunkRedOwner, facts ...rawGitReadFact) {
 	t.Helper()
 	read := 0
-	owner.gitRead = func(root string, args ...string) (string, error) {
+	owner.GitRead = func(root string, args ...string) (string, error) {
 		t.Helper()
-		if root != owner.endpoint.Root || read >= len(facts) || !reflect.DeepEqual(args, facts[read].args) {
-			t.Fatalf("raw Git read %d: root=%q args=%q, want root=%q facts=%+v", read, root, args, owner.endpoint.Root, facts)
+		if root != owner.Endpoint.Root || read >= len(facts) || !reflect.DeepEqual(args, facts[read].args) {
+			t.Fatalf("raw Git read %d: root=%q args=%q, want root=%q facts=%+v", read, root, args, owner.Endpoint.Root, facts)
 		}
 		fact := facts[read]
 		read++
@@ -442,7 +443,7 @@ func TestBatchTrunkRedProjectionCarriesTheFixGoal(t *testing.T) {
 		if err != nil || len(refs) != 1 {
 			t.Fatalf("record: %+v %v", refs, err)
 		}
-		request, err := owner.request(goal.Opid("01J5X0000000000000000000Z2", machine, lineage))
+		request, err := owner.Request(goal.Opid("01J5X0000000000000000000Z2", machine, lineage))
 		if err != nil {
 			t.Fatal(err)
 		}

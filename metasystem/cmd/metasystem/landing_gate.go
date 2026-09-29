@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
@@ -82,7 +83,7 @@ func (inv *intentInvocation) pushGate() func(root, goalID string) error {
 // productionIntentBranchTip is the goal branch's tip at origin, or "" where
 // origin has no branch for the goal.
 func productionIntentBranchTip(root, goalID string) (string, error) {
-	endpoint, err := goalBranchEndpoint(root)
+	endpoint, err := branch.MainEndpoint(root)
 	if err != nil {
 		return "", err
 	}
