@@ -203,13 +203,14 @@ export function DocumentPane() {
   }, [attempt]);
 
   const name = document.state === "read" ? document.document.title : "";
+  const { busy: working } = usePartner();
   useEffect(() => {
     const identity = identityOf(workspace);
-    globalThis.document.title = titleFor(name === "" ? "Project" : `${name} · Project`, identity);
+    globalThis.document.title = titleFor(name === "" ? "Project" : `${name} · Project`, identity, 0, working);
     return () => {
-      globalThis.document.title = titleFor("Project", identity);
+      globalThis.document.title = titleFor("Project", identity, 0, working);
     };
-  }, [name, workspace]);
+  }, [name, workspace, working]);
 
   // A fragment on load scrolls its heading into view once the article is in
   // the tree, which a layout effect after the render guarantees without a timer.

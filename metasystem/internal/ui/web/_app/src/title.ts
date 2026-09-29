@@ -24,8 +24,15 @@ export function unreadPrefix(unread: number): string {
   return unread > 0 ? `(${String(unread)}) ` : "";
 }
 
-export function titleFor(sectionTitle: string, identity: Identity, unread = 0): string {
-  return unreadPrefix(unread) + subjectTitle(sectionTitle, identity);
+/**
+ * A turn in flight, in front of everything (g1-s74 D3d). A human who left for
+ * another tab reads the dot go when the answer is in; a section change while
+ * the Partner works keeps it, because both setters of the title pass the flag.
+ */
+export const WORKING_MARK = "● ";
+
+export function titleFor(sectionTitle: string, identity: Identity, unread = 0, working = false): string {
+  return (working ? WORKING_MARK : "") + unreadPrefix(unread) + subjectTitle(sectionTitle, identity);
 }
 
 function subjectTitle(sectionTitle: string, identity: Identity): string {

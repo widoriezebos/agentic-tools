@@ -34,6 +34,13 @@ import type {
 export type Live = {
   /** The turn's id, or "" when nothing is running. */
   turn: string;
+  /**
+   * The instant the server admitted the turn, RFC 3339, or "" until the page
+   * has been told it. It is the live line's clock's one origin (g1-s74 D4): it
+   * arrives with the question's 202 or with a snapshot, and never from this
+   * page's own receipt of anything.
+   */
+  startedAt: string;
   /** The sequence of the last beat folded in. */
   seq: number;
   text: string;
@@ -70,7 +77,7 @@ export type Live = {
 };
 
 export const nothingRunning: Live = {
-  turn: "", seq: 0, text: "", activity: [], doing: "", looked: [], suggestions: [], deposits: [],
+  turn: "", startedAt: "", seq: 0, text: "", activity: [], doing: "", looked: [], suggestions: [], deposits: [],
   proposals: [], presents: [],
 };
 
@@ -192,10 +199,11 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
     index: snapshot.index ?? { goals: [], records: [] },
     sitting: snapshot.sitting,
     live: ahead
-      ? store.live
+      ? startedFrom(store.live, snapshot.startedAt ?? "")
       : running
       ? {
           turn: snapshot.turn,
+          startedAt: snapshot.startedAt ?? "",
           seq: snapshot.partialSeq,
           text: snapshot.partial,
           activity: snapshot.activity ?? [],
@@ -208,6 +216,15 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
         }
       : nothingRunning,
   };
+}
+
+/**
+ * A running turn the beats carried further than a snapshot, with the start the
+ * snapshot knows where the page does not know one yet. Nothing else of it is
+ * taken: the beats are the newer account of everything else.
+ */
+function startedFrom(live: Live, startedAt: string): Live {
+  return live.startedAt === "" && startedAt !== "" ? { ...live, startedAt } : live;
 }
 
 /**
@@ -364,6 +381,7 @@ export function asked(
   page: Page,
   at: string,
   asking: Pick<Message, "interface" | "trouble"> = {},
+  startedAt = "",
 ): Store {
   const question: Message = { id: `${turn}-human`, turn, role: "human", text, at, key, page, ...asking };
   const already = store.messages.some((message) => message.turn === turn && message.role === "human");
@@ -380,7 +398,13 @@ export function asked(
   return {
     ...store,
     messages,
-    live: ended ? nothingRunning : store.live.turn === turn ? store.live : { ...nothingRunning, turn },
+    // The start the 202 carried is the server's own, so it is set whether or
+    // not the beats got here first, and everything they brought stays.
+    live: ended
+      ? nothingRunning
+      : store.live.turn === turn
+        ? startedFrom(store.live, startedAt)
+        : { ...nothingRunning, turn, startedAt },
     refusal: "",
     install: "",
     refusedBusy: false,
