@@ -134,6 +134,9 @@ type Segment struct {
 	// suite-failures/, and under events/.
 	Git, Installation string
 	Context           *Context
+	// LedgerIdentity is the identity the segment index recorded; every
+	// observation must return it.
+	LedgerIdentity string
 	// Unknown, when set, is why the bound does nothing here this pass.
 	Unknown string
 }
@@ -169,6 +172,8 @@ type Item struct {
 	Jobs      []string `json:"jobs,omitempty"`
 	Compacted bool     `json:"compacted,omitempty"`
 	Attempt   string   `json:"attempt,omitempty"`
+	// OwnerLedger is the ledger identity a bundle's owner file records.
+	OwnerLedger string `json:"ownerLedger,omitempty"`
 	// Unsettled is why a bundle is not settled.
 	Unsettled string `json:"unsettled,omitempty"`
 	Bytes     int64  `json:"bytes"`
@@ -280,7 +285,7 @@ func bundleItem(path string) Item {
 	case err != nil:
 		item.Goal = diskstore.GoalUnknown
 	default:
-		item.Goal, item.Attempt = owner.Goal, owner.Attempt
+		item.Goal, item.Attempt, item.OwnerLedger = owner.Goal, owner.Attempt, owner.LedgerIdentity
 	}
 	return item
 }

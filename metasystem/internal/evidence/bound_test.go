@@ -38,6 +38,11 @@ func newBoundBed(t *testing.T) *boundBed {
 			t.Fatal(err)
 		}
 	}
+	// A template-layout installation: its state root is itself, found
+	// without running git.
+	if err := os.WriteFile(filepath.Join(bed.installation, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	facts := diskstore.CheckoutFacts{GitRoot: bed.gitRoot, Installation: bed.installation, RootCommit: "e83c5163316f89bfbde7d9ab23ca2e25604af290", LedgerIdentity: "01J9LEDGER0000000000000000"}
 	bed.segment = Segment{Root: bed.root, Git: diskstore.Segment(bed.gitRoot), Installation: diskstore.Segment(bed.installation),
 		Context: &Context{Installation: bed.installation, Facts: facts}}
