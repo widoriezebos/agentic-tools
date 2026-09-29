@@ -821,7 +821,7 @@ func runIntentDone(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	args := append([]string{"--root", inv.stateRoot, "--id", id, "--conclude", reason}, actor...)
+	args := append(append([]string{"--root", inv.stateRoot, "--id", id, "--conclude", reason}, actor...), inv.forward("force")...)
 	return inv.callOwner(inv.targets(id), func(dependencies syncRequestDependencies) int {
 		code, _ := trySyncMutationWithCompletion("done", args, inv.owners.commandNow, dependencies, inv.owners.parkBranchCheck, inv.owners.completion)
 		return code

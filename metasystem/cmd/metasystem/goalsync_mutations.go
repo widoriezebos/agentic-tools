@@ -31,6 +31,7 @@ import (
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -532,6 +533,8 @@ type syncRequestDependencies struct {
 	proveHuman     func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	proveTerminal  func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	presence       func(string, goal.Endpoint) (seat.Copy, error)
+	// helm reads whether the act's seat is at the helm; nil is helm.Active.
+	helm func(root string) helm.State
 	// report, when set, receives the owner's typed outcome instead of the
 	// printed one; the public intent commands render it themselves.
 	report *ownerReport
@@ -539,6 +542,13 @@ type syncRequestDependencies struct {
 	// the process's own. A caller that owns its streams (a parallel test)
 	// sets both, so no other goroutine's output can reach them.
 	stdout, stderr io.Writer
+}
+
+func (d syncRequestDependencies) helmState(root string) helm.State {
+	if d.helm != nil {
+		return d.helm(root)
+	}
+	return helm.Active(root)
 }
 
 func (d syncRequestDependencies) outStream() io.Writer {
@@ -1021,7 +1031,7 @@ type syncFlags struct {
 	attemptLimit, reservedJobMinutesLimit, activeJobLimit, reviewRoundLimit  int64
 	tier                                                                     uint
 	labels, unlabels, ids, blocks, blockedBy                                 repeatedStrings
-	claim, refreshOnly, sweep, fixtureHumanAuthority                         bool
+	claim, refreshOnly, sweep, fixtureHumanAuthority, force                  bool
 	keep                                                                     int
 }
 
@@ -1140,6 +1150,9 @@ func parseSyncFlagValuesWithOutput(name string, args []string, stdout, output io
 	fs.Var(&f.labels, "label", "label token (repeatable)")
 	fs.Var(&f.unlabels, "unlabel", "label token to remove (repeatable; edit only)")
 	fs.BoolVar(&f.claim, "claim", false, "claim on open")
+	if name == "done" {
+		fs.BoolVar(&f.force, "force", false, "at the helm: conclude despite open read items, review obligations, a carry word or a blocked dependency; each is recorded as overridden")
+	}
 	fs.BoolVar(&f.refreshOnly, "refresh-only", false, "complete a died refresh")
 	fs.IntVar(&f.keep, "keep", 10, "archive entries to keep")
 	if err := fs.Parse(args); err != nil {
@@ -1962,7 +1975,17 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 				EndpointTip: endpointTip, GoalID: goalID, Dropped: dropped, CheckClaim: func() error { return nil }})
 			return err
 		}
+		if f.force {
+			if err := forceAdmission(dependencies.helmState(f.root), req.Authority, f.root); err != nil {
+				return dependencies.fail(1, err), true
+			}
+			req.ForceBy = req.Actor.Human
+		}
 		res, err := goal.Done(req, f.id, f.conclude)
+		// At the helm, a refusal a forced conclusion overrides proposes it.
+		if err == nil && res.Outcome == goal.OutcomeRejected && !f.force && goal.ConclusionOverridable(res.Detail) && dependencies.helmState(f.root).Active {
+			res.Detail += "; at the helm you may conclude anyway and record what was overridden: " + shellCommand([]string{"metasystem", "goal", "done", f.id, "--reason", f.conclude, "--force"})
+		}
 		code := dependencies.publish(res, err)
 		// A repeat on a done goal whose metrics report was never written
 		// writes it: the report is the conclusion's follow-up, and the same
