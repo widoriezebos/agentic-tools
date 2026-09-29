@@ -50,7 +50,9 @@ func productionChangeJoinDependencies() changeJoinDependencies {
 		},
 		assemble: batch.AssembleUnits, protectedTests: productionBatchProtectedTests, closure: batch.UnitClosure,
 		ensure: ensureBatchOwner, prober: identity.KernelProber{},
-		onMain: func(lane, commit string) (bool, error) { return batchSeriesOnEndpoint(lane, "refs/remotes/origin/main", commit) },
+		onMain: func(lane, commit string) (bool, error) {
+			return batchSeriesOnEndpoint(lane, "refs/remotes/origin/main", commit)
+		},
 	}
 }
 
