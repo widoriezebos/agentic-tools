@@ -137,7 +137,7 @@ func designLoopRead(roots lifecycle.Roots, id string) (httpd.DesignLoop, error) 
 	chain := chains[0]
 	loop.Chain, loop.Goal, loop.Round = chain.Root, chain.Goal, chain.NewestRound
 	loop.Status = recordText(chain.Newest, "status")
-	loop.Critic = recordText(chain.Newest, "model")
+	loop.Critic = roundModel(roots, chain.Root, chain.NewestRound)
 	loop.Limit = designCritiqueRounds
 	if root, err := readJobRecord(roots.Installation, chain.Root); err == nil {
 		if limit, ok := root["reviewRoundLimit"].(float64); ok && limit >= 1 {
@@ -171,6 +171,19 @@ func designLoopRead(roots lifecycle.Roots, id string) (httpd.DesignLoop, error) 
 		}
 	}
 	return loop, nil
+}
+
+// roundModel is the model an examination runs, as its own composition record
+// beside the round's return names it, or "" where it names none.
+func roundModel(roots lifecycle.Roots, root string, round int64) string {
+	var composition struct {
+		Model string `json:"model"`
+	}
+	data, err := os.ReadFile(filepath.Join(roots.Installation, "artifacts", "agents", root, "rounds", strconv.FormatInt(round, 10), "composition.json"))
+	if err != nil || json.Unmarshal(data, &composition) != nil {
+		return ""
+	}
+	return composition.Model
 }
 
 // designToolCalls is the reader budget the sheet prefills.

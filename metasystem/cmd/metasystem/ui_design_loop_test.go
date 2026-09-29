@@ -61,8 +61,10 @@ func TestSendToCritiqueRunsTheVerbWithTheGoalAndTheBudget(t *testing.T) {
 	if err != nil || again.Outcome != intentInProgress || b.fresh != 1 {
 		t.Fatalf("the repeated send: %+v %v fresh=%d", again, err, b.fresh)
 	}
+	// The round's own composition names the model reading it.
+	b.writeJSON(filepath.Join(b.install, "artifacts", "agents", "rev1", "rounds", "1", "composition.json"), map[string]any{"model": "gpt-6-astra"})
 	loop, err := designLoopRead(roots, id)
-	if err != nil || loop.State != "reading" || loop.Round != 1 || loop.Limit != 2 || loop.ToolCalls != 30 || loop.Goal != bedGoal {
+	if err != nil || loop.State != "reading" || loop.Round != 1 || loop.Limit != 2 || loop.ToolCalls != 30 || loop.Goal != bedGoal || loop.Critic != "gpt-6-astra" {
 		t.Fatalf("the reading chain: %+v %v", loop, err)
 	}
 }
