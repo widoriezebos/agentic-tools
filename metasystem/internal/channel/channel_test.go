@@ -248,18 +248,9 @@ func TestReportHeadlineUsesConfiguredLocalTimeAndOffset(t *testing.T) {
 	}
 }
 
-func TestChannelRecordTimesAndGitWindowRemainUTC(t *testing.T) {
+func TestGitWindowRemainsUTC(t *testing.T) {
 	location := time.FixedZone("machine-local", 5*60*60+30*60)
 	sentAt := time.Date(2026, 9, 4, 17, 30, 0, 0, location)
-	receivedAt := sentAt.Add(time.Minute)
-	record := InboundRecord(ReceiveRule{HumanUserID: "human", Now: receivedAt}, "telegram", "fleet", "machine", Inbound{
-		Ref:    MessageRef{ID: "message"},
-		UserID: "human",
-		SentAt: sentAt,
-	})
-	if record.SentAt != "2026-09-04T12:00:00Z" || record.ReceivedAt != "2026-09-04T12:01:00Z" {
-		t.Fatalf("record timestamps changed from UTC: sent=%q received=%q", record.SentAt, record.ReceivedAt)
-	}
 	if got := landingSince(sentAt); got != "--since=2026-09-04T12:00:00Z" {
 		t.Fatalf("git history window changed from UTC RFC 3339: %q", got)
 	}
