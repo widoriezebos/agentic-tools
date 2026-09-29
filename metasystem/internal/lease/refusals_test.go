@@ -74,30 +74,28 @@ func TestRenewRefusesNonHolder(t *testing.T) {
 	}
 }
 
-func TestRunHeldRunsUngatedForHuman(t *testing.T) {
+func TestHeldRunsUngatedForHuman(t *testing.T) {
 	root := t.TempDir() // empty: a fresh child has no recognised ancestry
 	caller := childOf(t)
 	stageTerminalFact(t, root, caller, true)
-	code, err := RunHeld(root, caller, nil, []string{"/bin/sh", "-c", "exit 3"})
-	if err != nil {
-		t.Fatalf("human run-held errored: %v", err)
-	}
-	if code != 3 {
-		t.Fatalf("human run-held should pass through the exit code, got %d", code)
+	want := errors.New("the human's own failure")
+	ran := false
+	if err := Held(root, caller, nil, func() error { ran = true; return want }); !ran || err != want {
+		t.Fatalf("a human's work must run ungated and return its own error: ran=%v err=%v", ran, err)
 	}
 }
 
-func TestRunHeldRefusesNonHolder(t *testing.T) {
+func TestHeldRefusesNonHolder(t *testing.T) {
 	root := t.TempDir()
 	announceLiveChild(t, root)
 	self := int64(os.Getpid())
 	if _, err := Announce(root, "my sess", self, selfStart(t), "tag", "fake", ""); err != nil {
 		t.Fatal(err)
 	}
-	// We are a MAIN but not the holder: run-held must refuse before running.
-	code, err := RunHeld(root, self, nil, []string{"/bin/sh", "-c", "exit 0"})
-	if err == nil || !strings.Contains(err.Error(), "OWNED-ELSEWHERE") {
-		t.Fatalf("run-held should refuse a non-holder, got code=%d err=%v", code, err)
+	// We are a MAIN but not the holder: Held must refuse before running.
+	ran := false
+	if err := Held(root, self, nil, func() error { ran = true; return nil }); ran || err == nil || !strings.Contains(err.Error(), "OWNED-ELSEWHERE") {
+		t.Fatalf("Held should refuse a non-holder before running: ran=%v err=%v", ran, err)
 	}
 }
 

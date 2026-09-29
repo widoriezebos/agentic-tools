@@ -528,28 +528,11 @@ func Renew(root string, callerPid int64) (RenewResult, error) {
 	return RenewResult{ClaimEpoch: lease.ClaimEpoch, Revision: lease.Revision}, nil
 }
 
-// RunHeld runs argv while holding the lease lock, gated on the caller being
-// the holder (or a HUMAN, who runs ungated). It returns the child's exit code.
-func RunHeld(root string, callerPid int64, expectedEpoch *int64, argv []string) (int, error) {
-	code := 1
-	var runErr error
-	ran := false
-	err := Held(root, callerPid, expectedEpoch, func() error {
-		ran = true
-		code, runErr = runProcess(argv)
-		return runErr
-	})
-	if !ran {
-		return 1, err
-	}
-	return code, runErr
-}
-
-// Held runs fn while holding the lease lock, gated exactly as RunHeld gates
-// its child: a HUMAN runs ungated and unlocked, internal helpers pass, and a
-// MAIN must be the holder at the expected epoch. It is the in-process form of
-// run-held for a composition package that calls owners instead of spawning
-// the engine (verbs-object-action 6.2, 6.3). fn's error is returned as is.
+// Held runs fn while holding the lease lock: a HUMAN runs ungated and
+// unlocked, internal helpers pass, and a MAIN must be the holder at the
+// expected epoch. It is the in-process gate for a composition package that
+// calls owners instead of spawning the engine (verbs-object-action 6.2,
+// 6.3). fn's error is returned as is.
 func Held(root string, callerPid int64, expectedEpoch *int64, fn func() error) error {
 	root = resolveRoot(root)
 	identity, err := Classify(root, callerPid)
@@ -570,9 +553,9 @@ func Held(root string, callerPid int64, expectedEpoch *int64, fn func() error) e
 	return fn()
 }
 
-// WithHeld runs fn while holding the lease lock, gated exactly as RunHeld
-// gates a command: a HUMAN caller runs it ungated; any other caller must pass
-// the holder gate at the expected epoch while the lock is held.
+// WithHeld runs fn while holding the lease lock, gated as Held gates it: a
+// HUMAN caller runs it ungated; any other caller must pass the holder gate at
+// the expected epoch while the lock is held.
 func WithHeld(root string, callerPid int64, expectedEpoch *int64, fn func() error) error {
 	root = resolveRoot(root)
 	identity, err := Classify(root, callerPid)
