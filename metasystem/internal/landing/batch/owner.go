@@ -30,6 +30,7 @@ type ownerSeams struct {
 	probeRun            func(string, Record) (RunProbe, error)
 	runners             func(proofrun.LoadSample, proofrun.AdmissionCap) []RunnerCapacity
 	lock                func(string) *proofLock
+	proving             func() (func() error, string, error)
 	after               func(time.Duration) <-chan time.Time
 	report              func(string, error)
 	pipeline            PipelineSource
@@ -103,6 +104,10 @@ type OwnerOptions struct {
 	// BaseMove reads what moved main between two base trees; nil leaves a
 	// batch on the base it was sealed on until its landing decides.
 	BaseMove func(fromTree, toTree string) (BaseMove, error)
+	// Proving takes the host's proving flock without waiting (U12): its
+	// release, or nil and the holder when another batch proves; nil takes
+	// none.
+	Proving func() (release func() error, holder string, err error)
 }
 
 type Owner struct {
@@ -132,7 +137,7 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 		returns: options.Returns, rebind: options.Rebind, mint: options.Mint, logRed: options.LogRed,
 		baseCommit: options.BaseCommit, runDiagnostic: options.RunDiagnostic, descendsFrom: options.DescendsFrom, sample: options.Sample,
 		admission: options.Admission, launch: options.Launch, probeRun: options.ProbeRun, after: options.After,
-		report: options.Report, glob: options.Glob, pipeline: options.Pipeline, logWait: options.LogWait, location: options.Location, helmActive: options.HelmActive, baseMove: options.BaseMove, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
+		report: options.Report, glob: options.Glob, pipeline: options.Pipeline, logWait: options.LogWait, location: options.Location, helmActive: options.HelmActive, baseMove: options.BaseMove, proving: options.Proving, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
 		inflight: map[string]*proofRun{}, decided: map[string]decidedAt{}, completions: make(chan Completion, 64),
 		runners: func(sample proofrun.LoadSample, admission proofrun.AdmissionCap) []RunnerCapacity {
 			return []RunnerCapacity{hostRunner(sample, admission)}
@@ -229,7 +234,16 @@ func (owner *Owner) Tick(id string) error {
 		if record.Proof != nil {
 			token = record.Proof.Token
 		}
+		// A diagnosis proves; a landing run pushes and never waits behind a proof.
+		var host func() error
+		if record.State == StateDiagnosing {
+			var waited bool
+			if host, waited, err = owner.takeProving(id, at); err != nil || waited {
+				return errors.Join(err, lock.release())
+			}
+		}
 		owner.dispatch(lock, Dispatch{ID: id, Window: "resume", Token: token, Runner: "host"})
+		owner.inflight[id].host = host
 		return nil
 	}
 	if record.State == StateHeldTrunkRed && record.TrunkRed != nil && len(record.TrunkRed.Entries) == 0 {
@@ -289,11 +303,16 @@ func (owner *Owner) Tick(id string) error {
 	if !room {
 		return errors.Join(owner.recordCap(id, sample, admission, at), lock.release())
 	}
-	token, err := owner.mint()
-	if err != nil {
+	host, waited, err := owner.takeProving(id, at)
+	if err != nil || waited {
 		return errors.Join(err, lock.release())
 	}
+	token, err := owner.mint()
+	if err != nil {
+		return errors.Join(err, lock.release(), releaseHost(host))
+	}
 	owner.dispatch(lock, Dispatch{ID: id, Window: window, Token: token, Runner: runner, Sample: sample})
+	owner.inflight[id].host = host
 	return nil
 }
 
