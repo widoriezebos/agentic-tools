@@ -5,9 +5,14 @@ package gocache
 // staticcheck's cache is a vendored copy of the same design. The steward
 // trims each machine cache by last use to a hard cap:
 //
-//   - never inside the keep window: an entry whose mtime (Go's best-effort
-//     record of last use, refreshed at most hourly) is younger than the
-//     window is never deleted, so a build in flight keeps what it reads;
+//   - oldest first, and the keep window yields only over the cap: nothing
+//     is deleted while the cache is within its cap; over it, entries go by
+//     mtime (Go's best-effort record of last use, refreshed at most hourly),
+//     oldest first, so everything older than the keep window goes before
+//     anything inside it, and an entry used within the floor (MinKeep) is
+//     never deleted, so a build in flight keeps what it reads. Under heavy
+//     churn the keep window alone would hold the cache far over its cap;
+//     the accepted failure below is what a yielded entry risks;
 //   - handle-relative: the root and every shard are opened O_NOFOLLOW and
 //     checked against the Lstat taken just before, and every entry
 //     operation is relative to the shard handle (Fstatat, Unlinkat,
@@ -21,7 +26,10 @@ package gocache
 //   - bounded and resumable: names are listed once per shard, sorted, and
 //     stat'ed in batches with a checkpoint after every batch; eviction
 //     candidates are persisted, so a later pass evicts without measuring
-//     again; the budget and cancellation are checked between batches;
+//     again; the budget and cancellation are checked between batches; a
+//     measurement that has spent half the pass and has already counted
+//     more than the cap evicts from the shards it measured, oldest first,
+//     in that pass, then measures on;
 //   - one trimmer per cache: a nonblocking flock; a loser skips.
 //
 // The accepted failure: an entry deleted under a build that already looked
@@ -65,8 +73,14 @@ type TrimConfig struct {
 	Root string
 	// CapBytes is the hard cap the pass trims to.
 	CapBytes int64
-	// Keep is the window inside which no entry is ever deleted.
+	// Keep is the keep window: over the cap, every entry older than it goes
+	// before any entry used within it.
 	Keep time.Duration
+	// MinKeep is the floor the keep window yields to when the cache is
+	// over its cap: an entry used within it is never deleted.
+	MinKeep time.Duration
+	// Deadline is the end of the pass's budget on Clock; zero is none.
+	Deadline time.Time
 	// StateDir holds <Name>.flock, <Name>.json and <Name>.candidates.jsonl.
 	StateDir string
 	// Now is the pass's time: the keep window is measured from it.
@@ -130,9 +144,13 @@ type TrimReport struct {
 	MovedSkips        int            `json:"movedSkips"`
 	Unknown           []UnknownEntry `json:"unknown"`
 	UnknownCount      int            `json:"unknownCount"`
+	MinKeepMinutes    float64        `json:"minKeepMinutes"`
+	MinKeepEntries    int            `json:"minKeepEntries"`
+	MinKeepBytes      int64          `json:"minKeepBytes"`
+	OverCap           bool           `json:"overCap"`
 }
 
-// trimCandidate is an entry older than the keep window, as measured.
+// trimCandidate is an entry older than the floor, as measured.
 type trimCandidate struct {
 	Shard   string `json:"shard"`
 	Name    string `json:"name"`
@@ -157,8 +175,9 @@ func Trim(ctx context.Context, cfg TrimConfig) (TrimReport, error) {
 	}
 	started := clock()
 	report := TrimReport{Cache: cfg.Name, Root: cfg.Root, CapBytes: cfg.CapBytes, KeepHours: cfg.Keep.Hours(), Unknown: []UnknownEntry{}}
-	if !cacheNamePattern.MatchString(cfg.Name) || !filepath.IsAbs(cfg.Root) || !filepath.IsAbs(cfg.StateDir) || cfg.CapBytes < 1 || cfg.Keep <= 0 {
-		return report, fmt.Errorf("trim %q: needs a cache name, an absolute root and state directory, a positive cap and a positive keep window", cfg.Name)
+	report.MinKeepMinutes = cfg.MinKeep.Minutes()
+	if !cacheNamePattern.MatchString(cfg.Name) || !filepath.IsAbs(cfg.Root) || !filepath.IsAbs(cfg.StateDir) || cfg.CapBytes < 1 || cfg.Keep <= 0 || cfg.MinKeep <= 0 {
+		return report, fmt.Errorf("trim %q: needs a cache name, an absolute root and state directory, a positive cap, a positive keep window and a positive floor", cfg.Name)
 	}
 	if err := os.MkdirAll(cfg.StateDir, 0o755); err != nil {
 		return report, err
@@ -176,7 +195,11 @@ func Trim(ctx context.Context, cfg TrimConfig) (TrimReport, error) {
 		}
 		return report, err
 	}
-	p := &trimPass{cfg: cfg, report: &report, cutoff: cfg.Now.Add(-cfg.Keep)}
+	p := &trimPass{cfg: cfg, report: &report, cutoff: cfg.Now.Add(-cfg.Keep), floor: cfg.Now.Add(-cfg.MinKeep), clock: clock}
+	if !cfg.Deadline.IsZero() {
+		// The measurement's share of the pass: half of what is left.
+		p.shareEnds = started.Add(cfg.Deadline.Sub(started) / 2)
+	}
 	p.carry(p.readReport())
 	p.run(ctx)
 	ended := clock()
@@ -191,8 +214,15 @@ func Trim(ctx context.Context, cfg TrimConfig) (TrimReport, error) {
 type trimPass struct {
 	cfg    TrimConfig
 	report *TrimReport
+	// cutoff ends the keep window; floor ends MinKeep: only an entry older
+	// than the floor is a candidate.
 	cutoff time.Time
-	root   *os.File
+	floor  time.Time
+	clock  func() time.Time
+	// shareEnds is when the measurement has spent its share of the pass;
+	// zero is no share (no deadline, or the share was already used).
+	shareEnds time.Time
+	root      *os.File
 }
 
 func (p *trimPass) statePath(suffix string) string {
@@ -216,6 +246,7 @@ func (p *trimPass) carry(previous TrimReport) {
 		r.Phase, r.Checkpoint, r.MeasuredAt = previous.Phase, previous.Checkpoint, previous.MeasuredAt
 		r.BytesBefore, r.BytesAfter = previous.BytesBefore, previous.BytesAfter
 		r.KeepWindowEntries, r.KeepWindowBytes = previous.KeepWindowEntries, previous.KeepWindowBytes
+		r.MinKeepEntries, r.MinKeepBytes = previous.MinKeepEntries, previous.MinKeepBytes
 		r.Unknown, r.UnknownCount = previous.Unknown, previous.UnknownCount
 		if r.Unknown == nil {
 			r.Unknown = []UnknownEntry{}
@@ -232,6 +263,7 @@ func (p *trimPass) startMeasure() {
 	r := p.report
 	r.Phase, r.Checkpoint, r.MeasuredAt = "measure", TrimCheckpoint{Shard: shardName(0)}, ""
 	r.BytesBefore, r.BytesAfter, r.KeepWindowEntries, r.KeepWindowBytes = 0, 0, 0, 0
+	r.MinKeepEntries, r.MinKeepBytes = 0, 0
 	r.Unknown, r.UnknownCount = []UnknownEntry{}, 0
 	p.writeCandidates(nil)
 }
@@ -251,6 +283,14 @@ func (p *trimPass) run(ctx context.Context) {
 	if err == nil && p.report.Phase == "measure" {
 		var stop string
 		stop, err = p.measure(ctx)
+		if err == nil && stop == "share" {
+			// Over the cap on what is counted already: evict from the
+			// measured shards now, then measure on with what is left.
+			p.shareEnds = time.Time{}
+			if stop, err = p.evictMeasured(ctx); err == nil && stop == "" {
+				stop, err = p.measure(ctx)
+			}
+		}
 		if err == nil && stop != "" {
 			p.report.EndedBy = stop
 			return
@@ -443,7 +483,7 @@ func (p *trimPass) measure(ctx context.Context) (string, error) {
 	r.Checkpoint = TrimCheckpoint{}
 	r.MeasuredAt = p.cfg.Now.UTC().Format(time.RFC3339Nano)
 	if r.BytesBefore > p.cfg.CapBytes {
-		r.Phase = "evict"
+		r.Phase, r.OverCap = "evict", true
 		if err := p.planEviction(); err != nil {
 			return "", err
 		}
@@ -492,13 +532,40 @@ func (p *trimPass) measureShard(ctx context.Context, handle *os.File, shard stri
 		if stop := p.interrupted(ctx, true); stop != "" {
 			return stop, nil
 		}
+		if p.shareSpent() {
+			return "share", nil
+		}
 	}
 	return "", nil
 }
 
+// shareSpent: the measurement has used its share of the pass and what it
+// has counted alone already exceeds the cap.
+func (p *trimPass) shareSpent() bool {
+	return !p.shareEnds.IsZero() && p.report.Checkpoint.BytesSoFar > p.cfg.CapBytes && !p.clock().Before(p.shareEnds)
+}
+
+// evictMeasured evicts the shards measured so far, oldest first, until
+// what they hold is at or below the cap; the measurement keeps its
+// checkpoint and counts only what stays.
+func (p *trimPass) evictMeasured(ctx context.Context) (string, error) {
+	r := p.report
+	r.OverCap = true
+	if err := p.planEviction(); err != nil {
+		return "", err
+	}
+	r.BytesAfter = r.Checkpoint.BytesSoFar
+	stop, err := p.evictDown(ctx)
+	if err != nil {
+		return "", err
+	}
+	return stop, p.persist()
+}
+
 // measureEntry classifies one name through the shard handle: an aside is
 // finished; a Known entry counts its payload bytes and is a candidate when
-// it is older than the keep window.
+// it is older than the floor. The keep window and the floor are counted
+// for the report.
 func (p *trimPass) measureEntry(handle *os.File, shard, name string) (trimCandidate, bool) {
 	if p.cfg.hooks.beforeStat != nil {
 		p.cfg.hooks.beforeStat(shard, name)
@@ -517,9 +584,14 @@ func (p *trimPass) measureEntry(handle *os.File, shard, name string) (trimCandid
 		return trimCandidate{}, false
 	}
 	p.report.Checkpoint.BytesSoFar += size
-	if !time.Unix(0, mtime).Before(p.cutoff) {
+	used := time.Unix(0, mtime)
+	if !used.Before(p.cutoff) {
 		p.report.KeepWindowEntries++
 		p.report.KeepWindowBytes += size
+	}
+	if !used.Before(p.floor) {
+		p.report.MinKeepEntries++
+		p.report.MinKeepBytes += size
 		return trimCandidate{}, false
 	}
 	return trimCandidate{Shard: shard, Name: name, MtimeNS: mtime, Size: size}, true
@@ -656,6 +728,19 @@ func (p *trimPass) planEviction() error {
 // evict removes candidates oldest first until the total is at or below the
 // cap, each re-stat'ed through its shard handle immediately before removal.
 func (p *trimPass) evict(ctx context.Context) (string, error) {
+	p.report.OverCap = true
+	stop, err := p.evictDown(ctx)
+	if err != nil || stop != "" {
+		return stop, err
+	}
+	p.report.Phase = "idle"
+	return "", p.writeCandidates(nil)
+}
+
+// evictDown removes the planned candidates oldest first until BytesAfter is
+// at or below the cap or none is left, persisting what remains after every
+// batch.
+func (p *trimPass) evictDown(ctx context.Context) (string, error) {
 	r := p.report
 	candidates := p.readCandidates()
 	handles := map[string]*os.File{}
@@ -682,8 +767,7 @@ func (p *trimPass) evict(ctx context.Context) (string, error) {
 			return stop, nil
 		}
 	}
-	r.Phase = "idle"
-	return "", p.writeCandidates(nil)
+	return "", nil
 }
 
 func (p *trimPass) evictOne(handles map[string]*os.File, candidate trimCandidate) error {
@@ -720,7 +804,7 @@ func (p *trimPass) evictOne(handles map[string]*os.File, candidate trimCandidate
 		p.unknown(candidate.Shard, candidate.Name, "stat: "+err.Error())
 		return nil
 	}
-	if st.Mtim.Nano() != candidate.MtimeNS || !time.Unix(0, st.Mtim.Nano()).Before(p.cutoff) {
+	if st.Mtim.Nano() != candidate.MtimeNS || !time.Unix(0, st.Mtim.Nano()).Before(p.floor) {
 		r.MovedSkips++
 		return nil
 	}
@@ -763,6 +847,10 @@ func (p *trimPass) removed(size int64) {
 	p.report.EntriesRemoved++
 	p.report.BytesRemoved += size
 	p.report.BytesAfter -= size
+	if p.report.Phase == "measure" {
+		// Evicted from a measurement under way: it counts only what stays.
+		p.report.Checkpoint.BytesSoFar -= size
+	}
 }
 
 func (p *trimPass) readCandidates() []trimCandidate {

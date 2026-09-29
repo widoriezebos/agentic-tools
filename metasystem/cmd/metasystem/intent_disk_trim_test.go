@@ -70,8 +70,10 @@ func (bed diskCleanBed) run(t *testing.T, args ...string) (int, intentResult, st
 
 // `disk clean --go-cache` runs the steward's trimmer now (disk-lifetimes
 // A12, Part B's manual entry): the engine's Go cache, Go's default cache
-// every builder by hand also uses, is trimmed by last use to its cap, and
-// an entry used inside the keep window stays whatever the cap.
+// every builder by hand also uses, is trimmed by last use to its cap: over
+// the cap the keep window yields, oldest first, and an entry used within
+// the last disk.cache-min-keep-minutes stays whatever the cap; the line
+// says so plainly.
 func TestDiskCleanGoCacheTrimsTheMachineCachesNow(t *testing.T) {
 	t.Parallel()
 	bed := newDiskCleanBed(t)
@@ -80,19 +82,37 @@ func TestDiskCleanGoCacheTrimsTheMachineCachesNow(t *testing.T) {
 	}
 	const gib = int64(1) << 30
 	old := bed.entry(t, "go-build", "00/old-d", 2*gib, 3*24*time.Hour)
-	recent := bed.entry(t, "go-build", "01/recent-d", 2*gib, time.Hour)
+	withinKeep := bed.entry(t, "go-build", "02/keep-d", 2*gib, 3*time.Hour)
+	recent := bed.entry(t, "go-build", "01/recent-d", 2*gib, 30*time.Minute)
 	delegate := bed.entry(t, "metasystem-delegate-go-build", "02/dele-d", 11*gib, 2*24*time.Hour)
 	code, result, printed := bed.run(t, "--go-cache")
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("disk clean = %d %s", code, printed)
 	}
-	for _, path := range []string{old, delegate} {
+	for _, path := range []string{old, withinKeep, delegate} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Errorf("%s was not trimmed: %v", path, err)
 		}
 	}
 	if _, err := os.Stat(recent); err != nil {
-		t.Errorf("an entry inside the keep window went: %v", err)
+		t.Errorf("an entry used within the floor went: %v", err)
+	}
+	var decoded struct {
+		Data struct {
+			Caches []gocache.TrimReport `json:"caches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(printed), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	said := false
+	for _, report := range decoded.Data.Caches {
+		if report.Cache == "engine-go-build" {
+			said = strings.Contains(diskTrimLine(report), "over the cap: removing the oldest entries, keeping the last 60 min")
+		}
+	}
+	if !said {
+		t.Fatalf("the engine Go cache's line does not say the keep window yielded: %s", printed)
 	}
 	if !strings.Contains(printed, "engine-go-build") || !strings.Contains(printed, "delegate-go-build") {
 		t.Fatalf("the report does not name the caches: %s", printed)
@@ -160,8 +180,8 @@ func TestDiskTrimHeadlineMatchesItsLines(t *testing.T) {
 			want: []string{"still measuring the engine Go cache (74.9 GiB counted so far); the engine staticcheck cache is not measured yet; they resume on the next pass"}},
 		{name: "trimmed and still evicting", reports: []gocache.TrimReport{{Cache: "delegate-go-build", EndedBy: "budget", Phase: "evict", CapBytes: 10 * gib, EntriesRemoved: 4, BytesRemoved: 3 * gib}},
 			want: []string{"trimmed the machine caches: 4 entries, 3.0 GiB freed", "still trimming the delegate Go cache to its 10.0 GiB cap"}},
-		{name: "over its cap inside the keep window", reports: []gocache.TrimReport{{Cache: "engine-go-build", EndedBy: "complete", Phase: "idle", CapBytes: gib, BytesAfter: 3 * gib, KeepWindowBytes: 2 * gib}},
-			want: []string{"the engine Go cache stays over its 1.0 GiB cap: 2.0 GiB used within the keep window is never trimmed"}},
+		{name: "over its cap inside the floor", reports: []gocache.TrimReport{{Cache: "engine-go-build", EndedBy: "complete", Phase: "idle", CapBytes: gib, BytesAfter: 3 * gib, KeepWindowBytes: 3 * gib, MinKeepBytes: 2 * gib, MinKeepMinutes: 60}},
+			want: []string{"the engine Go cache stays over its 1.0 GiB cap: 2.0 GiB used within the last 60 min is never trimmed"}},
 		{name: "refused and held", reports: []gocache.TrimReport{{Cache: "engine-staticcheck", EndedBy: "refused", Reason: "shard 00 is a symbolic link"}, {Cache: "delegate-staticcheck", EndedBy: "lock-held"}},
 			want: []string{"the engine staticcheck cache was not trimmed: shard 00 is a symbolic link", "another steward is trimming the delegate staticcheck cache now"}},
 	} {
@@ -265,4 +285,29 @@ func TestDiskShowTellsTheCaches(t *testing.T) {
 		t.Fatalf("show after a trim = %d:\n%s", code, printed)
 	}
 	idemSameTree(t, "disk show", before, idemTreeDigest(t, bed.state))
+}
+
+// A cache found over its cap says plainly that the keep window yielded:
+// the oldest entries go and only the last minutes of the floor stay, both
+// when the whole measurement found it and when a partial one did.
+func TestDiskTrimLineSaysTheKeepWindowYieldsOverTheCap(t *testing.T) {
+	t.Parallel()
+	const gib = int64(1) << 30
+	const plain = "over the cap: removing the oldest entries, keeping the last 60 min"
+	for _, tc := range []struct {
+		name   string
+		report gocache.TrimReport
+		says   bool
+	}{
+		{name: "trimmed to the cap", report: gocache.TrimReport{Cache: "engine-go-build", EndedBy: "complete", Phase: "idle", CapBytes: 30 * gib, BytesAfter: 30 * gib, EntriesRemoved: 9, BytesRemoved: 100 * gib, MinKeepMinutes: 60, OverCap: true}, says: true},
+		{name: "evicting from a partial measure", report: gocache.TrimReport{Cache: "engine-go-build", EndedBy: "budget", Phase: "measure", CapBytes: 30 * gib, EntriesRemoved: 9, MinKeepMinutes: 60, OverCap: true, Checkpoint: gocache.TrimCheckpoint{Shard: "40", LastName: "x-a", BytesSoFar: 30 * gib}}, says: true},
+		{name: "within the cap", report: gocache.TrimReport{Cache: "engine-go-build", EndedBy: "complete", Phase: "idle", CapBytes: 30 * gib, BytesAfter: gib, MinKeepMinutes: 60}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if line := diskTrimLine(tc.report); strings.Contains(line, plain) != tc.says {
+				t.Fatalf("line %q; want it to say %q: %v", line, plain, tc.says)
+			}
+		})
+	}
 }

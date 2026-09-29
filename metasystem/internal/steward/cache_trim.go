@@ -23,7 +23,7 @@ func CacheTrimStateDir() (string, error) {
 
 // machineCacheTrimmer is the runner's cycle step that trims the machine Go
 // and staticcheck caches to their caps (disk-lifetimes A12). It reads the
-// five disk settings from the checkout's metasystem.conf, runs under the
+// disk settings from the checkout's metasystem.conf, runs under the
 // trim budget, and ends at the next batch once the runner's stop file
 // appears, so stopping the system never waits on a trim. It takes and
 // holds no arbitration: only each cache's own nonblocking flock.
@@ -82,7 +82,8 @@ func (run CacheTrimRun) productionPass(settings config.CacheTrim) CacheTrimPass 
 		return gocache.TrimMachine(ctx, gocache.MachineTrim{
 			UserCacheDir: run.UserCacheDir, StateDir: stateDir,
 			EngineGoCapBytes: settings.EngineGoCapBytes, DelegateGoCapBytes: settings.DelegateGoCapBytes, StaticcheckCapBytes: settings.StaticcheckCapBytes,
-			Keep: settings.Keep, Now: now, Clock: run.Clock, Stopped: run.Stopped, Only: caches,
+			Keep: settings.Keep, MinKeep: settings.MinKeep, Now: now, Clock: run.Clock, Deadline: now.Add(budget),
+			Stopped: run.Stopped, Only: caches,
 		})
 	}
 }

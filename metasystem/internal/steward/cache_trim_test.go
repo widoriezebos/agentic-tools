@@ -104,3 +104,67 @@ func TestAStopFileDuringATrimEndsTheTrimAndTheRunner(t *testing.T) {
 		t.Fatalf("the stop file did not end the trim at its first batch: %+v", report)
 	}
 }
+
+// The steward's pass carries the floor and its budget's deadline to the
+// trimmer: an engine Go cache over its cap with everything used within the
+// keep window starts evicting in the pass that has counted more than the
+// cap, before the measurement is whole, and keeps what was used within
+// disk.cache-min-keep-minutes. The pass's clock moves a minute a reading,
+// so its ten-second budget is spent at once; the stop question ends the
+// pass at its second batch boundary, which is after that eviction.
+func TestTheStewardPassYieldsTheKeepWindowOverTheCap(t *testing.T) {
+	t.Parallel()
+	top := t.TempDir()
+	if err := os.WriteFile(filepath.Join(top, "metasystem.conf"), []byte("disk.go-cache-cap-gib=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	userCache := t.TempDir()
+	state := filepath.Join(t.TempDir(), "cache-trim")
+	now := time.Date(2026, 9, 29, 16, 0, 0, 0, time.UTC)
+	entry := func(name string, size int64, age time.Duration) string {
+		path := filepath.Join(userCache, "go-build", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := file.Truncate(size); err != nil {
+			t.Fatal(err)
+		}
+		file.Close()
+		when := now.Add(-age)
+		if err := os.Chtimes(path, when, when); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	const gib = int64(1) << 30
+	older := entry("00/aaaa-d", gib, 3*time.Hour)
+	newer := entry("00/bbbb-d", gib, 2*time.Hour)
+	recent := entry("01/cccc-a", 1024, 30*time.Minute)
+	readings := 0
+	clock := func() time.Time { readings++; return now.Add(time.Duration(readings) * time.Minute) }
+	questions := 0
+	stopped := func() bool { questions++; return questions >= 2 }
+	reports, err := TrimMachineCaches(context.Background(), top, func() (string, error) { return userCache, nil }, state, now, clock, stopped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) == 0 || reports[0].Cache != "engine-go-build" {
+		t.Fatalf("reports = %+v", reports)
+	}
+	report := reports[0]
+	if report.Phase != "measure" || report.EntriesRemoved != 1 || !report.OverCap || report.MinKeepMinutes != 60 {
+		t.Fatalf("the pass did not evict from its partial measure: %+v", report)
+	}
+	if _, err := os.Stat(older); !os.IsNotExist(err) {
+		t.Errorf("the oldest entry inside the keep window stayed over the cap: %v", err)
+	}
+	for _, path := range []string{newer, recent} {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("%s went: %v", path, err)
+		}
+	}
+}
