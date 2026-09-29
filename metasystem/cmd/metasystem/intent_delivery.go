@@ -33,6 +33,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -326,7 +327,7 @@ func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 		landPrep: func(args []string) (goalBranchLandPrepOutcome, int, error) {
 			return goalBranchLandPrepRun(args, goalBranchLandPrepDependencies{Prepare: branch.PrepareLanding,
 				LoadContract: func(root string) (testpolicy.Contract, error) {
-					_, contract, _, err := loadPhysicalTestingContract(root)
+					_, contract, _, err := testrun.LoadContract(root)
 					return contract, err
 				}})
 		},

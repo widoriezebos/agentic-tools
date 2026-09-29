@@ -278,8 +278,8 @@ func (f *ordinaryCandidateFixture) writeFiles() {
 func (f *ordinaryCandidateFixture) workspace() gittree.Workspace {
 	return gittree.Workspace{Dir: f.root, RawSource: f.raw}
 }
-func (f *ordinaryCandidateFixture) dependency() candidateEngineIO {
-	return candidateEngineIO{runGit: f.runGit, open: f.open, buildArgv: fixtureCandidateBuildArgv}
+func (f *ordinaryCandidateFixture) dependency() candidateengine.IO {
+	return candidateengine.IO{RunGit: f.runGit, Open: f.open, BuildArgv: fixtureCandidateBuildArgv}
 }
 
 // fixtureCandidateBuildArgv runs the fixture tree's own build script in place

@@ -28,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 const (
@@ -360,7 +361,7 @@ func TestCommandApplicationWorkerAllowancePublicDelivery(t *testing.T) {
 			t.Fatal(err)
 		}
 		beforeBuilds, beforeNative := fixture.counts()
-		forecast, err := forecastTestingSelection(fixture.root, costSelection{
+		forecast, err := forecastTestingSelection(fixture.root, testrun.CostSelection{
 			ID: "tip:" + observed.tree, Kind: "tip", Tree: observed.tree, GoalID: "portable",
 			Requirements: []string{"application-workers"}}, 2)
 		if err != nil || len(forecast.Groups) != 1 || forecast.Groups[0].GroupID != "application-workers" ||

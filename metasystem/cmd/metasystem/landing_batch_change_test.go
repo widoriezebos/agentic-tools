@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 const laneChangeCommit = "abcdef0123456789abcdef0123456789abcdef01"
@@ -97,9 +98,9 @@ func TestBatchChangeForecastChargesTheGoalMember(t *testing.T) {
 			decided = append(decided, units[len(units)-1].GoalID+"@"+tree)
 			return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
 		},
-		func(_ string, selection costSelection, _ uint64) (costSelectionEvidence, error) {
+		func(_ string, selection testrun.CostSelection, _ uint64) (testrun.CostEvidence, error) {
 			charged = append(charged, selection.ID+"="+selection.GoalID)
-			return costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind, Tree: selection.Tree, ChargeGoal: selection.GoalID}}, nil
+			return testrun.CostEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind, Tree: selection.Tree, ChargeGoal: selection.GoalID}}, nil
 		},
 		func(_ string, unit batch.Unit, _ *batch.Unit, _ time.Time) (batchowner.BatchCostBudgetProjection, error) {
 			budgets = append(budgets, unit.GoalID)
@@ -123,9 +124,9 @@ func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
 	change := laneChangeUnit()
 	var plans []string
 	decision, err := batchowner.PlanPrefixDecisionWith("", []batch.Unit{laneGoalUnit(), change}, "tip-tree",
-		func(_, goalID, tree string, _ testpolicy.Mode, _ []string) (testingPlanOutput, error) {
+		func(_, goalID, tree string, _ testpolicy.Mode, _ []string) (testrun.PlanOutput, error) {
 			plans = append(plans, goalID)
-			return testingPlanOutput{CandidateTree: tree, ContractDigest: "c", PolicyBaseCommit: "p",
+			return testrun.PlanOutput{CandidateTree: tree, ContractDigest: "c", PolicyBaseCommit: "p",
 				Plan: testpolicy.Plan{SelectedGroups: []string{"app-a"}, RequiredGroups: []string{"app-a"}}}, nil
 		})
 	if err != nil || !slices.Equal(plans, []string{"goal-a"}) || !slices.Equal(decision.Groups, []string{"app-a"}) {

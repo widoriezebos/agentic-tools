@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestGLEBatchEveryPrefixHasApplicablePolicyProof(t *testing.T) {
@@ -27,7 +28,7 @@ func TestGLEBatchEveryPrefixHasApplicablePolicyProof(t *testing.T) {
 		"tree-2": {"a.txt", "b.txt"},
 		"tree-3": {"a.txt", "b.txt", "c.txt"},
 	}
-	planner := func(_, _, tree string, mode testpolicy.Mode, admitted []string) (testingPlanOutput, error) {
+	planner := func(_, _, tree string, mode testpolicy.Mode, admitted []string) (testrun.PlanOutput, error) {
 		contract := testpolicy.Contract{Surfaces: []testpolicy.Surface{
 			{ID: "a", Paths: []string{"a.txt"}, Standard: []string{"first"}},
 			{ID: "b", Paths: []string{"b.txt"}, Standard: []string{"second"}},
@@ -38,7 +39,7 @@ func TestGLEBatchEveryPrefixHasApplicablePolicyProof(t *testing.T) {
 		}
 		selected, err := testpolicy.Select(contract, testpolicy.SelectionRequest{ChangedPaths: paths[tree], RequestedMode: mode, Purpose: testpolicy.PurposeDelivery,
 			BatchRequirements: admitted})
-		return testingPlanOutput{PolicyBaseCommit: "base-commit", CandidateTree: tree, ContractDigest: "candidate-policy-" + tree,
+		return testrun.PlanOutput{PolicyBaseCommit: "base-commit", CandidateTree: tree, ContractDigest: "candidate-policy-" + tree,
 			BaseContractDigest: "base-policy", Plan: selected, Groups: contract.Groups}, err
 	}
 	for index, want := range [][]string{{"first"}, {"first", "second"}, {"first", "second", "third"}} {
@@ -61,7 +62,7 @@ func TestGLEBatchSupplementalFreshnessUsesTheSelectedPlan(t *testing.T) {
 		{ID: "admitted", Requires: []string{"prerequisite"}, Freshness: "episode", FreshnessMaxAgeMS: &maxAge},
 		{ID: "unselected-fresh", Freshness: "episode", FreshnessMaxAgeMS: &maxAge},
 	}, Always: testpolicy.Always{Canary: []string{"floor"}}}
-	planner := func(_, _, tree string, mode testpolicy.Mode, admitted []string) (testingPlanOutput, error) {
+	planner := func(_, _, tree string, mode testpolicy.Mode, admitted []string) (testrun.PlanOutput, error) {
 		selected, err := testpolicy.Select(contract, testpolicy.SelectionRequest{RequestedMode: mode, Purpose: testpolicy.PurposeDelivery,
 			BatchRequirements: admitted})
 		groups := []testpolicy.Group{}
@@ -70,7 +71,7 @@ func TestGLEBatchSupplementalFreshnessUsesTheSelectedPlan(t *testing.T) {
 				groups = append(groups, group)
 			}
 		}
-		return testingPlanOutput{PolicyBaseCommit: "base", CandidateTree: tree, ContractDigest: "contract", Plan: selected, Groups: groups}, err
+		return testrun.PlanOutput{PolicyBaseCommit: "base", CandidateTree: tree, ContractDigest: "contract", Plan: selected, Groups: groups}, err
 	}
 	plain, err := batchowner.PlanPrefixDecisionWith("", []batch.Unit{{GoalID: "goal-a"}}, "tree", planner)
 	if err != nil || plain.FreshRequired {
@@ -202,9 +203,9 @@ printf '%s\n' '{"schemaVersion":1,"candidateTree":"candidate","plan":{"purpose":
 	if err := testexec.WriteFile(engine, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	request := testingSelectionRequest{Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
+	request := testrun.SelectionRequest{Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
 		BatchPrefixReceipt: true, BatchRequirements: []string{"admitted"}}
-	trusted, err := planWithTrustedPolicyEngine(engine, trustedPolicyFloorRequest(request), t.TempDir(), "candidate")
+	trusted, err := testrun.PlanWithTrustedPolicyEngine(engine, testrun.TrustedPolicyFloorRequest(request), t.TempDir(), "candidate")
 	if err != nil {
 		t.Fatalf("legacy trusted policy child could not supply its floor: %v", err)
 	}

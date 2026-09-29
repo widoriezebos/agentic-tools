@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestBatchCostPrefixGenericBudgetRefusalUsesTypedReturn(t *testing.T) {
@@ -152,13 +153,13 @@ func TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnaps
 				func(string, []batch.Unit, string) (batch.PrefixDecision, error) {
 					return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
 				},
-				func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
+				func(_ string, selection testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
 					engine, check := fixture.engineIO(tree)
-					value, err := forecastTestingSelectionPrepared(selection, cap, testingSelectionRequest{Root: fixture.root, GoalID: "portable",
+					value, err := testrun.ForecastPrepared(selection, cap, testrun.SelectionRequest{Root: fixture.root, GoalID: "portable",
 						Tree: tree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
 						BatchPrefixReceipt: !selection.Admission, BatchAdmission: selection.Admission, BatchRequirements: selection.Requirements},
-						prepared, forecastTestingDependencies{workspace: gittree.Workspace{Dir: fixture.root}, candidateIO: engine,
-							openCandidate: fixture.open(tree, files), now: func() time.Time { return at }})
+						prepared, testrun.Forecasting{Workspace: gittree.Workspace{Dir: fixture.root}, CandidateIO: engine,
+							OpenCandidate: fixture.open(tree, files), Now: func() time.Time { return at }, WorkerPolicy: testingWorkerPolicy})
 					check()
 					return value, err
 				},
@@ -248,12 +249,12 @@ func TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnaps
 				func(string, []batch.Unit, string) (batch.PrefixDecision, error) {
 					return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
 				},
-				func(_ string, selected costSelection, cap uint64) (costSelectionEvidence, error) {
+				func(_ string, selected testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
 					engine, check := fixture.engineIO(tree)
-					value, err := forecastTestingSelectionPrepared(selected, cap, testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree,
+					value, err := testrun.ForecastPrepared(selected, cap, testrun.SelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree,
 						Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchPrefixReceipt: true, BatchRequirements: []string{"app-a"}},
-						fixture.prepared(proofRequest, proofResult), forecastTestingDependencies{workspace: gittree.Workspace{Dir: fixture.root},
-							candidateIO: engine, openCandidate: fixture.open(tree, files), now: func() time.Time { return now }})
+						fixture.prepared(proofRequest, proofResult), testrun.Forecasting{Workspace: gittree.Workspace{Dir: fixture.root},
+							CandidateIO: engine, OpenCandidate: fixture.open(tree, files), Now: func() time.Time { return now }, WorkerPolicy: testingWorkerPolicy})
 					check()
 					return value, err
 				},
@@ -520,16 +521,16 @@ func TestBatchCostPortableEvidenceForecastIsReadOnlyAndWarmsFromRealCommand(t *t
 	contract := fixture.loadedContract(files)
 	run := fixture.request(tree, files, fixture.plan(contract, "app/a.txt"))
 	run.CandidateEngineBuildIdentity = fixture.engineIdentity(tree, run.Environment)
-	selection := costSelection{ID: "tip:portable", Kind: "tip", Tree: tree, GoalID: "portable", Requirements: []string{"app-a"}}
-	selected := testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
+	selection := testrun.CostSelection{ID: "tip:portable", Kind: "tip", Tree: tree, GoalID: "portable", Requirements: []string{"app-a"}}
+	selected := testrun.SelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
 		Purpose: testpolicy.PurposeDelivery, BatchPrefixReceipt: true, BatchRequirements: []string{"app-a"}}
-	forecast := func(result proofrun.TestResult) costSelectionEvidence {
+	forecast := func(result proofrun.TestResult) testrun.CostEvidence {
 		t.Helper()
 		beforeBytes := costAttemptBytes(t, fixture.root)
 		beforeNative := fixture.counts()
 		engine, check := fixture.engineIO(tree)
-		view, err := forecastTestingSelectionPrepared(selection, 2, selected, fixture.prepared(run, result), forecastTestingDependencies{
-			workspace: gittree.Workspace{Dir: fixture.root}, candidateIO: engine, openCandidate: fixture.open(tree, files), now: time.Now,
+		view, err := testrun.ForecastPrepared(selection, 2, selected, fixture.prepared(run, result), testrun.Forecasting{
+			Workspace: gittree.Workspace{Dir: fixture.root}, CandidateIO: engine, OpenCandidate: fixture.open(tree, files), Now: time.Now, WorkerPolicy: testingWorkerPolicy,
 		})
 		check()
 		if err != nil {
@@ -576,7 +577,9 @@ func TestBatchCostPortableEvidenceForecastIsReadOnlyAndWarmsFromRealCommand(t *t
 		func(string, []batch.Unit, string) (batch.PrefixDecision, error) {
 			return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
 		},
-		func(string, costSelection, uint64) (costSelectionEvidence, error) { return forecast(result), nil }, budget)
+		func(string, testrun.CostSelection, uint64) (testrun.CostEvidence, error) {
+			return forecast(result), nil
+		}, budget)
 	if err != nil || len(stored.Groups) != 1 || stored.Groups[0].Status != "reusable" {
 		t.Fatalf("stored cost forecast: %+v err=%v", stored, err)
 	}
@@ -681,9 +684,9 @@ func TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry(t *testing.T)
 		t.Fatalf("fresh command/JUnit result is incomplete: %+v", group)
 	}
 	requirePortableCounts(t, fixture.counts(), map[string]int{"a": 1})
-	selection := costSelection{ID: "tip:fresh", Kind: "tip", Tree: tree, GoalID: "portable", Requirements: []string{"app-a"},
+	selection := testrun.CostSelection{ID: "tip:fresh", Kind: "tip", Tree: tree, GoalID: "portable", Requirements: []string{"app-a"},
 		FreshEpisode: run.FreshnessEpisode, FreshExpiresAt: run.FreshnessExpiresAt}
-	selected := testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
+	selected := testrun.SelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
 		Purpose: testpolicy.PurposeDelivery, BatchPrefixReceipt: true, BatchRequirements: []string{"app-a"},
 		FreshEpisode: run.FreshnessEpisode, FreshExpiresAt: run.FreshnessExpiresAt}
 	prepared := fixture.prepared(run, result)
@@ -699,9 +702,9 @@ func TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry(t *testing.T)
 		t.Run(boundary.name, func(t *testing.T) {
 			engine, checkEngine := fixture.engineIO(tree)
 			projection, checkProjection := fixture.projection(tree)
-			forecast, forecastErr := forecastTestingSelectionPrepared(selection, 2, selected, prepared, forecastTestingDependencies{
-				workspace: projection, candidateIO: engine, openCandidate: fixture.open(tree, files),
-				now: func() time.Time { return boundary.at },
+			forecast, forecastErr := testrun.ForecastPrepared(selection, 2, selected, prepared, testrun.Forecasting{
+				Workspace: projection, CandidateIO: engine, OpenCandidate: fixture.open(tree, files),
+				Now: func() time.Time { return boundary.at }, WorkerPolicy: testingWorkerPolicy,
 			})
 			checkEngine()
 			checkProjection()
@@ -711,9 +714,9 @@ func TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry(t *testing.T)
 			if boundary.reusable {
 				verifyProjection, checkVerifyProjection = fixture.projection(tree)
 			}
-			verified, verifyErr := verifyRetainedTestingPrepared(selected, prepared, retainedTestingVerification{
-				clock: func() time.Time { return boundary.at }, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
-				workspace: verifyProjection, candidateIO: verifyEngine, openCandidate: fixture.open(tree, files),
+			verified, verifyErr := testrun.VerifyPrepared(selected, prepared, testrun.Verification{
+				Clock: func() time.Time { return boundary.at }, Revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+				Workspace: verifyProjection, CandidateIO: verifyEngine, OpenCandidate: fixture.open(tree, files), WorkerPolicy: testingWorkerPolicy,
 			})
 			if boundary.reusable {
 				checkVerifyEngine()
@@ -761,8 +764,8 @@ func TestBatchCostTipFirstSharesKnownIdentityButNotUnknownOrFresh(t *testing.T) 
 		}
 		return batch.PrefixDecision{Groups: ids}, nil
 	}
-	run := func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
-		out := costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
+	run := func(_ string, selection testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
+		out := testrun.CostEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
 			Tree: selection.Tree, ChargeGoal: selection.GoalID, SelectedGroups: slices.Clone(selection.Requirements)}}
 		for _, id := range selection.Requirements {
 			row := batch.CostForecastGroup{RequestID: selection.ID, Tree: selection.Tree, ChargeGoal: selection.GoalID,
@@ -831,8 +834,8 @@ func TestBatchCostReplacementFreshEpisodeChangesBindingAndNativeDemand(t *testin
 		record.PrefixEpisodes[unit.GoalID] = batch.PrefixEpisode{DecisionID: id, Token: strings.Repeat(string(rune('a'+index)), 64),
 			ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)}
 	}
-	run := func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
-		return costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
+	run := func(_ string, selection testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
+		return testrun.CostEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
 			Tree: selection.Tree, ChargeGoal: selection.GoalID}, Groups: []batch.CostForecastGroup{{
 			RequestID: selection.ID, Tree: selection.Tree, ChargeGoal: selection.GoalID,
 			GroupID: "shared", ExecutionIdentity: "same-identity", IdentityKnown: true, Status: "missing",
@@ -882,8 +885,8 @@ func TestBatchCostEarlierSharedIdentityChargesFirstPrefixOwner(t *testing.T) {
 		}
 		return batch.PrefixDecision{Groups: []string{"shared"}}, nil
 	}
-	run := func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
-		return costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
+	run := func(_ string, selection testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
+		return testrun.CostEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
 			Tree: selection.Tree, ChargeGoal: selection.GoalID}, Groups: []batch.CostForecastGroup{{
 			RequestID: selection.ID, Tree: selection.Tree, ChargeGoal: selection.GoalID,
 			GroupID: selection.Requirements[0], ExecutionIdentity: "identity-" + selection.Requirements[0],
@@ -921,8 +924,8 @@ func TestBatchCostBudgetDoesNotBorrowAnotherGoalsHeadroom(t *testing.T) {
 	decision := func(_ string, _ []batch.Unit, _ string) (batch.PrefixDecision, error) {
 		return batch.PrefixDecision{Groups: []string{"two-unknowns"}}, nil
 	}
-	run := func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
-		return costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
+	run := func(_ string, selection testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
+		return testrun.CostEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
 			Tree: selection.Tree, ChargeGoal: selection.GoalID}, Groups: []batch.CostForecastGroup{
 			{RequestID: selection.ID, Tree: selection.Tree, ChargeGoal: selection.GoalID, GroupID: "u1", Status: "unknown", DeclaredAllowanceMS: int64(cap) * 60000},
 			{RequestID: selection.ID, Tree: selection.Tree, ChargeGoal: selection.GoalID, GroupID: "u2", Status: "unknown", DeclaredAllowanceMS: int64(cap) * 60000},
@@ -1039,8 +1042,8 @@ func TestBatchCostElapsedFollowsLandingReadyAdmission(t *testing.T) {
 	decision := func(_ string, _ []batch.Unit, _ string) (batch.PrefixDecision, error) {
 		return batch.PrefixDecision{Groups: []string{"native"}}, nil
 	}
-	run := func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
-		return costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
+	run := func(_ string, selection testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
+		return testrun.CostEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
 			Tree: selection.Tree, ChargeGoal: selection.GoalID}, Groups: []batch.CostForecastGroup{{
 			RequestID: selection.ID, Tree: selection.Tree, ChargeGoal: selection.GoalID,
 			GroupID: "native", Status: "unknown", DeclaredAllowanceMS: int64(cap) * 60000,

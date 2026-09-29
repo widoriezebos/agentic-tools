@@ -26,6 +26,7 @@ import (
 	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
@@ -728,7 +729,7 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 		return 3
 	}
 	var request proofrun.TestRunRequest
-	if err := readStrictJSON(*packet, &request); err != nil {
+	if err := strictjson.Read(*packet, &request); err != nil {
 		fmt.Fprintln(stderr, "metasystem internal test worker:", err)
 		return 2
 	}

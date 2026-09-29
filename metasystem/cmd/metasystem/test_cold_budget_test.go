@@ -46,7 +46,7 @@ func testColdCandidateBuildRefusalRunsBeforeNativeBuilder(t *testing.T) {
 	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildFive, environment, false)
 	artifact, err := candidateengine.Prepare(context.Background(), controlRoot,
 		fixture.workspace(), "metasystem", ordinaryProjectTree,
-		environment, func() error { called++; return want }, fixture.dependency().engine())
+		environment, func() error { called++; return want }, fixture.dependency())
 	fixture.assertDrained()
 	var refusal *coldBuildBudgetRefusal
 	if artifact != nil || !errors.As(err, &refusal) || refusal != want || called != 1 {

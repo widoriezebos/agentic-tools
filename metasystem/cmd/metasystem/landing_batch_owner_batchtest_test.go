@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestBatchJoinSpawnsOneOwner(t *testing.T) {
@@ -566,9 +567,9 @@ func TestBatchProofRearmsBaseBeforePlanningEvenWhenTreeMatches(t *testing.T) {
 	var events []string
 	batchowner.BatchBaseRearm.FastForward = func(context.Context, string, string) error { events = append(events, "fast-forward"); return nil }
 	batchowner.BatchBaseRearm.Rebuild = func(context.Context, string) error { events = append(events, "rebuild"); return nil }
-	batchowner.BatchBaseRearm.Up = func(context.Context, string, string) (upOutcome, error) {
+	batchowner.BatchBaseRearm.Up = func(context.Context, string, string) (testrun.UpOutcome, error) {
 		events = append(events, "up")
-		return upOutcome{}, nil
+		return testrun.UpOutcome{}, nil
 	}
 	if err := batchowner.RearmBatchBase(root, baseTree); err != nil || strings.Join(events, ",") != "fast-forward,rebuild,up" {
 		t.Fatalf("moved rearm events=%v error=%v", events, err)
@@ -592,9 +593,9 @@ func TestBatchPostPushRearmFastForwardsRebuildsAndArms(t *testing.T) {
 		events = append(events, "rebuild:"+root)
 		return nil
 	}
-	batchowner.BatchBaseRearm.Up = func(_ context.Context, root, repo string) (upOutcome, error) {
+	batchowner.BatchBaseRearm.Up = func(_ context.Context, root, repo string) (testrun.UpOutcome, error) {
 		events = append(events, "up:"+root+":"+repo)
-		return upOutcome{}, nil
+		return testrun.UpOutcome{}, nil
 	}
 	if err := batchowner.RearmBatchTip("/landing", "receipt-tip"); err != nil {
 		t.Fatal(err)

@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // The application in this fixture has text inputs and command/JUnit checks.
@@ -699,7 +700,7 @@ func TestCommandApplicationThreePrefixReceiptConsumer(t *testing.T) {
 	}
 	tipResultPath := filepath.Join(t.TempDir(), "tip-result.json")
 	tipArgs := []string{"internal", "test", "run", "--root", fixture.root, "--goal", "goal-c", "--tree", thirdTree,
-		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-a", "app-b", "app-c"}), "--result", tipResultPath}
+		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", testrun.BatchRequirementsArgument([]string{"app-a", "app-b", "app-c"}), "--result", tipResultPath}
 	started := time.Now()
 	fixture.requireCommand(tipArgs...)
 	tipOutput, err := os.ReadFile(tipResultPath)
@@ -931,7 +932,7 @@ func TestCommandApplicationRedEarlierPrefixBlocksReceipt(t *testing.T) {
 	tipResultPath := filepath.Join(t.TempDir(), "tip-result.json")
 	started := time.Now()
 	fixture.requireCommand("internal", "test", "run", "--root", fixture.root, "--goal", "goal-c", "--tree", tipTree,
-		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-a", "app-b", "app-c"}), "--result", tipResultPath)
+		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", testrun.BatchRequirementsArgument([]string{"app-a", "app-b", "app-c"}), "--result", tipResultPath)
 	data, err := os.ReadFile(tipResultPath)
 	if err != nil {
 		t.Fatal(err)

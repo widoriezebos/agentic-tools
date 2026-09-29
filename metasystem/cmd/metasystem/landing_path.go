@@ -38,6 +38,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -161,15 +162,15 @@ func landingPathObserve(request landpath.ObserveRequest) (landing.Observation, i
 	}
 	if (request.TestReceipt != "" || request.Carried != "") && request.Recertification == "" {
 		params.VerifyTesting = func() (proofrun.TestResult, error) {
-			return verifyRetainedTesting(testingSelectionRequest{Root: root, GoalID: request.Goal,
+			return verifyRetainedTesting(testrun.SelectionRequest{Root: root, GoalID: request.Goal,
 				Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, Carried: request.Carried != ""})
 		}
 	}
 	return landing.Observe(params), 0
 }
 
-func landingPathVerifyRequest(root, tree, goalID string, carried bool) testingSelectionRequest {
-	return testingSelectionRequest{Preparation: &testingPreparationState{}, Root: root, Tree: tree, GoalID: goalID,
+func landingPathVerifyRequest(root, tree, goalID string, carried bool) testrun.SelectionRequest {
+	return testrun.SelectionRequest{Preparation: &testrun.PreparationState{}, Root: root, Tree: tree, GoalID: goalID,
 		Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, Carried: carried}
 }
 

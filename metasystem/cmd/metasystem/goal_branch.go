@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // The four raw readers below moved into internal/goal/branch, where the
@@ -484,7 +485,7 @@ func goalBranchClaimCheckWith(root, goalID string, endpoint goal.Endpoint, confi
 }
 
 func goalBranchHolderRoot(root string) string {
-	if main, linked := linkedWorktreeMainCheckout(root); linked {
+	if main, linked := testrun.LinkedWorktreeMainCheckout(root); linked {
 		top, topErr := goalBranchGit(root, "rev-parse", "--show-toplevel")
 		installation, rootErr := filepath.Abs(root)
 		if rootErr == nil {

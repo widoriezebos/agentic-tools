@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestBatchPushRejectionAppearsInStatus(t *testing.T) {
@@ -385,7 +386,10 @@ func TestConcurrentRearmsNeverOverlapNorMoveTheControlRootBack(t *testing.T) {
 			return nil
 		},
 		Rebuild: func(context.Context, string) error { step("rebuild"); return nil },
-		Up:      func(context.Context, string, string) (upOutcome, error) { step("up"); return upOutcome{}, nil },
+		Up: func(context.Context, string, string) (testrun.UpOutcome, error) {
+			step("up")
+			return testrun.UpOutcome{}, nil
+		},
 	}
 	errs := make(chan error, 2)
 	go func() { errs <- batchowner.RearmBatchBaseWith(root, "tree-T2", edges) }()
@@ -436,7 +440,7 @@ func TestLandingsAndRearmsTakeTurnsOnTheLaneCheckout(t *testing.T) {
 			return "T1", "tree-T1", nil
 		},
 		Rebuild: func(context.Context, string) error { return nil },
-		Up:      func(context.Context, string, string) (upOutcome, error) { return upOutcome{}, nil },
+		Up:      func(context.Context, string, string) (testrun.UpOutcome, error) { return testrun.UpOutcome{}, nil },
 	}
 	go func() { rearmed <- batchowner.RearmBatchBaseWith(root, "tree-T1", edges) }()
 	for checkout.Waiting.Load() != 2 && !landedDuringA.Load() && !rearmedDuringA.Load() {
