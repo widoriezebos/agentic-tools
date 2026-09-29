@@ -234,10 +234,20 @@ func witnessTestRemoveRepeat(t *testing.T) {
 		t.Fatalf("a repeated test remove changed the contract: err=%v", err)
 	}
 	// Inputs, surface paths and a whole surface already gone: success, the
-	// same bytes.
+	// same bytes. A group keeps at least one input and a surface at least
+	// one path (the contract refuses an empty list), so the witness removes
+	// a second one of each that it added.
 	for _, args := range [][]string{
-		{"test", "remove", "--file", path, "--group", "app-group", "--inputs", "go.mod"},
-		{"test", "remove", "--file", path, "--surface", "app", "--paths", "app/**"},
+		{"test", "add", "--file", path, "--group", "app-group", "--inputs", "extra.json"},
+		{"test", "add", "--file", path, "--surface", "app", "--paths", "extra/**"},
+	} {
+		if code := dispatch(args); code != 0 {
+			t.Fatalf("%v exit = %d", args, code)
+		}
+	}
+	for _, args := range [][]string{
+		{"test", "remove", "--file", path, "--group", "app-group", "--inputs", "extra.json"},
+		{"test", "remove", "--file", path, "--surface", "app", "--paths", "extra/**"},
 		{"test", "remove", "--file", path, "--surface", "no-longer-there"},
 	} {
 		if code := dispatch(args); code != 0 {

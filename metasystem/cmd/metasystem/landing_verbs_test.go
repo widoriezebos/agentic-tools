@@ -1350,6 +1350,10 @@ case "${1:-}" in
     ;;
   list)
     if [[ " $* " == *" -json "* ]]; then exec "$RECEIPT_CANARY_REAL_GO" "$@"; fi
+    # The static gate's dead-code check analyses this bed for real: its
+    # loader asks go list for the target's architecture and compiler, then
+    # for the packages as -json=FIELDS.
+    if [[ " $* " == *"{{context."* || " $* " == *" -json="* ]]; then exec "$RECEIPT_CANARY_REAL_GO" "$@"; fi
     if [[ " $* " == *" {{.Dir}} "* ]]; then
       printf '%s/internal/proofrun\n%s/cmd/tool\n' "$PWD" "$PWD"
     else
