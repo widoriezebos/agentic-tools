@@ -33,22 +33,52 @@ type Request struct {
 	From string
 	// Destination is the absolute path of the clone on this host.
 	Destination string
-	// Word and ReviewBy are the human's own authorization, which travel to
-	// the arming verb's argument list and nowhere else. The word is never
-	// written into the record, the capture or a log.
+	// Word and ReviewBy are the temporary pair a human at a terminal may
+	// give `seat launch`, which travel to the arming verb's argument list
+	// and nowhere else. The word is never written into the record, the
+	// capture or a log. The interface never sends them: a browser launch is
+	// enrolled from the signed-in session's verdict on its record (g1-s72).
 	Word     string
 	ReviewBy string
-	// ClientToday is the day the caller was on when it asked, as a plain
-	// YYYY-MM-DD. It travels because a browser and its server can be on
-	// different dates for several hours of every day, and the review date is
-	// judged against the day the human who chose it was looking at.
-	ClientToday string
 	// Resume names the launch this run continues, or "" for a fresh one.
 	Resume string
 }
 
 // Resuming reports whether this request continues an earlier launch.
 func (r Request) Resuming() bool { return r.Resume != "" }
+
+// Admit judges a request against the record it names, before anything is
+// written or run.
+//
+// A record a signed-in session enrolled is authoritative for its machine and
+// its destination, on a fresh invocation exactly as on a resume (g1-s72
+// S72-01): the clone's arm binds the verdict to the record's destination, so
+// a stale record path handed a new machine and destination would otherwise
+// enroll another machine under the session that launched the first. A flag
+// left empty takes the record's value; one that differs is refused. The pair
+// beside such a record is refused too: the record already says whose machine
+// this is. A record with no enrollment keeps the verb's own rules.
+func Admit(request Request, record Record) error {
+	if !record.SessionEnrolled() {
+		return nil
+	}
+	if request.Word != "" || request.ReviewBy != "" {
+		return refuse(CodeWordInvalid,
+			"launch %s was enrolled by %s's signed-in browser session; the temporary word and review date do not travel beside it",
+			record.Launch, record.Enrollment.Human)
+	}
+	if request.Machine != "" && request.Machine != record.Machine {
+		return refuse(CodeRecordConflict,
+			"launch %s is %s's launch of %s and not of %s; its record decides the machine",
+			record.Launch, record.Enrollment.Human, record.Machine, request.Machine)
+	}
+	if request.Destination != "" && filepath.Clean(request.Destination) != filepath.Clean(record.Destination) {
+		return refuse(CodeRecordConflict,
+			"launch %s clones into %s and not %s; its record decides the destination",
+			record.Launch, record.Destination, request.Destination)
+	}
+	return nil
+}
 
 // Facts are the world the preflight judges against, gathered by the caller so
 // that this function opens no repository and reads no ledger.

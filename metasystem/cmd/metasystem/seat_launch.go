@@ -42,7 +42,7 @@ func runSeatLaunchTo(args []string, stdout io.Writer) int {
 	machine := flags.String("machine", "", "nickname the new machine carries and publishes presence under")
 	from := pathFlag(flags, "from", ".", "the checkout this machine is cloned from (default: the current directory)")
 	destination := pathFlag(flags, "destination", "", "where the clone lands (default: beside this checkout, named for the remote's repository and the nickname)")
-	word := flags.String("temporary-human-word", "", "the human's own authorization, verbatim; enrolls the machine TEMPORARILY with the word recorded on its identity")
+	word := flags.String("temporary-human-word", "", "the human's own authorization, verbatim; enrolls the machine TEMPORARILY with the word recorded on its identity (refused beside a record a signed-in session enrolled)")
 	reviewBy := flags.String("review-by", "", "the human's own re-approval date (required with --temporary-human-word)")
 	resume := flags.String("resume", "", "continue the launch with this id: verify each done step and redo what does not hold")
 	recordPath := pathFlag(flags, "record", "", "the record file this launch writes (default: one per launch under artifacts/agents/ui/launches)")
@@ -82,11 +82,22 @@ func runSeatLaunchTo(args []string, stdout io.Writer) int {
 		fmt.Fprintln(os.Stderr, "seat launch:", err)
 		return 1
 	}
+	// A record a signed-in session enrolled is authoritative for its machine
+	// and destination, on a fresh invocation as on a resume, and the pair
+	// does not travel beside it (g1-s72 S72-01, D4). This is judged before
+	// the record is touched: a refusal here leaves it exactly as it was.
+	if err := launch.Admit(request, record); err != nil {
+		fmt.Fprintln(os.Stderr, "seat launch:", err)
+		return 1
+	}
 	// A resume takes the machine and the destination from the record it
 	// names: they are what this launch created, and a resume that took them
-	// from a flag could finish one launch into another's directory.
-	if request.Resuming() {
+	// from a flag could finish one launch into another's directory. A
+	// session-enrolled record's own values stand in for flags left empty.
+	if request.Resuming() || record.SessionEnrolled() {
 		request.Machine, request.Destination = record.Machine, record.Destination
+	}
+	if request.Resuming() {
 		if request.ReviewBy == "" {
 			request.ReviewBy = record.ReviewBy
 		}
@@ -167,6 +178,9 @@ func runSeatLaunchTo(args []string, stdout io.Writer) int {
 		// configuration step has put it there.
 		PresenceTick:  time.Duration(steward.TickSeconds(filepath.Join(request.From, installation))) * time.Second,
 		PresenceTicks: seatLaunchPresenceTicks,
+		// The enrollment step hands this file to the clone's arm when the
+		// record carries a signed-in session's verdict.
+		RecordPath: path,
 	}
 	record.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	finished, runErr := sequencer.Run(record)

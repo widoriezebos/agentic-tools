@@ -149,6 +149,11 @@ type Sequencer struct {
 	// first. PresenceTicks is how many of those ticks the wait allows.
 	PresenceTick  time.Duration
 	PresenceTicks int
+	// RecordPath is the file this launch's record is written to. The
+	// enrollment step hands it to the clone's arm when the record carries a
+	// signed-in session's verdict (g1-s72 D4), so the arm reads the verdict
+	// from the one file the interface stamped.
+	RecordPath string
 }
 
 // stepRun is what one step did: how it ended, and the words it ended with.
@@ -165,6 +170,11 @@ type stepRun struct {
 // that is not there. The error it answers is the refusal itself, so a caller
 // exits with the last step's outcome.
 func (s *Sequencer) Run(record Record) (Record, error) {
+	// Judged before the record is touched: a request the record does not
+	// admit is refused with the record exactly as it was.
+	if err := Admit(s.Request, record); err != nil {
+		return record, err
+	}
 	record.SchemaVersion = SchemaVersion
 	record.Machine = s.Request.Machine
 	record.Destination = filepath.Clean(s.Request.Destination)
@@ -656,31 +666,48 @@ func (s *Sequencer) ledger(record *Record) (stepRun, error) {
 
 /* ---------------------------------------------------------- 7 enrollment -- */
 
-// enrollment is the human's own act, carried: `steward arm` with the word
-// they typed and the review date they chose.
+// enrollment is the human's own act, carried: `steward arm`, told whose
+// machine this is in one of three ways (g1-s72 D4).
+//
+// A record a signed-in session enrolled hands the arm its own path, and the
+// arm reads the verdict from it; nothing about the human travels on argv. A
+// terminal's temporary pair is forwarded as it always was. With neither, a
+// fresh launch runs plain `steward arm` and the caller's own classification
+// decides, while a resume refuses: a record created without an enrollment is
+// never armed by the new path (S72-02), so a pre-slice clone's engine, kept
+// at its HEAD by the resume, is never handed a flag it does not know.
 //
 // Arming mints the identity and starts the runner, so there is no second
-// "start the steward" step. The word is passed as an argument and is never
-// written into the record.
+// "start the steward" step.
 func (s *Sequencer) enrollment(record *Record) (stepRun, error) {
 	install := s.install(record.Destination)
 	if _, enrolled := s.Host.Enrolled(install); enrolled {
 		return stepRun{outcome: StepSkipped, words: install + " already carries an identity enrolled for the engine installed there"}, nil
 	}
 	args := []string{"steward", "arm", "--repo", install}
-	if s.Request.Word != "" {
+	words := "enrolled at this terminal"
+	switch {
+	case record.SessionEnrolled():
+		if s.Request.Word != "" {
+			return stepRun{}, refuse(CodeWordInvalid,
+				"launch %s was enrolled by a signed-in browser session; the temporary word does not travel beside it", record.Launch)
+		}
+		if s.RecordPath == "" {
+			return stepRun{}, fmt.Errorf("launch %s carries a signed-in enrollment and this run has no record file to hand the arm", record.Launch)
+		}
+		args = append(args, "--launch-record", s.RecordPath)
+		words = "enrolled as " + record.Enrollment.Human + " from a signed-in browser session"
+	case s.Request.Word != "":
 		args = append(args, "--temporary-human-word", s.Request.Word, "--review-by", s.Request.ReviewBy)
-	} else if s.Request.Resuming() {
-		// The record never held the word, by design, so a resume that has to
-		// arm again asks for it rather than enrolling under something this
-		// verb made up.
+		words = "temporary enrollment, review due " + s.Request.ReviewBy
+	case s.Request.Resuming():
 		return stepRun{}, refuse(CodeWordRequired,
-			"this launch has to enroll %s and the record never held your authorization; give the word and the review date again", record.Machine)
+			"this launch has to enroll %s and its record carries no signed-in enrollment; press Discard launch on the fleet page and launch it again, or resume it at a terminal with --temporary-human-word and --review-by", record.Machine)
 	}
 	if _, err := s.run(Command{Dir: install, Name: s.binary(record.Destination), Args: args, Budget: s.GitBudget}); err != nil {
 		return stepRun{}, err
 	}
-	return stepRun{outcome: StepDone, words: "temporary enrollment, review due " + s.Request.ReviewBy}, nil
+	return stepRun{outcome: StepDone, words: words}, nil
 }
 
 /* --------------------------------------------------------- 8 supervision -- */

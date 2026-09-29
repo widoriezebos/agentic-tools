@@ -10,7 +10,6 @@ package launch
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
@@ -39,15 +38,21 @@ const (
 	// sibling evidence root that is this seat's own, or that resolves through
 	// a symlink to somewhere else.
 	CodeEvidenceRootUnsafe = "SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE"
-	// CodeWordRequired is a resume that reaches enrollment without the word
-	// and the date, which the record never held.
+	// CodeWordRequired is a resume that reaches enrollment with neither a
+	// signed-in session's verdict on its record nor the temporary pair: the
+	// record never held a word, and a record created without an enrollment
+	// is never stamped with one later (g1-s72 S72-02).
 	CodeWordRequired = "SEAT_LAUNCH_WORD_REQUIRED"
-	// CodeWordInvalid is a word and a date that do not travel together, or a
-	// date that is not one, in the arming validator's own words.
+	// CodeWordInvalid is the temporary pair beside a record a signed-in
+	// session already enrolled (g1-s72 D4): the record says whose machine
+	// this is, and a second authority beside it is refused rather than
+	// chosen between.
 	CodeWordInvalid = "SEAT_LAUNCH_WORD_INVALID"
-	// CodeReviewDatePast is a review-by date already behind us, which is this
-	// side's refusal and not the engine's.
-	CodeReviewDatePast = "SEAT_LAUNCH_REVIEW_DATE_PAST"
+	// CodeRecordConflict is a machine or a destination asked for beside a
+	// record a signed-in session enrolled, which names its own: one verdict
+	// arms one clone, so a stale record path never enrolls another machine
+	// under the session that launched the first (g1-s72 S72-01).
+	CodeRecordConflict = "SEAT_LAUNCH_RECORD_CONFLICT"
 	// CodeIDInvalid is a launch id that is not the one path segment a record
 	// is named by.
 	CodeIDInvalid = "SEAT_LAUNCH_ID_INVALID"
@@ -87,41 +92,4 @@ func (r *Refusal) Error() string {
 // refuse is the one constructor, so every refusal reads the same way.
 func refuse(code, format string, args ...any) *Refusal {
 	return &Refusal{Code: code, Message: fmt.Sprintf(format, args...)}
-}
-
-// reviewByLayout is the date form steward arm's own validator takes.
-const reviewByLayout = "2006-01-02"
-
-// ValidDay reports whether a string is one plain YYYY-MM-DD day.
-func ValidDay(day string) bool {
-	_, err := time.Parse(reviewByLayout, day)
-	return err == nil
-}
-
-// ReviewDateBefore reports whether a review-by date falls before the day the
-// client was on when it sent it.
-//
-// The day is the CLIENT's and never this process's. A browser and its server
-// can be in different zones, and for several hours a day they are on
-// different dates — so a server judging "is this in the past" against its own
-// UTC day would refuse a date a human is looking at on their own screen, or
-// accept one the sheet had already refused. One rule, judged against one day,
-// and the day travels with the request.
-//
-// The two sides are deliberately not identical. The sheet asks for a date
-// LATER than today, because a review due today is a review due the moment the
-// machine joins; the server refuses only a date EARLIER than the client's
-// today, so a request written a minute before midnight is not refused for
-// arriving a minute after it.
-//
-// It is this side's rule either way and not the engine's:
-// ValidateTemporaryWordPair accepts a past date, and the identity reader never
-// compares the date to a clock.
-func ReviewDateBefore(reviewBy, clientToday string) bool {
-	if !ValidDay(reviewBy) || !ValidDay(clientToday) {
-		return false
-	}
-	// Both are zero-padded YYYY-MM-DD, so their lexical order is their order
-	// in time and no zone is involved in the comparison at all.
-	return reviewBy < clientToday
 }
