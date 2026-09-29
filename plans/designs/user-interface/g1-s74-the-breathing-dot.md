@@ -432,3 +432,5 @@ with main `75c5d1eae` (batch 20) and the landing checks green at
 wall-time and path-manifest audits, the structural tests, the static
 gate with its dead-code check; the whole `cmd/metasystem` package left
 to the batch's suite. The landing commit is the batch's.
+
+Landed on main in m1e batch 21 as `17002c04d` (2026-09-29); 7878 restarted onto it from human:11.
