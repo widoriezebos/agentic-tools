@@ -606,6 +606,44 @@ func TestIntentWorkStatusPrintsTheBatchWaitLine(t *testing.T) {
 	}
 }
 
+// TestIntentWorkStatusSaysWhatTheWaitIsUsedFor (R27, R23, U10b-3): each
+// member's work status and status print the batch's wait line with its
+// meanwhile clause, here a partial red nobody was named for.
+func TestIntentWorkStatusSaysWhatTheWaitIsUsedFor(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	landing := t.TempDir()
+	claim := batch.Claim{Machine: "landing", Lineage: "l", Epoch: 1, Revision: 1, AccountingRevision: 1}
+	record := batch.Record{Schema: 1, BatchID: "01j5x00000000000000000wa01", State: batch.StateOpen,
+		Units: []batch.Unit{{GoalID: "standing-validation", Chain: "c", Claim: claim, State: batch.UnitJoined},
+			{GoalID: "goal-b", Chain: "c", Claim: claim, State: batch.UnitJoined}},
+		Wait: &batch.WaitState{Reason: "r", ProofCost: 40 * time.Minute, Basis: "default", For: []batch.Waited{
+			{Goal: "goal-x", Seat: "m1b", Stage: board.StageBuild, ExpectedAt: now.Add(8 * time.Minute)}}},
+		Early: &batch.Early{Shape: []string{"standing-validation", "goal-b"}, Tree: "tip", Cheap: "red",
+			Finding: &batch.EarlyFinding{Group: "go-unit", Attempt: "proof-1", Log: "/logs/unit.log"}}}
+	if err := batch.NewStore(landing, identity.KernelProber{}).Create(record); err != nil {
+		t.Fatal(err)
+	}
+	want := "batch 01j5x00000000000000000wa01 waits for goal-x on m1b (build, ~8 min); a separate proof costs ~40 min (default); " +
+		"meanwhile: partial red: go-unit on standing-validation+goal-b; decided at the batch proof"
+	b := newDeliveryBed(t)
+	b.owners.now = func() time.Time { return now }
+	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landing, true, nil }
+	code, result := b.do("work", "status", "standing-validation")
+	data, _ := result.Data.(map[string]any)
+	if code != 0 || data == nil || data["batch"] == nil || data["batch"].(map[string]any)["line"] != want {
+		t.Fatalf("work status: code %d data %+v", code, result.Data)
+	}
+	p := newProcessBed(t)
+	owners := p.owners()
+	owners.delivery.now = func() time.Time { return now }
+	owners.delivery.batchRoot = func(string, time.Time) (string, bool, error) { return landing, true, nil }
+	owners.delivery.boardView = func(string, time.Time) board.View { return board.View{} }
+	if code, stdout, _ := p.run(owners, "status"); code != 0 || !slices.Contains(strings.Split(strings.TrimRight(stdout, "\n"), "\n"), want) {
+		t.Fatalf("status = %d:\n%s", code, stdout)
+	}
+}
+
 // TestStatusShowsTheBoardAndEachUnfinishedBatch (R23, R24, U10d): status
 // prints the board block from a direct read of the fixture host (one line
 // per armed seat, in local time, saying bridge absent with no socket) and

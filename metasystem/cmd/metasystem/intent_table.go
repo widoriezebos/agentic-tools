@@ -547,6 +547,8 @@ func hiddenIntentEntries() []intentCommand {
 		entry("app", "serve", "internal/applaunch/launch.go"),
 		entry("ui", "serve", "internal/ui/lifecycle/launch.go"),
 		entry("ui", "tools", "internal/ui/partner/runtime.go"),
+		entry("landing", "observe", "cmd/metasystem/landing_path.go"),
+		entry("landing", "workspace", "cmd/metasystem/landing_path.go"),
 	}
 }
 
@@ -595,6 +597,9 @@ func (inv *intentInvocation) statusBoardLines() ([]string, board.View) {
 	now := inv.boardNow()
 	view := inv.hostBoardView(now)
 	lines := view.Lines(now, time.Local, inv.input.switched("verbose"))
+	if line := inv.statusLaneLine(); line != "" {
+		lines = append(lines, line)
+	}
 	for _, record := range inv.unfinishedBatches() {
 		lines = append(lines, batchStatusLine(record, now))
 	}

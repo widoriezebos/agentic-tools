@@ -168,8 +168,12 @@ reduced motion the dot stands still and the clock still counts.
   wait", and the human is not blocked; a breath says "present".
 - D3. **Three places, and the title.** (a) The answer's place: D1
   replaces the paragraph. (b) The drawer's title carries the dot alone
-  while a turn runs, open or closed, for when the transcript is
-  scrolled away. (c) The closed bar while a turn runs: the disabled
+  while a turn runs and the drawer is open, for when the transcript is
+  scrolled away; closed, the bar's live line is the mark, and a second
+  dot beside it would say one thing twice (amended after the build's
+  screenshots and Sol's read, 2026-09-29). On the phone, where the
+  title is hidden, the dot alone stands at the bar's start while the
+  drawer is open. (c) The closed bar while a turn runs: the disabled
   field is replaced by the live line and a Stop button that calls the
   store's stop; the Seeing chip, the proposal bar and the handed chip
   stay where they are; when the turn ends the field returns with the
@@ -348,3 +352,83 @@ confirmation read on S74-01 alone.
 
 **Confirmation read (2026-09-29, at `08123ffde`):** S74-01 confirmed
 answered, zero material. The loop is CLOSED.
+
+## Built (2026-09-29)
+
+Step 1 built by Claude on Opus 5.5 in worktree `agentic-tools-dot`,
+branch `g1-s74` from the design's own commit on main (`2adc52d0d`),
+in three commits: the Go half (`facbad3bc`: the running turn holds
+the instant it was admitted, the 202 carries it beside the turn's id
+and the snapshot while the turn runs; the host records each call's
+start order and, when a call ends, sends a doing beat naming the
+earliest-started call still in flight or nothing, and a new turn
+clears calls an earlier one left; the walkthrough's fake Partner
+gains a pause flag), the page with the rebuilt bundle (`4a3161fec`:
+one live line component with the dot, the words, the tally counted as
+the Looked line counts, and the clock, the words and tally a polite
+status span and the rest hidden; the breath keyframes over a halo
+token registered in the token table and named as translucent
+decoration in the contrast test; the answer's place, the drawer's
+title, the closed bar with Stop, the title's leading mark through
+`titleFor` from both callers; the shell's fleet read and the rail's
+Fleet badge with one line per running job, the Running column's dot;
+the cut guard's rows carrying each timer's name and count with the
+live line's one `setInterval`), and the walkthrough's findings
+(`b556dc52f`: a stale snapshot read before the turn was admitted no
+longer wipes the running turn, the phone hides the title's dot with
+the title, the shell writes the title in a layout effect so a
+document's name is written last). Report:
+`~/LocalStorage/agentic-tools-evidence/breathing-dot-20260929/
+opus-build-report-breathing-dot.md`; screenshots under
+`breathing-dot/`; the accepted mockup beside them. Coverage: partner
+85.1 of 80.1, httpd 88.7 of 88.5.
+
+Departures, each recorded there: `loaded` keeps a running turn a
+snapshot older than it would have wiped (the race predates the slice
+and was harmless until the start had to survive it); `marker-fg` on
+`surface` and `surface-2` added to the contrast pairs, since ", N
+failed" is text and the marker colour itself is below 4.5:1; the
+walkthrough's `-partner-pause` flag; a `fakeacp` knob narrowing the
+open call to certain prompts for the stale-call test.
+
+**Sol's read** (`g1-s74-sol-read.md`, verbatim): three material
+findings, all agreed. SOL-S74-01, the stale-snapshot branch kept the
+turn but took the snapshot's messages, so the just-asked question was
+gone and the answer arrived without it; SOL-S74-02, the phone rule hid
+the title's dot in both states, so an open phone drawer showed no dot
+once the answer's words replaced the line; SOL-S74-03, the shell's
+title write moved to a layout effect while the document pane's
+cleanup stayed passive, so leaving a document left "Project" on the
+destination's title. On SOL-S74-02 the author amended D3b: the title
+carries the dot only while the drawer is open, since closed the bar's
+line is the mark and a second dot beside it said one thing twice.
+**Fix round 1** (`2e6020dfc`, front end only): the `before` branch
+keeps the page's own messages, held through the terminal beat; the
+title dot renders only open and busy, and the phone rule no longer
+hides it, the lone dot at the bar's start; the document pane's
+cleanup became a layout effect while its write stayed passive, the
+builder's reasoned departure from the ruling's letter (both in the
+layout phase, the shell's write would land last and the document's
+name would be lost), proven in the browser by a table of eight title
+readings on the base, on the ruling taken literally, and as committed.
+**Sol's re-read** of the fix commit: SOL-S74-01, -02 and -03 fixed,
+the departure on the title judged justified by the table, no new
+material finding, zero material.
+
+Residuals, none material at first use: the `startedAt` fields are
+optional in the page's types though the server always sends them; the
+document pane still passes no unread count, as before this slice, so
+the Project index's title carries no "(N)" while a document's cleanup
+was the last write; the shell and the Fleet page each read the fleet
+(S74-06); the interval's mount and clear and the shell's fleet read
+are held by the walkthrough and the cut guard, not a unit test, since
+effects do not run in the static-markup tests.
+
+Handed to the engine seat's integration batch as `origin/g1-s74` on
+2026-09-29 under the one-batch-per-machine rule, the branch merged
+with main `75c5d1eae` (batch 20) and the landing checks green at
+`0dd5d5c6b`: the bundle current, vitest 1808 and typecheck, partner
+85.1 of 80.1 and httpd 88.7 of 88.5, every interface package, the
+wall-time and path-manifest audits, the structural tests, the static
+gate with its dead-code check; the whole `cmd/metasystem` package left
+to the batch's suite. The landing commit is the batch's.

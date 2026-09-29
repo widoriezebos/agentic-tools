@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -172,7 +171,7 @@ func batchDiagnosticArgs(root string, request batch.DiagnosticRequest, resultPat
 }
 
 var batchDiagnosticExecute = func(binary string, args []string, dir string, environment []string) ([]byte, int, error) {
-	command := exec.Command(binary, args...)
+	command := batchProofCommand(binary, args, false)
 	command.Dir, command.Env = dir, environment
 	output, err := command.CombinedOutput()
 	status := -1

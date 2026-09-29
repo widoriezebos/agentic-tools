@@ -459,6 +459,8 @@ export type Snapshot = {
   activity: string[] | null;
   /** What the running turn is at, in one line, kept nowhere afterwards. */
   doing: string;
+  /** The instant the running turn was admitted, RFC 3339, or "" when idle. */
+  startedAt?: string;
   /** What the running turn has read so far. */
   looked: Look[] | null;
   /** What the running turn has offered so far, so a reload keeps the cards. */
@@ -632,11 +634,17 @@ export async function loadPartner(signal?: AbortSignal, conversation = ""): Prom
 }
 
 /**
+ * A question the server accepted: the turn's id, and the instant it was
+ * admitted, which the live line's clock counts from.
+ */
+export type Accepted = { turn: string; startedAt?: string };
+
+/**
  * Ask one question. The key is the page's own, so the same send twice is the
  * same turn once and a retry after a lost answer never asks twice.
  */
-export async function sendTurn(key: string, text: string, about: Page, conversation = ""): Promise<{ turn: string }> {
-  return request<{ turn: string }>(TURNS, { key, text, about, conversation });
+export async function sendTurn(key: string, text: string, about: Page, conversation = ""): Promise<Accepted> {
+  return request<Accepted>(TURNS, { key, text, about, conversation });
 }
 
 /**
@@ -649,8 +657,8 @@ export async function sendTrouble(
   trouble: Trouble,
   about: Page,
   conversation = "",
-): Promise<{ turn: string }> {
-  return request<{ turn: string }>(TURNS, { key, text: "", about, conversation, trouble });
+): Promise<Accepted> {
+  return request<Accepted>(TURNS, { key, text: "", about, conversation, trouble });
 }
 
 /**

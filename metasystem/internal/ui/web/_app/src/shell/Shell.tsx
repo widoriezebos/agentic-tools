@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator, useGroupRef, type Layout, type LayoutChangedMeta } from "react-resizable-panels";
 import { Navigate, Route, Routes, useLocation } from "react-router";
 
@@ -45,6 +45,7 @@ import {
 } from "../storage";
 import { applyTheme, effectiveTheme, systemIsDark, watchSystemTheme, type ThemePreference } from "../theme";
 import { titleFor, type Identity } from "../title";
+import { useFleetWorking } from "./fleetWorking";
 
 /**
  * The shell: a rail, a header, the work area, and the Project Partner drawer
@@ -147,7 +148,10 @@ function Frame() {
   // Ask on a card, and Cmd/Ctrl+J, ask for the composer by counting. The
   // drawer opens for them, because a composer nobody can see is a composer
   // that must never be given the caret.
-  const { wanted, revealed, clearShowing } = usePartner();
+  const { wanted, revealed, clearShowing, busy: working } = usePartner();
+  // What the fleet is working on, for the rail's Fleet row: held here, above
+  // both of the rails the shell draws.
+  const fleetWorking = useFleetWorking();
 
   // The stored height is read once, as the layout this group opens with; from
   // there the group owns the arithmetic and a drag is what changes it.
@@ -216,9 +220,12 @@ function Frame() {
     applyTheme(document.documentElement, effectiveTheme(theme, systemDark));
   }, [theme, systemDark]);
 
-  useEffect(() => {
-    document.title = titleFor(sectionTitle, identityOf(workspace), unread);
-  }, [sectionTitle, workspace, unread]);
+  // Before the panes' own effects rather than after them: a turn starting or
+  // ending changes both this title and a document's, and the document's names
+  // more, so it has to be the one written last.
+  useLayoutEffect(() => {
+    document.title = titleFor(sectionTitle, identityOf(workspace), unread, working);
+  }, [sectionTitle, workspace, unread, working]);
 
   // The rail's sheet belongs to the phone. Crossing out of it closes the
   // sheet rather than leaving a modal layer over a layout that has no rail in
@@ -449,6 +456,7 @@ function Frame() {
               onToggle={toggleRail}
               theme={theme}
               onTheme={chooseTheme}
+              working={fleetWorking}
             />
           )}
           <div className="ms-shell-column">
@@ -531,6 +539,7 @@ function Frame() {
                 onToggle={toggleRail}
                 theme={theme}
                 onTheme={chooseTheme}
+                working={fleetWorking}
                 onNavigate={() => {
                   setRailSheetOpen(false);
                 }}

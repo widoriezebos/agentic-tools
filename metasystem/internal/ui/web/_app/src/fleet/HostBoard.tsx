@@ -3,10 +3,12 @@ import { useCallback, useEffect, useState } from "react";
 import { onFleetEvent, onStreamOpen } from "../notifications/stream";
 import { Trouble } from "../shell/Trouble";
 import { type BoardPayload, failureMessage, loadBoard } from "./api";
+import { LaneBlock } from "./LandingLane";
 
 /**
  * This host's board (batch-lane design D14-r2, U10d): one line per armed
- * seat of this host, saying what it works on and how far it is.
+ * seat of this host, saying what it works on and how far it is, under the
+ * host's landing lane (U12), which the same response carries.
  *
  * It reads when the Fleet page shows it, and again on the same `fleet` event
  * and reconnect the fleet re-reads on; it holds no timer. A read that fails
@@ -55,7 +57,20 @@ export function HostBoard() {
       </section>
     );
   }
-  return board === null ? null : <BoardBlock board={board} />;
+  return board === null ? null : <HostBlocks board={board} />;
+}
+
+/**
+ * What one board read draws: the host's landing lane above its seats. Both
+ * come from the one response, so the lane adds no request of its own.
+ */
+export function HostBlocks({ board }: { board: BoardPayload }) {
+  return (
+    <>
+      <LaneBlock lane={board.lane} />
+      <BoardBlock board={board} />
+    </>
+  );
 }
 
 /** The block itself, from the server's payload. */

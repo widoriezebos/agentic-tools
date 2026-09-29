@@ -62,6 +62,9 @@ const pairs: { front: string; back: string; needs: number; where: string }[] = [
   { front: "danger", back: "surface-2", needs: TEXT, where: "the identity conflict" },
   { front: "danger", back: "surface", needs: TEXT, where: "an error boundary's heading" },
   { front: "ok", back: "surface-2", needs: NON_TEXT, where: "the connected dot" },
+  { front: "ok", back: "surface", needs: NON_TEXT, where: "the live dot in the transcript" },
+  { front: "marker-fg", back: "surface", needs: TEXT, where: "a failed read on the live line in the transcript" },
+  { front: "marker-fg", back: "surface-2", needs: TEXT, where: "a failed read on the live line in the bar" },
   { front: "ok-fg", back: "ok-bg", needs: TEXT, where: "a done record's status chip" },
   { front: "border-strong", back: "bg", needs: NON_TEXT, where: "the separator's resting line" },
   { front: "border-strong", back: "surface", needs: NON_TEXT, where: "an input boundary" },
@@ -122,8 +125,9 @@ describe("contrast", () => {
   it("asserts every colour token that is drawn on another", () => {
     const asserted = new Set(pairs.flatMap((pair) => [pair.front, pair.back]));
     const unasserted = [...themes.light.keys()].filter((name) => !asserted.has(name));
-    // border is a decorative rule, the scrim and the shadow are translucent,
-    // and surface-3 appears as a background above.
-    expect(unasserted.sort()).toEqual(["border", "scrim", "shadow"]);
+    // border is a decorative rule, the scrim, the shadow and the live dot's
+    // halo are translucent decoration, and surface-3 appears as a background
+    // above.
+    expect(unasserted.sort()).toEqual(["border", "ok-halo", "scrim", "shadow"]);
   });
 });

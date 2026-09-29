@@ -36,6 +36,7 @@ import {
   RESERVED_MEANING,
   rolesAlive,
   rolesNeedingAttention,
+  runningNow,
   runningWords,
   seatName,
   seenTitle,
@@ -55,6 +56,7 @@ import { Pane } from "../panes/Pane";
 import { goalPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, Hint } from "../shell/controls";
+import { LiveDot } from "../shell/LiveLine";
 import { useOffersRefresh } from "../shell/refresh";
 import { readFleetOpen, writeFleetOpen } from "../storage";
 import { captureOfFleet } from "./capture";
@@ -494,6 +496,9 @@ function MachineRow({
         </td>
         <td className="ms-fleet-cell">
           <span className="ms-fleet-label">Running</span>
+          {/* The rail's dot, before the words of a machine that is working;
+              the words themselves are the table's own (g1-s74 D5). */}
+          {runningNow(machine).length > 0 && <LiveDot />}
           <span>{workingWords(machine, now)}</span>
         </td>
         <td className="ms-fleet-cell ms-fleet-cell--holds">

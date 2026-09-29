@@ -40,6 +40,9 @@ type Script struct {
 	// Activity, when set, is a tool call the Partner makes on the way, which
 	// the drawer shows as a muted line.
 	Activity string
+	// ActivityWhen, when set, narrows Activity to the prompts that carry this
+	// text, so one turn can leave a call running that the next does not make.
+	ActivityWhen string
 	// Permission, when set, is one permission request the client will refuse,
 	// with this tool title and kind.
 	Permission     string
@@ -324,7 +327,7 @@ func (s *server) prompt(id json.RawMessage, asked string) {
 			break
 		}
 	}
-	if s.script.Activity != "" {
+	if s.script.Activity != "" && strings.Contains(asked, s.script.ActivityWhen) {
 		s.notify("session/update", map[string]any{
 			"sessionId": SessionID,
 			"update": map[string]any{

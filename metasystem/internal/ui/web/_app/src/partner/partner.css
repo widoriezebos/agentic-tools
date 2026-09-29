@@ -237,39 +237,17 @@
   overflow-x: auto;
 }
 
-/* --------------------------------------------------------- the working line -- */
+/* ------------------------------------------------------------ the live line -- */
 
 /*
- * While a turn runs, one italic line stands where the answer will be, saying
- * what the Partner is doing now. The pulse is the whole of the motion and it is
- * an animation rather than anything that ticks, so a reduced-motion preference
- * takes it away and leaves the words.
+ * While a turn runs, the live line stands where the answer will be (g1-s74
+ * D1). Its motion is the dot's, drawn by the shell's stylesheet with the bar's
+ * copy of the same line; the words stay still and legible.
  */
-.ms-partner-working {
+.ms-partner-live {
   margin: 0;
   font-size: 14px;
   line-height: 20px;
-  font-style: italic;
-  color: var(--ms-text-3);
-  animation: ms-partner-pulse 1800ms ease-in-out infinite;
-}
-
-@keyframes ms-partner-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.55;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ms-partner-working {
-    animation: none;
-    opacity: 1;
-  }
 }
 
 /* ----------------------------------------------------------- the meta line -- */
