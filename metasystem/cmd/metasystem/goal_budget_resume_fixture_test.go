@@ -104,10 +104,6 @@ func (f *goalBudgetResumeFixture) runBudget(args []string, prove goalAuthorityPr
 	return runGoalBudgetWithInputs(args, prove, f.commandNow, f.dependencies(), f.binding)
 }
 
-func (f *goalBudgetResumeFixture) runResume(args []string, prove goalAuthorityProver) int {
-	return runGoalResumeWithInputs(args, prove, f.commandNow, f.dependencies(), f.binding)
-}
-
 // runBudgetTo and runResumeTo run the command on the caller's own streams.
 // A capture of the process's os.Stdout/os.Stderr also received every
 // parallel test's lines ("goal open does not take --blocker", "mission is
