@@ -13,9 +13,11 @@ import {
   unblockGoal,
   unparkGoal,
   withdrawGoal,
+  BacklogError,
   type Backlog,
 } from "../backlog/api";
 import { startCandidate } from "../review/candidate";
+import { answerWords, CritiqueError, sendToCritique } from "../project/critiquing";
 
 /**
  * The impure half of applying what the Partner proposed: the read before a run,
@@ -114,8 +116,32 @@ async function actOf(line: Line): Promise<Backlog | null> {
     case "run":
       await startCandidate(dispatch.goal);
       return loadBacklog();
+    // A design's critique answers the engine's own words, not a backlog. The
+    // engine's refusal is a refusal; a failure may have started something, so
+    // it is unresolved; everything else, a round reading included, is applied.
+    case "critique":
+      await critique(dispatch.design, dispatch.goal, dispatch.toolCalls, dispatch.after);
+      return loadBacklog();
     default:
       return null;
+  }
+}
+
+async function critique(design: string, goal: string, toolCalls: number, after: number): Promise<void> {
+  const resource = `design review ${design}`;
+  try {
+    const answered = await sendToCritique(design, { goal, toolCalls, after });
+    if (answered.outcome === "refused") {
+      throw new BacklogError(resource, 409, answerWords(answered).join("; "), "engine");
+    }
+    if (answered.outcome === "failed") {
+      throw new BacklogError(resource, 500, answerWords(answered).join("; "), "engine");
+    }
+  } catch (error: unknown) {
+    if (error instanceof CritiqueError) {
+      throw new BacklogError(resource, error.status, error.message, error.code, error.signIn);
+    }
+    throw error;
   }
 }
 

@@ -1594,3 +1594,188 @@ a.ms-project-row-scope:focus-visible {
 .ms-facts-about-edit .ms-pick {
   flex: 1 1 240px;
 }
+
+/* The loop from the room (g1-s66): a design's critique on its own page. The
+   block reads as the Work section does — a small uppercase title, then rows —
+   and a round's cards are bordered surfaces a human decides one at a time. */
+.ms-critique {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ms-border);
+}
+
+.ms-critique-line {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-critique-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--ms-accent);
+  background: var(--ms-surface-2);
+}
+
+.ms-critique-said,
+.ms-critique-said-line {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.ms-critique-said-line {
+  font-family: var(--ms-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--ms-text-2);
+}
+
+.ms-critique-answer,
+.ms-critique-presses {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.ms-critique-round {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-critique-round-title {
+  margin: 8px 0 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.ms-critique-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-critique-card,
+.ms-section-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: var(--ms-surface);
+}
+
+.ms-critique-card[data-decided="yes"] {
+  background: var(--ms-surface-2);
+}
+
+.ms-critique-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ms-critique-claim {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.ms-critique-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ms-chip.ms-critique-anchor {
+  color: var(--ms-accent);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.ms-chip.ms-critique-anchor:hover,
+.ms-chip.ms-critique-anchor:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-critique-asks,
+.ms-critique-decided {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-critique-press {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.ms-critique-press select,
+.ms-critique-press input,
+.ms-critique-press textarea {
+  max-width: 100%;
+  font: inherit;
+}
+
+.ms-critique-prose,
+.ms-section-lines {
+  margin: 0;
+  padding: 8px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--ms-surface-2);
+  border-radius: 4px;
+}
+
+.ms-section-sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.ms-section-side {
+  min-width: 0;
+}
+
+.ms-section-side-title {
+  margin: 0 0 4px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-section-line {
+  display: block;
+}
+
+.ms-section-line[data-changed="yes"] {
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+}

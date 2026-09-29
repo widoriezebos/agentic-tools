@@ -67,8 +67,8 @@ export const emptyIntake: Intake = {
  * page. It is a starting point and nothing more — the human edits the line
  * freely, and the rest of the intake is as empty as it ever was.
  */
-export function intakeFor(intent: string): Intake {
-  return { ...emptyIntake, intent: intent.trim() };
+export function intakeFor(intent: string, nextStep = ""): Intake {
+  return { ...emptyIntake, intent: intent.trim(), nextStep: nextStep.trim() };
 }
 
 export const emptyRisk: Risk = {

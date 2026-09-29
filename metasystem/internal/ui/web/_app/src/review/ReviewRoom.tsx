@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { useLocation, useNavigate } from "react-router";
+import { NavLink, useLocation, useNavigate } from "react-router";
 
 import { loadChanges } from "./api";
 import { DeskAnchors } from "./anchors";
@@ -41,6 +41,7 @@ import { DepositCard } from "../partner/Deposit";
 import { usePartner } from "../partner/store";
 import { Transcript } from "../partner/Transcript";
 import { Help } from "../help/Help";
+import { OPEN_FROM, openGoalPath } from "../project/critiquing";
 import { pilesLine } from "../project/pane";
 import { backlogPath, documentPath, roomPath, SITTING_PREFIX } from "../routes";
 import { useAbout } from "../shell/about";
@@ -637,7 +638,7 @@ export function EndWays({
  * again on the record's page afterwards.
  */
 function ShapingEndSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { closeSitting, endWithoutRecording, sittingBusy, sittingRefusal } = usePartner();
+  const { closeSitting, endWithoutRecording, sittingBusy, sittingRefusal, sitting } = usePartner();
   return (
     <Sheet
       open={open}
@@ -658,6 +659,7 @@ function ShapingEndSheet({ open, onOpenChange }: { open: boolean; onOpenChange: 
       )}
       <EndShapingWays
         busy={sittingBusy}
+        design={sitting?.purpose === "shape a design" ? sitting.subject.id : ""}
         onDraft={() => {
           void closeSitting().then(
             () => {
@@ -683,8 +685,24 @@ function ShapingEndSheet({ open, onOpenChange }: { open: boolean; onOpenChange: 
   );
 }
 
-/** A shaping End sheet's two ways out, and no verdict (g1-s67 D7). */
-export function EndShapingWays({ busy, onDraft, onWithout }: { busy: boolean; onDraft: () => void; onWithout: () => void }) {
+/**
+ * A shaping End sheet's two ways out, and no verdict (g1-s67 D7) — and, in a
+ * sitting on a design, the way on to the goal that builds it (g1-s66 D5): the
+ * design's page, where the New goal sheet opens prefilled from the Outcome once
+ * it is recorded.
+ */
+export function EndShapingWays({
+  busy,
+  onDraft,
+  onWithout,
+  design = "",
+}: {
+  busy: boolean;
+  onDraft: () => void;
+  onWithout: () => void;
+  /** The design the sitting is on, or "" in a sitting on an intent. */
+  design?: string;
+}) {
   return (
     <div className="ms-sitting-foot">
       <Button primary disabled={busy} onClick={onDraft}>
@@ -693,6 +711,12 @@ export function EndShapingWays({ busy, onDraft, onWithout }: { busy: boolean; on
       <Button disabled={busy} onClick={onWithout}>
         {END_WITHOUT}
       </Button>
+      {design !== "" && (
+        <p className="ms-sitting-said">
+          <NavLink to={openGoalPath(documentPath(design))}>{OPEN_FROM}</NavLink>: on the design&apos;s page, with the intent and
+          the next step taken from the Outcome you record.
+        </p>
+      )}
     </div>
   );
 }

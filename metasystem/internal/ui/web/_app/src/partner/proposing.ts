@@ -272,6 +272,8 @@ const WORD: Readonly<Record<string, string>> = {
   // The review's verdict and the goal's candidate (g1-s69 §6).
   "review-goal": "Review",
   "app-start": "Run",
+  // A design's critique (g1-s66 D1): design review, sent or answering a round.
+  "design-review": "Send to critique",
 };
 
 export function verbWord(verb: string): string {
@@ -350,6 +352,14 @@ export function argumentsOf(line: Line): readonly Argument[] {
       add("Record", fields.record);
       add("Verdict", fields.verdict);
       add("Work", fields.work);
+      break;
+    // The design, the goal that funds its critique, the reader budget, and the
+    // round a line answers with its own decisions file.
+    case "design-review":
+      add("Design", fields.design);
+      add("Funded by", line.goal);
+      add("Reader budget", fields.toolCalls === undefined ? undefined : `${fields.toolCalls} tool calls`);
+      add("Answers", fields.after === undefined ? undefined : `round ${fields.after}, with ${fields.dispositions ?? ""}`);
       break;
     case "block-goal":
     case "unblock-goal":
@@ -1037,7 +1047,8 @@ export type Dispatch =
   | { act: "open"; goal: NewGoal }
   | { act: "abandon"; id: string; because: string; successor: string }
   | { act: "review"; id: string; record: string; verdict: string; work: string }
-  | { act: "run"; goal: string };
+  | { act: "run"; goal: string }
+  | { act: "critique"; design: string; goal: string; toolCalls: number; after: number };
 
 /**
  * What this line sends, composed from the route body's own fields — or null
@@ -1092,6 +1103,13 @@ export function dispatchOf(line: Line): Dispatch | null {
       };
     case "app-start":
       return { act: "run", goal: line.goal };
+    // The route derives the round's decisions file from the round answered,
+    // which is the file the grammar held the line to.
+    case "design-review":
+      return {
+        act: "critique", design: fields.design ?? "", goal: line.goal,
+        toolCalls: Number(fields.toolCalls ?? "0"), after: Number(fields.after ?? "0"),
+      };
     default:
       return null;
   }

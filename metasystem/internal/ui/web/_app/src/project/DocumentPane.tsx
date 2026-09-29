@@ -1,5 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 
 import {
@@ -27,6 +27,8 @@ import {
   type Editor as EditorState,
   type Outcome,
 } from "./editing";
+import { Critique } from "./Critique";
+import { OPEN_FROM, OPEN_GOAL_PARAM, SEND } from "./critiquing";
 import { Editor } from "./Editor";
 import { Markdown } from "./Markdown";
 import { outlineOf, useReadingRow, type OutlineRow } from "./outline";
@@ -55,6 +57,7 @@ import {
 } from "./pane";
 import { dateOf, ownership, timeOf } from "./ProjectPane";
 import "./reading.css";
+import { nextStepFor, outcomeParagraph } from "./sections";
 import { Sheet, type Done, type Request } from "./Sheet";
 import { STATUSES } from "./writing";
 import { loadBacklog, type Backlog } from "../backlog/api";
@@ -118,6 +121,14 @@ type WorkActions = {
   refusal: string;
   onMarkDone: () => void;
   onNewGoal: () => void;
+  /**
+   * What the act that opens a goal is called: Open a goal from this design
+   * where the design has an Outcome to take the goal from (g1-s66 D5), and the
+   * act it always was where it has none.
+   */
+  newGoal: string;
+  /** Send to critique, which opens its sheet (g1-s66 D1). */
+  onCritique: () => void;
 };
 
 /**
@@ -344,6 +355,15 @@ function Read({
   const [scopeChosen, setScopeChosen] = useState<string[] | null>(null);
   const [scopeBusy, setScopeBusy] = useState(false);
   const [scopeRefusal, setScopeRefusal] = useState("");
+  // Whether Send to critique asked for its sheet (g1-s66 D1).
+  const [sendAsked, setSendAsked] = useState(false);
+  // A goal from this design starts on its Outcome's first paragraph and the
+  // record it continues from, where the design has an Outcome (g1-s66 D5).
+  const outcome = useMemo(() => outcomeParagraph(document.source), [document.source]);
+  const goalStates = useMemo(
+    () => Object.fromEntries((pane?.goals ?? []).map((goal) => [goal.id, goal.state])),
+    [pane],
+  );
 
   // What the drawer says this page is about: the record, and the section of it
   // being read, from the outline the reader already follows. The first heading
@@ -510,7 +530,24 @@ function Read({
   const working: WorkActions | null =
     head === null || head.kind !== "design"
       ? null
-      : { work, busy, refusal, onMarkDone: markDone, onNewGoal: askForAGoal };
+      : {
+          work, busy, refusal, onMarkDone: markDone, onNewGoal: askForAGoal,
+          newGoal: outcome === "" ? NEW_GOAL : OPEN_FROM,
+          onCritique: () => {
+            setSendAsked(true);
+          },
+        };
+
+  // The End sheet of a sitting on this design sends the human here to open the
+  // goal once the Outcome is recorded: the address asks for the sheet, once.
+  const askedForGoal = useRef(false);
+  useEffect(() => {
+    if (askedForGoal.current || working === null || !new URLSearchParams(globalThis.location.search).has(OPEN_GOAL_PARAM)) {
+      return;
+    }
+    askedForGoal.current = true;
+    askForAGoal();
+  });
 
   /**
    * Saying what this record is about, as the whole list.
@@ -625,6 +662,19 @@ function Read({
                 />
               )}
               {document.state !== "readable" && <p className="ms-project-reason">{document.reason}</p>}
+              {/* The design's critique, sent, read and answered here (g1-s66). */}
+              {working !== null && document.state === "readable" && (
+                <Critique
+                  key={document.id}
+                  document={document}
+                  goalStates={goalStates}
+                  sendAsked={sendAsked}
+                  onSendClosed={() => {
+                    setSendAsked(false);
+                  }}
+                  onSaved={onSaved}
+                />
+              )}
               {/* What the human wrote to themselves about this document, under
                   its head where they will meet it again, and never over the
                   editor: a note about a file is not a note about the draft of
@@ -665,7 +715,8 @@ function Read({
       {goalSheet !== null && (
         <OpenSheet
           backlog={goalSheet}
-          intent={document.title}
+          intent={outcome === "" ? document.title : outcome}
+          nextStep={outcome === "" ? "" : nextStepFor(document.id, document.source)}
           onClose={() => {
             setGoalSheet(null);
           }}
@@ -887,6 +938,13 @@ function RecordFacts({
       </h1>
       <p className="ms-facts-line">
         <Status status={head.status} onChange={onStatusChange} />
+        {/* Beside the status, because sending a design to critique is the next
+            thing its status asks for (g1-s66 §3). */}
+        {working !== null && document.state === "readable" && (
+          <button type="button" className="ms-project-act" onClick={working.onCritique}>
+            {SEND}
+          </button>
+        )}
         {head.id !== "" && (
           <span className="ms-mono" title={head.id}>
             {shortID(head.id)}
@@ -900,6 +958,7 @@ function RecordFacts({
           document={document}
           onEdit={onEdit}
           onNewGoal={working === null ? null : working.onNewGoal}
+          newGoal={working?.newGoal}
           busy={working?.busy ?? ""}
         />
         <span>
@@ -1043,6 +1102,7 @@ export function FileActions({
   document: read,
   onEdit,
   onNewGoal,
+  newGoal = NEW_GOAL,
   busy,
   now = new Date(),
 }: {
@@ -1052,6 +1112,8 @@ export function FileActions({
   onEdit: (() => void) | null;
   /** Open a goal for this design, where the record is one. */
   onNewGoal: (() => void) | null;
+  /** What that act is called on this design. */
+  newGoal?: string;
   /** What is already in flight, by its own label, or "". */
   busy: string;
   /** The moment the door's "you stepped out" is counted from. */
@@ -1153,7 +1215,7 @@ export function FileActions({
       />
       {onNewGoal !== null && (
         <button type="button" className="ms-project-act" disabled={busy !== ""} onClick={onNewGoal}>
-          {NEW_GOAL}
+          {newGoal}
         </button>
       )}
       <button type="button" className="ms-project-act" onClick={copy}>

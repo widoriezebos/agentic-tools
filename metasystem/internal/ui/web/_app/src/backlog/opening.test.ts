@@ -165,6 +165,15 @@ describe("the intake a sheet opens on", () => {
     });
   });
 
+  // A goal opened from a design's outcome knows its next step too (g1-s66 D5).
+  it("starts on the next step it was given, beside the intent", () => {
+    expect(intakeFor("Build the loop.", "  Continue from the record plans/designs/x.md: build step 1 as its §5 says ")).toEqual({
+      ...emptyIntake,
+      intent: "Build the loop.",
+      nextStep: "Continue from the record plans/designs/x.md: build step 1 as its §5 says",
+    });
+  });
+
   it("is the empty intake where nothing knows what the goal is for", () => {
     expect(intakeFor("")).toEqual(emptyIntake);
   });

@@ -215,6 +215,7 @@ func run(ctx context.Context, args []string) error {
 	if *holder != "" && *holder != "none" && *holder != string(holderAttempt) && *holder != string(holderNeedsWork) {
 		return fmt.Errorf("-holder takes none, attempt or needs-work, not %q", *holder)
 	}
+	critiqued := newLoopFixture(checkout)
 	published := &verdicts{published: map[string][]byte{}, holder: holderAnswers(strings.TrimPrefix(*holder, "none"))}
 	running := &candidates{runs: map[string]httpd.Candidate{}, git: fixtureGit{branches: branchesFile(checkout)},
 		noContract: *launchContract == "absent"}
@@ -376,6 +377,14 @@ func run(ctx context.Context, args []string) error {
 			return project.SetStatus(roots, id, status)
 		},
 		AddRecordGoal: func(id, goal string) (project.Document, error) {
+			// A goal opened from a design's Outcome (g1-s66 D5) is planted in
+			// the fixture ledger first, so the Goals line can be seen gaining
+			// its id; any other goal this server opened stays in the canned
+			// tree alone, and naming it is refused as before.
+			if next := state.nextStepOf(goal); strings.HasPrefix(next, "Continue from the record ") {
+				planted := filepath.Join(checkout, "plans", "goals", goal+".md")
+				_ = os.WriteFile(planted, []byte("# "+goal+"\n\n- State: queued\n- Intent: "+state.intentOf(goal)+"\n"), 0o644)
+			}
 			return project.AddGoal(roots, id, goal, time.Now().UTC())
 		},
 		SetRecordGoals: func(id string, goals []string) (project.Document, error) {
@@ -389,6 +398,13 @@ func run(ctx context.Context, args []string) error {
 			return state.review(published, id, asked)
 		},
 		Candidate: running.act,
+		// The loop from the room (g1-s66): a canned critique of the loop
+		// design, answered in memory in the engine's words.
+		DesignReview: func(_ *session.Session, design string, asked httpd.DesignAsked) (httpd.DesignAnswer, error) {
+			return critiqued.review(design, asked)
+		},
+		DesignLoop:   critiqued.read,
+		DesignDecide: critiqued.decide,
 		// What this seat has been asked and what this human has ruled. The
 		// asks are invented, because this fixture has no channel; the
 		// register is the file planted above, read by the reader the engine
@@ -693,6 +709,8 @@ func fixtureCheckout(calm bool, register string) (checkout string, err error) {
 		// work, so the resolver validates the two designs below against the
 		// same two homes the pane reads them out of.
 		{"plans/goals/g1-s13.md", "# g1-s13\n\n- State: queued\n- Intent: The goal page reads the whole record\n"},
+		// The loop design's approved goal (g1-s66), which funds its critique.
+		{"plans/goals/g1-s14.md", "# g1-s14\n\n- State: approved\n- Intent: The Fleet section reads the seats\n"},
 		// The two goals waiting to land, which a review record names: the
 		// record creator refuses a goal its ledger does not carry.
 		{"plans/goals/g1-s21.md", "# g1-s21\n\n- State: claimed\n- Intent: The Overview reads what needs a human\n"},
@@ -722,6 +740,8 @@ func fixtureCheckout(calm bool, register string) (checkout string, err error) {
 		{shapingRecord, shapingText},
 		{beforeRoomsRecord, beforeRoomsText},
 		{shapingFile, shapingCode},
+		// The loop from the room's design (g1-s66).
+		{loopRecord, loopText},
 	} {
 		full := filepath.Join(directory, filepath.FromSlash(planted.relative))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -1194,7 +1214,7 @@ var walkthroughTitles = map[string]string{
 // ones are here because a design's work is read out of them — a payload that
 // carried only live goals would show a shipped design as a design naming a
 // goal nobody has heard of.
-var paneGoals = []string{"g1-s15", "g1-s12", "g1-s13", "g1-s9", "g1-s10", "g1-s23", "g1-s24", "g1-s25", "g1-s26", "g1-s44", "g1-s45"}
+var paneGoals = []string{"g1-s15", "g1-s12", "g1-s13", "g1-s14", "g1-s9", "g1-s10", "g1-s23", "g1-s24", "g1-s25", "g1-s26", "g1-s44", "g1-s45"}
 
 // goalFile is one goal of the fixture tree, live or concluded.
 func (l *ledger) goalFile(id string) *goal.GoalFile {
@@ -1205,6 +1225,22 @@ func (l *ledger) goalFile(id string) *goal.GoalFile {
 		return file
 	}
 	return l.tree.Abandoned[id]
+}
+
+// nextStepOf and intentOf are one goal's two lines, or "" for a goal the
+// fixture tree does not carry.
+func (l *ledger) nextStepOf(id string) string {
+	if file := l.goalFile(id); file != nil {
+		return file.NextStep
+	}
+	return ""
+}
+
+func (l *ledger) intentOf(id string) string {
+	if file := l.goalFile(id); file != nil {
+		return file.Intent
+	}
+	return ""
 }
 
 // satOnPane is the canned pane with one list read from the fixture checkout: the

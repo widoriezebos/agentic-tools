@@ -200,6 +200,13 @@ export type Suggestion = {
   offered: boolean;
   /** Why it was not offered, in the words a human reads, or "" for one that was. */
   reason?: string;
+  /**
+   * The other target (g1-s66 D3): one section of a document drafted anew, by
+   * the document's path and its heading. It names no editor and no field and
+   * belongs to no opening; the document's own page shows old and new.
+   */
+  document?: string;
+  section?: string;
 };
 
 /**
