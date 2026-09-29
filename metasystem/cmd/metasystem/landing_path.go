@@ -28,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
@@ -566,5 +567,7 @@ func landingGuardOwners() landpath.GuardOwners {
 			}
 			return nil
 		},
+		Helm:      helm.Active,
+		HelmYield: helm.RecordYield,
 	}
 }
