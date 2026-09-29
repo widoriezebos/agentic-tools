@@ -119,7 +119,7 @@ var Rows = []Row{
 	{Code: "BATCH_COST_HEADROOM_REFUSED", Owner: "cmd/metasystem", Site: "landing_batch_cost.go#forecastCostRefusal", Shape: Question, H1: StandingGuide, Forward: "goal budget"},
 	{Code: "BATCH_UNIT_ELSEWHERE", Owner: "internal/landing/batch", Site: "join.go#checkMembership", Shape: Question, H1: StandingInput},
 	{Code: "LANE_ACCOUNT_UNRESOLVED", Owner: "internal/landing/lane", Site: "account.go#ResolveAccount", Shape: Question, H1: StandingInput},
-	{Code: "LANE_ENGINE_TOO_OLD", Owner: "cmd/metasystem", Site: "test.go#planWithTrustedPolicyEngine", Shape: Question, H1: StandingGuide, Forward: "landing restart"},
+	{Code: "LANE_ENGINE_TOO_OLD", Owner: "internal/testrun", Site: "prepare.go#PlanWithTrustedPolicyEngine", Shape: Question, H1: StandingGuide, Forward: "landing restart"},
 	{Code: "BATCH_CHANGE_PARENT_UNKNOWN", Owner: "cmd/metasystem", Site: "landing_batch_change.go#executeChangeJoin", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_CHANGE_STACKED_ELSEWHERE", Owner: "internal/landing/batch", Site: "change.go#JoinChange", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_CHANGE_UNREADABLE", Owner: "internal/landing/batch", Site: "change.go#JoinChange", Shape: Question, H1: StandingInput},
