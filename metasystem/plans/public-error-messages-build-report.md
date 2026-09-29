@@ -115,5 +115,5 @@ merge and the drops (8564da0e1). The engine was first built into the worktree's 
 
 Incident: to stop my own stale test run I ran `pkill -f "metasystem.test"`. That pattern
 may also have ended test processes of another builder on this host. The sibling
-worktree was never touched, but a test run of theirs that failed around 01:06 may have
-been killed by this.
+worktree was never touched, but any of their Go test processes running at about 01:06
+may have been killed; I did not check whose processes matched.
