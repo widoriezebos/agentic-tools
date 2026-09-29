@@ -71,7 +71,9 @@ func newHelmBed(t *testing.T, invoker int64, enrolled bool) *helmBed {
 	}
 	owners := intentOwners{resolver: stateroot.NewResolver(fakeTop(root), noExecutable),
 		helm: helmOwners{reader: person(), pid: func() int64 { return invoker }, now: func() time.Time { return helmNow },
-			machine: func(string) (string, error) { return "m1e", nil }, account: func() string { return "wido" }, zone: time.FixedZone("CEST", 2*3600)}}
+			machine: func(string) (string, error) { return "m1e", nil }, account: func() string { return "wido" }, zone: time.FixedZone("CEST", 2*3600),
+			// No test answers a question at a terminal it happens to run at.
+			stdinTerminal: func() bool { return false }}}
 	return &helmBed{t: t, root: root, inst: inst, owners: owners}
 }
 

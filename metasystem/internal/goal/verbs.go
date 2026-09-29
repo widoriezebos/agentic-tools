@@ -1210,6 +1210,10 @@ func humanOfProof(root string, proof *humanauthority.Proof) string {
 	if !proof.EnrolledTerminalFor(root) {
 		return ""
 	}
+	// A helm proof names the person at the helm (the command edge's actor).
+	if proof.Helm != nil {
+		return proof.Helm.By
+	}
 	enrollment, err := humanauthority.ReadEnrollment(root)
 	if err != nil {
 		return ""

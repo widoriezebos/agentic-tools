@@ -106,15 +106,22 @@ type Proof struct {
 	ChannelContext      string     `json:"channelContext,omitempty"`
 	ChannelStep         int64      `json:"channelStep,omitempty"`
 	FixtureOnly         bool       `json:"fixtureOnly,omitempty"`
-	observedRoot        string
-	observedTerminalID  string
-	observed            bool
+	// Helm is the grant of the person at the helm when the walk refused and
+	// the seat's helm admitted the caller: the audit trail of that act.
+	Helm               *HelmGrant `json:"helm,omitempty"`
+	observedRoot       string
+	observedTerminalID string
+	observed           bool
 }
 
 // Valid reports whether the proof carries every fact required to authorize a
 // human-reserved mutation. It does not turn a parsed JSON document into a new
 // observation; production obtains proofs only from Prove.
 func (p Proof) Valid() bool {
+	if p.Helm != nil {
+		return p.observed && !p.FixtureOnly && p.Schema == 1 && p.Outcome == OutcomeProven && !p.CheckedAt.IsZero() &&
+			p.AuthorityGrade() == GradeEnrolled && strings.TrimSpace(p.Helm.By) != ""
+	}
 	if p.FixtureOnly {
 		return p.observed && p.Schema == 1 && p.Outcome == OutcomeProven && !p.CheckedAt.IsZero() &&
 			p.AuthorityGrade() == GradeEnrolled &&
@@ -861,6 +868,48 @@ func Prove(root string, invokerPID int64, reader Reader, now time.Time) (Proof, 
 		proof.Grade = ""
 		return proof, fmt.Errorf("%s: human authority has no readable terminal enrollment: %w", proof.Outcome, err)
 	}
+	return proveEnrolled(root, invokerPID, reader, now, enrollment, AtHelm)
+}
+
+// HelmGrant is what the seat's helm answers for a caller the walk refused:
+// the holder, since when, the caller's own class and the seat's common dir.
+type HelmGrant struct {
+	By       string `json:"by"`
+	Since    string `json:"since,omitempty"`
+	Class    string `json:"class,omitempty"`
+	Checkout string `json:"checkout,omitempty"`
+}
+
+// AtHelm is the owner seam the command edge wires once at startup: while the
+// seat is at the helm, a caller the enrolled-terminal walk refused is the
+// holder's act when the helm grants it. Nil in the library: no helm.
+var AtHelm func(root string, invokerPID int64) (HelmGrant, bool)
+
+// HelmProof is the proof of an act the person at the helm admitted: proven
+// at the enrolled grade, bound to root, naming the holder. The enrolled
+// terminal, when readable, is the terminal the holder's take enrolled.
+func HelmProof(root string, grant HelmGrant, now time.Time) (Proof, error) {
+	if strings.TrimSpace(grant.By) == "" {
+		return Proof{}, fmt.Errorf("a helm proof requires the holder's name")
+	}
+	if now.IsZero() {
+		return Proof{}, fmt.Errorf("a helm proof requires a non-zero observation time")
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return Proof{}, err
+	}
+	proof := Proof{Schema: 1, CheckedAt: now.UTC(), Outcome: OutcomeProven, Grade: GradeEnrolled, Helm: &grant,
+		observedRoot: filepath.Clean(abs), observed: true}
+	if enrollment, readErr := ReadEnrollment(root); readErr == nil {
+		proof.TerminalRef, proof.TerminalGeneration, proof.observedTerminalID = enrollment.TerminalRef, enrollment.Generation, enrollment.TerminalID
+	}
+	return proof, nil
+}
+
+// proveEnrolled walks to the enrolled terminal; when the walk refuses and the
+// seat's helm admits the caller, the act is the holder's (HelmProof).
+func proveEnrolled(root string, invokerPID int64, reader Reader, now time.Time, enrollment Enrollment, atHelm func(string, int64) (HelmGrant, bool)) (Proof, error) {
 	signatures, signatureDigest, err := signatureSet(root)
 	if err != nil {
 		return Proof{}, err
@@ -873,6 +922,21 @@ func Prove(root string, invokerPID int64, reader Reader, now time.Time) (Proof, 
 		TerminalGeneration: enrollment.Generation, SignatureSetDigest: signatureDigest, Outcome: OutcomeTerminalMissing}
 	proof.observedRoot = filepath.Clean(absRoot)
 	proof.observed = true
+	proof, err = walkToEnrollment(proof, invokerPID, reader, enrollment, signatures)
+	if err != nil && atHelm != nil {
+		if grant, admitted := atHelm(root, invokerPID); admitted {
+			helm, helmErr := HelmProof(root, grant, now)
+			if helmErr == nil {
+				helm.InvokerRef, helm.SignatureSetDigest, helm.Nodes = proof.InvokerRef, proof.SignatureSetDigest, proof.Nodes
+				return helm, nil
+			}
+		}
+	}
+	return proof, err
+}
+
+// walkToEnrollment is Prove's walk from the invoker to the enrolled terminal.
+func walkToEnrollment(proof Proof, invokerPID int64, reader Reader, enrollment Enrollment, signatures []census.Signature) (Proof, error) {
 	seen := map[int64]bool{}
 	current := invokerPID
 	var expectedParent *ProcessRef
