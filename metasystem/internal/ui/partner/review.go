@@ -132,7 +132,7 @@ func ReviewClosingRequest(sitting Sitting, verdict string) (string, error) {
 		"examined — the files, the sections and the walks this review looked at — then every finding with " +
 		"its answer as the record now carries it, then what was left open with its consequence. Draft it " +
 		"from the record and this conversation and from nothing else.\n\n" +
-		"Weigh nothing and settle nothing: the verdict is the human's, recorded on the goal when they record the Outcome, and nothing lands because of it. The human " +
+		"Weigh nothing and settle nothing: the verdict is the human's, recorded on the goal when they record the Outcome, and it is the word the landing gate waits for. The human " +
 		"reads it, edits it and presses Record it.", nil
 }
 

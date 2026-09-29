@@ -22,7 +22,7 @@ func goalReviewIntentCommands() []intentCommand {
 			"names the tip it was drafted for, and that tip is the one its Reviewed line records; the verdict is recorded against it.",
 			"The record, and with send-back the brief, are published beside the goal's history line in the ledger's own commit.",
 			"A record already published with the same words is a repeat; other words at that path are another review's and are refused.",
-			"clear-to-land records your word only: nothing lands because of it. send-back carries --brief FILE, the findings answered fix;",
+			"clear-to-land is the word the landing gate waits for at that tip; the holder lands it on its next turn. send-back carries --brief FILE;",
 			"the goal leaves the Review lane and the seat that holds it revises. --work names the work item the holder asked you to name.",
 			"--hold records that your review sitting of G stands: nothing lands while it stands, whatever the tier, and every seat reads it.",
 			"--release ends it; a verdict of yours releases it in the same line. A hold that is not released stands until you release it.",

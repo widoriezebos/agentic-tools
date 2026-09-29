@@ -244,6 +244,11 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	gateConf, err := plantLandingGate(checkout)
+	if err != nil {
+		return err
+	}
+	gating := &gateActs{l: state}
 	presenceWatch := fleet.NewWatch()
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 	discards := &fixtureDiscards{}
@@ -447,6 +452,13 @@ func run(ctx context.Context, args []string) error {
 		VisitApplication: func(human string, now time.Time) (time.Time, bool, error) {
 			return overview.VisitPage(checkout, application.PageName, human, now)
 		},
+		// The landing gate (g1-s70): the engine's own layered read over the
+		// fixture's conf and .local, and the two acts on the canned goals.
+		LandingGate: func() (config.LandingGate, error) {
+			return config.ResolveLandingGate(gateConf)
+		},
+		Sitting:            gating.sitting,
+		LandWithoutSitting: gating.landWithoutSitting,
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 			return map[string]goalbudget.Budget{"3": {
 				ElapsedLimit: "8h", AttemptLimit: 10, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3,
@@ -827,6 +839,10 @@ func newLedger(calm bool) *ledger {
 	landed2.Landing = &goal.LandingRecord{At: stampedAgo(20 * time.Minute), Opid: "op-land-g1-s90"}
 	landed2.History = append(landed2.History, goal.HistoryLine{At: stampedAgo(20 * time.Minute), Opid: "op-land-g1-s90",
 		Verb: "land-ready", Actor: "m2a+implementer", Targets: []string{"g1-s90"}, Keep: -1})
+
+	// Three more waiting to land, below the landing gate's tier (g1-s70): on
+	// the clock, past it, and held by a sitting.
+	landingGoals(add)
 
 	parked := add(ranked(walkthroughGoal("g1-s22", goal.StateParked, "The Fleet section reads the census"), 2, 11))
 	parked.Parked = &goal.ParkRecord{

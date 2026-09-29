@@ -438,6 +438,12 @@ describe("what one press sends", () => {
       .toEqual({ act: "priority", id: "fleet-presence", priority: 2, sequence: null });
     expect(dispatchOf(lineOf(card([proposal({ verb: "unblock-goal", fields: { blocker: "x" } })]))))
       .toEqual({ act: "unblock", dependent: "fleet-presence", blocker: "x" });
+    // Land without a sitting (g1-s70 D4): the reason the human wrote, and the
+    // card's own word and argument.
+    const landing = lineOf(card([proposal({ verb: "land-without-sitting", fields: { reason: "read the diff" } })]));
+    expect(dispatchOf(landing)).toEqual({ act: "land-without-sitting", id: "fleet-presence", reason: "read the diff" });
+    expect(verbWord("land-without-sitting")).toBe("Land without a sitting");
+    expect(argumentsOf(landing)).toEqual([{ label: "Reason", value: "read the diff" }]);
     expect(dispatchOf(lineOf(card([abandonOf()])))).toEqual({
       act: "abandon", id: "fleet-presence",
       because: "the seat inventory carries this now", successor: "g1-s70",
