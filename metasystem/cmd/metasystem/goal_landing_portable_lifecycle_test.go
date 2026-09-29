@@ -202,8 +202,8 @@ chmod +x "${out:-bin/metasystem}"
 	// Join requires a real landing holder. Suspend its cadence before any
 	// member joins, then simulate owner death so a separate CLI tick proves
 	// recovery and succession from the persisted batch record.
-	ownerCommand := portable.proofCommand.command(portable.commandEnvironment(), portable.engine,
-		"landing", "batch", "owner", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--interval", "1h")
+	ownerCommand := landingBatchChild(portable.proofCommand, portable.commandEnvironment(), portable.engine,
+		"owner", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--interval", "1h")
 	ownerCommand.Dir = landing
 	ownerCommand.Env = append(ownerCommand.Env, "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
 	if err := ownerCommand.Start(); err != nil {
@@ -303,8 +303,8 @@ chmod +x "${out:-bin/metasystem}"
 	<-ownerExited
 	ownerStopped = true
 	tick := func() batch.Record {
-		command := portable.proofCommand.command(portable.commandEnvironment(), portable.engine,
-			"landing", "batch", "tick", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--batch", batchID)
+		command := landingBatchChild(portable.proofCommand, portable.commandEnvironment(), portable.engine,
+			"tick", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--batch", batchID)
 		command.Dir = landing
 		command.Env = append(command.Env, "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
 		output, commandErr := command.CombinedOutput()
@@ -565,7 +565,10 @@ chmod +x "${out:-bin/metasystem}"
 	commandAt := func(at time.Time, args ...string) *exec.Cmd {
 		return portable.proofCommand.command(clockEnvironment(at), portable.engine, args...)
 	}
-	owner := commandAt(t0, "landing", "batch", "owner", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--interval", "1h")
+	batchAt := func(at time.Time, args ...string) *exec.Cmd {
+		return landingBatchChild(portable.proofCommand, clockEnvironment(at), portable.engine, args...)
+	}
+	owner := batchAt(t0, "owner", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--interval", "1h")
 	owner.Dir = landing
 	owner.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := owner.Start(); err != nil {
@@ -586,7 +589,7 @@ chmod +x "${out:-bin/metasystem}"
 		t.Fatal(err)
 	}
 	join := func(goalID string) string {
-		command := commandAt(t0, "landing", "batch", "join", "--root", bed.seats[goalID], "--goal", goalID, "--last")
+		command := batchAt(t0, "join", "--root", bed.seats[goalID], "--goal", goalID, "--last")
 		command.Dir = bed.seats[goalID]
 		output, err := command.CombinedOutput()
 		if err != nil {
@@ -625,7 +628,7 @@ chmod +x "${out:-bin/metasystem}"
 	}
 	// A public one-shot tick uses the governing fixture clock to close the
 	// elapsed membership window, then holds proof while we saturate capacity.
-	successor := commandAt(t0.Add(time.Minute+time.Second), "landing", "batch", "tick", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--batch", batchID)
+	successor := batchAt(t0.Add(time.Minute+time.Second), "tick", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--batch", batchID)
 	successor.Dir = landing
 	successor.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var ownerOutput bytes.Buffer
@@ -846,7 +849,7 @@ chmod +x "${out:-bin/metasystem}"
 		}
 		followAt := t1.Add(time.Duration(step+1) * time.Minute)
 		survivorClocks = append(survivorClocks, followAt)
-		follow := commandAt(followAt, "landing", "batch", "tick", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--batch", batchID)
+		follow := batchAt(followAt, "tick", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--batch", batchID)
 		follow.Dir = landing
 		output, tickErr := follow.CombinedOutput()
 		if tickErr != nil {
@@ -1107,4 +1110,38 @@ func readPortableRunnerLog(t *testing.T, path string) string {
 		return err.Error()
 	}
 	return string(data)
+}
+
+// landingBatchHelperCommand runs the landing batch owner, a one-shot tick or
+// a join in a child of this test binary. The engine has no landing batch
+// entry any more (production runs the owner as the supervised landing-owner
+// component, and work land joins in process); these beds keep each owner in
+// a process of its own so it holds the landing lease under its own pid, can
+// be stopped with SIGSTOP and killed, and a successor tick recovers from the
+// persisted record alone. The child re-executes the enrolled fixture engine
+// for tree plans and prefix receipts, as the former engine entry did with its
+// own executable, and commits through the planted commit script, as that
+// plantedcommit engine did.
+const landingBatchHelperCommand = "test-helper-landing-batch"
+
+const landingBatchHelperEngine = "METASYSTEM_TEST_LANDING_BATCH_ENGINE"
+
+func init() {
+	testHelperCommands[landingBatchHelperCommand] = func(args []string) int {
+		if engine := os.Getenv(landingBatchHelperEngine); engine != "" {
+			executable := func() (string, error) { return engine, nil }
+			batchTreePlanExecutable, batchPrefixReceiptExecutable = executable, executable
+		}
+		// The enrolled fixture engine is a plantedcommit build; the child
+		// commits each unit through the bed's planted commit script as it did.
+		batchCommitBoundary = plantedOrLandingCommit
+		return runLandingBatch(args)
+	}
+}
+
+func landingBatchChild(fixture proofBinaryFixture, environment []string, engine string, args ...string) *exec.Cmd {
+	fixture.t.Helper()
+	command := fixture.command(environment, commandTestExecutable(fixture.t), append([]string{landingBatchHelperCommand}, args...)...)
+	command.Env = append(command.Env, "GO_WANT_BATCH_E2E_COMMAND=1", landingBatchHelperEngine+"="+engine)
+	return command
 }

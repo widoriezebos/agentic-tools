@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -863,14 +864,18 @@ func newInstalledPublicApplicationFixture(t *testing.T, installed, expectedDiges
 			t.Errorf("installed public application bytes changed: snapshot=%s source=%s want=%s snapshotErr=%v sourceErr=%v", snapshotDigest, sourceDigest, wantDigest, snapshotErr, sourceErr)
 		}
 	})
-	statusRoot := t.TempDir()
-	status := exec.Command(canonicalEngine, "supervise", "status", "--repo", statusRoot)
-	statusOutput, err := status.CombinedOutput()
-	var engineStatus struct {
-		EngineBuild string `json:"engineBuild"`
+	// The engine has no supervise status entry any more; its build stamp is
+	// read from the installed file's bytes, as the steward's enrollment and
+	// the seat launcher read an engine's stamp.
+	var engineStatus struct{ EngineBuild string }
+	stampFile, err := os.Open(canonicalEngine)
+	if err != nil {
+		t.Fatalf("open installed public application: %v", err)
 	}
-	if err != nil || json.Unmarshal(statusOutput, &engineStatus) != nil || len(engineStatus.EngineBuild) != 40 {
-		t.Fatalf("read installed public application build stamp: err=%v output=%s", err, statusOutput)
+	engineStatus.EngineBuild, err = enginebuild.ReadStamp(stampFile)
+	_ = stampFile.Close()
+	if err != nil || len(engineStatus.EngineBuild) != 40 {
+		t.Fatalf("read installed public application build stamp: stamp=%q err=%v", engineStatus.EngineBuild, err)
 	}
 	sourceRootCommand := exec.Command("git", "rev-parse", "--show-toplevel")
 	sourceRootOutput, err := sourceRootCommand.CombinedOutput()
