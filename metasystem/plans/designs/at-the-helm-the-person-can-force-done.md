@@ -63,4 +63,5 @@ No override of the integrity refusals or the human rows. No change to `Publish`,
 | HF-01 | Astra 1 | yes | Folded (revision 2): force removes the unfinished blocker edges in the same transaction and names them in the conclusion; validation unchanged (verified `validate.go:382-390`). Fixture: a blocked goal forced through publication, archive read back. |
 | HF-02 | Astra 1 | yes | Folded: only the typed open-carry-word refusal is skipped; inspection errors still refuse (verified `verbs.go:5384-5398`). Fixture: an injected trailer-read error under force publishes nothing. |
 | HF-03 | Astra 1 | no | Wording: slice 2 records its yield when it produces the helm proof, before `forceAdmission` refuses it; the agent-refused test expects that one person-proof yield and no conclusion. |
+| Round 2 | Astra 2 (failsafe) | none | HF-01, HF-02 FIXED, zero material. Loop closed. |
 | HF-04, HF-05 | Astra 1 | no | Deferred as stated by the critic; no change. |

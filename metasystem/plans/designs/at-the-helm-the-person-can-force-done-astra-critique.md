@@ -46,3 +46,27 @@ Commit: `1f99214b939c7b2e54c56142efe6ad962c9b60c0`, `ui-development`. Limitation
 
 Codex session ID: 01a0ee04-f893-7312-b6b6-235900ed2cfb
 Resume in Codex: codex resume 01a0ee04-f893-7312-b6b6-235900ed2cfb
+
+
+# Astra round 2, the failsafe (task-mumwn1ip-38gi6h, commit 06ac95735), verbatim
+
+**HF-01 and HF-02 are FIXED in the design. No new material findings.**
+
+- **HF-01 — FIXED:** D-force now removes unfinished blocker edges in the same transaction and records their names in the conclusion. This satisfies the existing [done-goal validation rule](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/validate.go:382) without weakening it. The [proof section](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/at-the-helm-the-person-can-force-done.md:40) requires forced publication followed by archive readback.
+
+- **HF-02 — FIXED:** [D-force](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/at-the-helm-the-person-can-force-done.md:28) now distinguishes the typed open-carry-word refusal from inspection errors. Only the former is overridable; inspection errors still refuse. The proof section explicitly requires an injected trailer-read error to publish nothing under force.
+
+HF-03’s wording and test expectation now preserve the existing person-proof yield while refusing the agent’s conclusion. HF-04 and HF-05 remain deferred and non-material; neither warrants reopening this round.
+
+The unchanged source traces support the remaining design: agent and fixture proofs are excluded, helm state is read for the act’s root, return removes the signature before requesting force, and the enrolled-terminal walk remains available afterward. Outside-helm proposal text stays unchanged; validation and branch-sweep protections remain intact.
+
+The design-critique loop can close at round 2. Implementation must still establish the specified behavior through its fixtures.
+
+Reviewed commit: `06ac95735efa14d634fe67824a7b3807f26cd0bb`, branch `ui-development`. This was a read-only design review, grounded in source; no tests or terminal walkthrough were run, and no files were changed. The inspected companion implementation remained at `a0b4f817f4a2e659380cc0d81507dea013a2e19b`.
+
+Proposed receipt, unwritten: `Helm slice 4 design critique, round 2: HF-01/HF-02 fixed in design; zero new material findings; source review only.`
+
+**VERDICT: 0 material findings (fail test 2): none.**
+
+Codex session ID: 01a0ee04-f893-7312-b6b6-235900ed2cfb
+Resume in Codex: codex resume 01a0ee04-f893-7312-b6b6-235900ed2cfb
