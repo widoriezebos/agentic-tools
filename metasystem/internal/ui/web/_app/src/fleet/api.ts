@@ -349,6 +349,63 @@ export type BoardPayload = {
   bridge: string;
   seats: unknown[];
   lines: BoardLine[];
+  /**
+   * The host's one batch-landing lane (U12). Null where this host has none;
+   * absent from a server built before the lane existed, which the panel says
+   * rather than taking for "no lane".
+   */
+  lane?: Lane | null;
+};
+
+/** What the lane's owner process is doing, as the steward keeps it. */
+export type LaneOwnerState = "running" | "stopped" | "restarting" | "given-up" | "not-started";
+
+/**
+ * The lane's owner: the process the steward keeps alive, how often it had to
+ * restart it, and — once it stopped or the steward gave up — who stopped it
+ * and what a person does next.
+ */
+export type LaneOwner = {
+  state: LaneOwnerState;
+  pid: number | null;
+  since: string | null;
+  restarts: number;
+  last_exit: string | null;
+  stopped_by: string | null;
+  retry_hint: string | null;
+};
+
+/** One goal in a batch, and the seat it lands from. */
+export type LaneMember = { goal: string; seat: string };
+
+/** A goal the batch is holding for, with when its seat expects it ready. */
+export type LaneWaiting = { goal: string; seat: string; expected: string | null };
+
+/** Where the batch in hand is: one batch proves at a time on a host. */
+export type LaneBatchState = "collecting" | "waiting" | "proving" | "pushing";
+
+/** The batch the lane is working on now. */
+export type LaneBatch = {
+  id: string;
+  state: LaneBatchState;
+  members: LaneMember[];
+  waiting_for: LaneWaiting[];
+  since: string;
+  reason: string;
+};
+
+/** The batch collecting behind it. */
+export type LaneNext = { id: string; members: LaneMember[] };
+
+/** The landing lane, field for field as /api/board carries it. */
+export type Lane = {
+  root: string | null;
+  registered_by: string | null;
+  registered_at: string | null;
+  owner: LaneOwner;
+  batch: LaneBatch | null;
+  next: LaneNext | null;
+  summary: string;
 };
 
 /**
