@@ -128,7 +128,8 @@ func runIntentHelmTake(inv *intentInvocation) int {
 	enrollment, readErr := humanauthority.ReadEnrollment(root)
 	if readErr == nil {
 		record.Enrollment, record.EnrolledAs = "other-terminal", enrollment.Human
-		if _, proveErr := humanauthority.Prove(root, pid, owners.reader, now); proveErr == nil {
+		// A helm proof is never the take's grade: only the real walk is.
+		if enrolled, proveErr := humanauthority.Prove(root, pid, owners.reader, now); proveErr == nil && enrolled.Helm == nil {
 			record.Enrollment = "proven"
 			if record.By == "" {
 				record.By = enrollment.Human
