@@ -258,13 +258,19 @@ func TestIntentRouterObjectPages(t *testing.T) {
 			if code != 0 || problem != "" {
 				t.Fatalf("%v = %d %q", args, code, problem)
 			}
+			// The audience topic keeps its word (help agent is the agents'
+			// page), which lists the object's actions by their full name.
+			listed := func(command intentCommand) string { return "\n  " + command.action + " " }
+			if args[0] == "help" && intentTopic(object) {
+				listed = func(command intentCommand) string { return "\n  " + command.name + " " }
+			}
 			for _, command := range objectActions(object) {
-				if !strings.Contains(page, "\n  "+command.action+" ") {
+				if !strings.Contains(page, listed(command)) {
 					t.Errorf("%v does not list %s", args, command.name)
 				}
 			}
 			for _, command := range intentCommands() {
-				if command.hidden && command.object == object && strings.Contains(page, "\n  "+command.action+" ") {
+				if command.hidden && command.object == object && strings.Contains(page, listed(command)) {
 					t.Errorf("%v lists the entry %s", args, command.name)
 				}
 			}
