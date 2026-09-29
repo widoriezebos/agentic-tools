@@ -1374,7 +1374,8 @@ body {
   .ms-drawer-bar .ms-drawer-about,
   .ms-drawer-who .ms-help,
   .ms-drawer-who .ms-font-control,
-  .ms-drawer-title {
+  .ms-drawer-title,
+  .ms-drawer-who .ms-drawer-title-dot {
     display: none;
   }
 
@@ -1386,10 +1387,6 @@ body {
   }
 }
 
-/*
- * Under a reduced-motion preference every duration is zero and the skeleton
- * stands still. Nothing here is decorative enough to be worth an exception.
- */
 /* ------------------------------------------------------------ the live line -- */
 
 /*
@@ -1404,7 +1401,6 @@ body {
 .ms-live {
   display: inline-flex;
   align-items: baseline;
-  gap: 8px;
   min-width: 0;
   color: var(--ms-text-3);
   font-size: 13px;
@@ -1420,6 +1416,10 @@ body {
   border-radius: 50%;
   background: var(--ms-ok);
   animation: ms-live-breath 2400ms ease-out infinite;
+}
+
+.ms-live > .ms-live-dot {
+  margin-right: 8px;
 }
 
 @keyframes ms-live-breath {
@@ -1451,6 +1451,8 @@ body {
 
 .ms-live-clock {
   flex: none;
+  /* A flex item's leading space is trimmed; this is the space before its dot. */
+  margin-left: 0.3em;
   font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1463,8 +1465,8 @@ body {
 
 /* The closed bar's live line takes the field's place, and Stop stands beside it. */
 .ms-drawer-live {
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: none;
+  max-width: 50%;
   display: flex;
   align-items: center;
 }
@@ -1498,6 +1500,10 @@ body {
   margin-right: 6px;
 }
 
+/*
+ * Under a reduced-motion preference every duration is zero and the skeleton
+ * stands still. Nothing here is decorative enough to be worth an exception.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -165,7 +165,7 @@ describe("the bar while a turn runs", () => {
   it("puts the dot alone in the title while a turn runs, open or closed", () => {
     for (const open of [false, true]) {
       const markup = bar({ store: RUNNING, busy: true }, open);
-      expect({ open, dot: /ms-drawer-title[^>]*>Project Partner<\/span><span class="ms-live-dot" aria-hidden="true"><\/span>/.test(markup) }).toEqual({ open, dot: true });
+      expect({ open, dot: /ms-drawer-title[^>]*>Project Partner<\/span><span class="ms-live-dot ms-drawer-title-dot" aria-hidden="true"><\/span>/.test(markup) }).toEqual({ open, dot: true });
     }
     expect(bar({ store: emptyStore, busy: false })).not.toContain("ms-live-dot");
     expect(bar({ store: emptyStore, busy: false }, true)).not.toContain("ms-live-dot");

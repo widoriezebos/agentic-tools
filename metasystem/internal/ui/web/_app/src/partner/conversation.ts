@@ -188,6 +188,14 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
   // kept as they left it: a joined beat is never sent again, so replacing it
   // with the older snapshot would lose it until a reload (g1-s67 walkthrough).
   const ahead = running && store.live.turn === snapshot.turn && store.live.seq > snapshot.partialSeq;
+  // A snapshot read before this page's running turn was admitted knows nothing
+  // of it: the server writes a turn's question down before it answers the send,
+  // so a reading without that question is older than the turn, and a stream
+  // open's read can come back after the send's 202 has. Replacing the turn with
+  // nothing there would leave its next beats to start it again without the
+  // start the 202 carried, and so without its clock (g1-s74 D4).
+  const before =
+    !running && store.live.turn !== "" && !messages.some((message) => message.turn === store.live.turn);
   return {
     ...store,
     state: "ready",
@@ -214,6 +222,8 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
           proposals: snapshot.proposals ?? [],
           presents: [],
         }
+      : before
+      ? store.live
       : nothingRunning,
   };
 }

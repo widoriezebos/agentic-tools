@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:c930b6352fb52bea0e3e57a6f55b4ef2fddb00231d93195e2033c66c948b6f55",
+  "sourceDigest": "sha256:5b1c287614eb652c45d29f5c59bc8a501233b0556568eb0ecc01cc0de7742227",
   "source": [
     {
       "path": ".npmrc",
@@ -724,7 +724,7 @@
     },
     {
       "path": "src/partner/conversation.ts",
-      "sha256": "46915cf1e90a7464ae4bff54e9cb65aa223561627aefa330819b4119c096d05a"
+      "sha256": "ab7541699638cb4d7c759a41d1a9592e23e8670da9fd748edbede07299784462"
     },
     {
       "path": "src/partner/drafting.test.ts",
@@ -1108,11 +1108,11 @@
     },
     {
       "path": "src/shell/Drawer.test.tsx",
-      "sha256": "c01be8fa6e1c603a0cbbb5b796b725423ec45efd7f64072c5f95a96208836768"
+      "sha256": "fc0f60905b576e818879f68289be98704bba0b5f2a5d8685a562eed3d40a1928"
     },
     {
       "path": "src/shell/Drawer.tsx",
-      "sha256": "b0bd1c8c9ce6f675ff1829088c91404f6f565b0135c2d1a2f5030bade034eb2c"
+      "sha256": "79b06864e2c71b67fbfab0aa86f1343d5d74687445874223f375e114003f4a0d"
     },
     {
       "path": "src/shell/ErrorBoundary.test.tsx",
@@ -1208,7 +1208,7 @@
     },
     {
       "path": "src/shell/live.test.tsx",
-      "sha256": "119c0c214ae4c91a6ddf73cb5cef3901d077b186db5a9aafa3ef0cd8433b176e"
+      "sha256": "6aca5e7920181af3a30dd229358fdabe772f0cb96666fb49f91fdd31173fb91f"
     },
     {
       "path": "src/shell/media.ts",
@@ -1232,7 +1232,7 @@
     },
     {
       "path": "src/shell/shell.css",
-      "sha256": "900660f1c326cd380ecd452ee76ed7f6a9212566ad0f642f08707c855e3363ee"
+      "sha256": "740991153d30bab2c97739a78efc83ff611a7df77751dd1448edc4bc7d3d1f77"
     },
     {
       "path": "src/shell/troubles.tsx",
@@ -1574,11 +1574,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "da41be0da539b51ba0e88de005b97c14744b6cdd4039fe016e51c1868bdb229e"
+      "sha256": "6a217b826dd990c7e60ce88dc2afa195c4c6e8ee4d106499acd5f0c42da759c1"
     },
     {
       "path": "assets/index.js",
-      "sha256": "7fe39b0eccb459161fb9457c1c0a129638a73fb44180af7342aaccfe6eea6f8c"
+      "sha256": "41db107ad40bc906f7727626e303c1e99ee3d7e040548b1e8d899298356b096a"
     },
     {
       "path": "assets/info-A6RAGUB7.js",

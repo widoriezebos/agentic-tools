@@ -166,7 +166,7 @@ export function Drawer({
           <span className="ms-drawer-title">Project Partner</span>
           {/* The dot alone, open or closed, for when the transcript is
               scrolled away from the turn that is running (g1-s74 D3b). */}
-          {busy && <LiveDot />}
+          {busy && <LiveDot className="ms-drawer-title-dot" />}
           <Help id="partner" />
           <FontControl />
         </span>

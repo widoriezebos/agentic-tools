@@ -122,6 +122,11 @@ func run(ctx context.Context, args []string) error {
 	// process, over a pipe, so the drawer can be driven end to end without an
 	// agent, a key, or a network.
 	partnerRuntime := flag.String("partner", "", "serve a Project Partner from the canned ACP server: fake")
+	// How long the canned server waits after each read and between the pieces
+	// of its answer. The default is the one every earlier walkthrough was
+	// staged on; a longer one holds a turn in flight long enough to stand in
+	// front of the live line in its three places (g1-s74).
+	partnerPause := flag.Duration("partner-pause", 450*time.Millisecond, "how long the canned Partner pauses between reads and pieces")
 	// The by-hand check before a release. It serves nothing: it asks a real
 	// runtime a dozen questions through the production path, over a temporary
 	// copy of this walkthrough's fixture checkout with this kit's own
@@ -474,7 +479,7 @@ func run(ctx context.Context, args []string) error {
 		}
 		// The Partner reads what the pages read, so the "Seeing:" sheet shows
 		// this fixture's own board rather than an empty block.
-		service := fakePartner(checkout, partner.Facts{
+		service := fakePartner(checkout, *partnerPause, partner.Facts{
 			Observe: state.observe,
 			Project: func() (project.Pane, error) { return satOnPane(state.project(), roots), nil },
 			Document: func(id string) (project.Document, error) {

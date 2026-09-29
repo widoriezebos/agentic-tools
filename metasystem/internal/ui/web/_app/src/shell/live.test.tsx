@@ -172,6 +172,21 @@ describe("the turn's start", () => {
     expect(loaded(store, behind).live.startedAt).toBe("2026-09-29T10:00:00Z");
   });
 
+  it("survives a snapshot read before the turn was admitted that lands after its 202", () => {
+    // A stream open's read can leave before the send and come back after it:
+    // it knows nothing of the turn, and wiping the turn would leave the next
+    // beats to start it again with no start, so no clock.
+    let store = loaded(emptyStore, SNAPSHOT);
+    store = asked(store, "t1", "k1", "q", { section: "Backlog", path: "/backlog" }, "", {}, "2026-09-29T10:00:00Z");
+    store = received(store, beat(1, "doing", "Read plans/goals/backlog.md"));
+    const before = loaded(store, { ...SNAPSHOT, messages: [] });
+    expect(before.live).toEqual(store.live);
+    // A snapshot that holds the turn's question and no running turn is the
+    // turn over, and it ends here as it always did.
+    const over = loaded(store, { ...SNAPSHOT, messages: [store.messages[0]] });
+    expect(over.live).toEqual(nothingRunning);
+  });
+
   it("is the snapshot's for a turn the page learns of from a snapshot alone", () => {
     const store = loaded(emptyStore, {
       ...SNAPSHOT, busy: true, turn: "t9", partialSeq: 4, startedAt: "2026-09-29T09:58:00Z",
