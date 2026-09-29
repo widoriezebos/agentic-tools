@@ -463,6 +463,7 @@ func TestPrepareForExecutionRepairsInvalidPins(t *testing.T) {
 }
 
 func TestIdentityAcceptsHumanSessionAndRefusesAnUnknownKind(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "identity.json")
 	session := EnrolledSession{Provider: "browser", Human: "wido", Reference: "ref", Launch: "launch", From: "/from"}
 	if err := MintIdentity(path, InstallIdentity{RepoIdentity: "repo-ulid", Generation: 1, Enrollment: EnrollmentHumanSession, MintedBy: "human-session", Session: &session}); err != nil {

@@ -1325,21 +1325,24 @@ func TestSessionArmMintsAHumanSessionEnrollment(t *testing.T) {
 }
 
 func TestSessionArmRefusesASessionWithoutItsHuman(t *testing.T) {
+	t.Parallel()
+	// The refusal comes before the arm touches the repository, so a bare
+	// directory stands in for the bed: nothing may appear in it.
 	for name, mutate := range map[string]func(*EnrolledSession){
 		"provider":  func(s *EnrolledSession) { s.Provider = "" },
 		"human":     func(s *EnrolledSession) { s.Human = " " },
 		"reference": func(s *EnrolledSession) { s.Reference = "" },
 	} {
 		t.Run(name, func(t *testing.T) {
-			bed := newRearmBed(t, false)
+			t.Parallel()
+			root := canonicalPath(t.TempDir())
 			session := signedSession()
 			mutate(&session)
-			if _, err := armSessionWithDeps(bed.root, bed.engine, session, "", rearmTestDeps(t)); err == nil || !strings.Contains(err.Error(), "names no "+name) {
+			if _, err := armSessionWithDeps(root, filepath.Join(root, "bin", "metasystem"), session, "", rearmResolverDeps{}); err == nil || !strings.Contains(err.Error(), "names no "+name) {
 				t.Fatalf("a session without its %s must be refused by name: %v", name, err)
 			}
-			installed, _ := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
-			if installed.Generation != 1 || installed.Session != nil {
-				t.Fatalf("a refused session arm minted %+v", installed)
+			if _, err := os.Stat(RepoIdentityPath(root)); !os.IsNotExist(err) {
+				t.Fatalf("a refused session arm minted an identity: %v", err)
 			}
 		})
 	}

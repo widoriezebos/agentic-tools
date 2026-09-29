@@ -398,6 +398,7 @@ var Exclusions = []Exclusion{
 	{Pattern: "budget-malformed", Reason: "a typed health remedy cause name rather than a refusal returned to a caller"},
 	{Pattern: "CLAUDE_CONFIG_DIR", Reason: "the Claude Code configuration directory environment variable, not a refusal"},
 	{Pattern: "GIT_*", Reason: "git environment variable names"},
+	{Pattern: "SIGNED_IN_LAUNCH_GIT_*", Reason: "environment variable names of the g1-s72 end-to-end test's Git stand-in (cmd/metasystem/testdata/signedinlaunchgit), not a refusal"},
 	{Pattern: "METASYSTEM_*", Reason: "this tree's environment variable names"},
 	{Pattern: "LC_ALL", Reason: "an environment name"},
 	{Pattern: "CGO_ENABLED", Reason: "a Go toolchain environment name"},
