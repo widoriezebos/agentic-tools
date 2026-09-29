@@ -57,7 +57,12 @@ type TickConfig struct {
 	// write a FAILED report. A deferred pass scans nothing and reports
 	// nothing; the breach stays for the next tick. nil is always ready (the
 	// external tick verb).
-	BreachStopReady   func() bool
+	BreachStopReady func() bool
+	// KeepLandingLane is one step of the host landing lane's keeper (U12):
+	// it restarts the lane's owner when it died, within the keeper's
+	// thrashing bounds, and returns its line. The command layer supplies it;
+	// nil keeps nothing. RunLoop calls it once per cycle outside the helm.
+	KeepLandingLane   func() string
 	narrationLocation *time.Location
 }
 

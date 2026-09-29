@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
@@ -298,7 +297,7 @@ func (inv *intentInvocation) helmReport(seat helm.Seat, since time.Time) []strin
 		}
 	}
 	lines = append(lines, fmt.Sprintf("running dispatch jobs: %d (metasystem work status lists them; the helm stops none)", running))
-	held, err := helmHeldBatches(layout.InstallationRoot, seat)
+	held, err := helmHeldBatches(layout.InstallationRoot, seat, landingLaneRoot)
 	if err != nil {
 		return append(lines, "landing batches: unavailable: "+err.Error())
 	}
@@ -327,11 +326,12 @@ func helmYieldCount(seat helm.Seat, since time.Time) string {
 	return fmt.Sprint(count)
 }
 
-// helmHeldBatches reads the configured landing checkout's batch records
-// directly and names those with a unit this seat joined.
-func helmHeldBatches(installation string, seat helm.Seat) ([]string, error) {
-	root, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(installation, "metasystem.conf"), Default: "", DefaultSet: true})
-	if err != nil || strings.TrimSpace(root) == "" {
+// helmHeldBatches reads the batch records of the lane the installation lands
+// through (its own setting against the host's lane, U12) directly and names
+// those with a unit this seat joined.
+func helmHeldBatches(installation string, seat helm.Seat, laneRoot func(string, time.Time) (string, bool, error)) ([]string, error) {
+	root, configured, err := laneRoot(installation, time.Now().UTC())
+	if err != nil || !configured {
 		return nil, err
 	}
 	paths, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "landing-batches", "*.json"))

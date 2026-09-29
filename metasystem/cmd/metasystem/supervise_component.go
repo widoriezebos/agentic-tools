@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -265,27 +266,19 @@ func setupLandingOwnerWithInputs(metasystemRoot, repo string, cadence *batchOwne
 		return nil
 	}
 	pass = func() error {
+		// The owner serves only the host's one landing lane (U12), and
+		// stands down while a person has paused it (landing stop).
+		laneRoot, paused, err := landingOwnerLaneRoot(landingLaneHome, metasystemRoot, repo, clock())
+		if err != nil {
+			return err
+		}
+		if laneRoot == "" || realpath.Resolve(laneRoot) != realpath.Resolve(repo) || paused {
+			return nil
+		}
 		if activePass != nil {
 			return activePass()
 		}
 		conf := filepath.Join(metasystemRoot, "metasystem.conf")
-		rawRoot, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: conf, Default: "", DefaultSet: true})
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if rawRoot == "" {
-			return nil
-		}
-		resolved, err := resolvePathFlag(rawRoot)
-		if err != nil {
-			return err
-		}
-		if resolved != filepath.Clean(repo) {
-			return nil
-		}
 		rawWait, _, err := config.Get(config.GetParams{Key: config.BatchMaxWaitKey, ConfPath: conf,
 			Default: config.DefaultBatchMaxWait.String(), DefaultSet: true})
 		if err != nil {

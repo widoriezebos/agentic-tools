@@ -30,6 +30,7 @@ type ownerSeams struct {
 	probeRun            func(string, Record) (RunProbe, error)
 	runners             func(proofrun.LoadSample, proofrun.AdmissionCap) []RunnerCapacity
 	lock                func(string) *proofLock
+	proving             func() (string, bool, error)
 	after               func(time.Duration) <-chan time.Time
 	report              func(string, error)
 	pipeline            PipelineSource
@@ -109,6 +110,10 @@ type OwnerOptions struct {
 	BaseMove func(fromTree, toTree string) (BaseMove, error)
 	// Early are the acts that use a wait (D14, R27).
 	Early EarlySeams
+	// Proving probes the host's proving flock (U12): busy, and the holder,
+	// while a proof child holds it. The owner never holds it; the child it
+	// launches does, for its life. nil probes nothing.
+	Proving func() (holder string, busy bool, err error)
 }
 
 type Owner struct {
@@ -138,7 +143,7 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 		returns: options.Returns, rebind: options.Rebind, mint: options.Mint, logRed: options.LogRed,
 		baseCommit: options.BaseCommit, runDiagnostic: options.RunDiagnostic, descendsFrom: options.DescendsFrom, sample: options.Sample,
 		admission: options.Admission, launch: options.Launch, probeRun: options.ProbeRun, after: options.After,
-		report: options.Report, glob: options.Glob, pipeline: options.Pipeline, logWait: options.LogWait, location: options.Location, helmActive: options.HelmActive, baseMove: options.BaseMove, early: options.Early, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
+		report: options.Report, glob: options.Glob, pipeline: options.Pipeline, logWait: options.LogWait, location: options.Location, helmActive: options.HelmActive, baseMove: options.BaseMove, early: options.Early, proving: options.Proving, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
 		inflight: map[string]*proofRun{}, decided: map[string]decidedAt{}, completions: make(chan Completion, 64),
 		earlyRuns: map[string]earlyRun{}, capped: map[string]bool{}, earlyDone: make(chan EarlyCompletion, 64),
 		runners: func(sample proofrun.LoadSample, admission proofrun.AdmissionCap) []RunnerCapacity {
@@ -236,6 +241,12 @@ func (owner *Owner) Tick(id string) error {
 		if record.Proof != nil {
 			token = record.Proof.Token
 		}
+		// A diagnosis proves; a landing run pushes and never waits behind a proof.
+		if record.State == StateDiagnosing {
+			if waited, err := owner.waitsForProving(id, at); err != nil || waited {
+				return errors.Join(err, lock.release())
+			}
+		}
 		owner.dispatch(lock, Dispatch{ID: id, Window: "resume", Token: token, Runner: "host"})
 		return nil
 	}
@@ -255,6 +266,11 @@ func (owner *Owner) Tick(id string) error {
 	if record.State == StateHeldTrunkRed && record.TrunkRed != nil && len(record.TrunkRed.Entries) != 0 {
 		if tree == record.BaseTree || tree == record.TrunkRed.Red.BaseTree || tree == record.TrunkRed.CheckedTree {
 			return owner.release(id)
+		}
+		// The clearing diagnostic runs in this tick: it never starts beside
+		// another batch's proof.
+		if waited, err := owner.waitsForProving(id, at); err != nil || waited {
+			return errors.Join(err, owner.release(id))
 		}
 		baseCommit, err := owner.baseCommit(tree)
 		if err != nil {
@@ -300,6 +316,9 @@ func (owner *Owner) Tick(id string) error {
 		return errors.Join(owner.recordCap(id, sample, admission, at), lock.release())
 	}
 	delete(owner.capped, id)
+	if waited, err := owner.waitsForProving(id, at); err != nil || waited {
+		return errors.Join(err, lock.release())
+	}
 	token, err := owner.mint()
 	if err != nil {
 		return errors.Join(err, lock.release())

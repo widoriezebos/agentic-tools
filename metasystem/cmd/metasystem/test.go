@@ -1832,6 +1832,13 @@ func bindMaterializedCandidateCommit(ctx context.Context, workspace gittree.Work
 }
 
 func runTestRun(args []string) (exit int) {
+	// A batch's proof child holds the host's proving flock for its life (U12).
+	args, release, err := holdHostProvingFor(landingLaneHome, args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem internal test run:", err)
+		return 1
+	}
+	defer release()
 	// The entry supplies its own caller, as it always did.
 	return runTestRunWith(testRunInvocation{callerPID: int64(os.Getppid()), stdout: os.Stdout, stderr: os.Stderr, name: "internal test run"}, args)
 }
