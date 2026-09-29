@@ -3823,3 +3823,5 @@ Limitation — Register citation resolution: The accepted-risk register reader v
 2026-09-25T13:15:12Z HIGHLIGHT — A landing moved the repository storyline to commit b3f968a50423. (source: commit b3f968a504238de48822a7a5cf668d70b89083bd)
 2026-09-29T07:16:51Z HIGHLIGHT — A landing moved the repository storyline to commit 425962f7f36c. (source: commit 425962f7f36cb2c5889601261f78fcb91203380e)
 2026-09-29T07:16:51Z LOWLIGHT — The steward escalated: claimable backlog has no live claim or delegate process; every steward tick escalates independently of the seat runtime. (source: episode escalation-idle-backlog-dead-425962f7f36cb2c5889601261f78fcb91203380e)
+2026-09-29T07:18:32Z HIGHLIGHT — A landing moved the repository storyline to commit d8d0605de5a3. (source: commit d8d0605de5a356bf1ba633d5be90b4f8e64bcd9e)
+2026-09-29T07:18:32Z LOWLIGHT — The steward escalated: claimable backlog has no live claim or delegate process; every steward tick escalates independently of the seat runtime. (source: episode escalation-idle-backlog-dead-d8d0605de5a356bf1ba633d5be90b4f8e64bcd9e)
