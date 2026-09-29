@@ -166,13 +166,11 @@ func TestAttemptRetentionKeepsEveryRootAndRemovesTheOldestRest(t *testing.T) {
 	b.attempt("proof-alive-0000000000000010", 65*retentionDay, true, nil)
 	b.alive[b.pid("proof-alive-0000000000000010")] = true
 
-	var total, one int64
-	entries, _ := os.ReadDir(b.path())
-	for _, entry := range entries {
-		bytes, _, _ := diskstore.Measure(context.Background(), b.path(entry.Name()))
-		total += bytes
-	}
-	one = payloadBytes(context.Background(), b.path("proof-a-0000000000000003"))
+	// The store is measured as retention measures it: the proof-run root
+	// itself, whose own directory blocks count on Linux (ext4 gives a
+	// directory a block; APFS reports none).
+	total, _, _ := diskstore.Measure(context.Background(), b.path())
+	one := payloadBytes(context.Background(), b.path("proof-a-0000000000000003"))
 	report := b.pass(b.retention(total-2*one, fakeNamer{kind: "fixture", named: []string{"proof-named-0000000000000009"}}))
 	for id, want := range map[string]bool{
 		"proof-a-0000000000000001": false, "proof-a-0000000000000002": false, "proof-a-0000000000000003": true,

@@ -196,13 +196,23 @@ func TestAReusedExportReestablishesDurability(t *testing.T) {
 
 func TestAnExportDirectoryInsideARootOrCheckoutIsDeclined(t *testing.T) {
 	t.Parallel()
-	roots, checkouts, stores := []string{"/Users/wido/metasystem-evidence/agentic-tools"}, []string{"/Users/wido/LocalStorage/GitHub/agentic-tools-m1e"}, []string{"/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/artifacts/agents/workspaces/goal-g/default"}
-	for _, dir := range []string{"/Users/wido/metasystem-evidence/agentic-tools/exports", "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/exports"} {
+	// The judgement is by file identity, so the roots must exist: a bed of
+	// its own, never the host's real evidence root or checkout.
+	bed := t.TempDir()
+	root, checkout := filepath.Join(bed, "metasystem-evidence", "agentic-tools"), filepath.Join(bed, "agentic-tools-m1e")
+	store := filepath.Join(checkout, "metasystem", "artifacts", "agents", "workspaces", "goal-g", "default")
+	for _, dir := range []string{root, store, filepath.Join(bed, "Backup")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	roots, checkouts, stores := []string{root}, []string{checkout}, []string{store}
+	for _, dir := range []string{filepath.Join(root, "exports"), filepath.Join(checkout, "exports")} {
 		if problem := ExportDirProblem(dir, roots, checkouts, stores); !strings.Contains(problem, "an export must live outside every evidence root and checkout") {
 			t.Fatalf("%s: %q", dir, problem)
 		}
 	}
-	if problem := ExportDirProblem("/Volumes/Backup/metasystem-exports", roots, checkouts, stores); problem != "" {
+	if problem := ExportDirProblem(filepath.Join(bed, "Backup", "metasystem-exports"), roots, checkouts, stores); problem != "" {
 		t.Fatalf("an external directory is accepted: %q", problem)
 	}
 }
