@@ -16,8 +16,10 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestBatchPushRejectionAppearsInStatus(t *testing.T) {
@@ -53,7 +55,7 @@ func TestBatchLandReceiptsRunFromNestedModuleRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	seams := batchLandSeamsWithRead(repository, "batch", batch.Record{}, "base", "actor", gitOutput, plantedBatchCommit)
+	seams := batchowner.BatchLandSeamsWithRead(repository, "batch", batch.Record{}, "base", "actor", batchowner.GitOutput, plantedBatchCommit)
 	if err := seams.AppendReceipt(batch.Unit{GoalID: "goal-a"}, batch.PrefixReceipt{Tree: "tree"}); err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +141,7 @@ func TestBatchLandCommitWrapperRunsFromNestedModuleRoot(t *testing.T) {
 		readCount++
 		return result, nil
 	}
-	seams := batchLandSeamsWithRead(repository, "batch", batch.Record{}, "base", "actor", readGit, plantedBatchCommit)
+	seams := batchowner.BatchLandSeamsWithRead(repository, "batch", batch.Record{}, "base", "actor", readGit, plantedBatchCommit)
 	head, err := seams.Commit(batch.Unit{GoalID: "goal-a", Chain: "chain-a", AuthorName: "Owner", AuthorEmail: "owner@example.invalid"}, batch.PrefixReceipt{Tree: "tree"})
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +178,7 @@ func TestFinishBatchLandingLeavesUnchangedPushRejectionQuiet(t *testing.T) {
 	if err := store.Create(record); err != nil {
 		t.Fatal(err)
 	}
-	if err := finishBatchLanding(root, store, batchID, "owner", time.Unix(5, 0)); err != nil {
+	if err := batchowner.FinishBatchLanding(root, store, batchID, "owner", time.Unix(5, 0)); err != nil {
 		t.Fatalf("unchanged held tick produced output: %v", err)
 	}
 	stored, err := store.Load(batchID)
@@ -206,7 +208,7 @@ exit 2
 	}
 	dependencies := batchTestExecutionDependencies(t, root, tree, fake)
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
-	result, err := executeBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"group-a"}}, dependencies)
+	result, err := batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"group-a"}}, dependencies)
 	if err == nil || len(result.Red) != 0 {
 		t.Fatalf("infrastructure result=%+v error=%v", result, err)
 	}
@@ -221,7 +223,7 @@ func TestRecoveryFailureDoesNotAbortAmbientRebase(t *testing.T) {
 	if err := os.WriteFile(marker, []byte("unrelated\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	recovery, err := reopenMovedBatchAfterRecoveryFailure(root, "batch", "tip", "origin", batch.PushRecovery{}, errors.New("landing recovery failed"))
+	recovery, err := batchowner.ReopenMovedBatchAfterRecoveryFailure(root, "batch", "tip", "origin", batch.PushRecovery{}, errors.New("landing recovery failed"))
 	if err != nil || !recovery.Reopen {
 		t.Fatalf("recovery=%+v error=%v", recovery, err)
 	}
@@ -233,7 +235,7 @@ func TestRecoveryFailureDoesNotAbortAmbientRebase(t *testing.T) {
 func TestBatchProofInputsMovedIgnoresSiblingEnginePaths(t *testing.T) {
 	record := batch.Record{Proof: &batch.Proof{SelectedGroups: []string{"docs"}, InputManifests: map[string][]string{"docs": {"metasystem/docs/**"}}}}
 	for _, outside := range []string{"internal/other/x.go", "cmd/metasystem/main.go", "go.mod"} {
-		if batchProofInputsMoved(record, []string{outside}, "metasystem") {
+		if batch.DecideMovedBase(record, []string{outside}, "metasystem").Reopen {
 			t.Fatalf("sibling path %q was mapped into the installation engine", outside)
 		}
 	}
@@ -251,7 +253,7 @@ func TestPrefixGroupExecutionListsCachedPassesApart(t *testing.T) {
 		reusable bool
 		want     string
 	}{{cached, false, "cached"}, {mixed, false, "executed"}, {legacy, false, "executed"}, {cached, true, ""}, {proofrun.GroupResult{}, false, ""}} {
-		if got := prefixGroupExecution(row.group, row.reusable); got != row.want {
+		if got := batchowner.PrefixGroupExecution(row.group, row.reusable); got != row.want {
 			t.Errorf("prefixGroupExecution(%+v, %t) = %q, want %q", row.group.Execution, row.reusable, got, row.want)
 		}
 	}
@@ -277,8 +279,8 @@ func TestFirstGreenLandsOthersRebaseWhenNoInputMoved(t *testing.T) {
 	}
 	var calls []string
 	var verified [][]string
-	edges := movedBaseEdges{
-		readGit: func(_ string, args ...string) (string, error) {
+	edges := batchowner.MovedBaseEdges{
+		ReadGit: func(_ string, args ...string) (string, error) {
 			switch strings.Join(args, " ") {
 			case "rev-parse commit-2^{tree}":
 				return "base-2", nil
@@ -289,19 +291,19 @@ func TestFirstGreenLandsOthersRebaseWhenNoInputMoved(t *testing.T) {
 			}
 			return "", errors.New("unstubbed git " + strings.Join(args, " "))
 		},
-		onEndpoint: func(string, string, string) (bool, error) { return false, nil },
-		paths: func(_, from, to string) ([]string, string, error) {
+		OnEndpoint: func(string, string, string) (bool, error) { return false, nil },
+		Paths: func(_, from, to string) ([]string, string, error) {
 			calls = append(calls, "paths "+from+".."+to)
 			return []string{"records/2026-09-28.md"}, "", nil
 		},
-		advance:   func(string) error { calls = append(calls, "advance"); return nil },
-		held:      func(_, base, commit, _, _ string) error { calls = append(calls, "held "+base+" "+commit); return nil },
-		verify:    func(_ string, _ batch.Record, trees []string) error { verified = append(verified, trees); return nil },
-		authorize: func(string, batch.Store, batch.Record, string, time.Time) error { return nil },
-		now:       func(string) (time.Time, error) { return time.Unix(3, 0), nil },
-		publish:   func(_, _, expected, tip string) error { calls = append(calls, "publish "+expected+" "+tip); return nil },
-		push:      func(_, _, base, tip string) error { calls = append(calls, "push "+base+" "+tip); return nil },
-		fetch: func(string) (string, string, error) {
+		Advance:   func(string) error { calls = append(calls, "advance"); return nil },
+		Held:      func(_, base, commit, _, _ string) error { calls = append(calls, "held "+base+" "+commit); return nil },
+		Verify:    func(_ string, _ batch.Record, trees []string) error { verified = append(verified, trees); return nil },
+		Authorize: func(string, batch.Store, batch.Record, string, time.Time) error { return nil },
+		Now:       func(string) (time.Time, error) { return time.Unix(3, 0), nil },
+		Publish:   func(_, _, expected, tip string) error { calls = append(calls, "publish "+expected+" "+tip); return nil },
+		Push:      func(_, _, base, tip string) error { calls = append(calls, "push "+base+" "+tip); return nil },
+		Fetch: func(string) (string, string, error) {
 			return "", "", errors.New("no fetch after a push that succeeded")
 		},
 	}
@@ -318,7 +320,7 @@ func TestFirstGreenLandsOthersRebaseWhenNoInputMoved(t *testing.T) {
 		Abandon: func(string, string) error { return nil }, SeriesOnOrigin: func(string, string) (bool, error) { return false, nil },
 		LeaseBase: "commit-1",
 		RecoverPush: func(origin, baseTree, tip string, _ func() error) (batch.PushRecovery, error) {
-			return recoverMovedBatchPushWith(root, id, record, "owner", "commit-1", origin, baseTree, tip, edges)
+			return batchowner.RecoverMovedBatchPushWith(root, id, record, "owner", "commit-1", origin, baseTree, tip, edges)
 		},
 	}
 	if err := batch.LandSeries(store, id, "owner", time.Unix(2, 0), seams); err != nil {
@@ -359,7 +361,7 @@ func TestConcurrentRearmsNeverOverlapNorMoveTheControlRootBack(t *testing.T) {
 			overlaps++
 		}
 		mu.Unlock()
-		if !laneCheckoutFor(root).held() {
+		if !batchowner.LaneCheckoutFor(root).Held() {
 			mu.Lock()
 			overlaps++
 			mu.Unlock()
@@ -372,24 +374,27 @@ func TestConcurrentRearmsNeverOverlapNorMoveTheControlRootBack(t *testing.T) {
 		active--
 		mu.Unlock()
 	}
-	edges := batchRearmEdges{
-		head:       func(string) (string, string, error) { mu.Lock(); defer mu.Unlock(); return head, "tree-" + head, nil },
-		baseCommit: func(_, tree string) (string, error) { return strings.TrimPrefix(tree, "tree-"), nil },
-		descends:   func(_, descendant, ancestor string) (bool, error) { return order[descendant] > order[ancestor], nil },
-		fastForward: func(_ context.Context, _, commit string) error {
+	edges := batchowner.BatchRearmEdges{
+		Head:       func(string) (string, string, error) { mu.Lock(); defer mu.Unlock(); return head, "tree-" + head, nil },
+		BaseCommit: func(_, tree string) (string, error) { return strings.TrimPrefix(tree, "tree-"), nil },
+		Descends:   func(_, descendant, ancestor string) (bool, error) { return order[descendant] > order[ancestor], nil },
+		FastForward: func(_ context.Context, _, commit string) error {
 			step("fast-forward " + commit)
 			mu.Lock()
 			moves, head = append(moves, head+"->"+commit), commit
 			mu.Unlock()
 			return nil
 		},
-		rebuild: func(context.Context, string) error { step("rebuild"); return nil },
-		up:      func(context.Context, string, string) (upOutcome, error) { step("up"); return upOutcome{}, nil },
+		Rebuild: func(context.Context, string) error { step("rebuild"); return nil },
+		Up: func(context.Context, string, string) (testrun.UpOutcome, error) {
+			step("up")
+			return testrun.UpOutcome{}, nil
+		},
 	}
 	errs := make(chan error, 2)
-	go func() { errs <- rearmBatchBaseWith(root, "tree-T2", edges) }()
+	go func() { errs <- batchowner.RearmBatchBaseWith(root, "tree-T2", edges) }()
 	<-entered
-	go func() { errs <- rearmBatchBaseWith(root, "tree-T1", edges) }()
+	go func() { errs <- batchowner.RearmBatchBaseWith(root, "tree-T1", edges) }()
 	close(proceed)
 	for range 2 {
 		if err := <-errs; err != nil {
@@ -408,13 +413,13 @@ func TestConcurrentRearmsNeverOverlapNorMoveTheControlRootBack(t *testing.T) {
 func TestLandingsAndRearmsTakeTurnsOnTheLaneCheckout(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	checkout := laneCheckoutFor(root)
+	checkout := batchowner.LaneCheckoutFor(root)
 	var inside atomic.Int32
 	var landedDuringA, rearmedDuringA atomic.Bool
 	entered, release := make(chan struct{}), make(chan struct{})
 	first := make(chan error, 1)
 	go func() {
-		first <- withLaneCheckout(root, func() error {
+		first <- batchowner.WithLaneCheckout(root, func() error {
 			inside.Add(1)
 			close(entered)
 			<-release
@@ -425,20 +430,20 @@ func TestLandingsAndRearmsTakeTurnsOnTheLaneCheckout(t *testing.T) {
 	<-entered
 	landed, rearmed := make(chan error, 1), make(chan error, 1)
 	go func() {
-		err := executeBatchLanding(root, "batch-b", "owner", time.Unix(0, 0))
+		err := batchowner.ExecuteBatchLanding(root, "batch-b", "owner", time.Unix(0, 0))
 		landedDuringA.Store(inside.Load() != 0)
 		landed <- err
 	}()
-	edges := batchRearmEdges{
-		head: func(string) (string, string, error) {
+	edges := batchowner.BatchRearmEdges{
+		Head: func(string) (string, string, error) {
 			rearmedDuringA.Store(inside.Load() != 0)
 			return "T1", "tree-T1", nil
 		},
-		rebuild: func(context.Context, string) error { return nil },
-		up:      func(context.Context, string, string) (upOutcome, error) { return upOutcome{}, nil },
+		Rebuild: func(context.Context, string) error { return nil },
+		Up:      func(context.Context, string, string) (testrun.UpOutcome, error) { return testrun.UpOutcome{}, nil },
 	}
-	go func() { rearmed <- rearmBatchBaseWith(root, "tree-T1", edges) }()
-	for checkout.waiting.Load() != 2 && !landedDuringA.Load() && !rearmedDuringA.Load() {
+	go func() { rearmed <- batchowner.RearmBatchBaseWith(root, "tree-T1", edges) }()
+	for checkout.Waiting.Load() != 2 && !landedDuringA.Load() && !rearmedDuringA.Load() {
 		runtime.Gosched()
 	}
 	close(release)
@@ -452,7 +457,7 @@ func TestLandingsAndRearmsTakeTurnsOnTheLaneCheckout(t *testing.T) {
 	if landedDuringA.Load() || rearmedDuringA.Load() {
 		t.Fatalf("the lane checkout was moved while batch A's landing held it: landing=%v rearm=%v", landedDuringA.Load(), rearmedDuringA.Load())
 	}
-	if checkout.held() {
+	if checkout.Held() {
 		t.Fatal("the lane checkout stayed held after every step finished")
 	}
 }
@@ -480,8 +485,8 @@ func TestBatchRecoveredPushRechecksTheFlakeAllowanceImmediatelyBeforeItsPush(t *
 	}
 	var calls []string
 	rebased := false
-	edges := movedBaseEdges{
-		readGit: func(_ string, args ...string) (string, error) {
+	edges := batchowner.MovedBaseEdges{
+		ReadGit: func(_ string, args ...string) (string, error) {
 			switch strings.Join(args, " ") {
 			case "rev-parse commit-2^{tree}":
 				return "base-2", nil
@@ -492,21 +497,21 @@ func TestBatchRecoveredPushRechecksTheFlakeAllowanceImmediatelyBeforeItsPush(t *
 			}
 			return "", errors.New("unstubbed git " + strings.Join(args, " "))
 		},
-		onEndpoint: func(string, string, string) (bool, error) { return false, nil },
-		paths:      func(_, _, _ string) ([]string, string, error) { return []string{"records/2026-09-28.md"}, "", nil },
-		advance:    func(string) error { return nil },
-		held:       func(string, string, string, string, string) error { return nil },
-		verify:     func(string, batch.Record, []string) error { return nil },
-		authorize:  func(string, batch.Store, batch.Record, string, time.Time) error { return nil },
-		now:        func(string) (time.Time, error) { return allowance.Add(-time.Hour), nil },
+		OnEndpoint: func(string, string, string) (bool, error) { return false, nil },
+		Paths:      func(_, _, _ string) ([]string, string, error) { return []string{"records/2026-09-28.md"}, "", nil },
+		Advance:    func(string) error { return nil },
+		Held:       func(string, string, string, string, string) error { return nil },
+		Verify:     func(string, batch.Record, []string) error { return nil },
+		Authorize:  func(string, batch.Store, batch.Record, string, time.Time) error { return nil },
+		Now:        func(string) (time.Time, error) { return allowance.Add(-time.Hour), nil },
 		// The rebase and re-verification take the clock past the allowance.
-		publish: func(_, _, expected, tip string) error {
+		Publish: func(_, _, expected, tip string) error {
 			rebased = true
 			calls = append(calls, "publish "+expected+" "+tip)
 			return nil
 		},
-		push:  func(_, _, base, tip string) error { calls = append(calls, "push "+base+" "+tip); return nil },
-		fetch: func(string) (string, string, error) { return "", "", errors.New("no fetch") },
+		Push:  func(_, _, base, tip string) error { calls = append(calls, "push "+base+" "+tip); return nil },
+		Fetch: func(string) (string, string, error) { return "", "", errors.New("no fetch") },
 	}
 	seams := batch.LandSeams{Prepare: func(string) error { return nil }, Apply: func(batch.Unit) error { return nil },
 		AppendReceipt: func(batch.Unit, batch.PrefixReceipt) error { return nil },
@@ -529,8 +534,8 @@ func TestBatchRecoveredPushRechecksTheFlakeAllowanceImmediatelyBeforeItsPush(t *
 		},
 		RecoverPush: func(origin, baseTree, tip string, recheck func() error) (batch.PushRecovery, error) {
 			recovery := edges
-			recovery.recheck = recheck
-			return recoverMovedBatchPushWith(root, id, record, "owner", "commit-1", origin, baseTree, tip, recovery)
+			recovery.Recheck = recheck
+			return batchowner.RecoverMovedBatchPushWith(root, id, record, "owner", "commit-1", origin, baseTree, tip, recovery)
 		},
 	}
 	err := batch.LandSeries(store, id, "owner", time.Unix(2, 0), seams)

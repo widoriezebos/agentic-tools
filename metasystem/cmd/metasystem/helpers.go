@@ -7,11 +7,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cliflags"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 type pathValue struct {
@@ -35,14 +35,7 @@ func (value pathValue) Set(raw string) error {
 }
 
 func resolvePathFlag(raw string) (string, error) {
-	if raw == "" {
-		return "", nil
-	}
-	absolute, err := filepath.Abs(raw)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Clean(absolute), nil
+	return realpath.Absolute(raw)
 }
 
 func pathFlag(flags *flag.FlagSet, name, value, usage string) *string {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -22,7 +23,7 @@ var laneTestNow = time.Date(2026, 9, 29, 18, 0, 0, 0, time.UTC)
 // whose settings the test writes; Git is never run.
 type laneBed struct {
 	home, landingA, landingB, seatA, seatB string
-	seams                                  landingLaneSeams
+	seams                                  batchowner.LandingLaneSeams
 }
 
 func newLaneBed(t *testing.T) *laneBed {
@@ -41,9 +42,9 @@ func newLaneBed(t *testing.T) *laneBed {
 		}
 	}
 	bed.home, bed.landingA, bed.landingB = realpath.Resolve(bed.home), realpath.Resolve(bed.landingA), realpath.Resolve(bed.landingB)
-	bed.seams = landingLaneSeams{home: func() (string, error) { return bed.home, nil },
-		by:       func(installation string) string { return filepath.Base(installation) },
-		validate: func(root, _ string, _ time.Time) (string, error) { return realpath.Resolve(root), nil }}
+	bed.seams = batchowner.LandingLaneSeams{Home: func() (string, error) { return bed.home, nil },
+		By:       func(installation string) string { return filepath.Base(installation) },
+		Validate: func(root, _ string, _ time.Time) (string, error) { return realpath.Resolve(root), nil }}
 	return bed
 }
 
@@ -60,7 +61,7 @@ func TestBatchRootRegistersTheFirstSeatAndServesTheOthers(t *testing.T) {
 	t.Parallel()
 	bed := newLaneBed(t)
 	bed.setRoot(t, bed.seatA, bed.landingA)
-	root, configured, err := bed.seams.batchRoot(bed.seatA, laneTestNow)
+	root, configured, err := bed.seams.BatchRoot(bed.seatA, laneTestNow)
 	if err != nil || !configured || root != bed.landingA {
 		t.Fatalf("seat A = %q %v %v; want %s", root, configured, err, bed.landingA)
 	}
@@ -68,12 +69,12 @@ func TestBatchRootRegistersTheFirstSeatAndServesTheOthers(t *testing.T) {
 	if err != nil || !ok || record.Root != bed.landingA || record.RegisteredBy != "seat-a" {
 		t.Fatalf("record = %+v %v %v", record, ok, err)
 	}
-	root, configured, err = bed.seams.batchRoot(bed.seatB, laneTestNow)
+	root, configured, err = bed.seams.BatchRoot(bed.seatB, laneTestNow)
 	if err != nil || !configured || root != bed.landingA {
 		t.Fatalf("unset seat B = %q %v %v; want the host's lane %s", root, configured, err, bed.landingA)
 	}
 	bed.setRoot(t, bed.seatB, bed.landingA)
-	if root, _, err = bed.seams.batchRoot(bed.seatB, laneTestNow); err != nil || root != bed.landingA {
+	if root, _, err = bed.seams.BatchRoot(bed.seatB, laneTestNow); err != nil || root != bed.landingA {
 		t.Fatalf("seat B naming the same lane = %q %v", root, err)
 	}
 }
@@ -82,7 +83,7 @@ func TestBatchRootRegistersTheFirstSeatAndServesTheOthers(t *testing.T) {
 func TestBatchRootWithoutAnyLaneIsNotConfigured(t *testing.T) {
 	t.Parallel()
 	bed := newLaneBed(t)
-	if root, configured, err := bed.seams.batchRoot(bed.seatA, laneTestNow); err != nil || configured || root != "" {
+	if root, configured, err := bed.seams.BatchRoot(bed.seatA, laneTestNow); err != nil || configured || root != "" {
 		t.Fatalf("no lane = %q %v %v", root, configured, err)
 	}
 	if _, ok, _ := lane.Read(bed.home); ok {
@@ -96,12 +97,12 @@ func TestWorkLandRefusesASeatWhoseRootIsNotTheHostLane(t *testing.T) {
 	t.Parallel()
 	bed := newLaneBed(t)
 	bed.setRoot(t, bed.seatA, bed.landingA)
-	if _, _, err := bed.seams.batchRoot(bed.seatA, laneTestNow); err != nil {
+	if _, _, err := bed.seams.BatchRoot(bed.seatA, laneTestNow); err != nil {
 		t.Fatal(err)
 	}
 	bed.setRoot(t, bed.seatB, bed.landingB)
 	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatB}, owners: intentOwners{delivery: &intentDeliveryOwners{
-		batchRoot: bed.seams.batchRoot, now: func() time.Time { return laneTestNow }}}}
+		batchRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
 	_, _, refused := inv.landingBatchRoot(nil)
 	if refused == nil || refused.Outcome != intentRefused {
 		t.Fatalf("seat B landed through another lane: %+v", refused)
@@ -124,19 +125,19 @@ func TestWorkLandRefusesASeatWhoseRootIsNotTheHostLane(t *testing.T) {
 func TestLandingOwnerServesOnlyTheHostLane(t *testing.T) {
 	t.Parallel()
 	bed := newLaneBed(t)
-	home := bed.seams.home
+	home := bed.seams.Home
 	bed.setRoot(t, bed.landingA, bed.landingA)
 	for _, landing := range []string{bed.landingA, bed.landingB} {
 		if err := os.WriteFile(filepath.Join(landing, "metasystem.conf"), nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	root, paused, err := landingOwnerLaneRoot(home, bed.landingA, bed.landingA, laneTestNow)
+	root, paused, err := batchowner.LandingOwnerLaneRoot(home, bed.landingA, bed.landingA, laneTestNow)
 	if err != nil || root != bed.landingA || paused {
 		t.Fatalf("lane A's own owner = %q %v %v", root, paused, err)
 	}
 	bed.setRoot(t, bed.landingB, bed.landingB)
-	_, _, err = landingOwnerLaneRoot(home, bed.landingB, bed.landingB, laneTestNow)
+	_, _, err = batchowner.LandingOwnerLaneRoot(home, bed.landingB, bed.landingB, laneTestNow)
 	var refusal *lane.Refusal
 	if !errors.As(err, &refusal) || refusal.Code != lane.CodeMismatch {
 		t.Fatalf("lane B's owner = %v; want %s so a second owner never runs", err, lane.CodeMismatch)
@@ -144,13 +145,13 @@ func TestLandingOwnerServesOnlyTheHostLane(t *testing.T) {
 	if err := os.Remove(filepath.Join(bed.landingB, "metasystem.conf.local")); err != nil {
 		t.Fatal(err)
 	}
-	if root, _, err = landingOwnerLaneRoot(home, bed.landingB, bed.landingB, laneTestNow); err != nil || root != bed.landingA {
+	if root, _, err = batchowner.LandingOwnerLaneRoot(home, bed.landingB, bed.landingB, laneTestNow); err != nil || root != bed.landingA {
 		t.Fatalf("unset owner B = %q %v; want the host's lane A, which is not B, so B does not run", root, err)
 	}
 	if _, err := lane.SetPause(bed.home, "Wido", laneTestNow); err != nil {
 		t.Fatal(err)
 	}
-	if _, paused, _ = landingOwnerLaneRoot(home, bed.landingA, bed.landingA, laneTestNow); !paused {
+	if _, paused, _ = batchowner.LandingOwnerLaneRoot(home, bed.landingA, bed.landingA, laneTestNow); !paused {
 		t.Fatalf("a person's pause is not seen by the owner")
 	}
 }
@@ -164,11 +165,11 @@ func TestBatchRootWithoutALaneHomeKeepsTheSeatSetting(t *testing.T) {
 	}
 	bed.setRoot(t, bed.landingA, bed.landingA)
 	noHome := func() (string, error) { return "", errors.New("no home") }
-	root, paused, err := landingOwnerLaneRoot(noHome, bed.landingA, bed.landingA, laneTestNow)
+	root, paused, err := batchowner.LandingOwnerLaneRoot(noHome, bed.landingA, bed.landingA, laneTestNow)
 	if err != nil || paused || realpath.Resolve(root) != bed.landingA {
 		t.Fatalf("owner without a lane home = %q %v %v", root, paused, err)
 	}
-	if landingLaneProving(noHome) != nil || landingLaneKeeper(noHome) != nil {
+	if batchowner.LandingLaneProving(noHome) != nil || batchowner.LandingLaneKeeper(noHome) != nil {
 		t.Fatalf("a host without a lane home gates proofs or keeps an owner")
 	}
 }
@@ -183,7 +184,7 @@ func TestHelmHeldBatchesReadsTheHostLaneForAnUnsetSeat(t *testing.T) {
 		t.Fatal(err)
 	}
 	bed.setRoot(t, bed.seatA, bed.landingA)
-	if _, _, err := bed.seams.batchRoot(bed.seatA, laneTestNow); err != nil {
+	if _, _, err := bed.seams.BatchRoot(bed.seatA, laneTestNow); err != nil {
 		t.Fatal(err)
 	}
 	batches := filepath.Join(bed.landingA, "artifacts", "agents", "landing-batches")
@@ -199,7 +200,7 @@ func TestHelmHeldBatchesReadsTheHostLaneForAnUnsetSeat(t *testing.T) {
 		t.Fatal(err)
 	}
 	held, err := helmHeldBatches(bed.seatB, seat, func(installation string, now time.Time) (string, bool, error) {
-		return bed.seams.resolve(installation, now, false)
+		return bed.seams.Resolve(installation, now, false)
 	})
 	if err != nil || len(held) != 1 || held[0] != "b1 (proving)" {
 		t.Fatalf("unset seat's held batches = %v %v; want b1 from the host lane", held, err)
@@ -212,12 +213,12 @@ func TestHelmHeldBatchesReadsTheHostLaneForAnUnsetSeat(t *testing.T) {
 func TestBatchProofLauncherAsksTheChildToHoldTheProvingLock(t *testing.T) {
 	t.Parallel()
 	args := []string{"internal", "test", "run", "--root", "/r"}
-	held := batchProofCommand("/bin/metasystem", args, false)
-	if !slices.Contains(held.Args, holdHostProvingFlag) {
+	held := batchowner.BatchProofCommand("/bin/metasystem", args, false)
+	if !slices.Contains(held.Args, batchowner.HoldHostProvingFlag) {
 		t.Fatalf("a proof child launched without the proving lock: %v", held.Args)
 	}
-	spare := batchProofCommand("/bin/metasystem", args, true)
-	if slices.Contains(spare.Args, holdHostProvingFlag) {
+	spare := batchowner.BatchProofCommand("/bin/metasystem", args, true)
+	if slices.Contains(spare.Args, batchowner.HoldHostProvingFlag) {
 		t.Fatalf("a spare launch holds the proving lock: %v", spare.Args)
 	}
 	if len(args) != 5 {
@@ -231,8 +232,8 @@ func TestTestRunHoldsTheProvingLockForItsLife(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
 	homeOf := func() (string, error) { return home, nil }
-	rest, release, err := holdHostProvingFor(homeOf, []string{"internal", "test", "run", holdHostProvingFlag, "--root", "/r"})
-	if err != nil || slices.Contains(rest, holdHostProvingFlag) || len(rest) != 5 {
+	rest, release, err := batchowner.HoldHostProvingFor(homeOf, []string{"internal", "test", "run", batchowner.HoldHostProvingFlag, "--root", "/r"})
+	if err != nil || slices.Contains(rest, batchowner.HoldHostProvingFlag) || len(rest) != 5 {
 		t.Fatalf("hold = %v %v", rest, err)
 	}
 	if holder, busy, _ := lane.ProbeProving(home); !busy || holder != fmt.Sprintf("pid %d", os.Getpid()) {
@@ -244,7 +245,7 @@ func TestTestRunHoldsTheProvingLockForItsLife(t *testing.T) {
 	if _, busy, _ := lane.ProbeProving(home); busy {
 		t.Fatalf("the lock outlived the run")
 	}
-	rest, release, err = holdHostProvingFor(homeOf, []string{"internal", "test", "run"})
+	rest, release, err = batchowner.HoldHostProvingFor(homeOf, []string{"internal", "test", "run"})
 	if err != nil || len(rest) != 3 || release() != nil {
 		t.Fatalf("without the flag = %v %v", rest, err)
 	}
@@ -259,7 +260,7 @@ func TestTestRunHoldsTheProvingLockForItsLife(t *testing.T) {
 func TestEnsureBatchOwnerRefusesAGoneLane(t *testing.T) {
 	t.Parallel()
 	gone := filepath.Join(t.TempDir(), "gone-landing")
-	err := landingCheckoutPresent(gone)
+	err := batchowner.LandingCheckoutPresent(gone)
 	var refusal *lane.Refusal
 	if !errors.As(err, &refusal) || refusal.Code != lane.CodeGone || !strings.Contains(refusal.Fix, "metasystem landing set PATH") {
 		t.Fatalf("ensure a gone lane = %v", err)

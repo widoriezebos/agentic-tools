@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 import (
 	"testing"
@@ -48,7 +48,7 @@ func TestBatchOwnerRestartProbeBindsOnlyTheBatchsOwnRun(t *testing.T) {
 	} {
 		attempts := []proofrun.Attempt{{AttemptID: "running", GoalID: "goal-a", CandidateTree: test.tree, StartedAt: test.started.Format(time.RFC3339Nano),
 			Launcher: proofrun.ProcessIdentity{Pid: 41, PidStartedAt: 41}}}
-		got, err := probeBatchProofRun(root, id, record, argvProber{41: test.exact}, func(string) ([]proofrun.Attempt, error) { return attempts, nil })
+		got, err := ProbeBatchProofRun(root, id, record, argvProber{41: test.exact}, func(string) ([]proofrun.Attempt, error) { return attempts, nil })
 		if err != nil || got.State != test.want {
 			t.Errorf("%s: probed %+v err=%v, want %s", test.name, got, err, test.want)
 		}

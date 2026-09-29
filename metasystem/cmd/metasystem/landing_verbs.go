@@ -16,7 +16,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func runLandingObserve(args []string, stdout, stderr io.Writer) int {
@@ -66,7 +68,7 @@ func runLandingObserve(args []string, stdout, stderr io.Writer) int {
 	}
 	if (*testReceipt != "" || *carried != "") && *recertification == "" {
 		params.VerifyTesting = func() (proofrun.TestResult, error) {
-			return verifyRetainedTesting(testingSelectionRequest{Root: *root, GoalID: *goal,
+			return verifyRetainedTesting(testrun.SelectionRequest{Root: *root, GoalID: *goal,
 				Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, Carried: *carried != ""})
 		}
 	}
@@ -250,7 +252,7 @@ func landingTestReceiptTo(stdout, stderr io.Writer, parent context.Context, reso
 			return status
 		}
 		var result proofrun.TestResult
-		if err := readStrictJSON(resultPath, &result); err != nil {
+		if err := strictjson.Read(resultPath, &result); err != nil {
 			return recordExitTo(stderr, fmt.Errorf("read shared testing result: %w", err))
 		}
 		var receipt landing.TestReceipt

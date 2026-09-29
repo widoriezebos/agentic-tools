@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	seatlaunch "github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
@@ -303,7 +304,7 @@ func witnessCoordinatorRepeat(t *testing.T) {
 		before := idemTreeDigest(t, root)
 		var stdout, stderr bytes.Buffer
 		// The caller is no person: a repeat whose effect holds needs none.
-		code := brainWithdraw(processIdentity{}, &stdout, &stderr, root, "Wido", false)
+		code := brainWithdraw(ownercall.Process{}, &stdout, &stderr, root, "Wido", false)
 		var printed map[string]any
 		if code != 0 || json.Unmarshal(stdout.Bytes(), &printed) != nil || printed["unchanged"] != true {
 			t.Fatalf("withdraw %d = %d %q %q", run, code, stdout.String(), stderr.String())

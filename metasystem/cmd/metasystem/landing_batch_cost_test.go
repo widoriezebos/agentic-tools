@@ -18,9 +18,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestBatchCostPrefixGenericBudgetRefusalUsesTypedReturn(t *testing.T) {
@@ -33,7 +35,7 @@ func TestBatchCostPrefixGenericBudgetRefusalUsesTypedReturn(t *testing.T) {
 	}
 	dependencies := batchTestExecutionDependencies(t, root, tree, fake)
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
-	_, err := executeBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
+	_, err := batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
 	var budget *batch.PrefixBudgetRefusal
 	if !errors.As(err, &budget) || !strings.Contains(budget.Error(), "BUDGET_REFUSED") {
 		t.Fatalf("generic engine budget refusal was not typed for member return: %T %v", err, err)
@@ -61,18 +63,18 @@ func TestBatchCostLandingReadyElapsedAuthorityMatchesDispatch(t *testing.T) {
 		Landing: &goal.LandingRecord{At: now.Add(-time.Minute).Format(time.RFC3339)},
 	}
 	projection := goal.Projection{Tree: &goal.TreeGoals{Live: map[string]*goal.GoalFile{unit.GoalID: file}}}
-	if err := authorizeBatchMemberInProjection(root, now, record, unit, projection); err != nil {
+	if err := batchowner.AuthorizeBatchMemberInProjection(root, now, record, unit, projection); err != nil {
 		t.Fatalf("landing-ready claim lost elapsed suspension: %v", err)
 	}
 	file.Landing = nil
 	var budget *batch.PrefixBudgetRefusal
-	if err := authorizeBatchMemberInProjection(root, now, record, unit, projection); !errors.As(err, &budget) {
+	if err := batchowner.AuthorizeBatchMemberInProjection(root, now, record, unit, projection); !errors.As(err, &budget) {
 		t.Fatalf("ordinary elapsed claim was not refused: %v", err)
 	}
 	file.Landing = &goal.LandingRecord{At: now.Add(-time.Minute).Format(time.RFC3339)}
 	file.StopFence = &goal.StopFence{StopID: "stop-goal-ready-r2"}
 	var fenced *batch.PrefixFencedRefusal
-	if err := authorizeBatchMemberInProjection(root, now, record, unit, projection); !errors.As(err, &fenced) {
+	if err := batchowner.AuthorizeBatchMemberInProjection(root, now, record, unit, projection); !errors.As(err, &fenced) {
 		t.Fatalf("landing-ready elapsed suspension escaped a live fence: %v", err)
 	}
 }
@@ -125,61 +127,61 @@ func TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnaps
 		if err := batch.NewStore(request.LandingRoot, nil).Create(old); err != nil {
 			t.Fatal(err)
 		}
-		dependencies.binding = func(root, id string, _ time.Time) (dispatchcore.GoalBinding, error) {
+		dependencies.Binding = func(root, id string, _ time.Time) (dispatchcore.GoalBinding, error) {
 			if root != request.SeatRoot || id != "goal-b" {
 				return dispatchcore.GoalBinding{}, fmt.Errorf("unexpected binding %s %s", root, id)
 			}
 			return dispatchcore.GoalBinding{Revision: goalB.Claimed.Revision, Machine: goalB.Claimed.Machine, Lineage: goalB.Claimed.Lineage,
 				File: goalB, Capability: goal.StopCapability{ClaimEpoch: 1}}, nil
 		}
-		dependencies.base = func(string) (string, error) { return tree, nil }
-		dependencies.assemble = func(_ string, base string, units []batch.Unit) ([]string, error) {
+		dependencies.Base = func(string) (string, error) { return tree, nil }
+		dependencies.Assemble = func(_ string, base string, units []batch.Unit) ([]string, error) {
 			if base != tree {
 				return nil, fmt.Errorf("unexpected base %s", base)
 			}
 			return slices.Repeat([]string{tree}, len(units)), nil
 		}
-		dependencies.plan = func(string, string, string) (testpolicy.Plan, error) { return run.Plan, nil }
-		dependencies.costForecast = func(root string, record batch.Record, incoming batch.Unit, at time.Time,
+		dependencies.Plan = func(string, string, string) (testpolicy.Plan, error) { return run.Plan, nil }
+		dependencies.CostForecast = func(root string, record batch.Record, incoming batch.Unit, at time.Time,
 			_ func(string, string, string) (testpolicy.Plan, error), _ func(string, string, []batch.Unit) ([]string, error)) (batch.Unit, batch.CostForecast, error) {
 			incoming.SelectedGroups = []string{"app-a"}
 			incoming.Admission = &batch.JoinAdmission{Tree: tree, Status: "pending"}
 			candidate := record
 			candidate.Units = append(slices.Clone(record.Units), incoming)
 			candidate.PrefixTrees, candidate.TipTree = []string{tree, tree}, tree
-			cost, err := forecastBatchCostWith(root, candidate, &incoming, at,
+			cost, err := batchowner.ForecastBatchCostWith(root, candidate, &incoming, at,
 				func(string, []batch.Unit, string) (batch.PrefixDecision, error) {
 					return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
 				},
-				func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
+				func(_ string, selection testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
 					engine, check := fixture.engineIO(tree)
-					value, err := forecastTestingSelectionPrepared(selection, cap, testingSelectionRequest{Root: fixture.root, GoalID: "portable",
+					value, err := testrun.ForecastPrepared(selection, cap, testrun.SelectionRequest{Root: fixture.root, GoalID: "portable",
 						Tree: tree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
 						BatchPrefixReceipt: !selection.Admission, BatchAdmission: selection.Admission, BatchRequirements: selection.Requirements},
-						prepared, forecastTestingDependencies{workspace: gittree.Workspace{Dir: fixture.root}, candidateIO: engine,
-							openCandidate: fixture.open(tree, files), now: func() time.Time { return at }})
+						prepared, testrun.Forecasting{Workspace: gittree.Workspace{Dir: fixture.root}, CandidateIO: engine,
+							OpenCandidate: fixture.open(tree, files), Now: func() time.Time { return at }, WorkerPolicy: testingWorkerPolicy})
 					check()
 					return value, err
 				},
-				func(_ string, unit batch.Unit, _ *batch.Unit, at time.Time) (batchCostBudgetProjection, error) {
+				func(_ string, unit batch.Unit, _ *batch.Unit, at time.Time) (batchowner.BatchCostBudgetProjection, error) {
 					budgetRoot := request.LandingRoot
 					if unit.GoalID == "goal-b" {
 						budgetRoot = request.SeatRoot
 					}
 					data, err := os.ReadFile(filepath.Join(budgetRoot, "plans", "goals", unit.GoalID+".md"))
 					if err != nil {
-						return batchCostBudgetProjection{}, err
+						return batchowner.BatchCostBudgetProjection{}, err
 					}
 					file, problems := goal.ParseFile(data)
 					if len(problems) != 0 {
-						return batchCostBudgetProjection{}, fmt.Errorf("goal %s: %v", unit.GoalID, problems)
+						return batchowner.BatchCostBudgetProjection{}, fmt.Errorf("goal %s: %v", unit.GoalID, problems)
 					}
-					return batchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(budgetRoot, file, at)}, nil
+					return batchowner.BatchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(budgetRoot, file, at)}, nil
 				})
 			if err != nil {
 				return batch.Unit{}, batch.CostForecast{}, err
 			}
-			if refused := forecastCostRefusal(cost); refused == nil {
+			if refused := batchowner.ForecastCostRefusal(cost); refused == nil {
 				t.Fatalf("insufficient forecast fitted: %+v", cost.Budgets)
 			}
 			return incoming, cost, nil
@@ -188,18 +190,18 @@ func TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnaps
 			t.Errorf("%s crossed pre-handover refusal", name)
 			return fmt.Errorf("%s crossed refusal", name)
 		}
-		dependencies.handover = func(batchJoinRequest, string, batch.Claim) error { return fatal("handover") }
-		dependencies.admissionRun = func(string, string, batch.Unit) (batch.JoinAdmission, error) {
+		dependencies.Handover = func(batchowner.BatchJoinRequest, string, batch.Claim) error { return fatal("handover") }
+		dependencies.AdmissionRun = func(string, string, batch.Unit) (batch.JoinAdmission, error) {
 			return batch.JoinAdmission{}, fatal("admission")
 		}
-		dependencies.publishAdmission = func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun) error {
+		dependencies.PublishAdmission = func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun) error {
 			return fatal("publication")
 		}
-		dependencies.publishForecast = func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun, batch.CostForecast) error {
+		dependencies.PublishForecast = func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun, batch.CostForecast) error {
 			return fatal("forecast publication")
 		}
-		dependencies.ensure = func(string) error { return nil }
-		_, err = executeBatchJoin(request, dependencies)
+		dependencies.Ensure = func(string) error { return nil }
+		_, err = batchowner.ExecuteBatchJoin(request, dependencies)
 		if err == nil || !strings.Contains(err.Error(), "BATCH_COST_HEADROOM_REFUSED") || *admissionCalls != 0 {
 			t.Fatalf("pre-handover refusal=%v admission calls=%d", err, *admissionCalls)
 		}
@@ -243,25 +245,25 @@ func TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnaps
 		proofRequest.CandidateEngineBuildIdentity = fixture.engineIdentity(tree, proofRequest.Environment)
 		proofResult, _ := fixture.execute(proofRequest, true)
 		compute := func(candidate batch.Record) (batch.CostForecast, error) {
-			return forecastBatchCostWith(root, candidate, nil, now,
+			return batchowner.ForecastBatchCostWith(root, candidate, nil, now,
 				func(string, []batch.Unit, string) (batch.PrefixDecision, error) {
 					return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
 				},
-				func(_ string, selected costSelection, cap uint64) (costSelectionEvidence, error) {
+				func(_ string, selected testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
 					engine, check := fixture.engineIO(tree)
-					value, err := forecastTestingSelectionPrepared(selected, cap, testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree,
+					value, err := testrun.ForecastPrepared(selected, cap, testrun.SelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree,
 						Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchPrefixReceipt: true, BatchRequirements: []string{"app-a"}},
-						fixture.prepared(proofRequest, proofResult), forecastTestingDependencies{workspace: gittree.Workspace{Dir: fixture.root},
-							candidateIO: engine, openCandidate: fixture.open(tree, files), now: func() time.Time { return now }})
+						fixture.prepared(proofRequest, proofResult), testrun.Forecasting{Workspace: gittree.Workspace{Dir: fixture.root},
+							CandidateIO: engine, OpenCandidate: fixture.open(tree, files), Now: func() time.Time { return now }, WorkerPolicy: testingWorkerPolicy})
 					check()
 					return value, err
 				},
-				func(root string, _ batch.Unit, _ *batch.Unit, at time.Time) (batchCostBudgetProjection, error) {
-					return batchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(root, file, at)}, nil
+				func(root string, _ batch.Unit, _ *batch.Unit, at time.Time) (batchowner.BatchCostBudgetProjection, error) {
+					return batchowner.BatchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(root, file, at)}, nil
 				})
 		}
 		fit, err := compute(record)
-		if err != nil || forecastCostRefusal(fit) != nil {
+		if err != nil || batchowner.ForecastCostRefusal(fit) != nil {
 			t.Fatalf("fitting forecast=%+v err=%v", fit, err)
 		}
 		record.CostForecast = &fit
@@ -281,7 +283,7 @@ func TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnaps
 		historical.Units[0].State = batch.UnitJoined
 		historical.Seal = map[string]batch.Claim{id: claim}
 		historicalFit, err := compute(historical)
-		if err != nil || forecastCostRefusal(historicalFit) != nil {
+		if err != nil || batchowner.ForecastCostRefusal(historicalFit) != nil {
 			t.Fatalf("historical forecast=%+v err=%v", historicalFit, err)
 		}
 		historical.CostForecast = &historicalFit
@@ -289,14 +291,14 @@ func TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnaps
 			t.Fatal(err)
 		}
 		seat := t.TempDir()
-		readStatus := func() batchStatusView {
+		readStatus := func() batchowner.BatchStatusView {
 			t.Helper()
 			facts := &batchRawFacts{root: root}
 			var output strings.Builder
 			code := runBatchStatusWithOutput([]string{"--root", seat, "--landing-root", root, "--batch", historicalID},
 				facts.source(), repository.reads().ResolveEndpoint, &output, t.Output())
 			facts.assertConsumed(t, true)
-			var decoded batchStatusOutput
+			var decoded batchowner.BatchStatusOutput
 			if code != 0 || json.Unmarshal([]byte(output.String()), &decoded) != nil || len(decoded.Batches) != 1 {
 				t.Fatalf("status code=%d json=%s", code, output.String())
 			}
@@ -322,7 +324,7 @@ func TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnaps
 			if actual == nil {
 				t.Fatal("competing spend passed final admission")
 			}
-			return batch.JoinAdmission{}, joinAdmissionRefusal(actual.Error())
+			return batch.JoinAdmission{}, batchowner.JoinAdmissionRefusal(actual.Error())
 		})
 		var refusal *batch.PrefixBudgetRefusal
 		if !errors.As(err, &refusal) || actual == nil || !strings.Contains(actual.Error(), "BUDGET_REFUSED") {
@@ -519,16 +521,16 @@ func TestBatchCostPortableEvidenceForecastIsReadOnlyAndWarmsFromRealCommand(t *t
 	contract := fixture.loadedContract(files)
 	run := fixture.request(tree, files, fixture.plan(contract, "app/a.txt"))
 	run.CandidateEngineBuildIdentity = fixture.engineIdentity(tree, run.Environment)
-	selection := costSelection{ID: "tip:portable", Kind: "tip", Tree: tree, GoalID: "portable", Requirements: []string{"app-a"}}
-	selected := testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
+	selection := testrun.CostSelection{ID: "tip:portable", Kind: "tip", Tree: tree, GoalID: "portable", Requirements: []string{"app-a"}}
+	selected := testrun.SelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
 		Purpose: testpolicy.PurposeDelivery, BatchPrefixReceipt: true, BatchRequirements: []string{"app-a"}}
-	forecast := func(result proofrun.TestResult) costSelectionEvidence {
+	forecast := func(result proofrun.TestResult) testrun.CostEvidence {
 		t.Helper()
 		beforeBytes := costAttemptBytes(t, fixture.root)
 		beforeNative := fixture.counts()
 		engine, check := fixture.engineIO(tree)
-		view, err := forecastTestingSelectionPrepared(selection, 2, selected, fixture.prepared(run, result), forecastTestingDependencies{
-			workspace: gittree.Workspace{Dir: fixture.root}, candidateIO: engine, openCandidate: fixture.open(tree, files), now: time.Now,
+		view, err := testrun.ForecastPrepared(selection, 2, selected, fixture.prepared(run, result), testrun.Forecasting{
+			Workspace: gittree.Workspace{Dir: fixture.root}, CandidateIO: engine, OpenCandidate: fixture.open(tree, files), Now: time.Now, WorkerPolicy: testingWorkerPolicy,
 		})
 		check()
 		if err != nil {
@@ -560,22 +562,24 @@ func TestBatchCostPortableEvidenceForecastIsReadOnlyAndWarmsFromRealCommand(t *t
 		Units: []batch.Unit{{GoalID: "portable", Chain: "portable-cost", Claim: claim, State: batch.UnitJoined,
 			ChangedPaths: []string{"app/a.txt"}, SelectedGroups: []string{"app-a"}}},
 		Seal: map[string]batch.Claim{"portable": claim}}
-	budget := func(root string, unit batch.Unit, _ *batch.Unit, at time.Time) (batchCostBudgetProjection, error) {
+	budget := func(root string, unit batch.Unit, _ *batch.Unit, at time.Time) (batchowner.BatchCostBudgetProjection, error) {
 		data, err := os.ReadFile(filepath.Join(root, "plans", "goals", unit.GoalID+".md"))
 		if err != nil {
-			return batchCostBudgetProjection{}, err
+			return batchowner.BatchCostBudgetProjection{}, err
 		}
 		file, problems := goal.ParseFile(data)
 		if len(problems) != 0 {
-			return batchCostBudgetProjection{}, fmt.Errorf("goal budget facts: %v", problems)
+			return batchowner.BatchCostBudgetProjection{}, fmt.Errorf("goal budget facts: %v", problems)
 		}
-		return batchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(root, file, at), LandingClaim: file.IsLandingClaim()}, nil
+		return batchowner.BatchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(root, file, at), LandingClaim: file.IsLandingClaim()}, nil
 	}
-	stored, err := forecastBatchCostWith(fixture.root, record, nil, time.Now().UTC(),
+	stored, err := batchowner.ForecastBatchCostWith(fixture.root, record, nil, time.Now().UTC(),
 		func(string, []batch.Unit, string) (batch.PrefixDecision, error) {
 			return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
 		},
-		func(string, costSelection, uint64) (costSelectionEvidence, error) { return forecast(result), nil }, budget)
+		func(string, testrun.CostSelection, uint64) (testrun.CostEvidence, error) {
+			return forecast(result), nil
+		}, budget)
 	if err != nil || len(stored.Groups) != 1 || stored.Groups[0].Status != "reusable" {
 		t.Fatalf("stored cost forecast: %+v err=%v", stored, err)
 	}
@@ -584,7 +588,7 @@ func TestBatchCostPortableEvidenceForecastIsReadOnlyAndWarmsFromRealCommand(t *t
 		t.Fatal(err)
 	}
 	seat := t.TempDir()
-	readStatus := func(stage string) batchStatusView {
+	readStatus := func(stage string) batchowner.BatchStatusView {
 		t.Helper()
 		beforeBytes := costAttemptBytes(t, fixture.root)
 		beforeNative := fixture.counts()
@@ -598,7 +602,7 @@ func TestBatchCostPortableEvidenceForecastIsReadOnlyAndWarmsFromRealCommand(t *t
 				return repository.reads().ResolveEndpoint(repository.root)
 			}, &output, t.Output())
 		facts.assertConsumed(t, true)
-		var decoded batchStatusOutput
+		var decoded batchowner.BatchStatusOutput
 		if code != 0 || json.Unmarshal([]byte(output.String()), &decoded) != nil || len(decoded.Batches) != 1 {
 			t.Fatalf("%s public status code=%d json=%s", stage, code, output.String())
 		}
@@ -680,9 +684,9 @@ func TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry(t *testing.T)
 		t.Fatalf("fresh command/JUnit result is incomplete: %+v", group)
 	}
 	requirePortableCounts(t, fixture.counts(), map[string]int{"a": 1})
-	selection := costSelection{ID: "tip:fresh", Kind: "tip", Tree: tree, GoalID: "portable", Requirements: []string{"app-a"},
+	selection := testrun.CostSelection{ID: "tip:fresh", Kind: "tip", Tree: tree, GoalID: "portable", Requirements: []string{"app-a"},
 		FreshEpisode: run.FreshnessEpisode, FreshExpiresAt: run.FreshnessExpiresAt}
-	selected := testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
+	selected := testrun.SelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
 		Purpose: testpolicy.PurposeDelivery, BatchPrefixReceipt: true, BatchRequirements: []string{"app-a"},
 		FreshEpisode: run.FreshnessEpisode, FreshExpiresAt: run.FreshnessExpiresAt}
 	prepared := fixture.prepared(run, result)
@@ -698,9 +702,9 @@ func TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry(t *testing.T)
 		t.Run(boundary.name, func(t *testing.T) {
 			engine, checkEngine := fixture.engineIO(tree)
 			projection, checkProjection := fixture.projection(tree)
-			forecast, forecastErr := forecastTestingSelectionPrepared(selection, 2, selected, prepared, forecastTestingDependencies{
-				workspace: projection, candidateIO: engine, openCandidate: fixture.open(tree, files),
-				now: func() time.Time { return boundary.at },
+			forecast, forecastErr := testrun.ForecastPrepared(selection, 2, selected, prepared, testrun.Forecasting{
+				Workspace: projection, CandidateIO: engine, OpenCandidate: fixture.open(tree, files),
+				Now: func() time.Time { return boundary.at }, WorkerPolicy: testingWorkerPolicy,
 			})
 			checkEngine()
 			checkProjection()
@@ -710,9 +714,9 @@ func TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry(t *testing.T)
 			if boundary.reusable {
 				verifyProjection, checkVerifyProjection = fixture.projection(tree)
 			}
-			verified, verifyErr := verifyRetainedTestingPrepared(selected, prepared, retainedTestingVerification{
-				clock: func() time.Time { return boundary.at }, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
-				workspace: verifyProjection, candidateIO: verifyEngine, openCandidate: fixture.open(tree, files),
+			verified, verifyErr := testrun.VerifyPrepared(selected, prepared, testrun.Verification{
+				Clock: func() time.Time { return boundary.at }, Revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+				Workspace: verifyProjection, CandidateIO: verifyEngine, OpenCandidate: fixture.open(tree, files), WorkerPolicy: testingWorkerPolicy,
 			})
 			if boundary.reusable {
 				checkVerifyEngine()
@@ -760,8 +764,8 @@ func TestBatchCostTipFirstSharesKnownIdentityButNotUnknownOrFresh(t *testing.T) 
 		}
 		return batch.PrefixDecision{Groups: ids}, nil
 	}
-	run := func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
-		out := costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
+	run := func(_ string, selection testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
+		out := testrun.CostEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
 			Tree: selection.Tree, ChargeGoal: selection.GoalID, SelectedGroups: slices.Clone(selection.Requirements)}}
 		for _, id := range selection.Requirements {
 			row := batch.CostForecastGroup{RequestID: selection.ID, Tree: selection.Tree, ChargeGoal: selection.GoalID,
@@ -783,11 +787,11 @@ func TestBatchCostTipFirstSharesKnownIdentityButNotUnknownOrFresh(t *testing.T) 
 		}
 		return out, nil
 	}
-	budget := func(_ string, _ batch.Unit, _ *batch.Unit, _ time.Time) (batchCostBudgetProjection, error) {
-		return batchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: dispatchcore.BudgetKnown, Limits: goal.Budget{
+	budget := func(_ string, _ batch.Unit, _ *batch.Unit, _ time.Time) (batchowner.BatchCostBudgetProjection, error) {
+		return batchowner.BatchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: dispatchcore.BudgetKnown, Limits: goal.Budget{
 			ElapsedLimit: "4h", AttemptLimit: 8, ReservedJobMinutesLimit: 1000, ActiveJobLimit: 2}}}, nil
 	}
-	forecast, err := forecastBatchCostWith(root, record, nil, time.Now(), decision, run, budget)
+	forecast, err := batchowner.ForecastBatchCostWith(root, record, nil, time.Now(), decision, run, budget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -830,19 +834,19 @@ func TestBatchCostReplacementFreshEpisodeChangesBindingAndNativeDemand(t *testin
 		record.PrefixEpisodes[unit.GoalID] = batch.PrefixEpisode{DecisionID: id, Token: strings.Repeat(string(rune('a'+index)), 64),
 			ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)}
 	}
-	run := func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
-		return costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
+	run := func(_ string, selection testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
+		return testrun.CostEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
 			Tree: selection.Tree, ChargeGoal: selection.GoalID}, Groups: []batch.CostForecastGroup{{
 			RequestID: selection.ID, Tree: selection.Tree, ChargeGoal: selection.GoalID,
 			GroupID: "shared", ExecutionIdentity: "same-identity", IdentityKnown: true, Status: "missing",
 			FreshEpisode: selection.FreshEpisode, DeclaredAllowanceMS: int64(cap) * 60000,
 		}}}, nil
 	}
-	budget := func(_ string, _ batch.Unit, _ *batch.Unit, _ time.Time) (batchCostBudgetProjection, error) {
-		return batchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: dispatchcore.BudgetKnown,
+	budget := func(_ string, _ batch.Unit, _ *batch.Unit, _ time.Time) (batchowner.BatchCostBudgetProjection, error) {
+		return batchowner.BatchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: dispatchcore.BudgetKnown,
 			Limits: goal.Budget{ElapsedLimit: "4h", AttemptLimit: 8, ReservedJobMinutesLimit: 1000, ActiveJobLimit: 2}}}, nil
 	}
-	first, err := forecastBatchCostWith(root, record, nil, time.Now(), decision, run, budget)
+	first, err := batchowner.ForecastBatchCostWith(root, record, nil, time.Now(), decision, run, budget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -857,7 +861,7 @@ func TestBatchCostReplacementFreshEpisodeChangesBindingAndNativeDemand(t *testin
 	replaced := record.PrefixEpisodes["goal-b"]
 	replaced.Token = strings.Repeat("d", 64)
 	record.PrefixEpisodes["goal-b"] = replaced
-	second, err := forecastBatchCostWith(root, record, nil, time.Now(), decision, run, budget)
+	second, err := batchowner.ForecastBatchCostWith(root, record, nil, time.Now(), decision, run, budget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -881,23 +885,23 @@ func TestBatchCostEarlierSharedIdentityChargesFirstPrefixOwner(t *testing.T) {
 		}
 		return batch.PrefixDecision{Groups: []string{"shared"}}, nil
 	}
-	run := func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
-		return costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
+	run := func(_ string, selection testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
+		return testrun.CostEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
 			Tree: selection.Tree, ChargeGoal: selection.GoalID}, Groups: []batch.CostForecastGroup{{
 			RequestID: selection.ID, Tree: selection.Tree, ChargeGoal: selection.GoalID,
 			GroupID: selection.Requirements[0], ExecutionIdentity: "identity-" + selection.Requirements[0],
 			IdentityKnown: true, Status: "missing", DeclaredAllowanceMS: int64(cap) * 60000,
 		}}}, nil
 	}
-	budget := func(_ string, unit batch.Unit, _ *batch.Unit, _ time.Time) (batchCostBudgetProjection, error) {
+	budget := func(_ string, unit batch.Unit, _ *batch.Unit, _ time.Time) (batchowner.BatchCostBudgetProjection, error) {
 		attempts := uint64(1)
 		if unit.GoalID == "goal-b" {
 			attempts = 0
 		}
-		return batchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: dispatchcore.BudgetKnown,
+		return batchowner.BatchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: dispatchcore.BudgetKnown,
 			Limits: goal.Budget{ElapsedLimit: "4h", AttemptLimit: attempts, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}}}, nil
 	}
-	forecast, err := forecastBatchCostWith(root, record, nil, time.Now(), decision, run, budget)
+	forecast, err := batchowner.ForecastBatchCostWith(root, record, nil, time.Now(), decision, run, budget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -920,21 +924,21 @@ func TestBatchCostBudgetDoesNotBorrowAnotherGoalsHeadroom(t *testing.T) {
 	decision := func(_ string, _ []batch.Unit, _ string) (batch.PrefixDecision, error) {
 		return batch.PrefixDecision{Groups: []string{"two-unknowns"}}, nil
 	}
-	run := func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
-		return costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
+	run := func(_ string, selection testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
+		return testrun.CostEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
 			Tree: selection.Tree, ChargeGoal: selection.GoalID}, Groups: []batch.CostForecastGroup{
 			{RequestID: selection.ID, Tree: selection.Tree, ChargeGoal: selection.GoalID, GroupID: "u1", Status: "unknown", DeclaredAllowanceMS: int64(cap) * 60000},
 			{RequestID: selection.ID, Tree: selection.Tree, ChargeGoal: selection.GoalID, GroupID: "u2", Status: "unknown", DeclaredAllowanceMS: int64(cap) * 60000},
 		}}, nil
 	}
-	budget := func(_ string, unit batch.Unit, _ *batch.Unit, _ time.Time) (batchCostBudgetProjection, error) {
+	budget := func(_ string, unit batch.Unit, _ *batch.Unit, _ time.Time) (batchowner.BatchCostBudgetProjection, error) {
 		limits := goal.Budget{ElapsedLimit: "4h", AttemptLimit: 8, ReservedJobMinutesLimit: 1000, ActiveJobLimit: 2}
 		if unit.GoalID == "goal-b" {
 			limits.AttemptLimit = 0
 		}
-		return batchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: dispatchcore.BudgetKnown, Limits: limits}}, nil
+		return batchowner.BatchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: dispatchcore.BudgetKnown, Limits: limits}}, nil
 	}
-	forecast, err := forecastBatchCostWith(root, record, nil, time.Now(), decision, run, budget)
+	forecast, err := batchowner.ForecastBatchCostWith(root, record, nil, time.Now(), decision, run, budget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -942,23 +946,23 @@ func TestBatchCostBudgetDoesNotBorrowAnotherGoalsHeadroom(t *testing.T) {
 		forecast.Budgets[0].Fits != true || forecast.Budgets[1].Fits || forecast.Budgets[1].Reason != "attempt-headroom" {
 		t.Fatalf("per-request cap and isolated budget: %+v", forecast)
 	}
-	unknownBudget := func(_ string, unit batch.Unit, _ *batch.Unit, _ time.Time) (batchCostBudgetProjection, error) {
+	unknownBudget := func(_ string, unit batch.Unit, _ *batch.Unit, _ time.Time) (batchowner.BatchCostBudgetProjection, error) {
 		if unit.GoalID == "goal-b" {
-			return batchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: dispatchcore.BudgetUnknown,
+			return batchowner.BatchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: dispatchcore.BudgetUnknown,
 				Unknown: &dispatchcore.BudgetUnknownEvidence{Code: dispatchcore.BudgetUnknown,
 					Record: "artifacts/agents/jobs/goal-b-unreadable.json", Reason: "retained job accounting is unreadable"}}}, nil
 		}
-		return batchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: dispatchcore.BudgetKnown,
+		return batchowner.BatchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: dispatchcore.BudgetKnown,
 			Limits: goal.Budget{ElapsedLimit: "4h", AttemptLimit: 100, ReservedJobMinutesLimit: 10000, ActiveJobLimit: 10}}}, nil
 	}
-	unknown, err := forecastBatchCostWith(root, record, nil, time.Now(), decision, run, unknownBudget)
+	unknown, err := batchowner.ForecastBatchCostWith(root, record, nil, time.Now(), decision, run, unknownBudget)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if unknown.Budgets[0].Fits != true || unknown.Budgets[0].AttemptDemand != 1 ||
 		unknown.Budgets[1].Fits || unknown.Budgets[1].Status != string(dispatchcore.BudgetUnknown) ||
 		unknown.Budgets[1].AttemptDemand != 1 || !strings.Contains(unknown.Budgets[1].Reason, "goal-b-unreadable.json") ||
-		forecastCostRefusal(unknown) == nil {
+		batchowner.ForecastCostRefusal(unknown) == nil {
 		t.Fatalf("unknown charged-goal budget borrowed another member's ample headroom: %+v", unknown.Budgets)
 	}
 }
@@ -984,13 +988,13 @@ func TestBatchCostUnknownJoinKeepsFirstRecordAbsentAndClosesOnlyExistingAdmissio
 				}
 			}
 			handedOver, ensured := false, 0
-			dependencies.handover = func(batchJoinRequest, string, batch.Claim) error { handedOver = true; return nil }
-			dependencies.ensure = func(string) error { ensured++; return nil }
-			dependencies.publishAdmission = func(batch.Store, string, batch.Unit, string, time.Time,
+			dependencies.Handover = func(batchowner.BatchJoinRequest, string, batch.Claim) error { handedOver = true; return nil }
+			dependencies.Ensure = func(string) error { ensured++; return nil }
+			dependencies.PublishAdmission = func(batch.Store, string, batch.Unit, string, time.Time,
 				func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun) error {
 				return fmt.Errorf("unknown budget reached publication")
 			}
-			dependencies.costForecast = func(_ string, record batch.Record, incoming batch.Unit, _ time.Time,
+			dependencies.CostForecast = func(_ string, record batch.Record, incoming batch.Unit, _ time.Time,
 				_ func(string, string, string) (testpolicy.Plan, error), _ func(string, string, []batch.Unit) ([]string, error)) (batch.Unit, batch.CostForecast, error) {
 				incoming.SelectedGroups = []string{"c"}
 				units := append(slices.Clone(record.Units), incoming)
@@ -1005,7 +1009,7 @@ func TestBatchCostUnknownJoinKeepsFirstRecordAbsentAndClosesOnlyExistingAdmissio
 				return incoming, batch.CostForecast{SchemaVersion: 1, Currency: "snapshot-not-revalidated",
 					Binding: batch.CostBinding(record, units, prefixes), Budgets: budgets}, nil
 			}
-			_, err := executeBatchJoin(request, dependencies)
+			_, err := batchowner.ExecuteBatchJoin(request, dependencies)
 			if err == nil || !strings.Contains(err.Error(), "BATCH_COST_HEADROOM_REFUSED") || handedOver || *admissionCalls != 0 {
 				t.Fatalf("unknown budget crossed source ownership or native admission: err=%v handover=%t admission=%d", err, handedOver, *admissionCalls)
 			}
@@ -1038,8 +1042,8 @@ func TestBatchCostElapsedFollowsLandingReadyAdmission(t *testing.T) {
 	decision := func(_ string, _ []batch.Unit, _ string) (batch.PrefixDecision, error) {
 		return batch.PrefixDecision{Groups: []string{"native"}}, nil
 	}
-	run := func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
-		return costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
+	run := func(_ string, selection testrun.CostSelection, cap uint64) (testrun.CostEvidence, error) {
+		return testrun.CostEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
 			Tree: selection.Tree, ChargeGoal: selection.GoalID}, Groups: []batch.CostForecastGroup{{
 			RequestID: selection.ID, Tree: selection.Tree, ChargeGoal: selection.GoalID,
 			GroupID: "native", Status: "unknown", DeclaredAllowanceMS: int64(cap) * 60000,
@@ -1057,10 +1061,10 @@ func TestBatchCostElapsedFollowsLandingReadyAdmission(t *testing.T) {
 		{name: "landing-ready elapsed suspended", landingReady: true, fits: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			budget := func(_ string, _ batch.Unit, _ *batch.Unit, _ time.Time) (batchCostBudgetProjection, error) {
-				return batchCostBudgetProjection{Budget: projection, LandingClaim: test.landingReady}, nil
+			budget := func(_ string, _ batch.Unit, _ *batch.Unit, _ time.Time) (batchowner.BatchCostBudgetProjection, error) {
+				return batchowner.BatchCostBudgetProjection{Budget: projection, LandingClaim: test.landingReady}, nil
 			}
-			forecast, err := forecastBatchCostWith(root, record, nil, time.Now(), decision, run, budget)
+			forecast, err := batchowner.ForecastBatchCostWith(root, record, nil, time.Now(), decision, run, budget)
 			if err != nil {
 				t.Fatal(err)
 			}

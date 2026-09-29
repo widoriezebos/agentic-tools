@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // Identical selected group IDs do not make a rebased policy equal.
@@ -20,8 +22,8 @@ func TestBatchRebasedVerifyUsesIdentityComposition(t *testing.T) {
 	seal := map[string]batch.Claim{"goal-a": claim}
 	decision := func(contractDigest string) batch.PrefixDecision {
 		t.Helper()
-		got, err := planPrefixDecisionWith("", units, "rebased-tree", func(_, _, tree string, _ testpolicy.Mode, _ []string) (testingPlanOutput, error) {
-			return testingPlanOutput{PolicyBaseCommit: "trusted-base", CandidateTree: tree, ContractDigest: contractDigest,
+		got, err := batchowner.PlanPrefixDecisionWith("", units, "rebased-tree", func(_, _, tree string, _ testpolicy.Mode, _ []string) (testrun.PlanOutput, error) {
+			return testrun.PlanOutput{PolicyBaseCommit: "trusted-base", CandidateTree: tree, ContractDigest: contractDigest,
 				BaseContractDigest: "base-policy", Plan: testpolicy.Plan{RequiredGroups: []string{"protected"}, SelectedGroups: []string{"protected"}}}, nil
 		})
 		if err != nil {
@@ -56,16 +58,16 @@ func TestLandingBatchJoinRefusesRedFastStaticGate(t *testing.T) {
 	}
 	request, dependencies, _ := prepublicationJoinBed(t)
 	called := 0
-	dependencies.admissionRun = func(_, _ string, _ batch.Unit) (batch.JoinAdmission, error) {
+	dependencies.AdmissionRun = func(_, _ string, _ batch.Unit) (batch.JoinAdmission, error) {
 		called++
 		return batch.JoinAdmission{}, &batch.JoinAdmissionRed{Reason: "BATCH_JOIN_ADMISSION_RED: fast-static-build staticcheck: unused assignment"}
 	}
-	dependencies.publishAdmission = func(_ batch.Store, id string, unit batch.Unit, _ string, _ time.Time,
+	dependencies.PublishAdmission = func(_ batch.Store, id string, unit batch.Unit, _ string, _ time.Time,
 		_ func(string, string, string) (testpolicy.Plan, error), _ func() error, run batch.JoinAdmissionRun) error {
 		_, err := run(id, unit)
 		return err
 	}
-	_, err = executeBatchJoin(request, dependencies)
+	_, err = batchowner.ExecuteBatchJoin(request, dependencies)
 	var red *batch.JoinAdmissionRed
 	if !errors.As(err, &red) || called != 1 || !strings.Contains(err.Error(), "fast-static-build") || !strings.Contains(err.Error(), "staticcheck") {
 		t.Fatalf("red static admission was not preserved: calls=%d err=%v", called, err)

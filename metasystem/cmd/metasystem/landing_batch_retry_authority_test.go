@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 )
 
 func TestGLEBatchMovedRetryRejectsRevisedMemberBeforePublication(t *testing.T) {
@@ -81,35 +83,35 @@ func TestGLEBatchMovedRetryRejectsRevisedMemberBeforePublication(t *testing.T) {
 	if err := store.Create(record); err != nil {
 		t.Fatal(err)
 	}
-	if err := authorizeBatchMember(root, record, record.Units[0]); err != nil {
+	if err := batchowner.AuthorizeBatchMember(root, record, record.Units[0]); err != nil {
 		t.Fatalf("initial live claim was not authorized: %v", err)
 	}
-	originalVerify, originalPush := batchVerifyRebasedSeries, batchMovedEndpointPush
+	originalVerify, originalPush := batchowner.BatchVerifyRebasedSeries, batchowner.BatchMovedEndpointPush
 	t.Cleanup(func() {
-		batchVerifyRebasedSeries, batchMovedEndpointPush = originalVerify, originalPush
+		batchowner.BatchVerifyRebasedSeries, batchowner.BatchMovedEndpointPush = originalVerify, originalPush
 	})
-	stubBatchOwnerCalls(t, func(ownerInvocation, ...string) error { return nil })
+	stubBatchOwnerCalls(t, func(ownercall.Invocation, ...string) error { return nil })
 	verified, pushed, firstAttempt := 0, 0, 0
 	revisedCommit := ""
-	batchVerifyRebasedSeries = func(_ string, _ batch.Record, trees []string) error {
+	batchowner.BatchVerifyRebasedSeries = func(_ string, _ batch.Record, trees []string) error {
 		verified++
 		if len(trees) != 1 || trees[0] == candidateTree {
 			t.Fatalf("rebased prefix was not replanned: %v", trees)
 		}
 		return nil
 	}
-	batchMovedEndpointPush = func(root, id, base, tip string) error {
+	batchowner.BatchMovedEndpointPush = func(root, id, base, tip string) error {
 		pushed++
 		return originalPush(root, id, base, tip)
 	}
-	seams := batchLandSeamsWithRead(root, id, record, baseCommit, "owner", gitOutput, plantedBatchCommit)
+	seams := batchowner.BatchLandSeamsWithRead(root, id, record, baseCommit, "owner", batchowner.GitOutput, plantedBatchCommit)
 	seams.Prepare = func(string) error { return nil }
 	seams.Apply = func(batch.Unit) error { return nil }
 	seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }
 	seams.Commit = func(batch.Unit, batch.PrefixReceipt) (string, error) { return tip, nil }
 	seams.Held = func(string, string) error { return nil }
 	seams.VerifySeries = func([]batch.Unit, map[string]string) error {
-		return authorizeBatchMember(root, record, record.Units[0])
+		return batchowner.AuthorizeBatchMember(root, record, record.Units[0])
 	}
 	seams.Push = func(string, string) error {
 		firstAttempt++

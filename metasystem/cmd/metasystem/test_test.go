@@ -31,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -263,7 +264,7 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
-	buildIdentity, err := candidateEngineBuildIdentityUsing(context.Background(), workspace,
+	buildIdentity, err := candidateengine.BuildIdentityUsing(context.Background(), workspace,
 		prepared.Prefix, prepared.CandidateTree, prepared.Environment, fixture.dependency())
 	if err != nil {
 		t.Fatal(err)
@@ -341,7 +342,7 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 	queueProjection()
 	fixed, err := testrun.VerifyPrepared(request, prepared, testrun.Verification{
 		Clock: fixedClock, Revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
-		Workspace: workspace, CandidateIO: fixture.dependency().engine(), OpenCandidate: fixture.openBed, WorkerPolicy: testingWorkerPolicy,
+		Workspace: workspace, CandidateIO: fixture.dependency(), OpenCandidate: fixture.openBed, WorkerPolicy: testingWorkerPolicy,
 	})
 	if err != nil || !fixed.Delivery.Sufficient {
 		t.Fatalf("authorized fixed fixture clock lost reusable proof: sufficient=%t err=%v groups=%+v", fixed.Delivery.Sufficient, err, fixed.Groups)
@@ -363,7 +364,7 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 			queueProjection()
 			result, err := testrun.VerifyPrepared(request, moved, testrun.Verification{
 				Clock: fixedClock, Revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
-				Workspace: workspace, CandidateIO: fixture.dependency().engine(), OpenCandidate: fixture.openBed, WorkerPolicy: testingWorkerPolicy,
+				Workspace: workspace, CandidateIO: fixture.dependency(), OpenCandidate: fixture.openBed, WorkerPolicy: testingWorkerPolicy,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -413,7 +414,7 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 		queueProjection()
 		result, err := testrun.VerifyPrepared(request, automatic, testrun.Verification{
 			Clock: fixedClock, Revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
-			Workspace: workspace, CandidateIO: fixture.dependency().engine(), OpenCandidate: fixture.openBed, WorkerPolicy: testingWorkerPolicy,
+			Workspace: workspace, CandidateIO: fixture.dependency(), OpenCandidate: fixture.openBed, WorkerPolicy: testingWorkerPolicy,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -438,7 +439,7 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 			queueProjection()
 			revalidated := false
 			result, err := testrun.VerifyPrepared(request, prepared, testrun.Verification{
-				Workspace: workspace, CandidateIO: fixture.dependency().engine(), OpenCandidate: fixture.openBed,
+				Workspace: workspace, CandidateIO: fixture.dependency(), OpenCandidate: fixture.openBed,
 				Clock: func() time.Time {
 					if revalidated {
 						return boundary.at
@@ -837,7 +838,7 @@ func TestPublishTestingResultSpillsOverTheBound(t *testing.T) {
 		t.Fatalf("spilled result did not print a reference: %q", stdout)
 	}
 	var decoded proofrun.TestResult
-	if err := readStrictJSON(reference.Path, &decoded); err != nil {
+	if err := strictjson.Read(reference.Path, &decoded); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(decoded, result) {
@@ -901,7 +902,7 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 	build := func(tree, projection, commit string) *candidateengine.Engine {
 		t.Helper()
 		fixture.queueBuild(tree, projection, commit, environment)
-		artifact, err := candidateengine.Build(ctx, fixture.workspace(), "metasystem", tree, environment, fixture.dependency().engine())
+		artifact, err := candidateengine.Build(ctx, fixture.workspace(), "metasystem", tree, environment, fixture.dependency())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1070,7 +1071,7 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 	prepare := func(tree, engineTree, commit string, build bool) *candidateengine.Engine {
 		t.Helper()
 		fixture.queuePrepare(tree, engineTree, commit, environment, build)
-		artifact, err := candidateengine.Prepare(candidateScratchContext(t, custodyContext, controlRoot), controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency().engine())
+		artifact, err := candidateengine.Prepare(candidateScratchContext(t, custodyContext, controlRoot), controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1255,7 +1256,7 @@ func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
 	environment := testrun.Environment(os.Environ())
 	for run := 0; run < 2; run++ {
 		fixture.queuePrepare(tree, ordinaryFailedEngineTree, ordinaryFailedBuild, environment, true)
-		if artifact, err := candidateengine.Prepare(candidateScratchContext(t, custodyContext, controlRoot), controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency().engine()); artifact != nil || err == nil {
+		if artifact, err := candidateengine.Prepare(candidateScratchContext(t, custodyContext, controlRoot), controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency()); artifact != nil || err == nil {
 			t.Fatalf("failed build %d entered cache: artifact=%+v err=%v", run, artifact, err)
 		}
 		fixture.assertDrained()
@@ -1265,7 +1266,7 @@ func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
 		t.Fatalf("failed builds were cached: count=%q err=%v", data, err)
 	}
 	fixture.queueIdentity(tree, ordinaryFailedEngineTree, ordinaryFailedBuild, environment, false)
-	buildIdentity, err := candidateEngineBuildIdentityUsing(context.Background(), workspace, "metasystem", tree, environment, fixture.dependency())
+	buildIdentity, err := candidateengine.BuildIdentityUsing(context.Background(), workspace, "metasystem", tree, environment, fixture.dependency())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1608,7 +1609,7 @@ func TestCandidateEngineBuildFailureCannotFallBackToPolicyEngine(t *testing.T) {
 	fixture.queueIdentity(ordinaryBrokenTree, ordinaryBrokenEngineTree, ordinaryBrokenBuild, environment, true)
 	fixture.queueRaw(true, ordinarySnapshotCommit+"\n", "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
 	fixture.queueGit(true, "plain", nil, nil, "update-ref", "--no-deref", "HEAD", ordinaryBrokenBuild, ordinarySnapshotCommit)
-	built, err := candidateengine.Build(context.Background(), fixture.workspace(), "metasystem", ordinaryBrokenTree, environment, fixture.dependency().engine())
+	built, err := candidateengine.Build(context.Background(), fixture.workspace(), "metasystem", ordinaryBrokenTree, environment, fixture.dependency())
 	fixture.assertDrained()
 	if built != nil || err == nil || !strings.Contains(err.Error(), "candidate engine build failed") || !strings.Contains(err.Error(), "fixture candidate compile failed") {
 		t.Fatalf("candidate build failure did not remain an explicit insufficient outcome: build=%+v err=%v", built, err)

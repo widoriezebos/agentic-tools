@@ -19,6 +19,7 @@ import (
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -33,11 +34,7 @@ import (
 // goalCommandNow keeps the wall clock authoritative unless the target root
 // explicitly authorizes fixture inputs through its fake-runtime config.
 func goalCommandNow(root string) (time.Time, error) {
-	clock, _, err := goalCommandClock(root)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return clock(), nil
+	return fixtureauth.GoalNow(root)
 }
 
 // goalCommandClock resolves fixture authority once for one command. A fixture
@@ -188,7 +185,7 @@ type legacyMutationInputs struct {
 	// caller, when set, is the supplied identity classification starts
 	// from (owner_invocation.go) where no --caller-pid names one.
 	stdout, stderr io.Writer
-	caller         processIdentity
+	caller         ownercall.Process
 }
 
 func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet) []*string,
@@ -227,7 +224,7 @@ func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet
 		return 2
 	}
 	if *callerPid == 0 {
-		*callerPid = inputs.caller.pid
+		*callerPid = inputs.caller.Pid
 	}
 	caller, err := goalCallerWithRepositoryTop(*root, *callerPid, name, inputs.repositoryTop)
 	if err != nil {

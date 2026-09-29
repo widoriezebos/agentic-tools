@@ -13,6 +13,7 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
@@ -345,7 +346,7 @@ func (r *proofAdmissionRepository) extendBudgetInputs(t *testing.T) syncRequestD
 	reads := r.reads()
 	dependencies := defaultSyncRequestDependencies()
 	dependencies.authorityFacts = goalAuthorityReadFacts{
-		caller:        entryCallerIdentity(),
+		caller:        ownercall.EntryCaller(),
 		repositoryTop: r.receiptTop,
 		ledgerIdentity: func(root string) string {
 			if root != r.root {

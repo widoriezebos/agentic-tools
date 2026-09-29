@@ -1143,3 +1143,29 @@ func TestCarriedAcceptedRiskValidatorsReadTheSpecimen(t *testing.T) {
 		t.Fatal("a line for another finding passed as this finding's specimen")
 	}
 }
+
+// AppendCarriedRow is the ledger endpoint's carried-counselor writer: a
+// confirmed carried row becomes its register line once, and a row that is
+// not a landed carry is refused before anything is written.
+func TestAppendCarriedRowWritesTheRowsRegisterLine(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	stamp := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+	opid := "01K4J000000000000000000001-seat-a-12345678"
+	reason := "landed commit=" + strings.Repeat("a", 40) + " workspace=" + strings.Repeat("b", 40) + " project=" + strings.Repeat("c", 40) +
+		" past=missing-declaration battery=green missing=- failing=- judge=live judgeTree=- judgeDigest=" + strings.Repeat("d", 64) +
+		" liveFailure=- ledger=" + strings.Repeat("e", 40) + " by=human:Wido"
+	row := goal.HistoryLine{At: stamp.Format(time.RFC3339), Opid: opid, Verb: "carried", Actor: "seat-a+lineage", Targets: []string{"carry-goal"}, Reason: reason, Keep: -1}
+	if err := AppendCarriedRow(root, "", row, stamp); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(carriedLandingsSource)))
+	if err != nil || !bytes.Contains(data, []byte(`"cl-`+opid+`"`)) {
+		t.Fatalf("carried register = %q, %v", data, err)
+	}
+	refused := row
+	refused.Reason = strings.Replace(reason, "landed", "refused", 1)
+	if err := AppendCarriedRow(t.TempDir(), "", refused, stamp); err == nil || !strings.Contains(err.Error(), "not landed") {
+		t.Fatalf("a refused carry = %v; want it refused", err)
+	}
+}

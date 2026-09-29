@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -473,7 +474,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				Watch: presenceWatch,
 				// The board panel: every seat of this host and how far its
 				// work is, read and classified on request (D14-r2).
-				Board: hostBoardSource(roots.Installation),
+				Board: batchowner.HostBoardSource(roots.Installation),
 				// One machine of this fleet joining on this host. It is
 				// the signed-in human's act and nothing weaker, which the
 				// route checks for itself: a launch spends disk, a build

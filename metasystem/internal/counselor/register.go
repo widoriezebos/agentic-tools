@@ -113,6 +113,17 @@ func carriedRecordValues(reason string) (map[string]string, string, error) {
 	return values, fields[0], nil
 }
 
+// AppendCarriedRow is the ledger endpoint's carried-counselor writer
+// (goal.Endpoint.ConfigureCarriedCounselorAppend): the confirmed carried
+// row's register line, appended once.
+func AppendCarriedRow(root, _ string, row goal.HistoryLine, _ time.Time) error {
+	line, err := CarriedLandingLine(row)
+	if err != nil {
+		return err
+	}
+	return AppendCarriedLanding(root, line)
+}
+
 func AppendCarriedLanding(root string, line CarriedLanding) error {
 	if line.SchemaVersion != 1 || line.ID == "" || line.OpID == "" {
 		return fmt.Errorf("carried landing line is incomplete")

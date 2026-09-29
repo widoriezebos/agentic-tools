@@ -108,7 +108,6 @@ cmd/metasystem/goalsync_mutations.go:		req.Actor.Human = f.by
 cmd/metasystem/goalsync_verbs.go:		return goal.Actor{}, err
 cmd/metasystem/goalsync_verbs.go:	return goal.Actor{Machine: machine, Lineage: lineage, Human: human}, nil
 cmd/metasystem/intent_delivery.go:	caller, err := classifyVerbCaller(root, int64(os.Getpid()))
-cmd/metasystem/landing_batch_trunkred.go:	return &ledgerTrunkRedOwner{endpoint: endpoint, actor: goal.Actor{Machine: machine, Lineage: lineage}, now: time.Now}, nil
 cmd/metasystem/process_verbs.go:	return classifyVerbCallerWith(root, callerPid, stateroot.RepositoryTop)
 cmd/metasystem/process_verbs.go:func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, error) {
 cmd/metasystem/process_verbs.go:func classifyVerbCallerWith(root string, callerPid int64, repositoryTop func(string) (string, error)) (lease.ClassifyResult, error) {
@@ -126,6 +125,7 @@ internal/dispatch/finding_register.go:	req := goal.VerbRequest{Endpoint: endpoin
 internal/dispatch/stop.go:				Actor:    goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage, Human: human},
 internal/dispatch/stop.go:	actor := goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage}
 internal/goal/recover.go:		r.Actor.Human = by
+internal/landing/batchowner/trunkred.go:	return &LedgerTrunkRedOwner{Endpoint: endpoint, Actor: goal.Actor{Machine: machine, Lineage: lineage}, Now: time.Now}, nil
 internal/missionrunner/launch.go:	if view, err := lease.ClassifyVerbAt(e.Root, e.classifierInstallation(), int64(pid)); err == nil {
 internal/steward/revive.go:		Actor: goal.Actor{
 internal/steward/validation_window.go:	request := goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: file.Claimed.Machine, Lineage: file.Claimed.Lineage}, Ulid: ulid, Now: now}

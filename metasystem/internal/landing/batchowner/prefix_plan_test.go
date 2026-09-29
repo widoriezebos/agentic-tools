@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 import (
 	"encoding/json"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // The migration battery the first testing transition adds to every delivery
@@ -28,21 +29,21 @@ func prefixPlanContract() testpolicy.Contract {
 
 // strictPrefixPlanner answers only the members it knows on the one prefix
 // tree and records every call, so a repeated or unexpected plan is visible.
-func strictPrefixPlanner(t *testing.T, changed map[string][]string, firstTransition bool, calls *[]string) func(string, string, string, testpolicy.Mode, []string) (testingPlanOutput, error) {
+func strictPrefixPlanner(t *testing.T, changed map[string][]string, firstTransition bool, calls *[]string) func(string, string, string, testpolicy.Mode, []string) (testrun.PlanOutput, error) {
 	contract := prefixPlanContract()
-	return func(_, goalID, tree string, mode testpolicy.Mode, admitted []string) (testingPlanOutput, error) {
+	return func(_, goalID, tree string, mode testpolicy.Mode, admitted []string) (testrun.PlanOutput, error) {
 		*calls = append(*calls, goalID+"/"+string(mode))
 		paths, ok := changed[goalID]
 		if !ok || tree != "prefix-tree" || (mode != testpolicy.ModeAuto && mode != testpolicy.ModeDeep) {
 			t.Errorf("unexpected planner call goal=%s tree=%s mode=%s", goalID, tree, mode)
-			return testingPlanOutput{}, fmt.Errorf("unexpected planner call")
+			return testrun.PlanOutput{}, fmt.Errorf("unexpected planner call")
 		}
 		plan, err := testpolicy.Select(contract, testpolicy.SelectionRequest{ChangedPaths: paths, RequestedMode: mode,
 			Purpose: testpolicy.PurposeDelivery, BatchRequirements: admitted})
 		if err == nil && firstTransition {
 			plan, err = testpolicy.RequireFirstTransition(contract, plan)
 		}
-		return testingPlanOutput{PolicyBaseCommit: "base-commit", CandidateTree: tree, ContractDigest: "candidate-policy",
+		return testrun.PlanOutput{PolicyBaseCommit: "base-commit", CandidateTree: tree, ContractDigest: "candidate-policy",
 			BaseContractDigest: "base-policy", Plan: plan, Groups: contract.Groups}, err
 	}
 }
@@ -65,7 +66,7 @@ func TestBatchPrefixPlanKeepsAutoPlansThatSelectedDeep(t *testing.T) {
 	changed := map[string][]string{"goal-a": {"a.txt", "b.txt"}, "goal-b": {"a.txt", "b.txt"}}
 	units := []batch.Unit{{GoalID: "goal-a", SelectedGroups: []string{"first"}}, {GoalID: "goal-b", SelectedGroups: []string{"second"}}}
 	calls := []string{}
-	decision, err := planPrefixDecisionWith("", units, "prefix-tree", strictPrefixPlanner(t, changed, false, &calls))
+	decision, err := PlanPrefixDecisionWith("", units, "prefix-tree", strictPrefixPlanner(t, changed, false, &calls))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +87,7 @@ func TestBatchPrefixPlanReplansOnlyMembersWhoseAutoPlanStayedStandard(t *testing
 	changed := map[string][]string{"goal-a": {"a.txt"}, "goal-b": {"b.txt"}}
 	units := []batch.Unit{{GoalID: "goal-a", SelectedGroups: []string{"first"}}, {GoalID: "goal-b", SelectedGroups: []string{"second"}}}
 	calls := []string{}
-	decision, err := planPrefixDecisionWith("", units, "prefix-tree", strictPrefixPlanner(t, changed, false, &calls))
+	decision, err := PlanPrefixDecisionWith("", units, "prefix-tree", strictPrefixPlanner(t, changed, false, &calls))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +106,7 @@ func TestBatchPrefixPlanReplansAFirstTransitionPlan(t *testing.T) {
 	t.Parallel()
 	units := []batch.Unit{{GoalID: "goal-a", SelectedGroups: []string{"first"}}}
 	calls := []string{}
-	decision, err := planPrefixDecisionWith("", units, "prefix-tree", strictPrefixPlanner(t, map[string][]string{"goal-a": {"a.txt"}}, true, &calls))
+	decision, err := PlanPrefixDecisionWith("", units, "prefix-tree", strictPrefixPlanner(t, map[string][]string{"goal-a": {"a.txt"}}, true, &calls))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +125,7 @@ func TestBatchPrefixPlanKeepsStandardPrefixesStandard(t *testing.T) {
 	t.Parallel()
 	units := []batch.Unit{{GoalID: "goal-a", SelectedGroups: []string{"first"}}}
 	calls := []string{}
-	decision, err := planPrefixDecisionWith("", units, "prefix-tree", strictPrefixPlanner(t, map[string][]string{"goal-a": {"a.txt"}}, false, &calls))
+	decision, err := PlanPrefixDecisionWith("", units, "prefix-tree", strictPrefixPlanner(t, map[string][]string{"goal-a": {"a.txt"}}, false, &calls))
 	if err != nil {
 		t.Fatal(err)
 	}

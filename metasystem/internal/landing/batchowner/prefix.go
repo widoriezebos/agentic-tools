@@ -1,33 +1,37 @@
-package main
+package batchowner
 
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // A retained proof does not retain the right to land. Recheck the live
 // handed-over claim and elapsed admission fence before consuming it.
-func authorizeBatchMember(root string, record batch.Record, unit batch.Unit) error {
+func AuthorizeBatchMember(root string, record batch.Record, unit batch.Unit) error {
 	controlRoot, now, projection, err := batchAuthorityProjection(root)
 	if err != nil {
 		return err
 	}
-	return authorizeBatchMemberInProjection(controlRoot, now, record, unit, projection)
+	return AuthorizeBatchMemberInProjection(controlRoot, now, record, unit, projection)
 }
 
 func batchAuthorityProjection(root string) (string, time.Time, goal.Projection, error) {
 	controlRoot := batch.ModuleRoot(root)
-	now, err := goalCommandNow(controlRoot)
+	now, err := fixtureauth.GoalNow(controlRoot)
 	if err != nil {
 		return "", time.Time{}, goal.Projection{}, err
 	}
@@ -44,7 +48,7 @@ func batchAuthorityProjection(root string) (string, time.Time, goal.Projection, 
 	return controlRoot, now, projection, nil
 }
 
-func authorizeBatchMemberInProjection(controlRoot string, now time.Time, record batch.Record, unit batch.Unit, projection goal.Projection) error {
+func AuthorizeBatchMemberInProjection(controlRoot string, now time.Time, record batch.Record, unit batch.Unit, projection goal.Projection) error {
 	if unit.IsChange() {
 		return authorizeChangeInProjection(controlRoot, unit, projection)
 	}
@@ -77,7 +81,7 @@ func authorizeBatchMemberInProjection(controlRoot string, now time.Time, record 
 	// The landing gate is read again at every publication and retry against
 	// this fresh ledger (g1-s70 D2): a hold published while the batch proved,
 	// or a word given at another tip, takes the member out of the batch.
-	settings, err := landingGateSettings(controlRoot)
+	settings, err := goal.ResolveGateSettings(filepath.Join(controlRoot, "metasystem.conf"))
 	if err != nil {
 		return err
 	}
@@ -92,21 +96,21 @@ func authorizeBatchMemberInProjection(controlRoot string, now time.Time, record 
 // leaves the batch when G's claim is no longer the asker's at the revision it
 // committed under, or G's landing gate now refuses (U11b).
 func authorizeChangeInProjection(controlRoot string, unit batch.Unit, projection goal.Projection) error {
-	return authorizeChangeWith(controlRoot, unit, projection, changeGoalBranchTip)
+	return AuthorizeChangeWith(controlRoot, unit, projection, changeGoalBranchTip)
 }
 
 // changeGoalBranchTip reads a goal's branch tip at origin as it is now: the
 // tip a goal-bound change's landing gate is read at before each push (N-6).
 func changeGoalBranchTip(controlRoot, goalID string) (string, error) {
-	endpoint, err := goalBranchEndpoint(controlRoot)
+	endpoint, err := branch.MainEndpoint(controlRoot)
 	if err != nil {
 		return "", err
 	}
-	tip, _, err := goalBranchOriginTip(controlRoot, endpoint, goalID)
+	tip, _, err := branch.OriginTip(controlRoot, endpoint, goalID)
 	return tip, err
 }
 
-func authorizeChangeWith(controlRoot string, unit batch.Unit, projection goal.Projection, branchTip func(string, string) (string, error)) error {
+func AuthorizeChangeWith(controlRoot string, unit batch.Unit, projection goal.Projection, branchTip func(string, string) (string, error)) error {
 	change := unit.Change
 	if change.Goal == "" {
 		return nil
@@ -123,7 +127,7 @@ func authorizeChangeWith(controlRoot string, unit batch.Unit, projection goal.Pr
 		return &batch.PrefixRevisionRefusal{Reason: "BATCH_PREFIX_AUTHORITY_REFUSED: change " + unit.GoalID + " was committed in goal " + change.Goal +
 			"'s name by " + change.AskedBy + " at revision " + fmt.Sprint(change.GoalRevision) + ", and that claim moved; commit it again and land it"}
 	}
-	settings, err := landingGateSettings(controlRoot)
+	settings, err := goal.ResolveGateSettings(filepath.Join(controlRoot, "metasystem.conf"))
 	if err != nil {
 		return err
 	}
@@ -151,7 +155,7 @@ func authorizeBatchSeries(root string, store batch.Store, record batch.Record, a
 		if unit.State != batch.UnitJoined {
 			continue
 		}
-		if err := authorizeBatchMemberInProjection(controlRoot, now, record, unit, projection); err != nil {
+		if err := AuthorizeBatchMemberInProjection(controlRoot, now, record, unit, projection); err != nil {
 			if returnErr := batch.HandlePrefixMemberRefusal(store, record.BatchID, unit.GoalID, actor, at, err); returnErr != nil {
 				return returnErr
 			}
@@ -161,14 +165,14 @@ func authorizeBatchSeries(root string, store batch.Store, record batch.Record, a
 	return nil
 }
 
-// productionPrefixDecision selects the protected policy on the cumulative
+// ProductionPrefixDecision selects the protected policy on the cumulative
 // tree for every member present at this boundary. Earlier prefixes never
 // inherit requirements introduced by a later member.
-func productionPrefixDecision(root string, units []batch.Unit, tree string) (batch.PrefixDecision, error) {
-	return planPrefixDecisionWith(root, units, tree, productionBatchTreePlanOutputWithGroups)
+func ProductionPrefixDecision(root string, units []batch.Unit, tree string) (batch.PrefixDecision, error) {
+	return PlanPrefixDecisionWith(root, units, tree, productionBatchTreePlanOutputWithGroups)
 }
 
-func planPrefixDecisionWith(root string, units []batch.Unit, tree string, plan func(string, string, string, testpolicy.Mode, []string) (testingPlanOutput, error)) (batch.PrefixDecision, error) {
+func PlanPrefixDecisionWith(root string, units []batch.Unit, tree string, plan func(string, string, string, testpolicy.Mode, []string) (testrun.PlanOutput, error)) (batch.PrefixDecision, error) {
 	if len(units) == 0 {
 		return batch.PrefixDecision{}, fmt.Errorf("BATCH_PREFIX_PLAN_REFUSED: no joined members")
 	}
@@ -187,7 +191,7 @@ func planPrefixDecisionWith(root string, units []batch.Unit, tree string, plan f
 	if len(units) == 0 {
 		return batch.PrefixDecision{}, fmt.Errorf("BATCH_PREFIX_PLAN_REFUSED: no joined members")
 	}
-	outputs := make([]testingPlanOutput, 0, len(units))
+	outputs := make([]testrun.PlanOutput, 0, len(units))
 	deep := false
 	for _, unit := range units {
 		output, err := plan(root, unit.GoalID, tree, testpolicy.ModeAuto, unit.SelectedGroups)
@@ -281,10 +285,10 @@ func verifyBatchPrefix(root string, unit batch.Unit, tree string, decision batch
 	if err != nil {
 		return err
 	}
-	request := testingSelectionRequest{Root: batch.ModuleRoot(detached.Workspace().Dir), ControlRoot: batch.ModuleRoot(root), GoalID: charge,
+	request := testrun.SelectionRequest{Root: batch.ModuleRoot(detached.Workspace().Dir), ControlRoot: batch.ModuleRoot(root), GoalID: charge,
 		Tree: tree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchRequirements: slices.Clone(decision.Groups), BatchPrefixReceipt: true,
 		FreshEpisode: decision.FreshEpisode, FreshExpiresAt: decision.FreshExpiresAt}
-	result, err := verifyRetainedTesting(request)
+	result, err := Engine.VerifyRetainedTesting(request)
 	if err != nil {
 		return err
 	}
@@ -294,17 +298,17 @@ func verifyBatchPrefix(root string, unit batch.Unit, tree string, decision batch
 	return nil
 }
 
-var batchVerifyPrefixEvidence = verifyBatchPrefix
+var BatchVerifyPrefixEvidence = verifyBatchPrefix
 
-// verifyBatchSeries re-plans every final prefix, including the tip, before
+// VerifyBatchSeries re-plans every final prefix, including the tip, before
 // publication. A retained receipt binds one decision but cannot certify a
 // changed destination policy or a rebased series by itself.
-func verifyBatchSeries(root string, record batch.Record, trees []string) error {
-	return verifyBatchSeriesWith(root, record, trees, productionPrefixDecision, batchVerifyPrefixEvidence)
+func VerifyBatchSeries(root string, record batch.Record, trees []string) error {
+	return VerifyBatchSeriesWith(root, record, trees, ProductionPrefixDecision, BatchVerifyPrefixEvidence)
 }
 
-// verifyBatchSeriesWith is verifyBatchSeries with its planner and verifier.
-func verifyBatchSeriesWith(root string, record batch.Record, trees []string,
+// VerifyBatchSeriesWith is verifyBatchSeries with its planner and verifier.
+func VerifyBatchSeriesWith(root string, record batch.Record, trees []string,
 	decide func(string, []batch.Unit, string) (batch.PrefixDecision, error), verify func(string, batch.Unit, string, batch.PrefixDecision) error) error {
 	units := []batch.Unit{}
 	for _, unit := range record.Units {
@@ -383,11 +387,11 @@ func verifyBatchCommittedSeries(root string, record batch.Record, units []batch.
 			continue
 		}
 		charge := batch.ChargeUnit(units[:index+1])
-		tree, err := gitOutput(root, "rev-parse", commit+"^{tree}")
+		tree, err := GitOutput(root, "rev-parse", commit+"^{tree}")
 		if err != nil {
 			return err
 		}
-		decision, err := productionPrefixDecision(root, units[:index+1], tree)
+		decision, err := ProductionPrefixDecision(root, units[:index+1], tree)
 		if err != nil {
 			return err
 		}
@@ -418,7 +422,7 @@ func verifyBatchCommittedSeries(root string, record batch.Record, units []batch.
 			}
 			decision.FreshEpisode, decision.FreshExpiresAt = episode.Token, episode.ExpiresAt
 		}
-		if err := batchVerifyPrefixEvidence(root, charge, tree, decision); err != nil {
+		if err := BatchVerifyPrefixEvidence(root, charge, tree, decision); err != nil {
 			return err
 		}
 	}

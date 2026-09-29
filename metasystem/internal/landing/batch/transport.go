@@ -269,14 +269,6 @@ func AttestedDeclaration(commit, snapshot, base string) CommitDeclaration {
 // and returns what it printed and its exit status.
 type CommitBoundary func(landpath.CommitRequest) (string, int)
 
-// CommitWithWrapper commits one unit through the commit boundary. The caller
-// supplies the goal approver's configured identity, stamped as author and
-// committer; ambient git author and committer configuration is ignored. The
-// lineage is the landing owner's, named here rather than inherited.
-func CommitWithWrapper(root string, declaration CommitDeclaration, goalID, receipt, message, authorName, authorEmail, landedBy, lineage string, commit CommitBoundary) error {
-	return CommitWithWrapperWithRead(root, declaration, goalID, receipt, message, authorName, authorEmail, landedBy, lineage, commit, landingGitOutput)
-}
-
 func CommitWithWrapperWithRead(root string, declaration CommitDeclaration, goalID, receipt, message, authorName, authorEmail, landedBy, lineage string, commit CommitBoundary, readGit func(root string, args ...string) (string, error)) error {
 	if authorName == "" || authorEmail == "" {
 		return fmt.Errorf("BATCH_LAND_AUTHOR_UNBOUND: goal %s has no configured approver identity", goalID)
@@ -328,12 +320,6 @@ func landingGitOutput(root string, args ...string) (string, error) {
 	command.Env = gittree.ScrubbedEnviron()
 	output, err := command.Output()
 	return strings.TrimSpace(string(output)), err
-}
-
-// RequirePassingCommitVerdict keeps a branch member local unless the commit
-// boundary recorded that its complete provenance check passed.
-func RequirePassingCommitVerdict(root, goalID, commit string) error {
-	return RequirePassingCommitVerdictWithRead(root, goalID, commit, landingGitOutput)
 }
 
 func RequirePassingCommitVerdictWithRead(root, goalID, commit string, readGit func(root string, args ...string) (string, error)) error {

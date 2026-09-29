@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
@@ -503,7 +504,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 // landingOwners stands in for the landing owners' effects: each keeps the
 // state its owner would record, so repeats read what an earlier call did.
 type landingOwners struct {
-	joins         []batchJoinRequest
+	joins         []batchowner.BatchJoinRequest
 	joinErr       error
 	member        *batch.Unit
 	candidates    int
@@ -524,13 +525,13 @@ type landingOwners struct {
 func (l *landingOwners) install(b *deliveryBed) {
 	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return "/landing", l.configured, nil }
 	b.owners.redOnMain = func(*intentInvocation, string) (string, error) { return l.redFix, nil }
-	b.owners.batchUnit = func(string, batchJoinRequest, string) (batch.Record, batch.Unit, bool, error) {
+	b.owners.batchUnit = func(string, batchowner.BatchJoinRequest, string) (batch.Record, batch.Unit, bool, error) {
 		if l.member == nil {
 			return batch.Record{}, batch.Unit{}, false, nil
 		}
 		return batch.Record{BatchID: "b-1", State: "open"}, *l.member, true, nil
 	}
-	b.owners.batchJoin = func(request batchJoinRequest) (batch.Record, error) {
+	b.owners.batchJoin = func(request batchowner.BatchJoinRequest) (batch.Record, error) {
 		l.joins = append(l.joins, request)
 		if l.joinErr != nil {
 			return batch.Record{}, l.joinErr
@@ -806,7 +807,7 @@ func TestIntentLandBatchMemberSelection(t *testing.T) {
 	joins := 0
 	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
 	b.owners.batchUnit = productionIntentBatchUnit
-	b.owners.batchJoin = func(batchJoinRequest) (batch.Record, error) {
+	b.owners.batchJoin = func(batchowner.BatchJoinRequest) (batch.Record, error) {
 		joins++
 		return batch.Record{}, errors.New("unexpected join")
 	}
@@ -953,10 +954,10 @@ func TestIntentLandOldWholeLandingDoesNotAnswerFreshBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	markBatchLanded(t, landingRoot, record.BatchID)
-	var joins []batchJoinRequest
+	var joins []batchowner.BatchJoinRequest
 	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
 	b.owners.batchUnit = productionIntentBatchUnit
-	b.owners.batchJoin = func(request batchJoinRequest) (batch.Record, error) {
+	b.owners.batchJoin = func(request batchowner.BatchJoinRequest) (batch.Record, error) {
 		joins = append(joins, request)
 		return batch.Record{BatchID: "01k0000000000000000000000d", State: batch.StateOpen}, nil
 	}

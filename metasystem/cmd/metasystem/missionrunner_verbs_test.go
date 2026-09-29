@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -190,5 +191,5 @@ func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(
 // missionFenceBeforeArmWith is the fence check as the launching command runs
 // it: this process is the caller, refusals go to this process's stderr.
 func missionFenceBeforeArmWith(stderr io.Writer, root, mode string, repositoryTop func(string) (string, error), classify processCallerClassifier) (int64, int) {
-	return missionFenceBeforeArmFor(processIdentity{pid: int64(os.Getpid())}, stderr, root, mode, repositoryTop, classify)
+	return missionFenceBeforeArmFor(ownercall.Process{Pid: int64(os.Getpid())}, stderr, root, mode, repositoryTop, classify)
 }

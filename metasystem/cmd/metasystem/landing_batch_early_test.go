@@ -14,6 +14,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -52,7 +53,7 @@ func TestBatchEarlyCheapPhaseRunsTheJoinsChecksOnTheRecordedTip(t *testing.T) {
 	root := t.TempDir()
 	var calls []string
 	var episode batch.JoinAdmission
-	outcome := func(result batch.JoinAdmission, proof proofrun.TestResult, err error) batchAdmissionRun {
+	outcome := func(result batch.JoinAdmission, proof proofrun.TestResult, err error) batchowner.BatchAdmissionRun {
 		return func(gotRoot, batchID, baseTree, goalID string, claim batch.Claim, tree, label string,
 			fresh func(batch.JoinAdmission, int64) (batch.JoinAdmission, error)) (batch.JoinAdmission, proofrun.TestResult, bool, error) {
 			calls = append(calls, gotRoot+"|"+batchID+"|"+baseTree+"|"+goalID+"|"+tree+"|"+label)
@@ -67,7 +68,7 @@ func TestBatchEarlyCheapPhaseRunsTheJoinsChecksOnTheRecordedTip(t *testing.T) {
 			return result, proof, true, err
 		}
 	}
-	result, err := earlyCheapPhase(root, earlyRecord(), outcome(batch.JoinAdmission{Status: "verified", AttemptID: "cheap-1"}, proofrun.TestResult{}, nil))
+	result, err := batchowner.EarlyCheapPhase(root, earlyRecord(), outcome(batch.JoinAdmission{Status: "verified", AttemptID: "cheap-1"}, proofrun.TestResult{}, nil))
 	if err != nil || result.Attempt != "cheap-1" || len(result.Failing) != 0 ||
 		!slices.Equal(calls, []string{root + "|01j5x00000000000000000ea01|base|goal-b|tip-ab|early-cheap"}) ||
 		len(episode.FreshEpisode) != 64 || episode.FreshExpiresAt == "" {
@@ -76,12 +77,12 @@ func TestBatchEarlyCheapPhaseRunsTheJoinsChecksOnTheRecordedTip(t *testing.T) {
 
 	red := proofrun.TestResult{AttemptID: "cheap-2", Groups: []proofrun.GroupResult{{ID: "go-unit", Status: "failed", LogPath: "/logs/unit.log"},
 		{ID: "go-lint", Status: "passed"}}}
-	result, err = earlyCheapPhase(root, earlyRecord(), outcome(batch.JoinAdmission{}, red, &batch.JoinAdmissionRed{Reason: "BATCH_JOIN_ADMISSION_RED: go-unit"}))
+	result, err = batchowner.EarlyCheapPhase(root, earlyRecord(), outcome(batch.JoinAdmission{}, red, &batch.JoinAdmissionRed{Reason: "BATCH_JOIN_ADMISSION_RED: go-unit"}))
 	if err != nil || result.Attempt != "cheap-2" || len(result.Failing) != 1 || result.Failing[0].ID != "go-unit" || result.Failing[0].LogPath != "/logs/unit.log" {
 		t.Fatalf("red: result %+v err %v", result, err)
 	}
 
-	if _, err = earlyCheapPhase(root, earlyRecord(), outcome(batch.JoinAdmission{}, proofrun.TestResult{}, errors.New("BATCH_JOIN_TEST_DROPPED: x"))); err == nil {
+	if _, err = batchowner.EarlyCheapPhase(root, earlyRecord(), outcome(batch.JoinAdmission{}, proofrun.TestResult{}, errors.New("BATCH_JOIN_TEST_DROPPED: x"))); err == nil {
 		t.Fatal("a dropped run was not an error")
 	}
 }
@@ -103,21 +104,21 @@ func TestBatchEarlyProofIsLaunchedAsTheTipProofReservingNoHeadroom(t *testing.T)
 		}
 		return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard, SelectedGroups: plans[goalID]}, nil
 	}
-	var launched batchProofLaunch
-	launch := func(request batchProofLaunch) (proofrun.TestResult, error) {
+	var launched batchowner.BatchProofLaunch
+	launch := func(request batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
 		launched = request
 		return proofrun.TestResult{AttemptID: "early-1", Groups: []proofrun.GroupResult{{ID: "g1", Status: "passed"}, {ID: "g3", Status: "failed", LogPath: "/logs/g3.log"}}},
 			errors.New("exit status 1")
 	}
-	result, err := earlyProof(root, earlyRecord(), plan, launch)
-	want := batchProofLaunch{Root: batch.ModuleRoot(root), BatchID: "01j5x00000000000000000ea01", GoalID: "goal-b", Tree: "tip-ab",
+	result, err := batchowner.EarlyProof(root, earlyRecord(), plan, launch)
+	want := batchowner.BatchProofLaunch{Root: batch.ModuleRoot(root), BatchID: "01j5x00000000000000000ea01", GoalID: "goal-b", Tree: "tip-ab",
 		ResultPath: filepath.Join(batch.ModuleRoot(root), "artifacts", "agents", "proof-runs", "batch", "01j5x00000000000000000ea01-early.json"),
 		Mode:       testpolicy.ModeStandard, Groups: []string{"g1", "g2", "g3"}, GoalRevision: 4, AccountingRevision: 5, Early: true}
 	if err != nil || result.Attempt != "early-1" || len(result.Failing) != 1 || result.Failing[0].ID != "g3" || !equalLaunch(launched, want) {
 		t.Fatalf("early proof: result %+v err %v launched %+v", result, err, launched)
 	}
 
-	argv := func(request batchProofLaunch) []string {
+	argv := func(request batchowner.BatchProofLaunch) []string {
 		t.Helper()
 		dir := t.TempDir()
 		recorded := filepath.Join(dir, "argv")
@@ -127,11 +128,11 @@ func TestBatchEarlyProofIsLaunchedAsTheTipProofReservingNoHeadroom(t *testing.T)
 			t.Fatal(err)
 		}
 		request.ResultPath = filepath.Join(dir, "result.json")
-		if _, err := launchBatchTipProofWithDependencies(request, batchExecutionDependencies{
-			executable: func() (string, error) { return stub, nil },
-			checkout:   func(string, string) (string, func() error, error) { return dir, func() error { return nil }, nil },
-			topLevel:   func(root string) (string, error) { return root, nil },
-			readGit:    func(string, ...string) (string, error) { return "", nil },
+		if _, err := batchowner.LaunchBatchTipProofWithDependencies(request, batchowner.BatchExecutionDependencies{
+			Executable: func() (string, error) { return stub, nil },
+			Checkout:   func(string, string) (string, func() error, error) { return dir, func() error { return nil }, nil },
+			TopLevel:   func(root string) (string, error) { return root, nil },
+			ReadGit:    func(string, ...string) (string, error) { return "", nil },
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -148,7 +149,7 @@ func TestBatchEarlyProofIsLaunchedAsTheTipProofReservingNoHeadroom(t *testing.T)
 		}
 		return fields
 	}
-	tip := batchProofLaunch{Root: root, BatchID: "b", GoalID: "goal-b", Tree: "tip-ab", Mode: testpolicy.ModeStandard, GoalRevision: 4, AccountingRevision: 5}
+	tip := batchowner.BatchProofLaunch{Root: root, BatchID: "b", GoalID: "goal-b", Tree: "tip-ab", Mode: testpolicy.ModeStandard, GoalRevision: 4, AccountingRevision: 5}
 	early := tip
 	early.Early = true
 	retried := tip
@@ -158,16 +159,16 @@ func TestBatchEarlyProofIsLaunchedAsTheTipProofReservingNoHeadroom(t *testing.T)
 	// (U12): it never takes the host's proving flock, so speculative work
 	// never delays a real proof; the tip proof and its retry hold it.
 	if !slices.Contains(tipArgv, "--require-diagnostic-headroom") || slices.Contains(earlyArgv, "--require-diagnostic-headroom") ||
-		!slices.Contains(tipArgv, holdHostProvingFlag) || !slices.Contains(retriedArgv, holdHostProvingFlag) || slices.Contains(earlyArgv, holdHostProvingFlag) ||
+		!slices.Contains(tipArgv, batchowner.HoldHostProvingFlag) || !slices.Contains(retriedArgv, batchowner.HoldHostProvingFlag) || slices.Contains(earlyArgv, batchowner.HoldHostProvingFlag) ||
 		!slices.Equal(slices.DeleteFunc(slices.Clone(tipArgv), func(arg string) bool {
-			return arg == "--require-diagnostic-headroom" || arg == holdHostProvingFlag
+			return arg == "--require-diagnostic-headroom" || arg == batchowner.HoldHostProvingFlag
 		}), earlyArgv) ||
 		!slices.Contains(retriedArgv, "--retry-decision") || !slices.Contains(retriedArgv, "/decisions/early-retry.json") || slices.Contains(tipArgv, "--retry-decision") {
 		t.Fatalf("argv:\ntip     %q\nearly   %q\nretried %q", tipArgv, earlyArgv, retriedArgv)
 	}
 }
 
-func equalLaunch(got, want batchProofLaunch) bool {
+func equalLaunch(got, want batchowner.BatchProofLaunch) bool {
 	return got.Root == want.Root && got.BatchID == want.BatchID && got.GoalID == want.GoalID && got.Tree == want.Tree &&
 		got.ResultPath == want.ResultPath && got.Mode == want.Mode && slices.Equal(got.Groups, want.Groups) &&
 		got.GoalRevision == want.GoalRevision && got.AccountingRevision == want.AccountingRevision && got.Early == want.Early &&
@@ -181,8 +182,8 @@ func equalLaunch(got, want batchProofLaunch) bool {
 func TestBatchEarlyBudgetKeepsTheBatchProofsHeadroom(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
-	budget := func(attempts, minutes uint64, status dispatchcore.BudgetProjectionStatus) func(string, batch.Unit, *batch.Unit, time.Time) (batchCostBudgetProjection, error) {
-		return func(_ string, unit batch.Unit, incoming *batch.Unit, _ time.Time) (batchCostBudgetProjection, error) {
+	budget := func(attempts, minutes uint64, status dispatchcore.BudgetProjectionStatus) func(string, batch.Unit, *batch.Unit, time.Time) (batchowner.BatchCostBudgetProjection, error) {
+		return func(_ string, unit batch.Unit, incoming *batch.Unit, _ time.Time) (batchowner.BatchCostBudgetProjection, error) {
 			if unit.GoalID != "goal-b" || incoming != nil {
 				t.Fatalf("projected %s (incoming %v), want the head goal-b", unit.GoalID, incoming)
 			}
@@ -190,7 +191,7 @@ func TestBatchEarlyBudgetKeepsTheBatchProofsHeadroom(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			return batchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: status, Limits: limits, Attempts: 10 - attempts, ReservedJobMinutes: 1000 - minutes}}, nil
+			return batchowner.BatchCostBudgetProjection{Budget: dispatchcore.BudgetProjection{Status: status, Limits: limits, Attempts: 10 - attempts, ReservedJobMinutes: 1000 - minutes}}, nil
 		}
 	}
 	cap := func(string) (uint64, error) { return 60, nil }
@@ -206,7 +207,7 @@ func TestBatchEarlyBudgetKeepsTheBatchProofsHeadroom(t *testing.T) {
 		{"two caps of minutes left", 5, 179, dispatchcore.BudgetKnown, false, "no early work: goal-b has 5 attempts and 179 reserved minutes left, kept for the batch proof"},
 		{"unknown budget", 5, 900, dispatchcore.BudgetUnknown, false, "no early work: goal-b's budget is unknown"},
 	} {
-		ok, why := earlyBudget("/lane", earlyRecord(), at, budget(row.attempts, row.minutes, row.status), cap)
+		ok, why := batchowner.EarlyBudget("/lane", earlyRecord(), at, budget(row.attempts, row.minutes, row.status), cap)
 		if ok != row.ok || why != row.why {
 			t.Errorf("%s: ok %t why %q, want %t %q", row.name, ok, why, row.ok, row.why)
 		}
@@ -254,7 +255,7 @@ func TestBatchProofRetriesWhatTheEarlyProofOfItsTreeFailed(t *testing.T) {
 		t.Fatalf("without a decision: %+v decided %t err %v", decision, decided, err)
 	}
 
-	path, err := tipRetryDecision(fixture.root, record, head.GoalID, proofrun.ReadAttempts)
+	path, err := batchowner.TipRetryDecision(fixture.root, record, head.GoalID, proofrun.ReadAttempts)
 	if err != nil || path == "" {
 		t.Fatalf("no retry decision for the early tree: %q %v", path, err)
 	}
@@ -274,14 +275,14 @@ func TestBatchProofRetriesWhatTheEarlyProofOfItsTreeFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	proof := batch.Proof{Status: "green", Tree: tree, AttemptID: batchAttempt, SelectedGroups: []string{"app-a"}, Executions: []string{"app-a"}}
-	if sources, err := batch.ResolveSources(proof, batchSourcesFromVerification(verified)); err != nil || sources["app-a"].Attempt != batchAttempt {
+	if sources, err := batch.ResolveSources(proof, batchowner.BatchSourcesFromVerification(verified)); err != nil || sources["app-a"].Attempt != batchAttempt {
 		t.Fatalf("sources %+v err %v, want app-a from the batch proof %s, never the early %s", sources, err, batchAttempt, earlyAttempt)
 	}
 
 	// A member joined after the early proof: the batch proof's tree is not the
 	// early tree, and nothing is retried.
 	record.TipTree = strings.Repeat("f", 40)
-	if path, err := tipRetryDecision(fixture.root, record, head.GoalID, proofrun.ReadAttempts); err != nil || path != "" {
+	if path, err := batchowner.TipRetryDecision(fixture.root, record, head.GoalID, proofrun.ReadAttempts); err != nil || path != "" {
 		t.Fatalf("a grown batch carried a retry decision: %q %v", path, err)
 	}
 }
@@ -315,7 +316,7 @@ func TestBatchEarlyProofPassesAreReusedByIdentityAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sources := batchSourcesFromVerification(verified); sources["app-a"] != earlyAttempt || fixture.counts()["a"] != 1 {
+	if sources := batchowner.BatchSourcesFromVerification(verified); sources["app-a"] != earlyAttempt || fixture.counts()["a"] != 1 {
 		t.Fatalf("app-a at identity %s was not reused from the early attempt %s: %v counts %v", grownIDs["app-a"], earlyAttempt, sources, fixture.counts())
 	}
 
@@ -326,7 +327,7 @@ func TestBatchEarlyProofPassesAreReusedByIdentityAlone(t *testing.T) {
 	movedRun.CandidateEngineBuildIdentity = fixture.engineIdentity(moved, movedRun.Environment)
 	movedIDs, _ := fixture.prepare(movedRun)
 	verified, _ = fixture.verify(movedRun, movedFiles, early, time.Now().UTC())
-	if movedIDs["app-a"] == earlyIDs["app-a"] || batchSourcesFromVerification(verified)["app-a"] != "" {
+	if movedIDs["app-a"] == earlyIDs["app-a"] || batchowner.BatchSourcesFromVerification(verified)["app-a"] != "" {
 		t.Fatalf("a changed input was reused: identity %s (early %s)", movedIDs["app-a"], earlyIDs["app-a"])
 	}
 }

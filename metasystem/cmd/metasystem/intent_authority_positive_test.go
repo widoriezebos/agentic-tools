@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -131,8 +132,8 @@ func TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner(t *
 	var calls [][]string
 	ownerCalls := defaultIntentOwnerCalls()
 	realBrain := ownerCalls.brain
-	ownerCalls.brain = func(choice string, caller processIdentity, stdout, stderr io.Writer, root, by string) int {
-		if caller.pid != int64(os.Getpid()) {
+	ownerCalls.brain = func(choice string, caller ownercall.Process, stdout, stderr io.Writer, root, by string) int {
+		if caller.Pid != int64(os.Getpid()) {
 			t.Fatalf("brain owner call supplied %+v, want this process", caller)
 		}
 		calls = append(calls, []string{"brain", choice, "--root", root, "--by", by})

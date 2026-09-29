@@ -13,6 +13,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
@@ -53,14 +54,14 @@ func TestLaneChargedProofEndToEnd(t *testing.T) {
 }
 
 func runLaneChargedProofEndToEnd(t *testing.T) {
-	fixture := newPortableProofFixtureWithSetup(t, "", func(fixture *portableProofFixture) { fixture.holderLineage = landingOwnerLineage })
+	fixture := newPortableProofFixtureWithSetup(t, "", func(fixture *portableProofFixture) { fixture.holderLineage = batchowner.LandingOwnerLineage })
 	for _, entry := range fixture.commandEnvironment()[len(os.Environ()):] {
 		name, value, _ := bytesCut(entry)
 		t.Setenv(name, value)
 	}
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", landingOwnerLineage)
-	batchTreePlanExecutable = func() (string, error) { return fixture.engine, nil }
-	batchTipProofExecutable = func() (string, error) { return fixture.engine, nil }
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", batchowner.LandingOwnerLineage)
+	batchowner.BatchTreePlanExecutable = func() (string, error) { return fixture.engine, nil }
+	batchowner.BatchTipProofExecutable = func() (string, error) { return fixture.engine, nil }
 	now := time.Now().UTC()
 	home, err := board.Home()
 	if err != nil {
@@ -105,10 +106,10 @@ func runLaneChargedProofEndToEnd(t *testing.T) {
 	if _, err := batch.JoinChange(store, batch.ChangeJoin{Unit: unit, BaseTree: baseTree, NewID: id, Actor: "m1e+human", At: now}); err != nil {
 		t.Fatalf("join the change: %v", err)
 	}
-	dependencies := productionBatchProofDependencies
-	dependencies.base = func(string) (string, error) { return baseTree, nil }
-	dependencies.rearm = func(string, string) error { return nil }
-	if err := executeBatchProof(fixture.root, id, "landing+owner", "nothing within reach", "token-e2e", proofrun.LoadSample{}, time.Now().UTC(), dependencies); err != nil {
+	dependencies := batchowner.ProductionBatchProofDependencies
+	dependencies.Base = func(string) (string, error) { return baseTree, nil }
+	dependencies.Rearm = func(string, string) error { return nil }
+	if err := batchowner.ExecuteBatchProof(fixture.root, id, "landing+owner", "nothing within reach", "token-e2e", proofrun.LoadSample{}, time.Now().UTC(), dependencies); err != nil {
 		t.Fatalf("prove the batch of changes: %v", err)
 	}
 	record, err := store.Load(id)

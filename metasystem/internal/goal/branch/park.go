@@ -54,6 +54,22 @@ func OperationID() (string, error) {
 	return "branch-" + hex.EncodeToString(raw), nil
 }
 
+// MainEndpoint is root's ledger endpoint, refused unless it serves main:
+// goal branches land on main only.
+func MainEndpoint(root string) (goal.Endpoint, error) {
+	return mainEndpoint(goal.ResolveEndpoint(root))
+}
+
+func mainEndpoint(endpoint goal.Endpoint, err error) (goal.Endpoint, error) {
+	if err != nil {
+		return goal.Endpoint{}, err
+	}
+	if endpoint.Branch != "refs/heads/main" {
+		return goal.Endpoint{}, fmt.Errorf("GOAL_BRANCH_ENDPOINT_UNSUPPORTED: endpoint %s is not refs/heads/main", endpoint.Branch)
+	}
+	return endpoint, nil
+}
+
 // EndpointTip is the endpoint's main as the remote has it, read through a
 // disposable ref that is deleted whether the read succeeded or not.
 func EndpointTip(root string, endpoint goal.Endpoint) (tip string, err error) {

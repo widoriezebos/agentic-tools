@@ -15,6 +15,7 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -142,7 +143,7 @@ func gcliBudgetAnnounceParent(t *testing.T, bed *goalCLIBed) {
 		"goal-cli-fixture", "fake", bed.lineage); err != nil {
 		t.Fatal(err)
 	}
-	bed.caller = processIdentity{pid: parent.Pid, startedAt: parent.StartedAt.Unix()}
+	bed.caller = ownercall.Process{Pid: parent.Pid, StartedAt: parent.StartedAt.Unix()}
 }
 
 // gcliBudgetTemplateRoot moves the bed's checkout into the template layout

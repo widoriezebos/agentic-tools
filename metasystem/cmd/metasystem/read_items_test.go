@@ -120,20 +120,6 @@ func TestGoalShowAndNextPrintOpenReadItemFixUnit(t *testing.T) {
 	}
 }
 
-func TestGoalReadItemsListJSONShape(t *testing.T) {
-	fixture := newReadItemCommandFixture(t)
-	code, output, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
-		return runGoalReadItemsListWithInputs([]string{"--root", fixture.repository.root, "--open", "--json"}, fixture.repository.commandNow(fixture.now), fixture.dependencies.endpoint, stdout, stderr)
-	})
-	var envelope struct {
-		Tip   string              `json:"tip"`
-		Goals []readItemsGoalJSON `json:"goals"`
-	}
-	if code != 0 || stderr != "" || json.Unmarshal([]byte(output), &envelope) != nil || envelope.Tip != fixture.projection().Tip || len(envelope.Goals) != 1 || envelope.Goals[0].Goal != "standing-validation" || envelope.Goals[0].State != goal.StateClaimed || len(envelope.Goals[0].Items) != 1 || envelope.Goals[0].Items[0].ID != "critic-1" {
-		t.Fatalf("read-items list JSON shape: code=%d output=%q stderr=%q decoded=%+v", code, output, stderr, envelope)
-	}
-}
-
 func TestDoneReadItemRefusalRemedyExecutes(t *testing.T) {
 	fixture := newReadItemCommandFixture(t)
 	before := fixture.projection().Tip

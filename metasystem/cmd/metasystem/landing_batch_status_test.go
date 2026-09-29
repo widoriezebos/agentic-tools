@@ -21,8 +21,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
@@ -30,21 +32,21 @@ import (
 )
 
 func TestBatchStatusExposesReturnRevisionHeadroomOwnerLockSampleAndDeadline(t *testing.T) {
-	originalOwner, originalLock, originalSample, originalNow := batchStatusOwner, batchStatusLock, batchStatusSample, batchStatusNow
+	originalOwner, originalLock, originalSample, originalNow := batchowner.BatchStatusOwner, batchowner.BatchStatusLock, batchowner.BatchStatusSample, batchowner.BatchStatusNow
 	t.Cleanup(func() {
-		batchStatusOwner, batchStatusLock, batchStatusSample, batchStatusNow = originalOwner, originalLock, originalSample, originalNow
+		batchowner.BatchStatusOwner, batchowner.BatchStatusLock, batchowner.BatchStatusSample, batchowner.BatchStatusNow = originalOwner, originalLock, originalSample, originalNow
 	})
-	batchStatusOwner = func(string) (int64, identity.Liveness, error) { return 41, identity.Alive, nil }
+	batchowner.BatchStatusOwner = func(string) (int64, identity.Liveness, error) { return 41, identity.Alive, nil }
 	configuredLock := filepath.Join(t.TempDir(), "configured-proof-lock")
-	batchStatusLock = func(lockDir string) string {
+	batchowner.BatchStatusLock = func(lockDir string) string {
 		if lockDir != configuredLock {
 			t.Fatalf("status lock directory=%q, want %q", lockDir, configuredLock)
 		}
 		return "landing-batch-owner 41"
 	}
-	batchStatusSample = func(string) proofrun.LoadSample { return proofrun.LoadSample{OverlapKnown: true, OverlappingHost: 1} }
+	batchowner.BatchStatusSample = func(string) proofrun.LoadSample { return proofrun.LoadSample{OverlapKnown: true, OverlappingHost: 1} }
 	now := time.Date(2030, 1, 1, 0, 30, 0, 0, time.UTC)
-	batchStatusNow = func() time.Time { return now }
+	batchowner.BatchStatusNow = func() time.Time { return now }
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "plans", "goals"), 0o755); err != nil {
 		t.Fatal(err)
@@ -120,11 +122,11 @@ func TestBatchJoinAuthorComesFromApproverConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := &goal.GoalFile{Approved: &goal.ApprovalRecord{By: "human:Wido"}}
-	approver, name, email, err := productionBatchAuthor(root, file)
+	approver, name, email, err := batchowner.ProductionBatchAuthor(root, file)
 	if err != nil || approver != "Wido" || name != "Wido Example" || email != "wido@example.com" {
 		t.Fatalf("identity=%q %q <%s> error=%v", approver, name, email, err)
 	}
-	if _, _, _, err := productionBatchAuthor(root, &goal.GoalFile{Approved: &goal.ApprovalRecord{By: "human:Absent"}}); err == nil || !strings.Contains(err.Error(), "BATCH_JOIN_AUTHOR_UNBOUND") {
+	if _, _, _, err := batchowner.ProductionBatchAuthor(root, &goal.GoalFile{Approved: &goal.ApprovalRecord{By: "human:Absent"}}); err == nil || !strings.Contains(err.Error(), "BATCH_JOIN_AUTHOR_UNBOUND") {
 		t.Fatalf("unbound approver error=%v", err)
 	}
 }
@@ -245,7 +247,7 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 		}
 		return nil, 0, nil
 	}
-	result, err := launchBatchDiagnosticWithExecute(root, batchID, batch.DiagnosticRequest{GoalID: "goal-k", Tree: "base-tree", Groups: []string{"F"},
+	result, err := batchowner.LaunchBatchDiagnosticWithExecute(root, batchID, batch.DiagnosticRequest{GoalID: "goal-k", Tree: "base-tree", Groups: []string{"F"},
 		Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}, execute)
 	if err != nil || result.AttemptID != "fresh-diagnostic" {
 		t.Fatalf("production diagnostic result=%+v err=%v", result, err)
@@ -264,12 +266,12 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 		"--purpose", "diagnostic", "--groups", "F", "--no-reuse", "--result", resultPath,
 		"--expected-goal-revision", "11", "--expected-accounting-revision", "13"}
 	var forwarded batch.DiagnosticRequest
-	clear := clearingDiagnosticWithLaunch(root, func(launchRoot, launchBatchID string, request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
+	clear := batchowner.ClearingDiagnosticWithLaunch(root, func(launchRoot, launchBatchID string, request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
 		if launchRoot != batch.ModuleRoot(root) || launchBatchID != batchID {
 			t.Fatalf("clearing launcher root=%q batch=%q", launchRoot, launchBatchID)
 		}
 		forwarded = request
-		return launchBatchDiagnosticWithExecute(launchRoot, launchBatchID, request, execute)
+		return batchowner.LaunchBatchDiagnosticWithExecute(launchRoot, launchBatchID, request, execute)
 	})
 	cleared, err := clear(batchID, batch.DiagnosticRequest{GoalID: "goal-k", Tree: "new-base", Groups: []string{"F"}},
 		batch.Claim{Revision: 11, AccountingRevision: 13})
@@ -318,7 +320,7 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 }
 
 func TestPrefixReceiptAllowsIdentityReuseAndBindsRevisions(t *testing.T) {
-	args := batchPrefixReceiptArgs("/prefix", "/landing", "goal-a", "tree-a", "result.json", []string{"same", "different"}, batch.Claim{Revision: 7, AccountingRevision: 5})
+	args := batchowner.BatchPrefixReceiptArgsWithFresh("/prefix", "/landing", "goal-a", "tree-a", "result.json", []string{"same", "different"}, batch.Claim{Revision: 7, AccountingRevision: 5}, "", "")
 	joined := strings.Join(args, " ")
 	if strings.Contains(joined, "--no-reuse") || !strings.Contains(joined, "--root /prefix --control-root /landing") || !strings.Contains(joined, `--purpose delivery --batch-requirements {"groups":["same","different"]}`) || !strings.Contains(joined, "--batch-prefix") ||
 		!strings.Contains(joined, "--expected-goal-revision 7 --expected-accounting-revision 5") {
@@ -331,7 +333,7 @@ func batchPrefixReceiptTestRoot(t *testing.T) (string, string) {
 	return t.TempDir(), "prefix-tree"
 }
 
-func batchTestExecutionDependencies(t *testing.T, root, tree, binary string) batchExecutionDependencies {
+func batchTestExecutionDependencies(t *testing.T, root, tree, binary string) batchowner.BatchExecutionDependencies {
 	t.Helper()
 	executionRoot := t.TempDir()
 	if executionRoot == root {
@@ -343,21 +345,21 @@ func batchTestExecutionDependencies(t *testing.T, root, tree, binary string) bat
 			t.Error("detached checkout was not closed")
 		}
 	})
-	return batchExecutionDependencies{
-		executable: func() (string, error) { return binary, nil },
-		checkout: func(gotRoot, gotTree string) (string, func() error, error) {
+	return batchowner.BatchExecutionDependencies{
+		Executable: func() (string, error) { return binary, nil },
+		Checkout: func(gotRoot, gotTree string) (string, func() error, error) {
 			if gotRoot != root || gotTree != tree {
 				t.Fatalf("checkout root=%q tree=%q, want %q %q", gotRoot, gotTree, root, tree)
 			}
 			return executionRoot, func() error { closed = true; return nil }, nil
 		},
-		topLevel: func(gotRoot string) (string, error) {
+		TopLevel: func(gotRoot string) (string, error) {
 			if gotRoot != root {
 				t.Fatalf("top-level root=%q, want %q", gotRoot, root)
 			}
 			return root, nil
 		},
-		readGit: func(_ string, args ...string) (string, error) {
+		ReadGit: func(_ string, args ...string) (string, error) {
 			t.Fatalf("unexpected Git read: %v", args)
 			return "", nil
 		},
@@ -395,7 +397,7 @@ exit 76
 		t.Fatal(err)
 	}
 	err := batch.ComposePrefixReceipts(store, batchID, "owner", time.Unix(3, 0), batch.PrefixReceiptSeams{Execute: func(goalID, tree string, groups []string) (batch.PrefixRunResult, error) {
-		return executeBatchPrefixReceiptWithDependencies(root, batchID, record, goalID, tree, batch.PrefixDecision{Groups: groups}, dependencies)
+		return batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, batchID, record, goalID, tree, batch.PrefixDecision{Groups: groups}, dependencies)
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -442,7 +444,7 @@ exit 1
 		t.Fatal(err)
 	}
 	err := batch.ComposePrefixReceipts(store, batchID, "owner", time.Unix(3, 0), batch.PrefixReceiptSeams{Execute: func(goalID, tree string, groups []string) (batch.PrefixRunResult, error) {
-		return executeBatchPrefixReceiptWithDependencies(root, batchID, record, goalID, tree, batch.PrefixDecision{Groups: groups}, dependencies)
+		return batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, batchID, record, goalID, tree, batch.PrefixDecision{Groups: groups}, dependencies)
 	}})
 	var prefixRed *batch.PrefixRedError
 	if !errors.As(err, &prefixRed) {
@@ -468,7 +470,7 @@ func TestPrefixReceiptClassifiesRevisionMove(t *testing.T) {
 	}
 	dependencies := batchTestExecutionDependencies(t, root, tree, fake)
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
-	_, err := executeBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
+	_, err := batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
 	var revision *batch.PrefixRevisionRefusal
 	if !errors.As(err, &revision) || !strings.Contains(revision.Error(), "GOAL_REVISION_MOVED") {
 		t.Fatalf("revision refusal=%T %v", err, err)
@@ -485,7 +487,7 @@ func TestPrefixReceiptClassifiesCapacityWithoutBudgetWithdrawal(t *testing.T) {
 	}
 	dependencies := batchTestExecutionDependencies(t, root, tree, fake)
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
-	_, err := executeBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
+	_, err := batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
 	var admission *batch.PrefixAdmissionRefusal
 	if !errors.As(err, &admission) || admission.Code != "ADMISSION_REFUSED" || !strings.Contains(admission.Error(), "rank=host-load") {
 		t.Fatalf("capacity refusal=%T %+v", err, admission)
@@ -502,7 +504,7 @@ func TestPrefixReceiptClassifiesBudgetForWithdrawal(t *testing.T) {
 	}
 	dependencies := batchTestExecutionDependencies(t, root, tree, fake)
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
-	_, err := executeBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
+	_, err := batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
 	var budget *batch.PrefixBudgetRefusal
 	if !errors.As(err, &budget) || !strings.Contains(budget.Error(), "BATCH_MEMBER_BUDGET_REFUSED") {
 		t.Fatalf("budget refusal=%T %v", err, err)
@@ -521,17 +523,19 @@ func TestBatchDiagnosisForwardsStoredPrefixEvidence(t *testing.T) {
 	if err := store.Create(record); err != nil {
 		t.Fatal(err)
 	}
-	originalDiagnosis, originalOwner := batchDiagnosisSeams, productionTrunkRedLedgerOwner
-	t.Cleanup(func() { batchDiagnosisSeams, productionTrunkRedLedgerOwner = originalDiagnosis, originalOwner })
-	productionTrunkRedLedgerOwner = func(string) (batch.LedgerOwner, error) { return batch.UnboundLedgerOwner{}, nil }
-	batchDiagnosisSeams.commitForTree = func(string, string, string) (string, error) { return "base-commit", nil }
+	originalDiagnosis, originalOwner := batchowner.BatchDiagnosisSeams, batchowner.ProductionTrunkRedLedgerOwner
+	t.Cleanup(func() {
+		batchowner.BatchDiagnosisSeams, batchowner.ProductionTrunkRedLedgerOwner = originalDiagnosis, originalOwner
+	})
+	batchowner.ProductionTrunkRedLedgerOwner = func(string) (batch.LedgerOwner, error) { return batch.UnboundLedgerOwner{}, nil }
+	batchowner.BatchDiagnosisSeams.CommitForTree = func(string, string, string) (string, error) { return "base-commit", nil }
 	var groups []batch.RedGroup
 	var prefixGoal string
-	batchDiagnosisSeams.diagnose = func(_ batch.Store, _, _ string, gotGroups []batch.RedGroup, gotGoal string, _ time.Time, _ batch.RedSeams) error {
+	batchowner.BatchDiagnosisSeams.Diagnose = func(_ batch.Store, _, _ string, gotGroups []batch.RedGroup, gotGoal string, _ time.Time, _ batch.RedSeams) error {
 		groups, prefixGoal = gotGroups, gotGoal
 		return nil
 	}
-	if err := executeBatchDiagnosis(root, batchID, "owner", time.Unix(2, 0)); err != nil {
+	if err := batchowner.ExecuteBatchDiagnosis(root, batchID, "owner", time.Unix(2, 0)); err != nil {
 		t.Fatal(err)
 	}
 	if len(groups) != 1 || groups[0].ID != "red" || prefixGoal != "goal-a" {
@@ -581,24 +585,24 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 			if err := store.Create(record); err != nil {
 				t.Fatal(err)
 			}
-			originalPush := batchMovedEndpointPush
-			originalVerify := batchVerifyRebasedSeries
-			originalAuthorize := batchAuthorizeRebasedSeries
+			originalPush := batchowner.BatchMovedEndpointPush
+			originalVerify := batchowner.BatchVerifyRebasedSeries
+			originalAuthorize := batchowner.BatchAuthorizeRebasedSeries
 			t.Cleanup(func() {
-				batchMovedEndpointPush, batchVerifyRebasedSeries, batchAuthorizeRebasedSeries = originalPush, originalVerify, originalAuthorize
+				batchowner.BatchMovedEndpointPush, batchowner.BatchVerifyRebasedSeries, batchowner.BatchAuthorizeRebasedSeries = originalPush, originalVerify, originalAuthorize
 			})
-			batchAuthorizeRebasedSeries = func(string, batch.Store, batch.Record, string, time.Time) error { return nil } // Transport-only fixture has no accepted goal ledger.
+			batchowner.BatchAuthorizeRebasedSeries = func(string, batch.Store, batch.Record, string, time.Time) error { return nil } // Transport-only fixture has no accepted goal ledger.
 			var children [][]string
 			verifications := 0
 			pushes, refusedPushes := 0, 0
-			stubBatchOwnerCalls(t, func(_ ownerInvocation, args ...string) error {
+			stubBatchOwnerCalls(t, func(_ ownercall.Invocation, args ...string) error {
 				children = append(children, append([]string(nil), args...))
 				if test.childFailure == "held" && len(args) > 1 && args[0] == "landing" && args[1] == "held" {
 					return errors.New("held refusal")
 				}
 				return nil
 			})
-			batchVerifyRebasedSeries = func(_ string, _ batch.Record, trees []string) error {
+			batchowner.BatchVerifyRebasedSeries = func(_ string, _ batch.Record, trees []string) error {
 				verifications++
 				if len(trees) != 1 {
 					return errors.New("rebased prefix count moved")
@@ -608,11 +612,11 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 				}
 				return nil
 			}
-			batchMovedEndpointPush = func(root, id, base, tip string) error {
+			batchowner.BatchMovedEndpointPush = func(root, id, base, tip string) error {
 				pushes++
 				return originalPush(root, id, base, tip)
 			}
-			seams := batchLandSeamsWithRead(root, record.BatchID, record, baseCommit, "owner", gitOutput, plantedBatchCommit)
+			seams := batchowner.BatchLandSeamsWithRead(root, record.BatchID, record, baseCommit, "owner", batchowner.GitOutput, plantedBatchCommit)
 			seams.Prepare = func(string) error { return nil }
 			seams.Apply = func(batch.Unit) error { return nil }
 			seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }
@@ -650,7 +654,7 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 					t.Fatalf("conflicting unit was not ejected before dissolve: %+v", landed)
 				}
 				if landed.State == batch.StateOpen {
-					if err := finishBatchLanding(root, store, record.BatchID, "owner", time.Unix(2, 0)); err != nil {
+					if err := batchowner.FinishBatchLanding(root, store, record.BatchID, "owner", time.Unix(2, 0)); err != nil {
 						t.Fatalf("open input-move path entered P6 recovery: %v", err)
 					}
 				}
@@ -707,33 +711,33 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 	if err := store.Create(record); err != nil {
 		t.Fatal(err)
 	}
-	originalFetch, originalTree, originalAbandon, originalRecover := batchLandFetchOrigin, batchLandOriginTree, batchLandAbandon, batchLandRecoverPush
+	originalFetch, originalTree, originalAbandon, originalRecover := batchowner.BatchLandFetchOrigin, batchowner.BatchLandOriginTree, batchowner.BatchLandAbandon, batchowner.BatchLandRecoverPush
 	t.Cleanup(func() {
-		batchLandFetchOrigin, batchLandOriginTree, batchLandAbandon, batchLandRecoverPush = originalFetch, originalTree, originalAbandon, originalRecover
+		batchowner.BatchLandFetchOrigin, batchowner.BatchLandOriginTree, batchowner.BatchLandAbandon, batchowner.BatchLandRecoverPush = originalFetch, originalTree, originalAbandon, originalRecover
 	})
 	origins := []string{tip, tip, baseCommit, tip}
 	originReads := 0
-	batchLandFetchOrigin = func(string) (string, string, error) {
+	batchowner.BatchLandFetchOrigin = func(string) (string, string, error) {
 		origin := origins[min(originReads, len(origins)-1)]
 		originReads++
 		return origin, "ignored-tree", nil
 	}
 	treeReads := 0
-	batchLandOriginTree = func(string, string) (string, error) {
+	batchowner.BatchLandOriginTree = func(string, string) (string, error) {
 		treeReads++
 		return baseTree, nil
 	}
 	abandons := 0
-	batchLandAbandon = func(_, _ string, _, _ string) error {
+	batchowner.BatchLandAbandon = func(_, _ string, _, _ string) error {
 		abandons++
 		return nil
 	}
 	recoveries := 0
-	batchLandRecoverPush = func(_ string, _ string, _ batch.Record, _ string, _ string, origin, _ string, _ string, _ func() error) (batch.PushRecovery, error) {
+	batchowner.BatchLandRecoverPush = func(_ string, _ string, _ batch.Record, _ string, _ string, origin, _ string, _ string, _ func() error) (batch.PushRecovery, error) {
 		recoveries++
 		return batch.PushRecovery{Origin: origin}, errors.New("recovery transport unavailable")
 	}
-	seams := batchLandSeamsWithRead(root, record.BatchID, record, baseCommit, "owner", gitOutput, plantedBatchCommit)
+	seams := batchowner.BatchLandSeamsWithRead(root, record.BatchID, record, baseCommit, "owner", batchowner.GitOutput, plantedBatchCommit)
 	seams.Prepare = func(string) error { return nil }
 	seams.Apply = func(batch.Unit) error { return nil }
 	seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }
@@ -763,7 +767,7 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 
 func TestBatchProofInputsMovedIncludesEnginePaths(t *testing.T) {
 	record := batch.Record{Proof: &batch.Proof{SelectedGroups: []string{"docs"}, InputManifests: map[string][]string{"docs": {"metasystem/docs/**"}}}}
-	if !batchProofInputsMoved(record, []string{"metasystem/internal/other/x.go"}, "metasystem") {
+	if !batch.DecideMovedBase(record, []string{"metasystem/internal/other/x.go"}, "metasystem").Reopen {
 		t.Fatal("an engine path outside the selected manifest did not require a new proof")
 	}
 }
@@ -814,14 +818,14 @@ func TestBatchMovedPushRecoveryDoesNotRetryUnchangedOrigin(t *testing.T) {
 		}
 		return err
 	}
-	originalPush := batchMovedEndpointPush
-	t.Cleanup(func() { batchMovedEndpointPush = originalPush })
+	originalPush := batchowner.BatchMovedEndpointPush
+	t.Cleanup(func() { batchowner.BatchMovedEndpointPush = originalPush })
 	pushes := 0
-	batchMovedEndpointPush = func(string, string, string, string) error {
+	batchowner.BatchMovedEndpointPush = func(string, string, string, string) error {
 		pushes++
 		return nil
 	}
-	recovery, err := recoverMovedBatchPushWithInputs(root, "01j5x00000000000000000ba21", batch.Record{}, "owner", baseCommit, baseCommit, baseTree, tip, readGit, runGit)
+	recovery, err := batchowner.RecoverMovedBatchPushWithInputs(root, "01j5x00000000000000000ba21", batch.Record{}, "owner", baseCommit, baseCommit, baseTree, tip, readGit, runGit)
 	if err != nil {
 		t.Fatal(err)
 	}

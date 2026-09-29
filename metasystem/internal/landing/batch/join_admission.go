@@ -2,10 +2,11 @@ package batch
 
 import (
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"reflect"
 	"slices"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"

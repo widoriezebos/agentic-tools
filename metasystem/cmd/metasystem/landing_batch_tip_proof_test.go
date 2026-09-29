@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -90,11 +91,11 @@ func TestBatchTipProofRunsWhereTheIndexIsTheTipTree(t *testing.T) {
 	if err := testexec.WriteFile(stub, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	previous := batchTipProofExecutable
-	batchTipProofExecutable = func() (string, error) { return stub, nil }
-	t.Cleanup(func() { batchTipProofExecutable = previous })
+	previous := batchowner.BatchTipProofExecutable
+	batchowner.BatchTipProofExecutable = func() (string, error) { return stub, nil }
+	t.Cleanup(func() { batchowner.BatchTipProofExecutable = previous })
 
-	if _, err := launchBatchTipProof(batchProofLaunch{
+	if _, err := batchowner.LaunchBatchTipProof(batchowner.BatchProofLaunch{
 		Root:         repo,
 		BatchID:      "batch-a",
 		GoalID:       "goal-a",
@@ -133,12 +134,12 @@ func TestBatchTipProofRunsWhereTheIndexIsTheTipTree(t *testing.T) {
 // verification resolved to a passing attempt has a source.
 func TestBatchTipProofSourcesComeFromTheRetainedVerifier(t *testing.T) {
 	t.Parallel()
-	retained := reflect.ValueOf(batchRetainedSources).Pointer()
-	if reflect.ValueOf(productionBatchProofDependencies.sources).Pointer() != retained ||
-		reflect.ValueOf(batchDiagnosisSeams.sources).Pointer() != retained {
+	retained := reflect.ValueOf(batchowner.BatchRetainedSources).Pointer()
+	if reflect.ValueOf(batchowner.ProductionBatchProofDependencies.Sources).Pointer() != retained ||
+		reflect.ValueOf(batchowner.BatchDiagnosisSeams.Sources).Pointer() != retained {
 		t.Fatal("the tip proof or the composed proof does not resolve its sources through the retained verifier")
 	}
-	got := batchSourcesFromVerification(proofrun.TestResult{Groups: []proofrun.GroupResult{
+	got := batchowner.BatchSourcesFromVerification(proofrun.TestResult{Groups: []proofrun.GroupResult{
 		{ID: "reused", Status: "reused", ReuseAttempt: "older"}, {ID: "failed", Status: "failed"}, {ID: "not-run", Status: "not-run"}}})
 	if !reflect.DeepEqual(got, map[string]string{"reused": "older"}) {
 		t.Fatalf("sources from the verification = %v", got)

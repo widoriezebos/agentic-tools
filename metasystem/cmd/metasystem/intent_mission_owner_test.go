@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 )
 
 // TestMissionOwnersRunInThisProcess is the U9a witness that the public
@@ -28,14 +29,14 @@ func TestMissionOwnersRunInThisProcess(t *testing.T) {
 			t.Errorf("an engine child ran: %v", process.argv)
 			return intentProcessResult{code: 1}
 		}}
-	var suppliedLaunch, suppliedResolve []processIdentity
+	var suppliedLaunch, suppliedResolve []ownercall.Process
 	calls := defaultIntentOwnerCalls()
 	realLaunch, realResolve := calls.missionLaunch, calls.missionResolveTaint
-	calls.missionLaunch = func(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
+	calls.missionLaunch = func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
 		suppliedLaunch = append(suppliedLaunch, caller)
 		return realLaunch(caller, stdout, stderr, root, mission, mode, wait)
 	}
-	calls.missionResolveTaint = func(caller processIdentity, stdout, stderr io.Writer, request missionResolveRequest) int {
+	calls.missionResolveTaint = func(caller ownercall.Process, stdout, stderr io.Writer, request missionResolveRequest) int {
 		suppliedResolve = append(suppliedResolve, caller)
 		return realResolve(caller, stdout, stderr, request)
 	}
@@ -54,7 +55,7 @@ func TestMissionOwnersRunInThisProcess(t *testing.T) {
 		t.Fatalf("mission repair = %d %+v", code, result)
 	}
 	for _, supplied := range append(suppliedLaunch, suppliedResolve...) {
-		if supplied.pid != int64(os.Getpid()) {
+		if supplied.Pid != int64(os.Getpid()) {
 			t.Fatalf("an owner call supplied caller %+v, want this process %d", supplied, os.Getpid())
 		}
 	}
@@ -81,12 +82,12 @@ func TestMissionRepairHumanGateRefusesAnUnannouncedAgent(t *testing.T) {
 	request := missionResolveRequest{root: root, mission: "demo", taint: 2, variant: "restore", tree: strings.Repeat("b", 40), by: "Wido", reason: "restored"}
 	calls := defaultIntentOwnerCalls()
 	var stdout, stderr bytes.Buffer
-	if code := calls.missionResolveTaint(currentProcessIdentity(), &stdout, &stderr, request); code != 3 ||
+	if code := calls.missionResolveTaint(ownercall.CurrentProcess(), &stdout, &stderr, request); code != 3 ||
 		!strings.Contains(stderr.String(), "taint resolution is a human-reserved act") {
 		t.Fatalf("the unannounced agent's resolution was not refused by the human gate: %d %q", code, stderr.String())
 	}
 	var control bytes.Buffer
-	calls.missionResolveTaint(entryCallerIdentity(), io.Discard, &control, request)
+	calls.missionResolveTaint(ownercall.EntryCaller(), io.Discard, &control, request)
 	if strings.Contains(control.String(), "taint resolution is a human-reserved act") {
 		t.Fatalf("control: the caller-of-caller identity was refused too, so the fixture does not discriminate: %q", control.String())
 	}
@@ -157,7 +158,7 @@ func TestMissionStartWaitRunsTheMissionToItsEnd(t *testing.T) {
 	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil }}
 	var waits []bool
 	calls := defaultIntentOwnerCalls()
-	calls.missionLaunch = func(caller processIdentity, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
+	calls.missionLaunch = func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
 		waits = append(waits, wait)
 		return 0
 	}

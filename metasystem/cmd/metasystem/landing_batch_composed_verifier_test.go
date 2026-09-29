@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
@@ -51,7 +52,7 @@ func TestBatchComposedLandingResolvesThroughTheRealRetainedVerifier(t *testing.T
 	// Only the failed tip attempt is retained: the verifier has nothing
 	// passing to compose (it refuses, or the group does not resolve).
 	if before, err := fixture.verify(run, files, tip, time.Now().UTC()); err == nil {
-		if sources, err := batch.ResolveSources(proof, batchSourcesFromVerification(before)); err == nil {
+		if sources, err := batch.ResolveSources(proof, batchowner.BatchSourcesFromVerification(before)); err == nil {
 			t.Fatalf("the red group resolved without a classification attempt: %+v", sources)
 		}
 	}
@@ -79,7 +80,7 @@ func TestBatchComposedLandingResolvesThroughTheRealRetainedVerifier(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	sources, err := batch.ResolveSources(proof, batchSourcesFromVerification(verified))
+	sources, err := batch.ResolveSources(proof, batchowner.BatchSourcesFromVerification(verified))
 	if err != nil || sources["app-a"] != (batch.Source{Kind: batch.SourceReused, Attempt: classificationAttempt}) {
 		t.Fatalf("composed sources=%+v err=%v, want app-a reused from classification attempt %s (tip %s)", sources, err, classificationAttempt, tipAttempt)
 	}

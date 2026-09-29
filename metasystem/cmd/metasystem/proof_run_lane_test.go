@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // admitAsLaneOwner admits a launch as the lane checkout's lease holder does.
@@ -98,8 +99,8 @@ func TestTrustedPolicyEngineForwardsTheLane(t *testing.T) {
 	if err := testexec.WriteFile(engine, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	request := testingSelectionRequest{Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, LaneID: "lane:0123456789ab"}
-	if _, err := planWithTrustedPolicyEngine(engine, request, t.TempDir(), "candidate"); err != nil {
+	request := testrun.SelectionRequest{Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, LaneID: "lane:0123456789ab"}
+	if _, err := testrun.PlanWithTrustedPolicyEngine(engine, request, t.TempDir(), "candidate"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(argsFile)
@@ -114,7 +115,7 @@ func TestTrustedPolicyEngineForwardsTheLane(t *testing.T) {
 	if err := testexec.WriteFile(old, []byte("#!/bin/sh\necho 'flag provided but not defined: -lane' >&2\nexit 2\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := planWithTrustedPolicyEngine(old, request, t.TempDir(), "candidate"); err == nil || !strings.Contains(err.Error(), "LANE_ENGINE_TOO_OLD") ||
+	if _, err := testrun.PlanWithTrustedPolicyEngine(old, request, t.TempDir(), "candidate"); err == nil || !strings.Contains(err.Error(), "LANE_ENGINE_TOO_OLD") ||
 		!strings.Contains(err.Error(), "metasystem landing restart") {
 		t.Fatalf("an engine without --lane: %v", err)
 	}

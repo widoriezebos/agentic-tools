@@ -17,6 +17,7 @@ import (
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
@@ -120,7 +121,7 @@ func runSuperviseComponent(args []string, stdout, stderr io.Writer) (code int) {
 	var work func() error
 	// The landing owner alone subscribes to the host board's bridge; every
 	// other component's nudges are nil and never deliver.
-	var nudges *bridgeNudges
+	var nudges *batchowner.BridgeNudges
 	switch *component {
 	case "watcher":
 		release, pass, ok := setupWatcher(stderr, *metasystemRoot, *repo, *scope, self, *tag, *generation, *intervalSec)
@@ -146,7 +147,7 @@ func runSuperviseComponent(args []string, stdout, stderr io.Writer) (code int) {
 			}
 		}()
 		work = landingOwnerReportedPass(*repo, pass)
-		nudges = newBridgeNudges(stderr)
+		nudges = batchowner.NewBridgeNudges(stderr)
 		defer nudges.Close()
 	default:
 		// An unknown component still beats, so a mislabelled owner launch is
@@ -204,7 +205,7 @@ func runSuperviseComponent(args []string, stdout, stderr io.Writer) (code int) {
 // work at once, as on a tick (batch-lane design D14-r2, R25). A lost
 // subscription is dropped, and the tick reads the board directly. It
 // reports whether a stop signal ended it.
-func superviseLoop(stop <-chan os.Signal, ticks <-chan time.Time, wake <-chan os.Signal, nudges *bridgeNudges, tick func() bool, run func()) bool {
+func superviseLoop(stop <-chan os.Signal, ticks <-chan time.Time, wake <-chan os.Signal, nudges *batchowner.BridgeNudges, tick func() bool, run func()) bool {
 	for {
 		select {
 		case <-stop:
@@ -245,31 +246,31 @@ func landingOwnerCheckoutRoot(repo, scope string) string {
 }
 
 func setupLandingOwner(stderr io.Writer, metasystemRoot, repo string) (release func() error, pass func() error, ok bool) {
-	return setupLandingOwnerWithCadence(stderr, metasystemRoot, repo, newBatchOwnerCadence())
+	return setupLandingOwnerWithCadence(stderr, metasystemRoot, repo, batchowner.NewBatchOwnerCadence())
 }
 
-func setupLandingOwnerWithCadence(stderr io.Writer, metasystemRoot, repo string, cadence *batchOwnerCadence) (release func() error, pass func() error, ok bool) {
-	return setupLandingOwnerWithInputs(stderr, metasystemRoot, repo, cadence, resolveProductionBatchOwnerInputs)
+func setupLandingOwnerWithCadence(stderr io.Writer, metasystemRoot, repo string, cadence *batchowner.BatchOwnerCadence) (release func() error, pass func() error, ok bool) {
+	return setupLandingOwnerWithInputs(stderr, metasystemRoot, repo, cadence, batchowner.ResolveProductionBatchOwnerInputs)
 }
 
-func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, cadence *batchOwnerCadence, resolveInputs func(string) (productionBatchOwnerInputs, error)) (release func() error, pass func() error, ok bool) {
+func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, cadence *batchowner.BatchOwnerCadence, resolveInputs func(string) (batchowner.ProductionBatchOwnerInputs, error)) (release func() error, pass func() error, ok bool) {
 	var activePass func() error
-	var held *batchOwnerLease
-	var announced *batchOwnerLease
+	var held *batchowner.BatchOwnerLease
+	var announced *batchowner.BatchOwnerLease
 	var settings config.BatchLanding
-	var inputs productionBatchOwnerInputs
-	clock := cadenceProductionClock
+	var inputs batchowner.ProductionBatchOwnerInputs
+	clock := batchowner.CadenceProductionClock
 	release = func() error {
-		cadence.stop()
+		cadence.Stop()
 		if announced != nil {
-			return announced.retire()
+			return announced.Retire()
 		}
 		return nil
 	}
 	pass = func() error {
 		// The owner serves only the host's one landing lane (U12), and
 		// stands down while a person has paused it (landing stop).
-		laneRoot, paused, err := landingOwnerLaneRoot(landingLaneHome, metasystemRoot, repo, clock())
+		laneRoot, paused, err := batchowner.LandingOwnerLaneRoot(batchowner.LandingLaneHome, metasystemRoot, repo, clock())
 		if err != nil {
 			return err
 		}
@@ -297,10 +298,10 @@ func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, 
 		if err != nil {
 			return err
 		}
-		inputs.log = stderr
+		inputs.Log = stderr
 		if held == nil {
-			acquired, err := acquireBatchOwnerForComponent(repo)
-			if acquired.announced {
+			acquired, err := batchowner.AcquireBatchOwnerForComponent(repo)
+			if acquired.Announced {
 				announced = &acquired
 			}
 			if err != nil {
@@ -309,23 +310,23 @@ func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, 
 			held = &acquired
 			announced = held
 		}
-		owner, err := batchOwnerConstruct(settings, *held, inputs, clock)
+		owner, err := batchowner.BatchOwnerConstruct(settings, *held, inputs, clock)
 		if err != nil {
 			return err
 		}
 		// A new owner sweeps the retained-verification worktrees a prior
 		// owner left; a failure is reported and never stops the owner.
-		if err := batchOwnerSweepSources(repo); err != nil {
+		if err := batchowner.BatchOwnerSweepSources(repo); err != nil {
 			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "sweep": "retained-sources", "error": err.Error()})
 			fmt.Fprintln(stderr, string(line))
 		}
 		activePass = func() error {
-			if err := batchOwnerRequire(*held); err != nil {
+			if err := batchowner.BatchOwnerRequire(*held); err != nil {
 				activePass = nil
 				held = nil
 				return err
 			}
-			runBatchOwnerPass(stderr, owner, *held, repo, clock, cadence)
+			batchowner.RunBatchOwnerPass(stderr, owner, *held, repo, clock, cadence)
 			return nil
 		}
 		return activePass()

@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
@@ -60,7 +61,7 @@ func (engineHost) BreachStopOrderingHuman(_ context.Context, root string, caller
 // is the request's, never this process's environment.
 func (engineHost) ExtendBudget(_ context.Context, request delegation.ExtendBudgetRequest) (string, int) {
 	dependencies := defaultSyncRequestDependencies()
-	dependencies.authorityFacts.caller = processIdentity{pid: request.CallerPid}
+	dependencies.authorityFacts.caller = ownercall.Process{Pid: request.CallerPid}
 	lineage := request.OwnerLineage
 	dependencies.ownerLineage = func() string { return lineage }
 	var output strings.Builder

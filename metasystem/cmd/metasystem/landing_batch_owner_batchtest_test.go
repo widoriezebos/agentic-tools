@@ -22,42 +22,45 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestBatchJoinSpawnsOneOwner(t *testing.T) {
-	original := batchOwnerEnsure
-	t.Cleanup(func() { batchOwnerEnsure = original })
+	original := batchowner.BatchOwnerEnsure
+	t.Cleanup(func() { batchowner.BatchOwnerEnsure = original })
 	state, pid := identity.Dead, int64(0)
 	launches, wakes := 0, 0
-	batchOwnerEnsure = batchOwnerEnsureSeams{
-		inspect: func(string) (int64, identity.Liveness, error) { return pid, state, nil },
-		wake: func(got int64) error {
+	batchowner.BatchOwnerEnsure = batchowner.BatchOwnerEnsureSeams{
+		Inspect: func(string) (int64, identity.Liveness, error) { return pid, state, nil },
+		Wake: func(got int64) error {
 			wakes++
 			if got != pid {
 				t.Fatalf("woke pid %d, want %d", got, pid)
 			}
 			return nil
 		},
-		launch: func(string) error {
+		Launch: func(string) error {
 			launches++
 			pid, state = int64(40+launches), identity.Alive
 			return nil
 		},
 	}
 	root := t.TempDir()
-	if err := ensureBatchOwner(root); err != nil {
+	if err := batchowner.EnsureBatchOwner(root); err != nil {
 		t.Fatal(err)
 	}
-	if err := ensureBatchOwner(root); err != nil {
+	if err := batchowner.EnsureBatchOwner(root); err != nil {
 		t.Fatal(err)
 	}
 	state = identity.Dead
-	if err := ensureBatchOwner(root); err != nil {
+	if err := batchowner.EnsureBatchOwner(root); err != nil {
 		t.Fatal(err)
 	}
 	if launches != 2 || wakes != 1 {
@@ -66,22 +69,22 @@ func TestBatchJoinSpawnsOneOwner(t *testing.T) {
 }
 
 func TestBatchOwnerInspectionUsesInjectedProberAndKeepsReadErrorsUnknown(t *testing.T) {
-	holder := lease.CurrentHolderView{MainId: "main-a", OwnerLineage: landingOwnerLineage, ClaimEpoch: 1, Pid: 41}
+	holder := lease.CurrentHolderView{MainId: "main-a", OwnerLineage: batchowner.LandingOwnerLineage, ClaimEpoch: 1, Pid: 41}
 	announcements := func(string, int64) []lease.Announcement {
 		return []lease.Announcement{{MainId: "main-a", Pid: 41, PidStartedAt: 2}}
 	}
 	read := func(string) (lease.CurrentHolderView, error) { return holder, nil }
 	exact := identity.Exact{Pid: 41, StartedAt: time.Unix(2, 0)}
-	pid, state, err := inspectBatchOwnerWith("root", processRefProber{exact: exact, state: identity.Alive}, read, announcements)
+	pid, state, err := batchowner.InspectBatchOwnerWith("root", processRefProber{exact: exact, state: identity.Alive}, read, announcements)
 	if err != nil || pid != 41 || state != identity.Alive {
 		t.Fatalf("alive inspection pid=%d state=%s error=%v", pid, state, err)
 	}
-	_, state, err = inspectBatchOwnerWith("root", processRefProber{exact: exact, state: identity.Dead}, read, announcements)
+	_, state, err = batchowner.InspectBatchOwnerWith("root", processRefProber{exact: exact, state: identity.Dead}, read, announcements)
 	if err != nil || state != identity.Dead {
 		t.Fatalf("dead inspection state=%s error=%v", state, err)
 	}
 	readErr := errors.New("transient lease read")
-	_, state, err = inspectBatchOwnerWith("root", processRefProber{}, func(string) (lease.CurrentHolderView, error) {
+	_, state, err = batchowner.InspectBatchOwnerWith("root", processRefProber{}, func(string) (lease.CurrentHolderView, error) {
 		return lease.CurrentHolderView{}, readErr
 	}, announcements)
 	if !errors.Is(err, readErr) || state != identity.Unknown {
@@ -112,14 +115,14 @@ func TestBatchOwnerHoldsTheLease(t *testing.T) {
 			_, _ = os.Stdin.Read(make([]byte, 1))
 			return
 		}
-		held, err := acquireBatchOwner(root)
+		held, err := batchowner.AcquireBatchOwner(root)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(23)
 		}
 		if mode != "hold-dead" {
 			defer func() {
-				if err := held.retire(); err != nil {
+				if err := held.Retire(); err != nil {
 					fmt.Println(err)
 				}
 			}()
@@ -163,29 +166,29 @@ func TestBatchOwnerHoldsTheLease(t *testing.T) {
 }
 
 func TestBatchProductionReturnTargetClassifiesCustody(t *testing.T) {
-	original := batchReturnTargetSeams
-	t.Cleanup(func() { batchReturnTargetSeams = original })
+	original := batchowner.BatchReturnTargetSeams
+	t.Cleanup(func() { batchowner.BatchReturnTargetSeams = original })
 	files := []*goal.GoalFile{}
 	holder := lease.CurrentHolderView{MainId: "main-a", OwnerLineage: "seat-lineage", ClaimEpoch: 9, Pid: 41}
 	announcements := []lease.Announcement{{MainId: "main-a", OwnerLineage: "seat-lineage", Pid: 41, PidStartedAt: 2}}
-	batchReturnTargetSeams.goals = func(string, string) ([]*goal.GoalFile, error) { return files, nil }
-	batchReturnTargetSeams.holder = func(string) (lease.CurrentHolderView, error) { return holder, nil }
-	batchReturnTargetSeams.announcements = func(string, string) []lease.Announcement { return announcements }
+	batchowner.BatchReturnTargetSeams.Goals = func(string, string) ([]*goal.GoalFile, error) { return files, nil }
+	batchowner.BatchReturnTargetSeams.Holder = func(string) (lease.CurrentHolderView, error) { return holder, nil }
+	batchowner.BatchReturnTargetSeams.Announcements = func(string, string) []lease.Announcement { return announcements }
 	unit := batch.Unit{GoalID: "goal-a", SeatRoot: t.TempDir(), Claim: batch.Claim{Machine: "seat", Lineage: "seat-lineage"}}
 	exact := identity.Exact{Pid: 41, StartedAt: time.Unix(2, 0)}
-	if got := productionReturnTarget("landing", "tree", processRefProber{exact: exact, state: identity.Alive}, unit); got.State != batch.ReturnTargetLive || got.Epoch != 9 {
+	if got := batchowner.ProductionReturnTarget("landing", "tree", processRefProber{exact: exact, state: identity.Alive}, unit); got.State != batch.ReturnTargetLive || got.Epoch != 9 {
 		t.Fatalf("live target=%+v", got)
 	}
 	holder.MainId, holder.OwnerLineage = "main-b", "new-lineage"
-	if got := productionReturnTarget("landing", "tree", processRefProber{exact: exact, state: identity.Alive}, unit); got.State != batch.ReturnTargetRestarted {
+	if got := batchowner.ProductionReturnTarget("landing", "tree", processRefProber{exact: exact, state: identity.Alive}, unit); got.State != batch.ReturnTargetRestarted {
 		t.Fatalf("restarted target=%+v", got)
 	}
 	holder = lease.CurrentHolderView{}
-	if got := productionReturnTarget("landing", "tree", processRefProber{exact: exact, state: identity.Dead}, unit); got.State != batch.ReturnTargetDead {
+	if got := batchowner.ProductionReturnTarget("landing", "tree", processRefProber{exact: exact, state: identity.Dead}, unit); got.State != batch.ReturnTargetDead {
 		t.Fatalf("dead target=%+v", got)
 	}
 	files = []*goal.GoalFile{{Id: "goal-b", Claimed: &goal.ClaimRecord{Machine: "seat"}}}
-	if got := productionReturnTarget("landing", "tree", processRefProber{exact: exact, state: identity.Unknown}, unit); got.State != batch.ReturnTargetOccupied || !strings.Contains(got.Reason, "goal-b") {
+	if got := batchowner.ProductionReturnTarget("landing", "tree", processRefProber{exact: exact, state: identity.Unknown}, unit); got.State != batch.ReturnTargetOccupied || !strings.Contains(got.Reason, "goal-b") {
 		t.Fatalf("occupied target=%+v", got)
 	}
 }
@@ -204,12 +207,12 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 		t.Fatal(err)
 	}
 	events := []string{}
-	deps := batchProofDependencies{
-		rearm: func(_ string, tree string) error {
+	deps := batchowner.BatchProofDependencies{
+		Rearm: func(_ string, tree string) error {
 			events = append(events, "rearm:"+tree)
 			return nil
 		},
-		seal: func(_, _, _, _ string, _ time.Time) error {
+		Seal: func(_, _, _, _ string, _ time.Time) error {
 			events = append(events, "seal")
 			return store.Update(batchID, func(record *batch.Record) error {
 				record.Seal = map[string]batch.Claim{"goal-a": claim, "goal-b": claim}
@@ -217,7 +220,7 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 				return nil
 			})
 		},
-		plan: func(_, goalID, _ string, mode testpolicy.Mode) (testpolicy.Plan, error) {
+		Plan: func(_, goalID, _ string, mode testpolicy.Mode) (testpolicy.Plan, error) {
 			events = append(events, "plan:"+goalID+":"+string(mode))
 			groups := []string{"common"}
 			if goalID == "goal-a" {
@@ -225,7 +228,7 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 			}
 			return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard, SelectedGroups: groups}, nil
 		},
-		launch: func(request batchProofLaunch) (proofrun.TestResult, error) {
+		Launch: func(request batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
 			events = append(events, "launch:"+string(request.Mode))
 			admitted, err := store.Load(batchID)
 			if err != nil || admitted.State != batch.StateProving || admitted.Proof == nil || admitted.Proof.Status != "planned" || admitted.Proof.Token != request.Token || request.Token != "token" {
@@ -238,7 +241,7 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 		},
 	}
 	sample := proofrun.LoadSample{OverlappingHost: 7, OverlapKnown: true}
-	if err := executeBatchProof(root, batchID, "landing-owner", "full", "token", sample, time.Unix(8, 0), deps); err != nil {
+	if err := batchowner.ExecuteBatchProof(root, batchID, "landing-owner", "full", "token", sample, time.Unix(8, 0), deps); err != nil {
 		t.Fatal(err)
 	}
 	finished, err := store.Load(batchID)
@@ -270,18 +273,18 @@ func TestBatchTwoTipPublicationRetainsCandidateAndReceiptTips(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	var launched batchProofLaunch
-	deps := batchProofDependencies{
-		rearm: func(string, string) error { return nil },
-		plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
+	var launched batchowner.BatchProofLaunch
+	deps := batchowner.BatchProofDependencies{
+		Rearm: func(string, string) error { return nil },
+		Plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
 			return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard, SelectedGroups: []string{"required"}}, nil
 		},
-		launch: func(request batchProofLaunch) (proofrun.TestResult, error) {
+		Launch: func(request batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
 			launched = request
 			return proofrun.TestResult{AttemptID: "two-tip", CandidateTree: request.Tree, Delivery: proofrun.DeliveryJudgment{Sufficient: true}}, nil
 		},
 	}
-	if err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), deps); err != nil {
+	if err := batchowner.ExecuteBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), deps); err != nil {
 		t.Fatal(err)
 	}
 	receiptTip := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "commit-tree", launched.Tree, "-p", "HEAD", "-m", "receipt"))))
@@ -318,7 +321,7 @@ func TestBatchTwoTipPublicationRetainsCandidateAndReceiptTips(t *testing.T) {
 func TestBatchTipProofRejectsCandidateTreeMismatchBeforeLaunch(t *testing.T) {
 	root, _, _, _ := batchProofRefusalBed(t)
 	candidateTip := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "rev-parse", "HEAD"))))
-	_, err := launchBatchTipProof(batchProofLaunch{Root: root, CandidateTip: candidateTip, Tree: strings.Repeat("0", 40)})
+	_, err := batchowner.LaunchBatchTipProof(batchowner.BatchProofLaunch{Root: root, CandidateTip: candidateTip, Tree: strings.Repeat("0", 40)})
 	if err == nil || !strings.Contains(err.Error(), "batch proof candidate tip") || !strings.Contains(err.Error(), "has tree") {
 		t.Fatalf("candidate/tree mismatch=%v", err)
 	}
@@ -336,19 +339,22 @@ func TestBatchProofDurableUnionRefusalSkipsSecondRearm(t *testing.T) {
 		t.Fatal(err)
 	}
 	rearms, plans, launches := 0, 0, 0
-	deps := batchProofDependencies{
-		rearm: func(string, string) error { rearms++; return nil },
-		plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
+	deps := batchowner.BatchProofDependencies{
+		Rearm: func(string, string) error { rearms++; return nil },
+		Plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
 			plans++
 			return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard, SelectedGroups: []string{"other"}}, nil
 		},
-		launch: func(batchProofLaunch) (proofrun.TestResult, error) { launches++; return proofrun.TestResult{}, nil },
+		Launch: func(batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
+			launches++
+			return proofrun.TestResult{}, nil
+		},
 	}
-	if err := executeBatchProof(root, batchID, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(1, 0), deps); err == nil || !strings.Contains(err.Error(), "BATCH_PROOF_UNION_UNCOVERED") {
+	if err := batchowner.ExecuteBatchProof(root, batchID, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(1, 0), deps); err == nil || !strings.Contains(err.Error(), "BATCH_PROOF_UNION_UNCOVERED") {
 		t.Fatalf("first union refusal=%v", err)
 	}
 	firstRearms, firstPlans := rearms, plans
-	if err := executeBatchProof(root, batchID, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(2, 0), deps); err != nil {
+	if err := batchowner.ExecuteBatchProof(root, batchID, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(2, 0), deps); err != nil {
 		t.Fatal(err)
 	}
 	if rearms != firstRearms || plans != firstPlans || launches != 0 {
@@ -430,8 +436,8 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 	t.Run("union uncovered is durable and never launches", func(t *testing.T) {
 		root, id, store, _ := batchProofRefusalBed(t)
 		launches := 0
-		err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), batchProofDependencies{
-			rearm: func(string, string) error { return nil }, plan: plan("other"), launch: func(batchProofLaunch) (proofrun.TestResult, error) {
+		err := batchowner.ExecuteBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), batchowner.BatchProofDependencies{
+			Rearm: func(string, string) error { return nil }, Plan: plan("other"), Launch: func(batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
 				launches++
 				return proofrun.TestResult{}, nil
 			},
@@ -450,9 +456,9 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 	})
 	t.Run("capacity refusal returns to sealed without diagnosis", func(t *testing.T) {
 		root, id, store, _ := batchProofRefusalBed(t)
-		err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), batchProofDependencies{
-			rearm: func(string, string) error { return nil }, plan: plan("required"), launch: func(batchProofLaunch) (proofrun.TestResult, error) {
-				return proofrun.TestResult{}, &batchProofAdmissionRefusal{kind: "capacity", reason: "ADMISSION_REFUSED capacity"}
+		err := batchowner.ExecuteBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), batchowner.BatchProofDependencies{
+			Rearm: func(string, string) error { return nil }, Plan: plan("required"), Launch: func(batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
+				return proofrun.TestResult{}, &batchowner.BatchProofAdmissionRefusal{Kind: "capacity", Reason: "ADMISSION_REFUSED capacity"}
 			},
 		})
 		record, loadErr := store.Load(id)
@@ -462,9 +468,9 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 	})
 	t.Run("revision refusal returns head and excludes its patch", func(t *testing.T) {
 		root, id, store, original := batchProofRefusalBed(t)
-		err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), batchProofDependencies{
-			rearm: func(string, string) error { return nil }, plan: plan("required"), launch: func(batchProofLaunch) (proofrun.TestResult, error) {
-				return proofrun.TestResult{}, &batchProofAdmissionRefusal{kind: "revision", reason: "GOAL_REVISION_MOVED"}
+		err := batchowner.ExecuteBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), batchowner.BatchProofDependencies{
+			Rearm: func(string, string) error { return nil }, Plan: plan("required"), Launch: func(batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
+				return proofrun.TestResult{}, &batchowner.BatchProofAdmissionRefusal{Kind: "revision", Reason: "GOAL_REVISION_MOVED"}
 			},
 		})
 		record, loadErr := store.Load(id)
@@ -476,15 +482,15 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 	})
 	t.Run("budget refusal withdraws head and next launch uses survivor tip", func(t *testing.T) {
 		root, id, store, original := batchProofRefusalBed(t)
-		var launches []batchProofLaunch
-		deps := batchProofDependencies{rearm: func(string, string) error { return nil }, plan: plan("required"), launch: func(request batchProofLaunch) (proofrun.TestResult, error) {
+		var launches []batchowner.BatchProofLaunch
+		deps := batchowner.BatchProofDependencies{Rearm: func(string, string) error { return nil }, Plan: plan("required"), Launch: func(request batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
 			launches = append(launches, request)
 			if len(launches) == 1 {
-				return proofrun.TestResult{}, &batchProofAdmissionRefusal{kind: "budget", reason: "BATCH_MEMBER_BUDGET_REFUSED"}
+				return proofrun.TestResult{}, &batchowner.BatchProofAdmissionRefusal{Kind: "budget", Reason: "BATCH_MEMBER_BUDGET_REFUSED"}
 			}
 			return proofrun.TestResult{AttemptID: "survivor", Delivery: proofrun.DeliveryJudgment{Sufficient: true}}, nil
 		}}
-		if err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), deps); err != nil {
+		if err := batchowner.ExecuteBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(10, 0), deps); err != nil {
 			t.Fatal(err)
 		}
 		withdrawn, err := store.Load(id)
@@ -492,8 +498,8 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 			withdrawn.TipTree == original.TipTree || len(launches) != 1 {
 			t.Fatalf("withdrawn=%+v launches=%+v err=%v", withdrawn, launches, err)
 		}
-		deps.seal = reseal(store, map[string]batch.Claim{"goal-a": withdrawn.Units[0].Claim})
-		if err := executeBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(11, 0), deps); err != nil {
+		deps.Seal = reseal(store, map[string]batch.Claim{"goal-a": withdrawn.Units[0].Claim})
+		if err := batchowner.ExecuteBatchProof(root, id, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(11, 0), deps); err != nil {
 			t.Fatal(err)
 		}
 		if len(launches) != 2 || launches[1].GoalID != "goal-a" || launches[1].Tree != withdrawn.TipTree || launches[1].Tree == original.TipTree {
@@ -503,10 +509,10 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 }
 
 func TestBatchProofAcceptsReusableSuccess(t *testing.T) {
-	if !batchProofExitAccepted(proofrun.ExitReusableSuccess, proofrun.TestResult{Delivery: proofrun.DeliveryJudgment{Sufficient: true}}) {
+	if !batchowner.BatchProofExitAccepted(proofrun.ExitReusableSuccess, proofrun.TestResult{Delivery: proofrun.DeliveryJudgment{Sufficient: true}}) {
 		t.Fatal("reusable sufficient proof was classified red")
 	}
-	if batchProofExitAccepted(proofrun.ExitReusableSuccess, proofrun.TestResult{}) || batchProofExitAccepted(1, proofrun.TestResult{Delivery: proofrun.DeliveryJudgment{Sufficient: true}}) {
+	if batchowner.BatchProofExitAccepted(proofrun.ExitReusableSuccess, proofrun.TestResult{}) || batchowner.BatchProofExitAccepted(1, proofrun.TestResult{Delivery: proofrun.DeliveryJudgment{Sufficient: true}}) {
 		t.Fatal("insufficient reuse or an ordinary failure was classified green")
 	}
 }
@@ -517,7 +523,7 @@ func TestBatchProofUnionUsesRealMemberRiskSelection(t *testing.T) {
 		Groups:   []testpolicy.Group{{ID: "base"}, {ID: "cross", Obligations: []string{"cross"}}},
 	}
 	units := []batch.Unit{{GoalID: "risk-a"}, {GoalID: "tip-b"}}
-	plan, err := planBatchMemberUnion("root", "tree", units, "", testpolicy.ModeAuto, func(_, goalID, _ string, mode testpolicy.Mode) (testpolicy.Plan, error) {
+	plan, err := batchowner.PlanBatchMemberUnion("root", "tree", units, "", testpolicy.ModeAuto, func(_, goalID, _ string, mode testpolicy.Mode) (testpolicy.Plan, error) {
 		risk := testpolicy.GoalRisk{}
 		if goalID == "risk-a" {
 			risk.Accumulation = 2
@@ -556,42 +562,42 @@ func TestBatchProofRearmsBaseBeforePlanningEvenWhenTreeMatches(t *testing.T) {
 	baseTree := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "rev-parse", "HEAD^{tree}"))))
 	mustRun("update-ref", "refs/remotes/origin/main", "HEAD")
 	mustRun("checkout", "-q", "--detach", old)
-	original := batchBaseRearm
-	t.Cleanup(func() { batchBaseRearm = original })
+	original := batchowner.BatchBaseRearm
+	t.Cleanup(func() { batchowner.BatchBaseRearm = original })
 	var events []string
-	batchBaseRearm.fastForward = func(context.Context, string, string) error { events = append(events, "fast-forward"); return nil }
-	batchBaseRearm.rebuild = func(context.Context, string) error { events = append(events, "rebuild"); return nil }
-	batchBaseRearm.up = func(context.Context, string, string) (upOutcome, error) {
+	batchowner.BatchBaseRearm.FastForward = func(context.Context, string, string) error { events = append(events, "fast-forward"); return nil }
+	batchowner.BatchBaseRearm.Rebuild = func(context.Context, string) error { events = append(events, "rebuild"); return nil }
+	batchowner.BatchBaseRearm.Up = func(context.Context, string, string) (testrun.UpOutcome, error) {
 		events = append(events, "up")
-		return upOutcome{}, nil
+		return testrun.UpOutcome{}, nil
 	}
-	if err := rearmBatchBase(root, baseTree); err != nil || strings.Join(events, ",") != "fast-forward,rebuild,up" {
+	if err := batchowner.RearmBatchBase(root, baseTree); err != nil || strings.Join(events, ",") != "fast-forward,rebuild,up" {
 		t.Fatalf("moved rearm events=%v error=%v", events, err)
 	}
 	events = nil
 	mustRun("checkout", "-q", "refs/remotes/origin/main")
-	if err := rearmBatchBase(root, baseTree); err != nil || strings.Join(events, ",") != "rebuild,up" {
+	if err := batchowner.RearmBatchBase(root, baseTree); err != nil || strings.Join(events, ",") != "rebuild,up" {
 		t.Fatalf("equal-tree rearm events=%v error=%v", events, err)
 	}
 }
 
 func TestBatchPostPushRearmFastForwardsRebuildsAndArms(t *testing.T) {
-	original := batchBaseRearm
-	t.Cleanup(func() { batchBaseRearm = original })
+	original := batchowner.BatchBaseRearm
+	t.Cleanup(func() { batchowner.BatchBaseRearm = original })
 	var events []string
-	batchBaseRearm.fastForward = func(_ context.Context, root, tip string) error {
+	batchowner.BatchBaseRearm.FastForward = func(_ context.Context, root, tip string) error {
 		events = append(events, "fast-forward:"+root+":"+tip)
 		return nil
 	}
-	batchBaseRearm.rebuild = func(_ context.Context, root string) error {
+	batchowner.BatchBaseRearm.Rebuild = func(_ context.Context, root string) error {
 		events = append(events, "rebuild:"+root)
 		return nil
 	}
-	batchBaseRearm.up = func(_ context.Context, root, repo string) (upOutcome, error) {
+	batchowner.BatchBaseRearm.Up = func(_ context.Context, root, repo string) (testrun.UpOutcome, error) {
 		events = append(events, "up:"+root+":"+repo)
-		return upOutcome{}, nil
+		return testrun.UpOutcome{}, nil
 	}
-	if err := rearmBatchTip("/landing", "receipt-tip"); err != nil {
+	if err := batchowner.RearmBatchTip("/landing", "receipt-tip"); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"fast-forward:/landing:receipt-tip", "rebuild:/landing", "up:/landing:/landing"}
@@ -642,7 +648,7 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	root := syncedClaimedGoalFixture(t)
 	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "landing-machine")
 	amendSyncedGoalFixture(t, root, "hand standing validation to the landing owner", func(file *goal.GoalFile) {
-		file.Claimed.Machine, file.Claimed.Lineage = "landing-machine", landingOwnerLineage
+		file.Claimed.Machine, file.Claimed.Lineage = "landing-machine", batchowner.LandingOwnerLineage
 		file.Claimed.HandedOver = goal.HandedOver{FromMachine: "seat-machine", FromLineage: "seat-lineage", FromEpoch: 1, Batch: batchID}
 		file.StopCapability = &goal.StopCapability{Generation: 1, Revision: file.Claimed.Revision, Machine: "landing-machine", ClaimEpoch: 1}
 	})
@@ -677,27 +683,27 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", "") // the owner call names its lineage; nothing inherits it
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T08:07:00Z")
 	store := batch.NewStore(root, nil)
-	claim := batch.Claim{Machine: "landing", Lineage: landingOwnerLineage, Epoch: 1, Revision: 3, AccountingRevision: 2}
+	claim := batch.Claim{Machine: "landing", Lineage: batchowner.LandingOwnerLineage, Epoch: 1, Revision: 3, AccountingRevision: 2}
 	if err := store.Create(batch.Record{Schema: 1, BatchID: batchID, State: batch.StateOpen, Units: []batch.Unit{
 		{GoalID: "standing-validation", Chain: "chain-a", Claim: claim, State: batch.UnitJoined},
 		{GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: batch.UnitJoining},
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	var calls []goalHandoverRequest
-	run := func(request goalHandoverRequest) error {
+	var calls []ownercall.HandoverRequest
+	run := func(request ownercall.HandoverRequest) error {
 		if request.Root != root {
 			t.Fatalf("rebind root=%q, want %q", request.Root, root)
 		}
 		calls = append(calls, request)
 		// The real handover owner runs in this process, the lease holder,
 		// exactly as its former child classified this process as its parent.
-		return goalHandoverOwner(landingOwnerInvocation(), request)
+		return goalHandoverOwner(batchowner.LandingOwnerInvocation(), request)
 	}
 	acceptedTree := func() string {
 		return strings.TrimSpace(goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef+"^{tree}"))
 	}
-	if err := rebindBatchClaims(root, batchID, acceptedTree(), "landing-machine", 1, batch.ReadReturnLedgerGoal, run); err != nil || len(calls) != 0 {
+	if err := batchowner.RebindBatchClaims(root, batchID, acceptedTree(), "landing-machine", 1, batch.ReadReturnLedgerGoal, run); err != nil || len(calls) != 0 {
 		t.Fatalf("equal-epoch tick rebind calls=%v error=%v", calls, err)
 	}
 	if err := firstInput.Close(); err != nil {
@@ -707,32 +713,32 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstReleased = true
-	replacement, err := acquireBatchOwner(root)
+	replacement, err := batchowner.AcquireBatchOwner(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := replacement.retire(); err != nil {
+		if err := replacement.Retire(); err != nil {
 			t.Errorf("retire replacement owner: %v", err)
 		}
 	})
-	if replacement.epoch != 2 {
-		t.Fatalf("replacement owner epoch=%d, want real lease takeover epoch 2", replacement.epoch)
+	if replacement.Epoch != 2 {
+		t.Fatalf("replacement owner epoch=%d, want real lease takeover epoch 2", replacement.Epoch)
 	}
-	if err := rebindBatchClaims(root, batchID, acceptedTree(), "landing-machine", replacement.epoch, batch.ReadReturnLedgerGoal, run); err != nil {
+	if err := batchowner.RebindBatchClaims(root, batchID, acceptedTree(), "landing-machine", replacement.Epoch, batch.ReadReturnLedgerGoal, run); err != nil {
 		t.Fatal(err)
 	}
 	if len(calls) != 1 {
 		t.Fatalf("rebind calls=%v", calls)
 	}
-	if calls[0].GoalID != "standing-validation" || calls[0].TargetEpoch != 2 || calls[0].TargetLineage != landingOwnerLineage {
+	if calls[0].GoalID != "standing-validation" || calls[0].TargetEpoch != 2 || calls[0].TargetLineage != batchowner.LandingOwnerLineage {
 		t.Fatalf("rebind calls=%+v", calls)
 	}
 	ledger, err := batch.ReadReturnLedgerGoal(root, acceptedTree(), "standing-validation")
 	if err != nil || ledger.ClaimEpoch != 2 {
 		t.Fatalf("real rebound ledger=%+v error=%v", ledger, err)
 	}
-	if err := rebindBatchClaims(root, batchID, acceptedTree(), "landing-machine", 2, batch.ReadReturnLedgerGoal, run); err != nil || len(calls) != 1 {
+	if err := batchowner.RebindBatchClaims(root, batchID, acceptedTree(), "landing-machine", 2, batch.ReadReturnLedgerGoal, run); err != nil || len(calls) != 1 {
 		t.Fatalf("settled takeover rebind calls=%v error=%v", calls, err)
 	}
 	ref := parent.Ref()
@@ -830,20 +836,20 @@ func TestBatchProductionReturnAndForwardHandoverArguments(t *testing.T) {
 	if err := os.WriteFile(fixturePath, append(fixtureBytes, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	originalRead := batchReturnLedgerGoal
-	t.Cleanup(func() { batchReturnLedgerGoal = originalRead })
-	batchReturnLedgerGoal = func(string, string, string) (batch.ReturnLedgerGoal, error) {
+	originalRead := batchowner.BatchReturnLedgerGoal
+	t.Cleanup(func() { batchowner.BatchReturnLedgerGoal = originalRead })
+	batchowner.BatchReturnLedgerGoal = func(string, string, string) (batch.ReturnLedgerGoal, error) {
 		return batch.ReturnLedgerGoal{Claimed: true, Batch: batchID}, nil
 	}
 	var calls [][]string
-	stubBatchOwnerCalls(t, func(invocation ownerInvocation, args ...string) error {
-		if invocation.lineage != landingOwnerLineage || invocation.caller.pid != int64(os.Getpid()) {
+	stubBatchOwnerCalls(t, func(invocation ownercall.Invocation, args ...string) error {
+		if invocation.Lineage != batchowner.LandingOwnerLineage || invocation.Caller.Pid != int64(os.Getpid()) {
 			t.Fatalf("landing owner call context=%+v, want the owner itself under its lineage", invocation)
 		}
 		calls = append(calls, append([]string(nil), args...))
 		return nil
 	})
-	seams := productionReturnSeams(root, func() string { return "tree" })
+	seams := batchowner.ProductionReturnSeams(root, func() string { return "tree" })
 	if err := seams.HandBack("goal-a", claim, 8); err != nil {
 		t.Fatal(err)
 	}
@@ -863,17 +869,17 @@ func TestBatchProductionReturnAndForwardHandoverArguments(t *testing.T) {
 func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 	t.Run("failed preparation does not create an empty batch", func(t *testing.T) {
 		landing := t.TempDir()
-		dependencies := batchJoinDependencies{
-			binding: func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
+		dependencies := batchowner.BatchJoinDependencies{
+			Binding: func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
 				return dispatchcore.GoalBinding{Revision: 2, Machine: "seat", Lineage: "lineage", File: &goal.GoalFile{Claimed: &goal.ClaimRecord{AccountingRevision: 1}}, Capability: goal.StopCapability{ClaimEpoch: 1}}, nil
 			},
-			chain: func(string, string, string, uint64) (batch.CertifiedChain, error) {
+			Chain: func(string, string, string, uint64) (batch.CertifiedChain, error) {
 				return batch.CertifiedChain{ID: "chain", Patch: []byte("patch")}, nil
 			},
-			base: func(string) (string, error) { return "base", nil }, mint: func() (string, error) { return "01j5x00000000000000000ba98", nil },
-			transport: func(string, batch.CertifiedChain) error { return errors.New("transport refused") },
+			Base: func(string) (string, error) { return "base", nil }, Mint: func() (string, error) { return "01j5x00000000000000000ba98", nil },
+			Transport: func(string, batch.CertifiedChain) error { return errors.New("transport refused") },
 		}
-		if _, err := executeBatchJoin(batchJoinRequest{SeatRoot: t.TempDir(), LandingRoot: landing, GoalID: "goal", ChainID: "chain", At: time.Unix(1, 0)}, dependencies); err == nil {
+		if _, err := batchowner.ExecuteBatchJoin(batchowner.BatchJoinRequest{SeatRoot: t.TempDir(), LandingRoot: landing, GoalID: "goal", ChainID: "chain", At: time.Unix(1, 0)}, dependencies); err == nil {
 			t.Fatal("failed transport unexpectedly joined")
 		}
 		records, err := batch.NewStore(landing, nil).Records()
@@ -881,10 +887,12 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 			t.Fatalf("failed preparation left records=%+v err=%v", records, err)
 		}
 	})
-	originalDependencies, originalClock := batchJoinDependenciesForCommand, batchJoinClock
-	t.Cleanup(func() { batchJoinDependenciesForCommand, batchJoinClock = originalDependencies, originalClock })
+	originalDependencies, originalClock := batchowner.BatchJoinDependenciesForCommand, batchowner.BatchJoinClock
+	t.Cleanup(func() {
+		batchowner.BatchJoinDependenciesForCommand, batchowner.BatchJoinClock = originalDependencies, originalClock
+	})
 	now := time.Unix(30, 0).UTC()
-	batchJoinClock = func(string) (time.Time, error) { return now, nil }
+	batchowner.BatchJoinClock = func(string) (time.Time, error) { return now, nil }
 	seat, landing := t.TempDir(), t.TempDir()
 	for _, root := range []string{seat, landing} {
 		if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
@@ -930,36 +938,36 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 		_ = unix.Flock(int(file.Fd()), unix.LOCK_UN)
 	}
 	events := []string{}
-	dependencies := productionBatchJoinDependencies()
+	dependencies := batchowner.ProductionBatchJoinDependencies()
 	// This fixture owns the join publication boundary; cost forecasts have
 	// separate public tests and must not launch a planner outside its seams.
-	dependencies.costForecast = nil
+	dependencies.CostForecast = nil
 	fakeRef := identity.Ref{Pid: 99123, StartedAtSec: 55}
-	dependencies.prober = processRefProber{exact: identity.Exact{Pid: fakeRef.Pid, StartedAt: time.Unix(fakeRef.StartedAtSec, 0)}, state: identity.Alive}
-	dependencies.binding = func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
+	dependencies.Prober = processRefProber{exact: identity.Exact{Pid: fakeRef.Pid, StartedAt: time.Unix(fakeRef.StartedAtSec, 0)}, state: identity.Alive}
+	dependencies.Binding = func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
 		file := &goal.GoalFile{Claimed: &goal.ClaimRecord{AccountingRevision: 4}}
 		return dispatchcore.GoalBinding{Revision: 5, Machine: "seat-machine", Lineage: "seat-lineage", File: file,
 			Capability: goal.StopCapability{ClaimEpoch: 7}}, nil
 	}
-	dependencies.chain = func(string, string, string, uint64) (batch.CertifiedChain, error) {
+	dependencies.Chain = func(string, string, string, uint64) (batch.CertifiedChain, error) {
 		return batch.CertifiedChain{ID: "chain-a", Patch: patch}, nil
 	}
-	dependencies.base = func(string) (string, error) { return base, nil }
-	dependencies.mint = func() (string, error) { return "01j5x00000000000000000ba99", nil }
-	dependencies.author = func(string, *goal.GoalFile) (string, string, string, error) {
+	dependencies.Base = func(string) (string, error) { return base, nil }
+	dependencies.Mint = func() (string, error) { return "01j5x00000000000000000ba99", nil }
+	dependencies.Author = func(string, *goal.GoalFile) (string, string, string, error) {
 		return "Fixture", "Fixture", "fixture@example.com", nil
 	}
-	dependencies.transport = func(root string, chain batch.CertifiedChain) error {
+	dependencies.Transport = func(root string, chain batch.CertifiedChain) error {
 		flockFree("transport")
 		events = append(events, "transport")
 		return batch.TransportChain(root, chain)
 	}
-	dependencies.admissionRun = func(_ string, _ string, unit batch.Unit) (batch.JoinAdmission, error) {
+	dependencies.AdmissionRun = func(_ string, _ string, unit batch.Unit) (batch.JoinAdmission, error) {
 		flockFree("admission")
 		events = append(events, "admission")
 		return batch.JoinAdmission{Tree: unit.Admission.Tree, Status: "verified", AttemptID: "join-admission"}, nil
 	}
-	dependencies.protectedTests = func(_, baseTree, candidateTree string) error {
+	dependencies.ProtectedTests = func(_, baseTree, candidateTree string) error {
 		flockFree("protected tests")
 		events = append(events, "protected-tests")
 		if baseTree != base || candidateTree == baseTree {
@@ -967,18 +975,18 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 		}
 		return nil
 	}
-	dependencies.plan = func(string, string, string) (testpolicy.Plan, error) {
+	dependencies.Plan = func(string, string, string) (testpolicy.Plan, error) {
 		return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard}, nil
 	}
-	publish := dependencies.publishAdmission
-	dependencies.publishAdmission = func(store batch.Store, id string, unit batch.Unit, actor string, at time.Time,
+	publish := dependencies.PublishAdmission
+	dependencies.PublishAdmission = func(store batch.Store, id string, unit batch.Unit, actor string, at time.Time,
 		plan func(string, string, string) (testpolicy.Plan, error), handover func() error, admission batch.JoinAdmissionRun) error {
 		if got := store.Liveness(fakeRef); got != identity.Alive {
 			t.Fatalf("join store ignored injected prober: %s", got)
 		}
 		return publish(store, id, unit, actor, at, plan, handover, admission)
 	}
-	dependencies.handover = func(request batchJoinRequest, gotBatch string, source batch.Claim) error {
+	dependencies.Handover = func(request batchowner.BatchJoinRequest, gotBatch string, source batch.Claim) error {
 		events = append(events, "forward-handover")
 		if request.SeatRoot != seat || gotBatch != batchID || source.Lineage != "seat-lineage" {
 			t.Fatalf("forward handover request=%+v batch=%s source=%+v", request, gotBatch, source)
@@ -994,7 +1002,7 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 		}
 		return nil
 	}
-	dependencies.ensure = func(root string) error {
+	dependencies.Ensure = func(root string) error {
 		flockFree("ensureOwner")
 		events = append(events, "ensure-owner")
 		record, err := batch.NewStore(root, nil).Load(batchID)
@@ -1003,7 +1011,7 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 		}
 		return nil
 	}
-	batchJoinDependenciesForCommand = func() batchJoinDependencies { return dependencies }
+	batchowner.BatchJoinDependenciesForCommand = func() batchowner.BatchJoinDependencies { return dependencies }
 	if code := runBatchJoin([]string{"--root", seat, "--goal", "goal-a", "--chain", "chain-a"}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("join exited %d", code)
 	}
@@ -1055,7 +1063,7 @@ func TestBatchOwnerProbesAPlannedProofFromTheProofStore(t *testing.T) {
 		attempts = append(attempts, value)
 	}
 	probe := func(prober restartProber) batch.RunProbe {
-		got, err := probeBatchProofRun(root, "batch-1", record, prober, func(string) ([]proofrun.Attempt, error) { return attempts, nil })
+		got, err := batchowner.ProbeBatchProofRun(root, "batch-1", record, prober, func(string) ([]proofrun.Attempt, error) { return attempts, nil })
 		if err != nil {
 			t.Fatal(err)
 		}
