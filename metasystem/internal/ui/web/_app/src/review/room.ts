@@ -459,6 +459,11 @@ export const RETIPPED = "the branch was retipped since this Outcome was drafted;
 export const RETIP_ASKS_END =
   "The Outcome waiting in the conversation was drafted for the tip you reviewed before. Your words stay in its draft; press End again to draft the Outcome for the new tip.";
 
+/** Whether the sitting's Outcome card was recorded, which is how a sitting ends with its Outcome written. */
+export function recordedOutcome(cards: readonly { kind: string; standing: Standing }[]): boolean {
+  return cards.some((card) => card.kind === "outcome" && card.standing === "recorded");
+}
+
 /** Whether an Outcome card still waits to be recorded, which a retip leaves drafted for the old tip. */
 export function standingOutcome(cards: readonly { kind: string; standing: Standing }[]): boolean {
   return cards.some((card) => card.kind === "outcome" && pressable(card.standing));

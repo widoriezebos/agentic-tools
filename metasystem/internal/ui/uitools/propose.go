@@ -63,6 +63,11 @@ const (
 	ActionStart  = "start"
 	// ObjectApp is the object ActionStart belongs to.
 	ObjectApp = "app"
+	// ObjectDesign is the object of the design's critique, design review
+	// (g1-s66 D1): Send to critique, and Answer the round with the round's
+	// own decisions file. It shares the word review with the goal's verdict
+	// and is told apart by its object, as app start is.
+	ObjectDesign = "design"
 )
 
 // The routes those ten dispatch to: the interface's own ids, exactly as the
@@ -85,6 +90,9 @@ const (
 	ProposeAbandon  = "abandon-goal"
 	ProposeReview   = "review-goal"
 	ProposeAppStart = "app-start"
+	// ProposeDesignReview is the design page's Send to critique and Answer the
+	// round, one route for the verb's two forms.
+	ProposeDesignReview = "design-review"
 )
 
 // The public flags, under the descriptors' own names and spellings. They are
@@ -106,6 +114,12 @@ const (
 	FlagRecord    = "record"
 	FlagVerdict   = "verdict"
 	FlagWork      = "work"
+	// The design review's. FlagDesign is the design page, which the terminal
+	// names positionally (FILE); the rest are its own flags.
+	FlagDesign       = "design"
+	FlagToolCalls    = "tool-calls"
+	FlagDispositions = "dispositions"
+	FlagAfter        = "after"
 )
 
 // The route bodies' own fields, under the bodies' own spellings. They are what
@@ -144,6 +158,14 @@ const (
 	FieldRecord  = "record"
 	FieldVerdict = "verdict"
 	FieldWork    = "work"
+	// FieldDesign, FieldToolCalls, FieldDispositions and FieldAfter are a
+	// design review's: the design the route's path names, the reader budget,
+	// the round's decisions file the route derives from the examination it
+	// answers, and that examination.
+	FieldDesign       = "design"
+	FieldToolCalls    = "toolCalls"
+	FieldDispositions = "dispositions"
+	FieldAfter        = "after"
 )
 
 // ProposedAct is one row of the catalogue: the goal object's public action, the
@@ -168,6 +190,11 @@ type ProposedAct struct {
 	OneOf []string
 	// Takes are the rest, each admitted and none required.
 	Takes []string
+	// Beside are flags the card shows and the route's body does not carry: a
+	// design review's design is the route's path, as a goal act's goal is, and
+	// its decisions file is the one the route derives from the examination it
+	// answers.
+	Beside []string
 }
 
 // Verb is what a proposal names the act by: the goal object's action by its
@@ -209,7 +236,14 @@ func (a ProposedAct) Travels() []string {
 // collapsed into the whole list admission composes from it.
 func (a ProposedAct) Body() []string {
 	named := []string{}
+	beside := []string{}
+	for _, flag := range a.Beside {
+		beside = append(beside, bodyFields(a.Action, flag)...)
+	}
 	for _, field := range a.Travels() {
+		if contained(beside, field) {
+			continue
+		}
 		if field == FieldLabel || field == FieldUnlabel {
 			field = FieldLabels
 		}
@@ -251,6 +285,8 @@ func bodyFields(action, flag string) []string {
 		return []string{FieldLabel}
 	case FlagUnlabel:
 		return []string{FieldUnlabel}
+	case FlagToolCalls:
+		return []string{FieldToolCalls}
 	default:
 		// intent, basis, blocks, priority and sequence are spelt the same on
 		// both sides.
@@ -307,6 +343,15 @@ var ProposedActs = []ProposedAct{
 	},
 	// Run the goal's candidate (D3): app start --goal G, the goal alone.
 	{Object: ObjectApp, Action: ActionStart, Route: ProposeAppStart, Word: "Run"},
+	// The design's critique (g1-s66 D1), in the verb's two forms: design
+	// review FILE --goal G --tool-calls N sends it, and with --dispositions
+	// FILE --after N it answers the round. The goal every proposal names is
+	// the goal that funds it.
+	{
+		Object: ObjectDesign, Action: ActionReview, Route: ProposeDesignReview, Word: "Send to critique",
+		Needs: []string{FlagDesign, FlagToolCalls}, Takes: []string{FlagDispositions, FlagAfter},
+		Beside: []string{FlagDesign, FlagDispositions},
+	},
 }
 
 // ProposedActionOf is one row of the catalogue by its public action name.
@@ -398,6 +443,10 @@ const (
 	ProposalRecord       = "Record: "
 	ProposalVerdict      = "Verdict: "
 	ProposalWork         = "Work: "
+	ProposalDesign       = "Design: "
+	ProposalToolCalls    = "Tool calls: "
+	ProposalDispositions = "Dispositions: "
+	ProposalAfter        = "After: "
 	ProposalSeparator    = "--- the explanation follows, whole and to the end ---"
 )
 
@@ -430,6 +479,10 @@ var ProposalFrame = []struct {
 	{ProposalRecord, FieldRecord},
 	{ProposalVerdict, FieldVerdict},
 	{ProposalWork, FieldWork},
+	{ProposalDesign, FieldDesign},
+	{ProposalToolCalls, FieldToolCalls},
+	{ProposalDispositions, FieldDispositions},
+	{ProposalAfter, FieldAfter},
 }
 
 // PreparedProposalLine is what a prepared proposal answers the model with.
@@ -495,6 +548,13 @@ var refusedProposalFields = []struct {
 		words: "a basis is recorded with the risk answers it was judged on, and this interface's edit changes neither"},
 	// A verdict's brief is the room's: composed from the findings answered
 	// fix, read and edited on the End sheet, and never a Partner's words.
+	// A design review's retry and its check are a terminal's: a failed
+	// examination is retried where its process can be proven stopped, and the
+	// check asks no critic at all.
+	{field: "retry", on: []string{ObjectDesign + " " + ActionReview},
+		words: "a failed examination is retried at a terminal, where its process can be proven stopped: metasystem design review FILE --retry N"},
+	{field: "check-only", on: []string{ObjectDesign + " " + ActionReview},
+		words: "the moved-effect check asks no critic and is run at a terminal: metasystem design review FILE --check-only"},
 	{field: "brief", on: []string{ActionReview},
 		words: "the correction brief is composed in the room from the findings answered fix, and read and edited there before Send back"},
 	// Every -file form, named rather than classed: the text itself travels.
@@ -639,6 +699,11 @@ func (r Readers) propose(args Args) Result {
 			}
 		}
 	}
+	if act.Object == ObjectDesign {
+		if refusal := answeredRound(body); refusal != "" {
+			return refusedCall(refusal)
+		}
+	}
 	if len(act.OneOf) > 0 && !anyGiven(args, act.OneOf) {
 		return refusedCall(action + " changes at least one of " + listed(act.OneOf) +
 			"; a proposal that changes none of them would publish nothing")
@@ -767,6 +832,30 @@ func valueOf(args Args, act ProposedAct, flag string) (map[string]string, string
 				"; a review that ends without a verdict records nothing on the goal"
 		}
 		return into(said), ""
+	case FlagDesign:
+		said := oneLine(args.Text(flag))
+		if !strings.HasSuffix(said, ".md") || strings.HasPrefix(said, "/") || strings.Contains(said, "..") || utf8.RuneCountInString(said) > maxProposalClause {
+			return nil, "design is the design page's checkout-relative path, as the page names it"
+		}
+		return into(said), ""
+	case FlagToolCalls:
+		calls := args.Number(flag, 0)
+		if calls < 1 || calls > maxToolCalls {
+			return nil, "a reader budget is a number of tool calls, 1 or more and at most " + strconv.Itoa(maxToolCalls)
+		}
+		return into(strconv.Itoa(calls)), ""
+	case FlagAfter:
+		at := args.Number(flag, 0)
+		if at < 1 {
+			return nil, "after is the number of the examination the decisions answer"
+		}
+		return into(strconv.Itoa(at)), ""
+	case FlagDispositions:
+		said := oneLine(args.Text(flag))
+		if utf8.RuneCountInString(said) > maxProposalClause {
+			return nil, "dispositions is the round's own decisions file, beside that round's return"
+		}
+		return into(said), ""
 	case FlagOn, FlagSuccessor, FlagWork:
 		said := oneLine(args.Text(flag))
 		if refusal := boundedID(flag, said); refusal != "" {
@@ -785,6 +874,27 @@ func valueOf(args Args, act ProposedAct, flag string) (map[string]string, string
 	default:
 		return into(oneLine(args.Text(flag))), ""
 	}
+}
+
+// maxToolCalls is the most reader tool calls one proposed review carries: a
+// budget a human reads on a card, not a number past any brief's.
+const maxToolCalls = 1000
+
+// answeredRound is a design review's one cross-field rule: the decisions file
+// and the examination it answers travel together, and the file is that
+// round's own, which is the file the route answers with.
+func answeredRound(body map[string]string) string {
+	file, filed := body[FieldDispositions]
+	after, numbered := body[FieldAfter]
+	switch {
+	case filed != numbered:
+		return "dispositions and after answer one round together: the round's own decisions file and the examination it answers"
+	case !filed:
+		return ""
+	case !strings.HasSuffix(file, "/rounds/"+after+"/decisions.md"):
+		return "dispositions is the round's own decisions file, rounds/" + after + "/decisions.md beside that round's return"
+	}
+	return ""
 }
 
 // boundedID is the refusal one goal id past the ledger's own bound is named
@@ -1025,6 +1135,10 @@ func needs(action, flag string) string {
 		return "an edge names the goal that waits and the goal it waits for"
 	case FlagPriority:
 		return "a priority band is 1, 2 or 3"
+	case FlagToolCalls:
+		return "the engine refuses a review without a reader budget and never invents one"
+	case FlagDesign:
+		return "a review names the design page it critiques"
 	default:
 		return action + " cannot be published without it"
 	}
@@ -1182,11 +1296,11 @@ func proposeSchema() map[string]any {
 	properties := map[string]any{
 		"verb": map[string]any{
 			"type": "string", "enum": ProposeActions(),
-			"description": "Which act this is, by its public name: the goal object's action as metasystem goal ACTION names it, or app start for the goal's candidate.",
+			"description": "Which act this is, by its public name: the goal object's action as metasystem goal ACTION names it, app start for the goal's candidate, or design review for a design's critique.",
 		},
 		"goal": map[string]any{
 			"type":        "string",
-			"description": "The goal the act is about, by its ledger id. On " + ActionOpen + " it is the new goal's id.",
+			"description": "The goal the act is about, by its ledger id. On " + ActionOpen + " it is the new goal's id; on design review, the goal that funds the critique.",
 		},
 		"explanation": map[string]any{
 			"type": "string",
@@ -1227,6 +1341,14 @@ func proposeSchema() map[string]any {
 			"description": "On " + ActionReview + ": the verdict the record's Outcome opens with."},
 		FlagWork: map[string]any{"type": "string",
 			"description": "On " + ActionReview + " with send-back: the work item the holder asked to be named."},
+		FlagDesign: map[string]any{"type": "string",
+			"description": "On design review: the design page's checkout-relative path, which the terminal gives as FILE."},
+		FlagToolCalls: map[string]any{"type": "integer",
+			"description": "On design review: the reader's tool-call budget; the page's own setting is review.design.tool-calls."},
+		FlagDispositions: map[string]any{"type": "string",
+			"description": "On design review answering a round: the round's own decisions file, .../rounds/N/decisions.md."},
+		FlagAfter: map[string]any{"type": "integer",
+			"description": "On design review answering a round: the number of the examination the decisions answer."},
 	}
 	asked := schema(properties, []string{"verb", "goal", "explanation"})
 	// Closed, unlike every other tool's. This is the one tool whose arguments

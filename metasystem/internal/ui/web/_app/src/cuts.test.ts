@@ -253,6 +253,15 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // time: a candidate changes because a human pressed something, and the page
   // holds no timer to watch it.
   ["review/candidate.ts", 1, ["/api/app/", "/status", "/start", "/stop"]],
+  // The loop from the room (g1-s66 §6): a design's critique, read when the
+  // design's page opens and after each press, sent or answered when a human
+  // presses Send to critique or Answer the round, and one decision written per
+  // press on a finding card — three requests through one call site. The
+  // design's own path lies between the prefix and "/review", and a round's
+  // number between "/review" and "/decisions", which is why both are listed on
+  // their own. Nothing here polls: the bell says a round is back, and the page
+  // reads it again when a human comes to it or presses Refresh.
+  ["project/critiquing.ts", 1, ["/api/design/", "/review", "/decisions"]],
 ];
 
 /**

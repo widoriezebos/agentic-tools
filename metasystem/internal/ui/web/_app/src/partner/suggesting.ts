@@ -440,6 +440,22 @@ export function cardHead(card: Suggestion): string {
   return `Suggestion for ${card.field}`;
 }
 
+/**
+ * What a section drafted anew heads itself with in the conversation (g1-s66 D3).
+ * It is decided on the document's own page, where old and new stand side by
+ * side, so the conversation says where and links there.
+ */
+export function sectionHead(card: Suggestion): string {
+  return `A new “${card.section ?? ""}” for ${card.document ?? ""}`;
+}
+
+export const SECTION_ON_PAGE = "Old and new stand side by side on the document's page, where Use writes exactly this section.";
+
+/** Whether a suggestion is a section of a document rather than a sheet's field. */
+export function isSection(card: Suggestion): boolean {
+  return (card.document ?? "") !== "";
+}
+
 /** What the block beside a field heads itself with. */
 export const PROPOSES = "The Partner proposes";
 

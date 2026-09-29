@@ -677,6 +677,20 @@ func runUIServe(args []string) int {
 					advance()
 					return recorded, nil
 				},
+				// The loop from the room (g1-s66 §6): Send to critique and
+				// Answer the round run design review as the public verb runs,
+				// behind the route's signed-in session rule, as a launch
+				// does; the chain is read from the run store and a press
+				// writes one row of the engine's own decisions file.
+				DesignReview: func(_ *session.Session, design string, asked httpd.DesignAsked) (httpd.DesignAnswer, error) {
+					return designReviewRun(roots, design, asked)
+				},
+				DesignLoop: func(design string) (httpd.DesignLoop, error) {
+					return designLoopRead(roots, design)
+				},
+				DesignDecide: func(design string, round int64, row httpd.DesignRow) (httpd.DesignLoop, error) {
+					return designDecide(roots, design, round, row)
+				},
 				// The goal's candidate, from the room's pill (D3): the three
 				// app forms, run as the public verbs are run.
 				Candidate: func(goal, action string) (httpd.Candidate, error) {

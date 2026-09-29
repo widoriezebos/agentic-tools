@@ -83,6 +83,12 @@ func Acts() []manifest.Act {
 			Does: "Starts the goal's branch from its own worktree on its own port beside the standing run, and answers where it runs and the commit it runs."},
 		{ID: routeAppStop, Title: "Stop a goal's candidate", Requires: sessionHand,
 			Does: "Stops the goal's candidate run and proves it stopped."},
+		// The design's critique from its own page (g1-s66): the verb run under
+		// the launch route's rule, and a round's decisions written row by row.
+		{ID: routeDesignReview, Title: "Send a design to critique, or answer its round", Requires: sessionHand,
+			Does: "Runs design review for one design with the goal that funds it and the reader budget: it starts the configured critique lane, rejoins a round already reading, or answers the round with its decisions file, and the engine closes the critique or requests the next round by its own rules."},
+		{ID: routeDesignDecision, Title: "Decide one finding of a design's critique", Requires: sessionHand,
+			Does: "Writes one row — accepted, refuted, noted or out-of-scope, with its reasoning and amendment — into the round's own decisions file under the engine's binding. Nothing is written into the design."},
 		{ID: routeDiscardLaunch, Title: "Discard a stopped launch", Requires: checkoutHand,
 			Does: "Marks one launch that stopped, or whose machine joined, as discarded so its card leaves the fleet page. The record is kept and nothing is deleted: the clone stays on disk until you remove it."},
 		{ID: routeCreateRecord, Title: "Write a record", Requires: checkoutHand,

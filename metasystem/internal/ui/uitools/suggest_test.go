@@ -131,12 +131,14 @@ func TestTheSuggestToolIsPublishedAndAdmittedLikeTheRest(t *testing.T) {
 	}
 	testutil.Require(t, "it is in the catalogue", published.Name, OpSuggest)
 	properties, _ := published.InputSchema["properties"].(map[string]any)
-	for _, named := range []string{"editor", "field", "text"} {
+	for _, named := range []string{"editor", "field", "text", "document", "section"} {
 		_, there := properties[named]
 		testutil.Expect(t, "it takes "+named, there, true)
 	}
+	// Two targets, a sheet's field or a document's section (g1-s66 D3): the
+	// text is what both need, and the call itself refuses half of either.
 	required, _ := published.InputSchema["required"].([]string)
-	testutil.Expect(t, "and needs all three", required, []string{"editor", "field", "text"})
+	testutil.Expect(t, "and needs the text", required, []string{"text"})
 	testutil.Expect(t, "its description says the human decides",
 		strings.Contains(published.Description, "the human sees a card and decides"), true)
 }

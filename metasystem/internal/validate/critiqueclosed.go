@@ -380,5 +380,59 @@ func Dispositions(path string) (map[string]string, []string) {
 	return dispositions, violations
 }
 
+// DispositionRow is one row of a dispositions table, its four cells as the
+// author wrote them.
+type DispositionRow struct {
+	Finding, Disposition, Reasoning, Amendment string
+}
+
+// DispositionRows reads a dispositions table's rows in the order they stand,
+// through the same parser the close join uses, so a design's Dispositions
+// section says what the join judged. Any violation is returned beside them.
+func DispositionRows(path string) ([]DispositionRow, []string) {
+	var violations []string
+	_, _, joinable := readDispositions(path, func(format string, args ...any) {
+		violations = append(violations, fmt.Sprintf(format, args...))
+	})
+	if !joinable {
+		return nil, violations
+	}
+	data, _, _ := readFileIfExists(path)
+	lines := splitLines(string(data))
+	visible := linesOutsideFences(lines)
+	var rows []DispositionRow
+	inTable := false
+	for index, line := range lines {
+		cells := markdownCells(line)
+		switch {
+		case !inTable:
+			inTable = visible[index] && equalStrings(cells, dispositionsHeader)
+		case dispositionSeparator(cells):
+			continue
+		case !visible[index] || strings.TrimSpace(line) == "" || cells == nil:
+			return rows, violations
+		case len(cells) == len(dispositionsHeader):
+			rows = append(rows, DispositionRow{Finding: cells[0], Disposition: cells[1], Reasoning: cells[2], Amendment: cells[3]})
+		}
+	}
+	return rows, violations
+}
+
+func dispositionSeparator(cells []string) bool {
+	if len(cells) == 0 {
+		return false
+	}
+	for _, cell := range cells {
+		if !separatorCellRe.MatchString(cell) {
+			return false
+		}
+	}
+	return true
+}
+
+// TableCells splits one table line into its cells as the close join does,
+// honouring an escaped pipe; a line without a pipe yields nil.
+func TableCells(line string) []string { return markdownCells(line) }
+
 // DispositionsHeader is the table header the close join requires.
 func DispositionsHeader() []string { return append([]string(nil), dispositionsHeader...) }

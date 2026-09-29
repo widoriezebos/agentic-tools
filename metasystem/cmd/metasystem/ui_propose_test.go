@@ -40,13 +40,14 @@ func goalActionDescriptors() map[string]intentCommand {
 }
 
 // proposedDescriptors are the public actions the catalogue's acts belong to, by
-// each act's own verb: the goal object's actions, and the app object's start
-// that runs a goal's candidate (g1-s69 D3), which is the one act of another
-// object the grammar carries.
+// each act's own verb: the goal object's actions, the app object's start that
+// runs a goal's candidate (g1-s69 D3), and the design object's review that
+// critiques a design (g1-s66 D1), the two acts of other objects the grammar
+// carries.
 func proposedDescriptors() map[string]intentCommand {
 	held := goalActionDescriptors()
 	for _, command := range publicIntentCommands() {
-		if command.object == uitools.ObjectApp {
+		if command.object == uitools.ObjectApp || command.object == uitools.ObjectDesign && command.action == uitools.ActionReview {
 			held[command.object+" "+command.action] = command
 		}
 	}
@@ -119,11 +120,20 @@ func TestProposableFieldsAreTheirActionsOwnFlags(t *testing.T) {
 		testutil.Require(t, act.Command()+" is in the table", known, true)
 		// The app object names its goal with --goal, which is the subject every
 		// proposal already carries under goal.
-		if act.Object == uitools.ObjectApp {
+		if act.Object == uitools.ObjectApp || act.Object == uitools.ObjectDesign {
 			_, there := flagNamed(command, "goal")
 			testutil.Expect(t, act.Command()+" names its goal with --goal", there, true)
 		}
 		for _, field := range act.Fields() {
+			// A design review names its design positionally, as FILE, and the
+			// catalogue carries it under design: it is the command's one word
+			// and its usage line says so.
+			if act.Object == uitools.ObjectDesign && field == uitools.FlagDesign {
+				testutil.Expect(t, act.Command()+" takes the design as its one word", command.maxArgs, 1)
+				testutil.Expect(t, act.Command()+" names FILE in its usage line",
+					strings.HasPrefix(command.usage[0], "metasystem design review FILE"), true)
+				continue
+			}
 			flag, there := flagNamed(command, field)
 			testutil.Expect(t, act.Command()+" has a --"+field+" flag of its own", there, true)
 			testutil.Expect(t, act.Command()+"'s --"+field+" is not hidden", flag.hidden, false)

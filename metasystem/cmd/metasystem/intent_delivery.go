@@ -910,13 +910,17 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 		fmt.Sprintf("design page %s, SHA-256 %s", gitRel, hex.EncodeToString(digest[:])),
 		filepath.Join(dir, "findings.md"),
 		[]string{fmt.Sprintf("`%s:1-%d` — the whole design under skills/design-critique/SKILL.md: missing work, false premises and first-use failures", gitRel, lineCount)})
-	if err := writeIntentInputs(dir, map[string]string{brief: briefText, outputs: gitRel + "\n"}); err != nil {
-		return intentResult{Targets: target, Outcome: intentFailed, Summary: err.Error()}
-	}
 	designPath := filepath.Join(git, filepath.FromSlash(gitRel))
-	plan := designReviewPlan{targets: target, goalID: goalID, recordID: record.ID, design: designPath, subject: hex.EncodeToString(digest[:]), brief: brief}
+	plan := designReviewPlan{targets: target, goalID: goalID, recordID: record.ID, design: designPath, subject: hex.EncodeToString(digest[:]), brief: brief,
+		inputs: map[string]string{brief: briefText, outputs: gitRel + "\n"}}
+	// An existing chain is decided before anything is written: a Send that
+	// rejoins a running examination writes nothing, so the brief it admitted,
+	// which states its reader budget, keeps its bytes.
 	if decided := inv.reviewDesignChain(plan); decided != nil {
 		return *decided
+	}
+	if err := writeIntentInputs(dir, plan.inputs); err != nil {
+		return intentResult{Targets: target, Outcome: intentFailed, Summary: err.Error()}
 	}
 	if len(dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot, goalID, designPath)) == 0 {
 		// The first paid critique needs the goal's claim; an approved goal

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { NavLink } from "react-router";
 
 import { bringUp } from "./scrolling";
 import { usePartner } from "./store";
@@ -8,15 +9,19 @@ import {
   closedLine,
   DISMISSED,
   EDITED_SINCE,
+  isSection,
   mintOpening,
   NOT_OFFERED,
   refusedLine,
   refusedSaveLine,
   SAVING,
+  SECTION_ON_PAGE,
+  sectionHead,
   unresolvedSaveLine,
   USED_AND_SAVED,
 } from "./suggesting";
 import { Help } from "../help/Help";
+import { documentPath } from "../routes";
 import { Button } from "../shell/controls";
 import { Trouble } from "../shell/Trouble";
 
@@ -82,6 +87,22 @@ export function SuggestionCard({ id }: { id: string }) {
   }, [showing, id]);
   if (card === undefined) {
     return null;
+  }
+  // A section drafted anew is decided on its document's page (g1-s66 D3): the
+  // conversation keeps the words and says where they are decided.
+  if (isSection(card) && card.standing !== "refused") {
+    return (
+      <div className="ms-suggestion" ref={box} data-suggestion={id}>
+        <p className="ms-suggestion-head">
+          <span>{sectionHead(card)}</span>
+          <Help id="section-card" />
+        </p>
+        <p className="ms-suggestion-text">{card.text}</p>
+        <div className="ms-suggestion-foot">
+          <NavLink to={documentPath(card.document ?? "")}>{SECTION_ON_PAGE}</NavLink>
+        </div>
+      </div>
+    );
   }
   // Nothing was offered. It is the one card with nothing to press: no field of
   // the draft the human handed over was named, so there is nowhere to put the

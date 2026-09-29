@@ -93,6 +93,8 @@ var coreSettings = []Setting{
 		Meaning: "megabytes one transcript may reach before its oldest messages are trimmed; 0 disables the bound"},
 	{Key: UIStoreConversationDaysKey, Default: "90", ProofInput: false,
 		Meaning: "days the oldest message of a transcript may reach before it is trimmed; 0 disables the bound"},
+	{Key: ReviewDesignToolCallsKey, Default: "30", ProofInput: false,
+		Meaning: "the reader tool-call budget the interface's Send to critique prefills for a design review; the sheet may change it"},
 
 	// Spend accounting (spend.go), alert-only; committed root only outside a
 	// fixture root. Not a proof input: it meters, it never changes a result.

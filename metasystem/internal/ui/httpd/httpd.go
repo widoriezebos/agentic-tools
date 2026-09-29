@@ -182,8 +182,16 @@ type Info struct {
 	// (g1-s69 D1, D2): the verdict line, and the review record and a
 	// send-back's brief published beside it. Candidate runs one of the three
 	// app forms for a goal's candidate (D3). A nil one refuses its own routes.
-	Verdict   func(signed *session.Session, id string, asked act.Reviewed) (act.Recorded, error)
-	Candidate func(goal, action string) (Candidate, error)
+	Verdict func(signed *session.Session, id string, asked act.Reviewed) (act.Recorded, error)
+	// The loop from the room (g1-s66 §6). DesignReview runs `design review`
+	// for the design at a checkout-relative path under a signed-in session and
+	// answers what the engine did in its words; DesignLoop reads the design's
+	// critique chain and its rounds; DesignDecide writes one row into a
+	// round's decisions file. A nil one refuses its own route.
+	DesignReview func(signed *session.Session, design string, asked DesignAsked) (DesignAnswer, error)
+	DesignLoop   func(design string) (DesignLoop, error)
+	DesignDecide func(design string, round int64, row DesignRow) (DesignLoop, error)
+	Candidate    func(goal, action string) (Candidate, error)
 	// BudgetDefaults is the project's budget law by tier, read per request
 	// for the reason the readers are: what the browser prefills from is what
 	// the next read of the configuration will say.
@@ -390,6 +398,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		route, isWrite = written{route: routeAddSticky}, r.Method == http.MethodPost
 	}
+	// A design's critique is read and sent at one address, as the notepad is:
+	// the method says which (g1-s66 §6).
+	if _, loop := designReadOf(r.URL.Path); loop {
+		if r.Method != http.MethodPost && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD, POST")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		isWrite = r.Method == http.MethodPost
+	}
 	if isWrite && r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -483,6 +501,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if goal, ok := appGoal(r.URL.Path, appStatusPart); ok {
 		h.appStatus(w, goal)
+		return
+	}
+	if id, loop := designReadOf(r.URL.Path); loop {
+		h.designLoop(w, id)
 		return
 	}
 	if rest, beneath := strings.CutPrefix(r.URL.Path, reviewPrefix); beneath && rest != "" {

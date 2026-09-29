@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -76,6 +78,23 @@ type designReviewPlan struct {
 	design           string // canonical absolute path
 	subject          string // current design digest
 	brief            string
+	inputs           map[string]string // the generated brief and outputs, by path, not yet written
+}
+
+// writeMissingInputs writes the generated inputs a continuing chain needs
+// where none are written yet; one already written is the one its chain
+// admitted and is kept as it is.
+func (plan designReviewPlan) writeMissingInputs() error {
+	missing := map[string]string{}
+	for path, content := range plan.inputs {
+		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+			missing[path] = content
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return writeIntentInputs(filepath.Dir(plan.brief), missing)
 }
 
 // reviewDesignChain decides a design review against the document's
@@ -104,6 +123,11 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 	entry.Goal, entry.Design = plan.goalID, plan.design
 	status := recordText(chain.Newest, "status")
 	switch {
+	case chain.Closed && inv.input.has("dispositions") && inv.closedByTheseDecisions(chain):
+		// The same answer again is the close it already made; the design's
+		// Dispositions section, if the first close could not write it, is
+		// written now.
+		return inv.designCritiqueClosed(plan, chain, intentResult{Targets: append(plan.targets, jobTarget(chain.Root)), Outcome: intentUnchanged})
 	case chain.Closed && (inv.input.has("dispositions") || inv.input.has("retry")):
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
 			Summary: fmt.Sprintf("design %s's critique %s is closed; it is not continued; nothing was requested", plan.recordID, chain.Root)}
@@ -179,13 +203,25 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1, text: violations,
 			Summary: "the decisions file is not a complete decision of the examined findings; nothing was requested"}
 	}
-	if bound.Subject == plan.subject {
-		return inv.closeDesignCritique(plan, chain, returnPath, path)
+	// The decisions are the round's own from here on: the close composes the
+	// design's Dispositions section from every answered round's file.
+	if err := retainRoundDecisions(returnPath, path, content); err != nil {
+		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the round's decisions cannot be kept beside its return: " + err.Error()}
+	}
+	// The final round is answered by the close whatever a fold changed: there
+	// is no further round to examine the change, and the engine's own
+	// classification of what is left is the exit (g1-s66 D4).
+	final := bound.Round >= inv.designRoundLimit(chain.Root)
+	if bound.Subject == plan.subject || final {
+		return inv.closeDesignCritique(plan, chain, returnPath, path, bound.Round, final)
 	}
 	decisions := digestText(content)
 	operation := fmt.Sprintf("design-%s-after-%d-%s", strings.ToLower(plan.recordID), bound.Round, decisions[:12])
 	// The follow-up examines the changed design with the author's decisions
 	// on the reviewed findings; both are frozen in its brief.
+	if err := plan.writeMissingInputs(); err != nil {
+		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: err.Error()}
+	}
 	brief, err := os.ReadFile(plan.brief)
 	if err != nil {
 		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the review brief cannot be read: " + err.Error()}
@@ -221,6 +257,9 @@ func (inv *intentInvocation) retryDesignExamination(plan designReviewPlan, chain
 	if round != chain.NewestRound {
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
 			Summary: fmt.Sprintf("examination %d is not design %s's newest examination (%d); nothing was requested", round, plan.recordID, chain.NewestRound)}
+	}
+	if err := plan.writeMissingInputs(); err != nil {
+		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: err.Error()}
 	}
 	return inv.designFollowUp(plan, chain, entry, designReviewRequest{Kind: "retry", Root: chain.Root, AfterRound: round, OperationID: operation,
 		SubjectSHA256: entry.Subjects[strconv.FormatInt(round, 10)], Brief: plan.brief})
@@ -275,6 +314,16 @@ func (inv *intentInvocation) designFollowUp(plan designReviewPlan, chain dispatc
 	if data, ok := result.Data.(map[string]any); ok {
 		data["operation"], data["afterExamination"] = request.OperationID, request.AfterRound
 	}
+	// A continuation says which round it asked for, and when that round is
+	// the chain's last: its answer is the close.
+	if record, err := inv.jobRecord(request.Child); err == nil && request.Kind == "continue" {
+		round := recordRound(record)
+		said := fmt.Sprintf("round %d of critique %s requested", round, request.Root)
+		if round >= inv.designRoundLimit(request.Root) {
+			said += ", the final round"
+		}
+		result.Summary = said + "; " + result.Summary
+	}
 	return &result
 }
 
@@ -323,11 +372,14 @@ func (inv *intentInvocation) recordFirstDesignExamination(plan designReviewPlan)
 }
 
 // closeDesignCritique completes a critique whose decisions answer the
-// design version still in place: with no accepted material finding there is
-// nothing left to examine, so the whole close owner closes the chain. An
-// accepted material finding needs a changed design, which the next review
-// examines; it is never closed as clean.
-func (inv *intentInvocation) closeDesignCritique(plan designReviewPlan, chain dispatchcore.DesignCritiqueChain, returnPath, dispositions string) *intentResult {
+// design version still in place, or its final round. Before the final round,
+// an accepted material finding needs a changed design, which the next review
+// examines, and it is never closed as clean. Every answered round's decisions
+// reach the register first (the refuted, the out-of-scope, and an earlier
+// round's accepted findings the follow-up did not raise again); the whole
+// close owner then closes the chain by its own classification, and the
+// close's last act appends the design's Dispositions section.
+func (inv *intentInvocation) closeDesignCritique(plan designReviewPlan, chain dispatchcore.DesignCritiqueChain, returnPath, dispositions string, round int64, final bool) *intentResult {
 	findings, _, err := readIntentFindings(returnPath)
 	if err != nil {
 		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the examination's findings cannot be read: " + err.Error()}
@@ -343,15 +395,50 @@ func (inv *intentInvocation) closeDesignCritique(plan designReviewPlan, chain di
 			accepted = append(accepted, finding.ID)
 		}
 	}
-	if len(accepted) > 0 {
+	if len(accepted) > 0 && !final {
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1, Data: map[string]any{"accepted": accepted},
 			Summary:  fmt.Sprintf("design %s is unchanged, but material finding(s) %s are accepted; nothing was closed", plan.recordID, strings.Join(accepted, ", ")),
 			Decision: "change the design to address them, then run the same review with the same decisions file: the critique examines the new version"}
 	}
+	if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot, chain.Root, inv.registerDecisions(chain.Root, round)); err != nil {
+		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
+			Summary: fmt.Sprintf("the decisions of critique %s cannot reach its register: %v; nothing was closed", chain.Root, err)}
+	}
 	closed := inv.closeChain(chain.Root)
 	closed.Targets = append(append([]intentTarget{}, plan.targets...), closed.Targets...)
-	if closed.Outcome == intentConfirmed || closed.Outcome == intentUnchanged {
-		closed.Summary = fmt.Sprintf("design %s's critique is complete: every finding is decided and chain %s is closed", plan.recordID, chain.Root)
+	if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged {
+		return &closed
+	}
+	return inv.designCritiqueClosed(plan, chain, closed)
+}
+
+// designCritiqueClosed says how the closed chain exited, in the engine's
+// words, and appends the design's Dispositions section as the close's last
+// act. A section that could not be written leaves the chain closed; the same
+// command writes it.
+func (inv *intentInvocation) designCritiqueClosed(plan designReviewPlan, chain dispatchcore.DesignCritiqueChain, closed intentResult) *intentResult {
+	obligations := inv.deferredObligations(chain.Root)
+	closed.Summary = fmt.Sprintf("design %s's critique is complete: every finding is decided and chain %s is closed", plan.recordID, chain.Root)
+	if len(obligations) > 0 {
+		noun := "obligations"
+		if len(obligations) == 1 {
+			noun = "obligation"
+		}
+		closed.Summary = fmt.Sprintf("design %s's critique closed at round %d on %d fixture %s; chain %s is closed and each obligation is published on goal %s",
+			plan.recordID, chain.NewestRound, len(obligations), noun, chain.Root, plan.goalID)
+		closed.text = append(closed.text, obligations...)
+	}
+	appended, err := appendDesignDispositions(plan.design, chain.Root, inv.answeredDesignRounds(chain.Root))
+	data, _ := closed.Data.(map[string]any)
+	if data == nil {
+		data = map[string]any{}
+	}
+	data["closedAt"], data["obligations"], data["dispositions"] = chain.NewestRound, obligations, appended
+	closed.Data = data
+	if err != nil {
+		closed.Outcome, closed.code = intentFailed, 1
+		closed.Summary += fmt.Sprintf("; the design's Dispositions section could not be written: %v", err)
+		closed.next, closed.nextReason = inv.sameCommand(), "the same answer writes the section onto the closed chain's design"
 	}
 	return &closed
 }

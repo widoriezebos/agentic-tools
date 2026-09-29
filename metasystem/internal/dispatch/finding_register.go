@@ -589,6 +589,55 @@ func CritiqueRegisterResolveOutOfScope(repoRoot, rootJob string, findingIDs []st
 	return err
 }
 
+// CritiqueRegisterApplyDecisions carries a design author's validated decisions
+// into the register before the close (g1-s66 D4): a refuted finding is
+// resolved as refuted, which is not an accepted risk; an accepted finding of
+// an earlier round that the follow-up examination did not raise again is
+// resolved as accepted, its amendment having been read; an out-of-scope one as
+// the out-of-scope resolver does, refusing a severe or unproven finding. Only
+// open or disputed findings are decided here: one the critic withdrew or the
+// close deferred keeps its resolution, and an id the register does not carry
+// (a finding that was never material) has nothing to decide. The final round's
+// own accepted findings are not passed here, so the close still classifies
+// them.
+func CritiqueRegisterApplyDecisions(repoRoot, rootJob string, decisions map[string]string) error {
+	for id, resolution := range decisions {
+		if resolution != "refuted" && resolution != "accepted" && resolution != "out-of-scope" {
+			return fmt.Errorf("finding %s: %q is not a decision the register records; it records refuted, accepted and out-of-scope", id, resolution)
+		}
+	}
+	_, err := withFindingRegisterLock(repoRoot, func() (string, error) {
+		return "", withRecordLock(repoRoot, rootJob, func(path string) error {
+			root, err := readObject(path)
+			if err != nil {
+				return err
+			}
+			register, err := decodeFindingRegister(root[findingRegisterField])
+			if err != nil {
+				return err
+			}
+			changed := false
+			for i := range register {
+				resolution, decided := decisions[register[i].FindingID]
+				if !decided || (register[i].Status != "open" && register[i].Status != "disputed") {
+					continue
+				}
+				if resolution == "out-of-scope" && (register[i].RigorClass == critiqueModel.Severe || register[i].RigorClass == critiqueModel.Unproven) {
+					return fmt.Errorf("finding %s is %s and cannot be resolved out-of-scope", register[i].FindingID, register[i].RigorClass)
+				}
+				register[i].Status, register[i].Resolution = "resolved", resolution
+				changed = true
+			}
+			if !changed {
+				return nil
+			}
+			root[findingRegisterField] = encodeFindingRegister(register)
+			return writeRecord(path, root)
+		})
+	})
+	return err
+}
+
 func CritiqueRegisterClose(repoRoot, rootJob string) (string, error) {
 	return critiqueRegisterClose(repoRoot, rootJob, deferReviewObligations)
 }
@@ -1083,7 +1132,8 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 			if !unresolved && finding.Resolution == "" {
 				return nil, fmt.Errorf("entry %d is non-open without a resolution", index)
 			}
-			validResolution := finding.Status == "resolved" && (finding.Resolution == "withdrawn" || finding.Resolution == "out-of-scope") ||
+			validResolution := finding.Status == "resolved" && (finding.Resolution == "withdrawn" || finding.Resolution == "out-of-scope" ||
+				finding.Resolution == "refuted" || finding.Resolution == "accepted") ||
 				finding.Status == "deferred" && finding.Resolution == "deferred" && finding.DecisionOpID != "" ||
 				finding.Status == "accepted-risk" && finding.Resolution == "accepted-risk" && finding.DecisionOpID != ""
 			if !unresolved && !validResolution {

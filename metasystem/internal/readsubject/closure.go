@@ -93,7 +93,7 @@ func CleanRegister(value any) (bool, error) {
 
 		pairIsClean := status == "resolved" && resolution == "withdrawn"
 		pairIsNonClean := (status == "open" || status == "disputed") && resolution == "" ||
-			status == "resolved" && resolution == "out-of-scope" ||
+			status == "resolved" && (resolution == "out-of-scope" || resolution == "refuted" || resolution == "accepted") ||
 			status == "deferred" && resolution == "deferred" ||
 			status == "accepted-risk" && resolution == "accepted-risk"
 		if !pairIsClean && !pairIsNonClean {

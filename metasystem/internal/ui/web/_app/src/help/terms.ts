@@ -100,6 +100,11 @@ export type HelpId =
   | "deposit"
   | "the-case"
   | "the-outcome"
+  | "critique"
+  | "send-to-critique"
+  | "finding-card"
+  | "section-card"
+  | "answer-the-round"
   | "the-board"
   | "sittings"
   | "no-recommendation"
@@ -478,6 +483,31 @@ export const HELP: Record<HelpId, Term> = {
     term: "What this sitting came to",
     text:
       "The closing draft your Project Partner writes when you end a sitting: the outcome as you decided it, the constraints, the open questions with their consequences, and what the table holds. Nothing is weighed and nothing new is settled — it is drafted from the record's own sections and from this conversation. You read it, edit it, and press Record it: it becomes the record's Outcome section, replacing any Outcome the record already had, and the sitting ends then. Ending without recording it is allowed, and it says so: what you recorded during the sitting stays, and the outcome is not written.",
+  },
+  critique: {
+    term: "Critique",
+    text:
+      "An independent critic's reading of this design, in rounds: a design critique has two, and the second is the failsafe round — there is no third. Each round's findings stand here as cards, read from that round's own return. You decide every one, and Answer the round hands your decisions to the engine, which closes the critique or asks for the next round by its own rules. When it closes, the design gains its Dispositions table at the foot.",
+  },
+  "send-to-critique": {
+    term: "Send to critique",
+    text:
+      "Starts the configured critique lane on this design, as `metasystem design review` does at a terminal. The goal that funds it must be approved; the reader budget is the most tool calls the critic may make, and the engine refuses a review without one. Sending a design that is already being read rejoins that round rather than buying another.",
+  },
+  "finding-card": {
+    term: "A finding",
+    text:
+      "One finding of one round: how severe, whether it is material, the claim, and the evidence it rests on. Fold asks your Project Partner for the section the finding names, and Use writes it and records the finding accepted with its amendment. Refute records it refuted with your reason. Defer records a finding that is not material as noted, and a material one as out of scope, with the evidence that it is outside the brief. Each press writes one row of the round's decisions file; nothing a press writes goes into the design.",
+  },
+  "section-card": {
+    term: "A section, drafted anew",
+    text:
+      "Old and new side by side, the changed lines marked. Use replaces exactly that section of the design, checked against the version you read; a heading that is not in the design, or is in it twice, cannot be told apart and nothing is written. If the design changed since you read it, the section is read again and compared before Use is offered again.",
+  },
+  "answer-the-round": {
+    term: "Answer the round",
+    text:
+      "Hands the round's decisions to the engine. A design nothing you folded changed is closed; a design a fold changed gets the next round, the failsafe; on the final round the engine closes by its own rules — cleanly, on fixture obligations it publishes on the goal, or it leaves the critique open for a person. What it did is shown in its own words.",
   },
   reviews: {
     term: "Reviews",

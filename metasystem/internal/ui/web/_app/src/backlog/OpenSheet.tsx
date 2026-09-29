@@ -93,6 +93,7 @@ import { failureMessage } from "../shell/workspace";
 export function OpenSheet({
   backlog,
   intent = "",
+  nextStep = "",
   onClose,
   onDone,
 }: {
@@ -104,11 +105,16 @@ export function OpenSheet({
    * way it is a first draft — the human writes what done looks like.
    */
   intent?: string;
+  /**
+   * What the next step opens with, where the opener knows it: a design's page
+   * opening a goal from its Outcome says where to continue from (g1-s66 D5).
+   */
+  nextStep?: string;
   onClose: () => void;
   /** The ledger as it stands after the act, which is what shows the card. */
   onDone: (opened: Backlog, id: string) => void;
 }) {
-  const [intake, setIntake] = useState<Intake>(() => intakeFor(intent));
+  const [intake, setIntake] = useState<Intake>(() => intakeFor(intent, nextStep));
   // This opening of this sheet, minted once, which is what a suggestion for one
   // of its fields belongs to.
   const opening = useOpening();
