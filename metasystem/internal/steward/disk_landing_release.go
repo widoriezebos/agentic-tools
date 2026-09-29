@@ -63,6 +63,10 @@ type landingRecord struct {
 	Landing    string
 	Swept      bool
 	ReleaseSet *diskstore.ReleaseSet
+	// Staged, Subject and Endpoint are a staged landing's: the commit and
+	// the remote-tracking ref it was pushed to.
+	Staged            bool
+	Subject, Endpoint string
 }
 
 func readLandingRecord(path string) (landingRecord, map[string]json.RawMessage, error) {
@@ -85,12 +89,31 @@ func unfinished(record landingRecord) bool {
 	return record.Landing != "" && record.Swept && record.ReleaseSet != nil && !record.ReleaseSet.Finished()
 }
 
-// Plan lists every swept landing whose set is unfinished; it writes nothing.
-func (c LandingReleaseSets) Plan(_ context.Context, _ *diskstore.Pass) ([]diskstore.Item, error) {
+// stagedPushed reports a staged landing that crashed after its push: the
+// remote-tracking ref it was pushed to contains its commit (read as it
+// stands; nothing is fetched).
+func (c LandingReleaseSets) stagedPushed(ctx context.Context, record landingRecord) bool {
+	if !record.Staged || record.Swept || record.Subject == "" || !strings.HasPrefix(record.Endpoint, "refs/remotes/") ||
+		record.ReleaseSet == nil || record.ReleaseSet.Finished() || c.Git == nil {
+		return false
+	}
+	_, err := c.Git(ctx, c.GitRoot, "merge-base", "--is-ancestor", record.Subject, record.Endpoint)
+	return err == nil
+}
+
+// Plan lists every swept landing whose set is unfinished, and every staged
+// landing whose push landed before it could release; it writes nothing.
+func (c LandingReleaseSets) Plan(ctx context.Context, _ *diskstore.Pass) ([]diskstore.Item, error) {
 	var items []diskstore.Item
 	for _, path := range c.records() {
 		record, _, err := readLandingRecord(path)
-		if err != nil || !unfinished(record) {
+		if err != nil {
+			continue
+		}
+		if c.stagedPushed(ctx, record) {
+			record.Landing, record.Swept = record.Subject, true
+		}
+		if !unfinished(record) {
 			continue
 		}
 		pending := 0
@@ -117,6 +140,10 @@ func (c LandingReleaseSets) Apply(ctx context.Context, pass *diskstore.Pass, ite
 	if err != nil {
 		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "the landing record is unreadable: " + err.Error(), Command: "metasystem disk show"}
 	}
+	stagedPushed := c.stagedPushed(ctx, record)
+	if stagedPushed {
+		record.Landing, record.Swept = record.Subject, true
+	}
 	if !unfinished(record) {
 		return diskstore.Verdict{Decision: diskstore.Release, Reason: "the release set is finished"}
 	}
@@ -132,10 +159,14 @@ func (c LandingReleaseSets) Apply(ctx context.Context, pass *diskstore.Pass, ite
 			}
 			return census
 		}}
-	if diskstore.RunReleaseSet(ctx, request, record.ReleaseSet) {
+	if diskstore.RunReleaseSet(ctx, request, record.ReleaseSet) || stagedPushed {
 		encoded, err := json.Marshal(record.ReleaseSet)
 		if err == nil {
 			whole["ReleaseSet"] = encoded
+			if stagedPushed {
+				whole["Landing"], _ = json.Marshal(record.Landing)
+				whole["Swept"] = json.RawMessage("true")
+			}
 			var data []byte
 			if data, err = json.Marshal(whole); err == nil {
 				_, err = atomicfile.WriteFile(item.Path, data, 0o644, filepath.Dir(item.Path))

@@ -12,7 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"context"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -24,6 +26,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
@@ -57,6 +61,10 @@ type BatchJoinDependencies struct {
 	Ensure           func(string) error
 	Author           func(string, *goal.GoalFile) (string, string, string, error)
 	Prober           identity.Prober
+	// ReleaseSet selects, in the seat checkout, the goal's workspaces whose
+	// work the joined tip contains (disk-lifetimes Part B 3.6): recorded in
+	// the member at join, released at P6. Nil records none.
+	ReleaseSet func(seatRoot, goalID, tip string) (*diskstore.ReleaseSet, error)
 }
 
 var BatchJoinDependenciesForCommand = ProductionBatchJoinDependencies
@@ -65,9 +73,10 @@ var BatchTreePlanExecutable = os.Executable
 
 func ProductionBatchJoinDependencies() BatchJoinDependencies {
 	return BatchJoinDependencies{
-		Binding: dispatchcore.ResolveGoalBinding,
-		Chain:   batch.ReadCertifiedChain,
-		Base:    fetchLandingBaseTree,
+		ReleaseSet: SelectMemberReleaseSet,
+		Binding:    dispatchcore.ResolveGoalBinding,
+		Chain:      batch.ReadCertifiedChain,
+		Base:       fetchLandingBaseTree,
 		Mint: func() (string, error) {
 			id, err := goal.NewOperationULID()
 			return strings.ToLower(id), err
@@ -206,6 +215,14 @@ func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependenci
 		// A chain member has no builds; its tip is the commit the chain
 		// publishes, which the publication gate binds the human's word to.
 		unit.BranchTip = request.ChainHead
+	}
+	// The goal's workspaces whose work this member lands (its tip), recorded
+	// in the member now and released by the batch's P6 step (disk-lifetimes
+	// Part B 3.6).
+	if dependencies.ReleaseSet != nil && unit.BranchTip != "" {
+		if unit.ReleaseSet, err = dependencies.ReleaseSet(request.SeatRoot, request.GoalID, unit.BranchTip); err != nil {
+			return batch.Record{}, fmt.Errorf("the goal's workspaces cannot be judged for this landing's release set: %w", err)
+		}
 	}
 	for path := range batch.ChangedPaths(patch) {
 		unit.ChangedPaths = append(unit.ChangedPaths, path)
@@ -450,4 +467,41 @@ func productionForwardHandover(request BatchJoinRequest, batchID string, source 
 	return BatchOwnerCalls.Handover(ownercall.FromThisProcess(source.Lineage), ownercall.HandoverRequest{Root: request.SeatRoot,
 		GoalID: request.GoalID, TargetMachine: machine, TargetLineage: LandingOwnerLineage,
 		TargetEpoch: holder.ClaimEpoch, Batch: batchID})
+}
+
+// SelectMemberReleaseSet selects, in the member's seat checkout, the goal's
+// accepted copies whose every tip the joined tip contains and whose tree is
+// clean: the release set the batch's P6 step runs (disk-lifetimes Part B
+// 3.6, Round B3 ruling). It reads only.
+func SelectMemberReleaseSet(seatRoot, goalID, tip string) (*diskstore.ReleaseSet, error) {
+	layout, err := stateroot.ResolveLayout(seatRoot)
+	if err != nil {
+		return nil, err
+	}
+	set, err := diskstore.SelectReleaseSet(context.Background(), diskstore.CheckoutRegistry(seatRoot), layout.GitRoot, goalID, tip, steward.ExecWorkspaceGit)
+	if err != nil {
+		return nil, err
+	}
+	return &set, nil
+}
+
+// ReleaseMemberSet releases a landed member's recorded set in its seat
+// checkout through diskstore.ReleaseWorkspace, each workspace's tips
+// archived first and judged against the landed tip again; an unreadable
+// seat leaves every entry pending for the next recovery.
+func ReleaseMemberSet(batchID string, at time.Time) func(batch.Unit, *diskstore.ReleaseSet) {
+	return func(unit batch.Unit, set *diskstore.ReleaseSet) {
+		layout, err := stateroot.ResolveLayout(unit.SeatRoot)
+		if err != nil {
+			return
+		}
+		request := diskstore.WorkspaceReleaseRequest{Registry: diskstore.CheckoutRegistry(unit.SeatRoot), GitRoot: layout.GitRoot,
+			Git: steward.ExecWorkspaceGit, By: "landing batch " + batchID, Now: at.UTC(),
+			TakeCensus: func() *diskstore.UseCensus {
+				home, _ := steward.HomeStateRoot()
+				census := diskstore.TakeUseCensus(context.Background(), *steward.KernelCensusReader(home, append(steward.ArmedCheckouts(), unit.SeatRoot)))
+				return &census
+			}}
+		diskstore.RunReleaseSet(context.Background(), request, set)
+	}
 }

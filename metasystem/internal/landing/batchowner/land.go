@@ -732,6 +732,7 @@ func BatchRecoverySeamsWithGit(root string, store batch.Store, id string, at tim
 			}
 			return batch.CleanupLandingBranch(root, id, record.Landing.PushedTip)
 		},
+		Release: ReleaseMemberSet(id, at),
 	}
 }
 

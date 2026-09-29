@@ -106,6 +106,10 @@ func runIntentLandStaged(inv *intentInvocation) int {
 			// Admission is not the last word: the same gate is read again
 			// immediately before each push.
 			owners.LandingGate = inv.pushGate()
+			// The goal's workspaces this landing ends: recorded before each
+			// push, released once it succeeded (disk-lifetimes Part B 3.6).
+			owners.RecordRelease = func(commit, branch string) error { return inv.recordStagedRelease(request.Goal, commit, branch) }
+			owners.ReleaseLanded = func(commit string) { inv.releaseStagedLanding(request.Goal, commit) }
 		}
 	}
 	stdout, stderr := inv.stdout, inv.stderr
