@@ -104,3 +104,49 @@ func TestReportLinesGroupRepeatedFindings(t *testing.T) {
 		t.Fatalf("report lines:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+// Strays with the same reason and command are one line with their count,
+// their total size and the three largest, whatever their ages: the live
+// preview printed 2330 stray lines.
+func TestReportLinesGroupStrays(t *testing.T) {
+	t.Parallel()
+	report := Report{Schema: ReportSchema, Kind: "machine", Name: "machine", At: testNow, Mode: ModePreview}
+	for index := 0; index < 5; index++ {
+		report.Strays = append(report.Strays, Item{Path: fmt.Sprintf("/tmp/metasystem-proofrun-admission.%d", index), Bytes: int64(index+1) << 20, IdleSecs: 90000 + int64(index),
+			Verdict: Verdict{Decision: Keep, Reason: "engine-prefixed entry no store owns", Command: "metasystem disk clean --preview, then metasystem disk clean --strays"}})
+	}
+	for index := 0; index < 3; index++ {
+		report.Strays = append(report.Strays, Item{Path: fmt.Sprintf("/tmp/metasystem-audit.%d", index), Bytes: 10, IdleSecs: int64(3600 * (index + 1)),
+			Verdict: Verdict{Decision: Keep, Reason: fmt.Sprintf("engine-prefixed entry no store owns, written %dh0m0s ago: not removable before it is idle a day", index+1), Command: "metasystem disk show"}})
+	}
+	report.Strays = append(report.Strays, Item{Path: "/tmp/metasystem-one", Bytes: 4 << 20, IdleSecs: 90000,
+		Verdict: Verdict{Decision: Keep, Reason: "engine-prefixed entry no store owns", Command: "metasystem disk clean --strays"}})
+	want := []string{
+		"machine: preview pass at 2026-09-28T12:00:00Z",
+		"  strays: 5 items, 15.0 MiB: engine-prefixed entry no store owns; run metasystem disk clean --preview, then metasystem disk clean --strays (largest: /tmp/metasystem-proofrun-admission.4 5.0 MiB, /tmp/metasystem-proofrun-admission.3 4.0 MiB, /tmp/metasystem-proofrun-admission.2 3.0 MiB)",
+		"  strays: 3 items, 30 B: engine-prefixed entry no store owns, written less than a day ago: not removable before it is idle a day; run metasystem disk show (largest: /tmp/metasystem-audit.0 10 B, /tmp/metasystem-audit.1 10 B, /tmp/metasystem-audit.2 10 B)",
+		"  stray: /tmp/metasystem-one, 4.0 MiB, idle 25h0m0s: engine-prefixed entry no store owns; run metasystem disk clean --strays",
+	}
+	if got := report.Lines(); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("report lines:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// Releases and planned releases with the same reason are one line each
+// with their count and three examples.
+func TestReportLinesGroupReleases(t *testing.T) {
+	t.Parallel()
+	report := Report{Schema: ReportSchema, Kind: "checkout", Name: "/repo", At: testNow, Mode: ModeApply}
+	for index := 0; index < 4; index++ {
+		report.Actions = append(report.Actions, Line{Class: "context handoffs", Path: fmt.Sprintf("/repo/h/%d", index), Reason: "context handoff removed"})
+		report.Planned = append(report.Planned, Item{Class: "context handoffs", Path: fmt.Sprintf("/repo/p/%d", index), Verdict: Verdict{Decision: Release, Reason: "complete"}})
+	}
+	want := []string{
+		"checkout /repo: apply pass at 2026-09-28T12:00:00Z",
+		"  released: 4 items (context handoff removed) (e.g. /repo/h/0, /repo/h/1, /repo/h/2)",
+		"  would release: 4 items (complete) (e.g. /repo/p/0, /repo/p/1, /repo/p/2)",
+	}
+	if got := report.Lines(); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("report lines:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -184,18 +185,18 @@ func (r Report) Lines() []string {
 		}
 		lines = append(lines, line)
 	}
+	var released, planned [][2]string
 	for _, action := range r.Actions {
-		lines = append(lines, fmt.Sprintf("  released: %s (%s)", action.Path, action.Reason))
+		released = append(released, [2]string{action.Path, action.Reason})
 	}
 	for _, item := range r.Planned {
-		lines = append(lines, fmt.Sprintf("  would release: %s (%s)", item.Path, item.Verdict.Reason))
+		planned = append(planned, [2]string{item.Path, item.Verdict.Reason})
 	}
+	lines = append(lines, groupedReleases("released", released)...)
+	lines = append(lines, groupedReleases("would release", planned)...)
 	lines = append(lines, groupedLines("kept", r.Kept)...)
 	lines = append(lines, groupedLines("pending", r.Pending)...)
-	for _, stray := range r.Strays {
-		lines = append(lines, fmt.Sprintf("  stray: %s, %s, idle %s: %s; run %s", stray.Path, formatBytes(stray.Bytes),
-			(time.Duration(stray.IdleSecs)*time.Second).String(), stray.Verdict.Reason, stray.Verdict.Command))
-	}
+	lines = append(lines, groupedStrays(r.Strays)...)
 	for _, item := range r.Foreign {
 		lines = append(lines, fmt.Sprintf("  not the engine's: %s (%s)", item.Path, item.Verdict.Reason))
 	}
@@ -255,6 +256,75 @@ func groupedLines(kind string, lines []Line) []string {
 			text += "; run " + g.first.Command
 		}
 		rendered = append(rendered, text+examples(g.paths))
+	}
+	return rendered
+}
+
+// groupedReleases renders released or planned paths with their reasons,
+// one line per reason with its count and three examples.
+func groupedReleases(kind string, releases [][2]string) []string {
+	var order []string
+	paths := map[string][]string{}
+	for _, release := range releases {
+		if paths[release[1]] == nil {
+			order = append(order, release[1])
+		}
+		paths[release[1]] = append(paths[release[1]], release[0])
+	}
+	var rendered []string
+	for _, reason := range order {
+		if group := paths[reason]; len(group) == 1 {
+			rendered = append(rendered, fmt.Sprintf("  %s: %s (%s)", kind, group[0], reason))
+		} else {
+			rendered = append(rendered, fmt.Sprintf("  %s: %d items (%s)%s", kind, len(group), reason, examples(group)))
+		}
+	}
+	return rendered
+}
+
+// strayAgePattern is the variable age a too-young stray's reason carries.
+var strayAgePattern = regexp.MustCompile(`, written [0-9hms.]+ ago:`)
+
+// groupedStrays renders the strays, one line per finding: strays with the
+// same reason (whatever their ages) and command are one line with their
+// count, total size and the three largest, at the place of the first.
+func groupedStrays(strays []Item) []string {
+	type group struct {
+		reason string
+		items  []Item
+	}
+	var order []string
+	groups := map[string]*group{}
+	for _, stray := range strays {
+		reason := strayAgePattern.ReplaceAllString(stray.Verdict.Reason, ", written less than a day ago:")
+		key := reason + "\x00" + stray.Verdict.Command
+		if groups[key] == nil {
+			groups[key] = &group{reason: reason}
+			order = append(order, key)
+		}
+		groups[key].items = append(groups[key].items, stray)
+	}
+	var rendered []string
+	for _, key := range order {
+		g := groups[key]
+		if len(g.items) == 1 {
+			stray := g.items[0]
+			rendered = append(rendered, fmt.Sprintf("  stray: %s, %s, idle %s: %s; run %s", stray.Path, formatBytes(stray.Bytes),
+				(time.Duration(stray.IdleSecs)*time.Second).String(), stray.Verdict.Reason, stray.Verdict.Command))
+			continue
+		}
+		largest := append([]Item(nil), g.items...)
+		sort.SliceStable(largest, func(i, j int) bool { return largest[i].Bytes > largest[j].Bytes })
+		var total int64
+		for _, stray := range g.items {
+			total += stray.Bytes
+		}
+		var named []string
+		for _, stray := range largest[:min(len(largest), examplePaths)] {
+			named = append(named, stray.Path+" "+formatBytes(stray.Bytes))
+		}
+		rendered = append(rendered, fmt.Sprintf("  strays: %d items, %s: %s; run %s (largest: %s)", len(g.items), formatBytes(total), g.reason,
+			g.items[0].Verdict.Command, strings.Join(named, ", ")))
 	}
 	return rendered
 }
