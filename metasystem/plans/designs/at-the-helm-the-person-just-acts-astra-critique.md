@@ -1,3 +1,5 @@
+# Astra round 1 (task-mumsddti-olzuyw, commit 5b7d6ac4b), verbatim
+
 One material finding: the checkout comparison rejects an active helm in a submodule’s primary worktree. The ordinary checkout path appears sound by source inspection.
 
 **HA-01 — Medium severity; material: yes**
@@ -47,6 +49,61 @@ Proposed receipt, unwritten: `Independent helm slice-1 design critique at 5b7d6a
 Commit reviewed: `5b7d6ac4ba710a0bb778e954396d96ee7456e16e`, branch `ui-development`.
 
 Limitations: no tests, builds, commits, or GitHub Desktop actions were run. Failure traces are inferred from committed source. The hook was inspected as a local, unversioned file. No files were changed; the prohibited configuration and artifact directories were not read.
+
+Codex session ID: 01a0ed9e-9deb-7bb2-a339-cd0d6cbfcd9d
+Resume in Codex: codex resume 01a0ed9e-9deb-7bb2-a339-cd0d6cbfcd9d
+
+
+# Astra round 2, the failsafe (task-mumslsjy-v11waj, commit 4da766b7b), verbatim
+
+**HA-01 is FIXED:** the revised predicate admits a submodule’s primary worktree. HA-02’s test wording is also reconciled. One new material finding remains: Git steering can make a linked worktree pass the primary-checkout test.
+
+**HA-03 — High severity; material: yes**
+
+**Claim.** Equality between the effective Git directory and common directory does not prove that the hook runs in that repository’s primary checkout. Both answers honor Git’s environment; the helm reader independently follows the checkout’s on-disk `.git` entry.
+
+**Evidence at the reviewed commit.**
+
+- [Design:32](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/at-the-helm-the-person-just-acts.md:32) requires the two Git answers to match and asserts that `helm.Active(workTree)` necessarily reads the same seat.
+- [helm.go:49](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/helm/helm.go:49) resolves the seat through the filesystem. Its deliberate independence from Git steering is covered by [helm_test.go:119](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/helm/helm_test.go:119).
+- [landing_path.go:42](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/landing_path.go:42) runs Git with the inherited environment.
+- [precommit_entry.go:21](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/precommit_entry.go:21) supplies the hook’s working directory to the guard.
+
+**Concrete failure.** Let `P` be a primary checkout holding the helm and `W` its linked worktree. A headless caller commits with `GIT_DIR=P/.git` and `GIT_WORK_TREE=W`. The hook runs in `W`; `helm.Active(W)` finds P’s active signature. Both Git queries return `P/.git`, so revision 2 grants the yield even though the caller operates in the excluded linked worktree. On main without a wrapper token, today’s guard refuses.
+
+This directory behavior was **verified with read-only Git commands** against the existing `agentic-tools-ui` primary checkout and `agentic-tools-dot` linked worktree:
+
+| Invocation | Git directory | Common directory | Worktree |
+|---|---|---|---|
+| Ordinary linked worktree | `P/.git/worktrees/agentic-tools-dot` | `P/.git` | `W` |
+| Steered as above | `P/.git` | `P/.git` | `W` |
+
+The same mismatch can borrow a held checkout’s signature while targeting another clone’s Git directory. Commit admission is inferred from the proposed predicate; no commit was attempted.
+
+**Change to the design.** Bind the predicate to the actual checkout’s `.git` entry. Require its resolved administrative directory to equal both effective Git directory answers. For example, resolve the explicit `<workTree>/.git` path with `git rev-parse --resolve-git-dir`, then canonicalize and compare. Read-only probes confirmed that this explicit-path resolution still identifies the linked worktree’s administrative directory under the steering above.
+
+Add fixtures for the steered linked-worktree case and a held-checkout/foreign-repository mismatch. Both must retain today’s guard decision and produce no helm yield. Ordinary primary and submodule cases must continue to pass.
+
+**Test 1:** DIFFERENT — changes D-scope’s predicate and fixtures.  
+**Test 2:** WORKS/SAFE without it: **no** — an excluded linked-worktree invocation gains admission, and authority can cross repository boundaries.
+
+**Deferred and non-material**
+
+No additional non-material findings are reported. Slices 2 and 3 and broader robustness work remain deferred.
+
+**What I verified holds**
+
+- HA-01’s original submodule failure is removed: eligibility no longer depends on `Seat.Checkout`.
+- Ordinary primary and linked-worktree Git directory relationships match the revised design; symlink canonicalization remains specified.
+- HA-02 now correctly distinguishes classifier-unavailable fixtures from a wrapper yield followed by a damage-check refusal.
+- A no-worktree invocation fails `--show-toplevel` before reaching the proposed predicate; the fold does not change that existing guard path.
+- The relevant implementation files are unchanged between the two reviewed commits.
+
+Proposed receipt, unwritten: `Helm design round 2: HA-01 fixed; HA-03 identifies Git-steering admission outside the primary checkout; read-only directory probes and source inspection.`
+
+Reviewed commit: `4da766b7b5558e78a4747c8418e48676b43448b3`, branch `ui-development`. Limitations: no implementation tests, builds, hook execution, or commits; submodule admission and proposed guard outcomes were assessed from source and design. No files were changed or prohibited configuration/artifact contents read.
+
+**VERDICT: 1 material finding (fail test 2): HA-03**
 
 Codex session ID: 01a0ed9e-9deb-7bb2-a339-cd0d6cbfcd9d
 Resume in Codex: codex resume 01a0ed9e-9deb-7bb2-a339-cd0d6cbfcd9d
