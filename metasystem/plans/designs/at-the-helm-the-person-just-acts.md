@@ -86,3 +86,5 @@ No change to `helm take`'s proof, to `helm return` beyond the help clause, to th
 ## 8. Built
 
 Slice 1 built by Claude on Opus 5.5 on branch `helm-acts-s1`: `7c8ba19af` (the guard yields at the helm in the seat's primary checkout, seven guard tests), `6f7393dfe` (production wiring, the help clause, the end-to-end with no controlling terminal), `cca1d4801` (this page's Status line). Checks: landpath coverage 87.2 (floor 85.5), helm, the end-to-end, the wall-time audit, `devgate static`, all green. Sol's code read: zero material findings (`at-the-helm-the-person-just-acts-sol-read.md`). Lands through m1e's batch.
+
+Landed on main in m1e batch 22 as `643d6a0d4` (2026-09-29).
