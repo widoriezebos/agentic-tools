@@ -335,7 +335,8 @@ func TestCadencePackagesUseNoWallClock(t *testing.T) {
 	}
 	paths = append(paths,
 		filepath.Join("..", "proofrun", "reuse_policy.go"),
-		filepath.Join("..", "..", "cmd", "metasystem", "gate_cadence.go"),
+		// The production cadence tick moved here from gate_cadence.go (C8a part 2).
+		filepath.Join("..", "..", "cmd", "metasystem", "landing_batch_engine.go"),
 		filepath.Join("..", "cadence", "tick.go"),
 	)
 	for _, path := range paths {
