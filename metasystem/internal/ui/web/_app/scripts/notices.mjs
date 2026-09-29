@@ -38,6 +38,18 @@ const SUPPLEMENTED = new Map([
   ],
 ]);
 
+/**
+ * Packages whose manifest declares no licence while the tarball ships one,
+ * keyed name@version, with the identifier that shipped file is and where it was
+ * read. The text in the notices is still the shipped file's own; only the
+ * identifier the manifest omits is named here, and a package missing from this
+ * map with no declaration still refuses the build.
+ *
+ * khroma is mermaid's colour library (g1-s71 D2); its package.json has no
+ * license field and its shipped `license` file is the MIT licence.
+ */
+const DECLARED = new Map([["khroma@2.1.0", "MIT"]]);
+
 export function writeNotices(appDir, distDir) {
   const lock = JSON.parse(readFileSync(path.join(appDir, "package-lock.json"), "utf8"));
   const packages = lock.packages ?? {};
@@ -98,7 +110,7 @@ function resolve(packages, from, name) {
 function read(appDir, location, entry) {
   const dir = path.join(appDir, location);
   const manifest = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8"));
-  const license = identifier(entry, manifest);
+  const license = identifier(entry, manifest) || (DECLARED.get(`${manifest.name}@${manifest.version}`) ?? "");
   if (license === "") {
     throw new Error(`${location} declares no licence`);
   }

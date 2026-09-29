@@ -91,6 +91,17 @@ func TestOneEvidenceFileIsAnImageOrTextFromOutsideTheCheckout(t *testing.T) {
 	plain, err := owner.EvidenceFile(named, "notes/walk.txt")
 	testutil.Require(t, "a headingless text", err, nil)
 	testutil.Expect(t, "a report without headings is a report", plain.Text, "no headings here\njust lines\n")
+	// The section renderer's own blocks, over the bytes this read returned: a
+	// report's headings, and a headingless text's paragraphs.
+	kinds := func(read EvidenceFile) []string {
+		said := []string{}
+		for _, block := range read.Blocks {
+			said = append(said, block.Type)
+		}
+		return said
+	}
+	testutil.Expect(t, "the report's blocks", kinds(report), []string{"heading", "heading", "paragraph"})
+	testutil.Expect(t, "the headingless text's", kinds(plain), []string{"paragraph"})
 
 	// A relative Evidence line is the checkout's: the path is joined to it.
 	writeFile(t, filepath.Join(owner.Checkout, "artifacts", "evidence", "shot.png"), "png")

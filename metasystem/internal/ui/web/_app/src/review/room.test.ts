@@ -38,6 +38,9 @@ import {
   withoutDraft,
   type Desk,
   type DeskItem,
+  deskLabel,
+  EMPTY_DESK,
+  remarksIn,
 } from "./room";
 import { appended, cardsIn, entryOf, type Entry } from "../partner/sitting";
 import { recorder, type Written } from "../partner/recording";
@@ -510,5 +513,57 @@ describe("Review it after a refused open (Sol SOL-A-05)", () => {
       purpose: "review",
       subject: { kind: "record", id: "metasystem/plans/reviews/review-of-g1-s64.md", title: "Review of g1-s64" },
     });
+  });
+});
+
+describe("the whiteboard's desk items (g1-s71 D2, D4)", () => {
+  const evidence: DeskItem = { kind: "evidence", record: "plans/reviews/r.md", path: "shots/room-1280-light.png" };
+  const listing: DeskItem = { kind: "evidence", record: "plans/reviews/r.md", path: "" };
+  const drawing: DeskItem = { kind: "drawing", id: "0a1b2c3d", source: "flowchart LR\n  a --> b", caption: "How does the handoff work?" };
+
+  it("an evidence file and a drawing are each one strip entry, named in a few words", () => {
+    const desk = onDesk(onDesk(onDesk(onDesk(EMPTY_DESK, evidence), drawing), listing), evidence);
+    expect(desk.items.map(deskKey)).toEqual([
+      "evidence:plans/reviews/r.md#shots/room-1280-light.png",
+      "evidence:plans/reviews/r.md#",
+      "drawing:0a1b2c3d",
+    ]);
+    expect(desk.items.map(deskLabel)).toEqual(["room-1280-light.png", "the evidence", "drawing · How does the handoff work?"]);
+  });
+
+  it("are examined, and anchored, as what they are", () => {
+    expect(anchorOf(evidence)).toBe("shots/room-1280-light.png in the evidence");
+    expect(examinedLine([drawing, evidence])).toBe(
+      'Examined: shots/room-1280-light.png in the evidence; the drawing for "How does the handoff work?"',
+    );
+  });
+
+  it("are restored from the mark whole, so a reload reads them the same way", () => {
+    const kept = roomOf({ desk: { items: [evidence, drawing], current: 0 }, face: "desk", drafts: {} });
+    expect(kept.desk.items).toEqual([evidence, drawing]);
+  });
+
+  it("read back an anchor that names its commit as the lines it names", () => {
+    expect(parseAnchor("internal/owner.go:41-46 at 9c1f0a2")).toEqual({ kind: "source", path: "internal/owner.go", from: 41, to: 46 });
+    expect(parseAnchor("internal/owner.go:41 at main")).toBeNull();
+  });
+});
+
+describe("an unwritten remark across Step out (g1-s71 D1)", () => {
+  it("rides the room's drafts to the mark and comes back with what it is about", async () => {
+    const about = { kind: "source" as const, id: "r.md", record: "r.md", path: "internal/owner.go", from: 41, to: 46, commit: "9c1f0a2e9" };
+    const sent: unknown[] = [];
+    const keeper = new RoomKeeper(async (_record, room) => {
+      sent.push(JSON.parse(JSON.stringify(room)));
+    });
+    keeper.open("r.md", roomState({ items: [], current: -1 }, "desk", {}), 0, 1);
+    const drafts = withDraft({}, "remark-0a1b", { text: "this lock is taken tw", clause: "", kind: "remark", about });
+    await keeper.keep(() => roomState({ items: [], current: -1 }, "board", drafts));
+
+    const back = roomOf(sent[0] as { drafts?: unknown });
+    expect(remarksIn(back.drafts)).toEqual({
+      "remark-0a1b": { text: "this lock is taken tw", clause: "", kind: "remark", about },
+    });
+    expect(remarksIn({ "local-1": { text: "a finding", clause: "a.go:1" } })).toEqual({});
   });
 });

@@ -130,6 +130,9 @@ import { useSession } from "../shell/identity";
 import { useTroubles, type TroubleAsk } from "../shell/troubles";
 import { onPage, pendingIn, sendChoice, TROUBLE_REQUEST, waitingLine as troubleWaits, type Pending } from "../shell/troubling";
 import { editDocument, isStale, loadDocument } from "../project/api";
+import { keepDrawing as keepOnce, type Kept } from "../drawing/drawings";
+import type { Source } from "../review/api";
+import type { About } from "../stickies/api";
 import { captured } from "../stickies/stickies";
 import { useStickies } from "../stickies/store";
 import { roomIdFromPath } from "../routes";
@@ -151,6 +154,8 @@ import {
   roomOf,
   withDraft,
   withoutDraft,
+  REMARK_DRAFT,
+  remarksIn,
   type AnswerKind,
   type Desk,
   type DeskItem,
@@ -423,7 +428,27 @@ type Partner = {
    * and the words left empty: a review's finding (D7), a shaping sitting's fact
    * (g1-s67 D4).
    */
-  startCard: (anchor: string, kind: string) => void;
+  startCard: (anchor: string, kind: string, text?: string) => void;
+  /**
+   * The desk's last source read (g1-s71 D1): what a remark made on its lines
+   * keeps, and what the board reads a shaping remark against.
+   */
+  deskRead: Source | null;
+  noteRead: (read: Source) => void;
+  /** The remarks being written, by id; kept with the room's drafts until saved or dropped (g1-s71 D1). */
+  remarking: Readonly<Record<string, Draft>>;
+  /** Open a remark about lines or a section, with no words yet. */
+  startRemark: (about: About) => void;
+  /** The words of one remark being written. */
+  noteRemark: (id: string, text: string) => void;
+  /** A remark saved or given up: it leaves the drafts. */
+  dropRemark: (id: string) => void;
+  /**
+   * Keep it (g1-s71 D3): the drawing appended under the record's Drawings
+   * section through the recorder, once. It answers "" when the record keeps
+   * it, and the refusal in words when it does not.
+   */
+  keepDrawing: (kept: Kept) => Promise<string>;
   /**
    * Answer one recorded finding: its Answer line rewritten by its mark through
    * the recorder (D8). It answers "" when the record took it, and the refusal
@@ -683,6 +708,13 @@ const nothing: Partner = {
   stoppedPresenting: "",
   stopPresenting: () => {},
   startCard: () => {},
+  deskRead: null,
+  noteRead: () => {},
+  remarking: {},
+  startRemark: () => {},
+  noteRemark: () => {},
+  dropRemark: () => {},
+  keepDrawing: async () => "",
   answerFinding: async () => "",
   accepting: {},
   noteAccepting: () => {},
@@ -836,6 +868,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const [desk, setDesk] = useState(EMPTY_DESK);
   const [face, setFaceState] = useState<Face>("desk");
   const [locals, setLocals] = useState<Readonly<Record<string, Draft>>>({});
+  const [remarking, setRemarking] = useState<Readonly<Record<string, Draft>>>({});
+  const [deskRead, setDeskRead] = useState<Source | null>(null);
   const [accepting, setAccepting] = useState<Readonly<Record<string, string>>>({});
   const [stoppedPresenting, setStoppedPresenting] = useState("");
   const roomTaken = useRef("");
@@ -957,6 +991,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     setStore({ ...emptyStore, conversation: where });
     setDepositMarks({});
     setLocals({});
+    setRemarking({});
+    setDeskRead(null);
     setAccepting({});
     const aborter = new AbortController();
     read(aborter.signal);
@@ -1923,6 +1959,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     for (const [id, draft] of Object.entries(kept.drafts)) {
       if (id === BRIEF_DRAFT) {
         setBriefState(draft.text);
+      } else if (id.startsWith(REMARK_DRAFT)) {
+        continue;
       } else if (id.startsWith(LOCAL)) {
         mine[id] = draft;
       } else {
@@ -1933,6 +1971,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       }
     }
     setLocals(mine);
+    setRemarking(remarksIn(kept.drafts));
     setDepositMarks((held) => ({ ...marks, ...held }));
     setAccepting(reasons);
     keeper.open(asked, kept, snapshot.sitting?.room?.seq ?? 0);
@@ -2004,8 +2043,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     if (brief !== null) {
       held = withDraft(held, BRIEF_DRAFT, { text: brief, clause: "" });
     }
+    // A remark being written, with what it is about (g1-s71 D1).
+    for (const [id, remark] of Object.entries(remarking)) {
+      held = withDraft(held, id, remark);
+    }
     return held;
-  }, [deposits, accepting, brief]);
+  }, [deposits, accepting, brief, remarking]);
 
   const room = useMemo<RoomState>(() => ({ desk, face, drafts }), [desk, face, drafts]);
 
@@ -2071,9 +2114,39 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     setStoppedPresenting(store.live.turn);
   }, [store.live.turn]);
 
-  const startCard = useCallback((anchor: string, kind: string) => {
+  const startCard = useCallback((anchor: string, kind: string, text = "") => {
     const id = `${LOCAL}${mintLocal()}`;
-    setLocals((held) => ({ ...held, [id]: { text: "", clause: anchor, kind } }));
+    setLocals((held) => ({ ...held, [id]: { text, clause: anchor, kind } }));
+  }, []);
+
+  const noteRead = useCallback((read: Source) => {
+    setDeskRead(read);
+  }, []);
+
+  const startRemark = useCallback((about: About) => {
+    const id = `${REMARK_DRAFT}${mintLocal()}`;
+    setRemarking((held) => ({ ...held, [id]: { text: "", clause: "", kind: "remark", about } }));
+  }, []);
+
+  const noteRemark = useCallback((id: string, text: string) => {
+    setRemarking((held) => (id in held ? { ...held, [id]: { ...held[id], text } } : held));
+  }, []);
+
+  const dropRemark = useCallback((id: string) => {
+    setRemarking((held) => withoutDraft(held, id));
+  }, []);
+
+  const keepDrawing = useCallback(async (kept: Kept): Promise<string> => {
+    const held = recording.current;
+    const into = sittingNow.current?.subject.id ?? "";
+    if (held === null || held.reading().id !== into) {
+      return NOT_READ_YET;
+    }
+    const { said, outcome } = await keepOnce(held, into, kept);
+    if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
+      setReading(outcome.reading);
+    }
+    return said;
   }, []);
 
   const reviewNewTip = useCallback(async (current: string): Promise<string> => {
@@ -2473,6 +2546,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       wanted, returnFocus,
       conversation: where, room, putOnDesk, openDesk, showOnDesk, setFace, keepRoomNow, walk,
       stoppedPresenting, stopPresenting, startCard, answerFinding, accepting, noteAccepting, drafts,
+      deskRead, noteRead, remarking, startRemark, noteRemark, dropRemark, keepDrawing,
       reviewNewTip, brief, setBrief, verdictSaid, verdictRefusal, retryVerdict, stranded, recordStranded, verdictBusy,
       sitting, startSitting: begin, closeSitting: close, endSitting: end,
       endWithoutRecording: endWithout, sittingEnded, sittingRefusal, sittingBusy,
@@ -2491,6 +2565,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus,
       where, room, putOnDesk, openDesk, showOnDesk, setFace, keepRoomNow, walk,
       stoppedPresenting, stopPresenting, startCard, answerFinding, accepting, noteAccepting, drafts,
+      deskRead, noteRead, remarking, startRemark, noteRemark, dropRemark, keepDrawing,
       reviewNewTip, brief, setBrief, verdictSaid, verdictRefusal, retryVerdict, stranded, recordStranded, verdictBusy,
       sitting, begin, close, end, endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,

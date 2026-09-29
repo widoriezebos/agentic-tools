@@ -246,7 +246,12 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // Every sitting's room (g1-s67 D2) reads its desk through the same call site
   // and the same source read, answered for a record a sitting shapes from the
   // checkout as it stands; no read is added, and /changes is refused there.
-  ["review/api.ts", 1, ["/api/review/", "/source", "/changes"]],
+  // The whiteboard (g1-s71 D4) adds the review's evidence to the same call
+  // site: its listing, read when a human puts the evidence on the desk, and one
+  // text file of it, read when that file is put up. An image of it is the same
+  // route's address in an image element, which the browser reads and this file
+  // does not; nothing here polls.
+  ["review/api.ts", 1, ["/api/review/", "/source", "/changes", "/evidence"]],
   // The goal's candidate, from the room's pill (g1-s69 D3): app status, start and
   // stop --goal G, three routes through one call site. Status is read when the
   // room opens on a goal and after each press of Run or Stop, and at no other
@@ -297,6 +302,28 @@ const INJECTION = [
  * allowed to say `write` may not also say `document`, so the pair cannot meet.
  */
 const WRITE = "write";
+
+/**
+ * The files a human granted markup by name: the file, and the grant. A drawing
+ * is a picture the mermaid chunk composes as markup, which the library has
+ * sanitized, and it has no other way onto the page (g1-s71 D2); the proof that
+ * it is placed under the page's policy is src/drawing/csp.test.ts's, not this
+ * guard's. Each row is read by a reviewer, and none of them may reach the
+ * network or set a timer.
+ */
+const MARKUP_EXCEPTIONS: readonly (readonly [string, string])[] = [
+  ["drawing/render.ts", "g1-s71 D2: a drawing's picture, placed with the page's nonce — Wido, 2026-09-28, \"ok, build all\""],
+];
+
+/**
+ * The one chunk this build loads when it is needed rather than with the page:
+ * the drawing chunk, from one file, by one dynamic import (g1-s71 D2). It is
+ * served from this origin like every other file of the bundle, and nothing else
+ * names the library it carries.
+ */
+const CHUNK_SITE = "drawing/Drawing.tsx";
+const CHUNK = "./render";
+const CHUNK_LIBRARY = "mermaid";
 const WRITES_A_PREFERENCE = "storage.ts";
 
 /** The second cut's files, which do not exist in this one. */
@@ -658,6 +685,11 @@ function sourceFiles(): string[] {
 const files = sourceFiles();
 const scanned = new Map(files.map((file) => [file, scan(readFileSync(path.join(SRC, file), "utf8"))]));
 
+/** One file's text as written, for the rules that read import statements. */
+function sourceOf(file: string): string {
+  return readFileSync(path.join(SRC, file), "utf8");
+}
+
 function filesNaming(names: string[]): string[] {
   return files.filter((file) => names.some((name) => (scanned.get(file)?.identifiers.get(name) ?? 0) > 0));
 }
@@ -758,9 +790,24 @@ describe("the first cut", () => {
     }
   });
 
-  it("builds no markup from a string, under any name", () => {
-    expect(filesNaming(INJECTION)).toEqual([]);
+  it("builds no markup from a string, under any name, but in the files granted it", () => {
+    expect(filesNaming(INJECTION)).toEqual(MARKUP_EXCEPTIONS.map(([file]) => file));
+    for (const [file] of MARKUP_EXCEPTIONS) {
+      for (const name of [...NETWORK, ...TIMERS]) {
+        expect({ file, name, named: scanned.get(file)?.identifiers.get(name) }).toEqual({ file, name, named: undefined });
+      }
+    }
     expect(stringsMatching((value) => INJECTION.includes(value.trim()))).toEqual([]);
+  });
+
+  it("loads one chunk, lazily, from one file, and names its library nowhere else", () => {
+    const dynamic = files.filter((file) => /\bimport\s*\(/u.test(sourceOf(file)));
+    expect(dynamic).toEqual([CHUNK_SITE]);
+    expect(sourceOf(CHUNK_SITE)).toContain(`import("${CHUNK}")`);
+    const fromChunk = files.filter((file) => new RegExp(`from\\s+"${CHUNK}"`, "u").test(sourceOf(file)));
+    expect(fromChunk).toEqual([]);
+    const library = files.filter((file) => new RegExp(`from\\s+"${CHUNK_LIBRARY}"`, "u").test(sourceOf(file)));
+    expect(library).toEqual(["drawing/render.ts"]);
   });
 
   it("writes to no document, and the one file that says write says nothing else", () => {

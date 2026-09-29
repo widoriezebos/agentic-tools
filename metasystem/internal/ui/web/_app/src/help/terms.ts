@@ -512,7 +512,7 @@ export const HELP: Record<HelpId, Term> = {
   "the-desk": {
     term: "The desk",
     text:
-      "The candidate's own code, not this checkout's: a file at the lines under discussion with the changed ones marked, the change as a whole with each file's counts, one file's diff, or a record's section. The strip above it lists everything that has been on the desk, newest first, and pressing one brings it back. Select lines to Ask about them or to make a Finding anchored where they are.",
+      "The candidate's own code, not this checkout's: a file at the lines under discussion with the changed ones marked, the change as a whole with each file's counts, one file's diff, or a record's section. The strip above it lists everything that has been on the desk, newest first, and pressing one brings it back. Select lines to Ask about them, to make a Finding anchored where they are, or to write a Remark: a private sticky on those lines at the commit the desk read them at, which stays on the board and leaves the lines once the desk reads other code. The evidence puts the screenshots and reports the build recorded on the desk, and a drawing your Partner makes can be put here and kept in the record.",
   },
   "the-finding": {
     term: "A finding",
@@ -542,7 +542,7 @@ export const HELP: Record<HelpId, Term> = {
   "the-board": {
     term: "The board",
     text:
-      "The working material this sitting has put into its record, pile by pile: Facts, Proposals, Decisions and Open questions for a sitting that shapes a record, Facts, Findings, Decisions and Open questions for a review. It is not a second store — it is those sections of the record itself, so everything here is something you recorded and anything you did not record is not here. An anchor puts what it names back on the desk.",
+      "The working material this sitting has put into its record, pile by pile: Facts, Proposals, Decisions and Open questions for a sitting that shapes a record, Facts, Findings, Decisions and Open questions for a review. It is not a second store — it is those sections of the record itself, so everything here is something you recorded and anything you did not record is not here. An anchor puts what it names back on the desk. Beside the piles stand your Remarks, each saying where it was made, with Record as a fact and, in a review, Make a finding; and the Drawings the record keeps, each with the question it was drawn for.",
   },
   sittings: {
     term: "Sittings",

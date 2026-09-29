@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { usePartner } from "./store";
 import type { Chosen } from "./subject";
+import { remarkOf } from "../review/remarks";
 import { selectionPress } from "../review/room";
 
 /**
@@ -47,7 +48,7 @@ type Standing = {
 const DESK = "desk";
 
 export function AskSelection() {
-  const { askPassage, startCard, sitting } = usePartner();
+  const { askPassage, startCard, sitting, deskRead, startRemark } = usePartner();
   const [standing, setStanding] = useState<Standing | null>(null);
 
   useEffect(() => {
@@ -99,9 +100,11 @@ export function AskSelection() {
   }
   // On a room's desk, selected lines offer a card beside Ask with the anchor
   // filled and the words left for the human's own: a review's Finding (g1-s65
-  // D7) and a shaping sitting's Fact (g1-s67 D4). Remark comes with the board,
-  // in the next slice.
+  // D7) and a shaping sitting's Fact (g1-s67 D4); and a Remark (g1-s71 D1), a
+  // private sticky on the lines at the commit the desk read them at, or on the
+  // section, which is offered only where this desk read what it is about.
   const press = selectionPress(sitting?.purpose ?? "review");
+  const remark = sitting === null ? null : remarkOf(standing.finding, sitting.subject.id, deskRead);
   return (
     <div
       className="ms-ask-selection ms-ask-selection--desk"
@@ -126,6 +129,21 @@ export function AskSelection() {
       >
         {press.label}
       </button>
+      {remark !== null && (
+        <button
+          type="button"
+          className="ms-ask-selection-press"
+          onMouseDown={(event) => {
+            event.preventDefault();
+          }}
+          onClick={() => {
+            startRemark(remark);
+            setStanding(null);
+          }}
+        >
+          Remark
+        </button>
+      )}
     </div>
   );
 }

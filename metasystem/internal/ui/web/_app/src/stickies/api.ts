@@ -20,8 +20,23 @@ const ONE = "/api/stickies/";
 /** Removing one for good: the sticky's id, with this after it. */
 const REMOVE = "/remove";
 
-/** What a sticky is about: a ledger goal, or a document by its own path. */
-export type About = { kind: "goal" | "record"; id: string };
+/**
+ * What a sticky is about: a ledger goal, or a document by its own path; or, for
+ * a remark (g1-s71 D1), lines of a file as a room's desk read them at a commit,
+ * or a record's section, each named by its record. `lines` is the text a
+ * shaping remark was made on, since its commit pins nothing.
+ */
+export type About = {
+  kind: "goal" | "record" | "source" | "section";
+  id: string;
+  record?: string;
+  path?: string;
+  from?: number;
+  to?: number;
+  commit?: string;
+  lines?: string;
+  section?: string;
+};
 
 /** One sticky, as the server keeps it. */
 export type Sticky = {

@@ -1,0 +1,41 @@
+/* A drawing (g1-s71 D2): the picture at the width it was drawn, never wider
+   than the column it stands in, on the surface the reader's code blocks use. */
+.ms-drawing {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: var(--ms-surface);
+}
+
+.ms-drawing-picture {
+  overflow-x: auto;
+}
+
+.ms-drawing-picture svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.ms-drawing-arriving {
+  color: var(--ms-text-2);
+  font-size: 0.8125rem;
+}
+
+.ms-drawing-presses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.ms-drawing-kept {
+  color: var(--ms-text-2);
+}
+
+.ms-drawing-source {
+  margin-top: 0.5rem;
+}

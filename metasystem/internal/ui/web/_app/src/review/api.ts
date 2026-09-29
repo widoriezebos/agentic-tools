@@ -8,11 +8,19 @@
  * changed lines marked, the change index, and one file's hunks. Each is made
  * when a human puts something on the desk, and at no other time; nothing here
  * polls and nothing here sets a timer.
+ *
+ * The whiteboard (g1-s71 D4) adds the review's evidence through the same call
+ * site: the listing of what its record's Evidence path holds, and one text file
+ * of it. An image of it is the same route's address, which the desk's image
+ * element names; the browser reads it, not this file.
  */
+
+import type { Block } from "../project/api";
 
 const REVIEW = "/api/review/";
 const SOURCE = "/source";
 const CHANGES = "/changes";
+const EVIDENCE = "/evidence";
 
 /** One line of a source read, marked where the change touched it. */
 export type SourceLine = { number: number; text: string; touched?: boolean };
@@ -20,11 +28,13 @@ export type SourceLine = { number: number; text: string; touched?: boolean };
 /**
  * One text file of the reviewed tree at a range of lines, or of the checkout as
  * it stands where `checkout` says so and `commit` is "" (g1-s67 D2). `unmarked`
- * says the touched lines could not be established, so none are marked.
+ * says the touched lines could not be established, so none are marked. `head`
+ * is the checkout's head when a checkout read was made: provenance for a
+ * remark, never a pin (g1-s71 D1).
  */
 export type Source = {
-  path: string; commit: string; checkout?: boolean; from: number; to: number; total: number; lines: SourceLine[];
-  unmarked?: string;
+  path: string; commit: string; checkout?: boolean; head?: string; from: number; to: number; total: number;
+  lines: SourceLine[]; unmarked?: string;
 };
 
 /** One file of the change, with its counts. */
@@ -52,6 +62,24 @@ export type FileDiff = {
   supplied: number;
   total: number;
 };
+
+/** One file the review's evidence holds, by its evidence-relative path. */
+export type EvidenceEntry = { path: string; kind: "image" | "text"; size: number };
+
+/** What the review's Evidence path holds: images and text, bounded, saying the whole. */
+export type EvidenceListing = { root: string; entries: EvidenceEntry[]; supplied: number; total: number };
+
+/** One text file of the evidence, within the desk's line bound. */
+export type EvidenceText = { path: string; kind: "text"; text: string; blocks?: Block[]; supplied: number; total: number };
+
+/** The images the evidence read serves, by extension, as the server's owner lists them. */
+const IMAGES = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
+
+/** Whether an evidence path is an image, which the desk shows by address rather than reads. */
+export function evidenceImage(path: string): boolean {
+  const lower = path.toLowerCase();
+  return IMAGES.some((ending) => lower.endsWith(ending));
+}
 
 /** A read the server refused, in its own words. */
 export class ReviewError extends Error {
@@ -107,4 +135,19 @@ export function loadDiff(record: string, path: string, since = false, signal?: A
     query.set("since", "1");
   }
   return read<FileDiff>(`${base(record)}${CHANGES}?${query.toString()}`, signal);
+}
+
+/** What the review's Evidence path holds. */
+export function loadEvidence(record: string, signal?: AbortSignal): Promise<EvidenceListing> {
+  return read<EvidenceListing>(`${base(record)}${EVIDENCE}`, signal);
+}
+
+/** One text file of the review's evidence, by its evidence-relative path. */
+export function loadEvidenceText(record: string, path: string, signal?: AbortSignal): Promise<EvidenceText> {
+  return read<EvidenceText>(`${base(record)}${EVIDENCE}?${new URLSearchParams({ path }).toString()}`, signal);
+}
+
+/** The address an image of the review's evidence is shown from. */
+export function evidenceAddress(record: string, path: string): string {
+  return `${base(record)}${EVIDENCE}?${new URLSearchParams({ path }).toString()}`;
 }

@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/markdown"
 )
 
 // The evidence owner (g1-s71 D4, §6).
@@ -65,13 +67,16 @@ type EvidenceListing struct {
 // EvidenceFile is one file: an image's bytes and type, or a text's lines within
 // the bound.
 type EvidenceFile struct {
-	Path     string `json:"path"`
-	Kind     string `json:"kind"`
-	Type     string `json:"-"`
-	Body     []byte `json:"-"`
-	Text     string `json:"text,omitempty"`
-	Supplied int    `json:"supplied,omitempty"`
-	Total    int    `json:"total,omitempty"`
+	Path string `json:"path"`
+	Kind string `json:"kind"`
+	Type string `json:"-"`
+	Body []byte `json:"-"`
+	Text string `json:"text,omitempty"`
+	// Blocks are the text as the section renderer draws it, parsed from the
+	// bytes this read returned: headings or none, a report is a report.
+	Blocks   []markdown.Block `json:"blocks,omitempty"`
+	Supplied int              `json:"supplied,omitempty"`
+	Total    int              `json:"total,omitempty"`
 }
 
 // EvidenceIn is the path a record's head names on its Evidence line, or "".
@@ -221,5 +226,6 @@ func (o Owner) EvidenceFile(named, file string) (EvidenceFile, error) {
 	if !strings.HasSuffix(text, "\n") && strings.HasSuffix(string(body), "\n") || len(lines) < total {
 		text = strings.TrimSuffix(text, "\n") + "\n"
 	}
-	return EvidenceFile{Path: clean, Kind: kind, Text: text, Supplied: len(lines), Total: total}, nil
+	return EvidenceFile{Path: clean, Kind: kind, Text: text, Blocks: markdown.Parse([]byte(text)).Blocks,
+		Supplied: len(lines), Total: total}, nil
 }
