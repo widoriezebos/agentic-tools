@@ -750,7 +750,7 @@ func TestWorkLandRoutesEverySelectionThroughTheLane(t *testing.T) {
 	reread := newDeliveryBed(t)
 	readAgain := &landingOwners{configured: true, status: readBranch(2, "critic-root", "reader-record")}
 	readAgain.install(reread)
-	if code, result = reread.do("work", "land", "standing-validation"); result.Outcome != intentRefused {
+	if _, result = reread.do("work", "land", "standing-validation"); result.Outcome != intentRefused {
 		t.Fatalf("the reader-record unit was not refused first: %+v", result)
 	}
 	readAgain.status = readBranch(2, "critic-root", "critic-root")
