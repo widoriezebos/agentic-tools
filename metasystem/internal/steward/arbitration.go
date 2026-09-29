@@ -7,6 +7,7 @@ package steward
 // dispatch return — one critical section, one contender wins.
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,7 +26,16 @@ type ArbitrationLock struct{ f *os.File }
 
 var beforeArbitrationWait = func() {}
 
-// AcquireArbitration blocks until the critical section is ours.
+// arbitrationWantPath is where a blocking acquirer queues: it holds this
+// file shared while it waits, and the disk sweeper, which only ever takes
+// arbitration without waiting, yields to any queued waiter. So a hook that
+// waits for arbitration during a sweep waits at most one nonce's critical
+// section (Part B 3.3).
+func arbitrationWantPath(repoRoot string) string { return ArbitrationLockPath(repoRoot) + ".want" }
+
+// AcquireArbitration blocks until the critical section is ours. An
+// uncontended acquisition takes the lock at once and writes nothing more; a
+// contended one queues on the want file first, so the disk sweeper yields.
 func AcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	path := ArbitrationLockPath(repoRoot)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -35,12 +45,98 @@ func AcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
+		return &ArbitrationLock{f: f}, nil
+	} else if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
+		f.Close()
+		return nil, err
+	}
+	want, err := os.OpenFile(arbitrationWantPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	defer want.Close()
+	if err := flockWaiting(want, unix.LOCK_SH); err != nil {
+		f.Close()
+		return nil, err
+	}
 	beforeArbitrationWait()
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
+	if err := flockWaiting(f, unix.LOCK_EX); err != nil {
 		f.Close()
 		return nil, err
 	}
 	return &ArbitrationLock{f: f}, nil
+}
+
+func flockWaiting(f *os.File, operation int) error {
+	for {
+		err := unix.Flock(int(f.Fd()), operation)
+		if !errors.Is(err, unix.EINTR) {
+			return err
+		}
+	}
+}
+
+// ErrArbitrationHeld is a nonblocking acquisition finding the lock held.
+var ErrArbitrationHeld = errors.New("steward arbitration is held")
+
+// TryAcquireArbitration takes the lock LOCK_EX|LOCK_NB: the disk sweeper's
+// acquisition, which never waits inside a pass (Part B R14) and yields to a
+// queued blocking acquirer: a held lock or a queued waiter is
+// ErrArbitrationHeld.
+func TryAcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
+	path := ArbitrationLockPath(repoRoot)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	// A queued waiter holds the want file shared; the sweeper yields to it.
+	// No want file means no waiter has ever queued, and none is created here.
+	if want, err := os.OpenFile(arbitrationWantPath(repoRoot), os.O_RDONLY, 0); err == nil {
+		queued := unix.Flock(int(want.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		want.Close()
+		if queued != nil {
+			if errors.Is(queued, unix.EWOULDBLOCK) || errors.Is(queued, unix.EAGAIN) {
+				return nil, ErrArbitrationHeld
+			}
+			return nil, queued
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		f.Close()
+		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
+			return nil, ErrArbitrationHeld
+		}
+		return nil, err
+	}
+	return &ArbitrationLock{f: f}, nil
+}
+
+// ProbeArbitration reports whether the lock is free without creating the
+// lock file or its directory and without holding anything afterwards: the
+// plan phase's probe (Part B R15). An absent lock file reads as free.
+func ProbeArbitration(repoRoot string) (free bool, err error) {
+	f, err := os.OpenFile(ArbitrationLockPath(repoRoot), os.O_RDONLY, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_SH|unix.LOCK_NB); err != nil {
+		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // Release ends the critical section.

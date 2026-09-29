@@ -62,7 +62,7 @@ func prepareFakeRound(t *Turn) (Launch, error) {
 	if err := os.WriteFile(filepath.Join(d.jobs(), t.Job+".log"), []byte(fmt.Sprintf("fake supervisor started value=%s\n", t.Tag)), 0o644); err != nil {
 		return Launch{}, err
 	}
-	fakeRecordBuildCachePath(d.git(), d.agents(), t.Workspace, t.Dir)
+	fakeRecordBuildCachePath(d.git(), d.agents(), t.Workspace, t.Dir, d.delegateCaches())
 	if err := os.WriteFile(r.path("raw.out"), []byte("fake raw output\n"), 0o644); err != nil {
 		return Launch{}, err
 	}

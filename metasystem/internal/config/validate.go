@@ -521,6 +521,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
 		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours", "dispatch.cap-max",
 		"steward.tick-patience-sec", "steward.stop-slow-sec", IntentReviewToolCallsKey,
+		DiskGoCacheCapGiBKey, DiskDelegateGoCacheCapGiBKey, DiskStaticcheckCacheCapGiBKey, DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey,
 	} {
 		if raw, present := values[knob]; present {
 			if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 {
@@ -528,6 +529,8 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			}
 		}
 	}
+	// The disk-lifetime settings of Part B 3.13, in every source.
+	errs = append(errs, validateDiskSettings(confPath, values, os.LookupEnv)...)
 	if raw, present := values["dispatch.return-margin-min"]; present {
 		if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 0 {
 			add("dispatch.return-margin-min must be a non-negative integer, got %s", pyRepr(raw))

@@ -9,17 +9,21 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
@@ -46,7 +50,29 @@ import (
 
 const agentReason = "the interface was started by an agent process (claude-code); start it from your own terminal with bin/metasystem ui restart to act as yourself"
 
+// errUsage is a flag error flag has already printed.
+var errUsage = errors.New("usage")
+
 func main() {
+	// SIGINT and SIGTERM end the walkthrough through run's one exit, which
+	// removes the fixture checkout only after a completed shutdown.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	err := run(ctx, os.Args[1:])
+	stop()
+	switch {
+	case errors.Is(err, errUsage):
+		os.Exit(2)
+	case err != nil:
+		fmt.Fprintln(os.Stderr, "walkthrough:", err)
+		os.Exit(1)
+	}
+}
+
+// run is the walkthrough with one exit: every failure is returned, and the
+// fixture checkout it makes is removed on every path once nothing can read or
+// write it any more, or kept and named when a handler may still run.
+func run(ctx context.Context, args []string) error {
+	flag := flag.NewFlagSet("walkthrough", flag.ContinueOnError)
 	listen := flag.String("listen", "127.0.0.1:7979", "loopback address")
 	proven := flag.Bool("proven", false, "serve as a server that proved its human at boot")
 	// The walkthrough's own one-time-code secret. It is synthetic — the base32
@@ -118,23 +144,32 @@ func main() {
 	// migration's case and not the room's ordinary look.
 	satBeforeRooms := flag.String("sat-before-rooms", "",
 		"plant a shaping sitting on this human's ordinary conversation, as before D16; empty plants none")
-	flag.Parse()
+	// Two test seams for the kept-checkout witness: handlers whose context
+	// the shutdown does not cancel, and a shorter shutdown bound.
+	uncancelledHandlers := flag.Bool("test-uncancelled-handlers", false, "test seam: handlers outlive the shutdown's cancellation")
+	shutdownBound := flag.Duration("test-shutdown-bound", 5*time.Second, "test seam: how long a shutdown waits for every connection to close")
+	if err := flag.Parse(args); err != nil {
+		return errUsage
+	}
 	if *smoke != "" {
 		runSmoke(*smoke, *smokeModel, *smokeEngine, *smokeKit, *smokeOut)
-		return
+		return nil
 	}
 	if *register != registerKit && *register != registerAdopted {
-		log.Fatalf("-register takes kit or adopted, not %q", *register)
+		return fmt.Errorf("-register takes kit or adopted, not %q", *register)
 	}
 	if *freshness != string(snapshot.FreshnessCurrent) &&
 		*freshness != string(snapshot.FreshnessBehind) &&
 		*freshness != string(snapshot.FreshnessFailed) {
-		log.Fatalf("-freshness takes current, behind or failed, not %q", *freshness)
+		return fmt.Errorf("-freshness takes current, behind or failed, not %q", *freshness)
+	}
+	if *partnerRuntime != "" && *partnerRuntime != "fake" {
+		return fmt.Errorf("-partner takes fake, not %q", *partnerRuntime)
 	}
 
 	manifest, err := web.ReadManifest()
 	if err != nil {
-		log.Fatalf("this executable carries no bundle: %v", err)
+		return fmt.Errorf("this executable carries no bundle: %v", err)
 	}
 	state := newLedger(*calm)
 	state.calm = *calm
@@ -144,8 +179,19 @@ func main() {
 	// in-place editor have something real to open: the editor writes to disk,
 	// reads it back, and answers what is there, and a walkthrough over a
 	// canned payload would prove none of that.
-	checkout := fixtureCheckout(*calm, *register)
+	checkout, err := fixtureCheckout(*calm, *register)
+	if err != nil {
+		return err
+	}
 	fmt.Println("checkout " + checkout)
+	// Until the server is up, a failure removes the checkout at once:
+	// nothing has been started that could read or write it.
+	serving := false
+	defer func() {
+		if !serving {
+			removeFixture(checkout)
+		}
+	}()
 	// A previous visit to Decisions, so the inbox opens with half of it new.
 	// Both handles, because -proven acts as Wido and an unproven seat acts
 	// under the handle this fixture was given, which is empty by default.
@@ -154,7 +200,10 @@ func main() {
 	// home of its own beside the fixture checkout. It is never the account's
 	// own home: the store resolves that one, and a walkthrough that wrote
 	// there would put fixture notes into a human's actual notepad.
-	notepad := fixtureStickies(checkout, []string{"", *human, "Wido"}, time.Now().UTC())
+	notepad, err := fixtureStickies(checkout, []string{"", *human, "Wido"}, time.Now().UTC())
+	if err != nil {
+		return err
+	}
 	roots := project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
 	state.roots = roots
 	authority := httpd.AuthorityInfo{Reason: agentReason}
@@ -178,14 +227,11 @@ func main() {
 	// The steward's journal, planted with a dozen entries across the four
 	// sources — including one the notifier refused, which is the delivery gate
 	// made visible — and then, with -notify-every, grown while the server runs.
-	journal := fixtureJournal(checkout, *calm)
-	if *notifyEvery > 0 {
-		go appendFixtureNotifications(journal, *notifyEvery)
+	journal, err := fixtureJournal(checkout, *calm)
+	if err != nil {
+		return err
 	}
 	presenceWatch := fleet.NewWatch()
-	if *fleetEvery > 0 {
-		go announceFixturePresence(presenceWatch, *fleetEvery)
-	}
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 	info := httpd.Info{
 		Checkout: "/walkthrough", StartedAt: startedAt,
@@ -366,12 +412,12 @@ func main() {
 			}}, nil
 		},
 	}
+	var partnerService *partner.Service
 	if *partnerRuntime != "" {
-		if *partnerRuntime != "fake" {
-			log.Fatalf("-partner takes fake, not %q", *partnerRuntime)
-		}
 		if *satBeforeRooms != "" {
-			plantBeforeRooms(fixtureConversations(checkout), *satBeforeRooms)
+			if err := plantBeforeRooms(fixtureConversations(checkout), *satBeforeRooms); err != nil {
+				return err
+			}
 		}
 		// The Partner reads what the pages read, so the "Seeing:" sheet shows
 		// this fixture's own board rather than an empty block.
@@ -384,19 +430,86 @@ func main() {
 		})
 		info.Partner = service
 		info.PartnerConfigured = true
-		defer service.Close()
+		partnerService = service
 	}
 
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
-		log.Fatal(err)
+		if partnerService != nil {
+			partnerService.Close()
+		}
+		return err
 	}
 	if code, codeErr := channel.TOTPCode(*secret, time.Now()); codeErr == nil {
 		fmt.Println("sign-in code " + code + " (it changes every 30 seconds; restart for a fresh one)")
 	}
+	// Every handler's context descends from serveCtx, so cancelling it ends
+	// each event stream and each Partner call on its own ctx.Done() branch:
+	// Go's Shutdown closes listeners and waits for idle connections, but it
+	// never cancels a running handler.
+	serveCtx, cancelServe := context.WithCancel(context.Background())
+	defer cancelServe()
+	handlerCtx := serveCtx
+	if *uncancelledHandlers {
+		handlerCtx = context.Background()
+	}
+	// The two writers keep the journal and the fleet watch alive while the
+	// server runs; they stop on serveCtx and are joined before removal.
+	var writers sync.WaitGroup
+	if *notifyEvery > 0 {
+		writers.Go(func() { appendFixtureNotifications(serveCtx, journal, *notifyEvery) })
+	}
+	if *fleetEvery > 0 {
+		writers.Go(func() { announceFixturePresence(serveCtx, presenceWatch, *fleetEvery) })
+	}
+	serving = true
 	fmt.Println("ready http://" + listener.Addr().String())
-	server := &http.Server{Handler: httpd.New(info, listener.Addr(), web.Dist()), ReadHeaderTimeout: 5 * time.Second}
-	log.Fatal(server.Serve(listener))
+	server := &http.Server{Handler: httpd.New(info, listener.Addr(), web.Dist()), ReadHeaderTimeout: 5 * time.Second,
+		BaseContext: func(net.Listener) context.Context { return handlerCtx }}
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(listener) }()
+	var serveErr error
+	select {
+	case <-ctx.Done():
+	case serveErr = <-served:
+	}
+	return shutDown(server, served, serveErr, cancelServe, *shutdownBound, partnerService, &writers, checkout)
+}
+
+// shutDown ends a serving walkthrough in the one safe order: cancel every
+// handler, shut the server down within the bound, close the Partner, join
+// the writers, and only then remove the checkout. A Shutdown that did not
+// return nil means a connection, and so a handler reading the journal, may
+// still be live: the checkout is kept and named.
+func shutDown(server *http.Server, served <-chan error, serveErr error, cancelServe context.CancelFunc, bound time.Duration,
+	partnerService *partner.Service, writers *sync.WaitGroup, checkout string) error {
+	cancelServe()
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), bound)
+	shutdownErr := server.Shutdown(shutdownCtx)
+	cancelShutdown()
+	if serveErr == nil && shutdownErr == nil {
+		serveErr = <-served
+	}
+	if partnerService != nil {
+		partnerService.Close()
+	}
+	writers.Wait()
+	if shutdownErr != nil {
+		fmt.Fprintf(os.Stderr, "walkthrough: checkout kept at %s: shutdown did not complete: %v\n", checkout, shutdownErr)
+		return fmt.Errorf("shutdown did not complete: %w", shutdownErr)
+	}
+	removeFixture(checkout)
+	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		return serveErr
+	}
+	return nil
+}
+
+// removeFixture removes the fixture checkout this process made and the
+// notepad home beside it.
+func removeFixture(checkout string) {
+	_ = os.RemoveAll(checkout)
+	_ = os.RemoveAll(filepath.Dir(fixtureStoreHome(checkout)))
 }
 
 // ledger is the canned tree the board reads, and the two acts change it the
@@ -534,7 +647,7 @@ The rail, the header and the work area are one shell every section is read in.
 // resolver reads: a configuration file, an agents directory, a one-goal
 // ledger, and a design home. It is thrown away with the temporary directory,
 // so a walkthrough that saves over a file changes nothing a human keeps.
-func fixtureCheckout(calm bool, register string) string {
+func fixtureCheckout(calm bool, register string) (checkout string, err error) {
 	// The calm workspace's finished design is marked done on disk, because
 	// the two designs below are read back from the file rather than from the
 	// pane: a design whose goals have all landed and which nobody has closed
@@ -546,8 +659,13 @@ func fixtureCheckout(calm bool, register string) string {
 	}
 	directory, err := os.MkdirTemp("", "metasystem-walkthrough-")
 	if err != nil {
-		log.Fatalf("cannot make the walkthrough checkout: %v", err)
+		return "", fmt.Errorf("cannot make the walkthrough checkout: %v", err)
 	}
+	defer func() {
+		if err != nil {
+			_ = os.RemoveAll(directory)
+		}
+	}()
 	for _, planted := range []struct{ relative, text string }{
 		{"metasystem.conf", ""},
 		{"plans/goals/backlog.md", "# backlog\n\n- SyncMode: local\n"},
@@ -588,13 +706,13 @@ func fixtureCheckout(calm bool, register string) string {
 	} {
 		full := filepath.Join(directory, filepath.FromSlash(planted.relative))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			log.Fatalf("cannot make the walkthrough checkout: %v", err)
+			return "", fmt.Errorf("cannot make the walkthrough checkout: %v", err)
 		}
 		if err := os.WriteFile(full, []byte(planted.text), 0o644); err != nil {
-			log.Fatalf("cannot plant %s: %v", planted.relative, err)
+			return "", fmt.Errorf("cannot plant %s: %v", planted.relative, err)
 		}
 	}
-	return directory
+	return directory, nil
 }
 
 // newLedger builds the canned tree.
@@ -1810,10 +1928,10 @@ var calmNotices = []plantedNotice{
 	{2 * time.Hour, "steward", "", "steward: the accepted ledger advanced to c5d517f", true, ""},
 }
 
-func fixtureJournal(checkout string, calm bool) string {
+func fixtureJournal(checkout string, calm bool) (string, error) {
 	path := filepath.Join(checkout, "artifacts", "agents", "steward", "notifications.jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		log.Fatalf("cannot make the walkthrough journal: %v", err)
+		return "", fmt.Errorf("cannot make the walkthrough journal: %v", err)
 	}
 	now := time.Now().UTC()
 	planted := []plantedNotice{
@@ -1853,21 +1971,22 @@ func fixtureJournal(checkout string, calm bool) string {
 		}
 		encoded, err := json.Marshal(record)
 		if err != nil {
-			log.Fatalf("cannot write the walkthrough journal: %v", err)
+			return "", fmt.Errorf("cannot write the walkthrough journal: %v", err)
 		}
 		lines = append(lines, string(encoded))
 	}
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
-		log.Fatalf("cannot write the walkthrough journal: %v", err)
+		return "", fmt.Errorf("cannot write the walkthrough journal: %v", err)
 	}
 	fmt.Println("journal " + path)
-	return path
+	return path, nil
 }
 
 // appendFixtureNotifications grows the journal while the server runs, so the
 // stream, the toasts and the bell's count can be watched rather than imagined.
-// The sources rotate, and every fourth one is undelivered.
-func appendFixtureNotifications(path string, every time.Duration) {
+// The sources rotate, and every fourth one is undelivered. It stops when ctx
+// ends, so nothing appends into a checkout being removed.
+func appendFixtureNotifications(ctx context.Context, path string, every time.Duration) {
 	sources := []string{"steward", "alert", "handoff", "verdict"}
 	messages := []string{
 		"steward: the accepted ledger advanced",
@@ -1875,8 +1994,14 @@ func appendFixtureNotifications(path string, every time.Duration) {
 		"steward: seat m2a+implementer is handing g1-s20a back \u2014 your turn",
 		"steward: g1-s13 has spent its attempt budget",
 	}
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
 	for count := 0; ; count++ {
-		time.Sleep(every)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		at := time.Now().UTC()
 		source := sources[count%len(sources)]
 		record := map[string]any{

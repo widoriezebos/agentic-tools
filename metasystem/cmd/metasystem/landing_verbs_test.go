@@ -2234,7 +2234,11 @@ func TestCanonicalValidatorEnvironmentOwnsTheGateGoFlags(t *testing.T) {
 	inherited := []string{"PATH=/usr/bin:/bin", "GOCACHE=/fixture/cache/go-build", "STATICCHECK_CACHE=/fixture/cache/staticcheck",
 		"GOFLAGS=-mod=mod -tags=ambient", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=0"}
 	var owned []string
-	for _, entry := range canonicalValidatorEnvironmentFrom(inherited) {
+	environment, err := canonicalValidatorEnvironmentFrom(inherited, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range environment {
 		if strings.HasPrefix(entry, "GOFLAGS=") || strings.HasPrefix(entry, "METASYSTEM_GATE_FROZEN_TOOLCHAIN=") {
 			owned = append(owned, entry)
 		}

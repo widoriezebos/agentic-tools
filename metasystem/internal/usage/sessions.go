@@ -225,7 +225,13 @@ func callRegistrationsUnderMaintenance(stateRoot string) (rows []CallRegistratio
 		return nil, false, err
 	}
 	defer unlockCallFile(lock)
+	return readCallRegistrations(path)
+}
 
+// readCallRegistrations reads the session registry without its lock: the
+// locked reader above, and InspectCallSessions' observation, whose apply
+// re-reads under the lock.
+func readCallRegistrations(path string) (rows []CallRegistration, present bool, err error) {
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		return nil, false, nil

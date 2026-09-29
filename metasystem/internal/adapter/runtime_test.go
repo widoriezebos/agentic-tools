@@ -3,6 +3,7 @@ package adapter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -195,7 +196,7 @@ func TestBuildClaudeSettingsWriteAndNetwork(t *testing.T) {
 	record := filepath.Join(dir, "job.json")
 	out := filepath.Join(dir, "settings.json")
 	writeFile(t, record, claudeRecord(`["/ws/sub"]`, "allow"))
-	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", ""); err != nil {
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "", SandboxCaches{}); err != nil {
 		t.Fatal(err)
 	}
 	got := readJSONFile(t, out)
@@ -231,7 +232,7 @@ func TestBuildClaudeSettingsReadOnlyNoNetwork(t *testing.T) {
 	record := filepath.Join(dir, "job.json")
 	out := filepath.Join(dir, "settings.json")
 	writeFile(t, record, claudeRecord(`[]`, "deny"))
-	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", ""); err != nil {
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "", SandboxCaches{}); err != nil {
 		t.Fatal(err)
 	}
 	got := readJSONFile(t, out)
@@ -265,7 +266,7 @@ func TestBuildClaudeSettingsCodeCriticAllowsSandboxedBash(t *testing.T) {
 	    "network": "deny"
 	  }}
 	}`)
-	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch"); err != nil {
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch", SandboxCaches{}); err != nil {
 		t.Fatal(err)
 	}
 	got := readJSONFile(t, out)
@@ -309,7 +310,7 @@ func TestBuildClaudeSettingsImplementerAddsScratch(t *testing.T) {
 	    "network": "deny"
 	  }}
 	}`)
-	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch"); err != nil {
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch", SandboxCaches{}); err != nil {
 		t.Fatal(err)
 	}
 	got := readJSONFile(t, out)
@@ -337,7 +338,7 @@ func TestBuildClaudeSettingsImplementerDeniesReadRootOutsideWriteRoot(t *testing
 	    "network": "deny"
 	  }}
 	}`)
-	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch"); err != nil {
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch", SandboxCaches{}); err != nil {
 		t.Fatal(err)
 	}
 	got := readJSONFile(t, out)
@@ -382,7 +383,7 @@ func TestBuildClaudeSettingsKeepsNestedWorktreeWritable(t *testing.T) {
 	    "network": "deny"
 	  }}
 	}`)
-	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch"); err != nil {
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch", SandboxCaches{}); err != nil {
 		t.Fatal(err)
 	}
 	got := readJSONFile(t, out)
@@ -428,7 +429,7 @@ func TestBuildClaudeSettingsDoesNotDenyReadRootUnderWriteRoot(t *testing.T) {
 	    "network": "deny"
 	  }}
 	}`)
-	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch"); err != nil {
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch", SandboxCaches{}); err != nil {
 		t.Fatal(err)
 	}
 	got := readJSONFile(t, out)
@@ -744,5 +745,51 @@ func TestBuildCodexCommandCarriesExtraDirs(t *testing.T) {
 	joined = strings.Join(resume, " ")
 	if !strings.Contains(joined, `sandbox_workspace_write.writable_roots=["/repo/.git/worktrees/j","/repo/.git/refs/heads/agent"]`) {
 		t.Fatalf("resume argv lacks the writable_roots override: %v", resume)
+	}
+}
+
+// A Claude delegate builds in the machine delegate cache and never in the
+// engine's (disk-lifetimes A7, 3.3): both delegate directories join
+// allowWrite after the scratch, both engine directories join denyWrite, and
+// a critic's workspace denials stay ahead of them.
+func TestBuildClaudeSettingsGrantsTheDelegateCacheAndDeniesTheEngineCache(t *testing.T) {
+	dir := t.TempDir()
+	record := filepath.Join(dir, "job.json")
+	out := filepath.Join(dir, "settings.json")
+	writeFile(t, record, `{
+	  "role": "implementer",
+	  "workspaceRoot": "/ws/sub",
+	  "permissions": {"requested": {
+	    "readRoots": ["/ws/sub"],
+	    "writeRoots": ["/ws/sub"],
+	    "network": "deny"
+	  }}
+	}`)
+	caches := SandboxCaches{
+		Grant: []string{"/cache/metasystem-delegate-go-build", "/cache/metasystem-delegate-staticcheck"},
+		Deny:  []string{"/cache/go-build", "/cache/staticcheck"},
+	}
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch", caches); err != nil {
+		t.Fatal(err)
+	}
+	fs := readJSONFile(t, out)["sandbox"].(map[string]any)["filesystem"].(map[string]any)
+	if got := fmt.Sprint(fs["allowWrite"]); got != "[/ws/sub /scratch /cache/metasystem-delegate-go-build /cache/metasystem-delegate-staticcheck]" {
+		t.Fatalf("allowWrite = %s", got)
+	}
+	if got := fmt.Sprint(fs["denyWrite"]); got != "[/cache/go-build /cache/staticcheck]" {
+		t.Fatalf("denyWrite = %s", got)
+	}
+
+	writeFile(t, record, `{
+	  "role": "code-critic",
+	  "workspaceRoot": "/ws",
+	  "permissions": {"requested": {"readRoots": ["/ws"], "writeRoots": [], "network": "deny"}}
+	}`)
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch", caches); err != nil {
+		t.Fatal(err)
+	}
+	fs = readJSONFile(t, out)["sandbox"].(map[string]any)["filesystem"].(map[string]any)
+	if got := fmt.Sprint(fs["denyWrite"]); got != "[/ws /cache/go-build /cache/staticcheck]" {
+		t.Fatalf("critic denyWrite = %s", got)
 	}
 }

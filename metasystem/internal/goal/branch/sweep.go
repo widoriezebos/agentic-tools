@@ -1,6 +1,8 @@
 package branch
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -18,6 +20,16 @@ type SweepRequest struct {
 	CheckClaim                                            func() error
 	PushTransport                                         PushTransport
 	Hooks                                                 SweepHooks
+	// Context bounds every git and network call of the sweep; nil is
+	// context.Background(). The disk sweeper passes its pass context.
+	Context context.Context
+}
+
+func (req SweepRequest) context() context.Context {
+	if req.Context == nil {
+		return context.Background()
+	}
+	return req.Context
 }
 
 type SweepResult struct {
@@ -31,16 +43,55 @@ type sweepDependencies struct {
 	validateRange  func(repo, endpointTip, tip, goalID string) ([]Commit, error)
 	ancestor       func(repo, older, newer string) (bool, error)
 	clearRef       func(repo, ref string) error
+	// objectPresent reports whether a commit is in the local object store,
+	// so a plan can validate a remote tip without fetching it.
+	objectPresent func(repo, sha string) bool
 }
 
 func defaultSweepDependencies() sweepDependencies {
+	return sweepDependenciesFor(context.Background())
+}
+
+// sweepDependenciesFor binds every git call of a sweep to ctx.
+func sweepDependenciesFor(ctx context.Context) sweepDependencies {
+	read := func(repo string, args ...string) ([]byte, error) { return gitOutputContext(ctx, repo, args...) }
 	return sweepDependencies{
-		localBranchTip: localBranchTip,
-		gitOutput:      gitOutput,
-		validateRange:  ValidateRange,
-		ancestor:       ancestor,
-		clearRef:       clearPushTxn,
+		localBranchTip: func(repo, ref string) (string, bool, error) {
+			out, err := read(repo, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+			if err != nil {
+				if ctx.Err() != nil {
+					return "", false, ctx.Err()
+				}
+				return "", false, nil
+			}
+			return strings.TrimSpace(string(out)), true, nil
+		},
+		gitOutput: read,
+		validateRange: func(repo, endpointTip, tip, goalID string) ([]Commit, error) {
+			return ValidateRangeWithGit(repo, endpointTip, tip, goalID, read)
+		},
+		ancestor: func(repo, older, newer string) (bool, error) {
+			_, err := read(repo, "merge-base", "--is-ancestor", older, newer)
+			if err == nil {
+				return true, nil
+			}
+			if ctx.Err() != nil {
+				return false, ctx.Err()
+			}
+			return ancestor(repo, older, newer)
+		},
+		clearRef: clearPushTxn,
+		objectPresent: func(repo, sha string) bool {
+			_, err := read(repo, "cat-file", "-e", sha+"^{commit}")
+			return err == nil
+		},
 	}
+}
+
+// IsOperationRefusal reports whether err is a goal-branch refusal with code.
+func IsOperationRefusal(err error, code string) bool {
+	var refusal *OpError
+	return errors.As(err, &refusal) && refusal.Code == code
 }
 
 func sourceCommitsWith(repo, base, endpointTip string, read func(string, ...string) ([]byte, error)) (map[string]bool, error) {
@@ -131,12 +182,22 @@ func goalWorktreePathsWith(repo, goalID string, read func(string, ...string) ([]
 }
 
 func cleanGoalWorktreesWith(repo, goalID string, read func(string, ...string) ([]byte, error)) ([]string, error) {
+	return cleanGoalWorktreesReading(repo, goalID, read, false)
+}
+
+// cleanGoalWorktreesReading is the dirty-worktree check; observeOnly runs
+// status with --no-optional-locks, so the check never refreshes an index.
+func cleanGoalWorktreesReading(repo, goalID string, read func(string, ...string) ([]byte, error), observeOnly bool) ([]string, error) {
 	paths, err := goalWorktreePathsWith(repo, goalID, read)
 	if err != nil {
 		return nil, err
 	}
+	statusArgs := []string{"status", "--porcelain=v1", "--untracked-files=all"}
+	if observeOnly {
+		statusArgs = append([]string{"--no-optional-locks"}, statusArgs...)
+	}
 	for _, path := range paths {
-		status, err := read(path, "status", "--porcelain=v1", "--untracked-files=all")
+		status, err := read(path, statusArgs...)
 		if err != nil {
 			return nil, err
 		}
@@ -240,15 +301,124 @@ func sweepTipCoveredWith(repo, tip string, checked []string, isAncestor func(str
 }
 
 func Sweep(req SweepRequest) (SweepResult, error) {
-	return sweepWithDependencies(req, defaultSweepDependencies())
+	return sweepWithDependencies(req, sweepDependenciesFor(req.context()))
+}
+
+// SweepPlanResult is SweepPlan's observation of one goal's branch and
+// worktrees.
+type SweepPlanResult struct {
+	GoalID     string
+	Worktrees  []string
+	LocalTip   string
+	RemoteTips map[string]string
+	// Unverified names remote tips whose commits are not in the local store:
+	// the plan never fetches, so Sweep checks them when it applies.
+	Unverified []string
+	// Refusal is the refusal Sweep would return (StaleCode for uncommitted
+	// work, SweepUnlandedCode for unlanded commits), or nil.
+	Refusal error
+}
+
+// Nothing reports a goal with no branch and no worktree left to sweep.
+func (p SweepPlanResult) Nothing() bool {
+	return p.Refusal == nil && p.LocalTip == "" && len(p.RemoteTips) == 0 && len(p.Worktrees) == 0
+}
+
+// SweepPlan is Sweep's observation half (Part B 3.3, DL2-13): the same
+// dirty-worktree and unlanded-commit checks with no mutation. It reads the
+// remote tips without fetching, runs status without optional locks, deletes
+// nothing and moves no ref; the claim check is left to the apply. Its git
+// runs under req.Context.
+func SweepPlan(req SweepRequest) (SweepPlanResult, error) {
+	return sweepPlanWithDependencies(req, sweepDependenciesFor(req.context()))
+}
+
+func sweepPlanWithDependencies(req SweepRequest, deps sweepDependencies) (SweepPlanResult, error) {
+	ctx := req.context()
+	if req.PushTransport == nil {
+		req.PushTransport = GitPushTransport{Context: ctx}
+	}
+	if req.Repo == "" || req.Remote == "" || !hex40(req.EndpointTip) || !validName(req.GoalID) {
+		return SweepPlanResult{}, fmt.Errorf("goal branch sweep plan needs a repository, remote, endpoint, and goal")
+	}
+	if err := ctx.Err(); err != nil {
+		return SweepPlanResult{}, err
+	}
+	ref := goalBranchRef(req.GoalID)
+	plan := SweepPlanResult{GoalID: req.GoalID, RemoteTips: map[string]string{}}
+	for _, remote := range []string{req.Remote, req.Transport} {
+		if remote == "" {
+			continue
+		}
+		tip, present, err := req.PushTransport.RemoteTip(req.Repo, remote, ref)
+		if err != nil {
+			return SweepPlanResult{}, err
+		}
+		if present {
+			plan.RemoteTips[remote] = tip
+		}
+		if err := ctx.Err(); err != nil {
+			return SweepPlanResult{}, err
+		}
+	}
+	localTip, _, err := deps.localBranchTip(req.Repo, ref)
+	if err != nil {
+		return SweepPlanResult{}, err
+	}
+	plan.LocalTip = localTip
+	worktrees, err := cleanGoalWorktreesReading(req.Repo, req.GoalID, deps.gitOutput, true)
+	if err != nil {
+		var refusal *OpError
+		if errors.As(err, &refusal) {
+			plan.Refusal = err
+			return plan, nil
+		}
+		return SweepPlanResult{}, err
+	}
+	plan.Worktrees = worktrees
+	var checked []string
+	tips := []struct{ place, tip string }{{req.Remote, plan.RemoteTips[req.Remote]}, {req.Transport, plan.RemoteTips[req.Transport]}, {"local", localTip}}
+	for _, candidate := range tips {
+		if candidate.tip == "" {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return SweepPlanResult{}, err
+		}
+		if candidate.place != "local" && candidate.tip != localTip && !deps.objectPresent(req.Repo, candidate.tip) {
+			plan.Unverified = append(plan.Unverified, candidate.place+" "+candidate.tip)
+			continue
+		}
+		covered, err := sweepTipCoveredWith(req.Repo, candidate.tip, checked, deps.ancestor)
+		if err != nil {
+			return SweepPlanResult{}, err
+		}
+		if covered {
+			continue
+		}
+		if err := checkSweepTipWith(req, candidate.place, candidate.tip, deps); err != nil {
+			var refusal *OpError
+			if errors.As(err, &refusal) {
+				plan.Refusal = err
+				return plan, nil
+			}
+			return SweepPlanResult{}, err
+		}
+		checked = append(checked, candidate.tip)
+	}
+	return plan, nil
 }
 
 func sweepWithDependencies(req SweepRequest, deps sweepDependencies) (SweepResult, error) {
+	ctx := req.context()
 	if req.PushTransport == nil {
-		req.PushTransport = GitPushTransport{}
+		req.PushTransport = GitPushTransport{Context: ctx}
 	}
 	if req.Repo == "" || req.Remote == "" || !hex40(req.EndpointTip) || !validName(req.GoalID) {
 		return SweepResult{}, fmt.Errorf("goal branch sweep needs a repository, remote, endpoint, and goal")
+	}
+	if err := ctx.Err(); err != nil {
+		return SweepResult{}, err
 	}
 	if err := checkClaim(req.CheckClaim); err != nil {
 		return SweepResult{}, err
@@ -267,6 +437,9 @@ func sweepWithDependencies(req SweepRequest, deps sweepDependencies) (SweepResul
 	}
 	localTip, localPresent, err := deps.localBranchTip(req.Repo, ref)
 	if err != nil {
+		return SweepResult{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return SweepResult{}, err
 	}
 	worktrees, err := cleanGoalWorktreesWith(req.Repo, req.GoalID, deps.gitOutput)
@@ -299,6 +472,9 @@ func sweepWithDependencies(req SweepRequest, deps sweepDependencies) (SweepResul
 		if !candidate.present {
 			continue
 		}
+		if err := ctx.Err(); err != nil {
+			return SweepResult{}, err
+		}
 		if candidate.remote {
 			if err := fetchAndValidateWith(req.Repo, candidate.place, req.EndpointTip, req.GoalID, candidate.opid, candidate.tip, req.PushTransport,
 				fetchValidationDependencies{validateRange: deps.validateRange, clearRef: deps.clearRef}); err != nil {
@@ -321,6 +497,9 @@ func sweepWithDependencies(req SweepRequest, deps sweepDependencies) (SweepResul
 		if err := req.Hooks.AfterRemoteRead(); err != nil {
 			return SweepResult{}, err
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return SweepResult{}, err
 	}
 	if originPresent {
 		if err := deleteRemoteRef(req.PushTransport, req.Repo, req.Remote, ref, originTip, LeaseMovedCode); err != nil {

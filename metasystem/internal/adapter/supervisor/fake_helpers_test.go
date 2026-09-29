@@ -393,6 +393,7 @@ func (f *fakeInstall) deps() Deps {
 		Dispatch:     f.dispatcher,
 		GroupMembers: func(int, ...int) ([]int, error) { return nil, nil },
 		LookPath:     exec.LookPath,
+		UserCacheDir: func() (string, error) { return filepath.Join(f.root, "user-cache"), nil },
 	}
 }
 

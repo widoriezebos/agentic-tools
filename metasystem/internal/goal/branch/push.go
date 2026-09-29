@@ -2,6 +2,7 @@ package branch
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,10 +34,19 @@ type PushTransport interface {
 	Push(repo, remote, ref, expected, tip string) (CASOutcome, error)
 }
 
-type GitPushTransport struct{}
+// GitPushTransport runs the transport through git. Context, when set, bounds
+// every call (the disk sweeper's pass budget); the zero value is unbounded.
+type GitPushTransport struct{ Context context.Context }
 
-func (GitPushTransport) RemoteTip(repo, remote, ref string) (string, bool, error) {
-	out, err := gitOutput(repo, "ls-remote", "--refs", remote, ref)
+func (t GitPushTransport) context() context.Context {
+	if t.Context == nil {
+		return context.Background()
+	}
+	return t.Context
+}
+
+func (t GitPushTransport) RemoteTip(repo, remote, ref string) (string, bool, error) {
+	out, err := gitOutputContext(t.context(), repo, "ls-remote", "--refs", remote, ref)
 	if err != nil {
 		return "", false, err
 	}
@@ -50,13 +60,13 @@ func (GitPushTransport) RemoteTip(repo, remote, ref string) (string, bool, error
 	return fields[0], true, nil
 }
 
-func (GitPushTransport) Fetch(repo, remote, ref, destination string) error {
-	_, err := gitOutput(repo, "fetch", "--no-tags", "--refmap=", remote, "+"+ref+":"+destination)
+func (t GitPushTransport) Fetch(repo, remote, ref, destination string) error {
+	_, err := gitOutputContext(t.context(), repo, "fetch", "--no-tags", "--refmap=", remote, "+"+ref+":"+destination)
 	return err
 }
 
-func (GitPushTransport) Push(repo, remote, ref, expected, tip string) (CASOutcome, error) {
-	cmd := exec.Command("git", "-C", repo, "push", remote,
+func (t GitPushTransport) Push(repo, remote, ref, expected, tip string) (CASOutcome, error) {
+	cmd := exec.CommandContext(t.context(), "git", "-C", repo, "push", remote,
 		"--force-with-lease="+ref+":"+expected, tip+":"+ref)
 	cmd.Env = gittree.ScrubbedEnviron("LC_ALL=C")
 	var stdout, stderr bytes.Buffer

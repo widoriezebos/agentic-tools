@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -97,6 +98,27 @@ func ReadCallEvidence(stateRoot string) (CallEvidence, error) {
 
 func callMaintenancePath(stateRoot string) string {
 	return filepath.Join(stateRoot, "artifacts", "agents", "context", "maintenance.lock")
+}
+
+// ProbeMaintenance reports whether the maintenance lock is free, probing it
+// LOCK_SH|LOCK_NB without creating the lock file or its directory and
+// holding nothing afterwards (Part B R15). An absent lock reads as free.
+func ProbeMaintenance(stateRoot string) (free bool, err error) {
+	file, err := os.OpenFile(callMaintenancePath(stateRoot), os.O_RDONLY, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("cannot open call store maintenance lock: %w", err)
+	}
+	defer file.Close()
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); err != nil {
+		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+			return false, nil
+		}
+		return false, fmt.Errorf("cannot probe call store maintenance lock: %w", err)
+	}
+	return true, nil
 }
 
 func lockCallMaintenance(stateRoot string, exclusive, nonBlocking bool) (*lock.FileLock, error) {

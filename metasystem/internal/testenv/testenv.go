@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -125,6 +126,34 @@ func RegisterFixtureKey(key identity.FixtureKey) {
 	fixtureKeys.Lock()
 	defer fixtureKeys.Unlock()
 	fixtureKeys.keys = append(fixtureKeys.keys, key)
+}
+
+// SetupFixtureTag mints a fixture key owned by this test binary for a child
+// a package setup starts (MainWithSetup), registers it for the exit scan, and
+// returns the environment word that tags the child. A child carrying it, and
+// every process it starts, is a fixture the custodian ends when this binary
+// dies, so a build started in setup and orphaned by a kill never writes into
+// a namespace a later start removes. It needs the custodian: call it from
+// setup, never before MainWithSetup.
+func SetupFixtureTag(name string) (identity.FixtureKey, string, error) {
+	if _, started := FixtureCustodian(); !started {
+		return identity.FixtureKey{}, "", errors.New("a setup fixture needs the custodian: call SetupFixtureTag from MainWithSetup's setup")
+	}
+	owner, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive || !owner.Ref().NativeExact() {
+		return identity.FixtureKey{}, "", fmt.Errorf("setup fixture owner identity is unproven: state=%v err=%v", state, err)
+	}
+	nonce := make([]byte, 4)
+	if _, err := rand.Read(nonce); err != nil {
+		return identity.FixtureKey{}, "", err
+	}
+	key := identity.FixtureKey{Owner: owner.Ref(), Test: name, Nonce: hex.EncodeToString(nonce)}
+	encoded, err := identity.EncodeKey(key)
+	if err != nil {
+		return identity.FixtureKey{}, "", err
+	}
+	RegisterFixtureKey(key)
+	return key, identity.FixtureOwnerEnv + "=" + encoded, nil
 }
 
 func registeredFixtureKeys() []identity.FixtureKey {
@@ -565,12 +594,36 @@ func createProcessNamespace(mkdirTemp func(string, string) (string, error), root
 
 func sharedGoCacheEnvironment() map[string]string {
 	shared := make(map[string]string)
-	// The engine cache pair, resolved before the namespace replaces HOME.
+	// The cache pair, resolved before the namespace replaces HOME: an
+	// inherited absolute value is kept, else it is computed from the real
+	// user's cache dir. A cache context an ancestor engine issued wins
+	// (disk-lifetimes A8, rule 4), so a test binary started under a replaced
+	// HOME by a test of another package never computes a private cache.
 	caches, _ := gocache.Resolve(os.Environ())
+	domain, contextual := gocache.DomainEngine, false
+	if os.Getenv("METASYSTEM_HOOK_DELEGATE_JOB") != "" {
+		domain = gocache.DomainDelegate
+	}
+	if raw, present := os.LookupEnv(gocache.ContextEnv); present {
+		if context, err := gocache.DecodeContext(raw); err == nil {
+			if ancestor, _ := cachedomain.IssuerIsAncestor(context.Issuer); ancestor {
+				caches = gocache.Paths{GoCache: context.GoCache, StaticcheckCache: context.StaticcheckCache}
+				domain, contextual = context.Domain, true
+			}
+		}
+	}
 	for _, entry := range gocache.Environment(caches) {
 		name, value, _ := strings.Cut(entry, "=")
-		if os.Getenv(name) == "" {
+		if contextual || os.Getenv(name) == "" {
 			shared[name] = value
+		}
+	}
+	// This test binary issues the context its children inherit: a nested
+	// engine under the namespace's HOME authenticates it against this
+	// process and compiles into the same pair.
+	if self, err := cachedomain.SelfReference(); err == nil {
+		if context, err := gocache.EncodeContext(gocache.Context{Domain: domain, GoCache: caches.GoCache, StaticcheckCache: caches.StaticcheckCache, Issuer: self}); err == nil {
+			shared[gocache.ContextEnv] = context
 		}
 	}
 	gopath := os.Getenv("GOPATH")
@@ -833,19 +886,92 @@ func removeDeadRegistryHomes(root string, output io.Writer) {
 		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !strings.HasPrefix(entry.Name(), registryHomePrefix) {
 			continue
 		}
-		owner, err := openRegistryOwner(path)
-		if err != nil {
-			continue
-		}
-		if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-			_ = owner.Close()
-			continue
-		}
-		if err := removeSettledRegistryHome(path, output); err != nil {
+		if err := RemoveSettledHome(path, output); err != nil {
 			fmt.Fprintf(output, "remove dead registry home %s: %v\n", path, err)
 		}
-		_ = owner.Close()
 	}
+}
+
+// HomeSettled is the observation half of the dead-home predicate (Part B
+// 3.2, DL2-13): the home's owner lock is free, and every custodian sidecar
+// beside it is settled (its log lock free and its records gone, or no log
+// and no records). It removes nothing, reports nothing and creates nothing;
+// the locks are probed and released at once. Anything it cannot read is
+// "not settled".
+func HomeSettled(home string) bool {
+	info, err := os.Lstat(home)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !strings.HasPrefix(filepath.Base(home), registryHomePrefix) {
+		return false
+	}
+	owner, err := openRegistryOwner(home)
+	if err != nil {
+		return false
+	}
+	defer owner.Close()
+	if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		return false
+	}
+	entries, err := os.ReadDir(filepath.Dir(home))
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		stem, pid, ok := fixtureCustodianSidecar(entry.Name())
+		if !ok || stem != filepath.Base(home) {
+			continue
+		}
+		if !custodianSidecarsSettled(home, pid) {
+			return false
+		}
+	}
+	return true
+}
+
+// custodianSidecarsSettled observes one custodian's sidecars without the
+// removal and the report removeFixtureCustodianSidecars adds.
+func custodianSidecarsSettled(home, pid string) bool {
+	logPath := home + ".custodian-" + pid + ".log"
+	recordsPath := home + ".fixture-refs-" + pid
+	fd, err := unix.Open(logPath, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	if err == unix.ENOENT {
+		absent, err := fixtureCustodianRecordsAbsent(recordsPath)
+		return absent && err == nil
+	}
+	if err != nil {
+		return false
+	}
+	log := os.NewFile(uintptr(fd), logPath)
+	defer log.Close()
+	if opened, err := log.Stat(); err != nil || !opened.Mode().IsRegular() {
+		return false
+	}
+	if err := unix.Flock(int(log.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		return false
+	}
+	absent, err := fixtureCustodianRecordsAbsent(recordsPath)
+	return absent && err == nil
+}
+
+// RemoveSettledHome is the apply half: it takes the home's owner lock
+// exclusively without waiting and, holding it, removes the settled sidecars
+// and the home once none is pending. A live owner is not an error: the home
+// is simply kept.
+func RemoveSettledHome(home string, output io.Writer) error {
+	owner, err := openRegistryOwner(home)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer owner.Close()
+	if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if lockWouldBlock(err) {
+			return nil
+		}
+		return fmt.Errorf("lock registry home %s: %w", home, err)
+	}
+	return removeSettledRegistryHome(home, output)
 }
 
 const fixtureCustodianLogReportLimit = 64 << 10

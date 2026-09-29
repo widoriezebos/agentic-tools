@@ -3,6 +3,7 @@ package usage
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -70,18 +71,44 @@ var (
 
 // PruneCallSessions retires complete cursor/sample pairs whose filesystem and
 // committed evidence are both strictly older than before. Registry history
-// and stable lock files are never removed.
+// and stable lock files are never removed. It waits for the maintenance
+// lock and judges the cutoff against the wall clock.
 func PruneCallSessions(stateRoot string, before time.Time) (removed int, err error) {
+	return retireCallSessions(context.Background(), stateRoot, before, callRetentionNow(), 0, false)
+}
+
+// PruneCallSessionsAt is PruneCallSessions judged against the caller's
+// clock: the context-prune verb passes the now it prunes handoffs with.
+func PruneCallSessionsAt(stateRoot string, before, now time.Time) (removed int, err error) {
+	return retireCallSessions(context.Background(), stateRoot, before, now, 0, false)
+}
+
+// RetireCallSessions is the disk sweeper's retirement (Part B 3.5): the
+// cutoff is judged against now, the maintenance lock is taken exclusively
+// without waiting (held is a *CallStoreBusyError at once), the interrupted
+// journals present are recovered, at most limit pairs are retired, the
+// context is checked between pairs, and the lock is released on return.
+func RetireCallSessions(ctx context.Context, stateRoot string, before, now time.Time, limit int) (removed int, err error) {
+	if limit < 1 {
+		return 0, fmt.Errorf("call retirement limit must be positive, got %d", limit)
+	}
+	return retireCallSessions(ctx, stateRoot, before, now, limit, true)
+}
+
+func retireCallSessions(ctx context.Context, stateRoot string, before, now time.Time, limit int, nonBlocking bool) (removed int, err error) {
 	if !filepath.IsAbs(stateRoot) {
 		return 0, fmt.Errorf("state root must be absolute: %s", stateRoot)
 	}
-	if !before.Before(callRetentionNow().UTC().Add(-callRetentionWindow)) {
-		return 0, fmt.Errorf("call retirement cutoff must be older than retention window: window=%dd cutoff=%s", callRetentionWindowDays, before.UTC().Format(time.RFC3339Nano))
+	if err := validateCallCutoff(before, now); err != nil {
+		return 0, err
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
 	if err := validateCallStorageParents(stateRoot); err != nil {
 		return 0, err
 	}
-	maintenance, err := lockCallMaintenance(stateRoot, true, false)
+	maintenance, err := lockCallMaintenance(stateRoot, true, nonBlocking)
 	if err != nil {
 		return 0, err
 	}
@@ -100,9 +127,12 @@ func PruneCallSessions(stateRoot string, before time.Time) (removed int, err err
 	if err != nil {
 		return removed, err
 	}
-	candidates, err := callRetirementCandidates(stateRoot, registrations, before)
+	candidates, err := callRetirementCandidates(stateRoot, registrations, before, false)
 	if err != nil {
 		return removed, err
+	}
+	if limit > 0 && len(candidates) > limit {
+		candidates = candidates[:limit]
 	}
 	if len(candidates) == 0 {
 		return removed, nil
@@ -127,6 +157,9 @@ func PruneCallSessions(stateRoot string, before time.Time) (removed int, err err
 	}
 
 	for _, candidate := range candidates {
+		if err := ctx.Err(); err != nil {
+			return removed, err
+		}
 		var retireErr error
 		if candidate.Orphan {
 			retireErr = retireEmptySamplesOrphan(candidate, before)
@@ -143,6 +176,71 @@ func PruneCallSessions(stateRoot string, before time.Time) (removed int, err err
 		removed++
 	}
 	return removed, nil
+}
+
+func validateCallCutoff(before, now time.Time) error {
+	if now.IsZero() {
+		return fmt.Errorf("call retirement needs one nonzero clock observation")
+	}
+	if !before.Before(now.UTC().Add(-callRetentionWindow)) {
+		return fmt.Errorf("call retirement cutoff must be older than retention window: window=%dd cutoff=%s", callRetentionWindowDays, before.UTC().Format(time.RFC3339Nano))
+	}
+	return nil
+}
+
+// CallInspection is InspectCallSessions' observation.
+type CallInspection struct {
+	// Candidates are the pairs a retirement would retire now, oldest first.
+	Candidates []CallSession
+	// Orphans are empty samples files with no cursor a retirement removes.
+	Orphans []string
+	// Interrupted are the cursor paths whose retirement journal a retirement
+	// would recover first.
+	Interrupted []string
+	// MaintenanceHeld reports the maintenance lock held at the probe.
+	MaintenanceHeld bool
+}
+
+// InspectCallSessions is the read-only half of the retirement (Part B 3.5,
+// DL3B-05): it lists the retirable pairs and the interrupted journals,
+// recovers nothing, publishes no boundary, truncates nothing and creates no
+// file or directory; the maintenance lock is probed without being created.
+func InspectCallSessions(stateRoot string, before, now time.Time) (CallInspection, error) {
+	var inspection CallInspection
+	if !filepath.IsAbs(stateRoot) {
+		return inspection, fmt.Errorf("state root must be absolute: %s", stateRoot)
+	}
+	if err := validateCallCutoff(before, now); err != nil {
+		return inspection, err
+	}
+	if err := validateCallStorageParents(stateRoot); err != nil {
+		return inspection, err
+	}
+	free, err := ProbeMaintenance(stateRoot)
+	if err != nil {
+		return inspection, err
+	}
+	inspection.MaintenanceHeld = !free
+	inspection.Interrupted, err = callRetirementCursorPaths(stateRoot)
+	if err != nil {
+		return inspection, err
+	}
+	registrations, _, err := readCallRegistrations(filepath.Join(stateRoot, "artifacts", "agents", "context", "sessions.jsonl"))
+	if err != nil {
+		return inspection, err
+	}
+	candidates, err := callRetirementCandidates(stateRoot, registrations, before, true)
+	if err != nil {
+		return inspection, err
+	}
+	for _, candidate := range candidates {
+		if candidate.Orphan {
+			inspection.Orphans = append(inspection.Orphans, candidate.SamplesPath)
+		} else {
+			inspection.Candidates = append(inspection.Candidates, candidate.Session)
+		}
+	}
+	return inspection, nil
 }
 
 // recoverCallRetirement completes one journal-authorized deletion. The caller
@@ -254,7 +352,7 @@ func validateRecoverableCallRetirement(stateRoot, cursorPath string) error {
 	return validateCallRetirementTargets(stateRoot, cursorPath, journal)
 }
 
-func callRetirementCandidates(stateRoot string, registrations []CallRegistration, before time.Time) ([]callRetirementCandidate, error) {
+func callRetirementCandidates(stateRoot string, registrations []CallRegistration, before time.Time, observe bool) ([]callRetirementCandidate, error) {
 	if err := validateCallStorageParents(stateRoot); err != nil {
 		return nil, err
 	}
@@ -276,11 +374,21 @@ func callRetirementCandidates(stateRoot string, registrations []CallRegistration
 	var candidates []callRetirementCandidate
 	for _, stem := range names {
 		cursorPath := filepath.Join(cursorDir, stem+".json")
+		if observe {
+			candidate, eligible, inspectErr := inspectCallRetirementCandidate(stateRoot, cursorPath, registrations, before, true)
+			if inspectErr != nil {
+				return nil, inspectErr
+			}
+			if eligible {
+				candidates = append(candidates, candidate)
+			}
+			continue
+		}
 		lock, err := lockCallFile(cursorPath + ".lock")
 		if err != nil {
 			return nil, fmt.Errorf("cannot lock call retirement candidate %s: %w", cursorPath, err)
 		}
-		candidate, eligible, inspectErr := inspectCallRetirementCandidate(stateRoot, cursorPath, registrations, before)
+		candidate, eligible, inspectErr := inspectCallRetirementCandidate(stateRoot, cursorPath, registrations, before, false)
 		unlockCallFile(lock)
 		if inspectErr != nil {
 			return nil, inspectErr
@@ -298,7 +406,10 @@ func callRetirementCandidates(stateRoot string, registrations []CallRegistration
 	return candidates, nil
 }
 
-func inspectCallRetirementCandidate(stateRoot, cursorPath string, registrations []CallRegistration, before time.Time) (callRetirementCandidate, bool, error) {
+// inspectCallRetirementCandidate judges one pair. observe never truncates:
+// a samples log past its committed boundary needs recovery first, so an
+// observation reports the pair not eligible this pass.
+func inspectCallRetirementCandidate(stateRoot, cursorPath string, registrations []CallRegistration, before time.Time, observe bool) (callRetirementCandidate, bool, error) {
 	samplesPath := filepath.Join(stateRoot, "artifacts", "agents", "context", "samples", strings.TrimSuffix(filepath.Base(cursorPath), ".json")+".jsonl")
 	cursorInfo, cursorExists, err := callStoreMember(cursorPath)
 	if err != nil {
@@ -330,7 +441,14 @@ func inspectCallRetirementCandidate(stateRoot, cursorPath string, registrations 
 	if CursorPath(stateRoot, cursor.Runtime, cursor.Session) != cursorPath || SamplesPath(stateRoot, cursor.Runtime, cursor.Session) != samplesPath {
 		return callRetirementCandidate{}, false, pairError(cursorPath, samplesPath, fmt.Errorf("cursor identity %s/%s does not map to both store basenames", cursor.Runtime, cursor.Session))
 	}
-	if err := reconcileCallRows(samplesPath, cursor, true); err != nil {
+	if observe {
+		if samplesExists && samplesInfo.Size() < cursor.SamplesBytes {
+			return callRetirementCandidate{}, false, pairError(cursorPath, samplesPath, fmt.Errorf("call samples length %d is below committed boundary %d", samplesInfo.Size(), cursor.SamplesBytes))
+		}
+		if samplesExists && samplesInfo.Size() > cursor.SamplesBytes {
+			return callRetirementCandidate{}, false, nil
+		}
+	} else if err := reconcileCallRows(samplesPath, cursor, true); err != nil {
 		return callRetirementCandidate{}, false, pairError(cursorPath, samplesPath, err)
 	}
 	cursorInfo, cursorExists, err = callStoreMember(cursorPath)
@@ -475,7 +593,7 @@ func prepareCallRetirement(stateRoot string, session CallSession, before time.Ti
 		return callRetirementJournal{}, fmt.Errorf("call cursor retirement identity changed at %s", cursorPath)
 	}
 	registrations := []CallRegistration{{Runtime: session.Runtime, Session: session.Session, FirstSeen: before.Add(-time.Nanosecond)}}
-	candidate, eligible, err := inspectCallRetirementCandidate(stateRoot, cursorPath, registrations, before)
+	candidate, eligible, err := inspectCallRetirementCandidate(stateRoot, cursorPath, registrations, before, false)
 	if err != nil {
 		return callRetirementJournal{}, err
 	}

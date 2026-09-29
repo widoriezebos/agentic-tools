@@ -111,7 +111,7 @@ func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
 		goalIntentCommands(), intentPlanningCommands(), designIntentCommands(), intentWorkCommands(),
-		intentDeliveryCommands(), helmIntentCommands(), processIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
+		intentDeliveryCommands(), helmIntentCommands(), processIntentCommands(), diskIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
 	} {
 		commands = append(commands, part...)
 	}
@@ -545,6 +545,8 @@ type intentOwners struct {
 	// stopMovesDeclare writes a Stop decision move declaration; nil selects
 	// audit.DeclareStopDecisionSurface.
 	stopMovesDeclare func(string, audit.StopSurfaceOptions, string, string) (string, error)
+	// disk are the disk verbs' seams; the zero value is production.
+	disk diskOwners
 }
 
 func defaultIntentOwners() intentOwners {
@@ -976,7 +978,7 @@ type intentGroup struct {
 var intentGroups = []intentGroup{
 	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
 	{"deliver", "Deliver", []string{"work", "test", "question", "incident"}},
-	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "machine", "app", "ui", "settings"}},
+	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "machine", "disk", "app", "ui", "settings"}},
 	{"practice", "Practice", []string{"receipt", "experiment"}},
 }
 
@@ -996,6 +998,7 @@ var intentObjectSummaries = map[string]string{
 	"mission":    "autonomous missions",
 	"system":     "MetaSystem for this checkout: set up, start, stop, restart, status, check, enroll, adopt",
 	"machine":    "the fleet's machines",
+	"disk":       "what MetaSystem keeps on this computer's disk, and reclaiming it",
 	"app":        "the application this project builds, under its launch contract",
 	"ui":         "the browser interface",
 	"settings":   "MetaSystem settings and coordination",
@@ -1004,7 +1007,7 @@ var intentObjectSummaries = map[string]string{
 }
 
 // intentAdministrationObjects configure or repair MetaSystem itself.
-var intentAdministrationObjects = []string{"system", "machine", "ui", "settings"}
+var intentAdministrationObjects = []string{"system", "machine", "disk", "ui", "settings"}
 
 func intentObjectGroup(object string) string {
 	for _, group := range intentGroups {

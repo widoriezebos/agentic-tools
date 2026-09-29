@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -283,11 +284,26 @@ func PrepareScratchEnvironmentFor(request *TestRunRequest, run *ScratchRun, poli
 	}
 	switch policy {
 	case ScratchEnvironmentPolicyV2:
-		caches, err := gocache.Resolve(request.Environment)
+		// The pair comes from this engine's authenticated cache domain
+		// (disk-lifetimes A8) and is recorded with the run.
+		resolve := request.cacheDomain
+		if resolve == nil {
+			resolve = func(installationRoot string) (gocache.Resolution, error) {
+				return cachedomain.Resolve(os.Environ(), installationRoot)
+			}
+		}
+		installationRoot := ""
+		if request.ProjectRoot != "" {
+			installationRoot = filepath.Join(request.ProjectRoot, filepath.FromSlash(request.InstallationPrefix))
+		}
+		resolution, err := resolve(installationRoot)
 		if err != nil {
 			return fmt.Errorf("scratch environment: %w", err)
 		}
-		descriptor.GoCache, descriptor.StaticcheckCache = caches.GoCache, caches.StaticcheckCache
+		descriptor.GoCache, descriptor.StaticcheckCache = resolution.Paths.GoCache, resolution.Paths.StaticcheckCache
+		if err := run.RecordCaches(descriptor.GoCache, descriptor.StaticcheckCache); err != nil {
+			return fmt.Errorf("scratch environment: %w", err)
+		}
 	case ScratchEnvironmentPolicyV1:
 		for _, name := range []string{"gocache", "staticcheck"} {
 			if err := os.MkdirAll(filepath.Join(run.Root(), name), 0o700); err != nil {

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 )
 
 // fakeGit answers rev-parse queries from a table keyed by directory; any
@@ -19,11 +21,11 @@ func fakeGit(answers map[string]map[string]string) GitQuery {
 	}
 }
 
-// TestJobBuildCacheEnv is the build cache contract the dispatch fixtures
-// checked through runtime-common.sh's job_build_cache_env: a dispatcher-made
-// job worktree gets one cache under its private git dir (created, with the
-// staticcheck cache), a shared checkout and a seat's own linked worktree get
-// none, and the recorded path names the same cache.
+// TestJobBuildCacheEnv is the delegate cache contract (disk-lifetimes A7):
+// every job, worktree or shared checkout, exports the one machine delegate
+// cache pair (created), a dispatcher-made job worktree adds a chain-private
+// GOTMPDIR under its git dir, and the recorded path names the delegate
+// cache for every job. Nothing lands in the chain's git dir but GOTMPDIR.
 func TestJobBuildCacheEnv(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -40,43 +42,47 @@ func TestJobBuildCacheEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	caches := gocache.Paths{GoCache: filepath.Join(root, "user-cache", "metasystem-delegate-go-build"), StaticcheckCache: filepath.Join(root, "user-cache", "metasystem-delegate-staticcheck")}
 	git := fakeGit(map[string]map[string]string{
 		worktree: {"--absolute-git-dir": gitdir},
 		seat:     {"--absolute-git-dir": filepath.Join(root, ".git", "worktrees", "seat")},
 		root:     {"--absolute-git-dir": filepath.Join(root, ".git")},
 	})
-	env := jobBuildCacheEnv(git, agents, worktree)
-	cache := filepath.Join(gitdir, "metasystem-build-cache")
+	env := jobBuildCacheEnv(git, agents, worktree, caches)
 	want := []string{
-		"GOCACHE=" + filepath.Join(cache, "go-cache"),
-		"GOTMPDIR=" + filepath.Join(cache, "go-tmp"),
-		"STATICCHECK_CACHE=" + filepath.Join(cache, "staticcheck"),
+		"GOCACHE=" + caches.GoCache,
+		"STATICCHECK_CACHE=" + caches.StaticcheckCache,
+		"GOTMPDIR=" + filepath.Join(gitdir, "metasystem-go-tmp"),
 	}
 	if strings.Join(env, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("job worktree cache env = %v, want %v", env, want)
 	}
-	for _, dir := range []string{"go-cache", "go-tmp", "staticcheck"} {
-		if info, err := os.Stat(filepath.Join(cache, dir)); err != nil || !info.IsDir() {
+	for _, dir := range []string{caches.GoCache, caches.StaticcheckCache, filepath.Join(gitdir, "metasystem-go-tmp")} {
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 			t.Fatalf("cache directory %s was not created: %v", dir, err)
 		}
 	}
-	if env := jobBuildCacheEnv(git, agents, root); env != nil {
-		t.Fatalf("a shared checkout exported a cache: %v", env)
+	if _, err := os.Stat(filepath.Join(gitdir, "metasystem-build-cache")); !os.IsNotExist(err) {
+		t.Fatalf("a per-chain build cache was made: %v", err)
 	}
-	if env := jobBuildCacheEnv(git, agents, seat); env != nil {
-		t.Fatalf("a seat's linked worktree outside the job worktrees exported a cache: %v", env)
+	for _, workspace := range []string{root, seat} {
+		env := jobBuildCacheEnv(git, agents, workspace, caches)
+		if strings.Join(env, "\n") != strings.Join(want[:2], "\n") {
+			t.Fatalf("%s: a job outside the job worktrees = %v, want the delegate cache without GOTMPDIR", workspace, env)
+		}
+	}
+	if env := jobBuildCacheEnv(git, agents, worktree, gocache.Paths{}); strings.Join(env, "\n") != want[2] {
+		t.Fatalf("an unresolved delegate cache exported %v", env)
 	}
 	round := filepath.Join(realRoot, "round")
 	if err := os.MkdirAll(round, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	recordBuildCachePath(git, agents, worktree, round)
-	if data, _ := os.ReadFile(filepath.Join(round, "build-cache.txt")); string(data) != filepath.Join(cache, "go-cache")+"\n" {
-		t.Fatalf("recorded cache = %q", data)
-	}
-	recordBuildCachePath(git, agents, root, round)
-	if data, _ := os.ReadFile(filepath.Join(round, "build-cache.txt")); string(data) != "\n" {
-		t.Fatalf("a shared checkout recorded a cache: %q", data)
+	for _, workspace := range []string{worktree, root} {
+		recordBuildCachePath(git, agents, workspace, round, caches)
+		if data, _ := os.ReadFile(filepath.Join(round, "build-cache.txt")); string(data) != caches.GoCache+"\n" {
+			t.Fatalf("%s: recorded cache = %q", workspace, data)
+		}
 	}
 }
 

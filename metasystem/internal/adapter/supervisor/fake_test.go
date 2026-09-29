@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
@@ -55,8 +56,8 @@ func TestFakeCompleteValidSequence(t *testing.T) {
 	if got, want := readText(t, f.heartbeat()), `{"pid":`+strconv.Itoa(os.Getpid())+`,"pgid":`+strconv.Itoa(os.Getpid())+`,"instanceTag":"fake-tag-1"}`+"\n"; got != want {
 		t.Fatalf("heartbeat = %q, want %q", got, want)
 	}
-	if got := readText(t, f.roundFile("build-cache.txt")); got != "\n" {
-		t.Fatalf("build cache = %q, want empty line", got)
+	if got, want := readText(t, f.roundFile("build-cache.txt")), filepath.Join(f.root, "user-cache", "metasystem-delegate-go-build")+"\n"; got != want {
+		t.Fatalf("build cache = %q, want the machine delegate cache %q", got, want)
 	}
 	if got, want := readText(t, f.roundFile("events.jsonl")),
 		`{"event":"session-established","sessionId":"fake-session-fake-job-1","round":1}`+"\n"+`{"event":"turn.completed","topLevel":true}`+"\n"; got != want {
@@ -779,8 +780,9 @@ func TestFakeSuperviseRefusals(t *testing.T) {
 	})
 }
 
-// TestFakeRecordBuildCachePath mirrors job_build_cache_env: a job
-// worktree under artifacts/agents/worktrees records its private cache.
+// TestFakeRecordBuildCachePath: the fake records the path a real runtime's
+// round records (disk-lifetimes A7), the one machine delegate cache for a
+// job worktree and a shared checkout alike, and makes no per-chain cache.
 func TestFakeRecordBuildCachePath(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -799,18 +801,17 @@ func TestFakeRecordBuildCachePath(t *testing.T) {
 			t.Fatalf("git %v: %v %s", args, err, output)
 		}
 	}
+	caches := gocache.Paths{GoCache: filepath.Join(root, "cache", "metasystem-delegate-go-build"), StaticcheckCache: filepath.Join(root, "cache", "metasystem-delegate-staticcheck")}
 	roundDir := t.TempDir()
-	fakeRecordBuildCachePath(runGit, agents, worktree, roundDir)
-	cache := filepath.Join(repo, ".git", "worktrees", "job-1", "metasystem-build-cache")
-	if got := readText(t, filepath.Join(roundDir, "build-cache.txt")); got != filepath.Join(cache, "go-cache")+"\n" {
-		t.Fatalf("build cache = %q", got)
+	for _, workspace := range []string{worktree, repo} {
+		fakeRecordBuildCachePath(runGit, agents, workspace, roundDir, caches)
+		if got := readText(t, filepath.Join(roundDir, "build-cache.txt")); got != caches.GoCache+"\n" {
+			t.Fatalf("%s: build cache = %q", workspace, got)
+		}
 	}
-	if !exists(filepath.Join(cache, "go-tmp")) || exists(filepath.Join(cache, "staticcheck")) {
-		t.Fatal("the fake makes go-cache and go-tmp only")
-	}
-	fakeRecordBuildCachePath(runGit, agents, repo, roundDir)
-	if got := readText(t, filepath.Join(roundDir, "build-cache.txt")); got != "\n" {
-		t.Fatalf("a checkout outside the job worktrees recorded %q", got)
+	gitdir := filepath.Join(repo, ".git", "worktrees", "job-1")
+	if !exists(filepath.Join(gitdir, "metasystem-go-tmp")) || exists(filepath.Join(gitdir, "metasystem-build-cache")) {
+		t.Fatal("the fake makes the worktree's GOTMPDIR and no per-chain cache")
 	}
 }
 

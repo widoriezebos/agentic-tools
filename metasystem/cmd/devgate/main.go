@@ -28,6 +28,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"io"
 	"os"
 	"os/exec"
@@ -101,8 +103,9 @@ type deps struct {
 	now func() time.Time
 	// owners are the in-process owners the static and full gates consult.
 	owners owners
-	// userCacheDir is os.UserCacheDir, the engine cache's fallback base.
-	userCacheDir func() (string, error)
+	// cacheDomain decides the build's cache pair and the context its
+	// children inherit (cachedomain.Resolve, disk-lifetimes A8).
+	cacheDomain func(environ []string, installationRoot string) (gocache.Resolution, error)
 }
 
 // toolCall is one child program run from dir with an explicit environment.
@@ -148,9 +151,9 @@ func nativeDeps() deps {
 			command.Stdout, command.Stderr = call.stdout, call.stderr
 			return command.Run()
 		},
-		now:          time.Now,
-		owners:       nativeOwners(),
-		userCacheDir: os.UserCacheDir,
+		now:         time.Now,
+		owners:      nativeOwners(),
+		cacheDomain: cachedomain.Resolve,
 	}
 }
 

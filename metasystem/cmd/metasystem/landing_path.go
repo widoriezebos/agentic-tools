@@ -23,11 +23,11 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
@@ -204,7 +204,12 @@ func landingPathBaseJudge(toplevel, prefix string, stderr io.Writer) (landpath.J
 	// detached worktree's path never keys the build.
 	build := exec.Command("go", "build", "-trimpath", "-o", engine, "./cmd/metasystem")
 	build.Dir = filepath.Join(worktree, strings.TrimSuffix(prefix, "/"))
-	build.Env = gocache.Carry(os.Environ())
+	environment, carryErr := cachedomain.Carry(os.Environ(), "")
+	if carryErr != nil {
+		cleanup()
+		return landpath.Judge{}, nil, carryErr
+	}
+	build.Env = environment
 	build.Stdout, build.Stderr = stderr, stderr
 	buildErr := build.Run()
 	remove := exec.Command("git", "-C", toplevel, "worktree", "remove", "--force", worktree)

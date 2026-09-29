@@ -71,7 +71,13 @@ type ScratchRecord struct {
 	Launcher   string             `json:"launcher"`
 	Attempt    string             `json:"attempt,omitempty"`
 	Custodians []ScratchCustodian `json:"custodians,omitempty"`
-	Worktrees  []ScratchWorktree  `json:"worktrees,omitempty"`
+	// GoCache and StaticcheckCache are the cache pair a v2 run resolved
+	// from its authenticated domain: a proof child whose locator names this
+	// record, and whose ancestor is its launcher or a custodian, takes its
+	// paths from here and never from GOCACHE (disk-lifetimes A8, rule 3).
+	GoCache          string            `json:"goCache,omitempty"`
+	StaticcheckCache string            `json:"staticcheckCache,omitempty"`
+	Worktrees        []ScratchWorktree `json:"worktrees,omitempty"`
 	// Leases are the run-invariant slots this run claimed (scratch_lease.go).
 	Leases []string `json:"leases,omitempty"`
 }
@@ -221,6 +227,14 @@ func (r *ScratchRun) Locator(fd int) *ScratchLocator {
 func (r *ScratchRun) RecordAttempt(attempt string) error {
 	return r.mutate(func(record *ScratchRecord) error {
 		record.Attempt = attempt
+		return nil
+	})
+}
+
+// RecordCaches records the run's resolved cache pair.
+func (r *ScratchRun) RecordCaches(goCache, staticcheckCache string) error {
+	return r.mutate(func(record *ScratchRecord) error {
+		record.GoCache, record.StaticcheckCache = goCache, staticcheckCache
 		return nil
 	})
 }

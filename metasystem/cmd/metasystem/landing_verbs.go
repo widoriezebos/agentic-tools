@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -274,7 +274,9 @@ func landingTestReceiptTo(stdout, stderr io.Writer, parent context.Context, reso
 		if proofRunAlternateGoInputs() {
 			return recordExitTo(stderr, fmt.Errorf("canonical validator refuses GOFLAGS containing -modfile or -overlay"))
 		}
-		executionEnvironment = canonicalValidatorEnvironment()
+		if executionEnvironment, err = canonicalValidatorEnvironment(""); err != nil {
+			return recordExitTo(stderr, err)
+		}
 	}
 	limits, err := resolveProofRunLimits(confPath)
 	if err != nil {
@@ -369,16 +371,16 @@ func landingTestReceiptTo(stdout, stderr io.Writer, parent context.Context, reso
 	return status
 }
 
-func canonicalValidatorEnvironment() []string {
-	return canonicalValidatorEnvironmentFrom(os.Environ())
+func canonicalValidatorEnvironment(installationRoot string) ([]string, error) {
+	return canonicalValidatorEnvironmentFrom(os.Environ(), installationRoot)
 }
 
 // canonicalValidatorEnvironmentFrom derives the validator's environment from
 // an inherited one, so its owned values are provable without mutating the
-// test process's environment.
-func canonicalValidatorEnvironmentFrom(inherited []string) []string {
-	owned := map[string]bool{"GOFLAGS": true, "METASYSTEM_GATE_FROZEN_TOOLCHAIN": true, "GOCACHE": true, "STATICCHECK_CACHE": true}
-	caches, _ := gocache.Resolve(inherited)
+// test process's environment. The cache pair and its context come from the
+// authenticated cache domain (disk-lifetimes A8).
+func canonicalValidatorEnvironmentFrom(inherited []string, installationRoot string) ([]string, error) {
+	owned := map[string]bool{"GOFLAGS": true, "METASYSTEM_GATE_FROZEN_TOOLCHAIN": true}
 	environment := make([]string, 0, len(inherited)+2)
 	for _, entry := range inherited {
 		name, _, _ := strings.Cut(entry, "=")
@@ -386,8 +388,11 @@ func canonicalValidatorEnvironmentFrom(inherited []string) []string {
 			environment = append(environment, entry)
 		}
 	}
-	environment = append(environment, gocache.Environment(caches)...)
+	environment, err := cachedomain.Carry(environment, installationRoot)
+	if err != nil {
+		return nil, fmt.Errorf("canonical validator: %w", err)
+	}
 	// GOFLAGS must equal cmd/devgate's ownedGoFlags: the gate's frozen-tree
 	// check accepts exactly that value (disk-lifetimes A4).
-	return append(environment, "GOFLAGS=-mod=readonly -trimpath", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1")
+	return append(environment, "GOFLAGS=-mod=readonly -trimpath", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1"), nil
 }

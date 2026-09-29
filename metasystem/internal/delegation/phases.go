@@ -403,7 +403,6 @@ func (s *session) closeChain(args []string) error {
 			return casErr
 		}
 	}
-	s.removeChainBuildCache(rootID)
 	if err := s.releaseChainLock(rootID); err != nil {
 		return err
 	}
