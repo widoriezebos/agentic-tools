@@ -183,10 +183,10 @@ func TestProofCommandFixtureChild(t *testing.T) {
 	}
 	switch args[0] {
 	case "proof-run":
-		proofCommandFixtureChildStatus = runProofRunLaunchWithInputs(args[2:], admit, terminal)
+		proofCommandFixtureChildStatus = runProofRunLaunchWithInputs(args[2:], admit, terminal, os.Stdout, os.Stderr)
 	case "landing":
 		fixture := newDeadlineReceiptTreeFixture(t, repository)
-		proofCommandFixtureChildStatus = runLandingTestReceiptWithInputs(context.Background(), goalCommandClock,
+		proofCommandFixtureChildStatus = landingTestReceiptTo(os.Stdout, os.Stderr, context.Background(), goalCommandClock,
 			fixture.strictRaw, landingReceiptTestRun, args[2:],
 			func(root, tree, command string) (*landing.ReceiptPreparation, error) {
 				return landing.PrepareTestReceiptWithWorkspace(root, tree, command, fixture.workspace(),

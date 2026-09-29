@@ -184,8 +184,8 @@ type legacyMutationInputs struct {
 	repositoryTop func(string) (string, error)
 	ensureGuard   func(string) error
 	reporter      func(metrics.Options) (metrics.Result, error)
-	// stdout and stderr are where the verb reports; nil is the process's
-	// own. caller, when set, is the supplied identity classification starts
+	// stdout and stderr are the invocation's streams the verb reports on.
+	// caller, when set, is the supplied identity classification starts
 	// from (owner_invocation.go) where no --caller-pid names one.
 	stdout, stderr io.Writer
 	caller         processIdentity
@@ -194,13 +194,14 @@ type legacyMutationInputs struct {
 func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet) []*string,
 	run func(*goal.Store, goal.Caller, []string) (goal.Result, error),
 	trySync func(string, []string) (int, bool), inputs legacyMutationInputs) int {
+	stdout, stderr := inputs.stdout, inputs.stderr
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(os.Stdout, "Shared synced-goal options follow; each verb may accept fewer flags.")
-		_, err := parseSyncFlagValuesWithOutput(name, args, os.Stdout)
+		fmt.Fprintln(stdout, "Shared synced-goal options follow; each verb may accept fewer flags.")
+		_, err := parseSyncFlagValuesWithOutput(name, args, stdout, stdout)
 		if err == flag.ErrHelp {
 			return 0
 		}
-		fmt.Fprintln(os.Stderr, "goal "+name+" help:", err)
+		fmt.Fprintln(stderr, "goal "+name+" help:", err)
 		return 2
 	}
 	if inputs.repositoryTop == nil {
@@ -212,17 +213,10 @@ func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet
 	if inputs.reporter == nil {
 		inputs.reporter = generateMetricsReport
 	}
-	stdout, stderr := io.Writer(os.Stdout), io.Writer(os.Stderr)
-	if inputs.stdout != nil {
-		stdout = inputs.stdout
-	}
-	if inputs.stderr != nil {
-		stderr = inputs.stderr
-	}
 	if code, handled := trySync(name, args); handled {
 		return code
 	}
-	flags := newFlagSet("goal " + name)
+	flags := newFlagSet("goal "+name, stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid (defaults to the parent process)")
 	var extras []*string
@@ -299,64 +293,64 @@ func converted(root string) bool {
 	return err == nil
 }
 
-func nextSyncedWithInputs(root, machine string, fetchFirst bool, resolve func(string) (goal.Endpoint, error), commandNow func(string) (time.Time, error), project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), presence func(string, goal.Endpoint) (seat.Copy, error), requiredLabels ...string) int {
+func nextSyncedWithInputs(stdout, stderr io.Writer, root, machine string, fetchFirst bool, resolve func(string) (goal.Endpoint, error), commandNow func(string) (time.Time, error), project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), presence func(string, goal.Endpoint) (seat.Copy, error), requiredLabels ...string) int {
 	e, err := resolve(root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	now, err := commandNow(root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	p, err := project(e, fetchFirst, now)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	// Projection notices such as stale or single-machine state print before
 	// orientation so the caller sees the limits on the answer.
 	for _, banner := range p.Banners {
-		fmt.Println(banner)
+		fmt.Fprintln(stdout, banner)
 	}
 	// What the other machines are, before what this one can take: a goal
 	// nobody is moving because its holder has gone quiet is context for the
 	// frontier and never part of it. Standard error, so the orientation line
 	// an agent reads is exactly the line it read before.
 	for _, line := range silentHolderLines(root, e, p.Tree, machine, now, presence) {
-		fmt.Fprintln(os.Stderr, line)
+		fmt.Fprintln(stderr, line)
 	}
 	frontier, frontierErr := goal.Next(p, machine, requiredLabels...)
 	if frontierErr != nil {
-		fmt.Fprintln(os.Stderr, "goal next could not answer: "+frontierErr.Error())
+		fmt.Fprintln(stderr, "goal next could not answer: "+frontierErr.Error())
 		return 1
 	}
 	for _, entry := range frontier.TrunkRedOwned {
-		fmt.Println(trunkRedOwnedLine(entry))
+		fmt.Fprintln(stdout, trunkRedOwnedLine(entry))
 	}
 	fenced := make([]*goal.GoalFile, 0, len(frontier.Fenced))
 	for _, id := range frontier.Fenced {
 		fenced = append(fenced, p.Tree.Live[id])
 	}
 	for _, line := range goal.FencedClaimLines(fenced) {
-		fmt.Println(line)
+		fmt.Fprintln(stdout, line)
 	}
 	landing := make([]*goal.GoalFile, 0, len(frontier.Landing))
 	for _, id := range frontier.Landing {
 		landing = append(landing, p.Tree.Live[id])
 	}
 	for _, line := range goal.LandingClaimLines(landing, now) {
-		fmt.Println(line)
+		fmt.Fprintln(stdout, line)
 	}
 	selection := goal.SelectNext(frontier)
 	switch selection.Kind {
 	case goal.NextSelectionContinue:
-		fmt.Println("continue your claimed goal: " + selection.GoalID)
-		printOpenReadItemBlocks(p.Tree.Live[selection.GoalID])
+		fmt.Fprintln(stdout, "continue your claimed goal: "+selection.GoalID)
+		printOpenReadItemBlocks(stdout, p.Tree.Live[selection.GoalID])
 	case goal.NextSelectionReady:
-		fmt.Println("next ready goal: " + selection.GoalID)
-		printOpenReadItemBlocks(p.Tree.Live[selection.GoalID])
+		fmt.Fprintln(stdout, "next ready goal: "+selection.GoalID)
+		printOpenReadItemBlocks(stdout, p.Tree.Live[selection.GoalID])
 	default:
 		if len(requiredLabels) > 0 {
 			matched := false
@@ -367,7 +361,7 @@ func nextSyncedWithInputs(root, machine string, fetchFirst bool, resolve func(st
 				}
 			}
 			if !matched {
-				fmt.Println("no goal matches --label " + strings.Join(requiredLabels, " --label "))
+				fmt.Fprintln(stdout, "no goal matches --label "+strings.Join(requiredLabels, " --label "))
 				break
 			}
 		}
@@ -384,23 +378,23 @@ func nextSyncedWithInputs(root, machine string, fetchFirst bool, resolve func(st
 		default:
 			line += "; no matching eligible work"
 		}
-		fmt.Println(line)
+		fmt.Fprintln(stdout, line)
 	}
 	for _, entry := range frontier.TrunkRedElsewhere {
 		owner := entry.Owner.Machine
 		if owner == "" {
 			owner = "nobody"
 		}
-		fmt.Printf("trunk red %s owned by %s since %s\n", entry.ID, owner, entry.Owner.Since)
+		fmt.Fprintf(stdout, "trunk red %s owned by %s since %s\n", entry.ID, owner, entry.Owner.Since)
 	}
 	return 0
 }
 
-func printOpenReadItemBlocks(file *goal.GoalFile) {
+func printOpenReadItemBlocks(stdout io.Writer, file *goal.GoalFile) {
 	for _, block := range goal.OpenReadItemBlocks(file) {
-		fmt.Println(block.Heading)
+		fmt.Fprintln(stdout, block.Heading)
 		for _, item := range block.Items {
-			fmt.Printf("- %s: %s\n", item.ID, item.Text)
+			fmt.Fprintf(stdout, "- %s: %s\n", item.ID, item.Text)
 		}
 	}
 }
@@ -428,12 +422,12 @@ func trunkRedOwnedLine(entry goal.TrunkRedEntry) string {
 
 // runGoalNext prints the one orientation line any runtime's main can read
 // by instruction — the universal fallback transport.
-func runGoalNext(args []string) int {
-	return runGoalNextWithInputs(args, defaultSyncRequestDependencies(), goalCommandNow)
+func runGoalNext(args []string, stdout, stderr io.Writer) int {
+	return runGoalNextWithInputs(args, defaultSyncRequestDependencies(), goalCommandNow, stdout, stderr)
 }
 
-func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, commandNow func(string) (time.Time, error)) int {
-	flags := newFlagSet("goal next")
+func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, commandNow func(string) (time.Time, error), stdout, stderr io.Writer) int {
+	flags := newFlagSet("goal next", stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	machineFlag := flags.String("machine", "", "machine nickname whose ordered frontier to inspect")
 	fetch := flags.Bool("fetch", false, "fetch and validate the canonical backlog before selecting")
@@ -443,23 +437,23 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "goal next accepts flags only")
+		fmt.Fprintln(stderr, "goal next accepts flags only")
 		return 2
 	}
 	if err := goal.ValidateLabels(labels); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	if stateRoot, rootErr := goal.ResolveStateRoot(*root); rootErr == nil {
 		if waiting, waitErr := report.CurrentWaitingLines(stateRoot); waitErr == nil {
 			for _, line := range waiting {
-				fmt.Println(line)
+				fmt.Fprintln(stdout, line)
 			}
 		} else {
-			fmt.Fprintln(os.Stderr, "durable wait recovery rows could not be read:", waitErr)
+			fmt.Fprintln(stderr, "durable wait recovery rows could not be read:", waitErr)
 		}
 	} else {
-		fmt.Fprintln(os.Stderr, "durable wait recovery rows could not be read:", rootErr)
+		fmt.Fprintln(stderr, "durable wait recovery rows could not be read:", rootErr)
 	}
 	machineProvided := false
 	flags.Visit(func(flag *flag.Flag) {
@@ -471,43 +465,43 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 		machine := *machineFlag
 		if machineProvided {
 			if err := goal.ValidateMachineNickname(machine); err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				fmt.Fprintln(stderr, err)
 				return 1
 			}
 		} else {
 			var err error
 			machine, err = dependencies.machine(*root)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				fmt.Fprintln(stderr, err)
 				return 1
 			}
 		}
-		return nextSyncedWithInputs(*root, machine, *fetch, dependencies.endpoint, commandNow, goal.Project, dependencies.presence, labels...)
+		return nextSyncedWithInputs(stdout, stderr, *root, machine, *fetch, dependencies.endpoint, commandNow, goal.Project, dependencies.presence, labels...)
 	}
 	if len(labels) > 0 || machineProvided || *fetch {
-		fmt.Fprintln(os.Stderr, "goal next --label, --machine, and --fetch read the synced backlog; this checkout still carries the legacy ledger and must migrate first")
+		fmt.Fprintln(stderr, "goal next --label, --machine, and --fetch read the synced backlog; this checkout still carries the legacy ledger and must migrate first")
 		return 1
 	}
 	store := &goal.Store{Root: *root}
 	ledger, problems, err := store.ReadLedger()
 	switch {
 	case err != nil:
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	case ledger == nil && store.BaselinePresent():
-		fmt.Println("goal ledger degraded: goals.md was deleted after adoption; run `goal reconcile`")
+		fmt.Fprintln(stdout, "goal ledger degraded: goals.md was deleted after adoption; run `goal reconcile`")
 	case ledger == nil:
-		fmt.Println("no goal ledger; `goal open` starts one")
+		fmt.Fprintln(stdout, "no goal ledger; `goal open` starts one")
 	case len(problems) > 0:
-		fmt.Println("goal ledger degraded: " + string(problems[0]))
+		fmt.Fprintln(stdout, "goal ledger degraded: "+string(problems[0]))
 	case ledger.Current != nil:
-		fmt.Printf("%s — %s; next: %s\n", ledger.Current.Id, ledger.Current.Intent, ledger.Current.NextStep)
+		fmt.Fprintf(stdout, "%s — %s; next: %s\n", ledger.Current.Id, ledger.Current.Intent, ledger.Current.NextStep)
 	case ledger.Free != nil:
-		fmt.Println("goal-free declared " + ledger.Free.Declared)
+		fmt.Fprintln(stdout, "goal-free declared "+ledger.Free.Declared)
 	case len(ledger.Queued) > 0:
-		fmt.Printf("no current goal; the queue holds %s; this legacy ledger converts with `metasystem goal sync --upgrade`\n", ledger.Queued[0].Id)
+		fmt.Fprintf(stdout, "no current goal; the queue holds %s; this legacy ledger converts with `metasystem goal sync --upgrade`\n", ledger.Queued[0].Id)
 	default:
-		fmt.Println("no current goal")
+		fmt.Fprintln(stdout, "no current goal")
 	}
 	return 0
 }

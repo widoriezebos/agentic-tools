@@ -24,10 +24,10 @@ func upAdapterGit(t *testing.T, args ...string) *exec.Cmd {
 func TestTopLevelUpPrintsButDoesNotInstallSchedulerEntry(t *testing.T) {
 	root := t.TempDir()
 	repositoryTop := declaredRepositoryTop(t, root, map[string]int{root: 1})
-	stdout, stderr, code := captureRelay(t, func() int {
-		return dispatchWithRepositoryTop([]string{
+	stdout, stderr, code := captureRelay(t, func(stdout, stderr io.Writer) int {
+		return dispatchWithFamiliesAndRepositoryTop([]string{
 			"up", "--metasystem-root", root, "--repo", root, "--print-scheduler-entry",
-		}, repositoryTop)
+		}, stdout, stderr, families(), repositoryTop)
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("scheduler print failed: code=%d stderr=%q", code, stderr)
@@ -105,11 +105,11 @@ func TestTopLevelUpKeepsTemplateStateSeparateFromGitScope(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, stderr, code := captureRelay(t, func() int {
+	_, stderr, code := captureRelay(t, func(stdout, stderr io.Writer) int {
 		return runUpWith([]string{
 			"--metasystem-root", metasystemRoot, "--repo", appRoot, "--retire",
 			"--session", "template-state", "--pid", fmt.Sprint(pid), "--start-time", fmt.Sprint(started), "--runtime", "fake",
-		}, repositoryTop)
+		}, repositoryTop, stdout, stderr)
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("template retirement failed: code=%d stderr=%q", code, stderr)

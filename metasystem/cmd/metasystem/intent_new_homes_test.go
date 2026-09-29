@@ -56,7 +56,7 @@ func newHomesAddTestsFixture(t *testing.T) string {
 // with the contract's add-tests; the public test add does it.
 func TestTestAddIsThePublicHomeOfAddTests(t *testing.T) {
 	path := newHomesAddTestsFixture(t)
-	if code := dispatch([]string{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestAdded"}); code != 0 {
+	if code := dispatchOn([]string{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestAdded"}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("test add exit = %d", code)
 	}
 	loaded, err := testpolicy.Load(path)
@@ -71,14 +71,14 @@ func TestTestAddIsThePublicHomeOfAddTests(t *testing.T) {
 func witnessTestAddRepeat(t *testing.T) {
 	path := newHomesAddTestsFixture(t)
 	args := []string{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestAdded"}
-	if code := dispatch(args); code != 0 {
+	if code := dispatchOn(args, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("first test add exit = %d", code)
 	}
 	first, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code := dispatch(args); code != 0 {
+	if code := dispatchOn(args, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("repeated test add exit = %d", code)
 	}
 	if second, err := os.ReadFile(path); err != nil || !bytes.Equal(first, second) {
@@ -89,7 +89,7 @@ func witnessTestAddRepeat(t *testing.T) {
 		{"test", "add", "--file", path, "--group", "app-group", "--inputs", "go.mod"},
 		{"test", "add", "--file", path, "--surface", "app", "--paths", "app/**"},
 	} {
-		if code := dispatch(args); code != 0 {
+		if code := dispatchOn(args, t.Output(), t.Output()); code != 0 {
 			t.Fatalf("%v exit = %d", args, code)
 		}
 		if again, err := os.ReadFile(path); err != nil || !bytes.Equal(first, again) {
@@ -196,10 +196,10 @@ func witnessSettingsSetRepeat(t *testing.T) {
 // packages any more, and a name the group does not list is refused.
 func TestTestRemoveTakesTestsOutOfAGroup(t *testing.T) {
 	path := newHomesAddTestsFixture(t)
-	if code := dispatch([]string{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestAdded"}); code != 0 {
+	if code := dispatchOn([]string{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestAdded"}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("test add exit = %d", code)
 	}
-	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "app-group", "--tests", "TestAdded"}); code != 0 {
+	if code := dispatchOn([]string{"test", "remove", "--file", path, "--group", "app-group", "--tests", "TestAdded"}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("test remove exit = %d", code)
 	}
 	loaded, err := testpolicy.Load(path)
@@ -209,25 +209,25 @@ func TestTestRemoveTakesTestsOutOfAGroup(t *testing.T) {
 	if _, names, _ := testpolicy.GoTests(loaded.Groups[0]); !reflect.DeepEqual(names, []string{"TestBase"}) {
 		t.Fatalf("test remove left tests %v", names)
 	}
-	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "no-such-group", "--tests", "TestBase"}); code == 0 {
+	if code := dispatchOn([]string{"test", "remove", "--file", path, "--group", "no-such-group", "--tests", "TestBase"}, t.Output(), t.Output()); code == 0 {
 		t.Fatal("test remove of an unknown group succeeded")
 	}
 }
 
 func witnessTestRemoveRepeat(t *testing.T) {
 	path := newHomesAddTestsFixture(t)
-	if code := dispatch([]string{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestAdded"}); code != 0 {
+	if code := dispatchOn([]string{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestAdded"}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("test add exit = %d", code)
 	}
 	args := []string{"test", "remove", "--file", path, "--group", "app-group", "--tests", "TestAdded"}
-	if code := dispatch(args); code != 0 {
+	if code := dispatchOn(args, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("first test remove exit = %d", code)
 	}
 	first, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code := dispatch(args); code != 0 {
+	if code := dispatchOn(args, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("repeated test remove exit = %d", code)
 	}
 	if second, err := os.ReadFile(path); err != nil || !bytes.Equal(first, second) {
@@ -241,7 +241,7 @@ func witnessTestRemoveRepeat(t *testing.T) {
 		{"test", "add", "--file", path, "--group", "app-group", "--inputs", "extra.json"},
 		{"test", "add", "--file", path, "--surface", "app", "--paths", "extra/**"},
 	} {
-		if code := dispatch(args); code != 0 {
+		if code := dispatchOn(args, t.Output(), t.Output()); code != 0 {
 			t.Fatalf("%v exit = %d", args, code)
 		}
 	}
@@ -250,14 +250,14 @@ func witnessTestRemoveRepeat(t *testing.T) {
 		{"test", "remove", "--file", path, "--surface", "app", "--paths", "extra/**"},
 		{"test", "remove", "--file", path, "--surface", "no-longer-there"},
 	} {
-		if code := dispatch(args); code != 0 {
+		if code := dispatchOn(args, t.Output(), t.Output()); code != 0 {
 			t.Fatalf("first %v exit = %d", args, code)
 		}
 		once, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if code := dispatch(args); code != 0 {
+		if code := dispatchOn(args, t.Output(), t.Output()); code != 0 {
 			t.Fatalf("repeated %v exit = %d", args, code)
 		}
 		if twice, err := os.ReadFile(path); err != nil || !bytes.Equal(once, twice) {
@@ -286,7 +286,7 @@ func TestTestRemoveWithoutTestsTakesAWholeGroupOut(t *testing.T) {
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "spare-group"}); code != 0 {
+	if code := dispatchOn([]string{"test", "remove", "--file", path, "--group", "spare-group"}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("test remove of a group exit = %d", code)
 	}
 	loaded, err := testpolicy.Load(path)
@@ -297,7 +297,7 @@ func TestTestRemoveWithoutTestsTakesAWholeGroupOut(t *testing.T) {
 	if len(loaded.Groups) != 1 || strings.Contains(string(encoded), "spare-group") {
 		t.Fatalf("the removed group is still named: %s", encoded)
 	}
-	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "spare-group"}); code != 0 {
+	if code := dispatchOn([]string{"test", "remove", "--file", path, "--group", "spare-group"}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("a repeated group removal exit = %d", code)
 	}
 }
@@ -327,7 +327,7 @@ func TestTestRemoveAndAddEditGroupInputsAndSurfacePaths(t *testing.T) {
 		{"test", "add", "--file", path, "--surface", "app", "--paths", "floors.json"},
 		{"test", "remove", "--file", path, "--surface", "fixture"},
 	} {
-		if code := dispatch(args); code != 0 {
+		if code := dispatchOn(args, t.Output(), t.Output()); code != 0 {
 			t.Fatalf("%v exit = %d", args, code)
 		}
 	}
@@ -348,7 +348,7 @@ func TestTestRemoveAndAddEditGroupInputsAndSurfacePaths(t *testing.T) {
 		{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestBase", "--inputs", "x"},
 		{"test", "remove", "--file", path, "--surface", "app", "--inputs", "x"},
 	} {
-		if code := dispatch(args); code == 0 {
+		if code := dispatchOn(args, t.Output(), t.Output()); code == 0 {
 			t.Fatalf("%v succeeded", args)
 		}
 	}

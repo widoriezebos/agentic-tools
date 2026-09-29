@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,13 +73,8 @@ func TestIntentWaitGoalEventGitAdapterObservesAPersonsAct(t *testing.T) {
 
 	writeFixtureEnrollment(t, root, "Wido")
 	args := []string{"--root", root, "--id", "standing-validation", "--by", "Wido", "--lineage", "m1", "--priority", "1", "--fixture-human-authority"}
-	var stdout string
-	actErr, actCode := captureStderr(t, func() int {
-		var inner int
-		stdout, inner = captureStdout(t, func() int {
-			return runGoalSetPriorityWithAuthorityAndInputs(args, proveEnrolledGoalHumanAuthority, defaultSyncRequestDependencies())
-		})
-		return inner
+	actCode, stdout, actErr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalSetPriorityWithAuthorityAndInputs(args, proveEnrolledGoalHumanAuthority, withStreams(defaultSyncRequestDependencies(), stdout, stderr))
 	})
 	if actCode != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 		t.Fatalf("the person's act: code=%d stdout=%q stderr=%q", actCode, stdout, actErr)

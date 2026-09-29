@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,13 +32,15 @@ func TestBatchVerbsUnavailableWithoutFilesystemWrites(t *testing.T) {
 	}
 	for _, command := range commands {
 		t.Run(command.name, func(t *testing.T) {
-			stderr, code := captureStderr(t, func() int { return runLandingBatch(command.args[2:]) })
+			stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int { return runLandingBatch(command.args[2:], stdout, stderr) })
 			if code != 2 || !strings.Contains(stderr, command.want) || strings.Contains(stderr, "BATCH_UNAVAILABLE") {
 				t.Errorf("default command = code %d, stderr %q", code, stderr)
 			}
 		})
 	}
-	stderr, code := captureStderr(t, func() int { return runLandingBatch([]string{"unknown", "--root", root}) })
+	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+		return runLandingBatch([]string{"unknown", "--root", root}, stdout, stderr)
+	})
 	if code != 2 || !strings.Contains(stderr, `unknown verb "unknown"`) {
 		t.Fatalf("unknown verb = code %d, stderr %q", code, stderr)
 	}

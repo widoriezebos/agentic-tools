@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -43,7 +44,7 @@ func TestO12BothGoalDoneRoutesRequestTheGoalReport(t *testing.T) {
 	t.Run("synced mutation", func(t *testing.T) {
 		fixture := syncedDoneFixture(t)
 		calls := 0
-		code, handled := fixture.done("Synced route done.", false, func(opts metrics.Options) (metrics.Result, error) {
+		code, handled := fixture.done(t.Output(), t.Output(), "Synced route done.", false, func(opts metrics.Options) (metrics.Result, error) {
 			calls++
 			fixture.checkReport(t, opts)
 			return metrics.Result{Target: metrics.GoalReportTarget(opts.Root, opts.GoalID)}, nil
@@ -66,9 +67,9 @@ func TestGoalDoneWithoutLocalBranchSkipsUnreadableRemote(t *testing.T) {
 	reports := 0
 
 	var handled bool
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		var code int
-		code, handled = fixture.done("Branchless goal done.", false, func(opts metrics.Options) (metrics.Result, error) {
+		code, handled = fixture.done(stdout, stderr, "Branchless goal done.", false, func(opts metrics.Options) (metrics.Result, error) {
 			reports++
 			fixture.checkReport(t, opts)
 			return metrics.Result{}, nil
@@ -114,9 +115,9 @@ func TestGoalDoneWithLocalBranchStillSweepsUnreadableRemote(t *testing.T) {
 	}
 
 	var handled bool
-	code, _, stderr := captureCommandOutput(t, true, true, func() int {
+	code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		var code int
-		code, handled = fixture.done("Branched goal done.", true, func(opts metrics.Options) (metrics.Result, error) {
+		code, handled = fixture.done(stdout, stderr, "Branched goal done.", true, func(opts metrics.Options) (metrics.Result, error) {
 			reports++
 			fixture.checkReport(t, opts)
 			return metrics.Result{}, nil
@@ -156,10 +157,10 @@ func syncedDoneFixture(t *testing.T) *syncedDoneCommandFixture {
 	return &syncedDoneCommandFixture{repository: repository, dependencies: repository.extendBudgetInputs(t), now: now, branchTip: repository.accepted, t: t}
 }
 
-func (f *syncedDoneCommandFixture) done(conclusion string, localPresent bool, reporter func(metrics.Options) (metrics.Result, error), endpointTip func(string, goal.Endpoint) (string, error)) (int, bool) {
+func (f *syncedDoneCommandFixture) done(stdout, stderr io.Writer, conclusion string, localPresent bool, reporter func(metrics.Options) (metrics.Result, error), endpointTip func(string, goal.Endpoint) (string, error)) (int, bool) {
 	return trySyncMutationWithCompletion("done", []string{
 		"--root", f.repository.root, "--id", "synced-goal", "--conclude", conclusion, "--lineage", "fixture",
-	}, f.repository.commandNow(f.now), f.dependencies, goalParkBranchCheck, completionInputs{
+	}, f.repository.commandNow(f.now), withStreams(f.dependencies, stdout, stderr), goalParkBranchCheck, completionInputs{
 		localTip: func(root, ref string) (string, bool, error) {
 			if root != f.repository.root || ref != "refs/heads/goal/synced-goal" {
 				f.t.Fatalf("local ref root=%q ref=%q", root, ref)

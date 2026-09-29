@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,8 +30,8 @@ func TestSuiteProgressBedBoundedPreserveNamesTheTruncatedSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := filepath.Join(bed, "result")
-	code, stdout, _ := captureCommandOutput(t, true, false, func() int {
-		return runProofRunPreserve([]string{"--destination", result, "--max-bytes", "4", "--source", source})
+	code, stdout, _ := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runProofRunPreserve([]string{"--destination", result, "--max-bytes", "4", "--source", source}, stdout, stderr)
 	})
 	if code != 0 || !strings.Contains(stdout, "DROPPED "+evidence) {
 		t.Fatalf("bounded evidence result code=%d did not name the dropped source %s:\n%s", code, evidence, stdout)

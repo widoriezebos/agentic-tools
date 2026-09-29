@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -187,7 +188,7 @@ func TestIntentReferenceWaitResumesOrStarts(t *testing.T) {
 	b.dispatchJob("job-c", "running")
 	owners := b.owners()
 	var calls [][]string
-	owners.work.wait = func(args []string, emit func(metarun.WaitResult, bool)) int {
+	owners.work.wait = func(args []string, emit func(metarun.WaitResult, bool), _, _ io.Writer) int {
 		calls = append(calls, slices.Clone(args))
 		emit(metarun.WaitResult{WaitID: "0123456789abcdef0123456789abcdef", ExitCode: metarun.ExitWaitDeadline}, false)
 		return metarun.ExitWaitDeadline

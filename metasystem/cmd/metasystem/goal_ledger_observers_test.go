@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -21,7 +22,7 @@ type goalListOutput struct {
 	JSON, History, Done, Pretty bool
 }
 
-func runGoalListWithResolver(args []string, resolve func(string) (goal.Endpoint, error)) int {
+func runGoalListWithResolver(args []string, resolve func(string) (goal.Endpoint, error), stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("goal ledger listing", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
 	var output goalListOutput
@@ -37,12 +38,12 @@ func runGoalListWithResolver(args []string, resolve func(string) (goal.Endpoint,
 	}
 	e, err := resolve(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	p, err := goal.Project(e, *fetch, time.Now())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	grouped := map[string][]*goal.GoalFile{}
@@ -70,14 +71,14 @@ func runGoalListWithResolver(args []string, resolve func(string) (goal.Endpoint,
 	grouped[goal.StateAbandoned] = abandoned
 	if !output.JSON {
 		grouped[goal.StateDone] = done
-		fmt.Print(goalListSummary(grouped, syncedListStates, p.Tip, p.Banners, output.Done, p.Horizon, p.Tree.TrunkRed...))
+		fmt.Fprint(stdout, goalListSummary(grouped, syncedListStates, p.Tip, p.Banners, output.Done, p.Horizon, p.Tree.TrunkRed...))
 		return 0
 	}
 	trunkRed := p.Tree.TrunkRed
 	if trunkRed == nil {
 		trunkRed = []goal.TrunkRedEntry{}
 	}
-	encoder := json.NewEncoder(os.Stdout)
+	encoder := json.NewEncoder(stdout)
 	if output.Pretty {
 		encoder.SetIndent("", "  ")
 	}
@@ -86,13 +87,13 @@ func runGoalListWithResolver(args []string, resolve func(string) (goal.Endpoint,
 		"queued": grouped[goal.StateQueued], "approved": grouped[goal.StateApproved], "claimed": grouped[goal.StateClaimed],
 		"parked": grouped[goal.StateParked], "done": done, "abandoned": abandoned, "trunkRed": trunkRed,
 	}); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint, error)) int {
+func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint, error), stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("goal ledger page", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
@@ -102,17 +103,17 @@ func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint,
 	}
 	e, err := resolve(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	now, err := goalCommandNow(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	p, err := goal.Project(e, false, now)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	f, live := p.Tree.Live[*id]
@@ -122,7 +123,7 @@ func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint,
 			f = p.Tree.Abandoned[*id]
 		}
 		if f == nil {
-			fmt.Fprintf(os.Stderr, "no goal %q on the accepted tree (tip %s)\n", *id, p.Tip)
+			fmt.Fprintf(stderr, "no goal %q on the accepted tree (tip %s)\n", *id, p.Tip)
 			return 1
 		}
 		state = "archived"
@@ -131,7 +132,7 @@ func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint,
 	if blocks := goal.OpenReadItemBlocks(f); len(blocks) > 0 {
 		page["openReadItems"] = blocks
 	}
-	printJSON(page)
+	writeJSONLine(stdout, stderr, page)
 	return 0
 }
 
@@ -144,8 +145,8 @@ func runGoalDoneWithSync(args []string, trySync func(string, []string) (int, boo
 	return code
 }
 
-func runGoalMigrate(args []string) int {
-	return goalMigrateWith(defaultSyncRequestDependencies(), os.Stdout, os.Stderr, args)
+func runGoalMigrate(args []string, stdout, stderr io.Writer) int {
+	return goalMigrateWith(defaultSyncRequestDependencies(), stdout, stderr, args)
 }
 
 func runGoalCarry(args []string) int {

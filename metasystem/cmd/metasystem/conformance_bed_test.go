@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,9 +16,9 @@ func TestConformanceBedSeatReceiptEntrypointAppends(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runReceipt([]string{"add", "--type", "implement", "--outcome", "shipped", "--verify", "clean",
-			"--goal", "seat-owned", "--built-by", "coordinator", "--note", "fixture seat landing", "--root", root, "--file", filepath.Join(root, "memory", "receipts.log")})
+			"--goal", "seat-owned", "--built-by", "coordinator", "--note", "fixture seat landing", "--root", root, "--file", filepath.Join(root, "memory", "receipts.log")}, stdout, stderr)
 	})
 	if code != 0 {
 		t.Fatalf("receipt add = %d stdout=%q stderr=%q", code, stdout, stderr)

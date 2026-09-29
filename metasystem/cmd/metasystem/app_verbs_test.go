@@ -882,13 +882,13 @@ func TestAppGoalRunEvidenceIsCopiedBeforeItsRecordIsRemoved(t *testing.T) {
 // the run request carries to the runner that overlays it.
 func TestAppAddressIsOneNamedDiagnosticGroupsInput(t *testing.T) {
 	root := t.TempDir()
-	parsed, _, status := parseTestingSelection("test run", appCheckArgv(root, "app-smoke", "127.0.0.1:7981")[2:], true)
+	parsed, _, status := parseTestingSelection("test run", appCheckArgv(root, "app-smoke", "127.0.0.1:7981")[2:], true, t.Output(), t.Output())
 	if status != 0 || parsed.AppAddress != "127.0.0.1:7981" || !parsed.NoReuse || parsed.Purpose != "diagnostic" ||
 		len(parsed.Groups) != 1 || parsed.Groups[0] != "app-smoke" {
 		t.Fatalf("the check's argv must parse as one fresh named diagnostic group with the address: %+v status=%d", parsed, status)
 	}
-	status, _, refusal := captureCommandOutput(t, false, true, func() int {
-		_, _, status := parseTestingSelection("test run", []string{"--root", root, "--mode", "standard", "--app-address", "127.0.0.1:7981"}, true)
+	status, _, refusal := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		_, _, status := parseTestingSelection("test run", []string{"--root", root, "--mode", "standard", "--app-address", "127.0.0.1:7981"}, true, stdout, stderr)
 		return status
 	})
 	if status != 2 || !strings.Contains(refusal, "--app-address belongs to one named diagnostic group") {

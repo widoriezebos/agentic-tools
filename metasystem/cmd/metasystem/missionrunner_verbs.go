@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"io"
 	"strconv"
 	"strings"
 
@@ -61,7 +61,7 @@ func missionRunnerCommandEngine(root, mission string) (*missionrunner.Engine, er
 
 // runMissionRunnerRunLoop is the detached child that start/resume spawn; it
 // is internal and deliberately prints no usage.
-func runMissionRunnerRunLoop(args []string) int {
+func runMissionRunnerRunLoop(args []string, stdout, stderr io.Writer) int {
 	var root, mission, mode, tag, signal, generationText string
 	ignoreTerm := false
 	ok := parseRunnerArgs(args, map[string]*string{
@@ -75,7 +75,7 @@ func runMissionRunnerRunLoop(args []string) int {
 			case "--root", "--mission", "--mode", "--instance-tag", "--start-signal", "--fence-generation", "--ignore-term":
 			default:
 				if strings.HasPrefix(arg, "--") {
-					return refuseUnknownOption(nil, "mission run-loop", arg, "it takes --root, --mission, --mode, --instance-tag, --start-signal, --fence-generation, --ignore-term")
+					return refuseUnknownOption(stdout, stderr, "mission run-loop", arg, "it takes --root, --mission, --mode, --instance-tag, --start-signal, --fence-generation, --ignore-term")
 				}
 			}
 		}
@@ -88,7 +88,7 @@ func runMissionRunnerRunLoop(args []string) int {
 	}
 	engine, err := missionRunnerCommandEngine(root, mission)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "mission run-loop:", err)
+		fmt.Fprintln(stderr, "mission run-loop:", err)
 		return 1
 	}
 	return engine.RunLoopAtGeneration(mode, tag, signal, generation, ignoreTerm)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,8 +54,8 @@ func TestDischargeReviewObligationCLIWiring(t *testing.T) {
 	root := fixture.root()
 	watchWriteJSON(t, root, "artifacts/agents/jobs/critic-root.json", map[string]any{"jobId": "critic-root", "role": "code-critic", "reviews": "commit:" + commit, "status": "completed", "round": 1, "chainClosed": true, "findingRegister": []any{}, "findingRegisterRound": 1})
 	watchWriteJSON(t, root, "artifacts/agents/critic-root/rounds/1/return.json", map[string]any{"verdictMaterialCount": 0})
-	stdout, code := captureStdout(t, func() int {
-		return runGoalDischargeReviewObligationWithOwners([]string{"--root", root, "--id", "standing-validation", "--finding", "carried:" + commit, "--chain", goal.HumanCarriedChain, "--by", "Wido", "--lineage", "m1", "--test", "critic-root"}, dischargeFixtureRequest(fixture), goal.DischargeReviewObligation)
+	stdout, code := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runGoalDischargeReviewObligationWithOwners([]string{"--root", root, "--id", "standing-validation", "--finding", "carried:" + commit, "--chain", goal.HumanCarriedChain, "--by", "Wido", "--lineage", "m1", "--test", "critic-root"}, dischargeFixtureRequest(fixture), goal.DischargeReviewObligation, stdout, stderr)
 	})
 	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 		t.Fatalf("human discharge = %d %q", code, stdout)
@@ -72,8 +73,8 @@ func TestDischargeReviewObligationCLIWiring(t *testing.T) {
 	seedDischargeObligation(t, fixture, goal.ReviewObligation{Finding: "F-1", Chain: "design-critic", Artifact: "a.go", Test: "prove: group:a", Fixture: "group:section/a", State: "open"})
 	root = fixture.root()
 	_, acceptedBefore := fixture.acceptedGoal()
-	stdout, code = captureStdout(t, func() int {
-		return runGoalDischargeReviewObligationWithOwners([]string{"--root", root, "--id", "standing-validation", "--finding", "F-1", "--chain", "design-critic", "--by", "Wido", "--lineage", "m1", "--test", "bare", "--implementation-chain", "implementation-chain", "--artifact", "a.go", "--result", "run-passed"}, dischargeFixtureRequest(fixture), goal.DischargeReviewObligation)
+	stdout, code = captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runGoalDischargeReviewObligationWithOwners([]string{"--root", root, "--id", "standing-validation", "--finding", "F-1", "--chain", "design-critic", "--by", "Wido", "--lineage", "m1", "--test", "bare", "--implementation-chain", "implementation-chain", "--artifact", "a.go", "--result", "run-passed"}, dischargeFixtureRequest(fixture), goal.DischargeReviewObligation, stdout, stderr)
 	})
 	if code != 1 || !strings.Contains(stdout, "requires --critic") {
 		t.Fatalf("missing critic = %d %q", code, stdout)
@@ -87,7 +88,7 @@ func TestDischargeReviewObligationCLIWiring(t *testing.T) {
 	code = runGoalDischargeReviewObligationWithOwners([]string{"--root", root, "--id", "standing-validation", "--finding", "F-1", "--chain", "design-critic", "--by", "Wido", "--lineage", "m1", "--implementation-chain", "implementation-chain", "--artifact", "a.go", "--result", "run-passed", "--critic", "critic-root"}, dischargeFixtureRequest(fixture), func(_ goal.VerbRequest, _, _, _, _, _ string, supplied ...goal.DischargeEvidence) (goal.PublishResult, error) {
 		captured = supplied[0]
 		return goal.PublishResult{Outcome: goal.OutcomeConfirmed}, nil
-	})
+	}, t.Output(), t.Output())
 	if code != 0 || captured != (goal.DischargeEvidence{Root: root, ImplementationChain: "implementation-chain", Artifact: "a.go", ResultRunID: "run-passed", CriticRoot: "critic-root"}) {
 		t.Fatalf("fixture evidence wiring = %+v %d", captured, code)
 	}

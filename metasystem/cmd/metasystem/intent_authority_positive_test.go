@@ -27,9 +27,9 @@ import (
 func migratedHumanTerminalRoot(t *testing.T, machine string, pids ...int) string {
 	t.Helper()
 	root, digest := legacyHumanTerminalRoot(t, machine, pids...)
-	if stderr, code := captureStderr(t, func() int {
+	if stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
 		return runGoalMigrate([]string{"--root", root, "--source-digest", digest, "--sync-mode", "local",
-			"--identity", "01J5XM00000000000000000000", "--by", "fixture-human"})
+			"--identity", "01J5XM00000000000000000000", "--by", "fixture-human"}, stdout, stderr)
 	}); code != 0 {
 		t.Fatalf("real migration of the synthetic root failed: code=%d stderr=%s", code, stderr)
 	}

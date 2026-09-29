@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,11 +66,11 @@ func TestGLEGoalBranchReadPassesFrozenBriefAndSolOverrideToDelegate(t *testing.T
 	}
 	t.Setenv("ARGS_PATH", argsPath)
 	t.Setenv("BRIEF_COPY", copyPath)
-	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
+	code, stdout, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit,
 			"--brief", input, "--runtime", "codex", "--model", "gpt-5.6-sol"}, goalBranchReadDependencies{
 			Delegator: scriptDelegator(binary), Gate: func(string) (string, error) { return "green", nil }, Raw: raw,
-		})
+		}, stdout, stderr)
 	})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "state=dispatched") {
 		t.Fatalf("branch read: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -129,12 +130,12 @@ func TestGLEGoalBranchNestedReadCollectWritesProjectAttestation(t *testing.T) {
 	deps := goalBranchReadDependencies{Gate: func(string) (string, error) { return "green", nil },
 		Delegate: func(_, _, _, _, _ string) (string, error) { writeClosure(); return job, nil }, Commit: branch.CommitRead, Raw: raw}
 	args := []string{"--root", installation, "--goal", "standing-validation", "--unit", unit}
-	code, stdout, stderr = captureCommandOutput(t, true, true, func() int { return runGoalBranchReadWith(args, deps) })
+	code, stdout, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int { return runGoalBranchReadWith(args, deps, stdout, stderr) })
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "state=dispatched") {
 		t.Fatalf("nested read dispatch: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranchReadWith(append(append([]string{}, args...), "--collect"), deps)
+	code, stdout, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalBranchReadWith(append(append([]string{}, args...), "--collect"), deps, stdout, stderr)
 	})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "state=collected") {
 		t.Fatalf("nested read collect: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -161,8 +162,8 @@ func TestGLEGoalBranchReadRejectsDuplicateAndEmptyContextFlags(t *testing.T) {
 		} {
 			t.Run(name+"/"+test.label, func(t *testing.T) {
 				args := append([]string{"--goal", "goal-a", "--unit", strings.Repeat("a", 40)}, test.args...)
-				code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-					return runGoalBranchReadWith(args, goalBranchReadDependencies{})
+				code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+					return runGoalBranchReadWith(args, goalBranchReadDependencies{}, stdout, stderr)
 				})
 				if code != 2 || stdout != "" || !strings.Contains(stderr, test.want) {
 					t.Fatalf("flags %v: code=%d stdout=%q stderr=%q", test.args, code, stdout, stderr)
@@ -197,9 +198,9 @@ func TestGLEGoalBranchReadRetriesStructuredRosterRefusalWithFrozenContext(t *tes
 	t.Setenv("ARGV_PATH", argvPath)
 	t.Setenv("BRIEF_COPY", briefCopy)
 	deps := goalBranchReadDependencies{Delegator: scriptDelegator(binary), Gate: func(string) (string, error) { return "green", nil }, Raw: raw}
-	code, _, stderr = captureCommandOutput(t, true, true, func() int {
+	code, _, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit,
-			"--brief", input, "--runtime", "codex", "--model", "gpt-5.6-sol"}, deps)
+			"--brief", input, "--runtime", "codex", "--model", "gpt-5.6-sol"}, deps, stdout, stderr)
 	})
 	if code != 1 || !strings.Contains(stderr, "REFUSED-ROSTER") {
 		t.Fatalf("structured prelaunch refusal: code=%d stderr=%q", code, stderr)
@@ -210,8 +211,8 @@ func TestGLEGoalBranchReadRetriesStructuredRosterRefusalWithFrozenContext(t *tes
 	if err := os.WriteFile(input, []byte("changed after refusal\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit}, deps)
+	code, stdout, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit}, deps, stdout, stderr)
 	})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "state=dispatched") {
 		t.Fatalf("frozen retry: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -392,15 +393,15 @@ func TestGoalBranchVerbsRunFromTheHoldersLinkedWorktree(t *testing.T) {
 	writeTestingFixtureFile(t, filepath.Join(worktree, filepath.FromSlash(record)), []byte("holder record\n"), 0o644)
 	goalSyncMutationGit(t, worktree, "add", record)
 
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", worktree})
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", worktree}, stdout, stderr)
 	})
 	tip := strings.TrimSpace(stdout)
 	if code != 0 || stderr != "" || len(tip) != 40 {
 		t.Fatalf("commit from linked worktree: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "linked-holder-push"})
+	code, _, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "linked-holder-push"}, stdout, stderr)
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("push from linked worktree: code=%d stderr=%q", code, stderr)
@@ -423,8 +424,8 @@ func TestGoalBranchHolderResolutionPreservesInstallationSubdirectory(t *testing.
 	writeTestingFixtureFile(t, filepath.Join(worktree, filepath.FromSlash(record)), []byte("nested holder record\n"), 0o644)
 	goalSyncMutationGit(t, worktree, "add", record)
 
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", worktree})
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", worktree}, stdout, stderr)
 	})
 	if code != 0 || stderr != "" || len(strings.TrimSpace(stdout)) != 40 {
 		main, linked := linkedWorktreeMainCheckout(worktree)
@@ -438,8 +439,8 @@ func TestGoalBranchHolderResolutionPreservesInstallationSubdirectory(t *testing.
 func TestGoalBranchClaimRequiresMachineAndLineage(t *testing.T) {
 	f := newBranchRawFixtureWithReadReplies(t, false, false, false, "another-lineage")
 	assertUnchanged := goalBranchRawCheckoutSnapshot(t, f)
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", f.installation}, f.dependencies())
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", f.installation}, f.dependencies(), stdout, stderr)
 	})
 	if code != 1 || stdout != "" || !strings.Contains(stderr, branch.NotHolderCode) {
 		t.Fatalf("claim mismatch: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -470,8 +471,8 @@ func goalBranchCommitRefusalPreservesCheckout(t *testing.T) {
 	}
 	assertUnchanged := goalBranchRawCheckoutSnapshot(t, f)
 	beforeAccepted, beforeCanonical, beforeTip := f.ledger.accepted, f.ledger.canonical, f.tip
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", f.installation}, dependencies)
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", f.installation}, dependencies, stdout, stderr)
 	})
 	if code != 1 || stdout != "" || !strings.Contains(stderr, branch.RangeCode) || !staged {
 		t.Fatalf("class refusal: code=%d stdout=%q stderr=%q staged=%t", code, stdout, stderr, staged)
@@ -506,15 +507,15 @@ func TestGoalBranchCommitAndPushUseEndpointRemote(t *testing.T) {
 	root, _, base := goalBranchCLIFixture(t, "m1")
 	writeTestingFixtureFile(t, filepath.Join(root, "metasystem", "code.go"), []byte("package fixture\n"), 0o644)
 	goalSyncMutationGit(t, root, "add", "metasystem/code.go")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", root})
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", root}, stdout, stderr)
 	})
 	tip := strings.TrimSpace(stdout)
 	if code != 0 || stderr != "" || len(tip) != 40 || goalSyncMutationGit(t, root, "rev-parse", tip+"^") != base {
 		t.Fatalf("commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "remote-witness"})
+	code, stdout, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "remote-witness"}, stdout, stderr)
 	})
 	remote := strings.Fields(goalSyncMutationGit(t, root, "ls-remote", "--refs", "upstream", "refs/heads/goal/standing-validation"))
 	if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "pushed ") || len(remote) != 2 || remote[0] != tip {
@@ -635,8 +636,8 @@ func TestGoalBranchCommitAcceptsBuildUnitList(t *testing.T) {
 		f.tip, f.published = next, true
 		return nil
 	}
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "5", "--unit", "6", "--unit", "7a", "--unit", "7b", "--root", f.installation}, dependencies)
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "5", "--unit", "6", "--unit", "7a", "--unit", "7b", "--root", f.installation}, dependencies, stdout, stderr)
 	})
 	tip := strings.TrimSpace(stdout)
 	if code != 0 || stderr != "" || len(tip) != 40 || tip != f.read || f.tip != tip || applyCalls != 1 || publishCalls != 1 || !f.published || subject == "" ||
@@ -738,8 +739,8 @@ func TestGoalBranchCommitIsTheGuardedCommitWrapper(t *testing.T) {
 		t.Fatalf("raw git commit err=%v output=%q", rawErr, output)
 	}
 	goalSyncMutationGit(t, root, "add", "-u")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "guard", "--root", root})
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "guard", "--root", root}, stdout, stderr)
 	})
 	if code != 0 || len(strings.TrimSpace(stdout)) != 40 || stderr != "" {
 		t.Fatalf("guarded verb: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -753,15 +754,15 @@ func TestGoalBranchLastLandingSweepsGoalBranch(t *testing.T) {
 	root, _, base := goalBranchCLIFixture(t, "m1")
 	writeTestingFixtureFile(t, filepath.Join(root, "metasystem", "landed.go"), []byte("package fixture\n"), 0o644)
 	goalSyncMutationGit(t, root, "add", "metasystem/landed.go")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "last", "--root", root})
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "last", "--root", root}, stdout, stderr)
 	})
 	unit := strings.TrimSpace(stdout)
 	if code != 0 || stderr != "" || len(unit) != 40 {
 		t.Fatalf("unit commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "last-push"})
+	code, _, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "last-push"}, stdout, stderr)
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("goal push: code=%d stderr=%q", code, stderr)
@@ -776,8 +777,8 @@ func TestGoalBranchLastLandingSweepsGoalBranch(t *testing.T) {
 	prepared := t.TempDir()
 	trunk := "endpoint=" + base + "\ncandidate=" + goalSyncMutationGit(t, root, "rev-parse", landing+"^{tree}") + "\nlanding=" + landing + "\nbranch=landing/standing-validation\n"
 	writeTestingFixtureFile(t, filepath.Join(prepared, "trunk"), []byte(trunk), 0o644)
-	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-		return goalBranchTestCommand([]string{"land-push", "--goal", "standing-validation", "--prepared", prepared, "--root", root})
+	code, stdout, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return goalBranchTestCommand([]string{"land-push", "--goal", "standing-validation", "--prepared", prepared, "--root", root}, stdout, stderr)
 	})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "landed "+landing) {
 		t.Fatalf("land-push: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -886,9 +887,9 @@ func TestGoalBranchLandPrepRoutesLocalRedCandidate(t *testing.T) {
 			projected, index, "red-"+group, "red-"+group, group)
 		writeTestingFixtureFile(t, receiptPath, []byte(body+"\n"), 0o644)
 		out := filepath.Join(t.TempDir(), "red-out")
-		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 			return runGoalBranchLandPrepWith([]string{"--goal", "standing-validation", "--root", root,
-				"--out", out, "--test-receipt", receiptPath, "--last"}, dependencies)
+				"--out", out, "--test-receipt", receiptPath, "--last"}, dependencies, stdout, stderr)
 		})
 		if code != 0 || stderr != "" || !strings.Contains(stdout, "classification=goal-red") {
 			t.Fatalf("%s red command: code=%d stdout=%q stderr=%q", group, code, stdout, stderr)

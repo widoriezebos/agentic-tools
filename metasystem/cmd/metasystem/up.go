@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -72,9 +73,9 @@ func upWaitScale() int {
 	return scale
 }
 
-func printUpResult(result up.Result) int {
+func printUpResult(result up.Result, stdout io.Writer) int {
 	for _, line := range result.Lines() {
-		fmt.Println(line)
+		fmt.Fprintln(stdout, line)
 	}
 	return result.ExitCode()
 }
@@ -134,8 +135,8 @@ func restampStopCapabilityForUp(root, lineage string, claimEpoch int64) (up.Stop
 	return up.StopCapabilityRestampResult{}, nil
 }
 
-func runUpWith(args []string, repositoryTop func(string) (string, error)) int {
-	flags := newFlagSet("up")
+func runUpWith(args []string, repositoryTop func(string) (string, error), stdout, stderr io.Writer) int {
+	flags := newFlagSet("up", stdout, stderr)
 	repo := pathFlag(flags, "repo", ".", "repository or path inside it")
 	metasystemRoot := flags.String("metasystem-root", "", "metasystem checkout root (internal compatibility option)")
 	session := flags.String("session", "", "session id (defaults to METASYSTEM_SESSION_ID or session-<pid>)")
@@ -158,7 +159,7 @@ func runUpWith(args []string, repositoryTop func(string) (string, error)) int {
 		return 2
 	}
 	if flags.NArg() != 0 || *maxCap < 0 || (*runtimeSession != "" && *noRuntimeSession) {
-		fmt.Fprintln(os.Stderr, "up: flags are invalid")
+		fmt.Fprintln(stderr, "up: flags are invalid")
 		return 2
 	}
 	modeCount := 0
@@ -168,32 +169,32 @@ func runUpWith(args []string, repositoryTop func(string) (string, error)) int {
 		}
 	}
 	if modeCount > 1 || (*ifDown && !*recoverOnly) {
-		fmt.Fprintln(os.Stderr, "up: scheduler printing, recovery, retirement, and shutdown modes cannot be combined; --if-down requires --recover-only")
+		fmt.Fprintln(stderr, "up: scheduler printing, recovery, retirement, and shutdown modes cannot be combined; --if-down requires --recover-only")
 		return 2
 	}
 	root, err := upMetasystemRoot(*metasystemRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "up:", err)
+		fmt.Fprintln(stderr, "up:", err)
 		return 2
 	}
 	scope, err := upRepositoryScopeWith(*repo, repositoryTop)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "up:", err)
+		fmt.Fprintln(stderr, "up:", err)
 		return 2
 	}
 	binary, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "up:", err)
+		fmt.Fprintln(stderr, "up:", err)
 		return 1
 	}
 	binary, err = canonicalPath(binary)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "up:", err)
+		fmt.Fprintln(stderr, "up:", err)
 		return 1
 	}
 	scale := upWaitScale()
 	if scale == 0 {
-		fmt.Fprintln(os.Stderr, "up: METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer")
+		fmt.Fprintln(stderr, "up: METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer")
 		return 2
 	}
 	options := up.Options{
@@ -205,7 +206,7 @@ func runUpWith(args []string, repositoryTop func(string) (string, error)) int {
 		RestampStopCapability: restampStopCapabilityForUp,
 	}
 	if *printScheduler {
-		fmt.Println(up.SchedulerEntry(options))
+		fmt.Fprintln(stdout, up.SchedulerEntry(options))
 		return 0
 	}
 	// Supervision control, enrollment and accounting belong to the
@@ -213,10 +214,10 @@ func runUpWith(args []string, repositoryTop func(string) (string, error)) int {
 	// repository so census still observes application processes and sources.
 	options.Root = root
 	if *retire {
-		return printUpResult(up.Retire(options))
+		return printUpResult(up.Retire(options), stdout)
 	}
 	if *shutdown {
-		return printUpResult(up.Shutdown(options))
+		return printUpResult(up.Shutdown(options), stdout)
 	}
-	return printUpResult(up.Run(options))
+	return printUpResult(up.Run(options), stdout)
 }

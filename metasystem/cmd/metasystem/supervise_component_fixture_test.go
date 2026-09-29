@@ -82,7 +82,7 @@ func newLandingOwnerOrdinaryCadenceFixture(t *testing.T, expected ...string) *la
 	}
 	fixture := &landingOwnerOrdinaryFixture{root: root, expected: expected, cadence: newBatchOwnerCadence()}
 	var ok bool
-	fixture.release, fixture.pass, ok = setupLandingOwnerWithInputs(root, root, fixture.cadence, fixture.resolve)
+	fixture.release, fixture.pass, ok = setupLandingOwnerWithInputs(t.Output(), root, root, fixture.cadence, fixture.resolve)
 	if !ok {
 		t.Fatal("landing owner setup stopped the component")
 	}

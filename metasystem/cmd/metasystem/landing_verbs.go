@@ -18,8 +18,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-func runLandingObserve(args []string) int {
-	flags := newFlagSet("landing observe")
+func runLandingObserve(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("landing observe", stdout, stderr)
 	root := pathFlag(flags, "root", "", "project checkout root")
 	tree := flags.String("tree", "", "prospective project tree")
 	chain := flags.String("chain", "", "closed implementation chain root")
@@ -43,12 +43,12 @@ func runLandingObserve(args []string) int {
 		return 2
 	}
 	if *carried != "" && (*judge != "live" && *judge != "base" || *judge == "base" && *liveFailure == "") {
-		fmt.Fprintln(os.Stderr, "landing observe --carried requires --judge live, or --judge base with --live-failure")
+		fmt.Fprintln(stderr, "landing observe --carried requires --judge live, or --judge base with --live-failure")
 		return 2
 	}
 	now, err := goalCommandNow(*root)
 	if err != nil {
-		return recordExit(err)
+		return recordExitTo(stderr, err)
 	}
 	params := landing.ObserveParams{
 		RepoRoot: *root, CandidateTree: *tree, Chain: *chain,
@@ -70,23 +70,23 @@ func runLandingObserve(args []string) int {
 		}
 	}
 	observation := landing.Observe(params)
-	printJSON(observation)
+	writeJSONLine(stdout, stderr, observation)
 	return 0
 }
 
-func runLandingWorkspace(args []string) int {
-	flags := newFlagSet("landing workspace")
+func runLandingWorkspace(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("landing workspace", stdout, stderr)
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	tree := flags.String("tree", "", "whole-project tree")
-	if flags.Parse(args) != nil || !requireFlags(flags, nil, "root", "tree") || flags.NArg() != 0 || *root == "" || *tree == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing workspace --root INSTALLATION --tree TREE")
+	if flags.Parse(args) != nil || !requireFlags(flags, stderr, "root", "tree") || flags.NArg() != 0 || *root == "" || *tree == "" {
+		fmt.Fprintln(stderr, "usage: metasystem internal landing workspace --root INSTALLATION --tree TREE")
 		return 2
 	}
 	workspace, err := landing.ProjectWorkspaceTree(*root, *tree)
 	if err != nil {
-		return recordExit(err)
+		return recordExitTo(stderr, err)
 	}
-	fmt.Println(workspace)
+	fmt.Fprintln(stdout, workspace)
 	return 0
 }
 
@@ -139,36 +139,24 @@ func shortLandingID(id string) string {
 
 var landingReceiptTestRun = runTestRun
 
-func runLandingTestReceipt(args []string) (status int) {
-	return runLandingTestReceiptWithContext(context.Background(), goalCommandClock, args)
+func runLandingTestReceipt(args []string, stdout, stderr io.Writer) (status int) {
+	return runLandingTestReceiptWithDependencies(stdout, stderr, context.Background(), goalCommandClock, nil, landingReceiptTestRun, args)
 }
 
-func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(string) (func() time.Time, bool, error), args []string) (status int) {
-	return runLandingTestReceiptWithDependencies(parent, resolveClock, nil, landingReceiptTestRun, args)
-}
-
-func runLandingTestReceiptWithDependencies(parent context.Context, resolveClock func(string) (func() time.Time, bool, error), raw func(gittree.RawRequest) gittree.RawResult, testRun func([]string) int, args []string) (status int) {
-	return runLandingTestReceiptWithInputs(parent, resolveClock, raw, testRun, args,
+func runLandingTestReceiptWithDependencies(stdout, stderr io.Writer, parent context.Context, resolveClock func(string) (func() time.Time, bool, error), raw func(gittree.RawRequest) gittree.RawResult, testRun command, args []string) (status int) {
+	return landingTestReceiptTo(stdout, stderr, parent, resolveClock, raw, testRun, args,
 		landing.PrepareTestReceipt, admitProofLaunch, landing.PublishCommittedReceiptAt, commitProofTerminal)
-}
-
-func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(string) (func() time.Time, bool, error), raw func(gittree.RawRequest) gittree.RawResult, testRun func([]string) int, args []string,
-	prepare func(string, string, string) (*landing.ReceiptPreparation, error),
-	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
-	publish func(string, string, string, time.Time) (landing.TestReceipt, error),
-	terminal func(proofrun.CompletionContext, json.RawMessage) error) (status int) {
-	return landingTestReceiptTo(os.Stdout, os.Stderr, parent, resolveClock, raw, testRun, args, prepare, admit, publish, terminal)
 }
 
 // landingTestReceiptTo is landing test-receipt with its report streams
 // explicit, so a command that runs it in its own process (design 6.2)
 // receives the receipt and the refusals as the former child's pipes did.
-func landingTestReceiptTo(stdout, stderr io.Writer, parent context.Context, resolveClock func(string) (func() time.Time, bool, error), raw func(gittree.RawRequest) gittree.RawResult, testRun func([]string) int, args []string,
+func landingTestReceiptTo(stdout, stderr io.Writer, parent context.Context, resolveClock func(string) (func() time.Time, bool, error), raw func(gittree.RawRequest) gittree.RawResult, testRun command, args []string,
 	prepare func(string, string, string) (*landing.ReceiptPreparation, error),
 	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
 	publish func(string, string, string, time.Time) (landing.TestReceipt, error),
 	terminal func(proofrun.CompletionContext, json.RawMessage) error) (status int) {
-	flags := newFlagSet("landing test-receipt", stderr)
+	flags := newFlagSet("landing test-receipt", stdout, stderr)
 	root := pathFlag(flags, "root", "", "project checkout root")
 	tree := flags.String("tree", "", "candidate project tree")
 	command := flags.String("command", "", "test command to run from the isolated candidate workspace")
@@ -233,7 +221,7 @@ func landingTestReceiptTo(stdout, stderr io.Writer, parent context.Context, reso
 			testArgs = append(testArgs, "--expected-goal-revision", fmt.Sprint(*expectedGoalRevision),
 				"--expected-accounting-revision", fmt.Sprint(*expectedAccountingRevision))
 		}
-		status := testRun(testArgs)
+		status := testRun(testArgs, stdout, stderr)
 		if status != 0 && status != proofrun.ExitReusableSuccess {
 			return status
 		}
@@ -312,17 +300,17 @@ func landingTestReceiptTo(stdout, stderr io.Writer, parent context.Context, reso
 	deadline, deadlineCheck, err := proofDeadline(attempt.Deadline, commandClock)
 	if err != nil {
 		fmt.Fprintln(stderr, "landing test-receipt: admit native proof:", err)
-		status = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
+		status = retainIncompleteProofAttempt(stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
 		decision.ExitStatus, decision.Disposition, decision.Reason = status, proofrun.DispositionAdmissionRefused, err.Error()
 		_ = proofrun.EncodeResult(stderr, *resultPath, decision)
 		return status
 	}
 	resourceContext, cancelResource := proofDeadlineContext(parent, deadline, fixtureClock)
 	defer cancelResource()
-	lease, release, leaseErr := acquireManagedProofLaunchWithWaitCheck(resourceContext, controlRoot, confPath, deadlineCheck)
+	lease, release, leaseErr := acquireManagedProofLaunchWithWaitCheck(stderr, resourceContext, controlRoot, confPath, deadlineCheck)
 	if leaseErr != nil {
 		fmt.Fprintln(stderr, "landing test-receipt: admit native proof:", leaseErr)
-		status = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
+		status = retainIncompleteProofAttempt(stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
 		decision.ExitStatus, decision.Disposition, decision.Reason = status, proofrun.DispositionAdmissionRefused, leaseErr.Error()
 		_ = proofrun.EncodeResult(stderr, *resultPath, decision)
 		return status
@@ -350,7 +338,7 @@ func landingTestReceiptTo(stdout, stderr io.Writer, parent context.Context, reso
 			}
 			return json.Marshal(receipt)
 		}, CommitTerminal: terminal})
-	status = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, status)
+	status = retainIncompleteProofAttempt(stderr, controlRoot, attempt.AttemptID, joined, status)
 	decision.ExitStatus = status
 	if status != 0 {
 		decision.Disposition = proofrun.DispositionFailed

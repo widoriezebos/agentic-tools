@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,8 +29,8 @@ func TestReceiptAddFillsUsageFromTheLaunchRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	ledger := filepath.Join(receiptRoot, "memory", "receipts.log")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runReceipt([]string{"add", "--root", receiptRoot, "--file", ledger, "--type", "design", "--outcome", "shipped", "--launch", record.ID})
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runReceipt([]string{"add", "--root", receiptRoot, "--file", ledger, "--type", "design", "--outcome", "shipped", "--launch", record.ID}, stdout, stderr)
 	})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "receipt recorded") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -43,8 +44,8 @@ func TestReceiptAddFillsUsageFromTheLaunchRecord(t *testing.T) {
 		t.Fatalf("launch usage missing from receipt: %s", data)
 	}
 	missing := "missing-launch"
-	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return runReceipt([]string{"add", "--root", receiptRoot, "--file", ledger, "--type", "design", "--outcome", "shipped", "--launch", missing})
+	code, _, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runReceipt([]string{"add", "--root", receiptRoot, "--file", ledger, "--type", "design", "--outcome", "shipped", "--launch", missing}, stdout, stderr)
 	})
 	if code != 2 || !strings.Contains(stderr, missing) {
 		t.Fatalf("missing launch code=%d stderr=%q", code, stderr)
@@ -54,17 +55,17 @@ func TestReceiptAddFillsUsageFromTheLaunchRecord(t *testing.T) {
 	if err := store.Create(running); err != nil {
 		t.Fatal(err)
 	}
-	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return runReceipt([]string{"add", "--root", receiptRoot, "--file", ledger, "--type", "design", "--outcome", "shipped", "--launch", running.ID})
+	code, _, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runReceipt([]string{"add", "--root", receiptRoot, "--file", ledger, "--type", "design", "--outcome", "shipped", "--launch", running.ID}, stdout, stderr)
 	})
 	if code != 2 || !strings.Contains(stderr, running.ID) || !strings.Contains(stderr, "not terminal") {
 		t.Fatalf("running launch code=%d stderr=%q", code, stderr)
 	}
 
 	explicitLedger := filepath.Join(receiptRoot, "memory", "explicit.log")
-	code, _, stderr = captureCommandOutput(t, true, true, func() int {
+	code, _, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runReceipt([]string{"add", "--root", receiptRoot, "--file", explicitLedger, "--type", "design", "--outcome", "shipped", "--launch", record.ID,
-			"--design-tokens", "999", "--design-calls", "8", "--requests", "9", "--tool-calls", "10", "--peak-context", "11", "--cache-read-tokens", "12", "--output-tokens", "13"})
+			"--design-tokens", "999", "--design-calls", "8", "--requests", "9", "--tool-calls", "10", "--peak-context", "11", "--cache-read-tokens", "12", "--output-tokens", "13"}, stdout, stderr)
 	})
 	data, err = os.ReadFile(explicitLedger)
 	if code != 0 || stderr != "" || err != nil || !strings.Contains(string(data), "|design_tokens=999|design_calls=8|requests=9|tool_calls=10|peak_context=11|cache_read_tokens=12|output_tokens=13|") {
@@ -92,11 +93,11 @@ func TestReceiptCorrectVerbRejectsInvalidProvenanceValues(t *testing.T) {
 		{field: "goal", was: "goal-a", now: "Invalid_goal", want: "invalid corrected goal value: Invalid_goal"},
 		{field: "built_by", was: "delegate", now: "critic", want: "invalid corrected built_by value: critic"},
 	} {
-		_, stderr, code := captureRelay(t, func() int {
+		_, stderr, code := captureRelay(t, func(stdout, stderr io.Writer) int {
 			return runReceipt([]string{
 				"correct", "--file", ledger, "--ref-epoch", "1000", "--ref-sha1", digest,
 				"--field", test.field, "--was", test.was, "--now", test.now, "--reason", "corrupt",
-			})
+			}, stdout, stderr)
 		})
 		if code != 2 || strings.TrimSpace(stderr) != test.want {
 			t.Fatalf("invalid %s correction returned code=%d stderr=%q", test.field, code, stderr)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,8 +33,8 @@ func TestCapContractPublicAdapterAndRetiredVerb(t *testing.T) {
 			}
 		})
 	}
-	stderr, code := captureStderr(t, func() int {
-		return dispatch([]string{"internal", "job", "exhaustion-patches"})
+	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+		return dispatchOn([]string{"internal", "job", "exhaustion-patches"}, stdout, stderr)
 	})
 	// The internal job family itself is gone (U9b): the retired cap verb
 	// routes nowhere and is refused as an entrypoint that does not exist.

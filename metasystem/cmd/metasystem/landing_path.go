@@ -337,7 +337,7 @@ func landingPathReceiptLineFrom(raw func(gittree.RawRequest) gittree.RawResult, 
 }
 
 func landingPathTestReceipt(root, tree, command string, stdout, stderr io.Writer) int {
-	return runLandingTestReceipt([]string{"--root", root, "--tree", tree, "--command", command})
+	return runLandingTestReceipt([]string{"--root", root, "--tree", tree, "--command", command}, stdout, stderr)
 }
 
 func landingPathGateWidth(root, chain string) string {

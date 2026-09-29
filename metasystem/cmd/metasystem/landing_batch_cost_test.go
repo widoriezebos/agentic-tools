@@ -294,7 +294,7 @@ func TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnaps
 			facts := &batchRawFacts{root: root}
 			var output strings.Builder
 			code := runBatchStatusWithOutput([]string{"--root", seat, "--landing-root", root, "--batch", historicalID},
-				facts.source(), repository.reads().ResolveEndpoint, &output)
+				facts.source(), repository.reads().ResolveEndpoint, &output, t.Output())
 			facts.assertConsumed(t, true)
 			var decoded batchStatusOutput
 			if code != 0 || json.Unmarshal([]byte(output.String()), &decoded) != nil || len(decoded.Batches) != 1 {
@@ -596,7 +596,7 @@ func TestBatchCostPortableEvidenceForecastIsReadOnlyAndWarmsFromRealCommand(t *t
 					return goal.Endpoint{}, fmt.Errorf("status root %s", root)
 				}
 				return repository.reads().ResolveEndpoint(repository.root)
-			}, &output)
+			}, &output, t.Output())
 		facts.assertConsumed(t, true)
 		var decoded batchStatusOutput
 		if code != 0 || json.Unmarshal([]byte(output.String()), &decoded) != nil || len(decoded.Batches) != 1 {

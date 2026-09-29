@@ -520,8 +520,8 @@ func (r appRun) launchSupervisor() (string, error) {
 // runAppServe is the supervisor: one process that owns one run of the
 // application for its life. It is internal because a person never types it;
 // `app start` launches it the way `ui start` launches the interface.
-func runAppServe(args []string) int {
-	flags := newFlagSet("app serve")
+func runAppServe(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("app serve", stdout, stderr)
 	repo := pathFlag(flags, "repo", "", "checkout path (default: the checkout that contains the installation)")
 	root := flags.String("metasystem-root", "", "metasystem installation")
 	key := flags.String("key", applaunch.StandingKey, "the run's key")
@@ -533,7 +533,7 @@ func runAppServe(args []string) int {
 		return 2
 	}
 	if flags.NArg() != 0 || *readyFD < -1 {
-		fmt.Fprintln(os.Stderr, "invalid arguments for app serve")
+		fmt.Fprintln(stderr, "invalid arguments for app serve")
 		return 2
 	}
 	var ready *os.File
@@ -550,7 +550,7 @@ func runAppServe(args []string) int {
 	}
 	refuse := func(line string) int {
 		report("failed " + line)
-		fmt.Fprintln(os.Stderr, line)
+		fmt.Fprintln(stderr, line)
 		return 1
 	}
 	installation := *root
@@ -594,7 +594,7 @@ func runAppServe(args []string) int {
 		Failed:      func(message string) { report("failed " + message) },
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	return 0

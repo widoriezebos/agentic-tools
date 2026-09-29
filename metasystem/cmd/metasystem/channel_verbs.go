@@ -214,8 +214,8 @@ var errQuestionAlreadyOpen = errors.New("this exact question is already open; no
 // channelWaitCommand is the durable wait cycle a channel wait drives: its
 // selector argv, the provider poll, the waiting caller and where the result
 // is printed.
-var channelWaitCommand = func(args []string, poll func(context.Context) error, callerPID int64, stdout io.Writer) int {
-	return runWaitCommand(args, poll, callerPID, func(result metarun.WaitResult, jsonOutput bool) { writeWaitResult(stdout, result, jsonOutput) })
+var channelWaitCommand = func(args []string, poll func(context.Context) error, callerPID int64, stdout, stderr io.Writer) int {
+	return runWaitCommand(args, poll, callerPID, func(result metarun.WaitResult, jsonOutput bool) { writeWaitResult(stdout, result, jsonOutput) }, stdout, stderr)
 }
 
 // channelWaitWith waits for one channel question's answer under an explicit
@@ -224,7 +224,7 @@ var channelWaitCommand = func(args []string, poll func(context.Context) error, c
 // that replaced a child), lineage is the channel ledger identity's, and the
 // report goes to the caller's streams.
 func channelWaitWith(callerPID int64, lineage string, stdout, stderr io.Writer, args []string, resolveMachine func(string) (string, error)) int {
-	f := newFlagSet("channel wait", stderr)
+	f := newFlagSet("channel wait", stdout, stderr)
 	root := pathFlag(f, "root", ".", "repository root")
 	id := f.String("question", "", "question id")
 	resume := f.String("resume", "", "durable channel wait identifier")
@@ -315,7 +315,7 @@ func channelWaitWith(callerPID int64, lineage string, stdout, stderr io.Writer, 
 	} else if *resume == "" {
 		waitArgs = append(waitArgs, "--timeout", (24 * time.Hour).String())
 	}
-	code := channelWaitCommand(waitArgs, poll, callerPID, stdout)
+	code := channelWaitCommand(waitArgs, poll, callerPID, stdout, stderr)
 	if code == 0 {
 		answered, readErr := channel.ReadQuestion(*root, q.ID)
 		if readErr != nil || answered.Answer == nil {

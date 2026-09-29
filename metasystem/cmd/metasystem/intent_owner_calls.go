@@ -213,6 +213,6 @@ func landingTestReceiptFor(caller processIdentity, stdout, stderr io.Writer, _ s
 		return admitProofLaunch(request)
 	}
 	return landingTestReceiptTo(stdout, stderr, context.Background(), goalCommandClock, nil,
-		func(testArgs []string) int { return runTestRunWith(invocation, testArgs) }, args,
+		func(testArgs []string, _, _ io.Writer) int { return runTestRunWith(invocation, testArgs) }, args,
 		landing.PrepareTestReceipt, admit, landing.PublishCommittedReceiptAt, commitProofTerminal)
 }

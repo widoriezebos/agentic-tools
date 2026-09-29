@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -50,8 +51,8 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 	request := func(verb, root, by, lineage string) (goal.VerbRequest, error) {
 		return syncReqWithProofAtWithDependencies(verb, root, by, lineage, nil, fixture.commandNow, fixture.dependencies())
 	}
-	emptyOutput, emptyCode := captureStdout(t, func() int {
-		return runGoalListWithResolver([]string{"--root", root, "--json"}, resolve)
+	emptyOutput, emptyCode := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runGoalListWithResolver([]string{"--root", root, "--json"}, resolve, stdout, stderr)
 	})
 	if emptyCode != 0 || !strings.Contains(emptyOutput, `"trunkRed":[]`) {
 		t.Fatalf("empty JSON register code=%d output=%q", emptyCode, emptyOutput)
@@ -92,8 +93,8 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 		return branchCommit, nil
 	}
 
-	output, code := captureStdout(t, func() int {
-		return runGoalTrunkRedWithDependencies([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--branch", "fix/red", "--lineage", "m1"}, request, branchRead, defaultSyncRequestDependencies())
+	output, code := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runGoalTrunkRedWithDependencies([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--branch", "fix/red", "--lineage", "m1"}, request, branchRead, withStreams(defaultSyncRequestDependencies(), stdout, stderr))
 	})
 	if code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
 		t.Fatalf("own command code=%d output=%q", code, output)
@@ -107,8 +108,8 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 		len(owned[0].Sightings) != 1 || owned[0].Sightings[0].Attempt != "attempt-1" || len(owned[0].Holds) != 1 || owned[0].Holds[0] != "batch-1" {
 		t.Fatalf("published owner lost branch, sighting, or hold: entries=%+v problems=%v", owned, problems)
 	}
-	output, code = captureStdout(t, func() int {
-		return runGoalListWithResolver([]string{"--root", root, "--json"}, resolve)
+	output, code = captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runGoalListWithResolver([]string{"--root", root, "--json"}, resolve, stdout, stderr)
 	})
 	var listed struct {
 		TrunkRed []goal.TrunkRedEntry `json:"trunkRed"`
@@ -116,15 +117,15 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 	if code != 0 || json.Unmarshal([]byte(output), &listed) != nil || len(listed.TrunkRed) != 1 || listed.TrunkRed[0].FixBranch.Name != "fix/red" {
 		t.Fatalf("json list code=%d output=%q parsed=%+v", code, output, listed)
 	}
-	stderr, code := captureStderr(t, func() int {
-		return runGoalTrunkRedWithDependencies([]string{"close", "--root", root, "--id", id, "--why", "external outage", "--lineage", "m1"}, request, branchRead, defaultSyncRequestDependencies())
+	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+		return runGoalTrunkRedWithDependencies([]string{"close", "--root", root, "--id", id, "--why", "external outage", "--lineage", "m1"}, request, branchRead, withStreams(defaultSyncRequestDependencies(), stdout, stderr))
 	})
 	if code != 1 || !strings.Contains(stderr, "TRUNK_RED_CLOSE_IS_HUMAN") {
 		t.Fatalf("close without human code=%d stderr=%q", code, stderr)
 	}
 
-	output, code = captureStdout(t, func() int {
-		return runGoalTrunkRedWithDependencies([]string{"close", "--root", root, "--id", id, "--by", "Wido", "--why", "external outage", "--lineage", "human-line"}, request, branchRead, defaultSyncRequestDependencies())
+	output, code = captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runGoalTrunkRedWithDependencies([]string{"close", "--root", root, "--id", id, "--by", "Wido", "--why", "external outage", "--lineage", "human-line"}, request, branchRead, withStreams(defaultSyncRequestDependencies(), stdout, stderr))
 	})
 	if code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
 		t.Fatalf("close command code=%d output=%q", code, output)
@@ -135,8 +136,8 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 		closed[0].Owner.Machine != "mac-cli" || closed[0].FixBranch.Commit != branchCommit || len(closed[0].Sightings) != 1 {
 		t.Fatalf("published closure lost owner history or failed to clear holds: entries=%+v problems=%v", closed, problems)
 	}
-	stderr, code = captureStderr(t, func() int {
-		return runGoalTrunkRedWithDependencies([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--to", "mac-other"}, request, branchRead, defaultSyncRequestDependencies())
+	stderr, code = captureStderr(t, func(stdout, stderr io.Writer) int {
+		return runGoalTrunkRedWithDependencies([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--to", "mac-other"}, request, branchRead, withStreams(defaultSyncRequestDependencies(), stdout, stderr))
 	})
 	if code != 2 || stderr != "goal trunk-red own takes --to only with --by\n" {
 		t.Fatalf("--to edge code=%d stderr=%q", code, stderr)
@@ -174,8 +175,8 @@ func renderTrunkRedNext(t *testing.T, repository *proofAdmissionRepository, mach
 		endpoint.Repository = repository
 		return endpoint, nil
 	}
-	out, code := captureStdout(t, func() int {
-		return nextSyncedWithInputs(root, machine, false, resolve, goalCommandNow, func(goal.Endpoint, bool, time.Time) (goal.Projection, error) { return p, nil }, func(string, goal.Endpoint) (seat.Copy, error) { return seat.Copy{}, nil }, labels...)
+	out, code := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return nextSyncedWithInputs(stdout, stderr, root, machine, false, resolve, goalCommandNow, func(goal.Endpoint, bool, time.Time) (goal.Projection, error) { return p, nil }, func(string, goal.Endpoint) (seat.Copy, error) { return seat.Copy{}, nil }, labels...)
 	})
 	if code != 0 {
 		t.Fatalf("goal next code=%d output=%q", code, out)

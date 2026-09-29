@@ -42,12 +42,12 @@ import (
 // 3.3): the runtime lifecycle hook body. `hook --accepts` answers whether this
 // engine serves the entry at all; `system setup` asks it before connecting a
 // checkout's hooks.
-func runHookEntry(args []string) int {
+func runHookEntry(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 1 && args[0] == "--accepts" {
 		return 0
 	}
 	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
-		return refuseUnknownOption(nil, "hook", args[0], "it takes RUNTIME EVENT, or --accepts")
+		return refuseUnknownOption(stdout, stderr, "hook", args[0], "it takes RUNTIME EVENT, or --accepts")
 	}
 	runtime, event := "", ""
 	if len(args) > 0 {
@@ -67,11 +67,11 @@ func runHookEntry(args []string) int {
 	origin := time.Now()
 	owners := hookOwners{diagnostics: io.Discard}
 	if event == "start" {
-		owners.diagnostics = os.Stderr
+		owners.diagnostics = stderr
 	}
 	return hooks.RunRuntimeHook(hooks.Invocation{
 		Runtime: runtime, Event: event,
-		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
+		Stdin: os.Stdin, Stdout: stdout, Stderr: stderr,
 		Lookup: os.LookupEnv, Pid: os.Getpid(), Ppid: os.Getppid(), Installation: installation,
 		Now:       time.Now,
 		Monotonic: func() time.Duration { return time.Since(origin) },

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -224,8 +225,8 @@ chmod +x "${out:-bin/metasystem}"
 		t.Fatalf("suspend fixture owner cadence: %v", err)
 	}
 	join := func(goalID string) string {
-		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-			return runLandingBatch([]string{"join", "--root", bed.seats[goalID], "--goal", goalID, "--last"})
+		code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+			return runLandingBatch([]string{"join", "--root", bed.seats[goalID], "--goal", goalID, "--last"}, stdout, stderr)
 		})
 		if code != 0 {
 			t.Fatalf("join %s exited %d: %s", goalID, code, stderr)
@@ -245,8 +246,8 @@ chmod +x "${out:-bin/metasystem}"
 		}
 	}
 	checkStatus := func(want string) batch.Record {
-		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-			return runLandingBatch([]string{"status", "--root", bed.seats["goal-a"], "--batch", batchID})
+		code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+			return runLandingBatch([]string{"status", "--root", bed.seats["goal-a"], "--batch", batchID}, stdout, stderr)
 		})
 		if code != 0 {
 			t.Fatalf("batch status exited %d: %s", code, stderr)
@@ -1135,7 +1136,7 @@ func init() {
 		// The enrolled fixture engine is a plantedcommit build; the child
 		// commits each unit through the bed's planted commit script as it did.
 		batchCommitBoundary = plantedOrLandingCommit
-		return runLandingBatch(args)
+		return runLandingBatch(args, os.Stdout, os.Stderr)
 	}
 }
 

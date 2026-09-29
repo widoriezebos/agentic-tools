@@ -23,16 +23,16 @@ type fixtureLifetimeDependencies struct {
 	after     func(time.Duration) <-chan time.Time
 	openLeash func(string) (io.ReadCloser, error)
 	ready     func()
-	// stderr receives every diagnostic. Commands pass the process's standard
-	// error; in-process tests pass their own writer so a refusal never lands
-	// in another parallel test's captured os.Stderr.
-	stderr io.Writer
+	// stdout receives a help request's usage and stderr every diagnostic:
+	// the invocation's own streams, so a refusal never lands in another
+	// parallel test's output.
+	stdout, stderr io.Writer
 }
 
 func defaultFixtureLifetimeDependencies() fixtureLifetimeDependencies {
 	return fixtureLifetimeDependencies{
 		getenv: os.Getenv, prober: identity.KernelProber{}, after: time.After,
-		openLeash: openFixtureLeash, ready: func() {}, stderr: os.Stderr,
+		openLeash: openFixtureLeash, ready: func() {},
 	}
 }
 
@@ -134,12 +134,14 @@ func fixtureLifetimeContext(parent context.Context, maxSeconds int64, deps fixtu
 // --stopped-file when one is given and exits 0. A supervisor can therefore
 // distinguish a child that completed its bounded lifetime from one that was
 // killed outright.
-func runUtilHold(args []string) int {
-	return runUtilHoldWithDependencies(args, defaultFixtureLifetimeDependencies())
+func runUtilHold(args []string, stdout, stderr io.Writer) int {
+	deps := defaultFixtureLifetimeDependencies()
+	deps.stdout, deps.stderr = stdout, stderr
+	return runUtilHoldWithDependencies(args, deps)
 }
 
 func runUtilHoldWithDependencies(args []string, deps fixtureLifetimeDependencies) int {
-	flags := newFlagSet("util hold", deps.stderr)
+	flags := newFlagSet("util hold", deps.stdout, deps.stderr)
 	tag := flags.String("tag", "", "instance tag carried in this process's command line")
 	stoppedFile := flags.String("stopped-file", "", "file that receives \"stopped\" on an orderly stop")
 	readyFile := flags.String("ready-file", "", "file written after signal handling and lifetime custody are armed")

@@ -19,25 +19,25 @@ import (
 // runSessionIsolate creates an isolated writer worktree for a second session
 // (launch.SecondSession): `session isolate [--root INSTALLATION] [NAME]`. It
 // prints the command that enters the new checkout.
-func runSessionIsolate(args []string) int {
-	flags := newFlagSet("session isolate")
+func runSessionIsolate(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("session isolate", stdout, stderr)
 	root := pathFlag(flags, "root", "", "installation whose checkout the session isolates from (default: this engine's)")
 	if flags.Parse(args) != nil || flags.NArg() > 1 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem session isolate [--root INSTALLATION] [NAME]")
+		fmt.Fprintln(stderr, "usage: metasystem session isolate [--root INSTALLATION] [NAME]")
 		return 2
 	}
 	harness := *root
 	if harness == "" {
 		exe, err := os.Executable()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "second-session:", err)
+			fmt.Fprintln(stderr, "second-session:", err)
 			return 1
 		}
 		harness = filepath.Dir(filepath.Dir(exe))
 	}
 	harness, err := canonicalPath(harness)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "second-session:", err)
+		fmt.Fprintln(stderr, "second-session:", err)
 		return 1
 	}
 	destination, err := launch.SecondSession(launch.SecondSessionOptions{
@@ -45,7 +45,7 @@ func runSessionIsolate(args []string) int {
 		Git: func(args ...string) (string, error) {
 			command := exec.Command("git", args...)
 			command.Env = gittree.ScrubbedEnviron()
-			command.Stderr = os.Stderr
+			command.Stderr = stderr
 			output, err := command.Output()
 			return string(output), err
 		},
@@ -73,25 +73,25 @@ func runSessionIsolate(args []string) int {
 				engine = filepath.Join(newHarness, "bin", "metasystem")
 			}
 			command := exec.Command(engine, append([]string{"up", "--metasystem-root", newHarness}, upArgs...)...)
-			command.Stdout, command.Stderr = io.Discard, os.Stderr
+			command.Stdout, command.Stderr = io.Discard, stderr
 			return command.Run()
 		},
 	})
 	var isolated *launch.SecondSessionIsolated
 	if errors.As(err, &isolated) {
 		// The named isolation already exists (R-129-ui).
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Printf("cd '%s'\n", isolated.Path)
+		fmt.Fprintln(stderr, err)
+		fmt.Fprintf(stdout, "cd '%s'\n", isolated.Path)
 		return 0
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		var refusal *launch.SecondSessionError
 		if errors.As(err, &refusal) {
 			return refusal.Code
 		}
 		return 1
 	}
-	fmt.Printf("cd '%s'\n", destination)
+	fmt.Fprintf(stdout, "cd '%s'\n", destination)
 	return 0
 }

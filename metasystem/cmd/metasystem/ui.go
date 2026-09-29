@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -44,8 +45,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
 
-func runUIServe(args []string) int {
-	flags := newFlagSet("ui serve")
+func runUIServe(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("ui serve", stdout, stderr)
 	repo := pathFlag(flags, "repo", "", "checkout path (default: the checkout that contains the installation)")
 	root := flags.String("metasystem-root", "", "metasystem installation")
 	listen := flags.String("listen", "", "loopback IP and port")
@@ -54,7 +55,7 @@ func runUIServe(args []string) int {
 		return 2
 	}
 	if flags.NArg() != 0 || *readyFD < -1 {
-		fmt.Fprintln(os.Stderr, "invalid arguments for ui serve")
+		fmt.Fprintln(stderr, "invalid arguments for ui serve")
 		return 2
 	}
 
@@ -71,7 +72,7 @@ func runUIServe(args []string) int {
 			_ = ready.Close()
 			ready = nil
 		}
-		fmt.Fprintln(os.Stderr, line)
+		fmt.Fprintln(stderr, line)
 		return 1
 	}
 	listenSet := false
@@ -111,7 +112,7 @@ func runUIServe(args []string) int {
 		return refuse(nowErr.Error())
 	}
 	authority := act.Prove(roots.StateRoot, roots.Installation, act.ParentPID(), authorityNow)
-	fmt.Fprintln(os.Stderr, "interface authority: "+authority.Line())
+	fmt.Fprintln(stderr, "interface authority: "+authority.Line())
 
 	// The second way a human's acts reach the ledger: the seat's one-time
 	// code, in a browser. It needs no ancestry and no terminal, so it is
@@ -159,7 +160,7 @@ func runUIServe(args []string) int {
 	if home, homeErr := stickies.Home(); homeErr == nil {
 		notepad = stickies.New(home, roots.Checkout, time.Now)
 	} else {
-		fmt.Fprintln(os.Stderr, "interface notepad: unavailable: "+homeErr.Error())
+		fmt.Fprintln(stderr, "interface notepad: unavailable: "+homeErr.Error())
 	}
 
 	// The ledger reader answers requests from the accepted ref as it
@@ -297,13 +298,13 @@ func runUIServe(args []string) int {
 		switch {
 		case homeErr != nil:
 			partnerRefusal = "this seat cannot keep the Partner's conversation outside the checkout, so it serves no Partner: " + homeErr.Error()
-			fmt.Fprintln(os.Stderr, "interface Partner: "+partnerRefusal)
+			fmt.Fprintln(stderr, "interface Partner: "+partnerRefusal)
 		case admitErr != nil:
 			partnerRefusal = admitErr.Error()
-			fmt.Fprintln(os.Stderr, "interface Partner: "+partnerRefusal)
+			fmt.Fprintln(stderr, "interface Partner: "+partnerRefusal)
 		case carryErr != nil:
 			partnerRefusal = "this seat serves no Partner rather than an empty history: " + carryErr.Error()
-			fmt.Fprintln(os.Stderr, "interface Partner: "+partnerRefusal)
+			fmt.Fprintln(stderr, "interface Partner: "+partnerRefusal)
 		default:
 			// The interface's own read tools, handed to the session at
 			// session/new. A seat that cannot name its own executable gets
@@ -315,7 +316,7 @@ func runUIServe(args []string) int {
 			// refused at the call (R-130-ui, Astra F-06).
 			if tools, toolsErr := partner.ToolsFor(roots.Checkout, roots.Installation, presenceRun,
 				filepath.Join(conversations, "answer")); toolsErr != nil {
-				fmt.Fprintln(os.Stderr, "interface Partner: "+toolsErr.Error())
+				fmt.Fprintln(stderr, "interface Partner: "+toolsErr.Error())
 			} else {
 				admitted.Tools = tools
 			}
@@ -353,7 +354,7 @@ func runUIServe(args []string) int {
 						Age:   time.Duration(storeBounds.ConversationDays) * 24 * time.Hour,
 					}, humans)
 				},
-				say: func(line string) { fmt.Fprintln(os.Stderr, "interface store: "+line) },
+				say: func(line string) { fmt.Fprintln(stderr, "interface store: "+line) },
 			}
 			partnerService.Announce(func(busy bool) {
 				_ = lifecycle.Update(roots.StateRoot, func(r *lifecycle.Record) {
@@ -361,7 +362,7 @@ func runUIServe(args []string) int {
 				})
 			})
 			defer partnerService.Close()
-			fmt.Fprintln(os.Stderr, "interface Partner: "+partnerLine(admitted, false))
+			fmt.Fprintln(stderr, "interface Partner: "+partnerLine(admitted, false))
 		}
 	}
 
@@ -834,7 +835,7 @@ func runUIServe(args []string) int {
 				_ = ready.Close()
 				ready = nil
 			}
-			fmt.Fprintf(os.Stderr, "interface running at http://%s (pid %d)\n", address, os.Getpid())
+			fmt.Fprintf(stderr, "interface running at http://%s (pid %d)\n", address, os.Getpid())
 		},
 		// The loop ends while this process still holds the checkout, so a
 		// tick in flight cannot advance the accepted ref after the next
