@@ -86,3 +86,5 @@ No change to `helm take`'s proof, `ProveTerminal`, `ClassifyAt`, `ClassifyVerbAt
 ## 9. Built
 
 Slices 2 and 3 built by Claude on Opus 5.5 on branch `helm-acts-s23`: `0d558dbb6` (library: the person proof yields to the helm, `lease.MachineryAncestor`, `landpath.PrimaryCheckout`), `70f3f6225` (wiring, `resolveGoalHuman`, the end-to-end), `2e6048ef6` (helm return catches up), `5b674c32c` (batch 22's stream rule), `a0b4f817f` (yields name the act's target); eight departures in the build report, all accepted by Sol. Checks: humanauthority 82.0, landpath 87.2, lease 81.2, helm 83.0, goal 82.8, ui/act 75.5, refusal, the cmd/metasystem helm and structural filters, wall-time and stream audits, `devgate static`, all green. Sol's code read: zero material (`at-the-helm-every-verb-and-the-return-sol-read.md`). Lands through m1e's batch.
+
+Landed on main in m1e batch 23 as `d394ce345` (2026-09-29), with one in-batch fix: the `ui/act` helm refusal names the enroll command (TestAuditNoRefusalSendsAPersonToAnEnrolledTerminalWithoutEnroll).
