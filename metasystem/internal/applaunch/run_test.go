@@ -110,9 +110,16 @@ func (b *bed) start(key string) (string, int, error) {
 
 func (b *bed) startWith(key string, args []string) (string, int, error) {
 	b.t.Helper()
+	return b.startWaiting(key, args, 20*time.Second)
+}
+
+// startWaiting is startWith with the launcher's wait for the supervisor's
+// answer given; WaitForReport waits for the answer or the supervisor's exit.
+func (b *bed) startWaiting(key string, args []string, wait time.Duration) (string, int, error) {
+	b.t.Helper()
 	spec := LaunchSpec{Executable: b.super, Args: args, Dir: b.root,
 		LogPath: filepath.Join(Dir(b.stateRoot), key+".launch.log")}
-	address, pid, err := LaunchSupervisor(spec, ExecSpawn, 20*time.Second,
+	address, pid, err := LaunchSupervisor(spec, ExecSpawn, wait,
 		time.Duration(b.contract.StopWaitMS())*time.Millisecond+5*time.Second)
 	if pid > 0 {
 		// The engine's own start exits at once, so a supervisor it launched
@@ -509,9 +516,21 @@ func TestLogReadinessIsScopedToThisRun(t *testing.T) {
 func TestRunningAndNotAnswering(t *testing.T) {
 	t.Parallel()
 	address := freePort(t)
-	b := newBed(t, httpContract(mustApp(t), address, "--dark-after", "1s"))
-	if _, _, err := b.start(StandingKey); err != nil {
+	// The application goes dark when the test says so, never on a clock
+	// that starts with its process: on a loaded host a start slower than
+	// that clock would never be ready at all. The start carries no clock
+	// either; the test's own timeout bounds it.
+	dark := filepath.Join(t.TempDir(), "dark")
+	contract := httpContract(mustApp(t), address, "--dark-file", dark)
+	contract["readyMs"] = 600_000
+	b := newBed(t, contract)
+	args := []string{"--state-root", b.stateRoot, "--key", StandingKey, "--contract", b.path,
+		"--project-root", b.root, "--address", b.address, "--ready-fd", "3"}
+	if _, _, err := b.startWaiting(StandingKey, args, WaitForReport); err != nil {
 		t.Fatalf("start: %v", err)
+	}
+	if err := os.WriteFile(dark, nil, 0o644); err != nil {
+		t.Fatal(err)
 	}
 	eventually(t, "the application to stop answering", 10*time.Second, func() bool {
 		return b.status(StandingKey).Readiness == NotAnswering

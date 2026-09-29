@@ -20,7 +20,7 @@ import (
 func main() {
 	listen := flag.String("listen", "", "address to listen on (default: METASYSTEM_APP_ADDRESS)")
 	readyAfter := flag.Duration("ready-after", 0, "answer 200 only after this long")
-	darkAfter := flag.Duration("dark-after", 0, "stop answering 200 after this long, while staying alive")
+	darkFile := flag.String("dark-file", "", "stop answering 200 while this file exists, while staying alive")
 	listenAfter := flag.Duration("listen-after", 0, "start listening only after this long")
 	readyLine := flag.String("ready-line", "", "write this line to the log once ready")
 	ignoreTerm := flag.Bool("ignore-term", false, "ignore SIGTERM")
@@ -80,9 +80,11 @@ func main() {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
 			}
-			if *darkAfter > 0 && time.Since(started) >= *darkAfter {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
+			if *darkFile != "" {
+				if _, err := os.Stat(*darkFile); err == nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
 			}
 			fmt.Fprintln(w, "ok")
 		})
