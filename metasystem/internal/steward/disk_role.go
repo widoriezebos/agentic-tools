@@ -669,35 +669,11 @@ func armedCheckouts() []string {
 	return armedCheckoutsAt(path)
 }
 
-// armedCheckoutsAt reads the open claims and owners of the registry at path.
+// armedCheckoutsAt reads the open claims and owners of the registry at path;
+// the disk pass and the census treat an unreadable registry as no checkouts,
+// as they always have.
 func armedCheckoutsAt(path string) []string {
-	frames, err := registry.ReadFrames(path)
-	if err != nil {
-		return nil
-	}
-	reduction, err := registry.Reduce(frames)
-	if err != nil {
-		return nil
-	}
-	seen := map[string]bool{}
-	var checkouts []string
-	add := func(path string) {
-		if path != "" && !seen[path] {
-			seen[path] = true
-			checkouts = append(checkouts, path)
-		}
-	}
-	for _, tag := range reduction.SortedTags() {
-		if claim := reduction.Claims[tag]; claim != nil && claim.Open() {
-			add(claim.CheckoutPath)
-		}
-	}
-	for _, owner := range reduction.PublishedOwners {
-		if owner.Open() {
-			add(owner.CheckoutPath)
-		}
-	}
-	sort.Strings(checkouts)
+	checkouts, _ := registry.ArmedCheckouts(path)
 	return checkouts
 }
 

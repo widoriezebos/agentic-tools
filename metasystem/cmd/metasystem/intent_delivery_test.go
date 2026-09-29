@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation/fake"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
@@ -903,5 +904,43 @@ func TestIntentLandOldWholeLandingDoesNotAnswerFreshBranch(t *testing.T) {
 	expectOutcome(t, "retained landing once the branch is gone", code, result, intentUnchanged)
 	if len(joins) != 1 {
 		t.Fatal("a retained landed member is not joined again")
+	}
+}
+
+// TestIntentLandByHandWritesLandingThenLanded (R24, U10a-3, the hand route):
+// the hand route writes landing on the goal's card when it begins, with the
+// landing process as owner, and landed after its push.
+func TestIntentLandByHandWritesLandingThenLanded(t *testing.T) {
+	t.Parallel()
+	goalID := "card-hand-landing"
+	home, err := board.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seat := board.Seat{Machine: "m1-hand-landing", Installation: "/checkouts/m1-hand-landing/metasystem"}
+	if err := board.WriteAt(home, board.Card{Seat: seat, Goal: goalID, Stage: board.StageLandReady}); err != nil {
+		t.Fatal(err)
+	}
+	b := newDeliveryBed(t)
+	owners := &landingOwners{status: readBranch(2, "reader-record", "reader-record")}
+	owners.install(b)
+	push := b.owners.landPush
+	var during board.Card
+	b.owners.landPush = func(args []string) (branch.PreparedLanding, string, int, error) {
+		during, _ = board.LiveCard(home, goalID)
+		return push(args)
+	}
+	code, result := b.do("work", "land", goalID)
+	expectOutcome(t, "hand landing", code, result, intentConfirmed)
+	if during.Stage != board.StageLanding || during.Owner == nil || during.Owner.Pid != int64(os.Getpid()) || during.Seat != seat {
+		t.Fatalf("card during the push = %+v", during)
+	}
+	picture, _ := board.Read(home, []board.Seat{seat}, nil, time.Now(), time.Hour)
+	landed := false
+	for _, card := range picture.Cards {
+		landed = landed || card.Goal == goalID && card.Stage == board.StageLanded
+	}
+	if !landed {
+		t.Fatalf("no landed card after the push: %+v", picture)
 	}
 }

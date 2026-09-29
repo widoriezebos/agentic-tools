@@ -289,6 +289,21 @@ func goalFilesAt(root, tree string) ([]*goal.GoalFile, error) {
 	return files, nil
 }
 
+// liveClaims maps every claimed goal of the ledger at tree to its holder.
+func liveClaims(root, tree string) (map[string]string, error) {
+	files, err := goalFilesAt(root, tree)
+	if err != nil {
+		return nil, err
+	}
+	claims := map[string]string{}
+	for _, file := range files {
+		if file.Claimed != nil {
+			claims[file.Id] = file.Claimed.Machine
+		}
+	}
+	return claims, nil
+}
+
 var batchReturnTargetSeams = struct {
 	goals         func(string, string) ([]*goal.GoalFile, error)
 	holder        func(string) (lease.CurrentHolderView, error)
@@ -473,6 +488,11 @@ func batchOwnerFixtureProofLockDirectories(root string) (string, string, error) 
 
 func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease, inputs productionBatchOwnerInputs, now func() time.Time) (*batch.Owner, error) {
 	controlRoot := batch.ModuleRoot(settings.Root)
+	// The pipeline keys resolve from the landing checkout's own file; a file
+	// that cannot resolve them keeps the compiled defaults.
+	if withPipeline, err := settings.WithPipeline(filepath.Join(controlRoot, "metasystem.conf")); err == nil {
+		settings = withPipeline
+	}
 	sample := inputs.sample
 	if sample == nil {
 		sample = func() proofrun.LoadSample { return proofrun.SampleLoad(controlRoot, "", held.pid, now()) }
@@ -550,7 +570,20 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 		ProbeRun: func(id string, record batch.Record) (batch.RunProbe, error) {
 			return probeBatchProofRun(controlRoot, id, record, identity.KernelProber{}, proofrun.ReadAttempts)
 		},
-		After:      time.After,
+		After: time.After,
+		// The start is decided from the host board, read afresh at every
+		// decision and checked against the ledger at the latest fetched
+		// tree (D14, R22).
+		Pipeline: productionPipeline(settings.Pipeline.Stall, func() (map[string]string, error) {
+			if latestTree == "" {
+				return nil, fmt.Errorf("no tree fetched yet")
+			}
+			return liveClaims(settings.Root, latestTree)
+		}),
+		LogWait: func(id, line string) {
+			encoded, _ := json.Marshal(map[string]any{"component": "landing-owner", "batch": id, "start": line})
+			fmt.Fprintln(os.Stderr, string(encoded))
+		},
 		HelmActive: func(root string) bool { return helm.Active(root).Active },
 		BaseMove:   batchBaseMove(settings.Root),
 		Report: func(id string, err error) {

@@ -2,6 +2,7 @@ package batch
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"reflect"
 	"slices"
 	"time"
@@ -170,6 +171,7 @@ func ResumeJoinAdmission(store Store, batchID, goalID, actor string, at time.Tim
 					return fmt.Errorf("BATCH_JOIN_PENDING: member %s changed during admission", goalID)
 				}
 				candidate.Admission, candidate.Closure = &result, closure
+				candidate.Stages = boardHistory(goalID)
 				if result.AttemptID != "" {
 					candidate.Gate = append(candidate.Gate, result.AttemptID)
 				}
@@ -181,6 +183,7 @@ func ResumeJoinAdmission(store Store, batchID, goalID, actor string, at time.Tim
 		}); err != nil {
 			return err
 		}
+		writeUnitCard(goalID, unit.Claim.Machine, board.StageJoined, batchID, at)
 		return store.seams.publish(UnitJoined)
 	})
 }

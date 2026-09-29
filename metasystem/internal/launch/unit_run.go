@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"golang.org/x/sys/unix"
 )
@@ -333,7 +334,8 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	for index := 0; index < buildCount; index++ {
 		step := &round.Steps[index]
 		buildSpec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: step.Brief, Model: record.BuildModel, Effort: record.BuildEffort,
-			Inputs: buildInputs, Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: step.Units}
+			Inputs: buildInputs, Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: step.Units,
+			Round: round.Number, MaxRounds: record.MaxRounds}
 		if capped, stepErr := runner.advanceStep(record, round, index, buildSpec, deadline); stepErr != nil || capped {
 			return runner.result(*record, round, step, capped), stepErr
 		}
@@ -376,7 +378,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 				return UnitResult{}, err
 			}
 		}
-		spec := StartSpec{Kind: "proof", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: command.Dir, Brief: briefPath}
+		spec := StartSpec{Kind: "proof", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: command.Dir, Brief: briefPath, Round: round.Number, MaxRounds: record.MaxRounds}
 		if capped, err := runner.advanceStep(record, round, index, spec, deadline); err != nil || capped {
 			return runner.result(*record, round, &round.Steps[index], capped), err
 		}
@@ -428,7 +430,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, plan UnitPlan, inputs []string, diffPath string) readSequence {
 	return readSequence{driver: runner.driver(record, round), model: round.ReadModel, diff: diffPath, serial: len(plan.Read.Outputs) > 0,
 		spec: StartSpec{Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: plan.Read.Brief,
-			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model}}
+			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, Round: round.Number, MaxRounds: record.MaxRounds}}
 }
 
 // driver starts a unit round's launches under the run's own launch ids,
@@ -566,7 +568,30 @@ func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcom
 	if err := runner.save(*record); err != nil {
 		return UnitResult{}, err
 	}
+	runner.publishJudgement(*record, round.Number)
 	return UnitResult{Record: *record, Round: round.Number}, nil
+}
+
+// publishJudgement puts the finished round on the board as judgement: the
+// read is in, a person or the coordinator decides, and no process is waited
+// on (D14, R24). The run's step states write no card: the launch manager's
+// state writes cover every step.
+func (runner *UnitRunner) publishJudgement(record UnitRunRecord, number int) {
+	if runner.Manager == nil || runner.Manager.Seat.Machine == "" || record.Goal == "" {
+		return
+	}
+	card := board.Card{Seat: runner.Manager.Seat, Goal: record.Goal, Stage: board.StageJudgement,
+		Round: &board.Round{N: number}, Job: &board.Job{ID: record.ID, Kind: "unit-run", Phase: record.State}, Writer: board.Writer{Component: "unit-run"}}
+	if runner.Manager.Now != nil {
+		card.Writer.At = runner.Manager.Now()
+	}
+	if record.MaxRounds > 0 {
+		limit := record.MaxRounds
+		card.Round.Max = &limit
+	}
+	if err := board.Write(card); err != nil {
+		fmt.Fprintf(os.Stderr, "unit run %s: the board card was not written: %v\n", record.ID, err)
+	}
 }
 
 func (runner *UnitRunner) result(record UnitRunRecord, round *UnitRound, step *UnitStep, capped bool) UnitResult {

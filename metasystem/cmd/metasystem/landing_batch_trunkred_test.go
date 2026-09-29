@@ -423,3 +423,35 @@ func writeAdapterJournalEntry(t *testing.T, root string, entry goal.Entry) {
 		t.Fatal(err)
 	}
 }
+
+// TestBatchTrunkRedProjectionCarriesTheFixGoal (R22, U10b-2): the production
+// projection ledgerTrunkRedOwner.Open carries the class and the fix goal of
+// an owned entry, which is what the red-on-main start matches; an entry
+// whose fix branch is another goal's branch (goal/goal-g) carries the goal
+// that claimed it and no branch, so the start matches by goal alone.
+func TestBatchTrunkRedProjectionCarriesTheFixGoal(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct{ goal, branch string }{{"standing-validation", "fix/red"}, {"standing-validation", "goal/goal-g"}} {
+		repository := newProofAdmissionRepositoryFixture(t, time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC), false)
+		const machine, lineage = "mac-landing", "landing-lineage"
+		owner := proofLedgerTrunkRedOwner(t, repository, machine, lineage, time.Date(2026, 9, 18, 11, 0, 0, 0, time.UTC))
+		red := batch.TrunkRed{BatchID: "batch-red-start", AttemptID: "attempt-red", BaseCommit: strings.Repeat("c", 40), BaseTree: strings.Repeat("b", 40),
+			SeenAt: time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC), Joiners: []batch.Claim{{Machine: machine}},
+			Groups: []batch.RedGroup{{ID: "fast", Status: "failed", Failures: []batch.Failure{{Report: "report", Classname: "Class", Name: "Test", Status: "failed", Reason: "red"}}}}}
+		refs, err := owner.Record(goal.Opid("01J5X0000000000000000000Z1", machine, lineage), red)
+		if err != nil || len(refs) != 1 {
+			t.Fatalf("record: %+v %v", refs, err)
+		}
+		request, err := owner.request(goal.Opid("01J5X0000000000000000000Z2", machine, lineage))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result, err := goal.OwnTrunkRed(request, goal.TrunkRedOwnArgs{Entry: refs[0].ID, Goal: row.goal, Branch: row.branch, BranchCommit: strings.Repeat("c", 40)}); err != nil || result.Outcome != goal.OutcomeConfirmed {
+			t.Fatalf("own: %+v %v", result, err)
+		}
+		open, err := owner.Open()
+		if err != nil || len(open) != 1 || open[0].Class != batch.ClassTrunkRed || open[0].FixGoal != row.goal || open[0].ID != refs[0].ID {
+			t.Fatalf("%s on %s: open %+v %v", row.goal, row.branch, open, err)
+		}
+	}
+}

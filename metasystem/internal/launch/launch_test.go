@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -895,5 +896,117 @@ func TestUnobservableStartedWriterKeepsItsPathClaim(t *testing.T) {
 	got, err = other.Supervise(second.ID)
 	if err == nil || !strings.Contains(err.Error(), "declared-output-owner-unproven") || got.Child != nil {
 		t.Fatalf("successor accepted unobservable writer: %+v %v", got, err)
+	}
+}
+
+// cardOf reads one seat's card for goal from the process's board.
+func cardOf(t *testing.T, machine, goal string) (board.Card, bool) {
+	t.Helper()
+	home, err := board.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(board.Dir(home), machine, goal+".json"))
+	if err != nil {
+		return board.Card{}, false
+	}
+	var card board.Card
+	if err := json.Unmarshal(data, &card); err != nil {
+		t.Fatal(err)
+	}
+	return card, true
+}
+
+// observingChild reads the card while the child runs, before Wait returns.
+type observingChild struct {
+	observe func()
+}
+
+func (child observingChild) Wait() (int, error) { child.observe(); return 0, nil }
+
+type observingProcesses struct {
+	*fakeProcesses
+	observe func()
+}
+
+func (p observingProcesses) StartChild(command Command) (Child, identity.Ref, error) {
+	return observingChild{p.observe}, p.child, nil
+}
+
+// TestCardWritersPublishEveryStage (R24, U10a-2, launch manager): a
+// goal-bound launch publishes its card at its own state writes, owned by the
+// retained supervisor and never the caller: a build whose supervisor lives
+// while the caller has gone reads build; its terminal update ends the stage
+// into the history; a second-round build reads revise with the round of its
+// limit; a read reads review and, completed, judgement; a cancellation ends
+// the stage; an unwritable board leaves the launch whole.
+func TestCardWritersPublishEveryStage(t *testing.T) {
+	t.Parallel()
+	machine := "m1-launch-card"
+	m, processes, _, _ := manager(t)
+	m.Seat = board.Seat{Machine: machine, Installation: "/checkouts/m1-launch-card/metasystem"}
+	var running board.Card
+	m.Processes = observingProcesses{processes, func() { running, _ = cardOf(t, machine, "goal-build") }}
+	record := seed(t, m, "card-build", Starting)
+	m.Store.Update(record.ID, func(r *Record) error { r.Goal, r.Round, r.MaxRounds = "goal-build", 1, 3; return nil })
+	if _, err := m.Supervise(record.ID); err != nil {
+		t.Fatal(err)
+	}
+	if running.Stage != board.StageBuild || running.Owner == nil || running.Owner.Pid != 10 || running.Job == nil || running.Job.Phase != "running" ||
+		running.Round == nil || running.Round.N != 1 || running.Round.Max == nil || *running.Round.Max != 3 {
+		t.Fatalf("running build card = %+v", running)
+	}
+	ended, _ := cardOf(t, machine, "goal-build")
+	if ended.Stage != board.StageClaimedIdle || ended.Owner != nil || len(ended.Stages) == 0 || ended.Stages[len(ended.Stages)-1].Stage != board.StageBuild {
+		t.Fatalf("terminal build card = %+v", ended)
+	}
+
+	// Round 2 of a build is a revise; a read is a review, then judgement.
+	for _, row := range []struct {
+		kind, goal  string
+		round       int
+		during, end board.Stage
+	}{{"build", "goal-revise", 2, board.StageRevise, board.StageClaimedIdle}, {"read", "goal-read", 1, board.StageReview, board.StageJudgement}} {
+		var during board.Card
+		goal := row.goal
+		m.Processes = observingProcesses{processes, func() { during, _ = cardOf(t, machine, goal) }}
+		seeded := seed(t, m, "card-"+row.goal, Starting)
+		m.Store.Update(seeded.ID, func(r *Record) error { r.Kind, r.Goal, r.Round = row.kind, row.goal, row.round; return nil })
+		if _, err := m.Supervise(seeded.ID); err != nil {
+			t.Fatal(err)
+		}
+		after, _ := cardOf(t, machine, row.goal)
+		if during.Stage != row.during || after.Stage != row.end {
+			t.Fatalf("%s: during %s, after %s; want %s then %s", row.goal, during.Stage, after.Stage, row.during, row.end)
+		}
+	}
+
+	// A cancellation ends the stage.
+	cancelled := seed(t, m, "card-cancel", Running)
+	m.Store.Update(cancelled.ID, func(r *Record) error { r.Goal = "goal-cancel"; return nil })
+	m.Sleep = func(time.Duration) {
+		processes.group = false
+		processes.probe.states[10], processes.probe.states[20] = identity.Dead, identity.Dead
+	}
+	if record, err := m.Cancel(cancelled.ID); err != nil || record.State != Cancelled {
+		t.Fatalf("cancel = %+v, %v", record, err)
+	}
+	if card, _ := cardOf(t, machine, "goal-cancel"); card.Stage != board.StageClaimedIdle || len(card.Stages) == 0 || card.Stages[0].Stage != board.StageBuild {
+		t.Fatalf("cancelled card = %+v", card)
+	}
+
+	// An unwritable board: the launch completes and no card exists.
+	home, _ := board.Home()
+	blocked := "m1-launch-blocked"
+	os.MkdirAll(board.Dir(home), 0o700)
+	if err := os.WriteFile(filepath.Join(board.Dir(home), blocked), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m2, _, _, _ := manager(t)
+	m2.Seat = board.Seat{Machine: blocked, Installation: "/x/metasystem"}
+	unwritable := seed(t, m2, "card-blocked", Starting)
+	m2.Store.Update(unwritable.ID, func(r *Record) error { r.Goal = "goal-blocked"; return nil })
+	if record, err := m2.Supervise(unwritable.ID); err != nil || record.State != Completed {
+		t.Fatalf("an unwritable board failed the launch: %+v, %v", record, err)
 	}
 }

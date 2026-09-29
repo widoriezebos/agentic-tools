@@ -18,14 +18,17 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -1701,6 +1704,7 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 		return intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
 			Summary: fmt.Sprintf("goal %s already landed %s on %s", goalID, landed.Landing, landed.Endpoint)}
 	}
+	writeHandLandingCard(root, goalID, board.StageLanding)
 	selection := []string{"--last"}
 	if through != "" {
 		selection = []string{"--through", through}
@@ -1740,6 +1744,7 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 	}
 	landed = intentLanded{Landing: pushed.Landing, Endpoint: endpoint, Branch: pushed.Branch, Subject: subject, Swept: err == nil}
 	data["landing"] = landed
+	writeHandLandingCard(root, goalID, board.StageLanded)
 	if writeErr := writeIntentInputs(dir, map[string]string{landedPath: mustJSON(landed)}); writeErr != nil {
 		data["recordError"] = writeErr.Error()
 	}
@@ -1750,6 +1755,35 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 	}
 	return intentResult{Targets: targets, Outcome: intentConfirmed, Data: data,
 		Summary: fmt.Sprintf("landed %s on %s; goal %s stays open until done", pushed.Landing, endpoint, goalID)}
+}
+
+// writeHandLandingCard projects the hand route onto the goal's board card
+// (D14, R24): landing when the route begins, with this landing process as
+// owner, so an abandoned attempt reads as a dead owner and the goal's next
+// real transition overwrites it; landed after the push. The card is the
+// goal's live card, or this installation's own seat. A card that cannot be
+// written is reported and the landing goes on.
+func writeHandLandingCard(root, goalID string, stage board.Stage) {
+	home, err := board.Home()
+	if err != nil {
+		return
+	}
+	seat, found := board.Seat{}, false
+	if live, ok := board.LiveCard(home, goalID); ok {
+		seat, found = live.Seat, true
+	} else if machine, resolveErr := goal.ResolveMachine(root); resolveErr == nil {
+		seat, found = board.Seat{Machine: machine, Installation: realpath.Resolve(root)}, true
+	}
+	if !found {
+		return
+	}
+	card := board.Card{Seat: seat, Goal: goalID, Stage: stage, Writer: board.Writer{Component: "work-land"}}
+	if stage == board.StageLanding {
+		card.Owner = board.Self()
+	}
+	if err := board.Write(card); err != nil {
+		fmt.Fprintf(os.Stderr, "work land %s: the board card was not written: %v\n", goalID, err)
+	}
 }
 
 // receiptProves reports whether a retained receipt is a schema-3 receipt of

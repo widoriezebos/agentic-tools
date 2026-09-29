@@ -210,6 +210,18 @@ var coreSettings = []Setting{
 		Meaning: "the oldest a runtime capability snapshot may be, in days"},
 	{Key: "landing.receipt-bound-min", Default: "40", ProofInput: true,
 		Meaning: "the bound on a landing's tier-one receipt battery, in minutes"},
+	// The batch lane's start (batch-lane design D14, R22): none is a proof
+	// input; they decide when a proof starts, never what it proves.
+	{Key: BatchMaxWaitKey, Default: "10m",
+		Meaning: "the longest a joined unit waits for its batch to start, used only when the host board cannot be read"},
+	{Key: PipelineStallMinKey, Default: "20",
+		Meaning: "minutes without real progress after which a unit on the host board is stalled: not near, not waited for"},
+	{Key: PipelineProofCostKey, Default: "40m",
+		Meaning: "the cost of a separate full proof while the lane has no measured proof on its runner"},
+	{Key: PipelineStageDefaultsKey, Default: "build=10m,revise=10m,unit-proof=5m,review=18m,judgement=5m,land-ready=3m",
+		Meaning: "the stage estimates while the lane has no recorded spans of a stage; every pre-join stage named once"},
+	{Key: PipelineHistoryNKey, Default: "8",
+		Meaning: "how many recent completed spans, and same-runner batch proofs, a median is taken over"},
 	{Key: IntentReviewToolCallsKey, Default: "48", ProofInput: true,
 		Meaning: "the independent read's tool calls for a public build whose brief names none"},
 
