@@ -53,6 +53,78 @@ Public command design applies standing ruling R-126-m1e in
 - Use bounded parallelism, explicit timeouts, and cancellation contracts for concurrent work, and propagate correlation context across threads and executors.
 - Give each stage of a pipeline or agent loop a contract: what it consumes, what it produces, what it guarantees, and how it terminates. Preserve provenance when later stages depend on evidence from earlier ones.
 
+## Waits Are Used
+
+When the machinery must wait, it uses the wait: it does the work that the
+waited-for result cannot invalidate, prepares what the next step needs, and
+surfaces problems early, on spare capacity only, discarded when invalidated,
+never delaying the decision it waits for, never trading correctness for
+speed.
+
+Why: a wait in a pipeline is the moment the machinery has the most
+information about what comes next and the least to do. A person in the same
+seat merges what is already there, runs the cheap checks, and keeps only the
+expensive step for the thing that has not arrived. Machinery that folds its
+hands during a wait pays the whole cost of the next step after the wait,
+serially, and learns of a conflict or a red only then, when the person who
+could fix it has moved on.
+
+Conditions, all of them, for any act performed during a wait:
+
+- **Invalidation-safe.** The act's inputs are known now and the waited-for
+  result cannot change them. What it can change is whether the act's output
+  is still wanted, never whether it was correct. Name the invalidators.
+- **Spare capacity only.** The act is admitted by the same capacity rule
+  real work is admitted by, with room left for real work beside it, one act
+  at a time per owner; it is not started when that room is missing or the
+  host is loaded, and real work that arrives while it runs is queued by the
+  ordinary admission, never by a rule of its own. Capacity is derived from
+  the machine, never configured.
+- **Forgotten with a named reason.** When an invalidator fires, the owner
+  forgets the act and its record says why in words a person can read; an
+  act in flight ends on its own. Its durable by-products (a retained
+  attempt, a warm cache, an assembled tree) stay as ordinary evidence or
+  state and are judged by the ordinary rules; nothing is kept because it
+  was expensive, and nothing is built to end it early.
+- **The decision is never delayed.** The rule that decides when the wait
+  ends is a pure function of the same inputs as before; the acts run beside
+  it, never inside it, hold none of its locks, and are forgotten, not
+  waited for, when it decides.
+- **Nothing passes on speculation.** A result produced during a wait counts
+  later only where an identical result would have counted anyway: by exact
+  identity of its inputs, through the same verifier, cited by the same
+  record. A speculative result is never a landing's own proof and never
+  softens a rule. A problem it surfaces is judged by the ordinary rule for
+  that problem, not by a lighter one.
+- **The wait says what it is used for.** The line a person reads about the
+  wait names what runs meanwhile, or says "nothing" and why.
+
+Examples across the machinery:
+
+- The landing lane, waiting for a unit expected to join within one proof's
+  cost: it assembles the joined members onto the base and ejects a member
+  whose assembly conflicts, runs the join's cheap phase on the assembled
+  tree, and proves the partial batch once, as an ordinary attempt whose
+  passes the real proof reuses only by identical execution identity; all
+  forgotten when the base moves or a member leaves, none delaying the
+  start.
+- The disk sweeper, whose pass cannot take the use census this cycle: it
+  releases every store whose proof needs no census (dead process, launch,
+  session and delegate owners; lease dispositions), leaves the worktree
+  stores pending with the reason, and reports what it did meanwhile; nothing
+  computed under one pass's lock is carried into the next.
+- `machine remove`, waiting for the seat's stop transition: it fetches the
+  archive and ledger refs the later steps need, checks the evidence root's
+  room and mirrors the chains that are already closed and cannot change;
+  it archives nothing and deletes nothing until the stop has completed.
+
+A design that contains a wait states, in one paragraph named "Use of the
+wait", what the machinery does meanwhile, what invalidates it and the
+capacity bound; a wait with nothing safe to do says so and why. The
+smallest thing that works (Wido, 2026-09-29): a use of a wait adds no
+mechanism of its own beyond doing existing work earlier, and what it
+produces counts later only through the rules that already exist.
+
 ## Responsibility-Driven Design
 
 The core standard above is responsibility-driven. The practical method:
