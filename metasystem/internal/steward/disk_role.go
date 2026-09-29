@@ -212,9 +212,13 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 		defer cancel()
 		ctx = budget
 		checkoutOptions.Classes = []diskstore.Class{
-			diskstore.RegisteredStores{Registry: diskstore.CheckoutRegistry(top), Proofs: pass.proofs()},
+			diskstore.RegisteredStores{Registry: diskstore.CheckoutRegistry(top), Proofs: checkoutProofs(top, pass)},
 			HandoffClass{Root: top, Keep: settings.Duration(config.DiskContextKeepKey)},
 			UsageClass{StateRoot: top, Limit: settings.Count(config.DiskSweepItemsPerLockKey)},
+		}
+		if layout, err := stateroot.ResolveLayout(top); err == nil {
+			checkoutOptions.Classes = append(checkoutOptions.Classes, LandingReleaseSets{Installation: layout.InstallationRoot,
+				StateRoot: top, GitRoot: layout.GitRoot, Git: ExecWorkspaceGit})
 		}
 		checkoutOptions.CensusMinBudget = settings.Duration(config.DiskCensusMinBudgetKey)
 		checkoutOptions.CensusReader = KernelCensusReader(home, append(armedCheckouts(), top))

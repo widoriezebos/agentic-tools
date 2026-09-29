@@ -510,3 +510,78 @@ func removeWorkspace(ctx context.Context, request WorkspaceReleaseRequest, recor
 	}
 	return RemoveTree(ctx, WorkspaceTmp(record))
 }
+
+// WorkspaceProof is the sweeper's proof for a handed-out workspace (3.1's
+// workspace row): its owner ended by its own row, a copy is clean, then
+// the checkout-use proof (RegisteredStores runs it) and, inside the
+// store's critical section, the copy's archive and the layout's removal,
+// the same steps as ReleaseWorkspace. A store of its owner kind that is not
+// a workspace (a goal or session worktree) is pending: its release is
+// another owner's.
+type WorkspaceProof struct {
+	GitRoot string
+	Git     WorkspaceGit
+	// Ended reports whether the owner has ended, and whether that is known.
+	Ended func(Owner) (ended, known bool)
+	// Now stamps an archive ref that must not overwrite another commit.
+	Now time.Time
+}
+
+func (WorkspaceProof) Kind() OwnerKind { return OwnerGoal }
+
+func (p WorkspaceProof) request() WorkspaceReleaseRequest {
+	return WorkspaceReleaseRequest{GitRoot: p.GitRoot, Git: p.Git, Now: p.Now}
+}
+
+// Observe reads only: the owner's state and a copy's git status.
+func (p WorkspaceProof) Observe(ctx context.Context, record Record) Verdict {
+	name := filepath.Base(record.Path)
+	if record.Class != WorkspaceClass {
+		return Verdict{Decision: Pending, Reason: "a " + record.Class + " store of " + string(record.Owner.Kind) + " " + record.Owner.Ref + " is released by its own owner, not this proof",
+			Command: "metasystem disk show"}
+	}
+	ended, known := false, false
+	if p.Ended != nil {
+		ended, known = p.Ended(record.Owner)
+	}
+	switch {
+	case !known:
+		return Verdict{Decision: Pending, Reason: "whether " + string(record.Owner.Kind) + " " + record.Owner.Ref + " has ended cannot be read", Command: "metasystem goal show " + record.Owner.Ref}
+	case !ended:
+		command := "metasystem work workspace " + record.Owner.Ref + " --release --name " + name
+		if record.Owner.Kind != OwnerGoal {
+			command = "metasystem disk show"
+		}
+		return Verdict{Decision: Keep, Reason: "its " + string(record.Owner.Kind) + " is open; it ends with --release, the landing of its work, or the goal's conclusion", Command: command}
+	}
+	if record.Layout == LayoutCopy {
+		status, err := p.Git(ctx, record.Path, "status", "--porcelain=v1", "--untracked-files=all")
+		if err != nil {
+			return Verdict{Decision: Pending, Reason: "git status failed: " + err.Error(), Command: "git -C " + record.Path + " status"}
+		}
+		if strings.TrimSpace(string(status)) != "" {
+			return Verdict{Decision: Keep, Reason: "the workspace has uncommitted changes and its owner has ended", Command: discardCommand(record.Owner, name)}
+		}
+	}
+	return Verdict{Decision: Release, Reason: string(record.Owner.Kind) + " " + record.Owner.Ref + " has ended"}
+}
+
+// Apply archives a copy's branch tip, then removes the layout, inside the
+// critical section RegisteredStores holds.
+func (p WorkspaceProof) Apply(ctx context.Context, critical *Critical) error {
+	record := critical.Record()
+	if record.Layout == LayoutCopy {
+		archive, unique, err := archiveWorkspace(ctx, p.request(), record, filepath.Base(record.Path))
+		if err != nil {
+			return err
+		}
+		if archive != "" {
+			record.Notes = append(record.Notes, fmt.Sprintf("released %s: branch tip archived as %s (%d commit(s) nothing else contains)",
+				p.Now.UTC().Format(time.RFC3339), archive, unique))
+			if err := critical.Write(record); err != nil {
+				return err
+			}
+		}
+	}
+	return removeWorkspace(ctx, p.request(), record)
+}

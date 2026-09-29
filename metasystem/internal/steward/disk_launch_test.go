@@ -53,3 +53,47 @@ func TestMachinePassReleasesEndedLaunchesOverTheTarget(t *testing.T) {
 		t.Errorf("the launch store's class line: %+v", result.Machine.Classes)
 	}
 }
+
+// The checkout pass carries the landing release sets: a swept landing's
+// pending entry whose store no longer exists is marked absent by the next
+// pass.
+func TestCheckoutPassRetriesLandingReleaseSets(t *testing.T) {
+	t.Parallel()
+	bed := newStaleBed(t)
+	landed := filepath.Join(bed.inst, "artifacts", "agents", "landing-intent", "g", "c1-e1", "landed.json")
+	if err := os.MkdirAll(filepath.Dir(landed), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	record, _ := json.Marshal(map[string]any{"Landing": "land1", "Swept": true, "ReleaseSet": diskstore.ReleaseSet{Tip: "c1",
+		Stores: []diskstore.ReleaseEntry{{ID: "01K00000000000000000000000", State: diskstore.ReleasePending}}}})
+	if err := os.WriteFile(landed, record, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SweepDiskStores(context.Background(), bed.inst, bed.pass(diskstore.ModeApply, []string{bed.inst}, false)); err != nil {
+		t.Fatal(err)
+	}
+	var after struct{ ReleaseSet diskstore.ReleaseSet }
+	written, _ := os.ReadFile(landed)
+	if json.Unmarshal(written, &after) != nil || after.ReleaseSet.Stores[0].State != diskstore.ReleaseAbsent {
+		t.Fatalf("the checkout pass finishes the set: %s", written)
+	}
+}
+
+// A checkout pass carries the workspace proof over its own repository and
+// goal ledger; a checkout whose ledger cannot be read leaves every goal's
+// state unknown, so no workspace is released on a guess.
+func TestCheckoutProofsCarryTheWorkspaceProof(t *testing.T) {
+	t.Parallel()
+	bed := newStaleBed(t)
+	proof, ok := checkoutProofs(bed.inst, DiskPass{Now: staleNow})[diskstore.OwnerGoal].(diskstore.WorkspaceProof)
+	if !ok || proof.GitRoot == "" || proof.Git == nil || proof.Ended == nil {
+		t.Fatalf("proof = %+v", proof)
+	}
+	if ended, known := proof.Ended(diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: "g"}); ended || known {
+		t.Fatalf("no readable ledger: ended=%v known=%v", ended, known)
+	}
+	fixture := map[diskstore.OwnerKind]diskstore.OwnerProof{}
+	if proofs := checkoutProofs(bed.inst, DiskPass{Proofs: fixture}); len(proofs) != 0 {
+		t.Fatal("a fixture's proofs are used as named")
+	}
+}

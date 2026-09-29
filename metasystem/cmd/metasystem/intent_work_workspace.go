@@ -8,20 +8,17 @@ package main
 // its conclusion end it too.
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
@@ -54,19 +51,6 @@ func workspaceIntentCommands() []intentCommand {
 		examples: []string{"metasystem work workspace verbs-match-intent", "metasystem work workspace verbs-match-intent --name bed --copy-of HEAD", "metasystem work workspace verbs-match-intent --release --name bed"},
 		run:      runIntentWorkWorkspace,
 	}}
-}
-
-// execWorkspaceGit runs git in dir under ctx, with the repository-steering
-// environment scrubbed so the repository is always dir's own.
-func execWorkspaceGit(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	command := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	command.Env = gittree.ScrubbedEnviron()
-	var stdout, stderr bytes.Buffer
-	command.Stdout, command.Stderr = &stdout, &stderr
-	if err := command.Run(); err != nil {
-		return nil, fmt.Errorf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-	}
-	return stdout.Bytes(), nil
 }
 
 func runIntentWorkWorkspace(inv *intentInvocation) int {

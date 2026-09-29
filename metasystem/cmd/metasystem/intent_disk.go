@@ -72,7 +72,7 @@ func (o diskOwners) withDefaults() diskOwners {
 		o.proofs = map[diskstore.OwnerKind]diskstore.OwnerProof{}
 	}
 	if o.git == nil {
-		o.git = execWorkspaceGit
+		o.git = steward.ExecWorkspaceGit
 	}
 	if o.tempRoots == nil {
 		o.tempRoots = func() []string {
