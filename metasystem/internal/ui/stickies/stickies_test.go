@@ -417,3 +417,53 @@ func mintCounted() func() (string, error) {
 		return "STICKY" + strconv.Itoa(minted), nil
 	}
 }
+
+// A remark (g1-s71 D1) is a sticky about lines of a file at a commit, or about
+// a record's section: private as every sticky, and kept whole, with the text of
+// the lines a shaping remark was made on.
+func TestARemarkIsAStickyAboutLinesOrASection(t *testing.T) {
+	t.Parallel()
+
+	store, _ := fixture(t)
+	lines := About{Kind: KindSource, Record: "plans/reviews/r.md", Path: "internal/owner.go", From: 41, To: 46,
+		Commit: strings.Repeat("9c1f0a2e", 5), Lines: "func lock() {\n\tmu.Lock()\n}"}
+	section := About{Kind: KindSection, Record: "plans/reviews/r.md", Section: "Findings"}
+
+	list, err := store.Add("Wido", "this lock is taken twice", []About{lines, section})
+
+	testutil.Require(t, "the remark", err, nil)
+	lines.ID, section.ID = lines.Record, section.Record
+	testutil.Expect(t, "kept whole, each about named by its record", list.Stickies[0].About, []About{lines, section})
+	read, err := store.List("Wido")
+	testutil.Require(t, "read back", err, nil)
+	testutil.Expect(t, "and read back whole", read.Stickies[0].About, []About{lines, section})
+	encoded, err := json.Marshal(list.Stickies[0].About[0])
+	testutil.Require(t, "encoded", err, nil)
+	testutil.Expect(t, "in the payload's own names", string(encoded),
+		`{"kind":"source","id":"plans/reviews/r.md","record":"plans/reviews/r.md","path":"internal/owner.go","from":41,"to":46,`+
+			`"commit":"`+lines.Commit+`","lines":"func lock() {\n\tmu.Lock()\n}"}`)
+
+	for _, refused := range []struct {
+		what  string
+		about About
+		says  string
+	}{
+		{"lines of no file", About{Kind: KindSource, Record: "r.md", From: 1, To: 2}, "names the record and the file"},
+		{"lines of no record", About{Kind: KindSource, Path: "a.go", From: 1, To: 2}, "names the record and the file"},
+		{"a range backwards", About{Kind: KindSource, Record: "r.md", Path: "a.go", From: 9, To: 2}, "line 9 to line 2"},
+		{"no first line", About{Kind: KindSource, Record: "r.md", Path: "a.go"}, "line 0 to line 0"},
+		{"a commit that is not one", About{Kind: KindSource, Record: "r.md", Path: "a.go", From: 1, To: 1, Commit: "main"}, `"main" is not a commit`},
+		{"a section of no record", About{Kind: KindSection, Section: "Findings"}, "names the record and the section"},
+		{"a record's unnamed section", About{Kind: KindSection, Record: "r.md"}, "names the record and the section"},
+	} {
+		_, err := store.Add("Wido", "a remark", []About{refused.about})
+		refusal := refusalOf(t, refused.what, err)
+		testutil.Expect(t, refused.what+" is a bad request", refusal.Kind, RefusalBad)
+		testutil.Expect(t, refused.what+" says why: "+refusal.Message, strings.Contains(refusal.Message, refused.says), true)
+	}
+	_, err = store.Add("Wido", "a remark", []About{{Kind: KindSource, Record: "r.md", Path: "a.go", From: 1, To: 1,
+		Lines: strings.Repeat("x", MaxLines+1)}})
+	bound := refusalOf(t, "lines past the bound", err)
+	testutil.Expect(t, "lines past the bound are past a bound", bound.Kind, RefusalBounds)
+	testutil.Expect(t, "and say which", strings.Contains(bound.Message, "the lines it was made on"), true)
+}

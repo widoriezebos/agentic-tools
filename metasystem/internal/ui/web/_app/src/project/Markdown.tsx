@@ -3,6 +3,8 @@ import { createContext, Fragment, useContext, type ReactNode } from "react";
 import { NavLink } from "react-router";
 
 import type { Block, Cell, Inline, Item } from "./api";
+import { drawable } from "../drawing/drawings";
+import { Drawing } from "../drawing/Drawing";
 import { documentIdFor, externalHref, fragmentOf, interfaceAddress } from "./links";
 import { routeFor } from "../routes";
 import "./reading.css";
@@ -86,7 +88,12 @@ function BlockNode({ block, from }: { block: Block; from: string }) {
         </p>
       );
     case "code":
-      return <CodeBlock lang={block.lang ?? ""} text={block.text ?? ""} />;
+      // A mermaid fence is a drawing (g1-s71 D2), wherever Markdown is rendered.
+      return drawable(block.lang ?? "") ? (
+        <Drawing source={block.text ?? ""} />
+      ) : (
+        <CodeBlock lang={block.lang ?? ""} text={block.text ?? ""} />
+      );
     case "html":
       return <CodeBlock lang="" text={block.text ?? ""} caption={HTML_CAPTION} />;
     case "quote":

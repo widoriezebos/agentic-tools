@@ -20,6 +20,7 @@ import { idOf } from "./suggesting";
 import "./partner.css";
 import { previewDocument, type Block } from "../project/api";
 import { InterfaceLinks, Markdown } from "../project/Markdown";
+import { DrawingOrigin } from "../drawing/Drawing";
 import { Anchored, useDeskAnchors } from "../review/anchors";
 import { Chip } from "../shell/controls";
 import { Trouble } from "../shell/Trouble";
@@ -181,6 +182,7 @@ export function Transcript() {
           rendered={index >= firstRendered}
           names={names}
           asker={asker}
+          asked={askedBefore(messages, index)}
         />
       ))}
       {store.live.turn !== "" && <Running />}
@@ -192,6 +194,21 @@ export function Transcript() {
       )}
     </div>
   );
+}
+
+/**
+ * The question an answer answers: the words of the nearest human turn before
+ * it, or the interface's own line where the interface asked it in the human's
+ * name (a walk, the opening).
+ */
+export function askedBefore(messages: readonly Message[], index: number): string {
+  for (let at = index - 1; at >= 0; at -= 1) {
+    const one = messages[at];
+    if (one.role === "human") {
+      return one.interface === true ? interfaceLine(one.text) : one.text;
+    }
+  }
+  return "";
 }
 
 /**
@@ -214,11 +231,14 @@ function Said({
   rendered,
   names,
   asker,
+  asked = "",
 }: {
   message: Message;
   rendered: boolean;
   names: Names;
   asker: string;
+  /** The question this answer answers, which a drawing kept from it is captioned with (g1-s71 D3). */
+  asked?: string;
 }) {
   if (message.role === "human") {
     return (
@@ -250,7 +270,13 @@ function Said({
       <TurnHead who="partner" name={PARTNER} at={message.at} />
       <div className="ms-turn-body">
         {message.text !== "" &&
-          (rendered ? <Answer text={message.text} names={names} /> : <Paragraphs text={message.text} />)}
+          (rendered ? (
+            <DrawingOrigin.Provider value={{ turn: message.turn, asked }}>
+              <Answer text={message.text} names={names} />
+            </DrawingOrigin.Provider>
+          ) : (
+            <Paragraphs text={message.text} />
+          ))}
         {message.outcome === "stopped" && <p className="ms-partner-note">Stopped.</p>}
         {failed && <Trouble text={message.detail ?? "The turn did not finish."} />}
         {/* What this answer offered, under the words that offered it. The card

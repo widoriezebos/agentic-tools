@@ -237,3 +237,89 @@ fold, with one scoped confirmation read on S71-04 alone.
 
 **Confirmation read (2026-09-28, at `c79a62d79`):** S71-04 confirmed
 answered, no finding, zero material. The loop is CLOSED.
+
+## Built (2026-09-29)
+
+Step 1 built by Claude on Opus 5.5 in worktree `agentic-tools-board`,
+branch `whiteboard` from main `f60cc6b7f`, in three commits: the Go
+half (`46fbe4e43`: the evidence owner in `internal/ui/review` bounded
+by an anchored root open, its listing and one-file read, the
+`/api/review/<record>/evidence` route, `present` with kind `evidence`,
+the Behaves request carrying the listing, the `source` and `section`
+sticky subjects, a checkout read naming its head), the page with the
+rebuilt bundle (`fce9d9f12`: remarks from a selection and from every
+pile with their markers and board entries, the drawing chunk under the
+policy with its proof, Keep it under `## Drawings` through the
+recorder, the evidence and drawing desk items) and the walkthrough's
+evidence, drawing and Behaves walk (`386813ac1`). Report:
+`~/LocalStorage/agentic-tools-evidence/review-room-20260928/
+opus-build-report-whiteboard.md`; screenshots under `whiteboard/`.
+
+D2's proof holds at mermaid 12.0.0: rendered under the header the
+server sends, every style element the library writes carries the
+page's nonce and no refused attribute is written, held by a test that
+builds the render module and draws in Chromium with zero policy
+reports, where the naive render produced forty. The render patches
+`setAttribute`, `createElement`, `createElementNS` and
+`DOMParser.parseFromString` for the length of one render, one at a
+time, and restores them in `finally`; the cut guard grants that one
+file markup by a named row and holds it to no network and no timer.
+Departures, each honest and recorded there: a `drawing` desk item
+beyond §6's list, needed for Put on the desk; evidence text parsed on
+the server by the Go markdown package, since the preview route's 1 MB
+bound is below D4's 4 MB; the evidence text bound taken as the desk's
+largest, 3000 lines; the evidence read for review records only; Remark
+on the board as a remark on a pile's section; the lodash-es override
+and khroma's notice recorded as revision 6 of the toolchain design
+`g1-s8`; one process slip in the builder's own walkthrough server,
+stopped by pattern once, never the standing interface.
+
+**Sol's read** (`g1-s71-sol-read.md`, verbatim): two material
+findings, both agreed. SOL-S71-01, the evidence listing walked and
+stored the whole tree before cutting at 500, so a large or deep
+Evidence path stalled the read; SOL-S71-02, on the Board face after
+Step out or a reload in a shaping room no fresh read of a remark's
+lines existed and the board worded the remark as on its lines now.
+SOL-S71-03, a `source` remark saved with an empty commit when a
+shaping read cannot resolve HEAD, not material, a residual. **Fix
+round 1** (`7ffceee08`): the evidence walk is bounded in its work,
+reading directories in pages, keeping the first 500 image and text
+files, counting the rest without storing them, stopping at 5000
+visited entries or 16 levels, and saying when the listing is a part;
+the board claims currency for a shaping remark only from a fresh read
+of its lines in this session, "at an earlier reading" otherwise, with
+no read added; a review remark's wording unchanged. One refinement
+of the ruling confirmed by the design's author: past 500 the walk
+keeps counting so the listing can still name the exact total where
+no bound was hit. **Sol's re-read**: SOL-S71-02 fixed; SOL-S71-01 held on one
+corner, a listing cut before any eligible file was found said the
+path held nothing and omitted the cut, in the Partner's note and on
+the desk. **Fix round 2** (`40d7413cc`): an empty listing that was
+cut never claims the path holds nothing; the note, the desk and the
+Behaves request say nothing was found within the bounds and the path
+may hold more, the cut said first wherever it applies; read by the
+design's author under Wido's rule of 2026-09-28 to stop a loop once
+the remaining defects are one class at its root. The author's read of that
+commit: the note's new branch runs before the empty branch, the desk
+says the cut before anything else and keeps the not-cut wordings, the
+owner unchanged; confirmed.
+
+Residuals, none material at first use: a source remark's commit is
+not required by the server where the shaping read could not resolve
+HEAD; a drawing keeps the theme it was drawn in until drawn again; a
+throw during the render's patch installation, before its `try`, would
+leave earlier patches in place, with no reachable cause found; the
+chunk is one entry point with mermaid's own supporting files beside
+it; the CSP proof and the walkthrough were run by the builder and read
+by Sol as claims.
+
+Handed to the engine seat's integration batch as `origin/g1-s71` on
+2026-09-29 under the one-batch-per-machine rule, the branch merged
+with main `de8bf4e3e` (batch 18 included) and the landing checks
+green at `40d7413cc`: every interface package with coverage above
+each floor (review 87.5 of 86.0, stickies 97.5 of 94.7, uitools 85.0
+of 84.7, httpd 88.7 of 88.5, partner 84.9 of 80.1), the structural
+tests, the static gate with its dead-code check, the fast build gate,
+vitest and typecheck, the bundle rebuilt under Node 24; the whole
+`cmd/metasystem` package left to the batch's suite. The landing
+commit is the batch's.

@@ -37,8 +37,9 @@ const (
 const PresentedLine = "prepared for the desk; the human sees it there beside your answer unless they stopped " +
 	"the walk, and nothing else on their screen moves"
 
-// The four things a desk shows.
-var presentKinds = []string{"source", "changes", "diff", "section"}
+// The five things a desk shows: the four of the review room, and a file of the
+// review's evidence by its evidence-relative path (g1-s71 D4).
+var presentKinds = []string{"source", "changes", "diff", "section", "evidence"}
 
 // present prepares one desk item, or refuses the call in words.
 func present(args Args) Result {
@@ -50,7 +51,7 @@ func present(args Args) Result {
 		known = known || one == kind
 	}
 	if !known {
-		return refusedCall("a desk item is source, changes, diff or section; " + strconv.Quote(kind) +
+		return refusedCall("a desk item is source, changes, diff, section or evidence; " + strconv.Quote(kind) +
 			" is none of them")
 	}
 	built := PresentHeader + kind + "\n"
@@ -60,6 +61,14 @@ func present(args Args) Result {
 			return refusedCall("a section item names the record and the heading")
 		}
 		built += PresentPath + path + "\n" + PresentSection + section + "\n"
+	case "evidence":
+		if path == "" {
+			return refusedCall("an evidence item names the file by its path relative to the evidence, as the listing names it")
+		}
+		if !insideTree(path) {
+			return refusedCall(strconv.Quote(path) + " is not a path inside the evidence")
+		}
+		built += PresentPath + path + "\n"
 	case "source", "diff":
 		if path == "" {
 			return refusedCall("a " + kind + " item names the path of a file of the reviewed tree")

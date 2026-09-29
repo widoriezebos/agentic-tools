@@ -90,3 +90,55 @@ func TestTheBehavesWalkCarriesTheCandidateAndBothCommits(t *testing.T) {
 		asked("built", &partner.Candidate{Address: "http://127.0.0.1:7981/", Running: movedTip, Reviewed: closingTip}),
 		partner.WalkRequest("built", sitting))
 }
+
+func TestTheBehavesWalkCarriesTheEvidenceListing(t *testing.T) {
+	t.Parallel()
+	held := reviewService(t, fakeacp.Script{Chunks: []string{"Behaves: ..."}})
+	events, stop := held.service.Subscribe()
+	defer stop()
+	ctx := context.Background()
+	_, err := held.service.Sit(ctx, "Wido", reviewOf(reviewA), partner.PurposeReview, inTheRoom(reviewA))
+	testutil.Require(t, "the review opened", err, nil)
+	drain(t, events)
+	walks := 0
+	asked := func(candidate *partner.Candidate) string {
+		t.Helper()
+		walks++
+		_, err := held.service.WalkWith(ctx, "Wido", reviewA, "behaves", inTheRoom(reviewA), candidate)
+		testutil.Require(t, fmt.Sprintf("walk %d", walks), err, nil)
+		drain(t, events)
+		read, err := held.service.SnapshotIn("Wido", reviewA, 100)
+		testutil.Require(t, fmt.Sprintf("read back walk %d", walks), err, nil)
+		return read.Messages[len(read.Messages)-2].Text
+	}
+
+	listed := asked(&partner.Candidate{Reviewed: closingTip, Evidence: &partner.Evidence{
+		Path: "~/evidence/ledger-sync/", Entries: []string{"report.md (text, 2 KB)", "room-1280-light.png (image, 88 KB)"},
+		Supplied: 2, Total: 2,
+	}})
+	for _, said := range []string{"~/evidence/ledger-sync/", "- report.md (text, 2 KB)", "- room-1280-light.png (image, 88 KB)",
+		"present tool with kind evidence", "path relative to the evidence"} {
+		if !strings.Contains(listed, said) {
+			t.Errorf("the Behaves request does not say %q:\n%s", said, listed)
+		}
+	}
+	bounded := asked(&partner.Candidate{Reviewed: closingTip, Evidence: &partner.Evidence{
+		Path: "~/e/", Entries: []string{"a.png (image, 1 KB)"}, Supplied: 1, Total: 700}})
+	testutil.Expect(t, "a bounded listing says the whole", strings.Contains(bounded, "1 of 700"), true)
+	cut := asked(&partner.Candidate{Reviewed: closingTip, Evidence: &partner.Evidence{
+		Path: "~/e/", Entries: []string{"a.png (image, 1 KB)"}, Supplied: 1, Total: 700, Cut: true}})
+	testutil.Expect(t, "a cut listing says it is a part", strings.Contains(cut, "the first 1 found listed; the listing stopped at its bound, so the path may hold more"), true)
+	testutil.Expect(t, "and claims no whole", strings.Contains(cut, "1 of 700"), false)
+	cutBare := asked(&partner.Candidate{Reviewed: closingTip, Evidence: &partner.Evidence{Path: "~/e/", Cut: true}})
+	testutil.Expect(t, "a cut listing that found nothing says the cut first", strings.Contains(cutBare,
+		"The listing of the evidence path ~/e/ stopped at its bound before it found an image or text: nothing was found "+
+			"within the listing's bounds, and the path may hold more."), true)
+	testutil.Expect(t, "and never that the path holds nothing", strings.Contains(cutBare, "holds no image or text"), false)
+	testutil.Expect(t, "nor that nothing is recorded there", strings.Contains(cutBare, "nothing is recorded there"), false)
+	empty := asked(&partner.Candidate{Reviewed: closingTip, Evidence: &partner.Evidence{Path: "~/e/"}})
+	testutil.Expect(t, "a whole listing that found nothing keeps its words", strings.Contains(empty,
+		"The evidence path ~/e/ holds no image or text; say that nothing is recorded there."), true)
+	refused := asked(&partner.Candidate{Reviewed: closingTip, Evidence: &partner.Evidence{
+		Refusal: "this review's record names no Evidence path, so there is no evidence to read"}})
+	testutil.Expect(t, "no evidence is said in words", strings.Contains(refused, "names no Evidence path"), true)
+}

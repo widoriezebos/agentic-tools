@@ -143,6 +143,50 @@ type Candidate struct {
 	Address  string
 	Running  string
 	Reviewed string
+	// Evidence is what the review's Evidence path holds (g1-s71 D4), or nil
+	// where nothing was read: the listing the Partner presents from.
+	Evidence *Evidence
+}
+
+// Evidence is the listing the Behaves walk is handed: the path the record
+// names, each entry as "path (kind, size)", bounded and saying the whole — or,
+// where its walk stopped at its bound, that it is a part — or the words a read
+// of it was refused with.
+type Evidence struct {
+	Path     string
+	Entries  []string
+	Supplied int
+	Total    int
+	Cut      bool
+	Refusal  string
+}
+
+// EvidenceNote is what the Behaves walk's request says about the evidence: what
+// is there, by the one path convention the present tool and the desk share, or
+// why there is nothing to present. A cut is said first: a listing cut before
+// it found a file never claims the path holds nothing.
+func EvidenceNote(evidence Evidence) string {
+	if strings.TrimSpace(evidence.Refusal) != "" {
+		return "The evidence of this review could not be listed: " + evidence.Refusal + ". Say so, and present none."
+	}
+	if len(evidence.Entries) == 0 && evidence.Cut {
+		return "The listing of the evidence path " + evidence.Path + " stopped at its bound before it found an image or " +
+			"text: nothing was found within the listing's bounds, and the path may hold more. Say so, and present none."
+	}
+	if len(evidence.Entries) == 0 {
+		return "The evidence path " + evidence.Path + " holds no image or text; say that nothing is recorded there."
+	}
+	said := "The evidence recorded under " + evidence.Path + " holds these files"
+	switch {
+	case evidence.Cut:
+		said += fmt.Sprintf(", the first %d found listed; the listing stopped at its bound, so the path may hold more", evidence.Supplied)
+	case evidence.Supplied < evidence.Total:
+		said += fmt.Sprintf(", %d of %d listed", evidence.Supplied, evidence.Total)
+	}
+	said += ":\n- " + strings.Join(evidence.Entries, "\n- ") + "\n\n" +
+		"Present a file with the present tool with kind evidence and its path relative to the evidence, exactly " +
+		"as listed; present only what is listed."
+	return said
 }
 
 // CandidateNote is what the Behaves walk's request says about the candidate:
@@ -192,6 +236,9 @@ func (s *Service) WalkWith(ctx context.Context, human, record, part string, page
 	request := WalkRequest(part, *sitting)
 	if part == "behaves" && sitting.Purpose == PurposeReview && candidate != nil {
 		request += "\n\n" + CandidateNote(*candidate)
+		if candidate.Evidence != nil {
+			request += "\n\n" + EvidenceNote(*candidate.Evidence)
+		}
 	}
 	return s.submit(ctx, human, record, "", request, page, true)
 }

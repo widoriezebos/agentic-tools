@@ -3,6 +3,7 @@ import type { Store } from "../partner/conversation";
 import { ACCEPTED, answerOf, entriesIn, FIX, followUp, LEFT_OPEN, outcomeIn, pressable, type Entry, type Standing } from "../partner/sitting";
 import type { Recorded, Verdict as RowVerdict } from "../backlog/api";
 import type { Candidate } from "./candidate";
+import type { About } from "../stickies/api";
 
 /**
  * The room's own rules (g1-s65 §3, D5, D9, D10), for every sitting (g1-s67): a
@@ -21,13 +22,17 @@ import type { Candidate } from "./candidate";
  * One thing on the desk: a file of the reviewed tree at a range of lines, the
  * change index, one file's diff, or a record's section. `since` reads the change
  * between the reviewed tip and the branch now, which is what Show what changed
- * puts on the desk.
+ * puts on the desk. The whiteboard (g1-s71) adds two: a file of the review's
+ * evidence by its evidence-relative path — "" is the listing — and a drawing,
+ * carried whole, so a reload restores both as they were read.
  */
 export type DeskItem =
   | { kind: "source"; path: string; from: number; to: number }
   | { kind: "changes"; since?: boolean }
   | { kind: "diff"; path: string; since?: boolean }
-  | { kind: "section"; record: string; section: string };
+  | { kind: "section"; record: string; section: string }
+  | { kind: "evidence"; record: string; path: string }
+  | { kind: "drawing"; id: string; source: string; caption: string };
 
 /** The desk: its strip, newest first, and which item of it is up. */
 export type Desk = { items: readonly DeskItem[]; current: number };
@@ -78,6 +83,10 @@ export function deskKey(item: DeskItem): string {
       return `diff:${item.path}:${item.since === true ? "since" : ""}`;
     case "section":
       return `section:${item.record}#${item.section}`;
+    case "evidence":
+      return `evidence:${item.record}#${item.path}`;
+    case "drawing":
+      return `drawing:${item.id}`;
   }
 }
 
@@ -103,7 +112,16 @@ export function deskLabel(item: DeskItem): string {
       return `${baseName(item.path)} diff${item.since === true ? " since" : ""}`;
     case "section":
       return `${baseName(item.record)} § ${item.section}`;
+    case "evidence":
+      return item.path === "" ? "the evidence" : baseName(item.path);
+    case "drawing":
+      return `drawing · ${shortCaption(item.caption)}`;
   }
+}
+
+function shortCaption(caption: string): string {
+  const said = caption.replace(/\s+/gu, " ").trim();
+  return said.length <= 40 ? said : `${said.slice(0, 40)}…`;
 }
 
 function baseName(path: string): string {
@@ -181,11 +199,17 @@ export function anchorOf(item: DeskItem): string {
       return `${item.record} § ${item.section}`;
     case "changes":
       return "the change as a whole";
+    case "evidence":
+      return item.path === "" ? "the evidence" : `${item.path} in the evidence`;
+    case "drawing":
+      return `the drawing for "${item.caption.replace(/\s+/gu, " ").trim()}"`;
   }
 }
 
 const SECTION_ANCHOR = /^(\S+\.md) § (.+)$/u;
-const LINE_ANCHOR = /^([\w./-]*\/?[\w.-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?$/u;
+// A remark's fact or finding names the commit its lines were read at (g1-s71
+// D1): "owner.go:41-46 at 9c1f0a2e9". The desk reads the lines as it reads now.
+const LINE_ANCHOR = /^([\w./-]*\/?[\w.-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?(?: at [0-9a-f]{7,64})?$/u;
 
 /** A written anchor back as the desk item it names, or null for words. */
 export function parseAnchor(said: string): DeskItem | null {
@@ -746,9 +770,25 @@ export type Draft = {
   reason?: string;
   /** Which sheet was open over the card, where one was: accept. */
   sheet?: string;
+  /** What an unwritten remark is about (g1-s71 D1): its words ride as `text`. */
+  about?: About;
 };
 
 export type Drafts = Readonly<Record<string, Draft>>;
+
+/** What a remark being written is kept under in the room's drafts (g1-s71 D1). */
+export const REMARK_DRAFT = "remark-";
+
+/** The remarks being written among the drafts the mark carried back, each with what it is about. */
+export function remarksIn(drafts: Drafts): Record<string, Draft> {
+  const found: Record<string, Draft> = {};
+  for (const [id, draft] of Object.entries(drafts)) {
+    if (id.startsWith(REMARK_DRAFT) && draft.about !== undefined) {
+      found[id] = draft;
+    }
+  }
+  return found;
+}
 
 export function withDraft(drafts: Drafts, id: string, draft: Draft): Drafts {
   return { ...drafts, [id]: draft };

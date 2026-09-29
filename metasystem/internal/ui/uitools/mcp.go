@@ -362,7 +362,8 @@ func Catalogue() []Tool {
 		{
 			Name: OpPresent,
 			Description: "In a sitting, put one thing on the human's desk while you explain it. In a review: a file " +
-				"of the reviewed tree at a range of lines, the change index, one file's diff, or a record's section. In " +
+				"of the reviewed tree at a range of lines, the change index, one file's diff, a record's section, or a " +
+				"file of the review's evidence by its path relative to the evidence, as the Behaves walk lists it. In " +
 				"a sitting that shapes an intent or a design: a file of the checkout as it stands at a range of lines, " +
 				"the same file your own reads see, or a record's section; it has no change to index or diff. Call it " +
 				"as you come to each thing, in the order you explain them. It moves nothing else on their screen, " +
@@ -370,11 +371,11 @@ func Catalogue() []Tool {
 			InputSchema: schema(map[string]any{
 				"kind": map[string]any{
 					"type": "string", "enum": presentKinds,
-					"description": "source, changes, diff or section.",
+					"description": "source, changes, diff, section or evidence.",
 				},
 				"path": map[string]any{
 					"type":        "string",
-					"description": "The file of the reviewed tree in a review or of the checkout in a shaping sitting, or the record's checkout-relative path for a section.",
+					"description": "The file of the reviewed tree in a review or of the checkout in a shaping sitting, the record's checkout-relative path for a section, or the evidence-relative path for evidence.",
 				},
 				"from":    map[string]any{"type": "string", "description": "On a source: the first line, counted from one."},
 				"to":      map[string]any{"type": "string", "description": "On a source: the last line."},

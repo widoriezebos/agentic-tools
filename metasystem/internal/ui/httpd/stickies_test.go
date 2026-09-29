@@ -139,7 +139,7 @@ func TestARefusedActCarriesItsStatusAndItsWords(t *testing.T) {
 	}{
 		{"an empty sticky", stickiesPath, `{"text":"   "}`, http.StatusBadRequest, "is empty"},
 		{"an unknown about", stickiesPath, `{"text":"one","about":[{"kind":"machine","id":"m1a"}]}`,
-			http.StatusBadRequest, "a sticky is about a goal or a record"},
+			http.StatusBadRequest, "a sticky is about a goal, a record, lines of a file or a record"},
 		{"a sticky nobody wrote", stickiesPrefix + "STICKY9", `{"done":true}`,
 			http.StatusNotFound, "no sticky of yours"},
 		{"removing one nobody wrote", stickiesPrefix + "STICKY9" + removeSuffix, `{}`,

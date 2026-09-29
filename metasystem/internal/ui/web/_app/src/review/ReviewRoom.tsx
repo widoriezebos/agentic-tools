@@ -35,6 +35,8 @@ import {
   steppingOut,
   type Verdict,
 } from "./room";
+import { DrawingPresses, type Presses } from "../drawing/Drawing";
+import { drawingsIn } from "../drawing/drawings";
 import { NotificationsBell } from "../notifications/Bell";
 import type { Present } from "../partner/api";
 import { DRAFTING, END, END_SAID, END_WITHOUT, START, type Entry } from "../partner/sitting";
@@ -160,12 +162,12 @@ export function Room({ record }: { record: string }) {
       return;
     }
     for (const present of fresh) {
-      const item = deskItemOf(present);
+      const item = deskItemOf(present, record);
       if (item !== null) {
         putOnDesk(item);
       }
     }
-  }, [store.live, partner.stoppedPresenting, putOnDesk]);
+  }, [store.live, partner.stoppedPresenting, putOnDesk, record]);
 
   // The sitting ended — the Outcome was recorded, or the human left without
   // one — so the room closes: a review's board, a shaping sitting's record.
@@ -205,10 +207,19 @@ export function Room({ record }: { record: string }) {
   };
 
   const mine = Object.keys(room.drafts).filter((id) => id.startsWith("local-"));
+  // What the room does with a drawing (g1-s71 D2, D3): put it on the desk, keep
+  // it under the record's Drawings, and say whether the record keeps it.
+  const kept = drawingsIn(table.source).map((one) => one.id);
+  const presses: Presses = {
+    put: putOnDesk,
+    keep: partner.keepDrawing,
+    kept: (id) => kept.includes(id),
+  };
   const shownLocal = partner.deposits.filter((card) => card.id.startsWith("local-") &&
     (mine.includes(card.id) || card.standing === "recorded"));
 
   return (
+    <DrawingPresses.Provider value={presses}>
     <div className="ms-room" data-face={room.face}>
       <header className="ms-room-head">
         <h1 className="ms-room-title">
@@ -406,11 +417,12 @@ export function Room({ record }: { record: string }) {
         <ShapingEndSheet open={ending} onOpenChange={setEnding} />
       )}
     </div>
+    </DrawingPresses.Provider>
   );
 }
 
 /** A display suggestion as the desk item it puts up, or null for one the desk has no view of. */
-export function deskItemOf(present: Present): DeskItem | null {
+export function deskItemOf(present: Present, record: string): DeskItem | null {
   switch (present.kind) {
     case "source":
       return present.path === undefined
@@ -424,6 +436,10 @@ export function deskItemOf(present: Present): DeskItem | null {
       return present.path === undefined || present.section === undefined
         ? null
         : { kind: "section", record: present.path, section: present.section };
+    case "evidence":
+      // A file of the review's evidence, by its evidence-relative path, read
+      // through this room's record (g1-s71 D4).
+      return present.path === undefined || present.path === "" ? null : { kind: "evidence", record, path: present.path };
     default:
       return null;
   }

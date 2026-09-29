@@ -55,6 +55,9 @@ type Owner struct {
 	// Checkout is the root the document reader opens: a shaping desk's source
 	// reads are opened beneath it and nowhere else.
 	Checkout string
+	// Home is where a review's Evidence line's ~ leads (g1-s71 D4). Empty is
+	// the account's own home directory.
+	Home string
 }
 
 // The bounds. A source read carries at most four hundred lines, the change
@@ -527,13 +530,17 @@ type SourceLine struct {
 // Source is one text file of the reviewed tree at a range of lines, or of the
 // checkout as it stands, where Checkout says so and Commit is "".
 type Source struct {
-	Path     string       `json:"path"`
-	Commit   string       `json:"commit"`
-	Checkout bool         `json:"checkout,omitempty"`
-	From     int          `json:"from"`
-	To       int          `json:"to"`
-	Total    int          `json:"total"`
-	Lines    []SourceLine `json:"lines"`
+	Path     string `json:"path"`
+	Commit   string `json:"commit"`
+	Checkout bool   `json:"checkout,omitempty"`
+	// Head is the checkout's head when a checkout read was made, "" where it
+	// could not be read: a remark made on these lines keeps it as provenance
+	// only, never as a pin (g1-s71 D1).
+	Head  string       `json:"head,omitempty"`
+	From  int          `json:"from"`
+	To    int          `json:"to"`
+	Total int          `json:"total"`
+	Lines []SourceLine `json:"lines"`
 	// Unmarked says the touched lines could not be established and none are
 	// marked; "" where the marks stand.
 	Unmarked string `json:"unmarked,omitempty"`
@@ -636,6 +643,9 @@ func (o Owner) AsItStands(file string, from, to int) (Source, error) {
 		return Source{}, err
 	}
 	read.Checkout = true
+	if o.Git != nil {
+		read.Head, _ = o.Git.ResolveCommit("HEAD")
+	}
 	return read, nil
 }
 

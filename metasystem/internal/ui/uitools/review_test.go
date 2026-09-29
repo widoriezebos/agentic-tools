@@ -51,6 +51,9 @@ func TestPresentPreparesADeskItemOrRefusesInWords(t *testing.T) {
 	section := readers.Answer(OpPresent, Args{"kind": "section", "path": "plans/designs/d.md", "section": "D3"})
 	testutil.Expect(t, "a record's section", section.Prepared,
 		PresentedLine+"\n"+PresentHeader+"section\n"+PresentPath+"plans/designs/d.md\n"+PresentSection+"D3\n")
+	evidence := readers.Answer(OpPresent, Args{"kind": "evidence", "path": "shots/room-1280-light.png"})
+	testutil.Expect(t, "an evidence file, by its evidence-relative path (g1-s71 D4)", evidence.Prepared,
+		PresentedLine+"\n"+PresentHeader+"evidence\n"+PresentPath+"shots/room-1280-light.png\n")
 	changes := readers.Answer(OpPresent, Args{"kind": "changes"})
 	testutil.Expect(t, "the change index", changes.Prepared, PresentedLine+"\n"+PresentHeader+"changes\n")
 
@@ -58,7 +61,9 @@ func TestPresentPreparesADeskItemOrRefusesInWords(t *testing.T) {
 		args Args
 		says string
 	}{
-		{Args{"kind": "window"}, "a desk item is source, changes, diff or section; \"window\" is none of them"},
+		{Args{"kind": "window"}, "a desk item is source, changes, diff, section or evidence; \"window\" is none of them"},
+		{Args{"kind": "evidence"}, "an evidence item names the file by its path relative to the evidence, as the listing names it"},
+		{Args{"kind": "evidence", "path": "../secret.txt"}, "\"../secret.txt\" is not a path inside the evidence"},
 		{Args{"kind": "source"}, "a source item names the path of a file of the reviewed tree"},
 		{Args{"kind": "diff", "path": "../x"}, "\"../x\" is not a path inside the reviewed tree"},
 		{Args{"kind": "source", "path": "a.go", "from": "9", "to": "2"}, "a range runs forwards: line 9 to line 2 is not one"},

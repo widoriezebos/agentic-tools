@@ -659,3 +659,72 @@ pre.ms-send-back-brief {
   white-space: pre-wrap;
   resize: none;
 }
+
+/* ------------------------------------------------------------ the whiteboard -- */
+
+/* A remark on the lines it was made on (g1-s71 D1): the marker ochre every
+   sticky is drawn in, on the gutter and the ground, so it reads as the human's
+   note and never as the change's own marks. */
+.ms-desk-line--remarked {
+  border-left-color: var(--ms-marker);
+  background: var(--ms-marker-bg);
+}
+
+.ms-remarks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-remark-drafts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-remark-where {
+  margin: 2px 0 0;
+  color: var(--ms-text-2);
+  font-size: 12px;
+}
+
+.ms-table-remark {
+  margin-left: auto;
+  padding: 0 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  background: var(--ms-surface);
+  color: var(--ms-text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ms-table-remark:hover {
+  border-color: var(--ms-border-strong);
+  color: var(--ms-text);
+}
+
+.ms-table-drawing {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* An image of the evidence, large: as wide as the desk, never wider. */
+.ms-desk-evidence-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--ms-border);
+  border-radius: 4px;
+}

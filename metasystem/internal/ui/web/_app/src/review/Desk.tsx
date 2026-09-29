@@ -1,7 +1,24 @@
 import { useEffect, useState } from "react";
 
-import { loadChanges, loadDiff, loadSource, type Changes, type FileDiff, type Source } from "./api";
+import {
+  evidenceAddress,
+  evidenceImage,
+  loadChanges,
+  loadDiff,
+  loadEvidence,
+  loadEvidenceText,
+  loadSource,
+  type Changes,
+  type EvidenceListing,
+  type EvidenceText,
+  type FileDiff,
+  type Source,
+} from "./api";
+import { remarkDrawn, remarksOn, type Remark } from "./remarks";
+import { RemarkDrafts, RemarkNote } from "./RemarkNotes";
 import { deskKey, deskLabel, deskReadKey, reviewedOf, type DeskItem } from "./room";
+import { Drawing, type DrawingItem } from "../drawing/Drawing";
+import { useStickies } from "../stickies/store";
 import { ASK_REVISION, ASK_SOURCE, ASK_SURFACE } from "../partner/AskSelection";
 import { usePartner } from "../partner/store";
 import { Help } from "../help/Help";
@@ -57,9 +74,21 @@ export function Desk({ record }: { record: string }) {
             The change
           </button>
         )}
+        {reviewing && (
+          <button
+            type="button"
+            className="ms-desk-tab ms-desk-tab--changes"
+            onClick={() => {
+              putOnDesk({ kind: "evidence", record, path: "" });
+            }}
+          >
+            The evidence
+          </button>
+        )}
         <Help id={reviewing ? "the-desk" : "shaping-desk"} />
       </nav>
       <div className="ms-desk-item">
+        <RemarkDrafts />
         {item === undefined ? (
           <p className="ms-desk-empty">
             {reviewing
@@ -87,6 +116,10 @@ function DeskView({ record, item, at }: { record: string; item: DeskItem; at: st
       return <DiffView record={record} path={item.path} since={item.since === true} at={at} />;
     case "section":
       return <SectionView record={item.record} section={item.section} at={at} />;
+    case "evidence":
+      return <EvidenceView record={item.record} path={item.path} at={at} />;
+    case "drawing":
+      return <DrawingView item={item} />;
   }
 }
 
@@ -128,21 +161,45 @@ export function Refused({ reason }: { reason: string }) {
  * Finding, anchored at exactly those lines of exactly this tip (D7).
  */
 function SourceView({ record, path, from, to, at }: { record: string; path: string; from: number; to: number; at: string }) {
-  const { putOnDesk } = usePartner();
+  const { putOnDesk, noteRead } = usePartner();
   const read = useRead<Source>((signal) => loadSource(record, path, from, to, signal), at);
+  // What a remark made on these lines keeps, and what the board reads a
+  // shaping remark against (g1-s71 D1): the desk's latest read.
+  useEffect(() => {
+    if (read.state === "read") {
+      noteRead(read.value);
+    }
+  }, [read, noteRead]);
   if (read.state === "loading") {
     return <p className="ms-desk-loading">Reading {path}…</p>;
   }
   if (read.state === "refused") {
     return <Refused reason={read.reason} />;
   }
-  return <SourceShown source={read.value} put={putOnDesk} />;
+  return <SourceShown source={read.value} put={putOnDesk} record={record} />;
+}
+
+/**
+ * The remarks on one file the desk shows (g1-s71 D1): those drawn on the lines
+ * this read shows, and those on the same file the desk no longer reads where
+ * they were made, which stand beside the lines naming where they were made and
+ * are never drawn on them.
+ */
+function remarksOnFile(remarks: readonly Remark[], source: Source, purpose: string): { drawn: Remark[]; beside: Remark[] } {
+  const onFile = remarks.filter((remark) => remark.about.kind === "source" && remark.about.path === source.path);
+  const drawn = onFile.filter((remark) => remarkDrawn(remark.about, source, purpose));
+  return { drawn, beside: onFile.filter((remark) => !drawn.includes(remark)) };
 }
 
 /** A source read as the desk shows it, once it has been read. */
-export function SourceShown({ source, put }: { source: Source; put: (item: DeskItem) => void }) {
+export function SourceShown({ source, put, record = "" }: { source: Source; put: (item: DeskItem) => void; record?: string }) {
   const path = source.path;
   const putOnDesk = put;
+  const { sitting } = usePartner();
+  const { notepad } = useStickies();
+  const { drawn, beside } = remarksOnFile(remarksOn(notepad, record), source, sitting?.purpose ?? "review");
+  const marked = (number: number) =>
+    drawn.some((remark) => number >= (remark.about.from ?? 0) && number <= (remark.about.to ?? 0));
   const before = source.from > 1;
   const after = source.to < source.total;
   // A shaping desk reads the checkout as it stands (g1-s67 D2): no commit to
@@ -169,6 +226,13 @@ export function SourceShown({ source, put }: { source: Source; put: (item: DeskI
           </button>
         )}
       </p>
+      {(drawn.length > 0 || beside.length > 0) && (
+        <ul className="ms-remarks ms-remarks--desk" aria-label="Remarks on this file">
+          {[...drawn, ...beside].map((remark) => (
+            <RemarkNote key={`${remark.sticky.id}-${String(remark.about.from)}`} remark={remark} />
+          ))}
+        </ul>
+      )}
       {before && (
         <button
           type="button"
@@ -187,7 +251,7 @@ export function SourceShown({ source, put }: { source: Source; put: (item: DeskI
         {source.lines.map((line) => (
           <div
             key={line.number}
-            className={`ms-desk-line${line.touched === true ? " ms-desk-line--touched" : ""}`}
+            className={`ms-desk-line${line.touched === true ? " ms-desk-line--touched" : ""}${marked(line.number) ? " ms-desk-line--remarked" : ""}`}
             data-line={line.number}
           >
             <span className="ms-desk-number" aria-hidden="true">
@@ -366,6 +430,10 @@ export function DiffShown({ diff, since, put }: { diff: FileDiff; since: boolean
  */
 function SectionView({ record, section, at }: { record: string; section: string; at: string }) {
   const read = useRead<DocumentPayload>((signal) => loadDocument(record, signal), at);
+  const { notepad } = useStickies();
+  const remarks = remarksOn(notepad, record).filter(
+    (remark) => remark.about.kind === "section" && (remark.about.section ?? "").toLowerCase() === section.toLowerCase(),
+  );
   if (read.state === "loading") {
     return <p className="ms-desk-loading">Reading {record}…</p>;
   }
@@ -385,6 +453,13 @@ function SectionView({ record, section, at }: { record: string; section: string;
         <span className="ms-mono">{record}</span>
         <span>§ {section}</span>
       </p>
+      {remarks.length > 0 && (
+        <ul className="ms-remarks ms-remarks--desk" aria-label="Remarks on this section">
+          {remarks.map((remark) => (
+            <RemarkNote key={remark.sticky.id} remark={remark} />
+          ))}
+        </ul>
+      )}
       {blocks.length === 0 ? (
         <p className="ms-desk-empty">This record has no section called {section}.</p>
       ) : (
@@ -430,4 +505,134 @@ export function sectionOf(blocks: readonly Block[], section: string): Block[] {
 /** A heading's words, joined from its inlines. */
 function wordsOf(block: Block): string {
   return (block.inlines ?? []).map((inline) => inline.text ?? "").join("");
+}
+
+/**
+ * The review's evidence on the desk (g1-s71 D4): its listing, each entry
+ * opening on the desk; an image, large; or a text, headings or none, drawn by
+ * the section renderer over the bytes the evidence read returned — never the
+ * document route, which is the checkout's.
+ */
+function EvidenceView({ record, path, at }: { record: string; path: string; at: string }) {
+  if (path === "") {
+    return <EvidenceListingView record={record} at={at} />;
+  }
+  if (evidenceImage(path)) {
+    return <EvidenceImageShown record={record} path={path} />;
+  }
+  return <EvidenceTextView record={record} path={path} at={at} />;
+}
+
+function EvidenceListingView({ record, at }: { record: string; at: string }) {
+  const { putOnDesk } = usePartner();
+  const read = useRead<EvidenceListing>((signal) => loadEvidence(record, signal), at);
+  if (read.state === "loading") {
+    return <p className="ms-desk-loading">Reading the evidence…</p>;
+  }
+  if (read.state === "refused") {
+    return <Refused reason={read.reason} />;
+  }
+  return <EvidenceListingShown listing={read.value} record={record} put={putOnDesk} />;
+}
+
+/** What the evidence holds, each file opening on the desk; a cut is said first. */
+export function EvidenceListingShown({ listing, record, put }: { listing: EvidenceListing; record: string; put: (item: DeskItem) => void }) {
+  return (
+    <section className="ms-desk-changes" aria-label="The evidence">
+      <p className="ms-desk-caption">
+        <span>The evidence</span>
+        <span className="ms-mono">{listing.root}</span>
+      </p>
+      {listing.cut === true &&
+        (listing.entries.length === 0 ? (
+          <p className="ms-desk-empty">
+            The listing stopped at its bound before it found an image or text: nothing was found within the listing&apos;s bounds, and the evidence may hold more.
+          </p>
+        ) : (
+          <p className="ms-desk-bound">
+            The first {listing.supplied} files found are listed; the listing stopped at its bound, so the evidence may hold more.
+          </p>
+        ))}
+      {listing.entries.length === 0 ? (
+        listing.cut !== true && <p className="ms-desk-empty">The evidence holds no image and no text.</p>
+      ) : (
+        <ul className="ms-desk-files">
+          {listing.entries.map((entry) => (
+            <li key={entry.path}>
+              <button
+                type="button"
+                className="ms-desk-file"
+                onClick={() => {
+                  put({ kind: "evidence", record, path: entry.path });
+                }}
+              >
+                <span className="ms-mono">{entry.path}</span>
+                <span className="ms-desk-count">{entry.kind}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {listing.cut !== true && listing.supplied < listing.total && (
+        <p className="ms-desk-bound">
+          {listing.supplied} of {listing.total} files are listed.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** An image of the evidence, large, from the evidence read's own address. */
+export function EvidenceImageShown({ record, path }: { record: string; path: string }) {
+  return (
+    <section className="ms-desk-evidence" aria-label={`${path} in the evidence`}>
+      <p className="ms-desk-caption">
+        <span className="ms-mono">{path}</span>
+        <span>in the evidence</span>
+      </p>
+      <img className="ms-desk-evidence-image" src={evidenceAddress(record, path)} alt={path} />
+    </section>
+  );
+}
+
+function EvidenceTextView({ record, path, at }: { record: string; path: string; at: string }) {
+  const read = useRead<EvidenceText>((signal) => loadEvidenceText(record, path, signal), at);
+  if (read.state === "loading") {
+    return <p className="ms-desk-loading">Reading {path}…</p>;
+  }
+  if (read.state === "refused") {
+    return <Refused reason={read.reason} />;
+  }
+  return <EvidenceTextShown text={read.value} />;
+}
+
+/** A text of the evidence, through the section renderer, headings or none. */
+export function EvidenceTextShown({ text }: { text: EvidenceText }) {
+  return (
+    <section className="ms-desk-section" aria-label={`${text.path} in the evidence`} {...{ [ASK_SURFACE]: "evidence", [ASK_SOURCE]: text.path }}>
+      <p className="ms-desk-caption">
+        <span className="ms-mono">{text.path}</span>
+        <span>in the evidence</span>
+      </p>
+      <Markdown blocks={text.blocks ?? []} from="" />
+      {text.supplied < text.total && (
+        <p className="ms-desk-bound">
+          {text.supplied} of {text.total} lines are shown.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** A drawing on the desk, with the question it was drawn for (g1-s71 D2, D3). */
+function DrawingView({ item }: { item: DrawingItem }) {
+  return (
+    <section className="ms-desk-section" aria-label={`The drawing for ${item.caption}`}>
+      <p className="ms-desk-caption">
+        <span>A drawing</span>
+        <span>{item.caption === "" ? "from the conversation" : `for “${item.caption}”`}</span>
+      </p>
+      <Drawing source={item.source} item={item} />
+    </section>
+  );
 }
