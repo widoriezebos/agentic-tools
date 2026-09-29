@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -58,7 +57,7 @@ func TestMain(m *testing.M) {
 	if code, handled := resourceCustodyTestEntrypoint(); handled {
 		os.Exit(code)
 	}
-	if code, refused := refuseUnclaimedEngineInvocation(os.Args, os.Stderr); refused {
+	if code, refused := testenv.RefuseUnclaimedInvocation(os.Args, os.Stderr); refused {
 		os.Exit(code)
 	}
 	installDeterministicTestLoadReaders()
@@ -200,46 +199,14 @@ func resourceCustodyTestEntrypoint() (int, bool) {
 	}
 }
 
-// refuseUnclaimedEngineInvocation ends a test binary that was run as the
-// engine with a verb no entrypoint above claimed. go test and every helper
-// start this binary with -test.* flags first; a leading positional argument
-// means production code ran it as options.Executable (the watchdog's bounded
-// "proof-run preserve", for one). Flag parsing stops at that argument, so
-// without this the binary ran its whole package as a nested run, and the
-// caller's bound then SIGKILLed it mid-test: no Cleanup ran, and a real-process
-// test's launcher, custodian, worker and grandchild outlived it holding every
-// descriptor they had inherited (batch 24, 2026-09-29: the VM suite lock for
-// about 20 minutes).
+// The refusal above (testenv.RefuseUnclaimedInvocation) ends a test binary
+// that production code ran as the engine with a verb no entrypoint above
+// claimed: the watchdog's bounded "proof-run preserve", for one. It comes
+// before the helper path that runs m.Run itself, which never reaches
+// testenv.Main's own refusal (batch 24, 2026-09-29: a nested package run
+// SIGKILLed mid-test left a launcher, custodian, worker and grandchild holding
+// the VM suite lock for about 20 minutes).
 const engineVerbWitnessChild = "METASYSTEM_PROOFRUN_ENGINE_VERB_WITNESS_CHILD"
-
-func refuseUnclaimedEngineInvocation(args []string, stderr io.Writer) (int, bool) {
-	if len(args) < 2 || strings.HasPrefix(args[1], "-") {
-		return 0, false
-	}
-	fmt.Fprintf(stderr, "proofrun test binary: %q is an engine invocation no test entrypoint claims; the package's tests do not run for it\n", args[1:])
-	return 2, true
-}
-
-func TestUnclaimedEngineInvocationIsRefusedNotRunAsThePackage(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		name    string
-		args    []string
-		refused bool
-	}{
-		{"watchdog evidence copy", []string{"proofrun.test", "proof-run", "preserve", "--destination", "d", "--max-bytes", "1", "--source", "log"}, true},
-		{"any other verb", []string{"proofrun.test", "status"}, true},
-		{"go test", []string{"proofrun.test", "-test.paniconexit0", "-test.timeout=10m0s"}, false},
-		{"helper", []string{"proofrun.test", "-test.run=^TestSupervisorProcessHelper$", "--", "setsid-child"}, false},
-		{"no arguments", []string{"proofrun.test"}, false},
-	} {
-		var stderr bytes.Buffer
-		code, refused := refuseUnclaimedEngineInvocation(test.args, &stderr)
-		if refused != test.refused || refused && (code != 2 || !strings.Contains(stderr.String(), "no test entrypoint claims")) {
-			t.Errorf("%s: code=%d refused=%t stderr=%q, want refused=%t", test.name, code, refused, stderr.String(), test.refused)
-		}
-	}
-}
 
 // TestTheWatchdogsEvidenceCopyDoesNotRunThePackage drives the real binary the
 // way TestRecycledSuiteIdentityAuthorizesNoKillAction's watchdog does. It
