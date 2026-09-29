@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 )
 
 // The runner sweeps after the tick returned and released arbitration, and
@@ -283,4 +285,19 @@ func TestSweeperYieldsArbitrationToAQueuedWaiter(t *testing.T) {
 		t.Fatalf("with no waiter the sweeper's acquisition = %v", err)
 	}
 	lock.Release()
+}
+
+// TestArmedCheckoutsAfterTheMoveDown (U10b-1): the steward's projection is
+// the registry's, and it still reads an unreadable registry as no checkouts.
+func TestArmedCheckoutsAfterTheMoveDown(t *testing.T) {
+	t.Parallel()
+	bed := newStaleBed(t)
+	bed.owner(t, "/c/m1c/metasystem", "tag-c")
+	want, err := registry.ArmedCheckouts(bed.registry)
+	if err != nil || !slices.Equal(armedCheckoutsAt(bed.registry), want) || len(want) != 1 {
+		t.Fatalf("steward %v, registry %v, %v", armedCheckoutsAt(bed.registry), want, err)
+	}
+	if got := armedCheckoutsAt(t.TempDir()); got != nil {
+		t.Fatalf("an unreadable registry reads as %v; the disk pass wants none", got)
+	}
 }

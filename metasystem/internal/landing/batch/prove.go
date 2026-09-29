@@ -15,10 +15,14 @@ import (
 // Proof is the durable launch decision and the evidence returned by the one
 // tip proof. Planned is written before the charged runner can start.
 type Proof struct {
-	Status          string              `json:"status"`
-	Token           string              `json:"token,omitempty"`
-	Tree            string              `json:"tree"`
-	Window          string              `json:"window"`
+	Status string `json:"status"`
+	Token  string `json:"token,omitempty"`
+	Tree   string `json:"tree"`
+	Window string `json:"window"`
+	// Runner is where the proof ran, stamped by the owner when the run it
+	// dispatched completes: the lane's measured proof cost is per runner
+	// (D14, R22).
+	Runner          string              `json:"runner,omitempty"`
 	RequiredMode    testpolicy.Mode     `json:"requiredMode"`
 	ExecutedMode    testpolicy.Mode     `json:"executedMode"`
 	SelectedGroups  []string            `json:"selectedGroups"`
