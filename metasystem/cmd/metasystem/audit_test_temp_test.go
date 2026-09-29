@@ -21,8 +21,14 @@ import (
 // the host roots; both are outside this rule.
 
 // auditTestHostTempAllowance names a test file still allowed a host temp
-// path, with the reason: none.
-var auditTestHostTempAllowance = map[string]string{}
+// path, with the reason. The board bridge's tests bind a real unix socket
+// (batch 19, D14 U10c-1/U10d), whose path the kernel bounds below the
+// length of the testenv namespace plus the board's own layout.
+var auditTestHostTempAllowance = map[string]string{
+	"internal/board/bridge_test.go":        "a real unix socket at <home>/host/bridge.sock needs a short home (sun_path is 104 bytes on macOS, 108 on Linux) and the testenv namespace path is too long for it; the test removes the directory in its own t.Cleanup",
+	"internal/board/view_test.go":          "a real unix socket at <home>/host/bridge.sock needs a short home (sun_path is 104 bytes on macOS, 108 on Linux) and the testenv namespace path is too long for it; the test removes the directory in its own t.Cleanup",
+	"internal/steward/bridge_role_test.go": "a real unix socket at <home>/host/bridge.sock needs a short home (sun_path is 104 bytes on macOS, 108 on Linux) and the testenv namespace path is too long for it; the test removes the directory in its own t.Cleanup",
+}
 
 // auditTestTempCalls are the calls that create or name a temp location.
 var auditTestTempCalls = map[string]bool{"os.MkdirTemp": true, "os.CreateTemp": true, "os.TempDir": true}
