@@ -3,11 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 )
 
 // withStdin runs fn with os.Stdin fed from content, so a verb that reads the
@@ -101,5 +104,52 @@ func TestAdapterClaudeToolGateVerb(t *testing.T) {
 				t.Fatalf("row count=%d rows=%q", count, rows)
 			}
 		})
+	}
+}
+
+// TestToolGatePeerOffersTheSeatsOldestMessage (R26, U10f-2's binding): the
+// gate's Peer is the shared offer over this seat's board with Claude's
+// declared tool field as the room: it returns the oldest pending message
+// after its preface and a marker that records the delivery; with no message
+// on the board it reads no enrollment; a runtime that declares no field
+// offers nothing.
+func TestToolGatePeerOffersTheSeatsOldestMessage(t *testing.T) {
+	t.Parallel()
+	home := filepath.Join(t.TempDir(), ".metasystem")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resolved := 0
+	resolve := func(string) (string, error) { resolved++; return "m1b", nil }
+	claims := func() (map[string]string, error) { return map[string]string{}, nil }
+	now := func() time.Time { return time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC) }
+	peer, release := toolGatePeer(home, "/repo", resolve, claims, 10000, io.Discard, now)
+	if text, mark := peer(); text != "" || mark != nil || resolved != 0 {
+		t.Fatalf("an empty board: %q, marker %v, %d enrollment reads", text, mark != nil, resolved)
+	}
+	release()
+	published, err := board.Publish(home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1a"}, To: board.Address{Machine: "m1b"}, Text: "is it green?"}, now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer, release = toolGatePeer(home, "/repo", resolve, claims, 10000, io.Discard, now)
+	text, mark := peer()
+	if !strings.HasPrefix(text, "[peer message from m1a to m1b, id "+published.Message.ID+":") || !strings.HasSuffix(text, "\nis it green?") || mark == nil {
+		t.Fatalf("the offer = %q", text)
+	}
+	if err := mark(); err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if _, err := os.Stat(filepath.Join(board.Dir(home), "m1b", "mailbox", "delivered", published.Message.ID, "m1b.json")); err != nil {
+		t.Fatalf("the marker: %v", err)
+	}
+	if _, err := board.Publish(home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1a"}, To: board.Address{Machine: "m1b"}, Text: "still pending"}, now()); err != nil {
+		t.Fatal(err)
+	}
+	peer, release = toolGatePeer(home, "/repo", resolve, claims, 0, io.Discard, now)
+	defer release()
+	if text, _ := peer(); text != "" {
+		t.Fatalf("a runtime with no declared field was offered %q", text)
 	}
 }

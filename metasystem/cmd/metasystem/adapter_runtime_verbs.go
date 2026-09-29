@@ -2,14 +2,18 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -49,15 +53,48 @@ func runAdapterClaudeToolGate(args []string) int {
 	}
 	memoryDir, _ := usagepkg.MemoryDirectory(usagepkg.ReadOptions{Installation: stateRoot})
 	startedAt, _ := toolGateProcessBirth(int64(os.Getpid()))
+	home, _ := board.Home()
+	claude, _ := runtimes.Lookup("claude")
+	peer, release := toolGatePeer(home, stateRoot, goal.ResolveMachine, acceptedClaims(stateRoot), claude.ToolContextBytes, os.Stderr, toolGateClock)
+	defer release()
 	err = adapter.RunToolGate(adapter.ToolGateOptions{
 		ShellStartedAt: startedAt, Clock: toolGateClock, MemoryDir: memoryDir, Mode: mode,
 		StateRoot: stateRoot, Installation: stateRoot,
-		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
+		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Peer: peer,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem internal adapter claude-tool-gate:", err)
 	}
 	return 0
+}
+
+// toolGatePeer binds the gate's Peer to the shared offer (batch-lane design
+// D14-r3, R26; D14C-08): the seat's board, the accepted ledger's claims, and
+// the runtime's declared tool context bytes as the room. The gate calls it
+// at its single exit only; release gives back the claim locks the offer
+// holds, after the gate returned. An empty board reads no enrollment and a
+// runtime without a declared field is offered nothing.
+func toolGatePeer(home, root string, resolve func(string) (string, error), claims func() (map[string]string, error), room int, stderr io.Writer, now func() time.Time) (func() (string, func() error), func()) {
+	var offer *hooks.PeerOffer
+	peer := func() (string, func() error) {
+		if home == "" || room <= 0 || !board.HasMessages(home) {
+			return "", nil
+		}
+		seat, err := resolve(root)
+		if err != nil || !board.SafeName(seat) {
+			return "", nil
+		}
+		var ok bool
+		offer, ok = hooks.OfferPeerMessage(home, seat, os.Getenv("METASYSTEM_OWNER_LINEAGE"), claims, "tool", room, now())
+		if offer.Waiting != "" {
+			fmt.Fprintln(stderr, "metasystem peer messages: "+offer.Waiting)
+		}
+		if !ok {
+			return "", nil
+		}
+		return offer.Text, offer.Mark
+	}
+	return peer, func() { offer.Release() }
 }
 
 // runAdapterClaudeSessionSignal is the SessionStart hook helper: it reads the

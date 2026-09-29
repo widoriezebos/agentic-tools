@@ -35,6 +35,10 @@ type ToolGateOptions struct {
 	Stdin          io.Reader
 	Stdout         io.Writer
 	Stderr         io.Writer
+	// Peer offers the oldest pending peer message for this seat, at the
+	// gate's single exit only: its text, and the marker to run once the
+	// response carrying it was written. Nil when no delivery is wired.
+	Peer func() (text string, delivered func() error)
 }
 
 type toolGatePayload struct {
@@ -90,7 +94,7 @@ func RunToolGate(opts ToolGateOptions) error {
 
 	class := Classify(payload.Call, opts.MemoryDir)
 	if trivialToolGateAllow(class) {
-		return nil
+		return emitToolGate(opts, Decision{}, false)
 	}
 	// Under the helm the gate is silent: one decision row, no transcript read.
 	if helm.Active(opts.Installation).Active {
@@ -119,21 +123,21 @@ func RunToolGate(opts ToolGateOptions) error {
 			Session: payload.SessionID, Tool: payload.Tool, Mode: opts.Mode,
 			Decision: "allow", Cause: cause, Birth: birth,
 		}, base, opts.Clock())
-		return nil
+		return emitToolGate(opts, Decision{}, false)
 	}
 	if reading.Reason == "deadline" {
 		writeToolGateRow(opts, toolGateDecisionRow{
 			Session: payload.SessionID, Tool: payload.Tool, Mode: opts.Mode,
 			Decision: "allow", Cause: "deadline", Birth: birth,
 		}, base, opts.Clock())
-		return nil
+		return emitToolGate(opts, Decision{}, false)
 	}
 	if reading.Latest == nil {
 		writeToolGateRow(opts, toolGateDecisionRow{
 			Session: payload.SessionID, Tool: payload.Tool, Mode: opts.Mode,
 			Decision: "allow", Cause: "no-sample", Birth: birth,
 		}, base, opts.Clock())
-		return nil
+		return emitToolGate(opts, Decision{}, false)
 	}
 
 	tokens := reading.Latest.PromptTokens
@@ -145,10 +149,10 @@ func RunToolGate(opts ToolGateOptions) error {
 			Decision: "allow", WouldDeny: decision.Deny, Cause: "deadline", Birth: birth,
 			Tokens: tokens,
 		}, base, decidedAt)
-		return nil
+		return emitToolGate(opts, Decision{}, false)
 	}
 	if decision.Cause == "under-trigger" {
-		return nil
+		return emitToolGate(opts, Decision{}, false)
 	}
 
 	row := toolGateDecisionRow{
@@ -163,14 +167,34 @@ func RunToolGate(opts ToolGateOptions) error {
 		row.Reason = decision.Reason
 	}
 	writeToolGateRow(opts, row, base, decidedAt)
+	return emitToolGate(opts, decision, decision.Deny && opts.Mode == "deny")
+}
 
-	if decision.Deny && opts.Mode == "deny" {
-		output := append(decision.Output(), '\n')
-		if opts.Stdout == nil {
-			return fmt.Errorf("tool gate output is required")
+// emitToolGate is the gate's single exit: one composed response, written
+// once. An enforced denial is today's deny object and never asks for a peer
+// message; every allowed path asks Peer once and carries its text in the
+// context object, and the marker runs only after that object was written.
+func emitToolGate(opts ToolGateOptions, decision Decision, enforced bool) error {
+	decision.Deny = enforced
+	peer, delivered := "", func() error { return nil }
+	if !enforced && opts.Peer != nil {
+		if text, mark := opts.Peer(); text != "" && mark != nil {
+			peer, delivered = text, mark
 		}
-		if _, err := opts.Stdout.Write(output); err != nil {
-			return fmt.Errorf("write Claude tool gate decision: %w", err)
+	}
+	output := decision.Compose(peer)
+	if output == nil {
+		return nil
+	}
+	if opts.Stdout == nil {
+		return fmt.Errorf("tool gate output is required")
+	}
+	if _, err := opts.Stdout.Write(append(output, '\n')); err != nil {
+		return fmt.Errorf("write Claude tool gate decision: %w", err)
+	}
+	if peer != "" {
+		if err := delivered(); err != nil && opts.Stderr != nil {
+			fmt.Fprintf(opts.Stderr, "metasystem internal adapter claude-tool-gate: a peer message was delivered but not marked (%v); it is offered again\n", err)
 		}
 	}
 	return nil

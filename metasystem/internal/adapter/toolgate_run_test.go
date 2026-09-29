@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 	"golang.org/x/sys/unix"
 )
@@ -441,4 +442,199 @@ func readToolGateFile(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+// peerProbe is a fake peer offer: it counts the calls, the markers, and
+// what the marker saw written before it ran.
+type peerProbe struct {
+	text     string
+	calls    int
+	marked   int
+	markSeen string
+	out      *bytes.Buffer
+}
+
+func (p *peerProbe) offer() (string, func() error) {
+	p.calls++
+	return p.text, func() error {
+		p.marked++
+		if p.out != nil {
+			p.markSeen = p.out.String()
+		}
+		return nil
+	}
+}
+
+type failingToolGateWriter struct{}
+
+func (failingToolGateWriter) Write([]byte) (int, error) {
+	return 0, fmt.Errorf("injected: stdout closed")
+}
+
+// TestToolGateComposesOneResponse (R26, U10f-2; D14C-08): through RunToolGate
+// with Peer set, an allowed call with a pending message emits exactly one
+// object, the context object without permissionDecision, and the marker runs
+// after the write; so does observe mode's would-deny and every allowed path
+// (trivial allow, under the trigger, a busy store, the deadline, no sample);
+// an enforced denial emits today's deny object byte for byte, never calls
+// Peer and marks nothing; nothing pending emits nothing; a native subagent
+// call and a call under the helm never call Peer; a failing Stdout marks
+// nothing; the decision row is byte-identical with and without a pending
+// message.
+func TestToolGateComposesOneResponse(t *testing.T) {
+	t.Parallel()
+	const text = "[peer message from m1a to m1b, id d-1: information]\nis it green?"
+	encoded, _ := json.Marshal(text)
+	contextObject := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":` + string(encoded) + `}}` + "\n"
+	birth := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+	at := func() time.Time { return birth.Add(time.Millisecond) }
+
+	runIn := func(t *testing.T, root, transcript, mode string, call Call, pending string, amend func(*ToolGateOptions)) (*peerProbe, string, string, error) {
+		t.Helper()
+		stdout := &bytes.Buffer{}
+		probe := &peerProbe{text: pending, out: stdout}
+		opts := toolGateOptions(root, transcript, mode, birth, at, stdout)
+		opts.Stdin = bytes.NewReader(toolGatePayloadBytes("session", transcript, call, ""))
+		opts.Peer = probe.offer
+		if amend != nil {
+			amend(&opts)
+		}
+		err := RunToolGate(opts)
+		rows, _ := os.ReadFile(toolGateRowsPath(root))
+		lines := strings.Split(strings.TrimRight(string(rows), "\n"), "\n")
+		return probe, stdout.String(), lines[len(lines)-1], err
+	}
+	run := func(t *testing.T, tokens int64, mode string, call Call, pending string, amend func(*ToolGateOptions)) (*peerProbe, string, string, error) {
+		t.Helper()
+		root, transcript := toolGateFixture(t, tokens)
+		return runIn(t, root, transcript, mode, call, pending, amend)
+	}
+
+	for _, test := range []struct {
+		name   string
+		tokens int64
+		mode   string
+		call   Call
+	}{
+		{"observe mode's would-deny", 120000, "observe", bashToolGateCall("rm x")},
+		{"a trivial allow", 120000, "deny", Call{Tool: "Agent"}},
+		{"under the trigger", 10, "deny", bashToolGateCall("rm x")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			probe, out, _, err := run(t, test.tokens, test.mode, test.call, text, nil)
+			if err != nil || out != contextObject || probe.calls != 1 || probe.marked != 1 || probe.markSeen != contextObject {
+				t.Fatalf("err=%v stdout=%q calls=%d marked=%d seen-at-mark=%q", err, out, probe.calls, probe.marked, probe.markSeen)
+			}
+			if strings.Contains(out, "permissionDecision") || strings.Count(out, "\n") != 1 {
+				t.Fatalf("the context object decides the call or is not one object: %q", out)
+			}
+		})
+	}
+	t.Run("the deadline and no sample", func(t *testing.T) {
+		t.Parallel()
+		late := 0
+		probe, out, _, err := run(t, 120000, "deny", bashToolGateCall("rm x"), text, func(opts *ToolGateOptions) {
+			opts.Clock = func() time.Time {
+				late++
+				if late < 5 {
+					return birth.Add(99 * time.Millisecond)
+				}
+				return birth.Add(101 * time.Millisecond)
+			}
+		})
+		if err != nil || out != contextObject || probe.marked != 1 {
+			t.Fatalf("past the deadline: err=%v stdout=%q marked=%d", err, out, probe.marked)
+		}
+		root, _ := toolGateFixture(t, 120000)
+		empty := filepath.Join(root, "empty.jsonl")
+		if err := os.WriteFile(empty, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stdout := &bytes.Buffer{}
+		noSample := &peerProbe{text: text, out: stdout}
+		opts := toolGateOptions(root, empty, "deny", birth, at, stdout)
+		opts.Stdin = bytes.NewReader(toolGatePayloadBytes("no-sample", empty, bashToolGateCall("rm x"), ""))
+		opts.Peer = noSample.offer
+		if err := RunToolGate(opts); err != nil || stdout.String() != contextObject || noSample.marked != 1 {
+			t.Fatalf("no sample: err=%v stdout=%q marked=%d", err, stdout.String(), noSample.marked)
+		}
+	})
+	t.Run("a busy store", func(t *testing.T) {
+		t.Parallel()
+		root, transcript := toolGateFixture(t, 120000)
+		lockPath := filepath.Join(root, "artifacts", "agents", "context", "maintenance.lock")
+		if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lock.Close()
+		if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+			t.Fatal(err)
+		}
+		defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+		stdout := &bytes.Buffer{}
+		probe := &peerProbe{text: text, out: stdout}
+		opts := toolGateOptions(root, transcript, "deny", birth, at, stdout)
+		opts.Stdin = bytes.NewReader(toolGatePayloadBytes("busy", transcript, bashToolGateCall("rm x"), ""))
+		opts.Peer = probe.offer
+		if err := RunToolGate(opts); err != nil || stdout.String() != contextObject || probe.marked != 1 {
+			t.Fatalf("a busy store: err=%v stdout=%q marked=%d", err, stdout.String(), probe.marked)
+		}
+	})
+	t.Run("an enforced denial carries no peer text", func(t *testing.T) {
+		t.Parallel()
+		root, transcript := toolGateFixture(t, 120000)
+		probe, out, rows, err := runIn(t, root, transcript, "deny", bashToolGateCall("rm x"), text, nil)
+		_, silent, silentRows, _ := runIn(t, root, transcript, "deny", bashToolGateCall("rm x"), "", nil)
+		if err != nil || out != silent || probe.calls != 0 || probe.marked != 0 || !strings.Contains(out, `"permissionDecision":"deny"`) {
+			t.Fatalf("denial with a pending message: err=%v stdout=%q (without: %q) calls=%d marked=%d", err, out, silent, probe.calls, probe.marked)
+		}
+		if rows != silentRows {
+			t.Fatalf("the decision row changed with a pending message:\n%s\n%s", rows, silentRows)
+		}
+	})
+	t.Run("nothing pending emits nothing", func(t *testing.T) {
+		t.Parallel()
+		root, transcript := toolGateFixture(t, 120000)
+		probe, out, rows, err := runIn(t, root, transcript, "observe", bashToolGateCall("rm x"), "", nil)
+		_, _, pendingRows, _ := runIn(t, root, transcript, "observe", bashToolGateCall("rm x"), text, nil)
+		if err != nil || out != "" || probe.calls != 1 || probe.marked != 0 {
+			t.Fatalf("nothing pending: err=%v stdout=%q calls=%d marked=%d", err, out, probe.calls, probe.marked)
+		}
+		if rows != pendingRows {
+			t.Fatalf("the decision row changed with a pending message:\n%s\n%s", rows, pendingRows)
+		}
+	})
+	t.Run("a subagent call and the helm never call Peer", func(t *testing.T) {
+		t.Parallel()
+		probe, out, _, err := run(t, 120000, "observe", bashToolGateCall("rm x"), text, func(opts *ToolGateOptions) {
+			transcript := filepath.Join(opts.StateRoot, "transcript.jsonl")
+			opts.Stdin = bytes.NewReader(toolGatePayloadBytes("subagent", transcript, bashToolGateCall("rm x"), "agent-1"))
+		})
+		if err != nil || out != "" || probe.calls != 0 {
+			t.Fatalf("subagent: err=%v stdout=%q calls=%d", err, out, probe.calls)
+		}
+		probe, out, _, err = run(t, 120000, "observe", bashToolGateCall("rm x"), text, func(opts *ToolGateOptions) {
+			if err := os.Mkdir(filepath.Join(opts.StateRoot, ".git"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := helm.Write(opts.StateRoot, helm.Record{By: "Wido", At: birth.Format(time.RFC3339), Reason: "by hand"}); err != nil {
+				t.Fatal(err)
+			}
+		})
+		if err != nil || out != "" || probe.calls != 0 {
+			t.Fatalf("helm: err=%v stdout=%q calls=%d", err, out, probe.calls)
+		}
+	})
+	t.Run("a failing stdout marks nothing", func(t *testing.T) {
+		t.Parallel()
+		probe, _, _, err := run(t, 120000, "observe", bashToolGateCall("rm x"), text, func(opts *ToolGateOptions) { opts.Stdout = failingToolGateWriter{} })
+		if err == nil || probe.marked != 0 {
+			t.Fatalf("failing stdout: err=%v marked=%d", err, probe.marked)
+		}
+	})
 }
