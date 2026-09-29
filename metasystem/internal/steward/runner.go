@@ -370,6 +370,12 @@ func ArmTemporaryWithLineage(repoRoot, binaryPath, humanWord, reviewBy, lineage 
 	return outcome.Message, err
 }
 
+// ArmSessionWithLineage arms under a signed-in browser session's verdict
+// (g1-s72 D2/D3). Contract stub: the steward lane implements it.
+func ArmSessionWithLineage(repoRoot, binaryPath string, session EnrolledSession, lineage string) (string, error) {
+	return "", fmt.Errorf("human-session enrollment is not built yet")
+}
+
 // ArmStage names the last enrollment transition that changed machine state.
 type ArmStage int
 

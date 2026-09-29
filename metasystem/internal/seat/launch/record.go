@@ -143,6 +143,22 @@ type Record struct {
 	// the trail and the clone it made is never touched: a discard deletes
 	// nothing, so it asks for no confirmation.
 	DiscardedAt *string `json:"discardedAt"`
+	// Enrollment is the signed-in session's verdict the interface stamped
+	// before it spawned this launch (g1-s72 D1), or nil for a launch with
+	// none (a terminal or pair launch, or one written before g1-s72).
+	Enrollment *Enrollment `json:"enrollment,omitempty"`
+}
+
+// EnrollmentHumanSession is the one kind a launch record carries.
+const EnrollmentHumanSession = "human-session"
+
+// Enrollment is the verdict of a signed-in human's launch (g1-s72 D1).
+type Enrollment struct {
+	Kind     string `json:"kind"`
+	Provider string `json:"provider"`
+	Human    string `json:"human"`
+	Session  string `json:"session"`
+	At       string `json:"at"`
 }
 
 // Dir is where this checkout keeps its launch records, one file per launch.
