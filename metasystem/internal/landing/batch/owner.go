@@ -38,6 +38,10 @@ type ownerSeams struct {
 	glob                func(string) ([]string, error)
 	helmActive          func(string) bool
 	baseMove            func(string, string) (BaseMove, error)
+	early               EarlySeams
+	earlyRuns           map[string]earlyRun
+	capped              map[string]bool
+	earlyDone           chan EarlyCompletion
 	locks               map[string]*proofLock
 	held                map[string]HeldBatch
 	inflight            map[string]*proofRun
@@ -103,6 +107,8 @@ type OwnerOptions struct {
 	// BaseMove reads what moved main between two base trees; nil leaves a
 	// batch on the base it was sealed on until its landing decides.
 	BaseMove func(fromTree, toTree string) (BaseMove, error)
+	// Early are the acts that use a wait (D14, R27).
+	Early EarlySeams
 }
 
 type Owner struct {
@@ -117,7 +123,7 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 	if options.Now == nil || options.FetchTree == nil || options.ReadClaim == nil || options.Rebind == nil || options.Mint == nil || options.LogRed == nil ||
 		options.BaseCommit == nil || options.RunDiagnostic == nil || options.DescendsFrom == nil ||
 		options.Sample == nil || options.Admission == nil || options.Launch == nil || options.ProbeRun == nil || options.After == nil || options.Report == nil ||
-		options.Pipeline == nil {
+		options.Pipeline == nil || options.Early.Cheap == nil || options.Early.Prove == nil || options.Early.Budget == nil {
 		return nil, fmt.Errorf("construct batch owner: every owner seam is required")
 	}
 	if options.PID < 1 {
@@ -132,8 +138,9 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 		returns: options.Returns, rebind: options.Rebind, mint: options.Mint, logRed: options.LogRed,
 		baseCommit: options.BaseCommit, runDiagnostic: options.RunDiagnostic, descendsFrom: options.DescendsFrom, sample: options.Sample,
 		admission: options.Admission, launch: options.Launch, probeRun: options.ProbeRun, after: options.After,
-		report: options.Report, glob: options.Glob, pipeline: options.Pipeline, logWait: options.LogWait, location: options.Location, helmActive: options.HelmActive, baseMove: options.BaseMove, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
+		report: options.Report, glob: options.Glob, pipeline: options.Pipeline, logWait: options.LogWait, location: options.Location, helmActive: options.HelmActive, baseMove: options.BaseMove, early: options.Early, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
 		inflight: map[string]*proofRun{}, decided: map[string]decidedAt{}, completions: make(chan Completion, 64),
+		earlyRuns: map[string]earlyRun{}, capped: map[string]bool{}, earlyDone: make(chan EarlyCompletion, 64),
 		runners: func(sample proofrun.LoadSample, admission proofrun.AdmissionCap) []RunnerCapacity {
 			return []RunnerCapacity{hostRunner(sample, admission)}
 		},
@@ -268,6 +275,7 @@ func (owner *Owner) Tick(id string) error {
 		return err
 	}
 	if !start {
+		delete(owner.capped, id)
 		return owner.release(id)
 	}
 	lock := owner.batchLock(id)
@@ -287,8 +295,11 @@ func (owner *Owner) Tick(id string) error {
 	admission := owner.admission(sample)
 	runner, room := owner.chooseRunner(sample, admission)
 	if !room {
+		// A batch proof waits for a slot: no early proof starts meanwhile.
+		owner.capped[id] = true
 		return errors.Join(owner.recordCap(id, sample, admission, at), lock.release())
 	}
+	delete(owner.capped, id)
 	token, err := owner.mint()
 	if err != nil {
 		return errors.Join(err, lock.release())
@@ -502,6 +513,11 @@ func (owner *Owner) start(record *Record, sample proofrun.LoadSample, at time.Ti
 	if err := owner.recordDecision(record, decision, at); err != nil {
 		return false, "", err
 	}
+	if !decision.Start && decision.Wait != nil {
+		if err := owner.useWait(*record, sample, at); err != nil {
+			owner.report(record.BatchID, fmt.Errorf("use the wait: %w", err))
+		}
+	}
 	return decision.Start, decision.Window, nil
 }
 
@@ -535,7 +551,7 @@ func (owner *Owner) recordDecision(record *Record, decision Decision, at time.Ti
 	var changed bool
 	switch {
 	case decision.Start:
-		changed = record.Wait != nil || record.StartReason != decision.Reason
+		changed = record.Wait != nil || record.StartReason != decision.Reason || record.Early != nil && record.Early.Ended == ""
 	case decision.Wait != nil:
 		changed = record.Wait == nil || record.Wait.Reason != decision.Wait.Reason
 	}
@@ -546,6 +562,7 @@ func (owner *Owner) recordDecision(record *Record, decision Decision, at time.Ti
 	err := owner.store.Update(record.BatchID, func(current *Record) error {
 		if decision.Start {
 			current.Wait, current.StartReason = nil, decision.Reason
+			endEarly(current, at, owner.actor)
 		} else {
 			current.Wait, current.StartReason = decision.Wait, ""
 		}
@@ -675,6 +692,8 @@ func (owner *Owner) Loop(interval time.Duration, wake <-chan struct{}, stop <-ch
 		case <-timer:
 		case done := <-owner.completions:
 			owner.Complete(done)
+		case done := <-owner.earlyDone:
+			owner.CompleteEarly(done)
 		case <-stop:
 			return
 		}

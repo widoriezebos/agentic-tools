@@ -588,6 +588,7 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 		},
 		HelmActive: func(root string) bool { return helm.Active(root).Active },
 		BaseMove:   batchBaseMove(settings.Root),
+		Early:      productionEarlySeams(settings.Root),
 		Report: func(id string, err error) {
 			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "batch": id, "error": err.Error()})
 			fmt.Fprintln(os.Stderr, string(line))

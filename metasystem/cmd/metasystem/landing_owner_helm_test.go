@@ -96,7 +96,7 @@ func newOwnerHelmBed(t *testing.T) *ownerHelmBed {
 			bed.launched = append(bed.launched, request.ID)
 			return nil
 		}, ProbeRun: func(string, batch.Record) (batch.RunProbe, error) { return batch.RunProbe{State: batch.RunLive}, nil },
-		After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {}, Pipeline: emptyHostBoard{},
+		After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {}, Pipeline: emptyHostBoard{}, Early: quietEarlySeams(),
 		HelmActive: func(root string) bool { return helm.Active(root).Active }})
 	if err != nil {
 		t.Fatal(err)

@@ -79,6 +79,7 @@ func requestUnitReturn(record *Record, goalID, outcome, reason, actor string, at
 			from := unit.State
 			unit.State, unit.Outcome, unit.Failure, unit.ReturnDisposition = UnitReturnPending, outcome, reason, ""
 			appendUnitHistory(record, at, "return-request", actor, goalID, from, UnitReturnPending)
+			forgetEarly(record, at, actor, leaveCause(goalID, outcome))
 			return nil
 		}
 	}

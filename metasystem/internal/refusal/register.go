@@ -96,7 +96,7 @@ var Rows = []Row{
 	{Code: "BATCH_JOIN_TEST_DROPPED", Owner: "cmd/metasystem", Site: "landing_batch_join.go#productionBatchProtectedTestsWithRawSource", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_JOIN_PENDING", Owner: "internal/landing/batch", Site: "join_admission.go#publishJoinWithAdmission", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_JOIN_ADMISSION_UNAVAILABLE", Owner: "cmd/metasystem", Site: "landing_batch_join.go#executeBatchJoin", Shape: Question, H1: StandingAgent},
-	{Code: "BATCH_JOIN_ADMISSION_RED", Owner: "cmd/metasystem", Site: "landing_batch_admission.go#productionJoinAdmission", Shape: Question, H1: StandingInput},
+	{Code: "BATCH_JOIN_ADMISSION_RED", Owner: "cmd/metasystem", Site: "landing_batch_admission.go#runBatchAdmissionOnTree", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_JOIN_CHAIN_NOT_IMPLEMENTATION", Owner: "internal/landing/batch", Site: "chain.go#readCertifiedChain", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_JOIN_CHAIN_REQUIRED", Owner: "internal/landing/batch", Site: "chain.go#readCertifiedChain", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_JOIN_CHAIN_REVISION_MOVED", Owner: "internal/landing/batch", Site: "chain.go#readCertifiedChain", Shape: Question, H1: StandingInput},

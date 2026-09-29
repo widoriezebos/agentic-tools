@@ -93,6 +93,8 @@ type Record struct {
 	// why it started, copied into the proof it plans.
 	Wait        *WaitState `json:"wait,omitempty"`
 	StartReason string     `json:"startReason,omitempty"`
+	// Early is what the owner did with the wait (D14, R27).
+	Early *Early `json:"early,omitempty"`
 	batchRecordFields
 }
 

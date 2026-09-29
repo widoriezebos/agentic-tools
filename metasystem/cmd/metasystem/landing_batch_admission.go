@@ -24,7 +24,6 @@ var batchJoinAdmissionExecutable = os.Executable
 // claim reaches the landing control root. The complete delivery selection is
 // still held by the joining unit for every later prefix and tip decision.
 func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinAdmission, error) {
-	controlRoot := batch.ModuleRoot(root)
 	record, err := batch.NewStore(root, nil).Load(batchID)
 	if err != nil {
 		return batch.JoinAdmission{}, err
@@ -35,10 +34,30 @@ func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinA
 	if unit.Admission == nil || unit.Admission.Tree == "" {
 		return batch.JoinAdmission{}, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: %s has no exact admission tree", unit.GoalID)
 	}
-	tree := unit.Admission.Tree
-	planned, err := productionBatchTreePlanOutput(root, unit.GoalID, tree, testpolicy.ModeAuto)
-	if err != nil {
+	result, _, ran, err := runBatchAdmissionOnTree(root, batchID, record.BaseTree, unit.GoalID, unit.Claim, unit.Admission.Tree, "join-"+unit.GoalID,
+		func(decision batch.JoinAdmission, maxAgeMS int64) (batch.JoinAdmission, error) {
+			return retainJoinEpisode(root, batch.NewStore(root, nil), batchID, unit, decision, maxAgeMS)
+		})
+	if err != nil || !ran {
+		return result, err
+	}
+	if err := authorizeBatchMember(root, batch.Record{BatchID: batchID, Seal: map[string]batch.Claim{unit.GoalID: unit.Claim}}, unit); err != nil {
 		return batch.JoinAdmission{}, err
+	}
+	return result, nil
+}
+
+// runBatchAdmissionOnTree runs the join's cheap phase, the admission subset
+// of goalID's delivery plan, on one exact tree in a detached worktree of its
+// own, and verifies it through the retained verifier. ran is false when the
+// plan selects no admission group. A red is a *batch.JoinAdmissionRed with
+// the run's result beside it; episode binds fresh groups to an episode.
+func runBatchAdmissionOnTree(root, batchID, baseTree, goalID string, claim batch.Claim, tree, label string,
+	episode func(batch.JoinAdmission, int64) (batch.JoinAdmission, error)) (batch.JoinAdmission, proofrun.TestResult, bool, error) {
+	controlRoot := batch.ModuleRoot(root)
+	planned, err := productionBatchTreePlanOutput(root, goalID, tree, testpolicy.ModeAuto)
+	if err != nil {
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, err
 	}
 	contract := testpolicy.Contract{SchemaVersion: testpolicy.SchemaVersion, Groups: planned.Groups}
 	if slices.ContainsFunc(planned.Groups, func(group testpolicy.Group) bool { return group.Phase != "" }) {
@@ -46,12 +65,12 @@ func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinA
 	}
 	admission, err := testpolicy.AdmissionPlan(contract, planned.Plan)
 	if err != nil {
-		return batch.JoinAdmission{}, err
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, err
 	}
 	result := batch.JoinAdmission{Tree: tree, Status: "pending"}
 	if len(admission.SelectedGroups) == 0 {
 		result.Status = "verified"
-		return result, nil
+		return result, proofrun.TestResult{}, false, nil
 	}
 	groupByID := map[string]testpolicy.Group{}
 	for _, group := range planned.Groups {
@@ -66,7 +85,7 @@ func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinA
 		}
 		fresh = true
 		if group.FreshnessMaxAgeMS == nil || *group.FreshnessMaxAgeMS <= 0 {
-			return batch.JoinAdmission{}, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: fresh admission group %s has no positive max age", id)
+			return batch.JoinAdmission{}, proofrun.TestResult{}, false, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: fresh admission group %s has no positive max age", id)
 		}
 		if maxAgeMS == 0 || *group.FreshnessMaxAgeMS < maxAgeMS {
 			maxAgeMS = *group.FreshnessMaxAgeMS
@@ -78,40 +97,40 @@ func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinA
 		Selection                                                                     testpolicy.Plan
 		Groups                                                                        []testpolicy.Group
 		Admission                                                                     testpolicy.Plan
-	}{batchID, record.BaseTree, tree, planned.PolicyBaseCommit, planned.ContractDigest, planned.BaseContractDigest,
-		unit.Claim, planned.Plan, planned.Groups, admission})
+	}{batchID, baseTree, tree, planned.PolicyBaseCommit, planned.ContractDigest, planned.BaseContractDigest,
+		claim, planned.Plan, planned.Groups, admission})
 	digest := sha256.Sum256(decisionBytes)
 	result.DecisionID = hex.EncodeToString(digest[:])
 	if fresh {
-		result, err = retainJoinEpisode(root, batch.NewStore(root, nil), batchID, unit, result, maxAgeMS)
+		result, err = episode(result, maxAgeMS)
 		if err != nil {
-			return batch.JoinAdmission{}, err
+			return batch.JoinAdmission{}, proofrun.TestResult{}, false, err
 		}
 	}
 	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(tree)
 	if err != nil {
-		return batch.JoinAdmission{}, err
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, err
 	}
 	defer detached.Close()
 	executionRoot := batch.ModuleRoot(detached.Workspace().Dir)
 	binary, err := batchJoinAdmissionExecutable()
 	if err != nil {
-		return batch.JoinAdmission{}, err
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, err
 	}
 	resultDir := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch")
 	if err := os.MkdirAll(resultDir, 0o700); err != nil {
-		return batch.JoinAdmission{}, err
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, err
 	}
-	projection, err := os.CreateTemp(resultDir, batchID+"-join-"+unit.GoalID+"-*.json")
+	projection, err := os.CreateTemp(resultDir, batchID+"-"+label+"-*.json")
 	if err != nil {
-		return batch.JoinAdmission{}, err
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, err
 	}
 	result.ResultPath = projection.Name()
 	_ = projection.Close()
 	_ = os.Remove(result.ResultPath)
 	args := []string{"internal", "test", "run", "--root", executionRoot, "--control-root", controlRoot, "--batch-admission",
-		"--goal", unit.GoalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--result", result.ResultPath,
-		"--expected-goal-revision", fmt.Sprint(unit.Claim.Revision), "--expected-accounting-revision", fmt.Sprint(unit.Claim.AccountingRevision)}
+		"--goal", goalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--result", result.ResultPath,
+		"--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision)}
 	if result.FreshEpisode != "" {
 		args = append(args, "--fresh-episode", result.FreshEpisode, "--fresh-expires-at", result.FreshExpiresAt)
 	}
@@ -119,30 +138,27 @@ func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinA
 	command.Dir, command.Env = executionRoot, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
 	output, runErr := command.CombinedOutput()
 	if runErr != nil && command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitAdmissionRefused {
-		return batch.JoinAdmission{}, joinAdmissionRefusal(strings.TrimSpace(string(output)))
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, joinAdmissionRefusal(strings.TrimSpace(string(output)))
 	}
 	var proof proofrun.TestResult
 	if err := readStrictJSON(result.ResultPath, &proof); err != nil {
-		return batch.JoinAdmission{}, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: read admission result: %w; output=%s", err, strings.TrimSpace(string(output)))
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: read admission result: %w; output=%s", err, strings.TrimSpace(string(output)))
 	}
 	if runErr != nil && (command.ProcessState == nil || !batchProofExitAccepted(command.ProcessState.ExitCode(), proof)) {
 		if len(proof.Delivery.FailingGroups) != 0 {
-			return batch.JoinAdmission{}, &batch.JoinAdmissionRed{Reason: "BATCH_JOIN_ADMISSION_RED: " + strings.Join(proof.Delivery.FailingGroups, ",")}
+			return batch.JoinAdmission{}, proof, true, &batch.JoinAdmissionRed{Reason: "BATCH_JOIN_ADMISSION_RED: " + strings.Join(proof.Delivery.FailingGroups, ",")}
 		}
-		return batch.JoinAdmission{}, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: %s: %w", strings.TrimSpace(string(output)), runErr)
+		return batch.JoinAdmission{}, proof, true, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: %s: %w", strings.TrimSpace(string(output)), runErr)
 	}
-	request := testingSelectionRequest{Root: executionRoot, ControlRoot: controlRoot, GoalID: unit.GoalID, Tree: tree,
+	request := testingSelectionRequest{Root: executionRoot, ControlRoot: controlRoot, GoalID: goalID, Tree: tree,
 		Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchAdmission: true,
 		FreshEpisode: result.FreshEpisode, FreshExpiresAt: result.FreshExpiresAt, ExecutedWorkers: proof.Workers}
 	verified, err := verifyRetainedTesting(request)
 	if err != nil || !verified.Delivery.Sufficient {
-		return batch.JoinAdmission{}, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: retained admission is incomplete: %w; missing=%v", err, verified.Delivery.MissingGroups)
-	}
-	if err := authorizeBatchMember(root, batch.Record{BatchID: batchID, Seal: map[string]batch.Claim{unit.GoalID: unit.Claim}}, unit); err != nil {
-		return batch.JoinAdmission{}, err
+		return batch.JoinAdmission{}, proof, true, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: retained admission is incomplete: %w; missing=%v", err, verified.Delivery.MissingGroups)
 	}
 	result.AttemptID, result.Status = proof.AttemptID, "verified"
-	return result, nil
+	return result, proof, true, nil
 }
 
 func joinAdmissionRefusal(reason string) error {
