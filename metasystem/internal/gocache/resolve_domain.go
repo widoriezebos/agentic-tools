@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -89,6 +90,9 @@ type Evidence struct {
 	// Self is this process's encoded reference: the issuer of the context
 	// its children get.
 	Self func() (string, error)
+	// EvidenceRoots lists the host's evidence roots: no cache may lie
+	// under one (engine-owns-disk-lifetimes 3.12 placement rules).
+	EvidenceRoots func() []string
 }
 
 // Resolution is the decided domain, its paths, the rule that decided it,
@@ -124,8 +128,74 @@ func (r Refusal) Error() string { return "cache domain refused: " + r.reason }
 //
 // No rule reads GOCACHE or STATICCHECK_CACHE from the environment.
 func ResolveDomain(environment []string, installationRoot string, evidence Evidence) (Resolution, error) {
+	resolution, err := resolveDomain(environment, installationRoot, evidence)
+	if err != nil {
+		return resolution, err
+	}
+	if refusal := underEvidenceRoot(environment, resolution, evidence); refusal != nil {
+		return Resolution{}, refusal
+	}
+	return resolution, nil
+}
+
+// underEvidenceRoot refuses a resolved cache, or a GOMODCACHE the
+// environment sets, that lies under an evidence root (3.12 placement rules,
+// R21): the refusal names the path, the root, the engine cache and the
+// environment line that selects it.
+func underEvidenceRoot(environment []string, resolution Resolution, evidence Evidence) error {
+	roots := evidence.EvidenceRoots()
+	if len(roots) == 0 {
+		return nil
+	}
+	engine, err := DomainPathsUsing(DomainEngine, evidence.UserCacheDir)
+	if err != nil {
+		return nil
+	}
+	candidates := [][2]string{{"GOCACHE", resolution.Paths.GoCache}, {"STATICCHECK_CACHE", resolution.Paths.StaticcheckCache}}
+	if modules := lookup(environment, "GOMODCACHE"); modules != "" {
+		candidates = append(candidates, [2]string{"GOMODCACHE", modules})
+	}
+	for _, candidate := range candidates {
+		for _, root := range roots {
+			if candidate[1] != "" && liesUnder(candidate[1], root) {
+				return Refusal{fmt.Sprintf("%s=%s lies under the evidence root %s, and a cache never lives under an evidence root; the engine cache is %s (GOCACHE=%s, STATICCHECK_CACHE=%s): unset %s or set it outside every evidence root",
+					candidate[0], candidate[1], root, engine.GoCache, engine.GoCache, engine.StaticcheckCache, candidate[0])}
+			}
+		}
+	}
+	return nil
+}
+
+// liesUnder reports path at or below root: by its cleaned spelling, or by
+// file identity of root and a physical ancestor of path when both exist.
+func liesUnder(path, root string) bool {
+	cleanPath, cleanRoot := filepath.Clean(path), filepath.Clean(root)
+	if cleanPath == cleanRoot || strings.HasPrefix(cleanPath, cleanRoot+string(filepath.Separator)) {
+		return true
+	}
+	rootInfo, err := os.Stat(cleanRoot)
+	if err != nil {
+		return false
+	}
+	current := cleanPath
+	if resolved, err := filepath.EvalSymlinks(current); err == nil {
+		current = resolved
+	}
+	for {
+		if info, err := os.Stat(current); err == nil && os.SameFile(info, rootInfo) {
+			return true
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return false
+		}
+		current = parent
+	}
+}
+
+func resolveDomain(environment []string, installationRoot string, evidence Evidence) (Resolution, error) {
 	if evidence.UserCacheDir == nil || evidence.DelegateCustody == nil || evidence.JobWorktree == nil ||
-		evidence.ProofRecord == nil || evidence.LiveAncestor == nil || evidence.Self == nil {
+		evidence.ProofRecord == nil || evidence.LiveAncestor == nil || evidence.Self == nil || evidence.EvidenceRoots == nil {
 		return Resolution{}, errors.New("cache domain: incomplete evidence")
 	}
 	self, err := evidence.Self()

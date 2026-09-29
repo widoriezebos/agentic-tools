@@ -43,6 +43,10 @@ type Report struct {
 	Evidence []EvidenceSegment `json:"evidence,omitempty"`
 	// EvidenceRoots names every evidence root of the host with its owner.
 	EvidenceRoots []string `json:"evidenceRoots,omitempty"`
+	// Misplaced are caches and source copies found under an evidence
+	// root (3.12 placement rules): never evidence, never removed by
+	// machinery, each named with the removal a person runs.
+	Misplaced []Line `json:"misplaced,omitempty"`
 
 	Notes       []string `json:"notes,omitempty"`
 	HostUnknown []string `json:"hostUnknown,omitempty"`
@@ -124,6 +128,14 @@ func healthOf(report Report) Health {
 			}
 		}
 		return Health{Status: HealthAttention, Reason: "free space is below the floor" + free, Remedy: "metasystem disk clean --preview"}
+	}
+	if len(report.Misplaced) > 0 {
+		first := report.Misplaced[0]
+		reason := first.Class + ": " + first.Path
+		if len(report.Misplaced) > 1 {
+			reason += fmt.Sprintf(" and %d more", len(report.Misplaced)-1)
+		}
+		return Health{Status: HealthAttention, Reason: reason, Remedy: "metasystem disk show"}
 	}
 	return Health{Status: HealthOK, Reason: "free space is above the floor"}
 }
@@ -212,6 +224,15 @@ func (r Report) render(verbose bool) []string {
 	}
 	for _, segment := range r.Evidence {
 		lines = append(lines, segment.Lines(verbose)...)
+	}
+	for _, kind := range []string{PlacementCache, PlacementSourceCopy} {
+		var misplaced []Line
+		for _, line := range r.Misplaced {
+			if line.Class == kind {
+				misplaced = append(misplaced, line)
+			}
+		}
+		lines = append(lines, groupedLines(kind, misplaced, verbose)...)
 	}
 	for _, item := range r.Foreign {
 		lines = append(lines, fmt.Sprintf("  not the engine's: %s (%s)", item.Path, item.Verdict.Reason))

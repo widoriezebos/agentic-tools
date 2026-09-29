@@ -8,6 +8,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/placement"
 )
 
 // BoundClass is the evidence bound as one class of the machine pass (Round
@@ -40,6 +41,7 @@ type BoundClass struct {
 	lines     []string
 	notes     []string
 	hostBytes int64
+	misplaced []diskstore.Line
 }
 
 // Name names the class.
@@ -56,11 +58,17 @@ const (
 func (c *BoundClass) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstore.Item, error) {
 	registry, _ := ReadRootsRegistry(RootsRegistryPath(c.HomeStateRoot))
 	roots := DiscoverRoots(c.UserHome, c.Checkouts, registry)
-	c.positions, c.lines, c.notes, c.hostBytes = nil, nil, nil, 0
+	c.positions, c.lines, c.notes, c.hostBytes, c.misplaced = nil, nil, nil, 0, nil
 	for _, root := range roots {
 		bytes, _, _ := diskstore.Measure(ctx, root.Path)
 		c.hostBytes += bytes
 		c.lines = append(c.lines, rootLine(root, bytes))
+		for _, path := range root.NotManaged {
+			if misplaced := placement.Of(path); misplaced.Kind != "" {
+				treeBytes, _, _ := diskstore.Measure(ctx, path)
+				c.misplaced = append(c.misplaced, diskstore.MisplacedLine(path, misplaced, treeBytes))
+			}
+		}
 		for _, segment := range root.Segments {
 			read := c.SegmentSettings
 			if read == nil {
@@ -151,6 +159,7 @@ func (c *BoundClass) Finish(pass *diskstore.Pass, report *diskstore.Report) {
 			formatGiB(c.hostBytes), config.DiskEvidenceMachineCapKey, formatGiB(c.MachineCap), formatGiB(c.hostBytes-c.MachineCap)))
 	}
 	report.EvidenceRoots = append(report.EvidenceRoots, c.lines...)
+	report.Misplaced = append(report.Misplaced, c.misplaced...)
 	report.Notes = append(report.Notes, c.notes...)
 }
 
