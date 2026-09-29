@@ -238,6 +238,8 @@ var coreSettings = []Setting{
 		Meaning: "seconds between the bridge's reads of the host board where no kernel file watch can be established"},
 	{Key: BoardMailboxKeepDaysKey, Default: "7",
 		Meaning: "days a closed peer-message thread whose every message was offered stays in its mailbox after it closed; an unoffered message is never swept"},
+	{Key: BoardHandoverLockWaitSecKey, Default: "30",
+		Meaning: "seconds a goal handover waits for the peer-message offers holding its goal's claim lock before it is refused naming them; an offer holds it for one emission"},
 	{Key: IntentReviewToolCallsKey, Default: "48", ProofInput: true,
 		Meaning: "the independent read's tool calls for a public build whose brief names none"},
 

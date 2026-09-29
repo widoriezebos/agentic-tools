@@ -1,6 +1,8 @@
 package goal
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -399,4 +401,36 @@ func TestHandoverHoldsTheClaimLockAgainstAPeerOffer(t *testing.T) {
 		t.Fatalf("after the handover the claim lock is still held: %+v %v", inbox, err)
 	}
 	inbox.Release()
+}
+
+// TestHandoverWaitsTheConfiguredClaimLockWait (R26's N-2): the handover's
+// wait for an offer holding the goal's claim lock is the installation's
+// board.handover-lock-wait-sec, compiled 30; a checkout that sets 1 is
+// refused after one second, naming the offer and that wait.
+func TestHandoverWaitsTheConfiguredClaimLockWait(t *testing.T) {
+	t.Parallel()
+	const id = "handover-lock-wait"
+	endpoint, req := handoverBed(t, id, false)
+	if err := os.WriteFile(filepath.Join(endpoint.Root, "metasystem.conf"), []byte("board.handover-lock-wait-sec=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	home, err := board.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := board.Publish(home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1a"}, To: board.Address{Goal: id}, Text: "who reviews?"}, req.Now); err != nil {
+		t.Fatal(err)
+	}
+	offer, err := board.Pending(home, "mac-studio", func() (board.Ownership, error) {
+		return board.Ownership{Live: map[string]string{id: "mac-studio"}}, nil
+	}, req.Now)
+	if err != nil || len(offer.Messages) != 1 {
+		t.Fatalf("the offer holding the claim lock: %+v %v", offer, err)
+	}
+	defer offer.Release()
+	req.Ulid, req.Now = "01J5X00000000000000000HW01", req.Now.Add(time.Minute)
+	_, err = Handover(req, id, "landing", "landing-lineage", 11, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil })
+	if err == nil || !strings.Contains(err.Error(), "longer than 1s") {
+		t.Fatalf("handover under a held claim lock = %v; want the refusal after the configured 1s", err)
+	}
 }

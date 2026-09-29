@@ -47,7 +47,7 @@ type Prose struct {
 type Defect struct{ Code, Why string }
 
 var Rows = []Row{
-	{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Owner: "cmd/metasystem", Site: "test.go#errTestingWorkerPolicyUnsupported", Shape: Question, H1: StandingInput},
+	{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Owner: "internal/testrun", Site: "worker.go#ErrWorkerPolicyUnsupported", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go#Manager.Supervise", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_SETTING_INVALID", Owner: "internal/launch", Site: "settings.go#resolveSettings", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_BRIEF_OVERSIZE", Owner: "internal/launch", Site: "admit.go#Manager.admit", Shape: Question, H1: StandingInput},
@@ -134,8 +134,8 @@ var Rows = []Row{
 	{Code: "BATCH_OWNER_IDENTITY_UNKNOWN", Owner: "cmd/metasystem", Site: "landing_batch_owner.go#acquireBatchOwnerWithRetention", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_OWNER_INDETERMINATE", Owner: "cmd/metasystem", Site: "landing_batch_owner.go#ensureBatchOwner", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_OWNER_OWNED_ELSEWHERE", Owner: "cmd/metasystem", Site: "landing_batch_owner.go#acquireBatchOwnerWithRetention", Shape: Question, H1: StandingAgent},
-	{Code: "CADENCE_FETCH_REFUSED", Owner: "cmd/metasystem", Site: "gate_cadence.go#runProductionCadenceTick", Shape: Question, H1: StandingAgent},
-	{Code: "CADENCE_LEDGER_UNREADABLE", Owner: "cmd/metasystem", Site: "gate_cadence.go#runProductionCadenceTick", Shape: Question, H1: StandingAgent},
+	{Code: "CADENCE_FETCH_REFUSED", Owner: "internal/cadence", Site: "tick.go#RunTick", Shape: Question, H1: StandingAgent},
+	{Code: "CADENCE_LEDGER_UNREADABLE", Owner: "internal/cadence", Site: "tick.go#RunTick", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_PROOF_INPUT_MOVED", Owner: "internal/landing/batch", Site: "prove.go#RecordSources", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_PROOF_NOT_ADMITTED", Owner: "internal/landing/batch", Site: "prove.go#RefuseProofAdmission", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_PROOF_STATE_REFUSED", Owner: "internal/landing/batch", Site: "prove.go#RequireProofPlan", Shape: Question, H1: StandingAgent},
@@ -294,7 +294,7 @@ var Rows = []Row{
 	{Code: "RETRY_PRIOR_OUTSIDE_TREE", Owner: "internal/proofrun", Site: "attempt.go#readRetryDecision", Shape: Question, H1: StandingInput},
 	{Code: "ADMISSION_OVERLAP_UNKNOWN", Owner: "internal/proofrun", Site: "admission.go#AdmissionCap.RefusalReason", Shape: Question, H1: StandingInput},
 	{Code: "ADMISSION_NESTING_UNKNOWN", Owner: "internal/proofrun", Site: "admission.go#AdmissionCap.RefusalReason", Shape: Question, H1: StandingInput},
-	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "cmd/metasystem", Site: "test.go#protectCoverageRatchets", Shape: Question, H1: StandingGuide, Forward: "test run"},
+	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "internal/testrun", Site: "prepare.go#protectCoverageRatchets", Shape: Question, H1: StandingGuide, Forward: "test run"},
 	{Code: "TESTING_MERGE_CONFLICT", Owner: "internal/testpolicy/contractmerge", Site: "merge.go#conflict", Shape: Question, H1: StandingInput},
 	{Code: "TESTING_CONTRACT_INVALID", Owner: "internal/testpolicy/contractmerge", Site: "merge.go#invalid", Shape: Question, H1: StandingInput},
 	{Code: "TESTING_ADD_TESTS_REFUSED", Owner: "internal/testpolicy/contractmerge", Site: "addtests.go#addTestsRefusal", Shape: Question, H1: StandingInput},

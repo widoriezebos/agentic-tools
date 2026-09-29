@@ -13,10 +13,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // The launcher's own filter must deliver the caller's Go env selection to
-// scratch preparation: testingEnvironment -> testingRunRequest -> Prepare.
+// scratch preparation: testrun.Environment -> testrun.RunRequest -> Prepare.
 func TestTestingEnvironmentCarriesGoConfigIntoScratchPreparation(t *testing.T) {
 	t.Parallel()
 	host := t.TempDir()
@@ -53,11 +54,11 @@ func TestTestingEnvironmentCarriesGoConfigIntoScratchPreparation(t *testing.T) {
 		if test.goEnv != "" {
 			hostEnv = append(hostEnv, test.goEnv)
 		}
-		prepared := testingPreparation{EffectiveContract: contract, Plan: plan, Environment: testingEnvironment(hostEnv)}
+		prepared := testrun.Preparation{EffectiveContract: contract, Plan: plan, Environment: testrun.Environment(hostEnv)}
 		if slices.ContainsFunc(prepared.Environment, func(entry string) bool { return strings.HasPrefix(entry, "UNRELATED_SECRET=") }) {
 			t.Fatal("filter passed an unrelated host variable")
 		}
-		request := testingRunRequest(prepared, "attempt", t.TempDir(), "", "", "")
+		request := testrun.RunRequest(prepared, "attempt", t.TempDir(), "", "", "")
 		control := t.TempDir()
 		// Cleanup proves the scratch writers gone by taking the writer lock
 		// through a fresh description. A parallel test's fork/exec copies the

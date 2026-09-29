@@ -1,4 +1,4 @@
-package main
+package cadence
 
 import (
 	"context"
@@ -11,36 +11,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestCadencePreparationDoesNotRequireClaimedGoal(t *testing.T) {
+	t.Parallel()
 	request := cadencePreparationRequest("landing", "tree")
 	if request.Root != "landing" || request.Tree != "tree" || request.GoalID != "" || request.Purpose != testpolicy.PurposeCadence ||
 		request.Mode != testpolicy.ModeDeep || !request.CadencePreflight {
 		t.Fatalf("cadence preparation request=%+v", request)
 	}
-	accounts, err := testingPreparationAccountsToGoal(request)
-	if err != nil || accounts {
-		t.Fatalf("cadence preflight accounts-to-goal=%t err=%v", accounts, err)
-	}
 }
 
 func TestCadenceRunStoreRereadsLandingOwnerEpoch(t *testing.T) {
-	originalRequire := batchOwnerRequire
-	t.Cleanup(func() { batchOwnerRequire = originalRequire })
+	t.Parallel()
 	live := true
-	batchOwnerRequire = func(batchOwnerLease) error {
+	owner := Owner{Epoch: 9, Require: func() error {
 		if live {
 			return nil
 		}
 		return errors.New("owner lease moved")
-	}
-	store := cadenceRunStore("landing-root", batchOwnerLease{epoch: 9}, func() time.Time { return time.Unix(1, 0) })
+	}}
+	store := cadenceRunStore("landing-root", owner, func() time.Time { return time.Unix(1, 0) })
 	if epoch, ok := store.CurrentEpoch(); !ok || epoch == nil || *epoch != 9 {
 		t.Fatalf("live epoch=%v ok=%t", epoch, ok)
 	}
@@ -58,23 +56,25 @@ func TestCadenceRevalidationDefersMissingEngineBuildUntilClaimedRun(t *testing.T
 	cadenceBuildIdentity = func(context.Context, gittree.Workspace, string, string, []string) (string, error) {
 		return "build-identity", nil
 	}
-	cadenceRetainedEngineDigest = func(testingPreparation, []proofrun.Attempt, string, bool) (string, error) {
+	cadenceRetainedEngineDigest = func(testrun.Preparation, []proofrun.Attempt, string, bool) (string, error) {
 		return "", errors.New("no retained engine")
 	}
-	identity, digest, exact, err := cadenceCandidateEngineIdentity(testingPreparation{ProjectRoot: "root"}, gaterun.CadenceTrunk{Tree: strings.Repeat("a", 40)}, nil)
-	if err != nil || identity != "build-identity" || exact || digest != bytesSHA256([]byte("cadence-missing-engine-evidence\x00build-identity")) {
-		t.Fatalf("identity=%q digest=%q exact=%t err=%v", identity, digest, exact, err)
+	identity, marker, exact, err := cadenceCandidateEngineIdentityWith(testrun.Preparation{ProjectRoot: "root"}, gaterun.CadenceTrunk{Tree: strings.Repeat("a", 40)}, nil, productionCadenceRevalidationDependencies(Owner{}))
+	if err != nil || identity != "build-identity" || exact || marker != digest.SHA256([]byte("cadence-missing-engine-evidence\x00build-identity")) {
+		t.Fatalf("identity=%q digest=%q exact=%t err=%v", identity, marker, exact, err)
 	}
 }
 
 func TestCadenceRevalidationDoesNotBuildBeforeClaim(t *testing.T) {
-	data, err := os.ReadFile("gate_cadence.go")
+	t.Parallel()
+	data, err := os.ReadFile("tick.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := strings.Index(string(data), "func revalidateCadence(")
+	start := strings.Index(string(data), "func revalidateCadenceWith(")
 	end := strings.Index(string(data), "func cadencePreparationRequest(")
-	if start < 0 || end <= start || strings.Contains(string(data[start:end]), "buildCandidateEngine(") {
+	if start < 0 || end <= start || strings.Contains(string(data[start:end]), "candidateengine.Build(") ||
+		strings.Contains(string(data[start:end]), "candidateengine.Prepare(") {
 		t.Fatal("cadence pre-claim revalidation invokes the candidate-engine build")
 	}
 }
@@ -169,15 +169,21 @@ func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *tes
 		Stages: []testpolicy.Stage{{ID: "deep", Groups: []string{group.ID}}}}
 	digest := strings.Repeat("a", 64)
 	buildIdentity, engineDigest := strings.Repeat("b", 40), strings.Repeat("c", 64)
-	prepared := testingPreparation{Installation: root, ControlRoot: root, ProjectRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
+	prepared := testrun.Preparation{Installation: root, ControlRoot: root, ProjectRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 		BaseCommit: "HEAD", PolicyBaseCommit: "HEAD", CandidateTree: tree, EffectiveContract: contract, Plan: plan,
 		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest, JudgeKey: "cadence-worker-policy",
 		Environment: os.Environ()}
+	workerPolicy := func(confPath string) (testrun.WorkerPolicy, error) {
+		if confPath != filepath.Join(root, "metasystem.conf") {
+			return testrun.WorkerPolicy{}, errors.New("unexpected cadence configuration")
+		}
+		return testrun.WorkerPolicy{Workers: wantWorkers, AdmissionMaximum: 2}, nil
+	}
 	resolved := prepared
-	if _, err := resolveTestingPreparationWorkerPolicy(&resolved); err != nil || resolved.Workers != wantWorkers || resolved.AdmissionMaximum != 2 {
+	if _, err := testrun.ApplyWorkerPolicy(&resolved, workerPolicy); err != nil || resolved.Workers != wantWorkers || resolved.AdmissionMaximum != 2 {
 		t.Fatalf("resolved cadence policy workers=%d admission=%d err=%v", resolved.Workers, resolved.AdmissionMaximum, err)
 	}
-	request := testingRunRequest(resolved, "cadence-retained", "", "", engineDigest, buildIdentity)
+	request := testrun.RunRequest(resolved, "cadence-retained", "", "", engineDigest, buildIdentity)
 	request.WithCandidateOpener(openCandidate)
 	identities, metadata, launches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), request)
 	if err != nil || launches != 0 {
@@ -203,21 +209,22 @@ func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *tes
 	repreparations := 0
 	dependencies := cadenceRevalidationDependencies{
 		openCandidate: openCandidate,
+		workerPolicy:  workerPolicy,
 		readAttempts:  func(string) ([]proofrun.Attempt, error) { return []proofrun.Attempt{attempt}, nil },
 		buildIdentity: func(context.Context, gittree.Workspace, string, string, []string) (string, error) {
 			return buildIdentity, nil
 		},
-		retainedDigest: func(testingPreparation, []proofrun.Attempt, string, bool) (string, error) { return engineDigest, nil },
-		prepare: func(request testingSelectionRequest) (testingPreparation, error) {
+		retainedDigest: func(testrun.Preparation, []proofrun.Attempt, string, bool) (string, error) { return engineDigest, nil },
+		prepare: func(request testrun.SelectionRequest) (testrun.Preparation, error) {
 			repreparations++
 			if request.Tree != tree || request.Purpose != testpolicy.PurposeCadence || !request.CadencePreflight {
-				return testingPreparation{}, errors.New("unexpected cadence re-preparation request")
+				return testrun.Preparation{}, errors.New("unexpected cadence re-preparation request")
 			}
 			return prepared, nil
 		},
 	}
 
-	assertReused := func(name string, input testingPreparation, wantRepreparations int) {
+	assertReused := func(name string, input testrun.Preparation, wantRepreparations int) {
 		t.Helper()
 		revalidation, err := revalidateCadenceWith(root, input, gaterun.CadenceTrunk{Commit: "HEAD", Tree: tree}, []string{group.ID}, dependencies)
 		if err != nil || len(revalidation.Groups) != 1 || revalidation.Groups[0].Status != "reused" ||
@@ -240,4 +247,29 @@ func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *tes
 	changed := prepared
 	changed.CandidateTree = strings.Repeat("d", 40)
 	assertReused("changed-tree", changed, 1)
+}
+
+// TestTickRefusesBeforeRunningByCode: a trunk that cannot be fetched is the
+// fetch refusal, and a trunk fetched where no goal ledger resolves is the
+// unreadable-ledger refusal; neither prepares, claims or runs anything.
+func TestTickRefusesBeforeRunningByCode(t *testing.T) {
+	t.Parallel()
+	prepared := 0
+	owner := Owner{Lineage: "landing-test", Require: func() error { return nil },
+		FetchOrigin:     func(string) (string, string, error) { return "", "", errors.New("origin unreachable") },
+		WeightThreshold: func(string) int64 { return 1 },
+		Prepare: func(testrun.SelectionRequest) (testrun.Preparation, error) {
+			prepared++
+			return testrun.Preparation{}, nil
+		}}
+	var refusal Refusal
+	if _, err := RunTick(t.TempDir(), owner, time.Now); !errors.As(err, &refusal) || refusal.Code != FetchRefused ||
+		err.Error() != FetchRefused+": origin unreachable" {
+		t.Fatalf("unfetchable trunk = %v, want the fetch refusal", err)
+	}
+	owner.FetchOrigin = func(string) (string, string, error) { return strings.Repeat("a", 40), strings.Repeat("b", 40), nil }
+	output, err := RunTick(t.TempDir(), owner, time.Now)
+	if !errors.As(err, &refusal) || refusal.Code != cadenceLedgerUnreadable || output.Trunk.Tree != "" || prepared != 0 {
+		t.Fatalf("ledgerless trunk = %+v, %v (prepared %d), want the unreadable-ledger refusal before preparation", output, err, prepared)
+	}
 }

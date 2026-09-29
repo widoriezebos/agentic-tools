@@ -63,3 +63,17 @@ func TestWithinComparesWholeSegments(t *testing.T) {
 		}
 	}
 }
+
+// TestCanonicalRefusesWhatDoesNotExist: an existing path through a link is
+// its absolute, symlink-free form; a missing one is the resolution error,
+// never a lexical guess.
+func TestCanonicalRefusesWhatDoesNotExist(t *testing.T) {
+	t.Parallel()
+	root, outside := linkedBed(t)
+	if got, err := Canonical(filepath.Join(root, "out")); err != nil || got != outside {
+		t.Fatalf("Canonical of an existing link = %s, %v; want %s", got, err, outside)
+	}
+	if got, err := Canonical(filepath.Join(root, "out", "not-yet")); err == nil {
+		t.Fatalf("Canonical of a missing path = %s, want its error", got)
+	}
+}

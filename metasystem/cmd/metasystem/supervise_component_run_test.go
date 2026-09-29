@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cadence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -418,7 +419,7 @@ func TestLandingOwnerComponentReleaseJoinsCadenceTick(t *testing.T) {
 		close(started)
 		<-finish
 		close(tickDone)
-		return cadenceRefusal{code: cadenceFetchRefused, detail: "injected fetch refusal"}
+		return cadence.Refusal{Code: cadence.FetchRefused, Detail: "injected fetch refusal"}
 	}
 	var releaseReturned atomic.Bool
 	type cadenceReport struct {

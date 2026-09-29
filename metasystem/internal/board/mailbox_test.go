@@ -466,7 +466,7 @@ func TestGoalMessagesFollowTheLedgerClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	held.Release()
-	if release, err := LockGoalHandover(lockHome, "goal-h"); err != nil {
+	if release, err := LockGoalHandover(lockHome, "goal-h", 30*time.Second); err != nil {
 		t.Fatal(err)
 	} else {
 		release()
@@ -474,7 +474,7 @@ func TestGoalMessagesFollowTheLedgerClaim(t *testing.T) {
 	// While a handover holds the lock the source offers nothing.
 	source := fixtureHome(t)
 	mustPublish(t, source, askGoal("goal-w", "mid-handover"), t0)
-	release, err := LockGoalHandover(source, "goal-w")
+	release, err := LockGoalHandover(source, "goal-w", 30*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -689,14 +689,13 @@ func TestConcludedGoalClosesItsUnofferedMessages(t *testing.T) {
 }
 
 // TestHandoverLockWaitIsBounded (R26; the read's N-2): a handover waits for
-// an offer holding the goal's claim lock only up to its bound (30 s
-// compiled) and then refuses with a plain message naming the offer's pid;
-// once the offer released, the handover takes the lock.
+// an offer holding the goal's claim lock only up to the bound it is given
+// (board.handover-lock-wait-sec, compiled 30 s) and then refuses with a
+// plain message naming the offer's pid; once the offer released, the
+// handover takes the lock.
 func TestHandoverLockWaitIsBounded(t *testing.T) {
 	t.Parallel()
-	if HandoverLockWait != 30*time.Second {
-		t.Fatalf("HandoverLockWait = %v, want the compiled 30s", HandoverLockWait)
-	}
+	const wait = 30 * time.Second
 	home := fixtureHome(t)
 	mustPublish(t, home, askGoal("goal-b", "q"), t0)
 	_, held := pendingIDs(t, home, "m1b", claimsOf("goal-b", "m1b"), t0)
@@ -704,19 +703,19 @@ func TestHandoverLockWaitIsBounded(t *testing.T) {
 	now := func() time.Time { return clock }
 	sleeps := 0
 	sleep := func(d time.Duration) { sleeps++; clock = clock.Add(d) }
-	release, err := lockGoalHandover(home, "goal-b", HandoverLockWait, now, sleep)
+	release, err := lockGoalHandover(home, "goal-b", wait, now, sleep)
 	if err == nil {
 		release()
 		t.Fatal("the handover took the claim lock an offer holds")
 	}
-	if !strings.Contains(err.Error(), fmt.Sprintf("pid %d", os.Getpid())) || !strings.Contains(err.Error(), "30s") || sleeps == 0 || clock.Sub(t0) < HandoverLockWait {
+	if !strings.Contains(err.Error(), fmt.Sprintf("pid %d", os.Getpid())) || !strings.Contains(err.Error(), "30s") || sleeps == 0 || clock.Sub(t0) < wait {
 		t.Fatalf("refusal %q after %d sleeps and %v", err, sleeps, clock.Sub(t0))
 	}
 	held.Release()
 	if left := holders(home, "goal-b"); len(left) != 0 {
 		t.Fatalf("a released offer still names itself a holder: %v", left)
 	}
-	release, err = lockGoalHandover(home, "goal-b", HandoverLockWait, now, sleep)
+	release, err = lockGoalHandover(home, "goal-b", wait, now, sleep)
 	if err != nil {
 		t.Fatalf("after the offer released: %v", err)
 	}

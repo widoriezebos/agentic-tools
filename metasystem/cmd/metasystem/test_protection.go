@@ -14,9 +14,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
-const policyProbeWorkerEnvironment = "METASYSTEM_POLICY_PROBE_WORKER"
+const policyProbeWorkerEnvironment = testrun.PolicyProbeWorkerEnvironment
 
 // runFrozenPolicyProtectionCorpus is called by the authenticated test worker.
 // On ordinary landings that worker is the retained destination engine, so the
@@ -113,7 +114,7 @@ func runFrozenSelectionProbe(ctx context.Context, request proofrun.TestRunReques
 	if _, err := runPolicyProbeGit(ctx, projectRoot, "config", "--local", "metasystem.steward.landing-ref", isolatedPolicyRef); err != nil {
 		return err
 	}
-	actualPolicyBase, err := trustedTestingPolicyBase(projectRoot, gittree.Workspace{Dir: projectRoot})
+	actualPolicyBase, err := testrun.TrustedPolicyBase(projectRoot, gittree.Workspace{Dir: projectRoot})
 	if err != nil {
 		return fmt.Errorf("read protected probe destination without changing caller refs or configuration: %w", err)
 	}
@@ -124,7 +125,7 @@ func runFrozenSelectionProbe(ctx context.Context, request proofrun.TestRunReques
 	if request.InstallationPrefix != "" {
 		installation = filepath.Join(projectRoot, filepath.FromSlash(request.InstallationPrefix))
 	}
-	_, base, contractPath, err := loadPhysicalTestingContract(installation)
+	_, base, contractPath, err := testrun.LoadContract(installation)
 	if err != nil {
 		return err
 	}
@@ -177,7 +178,7 @@ func runFrozenSelectionProbe(ctx context.Context, request proofrun.TestRunReques
 	if probe.ID == "lower-coverage-floor" {
 		ratchetPath := filepath.Join(installation, testpolicy.CoverageFloorsFile("darwin"))
 		data, readErr := os.ReadFile(ratchetPath)
-		var baseline protectedCoverageBaseline
+		var baseline testrun.CoverageBaseline
 		if readErr != nil || json.Unmarshal(data, &baseline) != nil || len(baseline.Floors) == 0 {
 			return fmt.Errorf("read frozen coverage baseline: %v", readErr)
 		}
@@ -232,7 +233,7 @@ func runFrozenSelectionProbe(ctx context.Context, request proofrun.TestRunReques
 	}
 	command := exec.CommandContext(ctx, request.CandidateEngine, "test", "plan", "--root", installation, "--tree", candidateTree,
 		"--mode", "auto", "--purpose", "diagnostic", "--json")
-	command.Env = append(inheritedTestingEnvironment(request.Environment, os.Environ()), policyProbeWorkerEnvironment+"=1")
+	command.Env = append(testrun.InheritedEnvironment(request.Environment, os.Environ()), policyProbeWorkerEnvironment+"=1")
 	data, commandErr := command.CombinedOutput()
 	status := processExitStatus(commandErr)
 	if status != probe.ExpectedStatus {
@@ -244,7 +245,7 @@ func runFrozenSelectionProbe(ctx context.Context, request proofrun.TestRunReques
 		}
 		return nil
 	}
-	var output testingPlanOutput
+	var output testrun.PlanOutput
 	if err := json.Unmarshal(data, &output); err != nil {
 		return fmt.Errorf("decode plan: %w: %s", err, data)
 	}
@@ -372,7 +373,7 @@ func runFrozenWorkerProbe(ctx context.Context, outer proofrun.TestRunRequest, pr
 		return err
 	}
 	command := exec.CommandContext(ctx, outer.CandidateEngine, "test", "worker", "--packet", packet, "--packet-sha256", packetDigest, "--result", resultPath)
-	command.Env = append(inheritedTestingEnvironment(outer.Environment, os.Environ()), policyProbeWorkerEnvironment+"=1")
+	command.Env = append(testrun.InheritedEnvironment(outer.Environment, os.Environ()), policyProbeWorkerEnvironment+"=1")
 	data, commandErr := command.CombinedOutput()
 	status := processExitStatus(commandErr)
 	if status != probe.ExpectedStatus {

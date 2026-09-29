@@ -1372,7 +1372,11 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 	// peer message offered by the source either finished its emission first
 	// or reads the moved claim and offers nothing (batch-lane D14D-01).
 	if home, err := board.Home(); err == nil {
-		release, err := board.LockGoalHandover(home, id)
+		wait, err := config.ResolveHandoverLockWait(filepath.Join(r.Endpoint.Root, "metasystem.conf"))
+		if err != nil {
+			return PublishResult{}, err
+		}
+		release, err := board.LockGoalHandover(home, id, wait)
 		if err != nil {
 			return PublishResult{}, err
 		}

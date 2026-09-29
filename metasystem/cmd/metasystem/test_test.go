@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -29,18 +30,18 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestTestPlanReArmsOnALandedEngine(t *testing.T) {
 	previous := prepareTestingForCommand
 	defer func() { prepareTestingForCommand = previous }()
 	called, rearm := 0, false
-	prepareTestingForCommand = func(request testingSelectionRequest) (testingPreparation, error) {
+	prepareTestingForCommand = func(request testrun.SelectionRequest) (testrun.Preparation, error) {
 		called++
 		rearm = request.LandedRearm
-		return testingPreparation{}, errors.New("stop after observing preparation")
+		return testrun.Preparation{}, errors.New("stop after observing preparation")
 	}
 	status, _, _ := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestPlan([]string{"--root", t.TempDir(), "--purpose", "diagnostic"}, stdout, stderr)
@@ -54,10 +55,10 @@ func TestTestRunRearmsOnALandedEngine(t *testing.T) {
 	previous := prepareTestingForCommand
 	defer func() { prepareTestingForCommand = previous }()
 	called, rearm := 0, false
-	prepareTestingForCommand = func(request testingSelectionRequest) (testingPreparation, error) {
+	prepareTestingForCommand = func(request testrun.SelectionRequest) (testrun.Preparation, error) {
 		called++
 		rearm = request.LandedRearm
-		return testingPreparation{}, errors.New("stop after observing preparation")
+		return testrun.Preparation{}, errors.New("stop after observing preparation")
 	}
 	status, _, _ := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestRun([]string{"--root", t.TempDir(), "--purpose", "diagnostic"}, stdout, stderr)
@@ -82,7 +83,7 @@ func TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback(t *te
 		done := make(chan struct{})
 		owner := testingCommandAdmission{
 			now: func() time.Time { return <-clockSamples },
-			admitRun: func(_ testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+			admitRun: func(_ testrun.SelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
 				observed <- admission
 				return proofrun.Attempt{}, proofrun.LaunchResult{Disposition: proofrun.DispositionReusableSuccess}, false, nil
 			},
@@ -95,7 +96,7 @@ func TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback(t *te
 			defer close(done)
 			close(preparationStarted)
 			<-preparationReleased
-			_, _, _, _ = owner.initial(testingSelectionRequest{}, proofLaunchAdmission{Now: semanticCommandStarted})
+			_, _, _, _ = owner.initial(testrun.SelectionRequest{}, proofLaunchAdmission{Now: semanticCommandStarted})
 			<-fallbackReleased
 			_, _, _, _ = owner.forced(proofLaunchAdmission{Now: semanticCommandStarted})
 		}()
@@ -120,7 +121,7 @@ func TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback(t *te
 		observed := make(chan proofLaunchAdmission, 2)
 		owner := testingCommandAdmission{
 			now: func() time.Time { return semanticCommandStarted },
-			admitRun: func(_ testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+			admitRun: func(_ testrun.SelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
 				observed <- admission
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, nil
 			},
@@ -129,7 +130,7 @@ func TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback(t *te
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, nil
 			},
 		}
-		_, _, _, _ = owner.initial(testingSelectionRequest{}, proofLaunchAdmission{})
+		_, _, _, _ = owner.initial(testrun.SelectionRequest{}, proofLaunchAdmission{})
 		_, _, _, _ = owner.forced(proofLaunchAdmission{})
 		if initial, fallback := (<-observed).Now, (<-observed).Now; initial != semanticCommandStarted || fallback != semanticCommandStarted {
 			t.Fatalf("fixed fixture admission instants initial=%s fallback=%s, want both %s", initial, fallback, semanticCommandStarted)
@@ -170,10 +171,10 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(plan.SelectedGroups, []string{group.ID}) {
 		t.Fatalf("select retained proof groups: plan=%+v err=%v", plan, err)
 	}
-	prepared := testingPreparation{Installation: fixture.installation, ControlRoot: fixture.root, ProjectRoot: fixture.root,
+	prepared := testrun.Preparation{Installation: fixture.installation, ControlRoot: fixture.root, ProjectRoot: fixture.root,
 		Prefix: "metasystem", ConfPath: filepath.Join(fixture.root, "metasystem.conf"), GoalID: "portable", AccountingRevision: 2,
 		BaseCommit: ordinaryBaseCommit, PolicyBaseCommit: ordinaryBaseCommit, CandidateTree: ordinaryProjectTree,
-		EffectiveContract: contract, Plan: plan, Environment: testingEnvironment(os.Environ()),
+		EffectiveContract: contract, Plan: plan, Environment: testrun.Environment(os.Environ()),
 		ContractDigest: bytesSHA256(contractBytes), BaseContractDigest: bytesSHA256(contractBytes),
 		PolicyEngineDigest: fixture.policyDigest, BehaviorPolicyDigest: strings.Repeat("3", 64)}
 	fixture.queueJudge()
@@ -254,7 +255,7 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 	before := time.Now().UTC().Truncate(time.Second)
 	expires := before.Add(time.Minute)
 	t.Setenv("METASYSTEM_GOAL_NOW", before.Format(time.RFC3339Nano))
-	request := testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: ordinaryProjectTree, Mode: testpolicy.ModeAuto,
+	request := testrun.SelectionRequest{Root: fixture.root, GoalID: "portable", Tree: ordinaryProjectTree, Mode: testpolicy.ModeAuto,
 		Purpose: testpolicy.PurposeDelivery, FreshEpisode: strings.Repeat("1", 64), FreshExpiresAt: expires.Format(time.RFC3339Nano)}
 	if _, err := resolveTestingPreparationWorkerPolicy(&prepared); err != nil {
 		t.Fatal(err)
@@ -265,12 +266,12 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runRequest := testingRunRequest(prepared, "", "", "", strings.Repeat("a", 64), buildIdentity)
+	runRequest := testrun.RunRequest(prepared, "", "", "", strings.Repeat("a", 64), buildIdentity)
 	runRequest.WithCandidateOpener(fixture.openBed)
 	runRequest.FreshnessEpisode, runRequest.FreshnessExpiresAt = request.FreshEpisode, request.FreshExpiresAt
-	runRequest.FreshGroups, _ = testingFreshGroups(prepared, request)
+	runRequest.FreshGroups, _ = testrun.FreshGroups(prepared, request)
 	queueProjection()
-	if err := bindTestingFreshnessProjectionWithWorkspace(&runRequest, prepared.Installation, workspace); err != nil {
+	if err := testrun.BindFreshnessProjectionWithWorkspace(&runRequest, prepared.Installation, workspace); err != nil {
 		t.Fatal(err)
 	}
 	fixture.queueBed(ordinaryProjectTree)
@@ -278,7 +279,7 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runRequest.FreshnessBinding = testingFreshnessBinding(runRequest, identities, request.FreshEpisode)
+	runRequest.FreshnessBinding = testrun.FreshnessBinding(runRequest, identities, request.FreshEpisode)
 	result := proofrun.NewTestResultAt(runRequest, before)
 	zero := 0
 	for _, id := range prepared.Plan.SelectedGroups {
@@ -307,7 +308,7 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	attempt, decision, err := proofrun.ReserveLocked(privateProofAdmissionRequest(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
-		ControlRoot: prepared.proofControlRoot(), ExecutionRoot: prepared.ProjectRoot, CandidateTree: prepared.CandidateTree,
+		ControlRoot: prepared.ProofControlRoot(), ExecutionRoot: prepared.ProjectRoot, CandidateTree: prepared.CandidateTree,
 		GoalID: prepared.GoalID, GoalRevision: prepared.AccountingRevision, AccountingRevision: prepared.AccountingRevision,
 		CandidateGoalID: prepared.GoalID, CandidateRevision: prepared.AccountingRevision, ReservedMinutes: 2,
 		Identity: proofIdentity, Launcher: launcher, Now: before, ComponentIdentities: identities, SharedComponents: true,
@@ -317,16 +318,16 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 	if err != nil || decision.Disposition != proofrun.DispositionExecuted {
 		t.Fatalf("reserve retained proof: decision=%+v err=%v", decision, err)
 	}
-	if _, err := proofrun.FinalizeAttemptWithTestResultLocked(prepared.proofControlRoot(), attempt.AttemptID,
+	if _, err := proofrun.FinalizeAttemptWithTestResultLocked(prepared.ProofControlRoot(), attempt.AttemptID,
 		proofrun.TerminalSuccess, 0, "controlled retained proof", nil, &result, before.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 
-	retained, err := proofrun.ReadAttempts(prepared.proofControlRoot())
+	retained, err := proofrun.ReadAttempts(prepared.ProofControlRoot())
 	if err != nil || len(retained) != 1 || retained[0].TestResult == nil || retained[0].Terminal == nil {
 		t.Fatalf("persisted retained proof: attempts=%+v err=%v", retained, err)
 	}
-	fixedClock, authorized, err := goalCommandClock(prepared.proofControlRoot())
+	fixedClock, authorized, err := goalCommandClock(prepared.ProofControlRoot())
 	if err != nil || !authorized {
 		t.Fatalf("authorized fixed fixture clock: authorized=%t err=%v", authorized, err)
 	}
@@ -336,9 +337,9 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
 	fixture.queueBed(ordinaryProjectTree)
 	queueProjection()
-	fixed, err := verifyRetainedTestingPrepared(request, prepared, retainedTestingVerification{
-		clock: fixedClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
-		workspace: workspace, candidateIO: fixture.dependency(), openCandidate: fixture.openBed,
+	fixed, err := testrun.VerifyPrepared(request, prepared, testrun.Verification{
+		Clock: fixedClock, Revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+		Workspace: workspace, CandidateIO: fixture.dependency().engine(), OpenCandidate: fixture.openBed, WorkerPolicy: testingWorkerPolicy,
 	})
 	if err != nil || !fixed.Delivery.Sufficient {
 		t.Fatalf("authorized fixed fixture clock lost reusable proof: sufficient=%t err=%v groups=%+v", fixed.Delivery.Sufficient, err, fixed.Groups)
@@ -354,13 +355,13 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 		moved := prepared
 		moved.ConfPath = filepath.Join(t.TempDir(), "metasystem.conf")
 		writeTestingFixtureFile(t, moved.ConfPath, []byte(fmt.Sprintf("metasystem.runtimes=fake\ntesting.workers=%d\n", configured)), 0o644)
-		verify := func(request testingSelectionRequest) proofrun.TestResult {
+		verify := func(request testrun.SelectionRequest) proofrun.TestResult {
 			fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
 			fixture.queueBed(ordinaryProjectTree)
 			queueProjection()
-			result, err := verifyRetainedTestingPrepared(request, moved, retainedTestingVerification{
-				clock: fixedClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
-				workspace: workspace, candidateIO: fixture.dependency(), openCandidate: fixture.openBed,
+			result, err := testrun.VerifyPrepared(request, moved, testrun.Verification{
+				Clock: fixedClock, Revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+				Workspace: workspace, CandidateIO: fixture.dependency().engine(), OpenCandidate: fixture.openBed, WorkerPolicy: testingWorkerPolicy,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -408,9 +409,9 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 		fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
 		fixture.queueBed(ordinaryProjectTree)
 		queueProjection()
-		result, err := verifyRetainedTestingPrepared(request, automatic, retainedTestingVerification{
-			clock: fixedClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
-			workspace: workspace, candidateIO: fixture.dependency(), openCandidate: fixture.openBed,
+		result, err := testrun.VerifyPrepared(request, automatic, testrun.Verification{
+			Clock: fixedClock, Revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+			Workspace: workspace, CandidateIO: fixture.dependency().engine(), OpenCandidate: fixture.openBed, WorkerPolicy: testingWorkerPolicy,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -434,19 +435,20 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 			fixture.queueBed(ordinaryProjectTree)
 			queueProjection()
 			revalidated := false
-			result, err := verifyRetainedTestingPrepared(request, prepared, retainedTestingVerification{
-				workspace: workspace, candidateIO: fixture.dependency(), openCandidate: fixture.openBed,
-				clock: func() time.Time {
+			result, err := testrun.VerifyPrepared(request, prepared, testrun.Verification{
+				Workspace: workspace, CandidateIO: fixture.dependency().engine(), OpenCandidate: fixture.openBed,
+				Clock: func() time.Time {
 					if revalidated {
 						return boundary.at
 					}
 					return before
 				},
-				revalidate: func(ctx context.Context, request proofrun.TestRunRequest, attempts []proofrun.Attempt) (map[string]string, error) {
+				Revalidate: func(ctx context.Context, request proofrun.TestRunRequest, attempts []proofrun.Attempt) (map[string]string, error) {
 					identities, err := proofrun.RevalidateRetainedGroupExecutionIdentities(ctx, request, attempts)
 					revalidated = err == nil
 					return identities, err
 				},
+				WorkerPolicy: testingWorkerPolicy,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -529,8 +531,8 @@ func TestTestRunKeepsProofRecordsUnderTheControlRoot(t *testing.T) {
 					if ok {
 						selector, ok = call.Fun.(*ast.SelectorExpr)
 					}
-					if !ok || selector.Sel.Name != "proofControlRoot" || !isIdentifier(selector.X, "prepared") {
-						t.Errorf("controlRoot assignment takes %s instead of prepared.proofControlRoot()", expressionText(right))
+					if !ok || selector.Sel.Name != "ProofControlRoot" || !isIdentifier(selector.X, "prepared") {
+						t.Errorf("controlRoot assignment takes %s instead of prepared.ProofControlRoot()", expressionText(right))
 					}
 				case "pathsRoot":
 					found["pathsRoot filepath.Join"]++
@@ -709,7 +711,7 @@ func testingTerminalControlRootProblems(testSource, proofSource, launcherSource 
 		{"test.go", "runTestWorkerWithCandidateOpener", "proofrun.AuthenticateWorker", "canonicalControl"},
 		{"test.go", "runTestWorkerWithCandidateOpener", "proofrun.ReadAttempt", "canonicalControl"},
 		{"test.go", "testingTerminalCommit", "testingTerminalCommitWithReads", "workerResultPath"},
-		{"test.go", "testingTerminalCommitWithReads", "readTestingWorkerResult", "workerResultPath"},
+		{"test.go", "testingTerminalCommitWithReads", "testrun.ReadWorkerResult", "workerResultPath"},
 		{"test.go", "testingTerminalCommitWithReads", "commitProofTerminalWithReasonAndReads", "completion"},
 		{"proof_run.go", "commitProofTerminalWithReasonAndReads", "proofrun.ReadProcessRecord", "completion.ControlRoot"},
 		{"proof_run.go", "commitProofTerminalWithReasonAndReads", "proofrun.FinalizeAttemptWithTestResultLocked", "completion.ControlRoot"},
@@ -727,21 +729,64 @@ func testingTerminalControlRootProblems(testSource, proofSource, launcherSource 
 	return problems
 }
 
-func TestPolicyChildNeverFetchesOrReArms(t *testing.T) {
+// TestTestingSelectionStartsAFreshPreparationState: every command
+// invocation parses into its own preparation state, never restarted yet, so
+// one resident process's invocations do not share the restart allowance.
+func TestTestingSelectionStartsAFreshPreparationState(t *testing.T) {
+	t.Parallel()
+	parsed, _, code := parseTestingSelection("test run", []string{"--root", t.TempDir()}, true, t.Output(), t.Output())
+	if code != 0 || parsed.Preparation == nil || *parsed.Preparation != (testrun.PreparationState{}) {
+		t.Fatalf("a command invocation does not start with its own fresh preparation state: code=%d state=%+v", code, parsed.Preparation)
+	}
+}
+
+// TestTestPlanJSONKeepsItsFieldNames: test plan --json is a wire other
+// engines and the policy child's parent read, so its field names are read
+// exactly as spelled, case and all, including the unmatched inputs.
+func TestTestPlanJSONKeepsItsFieldNames(t *testing.T) {
 	previous := prepareTestingForCommand
 	defer func() { prepareTestingForCommand = previous }()
-	preparations, rearmCalls := 0, 0
-	prepareTestingForCommand = func(request testingSelectionRequest) (testingPreparation, error) {
-		preparations++
-		if request.LandedRearm {
-			rearmCalls++
-		}
-		return testingPreparation{CandidateTree: "candidate", PolicyBaseCommit: "base"}, nil
+	prepareTestingForCommand = func(testrun.SelectionRequest) (testrun.Preparation, error) {
+		return testrun.Preparation{CandidateTree: "candidate", PolicyBaseCommit: "base",
+			UnmatchedInputs: []testrun.UnmatchedInput{{Group: "app", Pattern: "missing/**"}}}, nil
 	}
 	status, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestPlan([]string{"--root", t.TempDir(), "--purpose", "diagnostic", "--json", "--policy-child"}, stdout, stderr)
 	})
-	var output testingPlanOutput
+	var fields map[string]any
+	if status != 0 || json.Unmarshal([]byte(stdout), &fields) != nil {
+		t.Fatalf("test plan --json: status=%d stdout=%q stderr=%q", status, stdout, stderr)
+	}
+	for _, key := range []string{"schemaVersion", "projectRoot", "installationPrefix", "baseCommit", "policyBaseCommit",
+		"candidateTree", "contractDigest", "baseContractDigest", "plan", "groups", "unmatchedInputs"} {
+		if _, ok := fields[key]; !ok {
+			t.Errorf("test plan --json lost the field %q: %s", key, stdout)
+		}
+	}
+	unmatched, _ := fields["unmatchedInputs"].([]any)
+	if len(unmatched) != 1 {
+		t.Fatalf("unmatchedInputs = %v", fields["unmatchedInputs"])
+	}
+	if entry, _ := unmatched[0].(map[string]any); entry["group"] != "app" || entry["pattern"] != "missing/**" {
+		t.Fatalf("unmatched input entry = %v", unmatched[0])
+	}
+}
+
+func TestPolicyChildNeverFetchesOrReArms(t *testing.T) {
+	previous := prepareTestingForCommand
+	defer func() { prepareTestingForCommand = previous }()
+	preparations, rearmCalls := 0, 0
+	prepareTestingForCommand = func(request testrun.SelectionRequest) (testrun.Preparation, error) {
+		preparations++
+		if request.LandedRearm {
+			rearmCalls++
+		}
+		return testrun.Preparation{CandidateTree: "candidate", PolicyBaseCommit: "base"}, nil
+	}
+	status, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestPlan([]string{"--root", t.TempDir(), "--purpose", "diagnostic", "--json", "--policy-child"}, stdout, stderr)
+	})
+	var output testrun.PlanOutput
 	if status != 0 || preparations != 1 || rearmCalls != 0 || stderr != "" || json.Unmarshal([]byte(stdout), &output) != nil {
 		t.Fatalf("policy child did not stay fetch/re-arm free with JSON-only stdout: status=%d preparations=%d rearms=%d stdout=%q stderr=%q", status, preparations, rearmCalls, stdout, stderr)
 	}
@@ -751,239 +796,12 @@ func TestPolicyChildNeverFetchesOrReArms(t *testing.T) {
 	if err := testexec.WriteFile(engine, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := planWithTrustedPolicyEngine(engine, testingSelectionRequest{Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic}, t.TempDir(), "candidate"); err != nil {
+	if _, err := testrun.PlanWithTrustedPolicyEngine(engine, testrun.SelectionRequest{Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic}, t.TempDir(), "candidate"); err != nil {
 		t.Fatalf("parent did not flag its policy child: %v", err)
 	}
 	verify, _, code := parseTestingSelection("test verify", []string{"--root", t.TempDir()}, false, t.Output(), t.Output())
 	if code != 0 || verify.LandedRearm || verify.PolicyChild {
 		t.Fatalf("test verify changed its re-arm behavior: code=%d request=%+v", code, verify)
-	}
-}
-
-func TestBaseMovedUnderTheRunRestartsPreparationOnce(t *testing.T) {
-	calls, state := 0, &testingPreparationState{}
-	var prepared testingPreparation
-	var prepareErr error
-	status, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
-		prepared, prepareErr = prepareTestingWith(testingSelectionRequest{LandedRearm: true, Preparation: state, notes: stderr}, func(request testingSelectionRequest) (testingPreparation, error) {
-			calls++
-			if !request.LandedRearm {
-				return testingPreparation{}, errors.New("restart skipped landed re-arm entry")
-			}
-			if calls == 1 {
-				return testingPreparation{}, &preparationBaseMove{ours: "old-base", engine: "new-base"}
-			}
-			return testingPreparation{PolicyBaseCommit: "new-base"}, nil
-		})
-		if prepareErr != nil {
-			return 1
-		}
-		return 0
-	})
-	if status != 0 || prepareErr != nil || calls != 2 || prepared.PolicyBaseCommit != "new-base" ||
-		!state.restarted || os.Getenv("METASYSTEM_PREPARATION_RESTARTED") != "" || !strings.Contains(stderr, "restarting preparation once") {
-		t.Fatalf("authenticated move did not restart once from the landed re-arm entry: status=%d calls=%d prepared=%+v err=%v restarted=%t stderr=%q",
-			status, calls, prepared, prepareErr, state.restarted, stderr)
-	}
-}
-
-type policyBaseMoveFixture struct {
-	root    string
-	parents map[string]string
-	refText string
-	commits map[string]string
-	git     *testgit.Stub
-}
-
-func newPolicyBaseMoveFixture(t *testing.T, parents map[string]string, tip string, calls ...[]string) *policyBaseMoveFixture {
-	t.Helper()
-	root := t.TempDir()
-	copyParents := make(map[string]string, len(parents))
-	for commit, parent := range parents {
-		if !policyBaseFixtureSHA(commit) || parent != "" && !policyBaseFixtureSHA(parent) {
-			t.Fatalf("invalid fixture commit or parent: %q %q", commit, parent)
-		}
-		copyParents[commit] = parent
-	}
-	if _, exists := copyParents[tip]; !exists {
-		t.Fatalf("landing tip is absent from fixture ancestry: %q", tip)
-	}
-	expected := make([]testgit.Expectation, 0, len(calls))
-	for _, call := range calls {
-		expected = append(expected, testgit.Expectation{Call: testgit.Call{Dir: root, Args: call}})
-	}
-	return &policyBaseMoveFixture{
-		root: root, parents: copyParents, refText: "refs/remotes/origin/main",
-		commits: map[string]string{"refs/remotes/origin/main": tip}, git: testgit.New(t, expected...),
-	}
-}
-
-func policyBaseFixtureSHA(value string) bool {
-	if len(value) != 40 {
-		return false
-	}
-	for _, digit := range value {
-		if digit < '0' || digit > '9' && digit < 'a' || digit > 'f' {
-			return false
-		}
-	}
-	return true
-}
-
-func (fixture *policyBaseMoveFixture) readers() policyBaseMoveReaders {
-	return policyBaseMoveReaders{
-		isAncestor: func(root, ours, engine string) (bool, error) {
-			if result := fixture.git.Run(testgit.Call{Dir: root, Args: []string{"ancestry", ours, engine}}); result.Err != nil {
-				return false, result.Err
-			}
-			if !policyBaseFixtureSHA(ours) || !policyBaseFixtureSHA(engine) {
-				return false, fmt.Errorf("invalid ancestry commit")
-			}
-			if _, exists := fixture.parents[ours]; !exists {
-				return false, fmt.Errorf("unknown ancestor commit %s", ours)
-			}
-			for commit := engine; commit != ""; commit = fixture.parents[commit] {
-				if _, exists := fixture.parents[commit]; !exists {
-					return false, fmt.Errorf("unknown descendant commit %s", commit)
-				}
-				if commit == ours {
-					return true, nil
-				}
-			}
-			return false, nil
-		},
-		localLandingRef: func(root string) (string, error) {
-			result := fixture.git.Run(testgit.Call{Dir: root, Args: []string{"landing-ref"}})
-			return fixture.refText, result.Err
-		},
-		commitAtRef: func(root, ref string) (string, error) {
-			result := fixture.git.Run(testgit.Call{Dir: root, Args: []string{"commit-at-ref", ref}})
-			if result.Err != nil {
-				return "", result.Err
-			}
-			commit, exists := fixture.commits[ref]
-			if !exists || !policyBaseFixtureSHA(commit) {
-				return "", fmt.Errorf("unknown landing ref or invalid commit %q", ref)
-			}
-			return commit, nil
-		},
-	}
-}
-
-func TestBaseMovedToAnEngineChangeReArmsOnce(t *testing.T) {
-	for _, test := range []struct {
-		name           string
-		contractChange bool
-	}{
-		{name: "engine path only"},
-		{name: "engine path and testing contract", contractChange: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			old, moved := strings.Repeat("a", 40), strings.Repeat("b", 40)
-			fixture := newPolicyBaseMoveFixture(t, map[string]string{old: "", moved: old}, moved,
-				[]string{"ancestry", old, moved}, []string{"landing-ref"}, []string{"commit-at-ref", "refs/remotes/origin/main"})
-			decision := testingPlanOutput{CandidateTree: "candidate", PolicyBaseCommit: moved, BaseContractDigest: "old-digest"}
-			if test.contractChange {
-				decision.BaseContractDigest = "new-digest"
-			}
-			calls, rearms, state := 0, 0, &testingPreparationState{}
-			prepared, err := prepareTestingWith(testingSelectionRequest{LandedRearm: true, Preparation: state}, func(request testingSelectionRequest) (testingPreparation, error) {
-				calls++
-				if calls == 1 {
-					return testingPreparation{}, compareTrustedPolicyDecisionWithReaders("candidate", old, "old-digest", decision, fixture.root, fixture.readers())
-				}
-				if request.LandedRearm {
-					rearms++
-				}
-				return testingPreparation{PolicyBaseCommit: moved}, nil
-			})
-			if err != nil || calls != 2 || rearms != 1 || prepared.PolicyBaseCommit != moved || !state.restarted {
-				t.Fatalf("descendant move did not succeed after exactly one restart and re-arm: calls=%d rearms=%d prepared=%+v restarted=%t err=%v", calls, rearms, prepared, state.restarted, err)
-			}
-		})
-	}
-}
-
-func TestSecondBaseMoveRefusesBaseMoved(t *testing.T) {
-	calls := 0
-	_, err := prepareTestingWith(testingSelectionRequest{}, func(testingSelectionRequest) (testingPreparation, error) {
-		calls++
-		if calls == 1 {
-			return testingPreparation{}, &preparationBaseMove{ours: "base-a", engine: "base-b"}
-		}
-		return testingPreparation{}, &preparationBaseMove{ours: "base-b", engine: "base-c"}
-	})
-	if err == nil || calls != 2 || !strings.Contains(err.Error(), "cause=base-moved ours=base-b engine=base-c restarts=1") {
-		t.Fatalf("second move did not refuse with the guarded base-moved cause: calls=%d err=%v", calls, err)
-	}
-}
-
-// TestPreparationRestartAllowanceIsInvocationLocal is the VOA-14 witness:
-// two consecutive preparations in one resident process, each with one base
-// movement, are both admitted; two movements within one invocation, across
-// its preparations, are still refused; and nothing reaches the process
-// environment.
-func TestPreparationRestartAllowanceIsInvocationLocal(t *testing.T) {
-	onceMoved := func(calls *int) testingPreparationAttempt {
-		return func(testingSelectionRequest) (testingPreparation, error) {
-			*calls++
-			if *calls == 1 {
-				return testingPreparation{}, &preparationBaseMove{ours: "base-a", engine: "base-b"}
-			}
-			return testingPreparation{PolicyBaseCommit: "base-b"}, nil
-		}
-	}
-	runOnOwnStreams(func(stdout, stderr io.Writer) int {
-		for invocation := 1; invocation <= 2; invocation++ {
-			calls := 0
-			request := testingSelectionRequest{Preparation: &testingPreparationState{}, notes: stderr}
-			if prepared, err := prepareTestingWith(request, onceMoved(&calls)); err != nil || calls != 2 || prepared.PolicyBaseCommit != "base-b" {
-				t.Fatalf("invocation %d in the same process: calls=%d prepared=%+v err=%v", invocation, calls, prepared, err)
-			}
-		}
-		return 0
-	})
-	if value, set := os.LookupEnv("METASYSTEM_PREPARATION_RESTARTED"); set {
-		t.Fatalf("preparation state leaked into the process environment: %q", value)
-	}
-	shared := &testingPreparationState{}
-	first, second := 0, 0
-	runOnOwnStreams(func(stdout, stderr io.Writer) int {
-		if _, err := prepareTestingWith(testingSelectionRequest{Preparation: shared, notes: stderr}, onceMoved(&first)); err != nil {
-			t.Fatalf("first preparation of the invocation: %v", err)
-		}
-		_, err := prepareTestingWith(testingSelectionRequest{Preparation: shared, notes: stderr}, onceMoved(&second))
-		if err == nil || second != 1 || !strings.Contains(err.Error(), "cause=base-moved") {
-			t.Fatalf("a second movement within one invocation was admitted: calls=%d err=%v", second, err)
-		}
-		return 0
-	})
-	parsed, _, code := parseTestingSelection("test run", []string{"--root", t.TempDir()}, true, t.Output(), t.Output())
-	if code != 0 || parsed.Preparation == nil || parsed.Preparation.restarted {
-		t.Fatalf("a command invocation does not start with its own fresh preparation state: code=%d state=%+v", code, parsed.Preparation)
-	}
-}
-
-func TestUnexplainedPolicyFieldRefusesDecisionMismatch(t *testing.T) {
-	old, moved := strings.Repeat("a", 40), strings.Repeat("b", 40)
-	fixture := newPolicyBaseMoveFixture(t, map[string]string{old: "", moved: old}, moved)
-	err := compareTrustedPolicyDecisionWithReaders("candidate", old, "digest", testingPlanOutput{
-		CandidateTree: "other-candidate", PolicyBaseCommit: moved, BaseContractDigest: "other-digest",
-	}, fixture.root, fixture.readers())
-	if err == nil || !strings.Contains(err.Error(), "cause=decision-mismatch field=candidate-tree") {
-		t.Fatalf("candidate mismatch was incorrectly explained by the base move: %v", err)
-	}
-}
-
-func TestNonDescendantPolicyBaseRefusesDecisionMismatch(t *testing.T) {
-	common, ours, sibling := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40)
-	fixture := newPolicyBaseMoveFixture(t, map[string]string{common: "", ours: common, sibling: common}, sibling,
-		[]string{"ancestry", ours, sibling})
-	err := compareTrustedPolicyDecisionWithReaders("candidate", ours, "digest", testingPlanOutput{
-		CandidateTree: "candidate", PolicyBaseCommit: sibling, BaseContractDigest: "digest",
-	}, fixture.root, fixture.readers())
-	if err == nil || !strings.Contains(err.Error(), "cause=decision-mismatch field=policy-base-commit") {
-		t.Fatalf("non-descendant base was incorrectly restarted: %v", err)
 	}
 }
 
@@ -1074,24 +892,14 @@ func TestTestingSelectionCarriesDeliveryAllGroupsOnlyForExecution(t *testing.T) 
 	}
 }
 
-func TestTrustedPolicyEngineIsRequiredWithoutBuildingDuringReadOnlySelection(t *testing.T) {
-	root := t.TempDir()
-	if _, _, _, err := trustedPolicyEngine(root, strings.Repeat("a", 40), false); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_ENGINE_REQUIRED") {
-		t.Fatalf("missing retained policy engine was accepted: %v", err)
-	}
-	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
-		t.Fatalf("read-only policy selection created build inputs: entries=%v err=%v", entries, err)
-	}
-}
-
 func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *testing.T) {
 	fixture := newOrdinaryCandidateFixture(t)
 	ctx := context.Background()
-	environment := testingEnvironment(os.Environ())
-	build := func(tree, projection, commit string) *candidateEngineBuild {
+	environment := testrun.Environment(os.Environ())
+	build := func(tree, projection, commit string) *candidateengine.Engine {
 		t.Helper()
 		fixture.queueBuild(tree, projection, commit, environment)
-		artifact, err := buildCandidateEngine(ctx, fixture.workspace(), "metasystem", tree, environment, fixture.dependency())
+		artifact, err := candidateengine.Build(ctx, fixture.workspace(), "metasystem", tree, environment, fixture.dependency().engine())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1160,7 +968,7 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
 		RequiredGroups: []string{group.ID}, SelectedGroups: []string{group.ID}, Stages: []testpolicy.Stage{{ID: "standard", Groups: []string{group.ID}}}}
 	fixture.queueJudge()
-	prepared := testingPreparation{ProjectRoot: fixture.root, Prefix: "metasystem", CandidateTree: ordinaryProjectTree,
+	prepared := testrun.Preparation{ProjectRoot: fixture.root, Prefix: "metasystem", CandidateTree: ordinaryProjectTree,
 		BaseCommit: ordinaryBaseCommit, PolicyBaseCommit: ordinaryBaseCommit, EffectiveContract: contract, Plan: plan,
 		ContractDigest: strings.Repeat("1", 64), BaseContractDigest: strings.Repeat("2", 64),
 		PolicyEngineDigest: fixture.policyDigest, BehaviorPolicyDigest: strings.Repeat("3", 64),
@@ -1168,7 +976,7 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 	if prepared.JudgeKey == proofrun.DefaultJudgeKey() || strings.Contains(prepared.JudgeKey, ":unreadable:") {
 		t.Fatalf("the fixture's engine sources did not yield a judge key: %s", prepared.JudgeKey)
 	}
-	request := testingRunRequest(prepared, "", "", built.Path, built.Digest, built.Commit)
+	request := testrun.RunRequest(prepared, "", "", built.Path, built.Digest, built.Commit)
 	request.WithCandidateOpener(fixture.openBed)
 	serialized, err := json.Marshal(request)
 	if err != nil {
@@ -1256,11 +1064,11 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(controlRoot, "admission"))
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
 	custodyContext := candidateResourceCustodyContext(t)
-	environment := inheritedTestingEnvironment(testingEnvironment(os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=legacy-parent"})
-	prepare := func(tree, engineTree, commit string, build bool) *candidateEngineBuild {
+	environment := testrun.InheritedEnvironment(testrun.Environment(os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=legacy-parent"})
+	prepare := func(tree, engineTree, commit string, build bool) *candidateengine.Engine {
 		t.Helper()
 		fixture.queuePrepare(tree, engineTree, commit, environment, build)
-		artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment, fixture.dependency())
+		artifact, err := candidateengine.Prepare(custodyContext, controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency().engine())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1287,7 +1095,7 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 	if buildCount() != 1 || first.Path != second.Path || first.Digest != second.Digest {
 		t.Fatalf("warm candidate engine preparation rebuilt: first=%+v second=%+v count=%d", first, second, buildCount())
 	}
-	environment = inheritedTestingEnvironment(testingEnvironment(os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=another-parent"})
+	environment = testrun.InheritedEnvironment(testrun.Environment(os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=another-parent"})
 	custodyVariant := prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, false)
 	if buildCount() != 1 || custodyVariant.Commit != first.Commit {
 		t.Fatalf("custody-only change fragmented candidate engine cache: first=%s variant=%s count=%d", first.Commit, custodyVariant.Commit, buildCount())
@@ -1360,13 +1168,13 @@ func testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin(t *testi
 	physicalEntry := time.Now().UTC()
 	buildEntered, releaseBuild := make(chan struct{}), make(chan struct{})
 	type buildOutcome struct {
-		artifact *candidateEngineBuild
+		artifact *candidateengine.Engine
 		err      error
 	}
 	built := make(chan buildOutcome, 1)
 	go func() {
-		artifact, err := prepareCandidateEngineWithColdPreflight(custodyContext, controlRoot,
-			gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()), func() error {
+		artifact, err := candidateengine.Prepare(custodyContext, controlRoot,
+			gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testrun.Environment(os.Environ()), func() error {
 				close(buildEntered)
 				<-releaseBuild
 				return nil
@@ -1437,10 +1245,10 @@ func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(controlRoot, "admission"))
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
 	custodyContext := candidateResourceCustodyContext(t)
-	environment := testingEnvironment(os.Environ())
+	environment := testrun.Environment(os.Environ())
 	for run := 0; run < 2; run++ {
 		fixture.queuePrepare(tree, ordinaryFailedEngineTree, ordinaryFailedBuild, environment, true)
-		if artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment, fixture.dependency()); artifact != nil || err == nil {
+		if artifact, err := candidateengine.Prepare(custodyContext, controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency().engine()); artifact != nil || err == nil {
 			t.Fatalf("failed build %d entered cache: artifact=%+v err=%v", run, artifact, err)
 		}
 		fixture.assertDrained()
@@ -1467,8 +1275,8 @@ func TestBatchPrefixTestingControlRootRetainsAttemptOutsideExecution(t *testing.
 	if err := os.WriteFile(filepath.Join(controlRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	prepared := testingPreparation{Installation: executionRoot, ControlRoot: controlRoot, ProjectRoot: executionRoot}
-	runRequest := testingRunRequest(prepared, "", "", "", strings.Repeat("1", 64), strings.Repeat("2", 40))
+	prepared := testrun.Preparation{Installation: executionRoot, ControlRoot: controlRoot, ProjectRoot: executionRoot}
+	runRequest := testrun.RunRequest(prepared, "", "", "", strings.Repeat("1", 64), strings.Repeat("2", 40))
 	if runRequest.ControlRoot != controlRoot || runRequest.ProjectRoot != executionRoot {
 		t.Fatalf("batch prefix request control=%s execution=%s, want %s and %s", runRequest.ControlRoot, runRequest.ProjectRoot, controlRoot, executionRoot)
 	}
@@ -1513,7 +1321,7 @@ func TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories(t
 		output := filepath.Join(t.TempDir(), "metasystem")
 		command := exec.Command(devgate, append(append([]string{"build"}, args...), "--out", output)...)
 		command.Dir = root
-		command.Env = append(candidateEngineBuildEnvironment(testingEnvironment(os.Environ()), stamp),
+		command.Env = append(candidateengine.BuildEnvironment(testrun.Environment(os.Environ()), stamp),
 			"GOCACHE="+filepath.Join(cacheRoot, "build"), "GOMODCACHE="+filepath.Join(cacheRoot, "modules"))
 		if combined, buildErr := command.CombinedOutput(); buildErr != nil {
 			t.Fatalf("build identical tree in %s: %v\n%s", root, buildErr, combined)
@@ -1536,53 +1344,15 @@ func TestEngineGoArgvCarriesTrimpath(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	for name, pair := range map[string][2][]string{
-		"candidate engine build": {candidateEngineBuildArgv("/out/metasystem"),
+		"candidate engine build": {candidateengine.DefaultBuildArgv("/out/metasystem"),
 			{"go", "run", "-trimpath", "./cmd/devgate", "build", "--trimpath", "--out", "/out/metasystem"}},
-		"bootstrap and landed rebuild": {devgateBootstrapBuildArgv(), {"go", "run", "-trimpath", "./cmd/devgate", "build"}},
+		"bootstrap and landed rebuild": {testrun.DevgateBootstrapBuildArgv(), {"go", "run", "-trimpath", "./cmd/devgate", "build"}},
 		"goal branch static":           {goalBranchStaticArgv("/proof"), {"go", "run", "-trimpath", "./cmd/devgate", "static", "--proof-out", "/proof"}},
 		"witness probe":                {proofRunWitnessProbe(root).Args, {"go", "run", "-trimpath", "./cmd/devgate", "gate", "--witness-check-only"}},
 	} {
 		if !slices.Equal(pair[0], pair[1]) {
 			t.Errorf("%s argv = %q, want %q", name, pair[0], pair[1])
 		}
-	}
-}
-
-func TestCandidateEngineBuildEnvironmentIsPinnedWithoutDroppingProofCustody(t *testing.T) {
-	stamp := strings.Repeat("a", 40)
-	environment := candidateEngineBuildEnvironment([]string{
-		"PATH=/fixture/bin", "GOFLAGS=-mod=vendor", "GOWORK=/foreign/workspace", "GOTOOLCHAIN=auto",
-		"GOEXPERIMENT=fieldtrack", "GOENV=/foreign/goenv", "CGO_ENABLED=1", "GOAMD64=v4", "GOARM64=v9.5", "GOARM=5",
-		"METASYSTEM_PROOF_CONTROL_ROOT=/proof", "METASYSTEM_PROOF_ATTEMPT=proof-attempt",
-	}, stamp)
-	values := map[string]string{}
-	for _, entry := range environment {
-		name, value, _ := strings.Cut(entry, "=")
-		values[name] = value
-	}
-	want := map[string]string{"CGO_ENABLED": "0", "GOAMD64": "v1", "GOARM64": "v8.0", "GOARM": "7",
-		"GOENV": "off", "GOEXPERIMENT": "", "GOFLAGS": "-mod=readonly", "GOTOOLCHAIN": "local", "GOWORK": "off", "METASYSTEM_BUILD_STAMP": stamp,
-		"METASYSTEM_PROOF_CONTROL_ROOT": "/proof", "METASYSTEM_PROOF_ATTEMPT": "proof-attempt"}
-	for name, value := range want {
-		if values[name] != value {
-			t.Fatalf("candidate build environment %s=%q, want %q: %v", name, values[name], value, environment)
-		}
-	}
-}
-
-func TestRunOwnerSurvivesTestingWorkerFilters(t *testing.T) {
-	const owner = "outer-exact-ref"
-	prepared := testingEnvironment([]string{"PATH=/fixture/bin", identity.RunOwnerEnv + "=" + owner, "UNRELATED=drop"})
-	if joined := strings.Join(prepared, "\n"); !strings.Contains(joined, identity.RunOwnerEnv+"="+owner) || strings.Contains(joined, "UNRELATED=") {
-		t.Fatalf("testing environment filtered the run owner incorrectly: %v", prepared)
-	}
-	worker := inheritedTestingEnvironment([]string{"PATH=/fixture/bin"}, []string{
-		"METASYSTEM_PROOF_CONTROL_ROOT=/proof", identity.RunOwnerEnv + "=" + owner,
-		identity.FixtureAttemptEnv + "=attempt-a", "UNRELATED=drop",
-	})
-	if joined := strings.Join(worker, "\n"); !strings.Contains(joined, identity.RunOwnerEnv+"="+owner) ||
-		!strings.Contains(joined, identity.FixtureAttemptEnv+"=attempt-a") || strings.Contains(joined, "UNRELATED=") {
-		t.Fatalf("worker inheritance filtered the run owner incorrectly: %v", worker)
 	}
 }
 
@@ -1672,7 +1442,7 @@ func TestFrozenPolicyProbeRefusalNamesResultPathPredicate(t *testing.T) {
 func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	fixture := newCandidateEngineFixture(t)
 	ctx := context.Background()
-	built, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
+	built, err := candidateengine.Build(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testrun.Environment(os.Environ()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1693,7 +1463,7 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	// materialized checkout; with no stamp it judges the stamp the installed
 	// candidate engine reports, as the dispatch that engine runs would.
 	reportedStamp := func(engine, root string) string {
-		command := (proofBinaryFixture{t: t}).command(testingEnvironment(os.Environ()), engine, "supervise", "status", "--repo", root)
+		command := (proofBinaryFixture{t: t}).command(testrun.Environment(os.Environ()), engine, "supervise", "status", "--repo", root)
 		output, err := command.Output()
 		if err != nil {
 			t.Fatalf("installed candidate engine did not report its build: %v", err)
@@ -1751,16 +1521,16 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 
 func TestCandidateEngineNativeGitSerializationPinsHeadSourceAndCleanup(t *testing.T) {
 	fixture := newCandidateEngineFixture(t)
-	io := nativeCandidateEngineIO()
-	nativeRun := io.runGit
-	nativeOpen := io.open
+	io := candidateengine.Native()
+	nativeRun := io.RunGit
+	nativeOpen := io.Open
 	var commands [][]string
 	var detachedRoot string
-	io.runGit = func(command *exec.Cmd) error {
+	io.RunGit = func(command *exec.Cmd) error {
 		commands = append(commands, append([]string(nil), command.Args...))
 		return nativeRun(command)
 	}
-	io.open = func(workspace gittree.Workspace, tree string) (candidateDetachedWorkspace, error) {
+	io.Open = func(workspace gittree.Workspace, tree string) (candidateengine.DetachedWorkspace, error) {
 		if workspace.Dir != fixture.projectRoot || tree != fixture.candidateTree {
 			t.Fatalf("native detached request root=%s tree=%s", workspace.Dir, tree)
 		}
@@ -1770,8 +1540,8 @@ func TestCandidateEngineNativeGitSerializationPinsHeadSourceAndCleanup(t *testin
 		}
 		return detached, err
 	}
-	built, err := buildCandidateEngine(context.Background(), gittree.Workspace{Dir: fixture.projectRoot},
-		"metasystem", fixture.candidateTree, testingEnvironment(os.Environ()), io)
+	built, err := candidateengine.Build(context.Background(), gittree.Workspace{Dir: fixture.projectRoot},
+		"metasystem", fixture.candidateTree, testrun.Environment(os.Environ()), io)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1824,145 +1594,20 @@ func TestCandidateEngineBuildFailureCannotFallBackToPolicyEngine(t *testing.T) {
 	fixture.script = broken
 	fixture.writeFiles()
 	fixture.declareSnapshot(ordinaryBrokenTree, ordinaryBrokenInstallationTree, ordinaryBrokenEngineTree, ordinaryBrokenScriptBlob, "")
-	environment := testingEnvironment(os.Environ())
+	environment := testrun.Environment(os.Environ())
 	fixture.steps = append(fixture.steps, ordinaryCandidateStep{kind: "open", output: []byte(ordinaryBrokenTree)})
 	fixture.queueRaw(true, ordinaryBrokenTree+"\n", "rev-parse", "HEAD^{tree}")
 	fixture.queueRaw(true, "", "rev-parse", "--show-prefix")
 	fixture.queueIdentity(ordinaryBrokenTree, ordinaryBrokenEngineTree, ordinaryBrokenBuild, environment, true)
 	fixture.queueRaw(true, ordinarySnapshotCommit+"\n", "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
 	fixture.queueGit(true, "plain", nil, nil, "update-ref", "--no-deref", "HEAD", ordinaryBrokenBuild, ordinarySnapshotCommit)
-	built, err := buildCandidateEngine(context.Background(), fixture.workspace(), "metasystem", ordinaryBrokenTree, environment, fixture.dependency())
+	built, err := candidateengine.Build(context.Background(), fixture.workspace(), "metasystem", ordinaryBrokenTree, environment, fixture.dependency().engine())
 	fixture.assertDrained()
 	if built != nil || err == nil || !strings.Contains(err.Error(), "candidate engine build failed") || !strings.Contains(err.Error(), "fixture candidate compile failed") {
 		t.Fatalf("candidate build failure did not remain an explicit insufficient outcome: build=%+v err=%v", built, err)
 	}
 	if digest, digestErr := fileSHA256(fixture.policyEngine); digestErr != nil || digest != fixture.policyDigest {
 		t.Fatalf("candidate failure changed or substituted the policy engine: digest=%s err=%v", digest, digestErr)
-	}
-}
-
-func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) {
-	const groupID = "candidate-bed"
-	digest := strings.Repeat("a", 64)
-	executionIdentity := strings.Repeat("b", 64)
-	candidateDigest := strings.Repeat("c", 64)
-	buildIdentity := strings.Repeat("f", 40)
-	candidateTree := strings.Repeat("e", 40)
-	group := testpolicy.Group{ID: groupID, Kind: "unit", CWD: ".", Inputs: []string{"source.go"},
-		Obligations: []string{"candidate-engine"}, Platforms: []string{"any"}, TargetMS: 1}
-	contract := testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}}
-	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto,
-		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
-		RequiredGroups: []string{groupID}, SelectedGroups: []string{groupID}}
-	prepared := testingPreparation{CandidateTree: candidateTree, EffectiveContract: contract, Plan: plan,
-		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest,
-		GoalID: "goal", AccountingRevision: 2}
-	request := testingRunRequest(prepared, "successful-attempt", "", "", candidateDigest, buildIdentity)
-	request.ProjectRoot, request.BaseCommit = "/project", "base"
-	successful := proofrun.NewTestResult(request)
-	zero := 0
-	successful.Groups = []proofrun.GroupResult{{ID: groupID, Kind: group.Kind, Obligations: group.Obligations,
-		InputManifest: group.Inputs, ExecutionIdentity: executionIdentity, Status: "passed", NativeLaunched: true,
-		CollectionComplete: true, NativeExitStatus: &zero, ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}}
-	// A sufficient attempt from an earlier plan remains a valid source for
-	// the deterministic candidate engine; its groups are reused only while no
-	// newer observation at the same identity contradicts them.
-	successful.CandidateTree = strings.Repeat("9", 40)
-	successful.PlanDigest = strings.Repeat("1", 64)
-	successful.RecomputeDelivery()
-	failed := successful
-	failed.AttemptID = "later-failed-attempt"
-	// A red battery is still a completed measurement of the deterministic
-	// candidate engine. Carried landing needs its structured insufficiency;
-	// sufficiency remains the later delivery decision, not an engine-identity
-	// precondition.
-	failed.CandidateEngineDigest = strings.Repeat("d", 64)
-	exit := 23
-	failed.Groups = append([]proofrun.GroupResult(nil), successful.Groups...)
-	failed.Groups[0].Status, failed.Groups[0].NativeExitStatus = "failed", &exit
-	failed.RecomputeDelivery()
-	now := time.Now().UTC()
-	attempts := []proofrun.Attempt{
-		{AttemptID: successful.AttemptID, GoalID: prepared.GoalID, AccountingRevision: prepared.AccountingRevision,
-			StartedAt: now.Add(-time.Minute).Format(time.RFC3339Nano), Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalSuccess},
-			PendingTestGroups: map[string]string{groupID: executionIdentity}, TestResult: &successful},
-		{AttemptID: failed.AttemptID, GoalID: prepared.GoalID, AccountingRevision: prepared.AccountingRevision,
-			StartedAt: now.Format(time.RFC3339Nano), Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalFailed},
-			PendingTestGroups: map[string]string{groupID: executionIdentity}, TestResult: &failed},
-	}
-	recovered, err := retainedCandidateEngineDigest(prepared, attempts, buildIdentity, false)
-	if err != nil || recovered != candidateDigest {
-		t.Fatalf("later failed attempt hid the sufficient candidate engine: digest=%s err=%v", recovered, err)
-	}
-	carriedDigest, err := retainedCandidateEngineDigest(prepared, attempts, buildIdentity, true)
-	if err != nil || carriedDigest != failed.CandidateEngineDigest {
-		t.Fatalf("carried verification did not retain the newest completed red measurement: digest=%s err=%v", carriedDigest, err)
-	}
-	templateRequest := testingRunRequest(prepared, "", "", "", recovered, buildIdentity)
-	templateRequest.ProjectRoot, templateRequest.BaseCommit = "/project", "base"
-	projection := proofrun.ReusedTestResult(proofrun.NewTestResult(templateRequest), attempts,
-		map[string]string{groupID: executionIdentity}, contract)
-	// The later attempt failed the same group at the same identity: that is
-	// the newest observation, so the earlier pass is not reused (green then
-	// red yields no reuse) while the candidate digest above is still recovered.
-	if projection.Delivery.Sufficient || len(projection.Groups) != 1 || projection.Groups[0].Status != "not-run" || projection.Groups[0].NotRunReason != "newest-observation-failed" {
-		t.Fatalf("verification composed the earlier pass although a newer attempt failed the group at the same identity: %+v", projection)
-	}
-}
-
-func TestDiagnosticsReadersFollowTheCandidatePair(t *testing.T) {
-	candidate := proofrun.Attempt{SchemaVersion: proofrun.CandidateAttemptSchemaVersion,
-		GoalID: "authority-c", AccountingRevision: 3, CandidateGoalID: "candidate-x", CandidateRevision: 7}
-	if !attemptAccountsForCandidate(candidate, "candidate-x", 7) {
-		t.Fatal("candidate-owned diagnostic attempt was not selected")
-	}
-	if attemptAccountsForCandidate(candidate, "authority-c", 3) {
-		t.Fatal("diagnostic reader selected the authority pair instead of the candidate pair")
-	}
-	legacy := proofrun.Attempt{SchemaVersion: proofrun.AttemptSchemaVersion, GoalID: "legacy", AccountingRevision: 5}
-	if !attemptAccountsForCandidate(legacy, "legacy", 5) {
-		t.Fatal("diagnostic reader stopped selecting schema-2 authority accounting")
-	}
-}
-
-func TestVerifyDoesNotKeyLegacyCandidateDigestByWholeTreeReceipt(t *testing.T) {
-	const groupID = "candidate-bed"
-	digest := strings.Repeat("a", 64)
-	candidateTree := strings.Repeat("b", 40)
-	group := testpolicy.Group{ID: groupID, Kind: "unit", CWD: ".", Inputs: []string{"source.go"},
-		Obligations: []string{"candidate-engine"}, Platforms: []string{"any"}, TargetMS: 1}
-	contract := testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}}
-	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto,
-		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
-		RequiredGroups: []string{groupID}, SelectedGroups: []string{groupID}}
-	prepared := testingPreparation{Installation: t.TempDir(), CandidateTree: candidateTree, EffectiveContract: contract, Plan: plan,
-		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest,
-		GoalID: "goal", AccountingRevision: 2}
-	request := testingRunRequest(prepared, "legacy-success", "", "", digest, strings.Repeat("c", 40))
-	request.ProjectRoot, request.BaseCommit = "/project", "base"
-	legacy := proofrun.NewTestResult(request)
-	legacy.CandidateEngineIdentityVersion = 0
-	legacy.CandidateEngineDigest = ""
-	zero := 0
-	legacy.Groups = []proofrun.GroupResult{{ID: groupID, Kind: group.Kind, Obligations: group.Obligations,
-		InputManifest: group.Inputs, ExecutionIdentity: digest, Status: "passed", NativeLaunched: true,
-		CollectionComplete: true, NativeExitStatus: &zero, ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}}
-	legacy.RecomputeDelivery()
-	receipt := landing.TestReceipt{SchemaVersion: 2, Tree: candidateTree, ProvedTree: candidateTree, Testing: &legacy}
-	payload, err := json.Marshal(receipt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := landing.TestReceiptPath(prepared.Installation, candidateTree)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, payload, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	recovered, err := retainedCandidateEngineDigest(prepared, nil, strings.Repeat("d", 40), false)
-	if err == nil || recovered != "" || !strings.Contains(err.Error(), "candidate engine digest is absent") {
-		t.Fatalf("legacy whole-tree receipt unexpectedly supplied a cross-tip engine identity: digest=%s err=%v", recovered, err)
 	}
 }
 
@@ -2025,271 +1670,6 @@ chmod +x "$3"
 	}
 	return candidateEngineFixture{projectRoot: projectRoot, installationRoot: installationRoot, baseCommit: baseCommit,
 		candidateTree: candidateTree, policyEngine: policyEngine, policyDigest: policyDigest}
-}
-
-func TestTestingPlanAdoptsCandidateFallbackOnlyWhenBaseHasNone(t *testing.T) {
-	candidate := testFallbackContract()
-	for _, test := range []struct {
-		name             string
-		baseFallback     bool
-		expectedFallback string
-	}{
-		{name: "candidate-fallback-fills-empty-base", expectedFallback: "residual"},
-		{name: "base-fallback-remains-protected", baseFallback: true, expectedFallback: "trusted"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Setenv("PATH", t.TempDir())
-			base := candidate
-			base.Surfaces = append([]testpolicy.Surface(nil), candidate.Surfaces...)
-			base.Groups = append([]testpolicy.Group(nil), candidate.Groups...)
-			if test.baseFallback {
-				base.Fallback = "trusted"
-				base.Surfaces[1].Paths = []string{"candidate-owned/**"}
-				base.Surfaces = append(base.Surfaces, testpolicy.Surface{ID: "trusted", Paths: []string{}, Standard: []string{"trusted"}})
-				base.Groups = append(base.Groups, testFallbackGroup("trusted", "unowned.txt"))
-			} else {
-				base.Fallback = ""
-				base.Surfaces = append([]testpolicy.Surface(nil), candidate.Surfaces[:1]...)
-				base.Groups = append([]testpolicy.Group(nil), candidate.Groups[:1]...)
-			}
-			baseBytes, err := json.Marshal(base)
-			if err != nil {
-				t.Fatal(err)
-			}
-			candidateBytes, err := json.Marshal(candidate)
-			if err != nil {
-				t.Fatal(err)
-			}
-			baseContract, err := testpolicy.Decode(baseBytes)
-			if err != nil {
-				t.Fatal(err)
-			}
-			candidateContract, err := testpolicy.Decode(candidateBytes)
-			if err != nil {
-				t.Fatal(err)
-			}
-			effective := protectedTestingContractWithCandidateFallback(baseContract, candidateContract)
-			if err := effective.Validate(); err != nil {
-				t.Fatal(err)
-			}
-			if effective.Fallback != test.expectedFallback {
-				t.Fatalf("effective fallback = %q, want %q", effective.Fallback, test.expectedFallback)
-			}
-			plan, err := testpolicy.Select(effective, testpolicy.SelectionRequest{
-				ChangedPaths: []string{"unowned.txt"}, RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(plan.Uncertainty) != 0 || !containsString(plan.AffectedSurfaces, test.expectedFallback) || !containsString(plan.SelectedGroups, test.expectedFallback) {
-				t.Fatalf("unowned path did not select the fallback without uncertainty: %+v", plan)
-			}
-			if test.baseFallback && containsString(plan.AffectedSurfaces, candidate.Fallback) {
-				t.Fatalf("candidate fallback replaced the protected base fallback: %+v", plan)
-			}
-			wantGroups := []string{"app", test.expectedFallback}
-			if !reflect.DeepEqual(plan.SelectedGroups, wantGroups) {
-				t.Fatalf("selected groups = %v, want %v", plan.SelectedGroups, wantGroups)
-			}
-		})
-	}
-}
-
-func testFallbackContract() testpolicy.Contract {
-	return testpolicy.Contract{SchemaVersion: 1,
-		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
-		Fallback:    "residual",
-		Surfaces: []testpolicy.Surface{
-			{ID: "app", Paths: []string{"owned/**"}, Standard: []string{"app"}},
-			{ID: "residual", Paths: []string{}, Standard: []string{"residual"}},
-		},
-		Groups:  []testpolicy.Group{testFallbackGroup("app", "owned/**"), testFallbackGroup("residual", "unowned.txt")},
-		Always:  testpolicy.Always{Canary: []string{"app"}},
-		Unknown: []string{"app"},
-		Cadence: []string{"app"},
-	}
-}
-
-func testFallbackGroup(id, input string) testpolicy.Group {
-	return testpolicy.Group{ID: id, Kind: "unit", Adapter: "go", CWD: ".", Inputs: []string{input}, Outputs: []string{}, Tools: []testpolicy.Tool{},
-		Obligations: []string{}, Platforms: []string{"any"}, TargetMS: 1000, Packages: []string{"."}, Tests: json.RawMessage(`"all"`)}
-}
-
-func TestProtectedCoverageFloorCannotFallOrDisappear(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	root := t.TempDir()
-	const baseTree = "1111111111111111111111111111111111111111"
-	const loweredTree = "2222222222222222222222222222222222222222"
-	const raisedTree = "3333333333333333333333333333333333333333"
-	const baseOID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	const linuxOID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	const loweredOID = "cccccccccccccccccccccccccccccccccccccccc"
-	const raisedOID = "dddddddddddddddddddddddddddddddddddddddd"
-	const baselinePath = "testing-coverage-floors.json"
-	const linuxPath = "testing-coverage-floors-linux.json"
-	const legacyPath = "scripts/agents/coverage-ratchet.json"
-	const legacyLinuxPath = "scripts/agents/coverage-ratchet-linux.json"
-	baseJSON := []byte(`{"floors":{"internal/app":80.0}}`)
-	linuxJSON := []byte(`{"floors":{"internal/app":79.0}}`)
-	loweredJSON := []byte(`{"floors":{"internal/app":79.9}}`)
-	raisedJSON := []byte(`{"floors":{"internal/app":80.1,"internal/new":50.0}}`)
-	type rawFact struct {
-		args   []string
-		output []byte
-	}
-	var facts []rawFact
-	addFile := func(tree, path, oid string, content []byte) {
-		facts = append(facts,
-			rawFact{args: []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", path},
-				output: []byte(fmt.Sprintf("100644 blob %s\t%s\x00", oid, path))},
-			rawFact{args: []string{"cat-file", "blob", oid}, output: content},
-		)
-	}
-	addAbsent := func(tree, path string) {
-		facts = append(facts, rawFact{args: []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", path}})
-	}
-	pins := []string{"-C", root, "-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
-		"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
-		"-c", "gc.auto=0", "-c", "maintenance.auto=false"}
-	next := 0
-	workspace := gittree.Workspace{Dir: root, RawSource: func(request gittree.RawRequest) gittree.RawResult {
-		if next >= len(facts) {
-			t.Fatalf("unexpected raw Git request: %v", request.Args)
-		}
-		fact := facts[next]
-		next++
-		wantArgs := append(append([]string(nil), pins...), fact.args...)
-		if request.Dir != root || !reflect.DeepEqual(request.Args, wantArgs) || request.Operation != "git "+strings.Join(fact.args, " ") ||
-			request.Stdin != nil || !reflect.DeepEqual(request.Env, gittree.ScrubbedEnviron()) {
-			t.Fatalf("raw Git request %d = %+v, want args %v", next, request, wantArgs)
-		}
-		return gittree.RawResult{Stdout: fact.output}
-	}}
-	addFile(baseTree, baselinePath, baseOID, baseJSON)
-	addFile(loweredTree, baselinePath, loweredOID, loweredJSON)
-	if err := protectCoverageRatchets(workspace, baseTree, loweredTree, ""); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
-		t.Fatalf("lowered base floor was accepted: %v", err)
-	}
-	if next != len(facts) {
-		t.Fatalf("lowered floor consumed %d of %d raw Git requests", next, len(facts))
-	}
-	facts = nil
-	next = 0
-	addFile(baseTree, baselinePath, baseOID, baseJSON)
-	addFile(raisedTree, baselinePath, raisedOID, raisedJSON)
-	addFile(baseTree, linuxPath, linuxOID, linuxJSON)
-	addFile(raisedTree, linuxPath, linuxOID, linuxJSON)
-	if err := protectCoverageRatchets(workspace, baseTree, raisedTree, ""); err != nil {
-		t.Fatalf("raised protected floor was refused: %v", err)
-	}
-	if next != len(facts) {
-		t.Fatalf("raised floor consumed %d of %d raw Git requests", next, len(facts))
-	}
-
-	// The landing that moves the floors beside testing.json: its base keeps
-	// them at the legacy path, and the moved floors are judged against them.
-	facts = nil
-	next = 0
-	addAbsent(baseTree, baselinePath)
-	addFile(baseTree, legacyPath, baseOID, baseJSON)
-	addFile(loweredTree, baselinePath, loweredOID, loweredJSON)
-	if err := protectCoverageRatchets(workspace, baseTree, loweredTree, ""); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
-		t.Fatalf("a floor lowered while moving was accepted: %v", err)
-	}
-	facts = nil
-	next = 0
-	addAbsent(baseTree, baselinePath)
-	addFile(baseTree, legacyPath, baseOID, baseJSON)
-	addFile(raisedTree, baselinePath, baseOID, baseJSON)
-	addAbsent(baseTree, linuxPath)
-	addFile(baseTree, legacyLinuxPath, linuxOID, linuxJSON)
-	addFile(raisedTree, linuxPath, linuxOID, linuxJSON)
-	if err := protectCoverageRatchets(workspace, baseTree, raisedTree, ""); err != nil {
-		t.Fatalf("the move refused itself: %v", err)
-	}
-	if next != len(facts) {
-		t.Fatalf("the move consumed %d of %d raw Git requests", next, len(facts))
-	}
-}
-
-// A floor leaves with its package: deleting a package takes its floors out of
-// both files, and that is no lowered floor, since nothing is left to measure.
-// A floor dropped while its package still has Go files stays refused.
-func TestProtectedCoverageFloorLeavesWithItsPackage(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	root := t.TempDir()
-	const baseTree = "1111111111111111111111111111111111111111"
-	const candidateTree = "2222222222222222222222222222222222222222"
-	const baseOID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	const candidateOID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	const baselinePath = "testing-coverage-floors.json"
-	const linuxPath = "testing-coverage-floors-linux.json"
-	baseJSON := []byte(`{"floors":{"internal/app":80.0,"internal/gone":70.0}}`)
-	candidateJSON := []byte(`{"floors":{"internal/app":80.0}}`)
-	type rawFact struct {
-		args   []string
-		output []byte
-	}
-	var facts []rawFact
-	addFile := func(tree, path, oid string, content []byte) {
-		facts = append(facts,
-			rawFact{args: []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", path},
-				output: []byte(fmt.Sprintf("100644 blob %s\t%s\x00", oid, path))},
-			rawFact{args: []string{"cat-file", "blob", oid}, output: content},
-		)
-	}
-	addListing := func(tree, path string, files ...string) {
-		var output []byte
-		for _, file := range files {
-			output = append(output, []byte(fmt.Sprintf("100644 blob %s\t%s\x00", candidateOID, file))...)
-		}
-		facts = append(facts, rawFact{args: []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", path}, output: output})
-	}
-	pins := []string{"-C", root, "-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
-		"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
-		"-c", "gc.auto=0", "-c", "maintenance.auto=false"}
-	next := 0
-	workspace := gittree.Workspace{Dir: root, RawSource: func(request gittree.RawRequest) gittree.RawResult {
-		if next >= len(facts) {
-			t.Fatalf("unexpected raw Git request: %v", request.Args)
-		}
-		fact := facts[next]
-		next++
-		if wantArgs := append(append([]string(nil), pins...), fact.args...); !reflect.DeepEqual(request.Args, wantArgs) {
-			t.Fatalf("raw Git request %d = %v, want %v", next, request.Args, wantArgs)
-		}
-		return gittree.RawResult{Stdout: fact.output}
-	}}
-
-	addFile(baseTree, baselinePath, baseOID, baseJSON)
-	addFile(candidateTree, baselinePath, candidateOID, candidateJSON)
-	addListing(candidateTree, "internal/gone")
-	addListing(baseTree, linuxPath)
-	addListing(baseTree, "scripts/agents/coverage-ratchet-linux.json")
-	if err := protectCoverageRatchets(workspace, baseTree, candidateTree, ""); err != nil {
-		t.Fatalf("a floor that left with its deleted package was refused: %v", err)
-	}
-	if next != len(facts) {
-		t.Fatalf("the deletion consumed %d of %d raw Git requests", next, len(facts))
-	}
-
-	facts, next = nil, 0
-	addFile(baseTree, baselinePath, baseOID, baseJSON)
-	addFile(candidateTree, baselinePath, candidateOID, candidateJSON)
-	addListing(candidateTree, "internal/gone", "internal/gone/testdata/fixture.txt", "internal/gone/gone.go")
-	if err := protectCoverageRatchets(workspace, baseTree, candidateTree, ""); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
-		t.Fatalf("a floor dropped from a package that still exists was accepted: %v", err)
-	}
-
-	facts, next = nil, 0
-	addFile(baseTree, baselinePath, baseOID, baseJSON)
-	addFile(candidateTree, baselinePath, candidateOID, candidateJSON)
-	addListing(candidateTree, "internal/gone", "internal/gone/sub/other.go")
-	addListing(baseTree, linuxPath)
-	addListing(baseTree, "scripts/agents/coverage-ratchet-linux.json")
-	if err := protectCoverageRatchets(workspace, baseTree, candidateTree, ""); err != nil {
-		t.Fatalf("a nested package's files kept the deleted package's floor: %v", err)
-	}
 }
 
 func TestFrozenPublicVersionOneProtectionCorpusIsComplete(t *testing.T) {
@@ -2366,7 +1746,7 @@ func TestFrozenWorkerProbeReaderAcceptsCandidateGroupFields(t *testing.T) {
 	if err != nil || len(probeResult.Groups) != 1 || probeResult.Groups[0].Status != "invalid" || probeResult.Groups[0].CollectionComplete {
 		t.Fatalf("probe reader lost the negative worker judgment: result=%+v err=%v", probeResult, err)
 	}
-	if _, err := readTestingWorkerResult(path); err == nil || !strings.Contains(err.Error(), `unknown field "candidateOnlyField"`) {
+	if _, err := testrun.ReadWorkerResult(path); err == nil || !strings.Contains(err.Error(), `unknown field "candidateOnlyField"`) {
 		t.Fatalf("strict destination worker reader accepted the candidate field: %v", err)
 	}
 }
@@ -2489,7 +1869,7 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 		t.Fatal(err)
 	}
 	request := proofrun.TestRunRequest{ControlRoot: root, ProjectRoot: root, PolicyBaseCommit: head, PolicyEngine: engine, PolicyEngineDigest: digest,
-		CandidateEngine: engine, CandidateEngineDigest: digest, Environment: testingEnvironment(os.Environ())}
+		CandidateEngine: engine, CandidateEngineDigest: digest, Environment: testrun.Environment(os.Environ())}
 	// The caller's destination may advance while the probes run. The probes
 	// judge the admitted policy base, so a later destination that drops the
 	// reverse dependency must neither be read nor fail the admitted source.
@@ -2734,7 +2114,7 @@ func writeFrozenCorpusEngineClosure(t *testing.T, moduleRoot, root, devgate, goC
 		"{{if and (not .Standard) .Module .Module.Main}}{{.Module.Dir}}|{{.Dir}}{{range .GoFiles}}|{{.}}{{end}}{{range .SFiles}}|{{.}}{{end}}{{range .EmbedFiles}}|{{.}}{{end}}{{end}}",
 		"./cmd/metasystem")
 	list.Dir = moduleRoot
-	list.Env = candidateEngineBuildEnvironment(gittree.ScrubbedEnviron(), "")
+	list.Env = candidateengine.BuildEnvironment(gittree.ScrubbedEnviron(), "")
 	listed, err := list.Output()
 	if err != nil {
 		t.Fatalf("list the engine's compile closure: %v", err)
@@ -3173,17 +2553,6 @@ func mustReadTestingFixtureFile(t *testing.T, path string) []byte {
 	return data
 }
 
-func TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("METASYSTEM_TRUSTED_POLICY_DECISION", "1")
-	if _, _, _, err := trustedPolicyEngine(root, strings.Repeat("a", 40), false); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_ENGINE_REQUIRED") {
-		t.Fatalf("ambient flag bypassed retained engine authentication: %v", err)
-	}
-	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
-		t.Fatalf("ambient policy selection created build inputs: entries=%v err=%v", entries, err)
-	}
-}
-
 func TestPublicTestingPlanAmbientTrustedPolicyDecisionCannotBypassRetainedEngineNativeGit(t *testing.T) {
 	root := t.TempDir()
 	contract := testpolicy.Contract{SchemaVersion: 1,
@@ -3324,7 +2693,7 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	if got := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "--verify", head+"^{commit}")); got != head {
 		t.Fatalf("fixture source commit moved: got=%s want=%s", got, head)
 	}
-	if _, _, _, err := trustedPolicyEngine(root, recordOnlyDestination, false); err != nil {
+	if _, _, _, err := testrun.TrustedPolicyEngine(root, recordOnlyDestination, false); err != nil {
 		t.Fatalf("record-only destination advancement did not reuse the genuinely source-bound engine built at %s: %v", head, err)
 	}
 	tree, err := (gittree.Workspace{Dir: root}).HeadTree()
@@ -3335,7 +2704,7 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 		t.Fatalf("test list status = %d", status)
 	}
 	// The contract check settings check runs (formerly internal test check).
-	if _, _, err := testingContractReady(root, true); err != nil {
+	if _, _, err := testrun.ContractReady(root, true); err != nil {
 		t.Fatalf("testing contract not ready: %v", err)
 	}
 	if status := runTestPlan([]string{"--root", root, "--tree", tree, "--purpose", "diagnostic", "--json"}, t.Output(), t.Output()); status != 0 {
@@ -3351,7 +2720,7 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	testingFixtureGit(t, root, "add", "internal/policy.txt")
 	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "change engine projection")
 	changedEngineDestination := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-	if _, _, _, err := trustedPolicyEngine(root, changedEngineDestination, false); err == nil || !strings.Contains(err.Error(), "different ENGINE projections") {
+	if _, _, _, err := testrun.TrustedPolicyEngine(root, changedEngineDestination, false); err == nil || !strings.Contains(err.Error(), "different ENGINE projections") {
 		t.Fatalf("destination with changed engine inputs reused an older policy engine: %v", err)
 	}
 }
@@ -3377,139 +2746,8 @@ func testingFixtureGit(t *testing.T, root string, args ...string) string {
 	return string(output)
 }
 
-// The worker capability compare tolerates what it does not know and the
-// scratch environment policy is negotiated (DL4A-01): a worker listing no
-// policies, as every worker before A5.2, gets v1; one listing this
-// frontend's policy gets it; a differing known capability still refuses.
-func TestScratchEnvironmentPolicyFollowsTheWorkerCapabilities(t *testing.T) {
-	t.Parallel()
-	reporting := func(edit func(map[string]any)) string {
-		capabilities := currentTestingWorkerCapabilities()
-		data, err := json.Marshal(capabilities)
-		if err != nil {
-			t.Fatal(err)
-		}
-		fields := map[string]any{}
-		if err := json.Unmarshal(data, &fields); err != nil {
-			t.Fatal(err)
-		}
-		edit(fields)
-		if data, err = json.Marshal(fields); err != nil {
-			t.Fatal(err)
-		}
-		engine := filepath.Join(t.TempDir(), "engine")
-		if err := testexec.WriteFile(engine, []byte("#!/bin/sh\nprintf '%s\\n' "+shellQuote(string(data))+"\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		return engine
-	}
-	environment := []string{"PATH=/usr/bin:/bin"}
-	for _, test := range []struct {
-		name string
-		edit func(map[string]any)
-		want string
-	}{
-		{"worker listing no policies", func(fields map[string]any) { delete(fields, "scratchEnvironmentPolicies") }, proofrun.ScratchEnvironmentPolicyV1},
-		{"worker reading only v1", func(fields map[string]any) {
-			fields["scratchEnvironmentPolicies"] = []string{proofrun.ScratchEnvironmentPolicyV1}
-		}, proofrun.ScratchEnvironmentPolicyV1},
-		{"upgraded worker", func(fields map[string]any) {
-			fields["scratchEnvironmentPolicies"] = []string{proofrun.ScratchEnvironmentPolicyV1, proofrun.ScratchEnvironmentPolicyV2}
-		}, proofrun.ScratchEnvironmentPolicy},
-		{"a capability this frontend does not know", func(fields map[string]any) { fields["laterCapability"] = 7 }, chooseScratchEnvironmentPolicy(currentTestingWorkerCapabilities().ScratchEnvironmentPolicies)},
-	} {
-		capabilities, err := requireTestingWorkerCapabilities(t.Context(), reporting(test.edit), environment)
-		if err != nil {
-			t.Fatalf("%s: refused: %v", test.name, err)
-		}
-		if got := chooseScratchEnvironmentPolicy(capabilities.ScratchEnvironmentPolicies); got != test.want {
-			t.Errorf("%s: policy = %q, want %q", test.name, got, test.want)
-		}
-	}
-	_, err := requireTestingWorkerCapabilities(t.Context(), reporting(func(fields map[string]any) { fields["workerPolicyVersion"] = 99 }), environment)
-	if !errors.Is(err, errTestingWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "install the matching backend compatibility release") {
-		t.Fatalf("differing known capability: %v", err)
-	}
-	// This engine as its own worker writes its own policy without a probe.
-	prepared := testingPreparation{FirstTestingTransition: true, PolicyEngine: "/nonexistent/engine"}
-	if got := chooseScratchEnvironmentPolicy(testingWorkerScratchPolicies(t.Context(), prepared)); got != proofrun.ScratchEnvironmentPolicy {
-		t.Fatalf("own worker policy = %q", got)
-	}
-	// An unreadable destination worker during revalidation is v1, never a refusal.
-	prepared.FirstTestingTransition = false
-	if got := chooseScratchEnvironmentPolicy(testingWorkerScratchPolicies(t.Context(), prepared)); got != proofrun.ScratchEnvironmentPolicyV1 {
-		t.Fatalf("unreadable worker policy = %q", got)
-	}
-}
-
-// A v1 descriptor from this launcher keeps the old wire (an old worker's
-// strict decoder sees no new field) and the run-private caches; a v1
-// descriptor from an old launcher is read by this worker.
-func TestScratchEnvironmentV1WireAndReaderSupport(t *testing.T) {
-	t.Parallel()
-	control := t.TempDir()
-	scratch, err := proofrun.CreateScratchRun(control)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = scratch.Cleanup(nil) })
-	group := testpolicy.Group{ID: "g", Adapter: "command", EnvironmentMode: "explicit", Env: map[string]string{"PATH": "/usr/bin:/bin"}}
-	request := proofrun.TestRunRequest{Environment: []string{"HOME=" + t.TempDir(), "GOENV=off", "GOCACHE=/outer/go-build"}}
-	request.Contract.Groups = []testpolicy.Group{group}
-	request.Plan.SelectedGroups = []string{group.ID}
-	request.BindScratch(scratch, nil)
-	if err := proofrun.PrepareScratchEnvironmentFor(&request, scratch, proofrun.ScratchEnvironmentPolicyV1); err != nil {
-		t.Fatal(err)
-	}
-	wire, err := json.Marshal(request.ScratchEnvironment)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var keys map[string]json.RawMessage
-	if err := json.Unmarshal(wire, &keys); err != nil {
-		t.Fatal(err)
-	}
-	for key := range keys {
-		if !map[string]bool{"policy": true, "run": true, "root": true, "goEnv": true, "goEnvDigest": true, "groups": true}[key] {
-			t.Fatalf("v1 descriptor wire carries %q, which an old worker's strict decoder refuses: %s", key, wire)
-		}
-	}
-	packet := filepath.Join(t.TempDir(), "request.json")
-	encoded, err := json.Marshal(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(packet, encoded, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var worker proofrun.TestRunRequest
-	if err := readStrictJSON(packet, &worker); err != nil {
-		t.Fatal(err)
-	}
-	if err := proofrun.ValidateScratchEnvironment(worker, scratch); err != nil {
-		t.Fatalf("upgraded worker refused a v1 descriptor: %v", err)
-	}
-	gocacheDir := filepath.Join(scratch.Root(), "gocache")
-	if info, err := os.Stat(gocacheDir); err != nil || !info.IsDir() {
-		t.Fatalf("v1 run-private cache %s: %v", gocacheDir, err)
-	}
-}
-
-// The mixed-generation witness against a real built worker engine (3.1):
-// set METASYSTEM_A5_WORKER_ENGINE to an engine built at another commit and
-// METASYSTEM_A5_WORKER_POLICY to the policy this frontend must write for it.
-func TestScratchEnvironmentPolicyAgainstABuiltWorker(t *testing.T) {
-	t.Parallel()
-	engine, want := os.Getenv("METASYSTEM_A5_WORKER_ENGINE"), os.Getenv("METASYSTEM_A5_WORKER_POLICY")
-	if engine == "" || want == "" {
-		t.Skip("set METASYSTEM_A5_WORKER_ENGINE and METASYSTEM_A5_WORKER_POLICY to a built worker and its expected policy")
-	}
-	capabilities, err := requireTestingWorkerCapabilities(t.Context(), engine, []string{"PATH=/usr/bin:/bin"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := chooseScratchEnvironmentPolicy(capabilities.ScratchEnvironmentPolicies); got != want {
-		t.Fatalf("worker %s reports %+v: this frontend writes %q, want %q", engine, capabilities, got, want)
-	}
-	t.Logf("worker %s reports %+v: this frontend writes %s", engine, capabilities, want)
+// resolveTestingGoalWithReads resolves the testing goal through the supplied
+// ledger reads, for the fixtures that stand in for the machine and endpoint.
+func resolveTestingGoalWithReads(root, requested string, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), now func() time.Time) (string, error) {
+	return testrun.ResolveGoalWithCaller(root, requested, resolveMachine, resolveEndpoint, now, int64(os.Getppid()))
 }

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
@@ -494,7 +495,7 @@ func (f *ordinaryCandidateFixture) prepareDetached(tree string) {
 		writeOrdinaryFixtureFile(f.t, filepath.Join(parent, "metasystem/tracked.txt"), s.tracked, 0o600)
 	}
 }
-func (f *ordinaryCandidateFixture) open(workspace gittree.Workspace, tree string) (candidateDetachedWorkspace, error) {
+func (f *ordinaryCandidateFixture) open(workspace gittree.Workspace, tree string) (candidateengine.DetachedWorkspace, error) {
 	step := f.take("open")
 	if tree != string(step.output) || workspace.Dir != f.root || workspace.RawSource == nil {
 		f.t.Fatalf("open workspace=%q tree=%q want=%q", workspace.Dir, tree, step.output)
@@ -665,7 +666,7 @@ func (f *ordinaryCandidateFixture) openBed(root, tree string) (proofrun.Candidat
 	}
 	return f.open(f.workspace(), tree)
 }
-func (f *ordinaryCandidateFixture) assertExecutable(artifact *candidateEngineBuild, commit string) {
+func (f *ordinaryCandidateFixture) assertExecutable(artifact *candidateengine.Engine, commit string) {
 	f.t.Helper()
 	if artifact == nil || artifact.Commit != commit {
 		f.t.Fatalf("artifact commit=%+v want %s", artifact, commit)
@@ -688,3 +689,7 @@ func (f *ordinaryCandidateFixture) assertDrained() {
 		f.t.Fatalf("unused repository replies: %d", len(f.steps))
 	}
 }
+
+// copyCandidateEngineArtifact is the goal-landing tests' spelling of
+// candidateengine.CopyArtifact until C8a part 2 ports them.
+var copyCandidateEngineArtifact = candidateengine.CopyArtifact

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cadence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -195,7 +196,7 @@ exit 1
 	claim := batch.Claim{Machine: "mac-cli", Lineage: landingOwnerLineage, Epoch: 1, Revision: 2, AccountingRevision: 2}
 	if err := store.Create(batch.Record{Schema: 1, BatchID: heldID, State: batch.StateLanding, BaseTree: newTrunk.Tree, TipTree: newTrunk.Tree,
 		Proof: &batch.Proof{Status: "green", AttemptID: "standard-green", BaseCommit: newTrunk.Commit, Passed: []string{"ordinary"}},
-		Units: []batch.Unit{{GoalID: cadenceAuthorityGoal, Chain: "chain", State: batch.UnitJoined,
+		Units: []batch.Unit{{GoalID: cadence.AuthorityGoal, Chain: "chain", State: batch.UnitJoined,
 			Claim: claim}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +259,7 @@ func cadenceBatchDependencies(root string, contract testpolicy.Contract, clock f
 			current.ExecutionIdentity = identities[probe.ID]
 			return gaterun.CadenceRevalidation{Groups: []proofrun.GroupResult{current}}, nil
 		}, ClaimAuthority: func(time.Time) (gaterun.CadenceAuthority, error) {
-			return gaterun.CadenceAuthority{GoalID: cadenceAuthorityGoal, ObligationRevision: 1}, nil
+			return gaterun.CadenceAuthority{GoalID: cadence.AuthorityGoal, ObligationRevision: 1}, nil
 		}, ReleaseAuthority: func(gaterun.CadenceAuthority, time.Time) error { return nil },
 		Run: func(gaterun.CadenceRunRequest) (gaterun.CadenceRunResult, error) {
 			attemptID := "attempt-native-" + trunk.Tree[:8]

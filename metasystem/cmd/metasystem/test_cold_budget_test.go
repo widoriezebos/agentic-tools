@@ -9,8 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestColdCandidateBuildRefusalRunsBeforeNativeBuilder(t *testing.T) {
@@ -40,11 +42,11 @@ func testColdCandidateBuildRefusalRunsBeforeNativeBuilder(t *testing.T) {
 	controlRoot := t.TempDir()
 	want := &coldBuildBudgetRefusal{detail: "fixture exhausted"}
 	called := 0
-	environment := testingEnvironment(os.Environ())
+	environment := testrun.Environment(os.Environ())
 	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildFive, environment, false)
-	artifact, err := prepareCandidateEngineWithColdPreflight(context.Background(), controlRoot,
+	artifact, err := candidateengine.Prepare(context.Background(), controlRoot,
 		fixture.workspace(), "metasystem", ordinaryProjectTree,
-		environment, func() error { called++; return want }, fixture.dependency())
+		environment, func() error { called++; return want }, fixture.dependency().engine())
 	fixture.assertDrained()
 	var refusal *coldBuildBudgetRefusal
 	if artifact != nil || !errors.As(err, &refusal) || refusal != want || called != 1 {
@@ -68,11 +70,11 @@ func TestColdBudgetScreenPreservesPossibleReuseAndExtension(t *testing.T) {
 		{ID: "a", Status: "passed", CollectionComplete: true},
 		{ID: "b", Status: "reused", CollectionComplete: true},
 	}}}}
-	if !retainedSuccessCouldCoverSelection(attempts, groups, testingSelectionRequest{}) {
+	if !retainedSuccessCouldCoverSelection(attempts, groups, testrun.SelectionRequest{}) {
 		t.Fatal("complete retained observations did not defer budget screen for receipt-only reuse")
 	}
 	attempts[0].TestResult.Groups[1].CollectionComplete = false
-	if retainedSuccessCouldCoverSelection(attempts, groups, testingSelectionRequest{}) {
+	if retainedSuccessCouldCoverSelection(attempts, groups, testrun.SelectionRequest{}) {
 		t.Fatal("incomplete retained group was treated as possible complete reuse")
 	}
 	breach := dispatchcore.GoalRevisionAdmission{Refusal: &dispatchcore.GoalAdmissionRefusal{
