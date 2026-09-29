@@ -426,3 +426,32 @@ func TestIntentSettingsSelectedInstallation(t *testing.T) {
 		t.Fatalf("all launch settings: code=%d %+v", code, result)
 	}
 }
+
+// An overrides-only metasystem.conf: `settings show KEY` answers a key the
+// file does not name with its compiled default and says so, and `settings
+// keys` lists it (the lesson of the evidence-root landing, for every key).
+func TestIntentSettingsShowAndKeysAnswerCompiledDefaults(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o700)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("# overrides only\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	owners := intentOwners{resolver: stateroot.NewResolver(fakeTop(root), noExecutable)}
+	show := func(key string) (int, string) {
+		var stdout, stderr bytes.Buffer
+		code := runIntentIn(mustIntentCommand(t, "settings show"), []string{key, "--repo", root}, &stdout, &stderr, root, owners)
+		return code, stdout.String()
+	}
+	for key, want := range map[string]string{"watch.stale-min": "20", "suite.section-cap-min": "45", "testing.contract": "testing.json"} {
+		code, text := show(key)
+		if code != 0 || !strings.Contains(text, key+"="+want+" (default)") {
+			t.Fatalf("settings show %s: code=%d %q; want %s=%s (default)", key, code, text, key, want)
+		}
+	}
+	var stdout bytes.Buffer
+	if code := configKeysTo(&stdout, filepath.Join(root, "metasystem.conf"), "watch.", nil); code != 0 ||
+		!strings.Contains(stdout.String(), "watch.stale-min\n") || !strings.Contains(stdout.String(), "watch.cap-min\n") {
+		t.Fatalf("settings keys watch.: code=%d %q", code, stdout.String())
+	}
+}

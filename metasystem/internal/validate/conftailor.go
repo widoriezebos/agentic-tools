@@ -2,6 +2,7 @@ package validate
 
 import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"os"
 	"regexp"
@@ -51,10 +52,23 @@ func TailorConf(confPath string, requested []string) error {
 	// shape (validation suites tailor a copied conf to the fake adapter).
 	defaultRuntime := runtimes.DefaultFor(selectedSet)
 
-	data, err := os.ReadFile(confPath)
+	original, err := os.ReadFile(confPath)
 	if err != nil {
 		return err
 	}
+	// The file holds overrides only; the defaults are compiled in. Tailor
+	// the effective committed layer, so a compiled binding of an unselected
+	// runtime is rebound or dropped exactly as a spelled-out line was, then
+	// write back only what differs from the compiled defaults.
+	originalKeys := map[string]bool{}
+	for _, raw := range splitLines(string(original)) {
+		stripped := strings.TrimSpace(raw)
+		if stripped == "" || strings.HasPrefix(stripped, "#") || !strings.Contains(raw, "=") {
+			continue
+		}
+		originalKeys[strings.TrimSpace(strings.SplitN(raw, "=", 2)[0])] = true
+	}
+	data := []byte(config.EffectiveCommittedContent(string(original)))
 
 	// Tailoring to the fake runtime collapses each role's dropped
 	// per-runtime model bindings into one model.fake=fake-model line (the
@@ -237,6 +251,22 @@ func TailorConf(confPath string, requested []string) error {
 			out = append(out, key+"=")
 		}
 	}
+
+	// A line the file did not hold whose tailored value is its compiled
+	// default adds nothing: the default already says it.
+	kept := out[:0]
+	for _, line := range out {
+		stripped := strings.TrimSpace(line)
+		if stripped != "" && !strings.HasPrefix(stripped, "#") && strings.Contains(line, "=") {
+			parts := strings.SplitN(line, "=", 2)
+			key, value := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+			if compiled, ok := config.CompiledDefault(key); ok && !originalKeys[key] && compiled == value {
+				continue
+			}
+		}
+		kept = append(kept, line)
+	}
+	out = kept
 
 	// Through the durable-write owner: a bare write-and-rename with no
 	// sync could leave a torn conf after a crash. Empty anchor

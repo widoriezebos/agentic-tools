@@ -18,14 +18,17 @@ const (
 	SpendCeilingDayMoneyKey   = "spend.ceiling.day.money"
 	SpendCeilingGoalTokensKey = "spend.ceiling.goal.tokens"
 	SpendCeilingGoalMoneyKey  = "spend.ceiling.goal.money"
+)
 
-	DefaultSpendMode              = "alert"
-	DefaultSpendCurrency          = "USD"
-	DefaultSpendZone              = "UTC"
-	DefaultSpendCeilingDayTokens  = uint64(250000000)
-	DefaultSpendCeilingDayMoney   = 750.0
-	DefaultSpendCeilingGoalTokens = uint64(125000000)
-	DefaultSpendCeilingGoalMoney  = 300.0
+// The spend law's compiled defaults (defaults.go).
+var (
+	DefaultSpendMode              = MustDefault(SpendModeKey)
+	DefaultSpendCurrency          = MustDefault(SpendCurrencyKey)
+	DefaultSpendZone              = MustDefault(SpendZoneKey)
+	DefaultSpendCeilingDayTokens  = uintDefault(SpendCeilingDayTokensKey)
+	DefaultSpendCeilingDayMoney   = floatDefault(SpendCeilingDayMoneyKey)
+	DefaultSpendCeilingGoalTokens = uintDefault(SpendCeilingGoalTokensKey)
+	DefaultSpendCeilingGoalMoney  = floatDefault(SpendCeilingGoalMoneyKey)
 )
 
 var (

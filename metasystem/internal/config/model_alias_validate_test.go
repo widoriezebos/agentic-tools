@@ -8,10 +8,7 @@ import (
 )
 
 func aliasValidationConf(lines ...string) string {
-	base := strings.Replace(validConf,
-		"runtime.claude.maximal-models=claude-fable-5",
-		"runtime.claude.maximal-models=claude-fable-5-1", 1)
-	return base + strings.Join(lines, "\n") + "\n"
+	return validConf + strings.Join(lines, "\n") + "\n"
 }
 
 func aliasValidationRepo(t *testing.T, body string) (repo, conf string) {

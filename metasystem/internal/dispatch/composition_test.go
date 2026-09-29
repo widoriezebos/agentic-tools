@@ -492,8 +492,9 @@ func TestComposeRolePacketHonorsConfiguredPacketCap(t *testing.T) {
 		if err := os.WriteFile(conf, nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got, err := InlineInputLimitBytes(conf); err != nil || got != 65536 {
-			t.Fatalf("missing key = %d, %v; want 65536, nil", got, err)
+		// The compiled default: 80 KiB (dispatch.max-inline-input-kb).
+		if got, err := InlineInputLimitBytes(conf); err != nil || got != 81920 {
+			t.Fatalf("missing key = %d, %v; want 81920, nil", got, err)
 		}
 		if err := os.WriteFile(conf, []byte("dispatch.max-inline-input-kb=8\n"), 0o644); err != nil {
 			t.Fatal(err)
@@ -1456,7 +1457,9 @@ func TestFMA_R2_ClaudeGateFixtureOmitted(t *testing.T) {
 		t.Fatalf("resolved target failed the Claude maximal gate: %v", err)
 	}
 
-	withoutAlias := strings.Replace(withAlias, "runtime.claude.model-alias.claude-fable-5=claude-fable-5-1\n", "", 1)
+	// The alias is compiled in, so omitting the line keeps it; a pointer
+	// written to a model outside the maximal list is what the gate refuses.
+	withoutAlias := strings.Replace(withAlias, "runtime.claude.model-alias.claude-fable-5=claude-fable-5-1\n", "runtime.claude.model-alias.claude-fable-5=claude-fable-4\n", 1)
 	if err := os.WriteFile(conf, []byte(withoutAlias), 0o644); err != nil {
 		t.Fatal(err)
 	}

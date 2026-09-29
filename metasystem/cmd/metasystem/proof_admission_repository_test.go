@@ -435,7 +435,7 @@ func newProofAdmissionRepositoryFixture(t *testing.T, now time.Time, extension b
 	if err := os.WriteFile(marker, []byte("fixture template marker\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	conf := []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n")
+	conf := []byte("metasystem.template=true\nmetasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n")
 	if extension {
 		conf = append(conf, []byte("metasystem.budget.tier-3=8h/1/1200m/1/3\n")...)
 	}

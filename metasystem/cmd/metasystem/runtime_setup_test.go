@@ -17,7 +17,7 @@ func setupCLIFixture(t *testing.T) (repo, installation string) {
 		t.Fatal(err)
 	}
 	setupCLIWrite(t, filepath.Join(repo, "development", "metasystem-design.md"), "design\n", 0o644)
-	setupCLIWrite(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=claude\n", 0o644)
+	setupCLIWrite(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=claude\nmetasystem.template=true\n", 0o644)
 	if err := os.MkdirAll(installation, 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -199,7 +199,7 @@ func TestLandingReceiptRefusesSemanticBudgetBeforeCommand(t *testing.T) {
 	}
 	root := filepath.Join(top, "metasystem")
 	writeReceiptFixture(t, top, "development/metasystem-design.md", "fixture template marker\n")
-	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.version=1\nmetasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=4\n")
+	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.version=1\nmetasystem.template=true\nmetasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=4\n")
 	writeReceiptFixture(t, root, ".gitignore", "artifacts/\n")
 	writeReceiptFixture(t, root, "payload.txt", "semantic budget fixture\n")
 

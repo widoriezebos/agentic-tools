@@ -321,8 +321,8 @@ func resolveRefactorCadence(p *validate.RefactorBaselineParams, set map[string]b
 		key, value, fallback string
 		target               *int
 	}{
-		{"refactor.max-age-minutes", maxAge, "1440", &p.MaxAgeMinutes},
-		{"refactor.max-commits", maxCommits, "40", &p.MaxCommits},
+		{"refactor.max-age-minutes", maxAge, config.MustDefault("refactor.max-age-minutes"), &p.MaxAgeMinutes},
+		{"refactor.max-commits", maxCommits, config.MustDefault("refactor.max-commits"), &p.MaxCommits},
 	} {
 		flagName := strings.TrimPrefix(cadence.key, "refactor.")
 		value, code, err := config.Get(config.GetParams{

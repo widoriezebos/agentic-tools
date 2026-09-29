@@ -38,10 +38,8 @@ func TestO3RootsAcrossLayouts(t *testing.T) {
 			testutil.Require(t, "create installation", os.MkdirAll(installation, 0o755), nil)
 			if test.selfHosted {
 				// The self-hosted layout is the nested metasystem/ directory
-				// beside development/metasystem-design.md.
-				design := filepath.Join(repository, "development", "metasystem-design.md")
-				testutil.Require(t, "create development directory", os.MkdirAll(filepath.Dir(design), 0o755), nil)
-				testutil.Require(t, "create design document", os.WriteFile(design, []byte("# design\n"), 0o644), nil)
+				// whose committed conf declares the template.
+				testutil.Require(t, "declare the template", os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644), nil)
 			}
 			wantStateRoot := filepath.Join(repository, test.stateRoot)
 

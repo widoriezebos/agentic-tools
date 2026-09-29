@@ -568,7 +568,7 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		}
 	}
 	confPath := filepath.Join(installation, "metasystem.conf")
-	contractRel, present, err := config.ConfLookup(confPath, "testing.contract")
+	contractRel, present, err := config.CommittedLookup(confPath, "testing.contract")
 	if err != nil || !present {
 		return testingPreparation{}, fmt.Errorf("testing.contract is required in committed metasystem.conf")
 	}
@@ -2849,7 +2849,7 @@ func loadPhysicalTestingContract(root string) (string, testpolicy.Contract, stri
 		return "", testpolicy.Contract{}, "", err
 	}
 	confPath := filepath.Join(installation, "metasystem.conf")
-	contractRel, found, err := config.ConfLookup(confPath, "testing.contract")
+	contractRel, found, err := config.CommittedLookup(confPath, "testing.contract")
 	if err != nil || !found {
 		return "", testpolicy.Contract{}, "", fmt.Errorf("testing.contract is required in committed metasystem.conf")
 	}

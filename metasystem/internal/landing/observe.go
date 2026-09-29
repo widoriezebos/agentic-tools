@@ -1353,14 +1353,11 @@ func loadLandingClasses(workspace observationReader, baseTree string, requireTie
 		manifest.EnginePolicyVersion != 1 || (len(manifest.Classes) != 2 && len(manifest.Classes) != 3) {
 		return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest is malformed")}
 	}
-	rulings, present, err := workspace.FileAt(baseTree, "memory/rulings.md")
-	if err != nil || !present {
-		return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("rulings register is unreadable")}
-	}
-	rulingRows := parseRulingRows(rulings)
+	// The authority a class cites is compiled landing policy
+	// (PolicyRulings), not a row read from the base's rulings register.
 	found := map[string]bool{}
 	for _, class := range manifest.Classes {
-		if found[class.ID] || !rulingID.MatchString(class.AuthorizedBy) || !rulingRows[class.AuthorizedBy] {
+		if found[class.ID] || !rulingID.MatchString(class.AuthorizedBy) || !policyRuling(class.AuthorizedBy) {
 			return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest is malformed")}
 		}
 		switch class.ID {
@@ -1450,16 +1447,6 @@ func addRulingRowsOnly(workspace observationReader, baseTree, candidateTree stri
 		}
 	}
 	return nil
-}
-
-func parseRulingRows(data []byte) map[string]bool {
-	rows := map[string]bool{}
-	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
-		if id, ok := rulingRowID(line); ok {
-			rows[id] = true
-		}
-	}
-	return rows
 }
 
 func rulingRowID(line string) (string, bool) {
@@ -1797,19 +1784,10 @@ func knownRefusalCode(code string) bool {
 }
 
 // AdoptionRulings prepares the landing authority register while preserving the
-// application's existing rulings. Only rows referenced by the engine's landing
-// classes enter a fresh register.
-func AdoptionRulings(sourceRoot, targetRoot string) ([]byte, error) {
-	readRegular := func(path string) ([]byte, error) {
-		info, err := os.Lstat(path)
-		if err != nil {
-			return nil, err
-		}
-		if !info.Mode().IsRegular() {
-			return nil, fmt.Errorf("adoption requires a regular policy file: %s", path)
-		}
-		return os.ReadFile(path)
-	}
+// application's existing rulings. Only the compiled landing authorities
+// (PolicyRulings) the engine's landing classes cite enter a fresh register;
+// no template register is read.
+func AdoptionRulings(targetRoot string) ([]byte, error) {
 	var manifest landingClassManifest
 	if err := json.Unmarshal(landingClassesSource, &manifest); err != nil {
 		return nil, err
@@ -1817,27 +1795,31 @@ func AdoptionRulings(sourceRoot, targetRoot string) ([]byte, error) {
 	if manifest.SchemaVersion != 1 || manifest.EnginePolicyVersion != 1 || len(manifest.Classes) == 0 {
 		return nil, fmt.Errorf("adoption landing classes are malformed")
 	}
-	source, err := readRegular(filepath.Join(sourceRoot, "memory", "rulings.md"))
-	if err != nil {
-		return nil, err
+	canonical := map[string][]string{}
+	for _, ruling := range PolicyRulings() {
+		canonical[ruling.ID] = append(canonical[ruling.ID], ruling.Row)
 	}
-	rows := func(data []byte) map[string][]string {
-		result := map[string][]string{}
-		for _, row := range strings.Split(string(data), "\n") {
-			if id, ok := rulingRowID(row); ok {
-				result[id] = append(result[id], row)
-			}
-		}
-		return result
-	}
-	canonical := rows(source)
-	data, err := readRegular(filepath.Join(targetRoot, "memory", "rulings.md"))
-	if os.IsNotExist(err) {
+	path := filepath.Join(targetRoot, "memory", "rulings.md")
+	var data []byte
+	info, err := os.Lstat(path)
+	switch {
+	case os.IsNotExist(err):
 		data = []byte("# Standing rulings register\n\nCanonical human rulings required by the shipped landing policy. Application rulings append here.\n\n| id | date | ruling | context | owner | review condition |\n|---|---|---|---|---|---|\n")
-	} else if err != nil {
+	case err != nil:
 		return nil, err
+	case !info.Mode().IsRegular():
+		return nil, fmt.Errorf("adoption requires a regular policy file: %s", path)
+	default:
+		if data, err = os.ReadFile(path); err != nil {
+			return nil, err
+		}
 	}
-	existing := rows(data)
+	existing := map[string][]string{}
+	for _, row := range strings.Split(string(data), "\n") {
+		if id, ok := rulingRowID(row); ok {
+			existing[id] = append(existing[id], row)
+		}
+	}
 	seen := map[string]bool{}
 	for _, class := range manifest.Classes {
 		id := class.AuthorizedBy

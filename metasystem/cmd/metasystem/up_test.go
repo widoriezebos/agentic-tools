@@ -81,7 +81,7 @@ func TestTopLevelUpKeepsTemplateStateSeparateFromGitScope(t *testing.T) {
 	if err := os.MkdirAll(metasystemRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(metasystemRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(metasystemRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.template=true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	pid := int64(os.Getppid())

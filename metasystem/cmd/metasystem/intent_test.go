@@ -277,6 +277,9 @@ func TestIntentRepositorySelection(t *testing.T) {
 	template := filepath.Join(base, "template repo")
 	writeTree(template, "development/metasystem-design.md", "metasystem/metasystem.conf",
 		"metasystem/scripts/agents/guard.sh", "metasystem/plans/goals/backlog.md", "docs/space dir/note.md")
+	if err := os.WriteFile(filepath.Join(template, "metasystem", "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	adopted := filepath.Join(base, "app")
 	writeTree(adopted, "metasystem.conf", "scripts/agents/guard.sh", "plans/goals/backlog.md", "src/child/file.go")
 	link := filepath.Join(base, "link-to-installation")

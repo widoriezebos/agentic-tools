@@ -19,8 +19,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-const brainBootTestPacket = "# Fixture brain packet\n\n## The standing instruction\nKeep going.\n"
-
 func useNonFiringBrainBootTimer(t *testing.T) {
 	t.Helper()
 	originalNow, originalTimer := brainBootNow, newBrainBootTimer
@@ -44,12 +42,6 @@ func declaredBrainBootTestRoot(t *testing.T) (string, func(string) string) {
 			t.Fatalf("brain ledger root %q, want %q", actualRoot, root)
 		}
 		return goal.ExistingLedgerIdentityAtEndpoint(goal.Endpoint{Root: root, Repository: repository})
-	}
-	if err := os.MkdirAll(filepath.Join(root, "records", "misc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, brain.PacketRelativePath), []byte(brainBootTestPacket), 0o644); err != nil {
-		t.Fatal(err)
 	}
 	record := brain.Record{
 		Schema: brain.Schema, Ledger: identity(root), Machine: "mac-cli",
@@ -93,7 +85,7 @@ func TestBrainBootKeepsPhaseOneWhenOptionalInputChildFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !output.Declared || !strings.Contains(output.Payload, brainBootTestPacket) || !strings.Contains(output.Payload, "BOOT DEADLINE: asks, held, fleet, digest not read") {
+	if !output.Declared || !strings.Contains(output.Payload, "## The standing instruction") || !strings.Contains(output.Payload, "BOOT DEADLINE: asks, held, fleet, digest not read") {
 		t.Fatalf("optional-input failure discarded phase one or its diagnostic: %+v", output)
 	}
 	for _, name := range []string{"asks", "held", "fleet", "digest"} {

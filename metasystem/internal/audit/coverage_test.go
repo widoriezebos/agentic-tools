@@ -312,18 +312,15 @@ func TestAuditMetasystemReport(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// The template marker beside the checkout: placeholders tolerated.
-	if err := os.MkdirAll(filepath.Join(parent, "development"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	os.WriteFile(filepath.Join(parent, "development", "metasystem-design.md"), []byte("design\n"), 0o644)
 	for _, file := range []string{"AGENTS.md", "wow.md", "metasystem.conf",
 		"docs/project-rules.md", "docs/orchestration.md", "docs/collaboration.md",
 		"docs/design/design-principles.md", "docs/design/design-obligation-gate.md",
 		"memory/README.md", "memory/instruction-ledger.md", "memory/known-issues.md"} {
 		os.WriteFile(filepath.Join(root, file), []byte("two words\n"), 0o644)
 	}
-	// Template placeholders in project-rules: tolerated because the marker
+	// The template signal in the committed conf: placeholders tolerated.
+	os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644)
+	// Template placeholders in project-rules: tolerated because the signal
 	// identifies the template.
 	os.WriteFile(filepath.Join(root, "docs/project-rules.md"), []byte("budget: <amount and period>\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "skills/demo/SKILL.md"), []byte("a skill\n"), 0o644)

@@ -14,10 +14,9 @@ import (
 const weightThresholdKey = "validation.weight-threshold"
 
 func weightThreshold(root string) int64 {
-	value, code, _ := config.Get(config.GetParams{Key: weightThresholdKey, Default: "60", DefaultSet: true,
-		ConfPath: filepath.Join(root, "metasystem.conf")})
+	value, code, _ := config.Get(config.GetParams{Key: weightThresholdKey, ConfPath: filepath.Join(root, "metasystem.conf")})
 	if code != 0 {
-		return 60
+		return int64(config.MustIntDefault(weightThresholdKey))
 	}
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil || parsed < 0 {

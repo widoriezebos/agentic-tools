@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,14 +53,19 @@ func TestSettingsRefuseAMalformedValue(t *testing.T) {
 	}
 }
 
-func TestTrackedConfCarriesEveryLaunchKey(t *testing.T) {
+// Every launch default is the compiled one (config.CompiledSettings) and the
+// tracked conf, which holds overrides only, repeats none of them.
+func TestLaunchDefaultsAreTheCompiledDefaults(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "metasystem.conf"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, setting := range settingDefaults {
-		if !strings.Contains(string(data), setting.Key+"="+setting.Value+"\n") {
-			t.Errorf("missing %s", setting.Key)
+		if compiled, ok := config.CompiledDefault(setting.Key); !ok || compiled != setting.Value {
+			t.Errorf("%s default %q is not the compiled %q", setting.Key, setting.Value, compiled)
+		}
+		if strings.Contains(string(data), "\n"+setting.Key+"="+setting.Value+"\n") {
+			t.Errorf("the tracked conf repeats the compiled default %s", setting.Key)
 		}
 	}
 }

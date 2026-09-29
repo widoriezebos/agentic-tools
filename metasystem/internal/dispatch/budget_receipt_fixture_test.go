@@ -73,16 +73,11 @@ func newBudgetReceiptBed(t *testing.T, attempts, minutes, active uint64) *budget
 	// A template installation makes RootForInstallation use its real layout
 	// rule while the accepted goal remains an immutable in-memory snapshot.
 	parent := filepath.Dir(bed.root)
-	if err := os.MkdirAll(filepath.Join(parent, "development"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(parent, "development", "metasystem-design.md"), []byte("# template\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	root := filepath.Join(parent, "metasystem")
 	if err := os.Rename(bed.root, root); err != nil {
 		t.Fatal(err)
 	}
+	declareTemplate(t, root)
 	bed.root = root
 	bed.reads.NewWorld = func(got string) bool {
 		if got != root {

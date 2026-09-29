@@ -17,17 +17,12 @@ func vendoredShape(t *testing.T, template bool) (repo, install string, resolver 
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("metasystem.runtimes=\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	conf := "metasystem.runtimes=\n"
 	if template {
-		dev := filepath.Join(repo, "development")
-		if err := os.MkdirAll(dev, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dev, "metasystem-design.md"), []byte("design\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		conf += "metasystem.template=true\n"
+	}
+	if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte(conf), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	resolver, top = resolverFixture(t, install)
 	return repo, install, resolver, top

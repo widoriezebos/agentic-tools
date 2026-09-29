@@ -407,9 +407,9 @@ func TestIntentSettingsKeysAndCheck(t *testing.T) {
 	if code != 0 || !strings.Contains(narrowed, "fixture.alpha.two") || strings.Contains(narrowed, "fixture.beta") {
 		t.Fatalf("settings --keys --matching: code=%d %+v", code, matching)
 	}
-	// The bed's configuration lacks testing.contract; the validate owner's
-	// own reason is the result.
-	if code, incomplete := run("settings", "check"); code == 0 || incomplete.Outcome != intentRefused || !strings.Contains(incomplete.Summary, "testing.contract is required") {
+	// The bed names no testing.contract, so it is the compiled testing.json,
+	// which the bed lacks; the validate owner's own reason is the result.
+	if code, incomplete := run("settings", "check"); code == 0 || incomplete.Outcome != intentRefused || !strings.Contains(incomplete.Summary, "testing.contract is invalid") {
 		t.Fatalf("check settings on an incomplete configuration: code=%d %+v", code, incomplete)
 	}
 	invalid := append(append([]byte{}, original...), []byte("\ntesting.contract=missing-contract.json\n")...)

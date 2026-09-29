@@ -13,19 +13,15 @@ func installFixture(t *testing.T, template bool) (installation, app string) {
 	t.Helper()
 	app = t.TempDir()
 	installation = app
+	conf := "evidence.root=" + filepath.Join(app, "durable") + "\n"
 	if template {
 		installation = filepath.Join(app, "metasystem")
-		if err := os.MkdirAll(filepath.Join(app, "development"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(app, "development", "metasystem-design.md"), []byte("design\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		conf = "metasystem.template=true\n" + conf
 	}
 	if err := os.MkdirAll(filepath.Join(installation, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("evidence.root="+filepath.Join(app, "durable")+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte(conf), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return installation, app
@@ -137,16 +133,11 @@ func TestStateRootRefusesUnknownKindsAndInvalidInstallationFacts(t *testing.T) {
 func TestRootForInstallationUsesOnlyTheExactTemplateMarker(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	design := filepath.Join(root, "development", "metasystem-design.md")
-	if err := os.MkdirAll(filepath.Dir(design), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(design, []byte("design\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
 	template := filepath.Join(root, "metasystem")
 	if err := os.MkdirAll(template, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(template, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	resolver, top := resolverFixture(t, template)
@@ -187,13 +178,7 @@ func TestRootForCandidateCanonicalizesAndValidatesTheInstallation(t *testing.T) 
 	if err := os.MkdirAll(installation, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(outer, "development"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(outer, "development", "metasystem-design.md"), []byte("design\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	link := filepath.Join(t.TempDir(), "installation-link")
@@ -312,15 +297,16 @@ func TestResolveLayoutSupportsNestedAndAdoptedRepositoriesFromSubdirectories(t *
 				t.Fatal(err)
 			}
 			installation := repo
+			var conf []byte
 			if nested {
 				installation = filepath.Join(repo, "metasystem")
-				writeLayoutFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "design\n")
+				conf = []byte("metasystem.template=true\n")
 			}
 			writeLayoutFile(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=claude\n")
 			if err := os.MkdirAll(installation, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), nil, 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), conf, 0o644); err != nil {
 				t.Fatal(err)
 			}
 			subdir := filepath.Join(repo, "sub", "directory")
@@ -457,5 +443,44 @@ func TestInstallationShapeIsTheConfiguration(t *testing.T) {
 	}
 	if installationShape(directory) {
 		t.Fatal("a metasystem.conf directory passed as an installation")
+	}
+}
+
+// Template mode is one explicit signal, metasystem.template=true in the
+// installation's committed metasystem.conf: renaming or deleting a design
+// document never changes engine behaviour.
+func TestTemplateModeIsTheCommittedKeyNotADocument(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	template := filepath.Join(root, "metasystem")
+	if err := os.MkdirAll(template, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(template, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resolver, _ := resolverFixture(t, template)
+	if got, err := resolver.RootForInstallation(template); err != nil || got != template {
+		t.Fatalf("the declared template resolved to %q, %v; want %q", got, err, template)
+	}
+
+	other := t.TempDir()
+	adopted := filepath.Join(other, "metasystem")
+	if err := os.MkdirAll(filepath.Join(other, "development"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "development", "metasystem-design.md"), []byte("design\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(adopted, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(adopted, "metasystem.conf"), []byte("# no template key\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resolver, top := resolverFixture(t, adopted)
+	top.expect(adopted, other, nil)
+	if got, err := resolver.RootForInstallation(adopted); err != nil || got != other {
+		t.Fatalf("a design document made %q a template: %q, %v", adopted, got, err)
 	}
 }

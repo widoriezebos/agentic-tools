@@ -211,9 +211,12 @@ func newDevinFixture(t *testing.T, transport, verb string) *devinFixture {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(f.root, "internal", "protocol", "schemas", "implementer.schema.json"), string(schema))
-	// An absent key resolves legacy; an absent file is unreadable.
-	conf := "# no transport key\n"
-	if transport != "" {
+	// The fixture's empty transport is legacy, named: an absent key resolves
+	// the compiled default (acp); an absent file is unreadable.
+	conf := "dispatch.transport.devin=legacy\n"
+	if transport == "absent" {
+		conf = "# no transport key\n"
+	} else if transport != "" {
 		conf = "dispatch.transport.devin=" + transport + "\n"
 	}
 	writeFile(t, filepath.Join(f.root, "metasystem.conf"), conf)
@@ -364,7 +367,7 @@ func TestDevinTransportRefusalUnreadable(t *testing.T) {
 func TestDevinOutputStreamFollowsTransport(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct{ transport, want string }{
-		{"", "/r/raw.out"}, {"legacy", "/r/raw.out"}, {"acp", "/r/acp-outcome.json"},
+		{"", "/r/raw.out"}, {"legacy", "/r/raw.out"}, {"acp", "/r/acp-outcome.json"}, {"absent", "/r/acp-outcome.json"},
 	} {
 		f := newDevinFixture(t, tc.transport, "dispatch")
 		code := Main([]string{"devin", "output-stream", "--root", f.root, "--round-dir", "/r/"}, func(string) Deps { return f.deps() })

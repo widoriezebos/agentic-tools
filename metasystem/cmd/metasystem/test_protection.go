@@ -64,7 +64,7 @@ func runFrozenSelectionProbe(ctx context.Context, request proofrun.TestRunReques
 	if err != nil {
 		return err
 	}
-	contractRel, present, err := config.ConfLookup(filepath.Join(request.ControlRoot, "metasystem.conf"), "testing.contract")
+	contractRel, present, err := config.CommittedLookup(filepath.Join(request.ControlRoot, "metasystem.conf"), "testing.contract")
 	if err != nil || !present {
 		return fmt.Errorf("read protected probe testing contract: %w", err)
 	}

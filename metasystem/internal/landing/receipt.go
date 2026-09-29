@@ -28,8 +28,7 @@ import (
 )
 
 const (
-	receiptBoundKey            = "landing.receipt-bound-min"
-	receiptBoundDefaultMinutes = 40
+	receiptBoundKey = "landing.receipt-bound-min"
 )
 
 // TestReceipt records evidence and tree observations for one candidate.
@@ -155,7 +154,7 @@ func (preparation *ReceiptPreparation) Close() error {
 }
 
 func receiptEvidenceLimits(root string) (time.Duration, int64) {
-	timeoutSeconds, maxMegabytes := 60, 512
+	timeoutSeconds, maxMegabytes := config.MustIntDefault("suite.evidence-copy-timeout-sec"), config.MustIntDefault("suite.evidence-copy-max-mb")
 	if raw := config.ConfValue(filepath.Join(root, "metasystem.conf"), "suite.evidence-copy-timeout-sec", ""); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 1 && parsed <= 600 {
 			timeoutSeconds = parsed
@@ -497,7 +496,7 @@ func stopReceiptCommand(cmd *exec.Cmd, done <-chan error, received os.Signal) {
 // execution bound. A full landing battery may lawfully run longer than a
 // routine local subprocess, while still needing a hard process-group ceiling.
 func receiptCommandBound(confPath string) boundedexec.Bound {
-	minutes := receiptBoundDefaultMinutes
+	minutes := config.MustIntDefault(receiptBoundKey)
 	if raw := config.ConfValue(confPath, receiptBoundKey, ""); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
 			minutes = parsed

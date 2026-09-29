@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,7 +106,7 @@ func devinProbe(d Deps, args []string) int {
 // config must never fail open into D61's dangerous path. The second result
 // is false on a refusal, whose reason is the first.
 func devinTransport(d Deps) (string, bool) {
-	value, err := d.configValue("dispatch.transport.devin", "legacy")
+	value, err := d.configValue("dispatch.transport.devin", config.MustDefault("dispatch.transport.devin"))
 	if err != nil {
 		return "transport-config-unreadable", false
 	}

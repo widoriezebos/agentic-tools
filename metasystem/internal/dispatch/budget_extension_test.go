@@ -79,9 +79,7 @@ func TestLandingAdvancementFindsTemplateReceiptBelowGitRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(top, "development", "metasystem-design.md"), []byte("# template\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	declareTemplate(t, installation)
 	line := shippedReceiptLine(now.Add(-time.Hour), "nested-goal", "implement", "shipped")
 	if err := os.WriteFile(filepath.Join(installation, "memory", "receipts.log"), []byte(line+"\n"), 0o644); err != nil {
 		t.Fatal(err)

@@ -77,7 +77,7 @@ func TestMaximumDeclarationHeaderFitsExplicitBound(t *testing.T) {
 	if err := os.WriteFile(Path(root), append(data, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, payload := PhaseOne(root, root, testLedger, 10000)
+	_, payload := PhaseOne(root, testLedger, 10000)
 	header, _, _ := strings.Cut(payload, "\n")
 	if len(header) > HeaderBytes {
 		t.Fatalf("maximal declaration header is %d bytes, exceeds %d-byte bound", len(header), HeaderBytes)
@@ -216,5 +216,35 @@ func TestFenceVerbs(t *testing.T) {
 		if got := Fence(root, act, testLedger); got == "" {
 			t.Fatalf("%s was not fenced", act)
 		}
+	}
+}
+
+// The role packet is compiled into the engine: a declared brain boots with
+// its standing instruction from a checkout that holds no packet file at all.
+func TestPhaseOneCarriesTheCompiledRolePacket(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	record := Record{Schema: Schema, Ledger: testLedger, Machine: "brain", DeclaredBy: "Wido", DeclaredAt: "2026-09-07T00:00:00Z"}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(Path(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(Path(root), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, payload := PhaseOne(root, testLedger, 10000)
+	if !strings.Contains(payload, string(RolePacket())) || strings.Contains(payload, "MISSING") {
+		t.Fatalf("the compiled role packet did not reach phase one: %q", payload)
+	}
+	if standingInstruction(RolePacket()) == "" {
+		t.Fatal("the compiled role packet has no standing instruction section")
+	}
+	_, small := PhaseOne(root, testLedger, 2048)
+	if !strings.Contains(small, "PACKET TOO LARGE FOR THIS CHANNEL") || !strings.Contains(small, "raise the context bound to at least") ||
+		!strings.Contains(small, "## The standing instruction") {
+		t.Fatalf("the bounded boot does not say how to read the whole packet: %q", small)
 	}
 }

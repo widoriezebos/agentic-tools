@@ -597,11 +597,11 @@ func Check(opts Options) Result {
 	if !epochRe.MatchString(refEpoch) {
 		return fail(2, "receipts file is malformed: %s", opts.File)
 	}
-	maxAgeDays, failed := opts.cadence("retro.max-age-days", opts.MaxAgeDays, opts.MaxAgeSet, "30")
+	maxAgeDays, failed := opts.cadence("retro.max-age-days", opts.MaxAgeDays, opts.MaxAgeSet, config.MustDefault("retro.max-age-days"))
 	if failed != nil {
 		return *failed
 	}
-	maxReceipts, failed := opts.cadence("retro.max-receipts", opts.MaxReceipts, opts.MaxReceiptsSet, "25")
+	maxReceipts, failed := opts.cadence("retro.max-receipts", opts.MaxReceipts, opts.MaxReceiptsSet, config.MustDefault("retro.max-receipts"))
 	if failed != nil {
 		return *failed
 	}

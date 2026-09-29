@@ -6,6 +6,7 @@ package audit
 // each reads the real installation tree at ../.. and writes nothing into it.
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"go/parser"
 	"go/token"
 	"os"
@@ -76,9 +77,10 @@ func TestMetasystemAuditSpawnsNoExternalCommand(t *testing.T) {
 	}
 }
 
-// The delivery mode is declared, never inferred (D33): the shipped
-// metasystem.conf names it exactly once, and source delivery ships the Go
-// module that declares the metasystem module path.
+// The delivery mode is declared, never inferred (D33): the engine compiles
+// metasystem.engine-delivery=source, the shipped metasystem.conf does not
+// override it, and source delivery ships the Go module that declares the
+// metasystem module path.
 func TestShippedInstallationDeclaresItsEngineDelivery(t *testing.T) {
 	t.Parallel()
 	root := shippedInstallationRoot(t)
@@ -86,12 +88,11 @@ func TestShippedInstallationDeclaresItsEngineDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	declared := regexp.MustCompile(`(?m)^metasystem\.engine-delivery=(.*)$`).FindAllStringSubmatch(string(conf), -1)
-	if len(declared) != 1 {
-		t.Fatalf("metasystem.conf declares metasystem.engine-delivery %d times, want exactly once; a missing key reads as damage, not as a mode", len(declared))
+	if overridden := regexp.MustCompile(`(?m)^metasystem\.engine-delivery=`).FindAllString(string(conf), -1); len(overridden) != 0 {
+		t.Fatalf("metasystem.conf overrides the compiled metasystem.engine-delivery %d times", len(overridden))
 	}
-	if mode := declared[0][1]; mode != "source" {
-		t.Fatalf("the template ships its engine as source; metasystem.engine-delivery=%q", mode)
+	if mode, ok := config.CompiledDefault("metasystem.engine-delivery"); !ok || mode != "source" {
+		t.Fatalf("the template ships its engine as source; the compiled metasystem.engine-delivery=%q", mode)
 	}
 	module, err := os.ReadFile(filepath.Join(root, "go.mod"))
 	if err != nil {

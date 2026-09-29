@@ -1325,29 +1325,18 @@ func BindIdentityInputs(identity ProofIdentity, inputs []string) ProofIdentity {
 }
 
 func effectiveProofConfigurationDigest(configurationPath string, environment []string) (string, error) {
+	// Keys lists every configured key: the files', the environment's
+	// numeric family members, and every applicable compiled default.
 	keys := config.Keys(configurationPath, "", environment)
 	lookup := environmentLookup(environment)
-	seen := make(map[string]bool, len(keys))
-	for _, key := range keys {
-		seen[key] = true
-	}
-	// These proof controls have defaults, so an environment-only override is
-	// an effective input even when the committed file does not name the key.
-	for _, key := range []string{"suite.progress-silence-min", "suite.section-cap-min", "suite.evidence-copy-timeout-sec", "suite.evidence-copy-max-mb"} {
-		if _, present := lookup(config.EnvName(key)); present && !seen[key] {
-			keys = append(keys, key)
-			seen[key] = true
-		}
-	}
 	sort.Strings(keys)
 	hash := sha256.New()
 	for _, key := range keys {
-		if key == AdmissionCapKey {
-			continue
-		}
-		// Where evidence is mirrored is a host-local destination with a
-		// per-checkout default, not an input to what the tests prove.
-		if key == config.EvidenceRootKey {
+		// The compiled table decides per key whether its value is an input
+		// to what a proof proves: a machine- or checkout-specific value (the
+		// evidence root, the admission cap, the interface's port) never
+		// changes a digest between checkouts.
+		if !config.ProofInput(key) {
 			continue
 		}
 		// The shipped template's model slot is metadata, not a resolvable key.

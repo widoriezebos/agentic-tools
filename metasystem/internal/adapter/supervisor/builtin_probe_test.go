@@ -192,9 +192,10 @@ func TestBuiltinSelftestRefusals(t *testing.T) {
 	t.Parallel()
 	for _, runtime := range []string{"claude", "codex"} {
 		f := newProbeFixture(t, runtime)
-		if err := os.WriteFile(filepath.Join(f.root, "metasystem.conf"), []byte("metasystem.runtimes="+runtime+"\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(f.root, "metasystem.conf"), []byte("metasystem.runtimes="+runtime+"\nrole.default.model."+runtime+"=\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		// Claude has a compiled default model; an explicit empty value is unfilled.
 		if code := registry[runtime].selftest(f.deps()); code != 1 || !strings.Contains(f.stderr.String(), "filled role.default.model."+runtime) {
 			t.Errorf("%s selftest without a model: exit %d stderr %q", runtime, code, f.stderr)
 		}

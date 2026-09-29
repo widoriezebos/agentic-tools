@@ -55,6 +55,8 @@ func (b *bed) installAsset(relative string) {
 const dispatchBedConfig = `metasystem.runtimes=fake
 role.default.runtime=fake
 role.default.model.fake=fake-model
+role.verifier.runtime=fake
+role.investigator.runtime=fake
 dispatch.cap-min=30
 dispatch.cap-max=240
 dispatch.max-inline-input-kb=256

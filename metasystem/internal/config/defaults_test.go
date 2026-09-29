@@ -1,0 +1,198 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// An overrides-only metasystem.conf: every reader answers a key it does not
+// name with the compiled-in default, from source "default", and lists it.
+func TestCompiledDefaultsAnswerEveryReader(t *testing.T) {
+	t.Parallel()
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	putFile(t, conf, "# overrides only\n")
+	for key, want := range map[string]string{
+		"watch.stale-min": "20", "suite.section-cap-min": "45", "metasystem.runtimes": "claude,codex,devin",
+		"testing.contract": "testing.json", "dispatch.max-inline-input-kb": "80", "dispatch.transport.devin": "acp",
+		"launch.build.model": "claude-opus-5-5", "role.default.model.claude": "claude-opus-5-5",
+	} {
+		params := GetParams{Key: key, ConfPath: conf, LookupEnv: noEnv}
+		if value, code, err := Get(params); err != nil || code != 0 || value != want {
+			t.Fatalf("Get(%s) = %q, %d, %v; want %q", key, value, code, err, want)
+		}
+		if origin, err := KeyOrigin(params); err != nil || origin != "default" {
+			t.Fatalf("KeyOrigin(%s) = %q, %v; want default", key, origin, err)
+		}
+		if got := ConfValue(conf, key, "caller-default"); got != want {
+			t.Fatalf("ConfValue(%s) = %q; want %q", key, got, want)
+		}
+		if keys := Keys(conf, key, nil); !slices.Contains(keys, key) {
+			t.Fatalf("Keys(%s) = %v; want it listed", key, keys)
+		}
+	}
+	// A compiled default wins over a caller's fallback: each default lives once.
+	if value, _, err := Get(GetParams{Key: "watch.cap-min", ConfPath: conf, Default: "7", DefaultSet: true, LookupEnv: noEnv}); err != nil || value != "180" {
+		t.Fatalf("Get(watch.cap-min) with a caller default = %q, %v; want the compiled 180", value, err)
+	}
+	// An override in the file wins and names its source.
+	putFile(t, conf, "watch.stale-min=5\n")
+	params := GetParams{Key: "watch.stale-min", ConfPath: conf, LookupEnv: noEnv}
+	if value, _, _ := Get(params); value != "5" {
+		t.Fatalf("an override lost to the default: %q", value)
+	}
+	if origin, _ := KeyOrigin(params); origin != "conf" {
+		t.Fatalf("an override's source = %q; want conf", origin)
+	}
+}
+
+// A default that binds a runtime holds only while that runtime is selected,
+// so an installation without Claude inherits no Claude roster.
+func TestRuntimeBoundDefaultsFollowTheSelectedRuntimes(t *testing.T) {
+	t.Parallel()
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	putFile(t, conf, "metasystem.runtimes=codex\n")
+	for _, key := range []string{"role.default.runtime", "role.default.model.claude", "runtime.claude.maximal-models", "dispatch.transport.devin"} {
+		if value, code, err := Get(GetParams{Key: key, ConfPath: conf, LookupEnv: noEnv}); err == nil || code != 1 {
+			t.Fatalf("Get(%s) without its runtime = %q, %d, %v; want no value", key, value, code, err)
+		}
+		if keys := Keys(conf, key, nil); slices.Contains(keys, key) {
+			t.Fatalf("Keys lists %s without its runtime", key)
+		}
+		if got := ConfValue(conf, key, ""); got != "" {
+			t.Fatalf("ConfValue(%s) without its runtime = %q", key, got)
+		}
+	}
+	if value, _, err := Get(GetParams{Key: "role.verifier.runtime", ConfPath: conf, LookupEnv: noEnv}); err != nil || value != "main" {
+		t.Fatalf("a runtime-neutral default did not hold: %q, %v", value, err)
+	}
+	// The environment's runtime selection is the one that counts.
+	env := mapEnv(map[string]string{EnvName("metasystem.runtimes"): "claude"})
+	if value, _, err := Get(GetParams{Key: "role.default.runtime", ConfPath: conf, LookupEnv: env}); err != nil || value != "claude" {
+		t.Fatalf("role.default.runtime with Claude selected by the environment = %q, %v", value, err)
+	}
+}
+
+// A mode-scoped default outranks a base key of the committed layer, as the
+// same line in the shipped file did.
+func TestModeScopedDefaultsKeepTheirPrecedence(t *testing.T) {
+	t.Parallel()
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	putFile(t, conf, "role.implementer.model.claude=base-override\n")
+	params := GetParams{Key: "role.implementer.model.claude", Mode: "design", ConfPath: conf, LookupEnv: noEnv}
+	if value, _, err := Get(params); err != nil || value != "claude-fable-5-1" {
+		t.Fatalf("design-mode implementer model = %q, %v; want the compiled mode default", value, err)
+	}
+	if origin, _ := KeyOrigin(params); origin != "default" {
+		t.Fatalf("design-mode implementer model source = %q; want default", origin)
+	}
+	params.Mode = ""
+	if value, _, _ := Get(params); value != "base-override" {
+		t.Fatalf("base implementer model = %q; want the override", value)
+	}
+}
+
+// Validation reads the effective configuration: an overrides-only file is
+// complete, and the compiled defaults are themselves valid.
+func TestValidateAcceptsAnOverridesOnlyConfiguration(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	conf := filepath.Join(repo, "metasystem.conf")
+	putFile(t, conf, "# overrides only\n")
+	contract, err := os.ReadFile(filepath.Join("..", "..", "testing.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	putFile(t, filepath.Join(repo, "testing.json"), string(contract))
+	for _, dir := range []string{".claude/agents", ".claude/skills", ".codex", ".agents/skills", ".devin"} {
+		if err := os.MkdirAll(filepath.Join(repo, filepath.FromSlash(dir)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, problems, err := Validate(conf, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, problem := range problems {
+		if strings.Contains(problem, "is required") || strings.Contains(problem, "has no model") {
+			t.Fatalf("an overrides-only configuration was refused: %v", problems)
+		}
+	}
+}
+
+// The table is well formed: every key valid and unique, every row explained.
+func TestCompiledSettingsTableIsWellFormed(t *testing.T) {
+	t.Parallel()
+	seen := map[string]bool{}
+	for _, setting := range CompiledSettings() {
+		if !confKeyPattern.MatchString(setting.Key) || seen[setting.Key] {
+			t.Fatalf("setting key %q is malformed or repeated", setting.Key)
+		}
+		seen[setting.Key] = true
+		if strings.TrimSpace(setting.Meaning) == "" {
+			t.Fatalf("setting %s has no meaning", setting.Key)
+		}
+	}
+	if ProofInput(EvidenceRootKey) {
+		t.Fatal("the evidence root, a per-checkout path, is a proof input")
+	}
+	if !ProofInput("suite.section-cap-min") || !ProofInput("an.unknown-key") {
+		t.Fatal("a proof control or an unknown key is not a proof input")
+	}
+}
+
+// The shipped metasystem.conf holds overrides only: no active line repeats a
+// compiled default, so each default lives once, in Go.
+func TestShippedConfigurationHoldsNoCompiledDefault(t *testing.T) {
+	t.Parallel()
+	content, err := os.ReadFile(filepath.Join("..", "..", "metasystem.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parseSettings(string(content), func(line int, key, value string, ok bool) {
+		if !ok {
+			return
+		}
+		if setting, found := compiledSetting(key); found && setting.Computed == "" && setting.Default == value {
+			t.Errorf("metasystem.conf:%d repeats the compiled default %s=%s", line, key, value)
+		}
+	})
+}
+
+// The only compiled mode-scoped role defaults are the shared Claude/Fable
+// design-author pair.
+func TestCompiledModeRoleDefaultsAreTheDesignAuthor(t *testing.T) {
+	t.Parallel()
+	var got []string
+	for _, setting := range CompiledSettings() {
+		if strings.HasPrefix(setting.Key, "mode.") {
+			got = append(got, setting.Key+"="+setting.Default)
+		}
+	}
+	want := []string{"mode.design.role.implementer.runtime=claude", "mode.design.role.implementer.model.claude=claude-fable-5-1"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("compiled mode role defaults %q, want %q", got, want)
+	}
+}
+
+// Template mode reads the committed file alone: the uncommitted .local file
+// cannot make a checkout the template (and no environment variable is read).
+func TestTemplateModeReadsOnlyTheCommittedKey(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	conf := filepath.Join(root, "metasystem.conf")
+	putFile(t, conf, "# overrides only\n")
+	putFile(t, conf+".local", TemplateModeKey+"=true\n")
+	if TemplateMode(root) {
+		t.Fatal("a .local value made the checkout the template")
+	}
+	putFile(t, conf, TemplateModeKey+"=true\n")
+	if !TemplateMode(root) {
+		t.Fatal("the committed key did not declare the template")
+	}
+	if value, ok := CompiledDefault(TemplateModeKey); !ok || value != "false" {
+		t.Fatalf("compiled template default = %q", value)
+	}
+}

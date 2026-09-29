@@ -44,7 +44,11 @@ func newFixture(t *testing.T, selfHosted bool) *fixture {
 		installation, state = "metasystem", "metasystem/"
 	}
 	f := &fixture{t: t, checkout: canonical, state: state}
-	f.write(installation+"/metasystem.conf", "metasystem.runtimes=claude\n")
+	conf := "metasystem.runtimes=claude\n"
+	if selfHosted {
+		conf += "metasystem.template=true\n"
+	}
+	f.write(installation+"/metasystem.conf", conf)
 	mustNot(t, os.MkdirAll(filepath.Join(canonical, installation, "scripts", "agents"), 0o755),
 		"create the installation's scripts")
 	if selfHosted {
