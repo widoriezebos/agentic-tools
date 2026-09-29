@@ -20,6 +20,7 @@ type fakeEvidence struct {
 	ancestors     map[string]bool
 	calledProof   bool
 	calledCustody bool
+	roots         []string
 }
 
 func (f *fakeEvidence) evidence() gocache.Evidence {
@@ -34,8 +35,9 @@ func (f *fakeEvidence) evidence() gocache.Evidence {
 			f.calledProof = true
 			return f.proofFound, f.proofAuth, f.proofPaths, nil
 		},
-		LiveAncestor: func(ref string) (bool, error) { return f.ancestors[ref], nil },
-		Self:         func() (string, error) { return "pid=7;micro=70", nil },
+		LiveAncestor:  func(ref string) (bool, error) { return f.ancestors[ref], nil },
+		Self:          func() (string, error) { return "pid=7;micro=70", nil },
+		EvidenceRoots: func() []string { return f.roots },
 	}
 }
 
@@ -145,5 +147,44 @@ func TestResolutionEnvironmentReplacesInheritedValues(t *testing.T) {
 	joined := strings.Join(environment, "\n")
 	if strings.Contains(joined, "/old") || strings.Contains(joined, "=stale") || !strings.Contains(joined, "GOCACHE=/machine/cache/go-build") || !strings.Contains(joined, "PATH=/bin") {
 		t.Fatalf("child environment = %v", environment)
+	}
+}
+
+// U5i (engine-owns-disk-lifetimes Part B, 3.12 placement rules): a cache
+// path under an evidence root is refused, naming the engine cache and the
+// environment line that selects it; so is a GOMODCACHE the environment sets
+// under one.
+func TestResolveDomainRefusesACacheUnderAnEvidenceRoot(t *testing.T) {
+	t.Parallel()
+	under := gocache.Paths{GoCache: "/evidence/root/gocache-run", StaticcheckCache: "/evidence/root/staticcheck"}
+	cases := []struct {
+		name        string
+		environment []string
+		evidence    fakeEvidence
+		want        string
+		source      string
+	}{
+		{name: "a proof record's cache", environment: []string{"METASYSTEM_PROOF_CONTROL_ROOT=/control", "METASYSTEM_PROOF_ATTEMPT=proof-1"},
+			evidence: fakeEvidence{proofFound: true, proofAuth: true, proofPaths: under, roots: []string{"/evidence/root"}}, want: "/evidence/root/gocache-run",
+			source: "the scratch record of the proof run METASYSTEM_PROOF_CONTROL_ROOT names"},
+		{name: "the machine cache itself", evidence: fakeEvidence{roots: []string{"/machine"}}, want: "/machine/cache/go-build",
+			source: "the user cache directory"},
+		{name: "an inherited module cache", environment: []string{"GOMODCACHE=/evidence/root/mod"}, evidence: fakeEvidence{roots: []string{"/evidence/root/"}},
+			want: "GOMODCACHE=/evidence/root/mod", source: "the environment's GOMODCACHE"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := gocache.ResolveDomain(c.environment, "", c.evidence.evidence())
+			var refusal gocache.Refusal
+			if !errors.As(err, &refusal) || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), "evidence root") || !strings.Contains(err.Error(), c.source) ||
+				strings.Contains(err.Error(), "unset GOCACHE") ||
+				!strings.Contains(err.Error(), enginePaths.GoCache) {
+				t.Fatalf("refused naming %q, the evidence root and the engine cache: %v", c.want, err)
+			}
+		})
+	}
+	if _, err := gocache.ResolveDomain(nil, "", (&fakeEvidence{roots: []string{"/evidence/root"}}).evidence()); err != nil {
+		t.Fatalf("a cache outside every root resolves: %v", err)
 	}
 }

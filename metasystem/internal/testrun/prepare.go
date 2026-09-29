@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -643,6 +644,19 @@ func coveragePackageGone(workspace gittree.Workspace, tree, directory string) (b
 	return true, nil
 }
 
+// retainedPolicyEngines hold their pins' preparation leases for the
+// process's life; the kernel releases them when it exits.
+var retainedPolicyEngines struct {
+	sync.Mutex
+	binaries []*steward.EnrolledBinary
+}
+
+func retainPolicyEngine(binary *steward.EnrolledBinary) {
+	retainedPolicyEngines.Lock()
+	defer retainedPolicyEngines.Unlock()
+	retainedPolicyEngines.binaries = append(retainedPolicyEngines.binaries, binary)
+}
+
 func TrustedPolicyEngine(installation, policyBaseCommit string, firstTransition bool) (string, string, bool, error) {
 	current, err := os.Executable()
 	if err != nil {
@@ -662,14 +676,20 @@ func TrustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 			return "", "", false, enrollmentRefusal(installation, openErr)
 		}
 		identity := pinned.Install
-		defer pinned.Close()
 		if sourceErr := pinned.VerifySourceAtDestination(enrollmentRoot, policyBaseCommit); sourceErr != nil {
+			_ = pinned.Close()
 			facts := append(engineCheckoutFacts(installation), enginecause.Value("destination", policyBaseCommit))
 			return "", "", false, judgmentRefusal(sourceErr, facts, "retained destination engine does not bind the captured policy base")
 		}
 		if prepareErr := pinned.PrepareForExecution(); prepareErr != nil {
+			_ = pinned.Close()
 			return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, engineCheckoutFacts(installation), "retain destination engine descriptor: "+prepareErr.Error())
 		}
+		// The policy engine runs the plan and every worker of this run, long
+		// after this returns: its pin keeps the preparation lease until the
+		// process ends (engine-owns-disk-lifetimes 3.5), so no disk pass
+		// removes it between two starts.
+		retainPolicyEngine(pinned)
 		engine = steward.EnrolledExecutionPath(enrollmentRoot, identity)
 	}
 	engineInfo, err := os.Stat(engine)

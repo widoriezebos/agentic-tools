@@ -182,32 +182,3 @@ func TestReleaseByPersonSuppliesOnlyTheUseJudgement(t *testing.T) {
 		t.Fatalf("an open goal's store = %+v", verdict)
 	}
 }
-
-func TestRecordDiscardIsAPersonsRepeatableAct(t *testing.T) {
-	t.Parallel()
-	root := realDir(t)
-	registry := Registry{Dir: filepath.Join(root, "stores")}
-	registration := plainRegistration(filepath.Join(root, "job"))
-	registration.Owner = Owner{Kind: OwnerDelegate, Ref: "job-1"}
-	record, err := registry.Register(registration, testNow, strings.NewReader(strings.Repeat("x", 16)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	updated, changed, err := RecordDiscard(registry, registration.Owner, "Wido", "abandoned bed", testNow)
-	if err != nil || !changed || updated.AuthorizedDiscard == nil || updated.AuthorizedDiscard.By != "Wido" {
-		t.Fatalf("discard = %+v %v %v", updated, changed, err)
-	}
-	before := snapshotTree(t, registry.Dir)
-	if _, changed, err := RecordDiscard(registry, registration.Owner, "Wido", "again", testNow.Add(time.Hour)); err != nil || changed {
-		t.Fatalf("a repeat = %v %v", changed, err)
-	}
-	if snapshotTree(t, registry.Dir) != before {
-		t.Fatal("a repeated discard wrote")
-	}
-	if loaded, _ := registry.Load(record.ID); loaded.AuthorizedDiscard == nil {
-		t.Fatal("the discard was not durable")
-	}
-	if _, _, err := RecordDiscard(registry, Owner{Kind: OwnerDelegate, Ref: "job-2"}, "Wido", "", testNow); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("an unregistered chain = %v", err)
-	}
-}

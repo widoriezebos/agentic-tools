@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 // A person's acts on the disk (3.8): each one works from what a preview or
@@ -193,43 +191,12 @@ func ReleaseByPerson(ctx context.Context, registry Registry, id string, proof Ow
 	return Verdict{Decision: Release, Reason: "released"}, nil
 }
 
-// RecordDiscard records a person's authorized discard of a delegate chain's
-// uncaptured work on its workspace record, so the delegate proof can pass
-// (3.2). The same person's discard again is success and writes nothing.
-func RecordDiscard(registry Registry, owner Owner, by, reason string, now time.Time) (Record, bool, error) {
-	records, _ := registry.Inventory()
-	for _, record := range records {
-		if record.Owner != owner || record.State == StateReleased {
-			continue
-		}
-		if record.AuthorizedDiscard != nil && record.AuthorizedDiscard.By == by {
-			return record, false, nil
-		}
-		updated, err := registry.setDiscard(record.ID, Discard{By: by, At: now.UTC(), Reason: reason})
-		return updated, err == nil, err
-	}
-	return Record{}, false, ErrNotFound
-}
-
-// setDiscard writes the discard under the record lock, waiting for it: a
-// person's act is bounded by one sweeper critical section.
-func (r Registry) setDiscard(id string, discard Discard) (Record, error) {
-	file, err := os.OpenFile(r.LockPath(id), os.O_RDWR, 0)
-	if err != nil {
-		return Record{}, err
-	}
-	if err := flockRetry(file, unix.LOCK_EX); err != nil {
-		_ = file.Close()
-		return Record{}, err
-	}
-	defer unlockAndClose(file)
-	r.acquired(file)
-	record, err := r.Load(id)
-	if err != nil {
-		return Record{}, err
-	}
-	record.AuthorizedDiscard = &discard
-	return record, r.write(record)
+// Discarder releases a delegate chain's workspace under a person's discard
+// of its uncommitted work, for that invocation alone (Round B3-3 rule 2):
+// the discard waives the content keep and nothing else, and it is kept as
+// history on the record, never as authority a later pass could use.
+type Discarder interface {
+	ReleaseDiscarded(ctx context.Context, registry Registry, id string, census *UseCensus, discard Discard) (Verdict, error)
 }
 
 // removalStopped is a stopped removal's reason and the command that truly

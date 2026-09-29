@@ -742,6 +742,12 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		add("%v", evidenceErr)
 	} else if withinRepo(realpath.Resolve(evidence.Path), repo) {
 		add("%s must be outside the repository (%s)", EvidenceRootKey, evidence.Line())
+	} else {
+		// Caches and source copies never live under an evidence root
+		// (engine-owns-disk-lifetimes 3.12, R21).
+		for _, problem := range placementProblems(evidence.Path, machineCacheRoots()) {
+			add("%s", problem)
+		}
 	}
 
 	// Registration is adopted-repository state, not a template invariant (the

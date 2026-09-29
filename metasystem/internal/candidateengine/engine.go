@@ -152,90 +152,19 @@ func Prepare(ctx context.Context, controlRoot string, workspace gittree.Workspac
 	if err != nil {
 		return nil, err
 	}
-	if scratch := proofrun.ScratchRunFromContext(ctx); scratch != nil {
-		return prepareScratch(ctx, scratch, controlRoot, workspace, installationPrefix, candidateTree, environment, beforeColdBuild, io, buildIdentity)
+	scratch := proofrun.ScratchRunFromContext(ctx)
+	if scratch == nil {
+		// Every candidate engine is built inside a proof run's scratch into
+		// the v2 namespace; the legacy candidate-engines/<identity> branch is
+		// gone (engine-owns-disk-lifetimes 3.5, DL2-11), and its entries are
+		// strays a person removes.
+		return nil, fmt.Errorf("a candidate engine is prepared only inside a proof run's scratch (metasystem test run creates one)")
 	}
-	cacheRoot := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines")
-	if err := os.MkdirAll(cacheRoot, 0o700); err != nil {
-		return nil, fmt.Errorf("create candidate engine cache: %w", err)
-	}
-	// The file lock is the identity reservation. A crashed producer releases
-	// it through the kernel; a partial staging directory is never a hit.
-	lockFile, err := os.OpenFile(filepath.Join(cacheRoot, buildIdentity+".lock"), os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("reserve candidate engine identity: %w", err)
-	}
-	defer lockFile.Close()
-	cacheWaitStarted := time.Now()
-	for {
-		if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
-			break
-		} else if err != unix.EWOULDBLOCK && err != unix.EAGAIN {
-			return nil, fmt.Errorf("reserve candidate engine identity: %w", err)
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
-	cacheWaitMS := time.Since(cacheWaitStarted).Milliseconds()
-	defer unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)
-	entry := filepath.Join(cacheRoot, buildIdentity)
-	if cached := validated(entry, buildIdentity); cached != nil {
-		cached.QueueDurationMS = cacheWaitMS
-		return cached, nil
-	}
-	if beforeColdBuild != nil {
-		if err := beforeColdBuild(); err != nil {
-			return nil, err
-		}
-	}
-	lease, err := proofrun.AcquireHostResources(ctx, controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "heavy", nil)
-	if err != nil {
-		return nil, fmt.Errorf("admit candidate engine build: %w", err)
-	}
-	defer lease.Close()
-	built, err := Build(proofrun.WithHostResourceLease(ctx, lease), workspace, installationPrefix, candidateTree, environment, io)
-	if err != nil {
-		return nil, err
-	}
-	defer built.Close()
-	if built.Commit != buildIdentity {
-		return nil, fmt.Errorf("candidate engine build identity changed during preparation")
-	}
-	stage, err := os.MkdirTemp(cacheRoot, ".candidate-engine-*")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(stage)
-	artifact := filepath.Join(stage, "metasystem")
-	if err := CopyArtifact(built.Path, artifact); err != nil {
-		return nil, err
-	}
-	record := cacheRecord{Version: 1, BuildIdentity: buildIdentity, Digest: built.Digest}
-	encoded, err := json.Marshal(record)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(filepath.Join(stage, "record.json"), encoded, 0o600); err != nil {
-		return nil, err
-	}
-	if err := os.RemoveAll(entry); err != nil {
-		return nil, fmt.Errorf("discard invalid candidate engine artifact: %w", err)
-	}
-	if err := os.Rename(stage, entry); err != nil {
-		return nil, fmt.Errorf("publish candidate engine artifact: %w", err)
-	}
-	if cached := validated(entry, buildIdentity); cached != nil {
-		cached.QueueDurationMS = cacheWaitMS + lease.Waited().Milliseconds()
-		return cached, nil
-	}
-	return nil, fmt.Errorf("published candidate engine artifact failed validation")
+	return prepareScratch(ctx, scratch, controlRoot, workspace, installationPrefix, candidateTree, environment, beforeColdBuild, io, buildIdentity)
 }
 
 // v2Retained bounds the v2 namespace; legacy entries beside
-// it are never read or evicted.
+// it are never read or evicted (a person removes them).
 const v2Retained = 8
 
 // prepareScratch is the run-rooted engine path: a cold build

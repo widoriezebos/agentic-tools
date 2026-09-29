@@ -164,7 +164,7 @@ func (s SuiteFailures) Apply(ctx context.Context, pass *Pass, item Item) Verdict
 		bundle, _ := MovedSource(filepath.Base(item.Path))
 		source := filepath.Join(filepath.Dir(item.Path), bundle)
 		rules := MoveRules{SegmentDir: s.SegmentDir, Blobs: s.Blobs, Referrer: s.referrer(source), Installation: s.Installation,
-			Segment: Segment(s.GitRoot), Stage: movedStage(item.Path), Sync: s.Sync}
+			Segment: Segment(s.GitRoot), Stage: movedStage(item.Path), Sync: s.Sync, Stores: CheckoutRegistry(s.Installation)}
 		kept, err := rules.FinishMovedSource(ctx, item.Path, filepath.Join(s.SegmentDir, bundle))
 		switch {
 		case err != nil:
@@ -196,7 +196,7 @@ func (s SuiteFailures) Apply(ctx context.Context, pass *Pass, item Item) Verdict
 		}
 		s.complete(ctx, item.Path, pass.Now)
 		result, err := MoveBundle(ctx, item.Path, MoveRules{SegmentDir: s.SegmentDir, Blobs: s.Blobs, Referrer: s.referrer(item.Path),
-			Installation: s.Installation, Segment: Segment(s.GitRoot), Stage: stage, Sync: s.Sync})
+			Installation: s.Installation, Segment: Segment(s.GitRoot), Stage: stage, Sync: s.Sync, Stores: CheckoutRegistry(s.Installation)})
 		switch {
 		case err != nil:
 			return s.pending("the move", err)

@@ -47,6 +47,9 @@ type diskOwners struct {
 	trimPass steward.CacheTrimPass
 	// git runs git for workspaces; nil is the real git.
 	git diskstore.WorkspaceGit
+	// discarder is the delegate proof a person's --discard releases
+	// through (fixtures); nil is steward.DelegateProof.
+	discarder func(top string, now time.Time) (diskstore.Discarder, error)
 	// evidenceEnv builds a person's evidence verb's environment (fixtures);
 	// nil is steward.EvidenceEnv.
 	evidenceEnv func(ctx context.Context, top, by string) (evidence.Env, error)
@@ -77,6 +80,9 @@ func (o diskOwners) withDefaults() diskOwners {
 	}
 	if o.git == nil {
 		o.git = steward.ExecWorkspaceGit
+	}
+	if o.discarder == nil {
+		o.discarder = func(top string, now time.Time) (diskstore.Discarder, error) { return steward.DelegateProof(top, now) }
 	}
 	if o.tempRoots == nil {
 		o.tempRoots = func() []string {
@@ -117,7 +123,7 @@ func diskIntentCommands() []intentCommand {
 				"Runs the steward's pass now for this checkout and this machine: a store goes only when its owner is proven ended and nothing still uses it; everything else is kept or pending with the command that settles it. Then it trims the machine's Go and staticcheck caches to their caps (disk.go-cache-cap-gib, disk.delegate-go-cache-cap-gib, disk.staticcheck-cache-cap-gib), least recently used first: everything unused for disk.go-cache-keep-hours goes before anything used within it, and a cache still over its cap loses the rest oldest first, never an entry used within disk.cache-min-keep-minutes. Run at a terminal it finishes the job: pass after pass of the steward's disk.cache-trim-budget-sec, telling each on stderr, until every cache is measured and trimmed or disk.cache-trim-person-budget-sec is spent. A repeat with nothing to do is success.",
 				"It also forgets the host registry's registrations of checkouts whose directories no longer exist (one reaped record each, reason checkout-gone); a registration whose recorded process still runs is kept. The steward's own pass only counts them.",
 				"--go-cache runs only the cache trim.",
-				"--preview changes nothing and writes one plan file whose id it prints. --strays, --release and --discard are a person's acts at the enrolled terminal: --strays removes the engine-named leftovers a preview listed, --release ID removes one registered store whose only obstacle is a use check the machine could not complete, --discard records that a chain's uncaptured work may be dropped.",
+				"--preview changes nothing and writes one plan file whose id it prints. --strays, --release and --discard are a person's acts at the enrolled terminal: --strays removes the engine-named leftovers a preview listed, --release ID removes one registered store whose only obstacle is a use check the machine could not complete, --discard drops a chain's uncommitted work and releases its workspace now, archiving every commit it holds.",
 				"Nothing unregistered is ever removed by the pass itself; nothing a live process uses is removed by anyone.",
 				"Output is a short summary: what was removed and the space freed, what was kept grouped by reason with its count and the three largest, and the command that settles it. --verbose prints every item on its own line; --json carries every item either way.",
 			},
@@ -127,7 +133,7 @@ func diskIntentCommands() []intentCommand {
 				{name: "strays", usage: "a person's act: remove the strays a preview listed"},
 				{name: "plan", value: "ID", usage: "the preview to act on (default: the newest)"},
 				{name: "release", value: "ID", usage: "a person's act: release the registered store ID that only an incomplete use check keeps"},
-				{name: "discard", value: "j2:ID", advanced: true, usage: "a person's act: record that chain ID's uncaptured work may be dropped"},
+				{name: "discard", value: "j2:ID", advanced: true, usage: "a person's act: drop chain ID's uncommitted work and release its workspace now"},
 				{name: "reason", value: "TEXT", advanced: true, usage: "why the work may be dropped (with --discard)"},
 				{name: "go-cache", usage: "only trim the Go and staticcheck caches to their caps"},
 				intentVerboseFlag,
@@ -510,18 +516,40 @@ func runDiskDiscard(inv *intentInvocation, owners diskOwners, top string) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	record, changed, err := diskstore.RecordDiscard(diskstore.CheckoutRegistry(top), diskstore.Owner{Kind: diskstore.OwnerDelegate, Ref: chain}, by, reason, owners.now())
-	switch {
-	case errors.Is(err, diskstore.ErrNotFound):
+	registry := diskstore.CheckoutRegistry(top)
+	records, unreadable := registry.Inventory()
+	if len(unreadable) > 0 {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the store registry cannot be read (" + unreadable[0].Reason + "); nothing was done",
+			Decision: "metasystem disk show names what the last pass could read"})
+	}
+	var record *diskstore.Record
+	for index := range records {
+		if records[index].Owner == (diskstore.Owner{Kind: diskstore.OwnerDelegate, Ref: chain}) && records[index].State != diskstore.StateReleased {
+			record = &records[index]
+		}
+	}
+	if record == nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "chain j2:" + chain + " has no registered workspace to discard; nothing was done",
 			next: inv.publicArgv("disk", "show"), nextReason: "the reports name every kept workspace and its chain"})
-	case err != nil:
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the discard could not be recorded: " + err.Error(), Decision: "metasystem disk show"})
-	case !changed:
-		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "the discard of j2:" + chain + " by " + by + " is already recorded"})
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "recorded: " + by + " allows j2:" + chain + "'s uncaptured work to be dropped; the next pass releases " + record.Path + " once its owner has ended",
-		next: inv.publicArgv("disk", "clean"), nextReason: "release it now"})
+	discarder, err := owners.discarder(top, owners.now())
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the chain's workspace cannot be judged: " + err.Error(), Decision: "metasystem disk show"})
+	}
+	// The discard is this invocation's alone (Round B3-3 rule 2): it
+	// releases now, or keeps the workspace with the reason; it leaves no
+	// authority for a later pass.
+	verdict, err := discarder.ReleaseDiscarded(context.Background(), registry, record.ID, owners.census(),
+		diskstore.Discard{By: by, At: owners.now().UTC(), Reason: reason})
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the discard stopped: " + err.Error(), Decision: "metasystem disk show"})
+	}
+	outcome := diskstore.PersonOutcome{Path: record.Path, Done: verdict.Decision == diskstore.Release, Reason: verdict.Reason, Command: verdict.Command,
+		Finding: verdict.Reason, FindingCommand: verdict.Command}
+	if verdict.Reason == "already released" {
+		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "chain j2:" + chain + "'s workspace is already released; nothing to do"})
+	}
+	return renderPersonOutcomes(inv, "discard", "workspaces", by, []diskstore.PersonOutcome{outcome})
 }
 
 func runDiskGoCache(inv *intentInvocation, owners diskOwners) int {

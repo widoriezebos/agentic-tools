@@ -39,6 +39,10 @@ type Seams struct {
 	DelegateCustody func(stateRoot, installationRoot, job string, pid int64) (bool, error)
 	// UserCacheDir is os.UserCacheDir.
 	UserCacheDir func() (string, error)
+	// EvidenceRoots lists the host's evidence roots; nil is the
+	// convention's $HOME/metasystem-evidence and every root the host
+	// registry of evidence roots names.
+	EvidenceRoots func() []string
 }
 
 func (s Seams) withDefaults() Seams {
@@ -74,7 +78,46 @@ func (s Seams) withDefaults() Seams {
 	if s.UserCacheDir == nil {
 		s.UserCacheDir = os.UserCacheDir
 	}
+	if s.EvidenceRoots == nil {
+		s.EvidenceRoots = hostEvidenceRoots
+	}
 	return s
+}
+
+// hostEvidenceRoots is the convention's evidence parent under the user's
+// home and every root ~/.metasystem/stores/evidence-roots.json names (read
+// here without the evidence package, which the engine's build path does not
+// carry). An unreadable registry adds nothing: the guard is a refusal of a
+// misplaced cache, never a removal.
+func hostEvidenceRoots() []string {
+	var roots []string
+	if home, err := os.UserHomeDir(); err == nil && filepath.IsAbs(home) {
+		roots = append(roots, filepath.Join(home, "metasystem-evidence"))
+	}
+	// The home state root as internal/registry resolves it (a run-scoped
+	// override first), spelled here to keep this package's imports leaf.
+	home := os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME")
+	if !filepath.IsAbs(home) {
+		var err error
+		if home, err = os.UserHomeDir(); err != nil {
+			return roots
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".metasystem", "stores", "evidence-roots.json"))
+	if err != nil {
+		return roots
+	}
+	var entries []struct {
+		Root string `json:"root"`
+	}
+	if json.Unmarshal(data, &entries) == nil {
+		for _, entry := range entries {
+			if filepath.IsAbs(entry.Root) {
+				roots = append(roots, entry.Root)
+			}
+		}
+	}
+	return roots
 }
 
 // Evidence composes the production evidence over the seams.
@@ -85,9 +128,10 @@ func (s Seams) Evidence() gocache.Evidence {
 		DelegateCustody: func(stateRoot, installationRoot, job string) (bool, error) {
 			return s.DelegateCustody(stateRoot, installationRoot, job, s.Self())
 		},
-		JobWorktree:  s.jobWorktree,
-		ProofRecord:  s.proofRecord,
-		LiveAncestor: s.liveAncestor,
+		JobWorktree:   s.jobWorktree,
+		ProofRecord:   s.proofRecord,
+		LiveAncestor:  s.liveAncestor,
+		EvidenceRoots: s.EvidenceRoots,
 		Self: func() (string, error) {
 			exact, alive := s.Probe(s.Self())
 			if !alive {

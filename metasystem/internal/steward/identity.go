@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"io"
 	"os"
 	"os/exec"
@@ -279,14 +280,17 @@ func (b *EnrolledBinary) BuildStamp() string {
 	return buildStampFromOpenFile(b.file)
 }
 
-// Close releases the pinned engine descriptor.
+// Close releases the pinned engine descriptor and, with it, the
+// preparation lease on the pin (engine-owns-disk-lifetimes 3.5): every
+// starter calls it after cmd.Start has returned, on success and failure.
 func (b *EnrolledBinary) Close() error {
 	if b == nil || b.file == nil {
 		return nil
 	}
 	var first error
 	if b.execFile != nil {
-		first = b.execFile.Close()
+		first = errors.Join(unix.Flock(int(b.execFile.Fd()), unix.LOCK_UN), b.execFile.Close())
+		b.execFile = nil
 	}
 	if err := b.file.Close(); first == nil {
 		first = err
@@ -322,6 +326,10 @@ func (b *EnrolledBinary) PrepareForExecution() error {
 	if existing, err := os.Open(finalPath); err == nil {
 		if digest, digestErr := digestOpenFile(existing); digestErr == nil && digest == b.Install.InstallDigest {
 			if info, statErr := existing.Stat(); statErr == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
+				if err := takePreparationLease(existing); err != nil {
+					_ = existing.Close()
+					return err
+				}
 				b.execPath, b.execFile = finalPath, existing
 				return nil
 			}
@@ -366,8 +374,28 @@ func (b *EnrolledBinary) PrepareForExecution() error {
 	if err != nil {
 		return err
 	}
+	if err := takePreparationLease(execFile); err != nil {
+		_ = execFile.Close()
+		return err
+	}
 	b.execPath, b.execFile = finalPath, execFile
 	return nil
+}
+
+// takePreparationLease is LOCK_SH on the pin's open descriptor, taken while
+// .prepare.flock is held and kept until Close: a command prepared and not
+// yet started keeps its pin, because the disk sweeper's LOCK_EX probe fails
+// (engine-owns-disk-lifetimes 3.5, DL3B-08).
+func takePreparationLease(file *os.File) error {
+	for {
+		err := unix.Flock(int(file.Fd()), unix.LOCK_SH)
+		if !errors.Is(err, unix.EINTR) {
+			if err != nil {
+				return fmt.Errorf("take the engine pin's preparation lease: %w", err)
+			}
+			return nil
+		}
+	}
 }
 
 // EnrolledExecutionPath is the deterministic owner-only snapshot path for one

@@ -15,13 +15,13 @@ func TestEveryDiskSettingHasADefaultAndAValidationClause(t *testing.T) {
 		"evidence.export-dir", "evidence.blob-grace-hours", "disk.proof-target-gib", "disk.proof-keep-days", "disk.suite-failure-target-gib",
 		"disk.suite-failure-distill-hours", "disk.suite-failure-move-days", "disk.launch-target-mib", "disk.launch-keep-days",
 		"disk.unit-target-mib", "disk.unit-keep-days", "disk.registry-history-target-mib", "disk.context-keep-days",
-		"disk.process-scratch-target-gib", "disk.job-worktree-target-gib", "disk.workspace-target-gib", "disk.candidate-engines-keep",
+		"disk.process-scratch-target-gib", "disk.job-worktree-target-gib", "disk.workspace-target-gib", "disk.pin-grace-hours", "disk.candidate-engines-keep",
 		"disk.compress-above-mib", "disk.session-bootstrap-hours", "disk.floor-gib", "disk.floor-min-age-hours", "disk.sweep-budget-sec",
 		"disk.sweep-items-per-lock", "disk.census-min-budget-sec",
 	}
 	rows := DiskSettings()
 	if len(rows) != len(want) {
-		t.Fatalf("%d disk settings, want the %d of 3.13", len(rows), len(want))
+		t.Fatalf("%d disk settings, want the %d of 3.13 and Round D2", len(rows), len(want))
 	}
 	for index, row := range rows {
 		if row.Key != want[index] {

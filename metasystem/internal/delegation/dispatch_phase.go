@@ -1,6 +1,7 @@
 package delegation
 
 import (
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
@@ -734,9 +736,27 @@ func (s *session) createJobWorktree(job, workspace string) error {
 	if exists(workspace) {
 		return s.die(1, "job worktree already exists: "+workspace)
 	}
+	// The worktree is the chain's delegate workspace, registered before it
+	// holds a byte and accepted with its gitdir and .git inode once git has
+	// made it (engine-owns-disk-lifetimes 3.1, U5f).
+	stores := diskstore.CheckoutRegistry(s.root)
+	registered, err := stores.Register(diskstore.Registration{Path: workspace, Git: true, Class: diskstore.DelegateClass,
+		Owner: diskstore.Owner{Kind: diskstore.OwnerDelegate, Ref: job}, Checkout: s.root, Lifetime: diskstore.LifetimeOwner,
+		CapBytes: 8 << 30, CapKind: diskstore.CapTarget, Layout: diskstore.LayoutCopy}, s.l.ports.Clock.Now(), rand.Reader)
+	if err != nil {
+		return s.die(1, "could not register the job worktree as a store: "+err.Error())
+	}
 	if _, stderr, err := s.l.ports.Git.Run(s.ctx, s.repoScope, "worktree", "add", "-q", "-b", "agent/"+job, workspace, "HEAD"); err != nil {
 		s.stderr.Write(stderr)
 		return s.die(1, "could not create job worktree")
+	}
+	identity, err := diskstore.ReadGitIdentity(workspace)
+	if err == nil {
+		_, err = stores.Transition(registered.ID, []diskstore.State{diskstore.StateReserved}, diskstore.StateAccepted,
+			func(record *diskstore.Record) { record.Identity = identity })
+	}
+	if err != nil {
+		return s.die(1, "could not accept the job worktree's store record: "+err.Error())
 	}
 	out, _, err := s.l.ports.Git.Run(s.ctx, workspace, "rev-parse", "--absolute-git-dir")
 	if err != nil {
@@ -757,15 +777,9 @@ func (s *session) createJobWorktree(job, workspace string) error {
 	if err := os.MkdirAll(filepath.Join(common, "info"), 0o755); err != nil {
 		return exitWith(1)
 	}
-	alternates := filepath.Join(common, "info", "alternates")
-	if content, readErr := os.ReadFile(alternates); readErr == nil {
-		for _, line := range strings.Split(string(content), "\n") {
-			if line == quarantine {
-				return nil
-			}
-		}
-	}
-	if err := appendFile(alternates, []byte(quarantine+"\n")); err != nil {
+	// The line is added under the alternates lock by an atomic rewrite,
+	// the same one the quarantine absorb removes it by (3.7).
+	if err := diskstore.AddAlternate(common, quarantine); err != nil {
 		return s.die(1, "could not link the quarantine into the shared object store")
 	}
 	return nil

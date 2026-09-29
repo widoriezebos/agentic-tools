@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/placement"
 	"golang.org/x/sys/unix"
 )
 
@@ -245,6 +246,23 @@ func discoverRoot(path string, checkouts []HostCheckout, roots map[string]bool) 
 			full := filepath.Join(path, entry.Name())
 			if !rootBookkeeping[entry.Name()] && !notAnItem(entry.Name()) && !isEvidenceRoot(full, roots) {
 				root.NotManaged = append(root.NotManaged, full)
+			}
+		}
+	}
+	// A cache or a source copy inside a segment is not an item either
+	// (Segment.Items skips it): it is listed with the root's entries that
+	// are not managed.
+	for _, segment := range root.Segments {
+		for _, directory := range segment.Dirs()[:2] {
+			if directory == "" {
+				continue
+			}
+			entries, _ := os.ReadDir(directory)
+			for _, entry := range entries {
+				full := filepath.Join(directory, entry.Name())
+				if entry.IsDir() && placement.Of(full).Kind != "" {
+					root.NotManaged = append(root.NotManaged, full)
+				}
 			}
 		}
 	}

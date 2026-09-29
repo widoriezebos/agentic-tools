@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"golang.org/x/sys/unix"
 	"io"
 	"os"
 	"os/exec"
@@ -1068,7 +1069,7 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 	prepare := func(tree, engineTree, commit string, build bool) *candidateengine.Engine {
 		t.Helper()
 		fixture.queuePrepare(tree, engineTree, commit, environment, build)
-		artifact, err := candidateengine.Prepare(custodyContext, controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency().engine())
+		artifact, err := candidateengine.Prepare(candidateScratchContext(t, custodyContext, controlRoot), controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency().engine())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1092,7 +1093,7 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 		t.Fatalf("candidate build lost legacy proof custody: seen=%q err=%v", seen, err)
 	}
 	second := prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, false)
-	if buildCount() != 1 || first.Path != second.Path || first.Digest != second.Digest {
+	if buildCount() != 1 || first.Commit != second.Commit || first.Digest != second.Digest {
 		t.Fatalf("warm candidate engine preparation rebuilt: first=%+v second=%+v count=%d", first, second, buildCount())
 	}
 	environment = testrun.InheritedEnvironment(testrun.Environment(os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=another-parent"})
@@ -1100,17 +1101,22 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 	if buildCount() != 1 || custodyVariant.Commit != first.Commit {
 		t.Fatalf("custody-only change fragmented candidate engine cache: first=%s variant=%s count=%d", first.Commit, custodyVariant.Commit, buildCount())
 	}
-	if err := testexec.Locked(func() error { return os.Chmod(second.Path, 0o700) }); err != nil {
+	// The cached v2 entry is what a warm preparation copies from: a corrupt
+	// or missing one is rebuilt.
+	cachedEngine := func(build *candidateengine.Engine) string {
+		return filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines", "v2", build.Commit, "metasystem")
+	}
+	if err := testexec.Locked(func() error { return os.Chmod(cachedEngine(second), 0o700) }); err != nil {
 		t.Fatal(err)
 	}
-	if err := testexec.WriteFile(second.Path, []byte("corrupt"), 0o500); err != nil {
+	if err := testexec.WriteFile(cachedEngine(second), []byte("corrupt"), 0o500); err != nil {
 		t.Fatal(err)
 	}
 	third := prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, true)
 	if buildCount() != 2 || third.Digest != first.Digest {
 		t.Fatalf("corrupt candidate engine was not rebuilt: third=%+v count=%d", third, buildCount())
 	}
-	if err := os.Remove(third.Path); err != nil {
+	if err := os.Remove(cachedEngine(third)); err != nil {
 		t.Fatal(err)
 	}
 	prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, true)
@@ -1173,7 +1179,7 @@ func testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin(t *testi
 	}
 	built := make(chan buildOutcome, 1)
 	go func() {
-		artifact, err := candidateengine.Prepare(custodyContext, controlRoot,
+		artifact, err := candidateengine.Prepare(candidateScratchContext(t, custodyContext, controlRoot), controlRoot,
 			gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testrun.Environment(os.Environ()), func() error {
 				close(buildEntered)
 				<-releaseBuild
@@ -1248,7 +1254,7 @@ func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
 	environment := testrun.Environment(os.Environ())
 	for run := 0; run < 2; run++ {
 		fixture.queuePrepare(tree, ordinaryFailedEngineTree, ordinaryFailedBuild, environment, true)
-		if artifact, err := candidateengine.Prepare(custodyContext, controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency().engine()); artifact != nil || err == nil {
+		if artifact, err := candidateengine.Prepare(candidateScratchContext(t, custodyContext, controlRoot), controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency().engine()); artifact != nil || err == nil {
 			t.Fatalf("failed build %d entered cache: artifact=%+v err=%v", run, artifact, err)
 		}
 		fixture.assertDrained()
@@ -1263,7 +1269,7 @@ func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture.assertDrained()
-	entry := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines", buildIdentity)
+	entry := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines", "v2", buildIdentity)
 	if _, err := os.Lstat(entry); !os.IsNotExist(err) {
 		t.Fatalf("failed build published an artifact entry: %v", err)
 	}
@@ -2693,8 +2699,21 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	if got := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "--verify", head+"^{commit}")); got != head {
 		t.Fatalf("fixture source commit moved: got=%s want=%s", got, head)
 	}
-	if _, _, _, err := testrun.TrustedPolicyEngine(root, recordOnlyDestination, false); err != nil {
+	policyEngine, _, _, err := testrun.TrustedPolicyEngine(root, recordOnlyDestination, false)
+	if err != nil {
 		t.Fatalf("record-only destination advancement did not reuse the genuinely source-bound engine built at %s: %v", head, err)
+	}
+	// The policy engine runs every worker of the run: its pin keeps the
+	// preparation lease for the process's life (engine-owns-disk-lifetimes
+	// 3.5), so no disk pass removes it between two workers.
+	if pin, err := os.Open(policyEngine); err != nil {
+		t.Fatal(err)
+	} else {
+		lockErr := unix.Flock(int(pin.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		_ = pin.Close()
+		if lockErr == nil {
+			t.Fatal("the policy engine's pin is held by its preparation lease after testrun.TrustedPolicyEngine returns")
+		}
 	}
 	tree, err := (gittree.Workspace{Dir: root}).HeadTree()
 	if err != nil {
@@ -2750,4 +2769,16 @@ func testingFixtureGit(t *testing.T, root string, args ...string) string {
 // ledger reads, for the fixtures that stand in for the machine and endpoint.
 func resolveTestingGoalWithReads(root, requested string, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), now func() time.Time) (string, error) {
 	return testrun.ResolveGoalWithCaller(root, requested, resolveMachine, resolveEndpoint, now, int64(os.Getppid()))
+}
+
+// candidateScratchContext is ctx carrying a fresh proof-run scratch under
+// controlRoot: every candidate engine is prepared inside one
+// (engine-owns-disk-lifetimes 3.5, the legacy branch deleted).
+func candidateScratchContext(t *testing.T, ctx context.Context, controlRoot string) context.Context {
+	t.Helper()
+	scratch, err := proofrun.CreateScratchRun(controlRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return proofrun.WithScratchRun(ctx, scratch)
 }

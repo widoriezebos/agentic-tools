@@ -33,6 +33,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/placement"
 )
 
 // statIDs are a file's device and inode.
@@ -153,7 +154,7 @@ func (e Env) NotManaged(ctx context.Context) []ItemView {
 	for _, root := range e.Roots() {
 		for _, path := range root.NotManaged {
 			bytes, _, _ := diskstore.Measure(ctx, path)
-			views = append(views, ItemView{Name: filepath.Base(path), Path: path, State: "not managed", Bytes: bytes, Why: NotManagedLine})
+			views = append(views, notManagedView(path, bytes))
 		}
 	}
 	return views
@@ -856,12 +857,12 @@ func (e Env) settleChain(target Target, stage string) string {
 		}
 		return "the chain is not closed; metasystem work finish j2:" + target.Item.Name + " closes it"
 	}
-	registry := diskstore.CheckoutRegistry(installation)
-	records2, _ := registry.Inventory()
-	for _, record := range records2 {
-		if record.Owner.Kind == diskstore.OwnerDelegate && record.Owner.Ref == target.Item.Name && record.State != diskstore.StateReleased {
-			return "its workspace store " + record.ID + " is registered and not released, and it keeps the chain's payload; metasystem disk clean --preview names what settles it"
-		}
+	holds := readStoreHolds(installation)
+	if holds.unreadable != "" {
+		return "the store registry of " + installation + " cannot be read (" + holds.unreadable + "), so whether a workspace keeps the chain's payload is unknown; metasystem disk show names the record"
+	}
+	if id := holds.chains[target.Item.Name]; id != "" {
+		return "its workspace store " + id + " is registered and not released, and it keeps the chain's payload; metasystem disk clean --preview names what settles it"
 	}
 	result := filepath.Join(e.HomeStateRoot, "stores", ".settle-"+stage+".json")
 	defer os.Remove(result)
@@ -1012,7 +1013,7 @@ func (e Env) Show(ctx context.Context) SegmentView {
 	view.Root = root.Path
 	for _, path := range root.NotManaged {
 		bytes, _, _ := diskstore.Measure(ctx, path)
-		view.NotManaged = append(view.NotManaged, ItemView{Name: filepath.Base(path), Path: path, State: "not managed", Bytes: bytes, Why: NotManagedLine})
+		view.NotManaged = append(view.NotManaged, notManagedView(path, bytes))
 	}
 	settings, err := e.settingsOf(segment)
 	if err != nil {
@@ -1110,4 +1111,14 @@ func charges(bytes int64) string {
 		return ""
 	}
 	return " (blob charges " + formatGiB(bytes) + ")"
+}
+
+// notManagedView names an entry that is not managed; a cache or a source
+// copy says what it is (3.12 placement rules).
+func notManagedView(path string, bytes int64) ItemView {
+	view := ItemView{Name: filepath.Base(path), Path: path, State: "not managed", Bytes: bytes, Why: NotManagedLine}
+	if misplaced := placement.Of(path); misplaced.Kind != "" {
+		view.State, view.Why = misplaced.Kind, misplaced.Shape+", never evidence; "+NotManagedLine
+	}
+	return view
 }

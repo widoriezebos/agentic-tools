@@ -324,10 +324,16 @@ func (f *ordinaryCandidateFixture) raw(request gittree.RawRequest) gittree.RawRe
 func (f *ordinaryCandidateFixture) runGit(command *exec.Cmd) error {
 	step := f.take("git")
 	dir := f.directory(step.detached)
-	if filepath.Base(command.Path) != "git" || command.Dir != "" || len(command.Args) < 3 || command.Args[0] != "git" || !reflect.DeepEqual(command.Args[1:3], []string{"-C", dir}) {
+	commandArgs := command.Args
+	// Inside a proof run's scratch a materializing git runs no repository
+	// hook: its argv carries the scratch's no-hooks path first.
+	if len(commandArgs) >= 3 && commandArgs[1] == "-c" && strings.HasPrefix(commandArgs[2], "core.hooksPath=") && strings.HasSuffix(commandArgs[2], "/no-hooks") {
+		commandArgs = append([]string{commandArgs[0]}, commandArgs[3:]...)
+	}
+	if filepath.Base(command.Path) != "git" || command.Dir != "" || len(commandArgs) < 3 || commandArgs[0] != "git" || !reflect.DeepEqual(commandArgs[1:3], []string{"-C", dir}) {
 		f.t.Fatalf("direct Git command path=%q dir=%q args=%q", command.Path, command.Dir, command.Args)
 	}
-	args := command.Args[3:]
+	args := commandArgs[3:]
 	if step.environment == "source" || step.environment == "target" {
 		if !reflect.DeepEqual(args[:4], []string{"-c", "core.fileMode=true", "-c", "core.useReplaceRefs=false"}) {
 			f.t.Fatalf("projection pins: %q", args)
@@ -358,7 +364,7 @@ func (f *ordinaryCandidateFixture) runGit(command *exec.Cmd) error {
 		}
 		parent := filepath.Dir(actual)
 		if !filepath.IsAbs(actual) || !strings.HasPrefix(filepath.Base(parent), "metasystem-engine-projection.") ||
-			filepath.Dir(parent) != os.TempDir() || actual != filepath.Join(parent, step.environment+"-index") {
+			!privateProjectionParent(filepath.Dir(parent)) || actual != filepath.Join(parent, step.environment+"-index") {
 			f.t.Fatalf("projection index is not its exact private scratch filename: %q", actual)
 		}
 		other := f.targetIndex
@@ -433,7 +439,7 @@ func (f *ordinaryCandidateFixture) runGit(command *exec.Cmd) error {
 	if step.environment == "commit" {
 		// The root and detached copies represent the same declared project tree.
 		// Their private filesystem names cannot change a commit object.
-		request := fmt.Sprintf("argv=%q env=%q stdin=%x", command.Args[3:], command.Env, actualStdin)
+		request := fmt.Sprintf("argv=%q env=%q stdin=%x", commandArgs[3:], command.Env, actualStdin)
 		oid := strings.TrimSpace(string(step.output))
 		if prior, ok := f.commitRequests[request]; ok && prior != oid {
 			f.t.Fatalf("identical commit-tree request returned %s and %s", prior, oid)
@@ -693,3 +699,10 @@ func (f *ordinaryCandidateFixture) assertDrained() {
 // copyCandidateEngineArtifact is the goal-landing tests' spelling of
 // candidateengine.CopyArtifact until C8a part 2 ports them.
 var copyCandidateEngineArtifact = candidateengine.CopyArtifact
+
+// privateProjectionParent is where an engine projection's private index
+// directory lives: the process temp directory, or, inside a proof run, its
+// scratch's engine directory.
+func privateProjectionParent(dir string) bool {
+	return dir == os.TempDir() || filepath.Base(dir) == "engine" && strings.Contains(dir, "/proof-runs/scratch/")
+}

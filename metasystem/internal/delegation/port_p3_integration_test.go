@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -625,5 +626,33 @@ func requireInlineLimitRefusal(t *testing.T, stdout []byte, capBytes int) {
 	fmt.Sscan(match[3], &overhead)
 	if limit != capBytes || packet <= limit || overhead != packet || strings.Contains(detail, "pass a file reference") {
 		t.Fatalf("inconsistent counts in %q", detail)
+	}
+}
+
+// engine-owns-disk-lifetimes U5f: the job worktree a dispatch creates is a
+// registered store before it holds a byte (the chain's delegate workspace,
+// identified by its gitdir and .git inode), and its quarantine is linked
+// into the common store's alternates under the alternates lock.
+func TestDispatchIntegrationRegistersTheJobWorktreeAsTheChainsWorkspace(t *testing.T) {
+	t.Parallel()
+	b := newDispatchBed(t)
+	brief := b.brief("code.md", "implement", "Build it.")
+	requireExit(t, b.dispatchAs("dispatch", "--role", "implementer", "--brief", brief, "--job-id", "registered-worktree", "--worktree"), 0, b.stderr.String())
+	records, unreadable := diskstore.CheckoutRegistry(b.root).Inventory()
+	if len(unreadable) != 0 || len(records) != 1 {
+		t.Fatalf("one registered store: %+v %+v", records, unreadable)
+	}
+	record := records[0]
+	worktree := filepath.Join(b.root, "artifacts", "agents", "worktrees", "registered-worktree")
+	if record.Class != diskstore.DelegateClass || record.Owner != (diskstore.Owner{Kind: diskstore.OwnerDelegate, Ref: "registered-worktree"}) ||
+		record.State != diskstore.StateAccepted || record.Identity.Gitdir == "" || record.Identity.Marker || record.Layout != diskstore.LayoutCopy {
+		t.Fatalf("the job worktree is the chain's accepted delegate workspace: %+v", record)
+	}
+	if err := diskstore.Revalidate(record); err != nil {
+		t.Fatalf("the record names the worktree at %s: %v", worktree, err)
+	}
+	alternates, err := os.ReadFile(filepath.Join(b.root, ".git", "objects", "info", "alternates"))
+	if err != nil || !strings.Contains(string(alternates), filepath.Join(record.Identity.Gitdir, diskstore.QuarantineName)) {
+		t.Fatalf("the quarantine is linked: %q %v", alternates, err)
 	}
 }

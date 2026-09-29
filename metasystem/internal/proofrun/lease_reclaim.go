@@ -105,19 +105,63 @@ type leaseReclaimRecord struct {
 	Fixtures  string          `json:"fixtures"`
 	Flock     string          `json:"flock"`
 	By        int             `json:"by"`
+	// Custodians are a richer lease's recorded custodians, each proved
+	// dead with an empty group.
+	Custodians []leaseCustodian `json:"custodians,omitempty"`
 }
 
 // leaseVerdict is one judgement of a dirty lease whose flock this process
 // holds: the owner is live, something is unknown (with its remedy), or the
 // owner is dead and settled (ownerDead names the proof).
 type leaseVerdict struct {
-	live      bool
-	unknown   string
-	remedy    string
-	ownerDead string
+	live       bool
+	unknown    string
+	remedy     string
+	ownerDead  string
+	custodians []leaseCustodian
 }
 
-func (reclaimer *leaseReclaimer) judge(record hostLeaseRecord) leaseVerdict {
+// judgeCustodians proves every custodian a richer lease records dead
+// (a reused pid or a zombie counts) with an empty process group; a custody
+// record that cannot be read, or anything else unproven, is unknown.
+func (reclaimer *leaseReclaimer) judgeCustodians(path string, record hostLeaseRecord) ([]leaseCustodian, string) {
+	if record.FixtureOwner == nil {
+		return nil, ""
+	}
+	custodians, err := readLeaseCustodians(path)
+	if err != nil {
+		return nil, fmt.Sprintf("the lease's custody record cannot be read (%v)", err)
+	}
+	for _, custodian := range custodians {
+		ref, err := identity.ParseRef(custodian.Ref)
+		if err != nil {
+			return nil, fmt.Sprintf("custodian %q is not a process reference", custodian.Ref)
+		}
+		exact, state, probeErr := reclaimer.prober.Probe(ref.Pid)
+		switch {
+		case probeErr != nil || state == identity.Unknown:
+			return nil, fmt.Sprintf("custodian pid %d liveness is unknown (%v)", ref.Pid, probeErr)
+		case state == identity.Alive:
+			comparison := identity.Compare(exact, ref)
+			if comparison.Mode == identity.CompareInvalid {
+				return nil, fmt.Sprintf("custodian pid %d identity is not comparable", ref.Pid)
+			}
+			if comparison.Matches && !exact.Zombie {
+				return nil, fmt.Sprintf("custodian pid %d still lives", ref.Pid)
+			}
+		}
+		live, groupErr := reclaimer.groupLive(custodian.Group, reclaimer.prober)
+		if groupErr != nil {
+			return nil, fmt.Sprintf("custodian process group %d membership is unknown (%v)", custodian.Group, groupErr)
+		}
+		if live {
+			return nil, fmt.Sprintf("custodian process group %d still has live members", custodian.Group)
+		}
+	}
+	return custodians, ""
+}
+
+func (reclaimer *leaseReclaimer) judge(path string, record hostLeaseRecord) leaseVerdict {
 	owner := record.Owner.Ref()
 	exact, state, probeErr := reclaimer.prober.Probe(owner.Pid)
 	var ownerDead string
@@ -150,6 +194,13 @@ func (reclaimer *leaseReclaimer) judge(record hostLeaseRecord) leaseVerdict {
 	if live {
 		return leaseVerdict{unknown: fmt.Sprintf("owner process group %d still has live members, settlement is unknown", record.Owner.Pgid), remedy: reclaimer.handRemedy(record)}
 	}
+	custodians, custodyUnknown := reclaimer.judgeCustodians(path, record)
+	if custodyUnknown != "" {
+		return leaseVerdict{unknown: custodyUnknown, remedy: reclaimer.handRemedy(record)}
+	}
+	if record.FixtureOwner != nil {
+		owner = record.FixtureOwner.Ref()
+	}
 	survivors, censusErr := reclaimer.survivors(reclaimer.prober, owner)
 	if censusErr != nil {
 		return leaseVerdict{unknown: fmt.Sprintf("the owner's fixture census failed (%v)", censusErr), remedy: reclaimer.fixtureRemedy(record)}
@@ -158,7 +209,7 @@ func (reclaimer *leaseReclaimer) judge(record hostLeaseRecord) leaseVerdict {
 		return leaseVerdict{unknown: fmt.Sprintf("%d owner-tagged fixture(s) survive, first pid %d (%s)", len(survivors), survivors[0].Ref.Pid, survivors[0].Class),
 			remedy: reclaimer.fixtureRemedy(record)}
 	}
-	return leaseVerdict{ownerDead: ownerDead}
+	return leaseVerdict{ownerDead: ownerDead, custodians: custodians}
 }
 
 // settle decides one dirty lease on the admission path. It returns true only
@@ -169,7 +220,7 @@ func (reclaimer *leaseReclaimer) settle(directory, path string, locked *os.File,
 		reclaimer.skip[name]--
 		return false, nil
 	}
-	verdict := reclaimer.judge(record)
+	verdict := reclaimer.judge(path, record)
 	if verdict.live {
 		return false, nil
 	}
@@ -177,12 +228,12 @@ func (reclaimer *leaseReclaimer) settle(directory, path string, locked *os.File,
 		reclaimer.keep(name, record, verdict.unknown, verdict.remedy)
 		return false, nil
 	}
-	return true, reclaimer.commit(directory, path, locked, record, verdict.ownerDead)
+	return true, reclaimer.commit(directory, path, locked, record, verdict)
 }
 
 // commit runs under admission.lock and the lease flock, after judge proved
 // the owner dead and settled.
-func (reclaimer *leaseReclaimer) commit(directory, path string, locked *os.File, record hostLeaseRecord, ownerDead string) error {
+func (reclaimer *leaseReclaimer) commit(directory, path string, locked *os.File, record hostLeaseRecord, verdict leaseVerdict) error {
 	name := filepath.Base(path)
 	_, data, err := readHostLeaseRecord(locked)
 	if err != nil {
@@ -191,7 +242,7 @@ func (reclaimer *leaseReclaimer) commit(directory, path string, locked *os.File,
 	entry := leaseReclaimRecord{
 		At: reclaimer.now().UTC().Format(time.RFC3339Nano), Lease: name, Owner: record.Owner,
 		Class: record.Class, Slot: record.Slot, Resources: append([]string{}, record.Resources...),
-		OwnerDead: ownerDead, Group: fmt.Sprintf("process group %d has no live member", record.Owner.Pgid),
+		OwnerDead: verdict.ownerDead, Custodians: verdict.custodians, Group: fmt.Sprintf("process group %d has no live member", record.Owner.Pgid),
 		Fixtures: "owner-scoped fixture census found no survivor", Flock: "lease flock acquired under admission.lock; record reloaded",
 		By: os.Getpid(),
 	}
@@ -203,6 +254,9 @@ func (reclaimer *leaseReclaimer) commit(directory, path string, locked *os.File,
 	}
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove reclaimed lease %s: %w", name, err)
+	}
+	if err := removeLeaseCustody(path); err != nil {
+		return fmt.Errorf("remove the custody record of %s: %w", name, err)
 	}
 	return nil
 }
