@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -183,22 +185,18 @@ func (r Report) Lines() []string {
 		}
 		lines = append(lines, line)
 	}
+	var released, planned [][2]string
 	for _, action := range r.Actions {
-		lines = append(lines, fmt.Sprintf("  released: %s (%s)", action.Path, action.Reason))
+		released = append(released, [2]string{action.Path, action.Reason})
 	}
 	for _, item := range r.Planned {
-		lines = append(lines, fmt.Sprintf("  would release: %s (%s)", item.Path, item.Verdict.Reason))
+		planned = append(planned, [2]string{item.Path, item.Verdict.Reason})
 	}
-	for _, line := range r.Kept {
-		lines = append(lines, renderLine("kept", line))
-	}
-	for _, line := range r.Pending {
-		lines = append(lines, renderLine("pending", line))
-	}
-	for _, stray := range r.Strays {
-		lines = append(lines, fmt.Sprintf("  stray: %s, %s, idle %s: %s; run %s", stray.Path, formatBytes(stray.Bytes),
-			(time.Duration(stray.IdleSecs)*time.Second).String(), stray.Verdict.Reason, stray.Verdict.Command))
-	}
+	lines = append(lines, groupedReleases("released", released)...)
+	lines = append(lines, groupedReleases("would release", planned)...)
+	lines = append(lines, groupedLines("kept", r.Kept)...)
+	lines = append(lines, groupedLines("pending", r.Pending)...)
+	lines = append(lines, groupedStrays(r.Strays)...)
 	for _, item := range r.Foreign {
 		lines = append(lines, fmt.Sprintf("  not the engine's: %s (%s)", item.Path, item.Verdict.Reason))
 	}
@@ -215,10 +213,179 @@ func (r Report) Lines() []string {
 	if r.Census != nil && len(r.Census.NotOurs) > 0 {
 		lines = append(lines, fmt.Sprintf("  use census: unreadable, not ours: %d", len(r.Census.NotOurs)))
 	}
-	for _, note := range append(append([]string(nil), r.HostUnknown...), r.Notes...) {
+	for _, note := range groupedNotes(append(append([]string(nil), r.HostUnknown...), r.Notes...)) {
 		lines = append(lines, "  "+note)
 	}
 	return lines
+}
+
+// examplePaths is how many paths a grouped finding names.
+const examplePaths = 3
+
+// groupedLines renders kept or pending lines, one line per finding: lines
+// with the same class, reason and command are one line with their count and
+// at most three example paths, at the place of the first.
+func groupedLines(kind string, lines []Line) []string {
+	type group struct {
+		first Line
+		paths []string
+		count int
+	}
+	var order []string
+	groups := map[string]*group{}
+	for _, line := range lines {
+		key := line.Class + "\x00" + line.Reason + "\x00" + line.Command
+		if groups[key] == nil {
+			groups[key] = &group{first: line}
+			order = append(order, key)
+		}
+		groups[key].count++
+		if line.Path != "" {
+			groups[key].paths = append(groups[key].paths, line.Path)
+		}
+	}
+	var rendered []string
+	for _, key := range order {
+		g := groups[key]
+		if g.count == 1 {
+			rendered = append(rendered, renderLine(kind, g.first))
+			continue
+		}
+		text := fmt.Sprintf("  %s: %d items: %s", kind, g.count, g.first.Reason)
+		if g.first.Command != "" {
+			text += "; run " + g.first.Command
+		}
+		rendered = append(rendered, text+examples(g.paths))
+	}
+	return rendered
+}
+
+// groupedReleases renders released or planned paths with their reasons,
+// one line per reason with its count and three examples.
+func groupedReleases(kind string, releases [][2]string) []string {
+	var order []string
+	paths := map[string][]string{}
+	for _, release := range releases {
+		if paths[release[1]] == nil {
+			order = append(order, release[1])
+		}
+		paths[release[1]] = append(paths[release[1]], release[0])
+	}
+	var rendered []string
+	for _, reason := range order {
+		if group := paths[reason]; len(group) == 1 {
+			rendered = append(rendered, fmt.Sprintf("  %s: %s (%s)", kind, group[0], reason))
+		} else {
+			rendered = append(rendered, fmt.Sprintf("  %s: %d items (%s)%s", kind, len(group), reason, examples(group)))
+		}
+	}
+	return rendered
+}
+
+// strayAgePattern is the variable age a too-young stray's reason carries.
+var strayAgePattern = regexp.MustCompile(`, written [0-9hms.]+ ago:`)
+
+// groupedStrays renders the strays, one line per finding: strays with the
+// same reason (whatever their ages) and command are one line with their
+// count, total size and the three largest, at the place of the first.
+func groupedStrays(strays []Item) []string {
+	type group struct {
+		reason string
+		items  []Item
+	}
+	var order []string
+	groups := map[string]*group{}
+	for _, stray := range strays {
+		reason := strayAgePattern.ReplaceAllString(stray.Verdict.Reason, ", written less than a day ago:")
+		key := reason + "\x00" + stray.Verdict.Command
+		if groups[key] == nil {
+			groups[key] = &group{reason: reason}
+			order = append(order, key)
+		}
+		groups[key].items = append(groups[key].items, stray)
+	}
+	var rendered []string
+	for _, key := range order {
+		g := groups[key]
+		if len(g.items) == 1 {
+			stray := g.items[0]
+			rendered = append(rendered, fmt.Sprintf("  stray: %s, %s, idle %s: %s; run %s", stray.Path, formatBytes(stray.Bytes),
+				(time.Duration(stray.IdleSecs)*time.Second).String(), stray.Verdict.Reason, stray.Verdict.Command))
+			continue
+		}
+		largest := append([]Item(nil), g.items...)
+		sort.SliceStable(largest, func(i, j int) bool { return largest[i].Bytes > largest[j].Bytes })
+		var total int64
+		for _, stray := range g.items {
+			total += stray.Bytes
+		}
+		var named []string
+		for _, stray := range largest[:min(len(largest), examplePaths)] {
+			named = append(named, stray.Path+" "+formatBytes(stray.Bytes))
+		}
+		rendered = append(rendered, fmt.Sprintf("  strays: %d items, %s: %s; run %s (largest: %s)", len(g.items), formatBytes(total), g.reason,
+			g.items[0].Verdict.Command, strings.Join(named, ", ")))
+	}
+	return rendered
+}
+
+// examples names at most three of a group's paths.
+func examples(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	shown := paths[:min(len(paths), examplePaths)]
+	return " (e.g. " + strings.Join(shown, ", ") + ")"
+}
+
+// hostUnknownPattern reads ResolveHost's per-checkout line: the checkout
+// and what could not be read there.
+var hostUnknownPattern = regexp.MustCompile(`^host settings unknown: (\S+) unreadable: (.*)$`)
+
+// groupedNotes renders the settings and note lines, one line per finding:
+// an identical note is one line with its count, and "host settings unknown"
+// lines whose reason differs only by their checkout's path are one line with
+// the count of checkouts and at most three of them.
+func groupedNotes(notes []string) []string {
+	type group struct {
+		text   string
+		paths  []string
+		count  int
+		unread bool
+	}
+	var order []string
+	groups := map[string]*group{}
+	for _, note := range notes {
+		key, text, path, unread := note, note, "", false
+		if match := hostUnknownPattern.FindStringSubmatch(note); match != nil {
+			path, unread = match[1], true
+			text = strings.ReplaceAll(match[2], path, "<checkout>")
+			key = "unknown\x00" + text
+		}
+		if groups[key] == nil {
+			groups[key] = &group{text: text, unread: unread}
+			order = append(order, key)
+		}
+		groups[key].count++
+		if path != "" {
+			groups[key].paths = append(groups[key].paths, path)
+		}
+	}
+	var rendered []string
+	for _, key := range order {
+		g := groups[key]
+		switch {
+		case g.count == 1 && g.unread:
+			rendered = append(rendered, fmt.Sprintf("host settings unknown: %s unreadable: %s", g.paths[0], strings.ReplaceAll(g.text, "<checkout>", g.paths[0])))
+		case g.count == 1:
+			rendered = append(rendered, g.text)
+		case g.unread:
+			rendered = append(rendered, fmt.Sprintf("host settings unknown: %d checkouts unreadable: %s%s", g.count, g.text, examples(g.paths)))
+		default:
+			rendered = append(rendered, fmt.Sprintf("%s (%d times)", g.text, g.count))
+		}
+	}
+	return rendered
 }
 
 func renderLine(kind string, line Line) string {

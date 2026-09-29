@@ -75,3 +75,41 @@ func TestTrimMachineTrimsTheFourCachesEachToItsCap(t *testing.T) {
 		}
 	}
 }
+
+// A person's disk clean continues only the caches the last pass left
+// unfinished: Only names them, and the others are neither measured again
+// nor reported. LastTrimReports reads each cache's persisted report and
+// changes nothing, for disk show.
+func TestTrimMachineOnlyTheNamedCachesAndTheLastReports(t *testing.T) {
+	t.Parallel()
+	userCache := t.TempDir()
+	state := filepath.Join(t.TempDir(), "cache-trim")
+	if reports, err := gocache.LastTrimReports(state); err != nil || len(reports) != 0 {
+		t.Fatalf("no pass yet: %+v %v", reports, err)
+	}
+	path := filepath.Join(userCache, "go-build", "00", "aaaa-d")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, make([]byte, 100), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reports, err := gocache.TrimMachine(context.Background(), gocache.MachineTrim{
+		UserCacheDir: func() (string, error) { return userCache, nil }, StateDir: state,
+		EngineGoCapBytes: 1000, DelegateGoCapBytes: 1000, StaticcheckCapBytes: 1000,
+		Keep: 12 * time.Hour, Now: trimNow, Only: []string{"engine-go-build"},
+	})
+	if err != nil || len(reports) != 1 || reports[0].Cache != "engine-go-build" || reports[0].EndedBy != "complete" {
+		t.Fatalf("only the engine Go cache: %+v %v", reports, err)
+	}
+	if _, err := os.Stat(filepath.Join(state, "engine-staticcheck.json")); !os.IsNotExist(err) {
+		t.Fatalf("a cache Only did not name was trimmed: %v", err)
+	}
+	last, err := gocache.LastTrimReports(state)
+	if err != nil || len(last) != 1 || last[0].Cache != "engine-go-build" || last[0].BytesAfter != 100 {
+		t.Fatalf("last reports = %+v %v", last, err)
+	}
+	if got := gocache.MachineCaches(); len(got) != 4 || got[0] != "engine-go-build" {
+		t.Fatalf("machine caches = %v", got)
+	}
+}
