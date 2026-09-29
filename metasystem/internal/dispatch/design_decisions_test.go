@@ -14,6 +14,7 @@ import (
 // until the refutation is applied, and then closes it; the refutation is its
 // own resolution, never an accepted risk.
 func TestDesignDecisionsReachTheRegister(t *testing.T) {
+	t.Parallel()
 	finding := closeFinding("F1", "invariant", "", "the claim", critiqueModel.Bounded)
 	repo, root, path := writeCloseRoot(t, "design-critic", 1, []registerFinding{finding}, materialHistory(1, 0), 2, 1)
 	if _, err := CritiqueRegisterClose(repo, root); err == nil {
@@ -45,6 +46,7 @@ func TestDesignDecisionsReachTheRegister(t *testing.T) {
 // nothing else is decided here, so the final round's own accepted findings
 // stay open for the close's classification.
 func TestDesignDecisionsKeepTheEngineClassification(t *testing.T) {
+	t.Parallel()
 	earlier := closeFinding("E1", "invariant", "", "earlier", critiqueModel.Bounded)
 	severe := closeFinding("S1", "invariant", "", "severe", critiqueModel.Severe)
 	repo, root, path := writeCloseRoot(t, "design-critic", 2, []registerFinding{earlier, severe}, materialHistory(2, 1), 2, 2)
