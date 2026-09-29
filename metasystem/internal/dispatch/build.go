@@ -1214,7 +1214,7 @@ const ImpactedTestsRule = "Before you return, run the tests your change impacts,
 // carries (disk-lifetimes A7): one machine delegate cache for every round of
 // every chain, never the engine's. scripts/agents/templates/brief.md carries
 // the same sentence.
-const BuildCacheRule = "The build cache is provided: the adapter sets GOCACHE and STATICCHECK_CACHE to the machine delegate cache, shared by every round of every chain, and GOTMPDIR; never set, unset or strip them, never point GOCACHE elsewhere, never run go clean, never strip the METASYSTEM_HOOK_DELEGATE_ markers, and never run a gate under env -u or env -i: a self-set cache is cold every round, and only the steward trims the shared one."
+const BuildCacheRule = "The build cache is provided: the adapter sets GOCACHE and STATICCHECK_CACHE to the machine delegate cache, shared by every round of every chain, and GOTMPDIR; never set, unset or strip them, never point GOCACHE elsewhere, never run go clean, never strip the METASYSTEM_HOOK_DELEGATE_ markers, and never run the go gate (`go run ./cmd/devgate`) or any test under env -u or env -i: a self-set cache is cold every round, and only the steward trims the shared one."
 
 // TestingRequirement is the one runtime-neutral brief requirement for both
 // initial and follow-up implementers. Gate width remains an immutable risk

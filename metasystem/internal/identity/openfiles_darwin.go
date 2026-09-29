@@ -120,3 +120,11 @@ func executablePathErr(pid int64) (string, error) {
 	}
 	return string(buffer[:end]), nil
 }
+
+// ProcessExecutable is a process's executable path from PROC_PIDPATHINFO,
+// which the kernel answers for other users' processes too; ok is false when
+// it cannot be read.
+func ProcessExecutable(pid int64) (string, bool) {
+	path, err := executablePathErr(pid)
+	return path, err == nil && path != ""
+}

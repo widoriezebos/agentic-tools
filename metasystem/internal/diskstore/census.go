@@ -37,7 +37,11 @@ type UseCensus struct {
 	Processes  []CensusProcess `json:"-"`
 	Count      int             `json:"processes"`
 	Unreadable []CensusGap     `json:"unreadable,omitempty"`
-	seen       map[int64]bool
+	// SystemNonHolders are unreadable processes of another uid whose
+	// executable lies in the operating system's own directories: they
+	// cannot hold the user's stores (design owner, 2026-09-29).
+	SystemNonHolders []CensusGap `json:"systemNonHolders,omitempty"`
+	seen             map[int64]bool
 }
 
 // Complete reports a census that was taken and read every live process.
@@ -51,13 +55,16 @@ type CensusReader struct {
 	ProcessUID func(pid int64) (uint32, bool)
 	Use        func(pid int64) (identity.ProcessUse, error)
 	Command    func(pid int64) string
+	// Executable answers a process's executable path even when its
+	// descriptors cannot be read.
+	Executable func(pid int64) (string, bool)
 }
 
 // KernelCensusReader reads this host's processes for the user uid.
 func KernelCensusReader(uid uint32) CensusReader {
 	prober := identity.KernelProber{}
 	return CensusReader{
-		UID: uid, Pids: identity.AllPids, ProcessUID: identity.ProcessUID, Use: identity.ReadProcessUse,
+		UID: uid, Pids: identity.AllPids, ProcessUID: identity.ProcessUID, Use: identity.ReadProcessUse, Executable: identity.ProcessExecutable,
 		Command: func(pid int64) string {
 			argv, known := prober.ReadArgv(pid)
 			if !known {
@@ -72,9 +79,12 @@ func KernelCensusReader(uid uint32) CensusReader {
 	}
 }
 
-// TakeUseCensus reads every live process of the reader's user. A process
-// that is gone by the time it is read is skipped; one that is alive and
-// cannot be read is a gap. The context bounds the walk: a cut-short census
+// TakeUseCensus reads every live process. A process that is gone by the
+// time it is read is skipped; one that is alive and cannot be read is a
+// gap, except a system process: one of another uid than the stores' owner
+// whose executable lies under /System/, /usr/libexec/ or /usr/sbin/, which
+// is recorded as "system process, not a holder" (design owner,
+// 2026-09-29). The context bounds the walk: a cut-short census
 // is not taken.
 func TakeUseCensus(ctx context.Context, reader CensusReader) UseCensus {
 	census := UseCensus{seen: map[int64]bool{}}
@@ -96,7 +106,7 @@ func TakeUseCensus(ctx context.Context, reader CensusReader) UseCensus {
 func (c *UseCensus) read(reader CensusReader, pid int64) {
 	c.seen[pid] = true
 	uid, alive := reader.ProcessUID(pid)
-	if !alive || uid != reader.UID {
+	if !alive {
 		return
 	}
 	use, err := reader.Use(pid)
@@ -105,11 +115,32 @@ func (c *UseCensus) read(reader CensusReader, pid int64) {
 		if _, still := reader.ProcessUID(pid); !still {
 			return
 		}
-		c.Unreadable = append(c.Unreadable, CensusGap{Pid: pid, UID: uid, Command: reader.Command(pid), Reason: err.Error()})
+		gap := CensusGap{Pid: pid, UID: uid, Command: reader.Command(pid), Reason: err.Error()}
+		if uid != reader.UID && reader.Executable != nil {
+			if executable, ok := reader.Executable(pid); ok && systemExecutable(executable) {
+				gap.Reason = "system process, not a holder (" + executable + ")"
+				c.SystemNonHolders = append(c.SystemNonHolders, gap)
+				return
+			}
+		}
+		c.Unreadable = append(c.Unreadable, gap)
 		return
 	}
 	c.Processes = append(c.Processes, CensusProcess{Pid: pid, UID: uid, Command: reader.Command(pid),
 		Cwd: use.Cwd, Executable: use.Executable, Files: use.Files})
+}
+
+// systemDirectories hold the operating system's own executables.
+var systemDirectories = []string{"/System/", "/usr/libexec/", "/usr/sbin/"}
+
+func systemExecutable(path string) bool {
+	clean := filepath.Clean(path)
+	for _, directory := range systemDirectories {
+		if strings.HasPrefix(clean, directory) {
+			return true
+		}
+	}
+	return false
 }
 
 // ReadNew reads every live process the census did not see: the processes

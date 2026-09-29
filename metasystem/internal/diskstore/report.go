@@ -212,6 +212,9 @@ func (r Report) Lines() []string {
 		}
 		lines = append(lines, "  use census "+reason)
 	}
+	if r.Census != nil && len(r.Census.SystemNonHolders) > 0 {
+		lines = append(lines, fmt.Sprintf("  use census: %d system process(es) of another user, unreadable and not holders", len(r.Census.SystemNonHolders)))
+	}
 	for _, note := range append(append([]string(nil), r.HostUnknown...), r.Notes...) {
 		lines = append(lines, "  "+note)
 	}

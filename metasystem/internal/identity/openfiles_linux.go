@@ -63,3 +63,6 @@ func ReadProcessUse(pid int64) (ProcessUse, error) {
 	}
 	return use, nil
 }
+
+// ProcessExecutable is /proc/<pid>/exe; ok is false when it cannot be read.
+func ProcessExecutable(pid int64) (string, bool) { return kernelExecutablePath(pid) }
