@@ -16,7 +16,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -51,19 +50,10 @@ func (p goalRecoveryPolicy) ParkBranchCheck(endpoint goal.Endpoint) func(string,
 	return goalParkBranchCheck(p.root, endpoint)
 }
 
-// The park branch check and its reader types moved into internal/goal/branch,
-// where the interface's own park reaches them too (R-125-m1u); these are the
-// command edge's one-line names for them.
+// goalParkBranchCheck is the command edge's name for the park branch check
+// internal/goal/branch owns, where the interface's own park reaches it too.
 func goalParkBranchCheck(root string, endpoint goal.Endpoint) func(string, string) (string, error) {
 	return goalbranch.ParkCheck(root, endpoint)
-}
-
-type parkLocalTipReader = goalbranch.ParkLocalTipReader
-type parkEndpointTipReader = goalbranch.ParkEndpointTipReader
-type parkOriginTipReader = goalbranch.ParkOriginTipReader
-
-func goalParkBranchCheckWithReaders(root string, endpoint goal.Endpoint, localTip parkLocalTipReader, endpointTipReader parkEndpointTipReader, originTipReader parkOriginTipReader) func(string, string) (string, error) {
-	return goalbranch.ParkCheckWithReaders(root, endpoint, localTip, endpointTipReader, originTipReader)
 }
 
 func bindHandoverTargetRoot(request *goal.VerbRequest, targetRoot string) {
@@ -869,10 +859,6 @@ func readItemsFile(path string) ([]string, error) {
 	return items, nil
 }
 
-func runGoalReadItemsCloseWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, resolveCodeCommit func(root, ref string) (string, error)) int {
-	return runGoalReadItemsCloseWithProof(args, nil, commandNow, dependencies, resolveCodeCommit)
-}
-
 // runGoalReadItemsCloseWithProof is read-items close with the person's
 // observed proof, when a caller has already proven it.
 func runGoalReadItemsCloseWithProof(args []string, observed *humanauthority.Proof, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, resolveCodeCommit func(root, ref string) (string, error)) int {
@@ -912,92 +898,6 @@ func runGoalReadItemsCloseWithProof(args []string, observed *humanauthority.Proo
 		result, err = goal.CloseReadItemWithResolver(req, *id, *item, closure, resolveCodeCommit)
 	}
 	return dependencies.publish(result, err)
-}
-
-type readItemsGoalJSON struct {
-	Goal  string          `json:"goal"`
-	State string          `json:"state"`
-	Items []goal.ReadItem `json:"items"`
-}
-
-func runGoalReadItemsListWithInputs(args []string, commandNow func(string) (time.Time, error), resolve func(string) (goal.Endpoint, error), stdout, stderr io.Writer) int {
-	flags := newFlagSet("goal read-items list", stdout, stderr)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	id := flags.String("id", "", "one goal id")
-	openOnly := flags.Bool("open", false, "only open items")
-	jsonOutput := flags.Bool("json", false, "machine-readable output")
-	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		return 2
-	}
-	if !converted(*root) {
-		fmt.Fprintln(stderr, "goal read-items list reads the synced backlog")
-		return 1
-	}
-	endpoint, err := resolve(*root)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
-	}
-	now, err := commandNow(*root)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
-	}
-	projection, err := goal.Project(endpoint, false, now)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
-	}
-	all := map[string]*goal.GoalFile{}
-	for goalID, file := range projection.Tree.Live {
-		all[goalID] = file
-	}
-	for goalID, file := range projection.Tree.Done {
-		all[goalID] = file
-	}
-	for goalID, file := range projection.Tree.Abandoned {
-		all[goalID] = file
-	}
-	ids := make([]string, 0, len(all))
-	if *id != "" {
-		if all[*id] == nil {
-			fmt.Fprintf(stderr, "no goal %q on the accepted tree\n", *id)
-			return 1
-		}
-		ids = append(ids, *id)
-	} else {
-		for goalID, file := range all {
-			if len(file.ReadItems) > 0 {
-				ids = append(ids, goalID)
-			}
-		}
-		sort.Strings(ids)
-	}
-	rows := make([]readItemsGoalJSON, 0, len(ids))
-	for _, goalID := range ids {
-		file := all[goalID]
-		items := make([]goal.ReadItem, 0, len(file.ReadItems))
-		for _, readItem := range file.ReadItems {
-			if !*openOnly || readItem.State == goal.ReadItemOpen {
-				items = append(items, readItem)
-			}
-		}
-		rows = append(rows, readItemsGoalJSON{Goal: goalID, State: file.State, Items: items})
-	}
-	if *jsonOutput {
-		writeJSONLine(stdout, stderr, map[string]any{"goals": rows, "tip": projection.Tip})
-		return 0
-	}
-	for _, row := range rows {
-		for _, readItem := range row.Items {
-			fmt.Fprintf(stdout, "goal=%s state=%s read=%s item=%s itemState=%s text=%s", row.Goal, row.State, readItem.Read, readItem.ID, readItem.State, strconv.Quote(readItem.Text))
-			if readItem.ClosingReference != "" {
-				fmt.Fprintf(stdout, " closingReference=%s", strconv.Quote(readItem.ClosingReference))
-			}
-			fmt.Fprintln(stdout)
-		}
-	}
-	return 0
 }
 
 // syncFlags is the shared flag surface; each verb reads the fields
@@ -1181,12 +1081,6 @@ func parseSyncFlagValuesWithOutput(name string, args []string, stdout, output io
 		return nil, fmt.Errorf("goal trunk-red own takes --to only with --by")
 	}
 	return f, nil
-}
-
-func runGoalDischargeReviewObligationWithOwners(args []string, requestBuilder func(verb, root, by, lineage string) (goal.VerbRequest, error), discharge func(goal.VerbRequest, string, string, string, string, string, ...goal.DischargeEvidence) (goal.PublishResult, error), stdout, stderr io.Writer) int {
-	dependencies := defaultSyncRequestDependencies()
-	dependencies.stdout, dependencies.stderr = stdout, stderr
-	return runGoalDischargeReviewObligationWithDependencies(args, requestBuilder, discharge, dependencies)
 }
 
 func runGoalDischargeReviewObligationWithDependencies(args []string, requestBuilder func(verb, root, by, lineage string) (goal.VerbRequest, error), discharge func(goal.VerbRequest, string, string, string, string, string, ...goal.DischargeEvidence) (goal.PublishResult, error), dependencies syncRequestDependencies) int {
@@ -2974,13 +2868,6 @@ func runGoalRevokeWithInputs(args []string, prove goalAuthorityProver, commandNo
 	return dependencies.publish(res, nil)
 }
 
-func runGoalResumeWithAuthorityFacts(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), facts goalAuthorityReadFacts, stdout, stderr io.Writer) int {
-	dependencies := defaultSyncRequestDependencies()
-	dependencies.authorityFacts = facts
-	dependencies.stdout, dependencies.stderr = stdout, stderr
-	return runGoalResumeWithInputs(args, prove, commandNow, dependencies, dispatchcore.ResolveGoalBinding)
-}
-
 func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values := newHumanVerbValues("resume", args)
 	values.bindDependencies(dependencies)
@@ -3290,13 +3177,6 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 	return 0
 }
 
-func runGoalSetObligationWithAuthorityFacts(args []string, prove goalAuthorityProver, facts goalAuthorityReadFacts, stdout, stderr io.Writer) int {
-	dependencies := defaultSyncRequestDependencies()
-	dependencies.authorityFacts = facts
-	dependencies.stdout, dependencies.stderr = stdout, stderr
-	return runGoalSetObligationWithAuthorityFactsAtWithDependencies(args, prove, goalCommandNow, dependencies)
-}
-
 func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("set-obligation", args)
 	values.bindDependencies(dependencies)
@@ -3424,16 +3304,6 @@ func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, pro
 	return dependencies.publish(res, nil)
 }
 
-func runGoalEditWithDependencies(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
-	requestBuilder := func(verb, root, by, lineage string) (goal.VerbRequest, error) {
-		return syncReqWithProofAtWithDependencies(verb, root, by, lineage, nil, commandNow, dependencies)
-	}
-	run := runSyncOnlyWithDependencies("edit", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
-		return goalEditEffect(req, f, commandNow)
-	}, requestBuilder, dependencies, "id")
-	return run(args)
-}
-
 func goalEditEffect(req goal.VerbRequest, f *syncFlags, commandNow func(string) (time.Time, error)) (goal.PublishResult, error) {
 	return goalEditEffectAppending(req, f, commandNow, "")
 }
@@ -3520,24 +3390,6 @@ func goalEditEffectAppending(req goal.VerbRequest, f *syncFlags, commandNow func
 		}
 	}
 	return res, err
-}
-
-// claimGoalOwner claims a goal, or its whole arc with --arc, for this machine.
-func claimGoalOwner(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
-	budget, err := f.budgetTuple(false)
-	if err != nil {
-		return goal.PublishResult{}, err
-	}
-	if f.arc != "" {
-		if budget != nil {
-			return goal.ClaimArc(req, f.id, *budget)
-		}
-		return goal.ClaimArc(req, f.id)
-	}
-	if budget != nil {
-		return goal.Claim(req, f.id, *budget)
-	}
-	return goal.Claim(req, f.id)
 }
 
 // goalDoneWithoutMetrics says the goal is done in the accepted ledger and its
