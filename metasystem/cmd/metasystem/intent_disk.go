@@ -44,6 +44,8 @@ type diskOwners struct {
 	stateDir     string
 	// trimPass replaces one trim pass (fixtures); nil is the steward's.
 	trimPass steward.CacheTrimPass
+	// git runs git for workspaces; nil is the real git.
+	git diskstore.WorkspaceGit
 }
 
 func (o diskOwners) withDefaults() diskOwners {
@@ -68,6 +70,9 @@ func (o diskOwners) withDefaults() diskOwners {
 	}
 	if o.proofs == nil {
 		o.proofs = map[diskstore.OwnerKind]diskstore.OwnerProof{}
+	}
+	if o.git == nil {
+		o.git = steward.ExecWorkspaceGit
 	}
 	if o.tempRoots == nil {
 		o.tempRoots = func() []string {
@@ -261,7 +266,7 @@ func runIntentDiskClean(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
 			Summary: "--plan ID names the preview --strays acts on; alone it does nothing: metasystem disk clean --strays --plan ID; nothing was done"})
 	}
-	pass := steward.DiskPass{Mode: diskstore.ModeApply, Now: owners.now().UTC(), Clock: owners.now, ForgetRemoved: true}
+	pass := steward.DiskPass{Mode: diskstore.ModeApply, Now: owners.now().UTC(), Clock: owners.now, ForgetRemoved: true, Clones: true}
 	if inv.input.switched("preview") {
 		pass.Mode, pass.ForgetRemoved = diskstore.ModePreview, false
 	}

@@ -65,6 +65,9 @@ type Manager struct {
 	StartCap      time.Duration
 	Settings      Settings
 	SettingsError error
+	// CompressAbove is disk.compress-above-mib in bytes: a launch's log
+	// that large is gzipped when the launch ends; 0 compresses nothing.
+	CompressAbove int64
 	// Seat is this installation's seat on the host board; an empty
 	// machine writes no card.
 	Seat              board.Seat
@@ -416,6 +419,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
+	compressFinishedLog(record, command.LogPath, m.CompressAbove)
 	return record, nil
 }
 func (m *Manager) finishCancelledBeforeChild(id string, cause error) (Record, error) {

@@ -19,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -1642,6 +1643,9 @@ func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchJoin
 type intentLanded struct {
 	Landing, Endpoint, Branch, Subject string
 	Swept                              bool
+	// ReleaseSet is the goal's workspaces this landing ends, recorded
+	// before the push and released once the merged branch is swept.
+	ReleaseSet *diskstore.ReleaseSet `json:",omitempty"`
 }
 
 func (inv *intentInvocation) landGoal(goalID, through string) intentResult {
@@ -1659,6 +1663,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	if result := inv.resumeSweep(targets, goalID, base); result != nil {
 		return *result
 	}
+	inv.finishReleaseSets(base)
 	landingRoot, configured, refused := inv.landingBatchRoot(targets)
 	if refused != nil {
 		return *refused
@@ -1770,8 +1775,14 @@ func (inv *intentInvocation) resumeSweep(targets []intentTarget, goalID, base st
 		if err := writeIntentInputs(filepath.Dir(path), map[string]string{path: mustJSON(landed)}); err != nil {
 			data["recordError"] = err.Error()
 		}
+		if released, err := inv.runReleaseSet(path); err != nil {
+			data["releaseError"] = err.Error()
+		} else {
+			landed = released
+			data["landing"] = landed
+		}
 		return &intentResult{Targets: targets, Outcome: intentConfirmed, Data: data,
-			Summary: fmt.Sprintf("landed %s on %s and swept the merged goal branch; goal %s stays open until done", landed.Landing, landed.Endpoint, goalID)}
+			Summary: fmt.Sprintf("landed %s on %s and swept the merged goal branch; goal %s stays open until done%s", landed.Landing, landed.Endpoint, goalID, releaseSummary(landed.ReleaseSet))}
 	}
 	return nil
 }
@@ -1839,6 +1850,10 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 		refused.Data = data
 		return *refused
 	}
+	selected, setErr := inv.recordReleaseSet(dir, landedPath, goalID, subject)
+	if setErr != nil {
+		data["releaseError"] = setErr.Error()
+	}
 	pushed, endpoint, code, err := owners.landPush([]string{"--root", root, "--goal", goalID, "--prepared", prepared})
 	if pushed.Landing == "" {
 		data["pushError"] = fmt.Sprint(err)
@@ -1846,19 +1861,25 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 			Summary: fmt.Sprintf("the landing of %s is proved and prepared in %s but not pushed: %v", goalID, prepared, err),
 			next:    inv.sameCommand(), nextReason: "pushes the retained prepared landing; its proof is reused"}
 	}
-	landed = intentLanded{Landing: pushed.Landing, Endpoint: endpoint, Branch: pushed.Branch, Subject: subject, Swept: err == nil}
+	landed = intentLanded{Landing: pushed.Landing, Endpoint: endpoint, Branch: pushed.Branch, Subject: subject, Swept: err == nil, ReleaseSet: selected.ReleaseSet}
 	data["landing"] = landed
 	writeHandLandingCard(inv.stderr, root, goalID, board.StageLanded)
 	if writeErr := writeIntentInputs(dir, map[string]string{landedPath: mustJSON(landed)}); writeErr != nil {
 		data["recordError"] = writeErr.Error()
 	}
+	if released, releaseErr := inv.runReleaseSet(landedPath); releaseErr != nil {
+		data["releaseError"] = releaseErr.Error()
+	} else {
+		landed = released
+	}
+	data["landing"] = landed
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentPartial, code: max(code, 1), Data: data,
 			Summary: fmt.Sprintf("landed %s on %s, but the merged goal branch was not swept: %v", pushed.Landing, endpoint, err),
 			next:    inv.sameCommand(), nextReason: "retries the branch owner's sweep of the pushed landing"}
 	}
 	return intentResult{Targets: targets, Outcome: intentConfirmed, Data: data,
-		Summary: fmt.Sprintf("landed %s on %s; goal %s stays open until done", pushed.Landing, endpoint, goalID)}
+		Summary: fmt.Sprintf("landed %s on %s; goal %s stays open until done%s", pushed.Landing, endpoint, goalID, releaseSummary(landed.ReleaseSet))}
 }
 
 // writeHandLandingCard projects the hand route onto the goal's board card

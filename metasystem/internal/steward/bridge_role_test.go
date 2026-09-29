@@ -2,6 +2,7 @@ package steward
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -150,12 +151,24 @@ func TestOnlyTheStewardHoldingTheFlockRunsTheBridge(t *testing.T) {
 		t.Fatalf("the holder's next cycle: %q", line)
 	}
 
+	// A process this test binary forks for another parallel test holds a
+	// copy of every descriptor between its fork and its exec, the listener
+	// included, and a copy keeps an in-process listener accepting after its
+	// close. The fixture holds such a copy on purpose, so the failover is
+	// proved in exactly that state; the abandoned holder's own listener is
+	// read directly instead of through a dial the copy would answer.
+	copied, err := first.listener.(*net.UnixListener).File()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer copied.Close()
+	abandoned := first.listener
 	first.abandon()
 	if board.BridgeState(home) != board.BridgeLive {
 		t.Fatal("the abandoned pathname should still stand")
 	}
-	if _, err := board.Dial(home); err == nil {
-		t.Fatal("an abandoned socket still answers")
+	if _, err := abandoned.Accept(); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("the abandoned holder's listener is closed: %v", err)
 	}
 	before := boardListing(t, board.Dir(home))
 	if line := second.Step(); !strings.HasPrefix(line, "bridge serving at ") {

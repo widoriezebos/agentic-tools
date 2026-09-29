@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -150,6 +151,10 @@ type DiskPass struct {
 	// processes have all ended: `metasystem disk clean`. The steward's own
 	// pass only counts them.
 	ForgetRemoved bool
+	// Clones lists the unowned clones beside the checkout (a person's pass:
+	// disk clean and its preview; the steward's cycle runs no git on the
+	// checkout's siblings).
+	Clones bool
 }
 
 func (p DiskPass) registryPath() (string, error) {
@@ -211,9 +216,18 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 		defer cancel()
 		ctx = budget
 		checkoutOptions.Classes = []diskstore.Class{
-			diskstore.RegisteredStores{Registry: diskstore.CheckoutRegistry(top), Proofs: pass.proofs()},
+			diskstore.RegisteredStores{Registry: diskstore.CheckoutRegistry(top), Proofs: checkoutProofs(top, pass)},
 			HandoffClass{Root: top, Keep: settings.Duration(config.DiskContextKeepKey)},
 			UsageClass{StateRoot: top, Limit: settings.Count(config.DiskSweepItemsPerLockKey)},
+		}
+		checkoutOptions.Classes = append(checkoutOptions.Classes,
+			attemptRetention(top, pass.Now, settings.Bytes(config.DiskProofTargetKey), settings.Duration(config.DiskProofKeepKey)))
+		if layout, err := stateroot.ResolveLayout(top); err == nil {
+			if pass.Clones {
+				checkoutOptions.Classes = append(checkoutOptions.Classes, clonesReport(layout.GitRoot))
+			}
+			checkoutOptions.Classes = append(checkoutOptions.Classes, LandingReleaseSets{Installation: layout.InstallationRoot,
+				StateRoot: top, GitRoot: layout.GitRoot, Git: ExecWorkspaceGit})
 		}
 		checkoutOptions.CensusMinBudget = settings.Duration(config.DiskCensusMinBudgetKey)
 		checkoutOptions.CensusReader = KernelCensusReader(home, append(armedCheckouts(), top))
@@ -306,6 +320,9 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	}
 	options.Classes = []diskstore.Class{
 		diskstore.RegisteredStores{Registry: diskstore.MachineRegistry(home), Proofs: pass.proofs()},
+		&launch.UnitRetention{Root: filepath.Join(home, "unit"), Target: host.Bytes(config.DiskUnitTargetKey), Keep: host.Duration(config.DiskUnitKeepKey),
+			GoalEnded: unitGoalEnded(func(root string) *ledgerView { return checkoutLedger(root, pass.Now) })},
+		launchRetention(home, host),
 		diskstore.TempStrays{Roots: tempRoots},
 	}
 	options.Volumes = pass.Volumes
@@ -333,6 +350,45 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	}
 	report, err := diskstore.RunPass(ctx, options)
 	return report, forgotten, err
+}
+
+// launchRetention is the launch store's class: ~/.metasystem/launch with
+// the unit store beside it, the kernel's prober and process groups, and
+// the host's launch target and window.
+func launchRetention(home string, host diskstore.HostSettings) *launch.Retention {
+	prober := identity.KernelProber{}
+	manager := &launch.Manager{Store: launch.Store{Root: filepath.Join(home, "launch")}, Prober: prober,
+		Processes: launch.OSProcesses{Prober: prober}}
+	return &launch.Retention{Manager: manager, UnitRoot: filepath.Join(home, "unit"),
+		Target: host.Bytes(config.DiskLaunchTargetKey), Keep: host.Duration(config.DiskLaunchKeepKey)}
+}
+
+// unitGoalEnded answers whether a unit's goal has concluded, read only in
+// the checkout the unit record names (the installation its worktree
+// belongs to), once and without a fetch. A worktree that no longer
+// resolves, or a ledger that cannot be read, is unknown, which keeps the
+// unit (Round B3-2 R9).
+func unitGoalEnded(ledgerFor func(string) *ledgerView) func(goal, worktree string) (bool, bool) {
+	views := map[string]*ledgerView{}
+	return func(goalID, worktree string) (bool, bool) {
+		if worktree == "" {
+			return false, false
+		}
+		layout, err := stateroot.ResolveLayout(worktree)
+		if err != nil {
+			return false, false
+		}
+		root := layout.InstallationRoot
+		if views[root] == nil {
+			views[root] = ledgerFor(root)
+		}
+		projection, err := views[root].get()
+		if err != nil || projection.Tree.Live[goalID] != nil {
+			return false, err == nil
+		}
+		ended := projection.Tree.Done[goalID] != nil || projection.Tree.Abandoned[goalID] != nil
+		return ended, ended
+	}
 }
 
 // checkoutRemoved reports whether the checkout directory itself no longer
@@ -658,6 +714,27 @@ func diskSettingsFor(checkout string) (diskstore.Settings, error) {
 		return diskstore.Settings{}, err
 	}
 	return diskstore.LoadSettings(filepath.Join(layout.InstallationRoot, "metasystem.conf"), nil)
+}
+
+// clonesReport is the unowned-clone report's class, with the git roots of
+// the host's armed checkouts; an unreadable host registry holds it.
+func clonesReport(gitRoot string) UnownedClones {
+	report := UnownedClones{GitRoot: gitRoot, Git: ExecWorkspaceGit}
+	path, err := registry.DefaultPath()
+	var checkouts []string
+	if err == nil {
+		checkouts, err = registry.ArmedCheckouts(path)
+	}
+	if err != nil {
+		report.ArmedErr = err
+		return report
+	}
+	for _, checkout := range checkouts {
+		if layout, err := stateroot.ResolveLayout(checkout); err == nil && !containsPath(report.Armed, layout.GitRoot) {
+			report.Armed = append(report.Armed, layout.GitRoot)
+		}
+	}
+	return report
 }
 
 // armedCheckouts reads the host registry's open claims and owners.
