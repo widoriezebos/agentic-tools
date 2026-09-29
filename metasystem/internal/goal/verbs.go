@@ -1362,7 +1362,11 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 	// peer message offered by the source either finished its emission first
 	// or reads the moved claim and offers nothing (batch-lane D14D-01).
 	if home, err := board.Home(); err == nil {
-		defer board.LockGoalHandover(home, id)()
+		release, err := board.LockGoalHandover(home, id)
+		if err != nil {
+			return PublishResult{}, err
+		}
+		defer release()
 	}
 	return publishedCard(Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,

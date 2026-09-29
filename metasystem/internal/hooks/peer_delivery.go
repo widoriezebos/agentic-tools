@@ -91,7 +91,7 @@ func OfferPeerMessage(home, seat, lineage string, claims func() (board.Ownership
 		if skipped == 1 {
 			noun = "peer message does"
 		}
-		line := fmt.Sprintf("%d %s not fit here and wait (metasystem agent inbox shows them)", skipped, noun)
+		line := fmt.Sprintf("%d %s not fit here and stay pending (metasystem agent inbox shows them)", skipped, noun)
 		if offer.Waiting != "" {
 			line = offer.Waiting + "; " + line
 		}

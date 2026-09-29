@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode"
@@ -865,43 +866,111 @@ func Mark(message Message, self, lineage, event string, now time.Time) error {
 // an offer reads; the files are never removed, so their inodes are stable.
 func claimLockDir(home string) string { return filepath.Join(home, "host", "claim-locks") }
 
-// lockGoal takes goal's claim lock with how (shared or exclusive, blocking
-// or not); false when it cannot be taken now.
-func lockGoal(home, goal string, how int) (func(), bool) {
+// HandoverLockWait bounds how long a handover waits for the offers that
+// hold its goal's claim lock (the read's N-2): an offer holds it for the
+// milliseconds of one emission, so a longer hold is a hung hook.
+const HandoverLockWait = 30 * time.Second
+
+var holderSequence atomic.Int64
+
+// tryLock takes goal's claim lock with how; busy when another holds it.
+func tryLock(home, goal string, how int) (release func(), busy bool, err error) {
 	if !SafeName(goal) {
-		return nil, false
+		return nil, false, checkName("goal", goal)
 	}
 	if _, err := boardDir(home); err != nil {
-		return nil, false
+		return nil, false, err
 	}
 	dir := claimLockDir(home)
 	if err := privateDir(dir); err != nil {
-		return nil, false
+		return nil, false, err
 	}
 	file, err := os.OpenFile(filepath.Join(dir, goal+".lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return nil, false
+		return nil, false, err
 	}
 	if err := syscall.Flock(int(file.Fd()), how); err != nil {
 		file.Close()
-		return nil, false
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, true, nil
+		}
+		return nil, false, err
 	}
 	return func() {
 		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
 		file.Close()
+	}, false, nil
+}
+
+// lockGoal takes goal's claim lock with how (shared or exclusive, blocking
+// or not); false when it cannot be taken now. A shared holder, an offer,
+// leaves its pid beside the lock while it holds it, so a handover that
+// waits too long can name it.
+func lockGoal(home, goal string, how int) (func(), bool) {
+	release, _, err := tryLock(home, goal, how)
+	if release == nil || err != nil {
+		return nil, false
+	}
+	if how&syscall.LOCK_SH == 0 {
+		return release, true
+	}
+	holder := filepath.Join(claimLockDir(home), fmt.Sprintf("%s.%d.%d.holder", goal, os.Getpid(), holderSequence.Add(1)))
+	_ = os.WriteFile(holder, nil, 0o600)
+	return func() {
+		_ = os.Remove(holder)
+		release()
 	}, true
+}
+
+// holders are the pids of the offers that hold goal's claim lock.
+func holders(home, goal string) []string {
+	entries, _ := os.ReadDir(claimLockDir(home))
+	seen := map[string]bool{}
+	var pids []string
+	for _, entry := range entries {
+		rest, ok := strings.CutPrefix(entry.Name(), goal+".")
+		if !ok || !strings.HasSuffix(rest, ".holder") {
+			continue
+		}
+		pid, _, _ := strings.Cut(rest, ".")
+		if pid != "" && !seen[pid] {
+			seen[pid] = true
+			pids = append(pids, "pid "+pid)
+		}
+	}
+	sort.Strings(pids)
+	return pids
 }
 
 // LockGoalHandover takes goal's claim lock exclusively for the act that
 // moves its claim (D14D-01): it waits for every offer that read the claim
 // and has not finished its emission and marker, and an offer that starts
-// meanwhile skips the goal. A lock that cannot be taken releases nothing.
-func LockGoalHandover(home, goal string) func() {
-	release, ok := lockGoal(home, goal, syscall.LOCK_EX)
-	if !ok {
-		return func() {}
+// meanwhile skips the goal. The wait is bounded by HandoverLockWait, after
+// which the handover is refused naming the holders (N-2). A lock that
+// cannot be opened at all holds nothing and refuses nothing.
+func LockGoalHandover(home, goal string) (func(), error) {
+	return lockGoalHandover(home, goal, HandoverLockWait, time.Now, time.Sleep)
+}
+
+func lockGoalHandover(home, goal string, wait time.Duration, now func() time.Time, sleep func(time.Duration)) (func(), error) {
+	start := now()
+	for {
+		release, busy, err := tryLock(home, goal, syscall.LOCK_EX|syscall.LOCK_NB)
+		if err != nil {
+			return func() {}, nil
+		}
+		if !busy {
+			return release, nil
+		}
+		if now().Sub(start) >= wait {
+			held := strings.Join(holders(home, goal), ", ")
+			if held == "" {
+				held = "a process that left no pid"
+			}
+			return nil, fmt.Errorf("goal %s's claim is being read by a peer-message offer (%s) for longer than %s, so the claim was not moved; run the handover again, and stop that process if it hangs", goal, held, wait)
+		}
+		sleep(100 * time.Millisecond)
 	}
-	return release
 }
 
 // Thread is one conversation: its root ask (nil when it is gone) and every
