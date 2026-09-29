@@ -27,6 +27,7 @@ type changeJoinDependencies struct {
 	assemble       func(string, string, []batch.Unit) ([]string, error)
 	protectedTests func(string, string, string) error
 	closure        func(root, baseTree, tree string) *adapter.Closure
+	onMain         func(lane, commit string) (bool, error)
 	ensure         func(string) error
 	prober         identity.Prober
 }
@@ -49,6 +50,43 @@ func productionChangeJoinDependencies() changeJoinDependencies {
 		},
 		assemble: batch.AssembleUnits, protectedTests: productionBatchProtectedTests, closure: batch.UnitClosure,
 		ensure: ensureBatchOwner, prober: identity.KernelProber{},
+		onMain: func(lane, commit string) (bool, error) { return batchSeriesOnEndpoint(lane, "refs/remotes/origin/main", commit) },
+	}
+}
+
+// changeParentStack is what a change's parent needs under it on the lane's
+// base: nothing when the parent is on origin/main or a change that landed,
+// the live changes it stacks on (oldest first) when it is one of the lane's.
+// A parent that is neither is refused, named.
+func changeParentStack(store batch.Store, lane, parent string, onMain func(string, string) (bool, error)) ([]batch.Unit, error) {
+	var stack []batch.Unit
+	for {
+		if on, err := onMain(lane, parent); err != nil {
+			return nil, fmt.Errorf("whether parent %s is on origin/main cannot be read: %w", parent, err)
+		} else if on {
+			return stack, nil
+		}
+		records, err := store.Records()
+		if err != nil {
+			return nil, err
+		}
+		var holder *batch.Unit
+		for _, record := range records {
+			for index := range record.Units {
+				unit := record.Units[index]
+				if unit.IsChange() && unit.Change.Commit == parent && slices.Contains([]string{batch.UnitJoining, batch.UnitJoined, batch.UnitLanded}, unit.State) {
+					holder = &unit
+				}
+			}
+		}
+		switch {
+		case holder == nil:
+			return nil, fmt.Errorf("its parent %s is neither on origin/main nor a change the landing lane holds; rebase it onto origin/main and land it again", parent)
+		case holder.State == batch.UnitLanded:
+			return stack, nil
+		}
+		stack = append([]batch.Unit{*holder}, stack...)
+		parent = holder.Change.Parent
 	}
 }
 
@@ -112,19 +150,28 @@ func executeChangeJoin(request changeJoinRequest, dependencies changeJoinDepende
 	if err != nil {
 		return batch.Record{}, err
 	}
-	prefixes, err := dependencies.assemble(lane, baseTree, []batch.Unit{unit})
-	if err != nil || len(prefixes) != 1 {
+	store := batch.NewStore(lane, dependencies.prober)
+	// The change's parent is on main, or a change the lane holds (the seat
+	// committed on top of one not landed yet); anything else would land a
+	// commit whose parent main never saw (N-3).
+	stack, err := changeParentStack(store, lane, parent, dependencies.onMain)
+	if err != nil {
+		return batch.Record{}, fmt.Errorf("BATCH_CHANGE_PARENT_UNKNOWN: change %s: %w", id, err)
+	}
+	prefixes, err := dependencies.assemble(lane, baseTree, append(stack, unit))
+	if err != nil || len(prefixes) != len(stack)+1 {
 		return batch.Record{}, fmt.Errorf("prepare change %s on the lane's base: prefixes=%d: %w", id, len(prefixes), err)
 	}
-	if err := dependencies.protectedTests(lane, baseTree, prefixes[0]); err != nil {
+	tree := prefixes[len(prefixes)-1]
+	if err := dependencies.protectedTests(lane, baseTree, tree); err != nil {
 		return batch.Record{}, err
 	}
-	unit.Closure = dependencies.closure(lane, baseTree, prefixes[0])
+	unit.Closure = dependencies.closure(lane, baseTree, tree)
 	newID, err := dependencies.mint()
 	if err != nil {
 		return batch.Record{}, err
 	}
-	record, err := batch.JoinChange(batch.NewStore(lane, dependencies.prober),
+	record, err := batch.JoinChange(store,
 		batch.ChangeJoin{Unit: unit, BaseTree: baseTree, NewID: newID, Actor: change.AskedBy, At: request.At})
 	if err != nil {
 		return batch.Record{}, err

@@ -129,11 +129,20 @@ func JoinChange(store Store, join ChangeJoin) (Record, error) {
 		if err != nil {
 			return err
 		}
-		own, err := store.reassembly.assemble(record.BaseTree, []Unit{unit})
-		if err != nil || len(own) != 1 || len(prefixes) != len(live)+1 {
-			return fmt.Errorf("assemble change %s: prefixes=%d own=%d: %w", unit.GoalID, len(prefixes), len(own), err)
+		if len(prefixes) != len(live)+1 {
+			return fmt.Errorf("assemble change %s: prefixes=%d", unit.GoalID, len(prefixes))
 		}
-		unit.Admission = &JoinAdmission{Tree: own[0], Status: AdmissionCarried}
+		// A change stacked on a change of this batch has no tree of its own
+		// on the base: its admitted tree is the series through it.
+		ownTree := prefixes[len(prefixes)-1]
+		if !slices.ContainsFunc(live, func(member Unit) bool { return member.IsChange() && member.Change.Commit == unit.Change.Parent }) {
+			own, err := store.reassembly.assemble(record.BaseTree, []Unit{unit})
+			if err != nil || len(own) != 1 {
+				return fmt.Errorf("assemble change %s: own=%d: %w", unit.GoalID, len(own), err)
+			}
+			ownTree = own[0]
+		}
+		unit.Admission = &JoinAdmission{Tree: ownTree, Status: AdmissionCarried}
 		mutate := func(current *Record) error {
 			current.Units = append(current.Units, unit)
 			current.PrefixTrees, current.TipTree = prefixes, prefixes[len(prefixes)-1]

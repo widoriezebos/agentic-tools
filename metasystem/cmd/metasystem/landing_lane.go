@@ -248,7 +248,7 @@ func landingLaneView(home func() (string, error), now time.Time) lane.View {
 	if err != nil {
 		return lane.View{Owner: lane.OwnerView{State: lane.OwnerNotStarted}, Summary: "the landing lane cannot be read: this host has no home for it (" + err.Error() + ")"}
 	}
-	return lane.BuildView(lane.ViewSources{Home: laneHome, Now: now, Owner: landingLaneOwnerProbe, Spend: laneSpend})
+	return lane.BuildView(lane.ViewSources{Home: laneHome, Now: now, Owner: landingLaneOwnerProbe})
 }
 
 // endLaneOwner ends the lane's running owner for a restart: the process the

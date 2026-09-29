@@ -158,6 +158,21 @@ func TestWorkLandMessageJoinsTheLaneAsAChange(t *testing.T) {
 		t.Fatalf("landed: advances=%d result=%+v", b.advances, result)
 	}
 
+	// A refused join gives the commit back and says what to do (N-2).
+	refusing := newChangeLaneBed(t, true)
+	refusing.owners.changeJoin = func(changeJoinRequest) (batch.Record, error) {
+		return batch.Record{}, errors.New("BATCH_JOIN_CONFLICT: change does not apply: notes.md")
+	}
+	refusing.edit("one\nconflicting\n")
+	base := refusing.seatGit("rev-parse", "HEAD")
+	code, result = refusing.land()
+	expectOutcome(t, "refused join", code, result, intentRefused)
+	if !strings.Contains(result.Summary, "BATCH_JOIN_CONFLICT") || strings.Contains(result.Summary, "joins it again") ||
+		!strings.Contains(result.Summary, "fix them and run the same command") || refusing.seatGit("rev-parse", "HEAD") != base ||
+		refusing.seatGit("status", "--porcelain", "--", "notes.md") != "M notes.md" {
+		t.Fatalf("refused join: head=%s result=%+v", refusing.seatGit("rev-parse", "HEAD"), result)
+	}
+
 	hand := newChangeLaneBed(t, false)
 	hand.edit("one\nthree\n")
 	code, result = hand.land()

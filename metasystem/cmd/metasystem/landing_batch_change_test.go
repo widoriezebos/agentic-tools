@@ -196,11 +196,11 @@ func TestBatchChangeAuthorityRechecksItsGoal(t *testing.T) {
 	person := named
 	person.Change = &batch.ChangeMember{Commit: laneChangeCommit, AskedBy: "m1e+human", Goal: "goal-g"}
 	moved.Tree.Live["goal-g"].Tier = 1
-	if err := authorizeBatchMemberInProjection(root, time.Unix(10, 0), record, person, moved); err != nil {
+	if err := authorizeChangeWith(root, person, moved, noBranchTip); err != nil {
 		t.Fatalf("a person's change in a goal's name below the human tier: %v", err)
 	}
 	moved.Tree.Live["goal-g"].Tier = 4
-	if err := authorizeBatchMemberInProjection(root, time.Unix(10, 0), record, person, moved); !errors.As(err, &revision) || !strings.Contains(err.Error(), "waits for a person") {
+	if err := authorizeChangeWith(root, person, moved, noBranchTip); !errors.As(err, &revision) || !strings.Contains(err.Error(), "waits for a person") {
 		t.Fatalf("a person's change past its goal's gate: %v", err)
 	}
 }
@@ -286,6 +286,28 @@ func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
 	if err != nil || len(again.History) != len(record.History) {
 		t.Fatalf("repeat err=%v history %d -> %d", err, len(record.History), len(again.History))
 	}
+	// A change stacked on a change the lane holds joins; one whose parent is
+	// neither on origin/main nor the lane's is refused, naming it (N-3).
+	if err := os.WriteFile(filepath.Join(seat, "notes.md"), []byte("one\ntwo\nthree\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(seat, "commit", "-qam", "record: more notes\n\nMachine: m1e+human")
+	stacked := run(seat, "rev-parse", "HEAD")
+	run(seat, "update-ref", changePinRef(stacked), stacked)
+	if _, err := executeChangeJoin(changeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: stacked, At: time.Unix(12, 0)}, dependencies); err != nil {
+		t.Fatalf("a change on a live change: %v", err)
+	}
+	run(seat, "checkout", "-q", "-b", "stray", base)
+	run(seat, "commit", "-q", "--allow-empty", "-m", "stray local commit")
+	stray := run(seat, "rev-parse", "HEAD")
+	run(seat, "commit", "-q", "--allow-empty", "-m", "record: on a stray parent\n\nMachine: m1e+human")
+	orphan := run(seat, "rev-parse", "HEAD")
+	run(seat, "update-ref", changePinRef(orphan), orphan)
+	if _, err := executeChangeJoin(changeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: orphan, At: time.Unix(13, 0)}, dependencies); err == nil ||
+		!strings.Contains(err.Error(), "BATCH_CHANGE_PARENT_UNKNOWN") || !strings.Contains(err.Error(), stray) {
+		t.Fatalf("a change on a stray parent: %v", err)
+	}
+	run(seat, "checkout", "-q", "main")
 	run(seat, "commit", "-q", "--allow-empty", "-m", "made by hand")
 	bare := run(seat, "rev-parse", "HEAD")
 	run(seat, "update-ref", changePinRef(bare), bare)
@@ -428,3 +450,31 @@ func TestLaneHoldIsVisibleOnTheBatch(t *testing.T) {
 		}
 	}
 }
+
+// TestChangeGateRecheckRereadsTheGoalBranchTip (U11b N-6): the gate of a
+// change made in G's name is read again just before the push at G's branch
+// tip as it is now, not at the tip recorded when the change joined.
+func TestChangeGateRecheckRereadsTheGoalBranchTip(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const current = "3333333333333333333333333333333333333333"
+	file := &goal.GoalFile{Id: "goal-g", State: goal.StateClaimed, Tier: 4, Claimed: &goal.ClaimRecord{Machine: "m1b", Lineage: "other", Revision: 5}}
+	humanWord(file, "01ARZ3NDEKTSV4RRFFQ69G5FW1", "review", "reviewed verdict=clear-to-land tip="+current+" record="+reviewBedRecord+" by=Wido")
+	projection := goal.Projection{Tree: &goal.TreeGoals{Live: map[string]*goal.GoalFile{"goal-g": file}}}
+	person := laneChangeUnit()
+	person.Change = &batch.ChangeMember{Commit: laneChangeCommit, AskedBy: "m1e+human", Goal: "goal-g", GateTip: "1111111111111111111111111111111111111111"}
+	var asked []string
+	tip := func(_, goalID string) (string, error) { asked = append(asked, goalID); return current, nil }
+	if err := authorizeChangeWith(root, person, projection, tip); err != nil || len(asked) != 1 {
+		t.Fatalf("gate at the re-read tip: err=%v asked=%v", err, asked)
+	}
+	unreadable := func(string, string) (string, error) { return "", errors.New("fetch goal/goal-g: network down") }
+	if err := authorizeChangeWith(root, person, projection, unreadable); err == nil {
+		t.Fatal("an unreadable goal branch tip authorized the change")
+	}
+}
+
+func noBranchTip(string, string) (string, error) { return "", nil }

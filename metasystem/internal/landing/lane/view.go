@@ -1,6 +1,7 @@
 package lane
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -209,17 +210,28 @@ func readRecords(sources ViewSources, root string) ([]batch.Record, error) {
 	sort.Strings(paths)
 	store := batch.NewStore(root, nil)
 	var records []batch.Record
+	unreadable := 0
 	for _, path := range paths {
-		id := strings.TrimSuffix(filepath.Base(path), ".json")
-		record, loadErr := store.Load(id)
+		record, loadErr := store.Load(strings.TrimSuffix(filepath.Base(path), ".json"))
 		if loadErr != nil {
-			// Fail closed: a record the lane cannot read is said, never shown
-			// as a lane with fewer batches or members.
-			return nil, fmt.Errorf("batch %s: %w", id, loadErr)
+			// Fail closed means visible: the rest is shown and the record the
+			// lane cannot read is counted in the summary.
+			unreadable++
+			continue
 		}
 		records = append(records, record)
 	}
+	if unreadable != 0 {
+		return records, &unreadableRecords{count: unreadable}
+	}
 	return records, nil
+}
+
+// unreadableRecords counts the batch records the lane could not read.
+type unreadableRecords struct{ count int }
+
+func (err *unreadableRecords) Error() string {
+	return fmt.Sprintf("%d batch record%s unreadable", err.count, plural(err.count))
 }
 
 // currentBatches picks the batch the lane works on (pushing, then proving,
@@ -344,8 +356,10 @@ func summary(root string, view View, recordsErr error) string {
 		owner += fmt.Sprintf(" (%d restarts so far)", view.Owner.Restarts)
 	}
 	line := "landing lane " + root + ": " + owner
+	var unreadable *unreadableRecords
+	partial := errors.As(recordsErr, &unreadable)
 	switch {
-	case recordsErr != nil:
+	case recordsErr != nil && !partial:
 		line += "; its batches are unreadable: " + recordsErr.Error()
 	case view.Batch == nil:
 		line += "; no batch"
@@ -354,6 +368,9 @@ func summary(root string, view View, recordsErr error) string {
 	}
 	if view.Next != nil {
 		line += fmt.Sprintf("; next %s collecting, %d member%s", view.Next.ID, len(view.Next.Members), plural(len(view.Next.Members)))
+	}
+	if partial {
+		line += "; " + unreadable.Error()
 	}
 	return line
 }

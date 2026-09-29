@@ -193,8 +193,11 @@ func (inv *intentInvocation) joinChangeToLane(request landpath.LandRequest, land
 	owners := inv.delivery()
 	record, err := owners.joinChange(changeJoinRequest{SeatRoot: request.Root, LandingRoot: landingRoot, Commit: head, GateTip: gateTip, At: owners.now()})
 	if err != nil {
+		// A refused join gives the commit back, as an ejection does: the
+		// same commit would be refused again (N-2).
+		back := giveChangeBack(request.Root, head, request)
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: map[string]any{"route": "lane", "change": id},
-			Summary: fmt.Sprintf("change %s did not join the landing lane: %v; the commit stays pinned on this branch, so the same command joins it again", id, err)}
+			Summary: fmt.Sprintf("change %s did not join the landing lane: %v; %s", id, err, back)}
 	}
 	targets = append(targets, intentTarget{Kind: "batch", ID: record.BatchID})
 	return intentResult{Outcome: intentInProgress, Targets: targets,

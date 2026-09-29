@@ -220,8 +220,8 @@ func TestLaneViewUnreadableRecordIsNotFewerMembers(t *testing.T) {
 	sources := viewSources(home, true, nil)
 	sources.Records = nil
 	view := BuildView(sources)
-	if !strings.Contains(view.Summary, "its batches are unreadable") {
-		t.Fatalf("an unreadable record read as fewer members: %q", view.Summary)
+	if !strings.Contains(view.Summary, "1 batch record unreadable") || view.Batch == nil || len(view.Batch.Members) != 1 {
+		t.Fatalf("an unreadable record must be said beside the rest: %q batch=%+v", view.Summary, view.Batch)
 	}
 }
 

@@ -92,6 +92,21 @@ func authorizeBatchMemberInProjection(controlRoot string, now time.Time, record 
 // leaves the batch when G's claim is no longer the asker's at the revision it
 // committed under, or G's landing gate now refuses (U11b).
 func authorizeChangeInProjection(controlRoot string, unit batch.Unit, projection goal.Projection) error {
+	return authorizeChangeWith(controlRoot, unit, projection, changeGoalBranchTip)
+}
+
+// changeGoalBranchTip reads a goal's branch tip at origin as it is now: the
+// tip a goal-bound change's landing gate is read at before each push (N-6).
+func changeGoalBranchTip(controlRoot, goalID string) (string, error) {
+	endpoint, err := goalBranchEndpoint(controlRoot)
+	if err != nil {
+		return "", err
+	}
+	tip, _, err := goalBranchOriginTip(controlRoot, endpoint, goalID)
+	return tip, err
+}
+
+func authorizeChangeWith(controlRoot string, unit batch.Unit, projection goal.Projection, branchTip func(string, string) (string, error)) error {
 	change := unit.Change
 	if change.Goal == "" {
 		return nil
@@ -112,7 +127,11 @@ func authorizeChangeInProjection(controlRoot string, unit batch.Unit, projection
 	if err != nil {
 		return err
 	}
-	if _, err := goal.Gate(file, change.GateTip, settings); err != nil {
+	tip, err := branchTip(controlRoot, change.Goal)
+	if err != nil {
+		return fmt.Errorf("BATCH_PREFIX_AUTHORITY_REFUSED: goal %s's branch tip cannot be read for change %s's landing gate: %w", change.Goal, unit.GoalID, err)
+	}
+	if _, err := goal.Gate(file, tip, settings); err != nil {
 		return &batch.PrefixRevisionRefusal{Reason: "BATCH_PREFIX_AUTHORITY_REFUSED: change " + unit.GoalID + " " + err.Error()}
 	}
 	return nil

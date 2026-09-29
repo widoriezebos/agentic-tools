@@ -152,7 +152,13 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 }
 
 func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.View {
-	return lane.BuildView(lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Spend: laneSpend})
+	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records}
+	if inv.input.switched("verbose") {
+		// The lane's spend is a full read of its proof store: only --verbose
+		// pays for it (N-5).
+		sources.Spend = laneSpend
+	}
+	return lane.BuildView(sources)
 }
 
 func laneTargets(root string) []intentTarget {
