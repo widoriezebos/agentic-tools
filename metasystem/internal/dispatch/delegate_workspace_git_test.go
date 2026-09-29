@@ -280,3 +280,17 @@ func TestAPersonsDiscardReleasesOnlyForItsInvocation(t *testing.T) {
 		t.Fatalf("a repeat succeeds: %+v %v", verdict, err)
 	}
 }
+
+// Round D2 F-3: chainMembers skips a record it cannot read, and the
+// skipped record may be the one that names a round of this chain; any
+// unreadable job record under jobs/ therefore holds every delegate
+// workspace for the pass.
+func TestAnUnreadableJobRecordHoldsTheDelegateClass(t *testing.T) {
+	t.Parallel()
+	bed := newDelegateBed(t, true)
+	if err := os.WriteFile(filepath.Join(bed.repo, "artifacts", "agents", "jobs", bed.chain+"-r2.json"), []byte("{torn"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	report := bed.pass(t, bed.proof(CustodyDeathProven), cleanCensus(""))
+	bed.kept(t, report, "cannot be read")
+}

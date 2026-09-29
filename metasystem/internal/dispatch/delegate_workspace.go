@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -57,6 +58,12 @@ func (p DelegateWorkspaceProof) observe(ctx context.Context, record diskstore.Re
 	}
 	if record.Class != diskstore.DelegateClass {
 		return pending("a "+record.Class+" store of chain "+chain+" is released by its own owner, not this proof", "metasystem disk show")
+	}
+	// chainMembers skips a record it cannot read, and that record may name
+	// a round of this chain: any unreadable job record holds the whole
+	// delegate class this pass (Round D2 F-3).
+	if unreadable := unreadableJobRecord(filepath.Join(p.Repo, "artifacts", "agents", "jobs")); unreadable != "" {
+		return pending("a job record cannot be read ("+unreadable+"); no delegate workspace is released this pass", "metasystem system check")
 	}
 	members, err := chainMembers(filepath.Join(p.Repo, "artifacts", "agents", "jobs"), chain)
 	switch {
@@ -184,4 +191,22 @@ func (p DelegateWorkspaceProof) ReleaseDiscarded(ctx context.Context, registry d
 		return verdict, nil
 	}
 	return p.release(ctx, critical, census, &discard, "person "+discard.By), nil
+}
+
+// unreadableJobRecord names the first job record under jobsDir that cannot
+// be read as a JSON object, or the listing error; empty when all read.
+func unreadableJobRecord(jobsDir string) string {
+	paths, err := filepath.Glob(filepath.Join(jobsDir, "*.json"))
+	if err != nil {
+		return err.Error()
+	}
+	if _, err := os.ReadDir(jobsDir); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return jobsDir + ": " + err.Error()
+	}
+	for _, path := range paths {
+		if _, err := readObject(path); err != nil {
+			return filepath.Base(path) + ": " + err.Error()
+		}
+	}
+	return ""
 }
