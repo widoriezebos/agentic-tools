@@ -47,6 +47,11 @@ const (
 	// UIStoreConversationDaysKey is how old the oldest message of a
 	// transcript may be before its head is trimmed.
 	UIStoreConversationDaysKey = "ui.store.conversation-days"
+	// ReviewDesignToolCallsKey is the reader budget the design page's Send
+	// to critique sheet starts from (g1-s66 D1): the engine refuses a review
+	// without one and never invents one, so the interface prefills what the
+	// project said and the human may change it.
+	ReviewDesignToolCallsKey = "review.design.tool-calls"
 )
 
 // The interface's compiled defaults (defaults.go).
@@ -56,6 +61,7 @@ var (
 	DefaultUIStoreWireMB           = intDefault(UIStoreWireMBKey)
 	DefaultUIStoreConversationMB   = intDefault(UIStoreConversationMBKey)
 	DefaultUIStoreConversationDays = intDefault(UIStoreConversationDaysKey)
+	DefaultReviewDesignToolCalls   = intDefault(ReviewDesignToolCallsKey)
 )
 
 // UIStore is the private store's three bounds as this seat resolves them: the

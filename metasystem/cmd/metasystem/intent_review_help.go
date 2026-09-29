@@ -133,7 +133,7 @@ func designReviewHelpForms() []intentHelpForm {
 			usage: []string{reviewDesignUsage},
 			inputs: []string{"FILE is a design in this project's design records; --goal G selects its goal when needed.",
 				"Use design write G --brief FILE to have a new project design authored."},
-			effects:     "Retains and starts an independent critique of the design. Changed designs and their decisions continue the same bounded review; no code is built or landed.",
+			effects:     "Retains and starts an independent critique of the design. Changed designs and their decisions continue the same bounded review; decisions on the unchanged design, or on the final round, close it by the review's own rules and append the design's Dispositions section from every answered round; no code is built or landed.",
 			authority:   "The author decides findings; critique does not accept the design on the human's behalf. Existing review limits and goal rules apply.",
 			repetition:  "Repeat to collect the existing examination. For a changed design supply --dispositions FILE and, if needed, --after N for the answered examination. --retry N retries a stopped failed examination, within the same round limit.",
 			flags:       []string{"goal", "dispositions", "after", "retry", "tool-calls"},
