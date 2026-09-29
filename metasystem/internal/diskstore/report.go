@@ -39,6 +39,8 @@ type Report struct {
 	Backlog []string          `json:"backlog,omitempty"`
 	Cursors map[string]string `json:"cursors,omitempty"`
 	Census  *UseCensus        `json:"census,omitempty"`
+	// Evidence is the evidence bound's position per segment (3.12).
+	Evidence []EvidenceSegment `json:"evidence,omitempty"`
 
 	Notes       []string `json:"notes,omitempty"`
 	HostUnknown []string `json:"hostUnknown,omitempty"`
@@ -203,6 +205,9 @@ func (r Report) render(verbose bool) []string {
 	lines = append(lines, groupedLines("kept", r.Kept, verbose)...)
 	lines = append(lines, groupedLines("pending", r.Pending, verbose)...)
 	lines = append(lines, groupedStrays(r.Strays, verbose)...)
+	for _, segment := range r.Evidence {
+		lines = append(lines, segment.Lines(verbose)...)
+	}
 	for _, item := range r.Foreign {
 		lines = append(lines, fmt.Sprintf("  not the engine's: %s (%s)", item.Path, item.Verdict.Reason))
 	}
