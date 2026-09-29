@@ -53,36 +53,80 @@ func mergeTestingFiles(basePath, oursPath, theirsPath, outPath string) error {
 }
 
 func runTestingAddTests(args []string) int {
-	return editTestingContract("add", args, func(contract testpolicy.Contract, path, group string, tests []string) (testpolicy.Contract, error) {
-		return contractmerge.AddTests(contract, path, group, tests)
+	return editTestingContract("add", args, testingContractEdits{
+		tests: func(contract testpolicy.Contract, path, group string, tests []string) (testpolicy.Contract, error) {
+			return contractmerge.AddTests(contract, path, group, tests)
+		},
+		inputs: contractmerge.AddInputs,
+		paths:  contractmerge.AddSurfacePaths,
 	})
 }
 
-// runTestingRemoveTests takes named tests out of a group, the follow-up of
-// deleting them.
+// runTestingRemoveTests takes named tests, inputs or surface paths out of the
+// contract, or a whole group or surface: the follow-up of deleting or moving
+// what they name.
 func runTestingRemoveTests(args []string) int {
-	return editTestingContract("remove", args, func(contract testpolicy.Contract, _ string, group string, tests []string) (testpolicy.Contract, error) {
-		if len(tests) == 0 {
-			return contractmerge.RemoveGroup(contract, group)
-		}
-		return contractmerge.RemoveTests(contract, group, tests)
+	return editTestingContract("remove", args, testingContractEdits{
+		tests: func(contract testpolicy.Contract, _ string, group string, tests []string) (testpolicy.Contract, error) {
+			return contractmerge.RemoveTests(contract, group, tests)
+		},
+		group:   contractmerge.RemoveGroup,
+		inputs:  contractmerge.RemoveInputs,
+		paths:   contractmerge.RemoveSurfacePaths,
+		surface: contractmerge.RemoveSurface,
 	})
+}
+
+// testingContractEdits are one action's edits, one per form; a nil edit is a
+// form the action does not have.
+type testingContractEdits struct {
+	tests   func(testpolicy.Contract, string, string, []string) (testpolicy.Contract, error)
+	group   func(testpolicy.Contract, string) (testpolicy.Contract, error)
+	inputs  func(testpolicy.Contract, string, []string) (testpolicy.Contract, error)
+	paths   func(testpolicy.Contract, string, []string) (testpolicy.Contract, error)
+	surface func(testpolicy.Contract, string) (testpolicy.Contract, error)
 }
 
 // editTestingContract is test add and test remove: decode the contract, apply
-// one group edit, render and write it back.
-func editTestingContract(action string, args []string, edit func(testpolicy.Contract, string, string, []string) (testpolicy.Contract, error)) int {
+// one group or surface edit, render and write it back.
+func editTestingContract(action string, args []string, edits testingContractEdits) int {
 	flags := newFlagSet("test " + action)
 	path := flags.String("file", "", "testing contract to edit")
 	group := flags.String("group", "", "group id")
+	surface := flags.String("surface", "", "surface id")
 	tests := flags.String("tests", "", "comma-separated Go test names")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *path == "" || *group == "" || *tests == "" && action != "remove" {
-		fmt.Fprintf(os.Stderr, "usage: metasystem test %s --file FILE --group ID --tests NAME,NAME\n", action)
-		return 2
+	inputs := flags.String("inputs", "", "comma-separated group input paths")
+	paths := flags.String("paths", "", "comma-separated surface paths")
+	list := func(value string) []string {
+		if value == "" {
+			return nil
+		}
+		return strings.Split(value, ",")
 	}
-	names := []string{}
-	if *tests != "" {
-		names = strings.Split(*tests, ",")
+	var edit func(testpolicy.Contract) (testpolicy.Contract, error)
+	if flags.Parse(args) == nil && flags.NArg() == 0 && *path != "" {
+		switch {
+		case *group != "" && *surface == "" && *paths == "" && *tests != "" && *inputs == "":
+			edit = func(c testpolicy.Contract) (testpolicy.Contract, error) {
+				return edits.tests(c, *path, *group, list(*tests))
+			}
+		case *group != "" && *surface == "" && *paths == "" && *tests == "" && *inputs != "" && edits.inputs != nil:
+			edit = func(c testpolicy.Contract) (testpolicy.Contract, error) {
+				return edits.inputs(c, *group, list(*inputs))
+			}
+		case *group != "" && *surface == "" && *paths == "" && *tests == "" && *inputs == "" && edits.group != nil:
+			edit = func(c testpolicy.Contract) (testpolicy.Contract, error) { return edits.group(c, *group) }
+		case *surface != "" && *group == "" && *tests == "" && *inputs == "" && *paths != "" && edits.paths != nil:
+			edit = func(c testpolicy.Contract) (testpolicy.Contract, error) {
+				return edits.paths(c, *surface, list(*paths))
+			}
+		case *surface != "" && *group == "" && *tests == "" && *inputs == "" && *paths == "" && edits.surface != nil:
+			edit = func(c testpolicy.Contract) (testpolicy.Contract, error) { return edits.surface(c, *surface) }
+		}
+	}
+	if edit == nil {
+		fmt.Fprintf(os.Stderr, "usage: metasystem test %s --file FILE --group ID --tests NAME,NAME | --group ID --inputs PATH,PATH | --surface ID --paths PATH,PATH\n", action)
+		return 2
 	}
 	data, err := os.ReadFile(*path)
 	if err != nil {
@@ -91,7 +135,7 @@ func editTestingContract(action string, args []string, edit func(testpolicy.Cont
 	}
 	contract, err := testpolicy.Decode(data)
 	if err == nil {
-		contract, err = edit(contract, *path, *group, names)
+		contract, err = edit(contract)
 	}
 	if err == nil {
 		data, err = contractmerge.Render(contract)
