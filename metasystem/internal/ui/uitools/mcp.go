@@ -286,7 +286,10 @@ func Catalogue() []Tool {
 				"head says it, the field's name as its label says it, and the field's whole new value. " +
 				"Call it when the human asks you to write or improve a field, once per field, beside the answer " +
 				"you give in words. It writes nothing and applies nothing: the human sees a card and decides " +
-				"whether to use it, and the field's value stays theirs until they do.",
+				"whether to use it, and the field's value stays theirs until they do. " +
+				"To draft one section of a document anew instead — a finding folded into a design — give document " +
+				"and section in place of editor and field, and the section's whole new text, heading line and all; " +
+				"the human sees old and new side by side on the document's page and Use writes exactly that section.",
 			InputSchema: schema(map[string]any{
 				"editor": map[string]any{
 					"type":        "string",
@@ -298,9 +301,17 @@ func Catalogue() []Tool {
 				},
 				"text": map[string]any{
 					"type":        "string",
-					"description": "The field's whole new value, at most 4000 characters. Not a diff and not an instruction.",
+					"description": "The field's whole new value, at most 4000 characters, or the section's whole new text, at most 20000. Not a diff and not an instruction.",
 				},
-			}, []string{"editor", "field", "text"}),
+				"document": map[string]any{
+					"type":        "string",
+					"description": "For a section: the document's checkout-relative path, as its page names it.",
+				},
+				"section": map[string]any{
+					"type":        "string",
+					"description": "For a section: its heading as the document spells it, without the #s. It must occur once in the document.",
+				},
+			}, []string{"text"}),
 		},
 		{
 			Name: OpDeposit,

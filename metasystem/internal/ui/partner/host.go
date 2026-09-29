@@ -167,6 +167,13 @@ type Suggestion struct {
 	// Reason is why it was not offered, in the words a human reads, and "" for
 	// one that was.
 	Reason string `json:"reason,omitempty"`
+	// Document and Section are the other target (g1-s66 D3): one section of a
+	// document drafted anew, named by the document's path and its heading. A
+	// section suggestion names no editor and no field, belongs to no sheet's
+	// opening, and is offered on that document's own page, where the section
+	// card shows old and new side by side.
+	Document string `json:"document,omitempty"`
+	Section  string `json:"section,omitempty"`
 }
 
 // Deposit is one entry the Partner offered the record of the sitting the human
@@ -1070,6 +1077,9 @@ func resultText(body toolCall) string {
 func suggestedIn(text string) *Suggestion {
 	lines := strings.Split(text, "\n")
 	for at, line := range lines {
+		if strings.HasPrefix(line, uitools.SectionSuggestionHeader) {
+			return sectionIn(lines, at)
+		}
 		if !strings.HasPrefix(line, uitools.SuggestionHeader) {
 			continue
 		}
@@ -1089,6 +1099,28 @@ func suggestedIn(text string) *Suggestion {
 			return &Suggestion{Editor: editor, Field: field, Text: said}
 		}
 		return nil
+	}
+	return nil
+}
+
+// sectionIn reads a section suggestion's frame from its header line: the
+// document and the heading, then everything after the separator as the
+// section's words.
+func sectionIn(lines []string, at int) *Suggestion {
+	document, section, split := strings.Cut(strings.TrimPrefix(lines[at], uitools.SectionSuggestionHeader), uitools.SuggestionJoin)
+	document, section = strings.TrimSpace(document), strings.TrimSpace(section)
+	if !split || document == "" || section == "" {
+		return nil
+	}
+	for after := at + 1; after < len(lines); after++ {
+		if strings.TrimSpace(lines[after]) != uitools.SuggestionSeparator {
+			continue
+		}
+		said := strings.Trim(strings.Join(lines[after+1:], "\n"), "\n")
+		if said == "" {
+			return nil
+		}
+		return &Suggestion{Document: document, Section: section, Text: said}
 	}
 	return nil
 }

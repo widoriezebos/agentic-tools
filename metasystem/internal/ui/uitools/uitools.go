@@ -242,6 +242,14 @@ func (r Readers) Answer(operation string, args Args) Result {
 	case OpKit:
 		return r.kit(args.Text("topic"), args.Cursor())
 	case OpSuggest:
+		// A section of a document is the other target (g1-s66 D3); a call
+		// naming both targets is one nobody can offer.
+		if args.Given("document") || args.Given("section") {
+			if args.Given("editor") || args.Given("field") {
+				return refusedCall("one suggestion is for a field of a sheet or for a section of a document, not both")
+			}
+			return suggestSection(args.Text("document"), args.Text("section"), args.Text("text"))
+		}
 		return suggest(args.Text("editor"), args.Text("field"), args.Text("text"))
 	case OpDeposit:
 		return deposit(args.Text("kind"), args.Text("text"),

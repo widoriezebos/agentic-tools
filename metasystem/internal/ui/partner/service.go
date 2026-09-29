@@ -928,7 +928,19 @@ func lookedAtPage(seen Seen) *Look {
 func (s *Service) admit(running *turn, prepared Suggestion) {
 	s.mu.Lock()
 	draft := running.page.Draft
+	page := running.page
 	s.mu.Unlock()
+	// A section is offered on its document's own page, where the section card
+	// stands and where the human asked for it (g1-s66 D3). It belongs to no
+	// sheet's opening.
+	if prepared.Document != "" {
+		prepared.Offered = page.Kind == "document" && page.Subject == prepared.Document
+		if !prepared.Offered {
+			prepared.Reason = "a section is offered on its document's own page; ask from " + prepared.Document
+		}
+		s.record(running, Event{Kind: EventSuggestion, Suggestion: &prepared})
+		return
+	}
 	if draft == nil || draft.Opening == "" ||
 		draft.Sheet != prepared.Editor || !draft.Writes(prepared.Field) {
 		prepared.Offered = false

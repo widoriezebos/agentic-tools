@@ -67,26 +67,27 @@ func goalCatalogue() []uitools.CommandFamily {
 	}}
 }
 
-// The catalogue is the twelve public actions and their public flags, and it is
-// what the tool's own description tells the model: the goal object's ten, the
-// review's verdict and the candidate's start (g1-s69 §6).
+// The catalogue is the thirteen public actions and their public flags, and it
+// is what the tool's own description tells the model: the goal object's ten,
+// the review's verdict and the candidate's start (g1-s69 §6), and the design's
+// critique (g1-s66 D1).
 func TestTheProposalCatalogueIsTheTenPublicActionsWithTheirFlags(t *testing.T) {
 	t.Parallel()
-	testutil.Expect(t, "twelve acts", len(uitools.ProposedActs), 12)
+	testutil.Expect(t, "thirteen acts", len(uitools.ProposedActs), 13)
 	testutil.Expect(t, "named by their public actions", uitools.ProposeActions(), []string{
 		"open", "approve", "unapprove", "prioritize",
-		"block", "unblock", "pause", "resume", "edit", "abandon", "review", "app start",
+		"block", "unblock", "pause", "resume", "edit", "abandon", "review", "app start", "design review",
 	})
 	testutil.Expect(t, "each dispatching to the interface's own route", uitools.ProposeRoutes(), []string{
 		"open-goal", "approve-goal", "withdraw-goal", "set-goal-priority",
 		"block-goal", "unblock-goal", "park-goal", "unpark-goal", "edit-goal", "abandon-goal",
-		"review-goal", "app-start",
+		"review-goal", "app-start", "design-review",
 	})
 	words := map[string]string{}
 	flags := map[string][]string{}
 	for _, act := range uitools.ProposedActs {
-		flags[act.Action] = act.Fields()
-		words[act.Action] = act.Word
+		flags[act.Verb()] = act.Fields()
+		words[act.Verb()] = act.Word
 	}
 	testutil.Expect(t, "open takes the public flags of goal open", flags["open"],
 		[]string{"intent", "next", "risk", "basis", "label", "blocked-by", "blocks"})
@@ -104,7 +105,9 @@ func TestTheProposalCatalogueIsTheTenPublicActionsWithTheirFlags(t *testing.T) {
 		[]string{"reason", "successor"})
 	testutil.Expect(t, "review takes the record, the verdict and the work", flags["review"],
 		[]string{"record", "verdict", "work"})
-	testutil.Expect(t, "app start takes the goal alone", flags["start"], []string{})
+	testutil.Expect(t, "app start takes the goal alone", flags["app start"], []string{})
+	testutil.Expect(t, "design review takes the design, the budget and the answered round", flags["design review"],
+		[]string{"design", "tool-calls", "dispositions", "after"})
 	// Abandon is the row whose public flag and route body field differ: the
 	// reason the Partner writes reaches the route as the `because` that body
 	// already has, and the successor is spelt the same on both sides.
@@ -118,7 +121,7 @@ func TestTheProposalCatalogueIsTheTenPublicActionsWithTheirFlags(t *testing.T) {
 	testutil.Expect(t, "the words are the actions' names", words, map[string]string{
 		"open": "Open", "approve": "Approve", "unapprove": "Unapprove", "prioritize": "Prioritize",
 		"block": "Block", "unblock": "Unblock", "pause": "Pause", "resume": "Resume", "edit": "Edit",
-		"abandon": "Abandon", "review": "Review", "start": "Run",
+		"abandon": "Abandon", "review": "Review", "app start": "Run", "design review": "Send to critique",
 	})
 
 	described := map[string]uitools.Tool{}
@@ -277,7 +280,7 @@ func TestAGoalActionTheInterfaceHasNoActForIsRefusedWithItsUsageLine(t *testing.
 	t.Parallel()
 	words := refusedPropose(t, "an unknown act", uitools.Args{"verb": "retire", "goal": "g1-s42", "explanation": "x"})
 	testutil.Expect(t, "the ten are named", strings.Contains(words, "open, approve, unapprove"), true)
-	testutil.Expect(t, "abandon among them", strings.Contains(words, "abandon, review and app start"), true)
+	testutil.Expect(t, "abandon among them", strings.Contains(words, "abandon, review, app start and design review"), true)
 	testutil.Expect(t, "and the unknown one is quoted", strings.Contains(words, `"retire"`), true)
 
 	readers := uitools.Readers{Kit: uitools.Kit{Commands: goalCatalogue}}

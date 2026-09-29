@@ -32,11 +32,13 @@ import (
 // The verdict and the candidate's run take the launch route's stronger hand,
 // sessionHand, and are acts on one goal too (g1-s69 §6). Of those, stopping the
 // candidate is the one the grammar does not carry: the design gives the
-// Partner Run and not Stop (D3).
+// Partner Run and not Stop (D3). A design's critique takes the same hand
+// (g1-s66 §6); its decisions row is the author's own press on a card, and the
+// grammar carries design review alone.
 func goalActs() []string {
 	named := []string{}
 	for _, act := range Acts() {
-		if (act.Requires == ledgerHand || act.Requires == sessionHand) && act.ID != routeAppStop {
+		if (act.Requires == ledgerHand || act.Requires == sessionHand) && act.ID != routeAppStop && act.ID != routeDesignDecision {
 			named = append(named, act.ID)
 		}
 	}
@@ -105,6 +107,11 @@ func TestEveryCatalogueFieldIsItsRoutesOwnBodyField(t *testing.T) {
 		routeAbandon:  fieldsOf(abandonBody{}),
 		routeReview:   fieldsOf(reviewBody{}),
 		routeAppStart: {},
+		// The design is the route's path, and the decisions file is the one
+		// the route derives from the examination it answers: both travel
+		// beside the body (Beside), so the body is the goal, the budget and
+		// the examination.
+		routeDesignReview: fieldsOf(DesignAsked{}),
 	}
 	for _, act := range uitools.ProposedActs {
 		carried, known := bodies[act.Route]

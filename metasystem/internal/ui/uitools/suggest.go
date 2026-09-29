@@ -55,6 +55,41 @@ const (
 const PreparedLine = "prepared; preparing does not confirm it was shown: " +
 	"it is offered only for a field of a draft the human has handed over"
 
+// maxSection is how much text one section suggestion carries: a design's
+// section is pages rather than a line, and past this it is refused in words
+// for the reason a field's is.
+const maxSection = 20000
+
+// The section's own frame (g1-s66 D3): the document and the heading the
+// section card replaces, then the section's whole new text.
+const SectionSuggestionHeader = "Section-for: "
+
+// PreparedSectionLine is what a prepared section answers the model with: the
+// field's line, said of a section and the page it is offered on.
+const PreparedSectionLine = "prepared; preparing does not confirm it was shown: " +
+	"it is offered only on the page of the document it replaces a section of, and nothing is written until the human presses Use"
+
+// suggestSection prepares one section drafted anew, or refuses the call.
+func suggestSection(document, section, text string) Result {
+	document, section = oneLine(document), oneLine(section)
+	text = strings.Trim(text, "\n")
+	switch {
+	case document == "":
+		return refusedCall("a section is named with the document it is in, by the path the page names it by")
+	case section == "":
+		return refusedCall("a section is named by its heading, as the document spells it, without the #s")
+	case strings.TrimSpace(text) == "":
+		return refusedCall("this tool needs the section's whole new text, heading and all")
+	case utf8.RuneCountInString(text) > maxSection:
+		return refusedCall("a section suggestion carries at most " + strconv.Itoa(maxSection) +
+			" characters and this one is " + strconv.Itoa(utf8.RuneCountInString(text)) + "; offer a shorter section")
+	}
+	return Result{Prepared: PreparedSectionLine + "\n" +
+		SectionSuggestionHeader + document + SuggestionJoin + section + "\n" +
+		SuggestionSeparator + "\n" +
+		text + "\n"}
+}
+
 // suggest prepares one suggestion, or refuses the call in words.
 func suggest(editor, field, text string) Result {
 	editor = oneLine(editor)
