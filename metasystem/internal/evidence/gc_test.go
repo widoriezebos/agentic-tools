@@ -353,7 +353,7 @@ func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
 
 	before := dispatch.ProjectBudget(root, file, testNow)
 	var out strings.Builder
-	if err := gcWithGoalEndpoint(root, evidenceRoot, 5400, &out, endpoint); err != nil {
+	if err := gcWithGoalEndpoint(root, evidenceRoot, 5400, &out, endpoint, testNow); err != nil {
 		t.Fatalf("GC: %v", err)
 	}
 	for name, wantGone := range map[string]bool{
@@ -384,7 +384,7 @@ func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
 	t.Run("wrong checkout root stays unknown", func(t *testing.T) {
 		wrong := *endpoint
 		wrong.Root = root + "-other"
-		state := readGoalRevisionStateWithEndpoint(root, &wrong)
+		state := readGoalRevisionStateWithEndpoint(root, &wrong, testNow)
 		if !state.unknown || state.tree != nil {
 			t.Fatalf("wrong-root goal state: %+v", state)
 		}
@@ -393,7 +393,7 @@ func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
 	t.Run("missing repository stays unknown", func(t *testing.T) {
 		missing := *endpoint
 		missing.Repository = nil
-		state := readGoalRevisionStateWithEndpoint(root, &missing)
+		state := readGoalRevisionStateWithEndpoint(root, &missing, testNow)
 		if !state.unknown || state.tree != nil {
 			t.Fatalf("missing-repository goal state: %+v", state)
 		}

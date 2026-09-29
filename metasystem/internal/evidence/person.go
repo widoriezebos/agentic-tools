@@ -856,12 +856,12 @@ func (e Env) settleChain(target Target, stage string) string {
 		}
 		return "the chain is not closed; metasystem work finish j2:" + target.Item.Name + " closes it"
 	}
-	registry := diskstore.CheckoutRegistry(installation)
-	records2, _ := registry.Inventory()
-	for _, record := range records2 {
-		if record.Owner.Kind == diskstore.OwnerDelegate && record.Owner.Ref == target.Item.Name && record.State != diskstore.StateReleased {
-			return "its workspace store " + record.ID + " is registered and not released, and it keeps the chain's payload; metasystem disk clean --preview names what settles it"
-		}
+	holds := readStoreHolds(installation)
+	if holds.unreadable != "" {
+		return "the store registry of " + installation + " cannot be read (" + holds.unreadable + "), so whether a workspace keeps the chain's payload is unknown; metasystem disk show names the record"
+	}
+	if id := holds.chains[target.Item.Name]; id != "" {
+		return "its workspace store " + id + " is registered and not released, and it keeps the chain's payload; metasystem disk clean --preview names what settles it"
 	}
 	result := filepath.Join(e.HomeStateRoot, "stores", ".settle-"+stage+".json")
 	defer os.Remove(result)
