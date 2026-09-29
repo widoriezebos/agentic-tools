@@ -304,12 +304,6 @@ func (s *session) configLookup() func(string) (string, bool) {
 	return configLookupOver(s.request.ConfigEnv, base)
 }
 
-// ConfigLookup resolves an environment name from carried KEY=VALUE
-// configuration first and the process environment after it.
-func ConfigLookup(carried []string) func(string) (string, bool) {
-	return configLookupOver(carried, nil)
-}
-
 // configLookupOver resolves an environment name from carried KEY=VALUE
 // configuration first and base after it (nil is the process environment).
 func configLookupOver(carried []string, base func(string) (string, bool)) func(string) (string, bool) {

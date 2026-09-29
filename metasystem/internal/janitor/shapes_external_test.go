@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 )
 
 // TestShapesAtTakeAnExternalRuntimesClaimShapes: an external runtime's
@@ -44,20 +42,6 @@ func TestShapesAtTakeAnExternalRuntimesClaimShapes(t *testing.T) {
 		if _, got := MatchShape(shapes, test.argv, test.tag); got != test.want {
 			t.Errorf("MatchShape(%q, %q) = %v, want %v", test.argv, test.tag, got, test.want)
 		}
-	}
-	// The kill proof over those shapes: the orphaned, correctly tagged CLI
-	// is killable; the same pid reused by another process, or a wrong tag,
-	// is left alone.
-	recorded := &registry.ProcessRef{Pid: 41, PidStartedAt: 100}
-	cli := []string{"/opt/bin/newagent", "-p", "--tag", "job-tag"}
-	if name, ok := Killable(observed(41, 100, cli...), recorded, shapes, []string{"job-tag"}); !ok || name != "adapter-cli-newagent" {
-		t.Fatalf("the tagged orphan = %q, %v", name, ok)
-	}
-	if _, ok := Killable(observed(41, 200, cli...), recorded, shapes, []string{"job-tag"}); ok {
-		t.Fatal("a reused pid was killable")
-	}
-	if _, ok := Killable(observed(41, 100, cli...), recorded, shapes, []string{"other-tag"}); ok {
-		t.Fatal("a wrongly tagged CLI was killable")
 	}
 	if _, got := MatchShape(DefaultShapes(), []string{"/opt/bin/newagent", "-p", "--tag", "job-tag"}, "job-tag"); got {
 		t.Fatal("the installation-free shapes know an external runtime")

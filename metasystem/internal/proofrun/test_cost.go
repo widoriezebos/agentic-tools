@@ -1,11 +1,8 @@
 package proofrun
 
 import (
-	"bytes"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"sort"
 	"time"
@@ -153,23 +150,6 @@ func cloneFaultDetection(values map[string]bool) map[string]bool {
 		result[key] = value
 	}
 	return result
-}
-
-func ReadCostComparison(path string) (CostComparison, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return CostComparison{}, err
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	var comparison CostComparison
-	if err := decoder.Decode(&comparison); err != nil {
-		return CostComparison{}, err
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return CostComparison{}, fmt.Errorf("cost comparison has trailing JSON")
-	}
-	return comparison, nil
 }
 
 func EvaluateCostComparison(comparison CostComparison) CostComparisonVerdict {

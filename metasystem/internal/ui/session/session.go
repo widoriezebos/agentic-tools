@@ -25,7 +25,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -426,7 +425,3 @@ func Secret(confPath string) (string, error) {
 	}
 	return "", fmt.Errorf("no value configured for %s", SecretKey)
 }
-
-// ConfPath is the installation's configuration file, which is where every
-// other ui. key is read from too.
-func ConfPath(installation string) string { return filepath.Join(installation, "metasystem.conf") }

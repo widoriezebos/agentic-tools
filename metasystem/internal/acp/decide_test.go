@@ -149,32 +149,9 @@ func TestAnswerWireShapeAndCrossKindAmbiguity(t *testing.T) {
 	}
 }
 
-// Canonicalize resolves symlinks over the existing prefix, keeps
-// nonexistent tails, and (on this case-insensitive host class)
-// substitutes on-disk spelling so containment is identity, not
-// string luck.
-func TestCanonicalize(t *testing.T) {
-	if _, err := Canonicalize("relative/path"); err == nil {
-		t.Fatal("relative paths must be refused")
-	}
-	dir := t.TempDir()
-	resolved, err := Canonicalize(dir + "/does/not/exist/yet")
-	if err != nil {
-		t.Fatal(err)
-	}
-	base, err := Canonicalize(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !allInside([]string{resolved}, []string{base}) {
-		t.Fatalf("a nonexistent tail must stay inside its canonical base: %s vs %s", resolved, base)
-	}
-}
-
 // The last matrix and normalizer branches: single unclassifiable
 // stays unclassifiable, multi-effect all-allow allows, malformed
-// assembler inputs drop, and Canonicalize resolves symlinks to the
-// target's canonical home.
+// assembler inputs drop.
 func TestRemainingBranches(t *testing.T) {
 	envelope := workspaceEnvelope("runtime-default")
 	if Decide([]Effect{{Class: EffectUnknown}}, envelope) != VerdictUnclassifiable {

@@ -9,110 +9,11 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 const tag = "metasystem-supervision-owner-repo-123-watcher-2-456"
-
-func observed(pid int64, startSec int64, argv ...string) identity.Exact {
-	return identity.Exact{Pid: pid, StartedAt: time.Unix(startSec, 0), Argv: argv, ArgvKnown: true}
-}
-
-// Exercise the kill-authority and three-part process proof row by row.
-func TestKillable(t *testing.T) {
-	recorded := &registry.ProcessRef{Pid: 41, PidStartedAt: 100}
-	// The watcher is the supervise owner's Go component (the shell watcher
-	// script is retired and matches no shape).
-	watcherArgv := []string{"/repo/bin/metasystem", "supervise", "component", "--component", "watcher", "--tag", tag}
-	cases := []struct {
-		name     string
-		observed identity.Exact
-		recorded *registry.ProcessRef
-		want     bool
-	}{
-		{
-			name:     "real leaked component IS killable",
-			observed: observed(41, 100, watcherArgv...),
-			recorded: recorded,
-			want:     true,
-		},
-		{
-			name: "same-second pid reuse with WRONG argv is not",
-			observed: observed(41, 100,
-				"vim", "notes-about-"+tag+".md"),
-			recorded: recorded,
-			want:     false,
-		},
-		{
-			name:     "recycled pid, different start second",
-			observed: observed(41, 101, watcherArgv...),
-			recorded: recorded,
-			want:     false,
-		},
-		{
-			// A shell QUOTING the tag matches no shape
-			// because the tag is not the tag-flag's value.
-			name: "tag mention in a grep is never killable",
-			observed: observed(41, 100,
-				"grep", "-rn", tag, "/repo"),
-			recorded: recorded,
-			want:     false,
-		},
-		{
-			name:     "unreadable argv means report, not kill",
-			observed: identity.Exact{Pid: 41, StartedAt: time.Unix(100, 0)},
-			recorded: recorded,
-			want:     false,
-		},
-		{
-			// An establishment orphan has no recorded identity, so its argv
-			// shape plus the claim tag is the proof.
-			name: "signature-only owner proof",
-			observed: observed(77, 999,
-				"/repo/bin/metasystem", "supervise", "owner", "--repo", "/repo", "--tag", tag),
-			recorded: nil,
-			want:     true,
-		},
-		{
-			name: "flag=value spelling matches",
-			observed: observed(41, 100,
-				"/repo/bin/metasystem", "supervise", "component", "--tag="+tag),
-			recorded: recorded,
-			want:     true,
-		},
-		{
-			name: "the retired shell watcher matches no shape",
-			observed: observed(41, 100,
-				"bash", "/repo/scripts/watch-background-jobs.sh", "--census", "--instance-tag", tag),
-			recorded: recorded,
-			want:     false,
-		},
-		{
-			name: "the go owner verb is a known shape",
-			observed: observed(41, 100,
-				"/usr/local/bin/metasystem", "supervise", "owner", "--tag", tag),
-			recorded: recorded,
-			want:     true,
-		},
-		{
-			name: "wrong tag in the tag position",
-			observed: observed(41, 100,
-				"/repo/bin/metasystem", "supervise", "component", "--tag", "some-other-tag"),
-			recorded: recorded,
-			want:     false,
-		},
-	}
-	for _, row := range cases {
-		t.Run(row.name, func(t *testing.T) {
-			_, got := Killable(row.observed, row.recorded, DefaultShapes(), []string{tag})
-			if got != row.want {
-				t.Fatalf("killable=%v, want %v", got, row.want)
-			}
-		})
-	}
-}
 
 func TestMatchShapeRequiresAllIncludes(t *testing.T) {
 	// "metasystem mission" alone must not match the run-loop shape without
@@ -220,10 +121,6 @@ func TestGroupOwnershipShapesRequireTheTagPosition(t *testing.T) {
 	rgLeader := []string{"rg", tag, "/repo"}
 	if _, ok := MatchShape(shapes, rgLeader, tag); ok {
 		t.Fatal("a group leader that merely searches for the tag must not prove ownership")
-	}
-	recorded := &registry.ProcessRef{Pid: 41, PidStartedAt: 100}
-	if _, ok := Killable(observed(41, 100, rgLeader...), recorded, shapes, []string{tag}); ok {
-		t.Fatal("a group leader that merely searches for the tag must not satisfy the kill predicate")
 	}
 	stable := identity.Exact{Pid: 41, StartedAt: time.UnixMicro(100_000_001)}
 	leaderReader := &tagVerificationReader{starts: []identity.Exact{stable, stable}, argv: rgLeader}

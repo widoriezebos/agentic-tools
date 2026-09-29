@@ -10,7 +10,7 @@ import (
 // TestAlivePairSurvivesBtimeDrift:
 // on a time-synced guest the btime-derived start SECOND of a live process
 // differs between two reads, so seconds-equality false-deaths it. The
-// clock-step-immune pair (StartTicks+BootID) does not move, so AlivePair with
+// clock-step-immune pair (StartTicks+BootID) does not move, so alivePair with
 // the pair must read the live process alive even when the expected SECOND is
 // wrong — while a wrong pair (a genuinely different/reused process) still
 // reads dead. Uses this test process's own real identity (Linux only; on
@@ -28,19 +28,19 @@ func TestAlivePairSurvivesBtimeDrift(t *testing.T) {
 	sec := exact.StartedAt.Unix()
 
 	// The exact truth is alive by every path.
-	if !AlivePair(pid, sec, exact.StartTicks, exact.BootID, nil) {
+	if !alivePair(pid, sec, exact.StartTicks, exact.BootID, nil) {
 		t.Fatal("exact identity must read alive")
 	}
 	// A btime step moved the recorded second by a few seconds; the pair is
 	// unchanged. Seconds-only reads dead (the bug); the pair reads alive.
-	if AlivePair(pid, sec+3, 0, "", nil) {
+	if alivePair(pid, sec+3, 0, "", nil) {
 		t.Fatal("a wrong second with no pair must read dead (the seconds path)")
 	}
-	if !AlivePair(pid, sec+3, exact.StartTicks, exact.BootID, nil) {
+	if !alivePair(pid, sec+3, exact.StartTicks, exact.BootID, nil) {
 		t.Fatal("a wrong second WITH the matching pair must read alive (drift-immune)")
 	}
 	// A genuinely different process (wrong ticks) is dead even at the right second.
-	if AlivePair(pid, sec, exact.StartTicks+1, exact.BootID, nil) {
+	if alivePair(pid, sec, exact.StartTicks+1, exact.BootID, nil) {
 		t.Fatal("a mismatched pair (reused pid) must read dead")
 	}
 }

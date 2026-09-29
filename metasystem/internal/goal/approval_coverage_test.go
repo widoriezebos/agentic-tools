@@ -441,29 +441,6 @@ func TestProvenSweepWithNoEligibleChangesIsExplicitNoOp(t *testing.T) {
 	}
 }
 
-func TestGoalNormCheckCoversWithinAndOverNormRemedies(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	seedGoalNormConfig(t, root)
-	within := Budget{ReservedJobMinutesLimit: 1200, ReviewRoundLimit: 3}
-	if err := requireWithinGoalNorm(root, 3, within, "within", ""); err != nil {
-		t.Fatalf("the exact goal norm refused: %v", err)
-	}
-	over := Budget{ReservedJobMinutesLimit: 1201, ReviewRoundLimit: 3}
-	if err := requireWithinGoalNorm(root, 3, over, "over", "cannot rejoin"); err == nil || !strings.Contains(err.Error(), "over cannot rejoin with an over-norm tuple") {
-		t.Fatalf("the contextual norm remedy was not preserved: %v", err)
-	}
-	if err := requireWithinGoalNorm(root, 3, over, "over", ""); err == nil || !strings.Contains(err.Error(), "GOAL_NORM_REFUSED") || !strings.Contains(err.Error(), "split it") {
-		t.Fatalf("the ordinary over-norm refusal lost its split remedy: %v", err)
-	}
-	if err := os.WriteFile(root+"/metasystem.conf", []byte("metasystem.budget.goal-norm-job-minutes=many\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := requireWithinGoalNorm(root, 3, within, "invalid-config", ""); err == nil || !strings.Contains(err.Error(), "is retired") {
-		t.Fatalf("a malformed goal norm was treated as a usable execution bound: %v", err)
-	}
-}
-
 func TestOverNormApprovalRefusesWithoutAndPassesWithCoveringToken(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)

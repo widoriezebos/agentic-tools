@@ -104,13 +104,6 @@ func testingReceiptIndexMatchesWithAccess(installationRoot, receiptTree, indexTr
 	return receiptWorkspace == indexWorkspace, nil
 }
 
-// CreateTestingReceipt projects sufficient schema-2 testing evidence without
-// executing another command. It remains the multi-attempt composition path;
-// an executed sufficient outer attempt instead publishes its committed bytes.
-func CreateTestingReceipt(installationRoot, tree string, result proofrun.TestResult) (TestReceipt, error) {
-	return CreateTestingReceiptAt(installationRoot, tree, result, time.Now().UTC())
-}
-
 // CreateTestingReceiptAt composes a receipt at the caller's current semantic
 // time. That instant is both the composition event and the owner-expiry check.
 func CreateTestingReceiptAt(installationRoot, tree string, result proofrun.TestResult, now time.Time) (TestReceipt, error) {

@@ -131,18 +131,10 @@ type ServeHooks struct {
 	LongPollAfter func(time.Duration) <-chan time.Time
 }
 
-func Serve(ctx context.Context, dir string) error {
-	return serve(ctx, dir, nil)
-}
-
 // ServeReady publishes the listener address after the server is ready to
 // accept requests. A nil channel preserves the production Serve contract.
 func ServeReady(ctx context.Context, dir string, ready chan<- string) error {
 	return ServeWithHooks(ctx, dir, ServeHooks{Ready: ready})
-}
-
-func serve(ctx context.Context, dir string, connState func(net.Conn, http.ConnState)) error {
-	return ServeWithHooks(ctx, dir, ServeHooks{ConnState: connState})
 }
 
 func ServeWithHooks(ctx context.Context, dir string, hooks ServeHooks) error {

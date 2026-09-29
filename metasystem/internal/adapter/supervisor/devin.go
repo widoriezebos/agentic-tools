@@ -325,10 +325,6 @@ func devinProtocol(t *Turn, envelopePath string) (*ProtocolLaunch, string) {
 		ExpectedProtocol: declaration.ExpectedACP.ExpectedProtocolVersion}, ""
 }
 
-// DevinACPMode resolves the adapter-owned dialect: the session mode a tools
-// grade maps to (the former `acp mode --runtime devin --tools GRADE`).
-func DevinACPMode(grade string) (string, error) { return devinACPMode(grade) }
-
 func devinACPMode(grade string) (string, error) {
 	if grade == "" {
 		return "", errors.New("usage: acp mode --runtime R --tools GRADE")

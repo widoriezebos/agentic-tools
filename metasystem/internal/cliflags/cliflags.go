@@ -99,10 +99,6 @@ func (w *errorWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Takes names a flag set's options: "it takes --a, --b" or "it takes no
-// options".
-func Takes(flags *flag.FlagSet) string { return takes(flags, nil) }
-
 func takes(flags *flag.FlagSet, shown func(string) bool) string {
 	var names []string
 	flags.VisitAll(func(f *flag.Flag) {

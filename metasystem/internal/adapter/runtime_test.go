@@ -14,7 +14,7 @@ func TestWaitAdapterBlocking(t *testing.T) {
 	deadline := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
 	for _, runtime := range []string{"claude", "codex", "devin", "fake"} {
 		t.Run(runtime, func(t *testing.T) {
-			answer, err := DeliverWait(context.Background(), runtime, WaitDeliveryRequest{
+			answer, err := DeliverWaitAt(context.Background(), "", runtime, WaitDeliveryRequest{
 				WaitID:   "0123456789abcdef0123456789abcdef",
 				Nonce:    "fedcba9876543210fedcba9876543210",
 				Deadline: deadline,
@@ -28,7 +28,7 @@ func TestWaitAdapterBlocking(t *testing.T) {
 			}
 		})
 	}
-	if _, err := DeliverWait(context.Background(), "no-such-runtime", WaitDeliveryRequest{
+	if _, err := DeliverWaitAt(context.Background(), "", "no-such-runtime", WaitDeliveryRequest{
 		WaitID: "w", Nonce: "n", Deadline: deadline, Session: "s",
 	}); err == nil || errors.Is(err, ErrWaitDeliveryDeclined) {
 		t.Fatalf("an undeclared runtime must be unavailable, not declined: %v", err)

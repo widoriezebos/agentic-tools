@@ -242,3 +242,13 @@ func writeDependencyTestFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+// shellCommandWords projects the live scanner's commands to their words.
+func shellCommandWords(source string) []string {
+	commands := shellCommands(source)
+	words := make([]string, 0, len(commands))
+	for _, command := range commands {
+		words = append(words, command.Word)
+	}
+	return words
+}

@@ -306,10 +306,6 @@ func WeightAddScaled(root, commit string, numstat []byte, prefix string, thresho
 	return state, threshold > 0 && state.Accumulated >= threshold, nil
 }
 
-func WeightCheck(root string, threshold int64) (WeightState, bool, error) {
-	return WeightCheckAt(root, threshold, weightNow())
-}
-
 // WeightCheckAt reads cadence weight using its caller's clock.
 func WeightCheckAt(root string, threshold int64, now time.Time) (WeightState, bool, error) {
 	lock, err := acquireWeightLock(root)

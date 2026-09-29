@@ -336,10 +336,6 @@ func resolveStopSurfaceBaseWithWorkspace(workspace stopSurfaceWorkspace, request
 	return bases[0], nil
 }
 
-func discoverStopSurfaceFiles(root string) ([]stopSurfaceFile, error) {
-	return discoverStopSurfaceFilesWithInventory(root, gitStopSurfaceCandidateInventory)
-}
-
 func gitStopSurfaceCandidateInventory(root string) ([]byte, error) {
 	command := exec.Command("git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--")
 	command.Env = gittree.ScrubbedEnviron()

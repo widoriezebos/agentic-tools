@@ -254,7 +254,7 @@ type Final struct {
 	// delivery the CLI exit does not describe).
 	Status *int
 
-	// A host turn's finish (host.FinishTurn): the session, the raw and
+	// A host turn's finish (host.FinishTurnTransport): the session, the raw and
 	// return paths, the accepted reply, whether a reply is required, the
 	// transport pin, and what to do with the finish code.
 	HostSession, HostRaw, HostReturn, HostAccepted, HostTransport string

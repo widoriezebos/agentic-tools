@@ -151,18 +151,12 @@ func TestWriteSelftestRecordNativeUsageAndDevinChecks(t *testing.T) {
 
 func TestSelftestListenerAnswersExactlyOneRequest(t *testing.T) {
 	dir := t.TempDir()
-	portFile := filepath.Join(dir, "port")
 	requestLog := filepath.Join(dir, "requested")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	port, done, err := StartSelftestListener(ctx, portFile, requestLog)
+	port, stop, err := startTripwire(context.Background(), requestLog)
 	if err != nil {
 		t.Fatal(err)
 	}
-	published, err := os.ReadFile(portFile)
-	if err != nil || string(published) != fmt.Sprint(port) {
-		t.Fatalf("published port = %q, %v; want %d", published, err, port)
-	}
+	defer stop()
 
 	connection, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
@@ -177,9 +171,7 @@ func TestSelftestListenerAnswersExactlyOneRequest(t *testing.T) {
 	if err != nil || !strings.Contains(string(reply[:n]), "200 OK") {
 		t.Fatalf("reply = %q, %v", reply[:n], err)
 	}
-	if err := <-done; err != nil {
-		t.Fatalf("listener: %v", err)
-	}
+	stop()
 	logged, err := os.ReadFile(requestLog)
 	if err != nil || !strings.Contains(string(logged), "GET /nonce-123") {
 		t.Fatalf("request log = %q, %v", logged, err)
@@ -189,15 +181,11 @@ func TestSelftestListenerAnswersExactlyOneRequest(t *testing.T) {
 func TestSelftestListenerTimesOutQuietlyWithoutARequest(t *testing.T) {
 	dir := t.TempDir()
 	requestLog := filepath.Join(dir, "requested")
-	ctx, cancel := context.WithCancel(context.Background())
-	_, done, err := StartSelftestListener(ctx, filepath.Join(dir, "port"), requestLog)
+	_, stop, err := startTripwire(context.Background(), requestLog)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatalf("timeout should be quiet success: %v", err)
-	}
+	stop()
 	// No request means no log: the log's existence is the tripwire.
 	if _, err := os.Stat(requestLog); !os.IsNotExist(err) {
 		t.Fatal("request log must not exist without a request")

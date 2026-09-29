@@ -247,14 +247,6 @@ func baseTipFor(e Endpoint, head func(string) (string, error)) (string, error) {
 // rewind repair and git gc.
 const baseAnchorRef = "refs/metasystem/goals/materialized-base"
 
-// MaintainBase advances the materialized base when the checkout's
-// goal files exactly match HEAD's goal tree and the record lags —
-// the ordinary pull/checkout path: no hook needed, the next
-// session's read does the bookkeeping.
-func MaintainBase(repoRoot string) {
-	maintainBaseFor(Endpoint{Root: repoRoot}, checkoutHead, anchorBase)
-}
-
 func maintainBaseFor(e Endpoint, headFn func(string) (string, error), anchor func(string, string) error) {
 	repoRoot := e.Root
 	rec, exists, err := ReadBase(repoRoot)
@@ -283,12 +275,6 @@ func maintainBaseFor(e Endpoint, headFn func(string) (string, error), anchor fun
 		}
 	}
 	_ = recordMaterializedFor(e, head, anchor)
-}
-
-// RecordMaterialized stamps the base after a refresh or a checkout
-// update of goal paths, anchoring the commit against gc.
-func RecordMaterialized(repoRoot, commit string) error {
-	return recordMaterializedFor(Endpoint{Root: repoRoot}, commit, anchorBase)
 }
 
 func recordMaterializedFor(e Endpoint, commit string, anchor func(string, string) error) error {
@@ -333,16 +319,6 @@ func diffAgainstBaseFor(e Endpoint, baseCommit string, snap *Snapshot) ([]Snapsh
 	}
 	sort.Slice(deltas, func(i, j int) bool { return deltas[i].Path < deltas[j].Path })
 	return deltas, nil
-}
-
-// Refresh writes the published tree's ledger files back into the
-// checkout — but a file edited AFTER capture is left untouched and
-// NAMED (re-run reconcile for it): the comparison is against the
-// captured snapshot, never blind overwrite. The base record is
-// written before the refresh and the refresh is idempotently
-// re-runnable when publication succeeded but the refresh died.
-func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string, err error) {
-	return refreshFor(Endpoint{Root: repoRoot}, publishedCommit, snap, anchorBase)
 }
 
 func refreshFor(e Endpoint, publishedCommit string, snap *Snapshot, anchor func(string, string) error) (skipped []string, err error) {

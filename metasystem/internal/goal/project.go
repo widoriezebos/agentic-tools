@@ -296,10 +296,6 @@ type ClaimableBudgetedWork struct {
 	ownedClaims     map[string]*GoalFile
 }
 
-// LandingClaims returns this machine's claims waiting to land (goal
-// land-ready): live work for the landing, never the seat's working claim.
-func (w ClaimableBudgetedWork) LandingClaims() []*GoalFile { return w.landingClaims }
-
 // OwnedClaim returns the exact accepted goal record used to compute this
 // claimable-work snapshot. Callers that need claim provenance must not join a
 // later projection to these claim ids because the accepted revision can move

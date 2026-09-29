@@ -24,13 +24,6 @@ const (
 
 var productionComponentSet = [...]Component{Watcher, Reaper, LandingOwner}
 
-// ProductionComponents returns the complete ordered component set. Every
-// production enumeration uses this one source so takeover cannot strand the
-// landing owner outside a supervision generation.
-func ProductionComponents() []Component {
-	return append([]Component(nil), productionComponentSet[:]...)
-}
-
 // Held is what the owner HOLDS IN MEMORY about a component it
 // launched: teardown uses exactly this, never a re-read state file
 // (SLC-F-001 — the trap that killed successors is the shape this

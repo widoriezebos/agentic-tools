@@ -99,26 +99,6 @@ const (
 	NoticeSteward = "steward"
 )
 
-// Deliver attempts one delivery. Returning nil MEANS delivered — the
-// caller may gate a launch on it.
-func Deliver(repoRoot, message string) error {
-	return DeliverNotice(repoRoot, Notice{Message: message, Source: NoticeSteward})
-}
-
-// DeliverNotice is Deliver with the origin written down. Every attempt, on
-// every path, leaves one line in the journal before this returns: the
-// interface reads that file, and a message the operator was shown but the
-// journal never heard of would be a toast with no history.
-//
-// The journal never gates delivery. A line that cannot be written costs the
-// interface a row; refusing the delivery over it would cost the operator the
-// alarm, which is the thing that matters. A delivery that failed is journaled
-// all the same, with delivered false and the reason, because "we tried and the
-// channel was down" is exactly what a human needs to see.
-func DeliverNotice(repoRoot string, notice Notice) error {
-	return deliverNoticeWith(repoRoot, notice, deliver)
-}
-
 func deliverNoticeWith(repoRoot string, notice Notice, transport func(string, string) error) error {
 	err := transport(repoRoot, notice.Message)
 	journalNotice(repoRoot, notice, err)

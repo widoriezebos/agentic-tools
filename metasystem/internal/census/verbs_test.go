@@ -2,6 +2,7 @@ package census
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -139,4 +140,27 @@ func TestAliveNonexistentPid(t *testing.T) {
 	if Alive(999999, 1, nil) {
 		t.Fatal("a non-existent pid is not alive")
 	}
+}
+
+// The signature verbs were retired (U6a); the positive/lookalike contract
+// stays a test of every live registry signature.
+// SignatureCheck is the positive/lookalike contract of one runtime's
+// registry signature: the positive argv must classify as the runtime and
+// the lookalike must NOT — the proof that a signature is neither too loose
+// nor too tight. Returns an error when the contract fails.
+func SignatureCheck(runtime, positive, lookalike string) error {
+	sig, _, err := RuntimeSignature(runtime)
+	if err != nil {
+		return err
+	}
+	return signatureContract(runtime, sig, positive, lookalike)
+}
+
+func signatureContract(runtime string, sig Signature, positive, lookalike string) error {
+	positiveOK := sig.matches(positive)
+	lookalikeOK := sig.matches(lookalike)
+	if !positiveOK || lookalikeOK {
+		return fmt.Errorf("signature positive/lookalike contract failed for %s", runtime)
+	}
+	return nil
 }

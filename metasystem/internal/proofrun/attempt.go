@@ -1370,14 +1370,6 @@ func effectiveProofConfigurationDigest(configurationPath string, environment []s
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func CompleteToolchainIdentity() (string, error) {
-	return CompleteToolchainIdentityAt("")
-}
-
-func CompleteToolchainIdentityAt(root string) (string, error) {
-	return CompleteToolchainIdentityAtWithEnvironment(root, os.Environ())
-}
-
 func coverageRatchetPath(root string) string {
 	return filepath.Join(root, testpolicy.CoverageFloorsFile(runtime.GOOS))
 }

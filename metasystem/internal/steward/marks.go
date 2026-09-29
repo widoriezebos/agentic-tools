@@ -17,13 +17,6 @@ import (
 	"strings"
 )
 
-// CurrentMarks reads both marks. Sentinel values stand in where a
-// mark has no referent yet (an unborn branch, an absent ledger), so
-// comparisons stay total.
-func CurrentMarks(repoRoot string) (Marks, error) {
-	return currentMarksWithReader(repoRoot, readMarksGit)
-}
-
 func readMarksGit(root string, args ...string) ([]byte, error) {
 	return exec.Command("git", append([]string{"-C", root}, args...)...).Output()
 }

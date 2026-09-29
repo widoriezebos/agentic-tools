@@ -7,17 +7,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
-// ResultWrite writes the turn's result envelope, the one artifact the mission
-// runner reads back: exactly sessionId, outcome, usage, rawPath, and
-// returnPath. An unreadable usage file records usage as unavailable rather than
-// failing the turn, and an empty session or return path is recorded as null.
-func ResultWrite(resultPath, session, outcome, usagePath, rawPath, returnPath string) error {
-	return resultWriteTransport(resultPath, session, outcome, usagePath, rawPath, returnPath, "")
-}
-
-// resultWriteTransport is ResultWrite with the turn's transport pin. An
-// empty transport keeps the pre-pin envelope byte shape — absent means
-// the legacy path, exactly as an absent configuration key does.
+// resultWriteTransport writes the turn's result envelope, the one artifact the
+// mission runner reads back: exactly sessionId, outcome, usage, rawPath, and
+// returnPath (and the transport pin). An unreadable usage file records usage
+// as unavailable rather than failing the turn, and an empty session or return
+// path is recorded as null. An empty transport keeps the pre-pin envelope
+// byte shape — absent means the legacy path, exactly as an absent
+// configuration key does.
 func resultWriteTransport(resultPath, session, outcome, usagePath, rawPath, returnPath, transport string) error {
 	usage, ok := loadValue(usagePath)
 	if !ok {
@@ -79,25 +75,20 @@ func fakeUsage(input, cached, output int) map[string]any {
 	}
 }
 
-// FinishTurn is the host turn's one outcome adjudication: it decides the
-// outcome from the observed facts, writes the envelope, and returns the
-// exit code of the host's taxonomy — 3 a failed turn, 6 a missing session
-// (the adapter's own fault signal; a ROTATED session is reported in the
-// envelope and judged once, at the runner's adjudication), 0 completed.
-// requireReply is the runtime shape where exit 0 with no reply means
-// "could not do it" (Devin): treating it as success would hand the runner
-// an empty return and blame the wrong thing.
-// acceptedPath, when non-empty, is the delivery walk's accepted
-// snapshot: the require-reply judgment consults IT
-// instead of raw stdout, so a file-delivered host result is a reply.
-// The raw path stays in the envelope as evidence either way.
-func FinishTurn(resultPath, session, usagePath, rawPath, returnPath, acceptedPath string, cliStatus int64, requireReply bool) (int, error) {
-	return FinishTurnTransport(resultPath, session, usagePath, rawPath, returnPath, acceptedPath, cliStatus, requireReply, "")
-}
-
-// FinishTurnTransport is FinishTurn carrying the turn's transport pin into
-// every envelope it writes, including the failed ones — a refused or failed
-// ACP turn is still evidence of WHICH path ran.
+// FinishTurnTransport is the host turn's one outcome adjudication: it
+// decides the outcome from the observed facts, writes the envelope, and
+// returns the exit code of the host's taxonomy — 3 a failed turn, 6 a
+// missing session (the adapter's own fault signal; a ROTATED session is
+// reported in the envelope and judged once, at the runner's adjudication),
+// 0 completed. requireReply is the runtime shape where exit 0 with no reply
+// means "could not do it" (Devin): treating it as success would hand the
+// runner an empty return and blame the wrong thing. acceptedPath, when
+// non-empty, is the delivery walk's accepted snapshot: the require-reply
+// judgment consults IT instead of raw stdout, so a file-delivered host
+// result is a reply. The raw path stays in the envelope as evidence either
+// way. The turn's transport pin goes into every envelope it writes,
+// including the failed ones — a refused or failed ACP turn is still
+// evidence of WHICH path ran.
 func FinishTurnTransport(resultPath, session, usagePath, rawPath, returnPath, acceptedPath string, cliStatus int64, requireReply bool, transport string) (int, error) {
 	if cliStatus != 0 {
 		if err := resultWriteTransport(resultPath, session, "failed", usagePath, rawPath, "", transport); err != nil {

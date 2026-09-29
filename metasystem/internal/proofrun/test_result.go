@@ -494,13 +494,6 @@ func ReusedTestResult(template TestResult, attempts []Attempt, identities map[st
 	return ReusedTestResultWithPolicy(template, attempts, identities, contract, ReusePolicy{})
 }
 
-// ReusedTestResultExcluding composes evidence retained before the current
-// reservation. The current live attempt is the mutation-locked exclusion
-// that prevents another caller from reserving the same missing components.
-func ReusedTestResultExcluding(template TestResult, attempts []Attempt, identities map[string]string, contract testpolicy.Contract, excludedAttempt string) TestResult {
-	return ReusedTestResultExcludingWithPolicy(template, attempts, identities, contract, excludedAttempt, ReusePolicy{})
-}
-
 // reuseObservation is one retained sighting of a group at an execution
 // identity: a launched or reused record of an attempt that has a terminal,
 // or a live attempt's plan for the group. Live plans rank newest of all;

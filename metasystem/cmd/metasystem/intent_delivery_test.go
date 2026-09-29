@@ -198,10 +198,10 @@ func TestIntentReviewEvidenceKinds(t *testing.T) {
 		if mode, err := dispatchcore.BriefModeOnly(brief); err != nil || mode != "design-critique" {
 			t.Fatalf("brief mode admission refused: %q %v", mode, err)
 		}
-		if _, err := dispatchcore.ReadBriefAdmission(brief, "", true, nil); err != nil {
+		text, _ := os.ReadFile(brief)
+		if _, err := dispatchcore.ParseBriefBounds(text, ""); err != nil {
 			t.Fatalf("brief admission refused: %v", err)
 		}
-		text, _ := os.ReadFile(brief)
 		for _, section := range []string{"Round budget: 2 focused rounds", "Threat model: ", "Scope: ", "## Prepared copy", "## Checklist", "Maximum reader tool calls: 30", "01DESIGN"} {
 			if !strings.Contains(string(text), section) {
 				t.Fatalf("brief lacks %q:\n%s", section, text)
@@ -254,7 +254,11 @@ func TestIntentReviewEvidenceKinds(t *testing.T) {
 		if flagValue(process.argv, "--role") != "code-critic" || flagValue(process.argv, "--reviews") != "impl1" {
 			t.Fatalf("job review dispatch %v", process.argv)
 		}
-		if _, err := dispatchcore.ReadBriefAdmission(flagValue(process.argv, "--brief"), "", true, nil); err != nil {
+		if text, err := os.ReadFile(flagValue(process.argv, "--brief")); err != nil {
+			t.Fatalf("job review brief admission refused: %v", err)
+		} else if _, _, err := dispatchcore.BriefTextMode(text); err != nil {
+			t.Fatalf("job review brief admission refused: %v", err)
+		} else if _, err := dispatchcore.ParseBriefBounds(text, ""); err != nil {
 			t.Fatalf("job review brief admission refused: %v", err)
 		}
 		unknown++

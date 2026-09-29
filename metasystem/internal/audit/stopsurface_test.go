@@ -293,7 +293,7 @@ func TestStopSurfaceUsesGitCandidateInventoryInNestedInstallation(t *testing.T) 
 		fixture.write(path, goStopSurfaceFixture("copied", "generated := Verdict{IdleRefusal: true}\n"))
 	}
 
-	files, err := discoverStopSurfaceFiles(installation)
+	files, err := discoverStopSurfaceFilesWithInventory(installation, gitStopSurfaceCandidateInventory)
 	if err != nil {
 		t.Fatal(err)
 	}

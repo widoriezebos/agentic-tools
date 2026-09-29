@@ -15,13 +15,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // terminalJobStatuses are the job statuses that count as finished for fence
@@ -143,12 +144,6 @@ func jobsDirPath(root string) string {
 // asksDirPath is the mission's ask directory.
 func asksDirPath(root, mission string) string {
 	return filepath.Join(missionDirPath(root, mission), "asks")
-}
-
-// ReadDoc reads a JSON object from a file, preserving number literals so
-// values round-trip through the runner unchanged.
-func ReadDoc(path string) (map[string]any, error) {
-	return readJSONDoc(path)
 }
 
 // readJSONDoc reads a JSON object from a file, preserving number literals so

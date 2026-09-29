@@ -781,13 +781,13 @@ func TestDevinACPModeUnmapped(t *testing.T) {
 	t.Parallel()
 	// Preflight admits only mapped grades, so the unmapped refusal is the
 	// dialect's defense in depth; the resolver itself refuses by name.
-	if _, err := DevinACPMode(""); err == nil {
+	if _, err := devinACPMode(""); err == nil {
 		t.Fatal("an empty grade must refuse")
 	}
-	if _, err := DevinACPMode("bypass"); err == nil || !strings.Contains(err.Error(), "no mode mapped for tools=bypass") {
+	if _, err := devinACPMode("bypass"); err == nil || !strings.Contains(err.Error(), "no mode mapped for tools=bypass") {
 		t.Fatalf("err %v", err)
 	}
-	if mode, err := DevinACPMode("read-only"); err != nil || mode != "ask" {
+	if mode, err := devinACPMode("read-only"); err != nil || mode != "ask" {
 		t.Fatalf("read-only maps to ask: %q %v", mode, err)
 	}
 }

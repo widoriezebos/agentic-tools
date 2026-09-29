@@ -568,26 +568,3 @@ type Change struct {
 	Path string
 	Kind string
 }
-
-// ClassifyChanges preserves each change side and attaches policy facts.
-func (p Policy) ClassifyChanges(projection Projection, prefix string, changes []Change) ([]ClassifiedChange, error) {
-	result := make([]ClassifiedChange, 0, len(changes))
-	for _, change := range changes {
-		class, err := p.Classify(change.Path, prefix)
-		if err != nil {
-			return nil, err
-		}
-		included, err := p.Includes(projection, change.Path, prefix)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, ClassifiedChange{Change: change, Class: class, Included: included})
-	}
-	return result, nil
-}
-
-type ClassifiedChange struct {
-	Change
-	Class    Class
-	Included bool
-}

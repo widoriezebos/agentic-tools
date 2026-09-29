@@ -277,13 +277,6 @@ func Preflight(path, verifiedBytesOutput string) (missionID, rawSHA string, err 
 	return contractPreflightWithRepository(path, verifiedBytesOutput, contractRepositoryFor)
 }
 
-func PreflightWithSource(path, verifiedBytesOutput string, source *Source) (string, string, error) {
-	if err := checkSource(source); err != nil {
-		return "", "", err
-	}
-	return contractPreflightWithSource(path, verifiedBytesOutput, source.Repository, source, nil)
-}
-
 func contractPreflightWithRepository(path, verifiedBytesOutput string, repository func(string) (string, error)) (missionID, rawSHA string, err error) {
 	return contractPreflightWithSource(path, verifiedBytesOutput, repository, nil, nil)
 }

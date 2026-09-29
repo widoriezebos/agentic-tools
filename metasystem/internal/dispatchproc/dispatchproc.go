@@ -32,13 +32,6 @@ func StartReader(root string) (identity.StartReader, error) {
 	return identity.FixtureStartReader{Kernel: identity.KernelProber{}, Fixture: authorization.Identity()}, nil
 }
 
-// PositionedJobTag reports whether argv carries tag in a shipped argv
-// position (a janitor process shape).
-func PositionedJobTag(argv []string, tag string) bool {
-	_, matches := janitor.MatchShape(janitor.DefaultShapes(), argv, tag)
-	return matches
-}
-
 // PositionedJobTagAt matches a tag in a known argv position among an
 // installation's shapes, its external runtimes' and overrides' included
 // (janitor.ShapesAt). An empty root is the committed shapes alone.

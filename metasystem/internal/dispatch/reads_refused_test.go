@@ -1,12 +1,17 @@
 package dispatch
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 func refusalEvent(id string) ReadRefusal {
@@ -48,7 +53,7 @@ func TestReadRefusalAppendUnderLock(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	loaded, err := LoadReadRefusals(path)
+	loaded, err := loadReadRefusals(path)
 	if err != nil || len(loaded) != 2 {
 		t.Fatalf("concurrent append = %+v, %v", loaded, err)
 	}
@@ -61,7 +66,7 @@ func TestReadRefusalAppendUnderLock(t *testing.T) {
 	if err != nil || durable {
 		t.Fatalf("same-id replay = durable %v, err %v; reading old bytes cannot prove durability", durable, err)
 	}
-	loaded, err = LoadReadRefusals(path)
+	loaded, err = loadReadRefusals(path)
 	if err != nil || len(loaded) != 3 {
 		t.Fatalf("same-id replay appended twice: %+v, %v", loaded, err)
 	}
@@ -93,7 +98,7 @@ func TestReadRefusalAppendUnderLock(t *testing.T) {
 	if err := os.WriteFile(mirror, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err = LoadReadRefusals(path, mirror)
+	loaded, err = loadReadRefusals(path, mirror)
 	if err != nil || len(loaded) != 3 {
 		t.Fatalf("local plus mirror = %+v, %v", loaded, err)
 	}
@@ -154,9 +159,56 @@ func TestReadRefusalAppendPublicationOutcomes(t *testing.T) {
 			t.Fatalf("doubted publication = %+v, %v", result, err)
 		}
 		path := filepath.Join(repo, "artifacts", "agents", "critic", "reads-refused.jsonl")
-		events, loadErr := LoadReadRefusals(path)
+		events, loadErr := loadReadRefusals(path)
 		if loadErr != nil || len(events) != 1 || events[0].ID != result.EventID {
 			t.Fatalf("published event = %+v, %v", events, loadErr)
 		}
 	})
+}
+
+// loadReadRefusals reads the reads-refused log the refusal writer appends,
+// in file order with duplicate ids dropped; no production path reads it back.
+func loadReadRefusals(paths ...string) ([]ReadRefusal, error) {
+	refusals := []ReadRefusal{}
+	seen := map[string]bool{}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("read refusals from %s: %w", path, err)
+		}
+		for index, line := range bytes.Split(data, []byte{'\n'}) {
+			line = bytes.TrimSpace(line)
+			if len(line) == 0 {
+				continue
+			}
+			var raw any
+			if err := json.Unmarshal(line, &raw); err != nil {
+				return nil, fmt.Errorf("%s line %d: %w", path, index+1, err)
+			}
+			object, ok := raw.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("%s line %d: read refusal must be an object", path, index+1)
+			}
+			var refusal ReadRefusal
+			if err := json.Unmarshal(line, &refusal); err != nil {
+				return nil, fmt.Errorf("%s line %d: %w", path, index+1, err)
+			}
+			if rawSubject, present := object["subject"]; present {
+				subject, _, err := readsubject.DecodeReadSubject(rawSubject)
+				if err != nil {
+					return nil, fmt.Errorf("%s line %d: %w", path, index+1, err)
+				}
+				refusal.Subject = subject
+			}
+			if seen[refusal.ID] {
+				continue
+			}
+			seen[refusal.ID] = true
+			refusals = append(refusals, refusal)
+		}
+	}
+	return refusals, nil
 }

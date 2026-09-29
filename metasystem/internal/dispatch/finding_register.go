@@ -942,10 +942,6 @@ func critiqueChainBudgetRebindWithReads(repoRoot, rootJob string, reads goalAdmi
 	return outcomes, nil
 }
 
-func CritiqueBudgetRebind(repoRoot, rootJob string) (outcome string, err error) {
-	return critiqueBudgetRebindWithReads(repoRoot, rootJob, concreteGoalAdmissionReads())
-}
-
 func critiqueBudgetRebindWithReads(repoRoot, rootJob string, reads goalAdmissionReads) (outcome string, err error) {
 	return withFindingRegisterLock(repoRoot, func() (string, error) {
 		state := loadCritiqueState(repoRoot)

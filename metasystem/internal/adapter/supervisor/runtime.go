@@ -46,38 +46,6 @@ type Runtime interface {
 	Usage(d Deps)
 }
 
-// BuiltinOperations reports, per built-in runtime, the operations its Go
-// implementation provides — the surface the external contract mirrors.
-func BuiltinOperations() map[string][]string {
-	out := map[string][]string{}
-	for name, a := range registry {
-		ops := []string{"signature", "local-config-paths", "wait-delivery", "cancel"}
-		if a.configIdentity != nil {
-			ops = append(ops, "identity", "config-identity")
-		}
-		if _, ok := runtimes.EnforcementMapJSON(name); ok {
-			ops = append(ops, "enforcement-map")
-		}
-		if a.contract != nil {
-			ops = append(ops, "contract")
-		}
-		if a.probe != nil {
-			ops = append(ops, "probe")
-		}
-		if a.outputStream != nil {
-			ops = append(ops, "output-stream-file")
-		}
-		if a.supervise != nil {
-			ops = append(ops, "supervise")
-		}
-		if a.selftest != nil {
-			ops = append(ops, "selftest")
-		}
-		out[name] = ops
-	}
-	return out
-}
-
 // builtin adapts a registered Go runtime to the interface.
 type builtin struct{ a runtimeAdapter }
 

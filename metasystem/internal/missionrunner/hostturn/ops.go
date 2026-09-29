@@ -16,7 +16,7 @@ type hostPreflight interface {
 
 // runHostOps is one host turn of a runtime through its operations (role
 // host): the runtime prepares the command, the turn runs its CLI in the
-// checkout, and the runtime's finalize names what host.FinishTurn judges.
+// checkout, and the runtime's finalize names what host.FinishTurnTransport judges.
 func runHostOps(t *Turn, ops supervisor.Operations) int {
 	d := t.d
 	description, err := ops.Describe(d)

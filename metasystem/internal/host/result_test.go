@@ -27,19 +27,19 @@ func TestFinishTurnTaxonomy(t *testing.T) {
 		return value
 	}
 
-	code, err := FinishTurn(result, "sess-1", "", raw, filepath.Join(dir, "return.json"), "", 7, false)
+	code, err := FinishTurnTransport(result, "sess-1", "", raw, filepath.Join(dir, "return.json"), "", 7, false, "")
 	if err != nil || code != 3 || read()["outcome"] != "failed" || read()["returnPath"] != nil {
 		t.Fatalf("cli failure = (%d,%v,%v)", code, err, read())
 	}
-	code, err = FinishTurn(result, "sess-1", "", empty, "r.json", "", 0, true)
+	code, err = FinishTurnTransport(result, "sess-1", "", empty, "r.json", "", 0, true, "")
 	if err != nil || code != 3 || read()["outcome"] != "failed" {
 		t.Fatalf("empty required reply = (%d,%v,%v)", code, err, read())
 	}
-	code, err = FinishTurn(result, "", "", raw, "r.json", "", 0, false)
+	code, err = FinishTurnTransport(result, "", "", raw, "r.json", "", 0, false, "")
 	if err != nil || code != 6 || read()["outcome"] != "unresumable" {
 		t.Fatalf("missing session = (%d,%v,%v)", code, err, read())
 	}
-	code, err = FinishTurn(result, "sess-1", "", raw, "r.json", "", 0, true)
+	code, err = FinishTurnTransport(result, "sess-1", "", raw, "r.json", "", 0, true, "")
 	if err != nil || code != 0 || read()["outcome"] != "completed" || read()["returnPath"] != "r.json" {
 		t.Fatalf("completed = (%d,%v,%v)", code, err, read())
 	}
@@ -57,12 +57,12 @@ func TestFinishTurnAcceptedReplySatisfiesRequireReply(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	code, err := FinishTurn(result, "sess-1", "", empty, "r.json", accepted, 0, true)
+	code, err := FinishTurnTransport(result, "sess-1", "", empty, "r.json", accepted, 0, true, "")
 	if err != nil || code != 0 {
 		t.Fatalf("accepted reply must satisfy require-reply: (%d,%v)", code, err)
 	}
 	// Without the accepted path the same empty raw still fails, as before.
-	code, err = FinishTurn(result, "sess-1", "", empty, "r.json", "", 0, true)
+	code, err = FinishTurnTransport(result, "sess-1", "", empty, "r.json", "", 0, true, "")
 	if err != nil || code != 3 {
 		t.Fatalf("empty raw without accepted must fail: (%d,%v)", code, err)
 	}

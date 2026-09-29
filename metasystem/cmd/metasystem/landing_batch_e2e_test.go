@@ -599,9 +599,9 @@ func (fixture *batchE2EFixture) enrollPolicyEngine(commit string, shared *batchE
 func (fixture *batchE2EFixture) buildPolicyEngine(commit, engine string) {
 	sourceRoot := testutil.MustSourceRoot(fixture.t)
 	linker := enginebuild.StampLinkerFlags(commit)
-	// The beds plant their own commit script; a plantedcommit engine commits
-	// through it, as the shell commit boundary did.
-	command := exec.Command("go", "build", "-buildvcs=false", "-tags", "plantedcommit", "-ldflags", linker, "-o", engine, "./cmd/metasystem")
+	// The enrolled engine is the production build: it commits through the
+	// landing path, never through a planted script.
+	command := exec.Command("go", "build", "-buildvcs=false", "-ldflags", linker, "-o", engine, "./cmd/metasystem")
 	command.Dir = sourceRoot
 	command.Env = os.Environ()
 	if output, buildErr := command.CombinedOutput(); buildErr != nil {

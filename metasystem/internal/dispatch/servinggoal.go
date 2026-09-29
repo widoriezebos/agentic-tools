@@ -7,13 +7,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-// ResolveGoalRevision reads one live goal from the accepted projection and
-// returns the revision dispatch must copy into every reservation record.
-// Goal admission owns the separate budget decision.
-func ResolveGoalRevision(root, id string) (uint64, uint8, error) {
-	return resolveGoalRevisionWithReads(root, id, concreteGoalAdmissionReads())
-}
-
 func resolveGoalRevisionWithReads(root, id string, reads goalAdmissionReads) (uint64, uint8, error) {
 	if id == "" {
 		return 0, 0, fmt.Errorf("a goal id is required")
