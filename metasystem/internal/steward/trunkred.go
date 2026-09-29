@@ -29,6 +29,12 @@ type trunkRedBatchRecord struct {
 	} `json:"history"`
 }
 
+// LandingLaneRoot resolves the landing lane a checkout lands through (U12:
+// its own landing.batch-root against the host's one lane, never
+// registering). The command layer sets it; nil reads the checkout's own
+// setting, as before the host lane.
+var LandingLaneRoot func(repoRoot string, now time.Time) (root string, configured bool, err error)
+
 func checkTrunkRed(repoRoot string, now time.Time) RoleVerdict {
 	if !goal.NewWorld(repoRoot) {
 		return roleAlive(RoleTrunkRed, "the bootstrap ledger has no trunk-red register")
@@ -38,15 +44,19 @@ func checkTrunkRed(repoRoot string, now time.Time) RoleVerdict {
 		return roleUnknown(RoleTrunkRed, "the trunk-red ledger endpoint is unreadable: "+err.Error(), "repair the goal sync configuration, then run metasystem system check")
 	}
 	projection, err := goal.Project(endpoint, false, now)
-	return checkTrunkRedFromProjection(repoRoot, now, projection, err, config.ResolveBatchLanding)
+	return checkTrunkRedFromProjection(repoRoot, now, projection, err, config.ResolveBatchLanding, LandingLaneRoot)
 }
 
-func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error, resolveBatchLanding func(string, string, func() time.Time) (config.BatchLanding, error)) RoleVerdict {
+func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error, resolveBatchLanding func(string, string, func() time.Time) (config.BatchLanding, error), laneRoot func(string, time.Time) (string, bool, error)) RoleVerdict {
 	if projectionErr != nil {
 		return roleUnknown(RoleTrunkRed, "the trunk-red ledger is unreadable: "+projectionErr.Error(), "repair or fetch the goal ledger, then run metasystem system check")
 	}
 	cadenceRoot := repoRoot
-	if configured, _, configErr := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(repoRoot, "metasystem.conf"), Default: "", DefaultSet: true}); configErr == nil && strings.TrimSpace(configured) != "" {
+	if laneRoot != nil {
+		if root, configured, laneErr := laneRoot(repoRoot, now); laneErr == nil && configured {
+			cadenceRoot = root
+		}
+	} else if configured, _, configErr := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(repoRoot, "metasystem.conf"), Default: "", DefaultSet: true}); configErr == nil && strings.TrimSpace(configured) != "" {
 		cadenceRoot = configured
 	}
 	// The landing owner runs the deep validation cadence in its own loop, so
@@ -67,7 +77,7 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 		return roleDead(RoleTrunkRed, fmt.Sprintf("deep validation cadence is non-green at trunk %s tree %s", cadence.TrunkCommit, cadence.TrunkTree), remedy)
 	}
 
-	staleBatches, batchErr := staleUnrecordedTrunkRedBatchesWith(repoRoot, now, resolveBatchLanding)
+	staleBatches, batchErr := staleUnrecordedTrunkRedBatchesWith(repoRoot, now, resolveBatchLanding, laneRoot)
 	if batchErr != nil {
 		return roleUnknown(RoleTrunkRed, batchErr.Error(), "repair the configured landing batch root, then run metasystem system check")
 	}
@@ -116,7 +126,17 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 	return roleAlive(RoleTrunkRed, fmt.Sprintf("%d open, all owned; oldest %s", len(open), deliveryAge(now, oldest))+defects)
 }
 
-func staleUnrecordedTrunkRedBatchesWith(repoRoot string, now time.Time, resolveBatchLanding func(string, string, func() time.Time) (config.BatchLanding, error)) ([]string, error) {
+func staleUnrecordedTrunkRedBatchesWith(repoRoot string, now time.Time, resolveBatchLanding func(string, string, func() time.Time) (config.BatchLanding, error), laneRoot func(string, time.Time) (string, bool, error)) ([]string, error) {
+	if laneRoot != nil {
+		root, configured, err := laneRoot(repoRoot, now)
+		if err != nil {
+			return nil, fmt.Errorf("the trunk-red batch root is unreadable: %w", err)
+		}
+		if !configured {
+			return nil, nil
+		}
+		return staleUnrecordedTrunkRedBatchesIn(root, now)
+	}
 	conf := filepath.Join(repoRoot, "metasystem.conf")
 	configured, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: conf, Default: "", DefaultSet: true})
 	if err != nil {
@@ -129,7 +149,12 @@ func staleUnrecordedTrunkRedBatchesWith(repoRoot string, now time.Time, resolveB
 	if err != nil {
 		return nil, fmt.Errorf("the trunk-red batch root is unreadable: %w", err)
 	}
-	directory := filepath.Join(settings.Root, "artifacts", "agents", "landing-batches")
+	return staleUnrecordedTrunkRedBatchesIn(settings.Root, now)
+}
+
+// staleUnrecordedTrunkRedBatchesIn reads one landing checkout's held batches.
+func staleUnrecordedTrunkRedBatchesIn(root string, now time.Time) ([]string, error) {
+	directory := filepath.Join(root, "artifacts", "agents", "landing-batches")
 	entries, err := os.ReadDir(directory)
 	if err != nil {
 		return nil, fmt.Errorf("the trunk-red batch root is unreadable at %s: %w", directory, err)

@@ -216,6 +216,38 @@ export function workingWords(machine: Machine, now: Date): string {
 }
 
 /**
+ * The jobs a machine is working on right now (g1-s74 D5): none unless its
+ * standing is reachable, and of its entries only those whose job's status is
+ * running. A reservation's start stamp proves nothing — dispatch stamps it on
+ * a record it creates pending — and a job with no status is not working.
+ * This seat's row carries every local job, so a running job beside a newer
+ * reservation counts.
+ */
+export function runningNow(machine: Machine): Working[] {
+  if (machine.standing !== "reachable") {
+    return [];
+  }
+  return machine.working.filter((one) => one.job.status === RUNNING);
+}
+
+/**
+ * What the rail's Fleet row says while any machine is working: one line per
+ * running job, "m1e: implementer round 2 on verbs-match-intent · running 41
+ * min", in the phase words of the entry that lit the dot and never of the
+ * machine's first entry, which may be a reservation. The minutes are the
+ * Fleet page's own, from presence; nothing here keeps a clock. No page, or a
+ * read that failed, says nothing.
+ */
+export function workingLines(page: Page | null, now: Date): string[] {
+  if (page === null) {
+    return [];
+  }
+  return page.machines.flatMap((machine) =>
+    runningNow(machine).map((one) => `${machine.machine}: ${phaseWords(one, now)}`),
+  );
+}
+
+/**
  * The three statuses a job still in flight can be in, and the one of them in
  * which it is actually being worked.
  *

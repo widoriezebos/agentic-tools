@@ -365,14 +365,49 @@ func main(){
 	defer next.Close()
 }
 
+// custodyFixtureTable answers the identity package's fixture probe from a
+// table of recorded identities.
+type custodyFixtureTable map[int64]identity.FixtureEntry
+
+func (table custodyFixtureTable) FixtureEntry(pid int64) (identity.FixtureEntry, bool) {
+	entry, ok := table[pid]
+	return entry, ok
+}
+
+type noKernelStarts struct{}
+
+func (noKernelStarts) ReadStart(int64) (identity.Exact, identity.Liveness, error) {
+	return identity.Exact{}, identity.Unknown, errors.New("the fixture has no kernel")
+}
+
+// nativeCustodyIdentity is a live process's exact identity in the running
+// platform's native form (Darwin microseconds, Linux ticks and boot id),
+// built by the identity package's own fixture constructor: a Darwin-shaped
+// Exact is no native reference on Linux, and EncodeRef refuses it there.
+func nativeCustodyIdentity(t *testing.T, pid, startedAt int64) identity.Exact {
+	t.Helper()
+	entry := identity.FixtureEntry{StartedAt: startedAt, HasStartedAt: true,
+		StartedAtExactMicro: startedAt * 1_000_000, HasStartedAtExactMicro: true,
+		StartTicks: startedAt, HasStartTicks: true, BootID: "custody-fixture-boot", HasBootID: true}
+	reader := identity.FixtureStartReader{Kernel: noKernelStarts{}, Fixture: custodyFixtureTable{pid: entry}}
+	exact, liveness, err := reader.ReadStart(pid)
+	if err != nil || liveness != identity.Alive {
+		t.Fatalf("native fixture identity of pid %d: %v %v", pid, liveness, err)
+	}
+	if _, err := identity.EncodeRef(exact.Ref()); err != nil {
+		t.Fatalf("fixture identity of pid %d is not native: %v", pid, err)
+	}
+	return exact
+}
+
 // A loaded host spends about a second on each fixture census; the injected
 // clock advances that much per census. The drain is decided by complete
 // censuses, so three (kill, empty, empty) finish custody after three seconds;
 // the former 2s wall-clock budget refused this with nothing left to stop.
 func TestFixtureDrainDecidesOnCensusesNotOnTheirDuration(t *testing.T) {
 	t.Parallel()
-	owner := identity.Exact{Pid: 4100, StartedAt: time.Unix(1700000000, 0)}
-	fixture := identity.Exact{Pid: 4101, StartedAt: time.Unix(1700000001, 0)}
+	owner := nativeCustodyIdentity(t, 4100, 1700000000)
+	fixture := nativeCustodyIdentity(t, 4101, 1700000001)
 	killed := false
 	prober := functionIdentityProber(func(pid int64) (identity.Exact, identity.Liveness, error) {
 		if pid == fixture.Pid && !killed {
@@ -407,8 +442,8 @@ func TestFixtureDrainDecidesOnCensusesNotOnTheirDuration(t *testing.T) {
 // still refuses custody, after the bounded number of censuses.
 func TestFixtureDrainRefusesASurvivorThatWillNotDie(t *testing.T) {
 	t.Parallel()
-	owner := identity.Exact{Pid: 4200, StartedAt: time.Unix(1700000000, 0)}
-	fixture := identity.Exact{Pid: 4201, StartedAt: time.Unix(1700000001, 0)}
+	owner := nativeCustodyIdentity(t, 4200, 1700000000)
+	fixture := nativeCustodyIdentity(t, 4201, 1700000001)
 	prober := functionIdentityProber(func(pid int64) (identity.Exact, identity.Liveness, error) {
 		if pid == fixture.Pid {
 			return fixture, identity.Alive, nil

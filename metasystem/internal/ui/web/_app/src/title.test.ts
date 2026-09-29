@@ -34,4 +34,12 @@ describe("titleFor", () => {
       "Not found · Ledger · built with MetaSystem",
     );
   });
+
+  it("leads with the dot while a turn runs, the unread count kept behind it", () => {
+    const known = { state: "known", subject: "MetaSystem", mode: "self-hosted", conflict: false } as const;
+    expect(titleFor("Backlog", known, 0, true)).toBe("● Backlog · MetaSystem · self-hosted");
+    expect(titleFor("Backlog", known, 3, true)).toBe("● (3) Backlog · MetaSystem · self-hosted");
+    expect(titleFor("Backlog", known, 3, false)).toBe("(3) Backlog · MetaSystem · self-hosted");
+    expect(titleFor("Backlog", known)).toBe("Backlog · MetaSystem · self-hosted");
+  });
 });

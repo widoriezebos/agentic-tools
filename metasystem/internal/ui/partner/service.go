@@ -108,6 +108,10 @@ type Snapshot struct {
 	// replaced by the next thing and kept nowhere: what was read is the looked
 	// list, and what a human has to be told is the activity.
 	Doing string `json:"doing"`
+	// StartedAt is the instant the running turn was admitted, RFC 3339, or ""
+	// when nothing runs. It is the one origin of the page's clock (g1-s74 D4):
+	// the page never counts from its own receipt of anything.
+	StartedAt string `json:"startedAt"`
 	// Looked is what the running turn has read so far, so a reload mid-answer
 	// shows the list rather than starting it over.
 	Looked []Look `json:"looked"`
@@ -225,7 +229,10 @@ type turn struct {
 	// tip is the branch tip the review's record named when its closing turn
 	// was asked, stamped on the outcome beside the verdict (g1-s69 D1), so
 	// the Outcome is bound to the tip it was drafted for.
-	tip      string
+	tip string
+	// started is the instant the service admitted this turn, which is where
+	// the page's clock counts from on every page and after every reload.
+	started  time.Time
 	seq      int
 	text     strings.Builder
 	activity []string
@@ -612,6 +619,18 @@ func (s *Service) Busy() bool {
 	return s.current != nil
 }
 
+// StartedAt is the instant the named turn was admitted, RFC 3339, while it is
+// the running turn, and "" otherwise: the question's answer carries it beside
+// the turn's id, so the page's clock starts where the snapshot's does.
+func (s *Service) StartedAt(id string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.current == nil || s.current.id != id {
+		return ""
+	}
+	return s.current.startedAt()
+}
+
 // Snapshot answers the read route for one human's own conversation.
 func (s *Service) Snapshot(human string, limit int) (Snapshot, error) {
 	return s.SnapshotIn(human, "", limit)
@@ -640,6 +659,7 @@ func (s *Service) SnapshotIn(human, sitting string, limit int) (Snapshot, error)
 		answer.PartialSeq = running.seq
 		answer.Activity = append([]string{}, running.activity...)
 		answer.Doing = running.doing
+		answer.StartedAt = running.startedAt()
 		answer.Looked = append([]Look{}, running.looked...)
 		answer.Suggestions = append([]Suggestion{}, running.suggestions...)
 		answer.Deposits = append([]Deposit{}, running.deposits...)
@@ -763,7 +783,7 @@ func (s *Service) submitWith(ctx context.Context, human, sitting, key, text stri
 	// even where that room's conversation is the ordinary one, so the page files
 	// them under the room they were asked from.
 	running := &turn{id: id, human: human, key: key, page: page, verdict: verdict, tip: tip, where: strings.TrimSpace(sitting),
-		conversation: conversation, done: make(chan struct{})}
+		conversation: conversation, started: s.now().UTC(), done: make(chan struct{})}
 	s.current = running
 	s.mu.Unlock()
 	if changed {
@@ -879,6 +899,11 @@ func (s *Service) submitWith(ctx context.Context, human, sitting, key, text stri
 	s.said(true)
 	go s.run(running, prompt)
 	return id, nil
+}
+
+// startedAt is when the turn was admitted, as the page reads it.
+func (t *turn) startedAt() string {
+	return t.started.Format(time.RFC3339)
 }
 
 // lookedAtPage is the page itself, as the first entry in what an answer was

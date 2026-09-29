@@ -137,6 +137,9 @@ func batchOwnerLaunchCommand(binary, repositoryRoot string) *exec.Cmd {
 }
 
 func ensureBatchOwner(root string) error {
+	if err := landingCheckoutPresent(root); err != nil {
+		return err
+	}
 	lockPath := filepath.Join(root, "artifacts", "agents", "locks", "landing-owner.ensure.lock")
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		return err
@@ -588,6 +591,9 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 		},
 		HelmActive: func(root string) bool { return helm.Active(root).Active },
 		BaseMove:   batchBaseMove(settings.Root),
+		Early:      productionEarlySeams(settings.Root),
+		// One batch proves at a time on the host (U12).
+		Proving: landingLaneProving(landingLaneHome),
 		Report: func(id string, err error) {
 			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "batch": id, "error": err.Error()})
 			fmt.Fprintln(os.Stderr, string(line))

@@ -31,6 +31,7 @@ var publicPairs = []string{
 	"session start", "session stop", "session status", "session handoff", "session isolate", "session wait",
 	"mission start", "mission status", "mission resume", "mission seal", "mission repair",
 	"system start", "system stop", "system restart", "system status", "system check", "system enroll", "system setup", "system adopt",
+	"landing status", "landing set", "landing start", "landing stop", "landing restart",
 	"machine list", "machine start",
 	"disk show", "disk clean",
 	"app start", "app stop", "app restart", "app status", "app log", "app reset", "app check",
@@ -43,10 +44,10 @@ var publicPairs = []string{
 // revisionSevenObjects are the objects section 3.4 leaves, in help order,
 // with helm (human-control design, section 3.1) in the Run group.
 var revisionSevenObjects = []string{"goal", "design", "decision", "grant", "work", "test", "question", "incident",
-	"helm", "session", "mission", "system", "machine", "disk", "app", "ui", "settings", "receipt", "experiment"}
+	"helm", "session", "mission", "system", "landing", "machine", "disk", "app", "ui", "settings", "receipt", "experiment"}
 
 // hiddenPairs are the process entrypoints whose first word is an object.
-var hiddenPairs = []string{"goal fetch", "goal next", "test worker", "test worker-capabilities", "mission run-loop", "app serve", "ui serve", "ui tools"}
+var hiddenPairs = []string{"goal fetch", "goal next", "test worker", "test worker-capabilities", "mission run-loop", "app serve", "ui serve", "ui tools", "landing observe", "landing workspace"}
 
 // TestIntentPublicCoverage is structural: it checks the object-action table,
 // its grammar, its help and its catalogue against the engine families, and

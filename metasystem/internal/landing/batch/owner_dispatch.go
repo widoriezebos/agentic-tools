@@ -92,6 +92,8 @@ func (runner RunnerCapacity) admits(own int) bool {
 	return max(runner.Load, float64(running)*share)+share <= float64(runner.Cores)
 }
 
+// ownRuns counts this owner's real runs on a runner. Early work never
+// counts here: speculative work never delays a real proof (D14, R27).
 func (owner *Owner) ownRuns(runner string) (count int) {
 	for _, run := range owner.inflight {
 		if run.runner == runner {
@@ -187,6 +189,8 @@ func (owner *Owner) drain() {
 		select {
 		case done := <-owner.completions:
 			owner.Complete(done)
+		case done := <-owner.earlyDone:
+			owner.CompleteEarly(done)
 		default:
 			return
 		}

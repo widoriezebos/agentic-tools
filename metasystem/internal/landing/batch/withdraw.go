@@ -69,6 +69,7 @@ func RequestWithdrawal(store Store, goalID, machine, lineage, seatRoot, actor st
 			current.State, current.Outcome = UnitReturnPending, UnitWithdrawn
 			current.Failure, current.ReturnDisposition = "withdraw requested by the recorded joiner", ""
 			appendUnitHistory(record, at, "withdraw-requested", actor, goalID, UnitJoined, UnitReturnPending)
+			forgetEarly(record, at, actor, leaveCause(goalID, UnitWithdrawn))
 			survivors := joinedUnits(record.Units)
 			record.PrefixTrees, record.SelectedGroups = nil, nil
 			record.TipTree = record.BaseTree

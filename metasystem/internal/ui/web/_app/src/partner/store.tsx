@@ -1097,7 +1097,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         // What goes with a question goes now; the subject and the sheets a
         // human is still filling in stand.
         setAttachments(retireOnSent);
-        setStore((held) => asked(held, accepted.turn, minted, text, taken, new Date().toISOString()));
+        setStore((held) =>
+          asked(held, accepted.turn, minted, text, taken, new Date().toISOString(), {}, accepted.startedAt ?? ""),
+        );
       })
       .catch((error: unknown) => {
         // Refused: the draft stays, and so does the key, so pressing Send
@@ -1136,7 +1138,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
             ? asked(held, accepted.turn, entry.key, TROUBLE_REQUEST, taken, new Date().toISOString(), {
                 interface: true,
                 trouble: entry.trouble,
-              })
+              }, accepted.startedAt ?? "")
             : held,
         );
       })

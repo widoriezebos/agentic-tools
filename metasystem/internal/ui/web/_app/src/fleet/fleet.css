@@ -898,3 +898,132 @@
     margin-left: 0;
   }
 }
+
+/* ------------------------------------------------------ landing lane -- */
+
+/*
+ * The host's landing lane, above its seats. The owner's state takes the same
+ * status tokens the standings pill does: running is the ok pair, restarting
+ * the marker pair, stopped or given up the danger colour on the surface, and
+ * not started the muted surface, because a lane nobody started is not an
+ * alarm. Every line wraps, so the panel reads at phone width without a
+ * sideways scroll; a long root path breaks anywhere rather than overflowing.
+ */
+.ms-fleet-lane-summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+.ms-fleet-lane-owner,
+.ms-fleet-lane-batch,
+.ms-fleet-lane-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ms-fleet-lane-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text);
+}
+
+.ms-fleet-lane-label,
+.ms-fleet-lane-sub {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ms-text-2);
+}
+
+.ms-fleet-lane-label {
+  min-width: 48px;
+}
+
+.ms-fleet-lane-facts,
+.ms-fleet-lane-seat {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-fleet-lane-facts {
+  margin-left: 4px;
+}
+
+.ms-fleet-lane-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+.ms-fleet-lane-state--ok {
+  border-color: var(--ms-ok);
+  background: var(--ms-ok-bg);
+  color: var(--ms-ok-fg);
+}
+
+.ms-fleet-lane-state--warn {
+  border-color: var(--ms-marker);
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+}
+
+.ms-fleet-lane-state--bad {
+  border-color: var(--ms-danger);
+  background: var(--ms-surface);
+  color: var(--ms-danger);
+}
+
+/* A command to copy: one press selects all of it. */
+.ms-fleet-lane-command {
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface-2);
+  color: var(--ms-text);
+  user-select: all;
+  -webkit-user-select: all;
+  overflow-wrap: anywhere;
+}
+
+.ms-fleet-lane-members {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 0 0 56px;
+  list-style: none;
+  min-width: 0;
+}
+
+.ms-fleet-lane-member {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+.ms-fleet-lane-root {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 599px) {
+  .ms-fleet-lane-members {
+    padding-left: 12px;
+  }
+}

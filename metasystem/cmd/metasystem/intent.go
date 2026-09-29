@@ -115,7 +115,7 @@ func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
 		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), goalLandWithoutSittingIntentCommands(), designIntentCommands(), intentWorkCommands(),
-		intentDeliveryCommands(), helmIntentCommands(), processIntentCommands(), diskIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
+		intentDeliveryCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), diskIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
 	} {
 		commands = append(commands, part...)
 	}
@@ -554,6 +554,8 @@ type intentOwners struct {
 	stopMovesDeclare func(string, audit.StopSurfaceOptions, string, string) (string, error)
 	// disk are the disk verbs' seams; the zero value is production.
 	disk diskOwners
+	// landing are the landing verbs' seams; the zero value is production.
+	landing laneVerbOwners
 }
 
 func defaultIntentOwners() intentOwners {
@@ -985,7 +987,7 @@ type intentGroup struct {
 var intentGroups = []intentGroup{
 	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
 	{"deliver", "Deliver", []string{"work", "test", "question", "incident"}},
-	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "machine", "disk", "app", "ui", "settings"}},
+	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "landing", "machine", "disk", "app", "ui", "settings"}},
 	{"practice", "Practice", []string{"receipt", "experiment"}},
 }
 
@@ -1004,6 +1006,7 @@ var intentObjectSummaries = map[string]string{
 	"session":    "this agent session: start, stop, whether it may stop, and its handoff",
 	"mission":    "autonomous missions",
 	"system":     "MetaSystem for this checkout: set up, start, stop, restart, status, check, enroll, adopt",
+	"landing":    "the landing lane on this computer: where every seat's work is proved and pushed",
 	"machine":    "the fleet's machines",
 	"disk":       "what MetaSystem keeps on this computer's disk, and reclaiming it",
 	"app":        "the application this project builds, under its launch contract",

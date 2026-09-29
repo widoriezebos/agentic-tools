@@ -494,9 +494,11 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	return result, nil
 }
 
-// installedBranchRead finds the Goal-Read of this unit commit already on the
-// local goal branch and adopts it only when its attestation validates and
-// binds this record's critic root, fast-gate run and subject tree.
+// installedBranchRead finds the newest Goal-Read of this unit commit already
+// on the local goal branch and adopts it only when its attestation validates
+// and binds this record's critic root, fast-gate run and subject tree. A unit
+// whose current attestation comes from a reader record has no critic read
+// installed, so a critic's read of it is still to be committed.
 func installedBranchRead(request BranchReadRequest, info KindInfo, record branchReadRecord) (string, bool, error) {
 	tip, present, err := localBranchTip(request.Repo, goalBranchRef(request.GoalID))
 	if err != nil || !present {
@@ -506,7 +508,8 @@ func installedBranchRead(request BranchReadRequest, info KindInfo, record branch
 	if err != nil {
 		return "", false, err
 	}
-	for _, commit := range commits {
+	for index := len(commits) - 1; index >= 0; index-- {
+		commit := commits[index]
 		if commit.Kind != Read {
 			continue
 		}
@@ -520,6 +523,9 @@ func installedBranchRead(request BranchReadRequest, info KindInfo, record branch
 		att, err := ValidateAttestation(request.Repo, request.EndpointTip, request.GoalID, unitList(info.Units), request.UnitCommit)
 		if err != nil {
 			return "", false, operationRefusal(ReadInvalidCode, "installed read %s of %s does not validate: %v", commit.ID, request.UnitCommit, err)
+		}
+		if att.Source.Kind == "reader-record" {
+			return "", false, nil
 		}
 		if att.Source.RootJob != record.RootJob || att.Gate.RunID != record.GateRunID || att.Subject.Tree != record.Tree {
 			return "", false, operationRefusal(ReadInvalidCode, "installed read %s of %s binds critic %s gate %s, not this record's %s %s",
