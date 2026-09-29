@@ -14,7 +14,7 @@ func fakeServingFixture(t *testing.T, machine string, files map[string]*GoalFile
 	client := commits.client()
 	client.accepted = commits.canonical
 	endpoint := Endpoint{Root: root, Remote: "local", Branch: LocalLedgerBranch, Repository: client}
-	store := &Store{Root: root, projectionDeps: projectionDependencies{source: &projectionSource{endpoint: endpoint, machine: machine}}}
+	store := &Store{Root: root, projectionDeps: fixtureProjection(&projectionSource{endpoint: endpoint, machine: machine})}
 	return store, client, endpoint
 }
 

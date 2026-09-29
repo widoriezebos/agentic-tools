@@ -151,7 +151,7 @@ func TestRecoveryRebuildsADisallowAndRefusesAnAllow(t *testing.T) {
 	if _, err := Recover(endpoint); err != nil {
 		t.Fatal(err)
 	}
-	p, err := Project(endpoint, true, time.Now())
+	p, err := projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

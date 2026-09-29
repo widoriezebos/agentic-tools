@@ -1288,7 +1288,7 @@ func TestReopenFromAbandonedIsProvenHumanUnrankedUnapprovedAndKeepsTheEvent(t *t
 	if result, err := claimApprovedForTest(t, claim, "reopen-abandoned", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("fresh claim: %+v %v", result, err)
 	}
-	projected, err := Project(endpoint, true, claim.Now)
+	projected, err := projectFetched(endpoint, claim.Now)
 	if err != nil {
 		t.Fatal(err)
 	}

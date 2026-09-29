@@ -98,7 +98,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	if res, err := claimApprovedForTest(t, claim, "stop-me", approvedBudget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
-	p, err := Project(endpoint, true, claim.Now)
+	p, err := projectFetched(endpoint, claim.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	if res, err := CloseStop(retry); err != nil || res.Outcome != OutcomeAbandoned {
 		t.Fatalf("fresh retry must rediscover the fence: %+v %v", res, err)
 	}
-	p, err = Project(endpoint, true, stop.Now)
+	p, err = projectFetched(endpoint, stop.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err = Project(endpoint, true, stop.Now)
+	p, err = projectFetched(endpoint, stop.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 		!strings.Contains(res.Detail, "only goal resume may clear its launch fence") {
 		t.Fatalf("ordinary done cleared a stopped claim: %+v %v", res, err)
 	}
-	p, err = Project(endpoint, true, done.Now)
+	p, err = projectFetched(endpoint, done.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	if res, err := Resume(resume); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("complete-batch resume: %+v %v", res, err)
 	}
-	p, err = Project(endpoint, true, resume.Now)
+	p, err = projectFetched(endpoint, resume.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func fencedSetBudgetBed(t *testing.T, state StopBatchState) (Endpoint, Budget, B
 	if result, err := claimApprovedForTest(t, claim, goalID, budget); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim fenced rebudget goal: %+v %v", result, err)
 	}
-	projection, err := Project(endpoint, true, claim.Now)
+	projection, err := projectFetched(endpoint, claim.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func fencedSetBudgetBed(t *testing.T, state StopBatchState) (Endpoint, Budget, B
 	if result, err := CloseStop(stop); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("close fenced rebudget goal: %+v %v", result, err)
 	}
-	projection, err = Project(endpoint, true, stop.Now)
+	projection, err = projectFetched(endpoint, stop.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDep
 	if result, err := claimApprovedForTest(t, claim, "stop-me", budget); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", result, err)
 	}
-	projection, err := Project(endpoint, true, claim.Now)
+	projection, err := projectFetched(endpoint, claim.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +384,7 @@ func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDep
 	if result, err := CloseStop(closeRequest); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("close stop: %+v %v", result, err)
 	}
-	projection, err = Project(endpoint, true, closeRequest.Now)
+	projection, err = projectFetched(endpoint, closeRequest.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,7 +490,7 @@ func makeFencedAbandonedGoal(t *testing.T, endpoint Endpoint, goalID, ulidPrefix
 	if result, err := claimApprovedForTest(t, claim, goalID, testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim %s: %+v %v", goalID, result, err)
 	}
-	projection, err := Project(endpoint, true, claim.Now)
+	projection, err := projectFetched(endpoint, claim.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -509,7 +509,7 @@ func makeFencedAbandonedGoal(t *testing.T, endpoint Endpoint, goalID, ulidPrefix
 	if result, err := Abandon(abandon, goalID, AbandonSpec{Because: "the stopped work will not resume"}, goalHumanProof(t, root, abandon.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon %s: %+v %v", goalID, result, err)
 	}
-	projection, err = Project(endpoint, true, abandon.Now)
+	projection, err = projectFetched(endpoint, abandon.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +548,7 @@ func TestReopenFromAbandonedRequiresTheStopBatchComplete(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "cannot prove stop batch "+abandoned.StopFence.StopID+" complete") {
 		t.Fatalf("missing batch refusal: %+v %v", result, err)
 	}
-	projection, _ := Project(endpoint, true, reopen.Now)
+	projection, _ := projectFetched(endpoint, reopen.Now)
 	if projection.Tree.Abandoned["fenced-reopen"].Revision != revisionBefore {
 		t.Fatal("missing batch refusal changed the record")
 	}
@@ -561,7 +561,7 @@ func TestReopenFromAbandonedRequiresTheStopBatchComplete(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not COMPLETE") {
 		t.Fatalf("open batch refusal: %+v %v", result, err)
 	}
-	projection, _ = Project(endpoint, true, reopen.Now)
+	projection, _ = projectFetched(endpoint, reopen.Now)
 	if projection.Tree.Abandoned["fenced-reopen"].Revision != revisionBefore {
 		t.Fatal("non-complete batch refusal changed the record")
 	}
@@ -673,7 +673,7 @@ func TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers(t *te
 	if _, err := CarryAbandoned(self, "lost-checkout-goal", "lost-checkout-goal", proofB); err == nil || err.Error() != "carried must name a live successor" {
 		t.Fatalf("carry to self refusal = %v", err)
 	}
-	projectionB, err := Project(endpointB, true, carry.Now)
+	projectionB, err := projectFetched(endpointB, carry.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -719,7 +719,7 @@ func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
 
 	closeAndComplete := func(ulid, stopID string, now time.Time) {
 		t.Helper()
-		projection, err := Project(endpoint, true, now)
+		projection, err := projectFetched(endpoint, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -735,7 +735,7 @@ func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
 		if result, err := CloseStop(request); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("close stop: %+v %v", result, err)
 		}
-		projection, err = Project(endpoint, true, now)
+		projection, err = projectFetched(endpoint, now)
 		if err != nil {
 			t.Fatal(err)
 		}

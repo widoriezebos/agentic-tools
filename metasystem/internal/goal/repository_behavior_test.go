@@ -255,7 +255,7 @@ func TestGoalRepositoryFakeProjectOfflineFresh(t *testing.T) {
 	if err != nil || offline.Tree.Live["seen"] == nil || offline.Tree.Live["unseen"] != nil {
 		t.Fatalf("offline accepted pin: %+v %v", offline.Tree, err)
 	}
-	fresh, err := Project(e, true, now)
+	fresh, err := projectFetched(e, now)
 	if err != nil || fresh.Tree.Live["seen"] == nil || fresh.Tree.Live["unseen"] == nil || client.accepted != result.Tip {
 		t.Fatalf("fresh advancement: %+v %v", fresh.Tree, err)
 	}

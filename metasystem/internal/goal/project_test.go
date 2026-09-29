@@ -6,6 +6,23 @@ import (
 	"time"
 )
 
+// projectFetched is Project with fetchFirst for a fixture: the fixture owns
+// both deadline boundaries (no projection deadline fires, and the fetch is
+// FetchAdvance's acceptance sequence without the process bound), so a loaded
+// host cannot turn a semantic proof into a transport-timeout failure ("fresh
+// canonical ledger fetch timed out after 4s"). The bounds themselves are
+// production behaviour with their own tests.
+func projectFetched(e Endpoint, now time.Time) (Projection, error) {
+	return project(e, true, now, fixtureProjection(nil))
+}
+
+// fixtureProjection is the projection dependencies a fixture's Store reads
+// through: source (nil for the resolved checkout) with the fixture owning
+// both fetch bounds, as projectFetched does.
+func fixtureProjection(source *projectionSource) projectionDependencies {
+	return projectionDependencies{source: source, deadline: make(chan time.Time), fetch: FetchAdvance}
+}
+
 func TestProjectionReadsTheAcceptedTreeOnly(t *testing.T) {
 	t.Parallel()
 	a, b := fakeGoalEndpointPair(t)

@@ -416,7 +416,7 @@ func TestConcurrentFieldEditConflictsInsteadOfOverwriting(t *testing.T) {
 		t.Fatalf("the conflict names the field and the fetched value: %s", res.Publish.Detail)
 	}
 	// The competitor's value survives untouched.
-	p, err := Project(endpoint, true, time.Now())
+	p, err := projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +437,7 @@ func TestHandArcMoveMapsToItsVerbs(t *testing.T) {
 	if err != nil || res.Publish.Outcome != OutcomeConfirmed || res.Rows[0].Verb != "set-arc" {
 		t.Fatalf("the arc move maps and publishes: %+v %v", res, err)
 	}
-	p, err := Project(endpoint, true, time.Now())
+	p, err := projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -182,7 +182,7 @@ func TestOpenBlocksRefusesAFencedTargetAndPublishesNothing(t *testing.T) {
 	if result, err := claimApprovedForTest(t, claim, "fenced-work", budget); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim the goal that will be fenced: %+v %v", result, err)
 	}
-	projection, err := Project(endpointFor(root), true, claim.Now)
+	projection, err := projectFetched(endpointFor(root), claim.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -828,7 +828,7 @@ func TestRecoveryReplaysASeatsEdgesAndRefusesAJournaledName(t *testing.T) {
 	if _, err := Recover(endpointFor(root)); err != nil {
 		t.Fatal(err)
 	}
-	projection, err := Project(endpointFor(root), true, time.Now())
+	projection, err := projectFetched(endpointFor(root), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -848,7 +848,7 @@ func TestRecoveryReplaysASeatsEdgesAndRefusesAJournaledName(t *testing.T) {
 	if _, err := Recover(endpointFor(root)); err != nil {
 		t.Fatal(err)
 	}
-	projection, err = Project(endpointFor(root), true, time.Now())
+	projection, err = projectFetched(endpointFor(root), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -876,7 +876,7 @@ func TestRecoveryReplaysASeatsEdgesAndRefusesAJournaledName(t *testing.T) {
 	if entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "cannot be replayed from journal text") {
 		t.Fatalf("a journaled name replayed as a person: %+v", entry)
 	}
-	projection, err = Project(endpointFor(root), true, time.Now())
+	projection, err = projectFetched(endpointFor(root), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1049,7 +1049,7 @@ func TestRecoveryReplaysAnOpenCarryingBothLists(t *testing.T) {
 	if _, err := Recover(endpoint); err != nil {
 		t.Fatal(err)
 	}
-	projection, err := Project(endpoint, true, time.Now())
+	projection, err := projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1104,7 +1104,7 @@ func TestRecoveryRefusesAJournaledUnblock(t *testing.T) {
 	if entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "cannot be replayed from journal text") {
 		t.Fatalf("a journaled unblock was replayed: %+v", entry)
 	}
-	projection, err := Project(endpointFor(root), true, time.Now())
+	projection, err := projectFetched(endpointFor(root), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
