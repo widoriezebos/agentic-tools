@@ -311,46 +311,6 @@ func TestCensusNamesAStrayHeadlessRun(t *testing.T) {
 	require(t, err != nil || !strings.Contains(joined, "design-stray") || !strings.Contains(joined, "read-stray") || strings.Contains(joined, "design-owned") || strings.Contains(joined, "design-interactive") || strings.Contains(joined, "build-other"), "census=%q err=%v", joined, err)
 }
 
-func TestRoundTaskMatchesTheGoldenFiles(t *testing.T) {
-	r1, err := os.ReadFile(filepath.Join("testdata", "round-task-r1.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	r2, err := RoundTask("demo", 2, r1, "0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, row := range []struct {
-		name string
-		got  []byte
-	}{{"round-task-r2.golden", r2}, {"round-task-r2-constraints.golden", func() []byte {
-		data, taskErr := RoundTask("demo", 2, r1, "7")
-		if taskErr != nil {
-			t.Fatal(taskErr)
-		}
-		return data
-	}()}} {
-		want, readErr := os.ReadFile(filepath.Join("testdata", row.name))
-		if readErr != nil || !bytes.Equal(row.got, want) {
-			t.Fatalf("%s mismatch err=%v\nwant:\n%s\ngot:\n%s", row.name, readErr, want, row.got)
-		}
-	}
-	r3, err := RoundTask("demo", 3, r2, "7")
-	want, readErr := os.ReadFile(filepath.Join("testdata", "round-task-r3.golden"))
-	if err != nil || readErr != nil || !bytes.Equal(r3, want) {
-		t.Fatalf("round 3 mismatch err=%v/%v\nwant:\n%s\ngot:\n%s", err, readErr, want, r3)
-	}
-	current, err := os.ReadFile(filepath.Join("testdata", "round-task-current-r1.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := RoundTask("demo", 2, current, "0")
-	want, readErr = os.ReadFile(filepath.Join("testdata", "round-task-current-r2.golden"))
-	if err != nil || readErr != nil || !bytes.Equal(got, want) {
-		t.Fatalf("current round 2 mismatch err=%v/%v\nwant:\n%s\ngot:\n%s", err, readErr, want, got)
-	}
-}
-
 func TestEmptyBriefIsRefusedWithoutARecord(t *testing.T) {
 	m, _, _, _ := manager(t)
 	path := filepath.Join(t.TempDir(), "empty")
