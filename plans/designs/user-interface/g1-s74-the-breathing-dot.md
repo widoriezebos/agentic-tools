@@ -168,8 +168,12 @@ reduced motion the dot stands still and the clock still counts.
   wait", and the human is not blocked; a breath says "present".
 - D3. **Three places, and the title.** (a) The answer's place: D1
   replaces the paragraph. (b) The drawer's title carries the dot alone
-  while a turn runs, open or closed, for when the transcript is
-  scrolled away. (c) The closed bar while a turn runs: the disabled
+  while a turn runs and the drawer is open, for when the transcript is
+  scrolled away; closed, the bar's live line is the mark, and a second
+  dot beside it would say one thing twice (amended after the build's
+  screenshots and Sol's read, 2026-09-29). On the phone, where the
+  title is hidden, the dot alone stands at the bar's start while the
+  drawer is open. (c) The closed bar while a turn runs: the disabled
   field is replaced by the live line and a Stop button that calls the
   store's stop; the Seeing chip, the proposal bar and the handed chip
   stay where they are; when the turn ends the field returns with the
