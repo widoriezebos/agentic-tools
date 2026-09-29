@@ -305,9 +305,10 @@ func fakePartner(checkout string, facts partner.Facts) *partner.Service {
 		},
 	}
 	host := partner.NewHostOn(runtime, checkout, fakeacp.Open(fakeacp.Script{
-		Models:         []string{"fake-1"},
-		Reads:          append(append(append([]fakeacp.Read{}, fakeReads...), reviewReads...), shapingReads...),
-		Answers:        append(append([]fakeacp.Answer{}, shapingAnswers...), reviewAnswers...),
+		Models: []string{"fake-1"},
+		Reads: append(append(append(append([]fakeacp.Read{}, fakeReads...), reviewReads...), shapingReads...),
+			troubleReads...),
+		Answers:        append(append(append([]fakeacp.Answer{}, troubleAnswers...), shapingAnswers...), reviewAnswers...),
 		AskFor:         "mcp__metasystem__board",
 		Permission:     "Write plans/goals/waiting.md",
 		PermissionKind: "edit",

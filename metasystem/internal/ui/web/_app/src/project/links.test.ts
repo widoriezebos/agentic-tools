@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { documentIdFor, externalHref, fragmentOf } from "./links";
+import { documentIdFor, externalHref, fragmentOf, interfaceAddress } from "./links";
 
 /**
  * The belt, tested on its own.
@@ -70,6 +70,27 @@ describe("documentIdFor", () => {
       "",
     ]) {
       expect({ href, id: documentIdFor("docs/a.md", href) }).toEqual({ href, id: null });
+    }
+  });
+});
+
+/**
+ * A place in this interface, as an answer names it (g1-s68 D3): a press
+ * elsewhere in the interface is given as a link to its address, never as a
+ * card, so the address has to be one this interface routes and nothing else.
+ */
+describe("a link to a place in this interface", () => {
+  it("is an address this interface routes", () => {
+    expect(interfaceAddress("/review/plans/reviews/review-of-g1-s22.md")).toBe("/review/plans/reviews/review-of-g1-s22.md");
+    expect(interfaceAddress("/sitting/plans/designs/sessions.md")).toBe("/sitting/plans/designs/sessions.md");
+    expect(interfaceAddress("/backlog/goal/g1-s22")).toBe("/backlog/goal/g1-s22");
+    expect(interfaceAddress("/fleet")).toBe("/fleet");
+    expect(interfaceAddress("/backlog?view=list")).toBe("/backlog?view=list");
+  });
+
+  it("and nothing that leaves it or is not a page", () => {
+    for (const href of ["//evil.example/x", "https://example.com", "/api/backlog", "/nowhere", "backlog", "/review/", "javascript:alert(1)"]) {
+      expect(interfaceAddress(href)).toBeNull();
     }
   });
 });

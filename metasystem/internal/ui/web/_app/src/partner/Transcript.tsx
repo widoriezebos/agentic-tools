@@ -19,7 +19,7 @@ import { depositID, interfaceLine } from "./sitting";
 import { idOf } from "./suggesting";
 import "./partner.css";
 import { previewDocument, type Block } from "../project/api";
-import { Markdown } from "../project/Markdown";
+import { InterfaceLinks, Markdown } from "../project/Markdown";
 import { Anchored, useDeskAnchors } from "../review/anchors";
 import { Chip } from "../shell/controls";
 import { Trouble } from "../shell/Trouble";
@@ -470,7 +470,10 @@ function Answer({ text, names }: { text: string; names: Names }) {
   }
   return (
     <div className="ms-partner-answer">
-      <Markdown blocks={blocks} from="" renderText={(words) => <References words={words} names={names} />} />
+      {/* A place in this interface the answer names is followed (g1-s68 D3). */}
+      <InterfaceLinks.Provider value={true}>
+        <Markdown blocks={blocks} from="" renderText={(words) => <References words={words} names={names} />} />
+      </InterfaceLinks.Provider>
     </div>
   );
 }
