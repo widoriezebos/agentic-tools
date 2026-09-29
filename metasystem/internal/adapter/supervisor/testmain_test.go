@@ -21,5 +21,10 @@ func TestMain(m *testing.M) {
 	// any repository, and no test reads a real work tree. The stub is
 	// constant, so parallel tests share no mutable fake.
 	gitOutput = func(string, ...string) (string, bool) { return "", false }
+	// The supervisor subprocess (fake_helpers_test.go) runs as the product
+	// runs, outside the test environment: no fixture custodian of its own.
+	if os.Getenv("FAKE_SUPERVISOR_HELPER") == "1" {
+		os.Exit(runFakeSupervisorHelper())
+	}
 	os.Exit(testenv.Main(m))
 }
