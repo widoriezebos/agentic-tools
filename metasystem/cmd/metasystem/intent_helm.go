@@ -39,7 +39,7 @@ type helmOwners struct {
 	stdinTerminal func() bool
 	ask           func(prompt string) (string, bool)
 	holder        func(root string) (lease.CurrentHolderView, error)
-	done          func(inv *intentInvocation, id, by, reason string, proof humanauthority.Proof) intentResult
+	done          func(inv *intentInvocation, id, by, reason string, proof humanauthority.Proof, force bool) intentResult
 	read          func(inv *intentInvocation, patch, brief string) intentResult
 	recover       func(scope processScope) string
 	fence         func(root string) error

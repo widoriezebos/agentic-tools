@@ -247,12 +247,13 @@ func goalIntentCommands() []intentCommand {
 		},
 		{
 			object: "goal", action: "done", audience: "both", summary: "conclude a goal",
-			usage:   []string{"metasystem goal done G --reason TEXT"},
+			usage:   []string{"metasystem goal done G --reason TEXT [--force]"},
 			details: []string{"The goal's obligations are checked first; its merged branch is swept afterwards. A goal conclusion needs --reason."},
 			flags: []intentFlag{
 				intentTargetFlag,
 				{name: "reason", aliases: []string{"conclude"}, value: "TEXT", usage: "the conclusion"},
 				fileFlag("reason", "read the reason from FILE"),
+				{name: "force", usage: "at the helm: conclude despite open read items, review obligations, a carry word or a blocked dependency; each is recorded as overridden"},
 				intentByFlag, intentLineageFlag,
 			},
 			maxArgs:  1,

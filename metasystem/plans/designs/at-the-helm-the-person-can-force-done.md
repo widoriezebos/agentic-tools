@@ -65,3 +65,7 @@ No override of the integrity refusals or the human rows. No change to `Publish`,
 | HF-03 | Astra 1 | no | Wording: slice 2 records its yield when it produces the helm proof, before `forceAdmission` refuses it; the agent-refused test expects that one person-proof yield and no conclusion. |
 | Round 2 | Astra 2 (failsafe) | none | HF-01, HF-02 FIXED, zero material. Loop closed. |
 | HF-04, HF-05 | Astra 1 | no | Deferred as stated by the critic; no change. |
+
+## Built
+
+Slice 4 built by Claude on Opus 5.5 on branch `helm-acts-s4`: `547ef1395` (goal done can be forced over the four goal-state refusals; HF-01 blocker edges removed in the transaction; HF-02 inspection errors still refuse; recovery replays a forced conclusion as forced), `8206cfdb4` (force admitted only at the helm and only on the person's own proof; the refusal proposes the force only at the helm; `helm return` asks "Conclude anyway and record what was overridden?"), `cdc4ae5fe` (the force refusal names the enroll command, for `TestAuditNoRefusalSendsAPersonToAnEnrolledTerminalWithoutEnroll`). Five departures in the build report, all accepted by Sol. Checks on the tree merged with main `d394ce345`: goal 82.9, humanauthority 82.0, refusal, ui/act, the cmd/metasystem helm, force, audit and structural filters, wall-time and stream audits, `devgate static`, all green. Sol's code read: zero material (`at-the-helm-the-person-can-force-done-sol-read.md`). Lands through m1e's batch.
