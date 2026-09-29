@@ -72,17 +72,11 @@ type landedRearmDecision struct {
 	Refusal string
 }
 
-func landedRearmCommand(checkout string) string {
-	return "go run ./cmd/devgate build && bin/metasystem session start --repo " + shellQuote(checkout)
-}
-
 // devgateBootstrapBuildArgv is the engine's own bootstrap build of an
 // installation: the devgate compile is trimmed like the build it runs.
 func devgateBootstrapBuildArgv() []string {
 	return []string{"go", "run", "-trimpath", "./cmd/devgate", "build"}
 }
-
-func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
 
 // decideLandedRearm applies DONE's two clauses: a run whose enrolled engine
 // is behind the tip by landed commits only re-arms itself; a run whose
@@ -619,10 +613,4 @@ func landedRearm(notes io.Writer, installation, projectRoot, prefix string, name
 		fmt.Fprintf(notes, "metasystem test run: could not restart on the landed engine (%v); continuing with the re-armed enrollment as the policy engine\n", reexecErr)
 	}
 	return record, nil
-}
-
-// runtimeUpCommandFor spells the up invocation the re-arm runs, for the
-// fixture that checks it names the rebuilt binary.
-func runtimeUpCommandFor(installation, projectRoot string) string {
-	return filepath.Join(installation, "bin", "metasystem") + " up --repo " + projectRoot
 }

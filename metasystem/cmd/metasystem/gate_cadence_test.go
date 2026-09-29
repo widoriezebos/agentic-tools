@@ -61,7 +61,7 @@ func TestCadenceRevalidationDefersMissingEngineBuildUntilClaimedRun(t *testing.T
 	cadenceRetainedEngineDigest = func(testingPreparation, []proofrun.Attempt, string, bool) (string, error) {
 		return "", errors.New("no retained engine")
 	}
-	identity, digest, exact, err := cadenceCandidateEngineIdentity(testingPreparation{ProjectRoot: "root"}, gaterun.CadenceTrunk{Tree: strings.Repeat("a", 40)}, nil)
+	identity, digest, exact, err := cadenceCandidateEngineIdentityWith(testingPreparation{ProjectRoot: "root"}, gaterun.CadenceTrunk{Tree: strings.Repeat("a", 40)}, nil, productionCadenceRevalidationDependencies())
 	if err != nil || identity != "build-identity" || exact || digest != bytesSHA256([]byte("cadence-missing-engine-evidence\x00build-identity")) {
 		t.Fatalf("identity=%q digest=%q exact=%t err=%v", identity, digest, exact, err)
 	}

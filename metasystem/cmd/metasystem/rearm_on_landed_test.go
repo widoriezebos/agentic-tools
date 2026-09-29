@@ -689,11 +689,6 @@ func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 	if _, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(err.Error(), "cause=mutation-lock") {
 		t.Fatalf("mutation-lock failure lost its cause: %v", err)
 	}
-	// The real up seam runs the rebuilt binary's own up verb from the
-	// installation with the checkout as --repo.
-	if !strings.HasSuffix(runtimeUpCommandFor(fixture.installation, fixture.projectRoot), filepath.Join("bin", "metasystem")+" up --repo "+fixture.projectRoot) {
-		t.Fatal("the up seam does not name the rebuilt binary's own up")
-	}
 }
 
 func TestLandedRearmRefusesAFastForwardBlockedByDirtyLedgers(t *testing.T) {
@@ -887,4 +882,10 @@ func TestLandedRearmRefusesAStalledTipCompareByName(t *testing.T) {
 	if err == nil || !strings.Contains(refusal.Error(), "cause=judgment-failed") || ancestryCalls != 0 || dirtyCalls != 0 {
 		t.Fatalf("failed compare did not refuse before later probes: err=%v refusal=%v ancestry=%d dirty=%d", err, refusal, ancestryCalls, dirtyCalls)
 	}
+}
+
+// landedRearmCommand is the manual remedy a refused re-arm names: rebuild,
+// then start the session again on the checkout.
+func landedRearmCommand(checkout string) string {
+	return "go run ./cmd/devgate build && bin/metasystem session start --repo " + shellQuote(checkout)
 }

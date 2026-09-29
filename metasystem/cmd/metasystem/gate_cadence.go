@@ -158,10 +158,6 @@ func revalidateCadenceWith(root string, prepared testingPreparation, trunk gater
 	return gaterun.CadenceRevalidation{Groups: groups}, nil
 }
 
-func cadenceCandidateEngineIdentity(prepared testingPreparation, trunk gaterun.CadenceTrunk, attempts []proofrun.Attempt) (string, string, bool, error) {
-	return cadenceCandidateEngineIdentityWith(prepared, trunk, attempts, productionCadenceRevalidationDependencies())
-}
-
 func cadenceCandidateEngineIdentityWith(prepared testingPreparation, trunk gaterun.CadenceTrunk, attempts []proofrun.Attempt, dependencies cadenceRevalidationDependencies) (string, string, bool, error) {
 	environment := inheritedTestingEnvironment(prepared.Environment, os.Environ())
 	buildIdentity, err := dependencies.buildIdentity(context.Background(), gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix, trunk.Tree, environment)

@@ -1260,7 +1260,7 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 	prepare := func(tree, engineTree, commit string, build bool) *candidateEngineBuild {
 		t.Helper()
 		fixture.queuePrepare(tree, engineTree, commit, environment, build)
-		artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment, fixture.dependency())
+		artifact, err := prepareCandidateEngineWithColdPreflight(custodyContext, controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1440,7 +1440,7 @@ func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
 	environment := testingEnvironment(os.Environ())
 	for run := 0; run < 2; run++ {
 		fixture.queuePrepare(tree, ordinaryFailedEngineTree, ordinaryFailedBuild, environment, true)
-		if artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment, fixture.dependency()); artifact != nil || err == nil {
+		if artifact, err := prepareCandidateEngineWithColdPreflight(custodyContext, controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency()); artifact != nil || err == nil {
 			t.Fatalf("failed build %d entered cache: artifact=%+v err=%v", run, artifact, err)
 		}
 		fixture.assertDrained()
@@ -3512,4 +3512,10 @@ func TestScratchEnvironmentPolicyAgainstABuiltWorker(t *testing.T) {
 		t.Fatalf("worker %s reports %+v: this frontend writes %q, want %q", engine, capabilities, got, want)
 	}
 	t.Logf("worker %s reports %+v: this frontend writes %s", engine, capabilities, want)
+}
+
+// resolveTestingGoalWithReads resolves the testing goal through the supplied
+// ledger reads, for the fixtures that stand in for the machine and endpoint.
+func resolveTestingGoalWithReads(root, requested string, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), now func() time.Time) (string, error) {
+	return resolveTestingGoalWithCaller(root, requested, resolveMachine, resolveEndpoint, now, int64(os.Getppid()))
 }

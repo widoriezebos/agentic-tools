@@ -1287,10 +1287,6 @@ func (build *candidateEngineBuild) Close() error {
 // prepareCandidateEngine keeps build outputs under the proof control root.
 // The existing build identity covers the tracked engine closure, platform and
 // toolchain. Every cache hit also checks the published bytes before use.
-func prepareCandidateEngine(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, options ...candidateEngineIO) (*candidateEngineBuild, error) {
-	return prepareCandidateEngineWithColdPreflight(ctx, controlRoot, workspace, installationPrefix, candidateTree, environment, nil, selectedCandidateEngineIO(options))
-}
-
 func prepareCandidateEngineWithColdPreflight(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, beforeColdBuild func() error, options ...candidateEngineIO) (*candidateEngineBuild, error) {
 	io := selectedCandidateEngineIO(options)
 	buildIdentity, err := candidateEngineBuildIdentityUsing(ctx, workspace, installationPrefix, candidateTree, environment, io)
@@ -2974,10 +2970,6 @@ func resolveTestingGoal(root, requested string) (string, error) {
 // parent is authenticated from the supplied caller.
 func resolveTestingGoalFor(root, requested string, callerPID int64) (string, error) {
 	return resolveTestingGoalWithCaller(root, requested, goal.ResolveMachine, goal.ResolveEndpoint, time.Now, callerPID)
-}
-
-func resolveTestingGoalWithReads(root, requested string, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), now func() time.Time) (string, error) {
-	return resolveTestingGoalWithCaller(root, requested, resolveMachine, resolveEndpoint, now, int64(os.Getppid()))
 }
 
 func resolveTestingGoalWithCaller(root, requested string, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), now func() time.Time, callerPID int64) (string, error) {
