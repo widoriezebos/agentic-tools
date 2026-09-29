@@ -66,5 +66,6 @@ func TestAttemptKindsReadTheLandingPackagesOwnRecords(t *testing.T) {
 // rule matches that carry no attempt id, each with why.
 var landingNotAttemptIDs = map[string]string{
 	"batch.Record.Proof.SourcesUnresolved":                 "a sentence saying why a proof's sources were not recorded",
+	"batch.Record.Early.Proof":                             "the early proof's status (green, red, running, unavailable)",
 	"landing.TestReceipt.Testing.EngineRearm.SourceCommit": "a git commit the engine was rebuilt from",
 }

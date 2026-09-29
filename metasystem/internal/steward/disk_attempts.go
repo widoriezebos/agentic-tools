@@ -188,6 +188,14 @@ type landingBatchRecord struct {
 		AttemptID string
 		Reused    map[string]string
 	} `json:"receipts"`
+	// Early is the owner's early acts on the batch's wait (D14, U10b-3):
+	// the early proof's attempt and a red finding's attempt.
+	Early *struct {
+		Attempt string `json:"attempt"`
+		Finding *struct {
+			Attempt string `json:"attempt"`
+		} `json:"finding"`
+	} `json:"early"`
 }
 
 // landingBatchNamer: a landing batch that has not landed or dissolved
@@ -245,6 +253,12 @@ func (n landingBatchNamer) Named(context.Context, time.Time) ([]string, error) {
 				if waited.Proof != nil {
 					named = append(named, attemptIDs(waited.Proof.Attempt)...)
 				}
+			}
+		}
+		if record.Early != nil {
+			named = append(named, attemptIDs(record.Early.Attempt)...)
+			if record.Early.Finding != nil {
+				named = append(named, attemptIDs(record.Early.Finding.Attempt)...)
 			}
 		}
 		for _, receipt := range record.Receipts {
