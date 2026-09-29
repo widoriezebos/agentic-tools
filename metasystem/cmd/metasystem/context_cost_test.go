@@ -927,7 +927,7 @@ func (bed *contextCostBed) runDiagnosticOverrides(live contextCostSnapshot) {
 	}
 	for _, diagnostic := range []string{empty, distinct} {
 		output, code, err := runContextCostCommand(bed.outer, bed.environment(false), nil, bed.engine,
-			"context", "status", "--root", bed.outer, "--runtime", bed.runtime,
+			"session", "handoff", "--status", "--root", bed.outer, "--runtime", bed.runtime,
 			"--session", bed.session, "--transcript", diagnostic)
 		if err != nil || code != 0 || !strings.Contains(output, "diagnostic transcript override") {
 			bed.t.Fatalf("%s diagnostic %s: code=%d err=%v output=%s", bed.runtime, filepath.Base(diagnostic), code, err, output)
