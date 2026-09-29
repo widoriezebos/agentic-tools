@@ -1,5 +1,6 @@
 import type { Deposit } from "./api";
 import { documentPath } from "../routes";
+import { TROUBLE_REQUEST } from "../shell/troubling";
 
 /**
  * What a sitting is, from the browser's side: the four sections of one record,
@@ -1143,6 +1144,9 @@ export const THE_INTERFACES = "asked by the interface, to open this sitting";
  * must be able to tell which one the interface asked in their name.
  */
 export function interfaceLine(text: string): string {
+  if (text === TROUBLE_REQUEST) {
+    return "asked by the interface, at your press on Ask what happened";
+  }
   if (text.startsWith("Open this review")) {
     return "asked by the interface, to open this review";
   }

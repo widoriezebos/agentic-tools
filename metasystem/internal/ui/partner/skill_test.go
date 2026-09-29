@@ -69,3 +69,25 @@ func TestTheInstructionsCarryTheReviewRules(t *testing.T) {
 		testutil.Expect(t, "the shipped skill carries: "+rule, strings.Contains(skillMarkdown, rule), true)
 	}
 }
+
+// The trouble rule is in the Partner's instructions (g1-s68 D3), in the copy
+// the binary ships as well as the kit's own: three parts ending in the
+// recovery, read before saying why, a card only for the ten goal acts, a link
+// for a press elsewhere in the interface, the exact verb for a human's, and
+// honesty where the cause is not in the records.
+func TestTheInstructionsCarryTheTroubleRule(t *testing.T) {
+	t.Parallel()
+	for _, rule := range []string{
+		"**What happened**, **Why** and **How to recover**",
+		"`refusal(code)`",
+		"Read before you say why",
+		"propose it as a card and say what Apply will do",
+		"give the place as a link, never a card",
+		"say the exact verb and that it runs from an enrolled terminal",
+		"say what to watch and where",
+		"say that it is not in the records and what would establish it",
+		"Never a cause you did not read, and never a card for something Apply cannot do",
+	} {
+		testutil.Expect(t, "the shipped skill carries: "+rule, strings.Contains(skillMarkdown, rule), true)
+	}
+}

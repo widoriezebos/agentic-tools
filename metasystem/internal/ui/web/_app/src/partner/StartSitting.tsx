@@ -9,6 +9,7 @@ import { roomPath } from "../routes";
 import { Button } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
 import "./sitting.css";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * Starting a sitting: the sheet, on the record's own page, which opens the
@@ -145,9 +146,7 @@ export function StartSittingSheet({
         </>
       )}
       {sittingRefusal !== "" && (
-        <p className="ms-sitting-refusal" role="status">
-          {sittingRefusal}
-        </p>
+        <Trouble text={sittingRefusal} role="status" />
       )}
       {made !== "" && (
         <p className="ms-sitting-said" role="status">

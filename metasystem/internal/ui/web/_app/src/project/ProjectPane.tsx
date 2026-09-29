@@ -89,7 +89,7 @@ import { ReviewItOrDoor } from "../review/Door";
 import { doorLine } from "../review/room";
 import { StickiesBlock } from "../stickies/Block";
 import { useSession } from "../shell/identity";
-import { failureMessage as actFailureMessage } from "../shell/workspace";
+import { failureCode, failureMessage as actFailureMessage } from "../shell/workspace";
 import {
   readBacklogView,
   readGoalTab,
@@ -99,6 +99,7 @@ import {
   writeProjectScope,
   writeProjectTab,
 } from "../storage";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * Project: a briefing on what this project is, not a list of its files.
@@ -251,9 +252,10 @@ function Briefed({ goal }: { goal: string | null }) {
       {read.state === "loading" && <LoadingCards />}
       {read.state === "failed" && <FailureCard message={read.message} onRetry={reload} />}
       {read.state === "read" && read.problem !== undefined && (
-        <p className="ms-project-reason" role="status">
-          Project could not be read again, so what is on screen is the last reading: {read.problem}
-        </p>
+        <Trouble
+          text={`Project could not be read again, so what is on screen is the last reading: ${read.problem}`}
+          role="status"
+        />
       )}
       {read.state === "read" && (
         <Columns
@@ -992,6 +994,7 @@ function Dependencies({
   const [adding, setAdding] = useState<"waits" | "holds" | null>(null);
   const [chosen, setChosen] = useState<string[]>([]);
   const [refusal, setRefusal] = useState("");
+  const [refusalCode, setRefusalCode] = useState("");
   const [sending, setSending] = useState(false);
   const { askToSignIn } = useSession();
   const retried = useRef(false);
@@ -1032,6 +1035,7 @@ function Dependencies({
           return;
         }
         setRefusal(actFailureMessage(error));
+        setRefusalCode(failureCode(error));
       });
   };
 
@@ -1132,9 +1136,7 @@ function Dependencies({
         {list("holds", mine.holds)}
       </div>
       {refusal !== "" && (
-        <p className="ms-act-refuse" role="alert">
-          {refusal}
-        </p>
+        <Trouble text={refusal} role="alert" variant="small" code={refusalCode} subject={{ id: goal, kind: "goal" }} />
       )}
     </section>
   );
@@ -1334,7 +1336,7 @@ function FailureCard({ message, onRetry }: { message: string; onRetry: () => voi
     <div className="ms-pane-stack">
       <section className="ms-card">
         <h2 className="ms-card-title">Project could not be read</h2>
-        <p className="ms-project-reason">{message}</p>
+        <Trouble text={`Project could not be read: ${message}`}>{message}</Trouble>
         <Button onClick={onRetry}>Retry</Button>
       </section>
     </div>
@@ -1351,12 +1353,17 @@ function Problems({ problems }: { problems: Problem[] }) {
       </div>
       <ul className="ms-project-rows">
         {problems.map((problem) => (
-          <li key={`${problem.path}:${String(problem.line)}:${problem.message}`} className="ms-project-problem">
-            <span className="ms-mono ms-project-problem-at">
+          <Trouble
+            key={`${problem.path}:${String(problem.line)}:${problem.message}`}
+            as="li"
+            text={`${problem.path}:${String(problem.line)}: ${problem.message}`}
+            subject={{ id: problem.path, kind: "document" }}
+          >
+            <span className="ms-mono ms-trouble-at">
               {problem.path}:{problem.line}
-            </span>
-            <span>{problem.message}</span>
-          </li>
+            </span>{" "}
+            {problem.message}
+          </Trouble>
         ))}
       </ul>
     </section>

@@ -19,7 +19,7 @@ import { useOpening } from "../partner/Suggestion";
 import { useFieldInHand } from "../partner/writing";
 import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
-import { failureMessage } from "../shell/workspace";
+import { failureCode, failureMessage } from "../shell/workspace";
 
 /**
  * Approving and unapproving, before the act is made.
@@ -55,6 +55,7 @@ export function ActSheet({
   onDone: (moved: Backlog) => void;
 }) {
   const [refusal, setRefusal] = useState("");
+  const [refusalCode, setRefusalCode] = useState("");
   const [sending, setSending] = useState(false);
   const prefill = prefillFor(request.goal, backlog.budgetDefaults, backlog.rows);
   const [draft, setDraft] = useState<BudgetDraft>(() => draftOf(prefill.budget));
@@ -87,6 +88,7 @@ export function ActSheet({
     }
     setSending(true);
     setRefusal("");
+    setRefusalCode("");
     const acting = approving
       ? approveGoal(request.goal.ref.id, budget as NonNullable<typeof budget>)
       : withdrawGoal(request.goal.ref.id, reason.trim());
@@ -106,6 +108,7 @@ export function ActSheet({
           return;
         }
         setRefusal(failureMessage(error));
+        setRefusalCode(failureCode(error));
       });
   };
 
@@ -139,6 +142,7 @@ export function ActSheet({
       set={putWords}
       unproven={authority.proven ? "" : authority.reason}
       refusal={refusal}
+      refusalCode={refusalCode}
       note={blocked === "" ? noteFor(request.move, authority.human) : blocked}
       onClose={onClose}
       act={

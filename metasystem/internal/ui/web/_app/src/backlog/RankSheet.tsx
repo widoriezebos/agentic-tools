@@ -6,7 +6,7 @@ import { claimedConsequence, needsConfirming, rankOf, type Placement } from "./r
 import { Panel } from "./Panel";
 import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
-import { failureMessage } from "../shell/workspace";
+import { failureCode, failureMessage } from "../shell/workspace";
 
 /**
  * A re-rank, before it is made.
@@ -42,6 +42,7 @@ export function RankSheet({
   const [priority, setPriority] = useState(String(placement.priority));
   const [sequence, setSequence] = useState(String(placement.sequence));
   const [refusal, setRefusal] = useState("");
+  const [refusalCode, setRefusalCode] = useState("");
   const [sending, setSending] = useState(false);
   const { session, askToSignIn } = useSession();
   const retried = useRef(false);
@@ -54,6 +55,7 @@ export function RankSheet({
     }
     setSending(true);
     setRefusal("");
+    setRefusalCode("");
     rankGoal(goal.ref.id, Number(priority), sequence.trim() === "" ? null : Number(sequence))
       .then((moved) => {
         setSending(false);
@@ -67,6 +69,7 @@ export function RankSheet({
           return;
         }
         setRefusal(failureMessage(error));
+        setRefusalCode(failureCode(error));
       });
   };
 
@@ -88,6 +91,7 @@ export function RankSheet({
       writable={[]}
       unproven={authority.proven ? "" : authority.reason}
       refusal={refusal}
+      refusalCode={refusalCode}
       note={blocked === "" ? note(goal) : blocked}
       onClose={onClose}
       act={

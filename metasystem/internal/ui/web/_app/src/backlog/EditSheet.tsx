@@ -20,6 +20,7 @@ import { Panel } from "./Panel";
 import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { TokenField } from "../shell/TokenField";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * A queued goal's three fields, before the edit is published.
@@ -342,11 +343,7 @@ export function EditSheet({
         <p className="ms-act-hint" id="ms-edit-labels-hint">
           Lowercase words the board narrows by, separated by spaces or commas. Emptying the field clears them.
         </p>
-        {labels !== "" && (
-          <p className="ms-act-refuse" role="alert">
-            {labels}
-          </p>
-        )}
+        {labels !== "" && <Trouble text={labels} role="alert" variant="small" />}
       </div>
     </Panel>
   );

@@ -54,8 +54,8 @@
 /* An action that was never offered. It loses nothing but its controls: the
    reason is what it owes the human, and it is in the danger colour because
    nothing about it will happen. */
-.ms-proposal-line--refused .ms-proposal-word,
-.ms-proposal-line--refused .ms-proposal-title {
+.ms-proposal-line--not-offered .ms-proposal-word,
+.ms-proposal-line--not-offered .ms-proposal-title {
   color: var(--ms-text-3);
 }
 
@@ -153,11 +153,6 @@
 .ms-proposal-said[data-said="refused"],
 .ms-proposal-said[data-said="unresolved"] {
   color: var(--ms-danger);
-}
-
-.ms-proposal-line--refused .ms-proposal-said {
-  color: var(--ms-danger);
-  padding-inline-start: 0;
 }
 
 .ms-proposal-recovery {

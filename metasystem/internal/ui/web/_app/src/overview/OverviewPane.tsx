@@ -54,6 +54,7 @@ import { Button, Chip, Hint, Skeleton } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { useOffersRefresh } from "../shell/refresh";
 import { minuteTime } from "../backlog/format";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * Overview: the page a human lands on when they come back to the project.
@@ -141,9 +142,10 @@ export function OverviewPane() {
       {read.state === "loading" && <Loading />}
       {read.state === "failed" && <Failure message={read.message} onRetry={reload} />}
       {read.state === "read" && read.problem !== undefined && (
-        <p className="ms-overview-reason" role="status">
-          Overview could not be read again, so what is on screen is the last reading: {read.problem}
-        </p>
+        <Trouble
+          text={`Overview could not be read again, so what is on screen is the last reading: ${read.problem}`}
+          role="status"
+        />
       )}
       {read.state === "read" && <Blocks page={read.page} />}
     </Pane>
@@ -822,7 +824,7 @@ function Failure({ message, onRetry }: { message: string; onRetry: () => void })
     <div className="ms-pane-stack">
       <section className="ms-card">
         <h2 className="ms-card-title">Overview could not be read</h2>
-        <p className="ms-overview-reason">{message}</p>
+        <Trouble text={`Overview could not be read: ${message}`}>{message}</Trouble>
         <Button onClick={onRetry}>Retry</Button>
       </section>
     </div>

@@ -34,6 +34,7 @@ import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
 import "./sitting.css";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * What the Partner offered the record, as a card under its answer — and the one
@@ -92,14 +93,12 @@ export function DepositCard({ id }: { id: string }) {
   // the words the Partner would have offered.
   if (card.standing === "refused") {
     return (
-      <div className="ms-deposit ms-deposit--refused" data-deposit={id}>
+      <div className="ms-deposit ms-deposit--not-offered" data-deposit={id}>
         <p className="ms-deposit-head">
           <span>{NOT_OFFERED}</span>
           <Help id="not-offered" />
         </p>
-        <p className="ms-deposit-reason" role="status">
-          {notOfferedLine(card)}
-        </p>
+        <Trouble text={notOfferedLine(card)} role="status" variant="small" />
         <p className="ms-deposit-text">{card.text}</p>
       </div>
     );
@@ -243,9 +242,7 @@ export function DepositCard({ id }: { id: string }) {
         </p>
       )}
       {card.mark.refusal !== "" && (
-        <p className="ms-deposit-refusal" role="status">
-          {card.mark.refusal}
-        </p>
+        <Trouble text={card.mark.refusal} role="status" variant="small" />
       )}
       <div className="ms-deposit-foot">
         {recorded ? (
@@ -378,9 +375,7 @@ function FindingCard({ card }: { card: Card }) {
             </p>
           )}
           {card.mark.refusal !== "" && (
-            <p className="ms-deposit-refusal" role="status">
-              {card.mark.refusal}
-            </p>
+            <Trouble text={card.mark.refusal} role="status" variant="small" />
           )}
           <div className="ms-deposit-foot">
             <Button
@@ -449,9 +444,7 @@ function CaseCard({ card }: { card: Card }) {
         </p>
       )}
       {card.mark.refusal !== "" && (
-        <p className="ms-deposit-refusal" role="status">
-          {card.mark.refusal}
-        </p>
+        <Trouble text={card.mark.refusal} role="status" variant="small" />
       )}
       <div className="ms-deposit-foot">
         {inFlight ? (
@@ -566,9 +559,7 @@ function DecideSheet({
         </p>
       )}
       {card.mark.refusal !== "" && (
-        <p className="ms-deposit-refusal" role="status">
-          {card.mark.refusal}
-        </p>
+        <Trouble text={card.mark.refusal} role="status" variant="small" />
       )}
       <div className="ms-sitting-foot">
         <Button

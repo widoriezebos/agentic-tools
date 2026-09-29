@@ -8,6 +8,7 @@ import type { Outcome } from "../partner/suggesting";
 import { useOpenSheet } from "../partner/store";
 import { Button } from "../shell/controls";
 import { DEFAULT_MODALITY, useOpener, useWorkModal, type Modality } from "../shell/workmodal";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The chrome every act of this section shares, before the act is made.
@@ -51,6 +52,8 @@ export function Panel({
   goal,
   unproven,
   refusal,
+  refusalCode,
+  refusalSignIn,
   note,
   act,
   aside,
@@ -75,6 +78,10 @@ export function Panel({
   unproven: string;
   /** What the server refused, in its own words, or "". */
   refusal: string;
+  /** The code it refused under, where the error carried one. */
+  refusalCode?: string;
+  /** Whether the refusal's remedy is the sign-in sheet. */
+  refusalSignIn?: boolean;
   /** What the act will do, or why the button is disabled. */
   note: string;
   /** The primary button, which the sheet owns because it knows the act. */
@@ -241,9 +248,14 @@ export function Panel({
         {form ? <div className="ms-act-body">{children}</div> : children}
         <div className="ms-act-foot">
           {form && refusal !== "" && (
-            <p className="ms-act-refusal" role="alert">
-              {refusal}
-            </p>
+            <Trouble
+              text={refusal}
+              role="alert"
+              code={refusalCode}
+              signIn={refusalSignIn}
+              act={{ verb: title, object: "goal", target: goal?.ref.id }}
+              subject={goal === undefined ? undefined : { id: goal.ref.id, kind: "goal" }}
+            />
           )}
           <div className="ms-act-buttons">
             {act}
@@ -254,9 +266,14 @@ export function Panel({
           {note !== "" && <p className="ms-act-note">{note}</p>}
         </div>
         {!form && refusal !== "" && (
-          <p className="ms-act-refusal" role="alert">
-            {refusal}
-          </p>
+          <Trouble
+            text={refusal}
+            role="alert"
+            code={refusalCode}
+            signIn={refusalSignIn}
+            act={{ verb: title, object: "goal", target: goal?.ref.id }}
+            subject={goal === undefined ? undefined : { id: goal.ref.id, kind: "goal" }}
+          />
         )}
       </section>
     </>

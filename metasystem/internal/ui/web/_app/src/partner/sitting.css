@@ -62,12 +62,6 @@
   line-height: 16px;
 }
 
-.ms-sitting-refusal {
-  margin: 0;
-  color: var(--ms-danger);
-  font-size: 13px;
-  line-height: 1.5;
-}
 
 .ms-sitting-foot {
   display: flex;
@@ -96,7 +90,7 @@
    another record: the sitting it belonged to has ended or moved on, so there is
    nothing to press here either. Both lose the accent, because the accent says
    this is an offer standing. */
-.ms-deposit--refused,
+.ms-deposit--not-offered,
 .ms-deposit--elsewhere {
   border-inline-start-color: var(--ms-border-strong);
 }
@@ -172,7 +166,6 @@
   line-height: 16px;
 }
 
-.ms-deposit-refusal,
 .ms-deposit-reason {
   margin: 0;
   color: var(--ms-danger);

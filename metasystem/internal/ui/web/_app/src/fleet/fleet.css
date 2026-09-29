@@ -62,12 +62,6 @@
   color: var(--ms-text-3);
 }
 
-.ms-fleet-problem {
-  margin: 0;
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--ms-danger);
-}
 
 /* --------------------------------------------------------- needs you -- */
 
@@ -770,13 +764,6 @@
   overflow-wrap: anywhere;
 }
 
-.ms-launch-refusal {
-  margin: 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--ms-danger);
-  overflow-wrap: anywhere;
-}
 
 .ms-launch-steps {
   display: flex;

@@ -4,7 +4,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router";
 
 import { AboutProvider } from "./about";
 import { Drawer, type Caret } from "./Drawer";
-import { ErrorBoundary } from "./ErrorBoundary";
+import { ErrorBoundary, holdsAt } from "./ErrorBoundary";
 import { Header } from "./Header";
 import { useWorkspaceState, type WorkspaceState } from "./identity";
 import { PHONE_QUERY, RAIL_QUERY, useMediaQuery } from "./media";
@@ -360,7 +360,7 @@ function Frame() {
       <Route path="*" element={<NotFoundPane />} />
     </Routes>
   );
-  const work = <ErrorBoundary>{panes}</ErrorBoundary>;
+  const work = <ErrorBoundary conversation={holdsAt(location.pathname)}>{panes}</ErrorBoundary>;
   const drawn = drawerOpen && !focused;
   // The room the drawer asks for, once, when its first deposit card arrives.
   //
@@ -395,7 +395,7 @@ function Frame() {
     [workarea],
   );
   const drawer = (
-    <ErrorBoundary>
+    <ErrorBoundary conversation="drawer">
       <Drawer
         open={drawn}
         caret={caret}
@@ -420,7 +420,7 @@ function Frame() {
       <WorkAreaProvider layer={null} under={null}>
         <Rereading />
         <main id="content" className="ms-room-shell" tabIndex={-1}>
-          <ErrorBoundary>
+          <ErrorBoundary conversation="room">
             <Room record={reviewing} />
           </ErrorBoundary>
         </main>

@@ -37,6 +37,7 @@ import { Help } from "../help/Help";
 import { goalPath } from "../routes";
 import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The acts the Partner proposed, as a card under its answer — and the one press
@@ -138,15 +139,18 @@ function ProposalLine({ card, line }: { card: Card; line: Line }) {
 
   if (!line.offered) {
     return (
-      <div className="ms-proposal-line ms-proposal-line--refused" data-line={line.id}>
+      <div className="ms-proposal-line ms-proposal-line--not-offered" data-line={line.id}>
         <p className="ms-proposal-verb">
           <span className="ms-proposal-not-offered">{NOT_OFFERED}</span>
           <span>{verbWord(line.verb)}</span>
           <span className="ms-proposal-id ms-mono">{line.goal}</span>
         </p>
-        <p className="ms-proposal-said" role="status">
-          {line.reason}
-        </p>
+        <Trouble
+          text={line.reason ?? ""}
+          role="status"
+          variant="small"
+          act={{ verb: verbWord(line.verb), object: "goal", target: line.goal }}
+        />
       </div>
     );
   }

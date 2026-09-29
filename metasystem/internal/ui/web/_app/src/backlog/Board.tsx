@@ -31,7 +31,9 @@ import { dateOf } from "../project/ProjectPane";
 import { goalPath } from "../routes";
 import { Button, Chip } from "../shell/controls";
 import { useSession } from "../shell/identity";
-import { failureMessage } from "../shell/workspace";
+import { failureCode, failureMessage } from "../shell/workspace";
+import { Trouble } from "../shell/Trouble";
+import type { TroubleAct } from "../shell/troubling";
 
 /**
  * The backlog as a board.
@@ -81,6 +83,14 @@ export type Asked = { move: "approve" | "withdraw"; goal: Row };
 /** The card being dragged: its id and the lane it is in. */
 type Dragging = { id: string; lane: LaneId };
 
+/** A move or a re-rank a lane refused, with what a trouble line carries about it (g1-s68). */
+type Refused = { lane: LaneId; reason: string; act?: TroubleAct; code?: string; signIn?: boolean };
+
+/** A re-rank, as the act a trouble names. */
+function rerank(moved: Row): TroubleAct {
+  return { verb: "Reorder", object: "goal", target: moved.ref.id };
+}
+
 /**
  * One column: what it is called, what being in it means, the lane a drop on
  * it asks for, and what it is showing.
@@ -128,7 +138,7 @@ export function Board({
   onFaded: () => void;
 }) {
   const [dragging, setDragging] = useState<Dragging | null>(null);
-  const [refused, setRefused] = useState<{ lane: LaneId; reason: string } | null>(null);
+  const [refused, setRefused] = useState<Refused | null>(null);
   // What the ledger made of the last re-rank, under the lane it was made in,
   // read from the board the act answered with rather than from what was asked
   // for: the two differ whenever the band shifted under the request.
@@ -187,7 +197,7 @@ export function Board({
     const goal = all.find((row) => row.ref.id === dragging.id) ?? null;
     setDragging(null);
     if (transition === null || goal === null) {
-      setRefused({ lane, reason: refusalFor(dragging.lane, lane) });
+      setRefused({ lane, reason: refusalFor(dragging.lane, lane), act: { verb: "Move", object: "goal", target: dragging.id } });
       return;
     }
     setRefused(null);
@@ -206,7 +216,7 @@ export function Board({
   const publish = (moved: Row, placement: Placement) => {
     if (!acting.proven) {
       setNoted(null);
-      setRefused({ lane: moved.lane, reason: acting.reason });
+      setRefused({ lane: moved.lane, reason: acting.reason, act: rerank(moved), signIn: true });
       askToSignIn(() => {
         publish(moved, placement);
       });
@@ -227,7 +237,7 @@ export function Board({
           });
           return;
         }
-        setRefused({ lane: moved.lane, reason: failureMessage(error) });
+        setRefused({ lane: moved.lane, reason: failureMessage(error), act: rerank(moved), code: failureCode(error) });
       });
   };
 
@@ -288,7 +298,7 @@ export function Board({
             sliced={sliced}
             statement={column.lane === "draft" ? backlog.draft.statement : ""}
             standing={standingFor(dragging, column.lane)}
-            refusal={refused !== null && refused.lane === column.lane ? refused.reason : ""}
+            refusal={refused !== null && refused.lane === column.lane ? refused : null}
             note={noted !== null && noted.lane === column.lane ? noted.line : ""}
             onDragStart={(row) => {
               setRefused(null);
@@ -491,7 +501,8 @@ function Column({
   sliced: Map<string, SlicePlan>;
   statement: string;
   standing: Standing;
-  refusal: string;
+  /** What this lane refused, or null. */
+  refusal: Refused | null;
   /** What the ledger made of the last re-rank published from this lane. */
   note: string;
   onDragStart: (row: Row) => void;
@@ -558,10 +569,16 @@ function Column({
             {note}
           </p>
         )}
-        {refusal !== "" && (
-          <p className="ms-column-refusal" role="alert">
-            {refusal}
-          </p>
+        {refusal !== null && refusal.reason !== "" && (
+          <Trouble
+            text={refusal.reason}
+            role="alert"
+            variant="small"
+            code={refusal.code}
+            act={refusal.act}
+            signIn={refusal.signIn}
+            subject={refusal.act?.target === undefined ? undefined : { id: refusal.act.target, kind: "goal" }}
+          />
         )}
       </header>
       <div className="ms-column-cards">

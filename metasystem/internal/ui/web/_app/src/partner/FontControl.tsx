@@ -36,6 +36,7 @@ import "./partner.css";
 import { Button, IconButton } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
 import { readPartnerTypeface, writePartnerTypeface } from "../storage";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The font of the conversation: the control, and the choice it carries.
@@ -233,7 +234,7 @@ function FontForm() {
           </Button>
         </div>
         {named !== "" && !typedIsName && (
-          <p className="ms-font-refusal">A face is named in letters, digits, spaces and hyphens, and nothing else.</p>
+          <Trouble text={"A face is named in letters, digits, spaces and hyphens, and nothing else."} variant="small" />
         )}
         {typedIsName && (
           <FacePreview face={named} absent={!typedInstalled} note={typedInstalled ? "" : absence(named)} />

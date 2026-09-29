@@ -105,6 +105,11 @@ export type Store = {
    */
   refusal: string;
   install: string;
+  /**
+   * Whether the refusal was the conversation being busy: a press of Ask what
+   * happened on it waits for the answer as a pending chip (g1-s68 D2).
+   */
+  refusedBusy: boolean;
 };
 
 export const emptyStore: Store = {
@@ -120,6 +125,7 @@ export const emptyStore: Store = {
   sitting: null,
   refusal: "",
   install: "",
+  refusedBusy: false,
 };
 
 /** True while a turn is running, which is what disables the composer. */
@@ -241,7 +247,7 @@ function keptProposals(store: Store, arriving: Message[]): Message[] {
 
 /** A Partner this seat does not have, or one that could not be admitted. */
 export function unavailable(store: Store, reason: string): Store {
-  return { ...store, state: "unavailable", refusal: reason, live: nothingRunning };
+  return { ...store, state: "unavailable", refusal: reason, refusedBusy: false, live: nothingRunning };
 }
 
 /**
@@ -350,8 +356,16 @@ function settled(store: Store, live: Live, outcome: Outcome, event: PartnerEvent
  * would throw those away, and the refusal among them, so a turn that has
  * already begun is left exactly as it is.
  */
-export function asked(store: Store, turn: string, key: string, text: string, page: Page, at: string): Store {
-  const question: Message = { id: `${turn}-human`, turn, role: "human", text, at, key, page };
+export function asked(
+  store: Store,
+  turn: string,
+  key: string,
+  text: string,
+  page: Page,
+  at: string,
+  asking: Pick<Message, "interface" | "trouble"> = {},
+): Store {
+  const question: Message = { id: `${turn}-human`, turn, role: "human", text, at, key, page, ...asking };
   const already = store.messages.some((message) => message.turn === turn && message.role === "human");
   // The answer can even have finished by now, on a short turn over a fast
   // runtime. Then the question belongs in front of it rather than after it,
@@ -369,17 +383,18 @@ export function asked(store: Store, turn: string, key: string, text: string, pag
     live: ended ? nothingRunning : store.live.turn === turn ? store.live : { ...nothingRunning, turn },
     refusal: "",
     install: "",
+    refusedBusy: false,
   };
 }
 
-/** A send the server refused, in its own words. */
-export function refused(store: Store, reason: string, install: string): Store {
-  return { ...store, refusal: reason, install };
+/** A send the server refused, in its own words, and whether it refused it as busy. */
+export function refused(store: Store, reason: string, install: string, busy = false): Store {
+  return { ...store, refusal: reason, install, refusedBusy: busy };
 }
 
 /** A send the human is retrying: the refusal goes and the draft stays. */
 export function retrying(store: Store): Store {
-  return { ...store, refusal: "", install: "" };
+  return { ...store, refusal: "", install: "", refusedBusy: false };
 }
 
 /**

@@ -1,7 +1,8 @@
-import { Square } from "lucide-react";
+import { Square, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-import { Button } from "./controls";
+import { Button, IconButton } from "./controls";
+import { ASK_WHAT_HAPPENED, chipLine } from "./troubling";
 import { showsSuggestions, Suggestions } from "../partner/Chips";
 import { insertAt } from "../partner/composing";
 import { useTypefaceOn } from "../partner/FontControl";
@@ -56,7 +57,8 @@ export function Composer({
    */
   takeCaret?: boolean;
 }) {
-  const { draft, setDraft, send, stop, busy, sending, store, wanted, offerInsert, returnFocus } = usePartner();
+  const { draft, setDraft, send, stop, busy, sending, store, wanted, offerInsert, returnFocus, pendingTrouble, dropTrouble } =
+    usePartner();
   const field = useRef<HTMLTextAreaElement | null>(null);
   // The card carries the conversation's chosen face and size, and the field is
   // the one thing in it that reads them: a custom property inherits, and the
@@ -115,6 +117,27 @@ export function Composer({
   return (
     <div className="ms-composer" ref={card}>
       <SeeingRow />
+      {/* A press on Ask what happened made while this conversation answered
+          (g1-s68 D2): it waits here, beside the draft and never in it, and
+          the next Send sends it first. */}
+      {pendingTrouble !== null && (
+        <div className="ms-trouble-pending" role="status">
+          <span className="ms-trouble-pending-what">
+            {ASK_WHAT_HAPPENED}: {chipLine(pendingTrouble.trouble)}
+          </span>
+          <span className="ms-trouble-pending-when">
+            {busy ? "waits for this answer to finish; Send asks it" : "Send asks it next"}
+          </span>
+          <IconButton
+            label="Take this question back"
+            onClick={() => {
+              dropTrouble(pendingTrouble.id);
+            }}
+          >
+            <X size={14} strokeWidth={1.75} aria-hidden="true" />
+          </IconButton>
+        </div>
+      )}
       {showsSuggestions(draft) && <Suggestions />}
       <label className="ms-visually-hidden" htmlFor="composer">
         {COMPOSER_LABEL}
@@ -166,7 +189,7 @@ export function Composer({
         ) : (
           <Button
             primary
-            disabled={sending || unavailable || draft.trim() === ""}
+            disabled={sending || unavailable || (draft.trim() === "" && pendingTrouble === null)}
             onClick={() => {
               send();
             }}

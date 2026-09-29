@@ -57,6 +57,7 @@ import { useSession } from "../shell/identity";
 import type { SessionStatus } from "../shell/session";
 import { useOffersRefresh } from "../shell/refresh";
 import { readDecisionsOpen, writeDecisionsOpen } from "../storage";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * Decisions: an inbox you can empty, and what you decided.
@@ -439,9 +440,7 @@ export function DecisionsPane() {
       {read.state === "loading" && <Loading />}
       {read.state === "failed" && <Failure message={read.message} onRetry={reload} />}
       {read.state === "read" && read.problem !== undefined && (
-        <p className="ms-decisions-refusal" role="status">
-          Decisions could not be read again, so what is on screen is the last reading: {read.problem}
-        </p>
+        <Trouble text={`Decisions could not be read again, so what is on screen is the last reading: ${read.problem}`} role="status" variant="small" />
       )}
       {read.state === "read" && (
         <Views
@@ -471,9 +470,7 @@ export function DecisionsPane() {
         />
       )}
       {bulk !== null && bulk.state === "failed" && (
-        <p className="ms-decisions-refusal" role="alert">
-          The backlog could not be read, so the sheet could not open: {bulk.message}
-        </p>
+        <Trouble text={`The backlog could not be read, so the sheet could not open: ${bulk.message}`} role="alert" variant="small" />
       )}
       {bulk !== null && bulk.state === "ready" && (
         <BulkSheet
@@ -494,9 +491,7 @@ export function DecisionsPane() {
         />
       )}
       {proposing !== null && proposing.state === "failed" && (
-        <p className="ms-decisions-refusal" role="alert">
-          The backlog could not be read, so the sheet could not open: {proposing.message}
-        </p>
+        <Trouble text={`The backlog could not be read, so the sheet could not open: ${proposing.message}`} role="alert" variant="small" />
       )}
       {proposing !== null && proposing.state === "ready" && (
         <ProposalSheet
@@ -521,9 +516,7 @@ export function DecisionsPane() {
         />
       )}
       {acting !== null && acting.state === "failed" && (
-        <p className="ms-decisions-refusal" role="alert">
-          The backlog could not be read, so the sheet could not open: {acting.message}
-        </p>
+        <Trouble text={`The backlog could not be read, so the sheet could not open: ${acting.message}`} role="alert" variant="small" />
       )}
       {acting !== null && acting.state === "ready" && (
         <ActSheet
@@ -542,9 +535,7 @@ export function DecisionsPane() {
         />
       )}
       {editing !== null && editing.state === "failed" && (
-        <p className="ms-decisions-refusal" role="alert">
-          The backlog could not be read, so the sheet could not open: {editing.message}
-        </p>
+        <Trouble text={`The backlog could not be read, so the sheet could not open: ${editing.message}`} role="alert" variant="small" />
       )}
       {editing !== null && editing.state === "ready" && (
         <EditSheet
@@ -1063,7 +1054,7 @@ function Failure({ message, onRetry }: { message: string; onRetry: () => void })
     <div className="ms-pane-stack">
       <section className="ms-card">
         <h2 className="ms-card-title">Decisions could not be read</h2>
-        <p className="ms-decisions-reason">{message}</p>
+        <Trouble text={`Decisions could not be read: ${message}`}>{message}</Trouble>
         <Button onClick={onRetry}>Retry</Button>
       </section>
     </div>

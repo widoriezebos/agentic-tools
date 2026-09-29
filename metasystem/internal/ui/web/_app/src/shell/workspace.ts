@@ -62,3 +62,16 @@ export async function loadWorkspace(signal?: AbortSignal): Promise<Workspace> {
 export function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/**
+ * The code a refusal was made under, where the error carries one, or "". It is
+ * what a trouble line carries beside the sentence (g1-s68 D1), so the Partner
+ * can read the register's row for it.
+ */
+export function failureCode(error: unknown): string {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code: unknown }).code;
+    return typeof code === "string" ? code : "";
+  }
+  return "";
+}

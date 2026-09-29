@@ -5,6 +5,7 @@ import { candidateHref, pillOf, pressSignedIn } from "./room";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The candidate's pill in the room's header (g1-s69 D3): what app status says
@@ -15,7 +16,9 @@ import { useSession } from "../shell/identity";
 export function CandidatePill({ goal, reviewed }: { goal: string; reviewed: string }) {
   const [read, setRead] = useState<Candidate | { refusal: string; code: string } | null>(null);
   const [acting, setActing] = useState(false);
-  const [refusal, setRefusal] = useState("");
+  // What Run or Stop was refused with, and the code it was refused under, so the
+  // trouble carries the code the Partner reads the register by (Sol SOL-S68-03).
+  const [refusal, setRefusal] = useState({ refusal: "", code: "" });
   const { askToSignIn } = useSession();
 
   useEffect(() => {
@@ -40,7 +43,7 @@ export function CandidatePill({ goal, reviewed }: { goal: string; reviewed: stri
     void pressSignedIn({
       act: () => {
         setActing(true);
-        setRefusal("");
+        setRefusal({ refusal: "", code: "" });
         return act(goal);
       },
       done: () => {
@@ -54,7 +57,7 @@ export function CandidatePill({ goal, reviewed }: { goal: string; reviewed: stri
       },
       refused: (error) => {
         setActing(false);
-        setRefusal(refusalOf(error).refusal);
+        setRefusal(refusalOf(error));
       },
       signIn: askToSignIn,
     });
@@ -83,10 +86,8 @@ export function CandidatePill({ goal, reviewed }: { goal: string; reviewed: stri
         </Button>
       )}
       <Help id="the-candidate" />
-      {refusal !== "" && (
-        <span className="ms-deposit-refusal" role="status">
-          {refusal}
-        </span>
+      {refusal.refusal !== "" && (
+        <Trouble text={refusal.refusal} code={refusal.code} role="status" as="span" variant="small" />
       )}
     </span>
   );

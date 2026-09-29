@@ -18,6 +18,7 @@ import {
 } from "./suggesting";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The words the Partner offered, as a card under its answer: the conversation's
@@ -87,14 +88,12 @@ export function SuggestionCard({ id }: { id: string }) {
   // words and no offer to fold away. What it owes them is the reason.
   if (card.standing === "refused") {
     return (
-      <div className="ms-suggestion ms-suggestion--refused" ref={box} data-suggestion={id}>
+      <div className="ms-suggestion ms-suggestion--not-offered" ref={box} data-suggestion={id}>
         <p className="ms-suggestion-head">
           <span>{NOT_OFFERED}</span>
           <Help id="not-offered" />
         </p>
-        <p className="ms-suggestion-refused" role="status">
-          {refusedLine(card)}
-        </p>
+        <Trouble text={refusedLine(card)} role="status" variant="small" />
         <p className="ms-suggestion-text">{card.text}</p>
       </div>
     );

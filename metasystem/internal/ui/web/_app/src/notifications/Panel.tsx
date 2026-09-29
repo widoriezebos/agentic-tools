@@ -1,7 +1,8 @@
 import { useNotifications } from "./store";
-import { clockTime, groupByDay, type Notification } from "./notifications";
+import { clockTime, groupByDay, happened, type Notification } from "./notifications";
 import { Button, Chip } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The history, as a sheet from the right.
@@ -40,7 +41,7 @@ export function NotificationsPanel() {
       closeLabel="Close the notifications"
       bodyClassName="ms-sheet-body--notifications"
     >
-      {store.problem !== "" && <p className="ms-notifications-problem">{store.problem}</p>}
+      {store.problem !== "" && <Trouble text={store.problem} onAsked={closePanel} />}
       {store.loaded && store.problem === "" && store.history.length === 0 && (
         <p className="ms-notifications-empty">{NOTHING_YET}</p>
       )}
@@ -49,7 +50,12 @@ export function NotificationsPanel() {
           <h3 className="ms-notifications-heading">{day.heading}</h3>
           <ul className="ms-notifications-rows">
             {day.rows.map((notification) => (
-              <Row key={notification.id} notification={notification} focused={notification.id === focused} />
+              <Row
+                key={notification.id}
+                notification={notification}
+                focused={notification.id === focused}
+                onAsked={closePanel}
+              />
             ))}
           </ul>
         </section>
@@ -72,7 +78,15 @@ export function NotificationsPanel() {
  * clicking a toast body does — the toast is a glimpse and this is the record,
  * and landing anywhere but on that message would make the click a lie.
  */
-function Row({ notification, focused }: { notification: Notification; focused: boolean }) {
+export function Row({
+  notification,
+  focused,
+  onAsked,
+}: {
+  notification: Notification;
+  focused: boolean;
+  onAsked: () => void;
+}) {
   return (
     <li
       className={focused ? "ms-notification ms-notification--focused" : "ms-notification"}
@@ -88,9 +102,17 @@ function Row({ notification, focused }: { notification: Notification; focused: b
         </time>
         <Chip>{notification.source}</Chip>
       </div>
-      <p className="ms-notification-message">{notification.message}</p>
+      {/* An alert is the steward saying something is wrong, so its row is a
+          trouble line: a toast that flashed by is asked about from here
+          (g1-s68 D5). The press closes the panel, which is window-modal, so
+          the answer is where the human can read it. */}
+      {notification.source === "alert" ? (
+        <Trouble text={notification.message} onAsked={onAsked} {...happened(notification)} />
+      ) : (
+        <p className="ms-notification-message">{notification.message}</p>
+      )}
       {!notification.delivered && (
-        <p className="ms-notification-undelivered">not delivered to macOS: {notification.error}</p>
+        <Trouble text={`not delivered to macOS: ${notification.error}`} onAsked={onAsked} {...happened(notification)} />
       )}
     </li>
   );

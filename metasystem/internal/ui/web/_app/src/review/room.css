@@ -230,11 +230,6 @@
   font-size: 14px;
 }
 
-.ms-desk-refused {
-  color: var(--ms-danger);
-  font-size: 14px;
-}
-
 .ms-desk-caption {
   display: flex;
   flex-wrap: wrap;
@@ -518,13 +513,9 @@
   gap: 4px;
 }
 
-.ms-end-refused {
+.ms-end-unanswered {
   color: var(--ms-marker-fg);
   font-size: 13px;
-}
-
-.ms-end-refused p {
-  margin: 0;
 }
 
 .ms-end-nod {

@@ -5,6 +5,8 @@ import { blockedForSignIn, signIn, SIGN_IN_NOTE, type SessionState, type Session
 import { Sheet } from "./Sheet";
 import { SIGN_IN_MODALITY } from "./workmodal";
 import { failureMessage } from "./workspace";
+import { Trouble } from "./Trouble";
+import { useSecret } from "./troubles";
 
 /**
  * Signing in, with the code this seat already gives its human.
@@ -28,6 +30,7 @@ export function SignInSheet({
   status,
   needsHandle,
   onOpenChange,
+  onHandOff,
   onSignedIn,
 }: {
   open: boolean;
@@ -35,6 +38,12 @@ export function SignInSheet({
   /** Whether the server said it does not know who its human is. */
   needsHandle: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Step aside for Ask what happened (g1-s68 D2): the sheet is window-modal,
+   * so an answer drawn beneath it could not be read. It closes keeping the
+   * handle typed and the act waiting on it, and opens again from the header.
+   */
+  onHandOff: () => void;
   /** What the server answered, which is what the page shows afterwards. */
   onSignedIn: (state: SessionState) => void;
 }) {
@@ -44,6 +53,9 @@ export function SignInSheet({
   const [sending, setSending] = useState(false);
 
   const blocked = blockedForSignIn(code, handle, needsHandle);
+  // The code is the one secret on this sheet: a trouble composed while it is
+  // typed has it replaced before it is kept or sent (g1-s68 D1, S68-01).
+  useSecret(code);
 
   const close = (next: boolean) => {
     if (!next) {
@@ -125,9 +137,17 @@ export function SignInSheet({
         <p className="ms-signin-hint">{blocked === "" ? SIGN_IN_NOTE : blocked}</p>
       </div>
       {refusal !== "" && (
-        <p className="ms-signin-refusal" role="alert">
-          {refusal}
-        </p>
+        <Trouble
+          text={refusal}
+          role="alert"
+          variant="small"
+          act={{ verb: "Sign in", object: "session" }}
+          signIn
+          onAsked={() => {
+            setCode("");
+            onHandOff();
+          }}
+        />
       )}
     </Sheet>
   );

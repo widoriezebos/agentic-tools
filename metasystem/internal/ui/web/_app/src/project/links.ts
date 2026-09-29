@@ -1,3 +1,5 @@
+import { activeSection, roomIdFromPath } from "../routes";
+
 /**
  * The belt.
  *
@@ -89,4 +91,23 @@ function hasScheme(href: string): boolean {
     }
   }
   return false;
+}
+
+/**
+ * The address of a place in this interface an answer links to, or null
+ * (g1-s68 D3). A recovery that is a press somewhere in the interface — a room,
+ * a page — is given as a link rather than a card, so a link to one of this
+ * interface's own addresses is followed in the page; anything else, including
+ * the server's own routes and an address that would leave the origin, is not.
+ */
+export function interfaceAddress(href: string): string | null {
+  if (!href.startsWith("/") || href.startsWith("//") || href.startsWith("/api/")) {
+    return null;
+  }
+  const pathname = href.split("#")[0].split("?")[0];
+  if (roomIdFromPath(pathname) !== "") {
+    return href;
+  }
+  const section = activeSection(pathname);
+  return section === null ? null : href;
 }

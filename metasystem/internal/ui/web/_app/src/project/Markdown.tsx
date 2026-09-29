@@ -3,9 +3,16 @@ import { createContext, Fragment, useContext, type ReactNode } from "react";
 import { NavLink } from "react-router";
 
 import type { Block, Cell, Inline, Item } from "./api";
-import { documentIdFor, externalHref, fragmentOf } from "./links";
+import { documentIdFor, externalHref, fragmentOf, interfaceAddress } from "./links";
 import { routeFor } from "../routes";
 import "./reading.css";
+
+/**
+ * Whether a link to one of this interface's own addresses is followed: true
+ * in a Partner's answer, whose recovery may be a press elsewhere in the
+ * interface (g1-s68 D3), and false in a document, which links to documents.
+ */
+export const InterfaceLinks = createContext(false);
 
 /**
  * The document, rendered as elements.
@@ -249,6 +256,7 @@ function InlineNode({ inline, from }: { inline: Inline; from: string }): ReactNo
 }
 
 function LinkNode({ inline, from, children }: { inline: Inline; from: string; children: ReactNode }) {
+  const followsInterfaceLinks = useContext(InterfaceLinks);
   const href = inline.href ?? "";
   if (inline.target === "external") {
     const safe = externalHref(href);
@@ -276,6 +284,18 @@ function LinkNode({ inline, from, children }: { inline: Inline; from: string; ch
   if (inline.target === "document") {
     const id = inline.id !== undefined && inline.id !== "" ? inline.id : documentIdFor(from, href);
     const to = id === null ? null : routeFor({ kind: "document", id });
+    if (to !== null) {
+      return (
+        <NavLink className="ms-md-link" to={to}>
+          {children}
+        </NavLink>
+      );
+    }
+  }
+  // A Partner's answer may give a place in this interface as a link (g1-s68
+  // D3): followed in the page, and only where the address is one of ours.
+  if (followsInterfaceLinks) {
+    const to = interfaceAddress(href);
     if (to !== null) {
       return (
         <NavLink className="ms-md-link" to={to}>

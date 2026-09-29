@@ -31,6 +31,7 @@ import {
 import { aboutLine, useAbout } from "../shell/about";
 import { Button } from "../shell/controls";
 import { useOffersRefresh } from "../shell/refresh";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * How many goals of one lane travel with a question. It is the server's own
@@ -97,11 +98,11 @@ export function BacklogPane() {
     return (
       <Pane title="Backlog">
         <div className="ms-backlog">
-          <div className="ms-error">
-            <p className="ms-error-heading">The backlog could not be read</p>
-            <p className="ms-error-detail">{backlog.message}</p>
-            <Button onClick={refresh}>Retry</Button>
-          </div>
+          <Trouble text={`The backlog could not be read: ${backlog.message}`} as="div" variant="pane">
+            <p className="ms-trouble-heading">The backlog could not be read</p>
+            <p className="ms-trouble-detail">{backlog.message}</p>
+          </Trouble>
+          <Button onClick={refresh}>Retry</Button>
         </div>
       </Pane>
     );
@@ -326,14 +327,10 @@ function Read({
           the banner is for the one wrong this page can otherwise only whisper:
           a read that worked and a fetch that did not. */}
       {sync.state === "wrong" && ledger.state === "read" && (
-        <p className="ms-board-problem" role="status">
-          {sync.wrong}
-        </p>
+        <Trouble text={sync.wrong} role="status" variant="boxed" />
       )}
       {problem !== undefined && (
-        <p className="ms-board-problem" role="status">
-          The backlog could not be read again, so what is on screen is the last reading: {problem}
-        </p>
+        <Trouble text={`The backlog could not be read again, so what is on screen is the last reading: ${problem}`} role="status" variant="boxed" />
       )}
       {/* What the landing had to change to show the goal it was sent for, or
           that it could not find one. It stands above the lanes because it is
@@ -540,8 +537,13 @@ function rowsIn(rows: Row[], lane: LaneId): Row[] {
   return rows.filter((row) => row.lane === lane);
 }
 
-/** What the pane says for each way the accepted ledger cannot be projected. */
-function LedgerStatement({ backlog }: { backlog: Backlog }) {
+/**
+ * What the pane says for each way the accepted ledger cannot be projected.
+ * Where the ledger could not be read, what was found is a trouble line with
+ * the page's own where and no act (Sol's re-read of SOL-S68-01); a clone that
+ * has no accepted tip yet is not a trouble.
+ */
+export function LedgerStatement({ backlog }: { backlog: Backlog }) {
   const ledger = backlog.ledger;
   switch (ledger.state) {
     case "absent":
@@ -556,7 +558,12 @@ function LedgerStatement({ backlog }: { backlog: Backlog }) {
       return (
         <Statement
           heading="The accepted tip carries no ledger"
-          body={`The ref points at ${shortTip(ledger.tip)}, whose tree has no plans/goals/backlog.md. The engine never sets the ref to such a commit, so something else did. The fetch loop cannot move it: ${lastTick(ledger)}.`}
+          body={
+            <Trouble
+              as="span"
+              text={`The ref points at ${shortTip(ledger.tip)}, whose tree has no plans/goals/backlog.md. The engine never sets the ref to such a commit, so something else did. The fetch loop cannot move it: ${lastTick(ledger)}.`}
+            />
+          }
           note="No verb heals this. Remove the ref the way it was made, from a terminal: git update-ref -d refs/metasystem/goals/accepted; the loop then creates it from the canonical branch."
         />
       );
@@ -564,7 +571,7 @@ function LedgerStatement({ backlog }: { backlog: Backlog }) {
       return (
         <Statement
           heading="The accepted ref cannot be read"
-          body={`${ledger.message}. The last fetch: ${lastTick(ledger)}.`}
+          body={<Trouble as="span" text={`${ledger.message}. The last fetch: ${lastTick(ledger)}.`} />}
           note={ledger.fetch.outcome === "failed" ? "Repair refs/metasystem/goals/accepted before continuing." : undefined}
         />
       );
@@ -575,11 +582,16 @@ function LedgerStatement({ backlog }: { backlog: Backlog }) {
           body="The engine refuses a tree with any problem whole rather than showing part of it, so this is every problem it found."
           note={`The last fetch: ${lastTick(ledger)}.`}
         >
-          <ul className="ms-problems">
+          <ul className="ms-ledger-lines">
             {ledger.problems.map((problem) => (
-              <li className="ms-mono" key={problem}>
-                {problem}
-              </li>
+              <Trouble
+                as="li"
+                variant="small"
+                key={problem}
+                text={`The ledger at ${shortTip(ledger.tip)} does not validate: ${problem}`}
+              >
+                <span className="ms-mono">{problem}</span>
+              </Trouble>
             ))}
           </ul>
         </Statement>
@@ -588,7 +600,7 @@ function LedgerStatement({ backlog }: { backlog: Backlog }) {
       return (
         <Statement
           heading="The ledger could not be projected"
-          body={`${ledger.message}. The last fetch: ${lastTick(ledger)}.`}
+          body={<Trouble as="span" text={`${ledger.message}. The last fetch: ${lastTick(ledger)}.`} />}
           note="Check goal.sync-remote and goal.sync-branch in this checkout's git configuration."
         />
       );

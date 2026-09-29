@@ -502,6 +502,9 @@ type Message struct {
 	Interface bool `json:"interface,omitempty"`
 	// Page is where the human was, on a human's message only.
 	Page *Page `json:"page,omitempty"`
+	// Trouble is what a press on "Ask what happened" asked about, on a human's
+	// message only: the transcript's chip is drawn from it (g1-s68 D2).
+	Trouble *Trouble `json:"trouble,omitempty"`
 	// Trimmed marks the one line a trim leaves at the head of a transcript:
 	// the note that says what is gone and when it went. It is in the file
 	// because a later trim has to recognise it — a note about messages that
@@ -1509,6 +1512,11 @@ func historyLine(message Message) string {
 	where := ""
 	if message.Page != nil {
 		where = " (asked from " + pageLine(*message.Page) + ")"
+	}
+	// A press on "Ask what happened" keeps the trouble on the table for a
+	// recovered session too (g1-s68 W5).
+	if message.Trouble != nil {
+		where += " (about the trouble: " + oneLine(message.Trouble.Text) + ")"
 	}
 	return "- " + who + where + ": " + oneLine(message.Text) + "\n"
 }

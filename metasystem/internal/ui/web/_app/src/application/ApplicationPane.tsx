@@ -32,6 +32,7 @@ import { documentPath, goalPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, Skeleton } from "../shell/controls";
 import { useOffersRefresh } from "../shell/refresh";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * Application: what is known to be wrong with this workspace, what it has
@@ -140,9 +141,10 @@ export function ApplicationPane() {
       {read.state === "loading" && <Loading />}
       {read.state === "failed" && <Failure message={read.message} onRetry={reload} />}
       {read.state === "read" && read.problem !== undefined && (
-        <p className="ms-application-reason" role="status">
-          Application could not be read again, so what is on screen is the last reading: {read.problem}
-        </p>
+        <Trouble
+          text={`Application could not be read again, so what is on screen is the last reading: ${read.problem}`}
+          role="status"
+        />
       )}
       {read.state === "read" && (
         <Blocks
@@ -670,7 +672,7 @@ function Failure({ message, onRetry }: { message: string; onRetry: () => void })
     <div className="ms-pane-stack">
       <section className="ms-card">
         <h2 className="ms-card-title">Application could not be read</h2>
-        <p className="ms-application-reason">{message}</p>
+        <Trouble text={`Application could not be read: ${message}`}>{message}</Trouble>
         <Button onClick={onRetry}>Retry</Button>
       </section>
     </div>

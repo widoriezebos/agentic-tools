@@ -39,6 +39,7 @@ import { Button, Hint } from "../shell/controls";
 import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
 import { useSession } from "../shell/identity";
 import { TokenField } from "../shell/TokenField";
+import { Trouble } from "../shell/Trouble";
 import { failureMessage } from "../shell/workspace";
 
 /**
@@ -589,11 +590,7 @@ function Field({
       <p className="ms-act-hint" id={`${id}-hint`}>
         {hint}
       </p>
-      {refuse !== "" && (
-        <p className="ms-act-refuse" role="alert">
-          {refuse}
-        </p>
-      )}
+      {refuse !== "" && <Trouble text={refuse} role="alert" variant="small" />}
     </div>
   );
 }

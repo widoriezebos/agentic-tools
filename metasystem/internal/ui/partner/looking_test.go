@@ -46,6 +46,16 @@ func TestThePointSaysWhatAnAdmittedCallActuallyDid(t *testing.T) {
 		"Allowed the interface's own tools to prepare a suggestion: nothing was read and nothing was written")
 }
 
+// The refusal register's reader is a read like any other (g1-s68 D4): admitted,
+// and said to have read.
+func TestTheRefusalReaderIsAdmittedAsARead(t *testing.T) {
+	t.Parallel()
+	decided := judge(mustParams(t, toolPermission("mcp__metasystem__refusal", "", "")), "s1", t.TempDir())
+	testutil.Expect(t, "it is admitted", decided.allowed, true)
+	testutil.Expect(t, "and it is called a read", decided.activity,
+		"Allowed a read through the interface's own tools: refusal")
+}
+
 // The exception is this server's operations and nothing beside them: another
 // server's tools, a tool this server does not have, and a name that merely
 // contains the server's are all refused.

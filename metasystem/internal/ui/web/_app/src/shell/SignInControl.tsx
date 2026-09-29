@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button, Skeleton } from "./controls";
 import { useSession } from "./identity";
 import { controlFor, signOut } from "./session";
+import { Trouble } from "./Trouble";
 
 /**
  * Who the server is acting as, in the header, beside who the workspace is.
@@ -51,9 +52,7 @@ export function SignInControl() {
   return (
     <span className="ms-signin">
       {trouble !== "" && (
-        <span className="ms-signin-refusal" role="alert">
-          {trouble}
-        </span>
+        <Trouble text={trouble} role="alert" as="span" variant="small" />
       )}
       <span className="ms-signin-who">{control.who}</span>
       <span className="ms-signin-until">· {control.qualifier}</span>

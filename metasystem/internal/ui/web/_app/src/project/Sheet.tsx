@@ -30,6 +30,7 @@ import type { Field } from "../partner/drafting";
 import { useOpenSheet } from "../partner/store";
 import { Button } from "../shell/controls";
 import { DEFAULT_MODALITY, useOpener, useWorkModal, type Modality } from "../shell/workmodal";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The sheet: every contribution, as a proposal, before it is made.
@@ -209,9 +210,7 @@ export function Sheet({
         )}
         {request.mode === "discard" && <DiscardForm request={request} onClose={onClose} onDone={onDone} />}
         {refusal !== "" && (
-          <p className="ms-writing-refusal" role="alert">
-            {refusal}
-          </p>
+          <Trouble text={refusal} role="alert" />
         )}
       </section>
     </>

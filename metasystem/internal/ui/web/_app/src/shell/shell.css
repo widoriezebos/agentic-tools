@@ -1152,33 +1152,8 @@ body {
 
 /* --------------------------------------------------------- error boundary -- */
 
-.ms-error {
-  max-width: 640px;
-  padding: 24px;
-  border-radius: 8px;
-  border: 1px solid var(--ms-border);
-  background: var(--ms-surface);
-}
 
-.ms-error-heading {
-  margin: 0 0 16px;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 600;
-  color: var(--ms-danger);
-}
 
-.ms-error-detail {
-  margin: 0 0 16px;
-  padding: 12px;
-  border-radius: 6px;
-  background: var(--ms-surface-2);
-  color: var(--ms-text-2);
-  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-  line-height: 18px;
-  overflow-x: auto;
-}
 
 /* ---------------------------------------------------------------- sheets -- */
 
@@ -1504,12 +1479,6 @@ body {
   color: var(--ms-text-3);
 }
 
-.ms-signin-refusal {
-  margin: 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--ms-danger);
-}
 
 .ms-signin-until {
   font-size: 12px;
@@ -1583,16 +1552,7 @@ body {
 }
 
 .ms-notifications-empty,
-.ms-notifications-problem {
-  margin: 0;
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--ms-text-2);
-}
 
-.ms-notifications-problem {
-  color: var(--ms-danger);
-}
 
 .ms-notifications-day {
   display: flex;
@@ -1663,8 +1623,7 @@ body {
 }
 
 /* The delivery gate, made visible. */
-.ms-notification-undelivered,
-.ms-toast-undelivered {
+.ms-notification-undelivered {
   margin: 0;
   font-size: 12px;
   line-height: 18px;
@@ -1752,6 +1711,15 @@ body {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+/* A failure toast's column: the panel-opening body, then its trouble lines. */
+.ms-toast-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .ms-toast-line {
@@ -1994,4 +1962,145 @@ body {
 .ms-token-clear:hover {
   background: var(--ms-border);
   color: var(--ms-text);
+}
+
+/* ------------------------------------------------------------ the trouble -- */
+
+/*
+ * Everything that goes wrong on screen is one line (g1-s68 D1): the sentence
+ * as the site says it, in the danger colour, and at its end, quietly, the one
+ * control that asks the Partner what happened. It is a link-weight button, not
+ * a second primary action: the sentence is what the eye goes to first.
+ */
+.ms-trouble {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-danger);
+  overflow-wrap: anywhere;
+}
+
+.ms-trouble--small {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ms-trouble--boxed {
+  padding: 8px 10px;
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--ms-danger);
+  border-radius: 8px;
+}
+
+.ms-trouble--pane {
+  max-width: 640px;
+  padding: 24px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+}
+
+.ms-trouble-text > svg {
+  vertical-align: -2px;
+  margin-inline-end: 6px;
+}
+
+.ms-trouble-heading {
+  margin: 0 0 16px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--ms-danger);
+}
+
+.ms-trouble-detail {
+  margin: 0 0 16px;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--ms-surface-2);
+  color: var(--ms-text-2);
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 18px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.ms-trouble-at {
+  margin-inline-end: 4px;
+}
+
+.ms-trouble-ask {
+  margin-inline-start: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ms-accent);
+  font: inherit;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ms-trouble-ask:hover {
+  color: var(--ms-accent-hover);
+}
+
+.ms-trouble-ask:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.ms-trouble-waiting,
+.ms-trouble-broken {
+  margin-inline-start: 8px;
+  color: var(--ms-text-2);
+}
+
+.ms-trouble--pane .ms-trouble-broken {
+  display: block;
+  margin: 0;
+}
+
+.ms-caught {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* A press made while the conversation answered waits above the composer,
+   beside the draft and never in it. */
+.ms-trouble-pending {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border: 1px dashed var(--ms-border-strong);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-2);
+}
+
+.ms-trouble-pending-what {
+  color: var(--ms-text);
+  font-weight: 500;
+}
+
+.ms-trouble-chip {
+  margin: 4px 0 0;
+}
+
+.ms-editor-troubles {
+  margin: 0;
+  padding: 12px 12px 12px 28px;
+  border: 1px solid var(--ms-danger);
+  border-radius: 6px;
 }
