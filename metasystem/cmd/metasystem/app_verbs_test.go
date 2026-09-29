@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 var (
@@ -894,7 +895,7 @@ func TestAppAddressIsOneNamedDiagnosticGroupsInput(t *testing.T) {
 	if status != 2 || !strings.Contains(refusal, "--app-address belongs to one named diagnostic group") {
 		t.Fatalf("an address outside one named diagnostic group is refused: status=%d %q", status, refusal)
 	}
-	request := testingRunRequest(testingPreparation{AppAddress: "127.0.0.1:7981"}, "attempt", root, "", "", "")
+	request := testrun.RunRequest(testrun.Preparation{AppAddress: "127.0.0.1:7981"}, "attempt", root, "", "", "")
 	if request.AppAddress != "127.0.0.1:7981" {
 		t.Fatalf("the run request carries the address to the runner: %+v", request.AppAddress)
 	}

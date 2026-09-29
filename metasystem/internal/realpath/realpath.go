@@ -10,6 +10,9 @@
 // ResolveExisting is the weak form: symlinks resolve only when the whole path
 // exists; otherwise the absolute lexical form is returned. It is for naming a
 // directory that exists (a checkout, a workspace), never for containment.
+//
+// Canonical is the refusing form: the absolute, symlink-free path of
+// something that must exist (a proof root), or the error saying it does not.
 package realpath
 
 import (
@@ -48,6 +51,20 @@ func ResolveExisting(path string) string {
 		return real
 	}
 	return path
+}
+
+// Canonical returns the absolute, cleaned, symlink-free form of an existing
+// path, or the error resolving it.
+func Canonical(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(resolved), nil
 }
 
 // Within reports whether path is root or lies below it, comparing whole path

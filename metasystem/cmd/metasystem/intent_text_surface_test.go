@@ -28,7 +28,7 @@ var oldStatusKinds = []string{"job", "run", "work", "mission", "ui", "checkout",
 // spelling on purpose, each with the reason it stays.
 var textSurfaceExceptions = []struct{ file, text, reason string }{
 	{"metasystem/cmd/metasystem/testing_merge.go", "metasystem testing merge-driver", "the Git merge driver entry's own setup line; Git runs it by this argv"},
-	{"metasystem/cmd/metasystem/rearm_on_landed.go", "metasystem up", "reports the up entry the re-arm actually ran"},
+	{"metasystem/internal/testrun/rearm.go", "metasystem up", "reports the up entry the re-arm actually ran"},
 	{"metasystem/internal/supervise/arming.go", "metasystem up", "the owner lock's recorded holder label"},
 	{"metasystem/internal/seat/launch/", "metasystem up", "the destination step's recorded argv"},
 	{"metasystem/internal/seat/launch/", "metasystem internal steward arm", "the destination step's recorded argv"},

@@ -37,6 +37,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestCoverageReuseVerbRefusesChangedParentProjectInput(t *testing.T) {
@@ -246,7 +248,7 @@ func TestCandidateGoalSelectsThePlanRisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	risk, revision, err := testingGoalRiskWithEndpoint(endpoint, candidate.Id, now)
+	risk, revision, err := testrun.GoalRiskAt(endpoint, candidate.Id, now)
 	if err != nil || revision != goal.BudgetEpisodeRevision(candidate) || risk.Accumulation != 3 {
 		t.Fatalf("candidate risk=%+v revision=%d err=%v", risk, revision, err)
 	}
@@ -1446,7 +1448,7 @@ printf '%s\n' "<testsuite><testcase classname=\"fixture\" name=\"$3\"/></testsui
 	code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestWorkerWithCandidateOpener([]string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", resultPath}, openCandidate, stdout, stderr)
 	})
-	result, resultErr := readTestingWorkerResult(resultPath)
+	result, resultErr := testrun.ReadWorkerResult(resultPath)
 	if code != 0 || resultErr != nil || !result.Delivery.Sufficient || len(result.Groups) != len(groupIDs) {
 		t.Fatalf("authenticated worker did not carry the admitted project root into its frozen witness: code=%d read=%v stderr=%q result=%+v", code, resultErr, stderr, result)
 	}
@@ -2437,39 +2439,8 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 
 }
 
-func assertHostAdmissionClean(t *testing.T, directory string, wantLeases int, allowedStaleManagedPID ...int) {
-	t.Helper()
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		t.Fatalf("read isolated host admission: %v", err)
-	}
-	leases := 0
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "managed-") {
-			if len(allowedStaleManagedPID) != 1 || entry.Name() != fmt.Sprintf("managed-%d.json", allowedStaleManagedPID[0]) {
-				t.Fatalf("unexpected managed proof process marker remained after exit: %s", entry.Name())
-			}
-			continue
-		}
-		if !strings.HasPrefix(entry.Name(), "lease-heavy-") {
-			continue
-		}
-		leases++
-		data, err := os.ReadFile(filepath.Join(directory, entry.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		var marker struct {
-			Cleared bool `json:"cleared"`
-		}
-		if json.Unmarshal(data, &marker) != nil || !marker.Cleared {
-			t.Fatalf("resource custody remained dirty after exit: %s: %s", entry.Name(), data)
-		}
-	}
-	if wantLeases > 0 && leases != wantLeases || wantLeases == 0 && leases == 0 {
-		t.Fatalf("host resource leases = %d, want %d", leases, wantLeases)
-	}
-}
+// assertHostAdmissionClean is testutil.AssertHostAdmissionClean.
+var assertHostAdmissionClean = testutil.AssertHostAdmissionClean
 
 func waitForPublicRouteFile(t *testing.T, path string) {
 	waitForPublicRouteFileOrExit(t, path, nil, nil)
@@ -3433,7 +3404,7 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 	_, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestWorkerWithCandidateOpener([]string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", resultPath}, openCandidate, stdout, stderr)
 	})
-	result, err := readTestingWorkerResult(resultPath)
+	result, err := testrun.ReadWorkerResult(resultPath)
 	if err != nil {
 		t.Fatalf("worker did not persist its unsuccessful result: %v\nstderr=%s", err, stderr)
 	}
@@ -3494,7 +3465,7 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 	greenCode, _, greenStderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestWorkerWithCandidateOpener([]string{"--packet", greenPacketPath, "--packet-sha256", greenPacketDigest, "--result", greenResultPath}, openCandidate, stdout, stderr)
 	})
-	greenResult, err := readTestingWorkerResult(greenResultPath)
+	greenResult, err := testrun.ReadWorkerResult(greenResultPath)
 	if err != nil {
 		t.Fatalf("worker did not persist its all-pass operational result: %v\nstderr=%s", err, greenStderr)
 	}
@@ -3593,7 +3564,7 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 	legacyCode, _, legacyStderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestWorkerWithCandidateOpener([]string{"--packet", legacyPacketPath, "--packet-sha256", legacyPacketDigest, "--result", legacyResultPath}, openCandidate, stdout, stderr)
 	})
-	legacyResult, err := readTestingWorkerResult(legacyResultPath)
+	legacyResult, err := testrun.ReadWorkerResult(legacyResultPath)
 	if err != nil {
 		t.Fatalf("worker did not publish the later-stage retained-source failure: %v\nstderr=%s", err, legacyStderr)
 	}

@@ -72,6 +72,7 @@ var engineBindingStandardTests = []string{
 	"TestTestPlanReArmsOnALandedEngine",
 	"TestTestRunRearmsOnALandedEngine",
 	"TestTestingPlanAdoptsCandidateFallbackOnlyWhenBaseHasNone",
+	"TestTestingSelectionStartsAFreshPreparationState",
 	"TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback",
 	"TestTestingSelectionCarriesDeliveryAllGroupsOnlyForExecution",
 	"TestTestWorkerBuildIdentityCompatibilityDoorIsPolicyProbeOnly",
@@ -216,8 +217,11 @@ func TestEngineBindingWitnessInventory(t *testing.T) {
 	}
 	files := []string{
 		"cmd/metasystem/test_test.go",
-		"cmd/metasystem/rearm_on_landed_test.go",
-		"cmd/metasystem/engine_refusal_test.go",
+		"internal/testrun/rearm_test.go",
+		"internal/testrun/refusal_test.go",
+		"internal/testrun/prepare_test.go",
+		"internal/testrun/verify_test.go",
+		"internal/testrun/worker_test.go",
 		"cmd/metasystem/engine_inventory_test.go",
 		"internal/candidateengine/environment_test.go",
 		"internal/enginecause/cause_test.go",

@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	runpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 const (
@@ -40,13 +41,13 @@ type cadenceTickOutput struct {
 
 var cadenceTick = runProductionCadenceTick
 var cadenceBuildIdentity = candidateengine.BuildIdentity
-var cadenceRetainedEngineDigest = retainedCandidateEngineDigest
+var cadenceRetainedEngineDigest = testrun.RetainedCandidateEngineDigest
 
 type cadenceRevalidationDependencies struct {
-	prepare        func(testingSelectionRequest) (testingPreparation, error)
+	prepare        func(testrun.SelectionRequest) (testrun.Preparation, error)
 	readAttempts   func(string) ([]proofrun.Attempt, error)
 	buildIdentity  func(context.Context, gittree.Workspace, string, string, []string) (string, error)
-	retainedDigest func(testingPreparation, []proofrun.Attempt, string, bool) (string, error)
+	retainedDigest func(testrun.Preparation, []proofrun.Attempt, string, bool) (string, error)
 	openCandidate  func(projectRoot, candidateTree string) (proofrun.CandidateWorkspace, error)
 }
 
@@ -112,11 +113,11 @@ func runProductionCadenceTick(root string, held batchOwnerLease, clock func() ti
 	return cadenceTickOutput{Trunk: trunk, Tick: result}, err
 }
 
-func revalidateCadence(root string, prepared testingPreparation, trunk gaterun.CadenceTrunk, deepOnly []string) (gaterun.CadenceRevalidation, error) {
+func revalidateCadence(root string, prepared testrun.Preparation, trunk gaterun.CadenceTrunk, deepOnly []string) (gaterun.CadenceRevalidation, error) {
 	return revalidateCadenceWith(root, prepared, trunk, deepOnly, productionCadenceRevalidationDependencies())
 }
 
-func revalidateCadenceWith(root string, prepared testingPreparation, trunk gaterun.CadenceTrunk, deepOnly []string, dependencies cadenceRevalidationDependencies) (gaterun.CadenceRevalidation, error) {
+func revalidateCadenceWith(root string, prepared testrun.Preparation, trunk gaterun.CadenceTrunk, deepOnly []string, dependencies cadenceRevalidationDependencies) (gaterun.CadenceRevalidation, error) {
 	if prepared.CandidateTree != trunk.Tree {
 		var err error
 		prepared, err = dependencies.prepare(cadencePreparationRequest(root, trunk.Tree))
@@ -135,7 +136,7 @@ func revalidateCadenceWith(root string, prepared testingPreparation, trunk gater
 	if err != nil {
 		return gaterun.CadenceRevalidation{}, err
 	}
-	request := testingRunRequest(prepared, "", "", "", digest, buildIdentity)
+	request := testrun.RunRequest(prepared, "", "", "", digest, buildIdentity)
 	request.WithCandidateOpener(dependencies.openCandidate)
 	identities, err := proofrun.RevalidateRetainedGroupExecutionIdentities(context.Background(), request, attempts)
 	if err != nil {
@@ -159,8 +160,8 @@ func revalidateCadenceWith(root string, prepared testingPreparation, trunk gater
 	return gaterun.CadenceRevalidation{Groups: groups}, nil
 }
 
-func cadenceCandidateEngineIdentityWith(prepared testingPreparation, trunk gaterun.CadenceTrunk, attempts []proofrun.Attempt, dependencies cadenceRevalidationDependencies) (string, string, bool, error) {
-	environment := inheritedTestingEnvironment(prepared.Environment, os.Environ())
+func cadenceCandidateEngineIdentityWith(prepared testrun.Preparation, trunk gaterun.CadenceTrunk, attempts []proofrun.Attempt, dependencies cadenceRevalidationDependencies) (string, string, bool, error) {
+	environment := testrun.InheritedEnvironment(prepared.Environment, os.Environ())
 	buildIdentity, err := dependencies.buildIdentity(context.Background(), gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix, trunk.Tree, environment)
 	if err != nil {
 		return "", "", false, err
@@ -175,8 +176,8 @@ func cadenceCandidateEngineIdentityWith(prepared testingPreparation, trunk gater
 	return buildIdentity, bytesSHA256([]byte("cadence-missing-engine-evidence\x00" + buildIdentity)), false, nil
 }
 
-func cadencePreparationRequest(root, tree string) testingSelectionRequest {
-	return testingSelectionRequest{Root: root, Tree: tree, Mode: testpolicy.ModeDeep, Purpose: testpolicy.PurposeCadence, CadencePreflight: true}
+func cadencePreparationRequest(root, tree string) testrun.SelectionRequest {
+	return testrun.SelectionRequest{Root: root, Tree: tree, Mode: testpolicy.ModeDeep, Purpose: testpolicy.PurposeCadence, CadencePreflight: true}
 }
 
 func cadenceRequest(endpoint goal.Endpoint, actor goal.Actor, epoch int64, at time.Time) (goal.VerbRequest, error) {

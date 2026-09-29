@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // One run snapshots its environment once, at the first (metadata) binding;
@@ -31,7 +32,7 @@ func TestBindTestingScratchSnapshotsOnceAndCarriesTheDescriptor(t *testing.T) {
 	}
 	base := proofrun.TestRunRequest{Environment: []string{"GOENV=" + source}}
 	metadata, admitted, worker := base, base, base
-	if err := bindTestingScratch(&metadata, scratch, nil, nil); err != nil {
+	if err := testrun.BindScratch(&metadata, scratch, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	descriptor := metadata.ScratchEnvironment
@@ -50,10 +51,10 @@ func TestBindTestingScratchSnapshotsOnceAndCarriesTheDescriptor(t *testing.T) {
 	if err := os.WriteFile(source, []byte("GOFLAGS=-race\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := bindTestingScratch(&admitted, scratch, nil, descriptor); err != nil {
+	if err := testrun.BindScratch(&admitted, scratch, nil, descriptor); err != nil {
 		t.Fatal(err)
 	}
-	if err := bindTestingScratch(&worker, scratch, scratch.Locator(proofrun.ScratchWriterFD(nil)), descriptor); err != nil {
+	if err := testrun.BindScratch(&worker, scratch, scratch.Locator(proofrun.ScratchWriterFD(nil)), descriptor); err != nil {
 		t.Fatal(err)
 	}
 	if admitted.ScratchEnvironment != descriptor || worker.ScratchEnvironment != descriptor || worker.Scratch == nil {
@@ -71,7 +72,7 @@ func TestBindTestingScratchSnapshotsOnceAndCarriesTheDescriptor(t *testing.T) {
 		t.Fatal(err)
 	}
 	tampered := base
-	if err := bindTestingScratch(&tampered, scratch, nil, descriptor); err == nil {
+	if err := testrun.BindScratch(&tampered, scratch, nil, descriptor); err == nil {
 		t.Fatal("a changed snapshot was accepted")
 	}
 }
@@ -86,8 +87,8 @@ func TestVerifyIdentityProjectionUsesTheVerificationScratchRun(t *testing.T) {
 	if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	prepared := testingPreparation{ControlRoot: root, ProjectRoot: root, ConfPath: conf, CandidateTree: strings.Repeat("a", 40),
-		Environment: testingEnvironment(os.Environ())}
+	prepared := testrun.Preparation{ControlRoot: root, ProjectRoot: root, ConfPath: conf, CandidateTree: strings.Repeat("a", 40),
+		Environment: testrun.Environment(os.Environ())}
 	interrupted := errors.New("interrupted verification")
 	observe := func(scratch *proofrun.ScratchRun) (string, *exec.Cmd) {
 		t.Helper()
@@ -102,8 +103,8 @@ func TestVerifyIdentityProjectionUsesTheVerificationScratchRun(t *testing.T) {
 			command = c
 			return interrupted
 		}}
-		_, err := verifyRetainedTestingPrepared(testingSelectionRequest{}, prepared, retainedTestingVerification{
-			clock: time.Now, workspace: gittree.Workspace{Dir: root}, candidateIO: io, scratch: scratch})
+		_, err := testrun.VerifyPrepared(testrun.SelectionRequest{}, prepared, testrun.Verification{
+			Clock: time.Now, Workspace: gittree.Workspace{Dir: root}, CandidateIO: io.engine(), Scratch: scratch, WorkerPolicy: testingWorkerPolicy})
 		if !errors.Is(err, interrupted) || command == nil {
 			t.Fatalf("verify did not reach the identity projection: %v", err)
 		}

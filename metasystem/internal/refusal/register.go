@@ -47,7 +47,7 @@ type Prose struct {
 type Defect struct{ Code, Why string }
 
 var Rows = []Row{
-	{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Owner: "cmd/metasystem", Site: "test.go#errTestingWorkerPolicyUnsupported", Shape: Question, H1: StandingInput},
+	{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Owner: "internal/testrun", Site: "worker.go#ErrWorkerPolicyUnsupported", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go#Manager.Supervise", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_SETTING_INVALID", Owner: "internal/launch", Site: "settings.go#resolveSettings", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_BRIEF_OVERSIZE", Owner: "internal/launch", Site: "admit.go#Manager.admit", Shape: Question, H1: StandingInput},
@@ -294,7 +294,7 @@ var Rows = []Row{
 	{Code: "RETRY_PRIOR_OUTSIDE_TREE", Owner: "internal/proofrun", Site: "attempt.go#readRetryDecision", Shape: Question, H1: StandingInput},
 	{Code: "ADMISSION_OVERLAP_UNKNOWN", Owner: "internal/proofrun", Site: "admission.go#AdmissionCap.RefusalReason", Shape: Question, H1: StandingInput},
 	{Code: "ADMISSION_NESTING_UNKNOWN", Owner: "internal/proofrun", Site: "admission.go#AdmissionCap.RefusalReason", Shape: Question, H1: StandingInput},
-	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "cmd/metasystem", Site: "test.go#protectCoverageRatchets", Shape: Question, H1: StandingGuide, Forward: "test run"},
+	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "internal/testrun", Site: "prepare.go#protectCoverageRatchets", Shape: Question, H1: StandingGuide, Forward: "test run"},
 	{Code: "TESTING_MERGE_CONFLICT", Owner: "internal/testpolicy/contractmerge", Site: "merge.go#conflict", Shape: Question, H1: StandingInput},
 	{Code: "TESTING_CONTRACT_INVALID", Owner: "internal/testpolicy/contractmerge", Site: "merge.go#invalid", Shape: Question, H1: StandingInput},
 	{Code: "TESTING_ADD_TESTS_REFUSED", Owner: "internal/testpolicy/contractmerge", Site: "addtests.go#addTestsRefusal", Shape: Question, H1: StandingInput},

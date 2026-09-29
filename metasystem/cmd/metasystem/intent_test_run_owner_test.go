@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // TestIntentTestRunRunsTheTestingRunnerInThisProcess is the U9a witness that
@@ -73,7 +74,7 @@ func TestProofAdmissionClassifiesTheSuppliedCaller(t *testing.T) {
 	if want := []int64{int64(os.Getpid()), int64(os.Getppid())}; !slices.Equal(classified, want) {
 		t.Fatalf("classified %v, want %v", classified, want)
 	}
-	if got := (testingSelectionRequest{CallerPID: 42}).callerPID(); got != 42 {
+	if got := (testrun.SelectionRequest{CallerPID: 42}).EffectiveCallerPID(); got != 42 {
 		t.Fatalf("the selection request's supplied caller = %d", got)
 	}
 }

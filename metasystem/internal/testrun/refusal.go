@@ -1,4 +1,4 @@
-package main
+package testrun
 
 import (
 	"errors"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -22,7 +23,7 @@ func engineCheckoutFacts(checkout string) []enginecause.Fact {
 	return []enginecause.Fact{enginecause.Path("checkout", checkout)}
 }
 
-func linkedWorktreeMainCheckout(installation string) (string, bool) {
+func LinkedWorktreeMainCheckout(installation string) (string, bool) {
 	read := func(option string) string {
 		command := exec.Command("git", "-C", installation, "rev-parse", "--path-format=absolute", option)
 		command.Env = gittree.ScrubbedEnviron()
@@ -44,7 +45,7 @@ func linkedWorktreeMainCheckout(installation string) (string, bool) {
 // subdirectory. Callers try the installation's own enrollment first: a proof
 // worktree may carry one, while a batch tree worktree borrows its checkout's.
 func linkedEnrollmentRoot(installation string) (string, bool) {
-	mainCheckout, linked := linkedWorktreeMainCheckout(installation)
+	mainCheckout, linked := LinkedWorktreeMainCheckout(installation)
 	if !linked {
 		return "", false
 	}
@@ -66,7 +67,7 @@ func linkedEnrollmentRoot(installation string) (string, bool) {
 }
 
 func linkedWorktreeMainInstallation(installation string) (string, bool) {
-	main, linked := linkedWorktreeMainCheckout(installation)
+	main, linked := LinkedWorktreeMainCheckout(installation)
 	if !linked {
 		return "", false
 	}
@@ -80,7 +81,7 @@ func linkedWorktreeMainInstallation(installation string) (string, bool) {
 }
 
 func batchPrefixProofControlRoot(installation, requested string) (string, error) {
-	controlRoot, err := canonicalProofRoot(requested)
+	controlRoot, err := realpath.Canonical(requested)
 	if err != nil {
 		return "", fmt.Errorf("resolve batch prefix proof control root: %w", err)
 	}
@@ -107,7 +108,7 @@ func gitOwnership(root string) (commonDir, prefix string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	commonDir, err = canonicalProofRoot(commonDir)
+	commonDir, err = realpath.Canonical(commonDir)
 	if err != nil {
 		return "", "", err
 	}
@@ -117,7 +118,7 @@ func gitOwnership(root string) (commonDir, prefix string, err error) {
 
 func enrollmentRefusal(installation string, cause error) error {
 	facts := engineCheckoutFacts(installation)
-	if checkout, linked := linkedWorktreeMainCheckout(installation); linked {
+	if checkout, linked := LinkedWorktreeMainCheckout(installation); linked {
 		facts = append(facts, enginecause.Path("linked-worktree", checkout))
 	}
 	return engineRefusal("not-enrolled", facts, fmt.Sprintf("retained destination engine is not authenticated: %v", cause))
@@ -137,7 +138,7 @@ func judgmentRefusal(cause error, facts []enginecause.Fact, detail string) error
 	return engineRefusal(token, facts, detail+": "+cause.Error())
 }
 
-func decisionMismatchRefusal(candidateTree, policyBaseCommit, baseContractDigest string, decision testingPlanOutput) error {
+func decisionMismatchRefusal(candidateTree, policyBaseCommit, baseContractDigest string, decision PlanOutput) error {
 	fields := []struct{ name, ours, engine string }{
 		{"candidate-tree", candidateTree, decision.CandidateTree},
 		{"policy-base-commit", policyBaseCommit, decision.PolicyBaseCommit},

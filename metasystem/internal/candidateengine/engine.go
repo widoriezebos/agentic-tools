@@ -301,7 +301,7 @@ func prepareScratch(ctx context.Context, scratch *proofrun.ScratchRun, controlRo
 	if err := CopyArtifact(source.Path, private); err != nil {
 		return nil, fmt.Errorf("copy candidate engine into the run: %w", err)
 	}
-	if digest, err := digest.FileSHA256(private); err != nil || digest != source.Digest {
+	if sum, err := digest.FileSHA256(private); err != nil || sum != source.Digest {
 		return nil, fmt.Errorf("candidate engine copy failed validation: %v", err)
 	}
 	if entry != filepath.Join(cacheRoot, buildIdentity) {
@@ -404,11 +404,11 @@ func validated(entry, buildIdentity string) *Engine {
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
 		return nil
 	}
-	digest, err := digest.FileSHA256(path)
-	if err != nil || digest != record.Digest {
+	sum, err := digest.FileSHA256(path)
+	if err != nil || sum != record.Digest {
 		return nil
 	}
-	return &Engine{Path: path, Digest: digest, Commit: buildIdentity}
+	return &Engine{Path: path, Digest: sum, Commit: buildIdentity}
 }
 
 // CopyArtifact copies an engine executable to a new read-and-execute-only

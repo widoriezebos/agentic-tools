@@ -13,9 +13,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
-
-var errRetainedCandidateEngineAbsent = errors.New("candidate engine digest is absent from retained evidence")
 
 type costSelection struct {
 	ID, Kind, Tree, GoalID string
@@ -48,7 +47,7 @@ func forecastTestingSelection(root string, selection costSelection, proofCapMinu
 	}
 	defer func() { err = errors.Join(err, detached.Close()) }()
 	executionRoot := batch.ModuleRoot(detached.Workspace().Dir)
-	request := testingSelectionRequest{Root: executionRoot, ControlRoot: batch.ModuleRoot(root), GoalID: selection.GoalID,
+	request := testrun.SelectionRequest{Root: executionRoot, ControlRoot: batch.ModuleRoot(root), GoalID: selection.GoalID,
 		Tree: selection.Tree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
 		BatchPrefixReceipt: !selection.Admission, BatchAdmission: selection.Admission,
 		BatchRequirements: slices.Clone(selection.Requirements), FreshEpisode: selection.FreshEpisode,
@@ -57,13 +56,13 @@ func forecastTestingSelection(root string, selection costSelection, proofCapMinu
 	if err != nil {
 		return costSelectionEvidence{}, err
 	}
-	commandClock, _, err := goalCommandClock(prepared.proofControlRoot())
+	commandClock, _, err := goalCommandClock(prepared.ProofControlRoot())
 	if err != nil {
 		return costSelectionEvidence{}, err
 	}
 	// Revalidation materializes the candidate and a managed environment like
 	// test verify does, so it owns a fresh scratch run for exactly that long.
-	scratch, err := proofrun.CreateScratchRun(prepared.proofControlRoot())
+	scratch, err := proofrun.CreateScratchRun(prepared.ProofControlRoot())
 	if err != nil {
 		return costSelectionEvidence{}, fmt.Errorf("scratch root: %w", err)
 	}
@@ -77,13 +76,13 @@ func forecastTestingSelection(root string, selection costSelection, proofCapMinu
 	return evidence, forecastErr
 }
 
-func forecastTestingSelectionPrepared(selection costSelection, proofCapMinutes uint64, request testingSelectionRequest,
-	prepared testingPreparation, dependencies forecastTestingDependencies) (costSelectionEvidence, error) {
+func forecastTestingSelectionPrepared(selection costSelection, proofCapMinutes uint64, request testrun.SelectionRequest,
+	prepared testrun.Preparation, dependencies forecastTestingDependencies) (costSelectionEvidence, error) {
 	semanticNow := dependencies.now()
 	if _, err := resolveTestingPreparationWorkerPolicy(&prepared); err != nil {
 		return costSelectionEvidence{}, err
 	}
-	attempts, err := proofrun.ReadAttempts(prepared.proofControlRoot())
+	attempts, err := proofrun.ReadAttempts(prepared.ProofControlRoot())
 	if err != nil {
 		return costSelectionEvidence{}, err
 	}
@@ -95,25 +94,25 @@ func forecastTestingSelectionPrepared(selection costSelection, proofCapMinutes u
 	if err != nil {
 		return costSelectionEvidence{}, err
 	}
-	engineDigest, err := retainedCandidateEngineDigest(prepared, attempts, buildIdentity, false)
+	engineDigest, err := testrun.RetainedCandidateEngineDigest(prepared, attempts, buildIdentity, false)
 	engineKnown := err == nil
-	if err != nil && !errors.Is(err, errRetainedCandidateEngineAbsent) {
+	if err != nil && !errors.Is(err, testrun.ErrRetainedCandidateEngineAbsent) {
 		return costSelectionEvidence{}, err
 	}
-	run := testingRunRequest(prepared, "", "", "", engineDigest, buildIdentity)
+	run := testrun.RunRequest(prepared, "", "", "", engineDigest, buildIdentity)
 	run.WithCandidateOpener(dependencies.openCandidate)
 	if dependencies.scratch != nil {
 		// A managed run's retained environment digest names its scratch
 		// paths as stable tokens; only a prepared descriptor reproduces it.
-		if err := prepareTestingScratch(ctx, &run, dependencies.scratch, prepared); err != nil {
+		if err := testrun.PrepareScratch(ctx, &run, dependencies.scratch, prepared); err != nil {
 			return costSelectionEvidence{}, err
 		}
 	}
 	run.FreshnessEpisode, run.FreshnessExpiresAt = selection.FreshEpisode, selection.FreshExpiresAt
-	freshGroups, _ := testingFreshGroups(prepared, request)
+	freshGroups, _ := testrun.FreshGroups(prepared, request)
 	run.FreshGroups = freshGroups
 	if selection.FreshEpisode != "" {
-		if err := bindTestingFreshnessProjectionWithWorkspace(&run, prepared.Installation, dependencies.workspace); err != nil {
+		if err := testrun.BindFreshnessProjectionWithWorkspace(&run, prepared.Installation, dependencies.workspace); err != nil {
 			return costSelectionEvidence{}, err
 		}
 	}
@@ -131,7 +130,7 @@ func forecastTestingSelectionPrepared(selection costSelection, proofCapMinutes u
 			identities[id] = fact.Identity
 		}
 	}
-	run.FreshnessBinding = testingFreshnessBinding(run, identities, selection.FreshEpisode)
+	run.FreshnessBinding = testrun.FreshnessBinding(run, identities, selection.FreshEpisode)
 	template := proofrun.NewTestResultAt(run, semanticNow)
 	reused := proofrun.ReusedTestResult(template, attempts, identities, prepared.EffectiveContract)
 	evidence := costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,

@@ -1,4 +1,4 @@
-package main
+package testrun
 
 import (
 	"bytes"
@@ -72,9 +72,9 @@ type landedRearmDecision struct {
 	Refusal string
 }
 
-// devgateBootstrapBuildArgv is the engine's own bootstrap build of an
+// DevgateBootstrapBuildArgv is the engine's own bootstrap build of an
 // installation: the devgate compile is trimmed like the build it runs.
-func devgateBootstrapBuildArgv() []string {
+func DevgateBootstrapBuildArgv() []string {
 	return []string{"go", "run", "-trimpath", "./cmd/devgate", "build"}
 }
 
@@ -213,7 +213,7 @@ func fetchLandingRef(ctx context.Context, clock steward.RearmClock, seconds int,
 	return err
 }
 
-// dirtyEnginePaths lists the paths changed against HEAD (index or working
+// DirtyEnginePaths lists the paths changed against HEAD (index or working
 // tree) or untracked that the behavior-surface policy classifies as ENGINE,
 // top-relative under the installation prefix: the same classification
 // bootstrap build (cmd/devgate) applies before it stamps a build dirty.
@@ -248,7 +248,7 @@ func dirtyCheckoutPaths(ctx context.Context, clock steward.RearmClock, seconds i
 	return dirty, nil
 }
 
-func dirtyEnginePaths(ctx context.Context, clock steward.RearmClock, seconds int, installation, prefix string) ([]string, error) {
+func DirtyEnginePaths(ctx context.Context, clock steward.RearmClock, seconds int, installation, prefix string) ([]string, error) {
 	policy, err := behaviorsurface.Load()
 	if err != nil {
 		return nil, err
@@ -316,7 +316,7 @@ var (
 		}
 		return false, err
 	}
-	landedRearmDirty    = dirtyEnginePaths
+	landedRearmDirty    = DirtyEnginePaths
 	landedRearmBlockers = dirtyBlockingPaths
 	landedRearmAttempts = proofrun.ReadAttempts
 )
@@ -398,7 +398,7 @@ var (
 		}
 		defer lease.Close()
 		fmt.Fprintf(os.Stderr, "metasystem test run: landed engine rebuild host queue=%dms\n", lease.Waited().Milliseconds())
-		argv := devgateBootstrapBuildArgv()
+		argv := DevgateBootstrapBuildArgv()
 		command := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		command.Dir = installation
 		environment, err := cachedomain.Carry(os.Environ(), installation)
@@ -419,14 +419,14 @@ var (
 	// not this process's older copy, and the options are exactly what a
 	// person's `metasystem up --repo` would build from this shell. The
 	// result line is returned as up printed it.
-	landedRearmUp = func(ctx context.Context, installation, projectRoot string) (upOutcome, error) {
+	landedRearmUp = func(ctx context.Context, installation, projectRoot string) (UpOutcome, error) {
 		command := exec.CommandContext(ctx, filepath.Join(installation, "bin", "metasystem"), "up", "--repo", projectRoot)
 		command.Dir = installation
 		command.Env = os.Environ()
 		out, err := command.CombinedOutput()
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 		last := strings.TrimSpace(lines[len(lines)-1])
-		outcome := upOutcome{Line: last, Failed: err != nil}
+		outcome := UpOutcome{Line: last, Failed: err != nil}
 		if match := upOutcomeField.FindStringSubmatch(last); match != nil {
 			outcome.Outcome = match[1]
 		}
@@ -451,12 +451,24 @@ var (
 	}
 )
 
+// RebuildLandedEngine is the re-arm's rebuild of the engine at installation,
+// admitted as heavy host work.
+func RebuildLandedEngine(ctx context.Context, installation string) error {
+	return landedRearmRebuild(ctx, installation)
+}
+
+// UpLandedEngine runs the rebuilt engine's own up for projectRoot and
+// returns what it said.
+func UpLandedEngine(ctx context.Context, installation, projectRoot string) (UpOutcome, error) {
+	return landedRearmUp(ctx, installation, projectRoot)
+}
+
 // engineRearmEnv carries the record of a re-arm across the re-exec, and is
 // the loop guard: a run that finds it never re-arms again.
 const engineRearmEnv = "METASYSTEM_ENGINE_REARM"
 
-// upOutcome is what the rebuilt engine's up said, as it said it.
-type upOutcome struct {
+// UpOutcome is what the rebuilt engine's up said, as it said it.
+type UpOutcome struct {
 	Line    string
 	Outcome string
 	Failed  bool
@@ -552,7 +564,7 @@ var landedRearmOpenEnrollment = func(installation string) (steward.InstallIdenti
 	return pinned.Install, nil
 }
 
-// landedRearm is the step prepareTesting takes before it captures the
+// landedRearm is the step Prepare takes before it captures the
 // candidate and resolves the policy base. It returns the record of a re-arm
 // it performed (nil when the enrolled engine already owned the tip) and the
 // index tree as it stood before any fast-forward, so a delivery run that

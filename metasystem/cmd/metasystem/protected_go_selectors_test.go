@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 const (
@@ -204,12 +205,12 @@ func TestGoalLandingGoExpansionCoversPriorChangedAndConsumers(t *testing.T) {
 		t.Fatalf("base identity changed: %+v vs %+v", base, again)
 	}
 	plan := testpolicy.Plan{SelectedGroups: []string{base.ID}}
-	declarations, err := testingRelevantInputs("metasystem/", "testing.json", expanded, plan)
+	declarations, err := testrun.RelevantInputs("metasystem/", "testing.json", expanded, plan)
 	if err != nil || !slices.Contains(declarations, "metasystem/base/**") {
 		t.Fatalf("selected inputs: %v err=%v", declarations, err)
 	}
 	fact := &deliverySnapshotFact{t: t, candidate: protectedCandidate, declarations: declarations, tree: "working-tree", wantCalls: 1}
-	err = checkDeliveryInputParityWith(protectedCandidate, "metasystem/", "testing.json", expanded, plan, fact.snapshot)
+	err = testrun.CheckDeliveryInputParity(protectedCandidate, "metasystem/", "testing.json", expanded, plan, fact.snapshot)
 	fact.assertConsumed()
 	if err == nil || !strings.Contains(err.Error(), "delivery candidate differs from relevant working-tree inputs") {
 		t.Fatalf("mismatched selected inputs accepted: %v", err)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 const weightThresholdKey = "validation.weight-threshold"
@@ -48,7 +49,7 @@ func goalWeightScale(root, goalID string) int64 {
 	if goalID == "" {
 		return 1
 	}
-	risk, _, err := testingGoalRisk(root, goalID)
+	risk, _, err := testrun.GoalRisk(root, goalID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "validation weight: goal %s risk not read (%v); the landing weighs unscaled\n", goalID, err)
 		return 1

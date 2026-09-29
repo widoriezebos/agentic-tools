@@ -30,6 +30,7 @@ import (
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -1496,7 +1497,7 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 	}
 	// The testing contract the settings name is validated with its declared
 	// tools; no test runs and no native discovery takes the host's lease.
-	path, groups, err := testingContractReady(root, false)
+	path, groups, err := testrun.ContractReady(root, false)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root},
 			Summary: "the settings of " + root + " are valid, but the testing contract is not: " + err.Error()})

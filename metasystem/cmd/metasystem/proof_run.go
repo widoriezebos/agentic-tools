@@ -31,8 +31,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	runpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 var legacyProofFenceRead = stopfence.Read
@@ -606,17 +608,7 @@ func proofDeadlineContext(parent context.Context, deadline time.Time, fixtureClo
 	return context.WithDeadline(parent, deadline)
 }
 
-func canonicalProofRoot(path string) (string, error) {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	resolved, err := filepath.EvalSymlinks(absolute)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Clean(resolved), nil
-}
+func canonicalProofRoot(path string) (string, error) { return realpath.Canonical(path) }
 
 type proofGoalRoles struct {
 	Candidate         *goal.GoalFile
@@ -1348,47 +1340,7 @@ func uniqueActiveProofGoal(root string, now time.Time) (string, error) {
 }
 
 func uniqueActiveProofGoalWithReads(root string, now time.Time, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error)) (string, error) {
-	machine, err := resolveMachine(root)
-	if err != nil {
-		return "", err
-	}
-	endpoint, err := resolveEndpoint(root)
-	if err != nil {
-		return "", err
-	}
-	projection, err := goal.Project(endpoint, false, now)
-	if err != nil {
-		return "", fmt.Errorf("resolve active claimed goal for proof: %w", err)
-	}
-	if projection.Tree == nil {
-		return "", fmt.Errorf("resolve active claimed goal for proof: accepted goal projection is empty")
-	}
-	selected := ""
-	fenced := make([]*goal.GoalFile, 0)
-	for _, id := range goal.OrderedOpenGoalIDs(projection.Tree.Live) {
-		file := projection.Tree.Live[id]
-		if file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Machine != machine {
-			continue
-		}
-		if file.IsFencedClaim() {
-			fenced = append(fenced, file)
-			continue
-		}
-		if selected != "" {
-			return "", fmt.Errorf("proof accounting is ambiguous: machine %s has multiple claimed goals; pass --goal", machine)
-		}
-		selected = id
-	}
-	if selected == "" {
-		if len(fenced) == 1 {
-			return "", fmt.Errorf(
-				"proof accounting has no live claimed goal for machine %s; the only claim here is breach-stopped: %s (stop %s); pass --goal",
-				machine, fenced[0].Id, fenced[0].StopFence.StopID,
-			)
-		}
-		return "", fmt.Errorf("proof accounting is ambiguous: machine %s has no claimed goal; pass --goal", machine)
-	}
-	return selected, nil
+	return testrun.UniqueActiveProofGoal(root, now, resolveMachine, resolveEndpoint)
 }
 
 func commitProofTerminal(completion proofrun.CompletionContext, receipt json.RawMessage) error {

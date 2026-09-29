@@ -1,4 +1,4 @@
-package main
+package testrun
 
 import (
 	"context"
@@ -17,8 +17,11 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestLandedRearmDecidesFromTheThreeFacts(t *testing.T) {
@@ -80,9 +83,11 @@ func TestLandedRearmRebuildWaitsForHostSlotAndClearsCustody(t *testing.T) {
 	if err := testexec.WriteFile(script, []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'built\\n' > build-ran\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	writeFixtureDevgate(t, installation)
+	if err := testutil.WriteFixtureDevgate(installation); err != nil {
+		t.Fatal(err)
+	}
 	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-o", engine, ".")
+	build := exec.Command("go", "build", "-o", engine, filepath.Join("..", "..", "cmd", "metasystem"))
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build rebuild custodian: %v\n%s", err, output)
 	}
@@ -108,7 +113,7 @@ func TestLandedRearmRebuildWaitsForHostSlotAndClearsCustody(t *testing.T) {
 		t.Fatalf("rebuild ran before host admission: %v", err)
 	}
 	// The blocked rebuild created no second lease; the first remains held.
-	assertHostAdmissionClean(t, admissionDir, 1)
+	testutil.AssertHostAdmissionClean(t, admissionDir, 1)
 	firstMarker := ""
 	for _, file := range lease.Files() {
 		if strings.HasPrefix(filepath.Base(file.Name()), "lease-heavy-") {
@@ -132,7 +137,7 @@ func TestLandedRearmRebuildWaitsForHostSlotAndClearsCustody(t *testing.T) {
 	if _, err := os.Stat(firstMarker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("clean first custody marker was not reclaimed: %v", err)
 	}
-	assertHostAdmissionClean(t, admissionDir, 1)
+	testutil.AssertHostAdmissionClean(t, admissionDir, 1)
 }
 
 type landedRearmFixture struct {
@@ -342,7 +347,7 @@ func landedAncestryResponses(projectRoot, installation, head, tip string, status
 // then lands a commit that changes an engine input (a fake landing).
 func newLandedRearmFixture(t *testing.T) landedRearmFixture {
 	t.Helper()
-	root, err := canonicalPath(t.TempDir())
+	root, err := realpath.Canonical(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -617,11 +622,11 @@ func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 	var rebuiltIn, upInstallation, upScope string
 	locked := 0
 	previousFastForward, previousRebuild, previousUp, previousOpen, previousLock := landedRearmFastForward, landedRearmRebuild, landedRearmUp, landedRearmOpenEnrollment, landedRearmMutationLock
-	upResult := upOutcome{Line: "up outcome=armed authority=writer re-armed=\"generation=2 previous=1\"", Outcome: "armed"}
+	upResult := UpOutcome{Line: "up outcome=armed authority=writer re-armed=\"generation=2 previous=1\"", Outcome: "armed"}
 	var upErr error
 	enrolledGeneration := 2
 	landedRearmRebuild = func(_ context.Context, installation string) error { rebuiltIn = installation; return nil }
-	landedRearmUp = func(_ context.Context, installation, projectRoot string) (upOutcome, error) {
+	landedRearmUp = func(_ context.Context, installation, projectRoot string) (UpOutcome, error) {
 		upInstallation, upScope = installation, projectRoot
 		return upResult, upErr
 	}
@@ -656,7 +661,7 @@ func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 	}
 	// up mints first and proves the session after: a detached run gets a
 	// failed up over an enrollment that did advance, and continues on it.
-	upResult = upOutcome{Line: "up outcome=failed failed=session-identity remedy=no runtime ancestor", Outcome: "failed", Failed: true}
+	upResult = UpOutcome{Line: "up outcome=failed failed=session-identity remedy=no runtime ancestor", Outcome: "failed", Failed: true}
 	upErr = errors.New("bin/metasystem up --repo x: exit status 1: no runtime ancestor")
 	enrolledGeneration = 3
 	record, err = landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 2)
@@ -887,5 +892,5 @@ func TestLandedRearmRefusesAStalledTipCompareByName(t *testing.T) {
 // landedRearmCommand is the manual remedy a refused re-arm names: rebuild,
 // then start the session again on the checkout.
 func landedRearmCommand(checkout string) string {
-	return "go run ./cmd/devgate build && bin/metasystem session start --repo " + shellQuote(checkout)
+	return "go run ./cmd/devgate build && bin/metasystem session start --repo " + shellquote.Quote(checkout)
 }

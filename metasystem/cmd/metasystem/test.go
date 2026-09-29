@@ -1,10 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -14,102 +11,23 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	pathpkg "path"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
-
-type testingPreparation struct {
-	Installation, ControlRoot, ProjectRoot, Prefix, ConfPath string
-	GoalID                                                   string
-	AccountingRevision                                       uint64
-	BaseCommit, PolicyBaseCommit, CandidateTree              string
-	CandidateContract, BaseContract                          testpolicy.Contract
-	EffectiveContract                                        testpolicy.Contract
-	ContractDigest, BaseContractDigest                       string
-	PolicyEngineDigest, BehaviorPolicyDigest                 string
-	JudgeKey                                                 string
-	EngineRearm                                              *proofrun.EngineRearm
-	PolicyEngine                                             string
-	FirstTestingTransition                                   bool
-	Plan                                                     testpolicy.Plan
-	Environment                                              []string
-	AllGroups                                                bool
-	AppAddress                                               string
-	Workers, AdmissionMaximum                                int
-	WorkerCapabilitiesChecked                                bool
-	WorkerScratchPolicies                                    []string
-	WorkerResultSchemas                                      []int
-	UnmatchedInputs                                          []testingUnmatchedInput
-}
-
-type testingUnmatchedInput struct {
-	Group   string `json:"group"`
-	Pattern string `json:"pattern"`
-}
-
-type testingPlanOutput struct {
-	SchemaVersion      int                     `json:"schemaVersion"`
-	ProjectRoot        string                  `json:"projectRoot"`
-	InstallationPrefix string                  `json:"installationPrefix"`
-	BaseCommit         string                  `json:"baseCommit"`
-	PolicyBaseCommit   string                  `json:"policyBaseCommit"`
-	CandidateTree      string                  `json:"candidateTree"`
-	ContractDigest     string                  `json:"contractDigest"`
-	BaseContractDigest string                  `json:"baseContractDigest"`
-	Plan               testpolicy.Plan         `json:"plan"`
-	Groups             []testpolicy.Group      `json:"groups"`
-	UnmatchedInputs    []testingUnmatchedInput `json:"unmatchedInputs,omitempty"`
-}
-
-const testWorkerProtocol = "metasystem.test-worker"
-
-var errTestingWorkerPolicyUnsupported = errors.New("TEST_WORKER_POLICY_UNSUPPORTED")
-
-type testingWorkerCapabilities struct {
-	SchemaVersion                 int    `json:"schemaVersion"`
-	Protocol                      string `json:"protocol"`
-	ProtocolVersion               int    `json:"protocolVersion"`
-	TestResultSchemaVersion       int    `json:"testResultSchemaVersion"`
-	GroupExecutionIdentityVersion int    `json:"groupExecutionIdentityVersion"`
-	WorkerPolicyVersion           int    `json:"workerPolicyVersion"`
-	// ScratchEnvironmentPolicies are the descriptor policies the worker reads;
-	// absent means v1 only.
-	ScratchEnvironmentPolicies []string `json:"scratchEnvironmentPolicies,omitempty"`
-	// TestResultSchemaVersions are the result schemas the worker writes on
-	// request; absent means testResultSchemaVersion only. The compared
-	// testResultSchemaVersion stays the worker-policy schema, so a frontend
-	// that predates the list still talks to this worker (and gets that schema).
-	TestResultSchemaVersions []int `json:"testResultSchemaVersions,omitempty"`
-}
-
-func currentTestingWorkerCapabilities() testingWorkerCapabilities {
-	return testingWorkerCapabilities{SchemaVersion: 1, Protocol: testWorkerProtocol,
-		ProtocolVersion: proofrun.TestWorkerProtocolVersion, TestResultSchemaVersion: proofrun.WorkerPolicyTestResultSchemaVersion,
-		TestResultSchemaVersions:      proofrun.TestResultSchemaVersions,
-		GroupExecutionIdentityVersion: proofrun.GroupExecutionIdentityVersion, WorkerPolicyVersion: proofrun.TestWorkerPolicyVersion,
-		ScratchEnvironmentPolicies: proofrun.ScratchEnvironmentPolicies}
-}
 
 func runTestWorkerCapabilities(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
@@ -119,50 +37,11 @@ func runTestWorkerCapabilities(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: metasystem internal test worker-capabilities")
 		return 2
 	}
-	if err := writeTestingWorkerCapabilities(stdout); err != nil {
+	if err := testrun.WriteWorkerCapabilities(stdout); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
 	return 0
-}
-
-func writeTestingWorkerCapabilities(writer io.Writer) error {
-	return json.NewEncoder(writer).Encode(currentTestingWorkerCapabilities())
-}
-
-// requireTestingWorkerCapabilities refuses a worker whose six known
-// capabilities differ from this frontend's and answers what it reports. A
-// field this frontend does not know is tolerated, so a newer worker may
-// advertise more (scratch environment policies) without being refused.
-func requireTestingWorkerCapabilities(ctx context.Context, engine string, environment []string) (testingWorkerCapabilities, error) {
-	command := exec.CommandContext(ctx, engine, "test", "worker-capabilities")
-	command.Env = testingEnvironment(environment)
-	data, err := command.CombinedOutput()
-	if err != nil {
-		return testingWorkerCapabilities{}, fmt.Errorf("%w: trusted destination engine %q does not support test worker protocol %d (%v: %s); stage, prove, and install the backend compatibility release matching this frontend first", errTestingWorkerPolicyUnsupported,
-			engine, proofrun.TestWorkerProtocolVersion, err, strings.TrimSpace(string(data)))
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	var capabilities testingWorkerCapabilities
-	if err := decoder.Decode(&capabilities); err != nil {
-		return testingWorkerCapabilities{}, fmt.Errorf("%w: trusted destination engine %q returned malformed worker capabilities: %v; stage, prove, and install the backend compatibility release first", errTestingWorkerPolicyUnsupported, engine, err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return testingWorkerCapabilities{}, fmt.Errorf("%w: trusted destination engine %q returned trailing worker capability data; stage, prove, and install the backend compatibility release first", errTestingWorkerPolicyUnsupported, engine)
-	}
-	want := currentTestingWorkerCapabilities()
-	if !sameKnownTestingWorkerCapabilities(capabilities, want) {
-		return testingWorkerCapabilities{}, fmt.Errorf("%w: trusted destination engine %q reports incompatible worker capabilities %+v, require %+v; stage, prove, and install the matching backend compatibility release first",
-			errTestingWorkerPolicyUnsupported, engine, capabilities, want)
-	}
-	return capabilities, nil
-}
-
-func (prepared testingPreparation) proofControlRoot() string {
-	if prepared.ControlRoot != "" {
-		return prepared.ControlRoot
-	}
-	return prepared.Installation
 }
 
 func runTestList(args []string, stdout, stderr io.Writer) int {
@@ -173,7 +52,7 @@ func runTestList(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "metasystem test list --help shows its forms and options")
 		return 2
 	}
-	installation, contract, path, err := loadPhysicalTestingContract(*root)
+	installation, contract, path, err := testrun.LoadContract(*root)
 	if err != nil {
 		if _, statErr := os.Stat(*root); errors.Is(statErr, fs.ErrNotExist) {
 			fmt.Fprintf(stderr, "metasystem test list: %s does not exist; nothing was listed\n", *root)
@@ -190,36 +69,6 @@ func runTestList(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "%s\t%s\t%s\n", group.ID, group.Kind, group.Adapter)
 	}
 	return 0
-}
-
-// testingContractReady validates the committed testing contract and its
-// declared tools without running a test; with discovery it also resolves
-// every group's native tests under the host's heavy resource lease.
-func testingContractReady(root string, discovery bool) (string, int, error) {
-	installation, contract, path, err := loadPhysicalTestingContract(root)
-	if err != nil {
-		return "", 0, err
-	}
-	projectRoot, err := (gittree.Workspace{Dir: installation}).TopLevel()
-	if err == nil {
-		err = checkTestingTools(projectRoot, contract)
-	}
-	if err == nil && discovery {
-		ctx := context.Background()
-		lease, leaseErr := proofrun.AcquireHostResources(ctx, installation,
-			filepath.Join(installation, "metasystem.conf"), "heavy", nil)
-		if leaseErr != nil {
-			err = leaseErr
-		} else {
-			err = proofrun.CheckNativeDiscovery(proofrun.WithHostResourceLease(ctx, lease), projectRoot, installation, contract,
-				testingEnvironment(os.Environ()))
-			err = errors.Join(err, lease.Close())
-		}
-	}
-	if err != nil {
-		return "", 0, err
-	}
-	return path, len(contract.Groups), nil
 }
 
 func runTestPlan(args []string, stdout, stderr io.Writer) int {
@@ -239,7 +88,7 @@ func runTestPlanAs(name string, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "metasystem test plan:", err)
 		return 1
 	}
-	output := planOutput(prepared)
+	output := testrun.PlanOutputOf(prepared)
 	if jsonOutput {
 		writeJSONLine(stdout, stderr, output)
 	} else {
@@ -250,65 +99,11 @@ func runTestPlanAs(name string, args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-type testingSelectionRequest struct {
-	Root, ControlRoot, GoalID, AuthorityGoalID, Tree, CapMin, RetryDecision, ResultPath string
-	ExpectedGoalRevision, ExpectedAccountingRevision                                    uint64
-	Mode                                                                                testpolicy.Mode
-	Purpose                                                                             testpolicy.Purpose
-	Groups, BatchRequirements                                                           []string
-	Carried                                                                             bool
-	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups                          bool
-	// AppAddress is the launch contract's check: the address of the
-	// application run the named group is run against.
-	AppAddress                                        string
-	BatchPrefixReceipt, BatchTipProof, BatchAdmission bool
-	FreshEpisode, FreshExpiresAt                      string
-	// ExecutedWorkers is the worker allowance of the run a verification checks.
-	// Group execution identity binds that allowance, and a fresh resolution can
-	// differ because the default allowance follows available memory.
-	ExecutedWorkers           int
-	RequireWorkerCapabilities bool
-	// CadencePreflight plans and revalidates the fetched tree before the cadence
-	// tick claims standing authority. Governed cadence execution does not set it.
-	CadencePreflight bool
-	// LandedRearm is set by outermost plan and run commands. The pinned child
-	// and the verify verb judge the engine as they find it.
-	LandedRearm bool
-	PolicyChild bool
-	// Preparation is this invocation's preparation state, shared by every
-	// preparation the invocation makes; nil gives one preparation its own.
-	Preparation *testingPreparationState
-	// notes is the invocation's standard error, where a preparation says it
-	// restarts; nil (a request no command parsed) is the process's own.
-	notes io.Writer
-	// CallerPID is the supplied process a nested proof's parent
-	// authentication starts from (design 6.2); zero is this process's parent,
-	// the entry's own caller.
-	CallerPID int64
-}
-
-// callerPID is the supplied caller, or this process's parent at an entry.
-func (request testingSelectionRequest) callerPID() int64 {
-	if request.CallerPID != 0 {
-		return request.CallerPID
-	}
-	return int64(os.Getppid())
-}
-
-// testingPreparationState is invocation-local execution state (design 6.2,
-// VOA-14): whether this invocation already restarted its preparation once
-// after the landing ref moved. It lives in the request, never in the process
-// environment, so a resident owner's earlier invocation cannot spend a later
-// one's allowance.
-type testingPreparationState struct {
-	restarted bool
-}
-
-func admitTestingRun(request testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+func admitTestingRun(request testrun.SelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
 	return admitTestingRunWith(request, admission, admitProofLaunch)
 }
 
-func admitTestingRunWith(request testingSelectionRequest, admission proofLaunchAdmission,
+func admitTestingRunWith(request testrun.SelectionRequest, admission proofLaunchAdmission,
 	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
 ) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
 	admission.ForceAttempt = request.Purpose == testpolicy.PurposeCadence || request.NoReuse || request.ForceGroups
@@ -320,11 +115,11 @@ func admitTestingRunWith(request testingSelectionRequest, admission proofLaunchA
 
 type testingCommandAdmission struct {
 	now        func() time.Time
-	admitRun   func(testingSelectionRequest, proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error)
+	admitRun   func(testrun.SelectionRequest, proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error)
 	admitProof func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error)
 }
 
-func (admission testingCommandAdmission) initial(request testingSelectionRequest, launch proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+func (admission testingCommandAdmission) initial(request testrun.SelectionRequest, launch proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
 	launch.Now = admission.now()
 	return admission.admitRun(request, launch)
 }
@@ -336,10 +131,10 @@ func (admission testingCommandAdmission) forced(launch proofLaunchAdmission) (pr
 	return admission.admitProof(launch)
 }
 
-func parseTestingSelection(name string, args []string, execution bool, stdout, stderr io.Writer) (testingSelectionRequest, bool, int) {
+func parseTestingSelection(name string, args []string, execution bool, stdout, stderr io.Writer) (testrun.SelectionRequest, bool, int) {
 	flags := newFlagSet(name, stdout, stderr)
 	// One command is one invocation: its preparations share one state.
-	request := testingSelectionRequest{Preparation: &testingPreparationState{}, notes: stderr}
+	request := testrun.SelectionRequest{Preparation: &testrun.PreparationState{}, Notes: stderr}
 	pathFlagVar(flags, &request.Root, "root", "", "MetaSystem installation root")
 	flags.StringVar(&request.GoalID, "goal", "", "accepted goal owning delivery")
 	flags.StringVar(&request.AuthorityGoalID, "authority", "", "claimed goal authorizing the proof reservation")
@@ -407,7 +202,7 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 			return request, false, 2
 		}
 		var err error
-		request.BatchRequirements, err = parseBatchRequirements(*batchRequirements)
+		request.BatchRequirements, err = testrun.ParseBatchRequirements(*batchRequirements)
 		if err != nil {
 			fmt.Fprintln(stderr, "invalid --batch-requirements:", err)
 			return request, false, 2
@@ -481,703 +276,32 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 	return request, *jsonOutput, 0
 }
 
-// The batch transport carries only exact group IDs. The current protected
-// policy and prerequisite closure are recomputed by the selector.
-func parseBatchRequirements(value string) ([]string, error) {
-	decoder := json.NewDecoder(strings.NewReader(value))
-	opening, err := decoder.Token()
-	if err != nil || opening != json.Delim('{') {
-		return nil, fmt.Errorf("expected an object with a groups array")
-	}
-	key, err := decoder.Token()
-	if err != nil || key != "groups" {
-		return nil, fmt.Errorf("expected only the groups field")
-	}
-	var groups []string
-	if err := decoder.Decode(&groups); err != nil || groups == nil {
-		return nil, fmt.Errorf("groups must be an array of identifiers")
-	}
-	closing, err := decoder.Token()
-	if err != nil || closing != json.Delim('}') {
-		return nil, fmt.Errorf("unexpected batch requirements field")
-	}
-	if _, err := decoder.Token(); err != io.EOF {
-		return nil, fmt.Errorf("trailing batch requirements content")
-	}
-	seen := map[string]bool{}
-	for _, id := range groups {
-		if id == "" || id != strings.TrimSpace(id) || seen[id] {
-			return nil, fmt.Errorf("groups must contain unique exact identifiers")
-		}
-		seen[id] = true
-	}
-	return groups, nil
-}
+var prepareTestingForCommand = testrun.Prepare
 
-func batchRequirementsArgument(groups []string) string {
-	if groups == nil {
-		groups = []string{}
-	}
-	encoded, _ := json.Marshal(struct {
-		Groups []string `json:"groups"`
-	}{Groups: groups})
-	return string(encoded)
-}
-
-type preparationBaseMove struct {
-	ours, engine string
-}
-
-// noteStream is where a preparation tells what it does: the invocation's
-// standard error, or the process's for a request no command parsed.
-func (request testingSelectionRequest) noteStream() io.Writer {
-	if request.notes != nil {
-		return request.notes
-	}
-	return os.Stderr
-}
-
-func (move *preparationBaseMove) Error() string {
-	return fmt.Sprintf("the landing ref moved under preparation from %s to %s", move.ours, move.engine)
-}
-
-type testingPreparationAttempt func(testingSelectionRequest) (testingPreparation, error)
-
-func prepareTesting(request testingSelectionRequest) (testingPreparation, error) {
-	return prepareTestingWith(request, prepareTestingOnce)
-}
-
-func prepareTestingWith(request testingSelectionRequest, attempt testingPreparationAttempt) (testingPreparation, error) {
-	state := request.Preparation
-	if state == nil {
-		state = &testingPreparationState{}
-	}
-	for {
-		prepared, err := attempt(request)
-		var move *preparationBaseMove
-		if !errors.As(err, &move) {
-			return prepared, err
-		}
-		if state.restarted {
-			return testingPreparation{}, engineRefusal("base-moved", []enginecause.Fact{
-				enginecause.Value("ours", move.ours), enginecause.Value("engine", move.engine), enginecause.Value("restarts", "1"),
-			}, "the landing ref moved a second time during one test invocation")
-		}
-		fmt.Fprintf(request.noteStream(), "metasystem test run: the landing ref moved under the run (ours=%s engine=%s); restarting preparation once\n", move.ours, move.engine)
-		state.restarted = true
-	}
-}
-
-func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, error) {
-	installation, err := canonicalProofRoot(request.Root)
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	controlRoot := installation
-	if request.ControlRoot != "" {
-		controlRoot, err = batchPrefixProofControlRoot(installation, request.ControlRoot)
-		if err != nil {
-			return testingPreparation{}, err
-		}
-	}
-	confPath := filepath.Join(installation, "metasystem.conf")
-	contractRel, present, err := config.CommittedLookup(confPath, "testing.contract")
-	if err != nil || !present {
-		return testingPreparation{}, fmt.Errorf("testing.contract is required in committed metasystem.conf")
-	}
-	if filepath.IsAbs(contractRel) || filepath.ToSlash(filepath.Clean(contractRel)) != contractRel || strings.HasPrefix(contractRel, "../") {
-		return testingPreparation{}, fmt.Errorf("testing.contract must be a relative normalized path")
-	}
-	installationWorkspace := gittree.Workspace{Dir: installation}
-	projectRoot, err := installationWorkspace.TopLevel()
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	prefix, err := installationWorkspace.Prefix()
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	workspace := gittree.Workspace{Dir: projectRoot}
-	baseCommit, unborn, err := workspace.HeadCommit()
-	if err != nil || unborn {
-		return testingPreparation{}, fmt.Errorf("testing requires a committed project HEAD")
-	}
-	goalID := request.GoalID
-	accountToGoal, err := testingPreparationAccountsToGoal(request)
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	if accountToGoal {
-		goalID, err = resolveTestingGoalFor(installation, request.GoalID, request.callerPID())
-		if err != nil {
-			return testingPreparation{}, err
-		}
-		// The trusted policy engine must judge the same candidate even when a
-		// parent attempt, rather than an explicit flag, supplied its identity.
-		request.GoalID = goalID
-	}
-	// A landed engine is trusted by its landing: when the enrolled engine is
-	// behind the landing ref by landed commits only, the run fetches,
-	// fast-forwards, rebuilds and re-arms before it judges anything.
-	var engineRearm *proofrun.EngineRearm
-	_, policyBaseBeforeRearmErr := trustedTestingPolicyBase(projectRoot, workspace)
-	// A non-delivery plan remains informative without a configured destination;
-	// delivery still enters re-arm so missing landing authority is a refusal.
-	if request.LandedRearm && (request.Purpose == testpolicy.PurposeDelivery || policyBaseBeforeRearmErr == nil) {
-		namedDeliveryTree := request.Tree != "" && request.Purpose == testpolicy.PurposeDelivery
-		rearm, rearmErr := landedRearm(request.noteStream(), installation, projectRoot, prefix, namedDeliveryTree)
-		if rearmErr != nil {
-			return testingPreparation{}, rearmErr
-		}
-		engineRearm = rearm
-	}
-	policyBaseCommit, policyBaseErr := trustedTestingPolicyBase(projectRoot, workspace)
-	if policyBaseErr != nil {
-		if request.Purpose == testpolicy.PurposeDelivery {
-			return testingPreparation{}, policyBaseErr
-		}
-		policyBaseCommit = baseCommit
-	}
-	policyBaseTree, err := workspace.TreeOf(policyBaseCommit)
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	indexTree, err := workspace.StagedTree()
-	if err != nil {
-		return testingPreparation{}, fmt.Errorf("capture real candidate index: %w", err)
-	}
-	candidateTree := request.Tree
-	if candidateTree == "" {
-		candidateTree = indexTree
-	} else {
-		candidateTree, err = workspace.ResolveTree(candidateTree)
-	}
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	if request.Purpose == testpolicy.PurposeDelivery && candidateTree != indexTree {
-		return testingPreparation{}, fmt.Errorf("delivery candidate must equal the real whole-project index: requested=%s index=%s", candidateTree, indexTree)
-	}
-	treeContractPath := filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), contractRel))
-	treeContractPath = strings.TrimPrefix(treeContractPath, "./")
-	baseBytes, basePresent, err := workspace.FileAt(policyBaseTree, treeContractPath)
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	candidateBytes, candidatePresent, err := workspace.FileAt(candidateTree, treeContractPath)
-	if err != nil || !candidatePresent {
-		return testingPreparation{}, fmt.Errorf("candidate testing contract %s is absent", treeContractPath)
-	}
-	candidateContract, err := testpolicy.Decode(candidateBytes)
-	if err != nil {
-		return testingPreparation{}, fmt.Errorf("candidate testing contract: %w", err)
-	}
-	baseContract := candidateContract
-	baseContractDigest := bytesSHA256([]byte("absent\x00" + treeContractPath))
-	if basePresent {
-		baseContract, err = testpolicy.Decode(baseBytes)
-		if err != nil {
-			return testingPreparation{}, fmt.Errorf("base testing contract: %w", err)
-		}
-		baseContractDigest = bytesSHA256(baseBytes)
-	}
-	policyEngine, policyEngineDigest, currentIsPolicyEngine, err := trustedPolicyEngine(installation, policyBaseCommit, !basePresent)
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	workerCapabilitiesChecked, workerCapabilities := false, testingWorkerCapabilities{}
-	if request.RequireWorkerCapabilities {
-		capabilityContext, cancelCapabilities := context.WithCancel(context.Background())
-		var capabilityErr error
-		workerCapabilities, capabilityErr = requireTestingWorkerCapabilities(capabilityContext, policyEngine, testingEnvironment(os.Environ()))
-		cancelCapabilities()
-		if capabilityErr != nil {
-			return testingPreparation{}, capabilityErr
-		}
-		workerCapabilitiesChecked = true
-	}
-	effective := protectedTestingContractWithCandidateFallback(baseContract, candidateContract)
-	if err := effective.Validate(); err != nil {
-		return testingPreparation{}, fmt.Errorf("protected testing contract: %w", err)
-	}
-	if basePresent {
-		if err := protectCoverageRatchets(workspace, policyBaseTree, candidateTree, prefix); err != nil {
-			return testingPreparation{}, err
-		}
-	}
-	mergeBases, err := workspace.MergeBases(baseCommit, policyBaseCommit)
-	if err != nil || len(mergeBases) != 1 {
-		return testingPreparation{}, fmt.Errorf("testing implementation and destination bases have no unique merge base")
-	}
-	changeBaseTree, err := workspace.TreeOf(mergeBases[0])
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	changedPaths, err := workspace.ChangedPaths(changeBaseTree, candidateTree)
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	// Expand protected Go package selectors against the exact trees before
-	// policy selection. Each affected package becomes its own reusable group.
-	selectionEnvironment := testingEnvironment(os.Environ())
-	effective, err = proofrun.ExpandGoPackageGroupsWithEnvironment(effective, projectRoot, changeBaseTree, candidateTree, selectionEnvironment)
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	risk, accountingRevision := testpolicy.GoalRisk{}, uint64(0)
-	if accountToGoal {
-		risk, accountingRevision, err = testingGoalRisk(installation, goalID)
-		if err != nil {
-			return testingPreparation{}, err
-		}
-	}
-	plan, err := testpolicy.Select(effective, testpolicy.SelectionRequest{ChangedPaths: changedPaths, GoalRisk: risk,
-		RequestedMode: request.Mode, Purpose: request.Purpose, Groups: request.Groups})
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	if basePresent && !currentIsPolicyEngine {
-		basePlan, basePlanErr := planWithTrustedPolicyEngine(policyEngine, trustedPolicyFloorRequest(request), installation, candidateTree)
-		if basePlanErr != nil {
-			return testingPreparation{}, basePlanErr
-		}
-		if afterDigest, digestErr := fileSHA256(policyEngine); digestErr != nil || afterDigest != policyEngineDigest {
-			return testingPreparation{}, engineRefusal("enrollment-drift", engineCheckoutFacts(installation), "retained trusted-base engine changed during policy selection")
-		}
-		if mismatch := compareTrustedPolicyDecision(installation, projectRoot, candidateTree, policyBaseCommit, baseContractDigest, basePlan); mismatch != nil {
-			return testingPreparation{}, mismatch
-		}
-		plan = basePlan.Plan
-	}
-	if len(request.BatchRequirements) > 0 {
-		plan, err = testpolicy.WithBatchRequirements(effective, plan, request.BatchRequirements)
-		if err != nil {
-			return testingPreparation{}, err
-		}
-	}
-	if !basePresent && request.Purpose == testpolicy.PurposeDelivery {
-		plan, err = testpolicy.RequireFirstTransition(effective, plan)
-		if err != nil {
-			return testingPreparation{}, err
-		}
-	}
-	if request.Purpose == testpolicy.PurposeDelivery && len(plan.Uncertainty) > 0 {
-		return testingPreparation{}, fmt.Errorf("delivery impact is unresolved: %s; use diagnostic purpose for the bounded unknown groups", strings.Join(plan.Uncertainty, "; "))
-	}
-	if request.Purpose == testpolicy.PurposeDelivery {
-		if err := checkDeliveryInputParity(workspace, candidateTree, prefix, contractRel, effective, plan); err != nil {
-			return testingPreparation{}, err
-		}
-	}
-	// Admission is a phase of the fully protected delivery decision. Preserve
-	// the complete floor through trusted policy comparison and relevant-input
-	// checks, then execute only the contract's admission subset. Legacy v1
-	// contracts conservatively retain their whole selected plan here.
-	if request.BatchAdmission {
-		plan, err = testpolicy.AdmissionPlan(effective, plan)
-		if err != nil {
-			return testingPreparation{}, err
-		}
-	}
-	unmatchedInputs, err := unmatchedTestingInputs(workspace, candidateTree, effective, plan)
-	if err != nil {
-		return testingPreparation{}, err
-	}
-	if policyBaseErr != nil {
-		plan.Uncertainty = append(plan.Uncertainty, "trusted destination policy base unavailable: "+policyBaseErr.Error())
-	}
-	return testingPreparation{Installation: installation, ControlRoot: controlRoot, ProjectRoot: projectRoot, Prefix: strings.TrimSuffix(prefix, "/"),
-		GoalID: goalID, AccountingRevision: accountingRevision,
-		ConfPath: confPath, BaseCommit: baseCommit, PolicyBaseCommit: policyBaseCommit, CandidateTree: candidateTree, BaseContract: baseContract,
-		CandidateContract: candidateContract, EffectiveContract: effective, ContractDigest: bytesSHA256(candidateBytes),
-		BaseContractDigest: baseContractDigest, PolicyEngineDigest: policyEngineDigest, PolicyEngine: policyEngine,
-		JudgeKey:                  proofrun.ComputeJudgeKey(context.Background(), projectRoot, policyBaseCommit, strings.TrimSuffix(prefix, "/")),
-		EngineRearm:               engineRearm,
-		WorkerCapabilitiesChecked: workerCapabilitiesChecked,
-		WorkerScratchPolicies:     workerCapabilities.ScratchEnvironmentPolicies,
-		WorkerResultSchemas:       workerCapabilities.TestResultSchemaVersions,
-		UnmatchedInputs:           unmatchedInputs,
-		FirstTestingTransition:    !basePresent,
-		BehaviorPolicyDigest:      bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: selectionEnvironment,
-		AllGroups: request.AllGroups, AppAddress: request.AppAddress}, nil
-}
-
-func protectedTestingContractWithCandidateFallback(baseContract, candidateContract testpolicy.Contract) testpolicy.Contract {
-	effective := testpolicy.ProtectedContract(baseContract, candidateContract)
-	if effective.Fallback == "" {
-		effective.Fallback = candidateContract.Fallback
-	}
-	return effective
-}
-
-func testingPreparationAccountsToGoal(request testingSelectionRequest) (bool, error) {
-	if request.CadencePreflight {
-		if request.Purpose != testpolicy.PurposeCadence {
-			return false, fmt.Errorf("cadence preflight requires cadence purpose")
-		}
-		return false, nil
-	}
-	return request.GoalID != "" || request.Purpose == testpolicy.PurposeDelivery || request.Purpose == testpolicy.PurposeCadence, nil
-}
-
-var prepareTestingForCommand = prepareTesting
-
-func compareTrustedPolicyDecision(installation, projectRoot, candidateTree, policyBaseCommit, baseContractDigest string, decision testingPlanOutput) error {
-	seconds := 0
-	limit := func() int {
-		if seconds == 0 {
-			seconds = steward.RearmResolveSeconds(installation)
-		}
-		return seconds
-	}
-	return compareTrustedPolicyDecisionWithReaders(candidateTree, policyBaseCommit, baseContractDigest, decision, projectRoot, policyBaseMoveReaders{
-		isAncestor: func(root, ours, engine string) (bool, error) {
-			_, err := landedRearmGitStep(context.Background(), landedRearmClock, limit(), "compare-moved-policy-base-ancestry", root,
-				"merge-base", "--is-ancestor", ours, engine)
-			if err != nil {
-				var exitError *exec.ExitError
-				if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
-					return false, nil
-				}
-				return false, err
-			}
-			return true, nil
-		},
-		localLandingRef: func(root string) (string, error) {
-			return readLocalLandingRefText(context.Background(), landedRearmClock, limit(), root)
-		},
-		commitAtRef: func(root, ref string) (string, error) {
-			return landedRearmGitStep(context.Background(), landedRearmClock, limit(), "reread-moved-policy-base", root,
-				"rev-parse", "--verify", ref+"^{commit}")
-		},
-	})
-}
-
-type policyBaseMoveReaders struct {
-	isAncestor      func(projectRoot, ours, engine string) (bool, error)
-	localLandingRef func(projectRoot string) (string, error)
-	commitAtRef     func(projectRoot, ref string) (string, error)
-}
-
-func compareTrustedPolicyDecisionWithReaders(candidateTree, policyBaseCommit, baseContractDigest string, decision testingPlanOutput, projectRoot string, readers policyBaseMoveReaders) error {
-	mismatch := decisionMismatchRefusal(candidateTree, policyBaseCommit, baseContractDigest, decision)
-	if mismatch == nil {
-		return nil
-	}
-	// CandidateTree cannot be explained by a moved policy base. The base
-	// contract digest can: it is read from that base's testing.json.
-	if candidateTree != decision.CandidateTree || policyBaseCommit == decision.PolicyBaseCommit {
-		return mismatch
-	}
-	moved, err := authenticatedPolicyBaseMove(projectRoot, policyBaseCommit, decision.PolicyBaseCommit, readers)
-	if err != nil || !moved {
-		return mismatch
-	}
-	return &preparationBaseMove{ours: policyBaseCommit, engine: decision.PolicyBaseCommit}
-}
-
-func trustedPolicyFloorRequest(request testingSelectionRequest) testingSelectionRequest {
-	request.BatchRequirements = nil
-	request.BatchPrefixReceipt = false
-	return request
-}
-
-func authenticatedPolicyBaseMove(projectRoot, ours, engine string, readers policyBaseMoveReaders) (bool, error) {
-	ancestor, err := readers.isAncestor(projectRoot, ours, engine)
-	if err != nil || !ancestor {
-		return false, err
-	}
-	refText, err := readers.localLandingRef(projectRoot)
-	if err != nil {
-		return false, err
-	}
-	ref, _, _, err := parseLandingRefParts(refText)
-	if err != nil {
-		return false, err
-	}
-	current, err := readers.commitAtRef(projectRoot, ref)
-	if err != nil {
-		return false, err
-	}
-	return current == engine, nil
-}
-
-type protectedCoverageBaseline struct {
-	Floors map[string]float64 `json:"floors"`
-}
-
-func protectCoverageRatchets(workspace gittree.Workspace, baseTree, candidateTree, prefix string) error {
-	inTree := func(relative string) string {
-		return strings.TrimPrefix(filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), relative)), "./")
-	}
-	for _, relative := range testpolicy.CoverageFloorsFiles() {
-		path := inTree(relative)
-		// A base from before the floors moved beside testing.json keeps them
-		// at the legacy path; the landing that moves them is judged by those.
-		baseBytes, basePresent, err := workspace.FileAt(baseTree, path)
-		if err == nil && !basePresent {
-			baseBytes, basePresent, err = workspace.FileAt(baseTree, inTree(testpolicy.LegacyCoverageFloorsFile(relative)))
-		}
-		if err != nil || !basePresent {
-			continue
-		}
-		candidateBytes, candidatePresent, err := workspace.FileAt(candidateTree, path)
-		if err != nil || !candidatePresent {
-			return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: protected coverage baseline %s is absent; a proof without it would certify unprotected coverage, so restore %s and rerun metasystem test run", path, path)
-		}
-		var base, candidate protectedCoverageBaseline
-		if json.Unmarshal(baseBytes, &base) != nil || json.Unmarshal(candidateBytes, &candidate) != nil || len(base.Floors) == 0 || len(candidate.Floors) == 0 {
-			return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: protected coverage baseline %s is malformed; a proof against it would certify unprotected coverage, so restore %s and rerun metasystem test run", path, path)
-		}
-		for packageName, floor := range base.Floors {
-			candidateFloor, present := candidate.Floors[packageName]
-			if !present {
-				// A floor leaves with its package: once the candidate tree
-				// holds no Go file in the package's directory there is
-				// nothing to measure, and the floor may go too.
-				gone, err := coveragePackageGone(workspace, candidateTree, inTree(packageName))
-				if err != nil {
-					return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: %s floor %s was removed and its package could not be read in the candidate tree: %v; restore the floor in %s and rerun metasystem test run", path, packageName, err, path)
-				}
-				if gone {
-					continue
-				}
-			}
-			if !present || candidateFloor < floor {
-				return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: %s floor %s changed from %.1f to %.1f; a proof against a lowered floor would certify lost coverage, so restore the floor in %s (floors only rise) and rerun metasystem test run", path, packageName, floor, candidateFloor, path)
-			}
-		}
-	}
-	return nil
-}
-
-// coveragePackageGone reports whether a tree holds no Go file directly in a
-// package directory: the package was deleted, so its coverage floor has
-// nothing left to measure.
-func coveragePackageGone(workspace gittree.Workspace, tree, directory string) (bool, error) {
-	entries, err := workspace.Entries(tree, []string{directory})
-	if err != nil {
-		return false, err
-	}
-	for path := range entries {
-		if pathpkg.Dir(path) == directory && strings.HasSuffix(path, ".go") {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
-func trustedPolicyEngine(installation, policyBaseCommit string, firstTransition bool) (string, string, bool, error) {
-	current, err := os.Executable()
-	if err != nil {
-		return "", "", false, err
-	}
-	engine := current
-	if !firstTransition {
-		enrollmentRoot := installation
-		pinned, openErr := steward.OpenEnrolledBinary(enrollmentRoot)
-		if openErr != nil {
-			if borrowed, linked := linkedEnrollmentRoot(installation); linked {
-				enrollmentRoot = borrowed
-				pinned, openErr = steward.OpenEnrolledBinary(enrollmentRoot)
-			}
-		}
-		if openErr != nil {
-			return "", "", false, enrollmentRefusal(installation, openErr)
-		}
-		identity := pinned.Install
-		defer pinned.Close()
-		if sourceErr := pinned.VerifySourceAtDestination(enrollmentRoot, policyBaseCommit); sourceErr != nil {
-			facts := append(engineCheckoutFacts(installation), enginecause.Value("destination", policyBaseCommit))
-			return "", "", false, judgmentRefusal(sourceErr, facts, "retained destination engine does not bind the captured policy base")
-		}
-		if prepareErr := pinned.PrepareForExecution(); prepareErr != nil {
-			return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, engineCheckoutFacts(installation), "retain destination engine descriptor: "+prepareErr.Error())
-		}
-		engine = steward.EnrolledExecutionPath(enrollmentRoot, identity)
-	}
-	engineInfo, err := os.Stat(engine)
-	if err != nil || !engineInfo.Mode().IsRegular() || engineInfo.Mode().Perm()&0o111 == 0 {
-		facts := append(engineCheckoutFacts(installation), enginecause.Path("engine", engine))
-		return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, facts, "retained immutable trusted-base engine is unavailable")
-	}
-	digest, err := fileSHA256(engine)
-	if err != nil {
-		facts := append(engineCheckoutFacts(installation), enginecause.Path("engine", engine))
-		return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, facts, "hash retained trusted-base engine: "+err.Error())
-	}
-	currentInfo, currentErr := os.Stat(current)
-	return engine, digest, currentErr == nil && os.SameFile(engineInfo, currentInfo), nil
-}
-
-func planWithTrustedPolicyEngine(engine string, request testingSelectionRequest, installation, candidateTree string) (testingPlanOutput, error) {
-	args := []string{"test", "plan", "--root", installation, "--tree", candidateTree, "--mode", string(request.Mode), "--purpose", string(request.Purpose), "--json", "--policy-child"}
-	if request.GoalID != "" {
-		args = append(args, "--goal", request.GoalID)
-	}
-	if len(request.Groups) > 0 {
-		args = append(args, "--groups", strings.Join(request.Groups, ","))
-	}
-	if request.BatchPrefixReceipt {
-		args = append(args, "--batch-prefix")
-	}
-	// No clock on the planning engine: a plan that never returns is ended
-	// by the attempt's cancellation, never by a wall bound under load.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	command := exec.CommandContext(ctx, engine, args...)
-	command.Env = testingEnvironment(os.Environ())
-	if os.Getenv(policyProbeWorkerEnvironment) == "1" {
-		command.Env = append(command.Env, policyProbeWorkerEnvironment+"=1")
-	}
-	data, err := command.CombinedOutput()
-	if err != nil {
-		return testingPlanOutput{}, engineRefusal("child-failed", []enginecause.Fact{enginecause.Path("engine", engine)}, fmt.Sprintf("retained trusted-base engine could not decide version-1 policy: %v: %s", err, strings.TrimSpace(string(data))))
-	}
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields()
-	var output testingPlanOutput
-	if err := decoder.Decode(&output); err != nil {
-		return testingPlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine)}, "retained trusted-base engine returned malformed policy output: "+err.Error())
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return testingPlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine)}, "retained trusted-base engine returned trailing policy output")
-	}
-	return output, nil
-}
-
-func testingRelevantInputs(prefix, contractRel string, contract testpolicy.Contract, plan testpolicy.Plan) ([]string, error) {
-	joinPrefix := func(path string) string {
-		return strings.TrimPrefix(filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), path)), "./")
-	}
-	values := map[string]bool{
-		joinPrefix(contractRel):       true,
-		joinPrefix("metasystem.conf"): true,
-	}
-	groups := map[string]testpolicy.Group{}
-	for _, group := range contract.Groups {
-		groups[group.ID] = group
-	}
-	for _, id := range plan.SelectedGroups {
-		group, ok := groups[id]
-		if !ok {
-			return nil, fmt.Errorf("selected testing group %s is absent", id)
-		}
-		for _, input := range group.Inputs {
-			values[input] = true
-		}
-		if group.Adapter == "command" && len(group.Argv) > 0 && strings.Contains(group.Argv[0], "/") && !filepath.IsAbs(group.Argv[0]) {
-			commandPath := filepath.ToSlash(filepath.Clean(filepath.Join(group.CWD, group.Argv[0])))
-			if commandPath == ".." || strings.HasPrefix(commandPath, "../") {
-				return nil, fmt.Errorf("testing group %s command executable escapes the project", id)
-			}
-			values[commandPath] = true
-		}
-	}
-	paths := make([]string, 0, len(values))
-	for path := range values {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	return paths, nil
-}
-
-func checkDeliveryInputParity(workspace gittree.Workspace, candidateTree, prefix, contractRel string, contract testpolicy.Contract, plan testpolicy.Plan) error {
-	return checkDeliveryInputParityWith(candidateTree, prefix, contractRel, contract, plan, workspace.SnapshotRelevant)
-}
-
-func checkDeliveryInputParityWith(candidateTree, prefix, contractRel string, contract testpolicy.Contract, plan testpolicy.Plan, snapshot func(candidateTree string, declarations []string) (string, error)) error {
-	declarations, err := testingRelevantInputs(prefix, contractRel, contract, plan)
-	if err != nil {
-		return err
-	}
-	workingTree, err := snapshot(candidateTree, declarations)
-	if err != nil {
-		return fmt.Errorf("capture relevant candidate working inputs: %w", err)
-	}
-	if candidateTree != workingTree {
-		return fmt.Errorf("delivery candidate differs from relevant working-tree inputs: candidate=%s working=%s", candidateTree, workingTree)
-	}
-	return nil
-}
-
-func unmatchedTestingInputs(workspace gittree.Workspace, tree string, contract testpolicy.Contract, plan testpolicy.Plan) ([]testingUnmatchedInput, error) {
-	entries, err := workspace.Entries(tree, []string{"."})
-	if err != nil {
-		return nil, fmt.Errorf("inspect candidate input patterns: %w", err)
-	}
-	selected := map[string]bool{}
-	for _, id := range plan.SelectedGroups {
-		selected[id] = true
-	}
-	var unmatched []testingUnmatchedInput
-	for _, group := range contract.Groups {
-		if !selected[group.ID] {
-			continue
-		}
-		for _, declaration := range group.Inputs {
-			pattern, err := pathpattern.Parse(declaration)
-			if err != nil {
-				return nil, fmt.Errorf("testing group %s input %q: %w", group.ID, declaration, err)
-			}
-			found := false
-			for name := range entries {
-				if pattern.Covers(name) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				unmatched = append(unmatched, testingUnmatchedInput{Group: group.ID, Pattern: pattern.String()})
-			}
-		}
-	}
-	return unmatched, nil
-}
-
-func printUnmatchedInputsTo(stderr io.Writer, values []testingUnmatchedInput) {
+func printUnmatchedInputsTo(stderr io.Writer, values []testrun.UnmatchedInput) {
 	for _, item := range values {
 		fmt.Fprintf(stderr, "TEST-INPUT-NO-MATCH group=%q pattern=%q\n", item.Group, item.Pattern)
 	}
 }
 
-func planOutput(prepared testingPreparation) testingPlanOutput {
-	groupsByID := map[string]testpolicy.Group{}
-	for _, group := range prepared.EffectiveContract.Groups {
-		groupsByID[group.ID] = group
-	}
-	groups := make([]testpolicy.Group, 0, len(prepared.Plan.SelectedGroups))
-	for _, id := range prepared.Plan.SelectedGroups {
-		groups = append(groups, groupsByID[id])
-	}
-	return testingPlanOutput{SchemaVersion: 1, ProjectRoot: prepared.ProjectRoot, InstallationPrefix: prepared.Prefix,
-		BaseCommit: prepared.BaseCommit, PolicyBaseCommit: prepared.PolicyBaseCommit, CandidateTree: prepared.CandidateTree, ContractDigest: prepared.ContractDigest,
-		BaseContractDigest: prepared.BaseContractDigest, Plan: prepared.Plan, Groups: groups, UnmatchedInputs: prepared.UnmatchedInputs}
-}
-
-func testingRunRequest(prepared testingPreparation, attemptID, logRoot, candidateEngine, candidateEngineDigest, candidateEngineBuildIdentity string) proofrun.TestRunRequest {
-	request := proofrun.TestRunRequest{ProjectRoot: prepared.ProjectRoot, InstallationPrefix: prepared.Prefix,
-		ControlRoot:   prepared.proofControlRoot(),
-		CandidateTree: prepared.CandidateTree, BaseCommit: prepared.BaseCommit, PolicyBaseCommit: prepared.PolicyBaseCommit,
-		Contract: prepared.EffectiveContract, Plan: prepared.Plan, AttemptID: attemptID, Environment: prepared.Environment,
-		LogRoot: logRoot, ContractDigest: prepared.ContractDigest, BaseContractDigest: prepared.BaseContractDigest,
-		PolicyEngineDigest: prepared.PolicyEngineDigest, JudgeKey: prepared.JudgeKey, PolicyEngine: prepared.PolicyEngine, BehaviorPolicyDigest: prepared.BehaviorPolicyDigest,
-		EngineRearm:     prepared.EngineRearm,
-		CandidateEngine: candidateEngine, CandidateEngineDigest: candidateEngineDigest,
-		CandidateEngineBuildIdentity: candidateEngineBuildIdentity, AllGroups: prepared.AllGroups,
-		AppAddress: prepared.AppAddress}
-	request.Workers, request.AdmissionMaximum = prepared.Workers, prepared.AdmissionMaximum
-	request.ResultSchemaVersion = chooseTestResultSchema(prepared)
-	return request
-}
-
-func resolveTestingPreparationWorkerPolicy(prepared *testingPreparation) (proofRunLimits, error) {
+func resolveTestingPreparationWorkerPolicy(prepared *testrun.Preparation) (proofRunLimits, error) {
 	limits, err := resolveProofRunLimits(prepared.ConfPath)
 	if err != nil {
 		return proofRunLimits{}, err
 	}
 	prepared.Workers, prepared.AdmissionMaximum = limits.workers, limits.admissionMaximum
 	return limits, nil
+}
+
+// testingWorkerPolicy is the proof-run limits' worker allowance as the
+// testing selection reads it.
+func testingWorkerPolicy(confPath string) (testrun.WorkerPolicy, error) {
+	limits, err := resolveProofRunLimits(confPath)
+	if err != nil {
+		return testrun.WorkerPolicy{}, err
+	}
+	return testrun.WorkerPolicy{Workers: limits.workers, AdmissionMaximum: limits.admissionMaximum,
+		Automatic: limits.automaticWorkers, AutomaticCeiling: limits.automaticWorkerCeiling}, nil
 }
 
 // candidateEngineIO is how the goal-landing and batch-cost tests still
@@ -1246,13 +370,13 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
 		fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
-		if errors.Is(err, errTestingWorkerPolicyUnsupported) {
+		if errors.Is(err, testrun.ErrWorkerPolicyUnsupported) {
 			return proofrun.ExitAdmissionRefused
 		}
 		return 1
 	}
 	printUnmatchedInputsTo(invocation.stderr, prepared.UnmatchedInputs)
-	controlRoot := prepared.proofControlRoot()
+	controlRoot := prepared.ProofControlRoot()
 	commandClock, fixtureClock, err := goalCommandClock(controlRoot)
 	if err != nil {
 		fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
@@ -1291,7 +415,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	}
 	if !prepared.WorkerCapabilitiesChecked {
 		capabilityContext, cancelCapabilities := context.WithCancel(context.Background())
-		workerCapabilities, capabilityErr := readTestingWorkerCapabilities(capabilityContext, prepared, engine)
+		workerCapabilities, capabilityErr := testrun.ReadWorkerCapabilities(capabilityContext, prepared, engine)
 		cancelCapabilities()
 		if capabilityErr != nil {
 			fmt.Fprintln(invocation.stderr, "metasystem test run:", capabilityErr)
@@ -1310,7 +434,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	engineIO := candidateengine.Native()
 	engineIO.Notes = invocation.stderr
 	candidateEngine, err := candidateengine.Prepare(buildContext, controlRoot, gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix,
-		prepared.CandidateTree, inheritedTestingEnvironment(prepared.Environment, os.Environ()), func() error {
+		prepared.CandidateTree, testrun.InheritedEnvironment(prepared.Environment, os.Environ()), func() error {
 			return refuseKnownColdBuildBudget(prepared, request)
 		}, engineIO)
 	cancelBuild()
@@ -1324,13 +448,13 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	}
 	defer candidateEngine.Close()
 	planDigest := proofrun.TestPlanDigest(prepared.EffectiveContract, prepared.Plan, prepared.CandidateTree)
-	manifestDigest, err := testingCandidateManifest(gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.CandidateTree, scratch)
+	manifestDigest, err := testrun.CandidateManifest(gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.CandidateTree, scratch)
 	if err != nil {
 		fmt.Fprintln(invocation.stderr, "metasystem test run: capture candidate manifest:", err)
 		return proofrun.ExitAdmissionRefused
 	}
-	preRequest := testingRunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
-	if err := prepareTestingScratch(context.Background(), &preRequest, scratch, prepared); err != nil {
+	preRequest := testrun.RunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
+	if err := testrun.PrepareScratch(context.Background(), &preRequest, scratch, prepared); err != nil {
 		fmt.Fprintln(invocation.stderr, "metasystem test run: scratch environment:", err)
 		return proofrun.ExitAdmissionRefused
 	}
@@ -1368,9 +492,9 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		fmt.Fprintln(invocation.stderr, "metasystem test run: bounded testing metadata preparation:", identityErr)
 		return proofrun.ExitAdmissionRefused
 	}
-	freshGroups, maxFreshAge := testingFreshGroups(prepared, request)
+	freshGroups, maxFreshAge := testrun.FreshGroups(prepared, request)
 	if request.FreshEpisode == "" && len(freshGroups) != 0 {
-		request.FreshEpisode, err = newTestingFreshEpisode()
+		request.FreshEpisode, err = testrun.NewFreshEpisode()
 		if err != nil {
 			fmt.Fprintln(invocation.stderr, "metasystem test run: create freshness episode:", err)
 			return proofrun.ExitAdmissionRefused
@@ -1385,12 +509,12 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	}
 	preRequest.FreshnessEpisode, preRequest.FreshnessExpiresAt = request.FreshEpisode, request.FreshExpiresAt
 	preRequest.FreshGroups = freshGroups
-	if err := bindTestingFreshnessProjection(&preRequest, prepared.Installation); err != nil {
+	if err := testrun.BindFreshnessProjection(&preRequest, prepared.Installation); err != nil {
 		fmt.Fprintln(invocation.stderr, "metasystem test run: project freshness candidate:", err)
 		return proofrun.ExitAdmissionRefused
 	}
 	freshnessProjection := preRequest.FreshnessCandidateProjection
-	freshBinding := testingFreshnessBinding(preRequest, identities, request.FreshEpisode)
+	freshBinding := testrun.FreshnessBinding(preRequest, identities, request.FreshEpisode)
 	preRequest.FreshnessBinding = freshBinding
 	admission := proofLaunchAdmission{ControlRoot: controlRoot,
 		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, AuthorityGoalID: request.AuthorityGoalID,
@@ -1455,8 +579,8 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		fmt.Fprintln(invocation.stderr, "metasystem test run: record scratch attempt:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
-	preRequest = testingRunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
-	if err := bindTestingScratch(&preRequest, scratch, nil, scratchEnvironment); err != nil {
+	preRequest = testrun.RunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
+	if err := testrun.BindScratch(&preRequest, scratch, nil, scratchEnvironment); err != nil {
 		fmt.Fprintln(invocation.stderr, "metasystem test run: scratch environment:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
@@ -1486,7 +610,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
-	runRequest := testingRunRequest(prepared, attempt.AttemptID, filepath.Join(pathsRoot, "groups"), candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
+	runRequest := testrun.RunRequest(prepared, attempt.AttemptID, filepath.Join(pathsRoot, "groups"), candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
 	runRequest.FreshnessEpisode, runRequest.FreshnessBinding, runRequest.FreshnessExpiresAt = request.FreshEpisode, freshBinding, request.FreshExpiresAt
 	runRequest.FreshGroups = freshGroups
 	runRequest.FreshnessCandidateProjection = freshnessProjection
@@ -1528,7 +652,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		}
 	}
 	runRequest.QueueDurationMS += time.Since(producerWaitStarted).Milliseconds()
-	resourceClass, exclusive := testingOwnedResources(prepared, attempt)
+	resourceClass, exclusive := testrun.OwnedResources(prepared, attempt)
 	var nativeLease *proofrun.HostResourceLease
 	if resourceClass != "" {
 		nativeLease, err = proofrun.AcquireHostResourcesWithWaitCheck(nativeContext, controlRoot, prepared.ConfPath, resourceClass, exclusive, deadlineCheck)
@@ -1540,7 +664,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		runRequest.QueueDurationMS += nativeLease.Waited().Milliseconds()
 	}
 	// The worker sees the writer after the host lease files (LaunchSuite).
-	if err := bindTestingScratch(&runRequest, scratch, scratch.Locator(proofrun.ScratchWriterFD(nativeLease.Files())), scratchEnvironment); err != nil {
+	if err := testrun.BindScratch(&runRequest, scratch, scratch.Locator(proofrun.ScratchWriterFD(nativeLease.Files())), scratchEnvironment); err != nil {
 		fmt.Fprintln(invocation.stderr, "metasystem test run: scratch environment:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
@@ -1562,7 +686,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		Environment: workerEnvironment, HostResourceFiles: nativeLease.Files(), ScratchWriter: scratch.Writer(), RequireCustody: true, Output: invocation.stdout, ErrorOutput: invocation.stderr,
 		Now: commandClock,
 		PrepareSuccess: func(completion proofrun.CompletionContext) (json.RawMessage, error) {
-			result, readErr := readTestingWorkerResult(workerResultPath)
+			result, readErr := testrun.ReadWorkerResult(workerResultPath)
 			if readErr != nil {
 				return nil, readErr
 			}
@@ -1581,7 +705,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		CommitTerminal: testingTerminalCommit(workerResultPath, &retained)})
 	launchStatus = retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, launchStatus)
 	if retained == nil {
-		if result, readErr := readTestingWorkerResult(workerResultPath); readErr == nil {
+		if result, readErr := testrun.ReadWorkerResult(workerResultPath); readErr == nil {
 			retained = &result
 		}
 	}
@@ -1600,148 +724,8 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	return launchStatus
 }
 
-func newTestingFreshEpisode() (string, error) {
-	var token [32]byte
-	if _, err := rand.Read(token[:]); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(token[:]), nil
-}
-
-func testingFreshGroups(prepared testingPreparation, request testingSelectionRequest) (map[string]bool, time.Duration) {
-	selected := make(map[string]bool, len(prepared.Plan.SelectedGroups))
-	for _, id := range prepared.Plan.SelectedGroups {
-		selected[id] = true
-	}
-	fresh := map[string]bool{}
-	var maxAge time.Duration
-	for _, group := range prepared.EffectiveContract.Groups {
-		if !selected[group.ID] {
-			continue
-		}
-		if group.Freshness == "episode" || request.NoReuse || request.Purpose == testpolicy.PurposeCadence {
-			fresh[group.ID] = true
-			if group.FreshnessMaxAgeMS != nil {
-				age := time.Duration(*group.FreshnessMaxAgeMS) * time.Millisecond
-				if maxAge == 0 || age < maxAge {
-					maxAge = age
-				}
-			}
-		}
-	}
-	return fresh, maxAge
-}
-
-func testingOwnedResources(prepared testingPreparation, attempt proofrun.Attempt) (string, []string) {
-	selected := map[string]bool{}
-	for _, id := range prepared.Plan.SelectedGroups {
-		selected[id] = true
-	}
-	class := ""
-	resources := map[string]bool{}
-	for _, group := range prepared.EffectiveContract.Groups {
-		if !selected[group.ID] {
-			continue
-		}
-		if len(attempt.TestInventory) != 0 && attempt.TestOwned[group.ID] == "" {
-			continue
-		}
-		if class == "" {
-			class = "cheap"
-		}
-		if group.Resources.Class != "cheap" || group.Adapter == "go" {
-			class = "heavy"
-		}
-		for _, resource := range group.Resources.Exclusive {
-			resources[resource] = true
-		}
-	}
-	names := make([]string, 0, len(resources))
-	for name := range resources {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return class, names
-}
-
-func bindTestingFreshnessProjection(request *proofrun.TestRunRequest, installation string) error {
-	return bindTestingFreshnessProjectionWithWorkspace(request, installation, gittree.Workspace{Dir: installation})
-}
-
-type testingProjectionAccess struct {
-	raw func(gittree.RawRequest) gittree.RawResult
-}
-
-func (a testingProjectionAccess) TopLevel(root string) (string, error) {
-	return (gittree.Workspace{Dir: root, RawSource: a.raw}).TopLevel()
-}
-func (a testingProjectionAccess) Prefix(root string) (string, error) {
-	return (gittree.Workspace{Dir: root, RawSource: a.raw}).Prefix()
-}
-func (a testingProjectionAccess) FilterPrefixes(root, tree string, paths []string) (string, error) {
-	return (gittree.Workspace{Dir: root, RawSource: a.raw}).FilterTreePrefixes(tree, paths)
-}
-
-func bindTestingFreshnessProjectionWithWorkspace(request *proofrun.TestRunRequest, installation string, workspace gittree.Workspace) error {
-	if request.FreshnessEpisode == "" {
-		return nil
-	}
-	tree, err := landing.ProjectWorkspaceTreeWith(installation, request.CandidateTree, testingProjectionAccess{raw: workspace.RawSource})
-	if err != nil {
-		return err
-	}
-	request.FreshnessCandidateProjection = tree
-	return nil
-}
-
-// A supplied episode is reusable only while the decision it names still
-// covers the same candidate, base, plan, and execution inputs.
-func testingFreshnessBinding(request proofrun.TestRunRequest, identities map[string]string, episode string) string {
-	if episode == "" {
-		return ""
-	}
-	candidate := request.CandidateTree
-	if request.FreshnessCandidateProjection != "" {
-		candidate = request.FreshnessCandidateProjection
-	}
-	encoded, _ := json.Marshal(struct {
-		Purpose, Candidate, Base, PolicyBase, Contract, BaseContract, Plan, ExpiresAt string
-		Groups                                                                        map[string]string
-		Environment                                                                   []string
-	}{string(request.Plan.Purpose), candidate, request.BaseCommit, request.PolicyBaseCommit,
-		request.ContractDigest, request.BaseContractDigest,
-		proofrun.TestPlanDigest(request.Contract, request.Plan, candidate), request.FreshnessExpiresAt, identities, request.Environment})
-	digest := sha256.Sum256(encoded)
-	return hex.EncodeToString(digest[:])
-}
-
 func testingWorkerEnvironment(environment []string) ([]string, error) {
 	return identity.ExportRunOwner(environment)
-}
-
-func testingCandidateManifest(workspace gittree.Workspace, candidateTree string, scratch *proofrun.ScratchRun) (string, error) {
-	var detached *gittree.DetachedWorktree
-	var err error
-	if scratch != nil {
-		var plan *gittree.WorktreePlan
-		if plan, err = scratch.PlanWorktree(workspace, "engine"); err == nil {
-			detached, err = plan.Create(candidateTree)
-		}
-	} else {
-		detached, err = workspace.NewDetachedWorktree(candidateTree)
-	}
-	if err != nil {
-		return "", err
-	}
-	digest, digestErr := proofrun.FullDigest(detached.Workspace().Dir)
-	closeErr := detached.Close()
-	if digestErr != nil {
-		return "", digestErr
-	}
-	if closeErr != nil {
-		return "", closeErr
-	}
-	return digest, nil
 }
 
 func runTestWorker(args []string, stdout, stderr io.Writer) int {
@@ -1827,7 +811,7 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 		fmt.Fprintln(stderr, "metasystem internal test worker: admitted deadline is invalid")
 		return 3
 	}
-	request.Environment = inheritedTestingEnvironment(request.Environment, os.Environ())
+	request.Environment = testrun.InheritedEnvironment(request.Environment, os.Environ())
 	request.Environment = proofrun.TestingEnvironment(request.Environment, map[string]string{
 		proofWitnessExecutionRootEnv: attempt.ExecutionRoot,
 	})
@@ -1933,7 +917,7 @@ func runTestVerifyAs(name string, args []string, stdout, stderr io.Writer) int {
 
 // testVerifyTo verifies retained delivery proof for request.Tree and prints
 // the verdict on the caller's streams; it launches nothing.
-func testVerifyTo(stdout, stderr io.Writer, request testingSelectionRequest, jsonOutput bool) int {
+func testVerifyTo(stdout, stderr io.Writer, request testrun.SelectionRequest, jsonOutput bool) int {
 	result, err := verifyRetainedTesting(request)
 	if err != nil {
 		printMovedProofInputsWithoutCandidateEngine(stderr, request)
@@ -1958,24 +942,25 @@ func testVerifyTo(stdout, stderr io.Writer, request testingSelectionRequest, jso
 // (the index when empty) for the request's goal and accounting revision. It
 // launches nothing and creates no attempt. The result's per-group
 // ExecutionIdentity is the identity on the current tree.
-func verifyRetainedTesting(request testingSelectionRequest) (proofrun.TestResult, error) {
+func verifyRetainedTesting(request testrun.SelectionRequest) (proofrun.TestResult, error) {
 	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
-	commandClock, _, err := goalCommandClock(prepared.proofControlRoot())
+	commandClock, _, err := goalCommandClock(prepared.ProofControlRoot())
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
 	// Revalidation materializes the candidate like a run does, so it owns a
 	// fresh scratch run of its own for exactly that long.
-	scratch, err := proofrun.CreateScratchRun(prepared.proofControlRoot())
+	scratch, err := proofrun.CreateScratchRun(prepared.ProofControlRoot())
 	if err != nil {
 		return proofrun.TestResult{}, fmt.Errorf("scratch root: %w", err)
 	}
-	result, verifyErr := verifyRetainedTestingPrepared(request, prepared, retainedTestingVerification{
-		clock: commandClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
-		workspace: gittree.Workspace{Dir: prepared.ProjectRoot}, candidateIO: nativeCandidateEngineIO(), scratch: scratch,
+	result, verifyErr := testrun.VerifyPrepared(request, prepared, testrun.Verification{
+		Clock: commandClock, Revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+		Workspace: gittree.Workspace{Dir: prepared.ProjectRoot}, CandidateIO: candidateengine.Native(), Scratch: scratch,
+		WorkerPolicy: testingWorkerPolicy,
 	})
 	if cleanupErr := scratch.Cleanup(nil); cleanupErr != nil {
 		return proofrun.TestResult{}, errors.Join(verifyErr, cleanupErr)
@@ -1983,107 +968,16 @@ func verifyRetainedTesting(request testingSelectionRequest) (proofrun.TestResult
 	return result, verifyErr
 }
 
-type retainedTestingVerification struct {
-	clock         func() time.Time
-	revalidate    func(context.Context, proofrun.TestRunRequest, []proofrun.Attempt) (map[string]string, error)
-	workspace     gittree.Workspace
-	candidateIO   candidateEngineIO
-	openCandidate func(string, string) (proofrun.CandidateWorkspace, error)
-	scratch       *proofrun.ScratchRun
-}
-
-func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared testingPreparation, dependencies retainedTestingVerification) (proofrun.TestResult, error) {
-	initialFreshnessCheckAt := dependencies.clock()
-	if request.FreshExpiresAt != "" {
-		expires, parseErr := time.Parse(time.RFC3339Nano, request.FreshExpiresAt)
-		if parseErr != nil || !expires.After(initialFreshnessCheckAt) {
-			return proofrun.TestResult{}, fmt.Errorf("freshness episode has expired; renew the proof decision")
-		}
-	}
-	// The limits are read for their validity; the retained-result checks
-	// below run under no clock (proof-groups-detect-hangs-by-progress-not-
-	// the-clock, slice 2).
-	limits, err := resolveTestingPreparationWorkerPolicy(&prepared)
-	if err != nil {
-		return proofrun.TestResult{}, err
-	}
-	attempts, err := proofrun.ReadAttempts(prepared.proofControlRoot())
-	if err != nil {
-		return proofrun.TestResult{}, err
-	}
-	if request.ExecutedWorkers > 0 {
-		prepared.Workers = request.ExecutedWorkers
-	} else if limits.automaticWorkers {
-		// An automatic allowance is the run's reading of this host's free
-		// memory, and group execution identity binds it because it shapes
-		// what a performance group or a whole-allowance command runs. A
-		// verification checks that run; re-sampling memory here would ask a
-		// different question and refuse an unchanged tree whenever the load
-		// moved (2026-09-28: five workers at run, six at verify).
-		if recorded, ok := recordedAutomaticTestingWorkers(prepared, attempts, limits.automaticWorkerCeiling); ok {
-			prepared.Workers = recorded
-		}
-	}
-	identityBase := context.Background()
-	if dependencies.scratch != nil {
-		// The identity projection's indexes and Git children belong to the
-		// verification's own scratch run, like a run's do.
-		identityBase = proofrun.WithScratchRun(identityBase, dependencies.scratch)
-	}
-	identityContext, cancelIdentity := context.WithCancel(identityBase)
-	candidateEngineBuildIdentity, err := candidateEngineBuildIdentityUsing(identityContext, dependencies.workspace,
-		prepared.Prefix, prepared.CandidateTree, prepared.Environment, dependencies.candidateIO)
-	cancelIdentity()
-	if err != nil {
-		return proofrun.TestResult{}, err
-	}
-	candidateEngineDigest, err := retainedCandidateEngineDigest(prepared, attempts, candidateEngineBuildIdentity, request.Carried)
-	if err != nil {
-		return proofrun.TestResult{}, err
-	}
-	runRequest := testingRunRequest(prepared, "", "", "", candidateEngineDigest, candidateEngineBuildIdentity)
-	runRequest.WithCandidateOpener(dependencies.openCandidate)
-	metadataBase := context.Background()
-	if dependencies.scratch != nil {
-		if err := prepareTestingScratch(context.Background(), &runRequest, dependencies.scratch, prepared); err != nil {
-			return proofrun.TestResult{}, err
-		}
-		metadataBase = proofrun.WithScratchRun(metadataBase, dependencies.scratch)
-	}
-	metadataContext, cancelMetadata := context.WithCancel(metadataBase)
-	identities, err := dependencies.revalidate(metadataContext, runRequest, attempts)
-	cancelMetadata()
-	if err != nil {
-		return proofrun.TestResult{}, err
-	}
-	runRequest.FreshnessEpisode = request.FreshEpisode
-	runRequest.FreshnessExpiresAt = request.FreshExpiresAt
-	freshGroups, maxFreshAge := testingFreshGroups(prepared, request)
-	if len(freshGroups) > 0 && request.FreshEpisode == "" ||
-		len(freshGroups) == 0 && request.FreshEpisode != "" ||
-		maxFreshAge > 0 && request.FreshExpiresAt == "" {
-		return proofrun.TestResult{}, fmt.Errorf("selected fresh testing groups require the same explicit episode and expiry used by test run")
-	}
-	runRequest.FreshGroups = freshGroups
-	if err := bindTestingFreshnessProjectionWithWorkspace(&runRequest, prepared.Installation, dependencies.workspace); err != nil {
-		return proofrun.TestResult{}, err
-	}
-	runRequest.FreshnessBinding = testingFreshnessBinding(runRequest, identities, request.FreshEpisode)
-	reuseDecisionAt := dependencies.clock()
-	return proofrun.ReusedTestResult(proofrun.NewTestResultAt(runRequest, reuseDecisionAt), attempts, identities,
-		prepared.EffectiveContract), nil
-}
-
-func printMovedProofInputs(stderr io.Writer, request testingSelectionRequest, current proofrun.TestResult) {
+func printMovedProofInputs(stderr io.Writer, request testrun.SelectionRequest, current proofrun.TestResult) {
 	installation, err := canonicalProofRoot(request.Root)
 	if err != nil {
 		return
 	}
-	goalID, err := resolveTestingGoal(installation, request.GoalID)
+	goalID, err := testrun.ResolveGoal(installation, request.GoalID)
 	if err != nil {
 		return
 	}
-	_, accountingRevision, err := testingGoalRisk(installation, goalID)
+	_, accountingRevision, err := testrun.GoalRisk(installation, goalID)
 	if err != nil {
 		return
 	}
@@ -2101,7 +995,7 @@ func printMovedProofInputs(stderr io.Writer, request testingSelectionRequest, cu
 		var sourceTree string
 		var newest time.Time
 		for _, attempt := range attempts {
-			if !attemptAccountsForCandidate(attempt, goalID, accountingRevision) ||
+			if !testrun.AttemptAccountsFor(attempt, goalID, accountingRevision) ||
 				attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess || attempt.TestResult == nil {
 				continue
 			}
@@ -2127,7 +1021,7 @@ func printMovedProofInputs(stderr io.Writer, request testingSelectionRequest, cu
 		}
 		var moved []string
 		for _, changedPath := range changed {
-			if testInputManifestContains(source.InputManifest, changedPath) {
+			if testrun.InputManifestContains(source.InputManifest, changedPath) {
 				moved = append(moved, changedPath)
 			}
 		}
@@ -2139,8 +1033,8 @@ func printMovedProofInputs(stderr io.Writer, request testingSelectionRequest, cu
 	}
 }
 
-func printMovedProofInputsWithoutCandidateEngine(stderr io.Writer, request testingSelectionRequest) {
-	prepared, err := prepareTesting(request)
+func printMovedProofInputsWithoutCandidateEngine(stderr io.Writer, request testrun.SelectionRequest) {
+	prepared, err := testrun.Prepare(request)
 	if err != nil {
 		return
 	}
@@ -2154,7 +1048,7 @@ func printMovedProofInputsWithoutCandidateEngine(stderr io.Writer, request testi
 		var sourceTree string
 		var newest time.Time
 		for _, attempt := range attempts {
-			if !attemptAccountsForCandidate(attempt, prepared.GoalID, prepared.AccountingRevision) ||
+			if !testrun.AttemptAccountsFor(attempt, prepared.GoalID, prepared.AccountingRevision) ||
 				attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess || attempt.TestResult == nil {
 				continue
 			}
@@ -2179,7 +1073,7 @@ func printMovedProofInputsWithoutCandidateEngine(stderr io.Writer, request testi
 		}
 		var moved []string
 		for _, changedPath := range changed {
-			if testInputManifestContains(source.InputManifest, changedPath) {
+			if testrun.InputManifestContains(source.InputManifest, changedPath) {
 				moved = append(moved, changedPath)
 			}
 		}
@@ -2187,273 +1081,6 @@ func printMovedProofInputsWithoutCandidateEngine(stderr io.Writer, request testi
 			fmt.Fprintf(stderr, "proof-input-moved-after-receipt: group %s was proved on tree %s with a different input identity; moved declared paths: %s\n", id, sourceTree, strings.Join(moved, ","))
 		}
 	}
-}
-
-func attemptAccountsForCandidate(attempt proofrun.Attempt, goalID string, accountingRevision uint64) bool {
-	return attempt.AccountedGoal() == goalID && attempt.AccountedRevision() == accountingRevision
-}
-
-func testInputManifestContains(manifest []string, candidate string) bool {
-	for _, declaration := range manifest {
-		matched, err := pathpattern.MatchManifestEntry(declaration, candidate)
-		if err != nil || matched {
-			return true
-		}
-	}
-	return false
-}
-
-func retainedCandidateEngineDigest(prepared testingPreparation, attempts []proofrun.Attempt, buildIdentity string, carried bool) (string, error) {
-	matching := func(result proofrun.TestResult) (string, bool) {
-		matches := result.CandidateEngineIdentityVersion == proofrun.CandidateEngineIdentitySchemaVersion &&
-			result.CandidateEngineBuildIdentity == buildIdentity && (carried || result.Delivery.Sufficient) &&
-			proofrun.ValidateTestResult(result) == nil
-		if !matches {
-			return "", false
-		}
-		if len(result.CandidateEngineDigest) == sha256.Size*2 {
-			return result.CandidateEngineDigest, true
-		}
-		return "", false
-	}
-	var newestStarted time.Time
-	digest := ""
-	for _, attempt := range attempts {
-		started, startErr := time.Parse(time.RFC3339Nano, attempt.StartedAt)
-		candidateDigest, matches := "", false
-		if attempt.TestResult != nil {
-			candidateDigest, matches = matching(*attempt.TestResult)
-		}
-		completedMeasurement := attempt.Terminal != nil &&
-			(attempt.Terminal.Result == proofrun.TerminalSuccess || carried && attempt.Terminal.Result == proofrun.TerminalFailed)
-		if startErr == nil && completedMeasurement && matches &&
-			(newestStarted.IsZero() || started.After(newestStarted)) {
-			newestStarted, digest = started, candidateDigest
-		}
-	}
-	if digest != "" {
-		return digest, nil
-	}
-	receiptsRoot := filepath.Dir(landing.TestReceiptPath(prepared.proofControlRoot(), prepared.CandidateTree))
-	entries, readErr := os.ReadDir(receiptsRoot)
-	if readErr == nil {
-		for _, entry := range entries {
-			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-				continue
-			}
-			var receipt landing.TestReceipt
-			if readStrictJSON(filepath.Join(receiptsRoot, entry.Name()), &receipt) != nil ||
-				receipt.SchemaVersion != 2 || receipt.Testing == nil {
-				continue
-			}
-			candidateDigest, matches := matching(*receipt.Testing)
-			markedIdentityMatches := receipt.PolicyEngineDigest == receipt.Testing.PolicyEngineDigest &&
-				receipt.CandidateEngineDigest == receipt.Testing.CandidateEngineDigest &&
-				receipt.CandidateEngineBuildIdentity == receipt.Testing.CandidateEngineBuildIdentity
-			if matches && markedIdentityMatches {
-				return candidateDigest, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("%w for build identity %s; run metasystem test run", errRetainedCandidateEngineAbsent, buildIdentity)
-}
-
-func loadPhysicalTestingContract(root string) (string, testpolicy.Contract, string, error) {
-	installation, err := canonicalProofRoot(root)
-	if err != nil {
-		return "", testpolicy.Contract{}, "", err
-	}
-	confPath := filepath.Join(installation, "metasystem.conf")
-	contractRel, found, err := config.CommittedLookup(confPath, "testing.contract")
-	if err != nil || !found {
-		return "", testpolicy.Contract{}, "", fmt.Errorf("testing.contract is required in committed metasystem.conf")
-	}
-	if filepath.IsAbs(contractRel) || filepath.ToSlash(filepath.Clean(contractRel)) != contractRel || strings.HasPrefix(contractRel, "../") {
-		return "", testpolicy.Contract{}, "", fmt.Errorf("testing.contract must be a relative normalized path")
-	}
-	path := filepath.Join(installation, filepath.FromSlash(contractRel))
-	contract, err := testpolicy.Load(path)
-	return installation, contract, path, err
-}
-
-func checkTestingTools(projectRoot string, contract testpolicy.Contract) error {
-	var unavailable []string
-	for _, group := range contract.Groups {
-		cwd := filepath.Join(projectRoot, filepath.FromSlash(group.CWD))
-		if info, err := os.Stat(cwd); err != nil || !info.IsDir() {
-			unavailable = append(unavailable, group.ID+":cwd")
-			continue
-		}
-		environment := proofrun.GroupTestingEnvironment(testingEnvironment(os.Environ()), group)
-		for _, tool := range group.Tools {
-			if _, err := proofrun.ResolveTestingExecutable(context.Background(), cwd, environment, []string{tool.Executable}); err != nil {
-				unavailable = append(unavailable, group.ID+":"+tool.ID)
-			}
-		}
-	}
-	if len(unavailable) > 0 {
-		sort.Strings(unavailable)
-		return fmt.Errorf("declared testing tools or directories unavailable: %s", strings.Join(unavailable, ","))
-	}
-	return nil
-}
-
-func testingGoalRisk(root, id string) (testpolicy.GoalRisk, uint64, error) {
-	if id == "" {
-		return testpolicy.GoalRisk{}, 0, nil
-	}
-	endpoint, err := goal.ResolveEndpoint(root)
-	if err != nil {
-		return testpolicy.GoalRisk{}, 0, err
-	}
-	return testingGoalRiskWithEndpoint(endpoint, id, time.Now().UTC())
-}
-
-func testingGoalRiskWithEndpoint(endpoint goal.Endpoint, id string, now time.Time) (testpolicy.GoalRisk, uint64, error) {
-	projection, err := goal.Project(endpoint, false, now)
-	if err != nil {
-		return testpolicy.GoalRisk{}, 0, err
-	}
-	file := projection.Tree.Live[id]
-	if file == nil || file.Risk == nil {
-		return testpolicy.GoalRisk{}, 0, fmt.Errorf("goal %s has no accepted risk and budget episode", id)
-	}
-	accountingRevision := goal.BudgetEpisodeRevision(file)
-	if accountingRevision == 0 {
-		return testpolicy.GoalRisk{}, 0, fmt.Errorf("goal %s has no accepted budget episode", id)
-	}
-	return testpolicy.GoalRisk{Severity: int(file.Risk.Severity), Novelty: int(file.Risk.Novelty),
-		Exposure: int(file.Risk.Exposure), Accumulation: int(file.Risk.Accumulation)}, accountingRevision, nil
-}
-
-func resolveTestingGoal(root, requested string) (string, error) {
-	return resolveTestingGoalFor(root, requested, int64(os.Getppid()))
-}
-
-// resolveTestingGoalFor resolves the goal a run accounts to; a nested proof's
-// parent is authenticated from the supplied caller.
-func resolveTestingGoalFor(root, requested string, callerPID int64) (string, error) {
-	return resolveTestingGoalWithCaller(root, requested, goal.ResolveMachine, goal.ResolveEndpoint, time.Now, callerPID)
-}
-
-func resolveTestingGoalWithCaller(root, requested string, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), now func() time.Time, callerPID int64) (string, error) {
-	if requested != "" {
-		return requested, nil
-	}
-	parentRoot, parentAttempt := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT")
-	if parentRoot != "" || parentAttempt != "" {
-		if parentRoot == "" || parentAttempt == "" {
-			return "", fmt.Errorf("proof parent locator is incomplete")
-		}
-		canonicalParent, err := canonicalProofRoot(parentRoot)
-		if err != nil || canonicalParent != root {
-			return "", fmt.Errorf("proof parent control root does not match testing root")
-		}
-		attempt, err := proofrun.AuthenticateContext(root, parentAttempt, callerPID)
-		if err != nil {
-			return "", err
-		}
-		return attempt.AccountedGoal(), nil
-	}
-	return uniqueActiveProofGoalWithReads(root, now().UTC(), resolveMachine, resolveEndpoint)
-}
-
-func trustedTestingPolicyBase(projectRoot string, workspace gittree.Workspace) (string, error) {
-	data, err := testingLandingRef(projectRoot, "--worktree")
-	if err != nil {
-		data, err = testingLandingRef(projectRoot, "--local")
-	}
-	ref := strings.TrimSpace(string(data))
-	tail := strings.TrimPrefix(ref, "refs/remotes/")
-	remote, branch, qualified := strings.Cut(tail, "/")
-	if err != nil || tail == ref || !qualified || remote == "" || branch == "" {
-		return "", fmt.Errorf("trusted testing policy base requires local metasystem.steward.landing-ref shaped refs/remotes/<remote>/<branch>")
-	}
-	commit, err := workspace.ResolveCommit(ref)
-	if err != nil {
-		return "", fmt.Errorf("resolve trusted testing policy base %s: %w", ref, err)
-	}
-	return commit, nil
-}
-
-func testingLandingRef(projectRoot, scope string) ([]byte, error) {
-	command := exec.Command("git", "-C", projectRoot, "config", scope, "--no-includes", "--get", "metasystem.steward.landing-ref")
-	command.Env = gittree.ScrubbedEnviron()
-	return command.Output()
-}
-
-func testingEnvironment(environment []string) []string {
-	allowed := map[string]bool{"PATH": true, "HOME": true, "TMPDIR": true, "TMP": true, "TEMP": true,
-		"GOCACHE": true, "GOMODCACHE": true, "GOTMPDIR": true, "STATICCHECK_CACHE": true, "GOPATH": true, "GOROOT": true, "GOFLAGS": true, "GOWORK": true,
-		"CGO_ENABLED": true, "GOTOOLCHAIN": true, "GOEXPERIMENT": true, "JAVA_HOME": true, "LANG": true,
-		"LC_ALL": true, "SYSTEMROOT": true, "TZ": true, identity.RunOwnerEnv: true,
-		// Go env file selection, snapshotted by PrepareScratchEnvironment.
-		"GOENV": true, "XDG_CONFIG_HOME": true}
-	var result []string
-	for _, entry := range environment {
-		name, _, ok := strings.Cut(entry, "=")
-		if ok && allowed[name] {
-			result = append(result, entry)
-		}
-	}
-	sort.Strings(result)
-	return result
-}
-
-func inheritedTestingEnvironment(prepared, inherited []string) []string {
-	allowed := map[string]bool{"METASYSTEM_PROOF_CONTROL_ROOT": true, "METASYSTEM_PROOF_ATTEMPT": true,
-		"METASYSTEM_PROOF_RECORD_KEY": true, "METASYSTEM_PROOF_CREATION_CLAIM": true, "METASYSTEM_PROOF_AUTH_BIN": true,
-		identity.RunOwnerEnv: true, identity.FixtureAttemptEnv: true}
-	values := make(map[string]string, len(prepared)+len(allowed))
-	for _, entry := range prepared {
-		name, value, ok := strings.Cut(entry, "=")
-		if ok {
-			values[name] = value
-		}
-	}
-	for _, entry := range inherited {
-		name, value, ok := strings.Cut(entry, "=")
-		if ok && allowed[name] {
-			values[name] = value
-		}
-	}
-	names := make([]string, 0, len(values))
-	for name := range values {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	result := make([]string, 0, len(names))
-	for _, name := range names {
-		result = append(result, name+"="+values[name])
-	}
-	return result
-}
-
-func readTestingWorkerResult(path string) (proofrun.TestResult, error) {
-	var result proofrun.TestResult
-	if err := readStrictJSON(path, &result); err != nil {
-		return proofrun.TestResult{}, err
-	}
-	if err := proofrun.ValidateTestResult(result); err != nil {
-		return proofrun.TestResult{}, err
-	}
-	return result, nil
-}
-
-func readStrictJSON(path string, target any) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return fmt.Errorf("trailing JSON in %s", path)
-	}
-	return nil
 }
 
 func writePrivateJSON(path string, value any) error {
@@ -2507,38 +1134,6 @@ func bytesSHA256(data []byte) string { return digest.SHA256(data) }
 
 func fileSHA256(path string) (string, error) { return digest.FileSHA256(path) }
 
-// testingReceiptWanted says whether a sufficient result becomes a testing
-// receipt on this checkout. A joined attempt has no result of its own, and
-// a diagnostic attempt never lands: it proves a tree that need not be this
-// checkout's index (a delegate round's worktree through job prove-round,
-// the bounded unknown groups), and the receipt preparation would refuse the
-// moved candidate and turn a sufficient attempt into a failed terminal.
-// testingTerminalCommit is the outer testing launch's terminal commit: the
-// worker's result is read once and committed with the terminal. A worker
-// that left no usable result (it refused before its first group, or its
-// suite was ended under it, or it wrote a result the reader refuses) ends
-// the attempt failed with the reader's error named, instead of failing the
-// commit itself and leaving an unknown terminal that hides the cause:
-// thirteen of the nineteen unknown terminals on four checkouts between
-// 2026-09-09 and 09-12 read that way. A success without its result is a
-// contradiction and is refused; in a real launch PrepareSuccess reads the
-// result first and turns a missing one into a failed exit, so this guard is
-// the commit's own defence.
-// bindTestingScratch binds a launcher request to the run's scratch root and
-// its managed environment; preparation, execution and verification all bind
-// through here so their identities agree.
-// The first binding of a run snapshots its environment once; every later
-// request of the run carries that exact descriptor and only validates it, so
-// the configuration identities were derived from is the one executed.
-func bindTestingScratch(request *proofrun.TestRunRequest, scratch *proofrun.ScratchRun, locator *proofrun.ScratchLocator, prepared *proofrun.ScratchEnvironment) error {
-	request.BindScratch(scratch, locator)
-	if prepared == nil {
-		return proofrun.PrepareScratchEnvironment(request, scratch)
-	}
-	request.ScratchEnvironment = prepared
-	return proofrun.ValidateScratchEnvironment(*request, scratch)
-}
-
 // finishTestingScratch removes this run's scratch root; a writer that has not
 // drained keeps the root and its record for recovery and fails the command.
 func finishTestingScratch(stderr io.Writer, scratch *proofrun.ScratchRun, status int) int {
@@ -2558,7 +1153,7 @@ func testingTerminalCommit(workerResultPath string, retained **proofrun.TestResu
 func testingTerminalCommitWithReads(workerResultPath string, retained **proofrun.TestResult, reads *dispatchcore.ProofAdmissionReads) func(proofrun.CompletionContext, json.RawMessage) error {
 	return func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
 		if *retained == nil {
-			result, readErr := readTestingWorkerResult(workerResultPath)
+			result, readErr := testrun.ReadWorkerResult(workerResultPath)
 			if readErr != nil {
 				if completion.ExitStatus == 0 {
 					return readErr
@@ -2594,36 +1189,4 @@ func cancelOnRecordedIntent(stderr io.Writer, ctx context.Context, cancel contex
 			}
 		}
 	}
-}
-
-// recordedAutomaticTestingWorkers returns the allowance the newest successful
-// run for this goal and accounting revision recorded, preferring a run on the
-// verified candidate tree. Only an allowance the automatic policy could have
-// chosen on this host (one through ceiling) is taken; anything else leaves the
-// fresh resolution, which then refuses honestly.
-func recordedAutomaticTestingWorkers(prepared testingPreparation, attempts []proofrun.Attempt, ceiling int) (int, bool) {
-	var chosen *proofrun.Attempt
-	var chosenStarted time.Time
-	chosenSameTree := false
-	for index := range attempts {
-		attempt := &attempts[index]
-		if !attemptAccountsForCandidate(*attempt, prepared.GoalID, prepared.AccountingRevision) ||
-			attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess || attempt.TestResult == nil ||
-			attempt.TestResult.WorkerPolicyVersion != proofrun.TestWorkerPolicyVersion ||
-			attempt.TestResult.Workers < 1 || attempt.TestResult.Workers > ceiling {
-			continue
-		}
-		started, err := time.Parse(time.RFC3339Nano, attempt.StartedAt)
-		if err != nil {
-			continue
-		}
-		sameTree := attempt.TestResult.CandidateTree == prepared.CandidateTree
-		if chosen == nil || sameTree && !chosenSameTree || sameTree == chosenSameTree && started.After(chosenStarted) {
-			chosen, chosenStarted, chosenSameTree = attempt, started, sameTree
-		}
-	}
-	if chosen == nil {
-		return 0, false
-	}
-	return chosen.TestResult.Workers, true
 }

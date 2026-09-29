@@ -1,6 +1,6 @@
 {
   "packages": {
-    "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem": 540,
+    "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem": 513,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/acp": 60,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/adapter": 162,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/atif": 7,
@@ -88,6 +88,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy": 32,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit": 4,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractmerge": 8,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/testrun": 27,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testutil": 22,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/turn": 3,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions": 0,
@@ -299,7 +300,7 @@
       "reason": "runs public proof commands with host admission and live launcher controls"
     },
     {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/testrun",
       "test": "TestLandedRearmRebuildWaitsForHostSlotAndClearsCustody",
       "reason": "uses live host resource admission and candidate engine rebuild controls"
     },

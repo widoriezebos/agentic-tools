@@ -35,6 +35,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
@@ -606,7 +607,7 @@ func (o hookOwners) EngineBehind(installation, repo string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	verifyErr := pinned.VerifySourceAtDestinationWithClock(landedRearmClock, installation, strings.TrimSpace(head))
+	verifyErr := pinned.VerifySourceAtDestinationWithClock(steward.SystemRearmClock(), installation, strings.TrimSpace(head))
 	if verifyErr == nil {
 		return false, nil
 	}
@@ -618,7 +619,7 @@ func (o hookOwners) EngineBehind(installation, repo string) (bool, error) {
 		return false, err
 	}
 	seconds := steward.RearmResolveSeconds(installation)
-	dirty, err := dirtyEnginePaths(context.Background(), landedRearmClock, seconds, installation, strings.TrimSuffix(strings.TrimSpace(prefix), "/"))
+	dirty, err := testrun.DirtyEnginePaths(context.Background(), steward.SystemRearmClock(), seconds, installation, strings.TrimSuffix(strings.TrimSpace(prefix), "/"))
 	if err != nil || len(dirty) > 0 {
 		return false, err
 	}
@@ -668,7 +669,7 @@ func (o hookOwners) StartEngineRebuild(installation string) error {
 		return err
 	}
 	defer logFile.Close()
-	argv := devgateBootstrapBuildArgv()
+	argv := testrun.DevgateBootstrapBuildArgv()
 	command := exec.Command(argv[0], argv[1:]...)
 	if o.engineBuild != nil {
 		command = o.engineBuild()

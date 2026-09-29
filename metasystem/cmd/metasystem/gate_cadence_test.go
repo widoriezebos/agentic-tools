@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestCadencePreparationDoesNotRequireClaimedGoal(t *testing.T) {
@@ -23,10 +24,6 @@ func TestCadencePreparationDoesNotRequireClaimedGoal(t *testing.T) {
 	if request.Root != "landing" || request.Tree != "tree" || request.GoalID != "" || request.Purpose != testpolicy.PurposeCadence ||
 		request.Mode != testpolicy.ModeDeep || !request.CadencePreflight {
 		t.Fatalf("cadence preparation request=%+v", request)
-	}
-	accounts, err := testingPreparationAccountsToGoal(request)
-	if err != nil || accounts {
-		t.Fatalf("cadence preflight accounts-to-goal=%t err=%v", accounts, err)
 	}
 }
 
@@ -58,10 +55,10 @@ func TestCadenceRevalidationDefersMissingEngineBuildUntilClaimedRun(t *testing.T
 	cadenceBuildIdentity = func(context.Context, gittree.Workspace, string, string, []string) (string, error) {
 		return "build-identity", nil
 	}
-	cadenceRetainedEngineDigest = func(testingPreparation, []proofrun.Attempt, string, bool) (string, error) {
+	cadenceRetainedEngineDigest = func(testrun.Preparation, []proofrun.Attempt, string, bool) (string, error) {
 		return "", errors.New("no retained engine")
 	}
-	identity, digest, exact, err := cadenceCandidateEngineIdentityWith(testingPreparation{ProjectRoot: "root"}, gaterun.CadenceTrunk{Tree: strings.Repeat("a", 40)}, nil, productionCadenceRevalidationDependencies())
+	identity, digest, exact, err := cadenceCandidateEngineIdentityWith(testrun.Preparation{ProjectRoot: "root"}, gaterun.CadenceTrunk{Tree: strings.Repeat("a", 40)}, nil, productionCadenceRevalidationDependencies())
 	if err != nil || identity != "build-identity" || exact || digest != bytesSHA256([]byte("cadence-missing-engine-evidence\x00build-identity")) {
 		t.Fatalf("identity=%q digest=%q exact=%t err=%v", identity, digest, exact, err)
 	}
@@ -169,7 +166,7 @@ func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *tes
 		Stages: []testpolicy.Stage{{ID: "deep", Groups: []string{group.ID}}}}
 	digest := strings.Repeat("a", 64)
 	buildIdentity, engineDigest := strings.Repeat("b", 40), strings.Repeat("c", 64)
-	prepared := testingPreparation{Installation: root, ControlRoot: root, ProjectRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
+	prepared := testrun.Preparation{Installation: root, ControlRoot: root, ProjectRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 		BaseCommit: "HEAD", PolicyBaseCommit: "HEAD", CandidateTree: tree, EffectiveContract: contract, Plan: plan,
 		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest, JudgeKey: "cadence-worker-policy",
 		Environment: os.Environ()}
@@ -177,7 +174,7 @@ func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *tes
 	if _, err := resolveTestingPreparationWorkerPolicy(&resolved); err != nil || resolved.Workers != wantWorkers || resolved.AdmissionMaximum != 2 {
 		t.Fatalf("resolved cadence policy workers=%d admission=%d err=%v", resolved.Workers, resolved.AdmissionMaximum, err)
 	}
-	request := testingRunRequest(resolved, "cadence-retained", "", "", engineDigest, buildIdentity)
+	request := testrun.RunRequest(resolved, "cadence-retained", "", "", engineDigest, buildIdentity)
 	request.WithCandidateOpener(openCandidate)
 	identities, metadata, launches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), request)
 	if err != nil || launches != 0 {
@@ -207,17 +204,17 @@ func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *tes
 		buildIdentity: func(context.Context, gittree.Workspace, string, string, []string) (string, error) {
 			return buildIdentity, nil
 		},
-		retainedDigest: func(testingPreparation, []proofrun.Attempt, string, bool) (string, error) { return engineDigest, nil },
-		prepare: func(request testingSelectionRequest) (testingPreparation, error) {
+		retainedDigest: func(testrun.Preparation, []proofrun.Attempt, string, bool) (string, error) { return engineDigest, nil },
+		prepare: func(request testrun.SelectionRequest) (testrun.Preparation, error) {
 			repreparations++
 			if request.Tree != tree || request.Purpose != testpolicy.PurposeCadence || !request.CadencePreflight {
-				return testingPreparation{}, errors.New("unexpected cadence re-preparation request")
+				return testrun.Preparation{}, errors.New("unexpected cadence re-preparation request")
 			}
 			return prepared, nil
 		},
 	}
 
-	assertReused := func(name string, input testingPreparation, wantRepreparations int) {
+	assertReused := func(name string, input testrun.Preparation, wantRepreparations int) {
 		t.Helper()
 		revalidation, err := revalidateCadenceWith(root, input, gaterun.CadenceTrunk{Commit: "HEAD", Tree: tree}, []string{group.ID}, dependencies)
 		if err != nil || len(revalidation.Groups) != 1 || revalidation.Groups[0].Status != "reused" ||

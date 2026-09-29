@@ -63,7 +63,7 @@ func topLevelEntries() []topLevelEntry {
 func registeredTopLevelEntries() []topLevelEntry {
 	return []topLevelEntry{
 		{name: "up", usage: "up [--repo <checkout>] [--pid <pid> --start-time <epoch>] | up --print-scheduler-entry [--repo <checkout>]",
-			launcher: "cmd/metasystem/rearm_on_landed.go", evidence: `"up", "--repo"`,
+			launcher: "internal/testrun/rearm.go", evidence: `"up", "--repo"`,
 			run: func(args []string, stdout, stderr io.Writer, repositoryTop func(string) (string, error)) int {
 				return runUpWith(args, repositoryTop, stdout, stderr)
 			}},
@@ -130,7 +130,7 @@ func registeredFamilies() []family {
 				}, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"plan\"", required: []string{"root"}},
 				{name: "run", summary: "run one proof as the landing owner's own child", run: runTestRun, launcher: "cmd/metasystem/landing_batch_prove.go", evidence: "\"internal\", \"test\", \"run\"", required: []string{"root"}},
 				{name: "verify", summary: "verify retained proof on the base engine a carried landing builds", run: runTestVerify, launcher: "cmd/metasystem/landing_path.go", evidence: "\"test\", \"verify\"", required: []string{"root"}},
-				{name: "worker-capabilities", summary: "report the testing worker protocol of a pinned engine", run: runTestWorkerCapabilities, launcher: "cmd/metasystem/test.go", evidence: "\"test\", \"worker-capabilities\""},
+				{name: "worker-capabilities", summary: "report the testing worker protocol of a pinned engine", run: runTestWorkerCapabilities, launcher: "internal/testrun/worker.go", evidence: "\"test\", \"worker-capabilities\""},
 				{name: "worker", summary: "execute one admitted selected plan on a pinned engine", run: runTestWorker, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"worker\"", required: []string{"packet", "packet-sha256", "result"}},
 			},
 		},
