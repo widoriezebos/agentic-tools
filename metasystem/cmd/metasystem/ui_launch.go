@@ -117,6 +117,14 @@ func launchStarter(roots lifecycle.Roots) func(*session.Session, launch.Request)
 	}
 }
 
+// launchDiscarder is the DiscardLaunch the server is built with: the record
+// in this checkout is marked, and the clone it names is not touched.
+func launchDiscarder(roots lifecycle.Roots) func(id string) (launch.Record, error) {
+	return func(id string) (launch.Record, error) {
+		return launch.Discard(roots.Checkout, id, time.Now())
+	}
+}
+
 // launchRecordFor is the record this request is about: the one a retry
 // resumes, or a fresh one written before anything runs.
 func launchRecordFor(roots lifecycle.Roots, asked *launch.Request) (launch.Record, string, error) {

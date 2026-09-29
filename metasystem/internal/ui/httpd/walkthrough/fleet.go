@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
@@ -209,9 +210,53 @@ func fixtureHealth(now time.Time) *fleet.Health {
 const (
 	fixtureRunningLaunch = "01M3BQAVYXE2AT6F0JG9YB64PG"
 	fixtureFailedLaunch  = "01M3BQ8000000000000000000A"
+	// fixtureDiscardedLaunch is an older launch a human already discarded:
+	// it travels on the payload and the page draws no card for it.
+	fixtureDiscardedLaunch = "01M3BQ6000000000000000000A"
 )
 
-// fixtureLaunches is a running launch and a failed one.
+// fixtureDiscards is which launches this fixture has been asked to discard.
+// It is state rather than a constant so that Discard in a browser does what
+// it does against the engine: the card goes, and stays gone on the next read.
+type fixtureDiscards struct {
+	mu   sync.Mutex
+	done map[string]string
+}
+
+// discard marks one fixture launch, idempotently, and answers its record.
+func (d *fixtureDiscards) discard(id string, now time.Time) (launch.Record, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, record := range fixtureLaunches(now) {
+		if record.Launch != id {
+			continue
+		}
+		if d.done == nil {
+			d.done = map[string]string{}
+		}
+		if _, held := d.done[id]; !held {
+			d.done[id] = seat.FormatTime(now)
+		}
+		at := d.done[id]
+		record.DiscardedAt = &at
+		return record, nil
+	}
+	return launch.Record{}, &launch.Refusal{Code: launch.CodeUnknown, Message: "no launch " + id + " is recorded on this host"}
+}
+
+// mark is the records with this fixture's discards written onto them.
+func (d *fixtureDiscards) mark(records []launch.Record) []launch.Record {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for index := range records {
+		if at, held := d.done[records[index].Launch]; held {
+			records[index].DiscardedAt = &at
+		}
+	}
+	return records
+}
+
+// fixtureLaunches is a running launch, a failed one and an older discarded one.
 //
 // The running one is partway through: the clone, the tracking fetch and the
 // build are done, and the configuration step is pending — which is the card's
@@ -221,6 +266,8 @@ const (
 // show verbatim.
 func fixtureLaunches(now time.Time) []launch.Record {
 	ended := seat.FormatTime(now.Add(-14 * time.Minute))
+	discardedEnded := seat.FormatTime(now.Add(-3 * time.Hour))
+	discardedAt := seat.FormatTime(now.Add(-2 * time.Hour))
 	return []launch.Record{
 		{
 			SchemaVersion: launch.SchemaVersion, Launch: fixtureRunningLaunch, Machine: "m1f",
@@ -261,6 +308,16 @@ func fixtureLaunches(now time.Time) []launch.Record {
 				Stop:    "metasystem system stop --repo /Users/wido/LocalStorage/GitHub/agentic-tools-m1g/metasystem",
 			},
 		},
+		{
+			SchemaVersion: launch.SchemaVersion, Launch: fixtureDiscardedLaunch, Machine: "m1h",
+			Destination: "/Users/wido/LocalStorage/GitHub/agentic-tools-m1h",
+			StartedAt:   seat.FormatTime(now.Add(-3 * time.Hour)), EndedAt: &discardedEnded,
+			Outcome: launch.OutcomeFailed, ReviewBy: "2026-10-02",
+			Steps: []launch.Step{
+				{Step: launch.StepClone, Outcome: launch.StepFailed, At: discardedEnded, Words: "git clone: exit status 128"},
+			},
+			DiscardedAt: &discardedAt,
+		},
 	}
 }
 
@@ -273,7 +330,7 @@ func fixtureLaunchesNewest(now time.Time, newest string) []launch.Record {
 	case "none":
 		return nil
 	case "failed":
-		return []launch.Record{records[1], records[0]}
+		return []launch.Record{records[1], records[0], records[2]}
 	default:
 		return records
 	}
@@ -301,7 +358,7 @@ func fixtureLaunchOf(asked launch.Request, now time.Time) launch.Record {
 
 // fixtureFleet is the Fleet page this fixture serves, composed from the canned
 // presence above and the observation the board was drawn from.
-func fixtureFleet(proven bool, launched string) func(snapshot.Observation, backlog.Board, time.Time) (fleet.Page, error) {
+func fixtureFleet(proven bool, launched string, discards *fixtureDiscards) func(snapshot.Observation, backlog.Board, time.Time) (fleet.Page, error) {
 	return func(observed snapshot.Observation, board backlog.Board, now time.Time) (fleet.Page, error) {
 		in := fleet.Inputs{
 			This: fixtureThis, Presence: fixturePresence(now, proven),
@@ -314,7 +371,10 @@ func fixtureFleet(proven bool, launched string) func(snapshot.Observation, backl
 			Previous: fixtureStandings(now),
 			Window:   seat.DefaultStaleMinutes * time.Minute,
 		}
-		in.Launches = fixtureLaunchesNewest(now, launched)
+		in.Launches = discards.mark(fixtureLaunchesNewest(now, launched))
+		// The failed launch's clone is on this invented disk, so its card
+		// names the leftover; the others are not.
+		in.Present = func(path string) bool { return path == "/Users/wido/LocalStorage/GitHub/agentic-tools-m1g" }
 		in.Launching = fleet.Launching{
 			Parent: "/Users/wido/LocalStorage/GitHub", Repository: "agentic-tools",
 		}

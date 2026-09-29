@@ -3,8 +3,10 @@ package fleet
 // The launch records on the page, and the one event a changed record causes.
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,4 +97,38 @@ func TestAHostWithNoLaunchesFingerprintsAsEmpty(t *testing.T) {
 	t.Parallel()
 	testutil.Expect(t, "absent", FingerprintOf(filepath.Join(t.TempDir(), "nothing")), "")
 	testutil.Expect(t, "empty", FingerprintOf(t.TempDir()), "")
+}
+
+// The page says, per launch, whether the clone it made is still on disk, so a
+// stopped card names the leftover only while there is one. Nothing is judged
+// here: the caller's own reading of the disk is what the page carries.
+func TestThePageSaysWhetherEachLaunchesCloneIsStillOnDisk(t *testing.T) {
+	t.Parallel()
+	page := Compose(Inputs{This: "m1u", Launches: []launch.Record{
+		{Launch: "01M3BQAVYXE2AT6F0JG9YB64PG", Machine: "m1f", Destination: "/w/there", Outcome: launch.OutcomeFailed},
+		{Launch: "01M3BQAVYXE2AT6F0JG9YB64PF", Machine: "m1g", Destination: "/w/gone", Outcome: launch.OutcomeFailed},
+	}, Present: func(path string) bool { return path == "/w/there" }}, time.Now().UTC())
+	testutil.Require(t, "both travel", len(page.Launches), 2)
+	testutil.Expect(t, "the clone still there", page.Launches[0].DestinationPresent, true)
+	testutil.Expect(t, "the clone gone", page.Launches[1].DestinationPresent, false)
+
+	data, err := json.Marshal(page.Launches[0])
+	testutil.Require(t, "marshal", err, nil)
+	testutil.Expect(t, "the field travels beside the record's own",
+		strings.Contains(string(data), `"destinationPresent":true`) && strings.Contains(string(data), `"machine":"m1f"`), true)
+}
+
+// A launch a human discarded is not one they can still act on, so the
+// reading does not print it.
+func TestTheReadingLeavesADiscardedLaunchOut(t *testing.T) {
+	t.Parallel()
+	at := "2026-09-29T10:00:00Z"
+	page := Compose(Inputs{This: "m1u", Launches: []launch.Record{
+		{Machine: "m1g", Destination: "/w/agentic-tools-m1g", Outcome: launch.OutcomeFailed, DiscardedAt: &at},
+	}}, time.Now().UTC())
+	for _, line := range page.Lines(time.Now().UTC()) {
+		if strings.HasPrefix(line, "- Launch: ") {
+			t.Fatalf("a discarded launch was printed: %s", line)
+		}
+	}
 }

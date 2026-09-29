@@ -35,12 +35,15 @@ func (p Page) Lines(now time.Time) []string {
 	// a machine that is joining is not a seat of this fleet yet, and a launch
 	// that failed is a directory on this host rather than a machine. Only the
 	// two a human can still act on are printed — a launch that finished is
-	// the row above it.
+	// the row above it, and one a human discarded is one they have put away.
 	for _, record := range p.Launches {
 		if record.Outcome != launch.OutcomeRunning && record.Outcome != launch.OutcomeFailed {
 			continue
 		}
-		lines = append(lines, "- Launch: "+launchLine(record))
+		if record.DiscardedAt != nil {
+			continue
+		}
+		lines = append(lines, "- Launch: "+launchLine(record.Record))
 	}
 	return lines
 }

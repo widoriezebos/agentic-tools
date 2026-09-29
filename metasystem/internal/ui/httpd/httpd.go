@@ -75,6 +75,11 @@ type Info struct {
 	// answers with; anything else is a 500. A nil Launch is an engine that
 	// cannot launch a machine, which the route says.
 	Launch func(signed *session.Session, asked launch.Request) (launch.Record, error)
+	// DiscardLaunch marks one stopped launch discarded and answers the record
+	// as it now reads. It deletes nothing. A launch.Refusal carries the status
+	// the route answers with; anything else is a 500. A nil DiscardLaunch is
+	// an engine that cannot discard one, which the route says.
+	DiscardLaunch func(id string) (launch.Record, error)
 	// Watch is the bridge between the open notification streams and the
 	// presence fetch owner: the streams are the owner's connection signal,
 	// and the one `fleet` event rides back to them after every attempt. A nil

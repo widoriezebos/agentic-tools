@@ -475,6 +475,9 @@ func runUIServe(args []string) int {
 				// route checks for itself: a launch spends disk, a build
 				// and their own authorization.
 				Launch: launchStarter(roots),
+				// A stopped launch put out of sight: the record is marked
+				// and kept, and nothing on disk is deleted.
+				DiscardLaunch: launchDiscarder(roots),
 				Project: func() (project.Pane, error) {
 					return project.ReadPane(projectRoots(roots), time.Now().UTC())
 				},

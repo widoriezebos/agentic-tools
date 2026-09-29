@@ -83,6 +83,8 @@ func Acts() []manifest.Act {
 			Does: "Starts the goal's branch from its own worktree on its own port beside the standing run, and answers where it runs and the commit it runs."},
 		{ID: routeAppStop, Title: "Stop a goal's candidate", Requires: sessionHand,
 			Does: "Stops the goal's candidate run and proves it stopped."},
+		{ID: routeDiscardLaunch, Title: "Discard a stopped launch", Requires: checkoutHand,
+			Does: "Marks one launch that stopped, or whose machine joined, as discarded so its card leaves the fleet page. The record is kept and nothing is deleted: the clone stays on disk until you remove it."},
 		{ID: routeCreateRecord, Title: "Write a record", Requires: checkoutHand,
 			Does: "Creates one decision, design, doctrine or intent record in the home its kind names."},
 		{ID: routeRecordStatus, Title: "Set a record's status", Requires: checkoutHand,
