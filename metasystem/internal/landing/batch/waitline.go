@@ -37,9 +37,6 @@ func WaitLine(record Record, now time.Time, location *time.Location) string {
 }
 
 func waitText(wait WaitState, now time.Time, location *time.Location) string {
-	if len(wait.Changes) != 0 {
-		return fmt.Sprintf("waits for a goal member: %s %s on a goal's proof", joinAnd(wait.Changes), map[bool]string{true: "rides", false: "ride"}[len(wait.Changes) == 1])
-	}
 	if wait.Fallback != "" {
 		return fmt.Sprintf("waits: board unreadable (%s); starts at the max wait, %s", wait.Fallback, localClock(wait.Until, location))
 	}

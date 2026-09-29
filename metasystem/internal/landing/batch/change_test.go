@@ -145,25 +145,24 @@ func TestReplayChangeGitAdapterKeepsTheAskersTrailersAndAddsLandingChange(t *tes
 	}
 }
 
-// TestChangeOnlyBatchWaitsForAGoalMember (U11b): every proof is charged to a
-// goal, so a batch whose joined members are all changes never starts and
-// says why; the first goal member that joins starts it.
-func TestChangeOnlyBatchWaitsForAGoalMember(t *testing.T) {
+// TestChangeOnlyBatchStartsAtOnce (U11b, the coordinator's ruling): a batch
+// whose joined members are all changes starts by the knowledge-driven start
+// rule like any batch, nothing reachable meaning now; it never waits for a
+// goal member, since its proof is charged to the lane. Its diagnosis is keyed
+// to its last change, which the lane owner charges to the lane.
+func TestChangeOnlyBatchStartsAtOnce(t *testing.T) {
 	t.Parallel()
 	record := Record{Schema: 1, BatchID: testBatchID, State: StateOpen, Units: []Unit{changeMemberUnit()},
 		History: []HistoryEntry{{At: ten.Format(time.RFC3339Nano), Verb: "join", Detail: "change:abcdef012345 joined"}}}
 	record.Units[0].State = UnitJoined
 	bed := newOwnerBed(t, record, ten)
 	bed.owner.pipeline = &scriptedBoard{picture: BoardPicture{Readable: true}}
-	waiting := tickAt(t, bed, ten.Add(time.Hour))
-	line := WaitLine(waiting, ten.Add(time.Hour), time.UTC)
-	if bed.launches != 0 || waiting.Wait == nil || !strings.Contains(line, "waits for a goal member: change:abcdef012345 rides on a goal's proof") {
-		t.Fatalf("change-only batch: launches=%d wait=%+v line=%q", bed.launches, waiting.Wait, line)
+	started := tickAt(t, bed, ten)
+	if bed.launches != 1 || started.Wait != nil || started.StartReason != "nothing within reach" {
+		t.Fatalf("change-only batch: launches=%d wait=%+v reason=%q", bed.launches, started.Wait, started.StartReason)
 	}
-	joinUnit(t, bed, "goal-a", ten.Add(time.Hour))
-	started := tickAt(t, bed, ten.Add(time.Hour))
-	if bed.launches != 1 || started.Wait != nil {
-		t.Fatalf("goal member joined: launches=%d wait=%+v", bed.launches, started.Wait)
+	if charge := ChargeUnit(joinedUnits(started.Units)); charge.GoalID != "change:abcdef012345" {
+		t.Fatalf("charge unit=%+v", charge)
 	}
 }
 
@@ -258,5 +257,52 @@ func TestChangeRecoveryFindsLandingChangeTrailer(t *testing.T) {
 	got := landed.Units[1]
 	if landed.State != StateLanded || got.Outcome != UnitLanded || !got.P6Done || got.LandedCommit != "origin-abcdef012345" || finalized["goal-a"] != 1 || finalized[change.GoalID] != 0 {
 		t.Fatalf("recovered state=%s change=%+v finalized=%v", landed.State, got, finalized)
+	}
+}
+
+// TestHeldRefusalEjectsTheChangeAndTheGoalMembersLand (U11b): when held
+// refuses the series at the push because of a change's replayed commit, the
+// change is ejected with the refusal as its reason and the survivors reopen;
+// the step is never tried again as it was, and the goal member then lands.
+func TestHeldRefusalEjectsTheChangeAndTheGoalMembersLand(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	base := testCommit(101)
+	store := NewStore(root, nil)
+	strictReassembly(t, &store, expectedAssembly(base, []string{"goal-a"}, []string{"chain-a"}, []string{testCommit(103)}))
+	record := openBatchWithGoalMember(base)
+	change := changeMemberUnit()
+	change.State = UnitJoined
+	record.Units = append(record.Units, change)
+	record.State, record.PrefixTrees, record.TipTree = StateLanding, []string{testCommit(103), testCommit(104)}, testCommit(104)
+	record.Proof = &Proof{Status: "green", AttemptID: "tip"}
+	record.Receipts = map[string]PrefixReceipt{"goal-a": {GoalID: "goal-a", Tree: testCommit(103), AttemptID: "prefix"}}
+	record.History = append(record.History, HistoryEntry{At: ten.Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "owner"})
+	must(t, store.Create(record))
+	var events []string
+	seams := greenLandSeams(&events)
+	seams.ReplayChange = func(unit Unit) (string, error) { events = append(events, "replay:"+unit.GoalID); return "replayed-change", nil }
+	seams.Held = func(_, tip string) error {
+		events = append(events, "held:"+tip)
+		return &HeldCommitRefusal{Commit: "replayed-change", Cause: errors.New("held refused: goal-item-not-held: replayed-change: goal goal-g is released at abc")}
+	}
+	must(t, LandSeries(store, testBatchID, "owner", ten.Add(time.Minute), seams))
+	after := load(t, store)
+	got := after.Units[1]
+	if after.State != StateOpen || after.Units[0].State != UnitJoined || got.State != UnitReturnPending || got.Outcome != UnitEjected ||
+		!strings.Contains(got.Failure, "held refused change "+change.GoalID) || !strings.Contains(got.Failure, "goal-item-not-held") || !slices.Contains(events, "reset") {
+		t.Fatalf("state=%s goal=%+v change=%+v events=%v", after.State, after.Units[0], got, events)
+	}
+	// The survivors prove again and land; nothing retries the refused step.
+	must(t, store.Update(testBatchID, func(current *Record) error {
+		current.Proof = &Proof{Status: "green", AttemptID: "tip-2"}
+		current.Transition(StateLanding, ten.Add(2*time.Minute), "prove", "owner", "green")
+		return nil
+	}))
+	events = nil
+	seams.Held = func(string, string) error { events = append(events, "held"); return nil }
+	must(t, LandSeries(store, testBatchID, "owner", ten.Add(3*time.Minute), seams))
+	if want := []string{"apply:goal-a", "receipt:goal-a", "commit:goal-a", "held", "push", "cleanup"}; !slices.Equal(events, want) {
+		t.Fatalf("survivor landing events=%v want %v", events, want)
 	}
 }

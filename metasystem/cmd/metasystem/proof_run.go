@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
@@ -28,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -563,6 +565,12 @@ type proofLaunchAdmission struct {
 	ForceGroups                                                                          bool
 	ManagedCapacity                                                                      bool
 	RequireDiagnosticHeadroom                                                            bool
+	// LaneID is the landing lane's accounting identity a proof is charged to
+	// instead of a goal: a batch whose members are all changes (U11b).
+	LaneID string
+	// laneAccount resolves the lane identity of a control root; nil reads the
+	// host's lane record.
+	laneAccount func(controlRoot string) (string, error)
 	// CallerPID is the supplied process the admission classifies and whose
 	// custody it authenticates (design 6.2); zero is this process's parent,
 	// the entry's own caller.
@@ -955,6 +963,9 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		}
 		return attempt, proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionExecuted, AttemptID: attempt.AttemptID}, true, nil
 	}
+	if request.LaneID != "" {
+		return admitLaneProofLaunch(request, classifiedCaller, now)
+	}
 	var reservationOwner *proofrun.ReservationOwner
 	delegateRevision := uint64(0)
 	boundAuthority := false
@@ -1319,6 +1330,100 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, errors.Join(snapshotErr, withdrawErr)
 	}
 	return attempt, decision, false, nil
+}
+
+// admitLaneProofLaunch reserves a proof charged to the landing lane, not a
+// goal (U11b): the lane's own checkout proves a batch whose members are all
+// changes. The identity must be the host lane's and the control root inside
+// it; the attempt records the lane as its owner, and no goal's budget, claim
+// or revision is read or moved.
+func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyResult, now time.Time) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+	refuse := func(format string, args ...any) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("LANE_ACCOUNT_UNRESOLVED: "+format, args...)
+	}
+	if request.GoalID != "" || request.AuthorityGoalID != "" || request.ExpectedGoalRevision != 0 || request.RequireDiagnosticHeadroom {
+		return refuse("a proof charged to the lane names no goal: --goal, --authority, --expected-goal-revision and --require-diagnostic-headroom belong to a goal's proof")
+	}
+	if os.Getenv("METASYSTEM_PROOF_RUN_ROOT") != "" || os.Getenv("METASYSTEM_HOOK_DELEGATE_JOB") != "" {
+		return refuse("a governed run or a delegate proves under its goal, never under the lane")
+	}
+	if !landinglane.IsAccount(request.LaneID) {
+		return refuse("%q is not a lane accounting identity", request.LaneID)
+	}
+	resolve := request.laneAccount
+	if resolve == nil {
+		resolve = func(controlRoot string) (string, error) {
+			home, err := board.Home()
+			if err != nil {
+				return "", err
+			}
+			return landinglane.ResolveAccount(home, controlRoot)
+		}
+	}
+	account, err := resolve(request.ControlRoot)
+	if err != nil {
+		if strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+		}
+		return refuse("%v", err)
+	}
+	if account != request.LaneID {
+		return refuse("this checkout's landing lane is %s, not %s", account, request.LaneID)
+	}
+	if caller.Class != lease.ClassHuman && !(caller.Class == lease.ClassMain && caller.Holder) {
+		return refuse("only the lane's owner (its checkout's lease holder) or a person charges a proof to the lane")
+	}
+	capValue, _, _, err := dispatchcore.ResolveCap(request.ConfPath, "proof", "main", "proof", "", request.CapMin)
+	if err != nil || capValue < 1 {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("resolve proof reservation: %w", err)
+	}
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+	}
+	var context proofrun.ExecutionContext
+	if request.SharedEngine != "" {
+		context, err = proofrun.CaptureSharedExecutionContext(request.ExecutionRoot, request.ConfPath, request.Environment, request.SharedEngine, request.SharedManifestDigest)
+	} else {
+		context, err = proofrun.CaptureExecutionContext(request.ExecutionRoot, request.ConfPath, request.Environment)
+	}
+	if err != nil {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+	}
+	proofIdentity := proofrun.BindIdentityInputs(proofrun.BuildProofIdentityForContext(context, request.ScopeClass,
+		request.CommandClass, request.Sections, behaviorsurface.SupportedVersion), request.IdentityInputs)
+	heldProof, err := proofrun.AcquireMutation(request.ControlRoot)
+	if err != nil {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+	}
+	defer heldProof.Release()
+	checkoutFence, fenceErr := stopfence.Read(request.ControlRoot)
+	if fenceErr != nil || checkoutFence.State == stopfence.StateClosed {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost checkout-fence authority")
+	}
+	reservation := proofrun.AdmissionRequest{
+		ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot, ConfPath: request.ConfPath,
+		GoalID: request.LaneID, GoalRevision: 1, AccountingRevision: 1, CandidateGoalID: request.LaneID, CandidateRevision: 1,
+		CandidateTree: proofAdmissionCandidateTree(request), ReservedMinutes: uint64(capValue), Identity: proofIdentity, Launcher: launcher,
+		RetryDecisionPath: request.RetryDecision, Now: now,
+		ComponentIdentities: request.ComponentIdentities, ForceAttempt: request.ForceAttempt, ForceGroups: request.ForceGroups,
+		SharedComponents: request.CommandClass == "testing" && len(request.ComponentIdentities) > 0,
+		ManagedCapacity:  request.ManagedCapacity,
+		FreshnessEpisode: request.FreshnessEpisode, FreshnessBinding: request.FreshnessBinding,
+		FreshnessExpiresAt: request.FreshnessExpiresAt, FreshGroups: request.FreshGroups,
+	}
+	decision, noChild, err := proofrun.NoChildDecisionLocked(reservation)
+	if err != nil || noChild {
+		return proofrun.Attempt{}, decision, false, err
+	}
+	if proofAdmissionBeforePublish != nil {
+		proofAdmissionBeforePublish(&reservation)
+	}
+	if request.BeforePublish != nil {
+		request.BeforePublish(&reservation)
+	}
+	attempt, decision, err := proofrun.ReserveLocked(reservation)
+	return attempt, decision, false, err
 }
 
 func proofAdmissionCandidateTree(request proofLaunchAdmission) string {

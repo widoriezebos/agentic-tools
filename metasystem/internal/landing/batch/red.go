@@ -86,12 +86,9 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 	if len(joined) == 0 || seams.Run == nil {
 		return fmt.Errorf("batch %s has no diagnostic runner or joined units", id)
 	}
-	// The diagnosis is charged to the batch's last goal member, as the tip
-	// proof was; a change has no goal to charge.
-	authority, ok := ChargeMember(joined)
-	if !ok {
-		return fmt.Errorf("batch %s has no goal member to charge its diagnosis to", id)
-	}
+	// The diagnosis is charged as the tip proof was: to the last goal
+	// member, or for a batch of changes to the lane (U11b).
+	authority := ChargeUnit(joined)
 	// runOn returns done when the diagnostic could not decide the red: the
 	// fenced authority was ejected, or the batch stays diagnosing and err says
 	// why when the runner failed outside an admission refusal.
@@ -357,10 +354,7 @@ func flakeOwner(joined []Unit, language adapter.Adapter, failure Failure) Unit {
 		}
 	}
 	// A change has no approver: its flake is owned by the charge member's.
-	if charge, ok := ChargeMember(joined); ok {
-		return charge
-	}
-	return joined[len(joined)-1]
+	return ChargeUnit(joined)
 }
 
 func (d redDecision) sighting(red, green DiagnosticResult, groups []RedGroup, tipTree string) FlakeSighting {

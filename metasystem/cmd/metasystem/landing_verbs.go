@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -95,17 +96,29 @@ func runLandingWorkspace(args []string) int {
 // carrying the lines the verb prints.
 func landingHeld(root, base, commit, remote, ref string) error {
 	var output strings.Builder
-	if status := landingHeldTo(&output, &output, cleanOwnerRoot(root), base, commit, remote, ref); status != 0 {
-		return fmt.Errorf("%s: landing held exited %d", strings.TrimSpace(output.String()), status)
+	verdict, status := landingHeldVerdictTo(&output, &output, cleanOwnerRoot(root), base, commit, remote, ref)
+	if status == 0 {
+		return nil
 	}
-	return nil
+	err := fmt.Errorf("%s: landing held exited %d", strings.TrimSpace(output.String()), status)
+	if verdict.Refusal != nil && verdict.Refusal.Commit != "" {
+		// The refused commit is named, so the landing can eject the member
+		// that made it (U11b).
+		return &batch.HeldCommitRefusal{Commit: verdict.Refusal.Commit, Cause: err}
+	}
+	return err
 }
 
 func landingHeldTo(stdout, stderr io.Writer, root, base, commit, remote, ref string) int {
+	_, status := landingHeldVerdictTo(stdout, stderr, root, base, commit, remote, ref)
+	return status
+}
+
+func landingHeldVerdictTo(stdout, stderr io.Writer, root, base, commit, remote, ref string) (landing.HeldVerdict, int) {
 	verdict, err := landing.Held(root, base, commit, remote, ref)
 	if err != nil {
 		fmt.Fprintln(stderr, "held: unreadable:", err)
-		return 2
+		return verdict, 2
 	}
 	for _, warning := range verdict.Warnings {
 		fmt.Fprintln(stderr, warning)
@@ -125,9 +138,9 @@ func landingHeldTo(stdout, stderr io.Writer, root, base, commit, remote, ref str
 		// Held has already supplied the precise unreadable line in Warnings.
 	default:
 		fmt.Fprintln(stderr, "held: unreadable: unknown verdict")
-		return 2
+		return verdict, 2
 	}
-	return verdict.ExitCode
+	return verdict, verdict.ExitCode
 }
 
 func shortLandingID(id string) string {

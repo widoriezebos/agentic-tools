@@ -253,3 +253,26 @@ func commitChange(root string, unit Unit, tree, parent string) (string, error) {
 func UnitClosure(root, baseTree, tree string) *adapter.Closure {
 	return unitClosure(root, baseTree, tree)
 }
+
+// ChargeUnit is the member a batch's proofs are keyed to: its last goal
+// member, else its last member, a change, whose proofs the lane owner
+// charges to the lane itself (U11b). The zero unit when units is empty.
+func ChargeUnit(units []Unit) Unit {
+	if charge, ok := ChargeMember(units); ok {
+		return charge
+	}
+	if len(units) == 0 {
+		return Unit{}
+	}
+	return units[len(units)-1]
+}
+
+// HeldCommitRefusal is held's refusal of one commit of the series at the
+// push; the landing ejects the change whose replay it names.
+type HeldCommitRefusal struct {
+	Commit string
+	Cause  error
+}
+
+func (refusal *HeldCommitRefusal) Error() string { return refusal.Cause.Error() }
+func (refusal *HeldCommitRefusal) Unwrap() error { return refusal.Cause }

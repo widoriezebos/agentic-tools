@@ -31,10 +31,7 @@ func reopenHeldAfterDiagnostic(store Store, id, newBaseTree, newBaseCommit, acto
 	}
 	refs, discoveryErr := heldTrunkRedEntries(id, record.TrunkRed.Entries, seams.ledger)
 	groups := heldTrunkRedGroups(refs)
-	charge, ok := ChargeMember(joined)
-	if !ok {
-		return fmt.Errorf("batch %s has no goal member to charge the clearing diagnostic to", id)
-	}
+	charge := ChargeUnit(joined)
 	result, err := seams.run(DiagnosticRequest{Tree: newBaseTree, GoalID: charge.GoalID, Groups: groups, NeverReuse: true}, charge.Claim)
 	if err != nil {
 		return errors.Join(discoveryErr, err)

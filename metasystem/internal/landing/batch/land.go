@@ -533,6 +533,17 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			return fmt.Errorf("BATCH_LAND_HELD_REFUSED: held helper is absent")
 		}
 		if heldErr := seams.Held(record.BaseTree, tip); heldErr != nil {
+			// A refusal of a change's replayed commit ejects that change and
+			// reopens the rest; the refused step is never tried again as it
+			// was (U11b).
+			var refused *HeldCommitRefusal
+			if errors.As(heldErr, &refused) {
+				for _, unit := range units {
+					if unit.IsChange() && refused.Commit != "" && progress.Commits[unit.GoalID] == refused.Commit {
+						return ejectHeldChange(store, id, actor, at, record.BaseTree, unit, heldErr, seams.Reset)
+					}
+				}
+			}
 			return fmt.Errorf("BATCH_LAND_HELD_REFUSED: complete series did not pass held: %w", heldErr)
 		}
 		progress.HeldChecked = true
@@ -698,6 +709,18 @@ func ejectRefusedMember(store Store, id, actor string, at time.Time, base string
 		return errors.Join(refusal, reassembleErr)
 	}
 	return fmt.Errorf("%w; goal %s was ejected; fix and rejoin it, then re-prove before the next landing", refusal, unit.GoalID)
+}
+
+// ejectHeldChange returns a change held refused at the push, with the
+// refusal as its reason, and reassembles the survivors on the same base.
+func ejectHeldChange(store Store, id, actor string, at time.Time, base string, unit Unit, cause error, reset func(string) error) error {
+	if reset != nil {
+		if err := reset(base); err != nil {
+			return fmt.Errorf("BATCH_LAND_HELD_REFUSED: change %s: reset: %w", unit.GoalID, err)
+		}
+	}
+	reason := "EJECTED from landing batch " + id + ": held refused change " + unit.GoalID + " at the push: " + cause.Error()
+	return ReassembleSurvivorsWithReturns(store, id, actor, at, []ReturnDecision{{GoalID: unit.GoalID, Outcome: UnitEjected, Reason: reason}})
 }
 
 func cloneStrings(source map[string]string) map[string]string {

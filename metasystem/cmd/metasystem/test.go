@@ -34,6 +34,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -252,7 +253,10 @@ func runTestPlanAs(name string, args []string) int {
 
 type testingSelectionRequest struct {
 	Root, ControlRoot, GoalID, AuthorityGoalID, Tree, CapMin, RetryDecision, ResultPath string
-	ExpectedGoalRevision, ExpectedAccountingRevision                                    uint64
+	// LaneID charges the run to the landing lane instead of a goal: a batch
+	// whose members are all changes (U11b).
+	LaneID                                           string
+	ExpectedGoalRevision, ExpectedAccountingRevision uint64
 	Mode                                                                                testpolicy.Mode
 	Purpose                                                                             testpolicy.Purpose
 	Groups, BatchRequirements                                                           []string
@@ -351,6 +355,9 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	flags.BoolVar(&request.Carried, "carried", false, "compose a completed red result for carried-landing classification")
 	flags.StringVar(&request.FreshEpisode, "fresh-episode", "", "retained freshness episode for a proof decision")
 	flags.StringVar(&request.FreshExpiresAt, "fresh-expires-at", "", "expiry for a retained freshness episode")
+	if execution || strings.HasPrefix(name, "internal ") {
+		flags.StringVar(&request.LaneID, "lane", "", "the landing lane's accounting identity a batch of changes is charged to, instead of a goal")
+	}
 	if execution {
 		pathFlagVar(flags, &request.ControlRoot, "control-root", "", "durable proof control root for an internal batch proof")
 		flags.BoolVar(&request.BatchTipProof, "batch-tip", false, "prove a batch tip projected into its own detached worktree")
@@ -372,6 +379,10 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		} else {
 			fmt.Fprintf(os.Stderr, "usage: metasystem internal %s --root INSTALLATION [--goal ID] [--authority ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
 		}
+		return request, false, 2
+	}
+	if request.LaneID != "" && (request.GoalID != "" || request.AuthorityGoalID != "" || request.ExpectedGoalRevision != 0 || !landinglane.IsAccount(request.LaneID)) {
+		fmt.Fprintln(os.Stderr, "--lane takes the lane's accounting identity (lane:...) and no --goal, --authority or --expected-goal-revision")
 		return request, false, 2
 	}
 	if request.PolicyChild && (strings.TrimPrefix(name, "internal ") != "test plan" || execution) {
@@ -595,6 +606,11 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 	if err != nil {
 		return testingPreparation{}, err
 	}
+	if request.LaneID != "" {
+		// Charged to the lane (U11b): no goal is resolved, and its attempts
+		// are accounted to the lane's identity.
+		goalID, accountToGoal = request.LaneID, false
+	}
 	if accountToGoal {
 		goalID, err = resolveTestingGoalFor(installation, request.GoalID, request.callerPID())
 		if err != nil {
@@ -713,7 +729,10 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		return testingPreparation{}, err
 	}
 	risk, accountingRevision := testpolicy.GoalRisk{}, uint64(0)
-	if accountToGoal {
+	if landinglane.IsAccount(goalID) {
+		// The lane has no goal risk; its one accounting revision is 1.
+		accountingRevision = 1
+	} else if accountToGoal {
 		risk, accountingRevision, err = testingGoalRisk(installation, goalID)
 		if err != nil {
 			return testingPreparation{}, err
@@ -2016,7 +2035,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	freshBinding := testingFreshnessBinding(preRequest, identities, request.FreshEpisode)
 	preRequest.FreshnessBinding = freshBinding
 	admission := proofLaunchAdmission{ControlRoot: controlRoot,
-		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, AuthorityGoalID: request.AuthorityGoalID,
+		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, AuthorityGoalID: request.AuthorityGoalID, LaneID: request.LaneID,
 		CandidateRevision: prepared.AccountingRevision, RetryDecision: request.RetryDecision,
 		CapMin: request.CapMin, ExpectedGoalRevision: request.ExpectedGoalRevision,
 		ExpectedAccountingRevision: request.ExpectedAccountingRevision,

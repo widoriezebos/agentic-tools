@@ -57,9 +57,6 @@ type WaitState struct {
 	// Fallback names the unreadable board's cause when the timer decides.
 	Fallback string    `json:"fallback,omitempty"`
 	Until    time.Time `json:"until,omitempty"`
-	// Changes are the joined change members of a batch with no goal member:
-	// they wait for one, because every proof is charged to a goal (U11b).
-	Changes []string `json:"changes,omitempty"`
 }
 
 // Decision is one start decision: start now with a reason, or wait.
