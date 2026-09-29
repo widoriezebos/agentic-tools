@@ -326,7 +326,23 @@ func runStewardRun(args []string) int {
 	return 0
 }
 
+// stewardArmDeps are the arm verb's Git-facing and minting dependencies,
+// passed per call so a test hands in its own instances.
+type stewardArmDeps struct {
+	repositoryTop func(string) (string, error)
+	landingRefGit stewardLandingRefGit
+	armSession    func(repoRoot, binaryPath string, session steward.EnrolledSession, lineage string) (string, error)
+}
+
 func runStewardArm(args []string) int {
+	return runStewardArmWith(args, stewardArmDeps{
+		repositoryTop: stateroot.RepositoryTop,
+		landingRefGit: realStewardLandingRefGit{},
+		armSession:    steward.ArmSessionWithLineage,
+	})
+}
+
+func runStewardArmWith(args []string, deps stewardArmDeps) int {
 	flags := newFlagSet("steward arm")
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	temporaryWord := flags.String("temporary-human-word", "", "verbatim remote human authorization; enrolls TEMPORARILY with the word recorded on the identity until a terminal re-arm")
@@ -357,7 +373,7 @@ func runStewardArm(args []string) int {
 	var session steward.EnrolledSession
 	if *launchRecord != "" {
 		var err error
-		if session, err = sessionEnrollmentFromRecord(*repo, *launchRecord, stateroot.RepositoryTop); err != nil {
+		if session, err = sessionEnrollmentFromRecord(*repo, *launchRecord, deps.repositoryTop); err != nil {
 			fmt.Fprintln(os.Stderr, "steward arm:", err)
 			return 1
 		}
@@ -384,7 +400,7 @@ func runStewardArm(args []string) int {
 		// construction — the word and the review date are durable.
 		fmt.Fprintf(os.Stderr, "steward arm: TEMPORARY enrollment under a recorded remote human word; re-approval due %s at an agent-free terminal\n", *reviewBy)
 	}
-	if seed, err := seedStewardLandingRef(*repo); err != nil {
+	if seed, err := seedStewardLandingRefWithGit(*repo, deps.landingRefGit); err != nil {
 		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
 		return 1
 	} else if seed.Ref != "" {
@@ -400,7 +416,7 @@ func runStewardArm(args []string) int {
 	var msg string
 	lineage := armingLineage(*repo)
 	if *launchRecord != "" {
-		msg, err = stewardArmSession(*repo, bin, session, lineage)
+		msg, err = deps.armSession(*repo, bin, session, lineage)
 	} else if *temporaryWord != "" {
 		msg, err = steward.ArmTemporaryWithLineage(*repo, bin, *temporaryWord, *reviewBy, lineage)
 	} else if fixtureEnrollment {
@@ -545,10 +561,6 @@ func armingLineage(repo string) string {
 	}
 	return holder.OwnerLineage
 }
-
-// stewardArmSession mints a human-session identity; a variable so the verb's
-// tests reach the gate without starting a runner.
-var stewardArmSession = steward.ArmSessionWithLineage
 
 // sessionEnrollmentFromRecord reads the verdict a signed-in browser launch
 // left on its record and binds it to the clone being armed (g1-s72 D2).

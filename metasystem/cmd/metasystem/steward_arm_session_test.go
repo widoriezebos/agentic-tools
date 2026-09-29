@@ -197,14 +197,13 @@ func TestSessionArmRefusesTheTemporaryPairBesideARecord(t *testing.T) {
 		{"--review-by", "2026-10-09"},
 	} {
 		called := false
-		prior := stewardArmSession
-		stewardArmSession = func(string, string, steward.EnrolledSession, string) (string, error) {
-			called = true
-			return "", nil
-		}
+		deps := stewardArmDeps{repositoryTop: fixedRepositoryTop("/fixture/clone"), landingRefGit: noGitForLandingRef{},
+			armSession: func(string, string, steward.EnrolledSession, string) (string, error) {
+				called = true
+				return "", nil
+			}}
 		args := append([]string{"--repo", t.TempDir(), "--launch-record", "/fixture/record.json"}, pair...)
-		stderr, code := captureStderr(t, func() int { return runStewardArm(args) })
-		stewardArmSession = prior
+		stderr, code := captureStderr(t, func() int { return runStewardArmWith(args, deps) })
 		if code != 2 || called || !strings.Contains(stderr, "--launch-record cannot be combined with --temporary-human-word or --review-by") {
 			t.Fatalf("pair %v beside --launch-record = code %d called %v stderr %q", pair, code, called, stderr)
 		}
@@ -225,7 +224,20 @@ const (
 	sessionArmLauncherHelper = "test-helper-session-arm-launcher"
 	sessionArmVerbHelper     = "test-helper-session-arm-verb"
 	sessionArmOutEnv         = "METASYSTEM_TEST_SESSION_ARM_OUT"
+	sessionArmCloneEnv       = "METASYSTEM_TEST_SESSION_ARM_CLONE"
 )
+
+// noGitForLandingRef is a checkout Git cannot read: landing-ref seeding
+// reports not seeded and nothing reaches a real Git.
+type noGitForLandingRef struct{}
+
+func (noGitForLandingRef) Output(string, ...string) ([]byte, error) {
+	return nil, errors.New("no git in this fixture")
+}
+
+func (noGitForLandingRef) CombinedOutput(string, ...string) ([]byte, error) {
+	return nil, errors.New("no git in this fixture")
+}
 
 func init() {
 	testHelperCommands[sessionArmLauncherHelper] = func(args []string) int {
@@ -244,17 +256,23 @@ func init() {
 		return 0
 	}
 	testHelperCommands[sessionArmVerbHelper] = func(args []string) int {
-		stewardArmSession = func(repo, bin string, session steward.EnrolledSession, lineage string) (string, error) {
-			data, err := json.Marshal(session)
-			if err != nil {
-				return "", err
-			}
-			if err := os.WriteFile(os.Getenv(sessionArmOutEnv), data, 0o600); err != nil {
-				return "", err
-			}
-			return "steward armed (test)", nil
-		}
-		return runStewardArm(args)
+		// The clone is synthetic: its repository top is the directory the
+		// test names, and the landing-ref seeding sees no Git at all.
+		clone := os.Getenv(sessionArmCloneEnv)
+		return runStewardArmWith(args, stewardArmDeps{
+			repositoryTop: fixedRepositoryTop(clone),
+			landingRefGit: noGitForLandingRef{},
+			armSession: func(repo, bin string, session steward.EnrolledSession, lineage string) (string, error) {
+				data, err := json.Marshal(session)
+				if err != nil {
+					return "", err
+				}
+				if err := os.WriteFile(os.Getenv(sessionArmOutEnv), data, 0o600); err != nil {
+					return "", err
+				}
+				return "steward armed (test)", nil
+			},
+		})
 	}
 }
 
@@ -289,10 +307,6 @@ func installTestEngine(t *testing.T, root string) string {
 func TestSessionArmAdmitsTheGenuineDetachedChainThroughTheRealClassifier(t *testing.T) {
 	t.Parallel()
 	launcher, clone := canonicalTestDir(t), canonicalTestDir(t)
-	gitInit := exec.Command("git", "init", "-q", clone)
-	if output, err := gitInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
 	if err := os.WriteFile(filepath.Join(clone, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +316,8 @@ func TestSessionArmAdmitsTheGenuineDetachedChainThroughTheRealClassifier(t *test
 
 	launcherProcess := exec.Command(engine, sessionArmLauncherHelper, engine, "--repo", clone, "--launch-record", record)
 	launcherProcess.Dir = clone
-	launcherProcess.Env = fixtureCommandEnvironment(t, sessionArmOutEnv+"="+out)
+	// PATH names an empty directory: no Git is reachable from the chain.
+	launcherProcess.Env = fixtureCommandEnvironment(t, sessionArmOutEnv+"="+out, sessionArmCloneEnv+"="+clone, "PATH="+t.TempDir())
 	launcherProcess.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	output, err := launcherProcess.CombinedOutput()
 	if err != nil {
