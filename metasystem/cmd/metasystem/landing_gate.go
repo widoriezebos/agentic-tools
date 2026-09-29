@@ -3,13 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // The landing gate at every form of work land (g1-s70 D2).
@@ -21,8 +19,8 @@ import (
 // again at every publication and retry against a fresh ledger
 // (authorizeBatchMemberInProjection), the hand route again right before its
 // push, and the landing path again right before every push of the staged and
-// exceptional forms, each retry included (landingPathGate). --queue-only is
-// not a landing and still enters Review.
+// exceptional forms, each retry included (pushGate). --queue-only is not a
+// landing and still enters Review.
 //
 // The candidate's tip is the goal branch at origin: the tip a review records
 // and a land-without-sitting decision binds. A certified chain landed with
@@ -65,31 +63,20 @@ func freshLandingGate(stateRoot, installationRoot, goalID, tip string, dependenc
 	return goal.Gate(projection.Tree.Live[goalID], tip, settings)
 }
 
-// landingPathGate is the landing path's gate immediately before each push of
-// a landing in a goal's name (g1-s70 D2): the staged --message form and the
-// exceptional forms met the gate at admission, and a hold or a changed word
-// that arrives while they prove, rebase or retry stops the push here.
-func landingPathGate(root, goalID string) error {
-	stateRoot, err := stateroot.NewResolver(stateroot.RepositoryTop, os.Executable).RootForInstallation(root)
-	if err != nil {
+// pushGate is the gate the landing path reads immediately before each push of
+// a staged or exceptional form this invocation admitted (g1-s70 D2): the same
+// gate the admission read, at the goal branch's tip at origin, against a
+// freshly fetched ledger, so a hold or a changed word that arrives while the
+// landing proves, rebases or retries stops the push.
+func (inv *intentInvocation) pushGate() func(root, goalID string) error {
+	return func(_, goalID string) error {
+		gate := inv.delivery().landingGate
+		if gate == nil {
+			gate = productionIntentLandingGate
+		}
+		_, err := gate(inv, goalID, inv.intentBranchTip(goalID))
 		return err
 	}
-	return landingPathGateAt(stateRoot, root, goalID, defaultSyncRequestDependencies(), goalCommandNow, productionIntentBranchTip)
-}
-
-// landingPathGateAt reads the gate at the goal branch's tip at origin, the tip
-// the admission read. An installation with no synced ledger carries none of
-// the gate's facts and reads none, as its admission does.
-func landingPathGateAt(stateRoot, root, goalID string, dependencies syncRequestDependencies, commandNow func(string) (time.Time, error), branchTip func(root, goalID string) (string, error)) error {
-	if !converted(stateRoot) {
-		return nil
-	}
-	tip, err := branchTip(root, goalID)
-	if err != nil {
-		return fmt.Errorf("the landing gate cannot read goal/%s at origin: %w", goalID, err)
-	}
-	_, err = freshLandingGate(stateRoot, root, goalID, tip, dependencies, commandNow)
-	return err
 }
 
 // productionIntentBranchTip is the goal branch's tip at origin, or "" where

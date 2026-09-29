@@ -216,9 +216,10 @@ type intentDeliveryOwners struct {
 	// engine may write the named chain's records, before anything writes.
 	recordWriter func(root, job string) (cause string, err error)
 	process      func(intentProcess) intentProcessResult
-	// landCarried runs one carried landing through the landing path and
-	// returns what it printed and its exit status.
-	landCarried func(landpath.LandRequest) intentProcessResult
+	// landCarried runs one carried landing through the landing path, which
+	// reads gate immediately before its push, and returns what it printed and
+	// its exit status.
+	landCarried func(request landpath.LandRequest, gate func(root, goalID string) error) intentProcessResult
 	// closeOwner runs the delegate lifecycle's close command (the whole
 	// chain close) for an installation root.
 	closeOwner  func(root string, args []string) intentProcessResult
@@ -265,8 +266,10 @@ type intentBranchState struct {
 }
 
 // landCarriedInProcess runs one carried landing in this process.
-func landCarriedInProcess(request landpath.LandRequest) intentProcessResult {
-	return landCarriedWithOwners(landingPathOwners(), request)
+func landCarriedInProcess(request landpath.LandRequest, gate func(root, goalID string) error) intentProcessResult {
+	owners := landingPathOwners()
+	owners.LandingGate = gate
+	return landCarriedWithOwners(owners, request)
 }
 
 func landCarriedWithOwners(owners landpath.Owners, request landpath.LandRequest) intentProcessResult {

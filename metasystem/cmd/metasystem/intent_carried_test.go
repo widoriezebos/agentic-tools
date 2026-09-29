@@ -93,9 +93,10 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 	}
 	// The carried transaction runs in this process (landpath.Land); the
 	// bed records each run's request.
-	delivery.landCarried = func(request landpath.LandRequest) intentProcessResult {
+	delivery.landCarried = func(request landpath.LandRequest, gate func(string, string) error) intentProcessResult {
 		b.calls = append(b.calls, []string{"landpath", request.Root, "--carried", request.Carried})
 		owners := landingPathOwners()
+		owners.LandingGate = gate
 		crashed := ""
 		if crash := b.crashAt; crash != "" {
 			// The crash seam stops the transaction at the named point as a
@@ -855,4 +856,40 @@ func TestIntentExceptionCarryRunsInThisProcess(t *testing.T) {
 	if len(supplied) != 1 || supplied[0].pid != int64(os.Getpid()) {
 		t.Fatalf("the carry owner was supplied %+v, want this process %d once", supplied, os.Getpid())
 	}
+}
+
+// TestIntentCarriedPushReadsTheGateAgain: the exceptional form met the gate at
+// admission, and the carried transaction reads the same gate again immediately
+// before its push (SOL-S70-01): a hold recorded after admission stops the push
+// and origin is unchanged; once released, the same word lands.
+func TestIntentCarriedPushReadsTheGateAgain(t *testing.T) {
+	b := newCarriedDeliveryBed(t)
+	_, result := b.land("standing-validation", "--exception", "missing-declaration", "--reason", "flaky host", "--by", "Wido", "--upgrade-goals")
+	opid, _ := carriedResultData(result)["exception"].(string)
+	proved := b.provePublicly(result)
+	reads, held := 0, true
+	b.owners.delivery.landingGate = func(*intentInvocation, string, string) (string, error) {
+		reads++
+		if held && reads == 2 {
+			return "", &goal.GateRefusal{Code: goal.GateHeldBySitting, Reason: "goal standing-validation is held by Wido's review sitting"}
+		}
+		return "the bed's landing", nil
+	}
+	code, stopped := b.shown(proved)
+	ran := b.lands[len(b.lands)-1]
+	if code == 0 || reads != 2 || !strings.Contains(string(ran.stderr), "!! STEP FAILED: landing gate before push") ||
+		!strings.Contains(string(ran.stderr), goal.GateHeldBySitting) || strings.Contains(string(ran.stdout), "== STEP: push carried commit") {
+		t.Fatalf("a hold recorded after admission did not stop the carried push: %d reads=%d %+v\n%s\n%s", code, reads, stopped, ran.stdout, ran.stderr)
+	}
+	// The ledger shares origin main in this bed, so only the carried commit
+	// itself says whether the push happened.
+	main := b.f.remote(t, "refs/heads/main")
+	if carried := goalSyncMutationGit(t, b.f.mainRoot, "log", "--format=%H", "--fixed-strings", "--grep=Carry: "+opid, main); carried != "" {
+		t.Fatalf("the carried commit reached origin past a hold: %s", carried)
+	}
+	held = false
+	if code, landed := b.land("standing-validation", "--using-exception", opid); code != 0 || landed.Outcome != intentConfirmed {
+		t.Fatalf("the released word did not land: %d %+v", code, landed)
+	}
+	b.carried(opid)
 }

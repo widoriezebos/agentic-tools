@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 const gateBedTip = "2222222222222222222222222222222222222222"
@@ -238,15 +239,12 @@ func belowTheGate(delivery *intentDeliveryOwners) *intentDeliveryOwners {
 }
 
 // The landing path reads the gate immediately before each push of the staged
-// --message form and the exceptional forms (SOL-S70-01): production wires it,
-// and it reads the fresh ledger at the goal branch's tip, so a hold recorded
-// after admission refuses, its release lets the retry pass, and a word at
-// another tip refuses naming both commits.
-func TestTheLandingPathsGateReadsTheFreshLedgerBeforeEachPush(t *testing.T) {
+// --message form and the exceptional forms (SOL-S70-01): the gate it is handed
+// is the invocation's own, at the goal branch's tip against the fresh ledger,
+// so a hold recorded after admission refuses, its release lets the retry pass,
+// and a word at another tip refuses naming both commits.
+func TestThePushGateReadsTheFreshLedgerBeforeEachPush(t *testing.T) {
 	t.Parallel()
-	if landingPathOwners().LandingGate == nil {
-		t.Fatal("the production landing path reads no gate before its pushes")
-	}
 	hold := func(file *goal.GoalFile) {
 		humanWord(file, "01ARZ3NDEKTSV4RRFFQ69G5FW2", "review", goal.SittingReason(true, reviewBedRecord, "Wido"))
 	}
@@ -254,10 +252,9 @@ func TestTheLandingPathsGateReadsTheFreshLedgerBeforeEachPush(t *testing.T) {
 		humanWord(file, "01ARZ3NDEKTSV4RRFFQ69G5FW3", "review", goal.SittingReason(false, reviewBedRecord, "Wido"))
 	}
 	gateOf := func(amend func(*goal.GoalFile)) error {
-		b := newDeliveryBedWith(t, amend)
-		owners := b.intentBed.owners()
-		return landingPathGateAt(b.root(), b.install, bedGoal, owners.dependencies, owners.commandNow,
-			func(string, string) (string, error) { return gateBedTip, nil })
+		b, _, _ := gatedDeliveryBed(t, amend)
+		inv := &intentInvocation{owners: b.deliveryOwners(), layout: stateroot.Layout{InstallationRoot: b.install}, stateRoot: b.root()}
+		return inv.pushGate()(b.install, bedGoal)
 	}
 
 	held := gateOf(func(file *goal.GoalFile) { clearedAt(gateBedTip)(file); hold(file) })

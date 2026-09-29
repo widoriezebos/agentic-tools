@@ -89,6 +89,7 @@ func runIntentLandStaged(inv *intentInvocation) int {
 			Decision: "run this inside the repository, or name it with --repo PATH"})
 	}
 	request.Root = layout.InstallationRoot
+	owners := landingPathOwners()
 	if request.GoalSet && !inv.input.switched("local") {
 		// A hand-made change landed in a goal's name meets the goal's gate
 		// (g1-s70 D2); --local publishes nothing.
@@ -101,6 +102,9 @@ func runIntentLandStaged(inv *intentInvocation) int {
 			if refused := inv.admitLanding([]intentTarget{{Kind: "goal", ID: request.Goal}}, request.Goal, inv.intentBranchTip(request.Goal)); refused != nil {
 				return inv.render(*refused)
 			}
+			// Admission is not the last word: the same gate is read again
+			// immediately before each push.
+			owners.LandingGate = inv.pushGate()
 		}
 	}
 	stdout, stderr := inv.stdout, inv.stderr
@@ -112,7 +116,7 @@ func runIntentLandStaged(inv *intentInvocation) int {
 	if inv.input.switched("local") {
 		status = landStagedLocally(request, stdout, stderr)
 	} else {
-		status = landpath.Land(landingPathOwners(), request, stdout, stderr)
+		status = landpath.Land(owners, request, stdout, stderr)
 	}
 	targets := []intentTarget{}
 	if request.GoalSet {
