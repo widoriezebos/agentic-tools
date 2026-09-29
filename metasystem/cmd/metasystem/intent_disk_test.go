@@ -457,7 +457,7 @@ func TestDiskCleanSummaryTellsForgottenAndUnknown(t *testing.T) {
 	}
 	result.Forgotten = []string{"/private/var/folders/T/tmp.a/repo", "/private/var/folders/T/tmp.b/repo"}
 	code, out := bed.run("disk", "clean")
-	if code != 0 || !strings.Contains(out, "forgot 2 stale registrations of removed checkouts") {
+	if code != 0 || !strings.Contains(out, "forgot the stale registrations of 2 removed checkouts") {
 		t.Fatalf("disk clean = %d:\n%s", code, out)
 	}
 	if code, out := bed.run("disk", "clean", "--preview"); code != 0 || strings.Contains(out, "forgot") {

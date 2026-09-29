@@ -269,8 +269,8 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 			}
 			staleNotes = forgetNotes(forgotten, running, err)
 		} else {
-			staleNotes = append(staleNotes, fmt.Sprintf("%d stale %s of removed checkouts; metasystem disk clean forgets them%s",
-				len(removed), plural(len(removed), "registration", "registrations"), examplesOf(removed)))
+			staleNotes = append(staleNotes, fmt.Sprintf("stale registrations of %d removed %s; metasystem disk clean forgets them%s",
+				len(removed), plural(len(removed), "checkout", "checkouts"), examplesOf(removed)))
 		}
 	}
 	var participants []diskstore.Participant
@@ -347,12 +347,12 @@ func checkoutRemoved(checkout string) bool {
 func forgetNotes(forgotten, running []string, err error) []string {
 	var notes []string
 	if len(forgotten) > 0 {
-		notes = append(notes, fmt.Sprintf("forgot %d %s%s", len(forgotten),
-			plural(len(forgotten), "registration of a removed checkout", "registrations of removed checkouts"), examplesOf(forgotten)))
+		notes = append(notes, fmt.Sprintf("forgot the registrations of %d removed %s%s", len(forgotten),
+			plural(len(forgotten), "checkout", "checkouts"), examplesOf(forgotten)))
 	}
 	if len(running) > 0 {
-		notes = append(notes, fmt.Sprintf("%d %s still %s a running process; it is forgotten once that ends%s", len(running),
-			plural(len(running), "registration of a removed checkout", "registrations of removed checkouts"), plural(len(running), "names", "name"), examplesOf(running)))
+		notes = append(notes, fmt.Sprintf("the registrations of %d removed %s still name a running process; they are forgotten once it ends%s", len(running),
+			plural(len(running), "checkout", "checkouts"), examplesOf(running)))
 	}
 	if err != nil {
 		notes = append(notes, "the registrations of removed checkouts could not be forgotten: "+err.Error()+"; the next metasystem disk clean retries")

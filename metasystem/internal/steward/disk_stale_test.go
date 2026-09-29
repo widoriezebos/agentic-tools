@@ -102,7 +102,7 @@ func TestMachinePassLeavesRemovedCheckoutsOutOfTheHostSettings(t *testing.T) {
 	if len(result.Machine.HostUnknown) != 0 || result.Machine.Health.Status != diskstore.HealthOK {
 		t.Fatalf("removed checkouts made the host settings unknown: %q, %+v", result.Machine.HostUnknown, result.Machine.Health)
 	}
-	if !hasNote(result.Machine, "2 stale registrations of removed checkouts; metasystem disk clean forgets them") {
+	if !hasNote(result.Machine, "stale registrations of 2 removed checkouts; metasystem disk clean forgets them") {
 		t.Fatalf("the stale registrations are not counted once: %q", result.Machine.Notes)
 	}
 	for _, line := range result.Machine.Lines() {
@@ -146,7 +146,7 @@ func TestDiskCleanForgetsTheRegistrationsOfRemovedCheckouts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(steward.Forgotten) != 0 || !bed.open(t)[gone] || !hasNote(steward.Machine, "2 stale registrations of removed checkouts; metasystem disk clean forgets them") {
+	if len(steward.Forgotten) != 0 || !bed.open(t)[gone] || !hasNote(steward.Machine, "stale registrations of 2 removed checkouts; metasystem disk clean forgets them") {
 		t.Fatalf("the steward's pass forgot or did not count: %v %q", steward.Forgotten, steward.Machine.Notes)
 	}
 
@@ -161,7 +161,7 @@ func TestDiskCleanForgetsTheRegistrationsOfRemovedCheckouts(t *testing.T) {
 	if open[gone] || !open[goneRunning] || !open[bed.inst] {
 		t.Fatalf("open registrations after disk clean = %v", open)
 	}
-	if !hasNote(result.Machine, "forgot 1 registration of a removed checkout") || !hasNote(result.Machine, "1 registration of a removed checkout still names a running process") {
+	if !hasNote(result.Machine, "forgot the registrations of 1 removed checkout") || !hasNote(result.Machine, "the registrations of 1 removed checkout still name a running process") {
 		t.Fatalf("notes = %q", result.Machine.Notes)
 	}
 	frames, err := registry.ReadFrames(bed.registry)

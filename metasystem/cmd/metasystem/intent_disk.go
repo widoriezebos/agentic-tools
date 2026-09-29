@@ -313,7 +313,7 @@ func runIntentDiskClean(inv *intentInvocation) int {
 	summary := diskCleanStoresSummary(result, released)
 	if len(result.Forgotten) > 0 {
 		data["forgotten"] = result.Forgotten
-		summary += fmt.Sprintf("; forgot %d stale %s of removed checkouts", len(result.Forgotten), diskPlural(len(result.Forgotten), "registration", "registrations"))
+		summary += fmt.Sprintf("; forgot the stale registrations of %d removed %s", len(result.Forgotten), diskPlural(len(result.Forgotten), "checkout", "checkouts"))
 	}
 	trimSummary, _ := diskTrimSummary(trimData)
 	summary += "; " + trimSummary
