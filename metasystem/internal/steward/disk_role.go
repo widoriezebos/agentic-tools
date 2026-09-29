@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -192,7 +193,7 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			UsageClass{StateRoot: top, Limit: settings.Count(config.DiskSweepItemsPerLockKey)},
 		}
 		checkoutOptions.CensusMinBudget = settings.Duration(config.DiskCensusMinBudgetKey)
-		checkoutOptions.CensusReader = kernelCensus()
+		checkoutOptions.CensusReader = KernelCensusReader(home, append(armedCheckouts(), top))
 	}
 	var err error
 	result.Checkout, err = diskstore.RunPass(ctx, checkoutOptions)
@@ -264,7 +265,7 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	}
 	options.FloorMinAge = own.Duration(config.DiskFloorMinAgeKey)
 	options.CensusMinBudget = host.Duration(config.DiskCensusMinBudgetKey)
-	options.CensusReader = kernelCensus()
+	options.CensusReader = KernelCensusReader(home, checkouts)
 	options.Headroom = func(paths []string, floor int64) ([]diskstore.VolumeFree, error) {
 		measured, err := janitor.Headroom(paths, floor)
 		var volumes []diskstore.VolumeFree
@@ -343,9 +344,69 @@ func diskOwnerProofs() map[diskstore.OwnerKind]diskstore.OwnerProof {
 	return map[diskstore.OwnerKind]diskstore.OwnerProof{}
 }
 
-func kernelCensus() *diskstore.CensusReader {
+// KernelCensusReader is the production use census: the kernel's process
+// table, with the metasystem's own processes (its records and engine
+// binaries) as the "ours" the census judges an unreadable process's
+// ancestry against.
+func KernelCensusReader(home string, checkouts []string) *diskstore.CensusReader {
 	reader := diskstore.KernelCensusReader(uint32(os.Getuid()))
+	recorded := recordedProcesses(home, checkouts)
+	reader.Ours = recorded.Ours
 	return &reader
+}
+
+// recordedProcesses indexes the processes the metasystem recorded: running
+// launches, the proof-admission leases and their managed processes, every
+// armed checkout's jobs, announced mains, sessions, steward and supervision
+// records and proof attempts and processes, and the host registry's open
+// owners and claims; plus any process running an engine binary.
+func recordedProcesses(home string, checkouts []string) *diskstore.RecordedProcesses {
+	recorded := &diskstore.RecordedProcesses{
+		StartOf: func(pid int64) (int64, bool) {
+			exact, state, err := identity.KernelProber{}.ReadStart(pid)
+			if err != nil || state != identity.Alive {
+				return 0, false
+			}
+			return exact.StartedAt.Unix(), true
+		},
+		Engine: func(pid int64) bool {
+			path, ok := identity.ProcessExecutable(pid)
+			return ok && diskstore.EngineExecutable(path)
+		},
+	}
+	directories := []string{filepath.Join(home, "proof-admission")}
+	for _, checkout := range checkouts {
+		agents := filepath.Join(checkout, "artifacts", "agents")
+		for _, sub := range []string{"jobs", "mains", "sessions", "steward", "supervision", filepath.Join("proof-runs", "attempts"), filepath.Join("proof-runs", "processes")} {
+			directories = append(directories, filepath.Join(agents, sub))
+		}
+	}
+	recorded.ScanFiles(diskstore.RecordFiles(directories, filepath.Join(home, "launch")))
+	if path, err := registry.DefaultPath(); err == nil {
+		if frames, err := registry.ReadFrames(path); err == nil {
+			if reduction, err := registry.Reduce(frames); err == nil {
+				for _, owner := range reduction.PublishedOwners {
+					if owner.Open() {
+						for _, generation := range owner.Generations {
+							for _, ref := range generation.Identities {
+								recorded.Add(ref.Pid, ref.PidStartedAt)
+							}
+						}
+					}
+				}
+				for _, claim := range reduction.Claims {
+					if claim.Open() {
+						for _, generation := range claim.Generations {
+							for _, ref := range generation.Identities {
+								recorded.Add(ref.Pid, ref.PidStartedAt)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return recorded
 }
 
 // diskSettingsFor reads the settings of the checkout whose state root (or
@@ -492,3 +553,6 @@ func regularFileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Mode().IsRegular()
 }
+
+// ArmedCheckouts are the checkouts the host registry names as armed.
+func ArmedCheckouts() []string { return armedCheckouts() }

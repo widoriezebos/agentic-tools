@@ -37,11 +37,11 @@ type UseCensus struct {
 	Processes  []CensusProcess `json:"-"`
 	Count      int             `json:"processes"`
 	Unreadable []CensusGap     `json:"unreadable,omitempty"`
-	// SystemNonHolders are unreadable processes of another uid whose
-	// executable lies in the operating system's own directories: they
-	// cannot hold the user's stores (design owner, 2026-09-29).
-	SystemNonHolders []CensusGap `json:"systemNonHolders,omitempty"`
-	seen             map[int64]bool
+	// NotOurs are unreadable processes none of whose ancestors the
+	// metasystem started or recorded: they cannot be the work that damages
+	// a store (design owner, 2026-09-29).
+	NotOurs []CensusGap `json:"notOurs,omitempty"`
+	seen    map[int64]bool
 }
 
 // Complete reports a census that was taken and read every live process.
@@ -55,16 +55,22 @@ type CensusReader struct {
 	ProcessUID func(pid int64) (uint32, bool)
 	Use        func(pid int64) (identity.ProcessUse, error)
 	Command    func(pid int64) string
-	// Executable answers a process's executable path even when its
-	// descriptors cannot be read.
-	Executable func(pid int64) (string, bool)
+	// Parent answers a process's parent pid from the kernel's process
+	// table, which is readable for every process; ok false is a chain that
+	// cannot be walked.
+	Parent func(pid int64) (int64, bool)
+	// Ours reports a process the metasystem started or recorded (engine
+	// launches, supervisors, delegates, proof and test workers, seat and
+	// agent sessions). A process with no metasystem ancestor cannot be the
+	// metasystem's work, and only its work can damage a store.
+	Ours func(pid int64) bool
 }
 
 // KernelCensusReader reads this host's processes for the user uid.
 func KernelCensusReader(uid uint32) CensusReader {
 	prober := identity.KernelProber{}
 	return CensusReader{
-		UID: uid, Pids: identity.AllPids, ProcessUID: identity.ProcessUID, Use: identity.ReadProcessUse, Executable: identity.ProcessExecutable,
+		UID: uid, Pids: identity.AllPids, ProcessUID: identity.ProcessUID, Use: identity.ReadProcessUse, Parent: identity.ParentPid,
 		Command: func(pid int64) string {
 			argv, known := prober.ReadArgv(pid)
 			if !known {
@@ -81,10 +87,9 @@ func KernelCensusReader(uid uint32) CensusReader {
 
 // TakeUseCensus reads every live process. A process that is gone by the
 // time it is read is skipped; one that is alive and cannot be read is a
-// gap, except a system process: one of another uid than the stores' owner
-// whose executable lies under /System/, /usr/libexec/ or /usr/sbin/, which
-// is recorded as "system process, not a holder" (design owner,
-// 2026-09-29). The context bounds the walk: a cut-short census
+// gap, unless its whole parent chain can be walked and neither it nor any
+// ancestor is a process the metasystem started or recorded: that one is
+// "unreadable, not ours" (design owner, 2026-09-29). The context bounds the walk: a cut-short census
 // is not taken.
 func TakeUseCensus(ctx context.Context, reader CensusReader) UseCensus {
 	census := UseCensus{seen: map[int64]bool{}}
@@ -116,12 +121,10 @@ func (c *UseCensus) read(reader CensusReader, pid int64) {
 			return
 		}
 		gap := CensusGap{Pid: pid, UID: uid, Command: reader.Command(pid), Reason: err.Error()}
-		if uid != reader.UID && reader.Executable != nil {
-			if executable, ok := reader.Executable(pid); ok && systemExecutable(executable) {
-				gap.Reason = "system process, not a holder (" + executable + ")"
-				c.SystemNonHolders = append(c.SystemNonHolders, gap)
-				return
-			}
+		if notOurs(reader, pid) {
+			gap.Reason = "unreadable, not ours (" + gap.Reason + ")"
+			c.NotOurs = append(c.NotOurs, gap)
+			return
 		}
 		c.Unreadable = append(c.Unreadable, gap)
 		return
@@ -130,17 +133,29 @@ func (c *UseCensus) read(reader CensusReader, pid int64) {
 		Cwd: use.Cwd, Executable: use.Executable, Files: use.Files})
 }
 
-// systemDirectories hold the operating system's own executables.
-var systemDirectories = []string{"/System/", "/usr/libexec/", "/usr/sbin/"}
-
-func systemExecutable(path string) bool {
-	clean := filepath.Clean(path)
-	for _, directory := range systemDirectories {
-		if strings.HasPrefix(clean, directory) {
-			return true
-		}
+// notOurs walks pid's parent chain to the root: true only when every link
+// reads and neither pid nor any ancestor is the metasystem's. Without the
+// seams, or on a chain that cannot be walked, the process stays a gap.
+func notOurs(reader CensusReader, pid int64) bool {
+	if reader.Parent == nil || reader.Ours == nil {
+		return false
 	}
-	return false
+	seen := map[int64]bool{}
+	for current := pid; current > 1; {
+		if seen[current] || len(seen) > 4096 {
+			return false
+		}
+		seen[current] = true
+		if reader.Ours(current) {
+			return false
+		}
+		parent, ok := reader.Parent(current)
+		if !ok {
+			return false
+		}
+		current = parent
+	}
+	return !reader.Ours(1)
 }
 
 // ReadNew reads every live process the census did not see: the processes

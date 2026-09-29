@@ -67,7 +67,8 @@ func (o diskOwners) withDefaults() diskOwners {
 	}
 	if o.census == nil {
 		o.census = func() *diskstore.UseCensus {
-			census := diskstore.TakeUseCensus(context.Background(), diskstore.KernelCensusReader(uint32(os.Getuid())))
+			home, _ := steward.HomeStateRoot()
+			census := diskstore.TakeUseCensus(context.Background(), *steward.KernelCensusReader(home, steward.ArmedCheckouts()))
 			return &census
 		}
 	}
