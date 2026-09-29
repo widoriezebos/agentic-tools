@@ -73,3 +73,37 @@ Commit: `4cf8b855dd9ef306d9f68f6118b51d4bc6aaeaa6`. Slice 1 inspected at `origin
 
 Codex session ID: 01a0edd5-d847-7af2-b197-f49a2982f3a2
 Resume in Codex: codex resume 01a0edd5-d847-7af2-b197-f49a2982f3a2
+
+
+# Astra round 2, the failsafe (task-mumustv2-qcllb5, commit f837ac0da), verbatim
+
+All four findings are **FIXED in the revised design**. No new first-use failure meets Test 2. Round 2 can close.
+
+Reviewed commit: `f837ac0da95f185169d1398d9ed945467df9896c`.
+
+| Finding | Disposition | Exact point resolved |
+|---|---|---|
+| HB-01 | **FIXED** | The [revised admission rule](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/at-the-helm-every-verb-and-the-return.md:30) checks the whole ancestry chain for supervision, adapter-supervisor custody, and steward plumbing. It therefore covers jobs running in the primary checkout despite an intervening agent runtime. Wiring through `cmd/metasystem` avoids the import cycle. |
+| HB-02 | **FIXED** | [Authority root and cwd must resolve to the same common Git directory](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/at-the-helm-every-verb-and-the-return.md:34), closing the grant from a held seat to another repository through `--repo`. |
+| HB-03 | **FIXED** | [The constructor now carries the private observed terminal ID](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/at-the-helm-every-verb-and-the-return.md:32). This supplies the field required by the [no-lineage stopping path](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/goalsync_mutations.go:661). The proposed fixture exercises the real done owner before and after signature removal. |
+| HB-04 | **FIXED** | [Return generates a nonempty brief beside the patch](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/at-the-helm-every-verb-and-the-return.md:47), and the [disposition explicitly passes both paths](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/at-the-helm-every-verb-and-the-return.md:83). This satisfies the diagnostic adapter’s required `--brief` and `StartRead`’s file check. The proposed command-output fixture includes both flags. |
+
+**Deferred and non-material.** Older wording still says all jobs use linked worktrees, defers machinery ancestry, calls `lease` untouched, and shows a read seam without a brief argument. The explicit revision-2 rules and fixtures resolve those inconsistencies sufficiently for implementation. Prose cleanup: material **no**; Test 1 **SAME**; Test 2 **WORKS/SAFE without it: yes**.
+
+Merge/amend/rebase attribution, unusual push destinations, pre-existing goal-state refusals, yield deduplication, and automatic goal inference on main remain outside the specified first use.
+
+**Verified holds:**
+
+- The no-flags actor path proves authority and resolves the holder before forwarding `--by`; [the current owner entry supports this](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/intent_goals.go:175).
+- A human-origin goal can conclude without a claim or landing receipt when its existing blockers and review obligations are absent. The [done checks](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/goal/verbs.go:2586) support the transcript.
+- Proof validation does not require a live helm signature, so return’s deliberately constructed proof can survive signature removal. The design retains the take-grade and UI-boot exclusions.
+- The proposed brief satisfies the current standalone-read requirements; the read remains unbound to the concluded goal.
+
+This was a static design review, not implementation certification. No files changed or tests ran; restricted configuration and artifact files were not read.
+
+Proposed receipt, **unwritten**: `Design critique round 2 at f837ac0: HB-01–04 fixed; no new first-use material findings; critique loop closed.`
+
+VERDICT: 0 material findings (fail test 2): none
+
+Codex session ID: 01a0edd5-d847-7af2-b197-f49a2982f3a2
+Resume in Codex: codex resume 01a0edd5-d847-7af2-b197-f49a2982f3a2
