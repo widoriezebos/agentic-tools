@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -52,12 +54,17 @@ func failureFacts(bundle string, blobs diskstore.BlobStore) ([]string, error) {
 			strings.HasSuffix(rel, ".git.tar.gz"), rel == diskstore.VerdictName, rel == diskstore.CompactTombstoneName:
 			return nil
 		}
+		// Every member must be read completely, or the verdict could miss
+		// what failed (Round B2-2, R4).
 		reader, closeReader, err := openMember(path)
 		if err != nil {
-			return nil // an unreadable member contributes nothing
+			return fmt.Errorf("member %s cannot be read: %w", rel, err)
 		}
-		scanFacts(reader, add)
+		scanErr := scanFacts(reader, add)
 		closeReader()
+		if scanErr != nil {
+			return fmt.Errorf("member %s cannot be read completely: %w", rel, scanErr)
+		}
 		return nil
 	})
 	if err != nil {
@@ -69,10 +76,13 @@ func failureFacts(bundle string, blobs diskstore.BlobStore) ([]string, error) {
 		}
 		file, err := os.Open(blobs.Path(recipe.SHA256))
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("the blob of %s cannot be read: %w", recipe.Path, err)
 		}
-		scanFacts(file, add)
+		scanErr := scanFacts(file, add)
 		file.Close()
+		if scanErr != nil {
+			return nil, fmt.Errorf("the blob of %s cannot be read completely: %w", recipe.Path, scanErr)
+		}
 	}
 	return facts, nil
 }
@@ -93,44 +103,56 @@ func openMember(path string) (io.Reader, func(), error) {
 	return inflated, func() { inflated.Close(); file.Close() }, nil
 }
 
-func scanFacts(reader io.Reader, add func(string)) {
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 64*1024), 4<<20)
+// scanFacts reads every line, however long (no line limit), and returns
+// the first read error.
+func scanFacts(reader io.Reader, add func(string)) error {
+	buffered := bufio.NewReader(reader)
 	afterFail := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "{") && strings.Contains(line, `"Action"`) {
-			var event struct {
-				Action, Package, Test, Output string
-			}
-			if json.Unmarshal([]byte(line), &event) == nil {
-				switch {
-				case event.Action == "fail" && event.Test != "":
-					add("FAIL " + event.Package + " " + event.Test)
-				case event.Action == "fail":
-					add("FAIL " + event.Package)
-				case event.Action == "output" && isFailureLine(event.Output):
-					add(strings.TrimSpace(event.Output))
-				}
-				continue
-			}
+	for {
+		line, err := buffered.ReadString('\n')
+		if len(line) > 0 {
+			afterFail = factLine(strings.TrimRight(line, "\r\n"), afterFail, add)
 		}
-		trimmed := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(trimmed, "--- FAIL:"):
-			afterFail = true
-			add(trimmed)
-		case afterFail && strings.Contains(trimmed, "_test.go:"):
-			add(trimmed)
-		case isFailureLine(line):
-			afterFail = false
-			add(trimmed)
-		default:
-			if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
-				afterFail = false
-			}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
 		}
 	}
+}
+
+// factLine adds a line's fact and says whether a failure block continues.
+func factLine(line string, afterFail bool, add func(string)) bool {
+	if strings.HasPrefix(line, "{") && strings.Contains(line, `"Action"`) {
+		var event struct {
+			Action, Package, Test, Output string
+		}
+		if json.Unmarshal([]byte(line), &event) == nil {
+			switch {
+			case event.Action == "fail" && event.Test != "":
+				add("FAIL " + event.Package + " " + event.Test)
+			case event.Action == "fail":
+				add("FAIL " + event.Package)
+			case event.Action == "output" && isFailureLine(event.Output):
+				add(strings.TrimSpace(event.Output))
+			}
+			return afterFail
+		}
+	}
+	trimmed := strings.TrimSpace(line)
+	switch {
+	case strings.HasPrefix(trimmed, "--- FAIL:"):
+		add(trimmed)
+		return true
+	case afterFail && strings.Contains(trimmed, "_test.go:"):
+		add(trimmed)
+		return true
+	case isFailureLine(line):
+		add(trimmed)
+		return false
+	}
+	return afterFail && (strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t"))
 }
 
 func isFailureLine(line string) bool {

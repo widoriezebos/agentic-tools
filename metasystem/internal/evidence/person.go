@@ -101,10 +101,6 @@ type Target struct {
 // ErrNotEvidence is a path outside every evidence root.
 var ErrNotEvidence = errors.New("not in any evidence root of this host")
 
-// structureNames are an evidence root's own directories and files: never an
-// item (Round B2, F-3).
-var structureNames = map[string]bool{"agents": true, "suite-failures": true, "events": true, "segments": true, "disposals": true, "RETIRED.json": true}
-
 // segmentName12 reports a segment directory's name: twelve hex digits.
 func segmentName12(name string) bool {
 	if len(name) != 12 {
@@ -118,87 +114,82 @@ func segmentName12(name string) bool {
 	return true
 }
 
-// Resolve finds exactly the items a word names (Round B2, F-3): an item's
-// path is that item; a segment's path is each of that segment's items; a
-// root's top-level entry that is not its structure is that one unsegmented
-// item (a legacy chain directly under agents/ is one too); a name is the
-// item of that name in this checkout's segment. A root's structure
-// directories, the root itself and a path inside an item are refused.
-func (e Env) Resolve(ctx context.Context, argument string) ([]Target, error) {
-	roots := e.Roots()
-	if !filepath.IsAbs(argument) {
-		for _, root := range roots {
-			for _, segment := range root.Segments {
-				if segment.Context == nil || segment.Context.Installation != e.This.Installation {
-					continue
-				}
-				items, err := segment.Items(ctx)
-				if err != nil {
-					return nil, err
-				}
-				for _, item := range items {
-					if item.Name == argument {
-						return []Target{{Root: root, Segment: segment, Item: item}}, nil
-					}
-				}
-			}
-		}
-		return nil, fmt.Errorf("no item named %s in this checkout's segment; name it by its path", argument)
-	}
-	clean := filepath.Clean(argument)
-	for _, root := range roots {
-		rel, err := filepath.Rel(root.Path, clean)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			continue
-		}
-		if rel == "." {
-			return nil, fmt.Errorf("%s is an evidence root, not an item; name its items or segments", clean)
-		}
-		parts := strings.Split(filepath.ToSlash(rel), "/")
-		structural := parts[0] == "agents" || parts[0] == "suite-failures" || parts[0] == "events"
-		switch {
-		case len(parts) == 1 && structureNames[parts[0]]:
-			return nil, fmt.Errorf("%s is the root's %s directory, never an item; name a segment (%s/<segment>) or an item", clean, parts[0], clean)
-		case len(parts) == 1:
-			bytes, _, _ := diskstore.Measure(ctx, clean)
-			return []Target{{Root: root, Unsegmented: true, Item: Item{Kind: diskstore.KindUnsegmented, Name: parts[0], Path: clean, Bytes: bytes}}}, nil
-		case !structural:
-			return nil, fmt.Errorf("%s lies inside %s; name the item itself", clean, filepath.Join(root.Path, parts[0]))
-		case len(parts) == 2 && parts[0] == "agents" && !segmentName12(parts[1]):
-			// A legacy chain mirrored before segments: unsegmented, judged
-			// by the exclusions like every item.
-			item := chainItem(clean)
-			item.Kind = diskstore.KindUnsegmented
-			item.Bytes, _, _ = diskstore.Measure(ctx, clean)
-			return []Target{{Root: root, Unsegmented: true, Item: item}}, nil
-		case len(parts) == 2:
-			segment := segmentNamed(root, parts[0], parts[1])
+// NotAnItem is the refusal for any word that is not an enumerated item.
+const NotAnItem = "not an item; metasystem evidence show --verbose lists this checkout's items, and --all --verbose every root's"
+
+// Enumerate is the inventory of items (Round B2-2, R1): every item of
+// every segment of every root (orphan segments included), every
+// unsegmented top-level entry and every legacy entry. It never yields a
+// structure directory, a segment, a tombstone, a sidecar, a stage or an
+// entry set aside for disposal.
+func (e Env) Enumerate(ctx context.Context) ([]Target, error) {
+	var targets []Target
+	for _, root := range e.Roots() {
+		for _, segment := range root.Segments {
 			items, err := segment.Items(ctx)
 			if err != nil {
 				return nil, err
 			}
-			var targets []Target
 			for _, item := range items {
-				if filepath.Dir(item.Path) == clean {
-					targets = append(targets, Target{Root: root, Segment: segment, Item: item})
-				}
+				targets = append(targets, Target{Root: root, Segment: segment, Item: item})
 			}
-			if len(targets) == 0 {
-				return nil, fmt.Errorf("segment %s holds no item", clean)
+		}
+		for _, path := range root.Unsegmented {
+			bytes, _, _ := diskstore.Measure(ctx, path)
+			targets = append(targets, Target{Root: root, Unsegmented: true,
+				Item: Item{Kind: diskstore.KindUnsegmented, Name: filepath.Base(path), Path: path, Bytes: bytes}})
+		}
+		for _, path := range root.Legacy {
+			item := Item{Kind: diskstore.KindUnsegmented, Name: filepath.Base(path), Path: path}
+			if filepath.Base(filepath.Dir(path)) == "agents" {
+				item = chainItem(path)
+				item.Kind = diskstore.KindUnsegmented
 			}
-			return targets, nil
-		case len(parts) == 3:
-			item, err := itemAt(ctx, parts[0], clean)
-			if err != nil {
-				return nil, err
-			}
-			return []Target{{Root: root, Segment: segmentNamed(root, parts[0], parts[1]), Item: item}}, nil
-		default:
-			return nil, fmt.Errorf("%s lies inside the item %s; name the item itself (metasystem evidence show PATH answers for a file)", clean,
-				filepath.Join(root.Path, parts[0], parts[1], parts[2]))
+			item.Bytes, _, _ = diskstore.Measure(ctx, path)
+			targets = append(targets, Target{Root: root, Unsegmented: true, Item: item})
 		}
 	}
-	return nil, fmt.Errorf("%s is %w", argument, ErrNotEvidence)
+	return targets, nil
+}
+
+// Resolve accepts only items the inventory enumerates (Round B2-2, R1): a
+// name is the item of that name in this checkout's segment; a path is
+// accepted only when it is the same file (device and inode, after Lstat,
+// never a string or case comparison) as exactly one enumerated item. A
+// symlink, a structure directory in any spelling, a segment, a record, a
+// path inside an item and anything else is refused.
+func (e Env) Resolve(ctx context.Context, argument string) ([]Target, error) {
+	targets, err := e.Enumerate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !filepath.IsAbs(argument) {
+		for _, target := range targets {
+			segment := target.Segment
+			if !target.Unsegmented && segment.Context != nil && segment.Context.Installation == e.This.Installation && target.Item.Name == argument {
+				return []Target{target}, nil
+			}
+		}
+		return nil, fmt.Errorf("%s: %s", argument, NotAnItem)
+	}
+	info, err := os.Lstat(argument)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %s (%v)", argument, NotAnItem, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s is a symlink: %s", argument, NotAnItem)
+	}
+	var found []Target
+	for _, target := range targets {
+		candidate, err := os.Lstat(target.Item.Path)
+		if err == nil && os.SameFile(info, candidate) {
+			found = append(found, target)
+		}
+	}
+	if len(found) != 1 {
+		return nil, fmt.Errorf("%s: %s", argument, NotAnItem)
+	}
+	return found, nil
 }
 
 // Locate is Resolve for a word that must name exactly one item.
@@ -642,7 +633,20 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 		outcome.Done, outcome.Already, outcome.Line = true, true, already
 		return outcome
 	}
-	target, err := e.Locate(ctx, planned.Path)
+	// An interrupted disposal of this item is settled first, from its
+	// tombstone, even when the item was set aside and no longer enumerates
+	// (Round B2-2, R5).
+	var target Target
+	_, tombstone, open, openErr := diskstore.OpenDisposal(planned.Path)
+	switch {
+	case openErr != nil:
+		outcome.Line = planned.Path + ": its tombstone cannot be read (" + openErr.Error() + "); a person decides"
+		return outcome
+	case open:
+		target, err = e.openTarget(ctx, planned, tombstone)
+	default:
+		target, err = e.Locate(ctx, planned.Path)
+	}
 	if err != nil {
 		outcome.Line = planned.Path + ": " + err.Error()
 		return outcome
@@ -752,6 +756,34 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 		}
 	}
 	return outcome
+}
+
+// openTarget is the target of an item whose disposal is open: its root and
+// segment from its path, its facts from the item or its set-aside copy.
+func (e Env) openTarget(ctx context.Context, planned PlannedDisposal, tombstone diskstore.Tombstone) (Target, error) {
+	for _, root := range e.Roots() {
+		rel, err := filepath.Rel(root.Path, planned.Path)
+		if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
+			continue
+		}
+		parts := strings.Split(filepath.ToSlash(rel), "/")
+		read := planned.Path
+		if tombstone.Disposing != "" {
+			if aside := filepath.Join(filepath.Dir(planned.Path), tombstone.Disposing); pathPresent(aside) {
+				read = aside
+			}
+		}
+		if len(parts) == 3 && segmentName12(parts[1]) {
+			item, err := itemAt(ctx, parts[0], read)
+			if err != nil {
+				return Target{}, err
+			}
+			item.Name, item.Path = filepath.Base(planned.Path), planned.Path
+			return Target{Root: root, Segment: segmentNamed(root, parts[0], parts[1]), Item: item}, nil
+		}
+		return Target{Root: root, Unsegmented: true, Item: Item{Kind: diskstore.KindUnsegmented, Name: filepath.Base(planned.Path), Path: planned.Path}}, nil
+	}
+	return Target{}, fmt.Errorf("%s is %w", planned.Path, ErrNotEvidence)
 }
 
 func pastTense(step string) string {

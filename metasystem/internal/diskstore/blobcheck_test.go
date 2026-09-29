@@ -110,7 +110,7 @@ func TestAnUncommittedRemovalKeepsEveryReference(t *testing.T) {
 	}
 }
 
-func TestTheCheckIsPendingOnALiveDistillerAndDropsAnInterruptedOne(t *testing.T) {
+func TestTheCheckIsPendingOnALiveDistillerAndKeepsAnInterruptedOne(t *testing.T) {
 	t.Parallel()
 	bed := newDistillBed(t)
 	rules := bed.rules("01STAGE0000000000000000001")
@@ -128,16 +128,11 @@ func TestTheCheckIsPendingOnALiveDistillerAndDropsAnInterruptedOne(t *testing.T)
 		t.Fatalf("the check is pending while a transaction is live: %+v", result)
 	}
 	release()
-	// The distiller died between its reference and its recipe line.
+	// The distiller died between its reference and its recipe line: the
+	// bundle is present, so its references stand (Round B2-2, R2).
 	result := check.Run(context.Background())
-	if len(result.Dropped) != 1 {
-		t.Fatalf("the interrupted transaction's reference is dropped: %+v", result)
-	}
-	entries, _ := os.ReadDir(bed.blobs.Dir)
-	for _, entry := range entries {
-		if IsPartial(entry.Name()) {
-			t.Fatalf("its stage is removed: %s", entry.Name())
-		}
+	if len(result.Dropped) != 0 {
+		t.Fatalf("a present bundle's reference is never dropped: %+v", result)
 	}
 	if _, err := os.Stat(filepath.Join(bed.bundle, "source-001-tmp", "work", "README")); err != nil {
 		t.Fatalf("the original is intact: %v", err)
@@ -148,26 +143,33 @@ func TestTheCheckIsPendingOnALiveDistillerAndDropsAnInterruptedOne(t *testing.T)
 	sameFiles(t, restoreBundle(t, bed.bundle, bed.blobs), bed.original)
 }
 
-func TestAHandDeletedBundleIsDanglingUntilTheAgeFloor(t *testing.T) {
+func TestAHandDeletedBundleIsReportedAndItsReferencesNeverDropped(t *testing.T) {
+	t.Parallel()
+	bed := newBlobBed(t, "20260901T000000Z-watchdog-a", "")
+	// The segment stays reachable: another bundle is in it.
+	writeBedFile(t, filepath.Join(filepath.Dir(bed.bundle), "20260902T000000Z-watchdog-b", "copy-note.txt"), []byte("x"))
+	if err := os.RemoveAll(bed.bundle); err != nil {
+		t.Fatal(err)
+	}
+	for _, at := range []time.Time{testNow, testNow.Add(91 * 24 * time.Hour), testNow.Add(400 * 24 * time.Hour)} {
+		result := bed.check(at, true).Run(context.Background())
+		if len(result.Dangling) != 1 || len(result.Dropped) != 0 || len(result.Removed) != 0 || !bed.blobPresent() {
+			t.Fatalf("at %s: a bundle gone without a committed removal is reported, its references kept (Round B2-2, R2): %+v", at, result)
+		}
+	}
+}
+
+// Round B2-2, R2: an evidence root that is not reachable (its segment
+// directory empty or unreadable, as an unmounted volume leaves it) holds
+// the whole check.
+func TestAnUnreachableSegmentHoldsTheWholeCheck(t *testing.T) {
 	t.Parallel()
 	bed := newBlobBed(t, "20260901T000000Z-watchdog-a", "")
 	if err := os.RemoveAll(bed.bundle); err != nil {
 		t.Fatal(err)
 	}
-	first := bed.check(testNow, true).Run(context.Background())
-	if len(first.Dangling) != 1 || len(first.Dropped) != 0 || !bed.blobPresent() {
-		t.Fatalf("reported from first sight, kept: %+v", first)
-	}
-	unarmed := bed.check(testNow.Add(400*24*time.Hour), false).Run(context.Background())
-	if len(unarmed.Dropped) != 0 {
-		t.Fatalf("an unarmed checkout keeps its references: %+v", unarmed)
-	}
-	later := bed.check(testNow.Add(91*24*time.Hour), true).Run(context.Background())
-	if len(later.Dropped) != 1 {
-		t.Fatalf("dropped after the age floor: %+v", later)
-	}
-	swept := bed.check(testNow.Add(93*24*time.Hour), true).Run(context.Background())
-	if len(swept.Removed) != 1 || bed.blobPresent() {
-		t.Fatalf("the unreferenced blob goes after the grace: %+v", swept)
+	result := bed.check(testNow.Add(400*24*time.Hour), true).Run(context.Background())
+	if result.Pending == "" || len(result.Dropped) != 0 || !bed.blobPresent() {
+		t.Fatalf("%+v", result)
 	}
 }

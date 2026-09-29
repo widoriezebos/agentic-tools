@@ -133,6 +133,9 @@ type Root struct {
 	// Unsegmented are the root's top-level entries that belong to no
 	// segment: reported and measured, disposed of only by a person.
 	Unsegmented []string
+	// Legacy are entries written under agents, suite-failures or events
+	// before segments existed: unsegmented items too.
+	Legacy []string
 }
 
 // segmentDirs are the directories under a root that hold segments; the
@@ -207,23 +210,29 @@ func discoverRoot(path string, checkouts []HostCheckout) Root {
 		entries, _ := os.ReadDir(filepath.Join(path, directory))
 		for _, entry := range entries {
 			name := entry.Name()
-			if !entry.IsDir() || claimedGit[name] || claimedInstallation[name] {
+			if notAnItem(name) || claimedGit[name] || claimedInstallation[name] {
+				continue
+			}
+			if !entry.IsDir() || !segmentName12(name) {
+				// Written before segments (a legacy basename layout): an
+				// unsegmented item of the root, never a segment.
+				root.Legacy = append(root.Legacy, filepath.Join(path, directory, name))
 				continue
 			}
 			if directory == "events" {
 				claimedInstallation[name] = true
 				root.Segments = append(root.Segments, Segment{Root: path, Installation: name,
-					Unknown: "orphan segment events/" + name + ": no armed checkout's installation hashes to it; arm its checkout (metasystem system setup there), or a person plans each of its items: metasystem evidence dispose " + filepath.Join(path, directory, name) + " --export DIR --preview (each is held until --override, having no checkout to judge it against)"})
+					Unknown: "orphan segment events/" + name + ": no armed checkout's installation hashes to it; arm its checkout (metasystem system setup there), or a person disposes of each of its items by path (metasystem evidence show --all --verbose lists them; each is held until --override, having no checkout to judge it against)"})
 				continue
 			}
 			claimedGit[name] = true
 			root.Segments = append(root.Segments, Segment{Root: path, Git: name,
-				Unknown: "orphan segment " + name + ": no armed checkout's git root hashes to it; arm its checkout (metasystem system setup there), or a person plans each of its items: metasystem evidence dispose " + filepath.Join(path, directory, name) + " --export DIR --preview (each is held until --override, having no checkout to judge it against)"})
+				Unknown: "orphan segment " + name + ": no armed checkout's git root hashes to it; arm its checkout (metasystem system setup there), or a person disposes of each of its items by path (metasystem evidence show --all --verbose lists them; each is held until --override, having no checkout to judge it against)"})
 		}
 	}
 	if entries, err := os.ReadDir(path); err == nil {
 		for _, entry := range entries {
-			if !rootBookkeeping[entry.Name()] {
+			if !rootBookkeeping[entry.Name()] && !notAnItem(entry.Name()) {
 				root.Unsegmented = append(root.Unsegmented, filepath.Join(path, entry.Name()))
 			}
 		}
@@ -337,4 +346,10 @@ func (h HostCap) Lines() []string {
 			formatGiB(h.TotalBytes), config.DiskEvidenceMachineCapKey, formatGiB(h.CapBytes), "metasystem disk show", "metasystem evidence show --all"))
 	}
 	return append(lines, h.Pending...)
+}
+
+// notAnItem is a name enumeration never yields: a disposal record, a stage,
+// a dot-file (Round B2-2, R1).
+func notAnItem(name string) bool {
+	return diskstore.IsDisposalRecord(name) || diskstore.IsPartial(name) || strings.HasPrefix(name, ".")
 }

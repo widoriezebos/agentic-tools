@@ -75,9 +75,11 @@ const (
 	refKeep referenceState = iota
 	refDrop
 	refDangling
-	// refUnknown keeps the reference without judging it (an unarmed or
-	// unreadable checkout, an unreadable ledger): a dangling clock stands.
-	refUnknown
+	// refHold keeps the reference and reports why.
+	refHold
+	// refUnreachable holds the whole check: the evidence root is not
+	// reachable.
+	refUnreachable
 )
 
 // Run checks every reference and sweeps every unreferenced blob, stopping
@@ -141,8 +143,12 @@ func (c BlobCheck) checkDigest(digest string, result *BlobCheckResult) {
 	for _, ref := range refs {
 		state, reason := c.judge(digest, ref)
 		switch state {
-		case refUnknown:
+		case refHold:
 			result.Kept++
+			result.Unreadable = append(result.Unreadable, reason)
+		case refUnreachable:
+			result.Kept++
+			result.Pending = reason + "; the check holds and nothing is swept this pass"
 		case refKeep:
 			result.Kept++
 			if ref.DanglingSince != nil {
@@ -150,34 +156,54 @@ func (c BlobCheck) checkDigest(digest string, result *BlobCheckResult) {
 				_ = c.Blobs.WriteRef(digest, ref, fmt.Sprintf("check-%d", c.Now.UnixNano()))
 			}
 		case refDangling:
+			// Reported, never dropped: only a committed removal drops a
+			// reference (Round B2-2, R2).
 			if ref.DanglingSince == nil {
 				since := c.Now.UTC()
 				ref.DanglingSince = &since
 				_ = c.Blobs.WriteRef(digest, ref, fmt.Sprintf("check-%d", c.Now.UnixNano()))
 			}
-			if c.Now.Sub(*ref.DanglingSince) < c.AgeFloor {
-				result.Dangling = append(result.Dangling, fmt.Sprintf("%s by %s since %s: %s", digest[:12], ref.Referrer, ref.DanglingSince.Format("2006-01-02"), reason))
-				result.Kept++
-				continue
-			}
-			c.drop(digest, ref.Referrer, reason+" for longer than the age floor", result)
+			result.Dangling = append(result.Dangling, fmt.Sprintf("%s by %s since %s: %s; a person decides", digest[:12], ref.Referrer, ref.DanglingSince.Format("2006-01-02"), reason))
+			result.Kept++
 		case refDrop:
 			c.drop(digest, ref.Referrer, reason, result)
 		}
 	}
 }
 
-// judge decides one reference.
+// judge decides one reference (Round B2-2, R2): a read error never
+// concludes "bundle gone". A bundle directory that exists keeps its
+// references whatever its DISTILLED.txt says; an unreadable one is held and
+// reported. A segment directory that cannot be read (an unmounted or
+// unreadable evidence root) holds the whole check. Only a bundle proven
+// absent whose removal a matching tombstone and receipt commit drops them;
+// one gone without a committed removal is reported as dangling and kept.
 func (c BlobCheck) judge(digest string, ref BlobRef) (referenceState, string) {
 	bundle := filepath.Dir(ref.Recipe)
-	_, lines, present, err := ReadDistilled(bundle)
-	if err == nil && present {
-		for _, line := range lines {
-			if line.Kind == RecipeBlob && line.SHA256 == digest {
-				return refKeep, ""
+	info, err := os.Lstat(bundle)
+	switch {
+	case err == nil && info.IsDir():
+		_, _, present, readErr := ReadDistilled(bundle)
+		if readErr != nil || !present {
+			reason := "its DISTILLED.txt is absent"
+			if readErr != nil {
+				reason = "its DISTILLED.txt cannot be read: " + readErr.Error()
 			}
+			return refHold, bundle + ": " + reason + "; its references are kept for a person"
 		}
-		return refDrop, "its recipe no longer names the blob (an interrupted distillation, redone by the next checkout pass)"
+		return refKeep, ""
+	case err == nil:
+		return refHold, bundle + " is not a directory; its references are kept for a person"
+	case !errors.Is(err, os.ErrNotExist):
+		return refUnreachable, bundle + " cannot be examined (" + err.Error() + ")"
+	}
+	segmentDir := filepath.Dir(bundle)
+	if entries, err := os.ReadDir(segmentDir); err != nil || len(entries) == 0 && !segmentHasRecords(segmentDir) {
+		reason := "is empty"
+		if err != nil {
+			reason = "cannot be read (" + err.Error() + ")"
+		}
+		return refUnreachable, "the bundle's segment " + segmentDir + " " + reason + ": its evidence root may be unmounted"
 	}
 	tombstone, tombErr := ReadTombstone(RemovedTombstonePath(bundle))
 	if tombErr == nil {
@@ -185,20 +211,24 @@ func (c BlobCheck) judge(digest string, ref BlobRef) (referenceState, string) {
 		committed, err := ReceiptCommitted(ledger, tombstone.Receipt, tombstone.Item)
 		switch {
 		case err != nil:
-			return refUnknown, ""
-		case committed:
+			return refHold, "the disposals ledger " + ledger + " cannot be read: " + err.Error()
+		case committed && tombstone.Item == filepath.Base(bundle):
 			return refDrop, "its bundle's removal is committed (receipt " + tombstone.Receipt + ")"
 		default:
 			return refKeep, "" // an uncommitted removal may roll back
 		}
 	}
 	if !errors.Is(tombErr, os.ErrNotExist) {
-		return refUnknown, ""
-	}
-	if c.Armed == nil || !c.Armed(ref.Installation) {
-		return refUnknown, ""
+		return refHold, "its bundle's tombstone cannot be read: " + tombErr.Error()
 	}
 	return refDangling, "its bundle " + bundle + " is gone and left no tombstone"
+}
+
+// segmentHasRecords reports a segment directory holding only tombstones
+// or sidecars (every bundle removed): it is reachable.
+func segmentHasRecords(directory string) bool {
+	entries, err := os.ReadDir(directory)
+	return err == nil && len(entries) > 0
 }
 
 func (c BlobCheck) drop(digest, referrer, reason string, result *BlobCheckResult) {

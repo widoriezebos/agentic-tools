@@ -142,8 +142,16 @@ type Segment struct {
 }
 
 // Dirs are the segment's three directories.
+// A segment known only by one of its names (an orphan events segment has
+// no git-root name) has "" for the directories it lacks: never the parent.
 func (s Segment) Dirs() []string {
-	return []string{filepath.Join(s.Root, "agents", s.Git), filepath.Join(s.Root, "suite-failures", s.Git), filepath.Join(s.Root, "events", s.Installation)}
+	dir := func(parent, name string) string {
+		if name == "" {
+			return ""
+		}
+		return filepath.Join(s.Root, parent, name)
+	}
+	return []string{dir("agents", s.Git), dir("suite-failures", s.Git), dir("events", s.Installation)}
 }
 
 // Ledger is the segment's disposals ledger.
@@ -185,6 +193,9 @@ var eventsStamp = regexp.MustCompile(`^events-(\d{8}T\d{6}Z)`)
 func (s Segment) Items(ctx context.Context) ([]Item, error) {
 	var items []Item
 	for index, directory := range s.Dirs() {
+		if directory == "" {
+			continue
+		}
 		entries, err := os.ReadDir(directory)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -457,6 +468,9 @@ func (b Bound) Settled(segment Segment, item Item) (bool, string) {
 func (b Bound) Measure(ctx context.Context, segment Segment) (total, charges int64, complete bool) {
 	complete = true
 	for _, directory := range segment.Dirs() {
+		if directory == "" {
+			continue
+		}
 		bytes, _, done := diskstore.Measure(ctx, directory)
 		total += bytes
 		complete = complete && done
@@ -730,6 +744,9 @@ func (s Segment) OpenPersonDisposals(ctx context.Context) []string {
 	var lines []string
 	seen := map[string]bool{}
 	for _, directory := range s.Dirs() {
+		if directory == "" {
+			continue
+		}
 		for _, item := range diskstore.OpenRemovals(directory) {
 			seen[item] = true
 			_, tombstone, open, err := diskstore.OpenDisposal(item)

@@ -13,33 +13,21 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
-// Round B2, F-3: a path resolves to exactly the items it names. A
-// segment's path is each of that segment's items, every one judged by the
-// exclusions; the root's structure directories are never an item.
-func TestASegmentPathResolvesToItsItemsEachJudged(t *testing.T) {
+// Round B2, F-3 as ruled in B2-2 (R1): only items the inventory
+// enumerates are accepted; a segment, the root's structure directories and
+// paths inside items are refused, and each item is judged.
+func TestOnlyEnumeratedItemsResolveAndEachIsJudged(t *testing.T) {
 	t.Parallel()
 	bed := newPersonBed(t)
 	open := bed.chain(t, "open-goal-chain", 300, 50, "g-open")
 	done := bed.chain(t, "done-chain", 300, 50, "g-done")
-	for _, structure := range []string{filepath.Join(bed.root, "agents"), filepath.Join(bed.root, "disposals"), filepath.Join(bed.root, "segments"), bed.root,
-		filepath.Join(done, "jobs", "done-chain.json")} {
-		if _, err := bed.env.Resolve(context.Background(), structure); err == nil {
-			t.Fatalf("%s must never resolve to an item", structure)
+	for _, structure := range []string{filepath.Join(bed.root, "agents"), filepath.Join(bed.root, "agents", bed.segment.Git), filepath.Join(bed.root, "disposals"),
+		filepath.Join(bed.root, "segments"), bed.root, filepath.Join(done, "jobs", "done-chain.json")} {
+		if _, err := bed.env.Resolve(context.Background(), structure); err == nil || !strings.Contains(err.Error(), "not an item") {
+			t.Fatalf("%s must never resolve to an item: %v", structure, err)
 		}
 	}
-	segmentPath := filepath.Join(bed.root, "agents", bed.segment.Git)
-	targets, err := bed.env.Resolve(context.Background(), segmentPath)
-	if err != nil || len(targets) != 2 {
-		t.Fatalf("a segment path is its two items: %+v %v", targets, err)
-	}
-	var plan DisposePlan
-	{
-		var paths []string
-		for _, target := range targets {
-			paths = append(paths, target.Item.Path)
-		}
-		plan = bed.preview(t, false, "", paths...)
-	}
+	plan := bed.preview(t, false, "", open, done)
 	outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{})
 	if gone(open) || !gone(done) {
 		t.Fatalf("the open goal's chain is held, the concluded one removed: %+v", outcomes)

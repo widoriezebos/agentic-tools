@@ -198,6 +198,17 @@ type DisposalReceipt struct {
 // target, a nested .git as its files, and each DISTILLED.txt line's logical
 // original. kept marks the members a compaction keeps.
 func Inventory(ctx context.Context, item string, kept func(rel string) bool) ([]InventoryFile, error) {
+	return inventory(ctx, item, kept, false)
+}
+
+// InventoryComplete is Inventory that fails closed (Round B2-2, R3): an
+// unreadable DISTILLED.txt is an error, so an item whose recipes cannot be
+// read is never exported as if it had none.
+func InventoryComplete(ctx context.Context, item string, kept func(rel string) bool) ([]InventoryFile, error) {
+	return inventory(ctx, item, kept, true)
+}
+
+func inventory(ctx context.Context, item string, kept func(rel string) bool, strict bool) ([]InventoryFile, error) {
 	info, err := os.Lstat(item)
 	if err != nil {
 		return nil, err
@@ -248,7 +259,11 @@ func Inventory(ctx context.Context, item string, kept func(rel string) bool) ([]
 	if err != nil {
 		return nil, err
 	}
-	if _, lines, present, err := ReadDistilled(item); err == nil && present {
+	_, lines, present, err := ReadDistilled(item)
+	if err != nil && strict {
+		return nil, fmt.Errorf("its recipes cannot be read: %w", err)
+	}
+	if err == nil && present {
 		for index := range lines {
 			line := lines[index]
 			if !line.Restores() {
@@ -699,7 +714,11 @@ func rollbackTombstone(ctx context.Context, item, path string, tombstone Tombsto
 		aside := filepath.Join(filepath.Dir(item), tombstone.Disposing)
 		if _, err := os.Lstat(aside); err == nil {
 			if _, err := os.Lstat(item); errors.Is(err, os.ErrNotExist) {
-				errs = append(errs, os.Rename(aside, item))
+				if err := os.Rename(aside, item); err != nil {
+					// The tombstone stays: it is the only record of where
+					// the item is (Round B2-2, L-1).
+					return fmt.Errorf("the item could not be renamed back from %s, its tombstone is kept: %w", aside, err)
+				}
 			}
 		}
 	}
@@ -755,6 +774,9 @@ func AppendReceipt(ledger string, receipt DisposalReceipt, sync Syncer) error {
 	var prior int64
 	if statErr == nil {
 		prior = info.Size()
+		if torn, offset := tornTail(ledger, prior); torn {
+			return fmt.Errorf("the disposals ledger %s ends in a torn line; nothing is appended until a person repairs it: truncate -s %d %s (keeps every whole line)", ledger, offset, ledger)
+		}
 	}
 	file, err := os.OpenFile(ledger, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -776,6 +798,19 @@ func AppendReceipt(ledger string, receipt DisposalReceipt, sync Syncer) error {
 		return errors.Join(sync.SyncDir(directory), sync.SyncDir(filepath.Dir(directory)))
 	}
 	return nil
+}
+
+// tornTail reports a ledger whose last byte is not a newline, and the
+// length that keeps every whole line (Round B2-2, R8).
+func tornTail(ledger string, size int64) (bool, int64) {
+	if size == 0 {
+		return false, 0
+	}
+	data, err := os.ReadFile(ledger)
+	if err != nil || len(data) == 0 || data[len(data)-1] == '\n' {
+		return false, size
+	}
+	return true, int64(bytes.LastIndexByte(data, '\n') + 1)
 }
 
 // ReadReceipts reads a disposals ledger; absent is empty.

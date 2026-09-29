@@ -127,7 +127,18 @@ func runIntentEvidenceShow(inv *intentInvocation) int {
 			lines = append(lines, fmt.Sprintf("%s: %s, %s", root.Path, root.Owner, evidenceBytes(bytes)))
 			data = append(data, map[string]any{"root": root.Path, "owner": root.Owner, "bytes": bytes, "unsegmented": root.Unsegmented})
 		}
-		summary := fmt.Sprintf("%d evidence root(s) on this host", len(lines))
+		if inv.input.switched("verbose") {
+			// Every item the inventory enumerates: the only things
+			// evidence dispose accepts (Round B2-2, R1).
+			targets, err := env.Enumerate(ctx)
+			if err != nil {
+				lines = append(lines, "the items cannot be listed: "+err.Error())
+			}
+			for _, target := range targets {
+				lines = append(lines, fmt.Sprintf("  %s %s, %s", target.Item.Kind, target.Item.Path, evidenceBytes(target.Item.Bytes)))
+			}
+		}
+		summary := fmt.Sprintf("%d evidence root(s) on this host", len(data))
 		return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: data})
 	}
 	view := env.Show(ctx)

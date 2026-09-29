@@ -157,6 +157,11 @@ func (e *Exclusions) observe(ctx context.Context, segment Segment) (LedgerView, 
 		observed = e.take(ctx, installation, e.Fetch)
 	case e.Tip == nil:
 		observed = e.take(ctx, installation, e.Fetch)
+	case observed.view.Local:
+		// Local mode: the union spans every armed clone of the identity,
+		// and any of them may have moved; each is read afresh from its
+		// accepted ledger (Round B2-2, R6).
+		observed = e.take(ctx, installation, false)
 	default:
 		// Each item is judged at its own critical section: the accepted
 		// tip is read again, and a moved tip is projected afresh.

@@ -230,3 +230,18 @@ func TestEvidenceDisposeWithoutAPlanTakesOnlyThisSessionsPreview(t *testing.T) {
 		t.Fatalf("a named plan runs = %d:\n%s", code, out)
 	}
 }
+
+// Round B2-2, R1: --all --verbose lists every enumerated item; a word that
+// is not one of them is refused, pointing at that listing.
+func TestEvidenceShowAllVerboseListsTheItemsDisposeAccepts(t *testing.T) {
+	t.Parallel()
+	bed := newEvidenceVerbBed(t)
+	code, out := bed.run("evidence", "show", "--all", "--verbose")
+	if code != 0 || !strings.Contains(out, "chain "+bed.chain) {
+		t.Fatalf("--all --verbose = %d:\n%s", code, out)
+	}
+	code, out = bed.run("evidence", "dispose", filepath.Join(bed.root, "AGENTS"), "--preview")
+	if code == 0 || !strings.Contains(out, "not an item; metasystem evidence show --verbose") {
+		t.Fatalf("a structure directory in another case is refused = %d:\n%s", code, out)
+	}
+}

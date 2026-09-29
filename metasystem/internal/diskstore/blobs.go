@@ -195,10 +195,14 @@ func (b BlobStore) Refs(digest string) ([]BlobRef, error) {
 	}
 	var refs []BlobRef
 	for _, entry := range entries {
-		// A reference is a plain referrer name; a dot-file (Finder's
-		// .DS_Store) or a stage is never one.
-		if IsPartial(entry.Name()) || strings.HasPrefix(entry.Name(), ".") {
+		// A reference is a plain file holding a reference; anything else in
+		// a refs directory (a dot-file, a link, junk) is not one and makes
+		// the blob's references unreadable, which keeps it (Round B2-2).
+		if IsPartial(entry.Name()) {
 			continue
+		}
+		if strings.HasPrefix(entry.Name(), ".") || !entry.Type().IsRegular() {
+			return nil, fmt.Errorf("refs/%s/%s is not a reference", digest[:12], entry.Name())
 		}
 		data, err := os.ReadFile(filepath.Join(b.refDir(digest), entry.Name()))
 		if err != nil {

@@ -98,9 +98,9 @@ func Export(ctx context.Context, request ExportRequest) (ExportResult, error) {
 	if !filepath.IsAbs(request.Dir) {
 		return ExportResult{}, fmt.Errorf("the export directory must be absolute, got %q", request.Dir)
 	}
-	files, err := Inventory(ctx, request.Item, nil)
+	files, err := InventoryComplete(ctx, request.Item, nil)
 	if err != nil {
-		return ExportResult{}, err
+		return ExportResult{}, fmt.Errorf("not exported: %w", err)
 	}
 	digest := InventoryDigest(files)
 	name := filepath.Base(request.Item)
@@ -110,7 +110,7 @@ func Export(ctx context.Context, request ExportRequest) (ExportResult, error) {
 		// Reuse re-establishes durability before it authorizes anything
 		// (DL4F-02): both files and the directory chain synced, the archive
 		// re-opened by its final name and re-hashed.
-		if err := request.barrier(ctx, archive, manifestPath, existing.ArchiveSHA256, filepath.Dir(request.Dir)); err == nil {
+		if err := request.barrier(ctx, archive, manifestPath, existing.ArchiveSHA256); err == nil {
 			result.Already, result.ArchiveSHA256, result.VerifiedAt, result.Bytes = true, existing.ArchiveSHA256, *existing.VerifiedAt, existing.ArchiveBytes
 			return result, nil
 		}
@@ -129,10 +129,6 @@ func Export(ctx context.Context, request ExportRequest) (ExportResult, error) {
 			manifest.Blobs = append(manifest.Blobs, ExportBlob{Digest: recipe.SHA256, Entry: ".blobs/" + recipe.SHA256, Size: recipe.Size})
 		}
 	}
-	// The first directory that exists before the export: every directory
-	// the export creates below it has its entry in its parent, so the
-	// barrier syncs the chain up to and including it (Round B2, F-9).
-	anchor := firstExisting(filepath.Dir(archive))
 	if err := os.MkdirAll(filepath.Dir(archive), 0o755); err != nil {
 		return result, fmt.Errorf("not exported: %w", err)
 	}
@@ -177,7 +173,7 @@ func Export(ctx context.Context, request ExportRequest) (ExportResult, error) {
 		cleanup()
 		return result, fmt.Errorf("not exported: %w", err)
 	}
-	if err := request.barrier(ctx, archive, manifestPath, sum, anchor); err != nil {
+	if err := request.barrier(ctx, archive, manifestPath, sum); err != nil {
 		_ = os.Remove(archive)
 		_ = os.Remove(manifestPath)
 		return result, fmt.Errorf("not exported: %w", err)
@@ -233,7 +229,7 @@ func syncPath(path string) error {
 // barrier is the durability barrier: the archive and manifest synced, every
 // directory from the item's export directory up to DIR synced, then the
 // archive re-opened by its final name and re-hashed and the manifest re-read.
-func (r ExportRequest) barrier(ctx context.Context, archive, manifest, sum, anchor string) error {
+func (r ExportRequest) barrier(ctx context.Context, archive, manifest, sum string) error {
 	for _, path := range []string{archive, manifest} {
 		if err := syncPath(path); err != nil {
 			return fmt.Errorf("%s could not be synced: %w", path, err)
@@ -243,7 +239,10 @@ func (r ExportRequest) barrier(ctx context.Context, archive, manifest, sum, anch
 		if err := r.Sync.SyncDir(directory); err != nil {
 			return fmt.Errorf("the directory %s could not be synced, so the export is not durable: %w", directory, err)
 		}
-		if directory == anchor || directory == filepath.Dir(directory) {
+		// Every directory up to the file system's root, whether or not it
+		// existed before: an earlier crashed run may have created it
+		// unsynced (Round B2-2, R7).
+		if directory == filepath.Dir(directory) {
 			break
 		}
 	}
@@ -413,13 +412,4 @@ func ExportDirProblem(dir string, roots, checkouts, stores []string) string {
 		}
 	}
 	return ""
-}
-
-// firstExisting is path or its nearest ancestor that exists.
-func firstExisting(path string) string {
-	for current := path; ; current = filepath.Dir(current) {
-		if _, err := os.Lstat(current); err == nil || current == filepath.Dir(current) {
-			return current
-		}
-	}
 }
