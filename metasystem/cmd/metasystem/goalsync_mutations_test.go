@@ -537,13 +537,16 @@ func TestGoalBudgetCompletionUsesOnlyFiveValidMembers(t *testing.T) {
 func TestGoalApproveSweepWithIDsDropsSweepAndConfirmFromItsRemedy(t *testing.T) {
 	t.Parallel()
 	root := syncedMarkerRoot(t)
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runGoalApproveWithAuthority([]string{
-			"--root", root, "--sweep", "--id", "standing-validation", "--confirm", "stale",
-			"--by", "Wido", "--fixture-human-authority",
-		}, fixedFixtureGoalAuthority)
-	})
-	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	// The command prints on the streams its dependencies carry: a capture of
+	// the process's os.Stderr also received every parallel test's lines.
+	stdout, stderr := callerStreams()
+	dependencies := defaultSyncRequestDependencies()
+	dependencies.stdout, dependencies.stderr = stdout, stderr
+	code := runGoalApproveWithInputs([]string{
+		"--root", root, "--sweep", "--id", "standing-validation", "--confirm", "stale",
+		"--by", "Wido", "--fixture-human-authority",
+	}, fixedFixtureGoalAuthority, goalCommandNow, dependencies, dispatchcore.ResolveGoalBinding)
+	lines := strings.Split(strings.TrimSpace(stderr.String()), "\n")
 	if code != 2 || len(lines) != 2 || !strings.Contains(lines[1], "run: metasystem goal approve") || !strings.Contains(lines[1], "--id standing-validation") ||
 		strings.Contains(lines[1], "--sweep") || strings.Contains(lines[1], "--confirm") {
 		t.Fatalf("the direct-ID approval remedy retained sweep-only flags: code=%d stderr=%q", code, stderr)
@@ -553,12 +556,20 @@ func TestGoalApproveSweepWithIDsDropsSweepAndConfirmFromItsRemedy(t *testing.T) 
 func TestGoalClassifySweepWithoutDraftPrintsWordsInsteadOfAnEmptyPath(t *testing.T) {
 	t.Parallel()
 	root := syncedMarkerRoot(t)
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runGoalClassifySweepWithAuthority([]string{"--root", root, "--preview"}, fixedFixtureGoalAuthority)
-	})
+	stdout, errStream := callerStreams()
+	dependencies := defaultSyncRequestDependencies()
+	dependencies.stdout, dependencies.stderr = stdout, errStream
+	code := runGoalClassifySweepWithInputs([]string{"--root", root, "--preview"}, fixedFixtureGoalAuthority, goalCommandNow, dependencies)
+	stderr := errStream.String()
 	if code != 2 || !strings.Contains(stderr, "no command completes this:") || strings.Contains(stderr, "run:") || strings.Contains(stderr, "--draft ''") {
 		t.Fatalf("the missing-draft refusal printed an unusable command: code=%d stderr=%q", code, stderr)
 	}
+}
+
+// callerStreams are a command's own output buffers, handed to it through its
+// dependencies instead of capturing the process's shared standard streams.
+func callerStreams() (*strings.Builder, *strings.Builder) {
+	return &strings.Builder{}, &strings.Builder{}
 }
 
 func syncedMarkerRoot(t *testing.T) string {
