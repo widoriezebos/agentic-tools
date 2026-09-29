@@ -355,7 +355,7 @@ func (inv *intentInvocation) enterGoalWorktree(id, path string) *intentResult {
 	owner := diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: id}
 	gone := &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "goal", ID: id}},
 		Summary: fmt.Sprintf("goal %s's worktree is being released because the goal concluded; nothing was built", id),
-		next:    inv.publicArgv("goal", "status", id), nextReason: "see the goal's state"}
+		next:    inv.publicArgv("goal", "show", id), nextReason: "see the goal's state"}
 	records, err := diskstore.FindLinkedWorktrees(registry, diskstore.GoalWorktreeClass, owner)
 	if err != nil {
 		return &intentResult{Outcome: intentFailed, code: 1, Summary: "the store registry cannot be read: " + err.Error() + "; nothing was built",

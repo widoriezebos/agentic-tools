@@ -354,7 +354,7 @@ func (p GoalWorktreeProof) Observe(ctx context.Context, record Record) Verdict {
 	}
 	goalID := record.Owner.Ref
 	if record.State == StateReserved {
-		return Verdict{Decision: Pending, Reason: "goal " + goalID + "'s worktree is still being created", Command: "metasystem goal status " + goalID}
+		return Verdict{Decision: Pending, Reason: "goal " + goalID + "'s worktree is still being created", Command: "metasystem goal show " + goalID}
 	}
 	ended, known, basis := false, false, ""
 	if p.Ended != nil {
@@ -362,9 +362,9 @@ func (p GoalWorktreeProof) Observe(ctx context.Context, record Record) Verdict {
 	}
 	switch {
 	case !known:
-		return Verdict{Decision: Pending, Reason: "whether goal " + goalID + " has ended cannot be read", Command: "metasystem goal status " + goalID}
+		return Verdict{Decision: Pending, Reason: "whether goal " + goalID + " has ended cannot be read", Command: "metasystem goal show " + goalID}
 	case !ended:
-		return Verdict{Decision: Keep, Reason: "goal " + goalID + " is open; its worktree ends when the goal concludes", Command: "metasystem goal status " + goalID}
+		return Verdict{Decision: Keep, Reason: "goal " + goalID + " is open; its worktree ends when the goal concludes", Command: "metasystem goal show " + goalID}
 	}
 	if gone, err := worktreeGone(ctx, LinkedRelease{GitRoot: p.GitRoot, Git: p.Git}, record); err != nil {
 		return Verdict{Decision: Pending, Reason: "whether the worktree still exists cannot be read: " + err.Error(), Command: "metasystem disk show"}
