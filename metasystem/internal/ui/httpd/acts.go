@@ -273,6 +273,7 @@ func actRouteOf(path string) (written, bool) {
 		unparkSuffix:   routeUnpark,
 		abandonSuffix:  routeAbandon,
 		editGoalSuffix: routeEditGoal,
+		reviewSuffix:   routeReview,
 	}
 	for suffix, route := range suffixes {
 		if id, ok := actID(path, suffix); ok {

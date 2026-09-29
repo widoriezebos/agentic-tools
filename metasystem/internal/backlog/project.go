@@ -14,6 +14,13 @@ import (
 // the lane and names the gap rather than inventing a phase.
 const PhaseNotRecorded = "not recorded"
 
+// PhaseSentBack is the phase of a claimed goal whose history carries a
+// send-back newer than its Landing record (g1-s69 D2). The Landing is left as
+// it stands, because a landing claim stands outside the one-claim quota; the
+// goal leaves the Review lane by this reading instead, and a later land-ready
+// writes a newer Landing and puts it back.
+const PhaseSentBack = "sent back"
+
 // DraftStatement is what the Draft lane says instead of counting proposals.
 // No engine code reads the drafts directory, and counting its files would be
 // a read of the very source this statement says nothing reads.
@@ -77,6 +84,45 @@ type Fence struct {
 	ClosedAt string `json:"closedAt"`
 }
 
+// Verdict is the newest human verdict recorded on the goal since its standing
+// Landing (g1-s69 D1, D2), as every seat reads it from the history: who gave
+// it, at which tip, from which record, and for a send-back the brief and the
+// holder's answer — the attempt it started, or the work items it could not
+// choose between.
+type Verdict struct {
+	Verdict    string   `json:"verdict"`
+	By         string   `json:"by"`
+	At         string   `json:"at"`
+	Tip        string   `json:"tip"`
+	Record     string   `json:"record"`
+	Brief      string   `json:"brief,omitempty"`
+	Work       string   `json:"work,omitempty"`
+	Answered   bool     `json:"answered"`
+	Attempt    int      `json:"attempt,omitempty"`
+	Candidates []string `json:"candidates,omitempty"`
+}
+
+// verdictOf is the row's verdict, or nil where none stands since the Landing.
+func verdictOf(f *goal.GoalFile) *Verdict {
+	read := goal.VerdictsOf(f)
+	if read.Latest == nil {
+		return nil
+	}
+	verdict := &Verdict{
+		Verdict: read.Latest.Verdict, By: read.Latest.By, At: read.Latest.At, Tip: read.Latest.Tip,
+		Record: read.Latest.Record, Brief: read.Latest.Brief, Work: read.Latest.Work,
+	}
+	if answer := read.Answer; answer != nil {
+		verdict.Answered = true
+		verdict.Attempt = answer.Attempt
+		verdict.Candidates = append([]string{}, answer.Candidates...)
+		if answer.Work != "" {
+			verdict.Work = answer.Work
+		}
+	}
+	return verdict
+}
+
 // Row is one goal as a reader sees it: its identity, its lane, the record's
 // own facts, and every gap the record leaves open.
 type Row struct {
@@ -112,6 +158,7 @@ type Row struct {
 	Waiting    *Waiting           `json:"waiting,omitempty"`
 	Abandoned  *Abandoned         `json:"abandoned,omitempty"`
 	Fence      *Fence             `json:"fence,omitempty"`
+	Verdict    *Verdict           `json:"verdict,omitempty"`
 	Sliced     bool               `json:"sliced"`
 	Decomposed bool               `json:"decomposed"`
 	OpenedAt   string             `json:"openedAt"`
@@ -211,6 +258,8 @@ func LaneOf(f *goal.GoalFile, tree *goal.TreeGoals, horizon goal.ApprovalHorizon
 			// A breach fence outranks a landing: the work is stopped and
 			// waiting on a human whatever else the claim carries.
 			return LaneWaiting, PhaseNotRecorded, nil
+		case f.Landing != nil && goal.VerdictsOf(f).SentBack:
+			return LaneInProgress, PhaseSentBack, nil
 		case f.Landing != nil:
 			return LaneReview, "landing", nil
 		default:
@@ -294,6 +343,7 @@ func rowOf(f *goal.GoalFile, where string, tree *goal.TreeGoals, horizon goal.Ap
 	if fence := f.StopFence; fence != nil {
 		row.Fence = &Fence{Reason: fence.Reason, ClosedAt: fence.ClosedAt}
 	}
+	row.Verdict = verdictOf(f)
 	if parked := f.Parked; parked != nil {
 		row.Waiting = &Waiting{
 			Reason: parked.Because, Since: parked.At, By: parked.By,

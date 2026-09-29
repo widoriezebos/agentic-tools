@@ -28,10 +28,15 @@ import (
 // is mayAct's rule and what ledgerHand says. The three Partner routes, the
 // checkout's writes and the notepad's carry other hands and are not acts on a
 // goal at all, so nothing here has to name them.
+//
+// The verdict and the candidate's run take the launch route's stronger hand,
+// sessionHand, and are acts on one goal too (g1-s69 §6). Of those, stopping the
+// candidate is the one the grammar does not carry: the design gives the
+// Partner Run and not Stop (D3).
 func goalActs() []string {
 	named := []string{}
 	for _, act := range Acts() {
-		if act.Requires == ledgerHand {
+		if (act.Requires == ledgerHand || act.Requires == sessionHand) && act.ID != routeAppStop {
 			named = append(named, act.ID)
 		}
 	}
@@ -50,7 +55,7 @@ func TestEveryProposableActIsARouteThisInterfaceHas(t *testing.T) {
 		// And it is a ledger act: a proposal the human applies publishes under
 		// their own session, so a catalogue row whose route needed some other
 		// hand would be a card promising an act this hand cannot make.
-		testutil.Expect(t, act.Route+" needs a signed-in human", hand, ledgerHand)
+		testutil.Expect(t, act.Route+" needs a signed-in human", hand == ledgerHand || hand == sessionHand, true)
 	}
 }
 
@@ -98,6 +103,8 @@ func TestEveryCatalogueFieldIsItsRoutesOwnBodyField(t *testing.T) {
 		routeUnpark:   {},
 		routeEditGoal: fieldsOf(editGoalBody{}),
 		routeAbandon:  fieldsOf(abandonBody{}),
+		routeReview:   fieldsOf(reviewBody{}),
+		routeAppStart: {},
 	}
 	for _, act := range uitools.ProposedActs {
 		carried, known := bodies[act.Route]

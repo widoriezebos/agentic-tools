@@ -205,6 +205,11 @@ type Deposit struct {
 	// is the card's, not the page's: a card rebuilt after a reload records
 	// under the verdict it was drafted with.
 	Verdict string `json:"verdict,omitempty"`
+	// Tip is the branch tip the review's record named when its closing turn
+	// was asked, stamped by the service beside the verdict (g1-s69 D1): the
+	// Outcome is bound to it, and Record it refuses once the record names
+	// another.
+	Tip string `json:"tip,omitempty"`
 	// Offered says whether the human was shown it as something to record.
 	//
 	// The host never sets it: it reads what the tool prepared, and whether a
@@ -223,7 +228,7 @@ type Deposit struct {
 // applied.
 //
 // It is not an act and it is not made. The Partner has no session and cannot
-// obtain one; what it can do is say which of this interface's ten acts it would
+// obtain one; what it can do is say which of this interface's acts it would
 // make and with which arguments, and the human's press on the card is the act.
 // So the fields here are the route body's own fields, under the body's own
 // names, and the verb is the route id the runner dispatches on.

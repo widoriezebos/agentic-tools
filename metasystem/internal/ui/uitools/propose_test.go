@@ -67,18 +67,20 @@ func goalCatalogue() []uitools.CommandFamily {
 	}}
 }
 
-// The catalogue is the ten public actions and their public flags, and it is
-// what the tool's own description tells the model.
+// The catalogue is the twelve public actions and their public flags, and it is
+// what the tool's own description tells the model: the goal object's ten, the
+// review's verdict and the candidate's start (g1-s69 §6).
 func TestTheProposalCatalogueIsTheTenPublicActionsWithTheirFlags(t *testing.T) {
 	t.Parallel()
-	testutil.Expect(t, "ten acts", len(uitools.ProposedActs), 10)
-	testutil.Expect(t, "named by the goal object's public actions", uitools.ProposeActions(), []string{
+	testutil.Expect(t, "twelve acts", len(uitools.ProposedActs), 12)
+	testutil.Expect(t, "named by their public actions", uitools.ProposeActions(), []string{
 		"open", "approve", "unapprove", "prioritize",
-		"block", "unblock", "pause", "resume", "edit", "abandon",
+		"block", "unblock", "pause", "resume", "edit", "abandon", "review", "app start",
 	})
 	testutil.Expect(t, "each dispatching to the interface's own route", uitools.ProposeRoutes(), []string{
 		"open-goal", "approve-goal", "withdraw-goal", "set-goal-priority",
 		"block-goal", "unblock-goal", "park-goal", "unpark-goal", "edit-goal", "abandon-goal",
+		"review-goal", "app-start",
 	})
 	words := map[string]string{}
 	flags := map[string][]string{}
@@ -100,6 +102,9 @@ func TestTheProposalCatalogueIsTheTenPublicActionsWithTheirFlags(t *testing.T) {
 		[]string{"intent", "next", "label", "unlabel"})
 	testutil.Expect(t, "abandon takes the reason and the successor", flags["abandon"],
 		[]string{"reason", "successor"})
+	testutil.Expect(t, "review takes the record, the verdict and the work", flags["review"],
+		[]string{"record", "verdict", "work"})
+	testutil.Expect(t, "app start takes the goal alone", flags["start"], []string{})
 	// Abandon is the row whose public flag and route body field differ: the
 	// reason the Partner writes reaches the route as the `because` that body
 	// already has, and the successor is spelt the same on both sides.
@@ -110,10 +115,10 @@ func TestTheProposalCatalogueIsTheTenPublicActionsWithTheirFlags(t *testing.T) {
 		abandon.Body(), []string{"because", "successor"})
 
 	// One word for one act, everywhere a human reads it: the action's own name.
-	testutil.Expect(t, "the ten words are the ten actions' names", words, map[string]string{
+	testutil.Expect(t, "the words are the actions' names", words, map[string]string{
 		"open": "Open", "approve": "Approve", "unapprove": "Unapprove", "prioritize": "Prioritize",
 		"block": "Block", "unblock": "Unblock", "pause": "Pause", "resume": "Resume", "edit": "Edit",
-		"abandon": "Abandon",
+		"abandon": "Abandon", "review": "Review", "start": "Run",
 	})
 
 	described := map[string]uitools.Tool{}
@@ -123,8 +128,8 @@ func TestTheProposalCatalogueIsTheTenPublicActionsWithTheirFlags(t *testing.T) {
 	tool := described[uitools.OpPropose]
 	testutil.Expect(t, "the tool is offered", tool.Name, uitools.OpPropose)
 	for _, act := range uitools.ProposedActs {
-		testutil.Expect(t, "its description names goal "+act.Action,
-			strings.Contains(tool.Description, "\n- goal "+act.Action), true)
+		testutil.Expect(t, "its description names "+act.Command(),
+			strings.Contains(tool.Description, "\n- "+act.Command()), true)
 	}
 	testutil.Expect(t, "and sends the model to the command's own help",
 		strings.Contains(tool.Description, "`metasystem goal ACTION --help`"), true)
@@ -272,7 +277,7 @@ func TestAGoalActionTheInterfaceHasNoActForIsRefusedWithItsUsageLine(t *testing.
 	t.Parallel()
 	words := refusedPropose(t, "an unknown act", uitools.Args{"verb": "retire", "goal": "g1-s42", "explanation": "x"})
 	testutil.Expect(t, "the ten are named", strings.Contains(words, "open, approve, unapprove"), true)
-	testutil.Expect(t, "abandon among them", strings.Contains(words, "and abandon"), true)
+	testutil.Expect(t, "abandon among them", strings.Contains(words, "abandon, review and app start"), true)
 	testutil.Expect(t, "and the unknown one is quoted", strings.Contains(words, `"retire"`), true)
 
 	readers := uitools.Readers{Kit: uitools.Kit{Commands: goalCatalogue}}

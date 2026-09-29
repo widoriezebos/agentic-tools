@@ -39,6 +39,20 @@ func goalActionDescriptors() map[string]intentCommand {
 	return held
 }
 
+// proposedDescriptors are the public actions the catalogue's acts belong to, by
+// each act's own verb: the goal object's actions, and the app object's start
+// that runs a goal's candidate (g1-s69 D3), which is the one act of another
+// object the grammar carries.
+func proposedDescriptors() map[string]intentCommand {
+	held := goalActionDescriptors()
+	for _, command := range publicIntentCommands() {
+		if command.object == uitools.ObjectApp {
+			held[command.object+" "+command.action] = command
+		}
+	}
+	return held
+}
+
 // flagNamed is one flag of a command under the DESCRIPTOR'S OWN spelling — its
 // name and not one of its aliases — with whether the table found it at all.
 func flagNamed(command intentCommand, name string) (intentFlag, bool) {
@@ -75,14 +89,14 @@ func flagOrAlias(command intentCommand, name string) (intentFlag, bool) {
 // hidden row is a process entrypoint that public help does not even list.
 func TestProposableActsAreCurrentPublicGoalActions(t *testing.T) {
 	t.Parallel()
-	described := goalActionDescriptors()
+	described := proposedDescriptors()
 	for _, act := range uitools.ProposedActs {
-		command, known := described[act.Action]
-		testutil.Require(t, "goal "+act.Action+" is a public action of the goal object", known, true)
-		testutil.Expect(t, "goal "+act.Action+" is named object then action", command.name, "goal "+act.Action)
-		testutil.Expect(t, "goal "+act.Action+" is for a human or for both",
+		command, known := described[act.Verb()]
+		testutil.Require(t, act.Command()+" is a public action of its object", known, true)
+		testutil.Expect(t, act.Command()+" is named object then action", command.name, act.Command())
+		testutil.Expect(t, act.Command()+" is for a human or for both",
 			command.audience == "human" || command.audience == "both", true)
-		testutil.Expect(t, "goal "+act.Action+" is not a hidden row", command.hidden, false)
+		testutil.Expect(t, act.Command()+" is not a hidden row", command.hidden, false)
 	}
 }
 
@@ -98,15 +112,21 @@ func TestProposableActsAreCurrentPublicGoalActions(t *testing.T) {
 // here is the descriptor's own name.
 func TestProposableFieldsAreTheirActionsOwnFlags(t *testing.T) {
 	t.Parallel()
-	described := goalActionDescriptors()
+	described := proposedDescriptors()
 	advanced := 0
 	for _, act := range uitools.ProposedActs {
-		command, known := described[act.Action]
-		testutil.Require(t, "goal "+act.Action+" is in the table", known, true)
+		command, known := described[act.Verb()]
+		testutil.Require(t, act.Command()+" is in the table", known, true)
+		// The app object names its goal with --goal, which is the subject every
+		// proposal already carries under goal.
+		if act.Object == uitools.ObjectApp {
+			_, there := flagNamed(command, "goal")
+			testutil.Expect(t, act.Command()+" names its goal with --goal", there, true)
+		}
 		for _, field := range act.Fields() {
 			flag, there := flagNamed(command, field)
-			testutil.Expect(t, "goal "+act.Action+" has a --"+field+" flag of its own", there, true)
-			testutil.Expect(t, "goal "+act.Action+"'s --"+field+" is not hidden", flag.hidden, false)
+			testutil.Expect(t, act.Command()+" has a --"+field+" flag of its own", there, true)
+			testutil.Expect(t, act.Command()+"'s --"+field+" is not hidden", flag.hidden, false)
 			if flag.advanced {
 				advanced++
 			}
@@ -134,7 +154,7 @@ func TestProposableFieldsAreTheirActionsOwnFlags(t *testing.T) {
 // leave the plumbing admitted.
 func TestNoProposableFieldIsAnAuthorityAndEveryRefusalIsARealFlag(t *testing.T) {
 	t.Parallel()
-	described := goalActionDescriptors()
+	described := proposedDescriptors()
 	refused := uitools.RefusedProposalFlags()
 	for _, act := range uitools.ProposedActs {
 		for _, field := range act.Fields() {
@@ -156,8 +176,8 @@ func TestNoProposableFieldIsAnAuthorityAndEveryRefusalIsARealFlag(t *testing.T) 
 	for _, name := range refused {
 		carried := []string{}
 		for _, act := range uitools.ProposedActs {
-			if _, there := flagOrAlias(described[act.Action], name); there {
-				carried = append(carried, act.Action)
+			if _, there := flagOrAlias(described[act.Verb()], name); there {
+				carried = append(carried, act.Verb())
 			}
 		}
 		testutil.Expect(t, "--"+name+" is a flag one of the nine actually carries",

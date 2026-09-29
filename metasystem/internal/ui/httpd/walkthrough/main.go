@@ -118,6 +118,12 @@ func main() {
 	// migration's case and not the room's ordinary look.
 	satBeforeRooms := flag.String("sat-before-rooms", "",
 		"plant a shaping sitting on this human's ordinary conversation, as before D16; empty plants none")
+	// The verdict and the candidate (g1-s69). What the fixture's holding seat
+	// answers a send-back with, taken at once, so the lane card's later
+	// readings can be stood in front of; and a project with no launch
+	// contract, whose pill is greyed with its reason.
+	holder := flag.String("holder", "", "what the holding seat answers a send-back with: none, attempt or needs-work")
+	launchContract := flag.String("launch-contract", "present", "whether this fixture has a launch contract to run a candidate by: present or absent")
 	flag.Parse()
 	if *smoke != "" {
 		runSmoke(*smoke, *smokeModel, *smokeEngine, *smokeKit, *smokeOut)
@@ -157,6 +163,12 @@ func main() {
 	notepad := fixtureStickies(checkout, []string{"", *human, "Wido"}, time.Now().UTC())
 	roots := project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
 	state.roots = roots
+	if *holder != "" && *holder != "none" && *holder != string(holderAttempt) && *holder != string(holderNeedsWork) {
+		log.Fatalf("-holder takes none, attempt or needs-work, not %q", *holder)
+	}
+	published := &verdicts{published: map[string][]byte{}, holder: holderAnswers(strings.TrimPrefix(*holder, "none"))}
+	running := &candidates{runs: map[string]httpd.Candidate{}, git: fixtureGit{branches: branchesFile(checkout)},
+		noContract: *launchContract == "absent"}
 	authority := httpd.AuthorityInfo{Reason: agentReason}
 	if *proven || *calm {
 		authority = httpd.AuthorityInfo{Proven: true, Human: "Wido"}
@@ -324,6 +336,13 @@ func main() {
 			return project.SetGoals(roots, id, goals, time.Now().UTC())
 		},
 		PreviewDocument: project.PreviewDocument,
+		// The review's verdict, judged by the engine's own rules and written
+		// onto the canned goal's history, and the goal's candidate as a run of
+		// this fixture's own (g1-s69).
+		Verdict: func(_ *session.Session, id string, asked act.Reviewed) (act.Recorded, error) {
+			return state.review(published, id, asked)
+		},
+		Candidate: running.act,
 		// What this seat has been asked and what this human has ruled. The
 		// asks are invented, because this fixture has no channel; the
 		// register is the file planted above, read by the reader the engine
@@ -654,12 +673,16 @@ func newLedger(calm bool) *ledger {
 	// name, and neither is a shape a walkthrough should leave untried.
 	landing := add(ranked(walkthroughGoal("g1-s21", goal.StateClaimed, "The Overview reads what needs a human"), 2, 10))
 	landing.Claimed = &goal.ClaimRecord{Machine: "m1e", Lineage: "coordinator", At: stampedAgo(7 * time.Hour)}
-	landing.Landing = &goal.LandingRecord{At: stampedAgo(35 * time.Minute)}
+	landing.Landing = &goal.LandingRecord{At: stampedAgo(35 * time.Minute), Opid: "op-land-g1-s21"}
+	landing.History = append(landing.History, goal.HistoryLine{At: stampedAgo(35 * time.Minute), Opid: "op-land-g1-s21",
+		Verb: "land-ready", Actor: "m1e+coordinator", Targets: []string{"g1-s21"}, Keep: -1})
 	// A second goal waiting to land, so a human can start a review, step out,
 	// start another on this one, and go back to the first through its door.
 	landed2 := add(ranked(walkthroughGoal("g1-s90", goal.StateClaimed, "The owner holds one lock across publish and reconcile"), 2, 13))
 	landed2.Claimed = &goal.ClaimRecord{Machine: "m2a", Lineage: "implementer", At: stampedAgo(3 * time.Hour)}
-	landed2.Landing = &goal.LandingRecord{At: stampedAgo(20 * time.Minute)}
+	landed2.Landing = &goal.LandingRecord{At: stampedAgo(20 * time.Minute), Opid: "op-land-g1-s90"}
+	landed2.History = append(landed2.History, goal.HistoryLine{At: stampedAgo(20 * time.Minute), Opid: "op-land-g1-s90",
+		Verb: "land-ready", Actor: "m2a+implementer", Targets: []string{"g1-s90"}, Keep: -1})
 
 	parked := add(ranked(walkthroughGoal("g1-s22", goal.StateParked, "The Fleet section reads the census"), 2, 11))
 	parked.Parked = &goal.ParkRecord{

@@ -132,13 +132,51 @@ func ReviewClosingRequest(sitting Sitting, verdict string) (string, error) {
 		"examined — the files, the sections and the walks this review looked at — then every finding with " +
 		"its answer as the record now carries it, then what was left open with its consequence. Draft it " +
 		"from the record and this conversation and from nothing else.\n\n" +
-		"Weigh nothing and settle nothing: the verdict is the human's, and it changes nothing yet. The human " +
+		"Weigh nothing and settle nothing: the verdict is the human's, recorded on the goal when they record the Outcome, and nothing lands because of it. The human " +
 		"reads it, edits it and presses Record it.", nil
+}
+
+// Candidate is what the Behaves walk is told of the goal's candidate run
+// (g1-s69 D3): where it answers, the commit it runs, and the tip the review's
+// record names. A candidate with no address is not running.
+type Candidate struct {
+	Address  string
+	Running  string
+	Reviewed string
+}
+
+// CandidateNote is what the Behaves walk's request says about the candidate:
+// where it runs and at which commit beside the reviewed tip, and when the two
+// differ, that what runs is not the version under review.
+func CandidateNote(candidate Candidate) string {
+	if strings.TrimSpace(candidate.Address) == "" {
+		return "No candidate of this goal is running now; say so, and walk what the record holds of it running."
+	}
+	said := "The candidate runs at " + candidate.Address + ", at commit " + orUnknown(candidate.Running) +
+		"; the review is of " + orUnknown(candidate.Reviewed) + "."
+	if candidate.Running == "" || candidate.Reviewed == "" || candidate.Running != candidate.Reviewed {
+		said += " What runs is not the version under review: say so first, and do not present what it does as " +
+			"evidence of the reviewed version."
+	}
+	return said
+}
+
+func orUnknown(commit string) string {
+	if strings.TrimSpace(commit) == "" {
+		return "a commit nobody recorded"
+	}
+	return commit
 }
 
 // Walk asks one of the walks of one sitting's room (g1-s65 D6, g1-s67 D3). It
 // is the interface's question, marked as such, exactly as the opening turn is.
 func (s *Service) Walk(ctx context.Context, human, record, part string, page Page) (string, error) {
+	return s.WalkWith(ctx, human, record, part, page, nil)
+}
+
+// WalkWith is Walk with what the Behaves walk is told of the candidate run; the
+// other walks are asked as they always were.
+func (s *Service) WalkWith(ctx context.Context, human, record, part string, page Page, candidate *Candidate) (string, error) {
 	conversation, err := s.conversationOf(human, record)
 	if err != nil {
 		return "", err
@@ -151,7 +189,11 @@ func (s *Service) Walk(ctx context.Context, human, record, part string, page Pag
 	if !slices.Contains(offered, part) {
 		return "", fmt.Errorf("a walk of this sitting is one of %s; %s is none of them", strings.Join(offered, ", "), part)
 	}
-	return s.submit(ctx, human, record, "", WalkRequest(part, *sitting), page, true)
+	request := WalkRequest(part, *sitting)
+	if part == "behaves" && sitting.Purpose == PurposeReview && candidate != nil {
+		request += "\n\n" + CandidateNote(*candidate)
+	}
+	return s.submit(ctx, human, record, "", request, page, true)
 }
 
 // KeepRoom writes the room's working state onto one sitting's mark (D9).

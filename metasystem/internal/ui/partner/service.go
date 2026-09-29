@@ -221,7 +221,11 @@ type turn struct {
 	page Page
 	// verdict is the verdict a review's closing turn was asked with, stamped on
 	// the outcome it offers (g1-s65 D10), and "" for every other turn.
-	verdict  string
+	verdict string
+	// tip is the branch tip the review's record named when its closing turn
+	// was asked, stamped on the outcome beside the verdict (g1-s69 D1), so
+	// the Outcome is bound to the tip it was drafted for.
+	tip      string
 	seq      int
 	text     strings.Builder
 	activity []string
@@ -694,6 +698,11 @@ func (s *Service) submit(ctx context.Context, human, sitting, key, text string, 
 // submitClosing is submit for a turn that carries the verdict a review's
 // closing was asked with, so the outcome it offers carries it too.
 func (s *Service) submitClosing(ctx context.Context, human, sitting, key, text string, page Page, byInterface bool, verdict string) (string, error) {
+	return s.submitClosingAt(ctx, human, sitting, key, text, page, byInterface, verdict, "")
+}
+
+// submitClosingAt is submitClosing with the tip a review's record names.
+func (s *Service) submitClosingAt(ctx context.Context, human, sitting, key, text string, page Page, byInterface bool, verdict, tip string) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", errors.New("a turn needs a question")
@@ -747,7 +756,7 @@ func (s *Service) submitClosing(ctx context.Context, human, sitting, key, text s
 	// The turn's beats name the address it was asked from, the room's record
 	// even where that room's conversation is the ordinary one, so the page files
 	// them under the room they were asked from.
-	running := &turn{id: id, human: human, key: key, page: page, verdict: verdict, where: strings.TrimSpace(sitting),
+	running := &turn{id: id, human: human, key: key, page: page, verdict: verdict, tip: tip, where: strings.TrimSpace(sitting),
 		conversation: conversation, done: make(chan struct{})}
 	s.current = running
 	s.mu.Unlock()
@@ -1164,6 +1173,14 @@ func (s *Service) Closing(ctx context.Context, human string, page Page) (Sitting
 // review's close carries the verdict the human chose on the End sheet (g1-s65
 // D10), which the drafted Outcome opens with.
 func (s *Service) ClosingIn(ctx context.Context, human, where, verdict string, page Page) (Sitting, error) {
+	return s.ClosingAt(ctx, human, where, verdict, "", page)
+}
+
+// ClosingAt is ClosingIn for a review whose record names the tip it reviews:
+// the outcome the closing turn offers carries that tip beside the verdict
+// (g1-s69 D1), and the recorder writes it into the Outcome as its Reviewed at
+// line.
+func (s *Service) ClosingAt(ctx context.Context, human, where, verdict, tip string, page Page) (Sitting, error) {
 	conversation, err := s.conversationOf(human, where)
 	if err != nil {
 		return Sitting{}, err
@@ -1179,8 +1196,10 @@ func (s *Service) ClosingIn(ctx context.Context, human, where, verdict string, p
 			return Sitting{}, err
 		}
 		request, chosen = said, verdict
+	} else {
+		tip = ""
 	}
-	if _, err := s.submitClosing(ctx, human, where, "", request, page, true, chosen); err != nil {
+	if _, err := s.submitClosingAt(ctx, human, where, "", request, page, true, chosen, tip); err != nil {
 		return Sitting{}, err
 	}
 	return *sitting, nil
@@ -1324,9 +1343,10 @@ func (s *Service) admitDeposit(running *turn, prepared Deposit) {
 	prepared.Subject = sitting.Subject
 	// The verdict is the service's to write, never the Partner's: it is the
 	// one the closing turn was asked with, and only on a review's outcome.
-	prepared.Verdict = ""
+	prepared.Verdict, prepared.Tip = "", ""
 	if prepared.Kind == DepositOutcome && sitting.Purpose == PurposeReview {
 		prepared.Verdict = running.verdict
+		prepared.Tip = running.tip
 	}
 	prepared.Offered = true
 	s.record(running, Event{Kind: EventDeposit, Deposit: &prepared})

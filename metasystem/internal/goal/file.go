@@ -2204,6 +2204,9 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 			return h, fmt.Errorf("carried reason must be landed or superseded")
 		}
 	}
+	if err := validReviewHistory(h); err != nil {
+		return h, err
+	}
 	return h, nil
 }
 

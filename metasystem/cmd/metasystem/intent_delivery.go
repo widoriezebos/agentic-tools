@@ -117,7 +117,7 @@ func intentDeliveryCommands() []intentCommand {
 				"response or a failure, reaches the same new attempt and never spends another. Without --after an identical earlier",
 				"request is rejoined first; otherwise the newest attempt is corrected. A request against an older attempt is refused.",
 				"When the new attempt fails, the same brief with --after of that attempt's number deliberately makes one more attempt.",
-				"Without --work: the only work item that failed, else the only one that finished. The result must be reviewed again.",
+				"Without --work: the only work item that failed, else the only one that finished. The result must be reviewed again.", sentBackReviseDetail,
 				"--dispositions is the decisions file work review G wrote for an examination of attempt R (R may be before N). Its findings",
 				"and decisions are frozen with the request and stay the builder's input across failed corrections; a file answering an",
 				"examination that a later attempt's completed examination superseded is refused.",
@@ -134,7 +134,7 @@ func intentDeliveryCommands() []intentCommand {
 			maxArgs:  1,
 			accepts:  []string{refGoal, refJ2, refRun},
 			examples: []string{"metasystem work revise verbs-match-intent --brief fix.md", "metasystem work revise j2:crit-01 --dispositions r1-dispositions.md --brief r1-fix.md", "metasystem work revise verbs-match-intent --work discovery --after 2 --brief fix.md"},
-			run:      runIntentRevise,
+			run:      runIntentReviseSentBack,
 		},
 		{
 			object: "work", action: "land", primary: true, audience: "both", summary: "land a goal's reviewed work",
