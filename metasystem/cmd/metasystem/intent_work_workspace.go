@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 func workspaceIntentCommands() []intentCommand {
@@ -30,12 +31,14 @@ func workspaceIntentCommands() []intentCommand {
 			"metasystem work workspace G [--name N] [--copy-of REV]",
 			"metasystem work workspace G --release [--name N]",
 			"metasystem work workspace G --release --discard --name N --reason TEXT",
+			"metasystem work workspace --release --path PATH [--discard --reason TEXT]",
 		},
 		details: []string{
 			"Use it instead of copying the checkout to /tmp or cloning it: the workspace is registered to the goal before it receives a byte, and the engine removes it when it ends. Without --copy-of it is an empty directory; with --copy-of REV it is a linked worktree of this checkout at REV on branch workspace/goal-G/N, whose commits live in this checkout's object store.",
 			"It prints the path and the environment to work in: TMPDIR inside the workspace (beside a worktree) and the machine's Go and staticcheck caches, so nothing lands in a private cache or the system temporary directory.",
 			"The same goal and name again return the same workspace and write nothing; the same name at another revision is refused with the two ways out. --release ends it at any time: a worktree must be clean, its branch tip is archived under refs/archive/goal-G/N/ before the branch goes, and a workspace a running process uses is kept, naming it. A release of a workspace already gone is success.",
 			"--discard drops a worktree's uncommitted changes (committed work is still archived) and is a person's act: " + humanauthority.PersonActRemedy("the release with --discard") + ".",
+			"--release --path PATH is a person's act on a clone of this project beside the checkout that no workspace records: every ref, detached HEAD, stash entry, linked worktree HEAD, worktree index and initialized submodule is fetched into this checkout's store under refs/archive/clone-..., read back, and only then is the clone removed with its linked worktrees. A clone with work no commit holds is kept until the person adds --discard with a reason; a repeat resumes and succeeds.",
 			"Output is the path and the environment; --verbose adds the record, layout and cap.",
 		},
 		flags: []intentFlag{
@@ -44,6 +47,7 @@ func workspaceIntentCommands() []intentCommand {
 			{name: "release", usage: "end the workspace: archive, check and remove it"},
 			{name: "discard", usage: "a person's act: with --release, drop a worktree's uncommitted changes"},
 			{name: "reason", value: "TEXT", usage: "why the changes may be dropped (with --discard)"},
+			{name: "path", value: "PATH", usage: "a person's act: with --release, archive and remove the clone at PATH"},
 			intentVerboseFlag,
 		},
 		maxArgs:  1,
@@ -57,6 +61,9 @@ func runIntentWorkWorkspace(inv *intentInvocation) int {
 	id, problem := inv.singleTarget()
 	if problem != nil {
 		return inv.render(*problem)
+	}
+	if inv.input.has("path") {
+		return releaseClone(inv)
 	}
 	if id == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work workspace needs the goal it belongs to; nothing was done",
@@ -205,5 +212,48 @@ func releaseWorkWorkspace(inv *intentInvocation, owners diskOwners, registry dis
 	}
 	return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, text: lines,
 		Summary:  fmt.Sprintf("workspace %s of %s is kept: %s; nothing was removed", name, owner.Ref, outcome.Reason),
+		Decision: outcome.Command})
+}
+
+// releaseClone is a person's release of a clone beside the checkout.
+func releaseClone(inv *intentInvocation) int {
+	if !inv.input.switched("release") || inv.input.has("name") || inv.input.has("copy-of") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--path goes with --release alone: metasystem work workspace --release --path PATH; nothing was done"})
+	}
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	owners := inv.owners.disk.withDefaults()
+	path := inv.callerPath(inv.input.text("path"))
+	command := "metasystem work workspace --release --path " + path
+	by, err := owners.person(inv.stateRoot)
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 3,
+			Summary:  "removing a clone is a person's act, and this shell was not proven to be one; nothing was done",
+			Decision: humanauthority.PersonActRemedy(command)})
+	}
+	var discard *diskstore.Discard
+	if inv.input.switched("discard") {
+		reason := strings.TrimSpace(inv.input.text("reason"))
+		if reason == "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--discard needs --reason TEXT: why the clone's uncommitted work may be dropped; nothing was done"})
+		}
+		discard = &diskstore.Discard{By: by, At: owners.now().UTC(), Reason: reason}
+	}
+	outcome, err := diskstore.ReleaseClone(context.Background(), diskstore.CloneReleaseRequest{Registry: diskstore.CheckoutRegistry(inv.stateRoot),
+		GitRoot: inv.layout.GitRoot, Path: path, Git: owners.git, Census: owners.census(), Discard: discard, Now: owners.now().UTC(),
+		Armed: steward.ArmedGitRoots()})
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was removed"})
+	}
+	data := map[string]any{"release": outcome, "path": path}
+	switch {
+	case outcome.Done && outcome.Already:
+		return inv.render(intentResult{Outcome: intentUnchanged, Data: data, Summary: path + " is already gone; nothing to release"})
+	case outcome.Done:
+		return inv.render(intentResult{Outcome: intentConfirmed, Data: data,
+			Summary: fmt.Sprintf("archived %d item(s) of %s under %s and removed it", outcome.Rows, path, outcome.Base)})
+	}
+	return inv.render(intentResult{Outcome: intentRefused, code: 1, Data: data, Summary: fmt.Sprintf("%s is kept: %s; nothing was removed", path, outcome.Reason),
 		Decision: outcome.Command})
 }

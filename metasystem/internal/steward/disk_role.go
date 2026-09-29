@@ -151,6 +151,10 @@ type DiskPass struct {
 	// processes have all ended: `metasystem disk clean`. The steward's own
 	// pass only counts them.
 	ForgetRemoved bool
+	// Clones lists the unowned clones beside the checkout (a person's pass:
+	// disk clean and its preview; the steward's cycle runs no git on the
+	// checkout's siblings).
+	Clones bool
 }
 
 func (p DiskPass) registryPath() (string, error) {
@@ -219,6 +223,9 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 		checkoutOptions.Classes = append(checkoutOptions.Classes,
 			attemptRetention(top, pass.Now, settings.Bytes(config.DiskProofTargetKey), settings.Duration(config.DiskProofKeepKey)))
 		if layout, err := stateroot.ResolveLayout(top); err == nil {
+			if pass.Clones {
+				checkoutOptions.Classes = append(checkoutOptions.Classes, UnownedClones{GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, Armed: armedGitRoots()})
+			}
 			checkoutOptions.Classes = append(checkoutOptions.Classes, LandingReleaseSets{Installation: layout.InstallationRoot,
 				StateRoot: top, GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, IgnoredReleaseBytes: settings.Bytes(config.DiskWorkspaceIgnoredKey)})
 		}
@@ -679,6 +686,17 @@ func diskSettingsFor(checkout string) (diskstore.Settings, error) {
 	return diskstore.LoadSettings(filepath.Join(layout.InstallationRoot, "metasystem.conf"), nil)
 }
 
+// armedGitRoots are the git roots of the host's armed checkouts.
+func armedGitRoots() []string {
+	var roots []string
+	for _, checkout := range armedCheckouts() {
+		if layout, err := stateroot.ResolveLayout(checkout); err == nil && !containsPath(roots, layout.GitRoot) {
+			roots = append(roots, layout.GitRoot)
+		}
+	}
+	return roots
+}
+
 // armedCheckouts reads the host registry's open claims and owners.
 func armedCheckouts() []string {
 	path, err := registry.DefaultPath()
@@ -793,3 +811,6 @@ func regularFileExists(path string) bool {
 
 // ArmedCheckouts are the checkouts the host registry names as armed.
 func ArmedCheckouts() []string { return armedCheckouts() }
+
+// ArmedGitRoots are the git roots of the host's armed checkouts.
+func ArmedGitRoots() []string { return armedGitRoots() }
