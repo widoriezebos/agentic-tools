@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
@@ -700,15 +701,34 @@ func TestFakeHoldBehaviors(t *testing.T) {
 
 // TestFakeCancelRace: SIGTERM during the hold completes the round valid and
 // exits 0.
+//
+// The hold outliving the supervisor is the product contract, so nothing in
+// the supervisor's own process may reap it. A fixture custodian there (the
+// test binary's TestMain run in full inside the subprocess) observes its
+// owner's descendants every poll and kills them when the owner exits; under
+// suite load the subprocess lived past the default 250ms poll and the hold
+// died after this assertion's reading had become racy. The poll is set to
+// 1ms so any such custodian observes the hold at once, and its exit is
+// awaited before the hold is judged.
 func TestFakeCancelRace(t *testing.T) {
 	t.Parallel()
 	f := newFakeInstall(t, installOptions{prompt: "FAKE:cancel-race\n"})
 	f.env["METASYSTEM_HEARTBEAT_INTERVAL_MS"] = "20"
+	f.env[identity.FixtureCustodianPollEnv] = "1ms"
 	command := f.startSubprocess()
 	f.waitPidFile("child.pid")
+	custodians := fixtureCustodiansOf(t, command.Process.Pid)
 	syscall.Kill(command.Process.Pid, syscall.SIGTERM)
 	if err := command.Wait(); err != nil {
 		t.Fatalf("cancel-race supervisor ended %v, want exit 0; output %s", err, f.subprocessOutput())
+	}
+	for _, custodian := range custodians {
+		waitFor(t, "the supervisor's fixture custodian to finish", func() bool {
+			return identity.AliveRef(identity.KernelProber{}, custodian) != identity.Alive
+		})
+	}
+	if len(custodians) != 0 {
+		t.Errorf("the supervisor subprocess ran %d fixture custodian(s); they reap its children when it exits, which the product supervisor never does", len(custodians))
 	}
 	calls := f.dispatcher.calls(t)
 	if got := callNames(calls); !reflect.DeepEqual(got, []string{"__handshake", "__record-cas"}) {
