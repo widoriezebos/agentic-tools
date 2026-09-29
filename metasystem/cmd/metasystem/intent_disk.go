@@ -546,9 +546,12 @@ func diskTrimSummary(reports []gocache.TrimReport) (string, bool) {
 		name := diskCacheName(report.Cache)
 		switch report.EndedBy {
 		case "budget", "cancelled":
-			if report.Phase == "measure" {
+			switch {
+			case report.Phase == "measure" && diskTrimNotStarted(report):
+				resuming = append(resuming, name+" is not measured yet")
+			case report.Phase == "measure":
 				resuming = append(resuming, fmt.Sprintf("still measuring %s (%s counted so far)", name, diskBytes(report.Checkpoint.BytesSoFar)))
-			} else {
+			default:
 				resuming = append(resuming, fmt.Sprintf("still trimming %s to its %s cap", name, diskBytes(report.CapBytes)))
 			}
 		case "lock-held":
@@ -622,6 +625,9 @@ func diskTrimLine(report gocache.TrimReport) string {
 	case "lock-held", "refused":
 		return line + ": " + report.Reason
 	}
+	if report.Phase == "measure" && diskTrimNotStarted(report) {
+		return line + ", not measured yet: the pass ended before it reached this cache; the next pass starts it"
+	}
 	if report.Phase == "measure" {
 		return line + fmt.Sprintf(", measuring (%s counted so far; the next pass resumes at shard %s)", diskBytes(report.Checkpoint.BytesSoFar), report.Checkpoint.Shard)
 	}
@@ -633,6 +639,11 @@ func diskTrimLine(report gocache.TrimReport) string {
 		line += fmt.Sprintf("; %d entries not Go's layout were left untouched", report.UnknownCount)
 	}
 	return line
+}
+
+// diskTrimNotStarted: a measurement that has not stat'ed its first entry.
+func diskTrimNotStarted(report gocache.TrimReport) bool {
+	return report.Checkpoint.BytesSoFar == 0 && report.Checkpoint.LastName == "" && (report.Checkpoint.Shard == "" || report.Checkpoint.Shard == "00")
 }
 
 func diskBytes(size int64) string {

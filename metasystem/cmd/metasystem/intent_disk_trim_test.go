@@ -156,6 +156,8 @@ func TestDiskTrimHeadlineMatchesItsLines(t *testing.T) {
 			want: []string{"the machine caches are within their caps: nothing removed"}, done: true},
 		{name: "the engine cache still measuring", reports: []gocache.TrimReport{measuring, within("engine-staticcheck")},
 			want: []string{"still measuring the engine Go cache (74.9 GiB counted so far); it resumes on the next pass: run metasystem disk clean --go-cache again or let the steward continue"}},
+		{name: "a cache the pass never reached", reports: []gocache.TrimReport{measuring, {Cache: "engine-staticcheck", EndedBy: "budget", Phase: "measure", CapBytes: 2 * gib, Checkpoint: gocache.TrimCheckpoint{Shard: "00"}}},
+			want: []string{"still measuring the engine Go cache (74.9 GiB counted so far); the engine staticcheck cache is not measured yet; they resume on the next pass"}},
 		{name: "trimmed and still evicting", reports: []gocache.TrimReport{{Cache: "delegate-go-build", EndedBy: "budget", Phase: "evict", CapBytes: 10 * gib, EntriesRemoved: 4, BytesRemoved: 3 * gib}},
 			want: []string{"trimmed the machine caches: 4 entries, 3.0 GiB freed", "still trimming the delegate Go cache to its 10.0 GiB cap"}},
 		{name: "over its cap inside the keep window", reports: []gocache.TrimReport{{Cache: "engine-go-build", EndedBy: "complete", Phase: "idle", CapBytes: gib, BytesAfter: 3 * gib, KeepWindowBytes: 2 * gib}},
