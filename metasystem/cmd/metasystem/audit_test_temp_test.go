@@ -148,7 +148,7 @@ func TestAuditTestsWriteNoHostTemp(t *testing.T) {
 func TestAuditTestHostTempWitnessSeesEachWay(t *testing.T) {
 	t.Parallel()
 	for source, want := range map[string]int{
-		`package p; import "os"; func f() { os.MkdirTemp("/tmp", "x") }`:                     1,
+		`package p; import "os"; func f() { os.MkdirTemp("/tmp", "x") }`:                      1,
 		`package p; import "os"; func f() { os.CreateTemp("/var/tmp", "x") }`:                 1,
 		`package p; import "os"; var d = os.TempDir()`:                                        1,
 		`package p; import ("os"; "path/filepath"); var d = filepath.Join(os.TempDir(), "x")`: 1,
@@ -170,7 +170,7 @@ func TestAuditTestHostTempWitnessSeesEachWay(t *testing.T) {
 	for text, want := range map[string]int{
 		helper: 0,
 		"const dir = mkdtempSync(path.join(tmpdir(), \"metasystem-digest-\"));\n": 1,
-		helper + "const other = mkdtempSync(\"y\");\n":                             2,
+		helper + "const other = mkdtempSync(\"y\");\n":                            2,
 	} {
 		if got := len(auditTestScriptTempLines(text)); got != want {
 			t.Errorf("%q: %d sites, want %d", text, got, want)

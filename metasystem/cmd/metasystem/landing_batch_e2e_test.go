@@ -35,6 +35,7 @@ import (
 )
 
 var batchE2EProcessEnvironment sync.Mutex
+
 // batchE2ESharedEngine's path is set by its first user, inside the test
 // namespace's TMPDIR: an initializer runs before TestMain and would name the
 // host temp root.
