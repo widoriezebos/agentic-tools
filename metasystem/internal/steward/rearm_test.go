@@ -1277,3 +1277,111 @@ func TestSignalFailureNamesStopAttempted(t *testing.T) {
 		t.Fatalf("signal failure transition: %+v %v", outcome, err)
 	}
 }
+
+func signedSession() EnrolledSession {
+	return EnrolledSession{Provider: "browser", Human: "wido", Reference: "01SESSIONREF", Launch: "01LAUNCHID", From: "/checkouts/agentic-tools-ui"}
+}
+
+// g1-s72 D3: a machine launched from a signed-in browser session is its
+// human's own enrollment. The arm mints human-session with the session named,
+// no temporary word, no review date, and witnesses its own generation; it
+// replaces a live runner as the temporary path does.
+func TestSessionArmMintsAHumanSessionEnrollment(t *testing.T) {
+	bed := newRearmBed(t, true)
+	before, alive := liveRunner(bed.root)
+	if !alive {
+		t.Fatal("fixture runner was not alive before the session arm")
+	}
+	session := signedSession()
+	outcome, err := armSessionWithDeps(bed.root, bed.engine, session, "", rearmTestDeps(t))
+	if err != nil || outcome.Status != "re-armed" || outcome.StoppedRunnerPid != before.Pid {
+		t.Fatalf("session arm: %+v %v", outcome, err)
+	}
+	if strings.Contains(outcome.Message, "TEMPORAR") || !strings.Contains(outcome.Message, "wido") {
+		t.Fatalf("session arm message must name the human and never say temporary: %q", outcome.Message)
+	}
+	installed, err := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if installed.Enrollment != EnrollmentHumanSession || installed.MintedBy != "human-session" ||
+		installed.TemporaryHumanWord != "" || installed.ReviewBy != "" ||
+		installed.Generation != 2 || installed.HumanWitnessedGeneration != 2 || installed.HumanWitnessedAt == "" ||
+		installed.Session == nil || *installed.Session != session {
+		t.Fatalf("session arm minted %+v session=%+v", installed, installed.Session)
+	}
+	after, alive := liveRunner(bed.root)
+	if !alive || after.Pid == before.Pid {
+		t.Fatalf("session arm did not replace the live runner: before=%+v after=%+v alive=%t", before, after, alive)
+	}
+	want := "enrollment generation 2 human-witnessed (engine " + bed.second + "); from a signed-in browser session of wido (session 01SESSIONREF, launch 01LAUNCHID)"
+	if got := EnrollmentProvenance(installed); got != want {
+		t.Fatalf("provenance = %q, want %q", got, want)
+	}
+	verdict := checkStewardRunnerWithCadence(bed.root, time.Now(), processidentity.KernelProber{}, func(string) int { return 600 })
+	if !strings.Contains(verdict.Reason, want) {
+		t.Fatalf("health hid the session provenance: %+v", verdict)
+	}
+}
+
+func TestSessionArmRefusesASessionWithoutItsHuman(t *testing.T) {
+	for name, mutate := range map[string]func(*EnrolledSession){
+		"provider":  func(s *EnrolledSession) { s.Provider = "" },
+		"human":     func(s *EnrolledSession) { s.Human = " " },
+		"reference": func(s *EnrolledSession) { s.Reference = "" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bed := newRearmBed(t, false)
+			session := signedSession()
+			mutate(&session)
+			if _, err := armSessionWithDeps(bed.root, bed.engine, session, "", rearmTestDeps(t)); err == nil || !strings.Contains(err.Error(), "names no "+name) {
+				t.Fatalf("a session without its %s must be refused by name: %v", name, err)
+			}
+			installed, _ := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
+			if installed.Generation != 1 || installed.Session != nil {
+				t.Fatalf("a refused session arm minted %+v", installed)
+			}
+		})
+	}
+}
+
+func TestSessionArmInAFixtureRootStillMintsFixture(t *testing.T) {
+	bed := newRearmBed(t, false)
+	writeRearmFile(t, filepath.Join(bed.root, "metasystem.conf"), "metasystem.runtimes=fake\n")
+	outcome, err := armSessionWithDeps(bed.root, bed.engine, signedSession(), "", rearmTestDeps(t))
+	if err != nil || outcome.Status != "re-armed" {
+		t.Fatalf("fixture session arm: %+v %v", outcome, err)
+	}
+	installed, err := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
+	if err != nil || installed.Enrollment != EnrollmentFixture || installed.MintedBy != "human-session" {
+		t.Fatalf("a fixture root must force the fixture enrollment: %+v %v", installed, err)
+	}
+}
+
+func TestMachineRebuildCarriesTheSessionForward(t *testing.T) {
+	bed := newRearmBed(t, false)
+	ref := "refs/remotes/origin/trunk"
+	installed, err := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := signedSession()
+	installed.Enrollment, installed.MintedBy, installed.Session = EnrollmentHumanSession, "human-session", &session
+	if err := MintIdentity(RepoIdentityPath(bed.root), installed); err != nil {
+		t.Fatal(err)
+	}
+	expected := append(rearmOwnedRef(bed.root, ref, rearmID(3)), rearmBuild(bed.root, bed.second, bed.second, 0), rearmAncestor(bed.root, bed.second, ref, 0), rearmExpected(bed.root, bed.second+"\n", nil, "rev-parse", "--verify", "HEAD^{commit}"))
+	outcome, err := reArmRebuiltEngineWithDeps(rearmTestDeps(t, expected...), bed.root, bed.root, bed.engine)
+	if err != nil || outcome.Status != "re-armed" {
+		t.Fatalf("machine re-arm: %+v %v", outcome, err)
+	}
+	rebuilt, err := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
+	if err != nil || rebuilt.MintedBy != "machine-rebuild" || rebuilt.Enrollment != EnrollmentHumanSession ||
+		rebuilt.Session == nil || *rebuilt.Session != session || rebuilt.HumanWitnessedGeneration != 1 {
+		t.Fatalf("machine rebuild dropped the session: %+v session=%+v %v", rebuilt, rebuilt.Session, err)
+	}
+	if got := EnrollmentProvenance(rebuilt); !strings.Contains(got, "above human-witnessed generation 1") ||
+		!strings.HasSuffix(got, "; from a signed-in browser session of wido (session 01SESSIONREF, launch 01LAUNCHID)") {
+		t.Fatalf("rebuild provenance hid the session: %q", got)
+	}
+}

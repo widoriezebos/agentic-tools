@@ -39,7 +39,7 @@ const (
 	EnrollmentFixture       = "fixture"
 	// EnrollmentHumanSession is a machine launched from the browser by a
 	// signed-in human (g1-s72): the session is the human's authority, as the
-	// terminal is. Contract stub; the steward lane fills the readers.
+	// terminal is.
 	EnrollmentHumanSession = "human-session"
 )
 
@@ -169,7 +169,7 @@ func VerifyIdentity(path, wantRepoIdentity string) (InstallIdentity, error) {
 	switch id.Enrollment {
 	case "":
 		id.Enrollment = EnrollmentHumanTerminal
-	case EnrollmentHumanTerminal, EnrollmentTemporaryWord, EnrollmentFixture:
+	case EnrollmentHumanTerminal, EnrollmentTemporaryWord, EnrollmentFixture, EnrollmentHumanSession:
 	default:
 		return id, fmt.Errorf("steward identity carries unknown enrollment %q", id.Enrollment)
 	}
