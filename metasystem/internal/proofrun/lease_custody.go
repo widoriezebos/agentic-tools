@@ -1,6 +1,6 @@
 package proofrun
 
-// A schema-2 lease's custody record (engine-owns-disk-lifetimes Part B, 3.5
+// A richer lease's custody record (engine-owns-disk-lifetimes Part B, 3.5
 // "Admission leases", DL2-01, DL3B-02): every custodian started for the
 // lease, with its process group, appended durably beside the lease before
 // the worker it guards is born. The lease record itself is immutable after
@@ -36,7 +36,7 @@ func leaseCustodyPath(lease string) string {
 }
 
 // createLeaseCustody creates the empty custody record of a new lease,
-// durably, before its claim is published: a schema-2 lease without one is
+// durably, before its claim is published: a richer lease without one is
 // unreadable, never "no custodians".
 func createLeaseCustody(lease string) error {
 	path := leaseCustodyPath(lease)
@@ -48,7 +48,7 @@ func createLeaseCustody(lease string) error {
 }
 
 // recordLeaseCustodian appends a custodian to the custody record of every
-// schema-2 lease marker among files.
+// richer lease marker among files.
 func recordLeaseCustodian(files []*os.File, custodian identity.Ref, group int64) error {
 	encoded, err := identity.EncodeRef(custodian)
 	if err != nil {
@@ -62,13 +62,13 @@ func recordLeaseCustodian(files []*os.File, custodian identity.Ref, group int64)
 		if !strings.HasPrefix(filepath.Base(file.Name()), "lease-") {
 			continue
 		}
-		// A schema-1 lease (one an older engine acquired and this one
-		// borrows) has no custody record; it is judged as schema 1.
+		// A lease an older engine acquired (no fixture owner) has no custody
+		// record; it is judged by the older rules.
 		lease, _, err := readHostLeaseRecord(file)
 		if err != nil {
 			return err
 		}
-		if lease.Schema < 2 {
+		if lease.FixtureOwner == nil {
 			continue
 		}
 		record, err := os.OpenFile(leaseCustodyPath(file.Name()), os.O_WRONLY|os.O_APPEND, 0o600)
@@ -125,4 +125,24 @@ func syncLeaseDirectory(directory string) error {
 		return err
 	}
 	return errors.Join(dir.Sync(), dir.Close())
+}
+
+// removeOrphanCustody removes every custody record whose lease marker no
+// longer exists; the caller holds admission.lock.
+func removeOrphanCustody(directory string) error {
+	records, err := filepath.Glob(filepath.Join(directory, leaseCustodyPrefix+"lease-*.jsonl"))
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		lease := filepath.Join(directory, strings.TrimSuffix(strings.TrimPrefix(filepath.Base(record), leaseCustodyPrefix), ".jsonl"))
+		if _, err := os.Lstat(lease); errors.Is(err, os.ErrNotExist) {
+			if err := os.Remove(record); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
+	}
+	return nil
 }

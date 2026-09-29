@@ -105,7 +105,7 @@ type leaseReclaimRecord struct {
 	Fixtures  string          `json:"fixtures"`
 	Flock     string          `json:"flock"`
 	By        int             `json:"by"`
-	// Custodians are a schema-2 lease's recorded custodians, each proved
+	// Custodians are a richer lease's recorded custodians, each proved
 	// dead with an empty group.
 	Custodians []leaseCustodian `json:"custodians,omitempty"`
 }
@@ -121,11 +121,11 @@ type leaseVerdict struct {
 	custodians []leaseCustodian
 }
 
-// judgeCustodians proves every custodian a schema-2 lease records dead
+// judgeCustodians proves every custodian a richer lease records dead
 // (a reused pid or a zombie counts) with an empty process group; a custody
 // record that cannot be read, or anything else unproven, is unknown.
 func (reclaimer *leaseReclaimer) judgeCustodians(path string, record hostLeaseRecord) ([]leaseCustodian, string) {
-	if record.Schema < 2 {
+	if record.FixtureOwner == nil {
 		return nil, ""
 	}
 	custodians, err := readLeaseCustodians(path)

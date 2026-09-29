@@ -802,7 +802,7 @@ func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostRes
 		return nil, nil, identity.Ref{}, errors.Join(err, finish())
 	}
 	if len(files) != 0 {
-		// A schema-2 lease names every custodian and its group before the
+		// A richer lease names every custodian and its group before the
 		// worker is born, so its reclaim can prove them settled.
 		if err := recordLeaseCustodian(files, custody.leader, int64(custody.group)); err != nil {
 			return nil, nil, identity.Ref{}, errors.Join(fmt.Errorf("record lease custodian: %w", err), finish())

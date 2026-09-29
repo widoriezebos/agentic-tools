@@ -46,9 +46,10 @@ type hostLeaseRecord struct {
 	Slot      string          `json:"slot,omitempty"`
 	Resources []string        `json:"resources"`
 	Cleared   bool            `json:"cleared"`
-	// Schema 2 (engine-owns-disk-lifetimes 3.5): the owner whose detached
-	// fixtures the lease answers for and the conf path of its checkout.
-	// Its custodians are recorded beside it (lease_custody.go).
+	// The richer lease (engine-owns-disk-lifetimes 3.5; still schema 1,
+	// Round D2 F-1): the owner whose detached fixtures the lease answers for
+	// and the conf path of its checkout. Its custodians are recorded beside
+	// it (lease_custody.go).
 	FixtureOwner *ProcessIdentity `json:"fixtureOwner,omitempty"`
 	ConfPath     string           `json:"confPath,omitempty"`
 }
@@ -57,12 +58,17 @@ const hostLeaseRecordMaxBytes = 16 << 10
 
 func validHostLeaseRecord(path string, record hostLeaseRecord) error {
 	name := filepath.Base(path)
+	// Every lease is schema 1, which every engine sharing the host's
+	// admission directory reads (Round D2 F-1). A richer lease carries the
+	// fixture owner and conf path as extra fields an older engine ignores;
+	// both come together, well formed.
 	switch {
-	case record.Schema == 1 && record.FixtureOwner == nil && record.ConfPath == "":
-	case record.Schema == 2 && record.FixtureOwner != nil && record.FixtureOwner.Pid > 0 && record.FixtureOwner.Ref().NativeExact() &&
-		filepath.IsAbs(record.ConfPath):
+	case record.Schema != 1:
+		return fmt.Errorf("unreconciled proof resource marker %s has an unknown schema", name)
+	case record.FixtureOwner == nil && record.ConfPath == "":
+	case record.FixtureOwner != nil && record.FixtureOwner.Pid > 0 && record.FixtureOwner.Ref().NativeExact() && filepath.IsAbs(record.ConfPath):
 	default:
-		return fmt.Errorf("unreconciled proof resource marker %s has an unknown schema or an invalid schema-2 claim", name)
+		return fmt.Errorf("unreconciled proof resource marker %s has an invalid fixture owner or conf path", name)
 	}
 	if record.Owner.Pid <= 0 || !record.Owner.Ref().NativeExact() ||
 		(record.Class != "cheap" && record.Class != "heavy") ||
@@ -398,6 +404,13 @@ func hostLeaseStateWithReclaim(directory string, reclaim bool, reclaimer *leaseR
 		return 0, nil, err
 	}
 	dirty, named := 0, map[string]bool{}
+	if reclaim {
+		// Under admission.lock no lease is being created: a custody record
+		// whose lease is gone (an older engine reclaimed it) goes too.
+		if err := removeOrphanCustody(directory); err != nil {
+			return 0, nil, err
+		}
+	}
 	for _, path := range paths {
 		// A live marker may be locked by its owner, but its immutable claim
 		// still has to be known before admission trusts the slot census.
@@ -834,9 +847,9 @@ func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPat
 				return nil, confErr
 			}
 			fixtureOwner := owner
-			record := hostLeaseRecord{Schema: 2, Owner: owner, Class: class, Slot: slot, Resources: claimed, Cleared: false,
+			record := hostLeaseRecord{Schema: 1, Owner: owner, Class: class, Slot: slot, Resources: claimed, Cleared: false,
 				FixtureOwner: &fixtureOwner, ConfPath: absoluteConf}
-			// The custody record exists before the claim: a schema-2 lease
+			// The custody record exists before the claim: a richer lease
 			// without one reads as unknown, never as "no custodians".
 			if custodyErr := createLeaseCustody(marker.Name()); custodyErr != nil {
 				closeHostFiles(files)

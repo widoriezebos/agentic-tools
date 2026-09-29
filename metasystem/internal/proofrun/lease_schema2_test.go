@@ -8,7 +8,9 @@ package proofrun
 // fixture census finds no survivor. What cannot be read keeps the lease.
 
 import (
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,7 +30,7 @@ const (
 func writeDirtySchema2Lease(t *testing.T, directory string, custodians []leaseCustodian) string {
 	t.Helper()
 	owner := processIdentity(reclaimExact(reclaimOwnerPid, reclaimOwnerMicro), reclaimOwnerPgid)
-	encoded, err := json.Marshal(hostLeaseRecord{Schema: 2, Owner: owner, Class: "heavy", Slot: "slot-00", Resources: []string{},
+	encoded, err := json.Marshal(hostLeaseRecord{Schema: 1, Owner: owner, Class: "heavy", Slot: "slot-00", Resources: []string{},
 		Cleared: false, FixtureOwner: &owner, ConfPath: "/checkout/metasystem.conf"})
 	if err != nil {
 		t.Fatal(err)
@@ -152,8 +154,8 @@ func TestAcquisitionWritesSchema2AndCustodyRecordsTheCustodian(t *testing.T) {
 		t.Fatal("the lease has no marker")
 	}
 	record, _, err := readHostLeaseRecord(marker)
-	if err != nil || record.Schema != 2 || record.FixtureOwner == nil || record.FixtureOwner.Pid != record.Owner.Pid || !filepath.IsAbs(record.ConfPath) {
-		t.Fatalf("the lease is schema 2 with its fixture owner and conf path: %+v %v", record, err)
+	if err != nil || record.Schema != 1 || record.FixtureOwner == nil || record.FixtureOwner.Pid != record.Owner.Pid || !filepath.IsAbs(record.ConfPath) {
+		t.Fatalf("the lease stays schema 1 with its fixture owner and conf path: %+v %v", record, err)
 	}
 	if err := recordLeaseCustodian(lease.Files(), reclaimExact(custodianPid, custodianMicro).Ref(), custodianGroup); err != nil {
 		t.Fatal(err)
@@ -161,5 +163,116 @@ func TestAcquisitionWritesSchema2AndCustodyRecordsTheCustodian(t *testing.T) {
 	custodians, err := readLeaseCustodians(marker.Name())
 	if err != nil || len(custodians) != 1 || custodians[0].Group != custodianGroup {
 		t.Fatalf("the custodian is recorded beside the lease: %+v %v", custodians, err)
+	}
+}
+
+// Round D2 F-1: an engine older than this one shares the host admission
+// directory and rejects any schema but 1, so a lease stays schema 1 and
+// carries the fixture owner and conf path as extra fields the old reader
+// ignores. baseLeaseRecord and baseValidHostLeaseRecord are the base
+// engine's (fa3c41a16) reader, copied verbatim.
+type baseLeaseRecord struct {
+	Schema    int             `json:"schema"`
+	Owner     ProcessIdentity `json:"owner"`
+	Class     string          `json:"class"`
+	Slot      string          `json:"slot,omitempty"`
+	Resources []string        `json:"resources"`
+	Cleared   bool            `json:"cleared"`
+}
+
+func baseValidHostLeaseRecord(path string, record baseLeaseRecord) error {
+	name := filepath.Base(path)
+	if record.Schema != 1 || record.Owner.Pid <= 0 || !record.Owner.Ref().NativeExact() ||
+		(record.Class != "cheap" && record.Class != "heavy") ||
+		!strings.HasPrefix(name, "lease-"+record.Class+"-") || len(strings.TrimPrefix(name, "lease-"+record.Class+"-")) != 32 {
+		return fmt.Errorf("unreconciled proof resource marker %s has an invalid claim", name)
+	}
+	if _, err := hex.DecodeString(strings.TrimPrefix(name, "lease-"+record.Class+"-")); err != nil {
+		return fmt.Errorf("unreconciled proof resource marker %s has an invalid nonce", name)
+	}
+	if record.Class == "cheap" && record.Slot != "" || record.Slot != "" && !strings.HasPrefix(record.Slot, "slot-") {
+		return fmt.Errorf("unreconciled proof resource marker %s has an invalid slot", name)
+	}
+	seen := map[string]bool{}
+	for _, resource := range record.Resources {
+		if seen[resource] || !strings.HasPrefix(resource, "resource-") || len(resource) != len("resource-")+64 {
+			return fmt.Errorf("unreconciled proof resource marker %s has an invalid resource", name)
+		}
+		if _, err := hex.DecodeString(strings.TrimPrefix(resource, "resource-")); err != nil {
+			return fmt.Errorf("unreconciled proof resource marker %s has an invalid resource", name)
+		}
+		seen[resource] = true
+	}
+	return nil
+}
+
+func TestAnOlderEngineReadsTheLeaseThisEngineWrites(t *testing.T) {
+	t.Parallel()
+	directory, conf := privateHostResources(t)
+	lease, err := acquireHostResourcesIn(t.Context(), directory, directory, conf, "heavy", []string{"shared-resource"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	for _, file := range lease.Files() {
+		if !strings.HasPrefix(filepath.Base(file.Name()), "lease-") {
+			continue
+		}
+		data, err := os.ReadFile(file.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var old baseLeaseRecord
+		if err := json.Unmarshal(data, &old); err != nil {
+			t.Fatalf("the base engine decodes the lease: %v", err)
+		}
+		if err := baseValidHostLeaseRecord(file.Name(), old); err != nil {
+			t.Fatalf("the base engine accepts the lease this engine writes: %v", err)
+		}
+		// And this engine still recognizes it as the richer lease.
+		record, _, err := readHostLeaseRecord(file)
+		if err != nil || record.FixtureOwner == nil || record.ConfPath == "" {
+			t.Fatalf("this engine reads the fixture owner and conf path: %+v %v", record, err)
+		}
+	}
+}
+
+// A richer lease must carry both extra fields, well formed: a fixture owner
+// without a conf path, or a relative conf path, is unreadable (rule 1).
+func TestAHalfRicherLeaseIsUnreadable(t *testing.T) {
+	t.Parallel()
+	owner := processIdentity(reclaimExact(reclaimOwnerPid, reclaimOwnerMicro), reclaimOwnerPgid)
+	path := filepath.Join(t.TempDir(), reclaimLeaseName)
+	for name, record := range map[string]hostLeaseRecord{
+		"a fixture owner without a conf path": {Schema: 1, Owner: owner, Class: "heavy", FixtureOwner: &owner},
+		"a relative conf path":                {Schema: 1, Owner: owner, Class: "heavy", FixtureOwner: &owner, ConfPath: "metasystem.conf"},
+		"schema 2":                            {Schema: 2, Owner: owner, Class: "heavy", FixtureOwner: &owner, ConfPath: "/c/metasystem.conf"},
+	} {
+		if err := validHostLeaseRecord(path, record); err == nil {
+			t.Fatalf("%s is refused", name)
+		}
+	}
+}
+
+// An older engine that reclaims a cleared richer lease removes the lease
+// alone; this engine's next reclaiming scan, under admission.lock, drops the
+// custody record no lease names any more, and never one whose lease exists.
+func TestAnOrphanCustodyRecordGoesWithTheNextReclaimingScan(t *testing.T) {
+	t.Parallel()
+	directory := reclaimDirectory(t)
+	live := writeDirtySchema2Lease(t, directory, []leaseCustodian{recordedCustodian(t)})
+	orphan := filepath.Join(directory, leaseCustodyPrefix+"lease-heavy-11111111111111111111111111111111.jsonl")
+	if err := os.WriteFile(orphan, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	seams := newReclaimSeams(reclaimProber{custodianPid: {reclaimExact(custodianPid, custodianMicro), identity.Alive}})
+	if _, _, err := hostLeaseStateWithReclaim(directory, true, seams.reclaimer()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+		t.Fatalf("the orphan custody record goes: %v", err)
+	}
+	if _, err := os.Stat(leaseCustodyPath(live)); err != nil {
+		t.Fatalf("a live lease keeps its custody record: %v", err)
 	}
 }
